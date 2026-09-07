@@ -59,7 +59,7 @@
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
-    "typescript": "^5.5.0",
+    "typescript": "^7.0.2",
     "@deepseek-ai/dsh-credentials": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-web": "workspace:^",

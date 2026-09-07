@@ -48,6 +48,6 @@
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "typescript": "^5.5.0"
+    "typescript": "^7.0.2"
   }
 }
