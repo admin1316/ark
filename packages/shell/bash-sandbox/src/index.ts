@@ -21,7 +21,7 @@ import type {
   SandboxPolicy,
 } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
-import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
+import { LocalBashExecutor, resolveBashExecutable } from '@deepseek-ai/dsh-bash-local'
 import type { Config as LocalConfig } from '@deepseek-ai/dsh-bash-local'
 import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure, matchesSignature } from './helpers.ts'
 
@@ -175,7 +175,7 @@ export class SandboxBashExecutor extends LocalBashExecutor {
    * @returns the provider's exact argv and settlement-classification facts.
    */
   private confine(command: string, policy: SandboxPolicy): ConfinedArgv {
-    return this.ctx.sandbox.confine(['bash', '-c', command], policy)
+    return this.ctx.sandbox.confine([resolveBashExecutable(), '-c', command], policy)
   }
 }
 
