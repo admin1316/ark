@@ -88,6 +88,6 @@
     "@deepseek-ai/dsh-typert-registry": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "@types/js-yaml": "^4.0.9",
-    "js-yaml": "^4.2.0"
+    "js-yaml": "^5.2.3"
   }
 }
