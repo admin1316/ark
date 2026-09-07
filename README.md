@@ -1,63 +1,33 @@
-# DeepSeek Harness
+# 九章天幕 · Ark
 
-English | [中文](README.zh.md)
+**所思即行，所创即见。**
 
-DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
+九章天幕 Ark 是一个桌面智能体工作台：本地优先、内嵌完整运行时，让每个想法即刻执行、每次创造即时可见。
 
-It uses an architecture where **everything is a plugin**, and is powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://github.com/cordiverse/paper).
+## 产品能力
 
-## Developer preview
+- **会话工作台** — 多会话并行、长任务与规划模式、子智能体协作与血缘视图
+- **万相织鉴** — 项目知识库：摄取、语义检索、校验与裁决
+- **原生体验** — SwiftUI 原生界面，内嵌 Node 运行时，安装即用
+- **能力扩展** — 一切皆插件（Cordis 插件框架），命令 / 技能 / 引用三类输入源
+- **权限与安全** — 沙盒模式 + 审批策略预设，读写边界与保护目录契约
 
-DeepSeek Harness is currently in _developer preview_ and is iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
+## 构建与运行
 
-Read the [safety boundaries](SAFETY.md) before enabling tools or opening an untrusted workspace.
-
-## Run
-
-### Run from `npm`
-
-Install `Node.js`, set a DeepSeek credential, then run one headless task:
-
-```sh
-export DEEPSEEK_API_KEY=sk-your-key-here
-npx @deepseek-ai/dsh --profile headless "Summarize this repository"
-```
-
-The command creates one persisted session, prints the final answer, and exits without opening a browser or listening on a port. See the [headless quickstart](docs/user/guide/index.md); automation clients can instead use the [Python SDK](docs/user/guide/python-sdk.md) or ACP examples.
-
-### Run from source
-
-To run from a repository checkout:
-
-```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
+```bash
+# 开发环境
 pnpm install
-pnpm run build
-export DEEPSEEK_API_KEY=sk-your-key-here
-pnpm dsh --profile headless "Summarize this repository"
+
+# 桌面应用构建（内嵌运行时打包 + Swift 壳）
+integrations/jiuzhang/native/build-app.sh <输出目录>
 ```
 
-`pnpm run build` prepares the repository artifacts. `pnpm dsh` uses those built artifacts without rebuilding.
+构建细节、闸门与验证记录见 `provenance/`。
 
-## Community and support
+## 安全边界
 
-- Feel free to submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
-- Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
-- Join <a href="https://discord.gg/Ycq5dCaS4">DeepSeek Harness Discord community</a>.
+启用工具或打开不受信任的工作区前，先阅读 [SAFETY.md](SAFETY.md)。
 
-## Contributing
+## 许可
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Development
-
-Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
-
-For agents, follow [AGENTS.md](AGENTS.md).
-
-## License
-
-[MIT](LICENSE)
-
-Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+见 [LICENSE](LICENSE)。
