@@ -1,0 +1,14 @@
+interface:
+  display_name: "媒体与视频制作工作室"
+  short_description: "HyperFrames 视频、动效、媒体资产、预览验证与渲染"
+  default_prompt: "使用 $media-production-studio 创建或修订这项媒体作品，并完成确定性检查和真实预览。"
+  icon_small: "assets/icon.svg"
+  icon_large: "assets/icon.svg"
+policy:
+  products:
+    - chatgpt
+    - codex
+    - api
+    - atlas
+  allow_implicit_invocation: true
+

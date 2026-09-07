@@ -1,0 +1,14 @@
+interface:
+  display_name: "影视制作工作室"
+  short_description: "短剧改编、剧本、导演分镜、互动叙事与 AI 视频执行稿"
+  default_prompt: "使用 $cinematic-production-studio 把这份内容完成为连续、可拍摄、可生成的影视制作方案。"
+  icon_small: "assets/icon.svg"
+  icon_large: "assets/icon.svg"
+policy:
+  products:
+    - chatgpt
+    - codex
+    - api
+    - atlas
+  allow_implicit_invocation: true
+

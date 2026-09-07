@@ -1,0 +1,14 @@
+interface:
+  display_name: "视觉制作工作室"
+  short_description: "分镜画格、封面、电影关键帧、海报与概念视觉"
+  default_prompt: "使用 $visual-production-studio 把这份内容完成为连续分镜画格或精选视觉关键帧。"
+  icon_small: "assets/icon.svg"
+  icon_large: "assets/icon.svg"
+policy:
+  products:
+    - chatgpt
+    - codex
+    - api
+    - atlas
+  allow_implicit_invocation: true
+

@@ -1,0 +1,121 @@
+{
+  "project": {
+    "title": "人间香火录·示例",
+    "format": "vertical-comic-drama",
+    "aspectRatio": "9:16",
+    "fps": 24,
+    "targetDurationSec": 6,
+    "visualMode": "board-sketch"
+  },
+  "continuity": {
+    "characters": {
+      "LIN_YUAN": {
+        "appearanceLock": "十六岁少年，黑色长发，深色旧布衣",
+        "referenceImages": []
+      }
+    },
+    "scenes": {
+      "SC01": {
+        "name": "财神庙正殿",
+        "geography": "林渊位于殿门内侧，财神像在纵深中央高台",
+        "light": "香炉暖光自下而上，殿外冷晨光从角色背后进入"
+      }
+    },
+    "props": {
+      "INCENSE": {
+        "owner": "LIN_YUAN",
+        "state": "三炷未点燃的香，握在右手"
+      }
+    }
+  },
+  "shots": [
+    {
+      "id": "SC01-SH001",
+      "sceneId": "SC01",
+      "beat": "踏入禁地",
+      "purpose": "建立林渊与财神像的悬殊权力关系",
+      "durationSec": 3,
+      "framing": "大全景",
+      "camera": {
+        "angle": "低机位背后三分之二侧视",
+        "lensMm": 24,
+        "height": "离地0.7米",
+        "movement": "静止",
+        "axisSide": "L",
+        "screenDirection": "DEPTH"
+      },
+      "blocking": "林渊停在画面下方，右手垂握三炷香；高台财神像占据画面上半部",
+      "composition": {
+        "focus": "财神像眉心裂纹",
+        "flow": "香烟与殿柱向上汇聚到神像",
+        "negativeSpace": "林渊头顶保留大面积黑暗形成压迫",
+        "horizon": "位于画面下三分之一",
+        "vanishingPoints": "单点透视汇聚于财神像腹部"
+      },
+      "continuity": {
+        "characters": ["LIN_YUAN"],
+        "wardrobeState": "深色旧布衣干燥完整",
+        "propState": "三炷香在右手，未点燃",
+        "positionState": "林渊在殿门内侧，面向画面纵深",
+        "lightState": "背后冷光，正面受微弱香火暖光",
+        "damageState": "无"
+      },
+      "frame": {
+        "mode": "board-sketch",
+        "status": "planned",
+        "prompt": "9:16制作级灰阶分镜画格，十六岁黑色长发少年从背后三分之二侧面站在古旧财神庙门内，右手垂握三炷未点燃的香，远处巨大财神像位于高台并占据画面上半部，24毫米广角，低机位，单点透视，殿柱与香烟汇聚向神像，块面光影，轮廓清晰，空间关系准确，不追求最终材质",
+        "negativePrompt": "不要文字、镜号、对白框、水印，不要彩色精修，不要换装，不要多余人物，不要错误手指，不要悬浮脚，不要扭曲建筑透视",
+        "imagePath": ""
+      },
+      "sound": {
+        "dialogue": "",
+        "sfx": "远处晨钟，衣料轻响",
+        "music": "低频持续音"
+      }
+    },
+    {
+      "id": "SC01-SH002",
+      "sceneId": "SC01",
+      "beat": "神像回应",
+      "purpose": "揭示财神像正在注视林渊",
+      "durationSec": 3,
+      "framing": "极近特写",
+      "camera": {
+        "angle": "正面略仰",
+        "lensMm": 85,
+        "height": "财神像眼部高度",
+        "movement": "极慢推进",
+        "axisSide": "ON",
+        "screenDirection": "STATIC"
+      },
+      "blocking": "财神像右眼的金色外壳裂开，裂缝内出现一只细长兽瞳",
+      "composition": {
+        "focus": "裂缝中的兽瞳",
+        "flow": "裂纹从画面边缘汇向瞳孔",
+        "negativeSpace": "眼窝周围压入黑暗",
+        "horizon": "不可见",
+        "vanishingPoints": "不适用，依靠裂纹放射线组织"
+      },
+      "continuity": {
+        "characters": [],
+        "wardrobeState": "不适用",
+        "propState": "林渊手中香保持未点燃且不入画",
+        "positionState": "摄影机仍面向高台，轴线未变",
+        "lightState": "香火暖光由下方扫过金色裂纹",
+        "damageState": "财神像眉心至右眼新增裂纹"
+      },
+      "frame": {
+        "mode": "board-sketch",
+        "status": "planned",
+        "prompt": "9:16制作级灰阶分镜画格，古旧财神像眼部极近特写，正面略仰，85毫米长焦，右眼金色外壳沿眉心裂开，裂缝深处一只细长黄仙兽瞳睁开，香火亮面由下方扫过裂纹，其余眼窝沉入黑暗，轮廓与裂纹清楚，不追求最终材质",
+        "negativePrompt": "不要完整脸部，不要文字、镜号、对白框、水印，不要彩色海报感，不要额外眼睛，不要塑料CG表面，不要杂乱裂纹",
+        "imagePath": ""
+      },
+      "sound": {
+        "dialogue": "终于来了。",
+        "sfx": "细微金属开裂声",
+        "music": "晨钟骤停"
+      }
+    }
+  ]
+}

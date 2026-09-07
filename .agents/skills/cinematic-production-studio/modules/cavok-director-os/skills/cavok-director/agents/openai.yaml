@@ -1,0 +1,11 @@
+interface:
+  display_name: "CAVOK 电影导演组"
+  short_description: "设计电影级分镜、场面调度、动作编排与物理可信视觉特效"
+  default_prompt: "使用 $cavok-director 把这场戏转化为可制作的电影分镜与 AI 视频生成执行稿。"
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "短剧 AI 制作套件"
+  short_description: "小说改编、角色场景、电影分镜与 AI 视频提示词"
+  default_prompt: "使用 $short-drama-ai-suite 把我的故事整理成安全、连续、可执行的短剧制作方案。"
+policy:
+  allow_implicit_invocation: true

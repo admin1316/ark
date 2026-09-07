@@ -1,0 +1,14 @@
+interface:
+  display_name: "故事创作工作室"
+  short_description: "长短篇研究、创作、续写、审稿、导入与角色资产"
+  default_prompt: "使用 $story-creation-studio 完成这项故事创作或角色资产任务，并只加载匹配的内部模块。"
+  icon_small: "assets/icon.svg"
+  icon_large: "assets/icon.svg"
+policy:
+  products:
+    - chatgpt
+    - codex
+    - api
+    - atlas
+  allow_implicit_invocation: true
+

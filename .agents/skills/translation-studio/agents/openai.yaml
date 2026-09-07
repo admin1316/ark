@@ -1,0 +1,14 @@
+interface:
+  display_name: "长文翻译工作室"
+  short_description: "长文互译、术语一致性、分段续跑与双语审校"
+  default_prompt: "使用 $translation-studio 翻译这份内容，并保持术语、专名、结构和文体一致。"
+  icon_small: "assets/icon.svg"
+  icon_large: "assets/icon.svg"
+policy:
+  products:
+    - chatgpt
+    - codex
+    - api
+    - atlas
+  allow_implicit_invocation: true
+
