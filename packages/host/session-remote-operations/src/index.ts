@@ -1669,6 +1669,36 @@ export class SessionRemoteOperationsService extends Service
     const found = await this.agentFor(request.sessionId)
     if (!found.ok) return found
     const agent = found.value
+  /**
+   * Resolve an unknown "/<name>" command against the installed skill
+   * catalogs (user homes plus the session's project roots). Returns the
+   * rewritten prompt text when the name matches an installed skill, and
+   * undefined otherwise so the caller keeps its unknown-command failure.
+   */
+  private async admitUnknownCommandAsSkill(commandLine: string, sessionId: SessionId): Promise<string | undefined> {
+    const name = commandLine.slice(1).trim().split(/\s/u, 1)[0] ?? ''
+    if (name.length === 0) return undefined
+    const skills = this.ctx.get('skills') as
+      | { list(options: { cwd?: string }): Promise<unknown> }
+      | undefined
+    if (skills === undefined) return undefined
+    const cwd = this.ctx.sessions.get(sessionId)?.header.cwd as string | undefined
+    let candidates: Array<{ name?: string }> = []
+    try {
+      const listed = await skills.list({ cwd })
+      candidates = Array.isArray(listed)
+        ? listed as Array<{ name?: string }>
+        : (listed as { candidates?: Array<{ name?: string }> }).candidates ?? []
+    } catch {
+      return undefined
+    }
+    if (!candidates.some(candidate => candidate.name === name)) return undefined
+    const args = commandLine.slice(1 + name.length).trim()
+    return args.length > 0
+      ? `请使用 ${name} 技能处理以下请求：\n${args}`
+      : `请使用 ${name} 技能。`
+  }
+
     const commandLine = request.content.length === 1 && request.content[0]?.type === 'text'
       && request.content[0].text.startsWith('/')
       ? request.content[0].text
@@ -1681,10 +1711,19 @@ export class SessionRemoteOperationsService extends Service
       try {
         const execution = await commands.execute(agent, commandLine, [], signal)
         if (execution === undefined) {
-          return failure(
-            'unknown-command',
-            `unknown command: ${commandLine.split(/\s/u, 1)[0] ?? commandLine}`,
-          )
+          // A composer skill row inserts "/<skill-name> " as its replacement,
+          // so an unknown command carrying an installed skill's name is a
+          // skill invocation, not a typo: rewrite it into an ordinary prompt
+          // that names the skill (the agent's injected skill catalog carries
+          // the methodology) instead of rejecting it.
+          const skillPrompt = await this.admitUnknownCommandAsSkill(commandLine, request.sessionId)
+          if (skillPrompt === undefined) {
+            return failure(
+              'unknown-command',
+              `unknown command: ${commandLine.split(/\s/u, 1)[0] ?? commandLine}`,
+            )
+          }
+          request = { ...request, content: [{ type: 'text', text: skillPrompt }] }
         }
         if (execution.result.kind === 'error') {
           return failure('command-error', execution.result.text)

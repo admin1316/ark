@@ -269,6 +269,45 @@ describe('SessionRemoteOperationsService', () => {
     expect(agent.cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: true })
   })
 
+  it('admits an unknown slash-command naming an installed skill as a skill prompt', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-session-remote-'))
+    temporary.push(cwd)
+    const state = await harness(cwd)
+    const skillCatalog: Array<{ name: string }> = [{ name: 'translation-studio' }]
+    state.ctx.provide('skills', {
+      list: () => Promise.resolve(skillCatalog),
+    } as never)
+    const session = emptySession('session-skill', cwd)
+    const agent = fakeAgent(session)
+    state.sessions.set(String(session.id), session)
+    state.agents.set(String(session.id), agent)
+    state.roots.push(agent)
+    const operations = state.ctx.sessionRemoteOperations as SessionRemoteOperationsService
+
+    await expect(operations.prompt({
+      sessionId: session.id,
+      invocationId: SessionPromptInvocationId('skill-known'),
+      mode: 'queue',
+      content: [{ type: 'text', text: '/translation-studio 把这篇翻成英文' }],
+    }, new AbortController().signal)).resolves.toEqual({ ok: true, value: { accepted: true } })
+    expect(agent.followup).toHaveBeenCalledTimes(1)
+    expect(agent.followup.mock.calls[0]?.[0]).toMatchObject({
+      content: [{ type: 'text', text: '请使用 translation-studio 技能处理以下请求：\n把这篇翻成英文' }],
+    })
+
+    skillCatalog.length = 0
+    await expect(operations.prompt({
+      sessionId: session.id,
+      invocationId: SessionPromptInvocationId('skill-unknown'),
+      mode: 'queue',
+      content: [{ type: 'text', text: '/no-such-skill' }],
+    }, new AbortController().signal)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'unknown-command' },
+    })
+    expect(agent.followup).toHaveBeenCalledTimes(1)
+  })
+
   it('routes an exact slash-command prompt through CommandRuntime and never into the model inbox', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'dsh-session-remote-'))
     temporary.push(cwd)
