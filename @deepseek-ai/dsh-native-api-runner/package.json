@@ -1,0 +1,59 @@
+{
+  "name": "@deepseek-ai/dsh-native-api-runner",
+  "description": "Dedicated executable that boots only Ark's managed native API profile without generic CLI or browser dispatch",
+  "version": "0.1.1-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/boot/native-api-runner"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "bin": {
+    "dsh-native-api": "lib/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./bin": {
+      "types": "./lib/types/bin.d.ts",
+      "default": "./lib/bin.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/bin.js",
+    "lib/types-*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "node-addon-require-builtin": "^0.1.4",
+    "@deepseek-ai/dsh-app-boot": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-native-api-app": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-base": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-tool-knowledge-wiki": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-profile-runner": "^0.1.1-rc.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-invariants": "^0.1.1-rc.2",
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-invariants": "^0.1.1-rc.2",
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}
