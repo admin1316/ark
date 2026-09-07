@@ -1,0 +1,41 @@
+{
+  "schema": "ark-package-audit/v1",
+  "app": "/private/tmp/ark-native-remediation-20260830-074522/current-test-app-r18-staging/Ark.app",
+  "appBinarySha256": "f5a8566f0ca466943820945cac61cc83a7172a625903972668591464e140f8e5",
+  "embeddedNodeSha256": "2a6444e63caa2908909180832c28d33b4a27c53674ea4a7a39d11d79cefb353c",
+  "infoPlistSha256": "61bf808045db56de56efe84f42ca342c3a082dbe42481ba59758bf86604a34e7",
+  "fileCount": 19121,
+  "symlinkCount": 11,
+  "totalFileBytes": 403985798,
+  "fileManifestSha256": "4381a275c5289dc7e354c4913b7204f278d146f308537248d826ca7683808a23",
+  "symlinkManifestSha256": "2966b7e2e12fe64df74b7bcace5a956cf58207ddffd37979389fb1d93dc858be",
+  "machOFiles": [
+    "Contents/MacOS/Ark",
+    "Contents/Resources/node/bin/node",
+    "Contents/Resources/runtime/node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.4.node",
+    "Contents/Resources/runtime/node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.6.dylib",
+    "Contents/Resources/runtime/node_modules/@koromix/koffi-darwin-arm64/darwin_arm64/koffi.node",
+    "Contents/Resources/runtime/node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node",
+    "Contents/Resources/runtime/node_modules/@vscode/ripgrep-darwin-arm64/bin/rg",
+    "Contents/Resources/runtime/node_modules/node-addon-require-builtin-darwin-arm64/prebuilt/darwin-arm64-napi-v9.node",
+    "Contents/Resources/runtime/node_modules/node-pty/prebuilds/darwin-arm64/pty.node",
+    "Contents/Resources/runtime/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+  ],
+  "packageIdentityCount": 331,
+  "packageNameCount": 324,
+  "violations": {
+    "invalidSymlinks": [],
+    "htmlCssFiles": [],
+    "forbiddenByteMatches": [],
+    "buildPathMatches": [],
+    "dynamicDependencyViolations": [],
+    "machoBuildPathMatches": [],
+    "machoDeveloperPathMatches": [],
+    "invalidInfoPaths": [],
+    "missingMainStrings": [],
+    "forbiddenMainStrings": [],
+    "missingRequiredPackages": [],
+    "forbiddenPackageIdentities": [],
+    "forbiddenManifestEdges": []
+  }
+}

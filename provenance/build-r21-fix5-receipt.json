@@ -1,0 +1,56 @@
+{
+ "schema": "ark.r21-fix5.build.v1",
+ "recorded_at": "2026-09-07T04:20:00+0800",
+ "authorization": "User authorized r21 candidate build gate only (AskUserQuestion 2026-09-06): build-app.sh from current source tree (five runtime-layer fixes, zero Swift changes) into independent current-test-app-r21-staging slot, receipt + main-binary identity check. install-e2e, LIVE, swap/production deployment, watchdog, deletion of any slot, merge/deploy all prohibited at this stage.",
+ "source": {
+  "tree": "/private/tmp/ark-r18",
+  "head": "84ae44c98c94bac19c29cd70516dc10a01af170b (working tree carries the uncommitted R18-R21 batch)",
+  "fixes_included": [
+   "session-export single-terminal-state ZIP containment (packages/host/session-remote-operations)",
+   "settings revision settlement + rejected-pragma remediation (packages/settings/settings, Sol High VERIFIED)",
+   "provider transaction execution ownership (packages/llm/llm)",
+   "provider endpoint generation replay (packages/llm/llm-pi-ai)",
+   "wiki verification verdict admission (packages/host/knowledge-wiki)"
+  ],
+  "build_gate_drift_repairs": [
+   "host-wide typecheck: 3 spec files (connection mock receipt type, wiki fd narrowing, native-events stale token-usage key -> tokenUsage x7)",
+   "runtime-plan: required-identity check spans workspace+external closures; peer-edge synthesis for peer-only libraries; importer peer-section externals skipped (autoInstallPeers:false runtime semantics); externalSnapshots record peers-filtered dependency edges",
+   "pack-runtime: canonical byte-order packlist comparison",
+   "runtime-closure: peer-suffix-tolerant key normalization (nested), install-faithful optional-platform pruning, canonical packlist/content ordering, dead content collector wired (rootInstalledExternalContent), workspace-link skip, absent-content (root-pruned) semantics, built-package (allowBuilds) content exemption"
+  ],
+  "settings_review": "repair-settings-independent-review.md — round1 REJECTED -> remediation -> supplemental VERIFIED (Sol High)",
+  "settings_seals": [
+   "repair-settings-settlement-fix-behavior 508/508 rc=0",
+   "repair-settings-settlement-fix-coverage 100%x4 rc=0",
+   "repair-settings-settlement-fix-lint rc=0",
+   "repair-settings-settlement-fix-typecheck-r2 rc=0"
+  ]
+ },
+ "build": {
+  "script": "/private/tmp/ark-r18/integrations/jiuzhang/native/build-app.sh",
+  "command_env": "JIUZHANG_RUNTIME_ROOT=current-runtime-pack-r21/runtime-template JIUZHANG_SELF_CONTAINED=1 JIUZHANG_PACK_RECEIPT=current-runtime-pack-r21/pack-receipt.json JIUZHANG_SWIFT_SCRATCH_PATH=integrations/jiuzhang/native/.build; node v24.19.0, pnpm 11.7.0 (corepack pin)",
+  "pack_receipt": "/private/tmp/ark-native-remediation-20260830-074522/current-runtime-pack-r21/pack-receipt.json",
+  "pack_receipt_sha256": "73e5846ee67b9e3f6a095c017273cbbb5fe93d3e486fd6da4a65fb47feb20c6e",
+  "pack_source_digest": "f97b5622c431605d7211be0d85f081518346b0aee902ae790b292bbfeaf79f01",
+  "pack_log": "/private/tmp/ark-r18/pack-r21.log",
+  "build_log": "/private/tmp/ark-r18/build-r21-fix5.log",
+  "build_log_sha256": "ca7d2819524a3bbdf62cc04ed7a0d064a6c38354f9c9975c2ba4f7ac769e0a21",
+  "real_exit_code": 0,
+  "chain_exit_file": "/private/tmp/ark-r18/build-r21-fix5.exit (CHAIN_RC=0)"
+ },
+ "candidate": {
+  "output": "/private/tmp/ark-native-remediation-20260830-074522/current-test-app-r21-staging/Ark.app",
+  "version": "3.1.0",
+  "main_binary_sha256": "2aa3585c308c9ed73818bb12eb03e6c4eb277372051155f52d4eae0bab7b5fe4",
+  "identity_check": "on-disk binary sha re-verified post-build",
+  "fix_spot_checks": {
+   "dsh-host-session-remote-operations": "bundle==workspace sha ece7472102df",
+   "dsh-settings": "bundle==workspace sha 2277492be90a (settlementResolver present)",
+   "dsh-llm-pi-ai": "bundle==workspace sha 413010dff9c2",
+   "dsh-knowledge-wiki": "bundle==workspace sha 117d0678521a",
+   "dsh-llm": "bundle==workspace sha ed5048e4c016"
+  },
+  "known_recorded_noise": "runtime-closure.mjs ships pack-time-only failure-path diagnostics (EDGE-DIFF/SNAPDIFF/EXTCONTENT-DIFF console.error); inert at app runtime; to be stripped in the pre-deploy cleanup pass"
+ },
+ "notes": "Build machinery (runtime-plan/runtime-closure/pack-runtime) is post-r20 code exercised end-to-end for the first time; every gate fix above is backed by a real exit code and, where applicable, module tests. install-e2e/LIVE/swap remain unauthorized and unexecuted."
+}

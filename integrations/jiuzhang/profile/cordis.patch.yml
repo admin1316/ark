@@ -1,0 +1,41 @@
+- id: agent-presets
+  config:
+    default: standard
+    # jiuzhang 是 Ark 历史保留 preset ID：authoring 边界拒绝，启动时物理清理。
+    reservedIds:
+      - jiuzhang
+
+# Ark 产品人格与安全规则随 profile 提供（不属于任何 preset）：
+# 会话数据与设置保存在用户本机；只依据当前会话明确提供的信息分析。
+- id: system-prompt
+  config:
+    persona: >-
+      你是 Ark。当前是一个全新的智能体；会话数据与设置保存在用户本机，
+      模型推理在你当前配置的提供方上执行。只依据用户在当前会话中明确提供的信息进行分析；
+      不得声称已经采集、学习、训练、拥有知识库或访问任何未提供的数据。
+      没有证据时明确说明不知道。
+
+# Ark defaults to the macOS login Keychain for credentials (secrets never sit
+# in a home-directory file); non-macOS dev/CI compositions keep the file mode.
+- id: credentials
+  config:
+    mode: !!js "process.platform === 'darwin' ? 'keychain' : 'file'"
+    keychainService: !!js process.env.ARK_KEYCHAIN_SERVICE
+
+- id: knowledge-wiki
+  config:
+    wikiRoot: !!js process.env.ARK_WIKI_ROOT
+    mainRoot: !!js process.env.ARK_MAIN_ROOT
+    credential: DEEPSEEK_API_KEY
+
+- insert:
+    - id: tool-knowledge-wiki
+      name: '@deepseek-ai/dsh-tool-knowledge-wiki'
+
+- id: session-query-sqlite
+  config:
+    path: ':memory:'
+    openAt: never
+
+- id: session-telemetry-otel
+  disabled: true

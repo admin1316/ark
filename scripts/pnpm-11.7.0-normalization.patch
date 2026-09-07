@@ -1,0 +1,37 @@
+--- a/dist/pnpm.mjs
++++ b/dist/pnpm.mjs
+@@ -194028,7 +194028,7 @@
+ }
+ async function assertWantedLockfileUpToDate(ctx, opts3) {
+   const { autoInstallPeers, config: config2, excludeLinksFromLockfile, linkWorkspacePackages, getManifestsByDir, getWorkspacePackages } = ctx;
+-  const { projectDir, projectId, projectManifest, wantedLockfile, wantedLockfileDir } = opts3;
++  const { projectDir, projectId, projectManifest: rawProjectManifest, wantedLockfile, wantedLockfileDir } = opts3;
+   const [patchedDependencies, pnpmfileChecksum] = await Promise.all([
+     calcPatchHashes(config2.patchedDependencies ?? {}),
+     config2.hooks?.calculatePnpmfileChecksum?.()
+@@ -194050,6 +194050,17 @@
+       hint: "Run `pnpm install` to update the lockfile"
+     });
+   }
++  const readPackageHook = createReadPackageHook({
++    ignoreCompatibilityDb: config2.ignoreCompatibilityDb,
++    readPackageHook: config2.hooks?.readPackage,
++    overrides: parseOverrides(config2.overrides ?? {}, config2.catalogs ?? {}),
++    lockfileDir: config2.lockfileDir ?? ctx.rootDir,
++    packageExtensions: config2.packageExtensions,
++    ignoredOptionalDependencies: config2.ignoredOptionalDependencies
++  });
++  const projectManifest = readPackageHook
++    ? await readPackageHook(clone_default(rawProjectManifest), projectDir)
++    : rawProjectManifest;
+   if (!satisfiesPackageManifest({
+     autoInstallPeers,
+     excludeLinksFromLockfile
+@@ -194137,6 +194148,7 @@
+   "../deps/status/lib/checkDepsStatus.js"() {
+     "use strict";
+     init_lib99();
++    init_lib105();
+     init_lib();
+     init_lib69();
+     init_lib2();

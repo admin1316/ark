@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-06-wiki-verification-verdict-admission.md
+2026-09-06-wiki-verification-verdict-admission.md: ee4292792a78a4ab2ed6cc9b427ea48eef4e7f81
+2026-09-06-wiki-verification-verdict-admission.zh.md: d39c7b017fa84c67b35232c4e0f3f475e1f88330

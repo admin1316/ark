@@ -1,0 +1,144 @@
+{
+  "schema": "ark.r18.build-receipt.v1",
+  "recorded_at": "2026-09-03T07:35:00+0800",
+  "role": "OFFLINE_BUILD_ONLY",
+  "boundary": "No Ark App was run, installed, exited, or replaced. ARK_AUDIT_PROGRESS.md untouched. Running R17 instance untouched. Install-e2e and LIVE sampling were NOT executed; they remain user-authorized steps per handoff-r18.md.",
+  "source": {
+    "tree": "/tmp/ark-r18/integrations",
+    "snapshot_tarball": "/tmp/ark-r18/current-source-r18-snapshot.tar.gz",
+    "snapshot_sha256": "6ea352656b571d3b83a6cd217f54ce50a915205a035740b8037cb6558f132781",
+    "snapshot_sha256_verified": true,
+    "r18_patch": "/tmp/ark-r18/r18-fix.patch",
+    "r18_fix_presence_verified": [
+      "Sources/JiuzhangShellUI/ArkRootView.swift (constant-size identity: messageID + sourceSlot; 3 R18 markers at 2797-2811)",
+      "Tests/JiuzhangShellCoreTests/ArkChatScrollContractChecks.swift (R18 marker present)",
+      "Tests/JiuzhangShellCoreTests/ArkMarkdownGFMContractChecks.swift (R18 marker present)"
+    ]
+  },
+  "build": {
+    "script": "/tmp/ark-r18/integrations/jiuzhang/native/build-app.sh",
+    "command": "JIUZHANG_RUNTIME_ROOT=<current-runtime-pack/runtime-template> JIUZHANG_SELF_CONTAINED=1 JIUZHANG_SWIFT_SCRATCH_PATH=<native>/.build PATH=<nvm node bin>:$PATH ./build-app.sh /private/tmp/ark-native-remediation-20260830-074522/current-test-app-r18-staging",
+    "node_version": "v24.19.0",
+    "node_path": "/Users/hui/.nvm/versions/node/v24.19.0/bin/node",
+    "swift_version": "Apple Swift 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)",
+    "swift_package_resolve": "OFFLINE_OK (existing scratch checkouts used; no network dependency hit)",
+    "swiftmath_revision": "fa8244ed032f4a1ade4cb0571bf87d2f1a9fd2d7",
+    "swiftmath_checkout_state": "pristine before adapter, restored on exit (anchor check passed)",
+    "swift_build_seconds": 124.39,
+    "total_elapsed_seconds": 248,
+    "build_log": "/tmp/ark-r18/build-r18.log",
+    "build_log_sha256": "e0b7ad3dd1e54498fa8ce91bf10c0908144808054bd16124990d33f4c9f33e20",
+    "rpath_normalization": "removed 1 build-toolchain entry; retained 2",
+    "build_path_leak_check": "PASS",
+    "first_attempt_note": "attempt 1 exited 2 in 2s: script resolves `command -v node` internally and node was not on PATH; resolved by adding the nvm node bin dir to PATH. No script was modified."
+  },
+  "runtime_pack": {
+    "base": "/private/tmp/ark-native-remediation-20260830-074522/current-runtime-pack/runtime-template",
+    "pack_receipt": "/private/tmp/ark-native-remediation-20260830-074522/current-runtime-pack/pack-receipt.json",
+    "pack_source_digest": "faf6008e698eb900dc4cf59705de38704eb335b44f20a4ccffd2fc6ad220a14f",
+    "packed_date": "2026-08-31",
+    "compatibility_anchors_byte_identical_to_r18_source": [
+      "start.mjs",
+      "runtime.mjs",
+      "runtime-closure.mjs",
+      "jiuzhang/profile/forbidden-runtime-packages.json"
+    ],
+    "embedded_prunes": [
+      "install-state prune removed 2 package-manager state files",
+      "browser-asset prune removed 77 audited files (468004 bytes) across 7 targets",
+      "node-pty darwin-arm64 only: 1 physical copy",
+      "Mach-O id normalization: 8 files accepted, Canvas copies=1"
+    ]
+  },
+  "candidate": {
+    "path": "/private/tmp/ark-native-remediation-20260830-074522/current-test-app-r18-staging/Ark.app",
+    "main_binary_path": "Contents/MacOS/Ark",
+    "main_sha256": "f5a8566f0ca466943820945cac61cc83a7172a625903972668591464e140f8e5",
+    "main_binary_bytes": 8551552,
+    "embedded_node_sha256": "2a6444e63caa2908909180832c28d33b4a27c53674ea4a7a39d11d79cefb353c",
+    "info_plist_sha256": "61bf808045db56de56efe84f42ca342c3a082dbe42481ba59758bf86604a34e7",
+    "file_count": 19121,
+    "symlink_count": 11,
+    "total_file_bytes": 403985798,
+    "file_manifest_sha256": "4381a275c5289dc7e354c4913b7204f278d146f308537248d826ca7683808a23",
+    "symlink_manifest_sha256": "2966b7e2e12fe64df74b7bcace5a956cf58207ddffd37979389fb1d93dc858be",
+    "cfbundle_identifier": "cn.jiuzhangtianmu.industrybrain",
+    "cfbundle_version": "3.1.0",
+    "self_contained_plist_keys": {
+      "JiuzhangNodeExecutable": "Contents/Resources/node/bin/node",
+      "JiuzhangLauncherPath": "Contents/Resources/runtime/start.mjs",
+      "JiuzhangRunnerPath": "Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js",
+      "JiuzhangRuntimeRoot": "Contents/Resources/runtime"
+    },
+    "codesign_deep_strict": "PASS",
+    "embedded_node_smoke": "PASS (build script ran embedded node without launching the app)"
+  },
+  "static_audit": {
+    "tool": "/private/tmp/ark-native-remediation-20260830-074522/lanes/PACKAGE-R2/audit-package.mjs",
+    "schema": "ark-package-audit/v1",
+    "exit": 0,
+    "output": "/tmp/ark-r18/package-audit-r18.json",
+    "output_sha256": "5928c5a240bd63b5bec420825a391ce9d728ca93f2eebcd080b8b0086fa5d00c",
+    "package_identities": 331,
+    "package_names": 324,
+    "mach_o_files": 10,
+    "violations_total": 0,
+    "violation_categories_all_empty": true
+  },
+  "comparison_to_r17_baseline": {
+    "evidence": "/private/tmp/ark-native-remediation-20260830-074522/evidence/gui-live-r17-20260902/package-audit-r17.json",
+    "embedded_node_sha256": "IDENTICAL",
+    "info_plist_sha256": "IDENTICAL",
+    "file_count": "IDENTICAL (19121)",
+    "symlink_count": "IDENTICAL (11)",
+    "symlink_manifest_sha256": "IDENTICAL",
+    "total_file_bytes": "R18 403985798 vs R17 403986246 (delta -448 bytes; consistent with the script's knowledge-wiki README refresh from the R18 tree)",
+    "file_manifest_sha256": "DIFFERS (expected: R18 payload differs from R17)",
+    "main_sha256": "DIFFERS (expected: R18 fix compiled in)"
+  },
+  "gates_and_authorizations": {
+    "required_gate_52_52": {
+      "status": "NOT_RUN",
+      "command": "DSH_GATE_CONCURRENCY=2 DSH_COVERAGE_MAX_WORKERS=1 pnpm run check:ci",
+      "reason": "R18 source tree /tmp/ark-r18 has no node_modules; offline-build-only mandate did not authorize a dependency install. Gate remains a precondition per handoff-r18.md step 3.",
+      "pnpm_available": "/Users/hui/.nvm/versions/node/v24.19.0/bin/pnpm",
+      "offline_stores_present": ["~/Library/pnpm/store/v10", "~/Library/pnpm/store/v11"]
+    },
+    "install_e2e": {
+      "status": "NOT_RUN",
+      "reason": "Temporarily launches and exits Ark; requires explicit user authorization (R17 precedent) and would restart the App. Handoff assigns Ark-side zero-restart to the user/authorized party."
+    },
+    "live_cpu_sampling": {
+      "status": "NOT_RUN",
+      "reason": "User-authorized LIVE step. R18's <10% CPU / no Section+LazySubviewPlacements hot-stack claim is UNVERIFIED by this build session and must not be claimed from this receipt."
+    }
+  },
+  "blockers": [
+    {
+      "id": "GATE-NOT-RUN",
+      "severity": "blocking-release",
+      "detail": "Handoff step 3 requires the 52/52 check:ci gate before the candidate leaves staging. It was not executed here: /tmp/ark-r18 has no node_modules, and a pnpm install was out of scope for this offline-build-only session. The candidate is BUILT, not GATE-VERIFIED.",
+      "unblock": "Run `pnpm install --offline` (stores v10/v11 present) then `DSH_GATE_CONCURRENCY=2 DSH_COVERAGE_MAX_WORKERS=1 pnpm run check:ci` on the R18 source tree."
+    },
+    {
+      "id": "R18-BEHAVIOR-UNVERIFIED",
+      "severity": "blocking-claim",
+      "detail": "No LIVE UI CPU sampling was performed. The R18 fix (constant-size identity in ArkRootView) is present in source and compiled into this binary, but its effect on the 100% CPU regression is unmeasured.",
+      "unblock": "User-authorized install-e2e + 10-round/2.6M-token recovery + 20x10s UI CPU sampling per handoff-r18.md step 4."
+    }
+  ],
+  "risks_non_blocking": [
+    "Candidate carries the production CFBundleIdentifier cn.jiuzhangtianmu.industrybrain; it must stay in /private/tmp staging until install authorization.",
+    "Runtime pack base was packed 2026-08-31 (digest faf6008e...). Its four compatibility anchors are byte-identical to the R18 source, so the embed carries R18-pinned assets, but any later R18 source change to start.mjs/runtime.mjs/runtime-closure.mjs/profile policy would invalidate the pack and require a repack.",
+    "SwiftPM resolve ran offline against the existing scratch; a clean-machine rebuild without that scratch would need network or a shipped SwiftPM cache.",
+    "R17 staging instance (PID 2872, binary 880f315b...) was left running and untouched; R18 cannot take effect until an authorized swap."
+  ],
+  "postconditions": {
+    "product_app_running": false,
+    "r18_processes_launched": 0,
+    "r17_running_instance_binary_sha256_unchanged": true,
+    "desktop_modified": false,
+    "production_modified": false,
+    "ark_audit_progress_md_modified": false
+  }
+}

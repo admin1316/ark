@@ -1,0 +1,13 @@
+{
+ "schema": "ark.r21c.promotion.v1",
+ "recorded_at": "20260907-072752",
+ "authorization": "User instruction 2026-09-07: 成为正式的ark吧 (promote r21c candidate to the official /Applications/Ark.app)",
+ "candidate": {"path": "/private/tmp/ark-native-remediation-20260830-074522/current-test-app-r21c-staging/Ark.app", "binary_sha256": "90543de897892261b98bc446192634f409e6764042a6c9e68c23a97832cef3be", "version": "3.1.0",
+   "build_receipt": "/private/tmp/ark-r18/build-r21-fix5-receipt.json",
+   "pack_source_digest": "f97b5622c431605d7211be0d85f081518346b0aee902ae790b292bbfeaf79f01"},
+ "previous_official": {"binary_sha256": "4697b8cb868a960bf1c2c98b4ff7f47a052b2cc7b70a58cff4c8cf9de2de0ea3", "rollback_path": "/Applications/Ark.app.rollback-20260907-072752"},
+ "installed": {"path": "/Applications/Ark.app", "binary_sha256": "90543de897892261b98bc446192634f409e6764042a6c9e68c23a97832cef3be", "verify": "PASS"},
+ "fixes": ["timezone GMT->UTC client reporting", "composer menu height clamp", "composer command localization (zh/en)",
+   "settings settlement (Sol High VERIFIED)", "session-export containment", "provider transaction ownership",
+   "endpoint generation replay", "wiki verification verdict admission"]
+}

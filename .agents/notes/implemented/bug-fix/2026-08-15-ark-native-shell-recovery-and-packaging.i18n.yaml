@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-15-ark-native-shell-recovery-and-packaging.md
+2026-08-15-ark-native-shell-recovery-and-packaging.md: b6efafc5673508fc62f502b288c6c698aa2d2aca
+2026-08-15-ark-native-shell-recovery-and-packaging.zh.md: 3bde4bf336e5a4deecb91578c8b76a0c3e3e9e78

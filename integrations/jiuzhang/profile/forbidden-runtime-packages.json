@@ -1,0 +1,42 @@
+{
+  "required": [
+    "@deepseek-ai/dsh-api-gateway",
+    "@deepseek-ai/dsh-deepseek-llm-api-extensions",
+    "@deepseek-ai/dsh-host-connection",
+    "@deepseek-ai/dsh-host-native-events",
+    "@deepseek-ai/dsh-host-plugin-inventory",
+    "@deepseek-ai/dsh-host-session-remote-operations",
+    "@deepseek-ai/dsh-host-workbench",
+    "@deepseek-ai/dsh-native-api-runner",
+    "@deepseek-ai/dsh-plugin-package-inventory-deepseek",
+    "@deepseek-ai/dsh-session-log-deepseek",
+    "@deepseek-ai/dsh-settings",
+    "@deepseek-ai/dsh-web-fetch-http",
+    "js-yaml"
+  ],
+  "requiredFiles": [
+    "start.mjs",
+    "runtime.mjs",
+    "runtime-closure.mjs",
+    "jiuzhang/profile/package.json",
+    "jiuzhang/profile/cordis.patch.yml",
+    "jiuzhang/profile/pnpm-workspace.yaml",
+    "jiuzhang/profile/runtime-identity-policy.json",
+    "jiuzhang/profile/forbidden-runtime-packages.json"
+  ],
+  "exact": [
+    "@deepseek-ai/dsh",
+    "@deepseek-ai/dsh-cordis-client-runner",
+    "@deepseek-ai/dsh-headless",
+    "@deepseek-ai/dsh-host-apiproxy",
+    "@deepseek-ai/dsh-host-directory-picker-auto",
+    "@deepseek-ai/dsh-host-directory-picker-browse",
+    "@deepseek-ai/dsh-host-frontend-static",
+    "@deepseek-ai/dsh-session-log-export",
+    "@deepseek-ai/dsh-web-app",
+    "@deepseek-ai/dsh-web-frontend"
+  ],
+  "prefixes": [
+    "@deepseek-ai/dsh-client-"
+  ]
+}
