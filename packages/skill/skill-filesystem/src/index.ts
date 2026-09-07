@@ -180,6 +180,16 @@ export class FileSystemSkillProvider implements SkillProvider {
    *   failure returns readable candidates as an incomplete observation.
    */
   async list(options: SkillLookupOptions): Promise<SkillCandidate[] | SkillProviderObservation> {
+    try {
+      const { appendFileSync } = await import('node:fs')
+      const rootsDebug = await this.roots(options.cwd)
+      appendFileSync('/tmp/skill-admission-debug.log', `[provider] libHasTrustedHost=${s.includes('trustedHost: true')} dshHome=${this.dshHome} agentsHome=${this.agentsHome} includeDefaultRoots=${this.includeDefaultRoots} roots=${JSON.stringify(rootsDebug)}\n`)
+    } catch (debugError) {
+      try {
+        const { appendFileSync } = await import('node:fs')
+        appendFileSync('/tmp/skill-admission-debug.log', `[provider] debug threw: ${debugError instanceof Error ? debugError.message : String(debugError)}\n`)
+      } catch {}
+    }
     const roots = await this.roots(options.cwd)
     let complete = true
     try {
@@ -190,9 +200,21 @@ export class FileSystemSkillProvider implements SkillProvider {
     }
     const candidates: SkillCandidate[] = []
     for (const root of roots) {
-      for (const skill of await discoverRoot(root, this.ctx, this.name)) {
-        candidates.push(skill)
+      let found: SkillCandidate[] = []
+      try {
+        found = await discoverRoot(root, this.ctx, this.name)
+      } catch (error) {
+        try {
+          const { appendFileSync } = await import('node:fs')
+          appendFileSync('/tmp/skill-admission-debug.log', `[provider] discoverRoot ${root.source} THREW: ${error instanceof Error ? error.message : String(error)}\n`)
+        } catch {}
+        throw error
       }
+      try {
+        const { appendFileSync } = await import('node:fs')
+        appendFileSync('/tmp/skill-admission-debug.log', `[provider] discoverRoot ${root.source} (${root.path}) -> ${found.length} skills: ${found.slice(0, 8).map(x => x.name).join(',')}\n`)
+      } catch {}
+      candidates.push(...found)
     }
     return complete ? candidates : { candidates, complete }
   }
@@ -249,9 +271,14 @@ export class FileSystemSkillProvider implements SkillProvider {
     }
     roots.push(...this.customSkillDirs.map(path => ({ path, source: 'custom' as const, rank: CUSTOM_RANK })))
     if (this.includeDefaultRoots) {
+      // User-level roots hold operator-installed skills: read them directly
+      // from the host filesystem (trustedHost), the same trust class as the
+      // bundled root. Routing them through the session fs service virtualizes
+      // listing for paths outside the active workspace and yields zero
+      // candidates in desktop sessions.
       roots.push(
-        { path: join(this.dshHome, 'skills'), source: 'user-dsh', rank: USER_DSH_RANK, skipSystem: true },
-        { path: join(this.agentsHome, 'skills'), source: 'user-agents', rank: USER_AGENTS_RANK },
+        { path: join(this.dshHome, 'skills'), source: 'user-dsh', rank: USER_DSH_RANK, skipSystem: true, trustedHost: true },
+        { path: join(this.agentsHome, 'skills'), source: 'user-agents', rank: USER_AGENTS_RANK, trustedHost: true },
       )
     }
     if (this.bundledSkillDir !== undefined) {
