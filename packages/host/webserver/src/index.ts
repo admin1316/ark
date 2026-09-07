@@ -129,6 +129,19 @@ function upgradeApiTokenAuthorized(req: IncomingMessage, apiToken: string | unde
 }
 
 /**
+ * Whether an index-document request may receive the token-planting script:
+ * the regular bearer/cookie channels, plus the same `?token=` bootstrap
+ * query the upgrade path accepts for a header-less first load. All-interfaces
+ * binding is the reason this channel exists at the index: the explicit token
+ * that binding requires protects nothing if every unauthenticated page fetch
+ * is also handed the token in the HTML, and a remote GET of `/` is
+ * indistinguishable from the legitimate browser's first load.
+ */
+function indexTokenAuthorized(req: IncomingMessage, apiToken: string | undefined): boolean {
+  return upgradeApiTokenAuthorized(req, apiToken)
+}
+
+/**
  * DNS-rebinding fence: on loopback binding, the Host header must name the
  * loopback (a rebinding page's origin is the attacker's domain once it
  * resolves to 127.0.0.1, so rejecting foreign Hosts blocks the cookie-
@@ -340,11 +353,15 @@ export class WebServer extends Service {
   /**
    * Register a raw-HTML index transform, the escape hatch for markup no
    * {@link IndexInjection} row expresses: {@link renderIndex} applies taps in
-   * registration order after rendering the structured rows.
-   * @param transform - pure html-to-html function.
+   * registration order after rendering the structured rows. The transform
+   * receives the request the index response answers, forwarded by the
+   * fallback owner through {@link applyIndexTaps}; request-aware taps (the
+   * launch-token plant) gate credentials on it, so an owner that cannot
+   * forward the request gets the legacy request-blind behavior.
+   * @param transform - pure html-to-html function over the rendered document.
    * @returns the disposer removing the transform.
    */
-  tapIndex(transform: (html: string) => string): () => void {
+  tapIndex(transform: (html: string, req?: IncomingMessage) => string): () => void {
     this.indexTaps.push(transform)
     return () => {
       const at = this.indexTaps.indexOf(transform)
@@ -368,10 +385,20 @@ export class WebServer extends Service {
     const apiToken = configured !== undefined && configured !== '' ? configured : randomBytes(32).toString('hex')
     this.apiTokenValue = apiToken
     if (this.config.apiOnly !== true) {
-      // Browser surfaces plant the SameSite cookie and bearer global on every
-      // index response, with a CSP hash admitting exactly that script.
+      // Browser surfaces plant the SameSite cookie and bearer global on index
+      // responses, with a CSP hash admitting exactly that script. On loopback
+      // the plant stays unconditional: the browser bootstraps from the index
+      // itself and the Host fence bounds who can fetch one. All-interfaces
+      // binding gates the plant on the request already carrying the token
+      // (cookie, bearer, or the `?token=` bootstrap query) — the explicit
+      // token that binding requires protects nothing if the page hands it
+      // back to every unauthenticated GET on the LAN.
       this.indexCSP = buildIndexCSP(scriptSha256(apiTokenIndexScriptBody(apiToken)))
-      this.tapIndex(html => html.replace('<head>', `<head>${apiTokenIndexScript(apiToken)}`))
+      this.tapIndex((html, req) => {
+        if (this.config.host === '0.0.0.0'
+          && (req === undefined || !indexTokenAuthorized(req, apiToken))) return html
+        return html.replace('<head>', `<head>${apiTokenIndexScript(apiToken)}`)
+      })
     }
     // Health probe for local orchestration. Deliberately outside the token
     // gate: a readiness check needs no credential, and on loopback-only
@@ -565,13 +592,18 @@ export class WebServer extends Service {
 
   /**
    * Run an index.html body through the registered taps in registration order
-   * — called by the fallback owner on every index response it renders.
+   * — called by the fallback owner on every index response it renders. The
+   * owner forwards the request being answered so request-aware taps can gate
+   * credential content on it; omitting it makes credential-carrying taps fail
+   * closed on all-interfaces hosts, and selects request-blind behavior only
+   * where no credential decision depends on it.
    * @param html - the raw index.html body.
+   * @param req - the request the index response answers, when available.
    * @returns the transformed body.
    */
-  applyIndexTaps(html: string): string {
+  applyIndexTaps(html: string, req?: IncomingMessage): string {
     let out = html
-    for (const transform of this.indexTaps) out = transform(out)
+    for (const transform of this.indexTaps) out = transform(out, req)
     return out
   }
 
@@ -591,10 +623,11 @@ export class WebServer extends Service {
    * Render one index.html body: the structured injection table first, then
    * the raw `tapIndex` transforms over the result.
    * @param html - the raw index.html body.
+   * @param req - the request the index response answers, when available.
    * @returns the transformed body.
    */
-  renderIndex(html: string): string {
-    return this.applyIndexTaps(renderIndexInjections(html, this.collectIndexInjections()))
+  renderIndex(html: string, req?: IncomingMessage): string {
+    return this.applyIndexTaps(renderIndexInjections(html, this.collectIndexInjections()), req)
   }
 }
 

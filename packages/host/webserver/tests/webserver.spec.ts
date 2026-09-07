@@ -416,6 +416,59 @@ describe('launch-scoped API token gate', () => {
     }
   })
 
+  it('keeps the token out of index HTML for unauthenticated page fetches on 0.0.0.0', { timeout: 60_000 }, async () => {
+    vi.stubEnv('DSH_API_TOKEN', 'test-token-abcdef0123456789')
+    try {
+      const loaded = await loadComposition(0, '0.0.0.0')
+      const server = loaded.webServer
+      const port = server.port
+      server.register({ kind: 'prefix', path: '/api', handler: (_req, res) => { res.writeHead(200); res.end('API') } })
+      const disposeFallback = server.registerFallback((req, res) => {
+        res.writeHead(200, { 'content-type': 'text/html', ...server.indexSecurityHeaders() })
+        res.end(server.applyIndexTaps('<head></head><body>shell</body>', req))
+      })
+
+      // The explicit token that all-interfaces binding requires protects
+      // nothing if the index page hands it back to every unauthenticated
+      // GET on the LAN: the page is served, but without the plant.
+      const bare = await request(port, '/no/such/route')
+      expect(bare.body).toContain('shell')
+      expect(bare.body).not.toContain('dsh_api_token')
+      expect(bare.body).not.toContain('__DSH_API_TOKEN__')
+
+      // The `?token=` bootstrap channel (mirroring the upgrade path) serves
+      // the plant to the legitimate first load, and cookie/bearer carriers
+      // keep receiving it.
+      expect((await request(port, '/?token=test-token-abcdef0123456789')).body)
+        .toContain('dsh_api_token=test-token-abcdef0123456789;Path=/;SameSite=Strict;HttpOnly')
+      expect((await request(port, '/', {
+        headers: { Cookie: 'dsh_api_token=test-token-abcdef0123456789' },
+      })).body).toContain('__DSH_API_TOKEN__')
+      expect((await request(port, '/', {
+        headers: { Authorization: 'Bearer test-token-abcdef0123456789' },
+      })).body).toContain('__DSH_API_TOKEN__')
+      expect((await request(port, '/?token=wrong-token')).body).not.toContain('__DSH_API_TOKEN__')
+
+      // The /api gate itself is unchanged.
+      expect((await request(port, '/api')).status).toBe(401)
+      expect((await request(port, '/api', {
+        headers: { Authorization: 'Bearer test-token-abcdef0123456789' },
+      }))).toMatchObject({ status: 200, body: 'API' })
+
+      // A fallback owner that answers without forwarding the request fails
+      // the plant closed on an all-interfaces host instead of planting it.
+      disposeFallback()
+      server.registerFallback((_req, res) => {
+        res.writeHead(200, { 'content-type': 'text/html', ...server.indexSecurityHeaders() })
+        res.end(server.applyIndexTaps('<head></head><body>blind</body>'))
+      })
+      expect((await request(port, '/no/such/route')).body)
+        .not.toContain('__DSH_API_TOKEN__')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('gates /api WebSocket upgrades with the same token as HTTP', { timeout: 60_000 }, async () => {
     vi.stubEnv('DSH_API_TOKEN', 'test-token-abcdef0123456789')
     try {

@@ -2619,9 +2619,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the disposer releasing the seat.',
       },
       {
-        signature: 'tapIndex(transform: (html: string) => string): () => void',
+        signature: 'tapIndex(transform: (html: string, req?: IncomingMessage) => string): () => void',
         description: 'Register a raw-HTML index transform, the escape hatch for markup no IndexInjection row expresses: renderIndex applies taps in registration order after rendering the structured rows.',
-        parameters: [{ name: 'transform', description: 'pure html-to-html function.' }],
+        parameters: [{ name: 'transform', description: 'pure html-to-html function over the rendered document; receives the request being answered when the owner forwards it.' }],
         returns: 'the disposer removing the transform.',
       },
       {
@@ -2631,9 +2631,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'header names to values for an index response.',
       },
       {
-        signature: 'applyIndexTaps(html: string): string',
+        signature: 'applyIndexTaps(html: string, req?: IncomingMessage): string',
         description: 'Run an index.html body through the registered taps in registration order — called by the fallback owner on every index response it renders.',
-        parameters: [{ name: 'html', description: 'the raw index.html body.' }],
+        parameters: [{ name: 'html', description: 'the raw index.html body.' }, { name: 'req', description: 'the request the index response answers, when available.' }],
         returns: 'the transformed body.',
       },
       {
@@ -2643,7 +2643,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'rows in subscriber activation order.',
       },
       {
-        signature: 'renderIndex(html: string): string',
+        signature: 'renderIndex(html: string, req?: IncomingMessage): string',
         description: 'Render one index.html body: the structured injection table first, then the raw `tapIndex` transforms over the result.',
         parameters: [{ name: 'html', description: 'the raw index.html body.' }],
         returns: 'the transformed body.',
