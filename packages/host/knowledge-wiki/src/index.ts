@@ -1521,7 +1521,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   async importProject(request: { path: string }): Promise<{ ok: boolean; error?: string; entries?: string[] }> {
     try {
       const { execFileSync } = await import('node:child_process')
-      const listing = execFileSync('/usr/bin/unzip', ['-l', request.path], { encoding: 'utf8' })
+      const listing = execFileSync('/usr/bin/unzip', ['-l', '--', request.path], { encoding: 'utf8' })
       const entries = listing.split('\n').slice(3, -2).map(line => line.trim().replace(/^.*\s/u, '')).filter(Boolean)
       return { ok: true, entries: entries.slice(0, 200) }
     } catch (error) {
