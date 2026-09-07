@@ -39,3 +39,9 @@
 
 - id: session-telemetry-otel
   disabled: true
+
+# Ark 技能目录发现（用户技能 ~/.agents/skills + Harness home 技能 + 会话项目根）
+- id: skill-filesystem
+  config:
+    dshHome: !!js process.env.DSH_HOME
+    agentsHome: !!js "process.env.DSH_AGENTS_HOME ?? require('node:os').homedir() + '/.agents'"
