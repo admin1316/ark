@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { writeFile,  mkdtemp, rm } from 'node:fs/promises'
+import { mkdir,  writeFile,  mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -296,7 +296,7 @@ describe('SessionRemoteOperationsService', () => {
       }, new AbortController().signal)).resolves.toEqual({ ok: true, value: { accepted: true } })
       expect(agent.followup).toHaveBeenCalledTimes(1)
       const admitted = agent.followup.mock.calls[0]?.[0]
-      expect(admitted.content[0].text).toContain('请使用 translation-studio 技能处理以下请求')
+      expect(admitted.content[0].text).toContain('用户调用了 translation-studio 技能。任务：把这篇翻成英文')
       expect(admitted.content[0].text).toContain('把这篇翻成英文')
       expect(admitted.content[0].text).toContain('术语表')
 

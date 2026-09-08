@@ -135,7 +135,7 @@ export {
   copyComposition, deleteComposition, InvalidPresetIdError, PresetExistsError,
   PresetNotWritableError, readComposition, writableRoot,
 } from './authoring.ts'
-export { agentPresetProjectionDefinition } from './session.ts'
+export { agentPresetProjectionDefinition, resolveSessionPreset } from './session.ts'
 export { PresetLockedError, PresetMountError, UnknownPresetError } from './preset.ts'
 export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts'
 

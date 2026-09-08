@@ -42,3 +42,26 @@ export const agentPresetProjectionDefinition = {
   wire: { viewSchema: agentPresetSchema, view: state => state },
   stateVersion: 1,
 } satisfies ProjectionDefinition<'agentPreset', string | null>
+
+/**
+ * The preset a session actually runs, newest selection winning.
+ *
+ * The header supplies the creation-time value; every later selection is a
+ * logged event, so the last one is the answer. Reading the header alone
+ * rebuilds a switched session under the composition it was created with, not
+ * the one its history was produced under. The projection above carries the
+ * same answer for runtime state; this scan reads raw history for callers
+ * holding only the log.
+ * @param session - the session's header and event log.
+ * @returns the preset id, or `undefined` when the deployment composes none.
+ */
+export function resolveSessionPreset(session: {
+  events: ReadonlyArray<{ type?: string; data?: { agentPreset?: string } }>
+  header: { agentPreset?: string }
+}): string | undefined {
+  for (let index = session.events.length - 1; index >= 0; index -= 1) {
+    const event = session.events[index]
+    if (event?.type === 'agent-preset/selected') return event.data.agentPreset
+  }
+  return session.header.agentPreset
+}
