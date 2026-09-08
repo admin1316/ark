@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 /**
  * Host ownership for generated Session Remote operations and archived
  * Workspace-session retirement.
@@ -12,9 +13,10 @@
  */
 
 import { Buffer } from 'node:buffer'
+import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
-import { isAbsolute } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import {
   installModelSelection,
@@ -1644,6 +1646,39 @@ export class SessionRemoteOperationsService extends Service
     }
   }
 
+  /**
+   * An unknown "/<name>" command whose name matches an installed skill is
+   * the skill invocation form: admit the text unchanged. The agent's
+   * injected skill catalog plus its skill tool resolve the methodology
+   * server-side on demand, so nothing is expanded into the visible message.
+   * Returns undefined when no such skill directory exists.
+   */
+  private admitUnknownCommandAsSkill(commandLine: string, sessionId: SessionId): string | undefined {
+    const name = commandLine.slice(1).trim().split(/\s/u, 1)[0] ?? ''
+    if (name.length === 0 || !/^[a-z0-9][a-z0-9-]*$/u.test(name)) return undefined
+    const skillMarkdown = join(name, 'SKILL.md')
+    const homes = new Set<string>()
+    const envHome = process.env.DSH_HOME
+    if (envHome !== undefined && envHome !== '') homes.add(envHome)
+    homes.add(join(homedir(), '.agents'))
+    const sessionCwd = this.ctx.sessions.get(sessionId)?.header.cwd
+    if (sessionCwd !== undefined && sessionCwd !== '') {
+      homes.add(sessionCwd)
+      homes.add(this.defaultCwd)
+    }
+    for (const home of homes) {
+      for (const leaf of ['skills', join('.agents', 'skills'), join('.dsh', 'skills')]) {
+        try {
+          readFileSync(join(home, leaf, skillMarkdown), 'utf8')
+          return commandLine
+        } catch {
+          continue
+        }
+      }
+    }
+    return undefined
+  }
+
   /** Admit ordinary queued or steering input to the exact live Agent. */
   async prompt(
     request: SessionRemotePromptRequest,
@@ -1669,35 +1704,6 @@ export class SessionRemoteOperationsService extends Service
     const found = await this.agentFor(request.sessionId)
     if (!found.ok) return found
     const agent = found.value
-  /**
-   * Resolve an unknown "/<name>" command against the installed skill
-   * catalogs (user homes plus the session's project roots). Returns the
-   * rewritten prompt text when the name matches an installed skill, and
-   * undefined otherwise so the caller keeps its unknown-command failure.
-   */
-  private async admitUnknownCommandAsSkill(commandLine: string, sessionId: SessionId): Promise<string | undefined> {
-    const name = commandLine.slice(1).trim().split(/\s/u, 1)[0] ?? ''
-    if (name.length === 0) return undefined
-    const skills = this.ctx.get('skills') as
-      | { list(options: { cwd?: string }): Promise<unknown> }
-      | undefined
-    if (skills === undefined) return undefined
-    const cwd = this.ctx.sessions.get(sessionId)?.header.cwd as string | undefined
-    let candidates: Array<{ name?: string }> = []
-    try {
-      const listed = await skills.list({ cwd })
-      candidates = Array.isArray(listed)
-        ? listed as Array<{ name?: string }>
-        : (listed as { candidates?: Array<{ name?: string }> }).candidates ?? []
-    } catch {
-      return undefined
-    }
-    if (!candidates.some(candidate => candidate.name === name)) return undefined
-    const args = commandLine.slice(1 + name.length).trim()
-    return args.length > 0
-      ? `请使用 ${name} 技能处理以下请求：\n${args}`
-      : `请使用 ${name} 技能。`
-  }
 
     const commandLine = request.content.length === 1 && request.content[0]?.type === 'text'
       && request.content[0].text.startsWith('/')
@@ -1716,7 +1722,7 @@ export class SessionRemoteOperationsService extends Service
           // skill invocation, not a typo: rewrite it into an ordinary prompt
           // that names the skill (the agent's injected skill catalog carries
           // the methodology) instead of rejecting it.
-          const skillPrompt = await this.admitUnknownCommandAsSkill(commandLine, request.sessionId)
+          const skillPrompt = this.admitUnknownCommandAsSkill(commandLine, request.sessionId)
           if (skillPrompt === undefined) {
             return failure(
               'unknown-command',
@@ -1724,17 +1730,18 @@ export class SessionRemoteOperationsService extends Service
             )
           }
           request = { ...request, content: [{ type: 'text', text: skillPrompt }] }
+        } else {
+          if (execution.result.kind === 'error') {
+            return failure('command-error', execution.result.text)
+          }
+          return success({
+            accepted: true,
+            command: {
+              kind: 'success',
+              ...execution.result.text === undefined ? {} : { text: execution.result.text },
+            },
+          })
         }
-        if (execution.result.kind === 'error') {
-          return failure('command-error', execution.result.text)
-        }
-        return success({
-          accepted: true,
-          command: {
-            kind: 'success',
-            ...execution.result.text === undefined ? {} : { text: execution.result.text },
-          },
-        })
       } catch (error: unknown) {
         if (aborted(signal)) return cancelled()
         return failure('command-error', error instanceof Error ? error.message : String(error))

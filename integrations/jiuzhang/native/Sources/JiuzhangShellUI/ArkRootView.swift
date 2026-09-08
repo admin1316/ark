@@ -6918,7 +6918,10 @@ private struct NativeComposerSuggestionPanel: View {
     let content = max(46, CGFloat(model.composerSuggestions.candidates.count) * 44
       + CGFloat(sectionCount) * 24 + 8)
     guard let maxHeight, maxHeight > 0 else { return min(320, content) }
-    return min(320, maxHeight, content)
+    // The back-navigation header stacks above the list inside the same
+    // panel; deduct it so panel total stays within the composer ceiling.
+    let backAllowance: CGFloat = model.composerLauncherHasBackNavigation ? 34 : 0
+    return min(320, max(46, maxHeight - backAllowance), content)
   }
 
   private func sectionTitle(_ section: ArkComposerSuggestionSection) -> String {
