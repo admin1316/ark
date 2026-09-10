@@ -1366,6 +1366,21 @@ func runArkChatPresentationContractChecks() {
       ),
     "native chat queue acceleration refuses a real draft and covers continuable subagent queues"
   )
+  check(
+    ArkAppModel.isImageCapabilityRejection(ArkAPIError(
+      message: "Model \"x\" does not support image input.",
+      code: "attachment-error",
+      details: .object(["reason": .string("MODEL_DOES_NOT_SUPPORT_IMAGES")])
+    )),
+    "an image-capability rejection is recognized by its reason code"
+  )
+  check(
+    ArkAppModel.isImageCapabilityRejection(
+      ArkAPIError(message: "Model \"x\" does not support image input.")
+    )
+      && !ArkAppModel.isImageCapabilityRejection(ArkAPIError(message: "network down")),
+    "the image-capability rejection also matches the legacy wording and ignores unrelated errors"
+  )
 
   let navigationMessages = [
     ArkMessage(

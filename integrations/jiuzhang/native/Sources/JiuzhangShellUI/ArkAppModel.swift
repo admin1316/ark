@@ -724,6 +724,8 @@ public final class ArkAppModel: ObservableObject {
   @Published public private(set) var composerLauncherQuery = ""
   @Published public private(set) var composerLauncherFocusRevision = 0
   @Published public private(set) var composerSubmissionInFlight = false
+  /// One automatic model fallback per user send when the routed model cannot take images.
+  private var imageModelFallbackInFlight = false
   @Published public private(set) var navigationErrorMessage: String?
   @Published public private(set) var settingsErrorMessage: String?
   @Published public private(set) var composerErrorMessage: String?
@@ -3874,8 +3876,50 @@ public final class ArkAppModel: ObservableObject {
           else { pendingDocuments.insert(contentsOf: documents, at: 0) }
         }
         composerErrorMessage = error.localizedDescription
+        if !imageModelFallbackInFlight,
+           Self.isImageCapabilityRejection(error),
+           let fallback = defaultModelSelection,
+           fallback.provider != draftModelSelection?.provider
+             || fallback.model != draftModelSelection?.model {
+          // A text-only model must not dead-end an image send. The draft and attachments are back
+          // in the composer, so switch to the configured default model once and resend the same
+          // content instead of leaving the user with a red banner and nothing to do.
+          imageModelFallbackInFlight = true
+          let fallbackSessionID = selectedSessionID
+          Task { [weak self] in
+            guard let self, let fallbackSessionID else { return }
+            do {
+              let selected = try await self.client.selectModel(
+                sessionID: fallbackSessionID,
+                selection: fallback
+              )
+              guard self.selectedSessionID == fallbackSessionID else { return }
+              self.modelLabel = Self.modelDisplayLabel(
+                provider: selected.provider,
+                model: selected.model,
+                reasoningEffort: selected.reasoningEffort
+              )
+              self.draftModelSelection = fallback
+              await self.refreshModelCatalog(for: fallbackSessionID)
+              self.composerErrorMessage = "当前模型不支持图片，已改用 \(fallback.model) 重新发送"
+              await self.sendComposer(modeOverride: nil)
+            } catch {
+              self.composerErrorMessage = error.localizedDescription
+            }
+            self.imageModelFallbackInFlight = false
+          }
+          return
+        }
+        imageModelFallbackInFlight = false
       }
     }
+  }
+
+  /// Whether one prompt rejection is the model's missing image capability.
+  nonisolated static func isImageCapabilityRejection(_ error: Error) -> Bool {
+    guard let api = error as? ArkAPIError else { return false }
+    if api.details?["reason"]?.stringValue == "MODEL_DOES_NOT_SUPPORT_IMAGES" { return true }
+    return api.message.contains("does not support image input")
   }
 
   /// Clear exactly the draft whose subagent invocation just received a durable
