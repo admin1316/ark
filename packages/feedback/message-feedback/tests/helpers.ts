@@ -130,6 +130,15 @@ class TestPersistence extends SessionPersistence {
     return Promise.resolve(deleted)
   }
 
+  /**
+   * This fixture never borrows an exact Session source: message-feedback reads
+   * through {@link inspect} and {@link readFrom}, so borrowing stays
+   * unsupported rather than faking a source the product never observes.
+   */
+  borrowSession(_id: SessionId, _signal?: AbortSignal): ReturnType<SessionPersistence['borrowSession']> {
+    return Promise.reject(new Error('test persistence: borrowSession is not supported'))
+  }
+
   load(id: SessionId): Promise<SessionInspection> {
     return this.readFrom(id, 0)
   }

@@ -220,6 +220,8 @@
     { "path": "./packages/core/agent-loop" },
     { "path": "./packages/llm/llm-retry" },
     { "path": "./packages/examples/agent-spine-demo" },
+    { "path": "./packages/examples/acp-demo" },
+    { "path": "./packages/examples/jsonrpc-demo" },
     { "path": "./packages/subprocess/subprocess" },
     { "path": "./packages/subprocess/subprocess-local" },
     { "path": "./packages/subprocess/win32-process" },

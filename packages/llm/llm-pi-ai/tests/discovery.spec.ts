@@ -362,7 +362,8 @@ describe('probe key format', () => {
   })
 
   it('refuses redirected discovery without forwarding the key to another endpoint', async () => {
-    const fetch = vi.fn(async () => new Response(null, { status: 302, headers: { location: 'https://another.invalid/models' } }))
+    const fetch = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
+      new Response(null, { status: 302, headers: { location: 'https://another.invalid/models' } }))
     vi.stubGlobal('fetch', fetch)
     const ctx = await harness()
     await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: 'https://candidate.invalid/v1', apiKey: 'synthetic-secret' }))

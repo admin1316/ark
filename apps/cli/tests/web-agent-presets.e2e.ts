@@ -111,7 +111,7 @@ async function bootWeb(
   // upward walk. The flat fallback the preset boot maintains is what makes
   // them resolvable — the same mechanism, not a test-only shim.
   const home = dirname(settingsFile)
-  await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, home })
+  healProfilesModuleFallback(INSTALL_ANCHOR, home)
   const profileDir = join(home, 'profiles', 'spec')
   await mkdir(profileDir, { recursive: true })
   // Product Bundles are installed into the Profile, not the dsh app. Model

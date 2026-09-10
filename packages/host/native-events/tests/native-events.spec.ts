@@ -797,7 +797,7 @@ describe('native interactive response validation', () => {
       callId: desiredCall,
     }
     const dispatch = (value: Omit<typeof request, 'callId'> & { callId?: CallId; signal?: AbortSignal }) => state.ctx.waterfall(
-      scopeTarget(state.ctx.approval, live.agent),
+      scopeTarget(live.agent, live.agent),
       'approval/request',
       value,
       () => Promise.resolve('unavailable' as const),

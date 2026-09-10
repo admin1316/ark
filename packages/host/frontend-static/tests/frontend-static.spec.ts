@@ -22,6 +22,28 @@ import * as FrontendStatic from '../src/index.ts'
 let root: string | undefined
 let context: Context | undefined
 
+/** The client Connection face the composition actually loads. */
+interface AuthenticatedConnection {
+  authenticatedUrl(base: string): string
+}
+
+/**
+ * Read the loaded composition's authenticated client Connection.
+ *
+ * The host aggregate merges a different `connection` augmentation under the
+ * same Context key, so the runtime face is established structurally instead of
+ * trusting the program-order winner.
+ * @param loaded - Booted composition root.
+ * @returns the client Connection handle with authority-bound URL building.
+ */
+function authenticatedConnection(loaded: Context): AuthenticatedConnection {
+  const connection: unknown = loaded.connection
+  if (typeof connection !== 'object' || connection === null || !('authenticatedUrl' in connection)) {
+    throw new Error('the loaded composition exposed no authenticated client connection')
+  }
+  return connection as AuthenticatedConnection
+}
+
 afterEach(async () => {
   await context?.fiber.dispose()
   context = undefined
@@ -104,7 +126,7 @@ describe('real Loader composition', () => {
     expect(unloaded).toEqual([])
     const server = loaded.webServer
     const port = server.port
-    const launchUrl = loaded.connection.authenticatedUrl(`http://127.0.0.1:${String(port)}`)
+    const launchUrl = authenticatedConnection(loaded).authenticatedUrl(`http://127.0.0.1:${String(port)}`)
     const exchange = await fetch(launchUrl, { redirect: 'manual' })
     expect(exchange.status).toBe(303)
     expect(exchange.headers.get('location')).toBe('/')

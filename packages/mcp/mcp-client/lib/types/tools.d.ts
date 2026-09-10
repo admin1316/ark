@@ -50,7 +50,7 @@ export declare function publicToolName(serverName: string, rawName: string): str
  *
  * 1. Fetch: drain uncached `tools/list` pagination and build the full next
  *    generation of `ToolDefinition`s under public names. Any failure here
- *    (network error, duplicate raw name in the server's list) rejects and
+ *    (network error, duplicate raw name, repeated continuation cursor) rejects and
  *    leaves the previous generation registered untouched.
  * 2. Swap: dispose the previous generation, register the new one. A registry
  *    conflict here can only mean a foreign registration squats on this

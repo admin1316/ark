@@ -366,6 +366,8 @@ describe('cold history recovery view', () => {
     }
     const backend: PersistenceBackend<never> = {
       name: 'history-recovery-test',
+      // Read-only fixture: nothing is ever stored, so nothing can be deleted.
+      deleteStored: () => Promise.resolve(false),
       loadStored: id => Promise.resolve(id === sessionId ? structuredClone(stored) : undefined),
       readStoredRevision: id => Promise.resolve(
         id === sessionId ? SessionPersistenceRevision('history-recovery-test:1') : undefined,

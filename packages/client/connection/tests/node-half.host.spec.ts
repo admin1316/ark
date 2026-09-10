@@ -97,7 +97,7 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
   return {
     routes,
     upgrades,
-    connection: ctx.get('connection') as HostConnectionHandle,
+    connection: ctx.get('connection') as unknown as HostConnectionHandle,
     dispose: () => fiber.dispose(),
   }
 }

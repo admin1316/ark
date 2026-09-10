@@ -11,7 +11,7 @@ function harness(): { server: TunnelServer; frames: TunnelOutboundFrame[] } {
   return { server, frames }
 }
 
-function seams(openStream: TunnelSeams['openStream']): TunnelSeams {
+function seams(openStream: NonNullable<TunnelSeams['openStream']>): TunnelSeams {
   return {
     directFetch: () => Promise.reject(new Error('fixture has no direct fetch')),
     bootPayload: () => ({}),

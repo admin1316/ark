@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AGENT_A, CLIENT_CODE, setup } from './helpers.ts'
+import { AGENT_A, setup } from './helpers.ts'
 
 const HOST = 'return { apply() {} }'
 
@@ -38,71 +38,79 @@ describe('dynamic Plugin versions', () => {
     expect(runner.inventory()[0]?.nextPackageId).toBeUndefined()
   })
 
-  it('cancels and retracts a Host activation owned by the pending approval', async () => {
-    const { runner, gateway } = await setup()
+  it('refuses an activation whose signal was already aborted and leaves no activation behind', async () => {
+    const { runner } = await setup()
     const defined = runner.define({
       sessionId: AGENT_A.id,
-      plugin: { kind: 'new', idPrefix: 'panel' },
-      name: 'panel',
-      purpose: 'render a panel',
-      code: { host: HOST, client: CLIENT_CODE },
+      plugin: { kind: 'new', idPrefix: 'clock' },
+      name: 'clock',
+      purpose: 'show time',
+      code: { host: HOST },
     })
     const controller = new AbortController()
-    const pending = runner.run(AGENT_A, defined.pluginId, defined.packageId, 'run', controller.signal)
-    await Promise.resolve()
-    const request = gateway.events.find(([event]) => event === 'cordis/request-run')?.[1]
-    expect(request).toBeDefined()
-    const approval = request as {
-      requestId: Parameters<typeof runner.runHostHalf>[4]
-    }
-    await expect(runner.runHostHalf(
-      AGENT_A,
-      defined.pluginId,
-      defined.packageId,
-      'run',
-      approval.requestId,
-      false,
-    )).resolves.toMatchObject({ ok: true, startedHere: true })
-
     controller.abort()
+    await expect(runner.run(AGENT_A, defined.pluginId, defined.packageId, 'run', controller.signal))
+      .resolves.toMatchObject({
+        ok: false,
+        reason: 'host-half-failed',
+        message: expect.stringContaining('was cancelled'),
+      })
 
-    await expect(pending).resolves.toMatchObject({ ok: true, status: 'awaiting-approval' })
-    expect(runner.inventory()[0]?.activeRun).toBeDefined()
-    await runner.stop(AGENT_A, defined.pluginId)
-    expect(runner.inventory()[0]?.activeRun).toBeUndefined()
+    // The refusal must tear nothing down and record no attempt: the package is
+    // still versionless, with no active run and no pending next version.
+    const refused = runner.inventory()
+    expect(refused).toHaveLength(1)
+    expect(refused[0]).not.toHaveProperty('currentPackageId')
+    expect(refused[0]).not.toHaveProperty('nextPackageId')
+    expect(refused[0]).not.toHaveProperty('activeRun')
+    expect(refused[0]).not.toHaveProperty('latestRun')
+
+    // And the same package still starts normally afterwards.
+    const started = await runner.run(AGENT_A, defined.pluginId, defined.packageId, 'run')
+    expect(started).toMatchObject({ ok: true, status: 'running', currentPackageId: defined.packageId })
+    if (!started.ok) throw new Error(started.message)
+    expect(runner.inventory()[0]?.activeRun).toEqual({
+      packageId: defined.packageId,
+      pluginRunId: started.pluginRunId,
+    })
   })
 
-  it('does not stop an existing Host run when an attaching page fails to load Client code', async () => {
+  it('does not stop an existing Host run when a later activation attempt is refused', async () => {
     const { runner } = await setup()
     const defined = runner.define({
       sessionId: AGENT_A.id,
       plugin: { kind: 'new', idPrefix: 'panel' },
       name: 'panel',
       purpose: 'render a panel',
-      code: { host: HOST, client: CLIENT_CODE },
+      code: { host: HOST },
     })
-    const first = await runner.runHostHalf(AGENT_A, defined.pluginId, defined.packageId, 'run', null, false)
-    expect(first).toMatchObject({ ok: true, startedHere: true })
+    const first = await runner.run(AGENT_A, defined.pluginId, defined.packageId, 'run')
+    expect(first).toMatchObject({ ok: true, status: 'running' })
     if (!first.ok) throw new Error(first.message)
-    await expect(runner.settleUserRun(AGENT_A, defined.pluginId, {
-      ok: true,
-      pluginRunId: first.pluginRunId,
-    })).resolves.toMatchObject({ ok: true })
 
-    const attached = await runner.runHostHalf(AGENT_A, defined.pluginId, defined.packageId, 'run', null, false)
-    expect(attached).toMatchObject({ ok: true, startedHere: false })
-    if (!attached.ok) throw new Error(attached.message)
-    await expect(runner.settleUserRun(AGENT_A, defined.pluginId, {
-      ok: false,
-      reason: 'client-half-failed',
-      pluginRunId: attached.pluginRunId,
-      startedHere: attached.startedHere,
-      message: 'this page cannot load it',
-    })).resolves.toMatchObject({ ok: false, reason: 'client-half-failed' })
+    // Re-running the live package observes the existing activation instead of
+    // restarting it, so the run identity a page attached to stays valid.
+    await expect(runner.run(AGENT_A, defined.pluginId, defined.packageId, 'run'))
+      .resolves.toMatchObject({ ok: true, pluginRunId: first.pluginRunId, status: 'running' })
+
+    // A version update cancelled before it starts must not tear that run down:
+    // the abort is refused before the current run is retracted.
+    const second = runner.define({
+      sessionId: AGENT_A.id,
+      plugin: { kind: 'existing', pluginId: defined.pluginId },
+      name: 'panel v2',
+      purpose: 'render a panel',
+      code: { host: HOST },
+    })
+    const cancelled = new AbortController()
+    cancelled.abort()
+    await expect(runner.run(AGENT_A, defined.pluginId, second.packageId, 'update', cancelled.signal))
+      .resolves.toMatchObject({ ok: false, reason: 'host-half-failed' })
 
     expect(runner.inventory()[0]?.activeRun).toEqual({
       packageId: defined.packageId,
       pluginRunId: first.pluginRunId,
     })
+    expect(runner.inventory()[0]?.currentPackageId).toBe(defined.packageId)
   })
 })

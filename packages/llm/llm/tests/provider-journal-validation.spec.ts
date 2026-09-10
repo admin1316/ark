@@ -213,7 +213,8 @@ it('rejects terminal metadata on an unfinished journal and a plan with no operat
   await run.mutate(run.request({ transactionId: ID }))
   const stored = structuredClone(await run.ctx.credentials.readRecord(KEY))
   if (stored?.kind !== 'grant' || !object(stored.payload)) throw new Error('fixture did not create a journal')
-  await run.ctx.credentials.modifyRecord(KEY, async () => ({ ...stored, payload: { ...stored.payload, phase: 'prepared' } }))
+  const payload = stored.payload
+  await run.ctx.credentials.modifyRecord(KEY, async () => ({ ...stored, payload: { ...payload, phase: 'prepared' } }))
   await expect(run.ctx.llm.remoteProviderTransaction({ provider: 'alpha', transactionId: ID }))
     .rejects.toMatchObject({ failure: { code: 'provider-transaction-in-doubt' } })
   replace(stored.payload, ['plan', 'ops'], [])

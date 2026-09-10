@@ -13,7 +13,10 @@ async function mounted(): Promise<{
   })
   await fiber.await()
   return {
-    connection: ctx.get('connection') as HostConnectionService,
+    // The host aggregate also merges the host connection augmentation under the
+    // same `connection` key, so the composition-known client handle needs the
+    // same explicit unknown bridge the shared Context key cannot express.
+    connection: ctx.get('connection') as unknown as HostConnectionService,
     dispose: () => fiber.dispose(),
   }
 }

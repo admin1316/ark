@@ -24,7 +24,7 @@
 // assertConsumed for the teardown fixture-consumption check).
 import { existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -54,8 +54,8 @@ import {
   composeEntries,
   healProfilesModuleFallback,
   loadOverlayPatches,
-  type Profile,
 } from '@deepseek-ai/dsh-app-boot'
+import type { HostConnectionHandle as BrowserAuthConnectionHandle } from '@deepseek-ai/dsh-client-connection'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
@@ -357,6 +357,20 @@ async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persiste
 }
 
 /**
+ * Whether a booted `connection` service carries the browser-auth handle the Web
+ * composition mounts. The host aggregate compiles the host Connection package
+ * as well as the client one, and their two Context augmentations for
+ * `ctx.connection` are structurally different; this structural check reads the
+ * runtime service instead of trusting whichever augmentation the merge picked.
+ * @param value - the `connection` service read from the booted context.
+ * @returns whether the value exposes the browser-auth token exchange.
+ */
+function isBrowserAuthConnection(value: unknown): value is BrowserAuthConnectionHandle {
+  return typeof value === 'object' && value !== null
+    && typeof (value as Partial<BrowserAuthConnectionHandle>).authenticatedUrl === 'function'
+}
+
+/**
  * Boot the real web composition under the current snapshot mode.
  * @param options - replay fixture selection and pacing.
  * @returns the running scaffold.
@@ -578,34 +592,23 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   try {
     process.chdir(workspaceCwd)
     const profileDir = join(harnessHome, 'profiles', 'scaffold')
-    const extraLayers: Profile['layers'] = await Promise.all((options.extraInstallAnchors ?? []).map(async (anchor) => {
+    // Mirror the production launcher: the shared installation closure keeps
+    // its carrier-specific fallback, while private bundle dependencies stay
+    // isolated to this synthetic scaffold profile.
+    healProfilesModuleFallback(INSTALL_ANCHOR, harnessHome)
+    // The launcher installs each private bundle into the profile's own
+    // node_modules; link the source-checkout anchors the same way, so the
+    // overlay can name them and each anchor's own dependencies resolve from
+    // its real workspace directory.
+    await Promise.all((options.extraInstallAnchors ?? []).map(async (anchor) => {
       const manifest = JSON.parse(await readFile(anchor, 'utf8')) as { name?: unknown }
       if (typeof manifest.name !== 'string' || manifest.name === '') {
         throw new Error(`web scaffold extra install anchor has no package name: ${anchor}`)
       }
-      const packageDir = dirname(anchor)
-      return {
-        packageName: manifest.name,
-        packageDir,
-        patchPath: join(packageDir, 'cordis.patch.yml'),
-        patches: [],
-      }
+      const link = join(profileDir, 'node_modules', manifest.name)
+      await mkdir(dirname(link), { recursive: true })
+      await symlink(dirname(anchor), link, 'junction')
     }))
-    // Mirror the production launcher: the shared installation closure keeps
-    // its carrier-specific fallback, while private bundle dependencies stay
-    // isolated to this synthetic scaffold profile.
-    await healProfilesModuleFallback({
-      installAnchor: INSTALL_ANCHOR,
-      home: harnessHome,
-      profile: {
-        name: 'scaffold',
-        dir: profileDir,
-        layers: extraLayers,
-        patchPath: join(profileDir, 'cordis.patch.yml'),
-        patches: [],
-        patchReload: 'startup',
-      },
-    })
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
@@ -703,7 +706,11 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       ), 'web e2e scaffold: route-only adapter')
     }
     baseUrl = `http://${browserHost}:${String(port)}`
-    authenticatedUrl = ctx.connection.authenticatedUrl(baseUrl)
+    const connection: unknown = ctx.get('connection')
+    if (!isBrowserAuthConnection(connection)) {
+      throw new Error('web e2e scaffold: the web composition mounted no browser-auth Connection service')
+    }
+    authenticatedUrl = connection.authenticatedUrl(baseUrl)
     const login = await fetch(authenticatedUrl, { redirect: 'manual' })
     const setCookie = login.headers.get('set-cookie')
     if (login.status !== 303 || login.headers.get('location') !== '/' || setCookie === null) {

@@ -19,14 +19,18 @@ const Adapter: z<object> = z.object({
   }),
 })
 
+/** Dictionary fixture carrying one public and one defaulted secret dictionary. */
+const DictionarySchema: z<{ headers: Record<string, string>; tokens: Record<string, string> }> = z.object({
+  headers: z.dict(z.string()),
+  tokens: z.dict(z.string().role('secret')).default({ private: 'synthetic-default-secret' }),
+})
+
 it('describes dictionary schemas with key references while stripping default secret values', async () => {
   const ctx = new Context()
   await ctx.plugin(MemorySettings)
   try {
-    ctx.settings.register(settingsNamespace('dictionary-fixture'), z.object({
-      headers: z.dict(z.string()),
-      tokens: z.dict(z.string().role('secret')).default({ private: 'synthetic-default-secret' }),
-    }), { base: { headers: { Authorization: 'ARK_SYNTHETIC_REF' } } })
+    ctx.settings.register(settingsNamespace('dictionary-fixture'), DictionarySchema,
+      { base: { headers: { Authorization: 'ARK_SYNTHETIC_REF' } } })
     const view = ctx.settings.describe({ redactSecrets: true })
     expect(view[0]?.value).toEqual({ headers: { Authorization: 'ARK_SYNTHETIC_REF' }, tokens: {} })
     expect(JSON.stringify(view)).not.toContain('synthetic-default-secret')

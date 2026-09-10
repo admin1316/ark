@@ -131,7 +131,8 @@ describe('llm-pi-ai real dormant composition', () => {
       models: [{ id: 'requested-alias' }],
     } } } })
     const result = await assemble(ctx, { provider: 'openai', model: 'requested-alias',
-      messages: [createUserMessage({ content: [{ type: 'text', text: 'hello' }] })],
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'hello' }],
+        source: { kind: 'plugin', plugin: 'test' } })],
     })
     expect(result.finish).toEqual({ kind: 'stop' })
     expect(result.message.source).toMatchObject({ replayState: { response: { model: 'requested-alias', responseId: 'resp-fixture' } } })

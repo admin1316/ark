@@ -172,6 +172,7 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`jsdom`](https://github.com/jsdom/jsdom) | MIT |
 | [`knip`](https://github.com/webpro-nl/knip) | ISC |
 | [`lefthook`](https://github.com/evilmartians/lefthook) | MIT |
+| [`lightningcss`](https://github.com/parcel-bundler/lightningcss) | MPL-2.0 |
 | [`mermaid`](https://github.com/mermaid-js/mermaid) | MIT |
 | [`oxlint`](https://github.com/oxc-project/oxc) | MIT |
 | [`oxlint-tsgolint`](https://github.com/oxc-project/tsgolint) | MIT |
@@ -187,7 +188,7 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`vitepress-plugin-mermaid`](https://github.com/emersonbottero/vitepress-plugin-mermaid) | MIT |
 | [`vitest`](https://github.com/vitest-dev/vitest) | MIT |
 
-`eslint-plugin-sonarjs` (LGPL-3.0-only) runs only as development tooling; their code is not linked into or distributed with any DeepSeek Harness artifact.
+`eslint-plugin-sonarjs` (LGPL-3.0-only) and `lightningcss` (MPL-2.0) run only as development tooling; their code is not linked into or distributed with any DeepSeek Harness artifact.
 
 ## Python SDK dependencies (`python/`)
 

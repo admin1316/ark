@@ -19,7 +19,7 @@ import SessionStore, {
 } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { renderWorkspaceContext } from '@deepseek-ai/dsh-agent-instructions'
-import { resolveConfig, workspaceBaselineIdentity } from '@deepseek-ai/dsh-agent-instructions/src/config.ts'
+import { resolveAgentInstructionsConfig, workspaceBaselineIdentity } from '@deepseek-ai/dsh-agent-instructions/src/config.ts'
 import { describe, expect, it } from 'vitest'
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'expected/workspace-context-resume/offline-edit')
@@ -61,7 +61,7 @@ async function seedVisibleBaseline(
     displayPath: file.name,
     content: file.content,
   })), { maxBytes: 65536 })
-  const config = resolveConfig({
+  const config = resolveAgentInstructionsConfig({
     dshHome: join(cwd, '.dsh'),
     maxBytes: 65536,
     ...options.instructionFileCandidates === undefined

@@ -91,14 +91,19 @@ export interface TunnelSeams {
   readonly directFetch: (request: Request) => Promise<Response>
   /** Boot payload for `GET /__boot__`: the structured index injection table. */
   readonly bootPayload: () => unknown
-  /** Open one decoded Gateway Remote stream without another network carrier. */
-  readonly openStream: (
+  /**
+   * Open one decoded Gateway Remote stream without another network carrier.
+   * Absent when the composed host exposes no in-process stream owner: the
+   * tunnel then answers every stream request with a stable unavailability
+   * failure instead of pretending the lane exists.
+   */
+  readonly openStream?: (
     endpoint: string,
     payload: unknown,
     signal: AbortSignal,
   ) => Promise<AsyncIterable<unknown>>
-  /** Convert a Gateway stream failure to stable Client fields. */
-  readonly streamFailure: (error: unknown) => {
+  /** Convert a Gateway stream failure to stable Client fields; absent with {@link openStream}. */
+  readonly streamFailure?: (error: unknown) => {
     readonly code: string
     readonly message: string
     readonly details: object
@@ -276,10 +281,24 @@ export class TunnelServer {
       return
     }
     const seams = this.seams
+    if (seams.openStream === undefined) {
+      this.send({
+        t: 'stream-error',
+        id: frame.id,
+        failure: {
+          kind: 'remote',
+          code: 'stream-unavailable',
+          message: 'webworker tunnel: the composed host exposes no in-process Remote stream opener',
+          details: {},
+        },
+      })
+      return
+    }
+    const openStream = seams.openStream
     const controller = new AbortController()
     this.inFlight.set(frame.id, { abort: () => { controller.abort() } })
     try {
-      const source = await seams.openStream(frame.endpoint, frame.payload, controller.signal)
+      const source = await openStream(frame.endpoint, frame.payload, controller.signal)
       for await (const value of source) {
         if (controller.signal.aborted) return
         this.send({ t: 'stream-item', id: frame.id, value })
@@ -287,7 +306,9 @@ export class TunnelServer {
       if (!controller.signal.aborted) this.send({ t: 'stream-end', id: frame.id })
     } catch (error) {
       if (!controller.signal.aborted) {
-        const failure = seams.streamFailure(error)
+        const failure = seams.streamFailure === undefined
+          ? { code: 'stream-failed', message: 'webworker tunnel: Remote stream failed without a failure mapper', details: {} }
+          : seams.streamFailure(error)
         this.send({
           t: 'stream-error',
           id: frame.id,

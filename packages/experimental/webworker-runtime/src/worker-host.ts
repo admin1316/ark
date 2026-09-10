@@ -22,7 +22,6 @@
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/src/worker-host
  */
 import { setActiveModuleLoader, WorkerModuleLoader, type StaticModuleFactory } from './module-system/module-loader.ts'
-import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
 import type { AlsCausality } from './polyfill/async-context/als-runtime.ts'
 import { dirname, join } from './module-system/posix-path.ts'
@@ -245,19 +244,13 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
 
       const connection = ctx.get('connection') as HostConnectionHandle | undefined
       if (connection === undefined) throw new Error('webworker host: the tree activated without a Connection service')
-      const typertGateway = ctx.get('typertGateway') as TypertGateway | undefined
-      if (typertGateway === undefined) {
-        throw new Error('webworker host: the tree activated without a typertGateway service')
-      }
       const handler = connection.createSharedFetchHandler('/api')
       const usage = loader.usage()
-      console.info(`webworker host: tree active (modules=${String(usage.modules)}, data overlays=${String(overlays.length)}, preset root overlay=${presetOverlay ? 'applied' : 'already in roster'}, direct lane=connection.createSharedFetchHandler, als causality=${options.alsCausality === undefined ? 'inert' : 'snapshot/restore'}, image lowering=${LOWERING_VERSION})`)
+      console.info(`webworker host: tree active (modules=${String(usage.modules)}, data overlays=${String(overlays.length)}, preset root overlay=${presetOverlay ? 'applied' : 'already in roster'}, direct lane=connection.createSharedFetchHandler, stream lane=unavailable, als causality=${options.alsCausality === undefined ? 'inert' : 'snapshot/restore'}, image lowering=${LOWERING_VERSION})`)
 
       tunnel.serve({
         directFetch: (request: Request) => handler.fetch(request),
         bootPayload: () => readBootPayload(ctx),
-        openStream: typertGateway.wireStream.open,
-        streamFailure: typertGateway.wireStream.failure,
       })
     } catch (reason) {
       tunnel.fail(reason)

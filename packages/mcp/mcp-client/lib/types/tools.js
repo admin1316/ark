@@ -77,7 +77,7 @@ export function publicToolName(serverName, rawName) {
  *
  * 1. Fetch: drain uncached `tools/list` pagination and build the full next
  *    generation of `ToolDefinition`s under public names. Any failure here
- *    (network error, duplicate raw name in the server's list) rejects and
+ *    (network error, duplicate raw name, repeated continuation cursor) rejects and
  *    leaves the previous generation registered untouched.
  * 2. Swap: dispose the previous generation, register the new one. A registry
  *    conflict here can only mean a foreign registration squats on this
@@ -97,6 +97,7 @@ export function publicToolName(serverName, rawName) {
 export async function syncTools(client, ctx, opts, previous) {
     // Phase 1: fetch and build the next generation without touching the registry.
     const definitions = new Map();
+    const seenCursors = new Set();
     let cursor;
     do {
         const response = await listToolsUncached(client, cursor);
@@ -108,6 +109,12 @@ export async function syncTools(client, ctx, opts, previous) {
             definitions.set(publicName, createDefinition(client, ctx, publicName, tool.name, tool.description ?? '', tool.inputSchema, supportedOutputSchema(tool.outputSchema), tool.execution?.taskSupport === 'required', opts));
         }
         cursor = response.nextCursor;
+        if (cursor) {
+            if (seenCursors.has(cursor)) {
+                throw new Error(`mcp-client(${opts.serverName}): server repeated a tools/list continuation cursor — invalid tool list`);
+            }
+            seenCursors.add(cursor);
+        }
     } while (cursor);
     // Phase 2: swap generations.
     for (const dispose of previous.values())

@@ -13,7 +13,7 @@ import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host
 import {
   API_PATH, apply, HOST_EVENTS_PATH, inject, MUX_EVENTS_PATH, RESPOND_PATH,
   HostConnectionService,
-  type ConnectionClientRequest, type ConnectionResponseReceipt, type HostConnectionEventReader, type HostConnectionHandle,
+  type ConnectionClientRequest, type ConnectionResponseReceipt,
 } from '../src/index.ts'
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from '../src/http-bridge.ts'
 import { WebSocketDownlinks } from '../src/websocket-downlink.ts'
@@ -95,12 +95,29 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
   return { routes, upgrades, dispose: () => fiber.dispose() }
 }
 
+/**
+ * Read the Connection service mounted by the fixture's `apply`. The host
+ * aggregate also compiles `packages/client/connection`'s Context augmentation
+ * (its `.host.spec.ts` files import that src), whose structurally different
+ * `ctx.connection` surface wins the ambient declaration merge; pin the runtime
+ * identity `apply` provides instead of casting through the shadowed type.
+ * @param ctx - context whose `apply` mounted the host service.
+ * @returns the mounted host Connection service.
+ */
+function hostConnection(ctx: Context): HostConnectionService {
+  const service: unknown = ctx.get('connection')
+  if (!(service instanceof HostConnectionService)) {
+    throw new Error('fixture context did not mount the host Connection service')
+  }
+  return service
+}
+
 async function connectionFixture() {
   const ctx = new Context()
   ctx.provide('webServer', fakeHttpServer([], []) as WebServer)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  const connection = ctx.get('connection') as HostConnectionService
+  const connection = hostConnection(ctx)
   return { fiber, connection, fetch: connection.createSharedFetchHandler('/api') }
 }
 
@@ -407,7 +424,7 @@ describe('connection node half', () => {
     expect(routes).toHaveLength(1)
     expect(routes[0]).toMatchObject({ kind: 'prefix', path: API_PATH })
 
-    const connection = ctx.get('connection') as HostConnectionHandle
+    const connection = hostConnection(ctx)
     const calls: unknown[] = []
     const remove = connection.rpc.handle('/rpc', async (endpoint, payload) => {
       calls.push({ endpoint, payload })
@@ -450,7 +467,7 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle & HostConnectionEventReader
+    const connection = hostConnection(ctx)
     let sourceSignal: AbortSignal | undefined
     const remove = connection.events.handle('mux', async function * (signal) {
       sourceSignal = signal
@@ -480,7 +497,7 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
+    const connection = hostConnection(ctx)
     const calls: unknown[] = []
     const remove = connection.rpc.intercept(
       '/api',
@@ -557,7 +574,7 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
+    const connection = hostConnection(ctx)
     const remove = connection.rpc.handle('/rpc', async (endpoint) => {
       if (endpoint === 'fail') throw new Error('handler broke')
       return { ok: true, value: null }
@@ -638,7 +655,7 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
+    const connection = hostConnection(ctx)
     const gatewayCalls: unknown[] = []
     const removeGateway = connection.rpc.intercept(
       '/api',
@@ -695,7 +712,7 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
+    const connection = hostConnection(ctx)
     let handlerSignal: AbortSignal | undefined
     const remove = connection.responses.handle(async (_message, signal) => {
       handlerSignal = signal
@@ -725,7 +742,7 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
+    const connection = hostConnection(ctx)
     const gatewayCalls: string[] = []
     const removeGateway = connection.rpc.intercept(
       '/api',
@@ -779,7 +796,7 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
+    const connection = hostConnection(ctx)
     let handlerSignal: AbortSignal | undefined
     let abortEvents = 0
     const observedDuringPull: boolean[] = []
@@ -846,8 +863,8 @@ describe('connection node half', () => {
     } as never)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
-    const service = ctx.get('connection') as unknown as Pick<HostConnectionService, 'createSharedFetchHandler'> & {
+    const connection = hostConnection(ctx)
+    const service = hostConnection(ctx) as unknown as Pick<HostConnectionService, 'createSharedFetchHandler'> & {
       downloadHandlers: Map<string, { active: Set<unknown> }>
     }
     let handlerSignal: AbortSignal | undefined
@@ -890,8 +907,8 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
-    const fetch = (ctx.get('connection') as HostConnectionService).createSharedFetchHandler('/api')
+    const connection = hostConnection(ctx)
+    const fetch = hostConnection(ctx).createSharedFetchHandler('/api')
 
     let finiteSignal: AbortSignal | undefined
     let finiteAbortEvents = 0
@@ -981,8 +998,8 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
-    const fetch = (ctx.get('connection') as HostConnectionService).createSharedFetchHandler('/api')
+    const connection = hostConnection(ctx)
+    const fetch = hostConnection(ctx).createSharedFetchHandler('/api')
 
     const consumerReason = new Error('consumer cancelled')
     let consumerSignal: AbortSignal | undefined
@@ -1049,8 +1066,8 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
-    const fetch = (ctx.get('connection') as HostConnectionService).createSharedFetchHandler('/api')
+    const connection = hostConnection(ctx)
+    const fetch = hostConnection(ctx).createSharedFetchHandler('/api')
 
     const requestAbort = new AbortController()
     const requestReason = new Error('request disconnected')
@@ -1135,9 +1152,9 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
-    const fetch = (ctx.get('connection') as HostConnectionService).createSharedFetchHandler('/api')
-    const internals = ctx.get('connection') as unknown as {
+    const connection = hostConnection(ctx)
+    const fetch = hostConnection(ctx).createSharedFetchHandler('/api')
+    const internals = hostConnection(ctx) as unknown as {
       downloadHandlers: Map<string, { active: Set<unknown> }>
     }
 
@@ -1238,8 +1255,8 @@ describe('connection node half', () => {
     } as never)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
-    const service = ctx.get('connection') as unknown as Pick<HostConnectionService, 'createSharedFetchHandler'> & {
+    const connection = hostConnection(ctx)
+    const service = hostConnection(ctx) as unknown as Pick<HostConnectionService, 'createSharedFetchHandler'> & {
       downloadHandlers: Map<string, { active: Set<unknown> }>
     }
     let handlerSignal: AbortSignal | undefined
@@ -1303,8 +1320,8 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
-    const fetch = (ctx.get('connection') as HostConnectionService).createSharedFetchHandler('/api')
+    const connection = hostConnection(ctx)
+    const fetch = hostConnection(ctx).createSharedFetchHandler('/api')
     const cleanupFailure = new Error('HEAD body cleanup failed')
     const remove = connection.downloads.handle('/api/files/head-failure', async () => {
       return new Response(new ReadableStream<Uint8Array>({
@@ -1329,8 +1346,8 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
-    const fetch = (ctx.get('connection') as HostConnectionService).createSharedFetchHandler('/api')
+    const connection = hostConnection(ctx)
+    const fetch = hostConnection(ctx).createSharedFetchHandler('/api')
     const abort = new AbortController()
     const reason = new Error('already disconnected')
     abort.abort(reason)
@@ -1389,7 +1406,7 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle & HostConnectionEventReader
+    const connection = hostConnection(ctx)
     const preCancelled = new AbortController()
     preCancelled.abort(new Error('caller left'))
     let sawPreCancelled = false
@@ -1406,7 +1423,7 @@ describe('connection node half', () => {
     await iterator.return?.()
     await removeSource()
 
-    const downloads = ctx.get('connection') as unknown as HostConnectionService
+    const downloads = hostConnection(ctx)
     const fetch = downloads.createSharedFetchHandler('/api')
     const preAbort = new AbortController()
     preAbort.abort(new Error('pre-aborted'))
@@ -1459,8 +1476,8 @@ describe('connection node half', () => {
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const connection = ctx.get('connection') as HostConnectionHandle
-    const internals = ctx.get('connection') as unknown as {
+    const connection = hostConnection(ctx)
+    const internals = hostConnection(ctx) as unknown as {
       eventSources: Map<string, unknown>
       downloadHandlers: Map<string, unknown>
       responseHandler: unknown

@@ -4,3 +4,5 @@ node_modules/
 .native-build/
 *.log
 .DS_Store
+/tsconfig.host.tsbuildinfo
+/*.tsbuildinfo

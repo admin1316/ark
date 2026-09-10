@@ -211,6 +211,15 @@ class MemorySessionPersistence extends SessionPersistence {
     return this.load(id)
   }
 
+  /**
+   * This medium has no coordinator and no prepared-session cache, so it cannot
+   * honor the borrow/reserve contract. Refuse loudly rather than returning an
+   * unpinned observation that a later `prepare` could not reserve.
+   */
+  borrowSession(_id: SessionId, _signal?: AbortSignal): ReturnType<SessionPersistence['borrowSession']> {
+    return Promise.reject(new Error('the ACP test persistence does not support borrowSession'))
+  }
+
   readFrom(id: SessionId, fromSeq: number, _signal?: AbortSignal): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
     const entry = this.require(id)
     return Promise.resolve({

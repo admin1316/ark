@@ -13,6 +13,7 @@ import { getBuiltinModels, getBuiltinProviders } from '@earendil-works/pi-ai/pro
 import { createModels, getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { Api, Model, OpenAICompletionsCompat, Provider } from '@earendil-works/pi-ai'
 import { Config, assertServiceable, resolveProfiles } from '../src/config.ts'
+import type { ResolvedPiAiProviderProfile } from '../src/config.ts'
 import { buildProvider, supportedProtocols } from '../src/provider.ts'
 import { assemble } from './assemble.ts'
 import { memoryAuth } from './auth-double.ts'
@@ -74,6 +75,20 @@ async function harness(config: LlmPiAi.Config): Promise<Context> {
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(LlmPiAi, config)
   return ctx
+}
+
+/**
+ * One resolved route's built pi-ai provider. A strict resolution either builds
+ * it or refuses the configuration, so an absent provider here is the deferred
+ * repair state and not something these cases may read past.
+ */
+function piProviderOf(
+  resolved: ReadonlyMap<string, ResolvedPiAiProviderProfile>,
+  route: string,
+): Provider {
+  const provider = resolved.get(route)?.piProvider
+  if (provider === undefined) throw new Error(`route "${route}" resolved no pi-ai provider`)
+  return provider
 }
 
 describe('Bailian pay-as-you-go presets', () => {
@@ -225,7 +240,7 @@ describe('hand-declared providers', () => {
       },
     })
     const modelsOf = (route: string): readonly { id: string; contextWindow: number; maxTokens: number }[] =>
-      resolved.get(route)?.piProvider.getModels() ?? []
+      piProviderOf(resolved, route).getModels()
 
     expect(modelsOf('acme-gateway')).toMatchObject([
       { id: 'bare', contextWindow: 262_144, maxTokens: 32_768 },
@@ -264,7 +279,7 @@ describe('hand-declared providers', () => {
       'anthropic': { defaultInput: ['text'] },
     })
     const inputOf = (route: string, id: string): readonly string[] | undefined =>
-      resolved.get(route)?.piProvider.getModels().find(model => model.id === id)?.input
+      piProviderOf(resolved, route).getModels().find(model => model.id === id)?.input
 
     expect(inputOf('acme-gateway', 'bare')).toEqual(['text'])
     expect(inputOf('acme-gateway', 'seeing')).toEqual(['text', 'image'])
@@ -327,8 +342,8 @@ describe('hand-declared providers', () => {
         models: [{ id: 'bare', input: [] }],
       },
     })
-    expect(resolved.get('acme-gateway')?.piProvider.getModels()[0]?.input).toEqual(['text'])
-    expect(resolved.get('deepseek')?.piProvider.getModels()[0]?.input).toEqual(catalogModel.input)
+    expect(piProviderOf(resolved, 'acme-gateway').getModels()[0]?.input).toEqual(['text'])
+    expect(piProviderOf(resolved, 'deepseek').getModels()[0]?.input).toEqual(catalogModel.input)
 
     // Nothing sits below the route value, so its empty list states no answer
     // anything could take, and is refused where it is written.
@@ -549,7 +564,7 @@ describe('catalog routes with per-model configuration', () => {
     const resolved = resolveProfiles({
       nvidia: { models: [{ id: headered.id, contextWindow: 4096 }] },
     })
-    const [model] = resolved.get('nvidia')?.piProvider.getModels() ?? []
+    const [model] = piProviderOf(resolved, 'nvidia').getModels()
     expect(model?.headers).toEqual(headered.headers)
     expect(model?.contextWindow).toBe(4096)
   })
@@ -575,15 +590,15 @@ describe('catalog routes with per-model configuration', () => {
     // `opencode` ships no provider-level endpoint: the address lives on every
     // catalog model, so the route resolves without any configured baseURL.
     const resolved = resolveProfiles({ opencode: {} })
-    const models = resolved.get('opencode')?.piProvider.getModels() ?? []
+    const models = piProviderOf(resolved, 'opencode').getModels()
     expect(models.length).toBeGreaterThan(0)
     expect(models.every(model => model.baseUrl.length > 0)).toBe(true)
-    expect(resolved.get('opencode')?.piProvider.baseUrl).toBeUndefined()
+    expect(piProviderOf(resolved, 'opencode').baseUrl).toBeUndefined()
   })
 
   it('repoints a catalog route at another wire protocol without restating its endpoint', () => {
     const resolved = resolveProfiles({ openai: { api: 'openai-completions' } })
-    const models = resolved.get('openai')?.piProvider.getModels() ?? []
+    const models = piProviderOf(resolved, 'openai').getModels()
     // The protocol changes for the whole route; each model keeps the catalog
     // endpoint it already had.
     expect(models.every(model => model.api === 'openai-completions')).toBe(true)
@@ -614,7 +629,7 @@ describe('catalog routes with per-model configuration', () => {
     // the wire format its models speak: naming an api must not cost a profile
     // its provider-native discovery.
     const resolved = resolveProfiles({ openai: { api: 'openai-completions' } })
-    expect(resolved.get('openai')?.piProvider.auth.apiKey?.name).toBe('OpenAI API key')
+    expect(piProviderOf(resolved, 'openai').auth.apiKey?.name).toBe('OpenAI API key')
   })
 
   it('lets an OAuth-only catalog route authenticate with the key its profile names', async () => {
@@ -637,7 +652,7 @@ describe('catalog routes with per-model configuration', () => {
     // and holds no OAuth store, so declaring the provider configured would
     // trade a truthful refusal for an endpoint's 401.
     const resolved = resolveProfiles({ 'openai-codex': {} })
-    expect(resolved.get('openai-codex')?.piProvider.auth.apiKey).toBeUndefined()
+    expect(piProviderOf(resolved, 'openai-codex').auth.apiKey).toBeUndefined()
   })
 })
 
@@ -649,7 +664,7 @@ describe('per-model reasoning efforts', () => {
 
   /** The first materialized model of one route, or throw. */
   function modelOf(providers: Record<string, LlmPiAi.PiAiProviderProfile>, route = 'acme-gateway'): Model<Api> {
-    const [model] = resolveProfiles(providers).get(route)?.piProvider.getModels() ?? []
+    const [model] = piProviderOf(resolveProfiles(providers), route).getModels()
     if (model === undefined) throw new Error(`route "${route}" resolved no models`)
     return model
   }
@@ -760,7 +775,7 @@ describe('modelOverrides', () => {
         },
       },
     })
-    const models = resolved.get('deepseek')?.piProvider.getModels() ?? []
+    const models = piProviderOf(resolved, 'deepseek').getModels()
     const reshaped = models.find(model => model.id === target.id)
     if (reshaped === undefined) throw new Error('the overridden model vanished from the route')
 
@@ -830,7 +845,7 @@ describe('compat switches', () => {
     const parsed = Config({ providers: { local: { api: 'openai-completions', baseURL: 'https://fixture.invalid',
       compat, models: [{ id: 'local-model' }],
     } } })
-    expect(resolveProfiles(parsed.providers).get('local')?.piProvider.getModels()[0]?.compat).toMatchObject(compat)
+    expect(piProviderOf(resolveProfiles(parsed.providers), 'local').getModels()[0]?.compat).toMatchObject(compat)
   })
 
   it('preserves model-owned output-limit, per-turn effort and fallback metadata', () => {
@@ -841,12 +856,13 @@ describe('compat switches', () => {
         compat: { supportsMidConvoEffort: true, forceAdaptiveThinking: true }, models: [{ id: 'local-messages' }] },
     } })
     const profiles = resolveProfiles(parsed.providers)
-    expect(profiles.get('responses')?.piProvider.getModels()[0]?.compat).toMatchObject({ supportsMaxOutputTokens: false })
-    expect(profiles.get('messages')?.piProvider.getModels()[0]?.compat).toMatchObject({ supportsMidConvoEffort: true })
+    expect(piProviderOf(profiles, 'responses').getModels()[0]?.compat).toMatchObject({ supportsMaxOutputTokens: false })
+    expect(piProviderOf(profiles, 'messages').getModels()[0]?.compat).toMatchObject({ supportsMidConvoEffort: true })
     const catalog = getBuiltinModels('anthropic')
     const fallback = catalog.find(model => model.compat?.allowedFallbackModels?.length)
     expect(fallback).toBeDefined()
-    const retained = resolveProfiles({ anthropic: {} }).get('anthropic')?.piProvider.getModels().find(model => model.id === fallback?.id)
+    const provider = piProviderOf(resolveProfiles({ anthropic: {} }), 'anthropic')
+    const retained = provider.getModels().find(model => model.id === fallback?.id)
     expect(retained?.compat).toEqual(fallback?.compat)
   })
 
@@ -867,7 +883,7 @@ describe('compat switches', () => {
   }
   /** The materialized models of one route, keyed by id. */
   function modelsOf(providers: Record<string, LlmPiAi.PiAiProviderProfile>, route: string): Map<string, Model<Api>> {
-    const models = resolveProfiles(providers).get(route)?.piProvider.getModels() ?? []
+    const models = piProviderOf(resolveProfiles(providers), route).getModels()
     return new Map(models.map(model => [model.id, model]))
   }
 

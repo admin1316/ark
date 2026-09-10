@@ -44,7 +44,8 @@ describe('native settings Remote', () => {
     contexts.push(ctx)
     await ctx.plugin(MemorySettings)
     const credentials = z.object({ token: z.string().role('secret').default('field-default-secret'), label: z.string() })
-    const union = z.union([credentials, z.object({ label: z.string() })]).default({ token: 'parent-default-secret' })
+    const union = z.union([credentials, z.object({ label: z.string() })])
+      .default({ token: 'parent-default-secret', label: 'parent-default-label' })
     ctx.settings.register(namespace, z.object({ provider: union }), {
       base: { provider: { token: 'composition-secret', label: 'visible' } },
     })

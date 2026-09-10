@@ -13,7 +13,7 @@ import {
   type AgentUnderTest,
   type LaunchedAcpTestAgent,
 } from '@deepseek-ai/dsh-session-snapshot'
-import { bwrapProfileArgs } from '@deepseek-ai/dsh-sandbox-local/src/profiles.ts'
+import { bwrapProfileArgs } from '../../../../../../packages/sandbox/sandbox-local/src/profiles.ts'
 import { cleanupAcpExampleTest } from './cleanup.ts'
 
 /**

@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import { SESSION_FORMAT_VERSION, Session, SessionId, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SurfaceEventType, SurfaceIntent } from '@deepseek-ai/dsh-session'
 import { CallId, MessageId, createMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
@@ -18,6 +19,18 @@ import type { SessionPersistence } from '../src/index.ts'
 export interface ContractBackend {
   persistence: SessionPersistence
   dispose: () => Promise<void>
+}
+
+/**
+ * The Context a backend was mounted in. `Service.ctx` is protected, so the
+ * contract reaches it through this single explicit typed channel — used only to
+ * observe the `session-persistence/deleted` event and the live SessionStore —
+ * rather than widening the Service surface or reading through `any`.
+ * @param persistence - the mounted backend whose owning context is needed.
+ * @returns the context that mounted the backend.
+ */
+function ownerContext(persistence: SessionPersistence): Context {
+  return (persistence as unknown as { ctx: Context }).ctx
 }
 
 /** Build a minimal {@link SessionHeader} for a session id. */
@@ -92,7 +105,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         await persistence.inspect(m.id)
         const notified = Promise.withResolvers<undefined>()
         const cleanup = Promise.withResolvers<undefined>()
-        persistence.ctx.on('session-persistence/deleted', async (id) => {
+        ownerContext(persistence).on('session-persistence/deleted', async (id) => {
           expect(id).toBe(m.id)
           await expect(persistence.inspect(id)).rejects.toThrow('not found')
           notified.resolve(undefined)
@@ -118,12 +131,12 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         await persistence.create(m)
         await persistence.append(m.id, oneTurnLog())
         let calls = 0
-        persistence.ctx.on('session-persistence/deleted', () => {
+        ownerContext(persistence).on('session-persistence/deleted', () => {
           calls++
           if (calls === 1) throw new Error('derived cleanup failed')
         })
         let cleaned = 0
-        persistence.ctx.on('session-persistence/deleted', () => { cleaned++ })
+        ownerContext(persistence).on('session-persistence/deleted', () => { cleaned++ })
         await expect(persistence.delete(m.id)).rejects.toThrow('derived cleanup failed; retry deletion')
         expect(cleaned).toBe(1)
         expect(await persistence.list()).toEqual([])
@@ -161,11 +174,12 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
       const { persistence, dispose } = await make()
       try {
         const id = SessionId('delete-live')
-        const session = persistence.ctx.sessions.create(id)
+        const context = ownerContext(persistence)
+        const session = context.sessions.create(id)
         await expect(persistence.delete(id)).rejects.toMatchObject({
           name: 'SessionPersistenceDeleteBlockedError', reason: 'live',
         })
-        expect(persistence.ctx.sessions.get(id)).toBe(session)
+        expect(context.sessions.get(id)).toBe(session)
       } finally {
         await dispose()
       }
@@ -342,7 +356,8 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
           throw new Error('expected a text tool result')
         }
         expect(synthetic.data.message.content[0].content[0].text).toContain('retry only if the operation is read-only or idempotent')
-        expect(synthetic.data.message.content[0].content[0].text).toContain('if it may have side effects, first verify external state or ask the user')
+        expect(synthetic.data.message.content[0].content[0].text)
+          .toContain('if it may have side effects, first verify external state or ask the user')
         const resumed = Session.create(m.id, loaded.events, loaded.meta)
         const resumedResult = resumed.deriveMessages().find(message => message.content.some(block => block.type === 'tool-result'))
         expect(resumedResult?.content[0]).toMatchObject({

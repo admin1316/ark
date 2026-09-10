@@ -364,6 +364,7 @@ describe('Host Typert Gateway', () => {
       const dispose = ctx.typert.contexts.registerHost('gatewayFixture', {
         wire: 'agentId',
         wireTypeSymbol: '@fixture/string',
+        identity: candidate => candidate === scoped ? 'agent-1' : undefined,
         resolve: (id) => {
           resolvedIdentity = id
           return id === 'agent-1' ? scoped : undefined
@@ -381,6 +382,7 @@ describe('Host Typert Gateway', () => {
       ctx.typert.contexts.registerHost('gatewayFixture', {
         wire: 'agentId',
         wireTypeSymbol: '@fixture/string',
+        identity: candidate => candidate === scoped ? 'agent-1' : undefined,
         resolve: () => { throw new TypertLookupFailure({ code: 'agent-busy', message: 'owned', details: {} }) },
       })
       await expect(connection.request('fixture/scoped', {
