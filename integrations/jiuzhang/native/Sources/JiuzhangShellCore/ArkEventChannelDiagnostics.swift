@@ -37,6 +37,12 @@ public enum ArkEventChannelDiagnostics {
     sequence.warning("session=\(session, privacy: .public) gap expected=\(expected) actual=\(actual)")
   }
 
+  /// Record one self-healing retry. These are expected while a page walk catches up, so they are
+  /// logged rather than surfaced as a conversation error.
+  public static func retry(session: String, attempt: Int, detail: String) {
+    sequence.info("session=\(session, privacy: .public) attempt=\(attempt) retry=\(detail, privacy: .public)")
+  }
+
   /// Record one reconciliation result (a heal installs a contiguous head at or above its target).
   public static func reconciled(session: String, head: Int, target: Int?) {
     sequence.notice("session=\(session, privacy: .public) head=\(head) target=\(target ?? -1)")

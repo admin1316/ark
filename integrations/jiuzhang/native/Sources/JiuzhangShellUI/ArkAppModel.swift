@@ -4519,13 +4519,25 @@ public final class ArkAppModel: ObservableObject {
       if selectedSessionID == requestedSessionID,
          historyProjectionGeneration == generation {
         historyLoadState = .failed(error.localizedDescription)
-        composerErrorMessage = error.localizedDescription
         if error is ArkEventSequenceValidationError {
-          markEventChannelDegraded(.mux, message: error.localizedDescription)
-          // A failed heal must not be terminal: retry with backoff while a target is pending.
+          // A page walk that caught a range mid-flight throws here; the retry below repairs it in a
+          // few hundred milliseconds. Reporting every attempt as a red card is what put a
+          // permanent "会话连接错误" over a healthy transcript, so this stays internal until it
+          // persists: only a retry that keeps failing past the backoff ladder surfaces.
+          ArkEventChannelDiagnostics.retry(
+            session: requestedSessionID,
+            attempt: eventResyncAttempt,
+            detail: error.localizedDescription
+          )
+          composerErrorMessage = nil
           if resyncTargetBySessionID[requestedSessionID] != nil {
             scheduleEventResync(sessionID: requestedSessionID)
           }
+          if eventResyncAttempt > 4 {
+            markEventChannelDegraded(.mux, message: error.localizedDescription)
+          }
+        } else {
+          composerErrorMessage = error.localizedDescription
         }
       }
     }
@@ -4647,9 +4659,21 @@ public final class ArkAppModel: ObservableObject {
       if selectedSessionID == sessionID,
          historyProjectionGeneration == generation {
         historyLoadState = .afterCancellation(hasHistory: !events.isEmpty)
-        composerErrorMessage = error.localizedDescription
         if error is ArkEventSequenceValidationError {
-          markEventChannelDegraded(.mux, message: error.localizedDescription)
+          ArkEventChannelDiagnostics.retry(
+            session: sessionID,
+            attempt: eventResyncAttempt,
+            detail: error.localizedDescription
+          )
+          composerErrorMessage = nil
+          if resyncTargetBySessionID[sessionID] != nil {
+            scheduleEventResync(sessionID: sessionID)
+          }
+          if eventResyncAttempt > 4 {
+            markEventChannelDegraded(.mux, message: error.localizedDescription)
+          }
+        } else {
+          composerErrorMessage = error.localizedDescription
         }
       }
     }
