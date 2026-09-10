@@ -1759,7 +1759,7 @@ function ark_remove_tree() {
     [[ -e "${path}" ]] || return 0
     /bin/rm -rf -- "${path}" 2>/dev/null || true
     [[ -e "${path}" ]] || return 0
-    sleep 0.3
+    /bin/sleep 0.3
   done
   [[ -e "${path}" ]] || return 0
   print -u2 "could not remove the build staging tree: ${path}"
