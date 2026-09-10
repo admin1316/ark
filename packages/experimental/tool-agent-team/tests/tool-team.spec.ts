@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -81,7 +81,7 @@ function execute(
   signal: AbortSignal = SIGNAL,
 ) {
   return ctx.tools.execute({
-    callId: ToolCallId(`team-call-${++callNumber}`),
+    callId: CallId(`team-call-${++callNumber}`),
     name,
     arguments: args,
     signal,

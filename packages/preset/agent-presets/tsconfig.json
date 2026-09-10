@@ -49,6 +49,9 @@
       "path": "../../util/home-paths"
     },
     {
+      "path": "../../util/native-command"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

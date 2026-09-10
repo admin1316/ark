@@ -1,6 +1,5 @@
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { isRecord } from "@deepseek-ai/dsh-sdk-protocol";
 import { FIRST_PARTY_SECTION_ORDER } from "@deepseek-ai/dsh-system-prompt";
 //#region lib/types/index.js
 /**
@@ -125,7 +124,7 @@ return { status: 'budget-limited', roundsStarted: args.maxRounds, report: previo
 `;
 const DESCRIPTION = "Run a foreground fresh-agent Ralph loop toward one immutable objective. Use only when the direct human explicitly asks for Ralph or fresh-agent iteration. Each round opens a new child with no parent conversation or prior child session; the shared workspace is long-term memory, and only a bounded structured report crosses rounds. The call returns when a worker reports completion or a concrete blocker, or at the round limit. Ordinary long-running same-session work belongs to goal tools.";
 /** Validate defaults even when a caller invokes apply() without Loader normalization. */
-function resolveRalphConfig(config) {
+function resolveConfig(config) {
 	const subagentProvider = config.subagentProvider ?? "spawn";
 	const maxRounds = config.maxRounds ?? 256;
 	const maxHandoffChars = config.maxHandoffChars ?? 16384;
@@ -155,6 +154,9 @@ function requireFreshProvider(ctx, name) {
 	if (!provider.capabilities.outputSchema) throw new Error(`Ralph subagent provider "${name}" does not support structured output`);
 	if (provider.inheritsParentContext) throw new Error(`Ralph subagent provider "${name}" inherits parent context; Ralph requires a fresh provider`);
 	return provider;
+}
+function isRecord(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function normalizedText(value) {
 	return typeof value === "string" && value.length > 0 && value === value.trim();
@@ -290,7 +292,7 @@ function presentResult(args, result) {
 }
 /** Register the fixed Ralph tool and its explicit-ask usage policy. */
 function apply(ctx, config) {
-	const resolved = resolveRalphConfig(config);
+	const resolved = resolveConfig(config);
 	ctx.systemPrompt.section({
 		name: "tool:ralph",
 		order: FIRST_PARTY_SECTION_ORDER.TOOL_RALPH,

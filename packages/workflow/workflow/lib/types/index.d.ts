@@ -78,7 +78,7 @@ export type WorkflowEventName = 'workflow/start' | 'workflow/phase' | 'workflow/
  * values, and cancellation. An ordinary child failure resolves its item to
  * `null` and is not one of these fatal codes.
  */
-export type WorkflowErrorCode = 'SCRIPT_PARSE' | 'META_INVALID' | 'INVALID_ARGUMENT' | 'UNSUPPORTED_OPTION' | 'UNSUPPORTED_SCHEMA' | 'AGENT_CAP' | 'ITEM_CAP' | 'NARRATION_CAP' | 'AGENT_START' | 'AGENT_RESULT' | 'RESULT_UNSERIALIZABLE' | 'CANCELLED';
+export type WorkflowErrorCode = 'SCRIPT_PARSE' | 'META_INVALID' | 'INVALID_ARGUMENT' | 'UNSUPPORTED_OPTION' | 'UNSUPPORTED_SCHEMA' | 'AGENT_CAP' | 'ITEM_CAP' | 'AGENT_START' | 'AGENT_RESULT' | 'RESULT_UNSERIALIZABLE' | 'CANCELLED';
 /**
  * Typed error for workflow-seam failures. Extends {@link HarnessError}, so the
  * `code` is machine-routable taxonomy. `fatal` drives the combinator

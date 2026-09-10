@@ -198,6 +198,8 @@ export interface SessionRemoteCreateValue {
 /** Inputs and outputs for `session/history`. */
 export interface SessionRemoteHistoryRequest {
   readonly sessionId: SessionId
+  /** Refuse a child page whose actual source header names another parent. */
+  readonly expectedParentSessionId?: SessionId
   readonly beforeSeq?: number
   readonly maxMessages?: number
 }

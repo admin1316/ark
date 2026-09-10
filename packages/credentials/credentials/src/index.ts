@@ -8,9 +8,11 @@
  * @module @deepseek-ai/dsh-credentials
  */
 
+import { createHash } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertLookupFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
+  CredentialInfo,
   CredentialKey,
   CredentialRecord,
   CredentialRef,
@@ -19,6 +21,7 @@ import type {
 } from './types.ts'
 
 export type {
+  CredentialInfo,
   ApiKeyRecord,
   CredentialKey,
   CredentialRecord,
@@ -134,14 +137,48 @@ export interface ResolvedCredential {
   source: string
 }
 
-/** Source and writability facts for one reference, safe for configuration UIs — never the value. */
-export interface CredentialInfo {
-  /** Whether {@link CredentialProvider.resolve} would currently return a value. */
-  configured: boolean
-  /** Source layer currently supplying the value; absent while unconfigured. */
+/** A secret-free compare-and-set condition; a null digest requires absence. */
+export interface CredentialCondition {
+  /** SHA-256 of the resolved secret, or null when the reference must be absent. */
+  valueDigest: string | null
+  /** When supplied, require the same resolution layer as well as the value. */
   source?: string
-  /** Whether {@link CredentialProvider.set} would currently succeed for this reference. */
-  writable: boolean
+}
+
+/** The reference changed before its conditional write; no requested write occurred. */
+export class CredentialConflictError extends Error {
+  /** @param ref - the reference whose condition no longer holds. */
+  constructor(public readonly ref: CredentialRef) {
+    super(`credential reference "${ref}" changed before its conditional write`)
+    this.name = 'CredentialConflictError'
+  }
+}
+
+/**
+ * Capture a reference's value and source without retaining its secret.
+ * @param current - the resolved reference, or absence.
+ * @returns the condition for a later provider-owned conditional write.
+ */
+export function credentialCondition(current: ResolvedCredential | undefined): CredentialCondition {
+  return current === undefined ? { valueDigest: null }
+    : { valueDigest: createHash('sha256').update(current.value).digest('hex'), source: current.source }
+}
+
+/**
+ * Check a conditional write while the provider holds its write exclusion.
+ * @param ref - the reference being checked.
+ * @param current - its current resolved value.
+ * @param expected - the required value digest and optional source.
+ * @returns nothing when the condition matches.
+ * @throws CredentialConflictError without including secret values or digests.
+ */
+export function assertCredentialCondition(
+  ref: CredentialRef, current: ResolvedCredential | undefined, expected: CredentialCondition,
+): void {
+  const actual = credentialCondition(current)
+  if (actual.valueDigest !== expected.valueDigest || (expected.source !== undefined && actual.source !== expected.source)) {
+    throw new CredentialConflictError(ref)
+  }
 }
 
 /** Presence and writability facts for one record, safe for configuration UIs — never the value. */
@@ -219,16 +256,18 @@ export abstract class CredentialProvider extends TypertRemoteService {
    * rejects an empty value (use {@link unset}).
    * @param ref - the reference to store.
    * @param value - the non-empty secret value.
+   * @param expected - optional condition checked under the same exclusion as all reference writes; a mismatch rejects without writing.
    */
-  abstract set(ref: CredentialRef, value: string): Promise<void>
+  abstract set(ref: CredentialRef, value: string, expected?: CredentialCondition): Promise<void>
 
   /**
    * Remove one reference from the provider-managed writable source; removing
    * an absent reference is a no-op. Rejects while a read-only source shadows
    * the reference, like {@link set}.
    * @param ref - the reference to remove.
+   * @param expected - optional condition checked under the same exclusion as all reference writes; a mismatch rejects without deleting.
    */
-  abstract unset(ref: CredentialRef): Promise<void>
+  abstract unset(ref: CredentialRef, expected?: CredentialCondition): Promise<void>
 
   /**
    * Read one stored record. The value is returned as its owner wrote it; a
@@ -264,11 +303,14 @@ export abstract class CredentialProvider extends TypertRemoteService {
    * concurrently would otherwise lose whichever wrote first.
    * @param key - the record to modify.
    * @param mutate - receives the current record and returns its replacement, or `undefined` to leave it.
+   * @param references - optional conditions checked before `mutate`, with exclusion held through commit.
+   * Callbacks must not enqueue writes on this provider.
    * @returns the record after the write, or the current one when `mutate` declined.
    */
   abstract modifyRecord(
     key: CredentialKey,
     mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>,
+    references?: readonly { ref: CredentialRef; expected: CredentialCondition }[],
   ): Promise<CredentialRecord | undefined>
 
   /**

@@ -489,7 +489,6 @@ private struct ArkConversationSurfaceSnapshot {
   let feedback: [String: ArkMessageFeedback]
   let feedbackAvailable: Bool
   let sessionProjections: [String: JSONValue]
-  let modelCatalog: ArkSessionModels?
   let modelLabel: String
 }
 
@@ -531,9 +530,9 @@ public final class ArkAppModel: ObservableObject {
   @Published public private(set) var sessionSearchRemoteUnavailable = false
   @Published public private(set) var knowledgeSearchPaths: Set<String> = []
   @Published public private(set) var modelCatalog: ArkSessionModels?
-  /// 最近一次成功加载的会话目录分组（含 reasoning efforts）。
-  /// New Conversation 清空 modelCatalog 后，draft 选择器仍能提供完整 effort 列表。
-  private var lastKnownModelGroups: [ArkModelProviderGroup]?
+  @Published private var hostModelGroups: [ArkModelProviderGroup] = []
+  private var settingsLoadGeneration: UInt64 = 0
+  private var modelCatalogLoadGeneration: UInt64 = 0
   @Published public private(set) var draftModelSelection: ArkModelSelection?
   @Published public private(set) var draftPermissionPreset: String?
   @Published public private(set) var approvals: [ArkApprovalRequest] = []
@@ -572,6 +571,7 @@ public final class ArkAppModel: ObservableObject {
   @Published public private(set) var providers: [ArkProviderView] = []
   @Published public private(set) var settingsSnapshot: ArkSettingsSnapshot?
   @Published public private(set) var credentialStates: [String: ArkCredentialView] = [:]
+  @Published public private(set) var providerTransactionStates: [String: ArkProviderTransactionStatus] = [:]
   @Published public private(set) var settingsBusy = false
   @Published public private(set) var agentPresetRoster: ArkAgentPresetRoster?
   @Published public private(set) var selectedPresetDocument: ArkAgentPresetDocument?
@@ -699,6 +699,7 @@ public final class ArkAppModel: ObservableObject {
   private var composerDraftDocument = ArkComposerDraftDocument()
   private var composerSuggestionTask: Task<Void, Never>?
   private var composerCatalogPrewarmTask: Task<Void, Never>?
+  private var modelDiscoveryTask: Task<Void, Never>?
   private var composerSuggestionGeneration: UInt64 = 0
   private var composerCatalogs: [String: ArkComposerCatalogSnapshot] = [:]
   private var composerMenuWasLaunched = false
@@ -1542,6 +1543,7 @@ public final class ArkAppModel: ObservableObject {
     composerSuggestionTask?.cancel()
     composerCatalogPrewarmTask?.cancel()
     for task in subagentCatalogTasks.values { task.cancel() }
+    modelDiscoveryTask?.cancel()
     wikiTask?.cancel()
     wikiIngestPollingTask?.cancel()
     sessionExportTask?.cancel()
@@ -1768,11 +1770,18 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func credentialReference(for provider: ArkProviderView) -> String {
-    guard let namespace = settingsSnapshot?.namespaces.first(where: { $0.id == provider.settingsNamespace }) else {
-      return suggestedCredentialReference(for: provider.id)
-    }
-    let root = namespace.value.value(at: provider.settingsPath) ?? namespace.value
-    return root.strings(forKey: "apiKeyEnv").first ?? suggestedCredentialReference(for: provider.id)
+    ArkSettingsSnapshot.credentialReference(for: provider, namespaces: settingsSnapshot?.namespaces ?? [])
+  }
+
+  public func newCredentialReference(for providerID: String) -> String {
+    ArkSettingsSnapshot.suggestedCredentialReference(for: providerID, namespaces: settingsSnapshot?.namespaces ?? [])
+  }
+
+  public func verifyProviderConnection(provider: String, model: String) async throws -> ArkProviderVerification {
+    let generation = settingsLoadGeneration
+    let result = try await client.verifyProvider(provider: provider, model: model)
+    guard generation == settingsLoadGeneration else { throw ArkAPIError(message: "配置已变化，请重新测试连接") }
+    return result
   }
 
   public var defaultPermissionPreset: String? {
@@ -1808,25 +1817,15 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public var composerModelCatalog: ArkSessionModels? {
-    if let modelCatalog { return modelCatalog }
-    let candidateGroups = lastKnownModelGroups ?? providers.compactMap { provider -> ArkModelProviderGroup? in
-      guard let namespace = settingsSnapshot?.namespaces.first(where: { $0.id == provider.settingsNamespace })
-      else { return nil }
-      let root = namespace.value.value(at: provider.settingsPath) ?? namespace.value
-      let rows = root["models"]?.arrayValue ?? []
-      let models = rows.compactMap { row -> ArkModelCatalogModel? in
-        guard let id = row["id"]?.stringValue, !id.isEmpty else { return nil }
-        return ArkModelCatalogModel(
-          id: id,
-          name: row["name"]?.stringValue ?? id,
-          description: row["description"]?.stringValue,
-          reasoning: Self.reasoningCatalog(from: row["reasoning"])
-        )
-      }
-      guard !models.isEmpty else { return nil }
-      return ArkModelProviderGroup(id: provider.id, name: provider.displayName, models: models)
+    if selectedSessionID != nil {
+      guard let modelCatalog else { return nil }
+      let groups = configuredModelGroups(modelCatalog.groups)
+      return ArkSessionModels(current: modelCatalog.current,
+        routable: modelCatalog.routable && groups.contains { group in
+          group.id == modelCatalog.current.provider && group.models.contains { $0.id == modelCatalog.current.model }
+        }, groups: groups, failures: modelCatalog.failures)
     }
-    let groups = Self.activeComposerGroups(candidateGroups, providers: providers)
+    let groups = availableModelGroups
     guard !groups.isEmpty else { return nil }
     let selected = draftModelSelection
       ?? defaultModelSelection
@@ -1835,6 +1834,32 @@ public final class ArkAppModel: ObservableObject {
       group.id == selected.provider && group.models.contains { $0.id == selected.model }
     }
     return ArkSessionModels(current: selected, routable: routable, groups: groups, failures: [])
+  }
+
+  /// Global configuration choices never borrow a historical session's model directory.
+  public var availableModelGroups: [ArkModelProviderGroup] {
+    ArkProviderPresentation.primaryModelGroups(
+      configuredModelGroups(Self.activeComposerGroups(hostModelGroups, providers: providers)))
+  }
+
+  private func configuredModelGroups(_ groups: [ArkModelProviderGroup]) -> [ArkModelProviderGroup] {
+    Self.configuredModelGroups(groups, providers: providers,
+      namespaces: settingsSnapshot?.namespaces ?? [], credentials: credentialStates)
+  }
+
+  nonisolated static func configuredModelGroups(
+    _ groups: [ArkModelProviderGroup], providers: [ArkProviderView],
+    namespaces: [ArkSettingsNamespace], credentials: [String: ArkCredentialView]
+  ) -> [ArkModelProviderGroup] {
+    groups.filter { group in
+      // Session-local providers can exist outside the Host's configurable directory.
+      guard let provider = providers.first(where: { $0.id == group.id }) else { return true }
+      guard provider.active else { return false }
+      guard let reference = namespaces.first(where: { $0.id == provider.settingsNamespace })?
+        .value.value(at: provider.settingsPath)?["apiKeyEnv"]?.stringValue, !reference.isEmpty
+      else { return true }
+      return credentials[reference]?.configured == true
+    }
   }
 
   /// 当前生效的模型选择：无会话时读 New Session draft，否则读 session 当前值。
@@ -1884,24 +1909,6 @@ public final class ArkAppModel: ObservableObject {
     return ArkL10n.permissionPresetLabel(raw, languagePreference)
   }
 
-  private static func reasoningCatalog(from value: JSONValue?) -> ArkModelReasoning? {
-    guard let value else { return nil }
-    let rows = value["efforts"]?.arrayValue ?? []
-    let efforts = rows.compactMap { row -> ArkModelReasoningEffort? in
-      if let id = row.stringValue, !id.isEmpty {
-        return ArkModelReasoningEffort(id: id, name: id)
-      }
-      guard let id = row["id"]?.stringValue, !id.isEmpty else { return nil }
-      return ArkModelReasoningEffort(
-        id: id,
-        name: row["name"]?.stringValue ?? id,
-        description: row["description"]?.stringValue
-      )
-    }
-    guard !efforts.isEmpty else { return nil }
-    return ArkModelReasoning(efforts: efforts, defaultEffort: value["defaultEffort"]?.stringValue)
-  }
-
   public var defaultAgentPresetID: String? {
     settingsSnapshot?.namespaces
       .first(where: { $0.id == "agent-presets" })?
@@ -1910,18 +1917,20 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func loadSettings() async {
+    settingsLoadGeneration &+= 1
+    let generation = settingsLoadGeneration
     settingsBusy = true
+    hostModelGroups = []
+    modelCatalog = nil
+    defer { if generation == settingsLoadGeneration { settingsBusy = false } }
     do {
       async let providerRows = client.providers()
       async let snapshot = client.settingsSnapshot()
       let loadedProviders = try await providerRows
       let loadedSnapshot = try await snapshot
+      guard generation == settingsLoadGeneration else { return }
       let refs = Array(Set(loadedProviders.map { provider in
-        guard let namespace = loadedSnapshot.namespaces.first(where: { $0.id == provider.settingsNamespace }) else {
-          return suggestedCredentialReference(for: provider.id)
-        }
-        let root = namespace.value.value(at: provider.settingsPath) ?? namespace.value
-        return root.strings(forKey: "apiKeyEnv").first ?? suggestedCredentialReference(for: provider.id)
+        ArkSettingsSnapshot.credentialReference(for: provider, namespaces: loadedSnapshot.namespaces)
       }))
       providers = loadedProviders
       settingsSnapshot = loadedSnapshot
@@ -1929,20 +1938,27 @@ public final class ArkAppModel: ObservableObject {
       // 不依赖后续 credential/network 请求成功。
       syncLanguagePreferenceFromSettings()
 
-      // 冷启动 capability 补种：只填空，不覆盖更晚/更具体的 session catalog。
-      if let groups = try? await client.hostModels(),
-         !groups.isEmpty,
-         modelCatalog == nil,
-         lastKnownModelGroups == nil
-      {
-        lastKnownModelGroups = groups
+      let groups = try await client.hostModels()
+      guard generation == settingsLoadGeneration else { return }
+      let credentials = try await client.credentialStates(refs: refs)
+      guard generation == settingsLoadGeneration else { return }
+      credentialStates = credentials
+      hostModelGroups = groups
+      if let sessionID = selectedSessionID { await refreshModelCatalog(for: sessionID) }
+      guard generation == settingsLoadGeneration else { return }
+      var recoveryErrors: [String] = []
+      providerTransactionStates = [:]
+      for provider in loadedProviders {
+        do { try await refreshProviderTransaction(provider: provider.id) }
+        catch { recoveryErrors.append("\(provider.displayName)：\(error.localizedDescription)") }
+        guard generation == settingsLoadGeneration else { return }
       }
-      credentialStates = try await client.credentialStates(refs: refs)
-      settingsErrorMessage = nil
+      settingsErrorMessage = recoveryErrors.isEmpty ? nil : recoveryErrors.joined(separator: "\n")
     } catch {
+      guard generation == settingsLoadGeneration else { return }
       settingsErrorMessage = error.localizedDescription
     }
-    settingsBusy = false
+    guard generation == settingsLoadGeneration else { return }
     await loadAgentPresets()
     await loadPluginSettings()
     await loadPluginInventory()
@@ -2150,18 +2166,67 @@ public final class ArkAppModel: ObservableObject {
         credential: credential,
         transactionID: transactionID
       )
-      providerTransactions.clear(provider: provider)
+      providerTransactions.clear(provider: provider, transactionID: transactionID)
+      if providerTransactionStates[provider]?.transactionID == transactionID {
+        providerTransactionStates.removeValue(forKey: provider)
+      }
       return updated
     } catch {
-      // Transport failures and an explicit in-doubt response keep the same ID
-      // for an app/Host restart. Terminal Host refusals own a done receipt and
-      // release the ID for the user's next distinct intent.
-      if let apiError = error as? ArkAPIError,
-         let code = apiError.code,
-         code != "provider-transaction-in-doubt" {
-        providerTransactions.clear(provider: provider)
+      // A transport error cannot establish whether the durable claim completed.
+      if let status = try? await client.providerTransaction(provider: provider, transactionID: transactionID) {
+        providerTransactions.acknowledge(provider: provider, transactionID: transactionID, state: status.state)
+        if providerTransactions.pendingTransactionID(for: provider) == transactionID {
+          providerTransactionStates[provider] = status
+        } else if providerTransactionStates[provider]?.transactionID == transactionID {
+          providerTransactionStates.removeValue(forKey: provider)
+        }
       }
       throw error
+    }
+  }
+
+  private func refreshProviderTransaction(provider: String) async throws {
+    let generation = settingsLoadGeneration
+    guard let transactionID = providerTransactions.pendingTransactionID(for: provider) else {
+      providerTransactionStates.removeValue(forKey: provider)
+      return
+    }
+    let status = try await client.providerTransaction(provider: provider, transactionID: transactionID)
+    guard generation == settingsLoadGeneration else { return }
+    guard providerTransactions.pendingTransactionID(for: provider) == transactionID else { return }
+    providerTransactionStates[provider] = status
+  }
+
+  /// Resume only after the user selects the pending operation; loading Settings is read-only.
+  public func restoreProviderConfiguration(
+    provider: ArkProviderView, transactionID: String, credentialValue: String? = nil
+  ) async -> Bool {
+    guard !settingsBusy else { return false }
+    guard providerTransactions.pendingTransactionID(for: provider.id) == transactionID else {
+      await loadSettings()
+      settingsErrorMessage = "恢复状态已变化，请查看刷新后的结果。"
+      return false
+    }
+    settingsBusy = true
+    defer { settingsBusy = false }
+    do {
+      _ = try await client.resumeProvider(
+        provider: provider.id, transactionID: transactionID, credentialValue: credentialValue
+      )
+      providerTransactions.clear(provider: provider.id, transactionID: transactionID)
+      if providerTransactionStates[provider.id]?.transactionID == transactionID {
+        providerTransactionStates.removeValue(forKey: provider.id)
+      }
+      await loadSettings()
+      postResultMessage("此前的 Provider 配置保存已恢复。")
+      return true
+    } catch {
+      if let status = try? await client.providerTransaction(provider: provider.id, transactionID: transactionID) {
+        providerTransactions.acknowledge(provider: provider.id, transactionID: transactionID, state: status.state)
+      }
+      await loadSettings()
+      settingsErrorMessage = error.localizedDescription
+      return false
     }
   }
 
@@ -2179,9 +2244,9 @@ public final class ArkAppModel: ObservableObject {
         guard let snapshot = settingsSnapshot,
               let namespace = snapshot.namespaces.first(where: { $0.id == provider.settingsNamespace })
         else { throw ArkAPIError(message: "Provider 设置尚未载入") }
-        let mutations: [ArkSettingMutation] = credentialReference(for: provider) == normalizedRef
-          ? []
-          : [.set(path: provider.settingsPath + ["apiKeyEnv"], value: .string(normalizedRef))]
+        let mutations: [ArkSettingMutation] = [
+          .set(path: provider.settingsPath + ["apiKeyEnv"], value: .string(normalizedRef)),
+        ]
         let updated = try await commitProviderMutation(
           provider: provider.id,
           namespace: namespace.id,
@@ -2210,7 +2275,8 @@ public final class ArkAppModel: ObservableObject {
     displayName: String,
     baseURL: String,
     api: String,
-    models: [ArkProviderModelInput]
+    models: [ArkProviderModelInput],
+    migrateLegacyCredentials: Bool = false
   ) async -> Bool {
     let ref = credentialRef.trimmingCharacters(in: .whitespacesAndNewlines)
     guard ref.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil else {
@@ -2224,12 +2290,22 @@ public final class ArkAppModel: ObservableObject {
       settingsErrorMessage = "Provider 设置当前不可写"
       return false
     }
+    if let migration = provider.migrationRequired,
+       !migration.canMigrateUserFields || !migrateLegacyCredentials || secret.isEmpty {
+      settingsErrorMessage = migration.canMigrateUserFields
+        ? "请明确选择迁移旧凭据字段并重新输入密钥。"
+        : "旧凭据来自部署配置或缺少安全迁移路径，请先修正其配置来源。"
+      return false
+    }
     settingsBusy = true
     defer { settingsBusy = false }
     do {
       let currentProfile = namespace.value.value(at: provider.settingsPath)?.objectValue ?? [:]
       var mutations: [ArkSettingMutation] = []
       let path = provider.settingsPath
+      if migrateLegacyCredentials, let paths = provider.migrationRequired?.paths {
+        mutations.append(contentsOf: paths.map { .unset(path: path + $0) })
+      }
       if !secret.isEmpty {
         mutations.append(.set(path: path + ["apiKeyEnv"], value: .string(ref)))
       }
@@ -2252,6 +2328,8 @@ public final class ArkAppModel: ObservableObject {
           preserving: currentProfile["models"]?.arrayValue ?? []
         )
         mutations.append(.set(path: path + ["models"], value: .array(rows)))
+      } else if provider.settingsNamespace == "llm-pi-ai", provider.declared != true {
+        mutations.append(.set(path: path + ["models"], value: .array([])))
       } else {
         mutations.append(.unset(path: path + ["models"]))
       }
@@ -2324,26 +2402,37 @@ public final class ArkAppModel: ObservableObject {
     api: String,
     unsavedAPIKey: String
   ) {
-    Task {
-      modelDiscoveryBusy = true
-      defer { modelDiscoveryBusy = false }
+    modelDiscoveryTask?.cancel()
+    modelDiscoveryBusy = true
+    modelDiscoveryError = nil
+    let client = client
+    modelDiscoveryTask = Task { [weak self] in
       do {
-        discoveredModels = try await client.discoverModels(
+        let candidates = try await client.discoverModels(
           settingsNamespace: provider?.settingsNamespace ?? "llm-pi-ai",
           provider: provider?.id,
           baseURL: baseURL.trimmingCharacters(in: .whitespacesAndNewlines),
           api: api,
           apiKey: unsavedAPIKey
         )
-        modelDiscoveryError = nil
+        guard !Task.isCancelled, let self else { return }
+        self.discoveredModels = candidates
+        self.modelDiscoveryBusy = false
+        self.modelDiscoveryTask = nil
       } catch {
-        discoveredModels = []
-        modelDiscoveryError = error.localizedDescription
+        guard !Task.isCancelled, let self else { return }
+        self.discoveredModels = []
+        self.modelDiscoveryError = error.localizedDescription
+        self.modelDiscoveryBusy = false
+        self.modelDiscoveryTask = nil
       }
     }
   }
 
   public func clearDiscoveredModels() {
+    modelDiscoveryTask?.cancel()
+    modelDiscoveryTask = nil
+    modelDiscoveryBusy = false
     discoveredModels = []
     modelDiscoveryError = nil
   }
@@ -2807,6 +2896,9 @@ public final class ArkAppModel: ObservableObject {
 
   /// Stop event delivery and await both WebSocket pumps before the owner releases this model.
   public func shutdown() async {
+    let discovery = modelDiscoveryTask
+    clearDiscoveredModels()
+    if let discovery { await discovery.value }
     if let eventShutdownTask {
       await eventShutdownTask.value
       return
@@ -2963,7 +3055,6 @@ public final class ArkAppModel: ObservableObject {
       feedback: messageFeedbackByID,
       feedbackAvailable: messageFeedbackAvailable,
       sessionProjections: sessionProjections,
-      modelCatalog: modelCatalog,
       modelLabel: modelLabel
     )
     conversationSurfaceSnapshotOrder.removeAll { $0 == sessionID }
@@ -2994,7 +3085,6 @@ public final class ArkAppModel: ObservableObject {
     messageFeedbackByID = snapshot.feedback
     messageFeedbackAvailable = snapshot.feedbackAvailable
     sessionProjections = snapshot.sessionProjections
-    modelCatalog = snapshot.modelCatalog
     modelLabel = snapshot.modelLabel
     historyLoadState = .loaded
     conversationSurfaceSnapshotOrder.removeAll { $0 == sessionID }
@@ -4867,7 +4957,7 @@ public final class ArkAppModel: ObservableObject {
 
   @discardableResult
   public func importKnowledgeURL(_ rawValue: String) -> Bool {
-    guard let normalized = ArkKnowledgeIngestInput.normalizedHTTPURL(rawValue) else {
+    guard let normalized = ArkHTTPURLInput.normalizedHTTPURL(rawValue) else {
       wikiIngestError = ArkL10n.text(.wikiImportURLInvalid, languagePreference)
       return false
     }
@@ -5297,13 +5387,17 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func refreshModelCatalog(for sessionID: String) async {
+    modelCatalogLoadGeneration &+= 1
+    let requestGeneration = modelCatalogLoadGeneration
+    let settingsGeneration = settingsLoadGeneration
     do {
       let catalog = try await client.sessionModels(sessionID: sessionID)
-      guard selectedSessionID == sessionID else { return }
+      guard selectedSessionID == sessionID, requestGeneration == modelCatalogLoadGeneration,
+        settingsGeneration == settingsLoadGeneration else { return }
       modelCatalog = catalog
-      lastKnownModelGroups = catalog.groups
     } catch {
-      guard selectedSessionID == sessionID else { return }
+      guard selectedSessionID == sessionID, requestGeneration == modelCatalogLoadGeneration,
+        settingsGeneration == settingsLoadGeneration else { return }
       modelCatalog = nil
     }
   }

@@ -11,7 +11,6 @@
  */
 import z from '@deepseek-ai/schemastery';
 import { defineTool } from '@deepseek-ai/dsh-tools';
-// Declaration merge only: makes ctx.systemPrompt visible for the section registration.
 import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt';
 export const name = 'tool-workflow';
 export const inject = ['tools', 'workflowEngine', 'systemPrompt'];
@@ -74,12 +73,8 @@ function createWorkflowRecorder(ctx) {
             active.delete(info.id);
     });
     return {
-        start(session, run, rootCallId) {
-            if (append(session, 'tool-workflow/run-start', {
-                runId: run.id,
-                rootCallId,
-                name: run.meta.name,
-            })) {
+        start(session, run) {
+            if (append(session, 'tool-workflow/run-start', { runId: run.id, name: run.meta.name })) {
                 active.set(run.id, session);
             }
         },
@@ -237,7 +232,7 @@ export function apply(ctx, config) {
             // The shipped worker-thread engine publishes member events from later
             // worker messages, after start() returns and this run record is active.
             if (recordsRun)
-                recorder.start(parent.session, run, exec.rootCallId);
+                recorder.start(parent.session, run);
             // Bridge the tool's abort signal to the run: if the parent step is aborted while the
             // script is in flight, cancel the whole run. The signal also enters the engine directly, but
             // this local bridge preserves the tool contract even if an implementation ignores it.

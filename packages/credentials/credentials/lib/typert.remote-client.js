@@ -42,7 +42,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-credentials/types#RemoteCredentialsDescription',
         schema: _deepseek_ai_dsh_credentials_credentials_describe_result$schema,
       },
-      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":288,"column":9},
+      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":330,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-credentials#credentials/set',
@@ -78,7 +78,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-credentials#credentials/set:result',
         schema: _deepseek_ai_dsh_credentials_credentials_set_result$schema,
       },
-      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":318,"column":9},
+      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":360,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-credentials#credentials/unset',
@@ -104,7 +104,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-credentials#credentials/unset:result',
         schema: _deepseek_ai_dsh_credentials_credentials_unset_result$schema,
       },
-      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":339,"column":9},
+      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":381,"column":9},
     },
   ],
 }

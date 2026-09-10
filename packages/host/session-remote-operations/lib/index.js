@@ -1,9 +1,7 @@
-import { readFileSync } from "node:fs";
 import { Buffer } from "node:buffer";
-import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute } from "node:path";
 import { Service } from "@deepseek-ai/cordis";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { PresetMountError, UnknownPresetError, resolveSessionPreset } from "@deepseek-ai/dsh-agent-presets";
@@ -14,10 +12,11 @@ import { MessageId, ReasoningEffortId } from "@deepseek-ai/dsh-llm/brand";
 import { SessionId, findToolCallArguments, isAppendSurfaceEvent, snapshotJsonValue } from "@deepseek-ai/dsh-session";
 import { SessionQueryError } from "@deepseek-ai/dsh-session-query";
 import { SessionTitleInvalidError } from "@deepseek-ai/dsh-session-title";
+import { isSkillName, isUserInvocable } from "@deepseek-ai/dsh-skill";
 import { WorkspaceId, WorkspaceSessionDeletionBlockedError } from "@deepseek-ai/dsh-workspace";
 import { z } from "zod";
 import { Zip, ZipDeflate } from "fflate";
-//#region src/session-export.ts
+//#region lib/types/session-export.js
 /**
 * Host-owned Session log download.
 *
@@ -408,7 +407,7 @@ async function fetchSessionLogExport(ctx, request, compressionLevel) {
 	return new Response(streamSessionLogZip(prepared.ready, prepared.root, prepared.sessionId, prepared.includeDescendants, compressionLevel, request.signal), { headers: prepared.headers });
 }
 //#endregion
-//#region src/index.ts
+//#region lib/types/index.js
 /**
 * Host ownership for generated Session Remote operations and archived
 * Workspace-session retirement.
@@ -978,7 +977,7 @@ var SessionRemoteOperationsService = class extends Service {
 		const projections = this.ctx.get("sessionProjections");
 		if (projections === void 0) return void 0;
 		try {
-			return remoteProjections(source.kind === "attached" ? projections.snapshot(source.session) : projections.restore({}, source.events, 0).snapshot);
+			return remoteProjections(source.kind === "attached" ? projections.snapshot(source.session) : projections.restore({}, source.events, 0, source.header).snapshot);
 		} catch (error) {
 			this.ctx.logger.warn(`session Remote projections unavailable: ${String(error)}`);
 			return;
@@ -1310,6 +1309,7 @@ var SessionRemoteOperationsService = class extends Service {
 				header: source.header,
 				events: source.events
 			};
+			if (request.expectedParentSessionId !== void 0 && bearing.header.parentSession !== request.expectedParentSessionId) return failure("subagent-unauthorized", "subagent parent changed during history read", { sessionId: request.sessionId });
 			const scope = await this.presenterScope(request.sessionId, bearing);
 			signal.throwIfAborted();
 			const events = source.kind === "attached" ? [...source.session.events] : source.events;
@@ -1579,36 +1579,17 @@ var SessionRemoteOperationsService = class extends Service {
 		this.ctx.workspaceRegistry.assertSessionAdmission(sessionId, revision);
 		if (this.ctx.agents.get(sessionId) !== agent || this.ctx.sessions.get(sessionId) !== agent.session) throw new Error(`session "${sessionId}" lifecycle changed before prompt delivery`);
 	}
-	/**
-	* An unknown "/<name>" command whose name matches an installed skill is
-	* the skill invocation form: admit the text unchanged. The agent's
-	* injected skill catalog plus its skill tool resolve the methodology
-	* server-side on demand, so nothing is expanded into the visible message.
-	* Returns undefined when no such skill directory exists.
-	*/
-	admitUnknownCommandAsSkill(commandLine, sessionId) {
+	/** Admit an unmatched slash line only when the live Agent can resolve its exact user-invocable skill. */
+	async admitUnknownCommandAsSkill(commandLine, agent, signal) {
 		const name = commandLine.slice(1).trim().split(/\s/u, 1)[0] ?? "";
-		if (name.length === 0 || !/^[a-z0-9][a-z0-9-]*$/u.test(name)) return void 0;
-		const skillMarkdown = join(name, "SKILL.md");
-		const homes = /* @__PURE__ */ new Set();
-		const envHome = process.env.DSH_HOME;
-		if (envHome !== void 0 && envHome !== "") homes.add(envHome);
-		homes.add(join(homedir(), ".agents"));
-		const sessionCwd = this.ctx.sessions.get(sessionId)?.header.cwd;
-		if (sessionCwd !== void 0 && sessionCwd !== "") {
-			homes.add(sessionCwd);
-			homes.add(this.defaultCwd);
-		}
-		for (const home of homes) for (const leaf of [
-			"skills",
-			join(".agents", "skills"),
-			join(".dsh", "skills")
-		]) try {
-			readFileSync(join(home, leaf, skillMarkdown), "utf8");
-			return commandLine;
-		} catch {
-			continue;
-		}
+		if (!isSkillName(name)) return void 0;
+		const registry = agent.ctx.get("skills") ?? this.ctx.get("skills");
+		if (registry === void 0) return void 0;
+		return (await registry.list({
+			cwd: agent.session.header.cwd,
+			scope: agent,
+			signal
+		})).some((skill) => skill.name === name && isUserInvocable(skill)) ? commandLine : void 0;
 	}
 	/** Admit ordinary queued or steering input to the exact live Agent. */
 	async prompt(request, signal) {
@@ -1626,7 +1607,7 @@ var SessionRemoteOperationsService = class extends Service {
 			try {
 				const execution = await commands.execute(agent, commandLine, [], signal);
 				if (execution === void 0) {
-					const skillPrompt = this.admitUnknownCommandAsSkill(commandLine, request.sessionId);
+					const skillPrompt = await this.admitUnknownCommandAsSkill(commandLine, agent, signal);
 					if (skillPrompt === void 0) return failure("unknown-command", `unknown command: ${commandLine.split(/\s/u, 1)[0] ?? commandLine}`);
 					request = {
 						...request,

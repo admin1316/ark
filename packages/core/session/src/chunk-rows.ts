@@ -70,6 +70,15 @@ export type ChunkRow =
 export type StorageRecord = SessionEvent | ChunkRow
 
 /**
+ * Identify a packed row in an already-typed storage record.
+ * @param record - validated event or packed chunk row.
+ * @returns whether the record uses a packed chunk tag.
+ */
+export function isChunkRow(record: StorageRecord): record is ChunkRow {
+  return record.type === 'text-chunks' || record.type === 'reasoning-chunks' || record.type === 'tool-call-chunks'
+}
+
+/**
  * Minimum members before a run packs. Below it a row's envelope rivals the
  * event lines it replaces. A format constant, not a tunable: both layouts
  * decode identically, so changing it never invalidates stored logs.

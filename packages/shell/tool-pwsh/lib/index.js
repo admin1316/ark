@@ -1,8 +1,8 @@
 import { isAbsolute, resolve } from "node:path";
-import { FIRST_PARTY_SECTION_ORDER } from "@deepseek-ai/dsh-system-prompt";
 import z from "@deepseek-ai/schemastery";
 import { TOOL_ABORTED, defineTool } from "@deepseek-ai/dsh-tools";
 import { HarnessError } from "@deepseek-ai/dsh-llm";
+import { FIRST_PARTY_SECTION_ORDER } from "@deepseek-ai/dsh-system-prompt";
 import { ESCALATION_TARGETS, approveEscalation, escalationHintMarker, sandboxDenialMarker, validateEscalationArgs } from "@deepseek-ai/dsh-sandbox";
 import { parseExitStatus } from "@deepseek-ai/dsh-shell";
 //#region lib/types/background.js

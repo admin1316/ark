@@ -5,9 +5,9 @@
  * stays configuration-free while a route pi-ai has never heard of is fully
  * describable from `settings.yaml`.
  *
- * Every pi-ai `Model` field the harness cannot default is required here rather
- * than at request time: an unserviceable route fails while its configuration is
- * being resolved, which is the earliest point that can name the offending key.
+ * Strict resolution rejects unserviceable models before settings writes.
+ * Deferred resolution retains their diagnostics so stored catalog drift does
+ * not prevent inspection, repair, or requests to independently valid models.
  *
  * @module dsh-llm-pi-ai/catalog
  */
@@ -27,6 +27,7 @@ import type {
   OpenAIResponsesCompat,
   Provider,
   ThinkingLevelMap,
+  ThinkingTokenBudgetField,
 } from '@earendil-works/pi-ai'
 
 /**
@@ -125,6 +126,15 @@ const MAX_TOKENS_FIELD_GATE: Record<PiAiMaxTokensField, true> = {
 /** The output-cap field spellings a profile may name. */
 export const MAX_TOKENS_FIELDS = Object.keys(MAX_TOKENS_FIELD_GATE) as readonly PiAiMaxTokensField[]
 
+const THINKING_BUDGET_FIELD_GATE: Record<ThinkingTokenBudgetField, true> = {
+  thinking_token_budget: true,
+  thinking_budget: true,
+  thinking_budget_tokens: true,
+}
+
+/** Every upstream-supported reasoning-budget field spelling for private endpoints. */
+export const THINKING_BUDGET_FIELDS = Object.keys(THINKING_BUDGET_FIELD_GATE) as readonly ThinkingTokenBudgetField[]
+
 /** The prompt-cache marker conventions pi-ai accepts. */
 export type PiAiCacheControlFormat = NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
 
@@ -143,12 +153,18 @@ export type PiAiChatTemplateVar = Extract<ChatTemplateKwargValue, { $var: string
 const CHAT_TEMPLATE_VAR_GATE: Record<PiAiChatTemplateVar, true> = {
   'thinking.enabled': true,
   'thinking.effort': true,
+  'thinking.budget': true,
 }
 
 /** The request-state placeholders a profile may name. */
 export const CHAT_TEMPLATE_VARS = Object.keys(CHAT_TEMPLATE_VAR_GATE) as readonly PiAiChatTemplateVar[]
 
 let providerIndex: Map<string, Provider> | undefined
+
+const BAILIAN_PRESETS = [
+  ['bailian-cn', '阿里云百炼（按量·北京）', 'https://dashscope.aliyuncs.com/compatible-mode/v1'],
+  ['bailian-intl', '阿里云百炼（按量·新加坡）', 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'],
+] as const
 
 /**
  * Installed catalog providers by id, constructed once. Each entry owns the API
@@ -157,7 +173,30 @@ let providerIndex: Map<string, Provider> | undefined
  * @returns the catalog provider index.
  */
 function catalogProviders(): Map<string, Provider> {
-  providerIndex ??= new Map(builtinProviders().map(provider => [provider.id, provider]))
+  if (providerIndex !== undefined) return providerIndex
+  const providers = new Map(builtinProviders().map(provider => [provider.id, provider]))
+  const qwen = providers.get('qwen-token-plan')
+  if (qwen === undefined) throw new Error('Bailian presets require the installed Qwen protocol owner')
+  // Canonical Qwen model capabilities are shared; billing endpoints and credentials are not.
+  const modelIds = new Set(['qwen3.8-flash', 'qwen3.8-max'])
+  const models = getBuiltinModels('qwen-token-plan').filter(model => modelIds.has(model.id))
+  if (models.length !== modelIds.size) throw new Error('Bailian preset model capabilities are missing')
+  for (const [id, name, baseUrl] of BAILIAN_PRESETS) {
+    const presetModels: Model<Api>[] = models.map(model => ({ ...model, provider: id, baseUrl,
+      compat: { ...model.compat, maxTokensField: 'max_tokens' as const } }))
+    providers.set(id, {
+      id, name, baseUrl,
+      auth: { apiKey: {
+        name,
+        resolve: ({ credential }) => Promise.resolve(credential?.key === undefined
+          ? undefined : { auth: { apiKey: credential.key }, source: name }),
+      } },
+      getModels: () => presetModels,
+      stream: (model, context, options) => qwen.stream(model, context, options),
+      streamSimple: (model, context, options) => qwen.streamSimple(model, context, options),
+    })
+  }
+  providerIndex = providers
   return providerIndex
 }
 
@@ -171,21 +210,24 @@ export function catalogProvider(provider: string): Provider | undefined {
 }
 
 /**
- * Every provider route the installed pi-ai catalog ships.
- * @returns the catalog provider ids.
+ * Installed pi-ai catalog routes plus ordinary Bailian API presets.
+ * @returns the selectable catalog provider ids, excluding dynamic-only registrations.
  */
 export function catalogProviderIds(): readonly string[] {
-  return getBuiltinProviders()
+  return [...getBuiltinProviders(), ...BAILIAN_PRESETS.map(([id]) => id)]
 }
 
 /**
  * The installed catalog models for one route, indexed by model id.
  * @param provider - provider route key.
- * @returns catalog models by id; empty for a route pi-ai does not ship.
+ * @returns catalog models by id; empty for a route without catalog defaults.
  */
 export function catalogModels(provider: string): Map<string, Model<Api>> {
-  if (!catalogProviders().has(provider)) return new Map()
-  const models = getBuiltinModels(provider as BuiltinProvider) as Model<Api>[]
+  const owner = catalogProviders().get(provider)
+  if (owner === undefined) return new Map()
+  const models: readonly Model<Api>[] = BAILIAN_PRESETS.some(([id]) => id === provider)
+    ? owner.getModels()
+    : getBuiltinModels(provider as BuiltinProvider)
   return new Map(models.map(model => [model.id, model]))
 }
 
@@ -229,6 +271,8 @@ const COMPLETIONS_COMPAT_GATE = {
   chatTemplateKwargs: 'offer',
   chatTemplateArgs: 'offer',
   supportsThinkingTokenBudget: 'offer',
+  thinkingTokenBudgetField: 'offer',
+  vllmPriority: 'offer',
   supportsStrictMode: 'offer',
   cacheControlFormat: 'offer',
   supportsLongCacheRetention: 'offer',
@@ -243,6 +287,7 @@ const COMPLETIONS_COMPAT_GATE = {
 
 /** Disposition of every `OpenAIResponsesCompat` field; a drift gate like the one above. */
 const RESPONSES_COMPAT_GATE = {
+  supportsMaxOutputTokens: 'offer',
   supportsDeveloperRole: 'offer',
   supportsStrictMode: 'offer',
   supportsLongCacheRetention: 'offer',
@@ -262,6 +307,8 @@ const ANTHROPIC_COMPAT_GATE = {
   forceAdaptiveThinking: 'offer',
   allowEmptySignature: 'offer',
   supportsStrictTools: 'offer',
+  supportsMidConvoEffort: 'offer',
+  allowedFallbackModels: 'withhold',
   sendSessionAffinityHeaders: 'withhold',
   supportsToolReferences: 'withhold',
 } as const satisfies Record<keyof AnthropicMessagesCompat, CompatDisposition>
@@ -338,6 +385,14 @@ type OfferedCompatField =
  * switch settable on one is settable on all three.
  */
 export interface PiAiCompatProfile {
+  /** Reasoning budget request-field spelling for compatible private endpoints; `openai-completions`. */
+  thinkingTokenBudgetField?: ThinkingTokenBudgetField
+  /** Scheduler priority forwarded to vLLM when its server enables priority scheduling; `openai-completions`. */
+  vllmPriority?: number
+  /** Whether the endpoint accepts `max_output_tokens`; the three Responses protocols. */
+  supportsMaxOutputTokens?: boolean
+  /** Whether the transport accepts per-turn effort changes; requires adaptive thinking on `anthropic-messages`. */
+  supportsMidConvoEffort?: boolean
   /** Whether the endpoint accepts `store`; `openai-completions`. */
   supportsStore?: boolean
   /**
@@ -615,9 +670,12 @@ export interface RouteCatalogRequest {
   defaultInput: Model<Api>['input']
 }
 
+/** An expected configuration failure that stored-catalog reads may retain for repair. */
+export class PiAiCatalogError extends Error {}
+
 /** Report a route the deployment cannot serve, naming the settings key at fault. */
 function invalid(provider: string, detail: string): never {
-  throw new Error(`llm-pi-ai: provider "${provider}" ${detail}`)
+  throw new PiAiCatalogError(`llm-pi-ai: provider "${provider}" ${detail}`)
 }
 
 /**
@@ -766,13 +824,19 @@ function resolveModelCompat(
   // model starts from pi-ai's baseURL-derived detection instead, which is
   // what a protocol change means for every other compat field too.
   const inherited = base?.api === api ? base.compat : undefined
-  return { compat: { ...inherited, ...configured } as ModelCompat }
+  const compat: Record<string, unknown> = { ...inherited, ...configured }
+  if (compat['supportsMidConvoEffort'] === true && compat['forceAdaptiveThinking'] !== true) {
+    invalid(provider, `model "${entry.id}" requires forceAdaptiveThinking for supportsMidConvoEffort`)
+  }
+  return { compat: compat as ModelCompat }
 }
 
 /** One route's materialized catalog, plus the request caps its profile chose. */
 export interface RouteCatalog {
   /** The materialized models in configuration order. */
   models: readonly Model<Api>[]
+  /** Models that cannot be resolved, retained as diagnostics during stored-config reads. */
+  modelErrors: ReadonlyMap<string, string>
   /**
    * Per-request output caps this profile explicitly configured, by model id.
    *
@@ -792,9 +856,13 @@ export interface RouteCatalog {
  * installed catalog unchanged, which is what keeps an existing
  * `providers: { deepseek: { apiKeyEnv: … } }` profile working untouched.
  * @param request - the route-level catalog facts.
+ * @param validation - strict writes reject every error; deferred reads retain model diagnostics.
  * @returns the materialized models and the explicitly configured request caps.
  */
-export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
+export function resolveRouteModels(
+  request: RouteCatalogRequest,
+  validation: 'strict' | 'deferred' = 'strict',
+): RouteCatalog {
   const { provider } = request
   const defaults = catalogModels(provider)
   const providerBaseUrl = catalogProvider(provider)?.baseUrl
@@ -803,8 +871,9 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
   // serve no request anyway, so both mean "serve the installed catalog".
   const configured = request.models ?? []
   const overrides = request.modelOverrides ?? {}
-  // Every miss is refused, never skipped: an override that lands nowhere is a
-  // typo someone would otherwise hunt for in a silently unchanged model.
+  const modelErrors = new Map<string, string>()
+  // Writes reject missing referents. Stored overrides retain a diagnostic
+  // after catalog removal rather than silently disappearing.
   for (const [id, override] of Object.entries(overrides)) {
     if (id.length === 0) invalid(provider, 'has a modelOverrides entry with an empty model id')
     if (defaults.size === 0) {
@@ -816,7 +885,9 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
         + ' catalog, so declare the fields on its entries')
     }
     if (!defaults.has(id)) {
-      invalid(provider, `modelOverrides names "${id}", which the installed catalog does not describe`)
+      const message = `modelOverrides names "${id}", which the installed catalog does not describe`
+      if (validation === 'strict') invalid(provider, message)
+      modelErrors.set(id, `llm-pi-ai: provider "${provider}" ${message}`)
     }
     // The id lives in the dict key; a value carrying its own would quietly
     // rename the model it meant to customize. The static shape already omits
@@ -840,12 +911,10 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
   // wherever it is written, so it cannot look applied on a route whose models
   // never reach the protocol that would have taken it.
   assertOfferedCompatFields(provider, 'route', request.compat)
-  for (const entry of entries) {
-    assertOfferedCompatFields(provider, `model "${entry.id}"`, entry.compat)
-  }
   const seen = new Set<string>()
   const configuredMaxTokens = new Map<string, number>()
-  const models = entries.map((entry) => {
+  const resolveEntry = (entry: PiAiModelProfile): Model<Api> => {
+    assertOfferedCompatFields(provider, `model "${entry.id}"`, entry.compat)
     if (entry.id.length === 0) invalid(provider, 'has a model with an empty id')
     if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
     seen.add(entry.id)
@@ -864,11 +933,11 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
     // is a guess by construction, which is why it is a configurable route field
     // rather than a constant buried here.
     const contextWindow = entry.contextWindow ?? base?.contextWindow ?? request.defaultContextWindow
-    if (!Number.isInteger(contextWindow) || contextWindow <= 0) {
+    if (!Number.isSafeInteger(contextWindow) || contextWindow <= 0) {
       invalid(provider, `model "${entry.id}" contextWindow must be a positive integer`)
     }
     const maxTokens = entry.maxTokens ?? base?.maxTokens ?? request.defaultMaxTokens
-    if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
+    if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0) {
       invalid(provider, `model "${entry.id}" maxTokens must be a positive integer`)
     }
     // Only a value the profile named is a deployment choice; the catalog's is
@@ -893,16 +962,30 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
       ...resolveModelReasoning(provider, entry, base),
       ...resolveModelCompat(provider, entry, request.compat, base, api),
     }
-  })
+  }
+  const models: Model<Api>[] = []
+  for (const entry of entries) {
+    let model: Model<Api>
+    try {
+      model = resolveEntry(entry)
+    } catch (error) {
+      if (validation === 'strict' || !(error instanceof PiAiCatalogError)) throw error
+      modelErrors.set(entry.id, error.message)
+      continue
+    }
+    models.push(model)
+  }
+  // A later duplicate invalidates the id, including an earlier resolved entry.
+  const serviceableModels = models.filter(model => !modelErrors.has(model.id))
   // Per field, not per block: a route may default a switch its completions
   // models take beside one only its anthropic models do, and neither should
   // fail for the other's sake. What is refused is a route default no model on
   // the route could ever read, which is a route that will not behave as written.
   for (const [field] of configuredCompatEntries(request.compat)) {
     const takers = compatProtocols(field)
-    if (models.some(model => takers.includes(model.api))) continue
+    if (serviceableModels.some(model => takers.includes(model.api))) continue
     invalid(provider, `sets compat "${field}", but no model on the route speaks a protocol that takes it;`
       + ` it exists on ${takers.join(', ')}`)
   }
-  return { models, configuredMaxTokens }
+  return { models: serviceableModels, configuredMaxTokens, modelErrors }
 }

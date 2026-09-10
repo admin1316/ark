@@ -44,7 +44,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-skill/types#RemoteSkillCatalog',
         schema: _deepseek_ai_dsh_skill_skill_list_result$schema,
       },
-      sourceLocation: {"file":"packages/skill/skill/src/index.ts","line":489,"column":9},
+      sourceLocation: {"file":"packages/skill/skill/src/index.ts","line":487,"column":9},
     },
   ],
 }

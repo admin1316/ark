@@ -14,7 +14,7 @@ import { TextRetainer, describeOmitted } from "@deepseek-ai/dsh-output-retention
 * The policy only decides WHEN to spill and composes the notice.
 *
 * A second arm applies the SAME cap to the durable log: the
-* `tools/code-dispatch-log` waterfall bounds the `tool/code-dispatch` event's
+* `tools/ptc-dispatch-log` waterfall bounds the `tool/code-dispatch` event's
 * copy of an oversized `run_code` sub-call result (the program's value is
 * untouched; UIs and replay read the full text through the spill artifact).
 *
@@ -151,7 +151,7 @@ function apply(ctx, config) {
 			...decision.additionalContexts ? { additionalContexts: decision.additionalContexts } : {}
 		};
 	}, { prepend: true });
-	ctx.on("tools/code-dispatch-log", async (dispatch, next) => {
+	ctx.on("tools/ptc-dispatch-log", async (dispatch, next) => {
 		const content = await next();
 		const text = flattenPlainText(content);
 		if (text === void 0) return content;

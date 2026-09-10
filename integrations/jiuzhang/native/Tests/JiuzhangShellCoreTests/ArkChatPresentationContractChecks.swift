@@ -376,6 +376,79 @@ func runArkChatPresentationContractChecks() {
       && projectedMetrics.count == 2,
     "native chat projects every turn metric in one history pass"
   )
+  var measuredStreams = ArkChatTurnProjection()
+  func metric(_ time: Int, _ type: String, _ extra: [String: JSONValue] = [:]) -> ArkHistoryEvent {
+    chatEvent(time, type, .object(extra.merging(["turn": .number(1)]) { first, _ in first }))
+  }
+  measuredStreams.append(contentsOf: [
+    metric(1, "turn/start"), metric(2, "step/start"),
+    metric(3, "assistant/chunk"), metric(5, "assistant/chunk"),
+    metric(6, "assistant/message", ["usage": .object(["outputTokens": .number(20)])]),
+    metric(100, "step/start"), metric(102, "assistant/chunk"), metric(104, "assistant/chunk"),
+    metric(105, "assistant/message", ["usage": .object(["outputTokens": .number(20)])]),
+    metric(106, "turn/end"),
+  ])
+  check(measuredStreams.metricsByTurn[1]?.tokensPerSecond == 10
+    && measuredStreams.metricsByTurn[1]?.runSeconds == 105,
+    "throughput sums completed stream durations without counting tool gaps")
+  measuredStreams.append(contentsOf: [
+    metric(110, "step/start"),
+    metric(111, "assistant/message", ["usage": .object(["outputTokens": .number(20)])]),
+  ])
+  check(measuredStreams.metricsByTurn[1]?.tokensPerSecond == nil,
+    "missing stream timing cannot borrow a previous call's duration")
+  let retriedMetrics = ArkChatTurnMetrics.project(events: [
+    metric(1, "turn/start"), metric(2, "step/start"), metric(3, "assistant/chunk"),
+    metric(4, "assistant/chunk", ["chunk": .object([
+      "type": .string("finish"), "reason": .object(["kind": .string("error")]),
+    ])]),
+    metric(102, "assistant/chunk"), metric(104, "assistant/chunk"),
+    metric(105, "assistant/message", ["usage": .object(["outputTokens": .number(20)])]),
+  ], turn: 1)
+  check(retriedMetrics.tokensPerSecond == 10,
+    "throughput excludes a failed stream and its retry backoff")
+
+  func receipt(_ response: JSONValue?) -> ArkHistoryEvent {
+    var source: [String: JSONValue] = [
+      "kind": .string("model"), "provider": .string("proxy"), "model": .string("configured-alias"),
+    ]
+    if let response { source["replayState"] = .object(["response": response]) }
+    return chatEvent(7, "assistant/message", .object([
+      "turn": .number(1), "message": .object(["source": .object(source)]),
+    ]))
+  }
+  let recordedResponse: JSONValue = .object([
+    "kind": .string("pi-ai"), "version": .number(2), "model": .string("adapter-alias"),
+    "responseModel": .string("server-version"), "responseId": .string("response-123"),
+    "authorization": .string("must-not-display"), "thinkingSignature": .string("private-signature"),
+  ])
+  let recordedStatus = ArkChatStatusProjection(events: [receipt(recordedResponse)]).statuses.first
+  check(recordedStatus?.body?.contains("请求型号：configured-alias") == true
+    && recordedStatus?.body?.contains("服务端报告：server-version") == true
+    && recordedStatus?.body?.contains("response-123") == true
+    && recordedStatus?.body?.contains("must-not-display") == false
+    && recordedStatus?.body?.contains("private-signature") == false,
+    "invocation receipts distinguish route aliases from server reports and allowlist metadata")
+  for response in [nil, .object([
+    "kind": .string("pi-ai"), "version": .number(3), "responseModel": .string("unrecognized"),
+  ]), .object([
+    "kind": .string("pi-ai"), "version": .number(2), "model": .string("not-server-evidence"),
+  ])] as [JSONValue?] {
+    let body = ArkChatStatusProjection(events: [receipt(response)]).statuses.first?.body
+    check(body?.contains("服务端报告：未提供可用的服务端型号记录") == true,
+      "missing or unknown replay metadata never fabricates a server-reported model")
+  }
+  let configStatus = ArkChatStatusProjection(events: [chatEvent(2, "request/header", .object([
+    "header": .object([
+      "config": .object([
+        "provider": .string("proxy"), "model": .string("alias"), "reasoningEffort": .string("max"),
+      ]),
+      "system": .string("private-system-prompt"),
+    ]),
+  ]))]).statuses.first
+  check(configStatus?.detail == "proxy · alias · max"
+    && configStatus?.body?.contains("private-system-prompt") == false,
+    "invocation configuration exposes recorded reasoning without dumping the request header")
   check(
     !ArkSessionOutcomeResolver.latestIsFailure([
       (sequence: 10, failed: true),

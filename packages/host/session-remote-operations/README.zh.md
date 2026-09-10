@@ -14,7 +14,11 @@
 
 ## 提示调用身份
 
+子会话历史调用方可以提供 `expectedParentSessionId`。历史所有者在渲染事件前将其与实际来源 header 比较，因此先前的目录查找不能授权读取父身份不同的替换 Session 分页。不匹配时返回 `subagent-unauthorized`，不返回分页数据。
+
 每个 `SessionRemotePromptRequest` 都携带必填的、不透明的 `invocationId`。本服务校验该身份，并把它与可选的规范化客户端时区一起持久化到准确的用户消息来源中。这样可以保留乐观消息对账能力，同时不会把传输层 RPC 身份泄漏进 Session 领域。
+
+以斜杠开头的行首先由命令注册表解析。没有命令认领时，本服务查询当前 Agent 的 skill 注册表，仅允许名称精确匹配且用户可调用的 skill，并保持用户文本不变，交由 `dsh-tool-skill` 在 `agent/pre-step` 注入；其他未匹配的斜杠行均返回 `unknown-command`。
 
 ## 模型体验
 

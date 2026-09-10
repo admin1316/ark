@@ -29,7 +29,7 @@ const _deepseek_ai_dsh_settings_settings_mutate_parameter_0$schema = z.string()
 const _deepseek_ai_dsh_settings_settings_mutate_parameter_1$schema = z.array(z.union([z.object({
   'op': z.literal("set").readonly(),
   'path': z.array(z.string()).readonly(),
-  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6))]).readonly(),
+  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7))]).readonly(),
 }), z.object({
   'op': z.literal("unset").readonly(),
   'path': z.array(z.string()).readonly(),
@@ -37,10 +37,10 @@ const _deepseek_ai_dsh_settings_settings_mutate_parameter_1$schema = z.array(z.u
 const _deepseek_ai_dsh_settings_settings_mutate_parameter_2$schema = z.union([z.undefined(), z.number()])
 const _deepseek_ai_dsh_settings_settings_mutate_result$schema = z.object({
   'ns': z.string().readonly(),
-  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7))]).readonly(),
-  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7))]).readonly(),
-  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7))]).readonly().optional(),
-  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7))]).readonly().optional(),
+  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6))]).readonly(),
+  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6))]).readonly(),
+  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6))]).readonly().optional(),
+  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6))]).readonly().optional(),
   'applies': z.union([z.literal("live"), z.literal("restart")]).readonly(),
   'secrets': z.array(z.object({
   'path': z.array(z.string()).readonly(),
@@ -52,14 +52,14 @@ const _deepseek_ai_dsh_settings_settings_openDocument_result$schema = z.object({
   'opened': z.literal(true).readonly(),
 })
 const _deepseek_ai_dsh_settings_settings_replace_parameter_0$schema = z.string()
-const _deepseek_ai_dsh_settings_settings_replace_parameter_1$schema = z.record(z.string(), z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4))]))
+const _deepseek_ai_dsh_settings_settings_replace_parameter_1$schema = z.record(z.string(), z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5))]))
 const _deepseek_ai_dsh_settings_settings_replace_parameter_2$schema = z.union([z.undefined(), z.number()])
 const _deepseek_ai_dsh_settings_settings_replace_result$schema = z.object({
   'ns': z.string().readonly(),
-  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5))]).readonly(),
-  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5))]).readonly(),
-  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5))]).readonly().optional(),
-  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5))]).readonly().optional(),
+  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4))]).readonly(),
+  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4))]).readonly(),
+  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4))]).readonly().optional(),
+  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4))]).readonly().optional(),
   'applies': z.union([z.literal("live"), z.literal("restart")]).readonly(),
   'secrets': z.array(z.object({
   'path': z.array(z.string()).readonly(),
@@ -104,7 +104,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsDescription',
         schema: _deepseek_ai_dsh_settings_settings_describe_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":665,"column":3},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":632,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/mutate',
@@ -151,7 +151,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsNamespaceView',
         schema: _deepseek_ai_dsh_settings_settings_mutate_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":751,"column":9},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":711,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/openDocument',
@@ -168,7 +168,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsDocumentOpenResult',
         schema: _deepseek_ai_dsh_settings_settings_openDocument_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":682,"column":9},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":646,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/replace',
@@ -215,7 +215,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsNamespaceView',
         schema: _deepseek_ai_dsh_settings_settings_replace_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":735,"column":9},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":699,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/update',
@@ -262,7 +262,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsNamespaceView',
         schema: _deepseek_ai_dsh_settings_settings_update_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":719,"column":9},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":687,"column":3},
     },
   ],
   model: {
@@ -321,36 +321,50 @@ export const TYPERT = {
             "kind": "method",
             "name": "remoteDescribe",
             "signature": "@Remote('describe') remoteDescribe(): RemoteSettingsDescription",
-            "summary": "Read every registered settings namespace through the Native Remote plane.",
-            "jsDoc": "/**\n * Read every registered settings namespace through the Native Remote plane.\n * The projection is always redacted, so write-only fields can never leave\n * this service through a configuration read.\n * @returns the redacted settings namespace catalog.\n */"
+            "summary": "Read redacted settings and deployment facts without revealing a local path.",
+            "jsDoc": "/**\n * Read redacted settings and deployment facts without revealing a local path.\n * @returns every registered namespace in registration order.\n */"
           },
           {
             "kind": "method",
             "name": "remoteOpenDocument",
             "signature": "@Remote('openDocument') async remoteOpenDocument(signal: AbortSignal): Promise<RemoteSettingsDocumentOpenResult>",
-            "summary": "Materialize and open this provider's own local configuration document.",
-            "jsDoc": "/**\n * Materialize and open this provider's own local configuration document.\n * The generated strict Remote descriptor carries only transport cancellation;\n * no caller-provided filesystem path can cross this boundary. The Gateway\n * binds every strict Remote route to its loopback-only carrier.\n * @param signal - caller-owned cancellation propagated into the native command.\n * @returns confirmation that the Host opened the owned document.\n */"
+            "summary": "Prepare and open only the document owned by this provider.",
+            "jsDoc": "/**\n * Prepare and open only the document owned by this provider.\n * @param signal - transport cancellation, including the native command.\n * @returns confirmation of the editor handoff; cancellation rejects.\n */"
           },
           {
             "kind": "method",
             "name": "remoteUpdate",
-            "signature": "@Remote('update') async remoteUpdate( ns: string, patch: RemoteSettingsJsonObject, expectedRevision?: number, ): Promise<RemoteSettingsNamespaceView>",
-            "summary": "Merge one namespace's redacted-safe patch through the Remote plane.",
-            "jsDoc": "/**\n * Merge one namespace's redacted-safe patch through the Remote plane.\n * @param ns - settings namespace to update.\n * @param patch - redacted-safe fields to merge.\n * @param expectedRevision - optional revision for optimistic concurrency.\n * @returns the updated redacted namespace view.\n */"
+            "signature": "@Remote('update') remoteUpdate(ns: string, patch: RemoteSettingsJsonObject, expectedRevision?: number): Promise<RemoteSettingsNamespaceView>",
+            "summary": "Merge fields without reconstructing a redacted section.",
+            "jsDoc": "/**\n * Merge fields without reconstructing a redacted section.\n * @param ns - namespace to update.\n * @param patch - JSON fields to merge.\n * @param expectedRevision - revision read by the caller.\n * @returns the updated redacted namespace.\n */"
           },
           {
             "kind": "method",
             "name": "remoteReplace",
-            "signature": "@Remote('replace') async remoteReplace( ns: string, section: RemoteSettingsJsonObject, expectedRevision?: number, ): Promise<RemoteSettingsNamespaceView>",
-            "summary": "Replace one namespace's full user layer through the Remote plane.",
-            "jsDoc": "/**\n * Replace one namespace's full user layer through the Remote plane.\n * @param ns - settings namespace to replace.\n * @param section - replacement user-layer fields.\n * @param expectedRevision - optional revision for optimistic concurrency.\n * @returns the updated redacted namespace view.\n */"
+            "signature": "@Remote('replace') remoteReplace(ns: string, section: RemoteSettingsJsonObject, expectedRevision?: number): Promise<RemoteSettingsNamespaceView>",
+            "summary": "Replace the whole user layer, removing omitted overrides.",
+            "jsDoc": "/**\n * Replace the whole user layer, removing omitted overrides.\n * @param ns - namespace to replace.\n * @param section - complete new user layer, not a redacted readback.\n * @param expectedRevision - revision read by the caller.\n * @returns the updated redacted namespace.\n */"
           },
           {
             "kind": "method",
             "name": "remoteMutate",
-            "signature": "@Remote('mutate') async remoteMutate( ns: string, ops: readonly RemoteSettingsPathOp[], expectedRevision?: number, ): Promise<RemoteSettingsNamespaceView>",
-            "summary": "Apply path-addressed edits without reconstructing hidden secret fields.",
-            "jsDoc": "/**\n * Apply path-addressed edits without reconstructing hidden secret fields.\n * @param ns - settings namespace to mutate.\n * @param ops - path-addressed mutation operations.\n * @param expectedRevision - optional revision for optimistic concurrency.\n * @returns the updated redacted namespace view.\n */"
+            "signature": "@Remote('mutate') remoteMutate(ns: string, ops: readonly RemoteSettingsPathOp[], expectedRevision?: number): Promise<RemoteSettingsNamespaceView>",
+            "summary": "Apply ordered edits while preserving untouched hidden fields.",
+            "jsDoc": "/**\n * Apply ordered edits while preserving untouched hidden fields.\n * @param ns - namespace to mutate.\n * @param ops - path-addressed JSON edits.\n * @param expectedRevision - revision read by the caller.\n * @returns the updated redacted namespace.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "setRemoteProtectedNamespaces",
+            "signature": "setRemoteProtectedNamespaces(namespaces: readonly SettingsNamespace[]): void",
+            "summary": "Reserve generic Remote writes for namespaces with a domain transaction owner.",
+            "jsDoc": "/**\n * Reserve generic Remote writes for namespaces with a domain transaction owner.\n * @param namespaces - this calling fiber's complete protected set; other owners retain their reservations.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "settle",
+            "signature": "async settle(ns: SettingsNamespace, revision: number): Promise<boolean>",
+            "summary": "Wait for the owner's callbacks for an exact persisted revision.",
+            "jsDoc": "/**\n * Wait for the owner's callbacks for an exact persisted revision.\n * @param ns - registered namespace.\n * @param revision - exact revision to observe; superseded revisions reject.\n * @returns whether every owner callback accepted the revision, not merely whether it persisted.\n */"
           },
           {
             "kind": "method",
@@ -358,20 +372,6 @@ export const TYPERT = {
             "signature": "get(ns: SettingsNamespace): unknown",
             "summary": "Read one registered namespace's resolved value.",
             "jsDoc": "/**\n * Read one registered namespace's resolved value.\n * @param ns - the namespace to read.\n * @returns the resolved value, or `undefined` while unregistered.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "setRemoteProtectedNamespaces",
-            "signature": "setRemoteProtectedNamespaces(namespaces: readonly SettingsNamespace[]): void",
-            "summary": "Replace the set of namespaces whose wire writes belong to another domain transaction.",
-            "jsDoc": "/**\n * Replace the set of namespaces whose wire writes belong to another domain\n * transaction. Same-process owners still use update/replace/mutate directly;\n * only the generic Settings Remote is denied.\n * @param namespaces - complete current protected set.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "settle",
-            "signature": "async settle(ns: SettingsNamespace, revision: number): Promise<boolean>",
-            "summary": "Wait until the owner callbacks produced by one exact persisted revision settle.",
-            "jsDoc": "/**\n * Wait until the owner callbacks produced by one exact persisted revision\n * settle. The pending settlement is bound at the revision bump itself, so\n * callers racing a commit — even re-entry from user code read during the\n * commit's own equality walk — observe the real outcome. Configuration\n * transactions use this after a write so persistence cannot be reported as\n * live activation while an adapter rejected the new route. Ordinary settings\n * writes keep their existing failure-isolated behavior.\n * @param ns - namespace whose exact revision must settle.\n * @param revision - exact revision from a descriptor or document notification.\n * @returns true only when every owner callback for that revision succeeded.\n */"
           },
           {
             "kind": "method",
@@ -398,8 +398,8 @@ export const TYPERT = {
             "kind": "method",
             "name": "previewMutation",
             "signature": "previewMutation(ns: SettingsNamespace, ops: readonly SettingsPathOp[]): { secrets: RedactedSecret[] }",
-            "summary": "Validate one path mutation against the current section without persisting it, and enumerate every schema-declared secret path in the resolved candidate.",
-            "jsDoc": "/**\n * Validate one path mutation against the current section without persisting\n * it, and enumerate every schema-declared secret path in the resolved\n * candidate. Transaction owners use this before journaling so write-only\n * values can never be copied into an ordinary receipt.\n * @param ns - registered namespace to inspect.\n * @param ops - proposed path operations.\n * @returns secret positions in the validated candidate.\n */"
+            "summary": "Validate a mutation and locate its secrets before a domain owner journals it.",
+            "jsDoc": "/**\n * Validate a mutation and locate its secrets before a domain owner journals it.\n * @param ns - registered namespace.\n * @param ops - proposed ordered edits; nothing is persisted.\n * @returns secret positions in the resolved candidate.\n */"
           }
         ],
         "types": [
@@ -425,7 +425,7 @@ export const TYPERT = {
           },
           {
             "name": "RemoteSettingsJsonObject",
-            "declaration": "export type RemoteSettingsJsonObject = { [key: string]: RemoteSettingsJsonValue; };"
+            "declaration": "export interface RemoteSettingsJsonObject {\n    [key: string]: RemoteSettingsJsonValue;\n}"
           },
           {
             "name": "RemoteSettingsJsonValue",
@@ -476,7 +476,7 @@ export const TYPERT = {
     ],
     "events": [
       {
-        "description": "One registered namespace's RAW user section changed, whether or not the resolved value did. `settings/updated` is the consumer-facing event and stays deep-equal-gated; this one exists for configuration surfaces, which must learn that a field went from inherited to overridden (same resolved value, different meaning) and that their held revision is stale. Exact-revision settlement is bound before notification, which does not itself imply activation. Reentrant publication stops delivery of the superseded revision. Listener containment matches `settings/updated`.",
+        "description": "One registered namespace's RAW user section changed, whether or not the resolved value did. `settings/updated` is the consumer-facing event and stays deep-equal-gated; this one exists for configuration surfaces, which must learn that a field went from inherited to overridden (same resolved value, different meaning) and that their held revision is stale. Exact-revision settlement is bound before notification; persistence does not imply activation. Reentrant publication stops superseded revision delivery. Listener containment matches `settings/updated`.",
         "summary": "One registered namespace's RAW user section changed, whether or not the resolved value did.",
         "tags": [
           {
@@ -497,13 +497,13 @@ export const TYPERT = {
             "text": "@mode emit"
           }
         ],
-        "jsDoc": "/**\n * One registered namespace's RAW user section changed, whether or not the\n * resolved value did. `settings/updated` is the consumer-facing event and\n * stays deep-equal-gated; this one exists for configuration surfaces,\n * which must learn that a field went from inherited to overridden (same\n * resolved value, different meaning) and that their held revision is\n * stale. Exact-revision settlement is bound before notification, which\n * does not itself imply activation. Reentrant publication stops delivery\n * of the superseded revision. Listener containment matches `settings/updated`.\n * @param ns - the namespace whose stored section changed.\n * @param revision - the namespace's new revision.\n * @mode emit\n */",
+        "jsDoc": "/**\n * One registered namespace's RAW user section changed, whether or not the\n * resolved value did. `settings/updated` is the consumer-facing event and\n * stays deep-equal-gated; this one exists for configuration surfaces,\n * which must learn that a field went from inherited to overridden (same\n * resolved value, different meaning) and that their held revision is\n * stale. Exact-revision settlement is bound before notification; persistence\n * does not imply activation. Reentrant publication stops superseded revision\n * delivery. Listener containment matches `settings/updated`.\n * @param ns - the namespace whose stored section changed.\n * @param revision - the namespace's new revision.\n * @mode emit\n */",
         "name": "settings/document-updated",
         "mode": "emit",
         "signature": "'settings/document-updated'(ns: SettingsNamespace, revision: number): void"
       },
       {
-        "description": "Committed change to one registered namespace's resolved value. Emitted after the provider persisted (for `update`) or published (`provider`) the change; never emitted when the resolved value is deep-equal. Listener failures are contained and logged — a sync throw and an async rejection alike — except `INVARIANT`-coded failures, which rethrow after fan-out; a reentrant commit stops delivery of the superseded value to later listeners. That rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.",
+        "description": "Committed change to one registered namespace's resolved value. Emitted after the provider persisted (for `update`) or published (`provider`) the change; never emitted when the resolved value is deep-equal. Listener failures are contained and logged — a sync throw and an async rejection alike — except `INVARIANT`-coded failures, which rethrow after fan-out; reentrant publication stops delivery of superseded values. That rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.",
         "summary": "Committed change to one registered namespace's resolved value.",
         "tags": [
           {
@@ -536,7 +536,7 @@ export const TYPERT = {
             "text": "@mode emit"
           }
         ],
-        "jsDoc": "/**\n * Committed change to one registered namespace's resolved value. Emitted\n * after the provider persisted (for `update`) or published (`provider`)\n * the change; never emitted when the resolved value is deep-equal.\n * Listener failures are contained and logged — a sync throw and an async\n * rejection alike — except `INVARIANT`-coded failures, which rethrow\n * after fan-out; a reentrant commit stops delivery of the superseded value\n * to later listeners. That rethrow reaches the emitter only from\n * synchronous listeners, so invariant checks on this event must not be\n * async functions.\n * @param ns - the namespace whose resolved value changed.\n * @param next - the new resolved value.\n * @param prev - the previous resolved value.\n * @param source - whether the change entered through `update()` or the provider.\n * @mode emit\n */",
+        "jsDoc": "/**\n * Committed change to one registered namespace's resolved value. Emitted\n * after the provider persisted (for `update`) or published (`provider`)\n * the change; never emitted when the resolved value is deep-equal.\n * Listener failures are contained and logged — a sync throw and an async\n * rejection alike — except `INVARIANT`-coded failures, which rethrow\n * after fan-out; reentrant publication stops delivery of superseded values.\n * That rethrow reaches the emitter only from\n * synchronous listeners, so invariant checks on this event must not be\n * async functions.\n * @param ns - the namespace whose resolved value changed.\n * @param next - the new resolved value.\n * @param prev - the previous resolved value.\n * @param source - whether the change entered through `update()` or the provider.\n * @mode emit\n */",
         "name": "settings/updated",
         "mode": "emit",
         "signature": "'settings/updated'(ns: SettingsNamespace, next: unknown, prev: unknown, source: SettingsUpdateSource): void"

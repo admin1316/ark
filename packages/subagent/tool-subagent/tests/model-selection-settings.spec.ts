@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
@@ -171,7 +171,7 @@ describe('SubagentModelSelectionConfig', () => {
 
     const result = await ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: ToolCallId('disallowed-session-route'),
+      callId: CallId('disallowed-session-route'),
       name: 'subagent',
       arguments: {
         description: 'forced route',

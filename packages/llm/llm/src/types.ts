@@ -6,8 +6,55 @@
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { ToolCallId, ProviderRequestId, ReasoningEffortId } from './brand.ts'
+import type { CallId, ProviderRequestId, ReasoningEffortId } from './brand.ts'
 import type { Message } from './message.ts'
+import type { RemoteCredentialView } from '@deepseek-ai/dsh-credentials/types'
+import type { RemoteSettingsNamespaceView, RemoteSettingsPathOp } from '@deepseek-ai/dsh-settings/types'
+
+/** Write-only credential change committed with one provider's profile edits. */
+export type RemoteLlmCredentialMutation =
+  | { readonly op: 'set'; readonly ref: string; readonly value: string }
+  | { readonly op: 'unset'; readonly ref: string }
+
+/** Retry-addressed Native provider configuration transaction. */
+export interface RemoteLlmProviderMutationRequest {
+  readonly transactionId: string
+  readonly provider: string
+  readonly settingsNs: string
+  readonly ops: readonly RemoteSettingsPathOp[]
+  readonly expectedRevision: number
+  readonly credential?: RemoteLlmCredentialMutation
+}
+
+/** Current redacted state after the owner accepts the committed configuration, including route removal. */
+export interface RemoteLlmProviderMutationResult {
+  readonly settings: RemoteSettingsNamespaceView
+  readonly credential?: RemoteCredentialView
+  readonly live?: { readonly accepted: true }
+}
+
+/** Secret-free lookup of one durable provider configuration transaction. */
+export interface RemoteLlmProviderTransactionRequest {
+  readonly provider: string
+  readonly transactionId: string
+}
+
+/** Persisted phases and terminal outcomes; querying does not advance them. */
+export interface RemoteLlmProviderTransactionResult {
+  readonly state: 'absent' | 'prepared' | 'credential-staged' | 'settings-applied' | 'credential-applied'
+    | 'committed' | 'rolled-back' | 'committed-not-live'
+  readonly needsCredential: boolean
+  readonly settingsNs?: string
+  readonly live?: boolean
+}
+
+/** Continue the stored plan without reconstructing its operations in the client. */
+export interface RemoteLlmProviderResumeRequest {
+  readonly provider: string
+  readonly transactionId: string
+  /** Write-only value needed only when its recorded credential has not been staged. */
+  readonly credentialValue?: string
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -78,7 +125,7 @@ export interface ImageBlock {
 export interface ToolCallBlock {
   type: 'tool-call'
   /** Provider-issued call id; correlates with the matching tool result. */
-  id: ToolCallId
+  id: CallId
   name: string
   /** Raw JSON string as produced by the model. */
   arguments: string
@@ -87,7 +134,7 @@ export interface ToolCallBlock {
 /** The result of a tool invocation, sent back to the model. */
 export interface ToolResultBlock {
   type: 'tool-result'
-  toolCallId: ToolCallId
+  toolCallId: CallId
   content: ContentBlock[]
   isError?: boolean
 }
@@ -222,6 +269,19 @@ export interface LlmConfigurableProvider {
    * from outside.
    */
   declared?: boolean
+  /** Configuration diagnostic retained for repair; unaffected models may remain serviceable. */
+  error?: string
+  /** Stored credential fields that require explicit migration before this route can activate. */
+  migrationRequired?: LlmProviderMigration
+}
+
+/** Value-free configuration repair requirements; paths are relative to the provider profile. */
+export interface LlmProviderMigration {
+  readonly code: 'credential-headers' | 'credential-fields'
+  readonly fields: readonly string[]
+  readonly paths?: readonly (readonly string[])[]
+  /** Deployment-owned paths cannot be removed through the user settings layer. */
+  readonly inheritedPaths?: readonly (readonly string[])[]
 }
 
 /**
@@ -233,14 +293,13 @@ export interface LlmConfigurableProvider {
 export interface LlmModelDiscoveryRequest {
   /**
    * Route the draft is editing, when it edits an existing one. A route whose
-   * adapter already knows its models answers from that knowledge instead of
-   * asking the endpoint — the adapter's own registry is the better answer, and
-   * it costs no network call.
+   * adapter already knows its models answers locally only when no endpoint
+   * override is supplied; an explicit baseURL is interrogated.
    */
   provider?: string
   /**
    * Endpoint to interrogate. Optional because a route the adapter already
-   * describes needs none; a route it does not must supply one.
+   * describes needs none; when present it overrides that local catalog answer.
    */
   baseURL?: string
   /** Wire protocol the endpoint speaks, when the draft names one. */
@@ -249,8 +308,81 @@ export interface LlmModelDiscoveryRequest {
   apiKey?: string
 }
 
+/** Native draft discovery request; the one-shot key is never persisted or returned. */
+export interface RemoteLlmDiscoverModelsRequest extends LlmModelDiscoveryRequest {
+  readonly settingsNs: string
+}
+
+/** Native discovery response envelope. */
+export interface RemoteLlmDiscoveredModelsResult {
+  readonly models: readonly LlmDiscoveredModel[]
+}
+
+/** Evidence obtained by an exact provider/model probe; catalog reachability does not prove authentication. */
+export type LlmProviderVerificationMode = 'metadata-auth' | 'endpoint-catalog' | 'minimal-generation'
+
+/** Exact configured route requested by a configuration-time verification. */
+export interface RemoteLlmProviderVerificationRequest {
+  readonly provider: string
+  readonly model: string
+}
+
+/** Endpoint reachability alone is not authentication proof. */
+export type RemoteLlmProviderVerificationResult =
+  | { readonly provider: string; readonly model: string; readonly verified: true; readonly mode: Exclude<LlmProviderVerificationMode, 'endpoint-catalog'> }
+  | { readonly provider: string; readonly model: string; readonly verified: false; readonly mode: 'endpoint-catalog'; readonly classification: 'reachability-only' }
+
+/** Configuration directory row joined with current adapter availability. */
+export interface RemoteLlmProviderView {
+  /** Configuration diagnostic supplied by the provider owner. */
+  error?: string
+  readonly provider: string
+  readonly displayName: string
+  readonly settingsNs: string
+  readonly settingsPath: readonly string[]
+  readonly active: boolean
+  readonly declared?: boolean
+  readonly migrationRequired?: LlmProviderMigration
+}
+
+/** Native provider directory, including dormant configurable routes. */
+export interface RemoteLlmProvidersResult {
+  readonly providers: readonly RemoteLlmProviderView[]
+}
+
+/** Reasoning controls for the exact model generation used by a catalog read. */
+export interface RemoteLlmReasoning {
+  readonly efforts: readonly {
+    readonly id: string
+    readonly name: string
+    readonly description?: string
+  }[]
+  readonly defaultEffort?: string
+}
+
+/** Native model row without provider-internal data. */
+export interface RemoteLlmModelView {
+  readonly id: string
+  readonly name: string
+  readonly description?: string
+  readonly defaultMaxTokens?: number
+  readonly reasoning?: RemoteLlmReasoning
+}
+
+/** Host-scoped model groups; an unavailable provider does not hide other groups. */
+export interface RemoteLlmModelsResult {
+  readonly groups: readonly {
+    readonly id: string
+    readonly name: string
+    readonly models: readonly RemoteLlmModelView[]
+  }[]
+  readonly failures: readonly { readonly id: string; readonly name: string; readonly message: string }[]
+}
+
 /** Provider-side discovery request with operation-local cancellation attached. */
 export interface LlmModelDiscoveryOperation extends LlmModelDiscoveryRequest {
+  /** Host-owned binding between a one-shot credential and its exact endpoint/protocol. */
+  credentialEndpointFingerprint?: string
   /** Caller cancellation; implementations must settle promptly after it aborts. */
   signal?: AbortSignal
 }
@@ -365,7 +497,7 @@ export type StreamChunk =
   | { type: 'block-start'; index: number; blockType: ContentBlockType }
   | { type: 'text-delta'; index: number; text: string }
   | { type: 'reasoning-delta'; index: number; text: string }
-  | { type: 'tool-call-delta'; index: number; id: ToolCallId; name?: string; argumentsDelta: string }
+  | { type: 'tool-call-delta'; index: number; id: CallId; name?: string; argumentsDelta: string }
   | { type: 'block-end'; index: number; block: ContentBlock }
   | { type: 'usage'; usage: TokenUsage }
   | {

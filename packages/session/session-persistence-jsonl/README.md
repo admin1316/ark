@@ -68,6 +68,8 @@ Session ids are injectively escaped to one safe path segment before use (no trav
 
 ### Durability and crash semantics
 
+Physical mutations share an ID-scoped cross-process lock under `~locks`. Deletion moves the ordinary session directory, including owned attachments, into a hidden project-local `~delete` tombstone before removing it. Repeating deletion finishes a leftover tombstone; symbolic-link deletion roots are rejected. The shared writer lock never guesses that an existing lock is stale: an orphan lock requires ownership inspection and explicit operator recovery before further mutations.
+
 A session is materialized lazily: `create(meta)` writes nothing, and the first `append` writes and `fsync`s the encoded header and first batch through a no-overwrite publish — so a created-but-never-appended session leaves nothing on disk unless a lifecycle consumer calls `ensureMaterialized`, which publishes one header frame without an event. Flushed events are never rewritten; each subsequent batch appends lines or one compressed frame, and a caught write or sync failure rolls the file back to its prior length. After a crash, `load` preserves an interrupted final turn: it keeps the complete decoded records of an incomplete last frame, truncates from that frame's start, and re-encodes the records with the synthetic tool, step, and turn closers required by the shared persistence contract. Only a never-fully-written torn tail is discarded; checksum, decompression, or structural failure in the committed prefix rejects as corruption.
 
 ### Reading the logs

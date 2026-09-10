@@ -43,7 +43,7 @@ var __esDecorate = (this && this.__esDecorate) || function (ctor, descriptorIn, 
     if (target) Object.defineProperty(target, contextIn.name, descriptor);
     done = true;
 };
-import { isTypertRemoteFailure, Remote, TypertLookupFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
+import { Remote, TypertLookupFailure, TypertRemoteService, isTypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol';
 import { assertNever } from '@deepseek-ai/dsh-llm';
 import { NamedEntries, ScopedLayers, scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope';
 import z from '@deepseek-ai/schemastery';
@@ -283,33 +283,29 @@ let SkillRegistry = (() => {
             return (await this.snapshot(options)).skills;
         }
         /**
-         * List user-invocable skills for one gateway-resolved Agent. The session's
-         * stored cwd and the agent's scope are the only lookup inputs; no raw host
-         * path crosses the Remote wire.
-         * @param agent - gateway-resolved Agent whose skill scope is listed.
-         * @param signal - caller-owned cancellation signal.
-         * @returns the user-invocable skill catalog.
+         * List user-invocable skills for a gateway-resolved Agent.
+         * @param agent - Agent whose persisted cwd and scope determine visibility.
+         * @param signal - Caller-owned cancellation signal.
+         * @returns The user-invocable catalog without skill bodies.
+         * @throws TypertLookupFailure for cancellation, absent cwd, or provider failures.
          */
         async remoteList(agent, signal) {
             if (signal.aborted)
                 remoteSkillFailure('cancelled', 'skill listing was cancelled', {});
             const cwd = agent.session.header.cwd;
-            if (cwd === undefined) {
+            if (cwd === undefined)
                 remoteSkillFailure('session-unavailable', `session "${agent.id}" has no project cwd`, { sessionId: String(agent.id) });
-            }
             const registry = agent.ctx.get('skills') ?? this;
             try {
                 const skills = (await registry.list({ cwd, scope: scopeOf(agent.ctx), signal })).filter(isUserInvocable);
                 if (isAborted(signal))
                     remoteSkillFailure('cancelled', 'skill listing was cancelled', {});
-                return {
-                    skills: skills.map(skill => ({
+                return { skills: skills.map(skill => ({
                         name: skill.name,
                         description: skill.description,
-                        ...skill.whenToUse === undefined ? {} : { whenToUse: skill.whenToUse },
+                        ...(skill.whenToUse === undefined ? {} : { whenToUse: skill.whenToUse }),
                         modelInvocable: skill.invocation.modelInvocable,
-                    })),
-                };
+                    })) };
             }
             catch (error) {
                 if (isTypertRemoteFailure(error))
@@ -710,13 +706,11 @@ function errorMessage(error) {
         return '[unrenderable thrown value]';
     }
 }
-/** Read a mutable AbortSignal after an await without retaining stale flow narrowing. */
+export default SkillRegistry;
 function isAborted(signal) {
     return signal.aborted;
 }
-/** Throw a serializable Remote failure. */
 function remoteSkillFailure(code, message, details) {
     throw new TypertLookupFailure({ code, message, details });
 }
-export default SkillRegistry;
 //# sourceMappingURL=index.js.map

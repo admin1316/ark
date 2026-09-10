@@ -10,7 +10,7 @@ import type {
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import LlmRuntime, { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, CallId } from '@deepseek-ai/dsh-llm'
 import type { Message, ToolSchema } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import type { PiAiReplayResponse } from '../src/replay.ts'
@@ -20,9 +20,10 @@ interface ProviderCase {
   provider: 'openai' | 'anthropic'
   api: 'openai-responses' | 'anthropic-messages'
   model: string
-  apiKey?: string
+  apiKeyEnv?: string
   baseURL?: string
   headers?: Record<string, string>
+  credentialHeaders?: Record<string, string>
 }
 
 const openAIBaseURL = process.env.DSH_PI_AI_OPENAI_BASE_URL
@@ -38,7 +39,7 @@ const providerCases: ProviderCase[] = [
     api: 'openai-responses',
     model: process.env.DSH_PI_AI_OPENAI_MODEL ?? 'gpt-5.5',
     ...azureOpenAIKey
-      ? { apiKey: azureOpenAIKey, headers: { 'api-key': azureOpenAIKey, Authorization: '' } }
+      ? { apiKeyEnv: 'AZURE_OPENAI_API_KEY', credentialHeaders: { 'api-key': 'AZURE_OPENAI_API_KEY' }, headers: { Authorization: '' } }
       : {},
     ...openAIBaseURL ? { baseURL: openAIBaseURL } : {},
   },
@@ -46,7 +47,7 @@ const providerCases: ProviderCase[] = [
     provider: 'anthropic',
     api: 'anthropic-messages',
     model: process.env.DSH_PI_AI_ANTHROPIC_MODEL ?? 'claude-opus-4-8',
-    ...anthropicApiKey === undefined ? {} : { apiKey: anthropicApiKey },
+    ...anthropicApiKey === undefined ? {} : { apiKeyEnv: 'ANTHROPIC_API_KEY' },
     ...anthropicBaseURL === undefined ? {} : { baseURL: anthropicBaseURL },
   },
 ]
@@ -59,7 +60,8 @@ async function harness(image?: StoredImageAttachment): Promise<Context> {
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(LlmPiAi, {
     providers: Object.fromEntries(providerCases.map(profile => [profile.provider, {
-      ...profile.apiKey === undefined ? {} : { apiKey: profile.apiKey },
+      ...profile.apiKeyEnv === undefined ? {} : { apiKeyEnv: profile.apiKeyEnv },
+      ...profile.credentialHeaders === undefined ? {} : { credentialHeaders: profile.credentialHeaders },
       ...profile.baseURL === undefined ? {} : { baseURL: profile.baseURL },
       ...profile.headers === undefined ? {} : { headers: profile.headers },
     }])),
@@ -166,7 +168,7 @@ const lookupTool: ToolSchema = {
 }
 
 for (const profile of providerCases) {
-  describe.skipIf(profile.apiKey === undefined)(
+  describe.skipIf(profile.apiKeyEnv === undefined)(
     `llm-pi-ai ${profile.provider} e2e (${profile.api})`,
     () => {
       it('streams text with usage and native replay metadata', async () => {
@@ -212,7 +214,7 @@ for (const profile of providerCases) {
             createUserMessage({
               content: [{
                 type: 'tool-result',
-                toolCallId: ToolCallId(call!.id),
+                toolCallId: CallId(call!.id),
                 content: [{ type: 'text', text: 'The code blue means ocean.' }],
               }],
               source: { kind: 'plugin', plugin: 'test' },

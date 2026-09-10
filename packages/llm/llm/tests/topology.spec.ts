@@ -265,13 +265,12 @@ describe('model discovery registry', () => {
     const signal = new AbortController().signal
 
     await expect(ctx.llm.remoteDiscoverModels(
-      'llm-example',
-      { baseURL: 'https://gateway.example/v1' },
+      { settingsNs: 'llm-example', baseURL: 'https://gateway.example/v1' },
       signal,
-    )).resolves.toEqual([
+    )).resolves.toEqual({ models: [
       { id: 'keep', name: 'Keep', contextWindow: 1024, maxTokens: 256 },
       { id: 'bare' },
-    ])
+    ] })
     expect(discover).toHaveBeenNthCalledWith(
       1,
       { baseURL: 'https://gateway.example/v1' },
@@ -279,24 +278,22 @@ describe('model discovery registry', () => {
     )
 
     await expect(ctx.llm.remoteDiscoverModels(
-      'llm-example',
-      { baseURL: 'https://gateway.example/v1' },
+      { settingsNs: 'llm-example', baseURL: 'https://gateway.example/v1' },
       signal,
     )).rejects.toMatchObject({
       failure: {
         code: 'model-discovery-failed',
-        message: 'endpoint offline',
+        message: 'provider model discovery failed',
         details: { settingsNs: 'llm-example', baseURL: 'https://gateway.example/v1' },
       },
     })
     await expect(ctx.llm.remoteDiscoverModels(
-      'llm-example',
-      { provider: 'known-route' },
+      { settingsNs: 'llm-example', provider: 'known-route' },
       signal,
     )).rejects.toMatchObject({
       failure: {
         code: 'model-discovery-failed',
-        message: 'provider refused',
+        message: 'provider model discovery failed',
         details: { settingsNs: 'llm-example' },
       },
     })

@@ -59,7 +59,7 @@ function firstHeading(plan) {
  * @param config Raw plugin config.
  * @returns A detached validated config.
  */
-export function resolvePlanModeConfig(config) {
+export function resolveConfig(config) {
     const section = config.section;
     if (typeof section !== 'string') {
         throw new Error('PlanModeConfig needs a string `section`');
@@ -147,7 +147,7 @@ export class PlanModeController extends Service {
     pendingIntents = new WeakMap();
     constructor(ctx, config = { section: '' }) {
         super(ctx, 'planMode');
-        this.section = resolvePlanModeConfig(config).section;
+        this.section = resolveConfig(config).section;
         let disposed = false;
         // Pre-step is outside Session.append publication, so it can append the
         // log-only mode event inside an open turn without re-entering the session.

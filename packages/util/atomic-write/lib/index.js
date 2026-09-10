@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { constants } from "node:fs";
-import { lstat, mkdir, open, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 //#region lib/types/index.js
 /**
@@ -114,47 +113,5 @@ async function withFileLock(filename, operation, options) {
 		await rm(lockPath, { force: true });
 	}
 }
-/**
-* Copy one file to `<filename>.bak` without following symlinks. The backup
-* temp file is created exclusively (`wx`): a symlink or hardlink planted at
-* the `.bak` name can neither redirect the write nor corrupt the inode it
-* shares, and the rename commit replaces the `.bak` name itself. The temp
-* file is fsynced before the rename, so a crash cannot leave a truncated
-* backup under the final name; the stale temp is removed on any failure.
-* @param filename - path whose current contents are copied to `<filename>.bak`.
-* @param options - permission bits stamped on the backup inode.
-*/
-async function backupFile(filename, options) {
-	let source;
-	try {
-		source = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
-	} catch (error) {
-		if (isENOENT(error)) return;
-		throw error;
-	}
-	const backup = `${filename}.bak`;
-	const temp = `${backup}.${randomBytes(6).toString("hex")}.tmp`;
-	try {
-		if (!(await source.stat()).isFile()) throw new Error(`atomic-write: refusing to back up non-regular file at ${filename}`);
-		const destination = await open(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, options.mode);
-		try {
-			await destination.writeFile(await source.readFile());
-			await destination.chmod(options.mode);
-			await destination.sync();
-		} finally {
-			await destination.close();
-		}
-		await rename(temp, backup);
-	} catch (error) {
-		await rm(temp, { force: true });
-		throw error;
-	} finally {
-		await source.close();
-	}
-}
-/** Whether a filesystem operation failed because the path is absent. */
-function isENOENT(error) {
-	return error?.code === "ENOENT";
-}
 //#endregion
-export { backupFile, withFileLock, writeFileAtomic };
+export { withFileLock, writeFileAtomic };

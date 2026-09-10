@@ -61,6 +61,10 @@ function domainTable(schema) {
 function defineDomain(spec) {
 	if (!UNIT_NAME_RE.test(spec.name)) throw new Error(`domain name '${spec.name}' must match ${UNIT_NAME_RE}`);
 	if (!Number.isInteger(spec.version) || spec.version < 0) throw new Error(`domain '${spec.name}' version must be a non-negative integer, got ${spec.version}`);
+	if (spec.layout !== void 0) {
+		const layout = spec.layout;
+		if (layout !== "single" && layout !== "per-record") throw new Error(`domain '${spec.name}' layout must be 'single' or 'per-record', got ${layout}`);
+	}
 	for (const table of Object.keys(spec.tables)) if (!UNIT_NAME_RE.test(table)) throw new Error(`domain '${spec.name}' table name '${table}' must match ${UNIT_NAME_RE}`);
 	if (spec.global !== void 0 && spec.global.schema.safeParse(null).success) throw new Error(`domain '${spec.name}' global schema must not accept null: null is the medium's "never written" sentinel, so a stored null could not round-trip`);
 	return spec;
@@ -75,7 +79,8 @@ function descriptorOf(spec) {
 		name: spec.name,
 		version: spec.version,
 		tables: Object.keys(spec.tables),
-		hasGlobal: spec.global !== void 0
+		hasGlobal: spec.global !== void 0,
+		...spec.layout === void 0 ? {} : { layout: spec.layout }
 	};
 }
 //#endregion

@@ -70,17 +70,4 @@ export interface FileLockOptions {
  * @returns the operation's result; the lock releases on both outcomes.
  */
 export declare function withFileLock<T>(filename: string, operation: () => Promise<T>, options?: FileLockOptions): Promise<T>;
-/**
- * Copy one file to `<filename>.bak` without following symlinks. The backup
- * temp file is created exclusively (`wx`): a symlink or hardlink planted at
- * the `.bak` name can neither redirect the write nor corrupt the inode it
- * shares, and the rename commit replaces the `.bak` name itself. The temp
- * file is fsynced before the rename, so a crash cannot leave a truncated
- * backup under the final name; the stale temp is removed on any failure.
- * @param filename - path whose current contents are copied to `<filename>.bak`.
- * @param options - permission bits stamped on the backup inode.
- */
-export declare function backupFile(filename: string, options: {
-    mode: number;
-}): Promise<void>;
 //# sourceMappingURL=index.d.ts.map

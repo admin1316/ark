@@ -102,3 +102,11 @@ export interface Workspace {
    */
   status(): Promise<'ok' | 'missing-dir'>
 }
+export type {
+  WorkspaceRemoteView, WorkspaceRemoteFailure, WorkspaceRemoteSuccess, WorkspaceRemoteResult,
+  WorkspaceRemoteListValue, WorkspaceRemoteCreateRequest, WorkspaceRemoteCreateValue,
+  WorkspaceRemoteRenameRequest, WorkspaceRemoteWorkspaceValue, WorkspaceRemoteDeleteRequest,
+  WorkspaceRemoteDeletedValue, WorkspaceRemoteInsertBeforeRequest, WorkspaceRemoteOrderValue,
+  WorkspaceRemoteInsertSessionBeforeRequest, WorkspaceRemoteArchiveRequest, WorkspaceRemoteArchivedValue,
+  WorkspaceRemoteDeleteArchivedRequest, WorkspaceRemoteDeleteArchivedValue,
+} from './remote.ts'

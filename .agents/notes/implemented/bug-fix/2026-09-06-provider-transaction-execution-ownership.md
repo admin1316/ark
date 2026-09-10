@@ -10,13 +10,15 @@ An atomic journal check does not protect later asynchronous credential writes. A
 
 ## Decision
 
-The existing [LLM transaction owner](../../../../packages/llm/llm/src/remote.ts) reserves execution through the whole operation. It acquires the provider journal, then the settings namespace, then all removed or adopted credential references. Keys within the final tier are reserved together. The fixed acquisition order and rejection of nested transaction callbacks avoid lock inversion. Provider calls are FIFO; unrelated resource sets can run independently.
+The existing [LLM transaction owner](../../../../packages/llm/llm/src/provider-transaction.ts) reserves execution through the whole operation. It acquires the provider journal, then the settings namespace, then all removed or adopted credential references. Keys within the final tier are reserved together. The fixed acquisition order and rejection of nested transaction callbacks avoid lock inversion. Provider calls are FIFO; unrelated resource sets can run independently.
 
 Leases bind Cordis's original service identity rather than a caller's traceable proxy. Their settled promise tails and callback-execution scope contain no profile, secret, revision or durable outcome. The existing settings revision and transaction journal remain authoritative. New stale requests fail before credential staging. Exact completed-receipt replay does not reapply profile or credential mutations and rejects a journal that became active; an existing legacy journal upgrade changes metadata only.
 
 Cancellation before claim leaves credentials and profiles unchanged. Starting durable claim is the cancellation boundary: normal commit or failure/recovery settlement retains the lease, including owner callbacks. This prevents cancellation from exposing unfinished side effects to the next executor. Pending non-cancellable I/O is not abandoned to release the lease early.
 
 The [endpoint-generation decision](2026-09-06-provider-endpoint-generation-replay.md) remains active for reference allocation, request binding and durable replay. Execution ownership supplements those checks rather than replacing their provenance or fail-closed behavior.
+
+The [journal recovery decision](2026-09-09-provider-journal-recovery.md) owns before-image verification, legacy normalization and explicit Native status/resume. Its format rules do not weaken these execution leases.
 
 ## Alternatives considered
 

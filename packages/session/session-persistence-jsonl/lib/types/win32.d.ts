@@ -19,17 +19,6 @@
  */
 export declare function publishNewFileWin32(existing: string, replacement: string): Promise<void>;
 /**
- * Move a path without replacement using Windows write-through semantics.
- * @param existing - The existing input.
- * @param replacement - The replacement input.
- */
-export declare function movePathWriteThroughWin32(existing: string, replacement: string): Promise<void>;
-/**
- * Remove a tombstone tree and confirm that its directory entry is gone.
- * @param target - The target input.
- */
-export declare function removeTreeConfirmedWin32(target: string): Promise<void>;
-/**
  * Create `target` and its missing ancestors with durable Windows namespace
  * publication. Each missing directory is first created as a random staging
  * sibling, then moved to its final name with `MOVEFILE_WRITE_THROUGH`; races

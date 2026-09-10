@@ -75,6 +75,8 @@ await ctx.sessionPersistence.append(id, events)
 
 ### 启动与安全运行
 
+永久删除使用经过 schema 验证的 `BEGIN IMMEDIATE` 事务。移除确切会话 key 时级联删除其事件行；提交完成后，协调器才通知关联存储清理。这项操作不需要 schema 迁移。
+
 全新数据库直接初始化为 schema 版本 19，并使用 64 KiB page。已有文件不会被重新调参：任何其他版本、外来应用标识、无版本的非全新 schema 或意外 schema 对象，都会在任何数据暴露或变更之前被拒绝。本预发布提供方不提供迁移。每条语句和固定 pragma 都来自 `resources/sql/` 下打包的 `.sql` 资源，运行时的值以 SQLite 参数绑定，包代码从不拼装查询文本。
 
 每个连接都会禁用 SQLite trusted schema 与内存映射 I/O、验证所请求的 journal mode，并固定 `synchronous=FULL`，保证成功返回的追加在操作系统崩溃或断电后依然持久。在 POSIX 上，数据库父目录和文件必须属于当前用户，父目录不得允许组或其他用户写入，文件也不得授予任何组或其他用户权限；Windows 还会拒绝符号链接和非普通文件，ACL 限制则由部署方负责。路径与所有权失败会拒绝插件初始化；Node 的 SQLite 驱动在首次持久化操作时才延迟加载。普通 `create` 会保持惰性直到首次 append，而 `ensureMaterialized` 会写入一条没有事件行的会话元数据记录。

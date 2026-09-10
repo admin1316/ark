@@ -9,9 +9,9 @@
  *
  * @module @deepseek-ai/dsh-skill
  */
-import { Context } from '@deepseek-ai/cordis';
-import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
+import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
+import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import type { ScopeKey } from '@deepseek-ai/dsh-scope';
 import type Schema from '@deepseek-ai/schemastery';
 import type { RemoteSkillCatalog } from './types.ts';
@@ -271,12 +271,11 @@ export declare class SkillRegistry extends TypertRemoteService {
      */
     list(options?: SkillViewOptions): Promise<SkillSummary[]>;
     /**
-     * List user-invocable skills for one gateway-resolved Agent. The session's
-     * stored cwd and the agent's scope are the only lookup inputs; no raw host
-     * path crosses the Remote wire.
-     * @param agent - gateway-resolved Agent whose skill scope is listed.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the user-invocable skill catalog.
+     * List user-invocable skills for a gateway-resolved Agent.
+     * @param agent - Agent whose persisted cwd and scope determine visibility.
+     * @param signal - Caller-owned cancellation signal.
+     * @returns The user-invocable catalog without skill bodies.
+     * @throws TypertLookupFailure for cancellation, absent cwd, or provider failures.
      */
     remoteList(agent: Agent, signal: AbortSignal): Promise<RemoteSkillCatalog>;
     /**

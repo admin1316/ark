@@ -8,16 +8,15 @@
  * @module dsh-llm-deepseek/adapter
  */
 import { LlmAdapter } from '@deepseek-ai/dsh-llm';
-import type { ImageAttachmentAccessResolver } from '@deepseek-ai/dsh-llm';
-import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, PreparedAdapterCall, LlmResolvedModelInfo, ModelModality, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm';
-import type { AttachmentStore, ImageRequestPolicy } from '@deepseek-ai/dsh-attachment';
+import type { GenerateOptions, ImageAttachmentAccess, LlmModelInfo, LlmProviderInfo, PreparedAdapterCall, LlmResolvedModelInfo, ModelModality, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm';
+import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials';
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id';
+import type { DeepSeekLlmApiExtensionRequest, PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions';
 import type { RequestDefaults } from './serialize.ts';
 import { DeepSeekFileStore } from './file-store.ts';
 import type { DeepSeekFilePolicy } from './file-store.ts';
 import type { WireError } from './types.ts';
-import type { DeepSeekLlmApiExtensionRequest, PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions';
 /** One optional model entry advertised by the direct-fetch adapter. */
 export interface DeepSeekCatalogModel {
     /** Wire model id accepted by the configured endpoint. */
@@ -32,12 +31,10 @@ export interface DeepSeekCatalogModel {
     maxTokens?: number;
     /** Accepted request modalities; omission is text-only. */
     inputModalities?: ModelModality[];
-    /** Total-pixel budget for one deterministic request preview. */
-    imagePixelBudget?: number;
-    /** Encoded-byte cap for one deterministic request preview. */
+    /** Total-pixel budget for one deterministic request preview, or the 512-by-512 `low` preset. */
+    imagePixelBudget?: number | 'low';
+    /** Encoded-byte target for one deterministic request preview; the smallest quality-ladder output is used when no quality fits. */
     imageMaxBytes?: number;
-    /** Provider detail tier; `low` uses the 512-by-512 total-pixel default. */
-    imageDetail?: 'auto' | 'low';
 }
 /**
  * Validated connection facts for one operation. The plugin's
@@ -99,12 +96,12 @@ export interface DeepSeekAdapterOptions {
     resolveUserId: () => AnonymousUserId;
     /** Resolve the current durable attachment service; absence rejects image input. */
     resolveAttachments?: () => AttachmentStore | undefined;
-    /** Resolve a normalized image path in the current model execution world. */
-    resolveImageAccess?: ImageAttachmentAccessResolver;
-    /** Prepare optional provider-specific top-level request fields. */
-    prepareExtensions?: (request: DeepSeekLlmApiExtensionRequest) => Promise<PreparedDeepSeekLlmApiExtensions>;
+    /** Bridge one attachment reference into the current model-tool execution world. */
+    resolveImageAccess?: (attachments: AttachmentStore, ref: ImageAttachmentRef) => ImageAttachmentAccess | undefined;
     /** Resolve the process-wide upload reuse store. */
     resolveFiles?: () => DeepSeekFileStore;
+    /** Prepare the official API's plugin-contributed top-level fields for one exact wire request. */
+    prepareExtensions: (request: DeepSeekLlmApiExtensionRequest) => Promise<PreparedDeepSeekLlmApiExtensions>;
 }
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 export declare const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300000;
@@ -112,18 +109,8 @@ export declare const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300000;
 export declare const DEFAULT_CONTEXT_WINDOW = 1000000;
 /** Default per-request output-token cap. */
 export declare const DEFAULT_MAX_TOKENS = 256000;
-/** Default bound on accumulated file-referenced image bytes per request. */
-export declare const DEFAULT_MAX_REQUEST_FILES_BYTES: number;
 /** Default bound on accumulated base64 image payload after Files API fallback. */
 export declare const DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES: number;
-/** Provider request image-count limit. */
-export declare const DEFAULT_MAX_IMAGES_PER_REQUEST = 600;
-/** Total-pixel budget matching DeepSeek's normal vision projection. */
-export declare const DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 640000;
-/** Total-pixel budget matching provider low-detail image input. */
-export declare const DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET: number;
-/** Encoded-byte cap for one deterministic model-request image. */
-export declare const DEFAULT_REQUEST_IMAGE_MAX_BYTES: number;
 /** Deterministic raw-byte removal step. */
 export declare const DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM: number;
 /** Deterministic base64-byte removal step after Files API fallback. */
@@ -138,13 +125,6 @@ export declare const DEFAULT_FILE_REFRESH_MARGIN_SECONDS: number;
 export declare const DEFAULT_FILE_QUOTA_CLEANUP_BATCH = 100;
 /** Default deadline for resolving one request image through the Files API. */
 export declare const DEFAULT_FILES_API_TIMEOUT_MS = 60000;
-/**
- * Resolve the request-image budgets owned by one DeepSeek model route.
- * @param model - Advertised model route and its optional image overrides.
- * @returns Complete pixel and encoded-byte budgets.
- * @internal
- */
-export declare function resolveRequestImagePolicy(model: DeepSeekCatalogModel): ImageRequestPolicy;
 /**
  * Map an HTTP status to a stable LlmError code.
  * @param status - status of a non-2xx provider response.

@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import { runtimeAssetSource } from '../src/runtime-plan.mjs'
 
 const execFileAsync = promisify(execFile)
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
@@ -52,33 +53,6 @@ async function findInstalledNodePtyRoot() {
     1,
     `expected exactly one installed node-pty@1.2.0-beta.15 fixture, found ${matches.length}`,
   )
-  return matches[0]
-}
-
-async function findInstalledCanvasAddon() {
-  const store = join(root, 'node_modules/.pnpm')
-  const matches = []
-  for (const entry of await readdir(store, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue
-    const packageRoot = join(
-      store,
-      entry.name,
-      'node_modules/@napi-rs/canvas-darwin-arm64',
-    )
-    try {
-      const metadata = await lstat(packageRoot)
-      if (!metadata.isDirectory() || metadata.isSymbolicLink()) continue
-      const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
-      const addon = join(packageRoot, 'skia.darwin-arm64.node')
-      if (manifest.name === '@napi-rs/canvas-darwin-arm64') {
-        await access(addon)
-        matches.push(addon)
-      }
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
-    }
-  }
-  assert.equal(matches.length, 1, `expected exactly one installed Canvas arm64 addon, found ${matches.length}`)
   return matches[0]
 }
 
@@ -136,9 +110,7 @@ async function writeRuntimeFixture(rootPath, {
     '@deepseek-ai/dsh-llm',
   ].map(name => [name, '1.0.0']))
   for (const relative of runtimePolicy.requiredFiles) {
-    const source = relative.startsWith('jiuzhang/profile/')
-      ? join(integrationRoot, 'profile', relative.slice('jiuzhang/profile/'.length))
-      : join(integrationRoot, 'src', relative)
+    const source = runtimeAssetSource(root, relative)
     const destination = join(rootPath, relative)
     await mkdir(dirname(destination), { recursive: true })
     await copyFile(source, destination)
@@ -769,8 +741,8 @@ test('macOS packaging removes only audited browser-only runtime assets and rejec
 test('macOS packaging normalizes the audited Canvas install id and rejects unknown build paths atomically', {
   skip: process.platform !== 'darwin' || process.arch !== 'arm64',
 }, async () => {
-  const source = await findInstalledCanvasAddon()
   const sandbox = await mkdtemp(join(tmpdir(), 'ark-runtime-macho-id-'))
+  const source = join(sandbox, 'install-id-fixture.node')
   const canvasPath = runtime => join(
     runtime,
     'node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node',
@@ -791,6 +763,12 @@ test('macOS packaging normalizes the audited Canvas install id and rejects unkno
     return stdout.trim().split('\n').at(-1)
   }
   try {
+    // This test exercises Mach-O load-command rewriting, not Canvas rendering.
+    // Compile a real dylib so the policy does not depend on an unrelated optional package being installed.
+    const fixtureSource = join(sandbox, 'install-id-fixture.c')
+    await writeFile(fixtureSource, 'int fixture_value(void) { return 1; }\n')
+    await execFileAsync('/usr/bin/clang', [fixtureSource, '-dynamiclib', '-o', source,
+      '-Wl,-install_name,/Users/runner/work/canvas/canvas/target/aarch64-apple-darwin/release/deps/libcanvas.dylib'])
     await access(source)
     const runtime = join(sandbox, 'accepted')
     const expected = canvasPath(runtime)

@@ -1,6 +1,8 @@
 - id: agent-presets
   config:
     default: standard
+    # The launcher supplies Ark's Native preset root; generic built-ins must not shadow it.
+    includeShippedRoot: false
     # jiuzhang 是 Ark 历史保留 preset ID：authoring 边界拒绝，启动时物理清理。
     reservedIds:
       - jiuzhang

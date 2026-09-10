@@ -21,7 +21,10 @@ export interface Config {
      * a distinct name.
      */
     toolName?: string;
-    /** Sample the Host allowlist for each new top-level session. */
+    /**
+     * Sample the Host `subagent-model-selection` user setting for each new
+     * top-level session and inherit that decision in its child sessions.
+     */
     modelSelectionSettings?: boolean;
     /**
      * Expose `run_in_background` (default true). Disabled instances omit the

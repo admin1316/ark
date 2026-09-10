@@ -55,24 +55,17 @@ function getOrCreateAnonymousUserId(options = {}) {
 	if (id === void 0) {
 		const created = (options.randomUUID ?? randomUUID)();
 		try {
-			mkdirSync(dirname(file), {
-				recursive: true,
-				mode: 448
-			});
+			mkdirSync(dirname(file), { recursive: true });
 			writeFileSync(file, `${created}\n`, {
 				encoding: "utf8",
-				flag: "wx",
-				mode: 384
+				flag: "wx"
 			});
 			id = created;
 		} catch {
 			id = readPersistedId(file);
 			if (id === void 0) {
 				try {
-					writeFileSync(file, `${created}\n`, {
-						encoding: "utf8",
-						mode: 384
-					});
+					writeFileSync(file, `${created}\n`, "utf8");
 				} catch {}
 				id = created;
 			}

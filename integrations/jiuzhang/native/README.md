@@ -9,6 +9,8 @@ The native macOS application for Ark. AppKit owns the process and window lifecyc
 - The process uses the product data directory, defaults to read-only permission mode, and disables telemetry.
 - Local builds are ad-hoc signed. A self-contained build embeds Node and signs it with the separate V8 JIT entitlements before executing a signed-runtime smoke test.
 
+Chat exposes recorded invocation configuration and response receipts in its process details. Requested model ids are separate from provider-reported model ids; absent or unsupported response metadata stays unknown. Receipts do not independently certify a gateway's underlying model, expose credentials, or inject new model-visible context. First-response timing measures the first stream event, not necessarily visible text. Throughput uses provider-reported output tokens, which may include reasoning, divided by the sum of completed model-stream durations; tool execution and retry backoff are excluded. Missing timing suppresses throughput instead of borrowing another call's interval.
+
 ## Build
 
 ```sh

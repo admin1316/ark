@@ -19,7 +19,7 @@ interface TokenMeasurement {
   readonly surfaceDeltaTokens: number
   /** Non-negative current request-and-response pressure. */
   readonly totalTokens: number
-  /** Total heuristic tokens across the current surface. */
+  /** Total route-priced request tokens across the current surface; equals the sum of the node prices. */
   readonly surfaceTokens: number
   /** Current surface nodes in positional head-to-tail order. */
   readonly nodes: readonly TokenSurfaceNode[]
@@ -35,8 +35,19 @@ interface TokenMeasurement {
 interface TokenSurfaceNode {
   /** Durable sequence number of the surface event. */
   readonly seq: number
-  /** Heuristic tokens for the exact message projected by this node. */
+  /**
+   * Request-pressure tokens for the exact message projected by this node under
+   * the measured route: image occurrences carry the route's declared visual
+   * price when the routed adapter declares one, and the fixed heuristic
+   * otherwise. Trigger, retention, and range selection all read this price.
+   */
   readonly tokens: number
+  /**
+   * Fixed-heuristic tokens for the same message, independent of any route.
+   * The shadow-price protocol prices replacements with this value so the O(1)
+   * projection fold stays in agreement with its own appends.
+   */
+  readonly heuristicTokens: number
 }
 ```
 
@@ -60,14 +71,18 @@ Replay owner for one service-wide estimator and isolated per-session folds.
 /**
  * Measure current request pressure and surface through the durable tail.
  *
- * Provider usage is reused only when the latest successful call's canonical
- * request envelope matches `requestHeader` and its total is no lower than
- * that call's full heuristic anchor; otherwise the complete envelope and
- * surface are heuristically repriced.
+ * The effective envelope's routed provider/model selects the request-image
+ * pricing every node is priced under: a route whose adapter declares image
+ * pricing charges each retained image its visual tokens plus its
+ * model-visible text, while other routes keep the fixed heuristic. Provider
+ * usage is reused only when the latest successful call's canonical request
+ * envelope matches `requestHeader` and its total is no lower than that
+ * call's full route-priced anchor; otherwise the complete envelope and
+ * surface are repriced.
  *
- * `requestHeader` affects request pressure only; surface fields always
- * describe the current session surface. Every call clones those positional
- * nodes, so measurement is O(surface).
+ * `requestHeader` replaces the latest logged envelope for pressure and node
+ * pricing; the node set always describes the current session surface. Every
+ * call clones those positional nodes, so measurement is O(surface).
  *
  * @param session - session to replay through its current durable tail.
  * @param requestHeader - optional effective request envelope replacing the latest logged header.

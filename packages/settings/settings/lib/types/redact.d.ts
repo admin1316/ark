@@ -27,14 +27,20 @@ export interface RedactedValue {
 }
 /**
  * Remove every `role('secret')` field a schema declares from a value. The
- * walker follows `object`, `dict`, and `array` containers; a secret buried
- * under a `union`, `intersect`, or `transform` node is refused with an error
- * instead of passing through, because the walker cannot prove it would strip
- * every secret the value may hold. The input is never mutated.
+ * walker follows object, dict, array, tuple, union, and intersection relations.
+ * Unsupported or malformed secret-bearing containers reject instead of returning
+ * their values, including schema defaults and overridden layers. Secret array
+ * positions become null so indexes remain stable.
  * @param schema - live schemastery schema describing the value.
  * @param value - the value to strip; `undefined` yields an empty record with
  *   object-property secret slots still enumerated.
  * @returns the stripped detached value and the ordered secret positions.
  */
 export declare function redactSecrets(schema: z<never>, value: unknown): RedactedValue;
+/**
+ * Serialize form metadata with secret values removed from every default layer.
+ * @param schema - live namespace schema, including shared schema nodes.
+ * @returns its detached schemastery envelope, safe from schema-declared default secrets.
+ */
+export declare function redactSettingsSchema(schema: z<never>): unknown;
 //# sourceMappingURL=redact.d.ts.map

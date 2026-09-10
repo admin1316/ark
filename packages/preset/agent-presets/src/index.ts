@@ -22,6 +22,8 @@
  */
 
 import { stat } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -29,7 +31,10 @@ import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type 
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
 import type {} from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { AgentPresetDocument, AgentPresetErrorDetailsMap, AgentPresetRoster } from './types.ts'
+import type {
+  AgentPresetDocument, AgentPresetDocumentOpen, AgentPresetErrorDetailsMap,
+  AgentPresetRemoved, AgentPresetRoster, AgentPresetSelection,
+} from './types.ts'
 import type {} from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves the registry notification emitted after scope reparenting.
 import type {} from '@deepseek-ai/dsh-tools'
@@ -136,6 +141,7 @@ export {
   PresetNotWritableError, readComposition, writableRoot,
 } from './authoring.ts'
 export { agentPresetProjectionDefinition, resolveSessionPreset } from './session.ts'
+export type { PresetBearingSession } from './session.ts'
 export { PresetLockedError, PresetMountError, UnknownPresetError } from './preset.ts'
 export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts'
 
@@ -216,7 +222,7 @@ export class AgentPresets extends TypertRemoteService {
   private readonly selfCtx: Context
 
   constructor(ctx: Context, public config: Config) {
-    super(ctx, 'agentPresets')
+    super(ctx, 'agentPresets', { namespace: 'agentPreset' })
     this.selfCtx = ctx
     const { baseUrl } = ctx
     if (baseUrl === undefined) {
@@ -327,6 +333,7 @@ export class AgentPresets extends TypertRemoteService {
         ...preset.broken === undefined ? {} : { broken: preset.broken },
       })),
       authorable: this.authorable,
+      hasDocument: this.authorable,
     }
   }
 
@@ -513,7 +520,7 @@ export class AgentPresets extends TypertRemoteService {
         ...preset.description === undefined ? {} : { description: preset.description },
       }
     } catch (error: unknown) {
-      rejectPreset(error, agentPreset, `agent preset "${agentPreset}": ${String(error)}`)
+      rejectPreset(error, agentPreset, 'agent preset document read failed')
     }
   }
 
@@ -550,20 +557,21 @@ export class AgentPresets extends TypertRemoteService {
   /**
    * Copy one preset through the Remote API.
    * @param from - the source preset id.
-   * @param id - the new preset id.
+   * @param agentPreset - the new preset id.
    * @param name - the copy's optional display name.
-   * @returns once the copy is stored.
+   * @returns the id after the copy is stored.
    * @throws {TypertRemoteFailure} with the corresponding stable preset code
    * and details when the copy is refused.
    */
   @Remote('copy')
-  async remoteExportCopy(from: string, id: string, name?: string): Promise<void> {
+  async remoteExportCopy(from: string, agentPreset: string, name?: string): Promise<AgentPresetSelection> {
     validatePresetId(from, 'from')
-    validatePresetId(id, 'agentPreset')
+    validatePresetId(agentPreset, 'agentPreset')
     try {
-      await this.copy(from, id, name)
+      await this.copy(from, agentPreset, name)
+      return { agentPreset }
     } catch (error: unknown) {
-      rejectPreset(error, id, `agent preset "${id}": ${String(error)}`)
+      rejectPreset(error, agentPreset, 'agent preset copy failed')
     }
   }
 
@@ -593,19 +601,70 @@ export class AgentPresets extends TypertRemoteService {
 
   /**
    * Delete one preset through the Remote API.
-   * @param id - the preset id.
-   * @returns once the preset is deleted.
+   * @param agentPreset - the preset id.
+   * @returns an empty acknowledgement after deletion.
    * @throws {TypertRemoteFailure} with the corresponding stable preset code
    * and details when deletion is refused.
    */
-  @Remote('deletePreset')
-  async remoteExportDelete(id: string): Promise<void> {
-    validatePresetId(id, 'agentPreset')
+  @Remote('remove')
+  async remoteExportDelete(agentPreset: string): Promise<AgentPresetRemoved> {
+    validatePresetId(agentPreset, 'agentPreset')
     try {
-      await this.remove(id)
+      await this.remove(agentPreset)
+      return {}
     } catch (error: unknown) {
-      rejectPreset(error, id, `agent preset "${id}": ${String(error)}`)
+      rejectPreset(error, agentPreset, 'agent preset removal failed')
     }
+  }
+
+  /**
+   * Open only a user-authored preset resolved by the service's own roster.
+   * @param agentPreset - user preset id, never a caller-supplied path.
+   * @param signal - native command cancellation.
+   * @returns a handoff confirmation or the directory when this host has no opener.
+   */
+  @Remote('openDocument')
+  async remoteOpenDocument(agentPreset: string, signal: AbortSignal): Promise<AgentPresetDocumentOpen> {
+    validatePresetId(agentPreset, 'agentPreset')
+    const checkCancellation = () => {
+      if (signal.aborted) throw remotePresetFailure('cancelled', 'agent preset open was cancelled', {})
+    }
+    checkCancellation()
+    let preset: AgentPreset
+    try {
+      preset = await this.resolve(agentPreset)
+      if (preset.trust !== 'user') throw new PresetNotWritableError(preset.id, 'it ships with the deployment')
+    } catch (error) {
+      checkCancellation()
+      rejectPreset(error, agentPreset, 'agent preset document resolution failed')
+    }
+    checkCancellation()
+    const directory = dirname(preset.path)
+    if (!this.canOpenPresetDirectory()) return { opened: false, path: directory }
+    try {
+      await this.openPresetDirectory(directory, signal)
+    } catch {
+      // Native command diagnostics can contain host paths or environment values.
+      checkCancellation()
+      throw remotePresetFailure('internal', 'agent preset document open failed', {})
+    }
+    checkCancellation()
+    return { opened: true }
+  }
+
+  /** @returns whether this Host can hand a directory to its native desktop. */
+  protected canOpenPresetDirectory(): boolean {
+    return canOpenNativePath()
+  }
+
+  /**
+   * Dispatch the directory already authorized by the preset roster.
+   * @param path - resolved user-preset directory.
+   * @param signal - caller cancellation.
+   * @returns completion of the native opening command.
+   */
+  protected openPresetDirectory(path: string, signal: AbortSignal): Promise<void> {
+    return openNativePath(path, signal)
   }
 
   /**
@@ -694,7 +753,6 @@ export class AgentPresets extends TypertRemoteService {
    * @throws {TypertRemoteFailure} with `bad-request`, `agent-preset-locked`,
    * `agent-preset-not-found`, or `agent-preset-invalid` when refused.
    */
-  @Remote('select')
   async select(agent: Agent, agentPreset: string): Promise<string> {
     validatePresetId(agentPreset, 'agentPreset')
     const queued = this.switches.get(agent.id) ?? Promise.resolve()
@@ -704,10 +762,21 @@ export class AgentPresets extends TypertRemoteService {
     try {
       return await turn
     } catch (error: unknown) {
-      return rejectPreset(error, agentPreset, `failed to select agent preset "${agentPreset}": ${String(error)}`)
+      return rejectPreset(error, agentPreset, 'agent preset selection failed')
     } finally {
       if (this.switches.get(agent.id) === guard) this.switches.delete(agent.id)
     }
+  }
+
+  /**
+   * Select through the existing serialized session-composition owner.
+   * @param agent - exact Agent resolved by the Gateway.
+   * @param agentPreset - requested preset id.
+   * @returns the preset committed to the session log.
+   */
+  @Remote('select')
+  async remoteSelect(agent: Agent, agentPreset: string): Promise<AgentPresetSelection> {
+    return { agentPreset: await this.select(agent, agentPreset) }
   }
 
   /** One queued switch: re-check, recompose, then record what the agent runs. */

@@ -209,7 +209,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_archiveSession_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":503,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":432,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/create',
@@ -236,7 +236,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_create_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":409,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":345,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/delete',
@@ -263,7 +263,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_delete_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":451,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":383,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/deleteArchivedSession',
@@ -290,7 +290,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_deleteArchivedSession_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":537,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":464,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/insertBefore',
@@ -317,7 +317,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_insertBefore_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":468,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":399,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/insertSessionBefore',
@@ -344,7 +344,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_insertSessionBefore_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":484,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":414,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/list',
@@ -361,7 +361,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_list_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":391,"column":3},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":333,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/rename',
@@ -388,7 +388,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_rename_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":435,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":368,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/unarchiveSession',
@@ -415,7 +415,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_unarchiveSession_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":520,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":448,"column":3},
     },
   ],
   model: {
@@ -439,8 +439,8 @@ export const TYPERT = {
             "kind": "method",
             "name": "createOrResolve",
             "signature": "async createOrResolve(path: string, title?: string): Promise<{ workspace: Workspace; created: boolean }>",
-            "summary": "Create one Workspace or resolve the existing canonical path in the same registry serialization slot.",
-            "jsDoc": "/**\n * Create one Workspace or resolve the existing canonical path in the same\n * registry serialization slot.  The `created` bit is therefore not guessed\n * from a stale preflight lookup.\n * @param path - Existing directory to own, in any path spelling.\n * @param title - Display title used only when a new record is created.\n * @returns the workspace and whether a new record was created.\n */"
+            "summary": "Resolve canonical ownership and creation status in the same serialized operation.",
+            "jsDoc": "/**\n * Resolve canonical ownership and creation status in the same serialized operation.\n * @param path - existing directory.\n * @param title - initial title when a record is created.\n * @returns workspace and whether this operation created it.\n */"
           },
           {
             "kind": "method",
@@ -460,64 +460,71 @@ export const TYPERT = {
             "kind": "method",
             "name": "remoteExportList",
             "signature": "@Remote('list') remoteExportList(signal: AbortSignal): WorkspaceRemoteResult<WorkspaceRemoteListValue>",
-            "summary": "List durable Workspaces and the archive overlay through the generated Remote boundary.",
-            "jsDoc": "/**\n * List durable Workspaces and the archive overlay through the generated Remote boundary.\n * @param signal - caller-owned cancellation signal.\n * @returns the workspace list and archived-session overlay.\n */"
+            "summary": "Project the native workspace list without persistence reads.",
+            "jsDoc": "/**\n * Project the native workspace list without persistence reads.\n * @param signal - request cancellation.\n * @returns durable rows and archive overlay.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportCreate",
             "signature": "@Remote('create') async remoteExportCreate( request: WorkspaceRemoteCreateRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteCreateValue>>",
-            "summary": "Create or resolve one canonical existing directory through the generated Remote boundary.",
-            "jsDoc": "/**\n * Create or resolve one canonical existing directory through the generated Remote boundary.\n * @param request - directory path to create or resolve.\n * @param signal - caller-owned cancellation signal.\n * @returns the workspace result and creation flag.\n */"
+            "summary": "Create or resolve a workspace registration through the native API.",
+            "jsDoc": "/**\n * Create or resolve a workspace registration through the native API.\n * @param request - existing directory to own.\n * @param signal - cancellation.\n * @returns row and atomic creation flag.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportRename",
-            "signature": "@Remote('rename') async remoteExportRename( request: WorkspaceRemoteRenameRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>",
-            "summary": "Rename one Workspace without exposing the registry's write chain to transport code.",
-            "jsDoc": "/**\n * Rename one Workspace without exposing the registry's write chain to transport code.\n * @param request - workspace id and replacement title.\n * @param signal - caller-owned cancellation signal.\n * @returns the renamed workspace result.\n */"
+            "signature": "@Remote('rename') remoteExportRename( request: WorkspaceRemoteRenameRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>",
+            "summary": "Rename a registered workspace through the native API.",
+            "jsDoc": "/**\n * Rename a registered workspace through the native API.\n * @param request - workspace and replacement title.\n * @param signal - cancellation.\n * @returns renamed row.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportDelete",
-            "signature": "@Remote('delete') async remoteExportDelete( request: WorkspaceRemoteDeleteRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeletedValue>>",
-            "summary": "Remove only a Workspace registration; neither files nor session logs are touched.",
-            "jsDoc": "/**\n * Remove only a Workspace registration; neither files nor session logs are touched.\n * @param request - workspace id to remove.\n * @param signal - caller-owned cancellation signal.\n * @returns confirmation of the registration removal.\n */"
+            "signature": "@Remote('delete') remoteExportDelete( request: WorkspaceRemoteDeleteRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeletedValue>>",
+            "summary": "Remove a workspace registration without deleting files or session logs.",
+            "jsDoc": "/**\n * Remove a workspace registration without deleting files or session logs.\n * @param request - registration to remove.\n * @param signal - cancellation.\n * @returns confirmation; files and logs remain.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportInsertBefore",
-            "signature": "@Remote('insertBefore') async remoteExportInsertBefore( request: WorkspaceRemoteInsertBeforeRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteOrderValue>>",
-            "summary": "Reorder Workspace rows using DOM-insertBefore semantics.",
-            "jsDoc": "/**\n * Reorder Workspace rows using DOM-insertBefore semantics.\n * @param request - workspace and optional anchor ids.\n * @param signal - caller-owned cancellation signal.\n * @returns the resulting workspace order.\n */"
+            "signature": "@Remote('insertBefore') remoteExportInsertBefore( request: WorkspaceRemoteInsertBeforeRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteOrderValue>>",
+            "summary": "Reorder a workspace through the native API.",
+            "jsDoc": "/**\n * Reorder a workspace through the native API.\n * @param request - workspace and optional anchor.\n * @param signal - cancellation.\n * @returns durable order.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportInsertSessionBefore",
-            "signature": "@Remote('insertSessionBefore') async remoteExportInsertSessionBefore( request: WorkspaceRemoteInsertSessionBeforeRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>",
-            "summary": "Reorder an accounted Session inside one Workspace.",
-            "jsDoc": "/**\n * Reorder an accounted Session inside one Workspace.\n * @param request - workspace, session, and optional anchor ids.\n * @param signal - caller-owned cancellation signal.\n * @returns the updated workspace result.\n */"
+            "signature": "@Remote('insertSessionBefore') remoteExportInsertSessionBefore( request: WorkspaceRemoteInsertSessionBeforeRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>",
+            "summary": "Reorder a session within its workspace account.",
+            "jsDoc": "/**\n * Reorder a session within its workspace account.\n * @param request - workspace, session and optional anchor.\n * @param signal - cancellation.\n * @returns updated account.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportArchiveSession",
-            "signature": "@Remote('archiveSession') async remoteExportArchiveSession( request: WorkspaceRemoteArchiveRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>",
-            "summary": "Archive one Session without changing its Workspace account or log.",
-            "jsDoc": "/**\n * Archive one Session without changing its Workspace account or log.\n * @param request - session id to archive.\n * @param signal - caller-owned cancellation signal.\n * @returns the archived-session ids after the operation.\n */"
+            "signature": "@Remote('archiveSession') remoteExportArchiveSession( request: WorkspaceRemoteArchiveRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>",
+            "summary": "Archive a session through the native API while retaining its log.",
+            "jsDoc": "/**\n * Archive a session through the native API while retaining its log.\n * @param request - session to archive.\n * @param signal - cancellation.\n * @returns committed archive overlay.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportUnarchiveSession",
-            "signature": "@Remote('unarchiveSession') async remoteExportUnarchiveSession( request: WorkspaceRemoteArchiveRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>",
-            "summary": "Restore one archived Session without changing its retained Workspace position.",
-            "jsDoc": "/**\n * Restore one archived Session without changing its retained Workspace position.\n * @param request - archived session id to restore.\n * @param signal - caller-owned cancellation signal.\n * @returns the archived-session ids after the operation.\n */"
+            "signature": "@Remote('unarchiveSession') remoteExportUnarchiveSession( request: WorkspaceRemoteArchiveRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>",
+            "summary": "Restore an archived session to the visible workspace projection.",
+            "jsDoc": "/**\n * Restore an archived session to the visible workspace projection.\n * @param request - archived session to restore.\n * @param signal - cancellation.\n * @returns committed archive overlay.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportDeleteArchivedSession",
-            "signature": "@Remote('deleteArchivedSession') async remoteExportDeleteArchivedSession( request: WorkspaceRemoteDeleteArchivedRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeleteArchivedValue>>",
-            "summary": "Permanently delete an archived Session only through the exact lifecycle-retirement capability.",
-            "jsDoc": "/**\n * Permanently delete an archived Session only through the exact lifecycle-retirement capability.\n * @param request - archived session id to delete.\n * @param signal - caller-owned cancellation signal.\n * @returns deletion confirmation and remaining archived-session ids.\n */"
+            "signature": "@Remote('deleteArchivedSession') remoteExportDeleteArchivedSession( request: WorkspaceRemoteDeleteArchivedRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeleteArchivedValue>>",
+            "summary": "Permanently delete an archived root through its existing lifecycle owners.",
+            "jsDoc": "/**\n * Permanently delete an archived root through its existing lifecycle owners.\n * @param request - archived root to delete.\n * @param signal - cancellation.\n * @returns deletion and archive state.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "rename",
+            "signature": "rename(id: WorkspaceId, title: string): Promise<Workspace>",
+            "summary": "Persist a non-empty, unique workspace title before publishing it.",
+            "jsDoc": "/**\n * Persist a non-empty, unique workspace title before publishing it.\n * @param id - registered workspace.\n * @param title - visible replacement title.\n * @returns renamed workspace after durability.\n */"
           },
           {
             "kind": "method",
@@ -525,13 +532,6 @@ export const TYPERT = {
             "signature": "delete(id: WorkspaceId): Promise<boolean>",
             "summary": "Delete one workspace registration while retaining its directory and every session log.",
             "jsDoc": "/**\n * Delete one workspace registration while retaining its directory and every\n * session log. The durable order is updated before the table deletion; a\n * failed table write restores the prior order and keeps the entity\n * published. Unknown ids are an idempotent no-op for domain callers.\n * @param id - Workspace registration to remove.\n * @returns `true` when a record was deleted, `false` when it was unknown.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "rename",
-            "signature": "rename(id: WorkspaceId, title: string): Promise<Workspace>",
-            "summary": "Rename one Workspace through the same serialization chain as all registry writes.",
-            "jsDoc": "/**\n * Rename one Workspace through the same serialization chain as all registry writes.\n * @param id - Workspace registration to rename.\n * @param title - replacement display title.\n * @returns the renamed workspace.\n */"
           },
           {
             "kind": "method",
@@ -551,15 +551,15 @@ export const TYPERT = {
             "kind": "method",
             "name": "sessionAdmissionRevision",
             "signature": "sessionAdmissionRevision(sessionId: SessionId): number",
-            "summary": "Capture the in-process permanent-deletion generation for publication fencing.",
-            "jsDoc": "/**\n * Capture the in-process permanent-deletion generation for publication fencing.\n * @param sessionId - Session identity whose deletion generation is read.\n * @returns Current admission generation for the session.\n */"
+            "summary": "Capture the deletion generation before asynchronously loading a session.",
+            "jsDoc": "/**\n * Capture the deletion generation before asynchronously loading a session.\n * @param sessionId - identity to observe.\n * @returns its in-process permanent-deletion generation.\n */"
           },
           {
             "kind": "method",
             "name": "assertSessionAdmission",
             "signature": "assertSessionAdmission(sessionId: SessionId, revision: number): void",
-            "summary": "Revalidate a publication against archive membership and deletion races.",
-            "jsDoc": "/**\n * Revalidate a publication against archive membership and deletion races.\n * @param sessionId - Session identity being published.\n * @param revision - Admission generation captured before the asynchronous work.\n */"
+            "summary": "Reject publication while a session is archived or its deletion raced the load.",
+            "jsDoc": "/**\n * Reject publication while a session is archived or its deletion raced the load.\n * @param sessionId - identity being published.\n * @param revision - generation captured before asynchronous work.\n */"
           },
           {
             "kind": "method",
@@ -572,15 +572,15 @@ export const TYPERT = {
             "kind": "method",
             "name": "unarchiveSession",
             "signature": "unarchiveSession(sessionId: SessionId): Promise<void>",
-            "summary": "Remove an existing session from the archive set without touching its log/account slot.",
-            "jsDoc": "/**\n * Remove an existing session from the archive set without touching its log/account slot.\n * @param sessionId - Archived session identity to restore.\n * @returns Resolution after the archive mutation is durable.\n */"
+            "summary": "Remove a known session from the durable archive overlay.",
+            "jsDoc": "/**\n * Remove a known session from the durable archive overlay.\n * @param sessionId - archived identity to restore.\n * @returns settlement after durable archive removal.\n */"
           },
           {
             "kind": "method",
             "name": "deleteArchivedSession",
-            "signature": "deleteArchivedSession( sessionId: SessionId, retireResident?: (residentSessionId: SessionId) => Promise<void>, ): Promise<void>",
-            "summary": "Permanently delete one archived session and every retained descendant.",
-            "jsDoc": "/**\n * Permanently delete one archived session and every retained descendant.\n * Logs commit descendant-first before workspace accounts and archive state;\n * a later failure leaves the root archive marker available for retry.\n * @param sessionId - Archived root session identity to delete.\n * @param retireResident - Callback that retires a live/resident session before log deletion.\n * @returns Resolution after all retained records and archive state are durable.\n */"
+            "signature": "deleteArchivedSession(sessionId: SessionId, retireResident?: (residentSessionId: SessionId) => Promise<void>): Promise<void>",
+            "summary": "Delete an archived root and retained descendants before committing account and archive removal.",
+            "jsDoc": "/**\n * Delete an archived root and retained descendants before committing account and archive removal.\n * @param sessionId - archived root identity.\n * @param retireResident - exact lifecycle owner used to retire resident sessions.\n * @returns settlement after logs, derived cleanup, accounts and archive state commit.\n */"
           },
           {
             "kind": "method",
@@ -688,14 +688,14 @@ export const TYPERT = {
     ],
     "events": [
       {
-        "description": "Complete committed archive set after a non-delete mutation.",
-        "summary": "Complete committed archive set after a non-delete mutation.",
+        "description": "Committed archive overlay after a non-delete mutation.",
+        "summary": "Committed archive overlay after a non-delete mutation.",
         "tags": [
           {
             "name": "param",
             "argument": "archivedSessionIds",
-            "comment": "- Current archived session identities in durable order.",
-            "text": "@param archivedSessionIds - Current archived session identities in durable order.\n     *"
+            "comment": "- current archive identities in durable order.",
+            "text": "@param archivedSessionIds - current archive identities in durable order.\n     *"
           },
           {
             "name": "mode",
@@ -703,26 +703,26 @@ export const TYPERT = {
             "text": "@mode emit"
           }
         ],
-        "jsDoc": "/**\n * Complete committed archive set after a non-delete mutation.\n * @param archivedSessionIds - Current archived session identities in durable order.\n * @mode emit\n */",
+        "jsDoc": "/**\n * Committed archive overlay after a non-delete mutation.\n * @param archivedSessionIds - current archive identities in durable order.\n * @mode emit\n */",
         "name": "workspace/archived-sessions-changed",
         "mode": "emit",
         "signature": "'workspace/archived-sessions-changed'(archivedSessionIds: readonly SessionId[]): void"
       },
       {
-        "description": "One permanently deleted identity after log/account/archive commits.",
-        "summary": "One permanently deleted identity after log/account/archive commits.",
+        "description": "Permanently removed identity after log, account and archive commits.",
+        "summary": "Permanently removed identity after log, account and archive commits.",
         "tags": [
           {
             "name": "param",
             "argument": "sessionId",
-            "comment": "- Root session identity that was permanently deleted.",
-            "text": "@param sessionId - Root session identity that was permanently deleted.\n     *"
+            "comment": "- deleted identity.",
+            "text": "@param sessionId - deleted identity.\n     *"
           },
           {
             "name": "param",
             "argument": "archivedSessionIds",
-            "comment": "- Remaining archived session identities in durable order.",
-            "text": "@param archivedSessionIds - Remaining archived session identities in durable order.\n     *"
+            "comment": "- remaining archive overlay.",
+            "text": "@param archivedSessionIds - remaining archive overlay.\n     *"
           },
           {
             "name": "mode",
@@ -730,7 +730,7 @@ export const TYPERT = {
             "text": "@mode emit"
           }
         ],
-        "jsDoc": "/**\n * One permanently deleted identity after log/account/archive commits.\n * @param sessionId - Root session identity that was permanently deleted.\n * @param archivedSessionIds - Remaining archived session identities in durable order.\n * @mode emit\n */",
+        "jsDoc": "/**\n * Permanently removed identity after log, account and archive commits.\n * @param sessionId - deleted identity.\n * @param archivedSessionIds - remaining archive overlay.\n * @mode emit\n */",
         "name": "workspace/session-deleted",
         "mode": "emit",
         "signature": "'workspace/session-deleted'(sessionId: SessionId, archivedSessionIds: readonly SessionId[]): void"

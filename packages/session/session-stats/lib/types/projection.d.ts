@@ -11,7 +11,7 @@
  * and undercount cancelled steps (aborted before the message assembles).
  *
  * The wall-time folds mirror the client window fold field by field
- * (`deriveStats` in the Native conversation renderer, that fold's whole-window
+ * (`deriveStats` in dsh-client-ui-conversation, that fold's whole-window
  * fallback role): model time is `step/start` → `assistant/message`, first
  * token is the first non-empty delta chunk and survives an in-step
  * `llm/retry`, decode spans first token → assembled message on steps that

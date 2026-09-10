@@ -210,49 +210,58 @@ register<T>(ns: SettingsNamespace, schema: z<T>, options?: SettingsRegisterOptio
 describe(options?: SettingsDescribeOptions): SettingsDescriptor[]
 
 /**
- * Read every registered settings namespace through the Native Remote plane.
- * The projection is always redacted, so write-only fields can never leave
- * this service through a configuration read.
- * @returns the redacted settings namespace catalog.
+ * Read redacted settings and deployment facts without revealing a local path.
+ * @returns every registered namespace in registration order.
  */
 @Remote('describe') remoteDescribe(): RemoteSettingsDescription
 
 /**
- * Materialize and open this provider's own local configuration document.
- * The generated strict Remote descriptor carries only transport cancellation;
- * no caller-provided filesystem path can cross this boundary. The Gateway
- * binds every strict Remote route to its loopback-only carrier.
- * @param signal - caller-owned cancellation propagated into the native command.
- * @returns confirmation that the Host opened the owned document.
+ * Prepare and open only the document owned by this provider.
+ * @param signal - transport cancellation, including the native command.
+ * @returns confirmation of the editor handoff; cancellation rejects.
  */
 @Remote('openDocument') async remoteOpenDocument(signal: AbortSignal): Promise<RemoteSettingsDocumentOpenResult>
 
 /**
- * Merge one namespace's redacted-safe patch through the Remote plane.
- * @param ns - settings namespace to update.
- * @param patch - redacted-safe fields to merge.
- * @param expectedRevision - optional revision for optimistic concurrency.
- * @returns the updated redacted namespace view.
+ * Merge fields without reconstructing a redacted section.
+ * @param ns - namespace to update.
+ * @param patch - JSON fields to merge.
+ * @param expectedRevision - revision read by the caller.
+ * @returns the updated redacted namespace.
  */
-@Remote('update') async remoteUpdate( ns: string, patch: RemoteSettingsJsonObject, expectedRevision?: number, ): Promise<RemoteSettingsNamespaceView>
+@Remote('update') remoteUpdate(ns: string, patch: RemoteSettingsJsonObject, expectedRevision?: number): Promise<RemoteSettingsNamespaceView>
 
 /**
- * Replace one namespace's full user layer through the Remote plane.
- * @param ns - settings namespace to replace.
- * @param section - replacement user-layer fields.
- * @param expectedRevision - optional revision for optimistic concurrency.
- * @returns the updated redacted namespace view.
+ * Replace the whole user layer, removing omitted overrides.
+ * @param ns - namespace to replace.
+ * @param section - complete new user layer, not a redacted readback.
+ * @param expectedRevision - revision read by the caller.
+ * @returns the updated redacted namespace.
  */
-@Remote('replace') async remoteReplace( ns: string, section: RemoteSettingsJsonObject, expectedRevision?: number, ): Promise<RemoteSettingsNamespaceView>
+@Remote('replace') remoteReplace(ns: string, section: RemoteSettingsJsonObject, expectedRevision?: number): Promise<RemoteSettingsNamespaceView>
 
 /**
- * Apply path-addressed edits without reconstructing hidden secret fields.
- * @param ns - settings namespace to mutate.
- * @param ops - path-addressed mutation operations.
- * @param expectedRevision - optional revision for optimistic concurrency.
- * @returns the updated redacted namespace view.
+ * Apply ordered edits while preserving untouched hidden fields.
+ * @param ns - namespace to mutate.
+ * @param ops - path-addressed JSON edits.
+ * @param expectedRevision - revision read by the caller.
+ * @returns the updated redacted namespace.
  */
-@Remote('mutate') async remoteMutate( ns: string, ops: readonly RemoteSettingsPathOp[], expectedRevision?: number, ): Promise<RemoteSettingsNamespaceView>
+@Remote('mutate') remoteMutate(ns: string, ops: readonly RemoteSettingsPathOp[], expectedRevision?: number): Promise<RemoteSettingsNamespaceView>
+
+/**
+ * Reserve generic Remote writes for namespaces with a domain transaction owner.
+ * @param namespaces - this calling fiber's complete protected set; other owners retain their reservations.
+ */
+setRemoteProtectedNamespaces(namespaces: readonly SettingsNamespace[]): void
+
+/**
+ * Wait for the owner's callbacks for an exact persisted revision.
+ * @param ns - registered namespace.
+ * @param revision - exact revision to observe; superseded revisions reject.
+ * @returns whether every owner callback accepted the revision, not merely whether it persisted.
+ */
+async settle(ns: SettingsNamespace, revision: number): Promise<boolean>
 
 /**
  * Read one registered namespace's resolved value.
@@ -260,26 +269,6 @@ describe(options?: SettingsDescribeOptions): SettingsDescriptor[]
  * @returns the resolved value, or `undefined` while unregistered.
  */
 get(ns: SettingsNamespace): unknown
-
-/**
- * Replace the set of namespaces whose wire writes belong to another domain
- * transaction. Same-process owners still use update/replace/mutate directly;
- * only the generic Settings Remote is denied.
- * @param namespaces - complete current protected set.
- */
-setRemoteProtectedNamespaces(namespaces: readonly SettingsNamespace[]): void
-
-/**
- * Wait until the owner callbacks produced by one exact persisted revision
- * settle. Configuration transactions use this after a write so persistence
- * cannot be reported as live activation while an adapter rejected the new
- * route. Ordinary settings writes keep their existing failure-isolated
- * behavior.
- * @param ns - namespace whose exact revision must settle.
- * @param revision - revision returned by the write's redacted descriptor.
- * @returns true only when every owner callback for that revision succeeded.
- */
-async settle(ns: SettingsNamespace, revision: number): Promise<boolean>
 
 /**
  * Merge a patch into one registered namespace's user layer, validate the
@@ -321,18 +310,88 @@ async replace(ns: SettingsNamespace, section: object, expectedRevision?: number)
 async mutate(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>
 
 /**
- * Validate one path mutation against the current section without persisting
- * it, and enumerate every schema-declared secret path in the resolved
- * candidate. Transaction owners use this before journaling so write-only
- * values can never be copied into an ordinary receipt.
- * @param ns - registered namespace to inspect.
- * @param ops - proposed path operations.
- * @returns secret positions in the validated candidate.
+ * Validate a mutation and locate its secrets before a domain owner journals it.
+ * @param ns - registered namespace.
+ * @param ops - proposed ordered edits; nothing is persisted.
+ * @returns secret positions in the resolved candidate.
  */
 previewMutation(ns: SettingsNamespace, ops: readonly SettingsPathOp[]): { secrets: RedactedSecret[] }
 ```
 
 Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
+
+<a id="ctxsettingscontroller--settingscontroller"></a>
+
+### `ctx.settingsController` — `SettingsController`
+
+Host service backing the generated `ctx.remote.settings` namespace. Every remote read uses `redactSecrets: true`, so a `role('secret')` field cannot ride a response. Writes expose the settings service's merge, replacement, and path-addressed operations, and classify every provider refusal as `settings-conflict` or `settings-rejected` with the service's message.
+
+```ts cordis-catalog
+/**
+ * Describe every registered namespace for a configuration page: redacted
+ * layered values plus the serialized schema the page renders its form from.
+ * @returns provider writability, local-document presence, and one view per namespace.
+ * @throws TypertRemoteFailure when no settings provider is mounted.
+ */
+@Remote describe(): SettingsDescribeValue
+
+/**
+ * Report whether this deployment can open an authored Agent preset directory natively.
+ * @returns true when the matching open operation is available.
+ */
+@Remote canOpenAgentPresetDirectory(): boolean
+
+/**
+ * Merge a patch into one namespace's stored user section.
+ * @param ns - namespace key to write.
+ * @param patch - fields to merge into the user section.
+ * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
+ * @returns the namespace's redacted view after the write.
+ * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
+ */
+@Remote update( ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
+
+/**
+ * Replace one namespace's stored user section wholesale.
+ * @param ns - namespace key to write.
+ * @param section - complete replacement user section.
+ * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
+ * @returns the namespace's redacted view after the write.
+ * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
+ */
+@Remote replace( ns: string, section: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
+
+/**
+ * Apply path-addressed edits to one namespace's user section, resolved against
+ * the section as stored rather than against whatever the caller last read,
+ * then answer with that namespace's new redacted view.
+ * @param ns - namespace key to write.
+ * @param ops - the edits to apply, in order.
+ * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
+ * @returns the namespace's redacted view after the write.
+ * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
+ */
+@Remote async mutate( ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
+
+/**
+ * Materialize the provider-owned settings document and open it in a native text editor.
+ * @param signal - caller lifetime; abort terminates preparation or the native command.
+ * @returns confirmation after the native opener accepts the document.
+ * @throws TypertRemoteFailure when no document exists, preparation fails, or opening fails.
+ */
+@Remote async openSettingsDocument(signal: AbortSignal): Promise<SettingsDocumentOpenValue>
+
+/**
+ * Open one user-authored Agent preset directory or return its path when no native opener exists.
+ * @param agentPreset - preset id resolved against Host-owned roots.
+ * @param signal - caller lifetime; abort terminates the native command.
+ * @returns an opened confirmation or the resolved directory for text display.
+ * @throws TypertRemoteFailure when the preset is missing, read-only, invalid, or cannot be opened.
+ */
+@Remote async openAgentPresetDirectory( agentPreset: string, signal: AbortSignal, ): Promise<AgentPresetDirectoryOpenValue>
+```
+
+Source: [`packages/api/settings-controller/src/index.ts`](../../packages/api/settings-controller/src/index.ts)
 
 <a id="settings-events"></a>
 
@@ -342,7 +401,7 @@ Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/sett
 
 #### `settings/document-updated` — emit
 
-One registered namespace's RAW user section changed, whether or not the resolved value did. `settings/updated` is the consumer-facing event and stays deep-equal-gated; this one exists for configuration surfaces, which must learn that a field went from inherited to overridden (same resolved value, different meaning) and that their held revision is stale. Listener containment matches `settings/updated`.
+One registered namespace's RAW user section changed, whether or not the resolved value did. `settings/updated` is the consumer-facing event and stays deep-equal-gated; this one exists for configuration surfaces, which must learn that a field went from inherited to overridden (same resolved value, different meaning) and that their held revision is stale. Exact-revision settlement is bound before notification; persistence does not imply activation. Reentrant publication stops superseded revision delivery. Listener containment matches `settings/updated`.
 
 ```ts cordis-catalog
 /**
@@ -351,7 +410,9 @@ One registered namespace's RAW user section changed, whether or not the resolved
  * stays deep-equal-gated; this one exists for configuration surfaces,
  * which must learn that a field went from inherited to overridden (same
  * resolved value, different meaning) and that their held revision is
- * stale. Listener containment matches `settings/updated`.
+ * stale. Exact-revision settlement is bound before notification; persistence
+ * does not imply activation. Reentrant publication stops superseded revision
+ * delivery. Listener containment matches `settings/updated`.
  * @param ns - the namespace whose stored section changed.
  * @param revision - the namespace's new revision.
  * @mode emit
@@ -365,7 +426,7 @@ Source: [`packages/settings/settings/src/types.ts`](../../packages/settings/sett
 
 #### `settings/updated` — emit
 
-Committed change to one registered namespace's resolved value. Emitted after the provider persisted (for `update`) or published (`provider`) the change; never emitted when the resolved value is deep-equal. Listener failures are contained and logged — a sync throw and an async rejection alike — except `INVARIANT`-coded failures, which rethrow after every listener ran; that rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.
+Committed change to one registered namespace's resolved value. Emitted after the provider persisted (for `update`) or published (`provider`) the change; never emitted when the resolved value is deep-equal. Listener failures are contained and logged — a sync throw and an async rejection alike — except `INVARIANT`-coded failures, which rethrow after fan-out; reentrant publication stops delivery of superseded values. That rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.
 
 ```ts cordis-catalog
 /**
@@ -374,7 +435,8 @@ Committed change to one registered namespace's resolved value. Emitted after the
  * the change; never emitted when the resolved value is deep-equal.
  * Listener failures are contained and logged — a sync throw and an async
  * rejection alike — except `INVARIANT`-coded failures, which rethrow
- * after every listener ran; that rethrow reaches the emitter only from
+ * after fan-out; reentrant publication stops delivery of superseded values.
+ * That rethrow reaches the emitter only from
  * synchronous listeners, so invariant checks on this event must not be
  * async functions.
  * @param ns - the namespace whose resolved value changed.

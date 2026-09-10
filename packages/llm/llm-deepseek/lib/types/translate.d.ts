@@ -21,7 +21,8 @@ export declare function mapFinishReason(reason: string): FinishReason;
  * api/create-chat-completion); the harness TokenUsage convention is
  * DISJOINT counts, so cache reads are subtracted out of `inputTokens`.
  * @param usage - wire usage from the finish chunk or the trailing usage-only chunk.
- * @returns disjoint harness counts; cache/reasoning fields present only when the wire reported them.
+ * @returns disjoint harness counts; an exact total is present only when the
+ *   aggregate prompt/completion counters are valid and agree with any wire total.
  */
 export declare function mapUsage(usage: WireUsage): TokenUsage;
 /**

@@ -323,7 +323,7 @@ public struct ArkKnowledgeIngestQueue: Equatable, Sendable {
   public var completedCount: Int { tasks.filter { $0.status == .done }.count }
 }
 
-public enum ArkKnowledgeIngestInput {
+public enum ArkHTTPURLInput {
   public static func normalizedHTTPURL(_ rawValue: String) -> String? {
     let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard

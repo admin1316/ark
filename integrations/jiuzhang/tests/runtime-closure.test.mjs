@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
+import { runtimeAssetSource } from '../src/runtime-plan.mjs'
 import {
   assertArkRuntimeClosure,
   createArkRuntimeManifest,
@@ -39,9 +40,7 @@ function independentJsonSha256(value) {
 async function stageRuntime() {
   const root = await mkdtemp(join(tmpdir(), 'ark-runtime-closure-'))
   for (const relative of policyDocument.requiredFiles) {
-    const source = relative.startsWith('jiuzhang/profile/')
-      ? join(integrationRoot, 'profile', relative.slice('jiuzhang/profile/'.length))
-      : join(integrationRoot, 'src', relative)
+    const source = runtimeAssetSource(resolve(integrationRoot, '../..'), relative)
     const destination = join(root, relative)
     await mkdir(dirname(destination), { recursive: true })
     await copyFile(source, destination)
@@ -426,6 +425,75 @@ test('Ark runtime closure rejects an exported first-party entry that plain Node 
       assertArkRuntimeClosure(root, policy),
       /unparseable JavaScript entry @deepseek-ai\/dsh-syntax-fixture:lib\/broken\.js/,
     )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Ark syntax batches compile module and CommonJS entries without executing them', async () => {
+  const root = await stageRuntime()
+  try {
+    const packageRoot = join(root, 'node_modules/@deepseek-ai/dsh-syntax-batch')
+    await mkdir(join(packageRoot, 'nested'), { recursive: true })
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh-syntax-batch', version: '1.0.0', type: 'module',
+      exports: { './*': './*.js', './nested': './nested/index.js', './common': './return.cjs' },
+    }))
+    await writeFile(join(packageRoot, 'nested/package.json'), '{"type":"commonjs"}')
+    await writeFile(join(packageRoot, 'nested/index.js'), 'return;\n')
+    await writeFile(join(packageRoot, 'return.cjs'), '#!/usr/bin/env node\nreturn;\n')
+    for (let index = 0; index < 260; index++) {
+      await writeFile(join(packageRoot, `entry-${index}.js`),
+        'export const valid = await Promise.resolve(1); throw new Error("must not execute");\n')
+    }
+    await addRootDependency(root, '@deepseek-ai/dsh-syntax-batch', '1.0.0')
+    const manifest = await createArkRuntimeManifest(root, policy)
+    assert.equal(manifest.packages.find(item => item.name === '@deepseek-ai/dsh-syntax-batch').javaScriptEntries.length, 262)
+    await writeFile(join(packageRoot, 'entry-259.js'), 'export const broken = ;\n')
+    await assert.rejects(assertArkRuntimeClosure(root, policy), /unparseable JavaScript entry.*entry-259\.js/)
+    await writeFile(join(packageRoot, 'entry-259.js'), 'export const valid = 1;\n')
+    await writeFile(join(packageRoot, 'nested/index.js'), 'export const notCommonJS = 1;\n')
+    await assert.rejects(assertArkRuntimeClosure(root, policy), /unparseable JavaScript entry.*nested\/index\.js/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Ark syntax batches agree with the selected Node for package syntax boundaries', async () => {
+  const root = await stageRuntime()
+  try {
+    const name = '@deepseek-ai/dsh-syntax-boundary'
+    const packageRoot = join(root, 'node_modules', name)
+    await mkdir(packageRoot, { recursive: true })
+    await addRootDependency(root, name, '1.0.0')
+    const cases = [
+      { type: 'module', entry: 'index.js', source: 'export const value = await Promise.resolve(1);' },
+      { type: 'module', entry: 'index.js', source: 'return;' },
+      { type: 'commonjs', entry: 'index.js', source: 'return;' },
+      { type: 'commonjs', entry: 'index.js', source: 'export const value = 1;' },
+      { type: undefined, entry: 'index.js', source: 'export const value = 1;' },
+      { type: undefined, entry: 'index.js', source: 'const require = 1;' },
+      { type: undefined, entry: 'index.js', source: 'return;' },
+      { type: 'module', entry: 'index.cjs', source: 'export const value = 1;' },
+      { type: 'commonjs', entry: 'index.mjs', source: 'export const value = 1;' },
+      { type: 'module', entry: 'index.js', source: '#!/usr/bin/env node\nexport const value = 1;' },
+      { type: 'module', entry: 'index.js', source: '\uFEFFexport const value = 1;' },
+      { type: 'module', entry: 'index.js', source: '\uFEFF#!/usr/bin/env node\nexport const value = 1;' },
+      { type: 'commonjs', entry: 'index.js', source: '\uFEFF#!/usr/bin/env node\nreturn;' },
+    ]
+    for (const fixture of cases) {
+      const entry = join(packageRoot, fixture.entry)
+      await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+        name, version: '1.0.0', type: fixture.type, main: fixture.entry,
+      }))
+      await writeFile(entry, fixture.source)
+      const nodeAccepts = await execFileAsync(process.execPath, ['--check', entry])
+        .then(() => true, () => false)
+      if (nodeAccepts) await createArkRuntimeManifest(root, policy)
+      else await assert.rejects(createArkRuntimeManifest(root, policy), /unparseable JavaScript entry/,
+        `Node rejected ${JSON.stringify(fixture)}`)
+      await rm(entry)
+    }
   } finally {
     await rm(root, { recursive: true, force: true })
   }

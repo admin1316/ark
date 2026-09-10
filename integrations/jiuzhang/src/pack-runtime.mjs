@@ -115,7 +115,7 @@ async function pack(repositoryRoot, output) {
   const staging = `${destination}.staging-${process.pid}-${randomBytes(6).toString('hex')}`
   await mkdir(staging, { recursive: false })
   try {
-    run('npm', ['run', 'build:lib:host'], repositoryRoot)
+    run(process.execPath, ['integrations/jiuzhang/src/build-native.mjs'], repositoryRoot)
     const repositoryManifest = JSON.parse(await readFile(join(repositoryRoot, 'package.json'), 'utf8'))
     if (typeof repositoryManifest.packageManager !== 'string'
       || !repositoryManifest.packageManager.startsWith('pnpm@')) {
@@ -203,9 +203,9 @@ async function pack(repositoryRoot, output) {
     }
     const nativeRunnerImports = [...nativeRunnerEntry.matchAll(/from\s+["']\.\/([^"']+\.js)["']/gu)]
       .map(match => match[1])
-    if (nativeRunnerImports.length === 0) {
-      throw new Error('packed dedicated Native runner has no relative implementation import')
-    }
+    // Both a bundled executable and a thin executable importing its sibling are valid.
+    // The published library entry and every retained relative import must exist in the same tarball.
+    packedMember(requiredTarball('@deepseek-ai/dsh-native-api-runner'), 'package/lib/index.js', repositoryRoot)
     for (const imported of nativeRunnerImports) {
       packedMember(
         requiredTarball('@deepseek-ai/dsh-native-api-runner'),

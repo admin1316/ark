@@ -68,6 +68,12 @@ export type ChunkRow = {
 /** One durable log line's JSON value: a session event verbatim, or a packed chunk row. */
 export type StorageRecord = SessionEvent | ChunkRow;
 /**
+ * Identify a packed row in an already-typed storage record.
+ * @param record - validated event or packed chunk row.
+ * @returns whether the record uses a packed chunk tag.
+ */
+export declare function isChunkRow(record: StorageRecord): record is ChunkRow;
+/**
  * Pack an event batch for storage: each run of at least {@link MIN_RUN}
  * consecutive whitelisted same-kind, same-block delta chunk events becomes one
  * {@link ChunkRow}; every other event passes through verbatim, in order.

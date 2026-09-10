@@ -23,8 +23,6 @@ import { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { SandboxProvider } from '@deepseek-ai/dsh-sandbox';
 import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox';
-import type { WindowsAclBackend } from './windows-acl-backend.ts';
-export { bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs } from './profiles.ts';
 /** Plugin config. All optional — `static Config` supplies the defaults. */
 export interface Config {
     /**
@@ -70,8 +68,6 @@ export interface SandboxInternals {
     windowsAclRunnerEntry?: string;
     /** Replaces the functional windows-acl probe (the win32 chain's sole rung — only consulted if that chain ever grows). */
     probeWindowsAcl?: () => boolean;
-    /** Supplies the typed Windows backend when a non-win32 test simulates that platform. */
-    windowsAclBackend?: WindowsAclBackend;
     /** Replaces the private-temp-directory removal at provider dispose (a throwing fake exercises the cleanup-failure path). */
     rmTempDir?: (path: string) => void;
 }
@@ -83,7 +79,7 @@ type SelectedRunner = {
 /**
  * Local process-sandbox provider. Registers as `ctx.sandbox`. Caches the
  * chain verdict and, on the windows-acl rung, the write grants
- * ({@link WindowsAclWriteGrant}: the standing workspace-root grant per workspace
+ * ({@link AclWriteGrant}: the standing workspace-root grant per workspace
  * and the revocable private-temp grant per live session/workspace pair, the
  * latter revoked on provider dispose); the one-time probes spawn nothing
  * else.
@@ -176,8 +172,6 @@ export declare class LocalSandboxProvider extends SandboxProvider {
     private landlockLauncher;
     /** The `sandbox-exec` executable to probe and exec (test hook over the system one). */
     private seatbeltExec;
-    /** Resolve the Win32-only implementation or fail with one explicit owner diagnostic. */
-    private windowsAclBackend;
     /**
      * The windows-acl runner argv prefix: the built lib/runner.js entry when
      * present (production), else the package source through tsx (development).

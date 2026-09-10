@@ -151,20 +151,18 @@ Source: [`packages/interaction/user-approval/src/index.ts`](../../packages/inter
 
 #### `approval/request` — waterfall
 
-Ask composed answerers for one decision. Return an outcome to claim the request or call `next()`; failure yields the fail-closed default. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+Ask scoped answerers; call next to delegate an unclaimed request.
 
 ```ts cordis-catalog
 /**
- * Ask composed answerers for one decision. Return an outcome to claim the
- * request or call `next()`; failure yields the fail-closed default.
- * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
- * @param req - the pending decision (agent, tool identity, reason, signal).
+ * Ask scoped answerers; call next to delegate an unclaimed request.
+ * @param req - borrowed live Agent request and cancellation signal.
  * @mode waterfall
  */
-'approval/request'(this: Scoped<ApprovalService>, req: ApprovalRequest, next: () => Promise<ApprovalOutcome>): Promise<ApprovalOutcome>
+'approval/request'( this: Scoped<Agent>, req: ApprovalRequest, next: () => Promise<ApprovalOutcome>, ): Promise<ApprovalOutcome>
 ```
 
-Types: [Scoped](scope.md)
+Types: [Agent](core.md) · [Scoped](scope.md)
 
 Source: [`packages/interaction/user-approval/src/index.ts`](../../packages/interaction/user-approval/src/index.ts)
 <!-- END GENERATED cordis-surface -->

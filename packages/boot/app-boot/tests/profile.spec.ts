@@ -125,6 +125,17 @@ describe('resolveBundleDir', () => {
 })
 
 describe('loadProfile', () => {
+  it('resolves the patch reload lifecycle and rejects unknown values', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const dir = resolveProfileDir('demo', home)
+    initProfile(dir, [])
+    expect(loadProfile('t', 'demo', anchor, home).patchReload).toBe('live')
+    writeProfileManifest(dir, { dsh: { profile: { patchReload: 'startup' } } })
+    expect(loadProfile('t', 'demo', anchor, home).patchReload).toBe('startup')
+    writeFileSync(join(dir, 'package.json'), '{"dsh":{"profile":{"patchReload":"unknown"}}}')
+    expect(() => loadProfile('t', 'demo', anchor, home)).toThrow('invalid dsh.profile.patchReload')
+  })
   it('resolves each dsh.profile.bundles entry to its patch layer in order, plus the user layer', () => {
     const anchor = stageInstallation({
       'bundle-a': { patch: '- insert:\n    - id: a\n      name: pkg-a\n' },

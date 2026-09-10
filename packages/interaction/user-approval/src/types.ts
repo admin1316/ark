@@ -6,9 +6,7 @@
  */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { Agent } from '@deepseek-ai/dsh-agent/types'
-import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
+import type { CallId } from '@deepseek-ai/dsh-llm/brand'
 
 /**
  * Pairs one `approval/asked` audit event with its `approval/decided`.
@@ -44,7 +42,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     'approval/asked': {
       id: ApprovalRequestId
       toolName: string
-      callId?: ToolCallId
+      callId?: CallId
       reason?: string
     }
     /**
@@ -56,36 +54,5 @@ declare module '@deepseek-ai/dsh-session/types' {
       id: ApprovalRequestId
       outcome: ApprovalOutcome
     }
-  }
-}
-
-/** Client-safe payload declared for the approval answerer waterfall. */
-export interface ApprovalRequestEvent {
-  /** Agent identity projected to the corresponding Client Context in transit. */
-  readonly agent: Agent
-  /** Tool whose operation requires a decision. */
-  readonly toolName: string
-  /** Exact tool call being decided, when available. */
-  readonly callId?: ToolCallId
-  /** Human-readable reason supplied by the asker. */
-  readonly reason?: string
-  /** Cancellation lifetime of the pending request. */
-  readonly signal?: AbortSignal
-}
-
-declare module '@deepseek-ai/cordis' {
-  interface Events {
-    /**
-     * Ask composed answerers for one decision. Return an outcome to claim the
-     * request or call `next()` to delegate. Scope-filtered dispatch
-     * (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
-     * @param req - pending approval request.
-     * @mode waterfall
-     */
-    'approval/request'(
-      this: Scoped<Agent>,
-      req: ApprovalRequestEvent,
-      next: () => Promise<ApprovalOutcome>,
-    ): Promise<ApprovalOutcome>
   }
 }

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { isTokenDelta } from "@deepseek-ai/dsh-llm/message";
 //#region lib/types/projection.js
 /**
 * The `sessionStats` projection unit: a pure fold of step boundaries, stream
@@ -14,7 +13,7 @@ import { isTokenDelta } from "@deepseek-ai/dsh-llm/message";
 * and undercount cancelled steps (aborted before the message assembles).
 *
 * The wall-time folds mirror the client window fold field by field
-* (`deriveStats` in the Native conversation renderer, that fold's whole-window
+* (`deriveStats` in dsh-client-ui-conversation, that fold's whole-window
 * fallback role): model time is `step/start` → `assistant/message`, first
 * token is the first non-empty delta chunk and survives an in-step
 * `llm/retry`, decode spans first token → assembled message on steps that
@@ -25,6 +24,15 @@ import { isTokenDelta } from "@deepseek-ai/dsh-llm/message";
 *
 * @module @deepseek-ai/dsh-session-stats/projection
 */
+/** Whether a stream chunk carries a non-empty first-token delta. */
+function isTokenDelta(chunk) {
+	switch (chunk.type) {
+		case "text-delta":
+		case "reasoning-delta": return chunk.text !== "";
+		case "tool-call-delta": return chunk.argumentsDelta !== "" || chunk.name !== void 0;
+		default: return false;
+	}
+}
 const sessionStatsSchema = z.object({
 	turns: z.number().int().nonnegative(),
 	steps: z.number().int().nonnegative(),

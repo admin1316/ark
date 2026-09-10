@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Remote, TypertLookupFailure, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 //#region lib/types/index.js
 /**
@@ -125,6 +126,39 @@ function credentialKeyScope(key) {
 */
 function credentialKeyId(key) {
 	return key.slice(key.indexOf("/") + 1);
+}
+/** The reference changed before its conditional write; no requested write occurred. */
+var CredentialConflictError = class extends Error {
+	ref;
+	/** @param ref - the reference whose condition no longer holds. */
+	constructor(ref) {
+		super(`credential reference "${ref}" changed before its conditional write`);
+		this.ref = ref;
+		this.name = "CredentialConflictError";
+	}
+};
+/**
+* Capture a reference's value and source without retaining its secret.
+* @param current - the resolved reference, or absence.
+* @returns the condition for a later provider-owned conditional write.
+*/
+function credentialCondition(current) {
+	return current === void 0 ? { valueDigest: null } : {
+		valueDigest: createHash("sha256").update(current.value).digest("hex"),
+		source: current.source
+	};
+}
+/**
+* Check a conditional write while the provider holds its write exclusion.
+* @param ref - the reference being checked.
+* @param current - its current resolved value.
+* @param expected - the required value digest and optional source.
+* @returns nothing when the condition matches.
+* @throws CredentialConflictError without including secret values or digests.
+*/
+function assertCredentialCondition(ref, current, expected) {
+	const actual = credentialCondition(current);
+	if (actual.valueDigest !== expected.valueDigest || expected.source !== void 0 && actual.source !== expected.source) throw new CredentialConflictError(ref);
 }
 /**
 * Abstract credential service over two key spaces that answer two questions.
@@ -329,4 +363,4 @@ function remoteCredentialRejected(details) {
 	});
 }
 //#endregion
-export { CredentialProvider, CredentialProvider as default, credentialKey, credentialKeyId, credentialKeyScope, credentialRef, isCredentialKeySegment, isCredentialRefName, parseCredentialKey };
+export { CredentialConflictError, CredentialProvider, CredentialProvider as default, assertCredentialCondition, credentialCondition, credentialKey, credentialKeyId, credentialKeyScope, credentialRef, isCredentialKeySegment, isCredentialRefName, parseCredentialKey };

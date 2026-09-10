@@ -32,8 +32,6 @@ export declare class WorkflowExecution {
     private readonly children;
     /** 1-based count of `agent()` calls started (the `agentsStarted` result field). */
     private started;
-    /** Cumulative `phase()` + `log()` calls so far, charged against `maxNarrationEvents`. */
-    private narrationEvents;
     private activeSlots;
     private readonly slotWaiters;
     private cancelReason;
@@ -107,11 +105,5 @@ export declare class WorkflowExecution {
     private phase;
     /** The `log(message)` hook: narration to observers. */
     private log;
-    /**
-     * Charge one `phase()`/`log()` call against the per-run narration budget so
-     * a runaway script cannot flood the host event bus and session log.
-     * @param hook - the hook being charged, named in the cap error.
-     */
-    private chargeNarration;
 }
 //# sourceMappingURL=runtime.d.ts.map

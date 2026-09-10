@@ -1,5 +1,5 @@
 ---
-description: "基于 waterfall 的问答服务，用于工具、权限插件、本地 answerer 与 Agent-scoped Web 交互。"
+description: "供工具、带作用域的回答者和原生 Host UI 提供方使用的问答服务。"
 kind: "package-reference"
 ---
 
@@ -27,6 +27,7 @@ kind: "package-reference"
 ### 公开 API
 
 - `ctx.userQuestions.ask(request): Promise<AskUserQuestionAnswer>` 派发回答者 waterfall，并等待第一个接受请求的回答。
+- `ctx.userQuestions.registerProvider(provider): () => void` 注册监听器委托后使用的唯一 Host UI 回答提供方。重复注册以 `DUPLICATE_PROVIDER` 拒绝；释放调用方 fiber 或调用返回的 disposer 会撤销该提供方。Ark 原生事件服务负责其待答请求与取消。
 
 ### 关键类型
 
@@ -38,7 +39,7 @@ kind: "package-reference"
 
 对于单选题，`custom` 会覆盖选中的选项，且 `selected` 为空。对于多选题，`custom` 可以补充 `selected` 中的标签。UI 可以把跳过的条目保留为 `{ id, selected: [] }`，既维持现有回答形态，也保留该批次中的其他回答。
 
-请求包含 agent 时，`ask()` 会通过当前 `AgentRegistry` 验证该 agent 与注册表中的存活实例是同一对象，并且只允许运行时根调用。持久谱系不构成权限依据：带有历史委托深度的会话恢复为新的运行时根后可以提问；归属于另一个 agent 的存活子级即使持久化记录的委托深度为零也会被拒绝。Web 回答者只接收带 Agent scope 的请求；不含 agent 的程序化请求仍会交给本地未限定 scope 的 waterfall listener，若无人接受则以 `NO_PROVIDER` 失败。
+请求包含 agent 时，`ask()` 会通过当前 `AgentRegistry` 验证该 agent 与注册表中的存活实例是同一对象，并且只允许运行时根调用。持久谱系不构成权限依据：带有历史委托深度的会话恢复为新的运行时根后可以提问；归属于另一个 agent 的存活子级即使持久化记录的委托深度为零也会被拒绝。带作用域的回答者仅接收匹配的请求。不含 agent 的请求交给未限定作用域的监听器和 Host 回答提供方；`NO_PROVIDER` 表示两者均未接受它。
 
 ### 呈现意图
 
@@ -47,7 +48,7 @@ kind: "package-reference"
 <a id="role"></a>
 ## 职责
 
-这是 Service Definition 包。`@deepseek-ai/dsh-tool-ask-user` 等 Consumer 依赖此服务；Web Client 通过 Remote Events 贡献带 Agent scope 的回答者。循环保持不变：工具调用等待 waterfall 结果，该结果随后恢复正常的 agent loop（智能体循环）。
+这是 Service Definition 包。`@deepseek-ai/dsh-tool-ask-user` 等 Consumer 依赖此服务；Ark 原生事件服务注册 Host UI 回答提供方。本地插件可以在该提供方之前组合带作用域的回答者。工具调用等待回答，再恢复正常的 agent loop（智能体循环）。
 
 <a id="model-experience"></a>
 ## 模型体验
@@ -62,7 +63,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **带 Agent scope 的 Web 回答**：Remote Events 仅在请求带有存活 Agent scope 时路由随产品交付的 Web 回答者；agentless 调用方需要本地未限定 scope 的 waterfall listener。
+- **提供方负责请求生命周期**：UI 提供方必须撤销已取消的请求，并在卸载时结算待答请求；撤销注册仅阻止新请求进入该提供方。
 - **词汇仅包含问题表单形态**：可供选择的选项加可选的自定义文本；更丰富的交互形态（文件选择器、diff 预览确认）尚无 seam 词汇。
 
 

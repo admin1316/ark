@@ -47,7 +47,7 @@ export declare class TypertRegistry extends Service implements TypertRegistryCon
     get remotes(): TypertRemoteRegistry;
     /** Host object lookup providers. */
     get lookups(): TypertLookupRegistry;
-    /** Host Context providers and Client Context binders. */
+    /** Host and Client Context adapters. */
     get contexts(): TypertContextRegistry;
     /**
      * Register one generated contribution atomically for the calling fiber.

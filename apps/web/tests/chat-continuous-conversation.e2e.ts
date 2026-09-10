@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { CallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { ReplayEntry, ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -34,7 +34,7 @@ interface TurnSpec {
   readonly firstMarker: string
   readonly doneMarker: string
   readonly deltas: readonly string[]
-  readonly callId?: ReturnType<typeof ToolCallId>
+  readonly callId?: ReturnType<typeof CallId>
   readonly toolResultMarker?: string
 }
 
@@ -83,7 +83,7 @@ function turnSpec(index: number): TurnSpec {
     firstMarker,
     doneMarker,
     deltas,
-    callId: ToolCallId(`continuous-chat-tool-${id}`),
+    callId: CallId(`continuous-chat-tool-${id}`),
     toolResultMarker: `CONTINUOUS_CHAT_TOOL_RESULT_${id}`,
   }
 }

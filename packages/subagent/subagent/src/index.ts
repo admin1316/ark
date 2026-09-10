@@ -36,7 +36,8 @@ import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionRemoteHistoryValue } from '@deepseek-ai/dsh-session/types'
+import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
   canonicalClientTimeZone, catalogView, rejectCatalogRead, rejectControl, rejectPrompt,
   validateControlRequest,
@@ -47,6 +48,7 @@ import type {
   SubagentPromptReceipt,
   SubagentPromptRequest,
   SubagentPromptRequestId,
+  RemoteSubagentPromptReceipt,
 } from './control-types.ts'
 import type {
   ContinuableCreateRequest,
@@ -70,6 +72,7 @@ import type {
   SubagentFollowupOptions,
   SubagentInterruptAuthority,
   SubagentReportOptions,
+  DurableSubagentMessageReceipt,
 } from './continuation.ts'
 import SubagentActivationSetupRegistry from './activation-setup-registry.ts'
 import type { ContinuableSetupContribution } from './activation-setup-registry.ts'
@@ -131,6 +134,8 @@ export type {
   SubagentReportMessageSource,
   SubagentReportOptions,
   SubagentSettledMessageSource,
+  SubagentPromptMessageSource,
+  DurableSubagentMessageReceipt,
 } from './continuation.ts'
 export type { ContinuableSetupContribution } from './activation-setup-registry.ts'
 export type * from './control-types.ts'
@@ -206,7 +211,7 @@ export class SubagentRuntime extends TypertRemoteService {
   private readonly emitLifecycle: LifecycleEmitter
 
   constructor(ctx: Context) {
-    super(ctx, 'subagents')
+    super(ctx, 'subagents', { namespace: 'subagent' })
     this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentContinuationManager(childCtx, {
@@ -249,7 +254,7 @@ export class SubagentRuntime extends TypertRemoteService {
    * @param content - user-role content to deliver.
    * @param options - the message source fields and caller cancellation, which stops the
    *   operation only before inbox acceptance.
-   * @returns the accepted message's inbox id.
+   * @returns the accepted message's inbox id after the Session flush barrier, without waiting for model completion.
    * @throws when continuation services are unavailable, parent authority is
    *   rejected, or the message was not admitted.
    */
@@ -260,6 +265,20 @@ export class SubagentRuntime extends TypertRemoteService {
     options: SubagentFollowupOptions,
   ): Promise<MessageId> {
     return this.requireContinuations().followup(parent, childId, content, options)
+  }
+
+  /**
+   * Deliver through the continuation owner's durable retry boundary.
+   * @param parent - exact live direct parent.
+   * @param childId - durable child session id.
+   * @param content - content to deliver once per invocation.
+   * @param options - source, retry identity, and pre-admission cancellation.
+   * @returns receipt after the Session flush barrier; a failed flush does not retract acceptance.
+   */
+  async followupReceipt(
+    parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions,
+  ): Promise<DurableSubagentMessageReceipt> {
+    return this.requireContinuations().followupReceipt(parent, childId, content, options)
   }
 
   /**
@@ -426,7 +445,6 @@ export class SubagentRuntime extends TypertRemoteService {
    *   `subagent-unauthorized`, `subagent-delivery-unavailable`, `cancelled`, or
    *   `internal`.
    */
-  @Remote('prompt')
   async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt> {
     const { parentSessionId, childSessionId, clientTimeZone } = request
     validateControlRequest('subagent.prompt', request)
@@ -475,7 +493,6 @@ export class SubagentRuntime extends TypertRemoteService {
    *   `subagent-unauthorized` when the address does not own the live target,
    *   otherwise `internal`.
    */
-  @Remote('interruptByParent')
   interruptByParent(
     childSessionId: SessionId,
     parentSessionId: SessionId,
@@ -495,6 +512,96 @@ export class SubagentRuntime extends TypertRemoteService {
       return rejectControl('internal', 'subagent interrupt failed', {})
     }
     return { accepted: true }
+  }
+
+  /**
+   * Read the Session owner's bounded page after verifying the direct-child address.
+   * @param parentSessionId - durable parent authorizing the read.
+   * @param childSessionId - direct child session id.
+   * @param mode - expected child mode.
+   * @param beforeSeq - exclusive cursor for an older page.
+   * @param maxMessages - bounded message count, validated by the Session owner.
+   * @param signal - read cancellation; neither Agent is resumed.
+   * @returns the original Session page, including its presentation projections.
+   */
+  @Remote('history')
+  async remoteHistory(
+    parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable',
+    beforeSeq: number | undefined, maxMessages: number | undefined, signal: AbortSignal,
+  ): Promise<SessionRemoteHistoryValue> {
+    await this.requireRemoteChild(parentSessionId, childSessionId, mode, signal)
+    const sessions = this.ctx.get('sessions')
+    if (sessions === undefined) return rejectControl('service-unavailable', 'subagent history requires the Session service', {})
+    const page = await sessions.remoteExportHistory({
+      sessionId: childSessionId, expectedParentSessionId: parentSessionId,
+      ...beforeSeq === undefined ? {} : { beforeSeq },
+      ...maxMessages === undefined ? {} : { maxMessages },
+    }, signal)
+    if (signal.aborted) return rejectControl('cancelled', 'subagent history read was cancelled', {})
+    if (!page.ok) {
+      const details = page.error.details
+      throw new TypertRemoteFailure({
+        code: page.error.code, message: page.error.message,
+        details: details !== null && typeof details === 'object' && !Array.isArray(details) ? details : {},
+      })
+    }
+    return page.value
+  }
+
+  /**
+   * Submit a Native draft under its stable retry identity through the live parent.
+   * @param agent - exact parent Agent supplied by the Gateway lookup.
+   * @param childSessionId - continuable direct child.
+   * @param content - human message content.
+   * @param invocationId - caller-stable UUID; conflicting reuse rejects.
+   * @param signal - cancellation before acceptance, not during the durability wait.
+   * @returns an original or newly committed message receipt.
+   */
+  @Remote('prompt')
+  async remotePrompt(
+    agent: Agent, childSessionId: SessionId, content: ContentBlock[], invocationId: string, signal: AbortSignal,
+  ): Promise<RemoteSubagentPromptReceipt> {
+    await this.requireRemoteChild(agent.id, childSessionId, 'continuable', signal)
+    try {
+      const receipt = await this.followupReceipt(agent, childSessionId, content, {
+        source: { kind: 'subagent-prompt', form: 'relay', senderSessionId: agent.id, invocationId },
+        invocationId, signal,
+      })
+      return { invocationId, ...receipt }
+    } catch (error) {
+      return rejectPrompt(error, childSessionId, signal)
+    }
+  }
+
+  /**
+   * Interrupt a child using the continuation manager's direct-parent authority.
+   * @param parentSessionId - durable parent address.
+   * @param childSessionId - continuable child; absent targets are accepted no-ops.
+   * @returns signal admission, not completion of child teardown.
+   */
+  @Remote('interrupt')
+  remoteInterrupt(parentSessionId: SessionId, childSessionId: SessionId): SubagentInterruptReceipt {
+    return this.interruptByParent(childSessionId, parentSessionId, 'continuable')
+  }
+
+  private async requireRemoteChild(
+    parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', signal: AbortSignal,
+  ): Promise<void> {
+    validateControlRequest('subagent.history', { parentSessionId, childSessionId, mode })
+    let entries: readonly SubagentListEntry[]
+    try {
+      entries = await this.listChildren(parentSessionId, signal)
+    } catch (error) {
+      return rejectCatalogRead(error, signal)
+    }
+    if (signal.aborted) return rejectControl('cancelled', 'subagent catalog read was cancelled', {})
+    const entry = entries.find(candidate => candidate.id === childSessionId)
+    if (entry === undefined || (entry.kind === 'child' && entry.mode !== mode)) {
+      return rejectControl('subagent-not-found', 'requested direct child is absent', { parentSessionId, childSessionId })
+    }
+    if (entry.kind === 'diagnostic') {
+      return rejectControl('subagent-catalog-diagnostic', 'requested child cannot be read', { childSessionId, reason: entry.reason })
+    }
   }
 
   /**

@@ -18,7 +18,8 @@ import {
 import type { Session, SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { BorrowedSessionSource, SessionInspection, SessionLocation } from './index.ts'
-import { SessionPersistenceNotFoundError } from './errors.ts'
+import { SessionPersistenceDeleteBlockedError, SessionPersistenceNotFoundError } from './errors.ts'
+export { SessionPersistenceDeleteBlockedError } from './errors.ts'
 import type { SessionPersistenceRevision } from './revision.ts'
 import { observeQueuedAbort, SessionPreparations } from './preparations.ts'
 import type { SessionPreparationReservation } from './preparations.ts'
@@ -127,6 +128,13 @@ export interface StoredSuffix {
 export interface PersistenceBackend<TornMarker = unknown> {
   /** Human-readable backend name, used in the dispose-failure AggregateError. */
   readonly name: string
+
+  /**
+   * Durably remove a stored session, including a retryable partial deletion.
+   * @param id - exact stored identity.
+   * @returns whether materialized data or a pending deletion was removed.
+   */
+  deleteStored(id: SessionId): Promise<boolean>
 
   /**
    * Read a stored prefix by id, scanning every backend storage scope. Returns
@@ -700,6 +708,34 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       throw new TypeError('session event batch is not losslessly JSON-serializable because it contains non-JSON-serializable data')
     }
     return this.serialize(id, () => this.appendCore(id, batch))
+  }
+
+  /**
+   * Delete after final retirement and release the write chain before derived-store cleanup.
+   * @param id - exact session identity to delete.
+   * @returns whether stored data was removed.
+   * @throws while the session or its preparation is still owned, or cleanup fails.
+   */
+  async delete(id: SessionId): Promise<boolean> {
+    await this.waitForRetirement(id)
+    const deleted = await this.serialize(id, async () => {
+      if (this.ctx.sessions.get(id) !== undefined || this.states.get(id)?.owner !== undefined) {
+        throw new SessionPersistenceDeleteBlockedError(id, 'live')
+      }
+      if (!this.preparations.discardForDelete(id)) throw new SessionPersistenceDeleteBlockedError(id, 'reserved')
+      const removed = await this.backend.deleteStored(id)
+      this.states.delete(id)
+      for (const [candidate] of this.live) {
+        if (candidate.header.id === id) this.live.delete(candidate)
+      }
+      return removed
+    })
+    try {
+      await this.ctx.parallel('session-persistence/deleted', id)
+    } catch (error) {
+      throw new Error(`session "${id}" was deleted but derived cleanup failed; retry deletion to finish cleanup`, { cause: error })
+    }
+    return deleted
   }
 
   private async appendCore(id: SessionId, events: readonly SessionEvent[]): Promise<void> {

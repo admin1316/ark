@@ -5,7 +5,7 @@ const _deepseek_ai_dsh_agent_presets_agentPreset_copy_parameter_0$schema = z.str
 const _deepseek_ai_dsh_agent_presets_agentPreset_copy_parameter_1$schema = z.string()
 const _deepseek_ai_dsh_agent_presets_agentPreset_copy_parameter_2$schema = z.union([z.undefined(), z.string()])
 const _deepseek_ai_dsh_agent_presets_agentPreset_copy_result$schema = z.object({
-  'agentPreset': z.string(),
+  'agentPreset': z.string().readonly(),
 })
 const _deepseek_ai_dsh_agent_presets_agentPreset_list_result$schema = z.object({
   'presets': z.array(z.object({
@@ -20,10 +20,12 @@ const _deepseek_ai_dsh_agent_presets_agentPreset_list_result$schema = z.object({
   'hasDocument': z.boolean().readonly(),
 })
 const _deepseek_ai_dsh_agent_presets_agentPreset_openDocument_parameter_0$schema = z.string()
-const _deepseek_ai_dsh_agent_presets_agentPreset_openDocument_result$schema = z.object({
-  'agentPreset': z.string().readonly(),
-  'requiresNativeHandoff': z.literal(true).readonly(),
-})
+const _deepseek_ai_dsh_agent_presets_agentPreset_openDocument_result$schema = z.union([z.object({
+  'opened': z.literal(true).readonly(),
+}), z.object({
+  'opened': z.literal(false).readonly(),
+  'path': z.string().readonly(),
+})])
 const _deepseek_ai_dsh_agent_presets_agentPreset_read_parameter_0$schema = z.string()
 const _deepseek_ai_dsh_agent_presets_agentPreset_read_result$schema = z.object({
   'agentPreset': z.string().readonly(),
@@ -33,11 +35,11 @@ const _deepseek_ai_dsh_agent_presets_agentPreset_read_result$schema = z.object({
   'description': z.string().readonly().optional(),
 })
 const _deepseek_ai_dsh_agent_presets_agentPreset_remove_parameter_0$schema = z.string()
-const _deepseek_ai_dsh_agent_presets_agentPreset_remove_result$schema = z.object({})
+const _deepseek_ai_dsh_agent_presets_agentPreset_remove_result$schema = z.record(z.string(), z.never())
 const _deepseek_ai_dsh_agent_presets_agentPreset_select_parameter_0$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_agent_presets_agentPreset_select_parameter_1$schema = z.string()
 const _deepseek_ai_dsh_agent_presets_agentPreset_select_result$schema = z.object({
-  'agentPreset': z.string(),
+  'agentPreset': z.string().readonly(),
 })
 
 export const TYPERT = {
@@ -51,7 +53,7 @@ export const TYPERT = {
       service: 'agentPresets',
       namespace: 'agentPreset',
       method: 'copy',
-      implementation: 'remoteCopy',
+      implementation: 'remoteExportCopy',
       invocation: { kind: 'direct' },
       parameters: [
         {
@@ -88,26 +90,26 @@ export const TYPERT = {
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets#agentPreset/copy:result',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetSelection',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_copy_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":311,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":567,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-agent-presets#agentPreset/list',
       service: 'agentPresets',
       namespace: 'agentPreset',
       method: 'list',
-      implementation: 'remoteList',
+      implementation: 'remoteExportList',
       invocation: { kind: 'direct' },
       parameters: [
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#RemoteAgentPresetCatalog',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetRoster',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_list_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":221,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":324,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-agent-presets#agentPreset/openDocument',
@@ -128,19 +130,20 @@ export const TYPERT = {
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#RemoteAgentPresetOpenTarget',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetDocumentOpen',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_openDocument_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":327,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":627,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-agent-presets#agentPreset/read',
       service: 'agentPresets',
       namespace: 'agentPreset',
       method: 'read',
-      implementation: 'remoteRead',
+      implementation: 'readDocument',
       invocation: { kind: 'direct' },
       parameters: [
         {
@@ -156,17 +159,17 @@ export const TYPERT = {
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#RemoteAgentPresetDocument',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetDocument',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_read_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":288,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":511,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-agent-presets#agentPreset/remove',
       service: 'agentPresets',
       namespace: 'agentPreset',
       method: 'remove',
-      implementation: 'remoteRemove',
+      implementation: 'remoteExportDelete',
       invocation: { kind: 'direct' },
       parameters: [
         {
@@ -182,10 +185,10 @@ export const TYPERT = {
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets#agentPreset/remove:result',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetRemoved',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_remove_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":343,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":610,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-agent-presets#agentPreset/select',
@@ -223,10 +226,10 @@ export const TYPERT = {
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets#agentPreset/select:result',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetSelection',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_select_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":246,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":778,"column":9},
     },
   ],
   model: {
@@ -255,45 +258,10 @@ export const TYPERT = {
           },
           {
             "kind": "method",
-            "name": "remoteList",
-            "signature": "@Remote('list') async remoteList(): Promise<RemoteAgentPresetCatalog>",
-            "summary": "List the current preset roster without exposing any Host path.",
-            "jsDoc": "/**\n * List the current preset roster without exposing any Host path.\n * @returns the redacted preset catalog and authoring capabilities.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remoteSelect",
-            "signature": "@Remote('select') async remoteSelect(agent: Agent, agentPreset: string): Promise<{ agentPreset: string }>",
-            "summary": "Recompose one blank agent under a different preset.",
-            "jsDoc": "/**\n * Recompose one blank agent under a different preset. The Agent lookup is\n * supplied by the gateway, so a caller never submits an arbitrary context.\n * @param agent - gateway-resolved Agent whose blank session is recomposed.\n * @param agentPreset - preset id to compose for the Agent.\n * @returns the selected preset id.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remoteRead",
-            "signature": "@Remote('read') async remoteRead(agentPreset: string): Promise<RemoteAgentPresetDocument>",
-            "summary": "Privileged read of one composition; gateway policy must mark this route privileged.",
-            "jsDoc": "/**\n * Privileged read of one composition; gateway policy must mark this route privileged.\n * @param agentPreset - preset id to read.\n * @returns the preset document without exposing its Host path.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remoteCopy",
-            "signature": "@Remote('copy') async remoteCopy(from: string, agentPreset: string, name?: string): Promise<{ agentPreset: string }>",
-            "summary": "Create one user-owned preset from a named existing source.",
-            "jsDoc": "/**\n * Create one user-owned preset from a named existing source.\n * @param from - source preset id to copy.\n * @param agentPreset - id for the new user-owned preset.\n * @param name - optional display name for the new preset.\n * @returns the new preset id.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remoteOpenDocument",
-            "signature": "@Remote('openDocument') async remoteOpenDocument(agentPreset: string): Promise<RemoteAgentPresetOpenTarget>",
-            "summary": "Authorize, but do not resolve or launch, a user-owned preset directory.",
-            "jsDoc": "/**\n * Authorize, but do not resolve or launch, a user-owned preset directory.\n * The Host re-resolves this id and owns the macOS LaunchServices handoff.\n * @param agentPreset - user-owned preset id to open.\n * @returns the authorized native document target.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remoteRemove",
-            "signature": "@Remote('remove') async remoteRemove(agentPreset: string): Promise<Record<never, never>>",
-            "summary": "Delete one locally authored preset.",
-            "jsDoc": "/**\n * Delete one locally authored preset.\n * @param agentPreset - user-owned preset id to delete.\n * @returns an empty object after deletion.\n */"
+            "name": "remoteExportList",
+            "signature": "@Remote('list') async remoteExportList(): Promise<AgentPresetRoster>",
+            "summary": "The roster off the Host: {@link list} projected to path-free rows, with the default marked and this deployment's authoring capability beside it.",
+            "jsDoc": "/**\n * The roster off the Host: {@link list} projected to path-free rows, with\n * the default marked and this deployment's authoring capability beside it.\n *\n * Whether a client can open a preset's directory is the Host's own opener\n * capability, not a roster property — a caller needing both joins them.\n * @returns the rows and the authoring capability.\n */"
           },
           {
             "kind": "method",
@@ -327,8 +295,8 @@ export const TYPERT = {
             "kind": "getter",
             "name": "roots",
             "signature": "get roots(): readonly PresetRoot[]",
-            "summary": "The roots this roster scans, which is not `config.roots`: it is every configured root in order, then the harness-home user root unless `includeUserRoot` is false.",
-            "jsDoc": "/**\n * The roots this roster scans, which is not `config.roots`: it is every\n * configured root in order, then the harness-home user root unless\n * `includeUserRoot` is false. Read this — not the config field — to answer\n * whether a roster is composed at all, so one derivation decides it.\n */"
+            "summary": "The roots this roster scans, which is not `config.roots`: the package's shipped root unless `includeShippedRoot` is false, every configured root in order, then the harness-home user root unless `includeUserRoot` is false.",
+            "jsDoc": "/**\n * The roots this roster scans, which is not `config.roots`: the package's\n * shipped root unless `includeShippedRoot` is false, every configured root\n * in order, then the harness-home user root unless `includeUserRoot` is\n * false. Read this — not the config field — to answer whether a roster is\n * composed at all, so one derivation decides it.\n */"
           },
           {
             "kind": "getter",
@@ -346,6 +314,13 @@ export const TYPERT = {
           },
           {
             "kind": "method",
+            "name": "readDocument",
+            "signature": "@Remote('read') async readDocument(agentPreset: string): Promise<AgentPresetDocument>",
+            "summary": "One preset's composition text with the roster row it belongs to.",
+            "jsDoc": "/**\n * One preset's composition text with the roster row it belongs to.\n * @param agentPreset - the preset id.\n * @returns the composition beside its trust and published metadata.\n * @throws {TypertRemoteFailure} `bad-request` for an empty id, or\n * `agent-preset-not-found` when no configured root supplies it.\n */"
+          },
+          {
+            "kind": "method",
             "name": "copy",
             "signature": "async copy(from: string, id: string, name?: string): Promise<void>",
             "summary": "Create a locally authored preset by copying an existing one whole.",
@@ -353,10 +328,31 @@ export const TYPERT = {
           },
           {
             "kind": "method",
+            "name": "remoteExportCopy",
+            "signature": "@Remote('copy') async remoteExportCopy(from: string, agentPreset: string, name?: string): Promise<AgentPresetSelection>",
+            "summary": "Copy one preset through the Remote API.",
+            "jsDoc": "/**\n * Copy one preset through the Remote API.\n * @param from - the source preset id.\n * @param agentPreset - the new preset id.\n * @param name - the copy's optional display name.\n * @returns the id after the copy is stored.\n * @throws {TypertRemoteFailure} with the corresponding stable preset code\n * and details when the copy is refused.\n */"
+          },
+          {
+            "kind": "method",
             "name": "remove",
             "signature": "async remove(id: string): Promise<void>",
             "summary": "Delete a locally authored preset.",
-            "jsDoc": "/**\n * Delete a locally authored preset.\n * @param id - the preset id.\n * @throws when the preset is unknown or ships with the deployment.\n */"
+            "jsDoc": "/**\n * Delete a locally authored preset.\n *\n * @param id - the preset id.\n * @throws when the preset is unknown or ships with the deployment.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteExportDelete",
+            "signature": "@Remote('remove') async remoteExportDelete(agentPreset: string): Promise<AgentPresetRemoved>",
+            "summary": "Delete one preset through the Remote API.",
+            "jsDoc": "/**\n * Delete one preset through the Remote API.\n * @param agentPreset - the preset id.\n * @returns an empty acknowledgement after deletion.\n * @throws {TypertRemoteFailure} with the corresponding stable preset code\n * and details when deletion is refused.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteOpenDocument",
+            "signature": "@Remote('openDocument') async remoteOpenDocument(agentPreset: string, signal: AbortSignal): Promise<AgentPresetDocumentOpen>",
+            "summary": "Open only a user-authored preset resolved by the service's own roster.",
+            "jsDoc": "/**\n * Open only a user-authored preset resolved by the service's own roster.\n * @param agentPreset - user preset id, never a caller-supplied path.\n * @param signal - native command cancellation.\n * @returns a handoff confirmation or the directory when this host has no opener.\n */"
           },
           {
             "kind": "method",
@@ -370,7 +366,21 @@ export const TYPERT = {
             "name": "recompose",
             "signature": "async recompose(agentCtx: Context, id: string): Promise<AgentPreset>",
             "summary": "Re-link one agent to a different preset's standing composition.",
-            "jsDoc": "/**\n * Re-link one agent to a different preset's standing composition.\n *\n * Only valid while the agent has produced nothing: swapping tools mid\n * conversation would leave logged tool calls the new composition cannot\n * make. The CALLER owns that check — this method does not read session\n * history.\n *\n * The swap is a parent re-link, not an unmount: standing mounts are shared\n * and permanent, so the old composition stays for its other agents and the\n * new one is ensured BEFORE the link moves. An unknown or unusable preset\n * therefore throws with the agent exactly as it was — there is no torn-down\n * state to restore. The re-link runs through the binding this roster kept\n * from the agent's mount — dsh-scope's only re-link authority. An agent\n * that never composed one has nothing to re-link: the switch is then the\n * agent's first bind, exactly a mount.\n * @param agentCtx - the agent's scope context.\n * @param id - the preset to compose the agent from instead.\n * @returns the preset now installed.\n * @throws when the preset is unknown or its composition is unusable.\n */"
+            "jsDoc": "/**\n * Re-link one agent to a different preset's standing composition.\n *\n * Only valid while the agent has produced nothing: swapping tools mid\n * conversation would leave logged tool calls the new composition cannot\n * make. The CALLER owns that check — this method does not read session\n * history.\n *\n * The swap is a parent re-link, not an unmount: standing mounts are shared\n * and permanent, so the old composition stays for its other agents and the\n * new one is ensured BEFORE the link moves. An unknown or unusable preset\n * therefore throws with the agent exactly as it was — there is no torn-down\n * state to restore. The re-link runs through the binding this roster kept\n * from the agent's mount — dsh-scope's only re-link authority. An agent\n * that never composed one has nothing to re-link: the switch is then the\n * agent's first bind, exactly a mount. A committed re-link emits\n * `tools/change` because changing the parent scope changes the Agent's\n * resolved tool set without adding or removing registry entries.\n * @param agentCtx - the agent's scope context.\n * @param id - the preset to compose the agent from instead.\n * @returns the preset now installed.\n * @throws when the preset is unknown or its composition is unusable.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "select",
+            "signature": "async select(agent: Agent, agentPreset: string): Promise<string>",
+            "summary": "Compose a blank session's agent from a different preset and record it.",
+            "jsDoc": "/**\n * Compose a blank session's agent from a different preset and record it.\n * @param agent - the session's live agent, resolved from the wire identity.\n * @param agentPreset - the preset to compose the agent from instead.\n * @returns the preset id that was recorded.\n * @throws {TypertRemoteFailure} with `bad-request`, `agent-preset-locked`,\n * `agent-preset-not-found`, or `agent-preset-invalid` when refused.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteSelect",
+            "signature": "@Remote('select') async remoteSelect(agent: Agent, agentPreset: string): Promise<AgentPresetSelection>",
+            "summary": "Select through the existing serialized session-composition owner.",
+            "jsDoc": "/**\n * Select through the existing serialized session-composition owner.\n * @param agent - exact Agent resolved by the Gateway.\n * @param agentPreset - requested preset id.\n * @returns the preset committed to the session log.\n */"
           },
           {
             "kind": "method",
@@ -396,6 +406,30 @@ export const TYPERT = {
           {
             "name": "AgentPreset",
             "declaration": "export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}"
+          },
+          {
+            "name": "AgentPresetDocument",
+            "declaration": "export interface AgentPresetDocument {\n    readonly agentPreset: string;\n    readonly trust: PresetTrust;\n    readonly content: string;\n    readonly name?: string;\n    readonly description?: string;\n}"
+          },
+          {
+            "name": "AgentPresetDocumentOpen",
+            "declaration": "export type AgentPresetDocumentOpen = { readonly opened: true; } | { readonly opened: false; readonly path: string; };"
+          },
+          {
+            "name": "AgentPresetRemoved",
+            "declaration": "export type AgentPresetRemoved = Record<string, never>;"
+          },
+          {
+            "name": "AgentPresetRoster",
+            "declaration": "export interface AgentPresetRoster {\n    readonly presets: readonly AgentPresetRow[];\n    readonly authorable: boolean;\n    readonly hasDocument: boolean;\n}"
+          },
+          {
+            "name": "AgentPresetRow",
+            "declaration": "export interface AgentPresetRow {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}"
+          },
+          {
+            "name": "AgentPresetSelection",
+            "declaration": "export interface AgentPresetSelection {\n    readonly agentPreset: string;\n}"
           },
           {
             "name": "AgentStatus",
@@ -483,7 +517,7 @@ export const TYPERT = {
           },
           {
             "name": "ContinuableSubagentDescriptorData",
-            "declaration": "export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: 'continuable';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}"
+            "declaration": "export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: 'continuable';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly agentReasoningEffort?: ReasoningEffortId;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}"
           },
           {
             "name": "CoordinatorMessageSource",
@@ -591,7 +625,7 @@ export const TYPERT = {
           },
           {
             "name": "MessageSourceMap",
-            "declaration": "export interface MessageSourceMap {\n    user: { kind: 'user'; };\n    plugin: { kind: 'plugin'; plugin: string; } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    goal: GoalMessageSource;\n    coordinator: CoordinatorMessageSource;\n    'subagent-prompt': SubagentPromptMessageSource;\n    'subagent-report': SubagentReportMessageSource;\n    'subagent-settled': SubagentSettledMessageSource;\n    'session-reference': SessionReferenceSource;\n    'skill-invocation': SkillInvocationSource;\n}"
+            "declaration": "export interface MessageSourceMap {\n    user: { kind: 'user'; };\n    plugin: { kind: 'plugin'; plugin: string; } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    goal: GoalMessageSource;\n    coordinator: CoordinatorMessageSource;\n    'subagent-report': SubagentReportMessageSource;\n    'subagent-settled': SubagentSettledMessageSource;\n    'subagent-prompt': SubagentPromptMessageSource;\n    'session-reference': SessionReferenceSource;\n    'skill-invocation': SkillInvocationSource;\n}"
           },
           {
             "name": "ModelMessageSource",
@@ -620,22 +654,6 @@ export const TYPERT = {
           {
             "name": "ReasoningEffortId",
             "declaration": "export type ReasoningEffortId = Branded<'ReasoningEffortId'>;"
-          },
-          {
-            "name": "RemoteAgentPresetCatalog",
-            "declaration": "export interface RemoteAgentPresetCatalog {\n    readonly presets: readonly RemoteAgentPresetEntry[];\n    readonly authorable: boolean;\n    readonly hasDocument: boolean;\n}"
-          },
-          {
-            "name": "RemoteAgentPresetDocument",
-            "declaration": "export interface RemoteAgentPresetDocument {\n    readonly agentPreset: string;\n    readonly trust: 'system' | 'user';\n    readonly content: string;\n    readonly name?: string;\n    readonly description?: string;\n}"
-          },
-          {
-            "name": "RemoteAgentPresetEntry",
-            "declaration": "export interface RemoteAgentPresetEntry {\n    readonly id: string;\n    readonly trust: 'system' | 'user';\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}"
-          },
-          {
-            "name": "RemoteAgentPresetOpenTarget",
-            "declaration": "export interface RemoteAgentPresetOpenTarget {\n    readonly agentPreset: string;\n    readonly requiresNativeHandoff: true;\n}"
           },
           {
             "name": "ReplayEnvelope",
@@ -667,7 +685,7 @@ export const TYPERT = {
           },
           {
             "name": "SessionEventMap",
-            "declaration": "export interface SessionEventMap {\n    'turn/start': { turn: number; };\n    'turn/end': { turn: number; reason: TurnEndReason; };\n    'step/start': { turn: number; step: number; };\n    'step/end': { turn: number; step: number; };\n    'user/message': UserMessage;\n    'assistant/chunk': { turn: number; step: number; chunk: StreamChunk; };\n    'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true; };\n    'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string; };\n    'tool/result': { turn: number; step: number; message: ToolResultMessage; error?: { name: string; code: string; }; meta?: JsonValue; };\n    'todo/write': { todos: TodoItem[]; };\n    'request/header': { header: EpochHeader; reason: RequestHeaderReason; };\n    'request/context': RequestContext;\n    'session/end-seed': Record<string, never>;\n    'agent/inbox/spliced': { target: InboxTarget; start: number; removedCount?: number; inserted: UserMessage[]; outcome?: 'canceled'; };\n    'agent-preset/selected': { agentPreset: string; };\n    'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource; };\n    'command/done': { commandId: CommandId; kind: 'success' | 'error'; text?: string; sourceEventSeq?: number; };\n    'goal/change': GoalChangeMeta;\n    'approval/asked': { id: ApprovalRequestId; toolName: string; callId?: CallId; reason?: string; };\n    'approval/decided': { id: ApprovalRequestId; outcome: ApprovalOutcome; };\n    'approval/policy': { policy: ApprovalPolicy; source?: 'delegation'; };\n    'tool/code-dispatch-start': CodeDispatchStartEventData;\n    'tool/code-dispatch': CodeDispatchEventData;\n    'subagent/descriptor': SubagentDescriptorData;\n    'sandbox/mode': { mode: SandboxMode; source?: 'delegation'; };\n    'session/title': SessionTitleEventData;\n    'compaction/start': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; };\n    'compaction/summary': { compactionId: CompactionId; sourceCommandId?: CommandId; summary: ContentBlock[]; shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; provider: string; model: string; maxTokens?: number; usage?: TokenUsage; } & ({ rawOutput: ContentBlock[]; llmStreamCall: true; } | { rawOutput?: ContentBlock[]; llmStreamCall?: never; });\n    'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string; };\n    'compaction/prune': { shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; };\n}"
+            "declaration": "export interface SessionEventMap {\n    'turn/start': { turn: number; };\n    'turn/end': { turn: number; reason: TurnEndReason; };\n    'step/start': { turn: number; step: number; };\n    'step/end': { turn: number; step: number; };\n    'user/message': UserMessage;\n    'assistant/chunk': { turn: number; step: number; chunk: StreamChunk; };\n    'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true; };\n    'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string; };\n    'tool/result': { turn: number; step: number; message: ToolResultMessage; error?: { name: string; code: string; }; meta?: JsonValue; };\n    'todo/write': { todos: TodoItem[]; };\n    'request/header': { header: EpochHeader; reason: RequestHeaderReason; };\n    'request/context': RequestContext;\n    'session/end-seed': Record<string, never>;\n    'agent/inbox/spliced': { target: InboxTarget; start: number; removedCount?: number; inserted: UserMessage[]; outcome?: 'canceled'; };\n    'approval/asked': { id: ApprovalRequestId; toolName: string; callId?: CallId; reason?: string; };\n    'approval/decided': { id: ApprovalRequestId; outcome: ApprovalOutcome; };\n    'approval/policy': { policy: ApprovalPolicy; source?: 'delegation'; };\n    'tool/code-dispatch-start': CodeDispatchStartEventData;\n    'tool/code-dispatch': CodeDispatchEventData;\n    'agent-preset/selected': { agentPreset: string; };\n    'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource; };\n    'command/done': { commandId: CommandId; kind: 'success' | 'error'; text?: string; sourceEventSeq?: number; };\n    'goal/change': GoalChangeMeta;\n    'subagent/descriptor': SubagentDescriptorData;\n    'session/title': SessionTitleEventData;\n    'sandbox/mode': { mode: SandboxMode; source?: 'delegation'; };\n    'compaction/start': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; };\n    'compaction/summary': { compactionId: CompactionId; sourceCommandId?: CommandId; summary: ContentBlock[]; shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; provider: string; model: string; maxTokens?: number; usage?: TokenUsage; } & ({ rawOutput: ContentBlock[]; llmStreamCall: true; } | { rawOutput?: ContentBlock[]; llmStreamCall?: never; });\n    'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string; };\n    'compaction/prune': { shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; };\n}"
           },
           {
             "name": "SessionEventType",
@@ -731,7 +749,7 @@ export const TYPERT = {
           },
           {
             "name": "SubagentSettledMessageSource",
-            "declaration": "export interface SubagentSettledMessageSource {\n    readonly kind: 'subagent-settled';\n    readonly form: 'notice';\n    readonly summary: string;\n    readonly senderSessionId: SessionId;\n    readonly settlementId: string;\n}"
+            "declaration": "export interface SubagentSettledMessageSource {\n    readonly kind: 'subagent-settled';\n    readonly form: 'notice';\n    readonly summary: string;\n    readonly senderSessionId: SessionId;\n}"
           },
           {
             "name": "SurfaceEventType",

@@ -68,6 +68,16 @@
     },
     {
       "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmModelDiscoveryOperation",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmProviderMigration",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
       "symbol": "LlmDiscoveredModel",
       "source": "packages/llm/llm/src/types.ts"
     },
@@ -134,13 +144,12 @@
     {
       "doc": "docs/subsystems/core.md",
       "symbol": "Agent",
-      "source": "packages/core/agent/src/types.ts",
-      "augmentations": [
-        {
-          "source": "packages/core/agent/src/runtime-types.ts",
-          "module": "./types.ts"
-        }
-      ]
+      "source": "packages/core/agent/src/runtime-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/core.md",
+      "symbol": "AgentQuiescenceResidual",
+      "source": "packages/core/agent-loop/src/agent.ts"
     },
     {
       "doc": "docs/subsystems/core.md",
@@ -472,7 +481,12 @@
     {
       "doc": "docs/subsystems/todo.md",
       "symbol": "TodoItem",
-      "source": "packages/todo/tool-todo/src/types.ts"
+      "source": "packages/core/session/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session.md",
+      "symbol": "TodoItem",
+      "source": "packages/core/session/src/types.ts"
     },
     {
       "doc": "docs/subsystems/session.md",
@@ -793,7 +807,7 @@
     },
     {
       "doc": "docs/subsystems/tools.md",
-      "symbol": "PtcDispatchLog",
+      "symbol": "CodeDispatchLog",
       "source": "packages/core/tools/src/index.ts"
     },
     {
@@ -879,6 +893,11 @@
     {
       "doc": "docs/subsystems/user-questions.md",
       "symbol": "AskUserQuestionRequest",
+      "source": "packages/interaction/user-questions/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/user-questions.md",
+      "symbol": "UserQuestionProvider",
       "source": "packages/interaction/user-questions/src/index.ts"
     },
     {
@@ -1677,6 +1696,21 @@
       "source": "packages/llm/llm/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmProviderVerificationMode",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "RemoteLlmProviderVerificationRequest",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "RemoteLlmProviderVerificationResult",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/settings.md",
       "symbol": "SettingsPathOp",
       "source": "packages/settings/settings/src/index.ts"
@@ -1850,11 +1884,6 @@
       "doc": "docs/subsystems/typert.md",
       "symbol": "TypertRemoteNamespaceMap",
       "source": "packages/typert/protocol/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/typert.md",
-      "symbol": "InvokeRemoteRequest",
-      "source": "packages/api/gateway/src/types.ts"
     },
     {
       "doc": "docs/subsystems/typert.md",

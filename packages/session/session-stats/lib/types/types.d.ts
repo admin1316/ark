@@ -1,14 +1,15 @@
 /**
  * Pure types of the session-stats domain: the ONE home of the `sessionStats`
  * projection-key declaration, free of this package's host-side value imports
- * (cordis context, zod, the llm chunk predicate). The `./types` outlet serves
- * Host and Native consumers without duplicating the projection definition.
+ * (cordis context, zod, the llm chunk predicate). Two namespace projections
+ * serve it — `./types` for host consumers, `./client` for client aggregates —
+ * with zero content duplication.
  *
  * @module @deepseek-ai/dsh-session-stats/types
  */
 export {};
 /**
- * Whole-log conversation figures, independent of how much history a consumer
+ * Whole-log conversation figures, independent of how much history a client
  * has paged in. Counts and wall times all fold from the complete durable log;
  * every field is 0 until its first contributing event lands. Field names
  * mirror the client window fold so an assembly without this unit can fall

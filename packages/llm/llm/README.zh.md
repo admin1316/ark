@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-任何调用模型提供方的组合——agent loop、会话标题生成器、压缩（compaction）摘要器——都会通过本服务流式发起请求。与至少一个提供方适配器一起挂载它；服务本身没有任何配置，也不包含提供方协议代码。
+任何调用模型提供方的组合——agent loop、会话标题生成器、压缩（compaction）摘要器——都会通过本服务流式发起请求。与至少一个提供方适配器一起挂载它。服务负责验证时限，但不包含提供方协议代码。
 
 ### 何时选择
 
@@ -70,6 +70,18 @@ for await (const chunk of ctx.llm.stream({
 
 -----
 
+原生目录读取使用 `llm/providers` 和 `llm/models` 响应封装。提供方目录包含休眠的可配置路由和仅有活动适配器的路由；一个提供方的目录失败不会丢弃其他提供方的模型。原生 `llm/discoverModels` 接受一个包含 `settingsNs` 与草稿字段的 `request`，并返回 `{ models }`。取消与提供方失败保持区分，一次性密钥和原始提供方诊断均不会返回。
+
+`llm/verifyProvider` 检查一组已配置的提供方和模型。`metadata-auth` 证明获取精确模型元数据需要认证；`endpoint-catalog` 返回 `verified: false` 和 `reachability-only`，不表示认证成功。不支持元数据探测的适配器使用独立的单 token 生成握手，分类为 `minimal-generation`；响应不包含会话历史或生成文本。`verificationTimeoutMs` 默认为 15,000 毫秒，`verificationCancellationGraceMs` 默认为 2,000 毫秒。忽略取消的工作在实际结束前持续占用预约，重试因此收到 `provider-verification-still-running`，不会启动重复操作。dispose（资源释放）停止新请求准入，并等待同一组已跟踪工作。详见[验证决策](../../../.agents/notes/implemented/bug-fix/2026-09-09-provider-verification-and-header-ownership.zh.md)。
+
+原生 `llm/mutateProvider` 通过现有 Settings 与 Credentials owner 协调配置修改和只写凭据。新写入要求当前设置修订号；精确重试可以携带较新的修订号，而不重复已提交的修改。共享事务日志、命名空间和凭据引用的资源预约覆盖激活过程，无关资源则可以独立推进。通用 Settings Remote 写入不能绕过已注册领域的保护。未被引用的暂存密钥不属于活动配置变更；已保存配置若被 owner 拒绝激活，会报告失败，而不是活动成功。
+
+凭据暂存、延迟删除和终态回执使用 Credentials owner 的条件写入。并发替换值会被保留并报告 `credential-rejected`；设置已经提交时，回执为 `committed-not-live`。设置失败时，证明此前不存在的计划会先按条件移除暂存值，再记录回滚；清理失败保持可重试，而不报告回滚完成。
+
+`llm/providerTransaction` 读取保留事务的阶段，不认领或升级日志。`llm/resumeProvider` 使用已存计划，而不是客户端重建的编辑；缺失凭据只通过只写值补入。包含完整且校验通过计划的版本 1 日志，与携带回执的日志读取为同一种内部表示；显式修改或恢复时写入携带回执的格式。未提交计划若没有可验证的原设置摘要，会记录为已回滚，且不改变已存配置。这是安全拒绝，不是成功激活。已完成回执不重复执行副作用；格式错误或不受支持的记录会被拒绝，而不是当作空状态。[恢复决策](../../../.agents/notes/implemented/bug-fix/2026-09-09-provider-journal-recovery.zh.md)定义兼容与重启边界。
+
+整项配置删除在结算后的有效配置与运行时都不包含该路由时成功；只移除用户覆盖项则可能保留继承路由。已删除自定义提供方的精确保留事务可以完成清理或回放回执，无须重新注册提供方。该日志不能授权新编辑或相邻配置。修改结果的 `live.accepted` 表示预期配置已应用，事务状态的 `live` 则单独表示路由目前是否存在。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
@@ -87,6 +99,7 @@ for await (const chunk of ctx.llm.stream({
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `LlmRuntime` 服务：适配器注册表、可配置提供方目录、模型发现、调用准备与流式边界 |
+| [`src/provider-transaction.ts`](src/provider-transaction.ts) | 提供方写入、共享资源预约和不含秘密的凭据日志回执 |
 | [`src/types.ts`](src/types.ts) | `StreamChunk` 协议、内容块映射、结束原因与共享词汇 |
 | [`src/message.ts`](src/message.ts) | 投递、历史与请求共享的不可变消息构造函数 |
 | [`src/assembler.ts`](src/assembler.ts) | `BlockAssembler`：分片到块的增量组装 |
@@ -132,11 +145,19 @@ for await (const chunk of ctx.llm.stream({
 <a id="model-experience"></a>
 ## 模型体验
 
-没有直接影响，因为 LLM 服务不添加内容；适配器决定何时添加本包导出的共享图片描述符与逐图片占位符。
+### 配置验证
+
+#### 模型看到什么
+
+回退握手发送一条内容为 `.` 的用户消息，设置 `maxTokens: 1`，不携带会话历史。元数据验证不发起模型生成请求。普通会话请求保留已组装的内容；适配器负责图片描述符与占位符。
+
+#### Token 影响
+
+回退会产生提供方计量的输入用量，并请求最多一个输出 token。生成内容被丢弃，不会追加到会话中。
 
 #### KV Cache 影响
 
-推理强度的具体化会保留已组装请求前缀。图片身份与请求预览文本是确定性的，可选执行世界路径则按请求解析；路径变化或图片卸载边界变化可能从该图片起阻止复用。
+验证不会改变会话的可复用前缀。推理强度的具体化会保留已组装请求前缀。图片身份与请求预览文本是确定性的，可选执行世界路径则按请求解析；路径变化或图片卸载边界变化可能从该图片起阻止复用。
 
 ## 已知限制与延期工作
 
@@ -150,6 +171,7 @@ for await (const chunk of ctx.llm.stream({
 - **只有出现实际产生方后，相应变体才会加入**——`prefill`、逐工具 `strict`、内容块 `cache` 提示和 `agent` 消息来源变体都没有产生方（见 [Agent Note](../../../.agents/notes/archived/simplification/2026-07-04-prune-producerless-vocabulary-variants.md)）。
 - **`BlockAssembler` 只处理核心块类型**——插件添加块类型的流若从未由 `block-end` 关闭，`blocks()` 会抛出异常。
 - **`GenerateOptions.sessionId` 是本地声明的品牌类型**——导入 dsh-session 的 `SessionId` 会产生依赖循环。
+- **恢复不能猜测缺失历史或凭据**——没有完整计划的不完整旧记录会被拒绝且保持原样；没有可验证原状态摘要的未提交计划不能作为写入续跑。完成历史保留规范化时仍存在的事务身份，无法补回旧写入方已经丢弃的记录。资源预约协调同进程共享 owner，不协调绕过它们的任意写入方；遗留文件锁恢复仍由操作者处理。
 
 <a id="dev-note"></a>
 ### 开发备注

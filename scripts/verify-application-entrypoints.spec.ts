@@ -25,6 +25,18 @@ function write(root: string, path: string, content: string): void {
 }
 
 describe('application entrypoints', () => {
+  it('accepts the exact managed Ark bin and rejects an altered target', () => {
+    const root = fixture()
+    const manifest = 'packages/boot/native-api-runner/package.json'
+    write(root, manifest, JSON.stringify({ bin: { 'dsh-native-api': 'lib/bin.js' } }))
+    write(root, 'packages/boot/native-api-runner/src/bin.ts', '#!/usr/bin/env node\n')
+    expect(applicationEntrypointViolations(root)).toEqual([])
+    write(root, manifest, JSON.stringify({ bin: { 'dsh-native-api': 'lib/other.js' } }))
+    expect(applicationEntrypointViolations(root)).toEqual([
+      `${manifest}: classified bin must remain {"dsh-native-api":"lib/bin.js"}, got {"dsh-native-api":"lib/other.js"}`,
+    ])
+  })
+
   it('accepts the repository launcher inventory', () => {
     expect(applicationEntrypointViolations(resolve(import.meta.dirname, '..'))).toEqual([])
   })

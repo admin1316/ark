@@ -1,6 +1,5 @@
 import { launchEnvironmentOf } from "@deepseek-ai/dsh-launch-environment";
-import * as LlmExports from "@deepseek-ai/dsh-llm";
-import { CONTEXT_WINDOW_EXCEEDED_CODE, CallId, EMPTY_RESPONSE_CODE, INVALID_CREDENTIAL_CODE, LlmAdapter, LlmError, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, assertUsableApiKey, attributionHeaders, contentHasImage, createImageAttachmentAccessResolver, isContextWindowExceededError, isQuotaExceededError, normalizeApiKey, offloadRequestImagesWithPolicy, offloadedImageText, requestImageHandleText, resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
+import { CONTEXT_WINDOW_EXCEEDED_CODE, CallId, EMPTY_RESPONSE_CODE, INVALID_CREDENTIAL_CODE, LlmAdapter, LlmError, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, assertUsableApiKey, attributionHeaders, contentHasImage, isContextWindowExceededError, isCredentialHeaderName, isQuotaExceededError, modelDiscoveryEndpointFingerprint, normalizeApiKey, offloadRequestImagesWithPolicy, offloadedImageText, requestImageHandleText, resolveImageAttachmentAccess, resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
 import { deepEqualJson, installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
 import { createModels, createProvider, getSupportedThinkingLevels, isContextOverflow } from "@earendil-works/pi-ai";
 import { MAX_TIMER_DELAY_MS, idleWatchdog, timeoutOf } from "@deepseek-ai/dsh-timeout";
@@ -10,6 +9,7 @@ import { builtinProviders, getBuiltinModels, getBuiltinProviders } from "@earend
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
+import assert from "node:assert/strict";
 import { homedir } from "node:os";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -66,6 +66,7 @@ function toPiReplayState(message) {
 			model: message.model,
 			...message.responseModel === void 0 ? {} : { responseModel: message.responseModel },
 			...message.responseId === void 0 ? {} : { responseId: message.responseId },
+			...message.providerThinkingLevel === void 0 ? {} : { providerThinkingLevel: message.providerThinkingLevel },
 			stopReason: message.stopReason
 		},
 		blocks: message.content.map((block) => {
@@ -113,6 +114,7 @@ function readReplayState(value) {
 	].includes(String(response["stopReason"]))) return invalidReplay("unknown stopReason");
 	if (response["responseModel"] !== void 0 && typeof response["responseModel"] !== "string") return invalidReplay("responseModel must be a string");
 	if (response["responseId"] !== void 0 && typeof response["responseId"] !== "string") return invalidReplay("responseId must be a string");
+	if (response["providerThinkingLevel"] !== void 0 && typeof response["providerThinkingLevel"] !== "string") return invalidReplay("providerThinkingLevel must be a string");
 	const blocks = envelope["blocks"];
 	if (!Array.isArray(blocks)) return invalidReplay("blocks must be an array");
 	for (const [index, value] of blocks.entries()) {
@@ -213,6 +215,7 @@ function replayedAssistant(message, source, rawState) {
 		model: state.response.model,
 		...state.response.responseModel === void 0 ? {} : { responseModel: state.response.responseModel },
 		...state.response.responseId === void 0 ? {} : { responseId: state.response.responseId },
+		...state.response.providerThinkingLevel === void 0 ? {} : { providerThinkingLevel: state.response.providerThinkingLevel },
 		usage: emptyPiUsage(),
 		stopReason: state.response.stopReason,
 		timestamp: 0
@@ -237,7 +240,7 @@ function toPiAssistant(message, onDegrade) {
 	try {
 		return replayedAssistant(message, source, source.replayState);
 	} catch (error) {
-		/* v8 ignore next -- replayedAssistant throws only INVALID_REPLAY_STATE LlmErrors today; the
+		/* v8 ignore next -- replayedAssistant throws only INVALID_REPLAY_STATE LlmErrors; the
 		guard keeps a future non-replay failure loud instead of silently degrading it */
 		if (!(error instanceof LlmError) || error.code !== "INVALID_REPLAY_STATE") throw error;
 		onDegrade?.(error.message);
@@ -253,9 +256,9 @@ function toPiAssistant(message, onDegrade) {
 * stays configuration-free while a route pi-ai has never heard of is fully
 * describable from `settings.yaml`.
 *
-* Every pi-ai `Model` field the harness cannot default is required here rather
-* than at request time: an unserviceable route fails while its configuration is
-* being resolved, which is the earliest point that can name the offending key.
+* Strict resolution rejects unserviceable models before settings writes.
+* Deferred resolution retains their diagnostics so stored catalog drift does
+* not prevent inspection, repair, or requests to independently valid models.
 *
 * @module dsh-llm-pi-ai/catalog
 */
@@ -316,14 +319,30 @@ const MAX_TOKENS_FIELDS = Object.keys({
 	max_completion_tokens: true,
 	max_tokens: true
 });
+/** Every upstream-supported reasoning-budget field spelling for private endpoints. */
+const THINKING_BUDGET_FIELDS = Object.keys({
+	thinking_token_budget: true,
+	thinking_budget: true,
+	thinking_budget_tokens: true
+});
 /** The prompt-cache marker conventions a profile may name. */
 const CACHE_CONTROL_FORMATS = Object.keys({ anthropic: true });
 /** The request-state placeholders a profile may name. */
 const CHAT_TEMPLATE_VARS = Object.keys({
 	"thinking.enabled": true,
-	"thinking.effort": true
+	"thinking.effort": true,
+	"thinking.budget": true
 });
 let providerIndex;
+const BAILIAN_PRESETS = [[
+	"bailian-cn",
+	"阿里云百炼（按量·北京）",
+	"https://dashscope.aliyuncs.com/compatible-mode/v1"
+], [
+	"bailian-intl",
+	"阿里云百炼（按量·新加坡）",
+	"https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+]];
 /**
 * Installed catalog providers by id, constructed once. Each entry owns the API
 * implementations for its own models, which is why a catalog route reuses this
@@ -331,7 +350,40 @@ let providerIndex;
 * @returns the catalog provider index.
 */
 function catalogProviders() {
-	providerIndex ??= new Map(builtinProviders().map((provider) => [provider.id, provider]));
+	if (providerIndex !== void 0) return providerIndex;
+	const providers = new Map(builtinProviders().map((provider) => [provider.id, provider]));
+	const qwen = providers.get("qwen-token-plan");
+	if (qwen === void 0) throw new Error("Bailian presets require the installed Qwen protocol owner");
+	const modelIds = new Set(["qwen3.8-flash", "qwen3.8-max"]);
+	const models = getBuiltinModels("qwen-token-plan").filter((model) => modelIds.has(model.id));
+	if (models.length !== modelIds.size) throw new Error("Bailian preset model capabilities are missing");
+	for (const [id, name, baseUrl] of BAILIAN_PRESETS) {
+		const presetModels = models.map((model) => ({
+			...model,
+			provider: id,
+			baseUrl,
+			compat: {
+				...model.compat,
+				maxTokensField: "max_tokens"
+			}
+		}));
+		providers.set(id, {
+			id,
+			name,
+			baseUrl,
+			auth: { apiKey: {
+				name,
+				resolve: ({ credential }) => Promise.resolve(credential?.key === void 0 ? void 0 : {
+					auth: { apiKey: credential.key },
+					source: name
+				})
+			} },
+			getModels: () => presetModels,
+			stream: (model, context, options) => qwen.stream(model, context, options),
+			streamSimple: (model, context, options) => qwen.streamSimple(model, context, options)
+		});
+	}
+	providerIndex = providers;
 	return providerIndex;
 }
 /**
@@ -343,20 +395,21 @@ function catalogProvider(provider) {
 	return catalogProviders().get(provider);
 }
 /**
-* Every provider route the installed pi-ai catalog ships.
-* @returns the catalog provider ids.
+* Installed pi-ai catalog routes plus ordinary Bailian API presets.
+* @returns the selectable catalog provider ids, excluding dynamic-only registrations.
 */
 function catalogProviderIds() {
-	return getBuiltinProviders();
+	return [...getBuiltinProviders(), ...BAILIAN_PRESETS.map(([id]) => id)];
 }
 /**
 * The installed catalog models for one route, indexed by model id.
 * @param provider - provider route key.
-* @returns catalog models by id; empty for a route pi-ai does not ship.
+* @returns catalog models by id; empty for a route without catalog defaults.
 */
 function catalogModels(provider) {
-	if (!catalogProviders().has(provider)) return /* @__PURE__ */ new Map();
-	const models = getBuiltinModels(provider);
+	const owner = catalogProviders().get(provider);
+	if (owner === void 0) return /* @__PURE__ */ new Map();
+	const models = BAILIAN_PRESETS.some(([id]) => id === provider) ? owner.getModels() : getBuiltinModels(provider);
 	return new Map(models.map((model) => [model.id, model]));
 }
 /**
@@ -379,6 +432,8 @@ const COMPLETIONS_COMPAT_GATE = {
 	chatTemplateKwargs: "offer",
 	chatTemplateArgs: "offer",
 	supportsThinkingTokenBudget: "offer",
+	thinkingTokenBudgetField: "offer",
+	vllmPriority: "offer",
 	supportsStrictMode: "offer",
 	cacheControlFormat: "offer",
 	supportsLongCacheRetention: "offer",
@@ -392,6 +447,7 @@ const COMPLETIONS_COMPAT_GATE = {
 };
 /** Disposition of every `OpenAIResponsesCompat` field; a drift gate like the one above. */
 const RESPONSES_COMPAT_GATE = {
+	supportsMaxOutputTokens: "offer",
 	supportsDeveloperRole: "offer",
 	supportsStrictMode: "offer",
 	supportsLongCacheRetention: "offer",
@@ -423,6 +479,8 @@ const COMPAT_GATES = {
 		forceAdaptiveThinking: "offer",
 		allowEmptySignature: "offer",
 		supportsStrictTools: "offer",
+		supportsMidConvoEffort: "offer",
+		allowedFallbackModels: "withhold",
 		sendSessionAffinityHeaders: "withhold",
 		supportsToolReferences: "withhold"
 	},
@@ -443,10 +501,10 @@ function compatGate(api) {
 *
 * schemastery materializes an absent dict as `{}` — the behavior
 * `reasoningEfforts` works around with a union — so every parsed profile
-* carries a `chatTemplateKwargs` key whether or not anyone wrote one. An empty
-* one states nothing here: it would send no kwargs, which is exactly what
-* leaving the field out does, so absent and empty are the same request and
-* neither may make a route look like it configured a switch. A valueless
+* carries both template-argument keys whether or not anyone wrote them. An
+* empty one states nothing here: it would send no arguments, which is exactly
+* what leaving the field out does, so absent and empty are the same request
+* and neither may make a route look like it configured a switch. A valueless
 * scalar is the other thing schemastery lets through, and it is refused by
 * {@link assertOfferedCompatFields} before this runs rather than filtered.
 * @param compat - the configured switches, when any.
@@ -506,9 +564,11 @@ function assertOfferedCompatFields(provider, site, compat) {
 		if (value == null) invalid(provider, `${site} sets compat "${field}" with no value; give it one, or remove the key to leave the field to the next layer — the installed catalog entry, then pi-ai's own detection`);
 	}
 }
+/** An expected configuration failure that stored-catalog reads may retain for repair. */
+var PiAiCatalogError = class extends Error {};
 /** Report a route the deployment cannot serve, naming the settings key at fault. */
 function invalid(provider, detail) {
-	throw new Error(`llm-pi-ai: provider "${provider}" ${detail}`);
+	throw new PiAiCatalogError(`llm-pi-ai: provider "${provider}" ${detail}`);
 }
 /**
 * The one wire protocol a catalog route's shipped models agree on. This is what
@@ -597,10 +657,12 @@ function resolveModelCompat(provider, entry, route, base, api) {
 		configured[field] = value;
 	}
 	if (Object.keys(configured).length === 0) return {};
-	return { compat: {
+	const compat = {
 		...base?.api === api ? base.compat : void 0,
 		...configured
-	} };
+	};
+	if (compat["supportsMidConvoEffort"] === true && compat["forceAdaptiveThinking"] !== true) invalid(provider, `model "${entry.id}" requires forceAdaptiveThinking for supportsMidConvoEffort`);
+	return { compat };
 }
 /**
 * Materialize one route's catalog by merging the installed catalog defaults
@@ -608,19 +670,25 @@ function resolveModelCompat(provider, entry, route, base, api) {
 * installed catalog unchanged, which is what keeps an existing
 * `providers: { deepseek: { apiKeyEnv: … } }` profile working untouched.
 * @param request - the route-level catalog facts.
+* @param validation - strict writes reject every error; deferred reads retain model diagnostics.
 * @returns the materialized models and the explicitly configured request caps.
 */
-function resolveRouteModels(request) {
+function resolveRouteModels(request, validation = "strict") {
 	const { provider } = request;
 	const defaults = catalogModels(provider);
 	const providerBaseUrl = catalogProvider(provider)?.baseUrl;
 	const configured = request.models ?? [];
 	const overrides = request.modelOverrides ?? {};
+	const modelErrors = /* @__PURE__ */ new Map();
 	for (const [id, override] of Object.entries(overrides)) {
 		if (id.length === 0) invalid(provider, "has a modelOverrides entry with an empty model id");
 		if (defaults.size === 0) invalid(provider, `sets modelOverrides for "${id}", but the installed catalog does not describe this route; a declared route spells every model out in its models list`);
 		if (configured.length > 0) invalid(provider, `sets modelOverrides for "${id}" beside a models list; models already replaces the served catalog, so declare the fields on its entries`);
-		if (!defaults.has(id)) invalid(provider, `modelOverrides names "${id}", which the installed catalog does not describe`);
+		if (!defaults.has(id)) {
+			const message = `modelOverrides names "${id}", which the installed catalog does not describe`;
+			if (validation === "strict") invalid(provider, message);
+			modelErrors.set(id, `llm-pi-ai: provider "${provider}" ${message}`);
+		}
 		if ("id" in override) invalid(provider, `modelOverrides entry "${id}" sets "id", which is the dict key`);
 	}
 	const entries = configured.length > 0 ? configured : [...defaults.values()].map((model) => ({
@@ -630,10 +698,10 @@ function resolveRouteModels(request) {
 	if (entries.length === 0) invalid(provider, "resolves no models; the installed catalog does not describe this route, so its models must be listed in configuration");
 	const routeApi = sharedCatalogApi(defaults);
 	assertOfferedCompatFields(provider, "route", request.compat);
-	for (const entry of entries) assertOfferedCompatFields(provider, `model "${entry.id}"`, entry.compat);
 	const seen = /* @__PURE__ */ new Set();
 	const configuredMaxTokens = /* @__PURE__ */ new Map();
-	const models = entries.map((entry) => {
+	const resolveEntry = (entry) => {
+		assertOfferedCompatFields(provider, `model "${entry.id}"`, entry.compat);
 		if (entry.id.length === 0) invalid(provider, "has a model with an empty id");
 		if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`);
 		seen.add(entry.id);
@@ -643,9 +711,9 @@ function resolveRouteModels(request) {
 		const baseUrl = request.baseURL ?? base?.baseUrl ?? providerBaseUrl;
 		if (baseUrl === void 0) invalid(provider, `model "${entry.id}" needs a baseURL; the installed catalog does not describe this route`);
 		const contextWindow = entry.contextWindow ?? base?.contextWindow ?? request.defaultContextWindow;
-		if (!Number.isInteger(contextWindow) || contextWindow <= 0) invalid(provider, `model "${entry.id}" contextWindow must be a positive integer`);
+		if (!Number.isSafeInteger(contextWindow) || contextWindow <= 0) invalid(provider, `model "${entry.id}" contextWindow must be a positive integer`);
 		const maxTokens = entry.maxTokens ?? base?.maxTokens ?? request.defaultMaxTokens;
-		if (!Number.isInteger(maxTokens) || maxTokens <= 0) invalid(provider, `model "${entry.id}" maxTokens must be a positive integer`);
+		if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0) invalid(provider, `model "${entry.id}" maxTokens must be a positive integer`);
 		if (entry.maxTokens !== void 0) configuredMaxTokens.set(entry.id, entry.maxTokens);
 		return {
 			...base,
@@ -661,15 +729,29 @@ function resolveRouteModels(request) {
 			...resolveModelReasoning(provider, entry, base),
 			...resolveModelCompat(provider, entry, request.compat, base, api)
 		};
-	});
+	};
+	const models = [];
+	for (const entry of entries) {
+		let model;
+		try {
+			model = resolveEntry(entry);
+		} catch (error) {
+			if (validation === "strict" || !(error instanceof PiAiCatalogError)) throw error;
+			modelErrors.set(entry.id, error.message);
+			continue;
+		}
+		models.push(model);
+	}
+	const serviceableModels = models.filter((model) => !modelErrors.has(model.id));
 	for (const [field] of configuredCompatEntries(request.compat)) {
 		const takers = compatProtocols(field);
-		if (models.some((model) => takers.includes(model.api))) continue;
+		if (serviceableModels.some((model) => takers.includes(model.api))) continue;
 		invalid(provider, `sets compat "${field}", but no model on the route speaks a protocol that takes it; it exists on ${takers.join(", ")}`);
 	}
 	return {
-		models,
-		configuredMaxTokens
+		models: serviceableModels,
+		configuredMaxTokens,
+		modelErrors
 	};
 }
 //#endregion
@@ -701,7 +783,7 @@ function resolveRouteModels(request) {
 * catalog route would.
 *
 * The table is deliberately narrow: the protocols a hand-declared route
-* actually reaches for today, each completely describable with a key, an
+* actually reads, each completely describable with a key, an
 * endpoint, and headers. Bedrock signs with SigV4 over AWS credentials and a
 * region, Vertex needs a project, a location, and application-default
 * credentials, Azure needs provider environment plus an api-version, and Codex
@@ -808,7 +890,7 @@ function buildProvider(spec) {
 	const catalog = catalogProvider(spec.provider);
 	if (catalog !== void 0 && spec.api === void 0) return reuseCatalogProvider(catalog, spec);
 	const factory = spec.api === void 0 ? void 0 : PROTOCOLS[spec.api];
-	if (factory === void 0) throw new Error(`llm-pi-ai: provider "${spec.provider}" names api "${spec.api}", which this build cannot serve; supported protocols are ${supportedProtocols().join(", ")}`);
+	if (factory === void 0) throw new PiAiCatalogError(`llm-pi-ai: provider "${spec.provider}" names api "${spec.api}", which this build cannot serve; supported protocols are ${supportedProtocols().join(", ")}`);
 	return createProvider({
 		id: spec.provider,
 		name: spec.displayName,
@@ -817,6 +899,180 @@ function buildProvider(spec) {
 		models: spec.models,
 		api: factory()
 	});
+}
+//#endregion
+//#region lib/types/headers.js
+/** Credential-header admission and legacy-settings projection for the pi-ai owner. */
+function required(value) {
+	assert(value !== void 0, "llm-pi-ai cannot redact an incomplete configuration schema");
+	return value;
+}
+function accepts(value, schema) {
+	try {
+		z.resolve(value, schema, {});
+		return true;
+	} catch {
+		return false;
+	}
+}
+function record(value) {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function redactProviderCredentialFields(value, schema, opaqueFields = ["headers", "credentialHeaders"]) {
+	const secrets = [];
+	const ancestors = /* @__PURE__ */ new Set();
+	const assertJson = (entry) => {
+		if (entry === null || typeof entry !== "object") return;
+		if (ancestors.has(entry)) throw new TypeError("llm-pi-ai cannot safely redact cyclic provider settings");
+		ancestors.add(entry);
+		try {
+			if (!Array.isArray(entry) && Object.getPrototypeOf(entry) !== Object.prototype && Object.getPrototypeOf(entry) !== null) throw new TypeError("llm-pi-ai cannot safely redact non-JSON provider settings");
+			Object.values(entry).forEach(assertJson);
+		} finally {
+			ancestors.delete(entry);
+		}
+	};
+	const alternatives = (nodes) => nodes.flatMap((node) => node.type === "union" ? alternatives(required(node.list)) : [node]);
+	const visit = (entry, nodes, path) => {
+		if (entry === void 0 || entry === null) return entry;
+		const choices = alternatives(nodes);
+		if (typeof entry !== "object") {
+			if (!choices.some((node) => accepts(entry, node))) throw new TypeError("llm-pi-ai cannot safely redact malformed provider settings");
+			return entry;
+		}
+		if (Array.isArray(entry)) {
+			const elements = choices.filter((node) => node.type === "array").map((node) => required(node.inner));
+			if (elements.length === 0) throw new TypeError("llm-pi-ai cannot safely redact malformed provider settings");
+			return entry.map((item, index) => visit(item, elements, [...path, String(index)]));
+		}
+		const objects = choices.filter((node) => node.type === "object" || node.type === "dict");
+		if (objects.length === 0) throw new TypeError("llm-pi-ai cannot safely redact malformed provider settings");
+		return Object.fromEntries(Object.entries(entry).flatMap(([name, item]) => {
+			const children = objects.flatMap((node) => node.type === "dict" ? accepts(name, required(node.sKey)) ? [required(node.inner)] : [] : Object.hasOwn(required(node.dict), name) ? [required(required(node.dict)[name])] : []);
+			if (children.length === 0) {
+				secrets.push({
+					path: [...path, name],
+					set: item !== void 0
+				});
+				return [];
+			}
+			return [[name, path.length === 0 && opaqueFields.includes(name) ? item : visit(item, children, [...path, name])]];
+		}));
+	};
+	let snapshot;
+	try {
+		snapshot = structuredClone(value);
+	} catch {
+		throw new TypeError("llm-pi-ai cannot safely redact non-serializable provider settings");
+	}
+	assertJson(snapshot);
+	return {
+		value: visit(snapshot, [schema], []),
+		secrets
+	};
+}
+/**
+* Validate headers and separate literal credentials from usable request fields.
+* @param provider - route used in value-free diagnostics.
+* @param source - deployment headers and reference-backed headers.
+* @param schema - the provider profile's live configuration schema.
+* @returns detached headers, validated references and any required migration fields.
+*/
+function resolveProfileHeaders(provider, source, schema) {
+	const headers = /* @__PURE__ */ new Map();
+	const credentialHeaders = /* @__PURE__ */ new Map();
+	const legacy = [];
+	const fields = redactProviderCredentialFields(source, schema).secrets.filter((field) => field.set).map((field) => field.path);
+	const seen = /* @__PURE__ */ new Set();
+	const admit = (name, value) => {
+		try {
+			new Headers([[name, value]]);
+		} catch {
+			throw new Error(`llm-pi-ai: provider "${provider}" has an invalid request header`);
+		}
+		const normalized = name.toLowerCase();
+		if (seen.has(normalized)) throw new Error(`llm-pi-ai: provider "${provider}" repeats a request header case-insensitively`);
+		seen.add(normalized);
+	};
+	for (const [name, value] of Object.entries(source.headers ?? {})) {
+		admit(name, value);
+		if (isCredentialHeaderName(name) && value.trim() !== "") legacy.push(name);
+		else headers.set(name, value);
+	}
+	for (const [name, reference] of Object.entries(source.credentialHeaders ?? {})) {
+		admit(name, "");
+		credentialHeaders.set(name, credentialRef(reference));
+	}
+	return {
+		...headers.size === 0 ? {} : { headers: Object.fromEntries(headers) },
+		...credentialHeaders.size === 0 ? {} : { credentialHeaders: Object.fromEntries(credentialHeaders) },
+		...legacy.length === 0 && fields.length === 0 ? {} : { migrationRequired: {
+			headers: legacy.sort(),
+			...fields.length === 0 ? {} : { fields }
+		} }
+	};
+}
+/**
+* Redact retained literal credential headers independently in each settings layer.
+* @param value - raw or resolved provider configuration layer.
+* @param schema - the owner's live configuration schema.
+* @returns detached configuration and secret slots without credential values.
+*/
+function redactPiAiSecrets(value, schema) {
+	if (value === void 0) return {
+		value,
+		secrets: []
+	};
+	if (!record(value)) throw new TypeError("llm-pi-ai cannot safely redact malformed provider settings");
+	const root = redactProviderCredentialFields(value, schema, ["providers"]);
+	const result = root.value;
+	const providers = result.providers;
+	if (providers === void 0) return {
+		value: result,
+		secrets: root.secrets
+	};
+	if (!record(providers)) throw new TypeError("llm-pi-ai cannot safely redact malformed provider settings");
+	const secrets = [...root.secrets];
+	for (const [provider, profile] of Object.entries(providers)) {
+		if (!record(profile)) throw new TypeError("llm-pi-ai cannot safely redact a malformed provider profile");
+		const redacted = redactProviderCredentialFields(profile, required(required(required(schema.dict)["providers"]).inner));
+		const projected = redacted.value;
+		providers[provider] = projected;
+		secrets.push(...redacted.secrets.map((field) => ({
+			...field,
+			path: [
+				"providers",
+				provider,
+				...field.path
+			]
+		})));
+		if (projected.apiKeyEnv !== void 0 && projected.apiKeyEnv !== null && projected.apiKeyEnv !== "" && (typeof projected.apiKeyEnv !== "string" || !isCredentialRefName(projected.apiKeyEnv))) throw new TypeError("llm-pi-ai cannot expose a malformed credential reference");
+		if (projected.credentialHeaders !== void 0 && projected.credentialHeaders !== null) {
+			if (!record(projected.credentialHeaders) || Object.values(projected.credentialHeaders).some((value) => typeof value !== "string" || !isCredentialRefName(value))) throw new TypeError("llm-pi-ai cannot expose malformed credential-header references");
+		}
+		if (projected.headers === void 0) continue;
+		if (!record(projected.headers)) throw new TypeError("llm-pi-ai cannot safely redact malformed provider headers");
+		projected.headers = Object.fromEntries(Object.entries(projected.headers).filter(([name, entry]) => {
+			if (!isCredentialHeaderName(name) || entry === "") {
+				if (typeof entry !== "string") throw new TypeError("llm-pi-ai cannot safely redact malformed provider headers");
+				return true;
+			}
+			secrets.push({
+				path: [
+					"providers",
+					provider,
+					"headers",
+					name
+				],
+				set: entry !== void 0
+			});
+			return false;
+		}));
+	}
+	return {
+		value: result,
+		secrets
+	};
 }
 //#endregion
 //#region lib/types/config.js
@@ -835,7 +1091,6 @@ function buildProvider(spec) {
 *
 * @module dsh-llm-pi-ai/config
 */
-const isCredentialHeaderName = (name) => LlmExports.isCredentialHeaderName(name);
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 3e5;
 /**
@@ -850,7 +1105,7 @@ const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 3e5;
 const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024;
 /** Default total-pixel budget preserves the complete 2048px normalized attachment. */
 const DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 2048 * 2048;
-/** Default raw encoded-byte cap before inline base64 expansion. */
+/** Default raw encoded-byte target before inline base64 expansion; the smallest quality-ladder output is used when no quality fits. */
 const DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1024 * 1024;
 /** Context capacity assumed for a model neither configuration nor the catalog sizes. */
 const DEFAULT_CONTEXT_WINDOW = 262144;
@@ -874,9 +1129,10 @@ const thinkingBudgets = z.object({
 	high: z.number()
 });
 /**
-* One `chat_template_kwargs` value. The `$var` member is pi-ai's placeholder
-* for a value dispatch fills from the request's thinking state, which is what
-* makes a chat-template gateway configurable without restating its template.
+* One `chat_template_kwargs` or `chat_template_args` value. The `$var` member
+* is pi-ai's placeholder for a value dispatch fills from the request's
+* thinking state, which makes a template-driven gateway configurable without
+* restating its template.
 */
 const chatTemplateKwarg = z.union([
 	z.string(),
@@ -889,6 +1145,10 @@ const chatTemplateKwarg = z.union([
 	})
 ]);
 const compatProfile = z.object({
+	thinkingTokenBudgetField: z.union(THINKING_BUDGET_FIELDS),
+	vllmPriority: z.number(),
+	supportsMaxOutputTokens: z.boolean(),
+	supportsMidConvoEffort: z.boolean(),
 	supportsStore: z.boolean(),
 	supportsDeveloperRole: z.boolean(),
 	supportsReasoningEffort: z.boolean(),
@@ -939,7 +1199,8 @@ const modelProfile = z.object({
 });
 /** A {@link modelProfile} whose id lives in the `modelOverrides` dict key. */
 const modelOverride = z.object(modelFields);
-const profile = z.object({
+/** Provider profile fields shared by configuration validation and public-settings projection. */
+const ProviderProfileSchema = z.object({
 	apiKeyEnv: z.string().role("credential-ref"),
 	displayName: z.string(),
 	api: z.union(supportedProtocols()),
@@ -974,119 +1235,19 @@ const profile = z.object({
 	retryPolicy: RetryPolicySchema
 });
 /** Runtime schema for {@link Config}. */
-const Config = z.object({ providers: z.dict(profile).default({}) });
-/**
-* Reject a section this adapter could not serve. Registered as the settings
-* namespace's validator, so an unserviceable profile is refused where it is
-* *written* — `settings.mutate` answers `settings-rejected` with the offending
-* route and model named — instead of being stored and then quietly disabling
-* every route in the namespace. It stays a validator rather than a schema
-* transform because the schema is also the shape a configuration surface
-* renders and the value an absent section resolves to; wrapping it would break
-* both.
-* @param config - the resolved section to check.
-* @throws Error naming the route and model that cannot be served.
-*/
-function assertServiceable(config) {
-	resolveProfiles(config.providers);
+const Config = z.object({ providers: z.dict(ProviderProfileSchema).default({}) });
+function changedProviders(config, previous) {
+	return Object.fromEntries(Object.entries(config.providers ?? {}).filter(([provider, profile]) => !deepEqualJson(profile, previous?.providers?.[provider])));
 }
 /**
-* Reject new writes that would create or retain legacy literal credentials.
-* @param config - Proposed provider section to validate before a settings write.
-* @throws Error when profile resolution fails or a route retains literal credential headers.
+* Refuse new writes containing literal credential headers without changing existing data.
+* @param config - proposed provider configuration.
+* @param previous - current section used to identify changed provider profiles.
+* @throws when any profile still requires credential-header migration.
 */
-function assertWritableConfig(config) {
-	const affected = [...resolveProfiles(config.providers).values()].filter((profile) => profile.migrationRequired !== void 0);
-	if (affected.length > 0) throw new Error(`llm-pi-ai: credential header migration required for ${affected.map((profile) => profile.provider).join(", ")}`);
-}
-/**
-* Redact legacy literal credential headers without exposing their values.
-* @param value - Settings section to project; non-null, non-array objects are
-*   cloned, while other inputs pass through unchanged without redaction records.
-* @returns The projected section and removed header paths with set/unset flags;
-*   the input is not mutated and removal records contain no header values.
-* @throws When an object input cannot be structured-cloned.
-*/
-function redactPiAiSecrets(value) {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) return {
-		value,
-		secrets: []
-	};
-	const root = structuredClone(value);
-	const providers = root.providers;
-	if (typeof providers !== "object" || providers === null || Array.isArray(providers)) return {
-		value: root,
-		secrets: []
-	};
-	const redactedProviders = {};
-	const secrets = [];
-	for (const [provider, rawProfile] of Object.entries(providers)) {
-		if (typeof rawProfile !== "object" || rawProfile === null || Array.isArray(rawProfile)) {
-			redactedProviders[provider] = rawProfile;
-			continue;
-		}
-		const profile = rawProfile;
-		const headers = profile.headers;
-		if (typeof headers !== "object" || headers === null || Array.isArray(headers)) {
-			redactedProviders[provider] = profile;
-			continue;
-		}
-		const safe = Object.fromEntries(Object.entries(headers).filter(([name, entry]) => {
-			if (!isCredentialHeaderName(name)) return true;
-			secrets.push({
-				path: [
-					"providers",
-					provider,
-					"headers",
-					name
-				],
-				set: entry !== void 0
-			});
-			return false;
-		}));
-		const { headers: _headers, ...rest } = profile;
-		redactedProviders[provider] = {
-			...rest,
-			...Object.keys(safe).length === 0 ? {} : { headers: safe }
-		};
-	}
-	return {
-		value: {
-			...root,
-			providers: redactedProviders
-		},
-		secrets
-	};
-}
-/** Validate and detach ordinary and credential-backed deployment headers. */
-function resolveHeaders(provider, source) {
-	const headers = {};
-	const credentialHeaders = {};
-	const legacyHeaders = [];
-	const seen = /* @__PURE__ */ new Set();
-	for (const [name, value] of Object.entries(source.headers ?? {})) {
-		const normalized = name.trim().toLowerCase();
-		if (normalized.length === 0 || /[\r\n]/.test(name) || /[\r\n]/.test(value)) throw new Error(`llm-pi-ai: provider "${provider}" has an invalid request header`);
-		if (isCredentialHeaderName(normalized)) {
-			legacyHeaders.push(name);
-			continue;
-		}
-		if (seen.has(normalized)) throw new Error(`llm-pi-ai: provider "${provider}" repeats request header "${name}" case-insensitively`);
-		seen.add(normalized);
-		headers[name] = value;
-	}
-	for (const [name, ref] of Object.entries(source.credentialHeaders ?? {})) {
-		const normalized = name.trim().toLowerCase();
-		if (normalized.length === 0 || /[\r\n]/.test(name)) throw new Error(`llm-pi-ai: provider "${provider}" has an invalid credential header`);
-		if (seen.has(normalized)) throw new Error(`llm-pi-ai: provider "${provider}" repeats request header "${name}" case-insensitively`);
-		seen.add(normalized);
-		credentialHeaders[name] = credentialRef(ref);
-	}
-	return {
-		...Object.keys(headers).length === 0 ? {} : { headers },
-		...Object.keys(credentialHeaders).length === 0 ? {} : { credentialHeaders },
-		...legacyHeaders.length === 0 ? {} : { migrationRequired: { headers: legacyHeaders.sort() } }
-	};
+function assertWritableConfig(config, previous) {
+	resolveProfiles(changedProviders(config, previous));
+	if (redactPiAiSecrets(config, Config).secrets.some((secret) => secret.set)) throw new Error("llm-pi-ai: credential headers must use credential references");
 }
 /** Reject removed pre-release profile fields and name their replacements. */
 function rejectRemovedFields(provider, source) {
@@ -1100,9 +1261,10 @@ function rejectRemovedFields(provider, source) {
 * resolves to the empty (dormant) route set here rather than through a hidden
 * fallback, and each route's models and pi-ai provider are materialized once.
 * @param providers - configured provider profiles keyed by route.
+* @param validation - strict writes reject catalog errors; deferred reads retain repair diagnostics.
 * @returns validated profiles in configuration order.
 */
-function resolveProfiles(providers) {
+function resolveProfiles(providers, validation = "strict") {
 	if (Array.isArray(providers)) throw new Error("llm-pi-ai: providers is now a dict keyed by provider route, not an array of profiles");
 	const entries = Object.entries(providers ?? {});
 	const resolved = /* @__PURE__ */ new Map();
@@ -1122,18 +1284,34 @@ function resolveProfiles(providers) {
 		const defaultInput = [...source.defaultInput ?? DEFAULT_INPUT];
 		if (defaultInput.length === 0) throw new Error(`llm-pi-ai: provider "${provider}" defaultInput must name at least one modality`);
 		const displayName = source.displayName ?? provider;
-		const headerConfig = resolveHeaders(provider, source);
-		const catalog = resolveRouteModels({
-			provider,
-			...source.api === void 0 ? {} : { api: source.api },
-			...source.baseURL === void 0 ? {} : { baseURL: source.baseURL },
-			...source.models === void 0 ? {} : { models: source.models },
-			...source.modelOverrides === void 0 ? {} : { modelOverrides: source.modelOverrides },
-			...source.compat === void 0 ? {} : { compat: source.compat },
-			defaultInput,
-			defaultContextWindow: source.defaultContextWindow ?? 262144,
-			defaultMaxTokens: source.defaultMaxTokens ?? 32768
-		});
+		let catalog;
+		let piProvider;
+		let catalogError;
+		try {
+			catalog = resolveRouteModels({
+				provider,
+				...source.api === void 0 ? {} : { api: source.api },
+				...source.baseURL === void 0 ? {} : { baseURL: source.baseURL },
+				...source.models === void 0 ? {} : { models: source.models },
+				...source.modelOverrides === void 0 ? {} : { modelOverrides: source.modelOverrides },
+				...source.compat === void 0 ? {} : { compat: source.compat },
+				defaultInput,
+				defaultContextWindow: source.defaultContextWindow ?? 262144,
+				defaultMaxTokens: source.defaultMaxTokens ?? 32768
+			}, validation);
+			catalogError = catalog.modelErrors.values().next().value;
+			piProvider = buildProvider({
+				provider,
+				displayName,
+				...source.api === void 0 ? {} : { api: source.api },
+				...source.baseURL === void 0 ? {} : { baseURL: source.baseURL },
+				models: catalog.models,
+				namesCredential: source.apiKeyEnv !== void 0 || Object.keys(source.credentialHeaders ?? {}).length > 0
+			});
+		} catch (error) {
+			if (validation === "strict" || !(error instanceof PiAiCatalogError)) throw error;
+			catalogError ??= error.message;
+		}
 		const { apiKeyEnv, credentialHeaders: _credentialHeaders, headers: _headers, retryPolicy, models: _models, displayName: _displayName, ...rest } = source;
 		resolved.set(provider, {
 			...rest,
@@ -1145,17 +1323,12 @@ function resolveProfiles(providers) {
 			requestImagePixelBudget,
 			requestImageMaxBytes,
 			retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
-			...headerConfig,
+			...resolveProfileHeaders(provider, source, ProviderProfileSchema),
 			...rest.thinkingBudgets === void 0 ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
-			configuredMaxTokens: catalog.configuredMaxTokens,
-			piProvider: buildProvider({
-				provider,
-				displayName,
-				...source.api === void 0 ? {} : { api: source.api },
-				...source.baseURL === void 0 ? {} : { baseURL: source.baseURL },
-				models: catalog.models,
-				namesCredential: apiKeyEnv !== void 0
-			})
+			configuredMaxTokens: catalog?.configuredMaxTokens ?? /* @__PURE__ */ new Map(),
+			modelErrors: catalog?.modelErrors ?? /* @__PURE__ */ new Map(),
+			...piProvider === void 0 ? {} : { piProvider },
+			...catalogError === void 0 ? {} : { catalogError }
 		});
 	}
 	return resolved;
@@ -1192,7 +1365,7 @@ async function userContent(blocks, requestImages, resolveImageAccess) {
 			const version = requestImages.get(block.attachment.attachmentId);
 			content.push({
 				type: "text",
-				text: requestImageHandleText(version.attachment, version, resolveImageAccess?.(version.attachment))
+				text: requestImageHandleText(block.attachment, version, resolveImageAccess(block.attachment))
 			});
 			content.push({
 				type: "image",
@@ -1286,20 +1459,22 @@ function textOnlyContext(options, onReplayDegrade) {
 	}
 	return piContext(options, messages);
 }
-function toPiContext(options, attachments, onReplayDegrade, maxRequestImageBytes, requestImagePolicy, resolveImageAccess) {
-	return attachments === void 0 ? textOnlyContext(options, onReplayDegrade) : toPiContextWithImages(options, attachments, onReplayDegrade, maxRequestImageBytes, requestImagePolicy, resolveImageAccess);
+function toPiContext(options, images, onReplayDegrade) {
+	return images === void 0 ? textOnlyContext(options, onReplayDegrade) : toPiContextWithImages(options, images, onReplayDegrade);
 }
-async function toPiContextWithImages(options, attachments, onReplayDegrade, maxRequestImageBytes, requestImagePolicy = {
-	maxPixels: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
-	maxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES
-}, resolveImageAccess) {
+async function toPiContextWithImages(options, images, onReplayDegrade) {
+	const { attachments, resolveImageAccess, maxRequestImageBytes } = images;
+	const requestImagePolicy = images.requestImagePolicy ?? {
+		maxPixels: 4194304,
+		maxBytes: 1048576
+	};
 	assertSupportedImageRoles(options.messages);
 	const requestMessages = offloadRequestImagesWithPolicy(options.messages, {
 		representation: "base64",
 		...maxRequestImageBytes === void 0 ? {} : { maxBytes: maxRequestImageBytes },
 		byteQuantum: 1,
 		byteLength: (ref) => Math.min(ref.bytes, requestImagePolicy.maxBytes),
-		placeholder: (ref) => offloadedImageText(ref, resolveImageAccess?.(ref))
+		placeholder: (ref) => offloadedImageText(ref, resolveImageAccess(ref))
 	});
 	const requestImages = await prepareRequestImages(requestMessages, attachments, requestImagePolicy, options.signal);
 	const exactMessages = offloadRequestImagesWithPolicy(requestMessages, {
@@ -1307,7 +1482,7 @@ async function toPiContextWithImages(options, attachments, onReplayDegrade, maxR
 		...maxRequestImageBytes === void 0 ? {} : { maxBytes: maxRequestImageBytes },
 		byteQuantum: 1,
 		byteLength: (ref) => requestImages.get(ref.attachmentId).bytes,
-		placeholder: (ref) => offloadedImageText(ref, resolveImageAccess?.(ref))
+		placeholder: (ref) => offloadedImageText(ref, resolveImageAccess(ref))
 	});
 	const toolNames = /* @__PURE__ */ new Map();
 	const messages = [];
@@ -1364,12 +1539,14 @@ async function toPiContextWithImages(options, attachments, onReplayDegrade, maxR
 /**
 * Map pi-ai usage (reasoning folded into output by pi-ai).
 * @param usage - cumulative usage from the terminal pi-ai event.
-* @returns harness counts; cache fields appear only when non-zero (pi-ai reports zeros, not absence).
+* @returns harness counts with pi-ai's exact total; cache fields appear only
+*   when non-zero (pi-ai reports zeros, not absence).
 */
 function mapUsage(usage) {
 	return {
 		inputTokens: usage.input,
 		outputTokens: usage.output,
+		totalTokens: usage.totalTokens,
 		...usage.cacheRead > 0 ? { cacheReadTokens: usage.cacheRead } : {},
 		...usage.cacheWrite > 0 ? { cacheWriteTokens: usage.cacheWrite } : {}
 	};
@@ -1393,8 +1570,8 @@ function classifyPiAiError(message) {
 * @returns the mapped harness reason. Recognized error text, `stop` usage above
 *   `contextWindow`, and zero-output `length` usage that fills the window map
 *   to `CONTEXT_WINDOW_EXCEEDED`; a `stop` with no content blocks maps to an
-*   `EMPTY_RESPONSE` error; `pending` and `deferred` are explicit non-success
-*   terminal states on newer pi-ai releases.
+*   `EMPTY_RESPONSE` error, while terminal `pending` and `deferred` states map
+*   to non-retryable `PI_AI_ERROR` failures.
 */
 function mapStopReason(message, contextWindow) {
 	const piAiOverflow = isContextOverflow(message, contextWindow);
@@ -1406,8 +1583,7 @@ function mapStopReason(message, contextWindow) {
 			code: CONTEXT_WINDOW_EXCEEDED_CODE
 		}
 	};
-	const stopReason = message.stopReason;
-	switch (stopReason) {
+	switch (message.stopReason) {
 		case "stop":
 			if (message.content.length === 0) return {
 				kind: "error",
@@ -1450,13 +1626,6 @@ function mapStopReason(message, contextWindow) {
 				}
 			};
 		}
-		default: return {
-			kind: "error",
-			failure: {
-				message: `pi-ai stream ended with unsupported stop reason "${stopReason}"`,
-				code: "PI_AI_ERROR"
-			}
-		};
 	}
 }
 /**
@@ -1465,10 +1634,12 @@ function mapStopReason(message, contextWindow) {
 * `finish` chunks (the harness protocol's other error-delivery style).
 * @param events - one assistant turn's pi-ai event stream.
 * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
+* @param callerSignal - caller cancellation state; an aborted caller makes any
+*   in-band terminal error an aborted finish.
 * @returns the harness chunks, ending with `usage` then `finish`; throws
 *   `LlmError` (`STREAM_CLOSED`) if the source ends without a terminal event.
 */
-async function* toStreamChunks(events, contextWindow) {
+async function* toStreamChunks(events, contextWindow, callerSignal) {
 	const toolIds = /* @__PURE__ */ new Map();
 	for await (const event of events) switch (event.type) {
 		case "start": break;
@@ -1576,11 +1747,116 @@ async function* toStreamChunks(events, contextWindow) {
 			};
 			yield {
 				type: "finish",
-				reason: mapStopReason(event.error, contextWindow)
+				reason: mapStopReason(callerSignal?.aborted ? {
+					...event.error,
+					stopReason: "aborted"
+				} : event.error, contextWindow)
 			};
 			return;
 	}
 	throw new LlmError("pi-ai event stream ended without done/error", "STREAM_CLOSED");
+}
+//#endregion
+//#region lib/types/verification.js
+/** Bounded, non-generative exact-model verification for OpenAI-compatible routes. */
+const METADATA_BYTES = 64 * 1024;
+async function cancelBody(body) {
+	try {
+		await body?.cancel();
+	} catch {}
+}
+async function verifyMetadata(response, provider, model) {
+	const oversized = () => new LlmError("provider verification metadata exceeded its byte limit", "VERIFICATION_FAILED");
+	const declared = Number(response.headers.get("content-length"));
+	if (Number.isFinite(declared) && declared > METADATA_BYTES) {
+		await cancelBody(response.body);
+		throw oversized();
+	}
+	if (response.body === null) throw new LlmError("provider verification returned no metadata", "VERIFICATION_FAILED");
+	const reader = response.body.getReader();
+	const chunks = [];
+	let size = 0;
+	try {
+		for (;;) {
+			const next = await reader.read();
+			if (next.done) break;
+			size += next.value.byteLength;
+			if (size > METADATA_BYTES) throw oversized();
+			chunks.push(next.value);
+		}
+	} finally {
+		try {
+			await reader.cancel();
+		} catch {}
+		reader.releaseLock();
+	}
+	let data;
+	try {
+		data = JSON.parse(Buffer.concat(chunks, size).toString("utf8"));
+	} catch {
+		throw new LlmError("provider verification metadata was not valid JSON", "VERIFICATION_FAILED");
+	}
+	if (data === null || typeof data !== "object" || Array.isArray(data)) throw new LlmError("provider verification metadata was not an object", "VERIFICATION_FAILED");
+	if (!("id" in data) || data.id !== model) throw new LlmError("provider verification returned a different model", "INVALID_MODEL_INFO");
+	if ("provider" in data && data.provider !== provider) throw new LlmError("provider verification returned a different provider", "INVALID_MODEL_INFO");
+}
+/**
+* Check exact metadata and an unauthenticated challenge without generating model output.
+* @param request - captured endpoint, route, headers and cancellation signal.
+* @returns authentication proof, reachability only, or undefined when the owner must verify generation instead.
+*/
+async function verifyExactModel(request) {
+	const { provider, model, signal } = request;
+	const url = `${request.baseURL.replace(/\/+$/u, "")}/models/${encodeURIComponent(model)}`;
+	const aborted = () => {
+		if (signal.aborted) throw new LlmError("provider metadata verification aborted", "ABORTED");
+	};
+	aborted();
+	let response;
+	try {
+		response = await fetch(url, {
+			method: "GET",
+			headers: request.headers,
+			signal,
+			redirect: "manual"
+		});
+	} catch {
+		aborted();
+		throw new LlmError("provider metadata verification could not reach its configured endpoint", "VERIFICATION_FAILED");
+	}
+	if (signal.aborted) {
+		await cancelBody(response.body);
+		aborted();
+	}
+	if (!response.ok) {
+		await cancelBody(response.body);
+		if (response.status === 401 || response.status === 403) throw new LlmError("provider metadata verification rejected the configured credential", "AUTH");
+		if (response.status === 404 || response.status === 405) return void 0;
+		throw new LlmError(`provider metadata verification answered HTTP ${response.status}`, "VERIFICATION_FAILED");
+	}
+	try {
+		await verifyMetadata(response, provider, model);
+	} catch (error) {
+		aborted();
+		throw error;
+	}
+	aborted();
+	const headers = Object.fromEntries(Object.entries(request.publicHeaders).filter(([name]) => !isCredentialHeaderName(name)));
+	let challenge;
+	try {
+		challenge = await fetch(url, {
+			method: "GET",
+			headers,
+			signal,
+			redirect: "manual"
+		});
+	} catch {
+		aborted();
+		return "endpoint-catalog";
+	}
+	await cancelBody(challenge.body);
+	aborted();
+	return challenge.status === 401 || challenge.status === 403 ? "metadata-auth" : "endpoint-catalog";
 }
 //#endregion
 //#region lib/types/adapter.js
@@ -1742,46 +2018,6 @@ function requestHeaders(headers, credentialHeaders) {
 		...attribution
 	};
 }
-const MAX_VERIFICATION_METADATA_BYTES = 64 * 1024;
-/** Read and parse one exact-model metadata response under a hard byte bound. */
-async function verificationMetadata(response, provider, model) {
-	const declared = Number(response.headers.get("content-length") ?? NaN);
-	if (Number.isFinite(declared) && declared > MAX_VERIFICATION_METADATA_BYTES) {
-		await response.body?.cancel();
-		throw new LlmError("provider verification metadata exceeded its byte limit", "VERIFICATION_FAILED");
-	}
-	if (response.body === null) throw new LlmError("provider verification returned no metadata", "VERIFICATION_FAILED");
-	const reader = response.body.getReader();
-	const chunks = [];
-	let total = 0;
-	try {
-		for (;;) {
-			const item = await reader.read();
-			if (item.done) break;
-			total += item.value.byteLength;
-			if (total > MAX_VERIFICATION_METADATA_BYTES) throw new LlmError("provider verification metadata exceeded its byte limit", "VERIFICATION_FAILED");
-			chunks.push(item.value);
-		}
-	} finally {
-		await reader.cancel().catch(() => void 0);
-	}
-	const bytes = new Uint8Array(total);
-	let offset = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	let payload;
-	try {
-		payload = JSON.parse(new TextDecoder().decode(bytes));
-	} catch (error) {
-		throw new LlmError("provider verification metadata was not valid JSON", "VERIFICATION_FAILED", { cause: error });
-	}
-	if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new LlmError("provider verification metadata was not an object", "VERIFICATION_FAILED");
-	const record = payload;
-	if (record.id !== model) throw new LlmError(`provider verification returned a different model than "${model}"`, "INVALID_MODEL_INFO");
-	if (record.provider !== void 0 && record.provider !== provider) throw new LlmError(`provider verification returned a different provider than "${provider}"`, "INVALID_MODEL_INFO");
-}
 /**
 * pi-ai-backed multi-provider adapter. Each operation reads the current
 * profiles, so a configuration change reaches the next request without a
@@ -1804,7 +2040,7 @@ var PiAiAdapter = class extends LlmAdapter {
 		const profiles = this.config.profiles();
 		if (this.snapshot?.profiles === profiles) return this.snapshot;
 		const models = createModels(this.config.auth);
-		for (const profile of profiles.values()) models.setProvider(profile.piProvider);
+		for (const profile of profiles.values()) if (profile.piProvider !== void 0) models.setProvider(profile.piProvider);
 		this.snapshot = {
 			profiles,
 			models
@@ -1815,11 +2051,14 @@ var PiAiAdapter = class extends LlmAdapter {
 	profileOf(snapshot, provider) {
 		const profile = snapshot.profiles.get(provider);
 		if (profile === void 0) throw new LlmError(`pi-ai adapter does not own provider "${provider}"`, "NO_ADAPTER");
+		if (profile.migrationRequired !== void 0) throw new LlmError("provider credential headers require migration to credential references", "MISSING_CREDENTIAL");
 		return profile;
 	}
 	/** The configured descriptor for one exact route/model pair within one snapshot. */
 	modelOf(snapshot, provider, model) {
-		this.profileOf(snapshot, provider);
+		const profile = this.profileOf(snapshot, provider);
+		const failure = profile.modelErrors.get(model) ?? (profile.piProvider === void 0 ? profile.catalogError : void 0);
+		if (failure !== void 0) throw new LlmError(failure, "INVALID_CONFIG");
 		const resolved = snapshot.models.getModel(provider, model);
 		if (resolved === void 0) throw new LlmError(`pi-ai provider "${provider}" has no configured model "${model}"`, "UNKNOWN_MODEL");
 		return resolved;
@@ -1833,7 +2072,6 @@ var PiAiAdapter = class extends LlmAdapter {
 	providerRetryPolicy(provider) {
 		return this.current().profiles.get(provider)?.retryPolicy;
 	}
-	imageRequestPricing(provider, model) {}
 	listModels(provider) {
 		return Promise.resolve().then(() => {
 			const snapshot = this.current();
@@ -1852,57 +2090,29 @@ var PiAiAdapter = class extends LlmAdapter {
 			return this.modelInfo(snapshot, provider, model);
 		});
 	}
+	async credentialHeaders(provider, profile) {
+		if (profile.credentialHeaders !== void 0 && this.config.resolveCredentialHeaders === void 0) throw new LlmError("provider has credential-backed headers but no credential resolver", "MISSING_CREDENTIAL");
+		return await this.config.resolveCredentialHeaders?.(provider, profile) ?? {};
+	}
 	async verifyProvider(provider, model, signal) {
 		const snapshot = this.current();
 		const profile = this.profileOf(snapshot, provider);
 		const resolved = this.modelOf(snapshot, provider, model);
+		if (provider === "bailian-cn" || provider === "bailian-intl") return void 0;
 		if (resolved.api !== "openai-completions" && resolved.api !== "openai-responses") return void 0;
 		const apiKey = await this.config.resolveApiKey(provider, profile);
-		if (profile.credentialHeaders !== void 0 && this.config.resolveCredentialHeaders === void 0) throw new LlmError(`pi-ai provider "${provider}" has credential-backed headers but no credential resolver`, "MISSING_CREDENTIAL");
-		const credentialHeaders = await this.config.resolveCredentialHeaders?.(provider, profile) ?? {};
-		if (apiKey === void 0 && Object.keys(credentialHeaders).length === 0) return void 0;
-		const headers = requestHeaders(profile.headers, credentialHeaders);
+		const credentials = await this.credentialHeaders(provider, profile);
+		if (apiKey === void 0 && Object.keys(credentials).length === 0) return void 0;
+		const headers = requestHeaders(profile.headers, credentials);
 		if (apiKey !== void 0 && !Object.keys(headers).some((name) => name.toLowerCase() === "authorization")) headers.authorization = `Bearer ${apiKey}`;
-		const url = `${resolved.baseUrl.replace(/\/+$/, "")}/models/${encodeURIComponent(resolved.id)}`;
-		let response;
-		try {
-			response = await fetch(url, {
-				method: "GET",
-				headers,
-				redirect: "manual",
-				signal
-			});
-		} catch (error) {
-			if (signal.aborted) throw new LlmError("provider metadata verification aborted", "ABORTED", { cause: error });
-			throw new LlmError("provider metadata verification could not reach its configured endpoint", "VERIFICATION_FAILED", { cause: error });
-		}
-		if (response.status === 401 || response.status === 403) {
-			await response.body?.cancel().catch(() => void 0);
-			throw new LlmError("provider metadata verification rejected the configured credential", "AUTH");
-		}
-		if (response.status === 404) {
-			await response.body?.cancel().catch(() => void 0);
-			throw new LlmError(`provider metadata verification did not find model "${model}"`, "UNKNOWN_MODEL");
-		}
-		if (!response.ok) {
-			await response.body?.cancel().catch(() => void 0);
-			throw new LlmError(`provider metadata verification answered HTTP ${String(response.status)}`, "VERIFICATION_FAILED");
-		}
-		await verificationMetadata(response, provider, model);
-		let challenge;
-		try {
-			challenge = await fetch(url, {
-				method: "GET",
-				headers: requestHeaders(profile.headers, {}),
-				redirect: "manual",
-				signal
-			});
-		} catch (error) {
-			if (signal.aborted) throw new LlmError("provider metadata verification aborted", "ABORTED", { cause: error });
-			return "endpoint-catalog";
-		}
-		await challenge.body?.cancel().catch(() => void 0);
-		return challenge.status === 401 || challenge.status === 403 ? "metadata-auth" : "endpoint-catalog";
+		return verifyExactModel({
+			baseURL: resolved.baseUrl,
+			provider,
+			model,
+			headers,
+			publicHeaders: requestHeaders(profile.headers, {}),
+			signal
+		});
 	}
 	modelInfo(snapshot, provider, model) {
 		const profile = this.profileOf(snapshot, provider);
@@ -1940,22 +2150,8 @@ var PiAiAdapter = class extends LlmAdapter {
 			const profile = this.profileOf(snapshot, options.provider);
 			const model = this.modelOf(snapshot, options.provider, options.model);
 			const reasoning = resolveReasoningLevel(model, options.reasoningEffort ?? profile.reasoning);
-			if (options.signal?.aborted) {
-				yield {
-					type: "finish",
-					reason: {
-						kind: "aborted",
-						failure: {
-							message: "pi-ai request aborted by caller",
-							code: "ABORTED"
-						}
-					}
-				};
-				return;
-			}
 			const apiKey = await this.config.resolveApiKey(options.provider, profile);
-			if (profile.credentialHeaders !== void 0 && this.config.resolveCredentialHeaders === void 0) throw new LlmError(`pi-ai provider "${options.provider}" has credential-backed headers but no credential resolver`, "MISSING_CREDENTIAL");
-			const credentialHeaders = await this.config.resolveCredentialHeaders?.(options.provider, profile) ?? {};
+			const credentialHeaders = await this.credentialHeaders(options.provider, profile);
 			const consumer = new AbortController();
 			const upstream = options.signal === void 0 ? consumer.signal : AbortSignal.any([options.signal, consumer.signal]);
 			const streamIdleTimeoutMs = profile.streamIdleTimeoutMs;
@@ -1975,10 +2171,15 @@ var PiAiAdapter = class extends LlmAdapter {
 				const context = attachments === void 0 ? toPiContext(options, void 0, onReplayDegrade) : await toPiContext({
 					...options,
 					signal: watchdog.signal
-				}, attachments, onReplayDegrade, profile.maxRequestImageBytes, {
-					maxPixels: profile.requestImagePixelBudget,
-					maxBytes: profile.requestImageMaxBytes
-				}, this.config.resolveImageAccess);
+				}, {
+					attachments,
+					resolveImageAccess: (ref) => this.config.resolveImageAccess?.(attachments, ref),
+					maxRequestImageBytes: profile.maxRequestImageBytes,
+					requestImagePolicy: {
+						maxPixels: profile.requestImagePixelBudget,
+						maxBytes: profile.requestImageMaxBytes
+					}
+				}, onReplayDegrade);
 				const iterator = toStreamChunks(snapshot.models.streamSimple(model, context, {
 					...profileOptions(profile, reasoning, apiKey),
 					...options.temperature === void 0 ? {} : { temperature: options.temperature },
@@ -1986,7 +2187,7 @@ var PiAiAdapter = class extends LlmAdapter {
 					...options.sessionId === void 0 ? {} : { sessionId: String(options.sessionId) },
 					signal: watchdog.signal,
 					headers: requestHeaders(profile.headers, credentialHeaders)
-				}), model.contextWindow)[Symbol.asyncIterator]();
+				}), model.contextWindow, options.signal)[Symbol.asyncIterator]();
 				let exhausted = false;
 				try {
 					while (true) {
@@ -2049,10 +2250,16 @@ function recordKeyFor(providerId) {
 	return credentialKey(RECORD_SCOPE, providerId);
 }
 /**
-* Convert a grant to the JSON shape accepted by the durable credential seam.
-* pi-ai grants may contain explicit `undefined` members (for example an OAuth
-* enterprise URL); JSON persistence omits object members and turns array holes
-* into null, so mirror that representation before storing the opaque grant.
+* The JSON image of one grant payload: plain objects lose their
+* explicitly-undefined members and array entries JSON cannot hold become
+* null, exactly as `JSON.stringify` would render them. pi-ai credentials
+* idiomatically carry optional members as explicit `undefined` (a github.com
+* Copilot grant holds `enterpriseUrl: undefined`), which the credential
+* store's strict validator refuses as unrepresentable. Everything else —
+* non-finite numbers and foreign prototypes included — passes through
+* untouched, so a genuinely unstorable value still fails loud at the store.
+* @param value - the value to render.
+* @returns the value's JSON image.
 */
 function jsonImage(value) {
 	if (Array.isArray(value)) return value.map((entry) => entry === void 0 ? null : jsonImage(entry));
@@ -2204,10 +2411,9 @@ function authContextFrom(ctx) {
 * Answering "which models can this provider serve?" for the configuration
 * surface's "fetch available models" action.
 *
-* A route the installed pi-ai catalog ships is answered from that catalog only
-* while the draft keeps its installed endpoint. Supplying a `baseURL` means the
-* user is editing an actual gateway endpoint, so that endpoint is always
-* interrogated instead of returning unrelated built-in models.
+* A known route without an endpoint override uses the installed catalog.
+* An explicit endpoint is interrogated with only a caller-supplied credential
+* bound to that exact endpoint and protocol; stored credentials are not reused.
 *
 * Neither path is a catalog refresh. Nothing here is stored: the request
 * carries a draft the user is still editing, and the reply is candidate
@@ -2222,7 +2428,6 @@ function authContextFrom(ctx) {
 *
 * @module dsh-llm-pi-ai/discovery
 */
-const modelDiscoveryEndpointFingerprint = LlmExports.modelDiscoveryEndpointFingerprint;
 /**
 * Protocols whose model listing this module can read: the two that speak
 * OpenAI's `GET /models` shape with bearer auth. Azure is absent despite its
@@ -2242,7 +2447,7 @@ const LISTABLE_PROTOCOLS = new Set(["openai-completions", "openai-responses"]);
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 /** A positive integer field of a listing entry, or `undefined` when absent or unusable. */
 function capacity(...candidates) {
-	for (const candidate of candidates) if (typeof candidate === "number" && Number.isInteger(candidate) && candidate > 0) return candidate;
+	for (const candidate of candidates) if (typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate > 0) return candidate;
 }
 /** A non-empty string field of a listing entry, or `undefined`. */
 function label(...candidates) {
@@ -2335,7 +2540,7 @@ function usableProbeKey(raw) {
 }
 /**
 * Interrogate one draft provider endpoint for the models it advertises.
-* @param request - the endpoint, protocol, and one-shot credential to use.
+* @param request - endpoint, protocol, cancellation and any Host-bound one-shot credential.
 * @returns the advertised models in endpoint order.
 * @throws LlmError when the protocol has no readable listing, the endpoint
 *   refuses or fails the request, or the reply is not a model listing.
@@ -2360,6 +2565,7 @@ async function discoverModels(request) {
 	try {
 		response = await fetch(url, {
 			method: "GET",
+			redirect: "manual",
 			headers: {
 				accept: "application/json",
 				...apiKey === void 0 ? {} : { authorization: `Bearer ${apiKey}` },
@@ -2507,10 +2713,10 @@ function registerPiAiFlows(ctx, auth) {
 		const provider = catalogProvider(providerId);
 		const [first, ...rest] = loginMethods(provider);
 		/* v8 ignore next 3 -- every id here names an installed provider and every
-		installed provider ships a login, so nothing is skipped today; the guard
+		installed provider ships a login, so no entry is skipped; the guard
 		is what keeps that from becoming a crash if either stops being true. */
 		if (provider === void 0 || first === void 0) continue;
-		/* v8 ignore next 7 -- every installed catalog id today is a lowercase
+		/* v8 ignore next 7 -- every installed catalog id is a lowercase
 		hyphenated identifier; the guard keeps a future upstream id outside the
 		record grammar (dotted or uppercase, as vendor ids elsewhere already
 		are) from throwing in `recordKeyFor` and failing the whole mount. */
@@ -2616,21 +2822,28 @@ function registrationFacts(profiles) {
 * catalog entry, so without this union it would have no settings address and
 * configuration surfaces could neither show nor edit it.
 * @param profiles - the currently resolved provider profiles.
+* @param base - deployment configuration, whose fields cannot be removed by user-layer edits.
 * @returns the directory entries in catalog order, declared routes last.
 */
-function directoryEntries(profiles) {
+function directoryEntries(profiles, base) {
 	const catalog = new Set(catalogProviderIds());
 	const entries = /* @__PURE__ */ new Map();
 	const declare = (provider, displayName, profile) => {
+		const migration = profile?.migrationRequired;
+		const inherited = migration === void 0 ? void 0 : resolveProfileHeaders(provider, base.providers?.[provider] ?? {}, ProviderProfileSchema).migrationRequired;
+		const paths = (value) => [...value.headers.map((name) => ["headers", name]), ...value.fields ?? []];
 		entries.set(provider, {
 			provider,
 			displayName,
 			settingsNs: NS,
 			settingsPath: ["providers", provider],
 			declared: !catalog.has(provider),
-			...profile?.migrationRequired === void 0 ? {} : { migrationRequired: {
-				code: "credential-headers",
-				fields: [...profile.migrationRequired.headers]
+			...profile?.catalogError === void 0 ? {} : { error: profile.catalogError },
+			...migration === void 0 ? {} : { migrationRequired: {
+				code: migration.fields === void 0 ? "credential-headers" : "credential-fields",
+				fields: [...migration.headers, ...migration.fields?.map((path) => path.join(".")) ?? []],
+				paths: paths(migration),
+				inheritedPaths: inherited === void 0 ? [] : paths(inherited)
 			} }
 		});
 	};
@@ -2640,8 +2853,7 @@ function directoryEntries(profiles) {
 }
 /** Register one generic pi-ai adapter for all configured provider routes. */
 function apply(ctx, config) {
-	let requested;
-	let accepted = config;
+	let current = () => config;
 	let lastRaw;
 	let memoized;
 	/**
@@ -2649,30 +2861,22 @@ function apply(ctx, config) {
 	* snapshot's identity — which is also what makes the adapter's own snapshot
 	* stable across operations that observe no change.
 	*
-	* No fallback for an unserviceable snapshot lives here: the section schema
-	* resolves the whole profile set, so a write that could not be served is
-	* refused where it is written, and the settings seam keeps a namespace's
-	* last good value for a stored section that fails. Anything reaching this
-	* point has already resolved once.
+	* Stored catalog failures remain beside independently serviceable models.
+	* Scalar configuration errors still reject; credential migration still
+	* withholds the route from registration.
 	*/
-	const allProfiles = () => {
-		const raw = accepted;
-		if (raw === lastRaw && memoized !== void 0) return memoized;
-		const next = resolveProfiles(raw.providers);
-		lastRaw = raw;
-		memoized = next;
-		return next;
-	};
-	let lastAllProfiles;
-	let memoizedRoutable;
 	const profiles = () => {
-		const all = allProfiles();
-		if (all === lastAllProfiles && memoizedRoutable !== void 0) return memoizedRoutable;
-		lastAllProfiles = all;
-		memoizedRoutable = new Map([...all].filter(([, profile]) => profile.migrationRequired === void 0));
-		return memoizedRoutable;
+		const raw = current();
+		if (raw === lastRaw && memoized !== void 0) return memoized;
+		const next = resolveProfiles(raw.providers, "deferred");
+		lastRaw = raw;
+		memoized = {
+			all: next,
+			routable: new Map([...next].filter(([, profile]) => profile.migrationRequired === void 0))
+		};
+		return memoized;
 	};
-	allProfiles();
+	profiles();
 	const resolveApiKey = async (provider, profile) => {
 		const ref = profile.apiKeyEnv;
 		if (ref === void 0) return void 0;
@@ -2681,28 +2885,32 @@ function apply(ctx, config) {
 		if (hit !== void 0 && hit.length > 0) return assertUsableApiKey(hit, "llm-pi-ai", ref);
 		throw new LlmError(`llm-pi-ai: no credential for provider route "${provider}"; its profile resolves ${ref}, which is not set — store ${ref} through the credentials service (the web Models page writes it) or export it, and remove apiKeyEnv only if this provider should authenticate from pi-ai's own environment discovery`, "MISSING_CREDENTIAL");
 	};
-	const resolveCredentialHeaders = async (provider, profile) => {
-		const resolved = {};
-		for (const [header, ref] of Object.entries(profile.credentialHeaders ?? {})) {
+	const resolveCredentialHeaders = async (_provider, profile) => {
+		const headers = /* @__PURE__ */ new Map();
+		for (const [header, reference] of Object.entries(profile.credentialHeaders ?? {})) {
 			const credentials = ctx.get("credentials");
-			const hit = credentials !== void 0 ? (await credentials.resolve(ref))?.value : launchEnvironmentOf(ctx).get(ref)?.value;
-			if (hit === void 0 || hit.length === 0) throw new LlmError(`llm-pi-ai: no credential for provider route "${provider}" header "${header}"; store ${ref} through the credentials service or export it`, "MISSING_CREDENTIAL");
-			if (/[\r\n]/.test(hit)) throw new LlmError(`llm-pi-ai: credential ${ref} for provider route "${provider}" cannot be used as an HTTP header`, "INVALID_CREDENTIAL");
-			resolved[header] = hit;
+			const value = credentials === void 0 ? launchEnvironmentOf(ctx).get(reference)?.value : (await credentials.resolve(reference))?.value;
+			if (value === void 0 || value.length === 0) throw new LlmError("credential-backed provider header is not configured", "MISSING_CREDENTIAL");
+			try {
+				new Headers([[header, value]]);
+			} catch {
+				throw new LlmError("credential-backed provider header is not valid for HTTP", "INVALID_CREDENTIAL");
+			}
+			headers.set(header, value);
 		}
-		return resolved;
+		return Object.fromEntries(headers);
 	};
 	const auth = {
 		credentials: credentialStoreFrom(ctx),
 		authContext: authContextFrom(ctx)
 	};
 	const adapter = new PiAiAdapter({
-		profiles,
+		profiles: () => profiles().routable,
 		resolveApiKey,
 		resolveCredentialHeaders,
 		auth,
 		resolveAttachments: () => ctx.get("attachments"),
-		resolveImageAccess: createImageAttachmentAccessResolver(() => ctx.get("attachments"), (hostPath) => ctx.get("fs")?.processPathFromHostPath(hostPath)),
+		resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(attachments, (hostPath) => ctx.get("fs")?.processPathFromHostPath(hostPath), ref),
 		onReplayDegrade: ({ provider, model, reason }) => {
 			ctx.logger.warn(`llm-pi-ai: unusable replay state on assistant history for route "${provider}/${model}"; sending that message as provider-neutral content (${reason})`);
 		}
@@ -2710,22 +2918,26 @@ function apply(ctx, config) {
 	ctx.inject(["authorization"], (authorized) => {
 		registerPiAiFlows(authorized, auth);
 	});
-	const initialDirectory = directoryEntries(allProfiles());
-	const directory = ctx.llm.registerConfigurableProviders(initialDirectory);
-	let directoryFacts = initialDirectory;
+	let directory;
+	let directoryFacts;
 	const ensureDirectory = () => {
-		const entries = directoryEntries(allProfiles());
+		const entries = directoryEntries(profiles().all, config);
 		if (deepEqualJson(entries, directoryFacts)) return;
-		directory.replace(entries);
+		if (directory === void 0) directory = ctx.llm.registerConfigurableProviders(entries);
+		else directory.replace(entries);
 		directoryFacts = entries;
 	};
-	ctx.llm.registerModelDiscovery(NS, (request) => discoverModels(request));
+	ensureDirectory();
+	ctx.llm.registerModelDiscovery(NS, (request, signal) => discoverModels({
+		...request,
+		...signal === void 0 ? {} : { signal }
+	}));
 	let registration;
 	let registeredFacts;
 	const ensureRegistrationFacts = () => {
-		const facts = registrationFacts(profiles());
+		const facts = registrationFacts(profiles().routable);
 		if (deepEqualJson(facts, registeredFacts)) return;
-		const routes = [...profiles().keys()];
+		const routes = [...profiles().routable.keys()];
 		if (registration === void 0) {
 			if (routes.length === 0) {
 				registeredFacts = facts;
@@ -2737,54 +2949,28 @@ function apply(ctx, config) {
 	};
 	ensureRegistrationFacts();
 	installSettingsSection(ctx, NS, Config, config, {
-		validate: assertServiceable,
-		validateWrite: assertWritableConfig,
-		redact: redactPiAiSecrets,
+		validate: (value) => {
+			resolveProfiles(value.providers, "deferred");
+		},
+		validateWrite: (value) => {
+			assertWritableConfig(value, current());
+		},
+		redact: (value) => redactPiAiSecrets(value, Config),
 		setSource: (source) => {
-			requested = source;
+			current = source;
 		},
 		onChange: () => {
-			const previous = accepted;
-			accepted = requested();
-			lastRaw = void 0;
-			memoized = void 0;
-			lastAllProfiles = void 0;
-			memoizedRoutable = void 0;
-			let activationFailure;
 			try {
 				ensureRegistrationFacts();
 			} catch (error) {
 				ctx.logger.error("llm-pi-ai: keeping the previously registered routes after a refused update");
 				ctx.logger.error(error);
-				activationFailure = error;
 			}
-			if (activationFailure === void 0) try {
+			try {
 				ensureDirectory();
 			} catch (error) {
 				ctx.logger.error("llm-pi-ai: keeping the previous configurable-provider directory after a refused update");
 				ctx.logger.error(error);
-				activationFailure = error;
-			}
-			if (activationFailure !== void 0) {
-				accepted = previous;
-				lastRaw = void 0;
-				memoized = void 0;
-				lastAllProfiles = void 0;
-				memoizedRoutable = void 0;
-				try {
-					const previousProfiles = profiles();
-					const previousAllProfiles = allProfiles();
-					const previousRoutes = [...previousProfiles.keys()];
-					if (registration !== void 0) registration.replace(previousRoutes);
-					registeredFacts = registrationFacts(previousProfiles);
-					const previousDirectory = directoryEntries(previousAllProfiles);
-					directory.replace(previousDirectory);
-					directoryFacts = previousDirectory;
-				} catch (rollbackError) {
-					ctx.logger.error("llm-pi-ai: failed to restore the last accepted provider registry generation");
-					ctx.logger.error(rollbackError);
-				}
-				throw activationFailure instanceof Error ? activationFailure : new Error("llm-pi-ai provider activation failed", { cause: activationFailure });
 			}
 		}
 	});

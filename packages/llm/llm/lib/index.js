@@ -1,12 +1,14 @@
 import { createRequire } from "node:module";
+import { addAbortListener } from "node:events";
 import { createHash } from "node:crypto";
-import { Remote, TypertLookupFailure, TypertRemoteService, isTypertRemoteFailure } from "@deepseek-ai/dsh-typert-protocol";
-import { SettingsConflictError, deepEqualJson, remoteNamespaceView, settingsNamespace } from "@deepseek-ai/dsh-settings";
 import z from "@deepseek-ai/schemastery";
-import { MAX_TIMER_DELAY_MS, deadline } from "@deepseek-ai/dsh-timeout";
+import { MAX_TIMER_DELAY_MS, deadline, timeoutOf } from "@deepseek-ai/dsh-timeout";
+import { Remote, TypertRemoteFailure, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
+import { randomUUID } from "@deepseek-ai/dsh-util-crypto";
+import { SettingsConflictError, deepEqualJson, remoteNamespaceView, settingsNamespace, snapshotSettingsJson } from "@deepseek-ai/dsh-settings";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { symbols } from "@deepseek-ai/cordis";
-import { credentialKey, credentialRef } from "@deepseek-ai/dsh-credentials";
+import { isObject, symbols } from "@deepseek-ai/cordis";
+import { CredentialConflictError, credentialCondition, credentialKey, credentialRef } from "@deepseek-ai/dsh-credentials";
 //#region lib/types/brand.js
 /**
 * dsh-llm's owned branded ids: tool-call correlation and provider request
@@ -170,7 +172,7 @@ function freezeMessage(message) {
 function createMessage(input) {
 	return freezeMessage({
 		...input,
-		id: MessageId(crypto.randomUUID())
+		id: MessageId(randomUUID())
 	});
 }
 /**
@@ -217,64 +219,6 @@ function createToolResultMessage(input) {
 			isError: input.isError
 		}]
 	});
-}
-/**
-* Whether a stream chunk carries visible model output (the first-token
-* boundary shared by client step timing and the whole-log sessionStats
-* projection). Empty deltas (heartbeats, empty tool-call frames) do not count
-* as a first token.
-* @param chunk - the stream chunk to test.
-* @returns true when the chunk contains a non-empty text/reasoning/tool delta.
-*/
-function isTokenDelta(chunk) {
-	switch (chunk.type) {
-		case "text-delta":
-		case "reasoning-delta": return chunk.text !== "";
-		case "tool-call-delta": return chunk.argumentsDelta !== "" || chunk.name !== void 0;
-		default: return false;
-	}
-}
-//#endregion
-//#region lib/types/api-key.js
-/**
-* The one definition of a well-formed provider API key, shared by every
-* adapter that puts one in an HTTP header.
-* @module @deepseek-ai/dsh-llm/api-key
-*/
-/**
-* Characters an HTTP header value carries verbatim and every known provider
-* key uses: printable ASCII, space excluded. A key outside this set cannot
-* reach any provider — `fetch` refuses to build the header — so this is a
-* transport invariant rather than one provider's policy. Latin-1 is excluded
-* deliberately: a header could carry it, but no provider issues it, and
-* admitting it trades a local explained refusal for an opaque 401.
-*/
-const LEGAL_API_KEY = /^[\x21-\x7E]+$/;
-/**
-* Judge one *supplied* API key, trimming surrounding whitespace first.
-*
-* Trimming is silent because a padded key has one unambiguous reading; every
-* other defect is reported. Absence is a configuration state this function
-* never sees — a profile naming no credential authenticates through the
-* provider's own ambient discovery or OAuth — so callers decide whether a
-* value was supplied before asking.
-* @param raw - the key exactly as configured, stored, or typed.
-* @returns the trimmed key, or why it cannot be used.
-*/
-function normalizeApiKey(raw) {
-	const value = raw.trim();
-	if (value.length === 0) return {
-		ok: false,
-		reason: "empty"
-	};
-	if (!LEGAL_API_KEY.test(value)) return {
-		ok: false,
-		reason: "illegalCharacters"
-	};
-	return {
-		ok: true,
-		value
-	};
 }
 //#endregion
 //#region lib/types/error.js
@@ -389,58 +333,6 @@ function errorChain(value) {
 */
 function isHarnessError(value) {
 	return value instanceof HarnessError;
-}
-/**
-* Typed error for LLM-related failures. Extends {@link HarnessError}, so the
-* `code` string (e.g. `AUTH`, `RATE_LIMIT`, `NO_ADAPTER`) is shared taxonomy.
-*/
-var LlmError = class extends HarnessError {
-	/** Serializable facts retained beside this live Error. */
-	failure;
-	/**
-	* @param message - non-empty human-readable failure summary.
-	* @param code - non-empty stable provider-neutral machine code.
-	* @param options - optional cause and validated serializable provider facts.
-	*/
-	constructor(message, code, options) {
-		if (typeof message !== "string" || message.length === 0) throw new Error("LlmError message must be a non-empty string");
-		if (typeof code !== "string" || code.length === 0) throw new Error("LlmError code must be a non-empty string");
-		if (options?.status !== void 0 && (!Number.isInteger(options.status) || options.status < 100 || options.status > 599)) throw new Error("LlmError status must be an integer from 100 through 599");
-		if (options?.providerRetryAfterMs !== void 0 && (!Number.isFinite(options.providerRetryAfterMs) || options.providerRetryAfterMs <= 0)) throw new Error("LlmError providerRetryAfterMs must be a positive finite number");
-		if (options?.requestId !== void 0 && (typeof options.requestId !== "string" || options.requestId.length === 0)) throw new Error("LlmError requestId must be a non-empty string");
-		super(message, code, options);
-		this.name = "LlmError";
-		this.failure = Object.freeze({
-			message,
-			code,
-			...options?.status === void 0 ? {} : { status: options.status },
-			...options?.providerRetryAfterMs === void 0 ? {} : { providerRetryAfterMs: options.providerRetryAfterMs },
-			...options?.requestId === void 0 ? {} : { requestId: options.requestId }
-		});
-	}
-};
-/**
-* Accept one supplied credential, or refuse it as unusable.
-*
-* A stored key arrives from the credentials seam, a `.env` line, or a shell
-* export, all of which pick up surrounding whitespace, so trimming is silent.
-* Anything else fails here rather than inside `fetch`, whose ByteString
-* refusal names a UTF-16 code point instead of the setting to change. The key
-* never enters the message: `ref` names where to fix it, and echoing any part
-* of a secret into a log or a UI is the failure this diagnosis avoids.
-*
-* Lives beside {@link LlmError} rather than in `./api-key.ts` so the predicate
-* module stays dependency-free; both adapters share this one diagnosis instead
-* of keeping near-identical local copies.
-* @param raw - the credential exactly as supplied.
-* @param pkg - the refusing package name, prefixed to the diagnostic.
-* @param ref - the credential reference the value resolved through.
-* @returns the trimmed, usable key.
-*/
-function assertUsableApiKey(raw, pkg, ref) {
-	const checked = normalizeApiKey(raw);
-	if (checked.ok) return checked.value;
-	throw new LlmError(checked.reason === "empty" ? `${pkg}: the API key resolved from ${ref} is blank; set ${ref} to the raw key (the web Models page writes it) or export it in the launching environment` : `${pkg}: the API key resolved from ${ref} contains characters no HTTP header can carry; set ${ref} to the raw key alone (the web Models page writes it)`, INVALID_CREDENTIAL_CODE);
 }
 //#endregion
 //#region lib/types/retry-policy.js
@@ -571,7 +463,7 @@ function normalizeLlmFailure(value) {
 	const carried = ownFailureSnapshot(error);
 	if (carried !== void 0 && carried.code === ownErrorCode(error)) return carried;
 	return Object.freeze({
-		message: errorMessage$1(error),
+		message: errorMessage(error),
 		code: harnessErrorCode(error)
 	});
 }
@@ -625,7 +517,7 @@ function failureSnapshot(value) {
 	}
 }
 /** Read an SDK error message without letting an accessor replace the primary failure. */
-function errorMessage$1(error) {
+function errorMessage(error) {
 	try {
 		const message = error.message;
 		if (typeof message === "string" && message.length > 0) return message;
@@ -635,6 +527,56 @@ function errorMessage$1(error) {
 /** Trust only Harness-owned codes; third-party SDK codes are not our taxonomy. */
 function harnessErrorCode(error) {
 	return error instanceof HarnessError ? error.code : "UNKNOWN";
+}
+//#endregion
+//#region lib/types/api-key.js
+/**
+* The one definition of a well-formed provider API key, shared by every
+* adapter that puts one in an HTTP header.
+* @module @deepseek-ai/dsh-llm/api-key
+*/
+/**
+* Characters an HTTP header value carries verbatim and every known provider
+* key uses: printable ASCII, space excluded. A key outside this set cannot
+* reach any provider — `fetch` refuses to build the header — so this is a
+* transport invariant rather than one provider's policy. Latin-1 is excluded
+* deliberately: a header could carry it, but no provider issues it, and
+* admitting it trades a local explained refusal for an opaque 401.
+*/
+const LEGAL_API_KEY = /^[\x21-\x7E]+$/;
+/**
+* Identify header names whose non-empty values must use credential storage.
+* @param name - header name, compared case-insensitively.
+* @returns whether the name carries authentication, tokens, passwords or cookies.
+*/
+function isCredentialHeaderName(name) {
+	return /authorization|api[-_]?key|auth[-_]?token|access[-_]?token|token|secret|credential|password|cookie/iu.test(name.trim());
+}
+/**
+* Judge one *supplied* API key, trimming surrounding whitespace first.
+*
+* Trimming is silent because a padded key has one unambiguous reading; every
+* other defect is reported. Absence is a configuration state this function
+* never sees — a profile naming no credential authenticates through the
+* provider's own ambient discovery or OAuth — so callers decide whether a
+* value was supplied before asking.
+* @param raw - the key exactly as configured, stored, or typed.
+* @returns the trimmed key, or why it cannot be used.
+*/
+function normalizeApiKey(raw) {
+	const value = raw.trim();
+	if (value.length === 0) return {
+		ok: false,
+		reason: "empty"
+	};
+	if (!LEGAL_API_KEY.test(value)) return {
+		ok: false,
+		reason: "illegalCharacters"
+	};
+	return {
+		ok: true,
+		value
+	};
 }
 //#endregion
 //#region lib/types/never.js
@@ -660,11 +602,14 @@ function assertNever(value, context) {
 //#region lib/types/content.js
 /** Content-block structure helpers. @module @deepseek-ai/dsh-llm/content */
 /**
-* Map a host-backed attachment path into the current filesystem execution world.
-* @param attachments - The attachments input.
-* @param mapHostPath - The map host path input.
-* @param ref - The ref input.
-* @returns The value produced by resolve image attachment access.
+* Bridge one attachment provider's host object location into the mounted
+* tool execution world. The consumer supplies the current filesystem
+* provider's mapping without making attachment or LLM definitions depend on it.
+* @param attachments - provider that owns the normalized attachment object.
+* @param mapHostPath - map one absolute host path into the current tool execution world.
+* @param ref - durable normalized attachment reference.
+* @returns a read-only execution-world path, or undefined when either provider exposes no mapping.
+* @throws an attachment error when the durable reference is invalid.
 */
 function resolveImageAttachmentAccess(attachments, mapHostPath, ref) {
 	const hostPath = attachments.imageHostPath(ref);
@@ -672,8 +617,11 @@ function resolveImageAttachmentAccess(attachments, mapHostPath, ref) {
 	const readonlyPath = mapHostPath(hostPath);
 	return readonlyPath === void 0 ? void 0 : { readonlyPath };
 }
+function quoted(value) {
+	return JSON.stringify(value);
+}
 function imageIdentity(ref) {
-	return ref.name === void 0 ? String(ref.attachmentId) : `${JSON.stringify(ref.name)} (${ref.attachmentId})`;
+	return ref.name === void 0 ? String(ref.attachmentId) : `${quoted(ref.name)} (${ref.attachmentId})`;
 }
 function extension(mediaType) {
 	switch (mediaType) {
@@ -685,30 +633,35 @@ function extension(mediaType) {
 	}
 }
 function normalizedAccessText(ref, access) {
-	return ` Normalized copy (read-only; may be resized or re-encoded): ${JSON.stringify(access.readonlyPath)} (${ref.width}x${ref.height}px, ${ref.mediaType}). Source dimensions, format, and byte size may differ. Copy to a writable path ending in ${extension(ref.mediaType)} before editing.`;
+	return ` Normalized copy (read-only; may be resized or re-encoded): ${quoted(access.readonlyPath)} (${ref.width}x${ref.height}px, ${ref.mediaType}). Source dimensions, format, and byte size may differ. Copy to a writable path ending in ${extension(ref.mediaType)} before editing.`;
 }
-/** Model-facing stand-in for an image removed to fit a provider request bound. */
-const OFFLOADED_IMAGE_TEXT = "[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]";
 /**
 * Stable text shown to a model that cannot accept one durable image reference.
-* @param ref - durable master reference omitted from the request.
+* @param ref - durable normalized attachment omitted from the request.
 * @returns deterministic text-only placeholder.
 */
 function textOnlyImageText(ref) {
 	return `[image omitted because this model accepts text only; attachment sha256:${String(ref.attachmentId).slice(7, 15)}]`;
 }
-function requestImageHandleText(value, dimensions, access) {
-	const ref = "attachment" in value ? value.attachment : value;
-	const version = "attachment" in value ? value : dimensions;
-	if (version === void 0) throw new TypeError("request image dimensions are required");
+/**
+* Stable model-facing handle for one exact request image. Identity comes from
+* the occurrence's own durable reference: request versions are prepared per
+* attachment id, so one shared version may serve occurrences whose display
+* names differ.
+* @param ref - the occurrence's durable normalized attachment.
+* @param version - exact request-image dimensions shown beside the text.
+* @param access - optional path resolved for the current tool execution world.
+* @returns attachment handle and request-image dimensions.
+*/
+function requestImageHandleText(ref, version, access) {
 	const preview = `Image ${imageIdentity(ref)}; request preview ${version.width}x${version.height}px.`;
 	return access === void 0 ? `${preview} It may be resized or re-encoded; source dimensions, format, and byte size may differ.` : preview + normalizedAccessText(ref, access);
 }
 /**
-* Stable placeholder for an image omitted by request limits.
-* @param ref - The ref input.
-* @param access - The access input.
-* @returns The value produced by offloaded image text.
+* Stable per-image placeholder for a request-limit omission.
+* @param ref - durable normalized attachment omitted from this request.
+* @param access - optional provider-resolved path for model tools.
+* @returns identity, normalized metadata, and the available recovery path.
 */
 function offloadedImageText(ref, access) {
 	const identity = `image omitted to fit request image limits; ${imageIdentity(ref)}.`;
@@ -729,30 +682,6 @@ function contentHasImage(content) {
 /** Base64 length of raw image bytes, including padding. */
 function base64Length(bytes) {
 	return Math.ceil(bytes / 3) * 4;
-}
-/**
-* Return the number of oldest image occurrences removed by the policy.
-* @param lengths - The lengths input.
-* @param policy - The policy input.
-* @returns The value produced by offloaded image prefix count.
-*/
-function offloadedImagePrefixCount(lengths, policy) {
-	const total = lengths.reduce((sum, bytes) => sum + bytes, 0);
-	const excessCount = policy.maxImages === void 0 ? 0 : Math.max(0, lengths.length - policy.maxImages);
-	const excessBytes = policy.maxBytes === void 0 ? 0 : Math.max(0, total - policy.maxBytes);
-	if (excessCount === 0 && excessBytes === 0) return 0;
-	const countQuantum = policy.countQuantum ?? 1;
-	const byteQuantum = policy.byteQuantum ?? 1;
-	const removeCount = excessCount === 0 ? 0 : Math.ceil(excessCount / countQuantum) * countQuantum;
-	const removeBytes = excessBytes === 0 ? 0 : Math.ceil(excessBytes / byteQuantum) * byteQuantum;
-	let count = 0;
-	let removedBytes = 0;
-	for (const imageBytes of lengths) {
-		if (count >= removeCount && (removeBytes === 0 || (byteQuantum === 1 ? removedBytes >= removeBytes : removedBytes > removeBytes))) break;
-		removedBytes += imageBytes;
-		count += 1;
-	}
-	return count;
 }
 /** Collect represented image lengths in request and nested-block order. */
 function collectImageLengths(blocks, lengths, policy) {
@@ -832,21 +761,31 @@ function projectImagesForTextModel(messages) {
 	});
 }
 /**
-* Return transient request messages whose oldest images are replaced until
-* their accumulated base64 payload fits the configured bound. The selection
-* is deterministic from durable message order and attachment metadata; a
-* provider can serialize the returned messages without reading omitted bytes.
-* @param messages - complete request history, oldest first.
-* @param maxRequestImageBytes - positive bound on total base64 image payload; undefined preserves every image.
-* @returns the original messages when they already fit, otherwise shallow message copies with replaced content trees.
+* Number of oldest image occurrences one request projection removes, in whole
+* count and byte quanta, once a route budget is exceeded. The result depends
+* only on the represented lengths, so provider request pricing reproduces the
+* exact serialization decision without building the projected messages.
+* @param lengths - represented byte length of every occurrence, in request order.
+* @param policy - count/byte budgets and removal quanta; unbounded when absent.
+* @returns how many leading occurrences the projection replaces with placeholders.
 */
-function offloadRequestImages(messages, maxRequestImageBytes) {
-	return offloadRequestImagesWithPolicy(messages, {
-		representation: "base64",
-		...maxRequestImageBytes === void 0 ? {} : { maxBytes: maxRequestImageBytes },
-		byteQuantum: 1,
-		placeholder: () => OFFLOADED_IMAGE_TEXT
-	});
+function offloadedImagePrefixCount(lengths, policy) {
+	const total = lengths.reduce((sum, bytes) => sum + bytes, 0);
+	const excessCount = policy.maxImages === void 0 ? 0 : Math.max(0, lengths.length - policy.maxImages);
+	const excessBytes = policy.maxBytes === void 0 ? 0 : Math.max(0, total - policy.maxBytes);
+	if (excessCount === 0 && excessBytes === 0) return 0;
+	const countQuantum = policy.countQuantum ?? 1;
+	const byteQuantum = policy.byteQuantum ?? 1;
+	const removeCount = excessCount === 0 ? 0 : Math.ceil(excessCount / countQuantum) * countQuantum;
+	const removeBytes = excessBytes === 0 ? 0 : Math.ceil(excessBytes / byteQuantum) * byteQuantum;
+	let count = 0;
+	let removedBytes = 0;
+	for (const imageBytes of lengths) {
+		if (count >= removeCount && (removeBytes === 0 || (byteQuantum === 1 ? removedBytes >= removeBytes : removedBytes > removeBytes))) break;
+		removedBytes += imageBytes;
+		count += 1;
+	}
+	return count;
 }
 /**
 * Return a deterministic transient projection whose oldest images are replaced
@@ -865,9 +804,8 @@ function offloadRequestImagesWithPolicy(messages, policy) {
 	const count = offloadedImagePrefixCount(lengths, policy);
 	if (count === 0) return messages;
 	const remaining = { count };
-	const placeholder = policy.placeholder ?? (() => "[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]");
 	return messages.map((message) => {
-		const content = replaceOldestImages(message.content, remaining, placeholder);
+		const content = replaceOldestImages(message.content, remaining, policy.placeholder);
 		return content === message.content ? message : {
 			...message,
 			content
@@ -875,24 +813,24 @@ function offloadRequestImagesWithPolicy(messages, policy) {
 	});
 }
 //#endregion
-//#region lib/types/remote.js
-/** Native Typert Remote projections owned by the LLM configuration domain. */
-const PROVIDER_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const PROVIDER_VERIFY_TIMEOUT_MS = 15e3;
-const SECRET_HEADER_NAME = /authorization|api[-_]?key|auth[-_]?token|access[-_]?token|token|secret|credential|password|cookie/i;
-const transactionTails = /* @__PURE__ */ new WeakMap();
-const transactionExecution = new AsyncLocalStorage();
-/** Reserve every key together; acquire journal, namespace, then reference tiers. */
-async function withTransactionKeys(owner, keys, operation) {
-	if (keys.length === 0) return operation();
-	const identity = Reflect.get(owner, symbols.original) ?? owner;
-	let tails = transactionTails.get(identity);
+//#region lib/types/provider-transaction.js
+/** Journaled Native provider writes; the Credential provider remains the only durable owner. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const PROVIDER = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
+const SHA256 = /^[a-f0-9]{64}$/u;
+const hash = (value) => createHash("sha256").update(value).digest("hex");
+const resourceTails = /* @__PURE__ */ new WeakMap();
+const execution = new AsyncLocalStorage();
+/** Reserve each resource tier atomically: provider journal, namespace, then credential references. */
+async function withResources(owner, keys, operation) {
+	const original = Reflect.get(owner, symbols.original);
+	const identity = isObject(original) ? original : owner;
+	let tails = resourceTails.get(identity);
 	if (tails === void 0) {
 		tails = /* @__PURE__ */ new Map();
-		transactionTails.set(identity, tails);
+		resourceTails.set(identity, tails);
 	}
-	const distinct = [...new Set(keys)].sort();
+	const distinct = [...new Set(keys)];
 	const previous = distinct.flatMap((key) => tails.get(key) ?? []);
 	const lease = Promise.withResolvers();
 	for (const key of distinct) tails.set(key, lease.promise);
@@ -902,959 +840,228 @@ async function withTransactionKeys(owner, keys, operation) {
 	} finally {
 		lease.resolve();
 		for (const key of distinct) if (tails.get(key) === lease.promise) tails.delete(key);
-		if (tails.size === 0) transactionTails.delete(identity);
+		if (tails.size === 0) resourceTails.delete(identity);
 	}
 }
-/** Hold one provider executor through settlement; reject recursive callback mutations. */
-async function withProviderExecution(credentials, provider, signal, operation) {
-	if (transactionExecution.getStore()?.active) remoteFailure("provider-transaction-reentrant", "provider mutation cannot be nested inside a running provider transaction", { provider });
-	return withTransactionKeys(credentials, [`journal:${provider}`], async () => {
-		assertProviderNotCancelled(signal);
-		const execution = { active: true };
-		try {
-			return await transactionExecution.run(execution, operation);
-		} finally {
-			execution.active = false;
-		}
+function fail(code, message, details = {}) {
+	throw new TypertRemoteFailure({
+		code,
+		message,
+		details
 	});
 }
-/** Before durable claim, cancellation leaves no credential or profile mutation. */
-function assertProviderNotCancelled(signal) {
-	if (signal?.aborted) remoteFailure("cancelled", "provider transaction was cancelled before durable claim", {});
+function record(value) {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-/** Lock both removed and adopted references, including a staged generation. */
-function transactionCredentialRefs(value, ops, settingsPath, suppliedRef) {
-	return new Set([
-		...providerCredentialRefs(value, settingsPath),
-		...providerCredentialRefs(applyRemoteOps(value, ops), settingsPath),
-		...suppliedRef === void 0 ? [] : [suppliedRef]
-	]);
+function onlyFields(value, fields) {
+	return Object.keys(value).every((key) => fields.includes(key));
 }
-/**
-* Whether an HTTP header value must live behind a credential reference.
-* @param name - Header name to classify case-insensitively.
-* @returns True for credential-, token-, cookie-, or password-bearing names.
-*/
-function isCredentialHeaderName(name) {
-	return SECRET_HEADER_NAME.test(name.trim().toLowerCase());
+/** JSON object insertion order is not part of a Native request's identity; array order is. */
+function hashJson(value) {
+	return hash(JSON.stringify(value, (_key, item) => record(item) ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item));
 }
-/**
-* Project the configured and live provider directories without giving writes a second owner.
-* @param runtime - The runtime input.
-* @returns The value produced by list remote providers.
-*/
-function listRemoteProviders(runtime) {
-	const active = new Set(runtime.listProviders().map((provider) => provider.id));
-	const declared = /* @__PURE__ */ new Set();
-	const providers = runtime.listConfigurableProviders().map((entry) => {
-		declared.add(entry.provider);
-		return {
-			provider: entry.provider,
-			displayName: entry.displayName,
-			settingsNs: entry.settingsNs,
-			settingsPath: [...entry.settingsPath],
-			active: active.has(entry.provider),
-			...entry.declared === void 0 ? {} : { declared: entry.declared },
-			...entry.migrationRequired === void 0 ? {} : { migrationRequired: {
-				code: entry.migrationRequired.code,
-				fields: [...entry.migrationRequired.fields]
-			} }
-		};
-	});
-	for (const provider of runtime.listProviders()) {
-		if (declared.has(provider.id)) continue;
-		providers.push({
-			provider: provider.id,
-			displayName: provider.name,
-			settingsNs: "",
-			settingsPath: [],
-			active: true
-		});
-	}
-	return { providers };
+function strings(value) {
+	return Array.isArray(value) && value.every((part) => typeof part === "string");
 }
-/**
-* Build a failure-isolated host-scoped model catalog.
-* @param runtime - The runtime input.
-* @returns The value produced by list remote models.
-*/
-async function listRemoteModels(runtime) {
-	const catalog = await Promise.all(runtime.listProviders().map(async (provider) => {
-		try {
-			const models = await runtime.listModels(provider.id);
-			const rows = await Promise.all(models.map(async (model) => {
-				return projectRemoteModel(model, await runtime.resolveModelInfo(provider.id, model.id));
-			}));
-			return {
-				kind: "group",
-				group: {
-					id: provider.id,
-					name: provider.name,
-					models: rows
-				}
-			};
-		} catch (error) {
-			return {
-				kind: "failure",
-				failure: {
-					id: provider.id,
-					name: provider.name,
-					message: error instanceof Error ? error.message : String(error)
-				}
-			};
-		}
-	}));
-	return {
-		groups: catalog.flatMap((entry) => entry.kind === "group" && entry.group.models.length > 0 ? [entry.group] : []),
-		failures: catalog.flatMap((entry) => entry.kind === "failure" ? [entry.failure] : [])
-	};
+function pathOp(value) {
+	return record(value) && strings(value.path) && (value.op === "unset" || value.op === "set" && Object.hasOwn(value, "value"));
 }
-/**
-* Discover a draft provider's models without storing or returning its one-shot secret.
-* @param runtime - The runtime input.
-* @param request - The request input.
-* @param signal - The signal input.
-* @returns The value produced by discover remote models.
-*/
-async function discoverRemoteModels(runtime, request, signal) {
-	if (signal.aborted) remoteFailure("cancelled", "model discovery was cancelled", {});
-	try {
-		const models = await runtime.discoverModels(request.settingsNs, {
-			...request.provider === void 0 ? {} : { provider: request.provider },
-			...request.baseURL === void 0 ? {} : { baseURL: request.baseURL },
-			...request.api === void 0 ? {} : { api: request.api },
-			...request.apiKey === void 0 ? {} : { apiKey: request.apiKey },
-			signal
-		});
-		if (isAborted(signal)) remoteFailure("cancelled", "model discovery was cancelled", {});
-		return { models: models.map(remoteDiscoveredModel) };
-	} catch (error) {
-		if (isTypertRemoteFailure(error)) throw error;
-		if (isRemoteFailure(error)) throwRemoteFailure(error);
-		if (isAborted(signal)) remoteFailure("cancelled", "model discovery was cancelled", {});
-		remoteFailure("model-discovery-failed", "provider model discovery failed", {
-			settingsNs: request.settingsNs,
-			...request.baseURL === void 0 ? {} : { baseURL: request.baseURL }
-		});
-	}
+function pathOps(value) {
+	return Array.isArray(value) && value.every(pathOp);
 }
-/**
-* Read one provider transaction without returning its operations or secrets.
-* @param runtime - Live provider registry used only for terminal live-state projection.
-* @param ctx - Host context containing the secure credential journal provider.
-* @param request - Provider id and transaction UUID to inspect.
-* @returns Durable phase, credential requirement, and optional live state.
-*/
-async function providerTransactionStatus(runtime, ctx, request) {
-	if (!PROVIDER_PATTERN.test(request.provider) || !UUID_PATTERN.test(request.transactionId)) remoteFailure("input-invalid", "provider transaction status needs a valid provider and UUID", {});
-	const credentials = ctx.get("credentials");
-	if (credentials === void 0) remoteFailure("service-unavailable", "credentials service is absent", {});
-	const record = await readProviderJournal(credentials, request.provider);
-	const payload = record?.kind === "grant" && isRecord(record.payload) ? record.payload : void 0;
-	if (payload === void 0 || payload.transactionId !== request.transactionId) return {
-		state: "absent",
-		needsCredential: false
-	};
-	const phase = payload.phase;
-	const outcome = payload.outcome;
-	const state = phase === "done" ? outcome === "committed" || outcome === "rolled-back" || outcome === "committed-not-live" ? outcome : "absent" : phase === "prepared" || phase === "credential-staged" || phase === "settings-applied" || phase === "credential-applied" ? phase : "absent";
-	if (state === "absent") remoteFailure("provider-transaction-in-doubt", "provider transaction journal is unreadable", {
-		provider: request.provider,
-		transactionId: request.transactionId
-	});
-	const plan = isRecord(payload.plan) ? payload.plan : void 0;
-	const credential = plan !== void 0 && isCredentialPlan(plan.credential) ? plan.credential : void 0;
-	let needsCredential = phase !== "done" && credential?.op === "set";
-	if (needsCredential && credential !== void 0) {
-		const current = await credentials.resolve(remoteCredentialRef(credential.ref));
-		needsCredential = current === void 0 || hash(current.value) !== credential.valueDigest;
-	}
-	return {
-		state,
-		needsCredential,
-		...typeof payload.settingsNs === "string" ? { settingsNs: payload.settingsNs } : {},
-		...phase === "done" ? { live: outcome === "committed" && runtime.listProviders().some((row) => row.id === request.provider) } : {}
-	};
-}
-/**
-* Resume a durable provider transaction without asking the caller to rebuild its settings operations.
-* @param runtime - Provider and model registry receiving the resumed commit.
-* @param ctx - Host context containing settings and secure credential services.
-* @param request - Provider id, transaction UUID, and optional credential replay.
-* @param signal - Cancellation before a durable claim; claimed work keeps ownership until settled.
-* @returns Committed provider mutation view or the journal's terminal failure.
-*/
-async function resumeRemoteProvider(runtime, ctx, request, signal) {
-	if (!PROVIDER_PATTERN.test(request.provider) || !UUID_PATTERN.test(request.transactionId)) remoteFailure("input-invalid", "provider transaction resume needs a valid provider and UUID", {});
-	const credentials = ctx.get("credentials");
-	if (credentials === void 0) remoteFailure("service-unavailable", "credentials service is absent", {});
-	return withProviderExecution(credentials, request.provider, signal, () => readAndResumeProvider(runtime, ctx, credentials, request, signal));
-}
-/** Read recovery metadata only after owning its provider journal. */
-async function readAndResumeProvider(runtime, ctx, credentials, request, signal) {
-	const journal = parseJournal(await readProviderJournal(credentials, request.provider), request.provider, request.transactionId);
-	if (journal.transactionId !== request.transactionId || journal.provider !== request.provider) remoteFailure("provider-transaction-in-doubt", "the requested provider transaction is not current", {
-		provider: request.provider,
-		transactionId: request.transactionId
-	});
-	const settings = ctx.get("settings");
-	if (settings === void 0) remoteFailure("service-unavailable", "settings service is absent", {});
-	const ns = remoteSettingsNamespace(journal.settingsNs);
-	return withTransactionKeys(settings, [`namespace:${journal.settingsNs}`], () => {
-		assertProviderNotCancelled(signal);
-		const refs = transactionCredentialRefs(settings.describe().find((candidate) => candidate.ns === ns)?.value, journal.plan.ops, journal.plan.settingsPath, journal.plan.credential?.ref);
-		return withTransactionKeys(credentials, [...refs].map((ref) => `reference:${ref}`), () => resumeProviderJournal(runtime, settings, credentials, request, journal, refs, signal));
-	});
-}
-/** Resolve a replay secret and complete recovery within all three resource tiers. */
-async function resumeProviderJournal(runtime, settings, credentials, request, journal, refs, signal) {
-	assertProviderNotCancelled(signal);
-	if (journal.phase === "done") {
-		requireCommittedJournal(journal, request.provider, request.transactionId);
-		const ns = remoteSettingsNamespace(journal.settingsNs);
-		const ref = journal.plan.credential === void 0 ? void 0 : remoteCredentialRef(journal.plan.credential.ref);
-		return remoteMutationResult(runtime, settings, credentials, ns, journal.provider, journal.settingsNs, ref);
-	}
-	const credentialPlan = journal.plan.credential;
-	let credential;
-	if (credentialPlan?.op === "unset") credential = {
+function canonicalOps(ops) {
+	return ops.map((op) => op.op === "unset" ? {
 		op: "unset",
-		ref: credentialPlan.ref
-	};
-	else if (credentialPlan?.op === "set") {
-		const ref = remoteCredentialRef(credentialPlan.ref);
-		const current = await credentials.resolve(ref);
-		const value = request.credentialValue ?? (current !== void 0 && hash(current.value) === credentialPlan.valueDigest ? current.value : void 0);
-		if (value === void 0 || hash(value) !== credentialPlan.valueDigest) remoteFailure("provider-transaction-needs-credential", "the durable provider transaction needs its write-only credential again", {
-			provider: request.provider,
-			transactionId: request.transactionId,
-			ref: credentialPlan.ref
-		});
-		credential = {
-			op: "set",
-			ref: credentialPlan.ref,
-			value
-		};
-	}
-	return mutateProviderRequest(runtime, settings, credentials, {
-		transactionId: journal.transactionId,
-		provider: journal.provider,
-		settingsNs: journal.settingsNs,
-		ops: journal.plan.ops,
-		expectedRevision: journal.plan.expectedRevision,
-		...credential === void 0 ? {} : { credential }
-	}, journal, signal, refs);
-}
-/**
-* Run one bounded exact-route request without exposing provider output.
-* @param runtime - Provider registry that performs the exact model verification.
-* @param request - Provider/model route to probe.
-* @param signal - Caller cancellation combined with the fixed verification deadline.
-* @returns Verification mode and accepted state; model output is discarded.
-*/
-async function verifyRemoteProvider(runtime, request, signal) {
-	if (!PROVIDER_PATTERN.test(request.provider) || request.model.trim().length === 0) remoteFailure("input-invalid", "provider verification needs a valid provider and model", {});
-	const deadline = AbortSignal.timeout(PROVIDER_VERIFY_TIMEOUT_MS);
-	const bounded = AbortSignal.any([signal, deadline]);
-	let mode;
-	try {
-		mode = await runtime.verifyModel(request.provider, request.model, bounded);
-	} catch (error) {
-		if (error?.code === "VERIFICATION_STILL_RUNNING") remoteFailure("provider-verification-still-running", "provider verification ignored cancellation and remains owner-tracked", {
-			provider: request.provider,
-			model: request.model,
-			state: "still-running"
-		});
-		if (signal.aborted) remoteFailure("cancelled", "provider verification was cancelled", {});
-		if (deadline.aborted) remoteFailure("provider-verification-timeout", "provider verification timed out", {
-			provider: request.provider,
-			model: request.model
-		});
-		if (isTypertRemoteFailure(error)) throw error;
-		remoteFailure("provider-verification-failed", "provider/model authentication verification failed", {
-			provider: request.provider,
-			model: request.model
-		});
-	}
-	return mode === "endpoint-catalog" ? {
-		provider: request.provider,
-		model: request.model,
-		verified: false,
-		mode,
-		classification: "reachability-only"
-	} : {
-		provider: request.provider,
-		model: request.model,
-		verified: true,
-		mode
-	};
-}
-/**
-* Commit a provider configuration change with a secret-free durable retry receipt.
-* @param runtime - Provider registry used for ownership and activation checks.
-* @param ctx - Host settings and credential service owners.
-* @param request - Provider mutation with its expected settings revision and transaction id.
-* @param signal - Cancellation before durable claim; late cancellation does not interrupt commit.
-* @returns The committed redacted view, or a typed conflict, cancellation or recovery failure.
-*/
-async function mutateRemoteProvider(runtime, ctx, request, signal) {
-	validateProviderRequest(request);
-	const settings = ctx.get("settings");
-	if (settings === void 0) remoteFailure("service-unavailable", "settings service is absent", {});
-	const credentials = ctx.get("credentials");
-	if (credentials === void 0) remoteFailure("service-unavailable", "credentials service is absent", {});
-	return withProviderExecution(credentials, request.provider, signal, () => withTransactionKeys(settings, [`namespace:${request.settingsNs}`], () => mutateProviderRequest(runtime, settings, credentials, request, void 0, signal)));
-}
-/** Share mutation admission while preserving an explicit resume's original journal. */
-async function mutateProviderRequest(runtime, settings, credentials, request, journalSnapshot, signal, heldRefs) {
-	assertProviderNotCancelled(signal);
-	validateProviderRequest(request);
-	const ns = remoteSettingsNamespace(request.settingsNs);
-	const declaration = runtime.listConfigurableProviders().find((entry) => entry.provider === request.provider && entry.settingsNs === request.settingsNs);
-	if (declaration === void 0) remoteFailure("settings-rejected", `provider "${request.provider}" is not declared by settings namespace "${request.settingsNs}"`, { ns: request.settingsNs });
-	const before = settings.describe().find((candidate) => candidate.ns === ns);
-	if (before === void 0) remoteFailure("settings-rejected", `settings namespace "${request.settingsNs}" is not registered`, { ns: request.settingsNs });
-	const replay = await endpointMutationReplay(credentials, declaration, request, journalSnapshot);
-	const stagedRequest = replay?.request ?? endpointBoundMutationRequest(declaration, before.value, request);
-	validateProviderRequest(stagedRequest);
-	const plan = replay?.plan ?? {
-		...mutationPlan(declaration.settingsPath, stagedRequest),
-		...stagedRequest === request ? {} : { requestDigest: mutationDigest(request.provider, request.settingsNs, mutationPlan(declaration.settingsPath, request)) }
-	};
-	const refs = transactionCredentialRefs(before.value, stagedRequest.ops, declaration.settingsPath, stagedRequest.credential?.ref);
-	if (request.credential !== void 0) refs.add(request.credential.ref);
-	const execute = () => {
-		assertProviderNotCancelled(signal);
-		if (replay?.phase !== "done") {
-			validateProviderOwnership(declaration.settingsPath, before.value, stagedRequest);
-			validateCredentialScope(runtime, settings, declaration, before.value, stagedRequest);
-			validateProviderSecrets(settings, ns, stagedRequest);
-		}
-		return mutateProviderTransaction(runtime, settings, credentials, ns, stagedRequest, plan, replay?.phase, signal);
-	};
-	if (heldRefs !== void 0) {
-		if ([...refs].some((ref) => !heldRefs.has(ref))) remoteFailure("provider-transaction-in-doubt", "provider resume reference ownership changed before commit", { provider: request.provider });
-		return execute();
-	}
-	return withTransactionKeys(credentials, [...refs].map((ref) => `reference:${ref}`), execute);
-}
-async function mutateProviderTransaction(runtime, settings, credentials, ns, request, plan, replay, signal) {
-	const credential = request.credential;
-	const ref = credential === void 0 ? void 0 : remoteCredentialRef(credential.ref);
-	if (replay !== "done" && credential !== void 0 && ref !== void 0) await ensureWritableCredential(credentials, ref, credential.ref);
-	const digest = mutationDigest(request.provider, request.settingsNs, plan);
-	const journalKey = credentialKey("llm-remote", request.provider);
-	const proposed = {
-		version: 1,
-		transactionId: request.transactionId,
-		digest,
-		provider: request.provider,
-		settingsNs: request.settingsNs,
-		plan,
-		phase: "prepared"
-	};
-	let journal;
-	assertProviderNotCancelled(signal);
-	try {
-		journal = await claimJournal(credentials, journalKey, proposed, request, replay);
-	} catch (error) {
-		if (isTypertRemoteFailure(error)) throw error;
-		if (isRemoteFailure(error)) throwRemoteFailure(error);
-		remoteFailure("provider-transaction-in-doubt", "provider transaction journal could not be acquired", {
-			provider: request.provider,
-			transactionId: request.transactionId
-		});
-	}
-	if (journal.phase === "done") {
-		requireCommittedJournal(journal, request.provider, request.transactionId);
-		return remoteMutationResult(runtime, settings, credentials, ns, request.provider, request.settingsNs, ref);
-	}
-	let active = journal;
-	if (replay === void 0) {
-		const current = settings.describe().find((candidate) => candidate.ns === ns);
-		if (current === void 0) remoteFailure("provider-transaction-in-doubt", `settings namespace "${request.settingsNs}" disappeared before provider mutation`, {
-			provider: request.provider,
-			transactionId: request.transactionId
-		});
-		if (current.revision !== active.plan.expectedRevision) await rejectProviderRevision(credentials, journalKey, active, ns, current.revision);
-	}
-	if (active.phase === "prepared" && active.plan.credential?.op === "set") {
-		await applyCredentialPlan(credentials, active, request.credential);
-		active = {
-			...active,
-			phase: "credential-staged"
-		};
-		try {
-			await writeJournal(credentials, journalKey, active);
-		} catch {
-			remoteFailure("provider-transaction-in-doubt", "provider credential staging could not be journaled", {
-				provider: request.provider,
-				transactionId: request.transactionId
-			});
-		}
-	}
-	if (active.phase === "prepared" || active.phase === "credential-staged") {
-		const current = settings.describe().find((candidate) => candidate.ns === ns);
-		if (current === void 0) remoteFailure("provider-transaction-in-doubt", `settings namespace "${request.settingsNs}" disappeared before provider mutation`, {
-			provider: request.provider,
-			transactionId: request.transactionId
-		});
-		let settingsCommitted = remoteOpsSatisfied(current.user, active.plan.ops);
-		if (!settingsCommitted) {
-			if (current.revision !== active.plan.expectedRevision) await rejectProviderRevision(credentials, journalKey, active, ns, current.revision);
-			try {
-				await settings.mutate(ns, active.plan.ops, active.plan.expectedRevision);
-				settingsCommitted = true;
-			} catch (error) {
-				const after = settings.describe().find((candidate) => candidate.ns === ns);
-				settingsCommitted = after !== void 0 && remoteOpsSatisfied(after.user, active.plan.ops);
-				if (!settingsCommitted) {
-					const failure = settingsFailureValue(request.settingsNs, error);
-					try {
-						await finishJournal(credentials, journalKey, active, "rolled-back", failure);
-					} catch {
-						remoteFailure("provider-transaction-in-doubt", "provider rollback receipt could not be persisted", {
-							provider: request.provider,
-							transactionId: request.transactionId
-						});
-					}
-					throwRemoteFailure(failure);
-				}
-			}
-		}
-		active = {
-			...active,
-			phase: "settings-applied"
-		};
-		try {
-			await writeJournal(credentials, journalKey, active);
-		} catch {
-			remoteFailure("provider-transaction-in-doubt", "provider settings commit could not be journaled", {
-				provider: request.provider,
-				transactionId: request.transactionId
-			});
-		}
-	}
-	if (active.phase === "settings-applied") {
-		if (active.plan.credential !== void 0) {
-			await applyCredentialPlan(credentials, active, request.credential);
-			active = {
-				...active,
-				phase: "credential-applied"
-			};
-			try {
-				await writeJournal(credentials, journalKey, active);
-			} catch {
-				remoteFailure("provider-transaction-in-doubt", "provider credential commit could not be journaled", {
-					provider: request.provider,
-					transactionId: request.transactionId
-				});
-			}
-		}
-	}
-	const committed = postWriteNamespace(settings, ns, request.settingsNs);
-	let accepted = false;
-	try {
-		accepted = await settings.settle(ns, committed.revision);
-	} catch (error) {
-		const failure = settingsFailureValue(request.settingsNs, error);
-		await finishOrInDoubt(credentials, journalKey, active, "committed-not-live", failure);
-		throwRemoteFailure(failure);
-	}
-	if (!accepted || !runtime.listProviders().some((provider) => provider.id === request.provider)) {
-		const failure = {
-			code: "provider-registration-rejected",
-			message: `provider "${request.provider}" settings were stored but its live route rejected the configuration`,
-			details: {
-				provider: request.provider,
-				transactionId: request.transactionId
-			}
-		};
-		await finishOrInDoubt(credentials, journalKey, active, "committed-not-live", failure);
-		throwRemoteFailure(failure);
-	}
-	await finishOrInDoubt(credentials, journalKey, active, "committed");
-	return remoteMutationResult(runtime, settings, credentials, ns, request.provider, request.settingsNs, ref);
-}
-/** Reuse the durable conflict receipt both before staging and after external drift. */
-async function rejectProviderRevision(credentials, key, active, ns, revision) {
-	const failure = settingsFailureValue(active.settingsNs, new SettingsConflictError(ns, active.plan.expectedRevision, revision));
-	try {
-		await finishJournal(credentials, key, active, "rolled-back", failure);
-	} catch {
-		remoteFailure("provider-transaction-in-doubt", "provider stale-write receipt could not be persisted", {
-			provider: active.provider,
-			transactionId: active.transactionId
-		});
-	}
-	throwRemoteFailure(failure);
-}
-async function remoteMutationResult(runtime, settings, credentials, ns, provider, nsName, ref) {
-	if (!runtime.listProviders().some((entry) => entry.id === provider)) remoteFailure("provider-registration-rejected", "committed provider route is not live", { ns: nsName });
-	const info = ref === void 0 ? void 0 : await credentials.describe(ref);
-	return {
-		settings: postWriteNamespace(settings, ns, nsName),
-		...info === void 0 ? {} : { credential: {
-			configured: info.configured,
-			...info.source === void 0 ? {} : { source: info.source },
-			writable: info.writable
-		} },
-		live: { accepted: true }
-	};
-}
-function postWriteNamespace(settings, ns, nsName) {
-	const descriptor = settings.describe({ redactSecrets: true }).find((candidate) => candidate.ns === ns);
-	if (descriptor === void 0) remoteFailure("internal", `settings namespace "${nsName}" was disposed after its write`, {});
-	return remoteNamespaceView(descriptor);
-}
-/**
-* Canonical provider/model projection shared by every catalog caller.
-* @param model - Declared model identity and display metadata.
-* @param resolved - Adapter-resolved limits and reasoning capabilities.
-* @returns Client-safe model view with normalized string reasoning ids.
-*/
-function projectRemoteModel(model, resolved) {
-	const reasoning = resolved.reasoning === void 0 ? void 0 : {
-		efforts: resolved.reasoning.efforts.map((effort) => ({
-			id: String(effort.id),
-			name: effort.name,
-			...effort.description === void 0 ? {} : { description: effort.description }
-		})),
-		...resolved.reasoning.defaultEffort === void 0 ? {} : { defaultEffort: String(resolved.reasoning.defaultEffort) }
-	};
-	return {
-		id: model.id,
-		name: model.name,
-		...model.description === void 0 ? {} : { description: model.description },
-		...resolved.defaultMaxTokens === void 0 ? {} : { defaultMaxTokens: resolved.defaultMaxTokens },
-		...reasoning === void 0 ? {} : { reasoning }
-	};
-}
-function remoteDiscoveredModel(model) {
-	return {
-		id: model.id,
-		...model.name === void 0 ? {} : { name: model.name },
-		...model.contextWindow === void 0 ? {} : { contextWindow: model.contextWindow },
-		...model.maxTokens === void 0 ? {} : { maxTokens: model.maxTokens }
-	};
-}
-function validateProviderRequest(request) {
-	if (!UUID_PATTERN.test(request.transactionId)) remoteFailure("input-invalid", "provider mutation transactionId must be a UUID", { field: "transactionId" });
-	if (!PROVIDER_PATTERN.test(request.provider)) remoteFailure("input-invalid", "provider mutation provider must be lower-kebab-case", { field: "provider" });
-	if (request.settingsNs.length === 0) remoteFailure("input-invalid", "provider mutation settingsNs must be non-empty", { field: "settingsNs" });
-	if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0) remoteFailure("input-invalid", "provider mutation expectedRevision must be a non-negative safe integer", { field: "expectedRevision" });
-	if (!Array.isArray(request.ops) || request.ops.length > 64) remoteFailure("input-invalid", "provider mutation ops must contain at most 64 operations", { field: "ops" });
-	if (request.ops.length === 0 && request.credential === void 0) remoteFailure("settings-rejected", "provider mutation must change settings, a credential, or both", { ns: request.settingsNs });
-	for (const op of request.ops) if (!isSettingsPathOperation(op)) remoteFailure("input-invalid", "provider mutation operations must carry an op and string path", { field: "ops" });
-	if (remoteOpsOverlap(request.ops)) remoteFailure("settings-rejected", "provider mutation paths must not overlap", { ns: request.settingsNs });
-	if (request.credential?.op === "set" && request.credential.value.trim().length === 0) remoteFailure("input-invalid", "provider credential value must be non-empty", { field: "credential.value" });
-	if (request.credential !== void 0) remoteCredentialRef(request.credential.ref);
-}
-/** Reuse a claimed endpoint generation for exact retries and durable resumes. */
-async function endpointMutationReplay(credentials, declaration, request, journalSnapshot) {
-	const record = journalSnapshot === void 0 ? await readProviderJournal(credentials, request.provider) : {
-		kind: "grant",
-		payload: journalSnapshot
-	};
-	const payload = record?.kind === "grant" && isRecord(record.payload) ? record.payload : void 0;
-	if (payload?.transactionId !== request.transactionId) return void 0;
-	const journal = parseJournal(record, request.provider, request.transactionId, request, declaration.settingsPath);
-	const { requestDigest, ...durableInput } = journal.plan;
-	const inputDigest = mutationDigest(request.provider, request.settingsNs, mutationPlan(declaration.settingsPath, request));
-	if (journal.provider !== request.provider || journal.settingsNs !== request.settingsNs || !deepEqualJson(journal.plan.settingsPath, declaration.settingsPath) || payload.plan !== void 0 && mutationDigest(journal.provider, journal.settingsNs, journal.plan) !== journal.digest || inputDigest !== requestDigest && inputDigest !== mutationDigest(journal.provider, journal.settingsNs, durableInput)) remoteFailure("provider-transaction-in-doubt", "provider transaction retry does not match its durable endpoint plan", {
-		provider: request.provider,
-		transactionId: request.transactionId
-	});
-	const credential = journal.plan.credential;
-	if (credential?.op !== request.credential?.op) remoteFailure("provider-transaction-in-doubt", "provider transaction retry changed its credential operation", {
-		provider: request.provider,
-		transactionId: request.transactionId
-	});
-	return {
-		request: {
-			...request,
-			ops: journal.plan.ops,
-			expectedRevision: journal.plan.expectedRevision,
-			...request.credential === void 0 || credential === void 0 ? {} : { credential: {
-				...request.credential,
-				ref: credential.ref
-			} }
-		},
-		plan: journal.plan,
-		phase: journal.phase
-	};
-}
-/**
-* Repointing an endpoint never overwrites the credential reference the old
-* live generation still reads. A deterministic transaction-scoped reference
-* is staged first, and the settings switch later points every matching profile
-* slot at that new version.
-*/
-function endpointBoundMutationRequest(declaration, currentValue, request) {
-	if (request.credential?.op !== "set") return request;
-	const candidateValue = applyRemoteOps(currentValue, request.ops);
-	const beforeFingerprint = providerEndpointFingerprint(declaration, currentValue);
-	const afterFingerprint = providerEndpointFingerprint(declaration, candidateValue);
-	if (beforeFingerprint === afterFingerprint) return request;
-	if (!providerCredentialRefs(currentValue, declaration.settingsPath).has(request.credential.ref)) return request;
-	const versionRef = endpointBoundCredentialRef(declaration.provider, request.transactionId, afterFingerprint, request.credential.ref);
-	const referencePaths = providerCredentialReferencePaths(candidateValue, declaration.settingsPath, request.credential.ref);
-	const ops = request.ops.map((op) => structuredClone(op));
-	for (const referencePath of referencePaths) {
-		const ownerIndex = ops.findIndex((op) => pathStartsWith(referencePath, op.path));
-		if (ownerIndex === -1) {
-			ops.push({
-				op: "set",
-				path: referencePath,
-				value: versionRef
-			});
-			continue;
-		}
-		const owner = ops[ownerIndex];
-		if (owner === void 0) throw new Error("provider mutation owner index was lost");
-		if (owner.op !== "set") remoteFailure("credential-version-required", "endpoint change cannot inherit a credential through an unset profile ancestor", {
-			provider: request.provider,
-			ref: request.credential.ref
-		});
-		ops[ownerIndex] = {
-			...owner,
-			value: setValueAtPath(owner.value, referencePath.slice(owner.path.length), versionRef)
-		};
-	}
-	return {
-		...request,
-		ops,
-		credential: {
-			op: "set",
-			ref: versionRef,
-			value: request.credential.value
-		}
-	};
-}
-/** Deterministic, valid environment-style name for one endpoint generation. */
-function endpointBoundCredentialRef(provider, transactionId, endpointFingerprint, sourceRef) {
-	return `ARK_${provider.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_V_${hash(JSON.stringify({
-		transactionId,
-		endpointFingerprint,
-		sourceRef
-	})).slice(0, 24).toUpperCase()}`;
-}
-/** Absolute profile paths whose current value names one credential reference. */
-function providerCredentialReferencePaths(root, settingsPath, ref) {
-	const selected = pathValue(root, settingsPath);
-	if (!selected.present || !isRecord(selected.value)) return [];
-	const paths = [];
-	if (selected.value.apiKeyEnv === ref) paths.push([...settingsPath, "apiKeyEnv"]);
-	if (isRecord(selected.value.credentialHeaders)) {
-		for (const [header, value] of Object.entries(selected.value.credentialHeaders)) if (value === ref) paths.push([
-			...settingsPath,
-			"credentialHeaders",
-			header
-		]);
-	}
-	return paths;
-}
-function setValueAtPath(root, path, value) {
-	const [head, ...rest] = path;
-	if (head === void 0) return value;
-	const record = isRecord(root) ? root : {};
-	return {
-		...record,
-		[head]: setValueAtPath(record[head], rest, value)
-	};
-}
-/** Read one secure provider journal without exposing a storage-specific failure. */
-async function readProviderJournal(credentials, provider) {
-	try {
-		return await credentials.readRecord(credentialKey("llm-remote", provider));
-	} catch {
-		remoteFailure("service-unavailable", "provider transaction journal is unavailable", {});
-	}
-}
-/** Return only when a terminal journal committed; otherwise replay its durable failure. */
-function requireCommittedJournal(journal, provider, transactionId) {
-	if (journal.outcome === "committed") return;
-	throwRemoteFailure(journal.error ?? {
-		code: journal.outcome === "committed-not-live" ? "provider-registration-rejected" : "settings-rejected",
-		message: "provider transaction did not commit successfully",
-		details: {
-			provider,
-			transactionId
-		}
-	});
-}
-/** Confine a provider transaction to its declared profile and credential. */
-function validateProviderOwnership(settingsPath, currentValue, request) {
-	for (const op of request.ops) if (!pathStartsWith(op.path, settingsPath)) remoteFailure("settings-rejected", `provider "${request.provider}" cannot mutate a sibling settings path`, {
-		provider: request.provider,
 		path: [...op.path]
-	});
-	const credential = request.credential;
-	if (credential === void 0) return;
-	const before = providerCredentialRefs(currentValue, settingsPath);
-	const after = providerCredentialRefs(applyRemoteOps(currentValue, request.ops), settingsPath);
-	if (credential.op === "set") {
-		if (!after.has(credential.ref)) remoteFailure("credential-rejected", `provider "${request.provider}" credential is not bound to its resulting profile`, {
-			provider: request.provider,
-			ref: credential.ref
-		});
-		return;
-	}
-	if (!before.has(credential.ref) || after.has(credential.ref)) remoteFailure("credential-rejected", `provider "${request.provider}" cannot unset an unrelated or still-referenced credential`, {
-		provider: request.provider,
-		ref: credential.ref
-	});
-}
-/** Credential references named by one exact provider profile. */
-function providerCredentialRefs(root, settingsPath) {
-	const selected = pathValue(root, settingsPath);
-	if (!selected.present || !isRecord(selected.value)) return /* @__PURE__ */ new Set();
-	const refs = /* @__PURE__ */ new Set();
-	if (typeof selected.value.apiKeyEnv === "string" && selected.value.apiKeyEnv.length > 0) refs.add(selected.value.apiKeyEnv);
-	if (isRecord(selected.value.credentialHeaders)) {
-		for (const ref of Object.values(selected.value.credentialHeaders)) if (typeof ref === "string" && ref.length > 0) refs.add(ref);
-	}
-	return refs;
-}
-/**
-* Keep a credential reference bound to one provider and endpoint generation.
-* Repointing an endpoint or adopting another provider's reference requires the
-* write-only credential in the same transaction; a reference-only edit can
-* never disclose an existing secret to a new endpoint.
-*/
-function validateCredentialScope(runtime, settings, declaration, currentValue, request) {
-	const descriptors = new Map(settings.describe().map((row) => [String(row.ns), row.value]));
-	const current = runtime.listConfigurableProviders().flatMap((entry) => providerCredentialUses(entry, descriptors.get(entry.settingsNs)));
-	const candidate = providerCredentialUses(declaration, applyRemoteOps(currentValue, request.ops));
-	const suppliedRef = request.credential?.op === "set" ? request.credential.ref : void 0;
-	for (const use of candidate) {
-		const conflicts = current.filter((existing) => existing.ref === use.ref && (existing.provider !== use.provider || existing.fingerprint !== use.fingerprint));
-		if (conflicts.some((existing) => existing.provider !== use.provider) || conflicts.length > 0 && suppliedRef !== use.ref) remoteFailure("credential-ownership-rejected", `credential reference "${use.ref}" belongs to another provider or endpoint`, {
-			provider: request.provider,
-			ref: use.ref
-		});
-		if (!current.some((existing) => existing.ref === use.ref && existing.provider === use.provider && existing.fingerprint === use.fingerprint) && suppliedRef !== use.ref) remoteFailure("credential-ownership-required", `credential reference "${use.ref}" needs an explicit value for this provider endpoint`, {
-			provider: request.provider,
-			ref: use.ref
-		});
-	}
-	if (request.credential?.op === "unset") {
-		if (current.some((use) => use.ref === request.credential?.ref && (use.provider !== request.provider || candidate.some((next) => next.ref === use.ref)))) remoteFailure("credential-ownership-rejected", `credential reference "${request.credential.ref}" is still owned by a provider endpoint`, {
-			provider: request.provider,
-			ref: request.credential.ref
-		});
-	}
-}
-/** Extract only reference and endpoint ownership facts; never credential values. */
-function providerCredentialUses(entry, root) {
-	const selected = pathValue(root, entry.settingsPath);
-	if (!selected.present || !isRecord(selected.value)) return [];
-	const profile = selected.value;
-	const refs = /* @__PURE__ */ new Set();
-	if (typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.length > 0) refs.add(profile.apiKeyEnv);
-	if (isRecord(profile.credentialHeaders)) {
-		for (const ref of Object.values(profile.credentialHeaders)) if (typeof ref === "string" && ref.length > 0) refs.add(ref);
-	}
-	const fingerprint = providerEndpointFingerprint(entry, root);
-	return [...refs].map((ref) => ({
-		provider: entry.provider,
-		ref,
-		fingerprint
-	}));
-}
-/** Identity of one provider's exact endpoint/protocol routing generation. */
-function providerEndpointFingerprint(entry, root) {
-	const selected = pathValue(root, entry.settingsPath);
-	const profile = selected.present && isRecord(selected.value) ? selected.value : {};
-	return hash(JSON.stringify({
-		provider: entry.provider,
-		settingsNs: entry.settingsNs,
-		settingsPath: entry.settingsPath,
-		baseURL: typeof profile.baseURL === "string" ? profile.baseURL.replace(/\/+$/, "") : null,
-		api: typeof profile.api === "string" ? profile.api : null
-	}));
-}
-/** Refuse any operation that would copy a schema-declared secret into the journal. */
-function validateProviderSecrets(settings, ns, request) {
-	let secrets;
-	try {
-		secrets = settings.previewMutation(ns, request.ops).secrets;
-	} catch (error) {
-		remoteSettingsFailure(request.settingsNs, error);
-	}
-	if (request.ops.some((op) => secrets.some((secret) => pathStartsWith(op.path, secret.path) || pathStartsWith(secret.path, op.path)))) remoteFailure("settings-rejected", "provider settings transactions cannot carry literal secret fields; use credential references", {
-		provider: request.provider,
-		ns: request.settingsNs
-	});
-}
-/** Whether `path` is the declared profile itself or one of its descendants. */
-function pathStartsWith(path, prefix) {
-	return prefix.length <= path.length && prefix.every((part, index) => path[index] === part);
-}
-/** Apply already-validated Remote path operations to a detached JSON value. */
-function applyRemoteOps(root, ops) {
-	return ops.reduce((current, op) => applyRemoteOp(current, op, op.path), structuredClone(root ?? {}));
-}
-/** Immutable path update used only for credential/profile ownership preflight. */
-function applyRemoteOp(root, op, path) {
-	const [head, ...rest] = path;
-	if (head === void 0) return op.op === "unset" ? {} : structuredClone(op.value);
-	const record = isRecord(root) ? root : {};
-	if (rest.length === 0) {
-		if (op.op === "set") return {
-			...record,
-			[head]: structuredClone(op.value)
-		};
-		const { [head]: _removed, ...kept } = record;
-		return kept;
-	}
-	const child = record[head];
-	if (op.op === "unset" && !isRecord(child)) return record;
-	return {
-		...record,
-		[head]: applyRemoteOp(child, op, rest)
-	};
-}
-/** Produce the secret-free durable transaction plan. */
-function mutationPlan(settingsPath, request) {
-	let ops;
-	try {
-		const encoded = JSON.stringify(request.ops);
-		ops = JSON.parse(encoded);
-		if (!deepEqualJson(ops, request.ops)) throw new TypeError("not lossless JSON");
-	} catch {
-		remoteFailure("input-invalid", "provider mutation operations must contain only lossless JSON values", { field: "ops" });
-	}
-	const credential = request.credential === void 0 ? void 0 : request.credential.op === "set" ? {
-		op: "set",
-		ref: request.credential.ref,
-		valueDigest: hash(request.credential.value)
 	} : {
-		op: "unset",
-		ref: request.credential.ref
-	};
-	return {
-		settingsPath: [...settingsPath],
-		ops,
-		expectedRevision: request.expectedRevision,
-		...credential === void 0 ? {} : { credential }
-	};
-}
-async function ensureWritableCredential(credentials, ref, displayRef) {
-	try {
-		if (!(await credentials.describe(ref)).writable) remoteFailure("credential-rejected", `credential ${displayRef} is supplied by a read-only source`, { ref: displayRef });
-	} catch (error) {
-		if (isTypertRemoteFailure(error)) throw error;
-		if (isRemoteFailure(error)) throwRemoteFailure(error);
-		remoteFailure("credential-rejected", `credential "${displayRef}" was rejected`, { ref: displayRef });
-	}
-}
-/** Reach one journaled credential state without ever persisting its value. */
-async function applyCredentialPlan(credentials, active, supplied) {
-	const plan = active.plan.credential;
-	if (plan === void 0) return;
-	const ref = remoteCredentialRef(plan.ref);
-	if (plan.op === "unset") {
-		if (!await credentialMatches(credentials, ref, void 0)) try {
-			await credentials.unset(ref);
-		} catch {
-			if (!await credentialMatches(credentials, ref, void 0)) remoteFailure("provider-transaction-in-doubt", `credential "${plan.ref}" did not reach its requested state`, {
-				provider: active.provider,
-				transactionId: active.transactionId
-			});
-		}
-		return;
-	}
-	const current = await credentials.resolve(ref);
-	if (current !== void 0 && hash(current.value) === plan.valueDigest) return;
-	if (supplied?.op !== "set" || supplied.ref !== plan.ref || hash(supplied.value) !== plan.valueDigest) remoteFailure("provider-transaction-needs-credential", "the durable provider transaction needs its write-only credential again", {
-		provider: active.provider,
-		transactionId: active.transactionId,
-		ref: plan.ref
+		op: "set",
+		path: [...op.path],
+		value: op.value
 	});
-	try {
-		await credentials.set(ref, supplied.value);
-	} catch {
-		const after = await credentials.resolve(ref);
-		if (after === void 0 || hash(after.value) !== plan.valueDigest) remoteFailure("provider-transaction-in-doubt", `credential "${plan.ref}" did not reach its requested state`, {
-			provider: active.provider,
-			transactionId: active.transactionId
-		});
-	}
 }
-async function finishOrInDoubt(credentials, key, active, outcome, error) {
-	try {
-		await finishJournal(credentials, key, active, outcome, error);
-	} catch {
-		remoteFailure("provider-transaction-in-doubt", "provider terminal receipt could not be persisted", {
-			provider: active.provider,
-			transactionId: active.transactionId
-		});
-	}
+function prefix(path, base) {
+	return base.length <= path.length && base.every((part, index) => path[index] === part);
 }
-function remoteSettingsNamespace(value) {
-	try {
-		return settingsNamespace(value);
-	} catch (error) {
-		remoteSettingsFailure(value, error);
-	}
-}
-function remoteCredentialRef(value) {
+function ref(value) {
 	try {
 		return credentialRef(value);
-	} catch (error) {
-		remoteFailure("input-invalid", errorMessage(error), { ref: value });
+	} catch {
+		return fail("input-invalid", "credential reference must be a valid environment name", { field: "credential.ref" });
 	}
 }
-function remoteSettingsFailure(ns, error) {
-	throwRemoteFailure(settingsFailureValue(ns, error));
-}
-function settingsFailureValue(ns, error) {
-	if (error instanceof SettingsConflictError) return {
-		code: "settings-conflict",
-		message: error.message,
-		details: {
-			ns,
-			expected: error.expected,
-			actual: error.actual
-		}
-	};
-	return {
-		code: "settings-rejected",
-		message: `settings write for "${ns}" was rejected`,
-		details: { ns }
-	};
-}
-function remoteOpsOverlap(ops) {
-	return ops.some((left, index) => ops.some((right, otherIndex) => {
-		if (index === otherIndex) return false;
-		const shortest = Math.min(left.path.length, right.path.length);
-		return left.path.length <= right.path.length && left.path.slice(0, shortest).every((segment, part) => segment === right.path[part]);
-	}));
-}
-function remoteOpsSatisfied(user, ops) {
-	return ops.every((op) => {
-		if (op.op === "unset" && op.path.length === 0) return user === void 0 || deepEqualJson(user, {});
-		const current = pathValue(user, op.path);
-		return op.op === "unset" ? !current.present : current.present && deepEqualJson(current.value, op.value);
-	});
-}
-function pathValue(root, path) {
-	if (path.length === 0) return root === void 0 ? { present: false } : {
-		present: true,
-		value: root
-	};
-	let current = root;
-	for (const part of path) {
-		if (!isRecord(current) || !Object.hasOwn(current, part)) return { present: false };
-		current = current[part];
+function snapshot(value) {
+	try {
+		return snapshotSettingsJson(value);
+	} catch {
+		return fail("input-invalid", "provider mutation must contain only lossless JSON data");
 	}
+}
+function requestSnapshot(input) {
+	const value = snapshot(input);
+	if (!record(value) || typeof value.transactionId !== "string" || !UUID.test(value.transactionId) || typeof value.provider !== "string" || !PROVIDER.test(value.provider) || typeof value.settingsNs !== "string" || typeof value.expectedRevision !== "number" || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0 || !pathOps(value.ops) || value.ops.length > 64) return fail("input-invalid", "provider mutation has invalid identity, revision, or operations");
+	try {
+		settingsNamespace(value.settingsNs);
+	} catch {
+		return fail("input-invalid", "provider mutation namespace is invalid", { field: "settingsNs" });
+	}
+	const ops = canonicalOps(value.ops);
+	if (ops.some((left, index) => ops.some((right, other) => index !== other && prefix(left.path, right.path)))) return fail("settings-rejected", "provider mutation paths must not overlap", { ns: value.settingsNs });
+	let credential;
+	if (value.credential !== void 0) {
+		const item = value.credential;
+		if (!record(item) || typeof item.ref !== "string") return fail("input-invalid", "provider credential is invalid");
+		ref(item.ref);
+		if (item.op === "unset") credential = {
+			op: "unset",
+			ref: item.ref
+		};
+		else if (item.op === "set" && typeof item.value === "string" && item.value.trim().length > 0) credential = {
+			op: "set",
+			ref: item.ref,
+			value: item.value
+		};
+		else return fail("input-invalid", "provider credential value or operation is invalid");
+	}
+	if (value.ops.length === 0 && credential === void 0) return fail("settings-rejected", "provider mutation must change settings, a credential, or both");
 	return {
+		transactionId: value.transactionId,
+		provider: value.provider,
+		settingsNs: value.settingsNs,
+		expectedRevision: value.expectedRevision,
+		ops,
+		...credential === void 0 ? {} : { credential }
+	};
+}
+function transactionIdentity(input) {
+	const value = snapshot(input);
+	if (!record(value) || typeof value.provider !== "string" || !PROVIDER.test(value.provider) || typeof value.transactionId !== "string" || !UUID.test(value.transactionId)) return fail("input-invalid", "provider transaction needs a valid provider and UUID");
+	return {
+		provider: value.provider,
+		transactionId: value.transactionId
+	};
+}
+function pathValue(value, path) {
+	let current = value;
+	for (const key of path) {
+		if (!record(current) || !Object.hasOwn(current, key)) return { present: false };
+		current = current[key];
+	}
+	return current === void 0 ? { present: false } : {
 		present: true,
 		value: current
 	};
 }
-function mutationDigest(provider, settingsNs, plan) {
+function edit(value, op, path = op.path) {
+	const [head, ...rest] = path;
+	if (head === void 0) return op.op === "unset" ? {} : structuredClone(op.value);
+	const source = record(value) ? value : {};
+	if (rest.length === 0 && op.op === "unset") {
+		const { [head]: removed, ...kept } = source;
+		return kept;
+	}
+	const child = Object.hasOwn(source, head) ? source[head] : void 0;
+	if (rest.length > 0 && op.op === "unset" && !record(child)) return source;
+	return {
+		...source,
+		[head]: edit(child, op, rest)
+	};
+}
+function apply(value, ops) {
+	return ops.reduce((current, op) => edit(current, op), structuredClone(value ?? {}));
+}
+function satisfied(value, ops) {
+	return ops.every((op) => {
+		if (op.op === "unset" && op.path.length === 0) return value === void 0 || deepEqualJson(value, {});
+		const current = pathValue(value, op.path);
+		return op.op === "unset" ? !current.present : current.present && deepEqualJson(current.value, op.value);
+	});
+}
+function references(value, path) {
+	const profile = pathValue(value, path).value;
+	const refs = /* @__PURE__ */ new Map();
+	if (!record(profile)) return refs;
+	const add = (value, tail) => {
+		if (typeof value !== "string" || value === "") return;
+		refs.set(value, [...refs.get(value) ?? [], [...path, ...tail]]);
+	};
+	add(profile.apiKeyEnv, ["apiKeyEnv"]);
+	if (record(profile.credentialHeaders)) for (const [name, value] of Object.entries(profile.credentialHeaders)) add(value, ["credentialHeaders", name]);
+	return refs;
+}
+function fingerprint(provider, value) {
+	const selected = pathValue(value, provider.settingsPath).value;
+	const profile = record(selected) ? selected : {};
+	return hash(JSON.stringify({
+		provider: provider.provider,
+		settingsNs: provider.settingsNs,
+		settingsPath: provider.settingsPath,
+		baseURL: typeof profile.baseURL === "string" ? profile.baseURL.replace(/\/+$/u, "") : null,
+		api: typeof profile.api === "string" ? profile.api : null
+	}));
+}
+function makePlan(provider, value, request, configured) {
+	const ops = request.ops.map((op) => structuredClone(op));
+	let credential = request.credential;
+	const after = apply(value, ops);
+	if (credential?.op === "set" && (configured || references(value, provider.settingsPath).has(credential.ref))) {
+		const versionRef = `ARK_${provider.provider.toUpperCase().replace(/[^A-Z0-9]+/gu, "_")}_V_${hash(JSON.stringify({
+			transactionId: request.transactionId,
+			endpointFingerprint: fingerprint(provider, after),
+			sourceRef: credential.ref
+		})).slice(0, 24).toUpperCase()}`;
+		for (const path of references(after, provider.settingsPath).get(credential.ref) ?? []) {
+			const owner = ops.find((op) => op.op === "set" && prefix(path, op.path));
+			const replacement = {
+				op: "set",
+				path,
+				value: versionRef
+			};
+			if (owner === void 0) ops.push(replacement);
+			else ops[ops.indexOf(owner)] = {
+				...owner,
+				value: snapshot(edit(owner.value, replacement, path.slice(owner.path.length)))
+			};
+		}
+		credential = {
+			...credential,
+			ref: versionRef
+		};
+	}
+	return {
+		settingsPath: [...provider.settingsPath],
+		ops,
+		expectedRevision: request.expectedRevision,
+		...credential === void 0 ? {} : { credential: credential.op === "unset" ? {
+			op: "unset",
+			ref: credential.ref
+		} : {
+			op: "set",
+			ref: credential.ref,
+			valueDigest: hash(credential.value)
+		} }
+	};
+}
+function inputDigest(request) {
+	return hashJson({
+		provider: request.provider,
+		settingsNs: request.settingsNs,
+		ops: request.ops,
+		credential: request.credential?.op === "set" ? {
+			op: "set",
+			ref: request.credential.ref,
+			valueDigest: hash(request.credential.value)
+		} : request.credential
+	});
+}
+function plannedInputDigest(provider, settingsNs, plan) {
+	return hashJson({
+		provider,
+		settingsNs,
+		ops: plan.ops,
+		credential: plan.credential
+	});
+}
+function legacyPlanDigest(provider, settingsNs, plan) {
 	return hash(JSON.stringify({
 		provider,
 		settingsNs,
@@ -1864,216 +1071,713 @@ function mutationDigest(provider, settingsNs, plan) {
 		requestDigest: plan.requestDigest
 	}));
 }
-function hash(value) {
-	return createHash("sha256").update(value).digest("hex");
-}
-async function claimJournal(credentials, key, proposed, request, replay) {
-	let selected;
-	await credentials.modifyRecord(key, (current) => {
-		const currentPayload = current?.kind === "grant" && isRecord(current.payload) ? current.payload : void 0;
-		if (replay !== void 0 && currentPayload?.transactionId !== proposed.transactionId) remoteFailure("provider-transaction-in-doubt", "provider transaction ownership changed before replay claim", {
-			provider: proposed.provider,
-			transactionId: proposed.transactionId
-		});
-		if (current === void 0) {
-			selected = proposed;
-			return Promise.resolve({
-				kind: "grant",
-				payload: proposed
-			});
-		}
-		const journal = parseJournal(current, proposed.provider, proposed.transactionId, request, proposed.plan.settingsPath);
-		if (replay === "done" && journal.phase !== "done") remoteFailure("provider-transaction-in-doubt", "completed provider transaction became active before receipt replay", {
-			provider: proposed.provider,
-			transactionId: proposed.transactionId
-		});
-		if (journal.transactionId === proposed.transactionId) {
-			if (mutationDigest(journal.provider, journal.settingsNs, journal.plan) !== proposed.digest) remoteFailure("provider-transaction-in-doubt", "provider transaction id was reused with different input", {
-				provider: proposed.provider,
-				transactionId: proposed.transactionId
-			});
-			if (journal.digest !== proposed.digest) {
-				if (currentPayload?.plan !== void 0) remoteFailure("provider-transaction-in-doubt", "provider transaction journal digest does not match its durable plan", {
-					provider: proposed.provider,
-					transactionId: proposed.transactionId
-				});
-				const upgraded = {
-					...journal,
-					digest: proposed.digest
-				};
-				selected = upgraded;
-				return Promise.resolve({
-					kind: "grant",
-					payload: upgraded
-				});
-			}
-			selected = journal;
-			return Promise.resolve(void 0);
-		}
-		if (journal.phase !== "done") remoteFailure("provider-transaction-in-doubt", "provider already has an unfinished configuration transaction", {
-			provider: proposed.provider,
-			transactionId: proposed.transactionId
-		});
-		selected = proposed;
-		return Promise.resolve({
-			kind: "grant",
-			payload: proposed
-		});
-	});
-	if (selected === void 0) remoteFailure("provider-transaction-in-doubt", "provider transaction journal was not acquired", {
-		provider: proposed.provider,
-		transactionId: proposed.transactionId
-	});
-	return selected;
-}
-async function writeJournal(credentials, key, next) {
-	await credentials.modifyRecord(key, (current) => {
-		const journal = parseJournal(current, next.provider, next.transactionId);
-		if (journal.transactionId !== next.transactionId || journal.digest !== next.digest || mutationDigest(journal.provider, journal.settingsNs, journal.plan) !== journal.digest) remoteFailure("provider-transaction-in-doubt", "provider transaction ownership changed during commit", {
-			provider: next.provider,
-			transactionId: next.transactionId
-		});
-		return Promise.resolve({
-			kind: "grant",
-			payload: next
-		});
-	});
-}
-async function finishJournal(credentials, key, active, outcome, error) {
-	await writeJournal(credentials, key, {
-		version: 1,
-		transactionId: active.transactionId,
-		digest: active.digest,
-		provider: active.provider,
-		settingsNs: active.settingsNs,
-		plan: active.plan,
-		phase: "done",
-		outcome,
-		...error === void 0 ? {} : { error: secretFreeFailure(error) }
-	});
-}
-async function credentialMatches(credentials, ref, expected) {
-	return (await credentials.resolve(ref))?.value === expected;
-}
-function parseJournal(record, provider, transactionId, request, settingsPath = []) {
-	const payload = record?.kind === "grant" && isRecord(record.payload) ? record.payload : void 0;
-	if (payload === void 0 || payload.version !== 1 || typeof payload.transactionId !== "string" || typeof payload.digest !== "string" || typeof payload.provider !== "string" || typeof payload.settingsNs !== "string" || payload.phase !== "prepared" && payload.phase !== "credential-staged" && payload.phase !== "settings-applied" && payload.phase !== "credential-applied" && payload.phase !== "done") remoteFailure("provider-transaction-in-doubt", `provider "${provider}" has an unreadable secure transaction journal`, {
+function planDigest(provider, namespace, plan) {
+	return hashJson({
 		provider,
-		transactionId
+		settingsNs: namespace,
+		plan
 	});
-	if (payload.phase === "done") {
-		if (payload.outcome !== "committed" && payload.outcome !== "rolled-back" && payload.outcome !== "committed-not-live") remoteFailure("provider-transaction-in-doubt", `provider "${provider}" has an unreadable terminal transaction journal`, {
-			provider,
-			transactionId
-		});
-		const plan = parsePlan(payload.plan, payload, request, settingsPath, provider, transactionId);
+}
+function isOutcome(value) {
+	return value === "committed" || value === "rolled-back" || value === "committed-not-live";
+}
+function isPhase(value) {
+	return value === "prepared" || value === "credential-staged" || value === "settings-applied" || value === "credential-applied" || value === "done";
+}
+function storedFailure(value) {
+	if (value === void 0) return void 0;
+	if (!record(value) || !record(value.details)) return fail("provider-transaction-in-doubt", "provider receipt failure is invalid");
+	const details = value.details;
+	if (value.code === "credential-rejected" && typeof details.provider === "string" && PROVIDER.test(details.provider)) return {
+		code: value.code,
+		message: "provider credential changed before commit",
+		details: { provider: details.provider }
+	};
+	if (value.code === "settings-conflict" && typeof details.ns === "string" && typeof details.expected === "number" && Number.isSafeInteger(details.expected) && details.expected >= 0 && typeof details.actual === "number" && Number.isSafeInteger(details.actual) && details.actual >= 0) return {
+		code: value.code,
+		message: "provider settings revision changed",
+		details: {
+			ns: details.ns,
+			expected: details.expected,
+			actual: details.actual
+		}
+	};
+	if (value.code === "settings-rejected" && typeof details.ns === "string") return {
+		code: value.code,
+		message: "provider settings write was rejected",
+		details: { ns: details.ns }
+	};
+	if (value.code === "provider-registration-rejected" && typeof details.provider === "string" && PROVIDER.test(details.provider)) return {
+		code: value.code,
+		message: "provider settings were stored but did not activate",
+		details: { provider: details.provider }
+	};
+	return fail("provider-transaction-in-doubt", "provider receipt failure is invalid");
+}
+function parseReceipt(value) {
+	if (!record(value) || !onlyFields(value, [
+		"requestDigest",
+		"legacyInput",
+		"outcome",
+		"error"
+	]) || typeof value.requestDigest !== "string" || !SHA256.test(value.requestDigest) || !isOutcome(value.outcome)) return fail("provider-transaction-in-doubt", "provider receipt history is invalid");
+	const error = storedFailure(value.error);
+	const legacyInput = parseLegacyInput(value.legacyInput);
+	const identity = {
+		requestDigest: value.requestDigest,
+		...legacyInput === void 0 ? {} : { legacyInput }
+	};
+	if (value.outcome === "committed") {
+		if (error !== void 0) return fail("provider-transaction-in-doubt", "provider receipt outcome is inconsistent");
 		return {
-			version: 1,
-			transactionId: payload.transactionId,
-			digest: payload.digest,
-			provider: payload.provider,
-			settingsNs: payload.settingsNs,
-			plan,
-			phase: "done",
-			outcome: payload.outcome,
-			...isRemoteFailure(payload.error) ? { error: secretFreeFailure(payload.error) } : {}
+			...identity,
+			outcome: value.outcome
 		};
 	}
-	const plan = parsePlan(payload.plan, payload, request, settingsPath, provider, transactionId);
+	if (error === void 0) return fail("provider-transaction-in-doubt", "provider receipt outcome is inconsistent");
 	return {
-		version: 1,
-		transactionId: payload.transactionId,
-		digest: payload.digest,
-		provider: payload.provider,
-		settingsNs: payload.settingsNs,
-		plan,
-		phase: payload.phase
+		...identity,
+		outcome: value.outcome,
+		error
 	};
 }
-/** Parse a current plan, or safely upgrade an earlier request-bound journal. */
-function parsePlan(value, legacy, request, settingsPath, provider, transactionId) {
-	if (isRecord(value) && Array.isArray(value.settingsPath) && value.settingsPath.every((part) => typeof part === "string") && Array.isArray(value.ops) && value.ops.every(isSettingsPathOperation) && typeof value.expectedRevision === "number" && Number.isSafeInteger(value.expectedRevision) && value.expectedRevision >= 0 && (value.credential === void 0 || isCredentialPlan(value.credential)) && (value.requestDigest === void 0 || typeof value.requestDigest === "string" && /^[a-f0-9]{64}$/.test(value.requestDigest))) return {
-		settingsPath: [...value.settingsPath],
-		ops: structuredClone(value.ops),
-		expectedRevision: value.expectedRevision,
-		...value.credential === void 0 ? {} : { credential: { ...value.credential } },
-		...value.requestDigest === void 0 ? {} : { requestDigest: value.requestDigest }
+function parseLegacyInput(value) {
+	if (value === void 0) return void 0;
+	if (!record(value) || !onlyFields(value, ["settingsPath", "digest"]) || !strings(value.settingsPath) || typeof value.digest !== "string" || !SHA256.test(value.digest)) return fail("provider-transaction-in-doubt", "provider legacy input binding is invalid");
+	return {
+		settingsPath: value.settingsPath,
+		digest: value.digest
 	};
-	if (request !== void 0 && legacy.transactionId !== request.transactionId) return {
-		settingsPath: [],
-		ops: [],
-		expectedRevision: 0
-	};
-	if (request !== void 0) {
-		const candidates = /* @__PURE__ */ new Set();
-		if (typeof legacy.expectedRevision === "number" && Number.isSafeInteger(legacy.expectedRevision)) candidates.add(legacy.expectedRevision);
-		candidates.add(request.expectedRevision);
-		if (request.expectedRevision > 0) candidates.add(request.expectedRevision - 1);
-		for (const expectedRevision of candidates) {
-			if (expectedRevision < 0) continue;
-			const plan = mutationPlan(settingsPath, {
-				...request,
-				expectedRevision
-			});
-			const legacyDigest = hash(JSON.stringify({
-				provider: request.provider,
-				settingsNs: request.settingsNs,
-				ops: request.ops,
-				expectedRevision,
-				credential: request.credential?.op === "set" ? {
-					op: "set",
-					ref: request.credential.ref,
-					valueDigest: hash(request.credential.value)
-				} : request.credential
-			}));
-			if (legacy.digest === legacyDigest) return plan;
+}
+function parseJournal(input) {
+	if (input === void 0) return void 0;
+	if (input.kind !== "grant") return fail("provider-transaction-in-doubt", "provider journal has an unsupported record kind");
+	let value;
+	try {
+		value = snapshotSettingsJson(input.payload);
+	} catch {
+		return fail("provider-transaction-in-doubt", "provider journal is not valid JSON data");
+	}
+	if (!record(value) || value.version !== 1 || value.receiptVersion !== void 0 && value.receiptVersion !== 1) return fail("provider-transaction-in-doubt", "provider journal format is unsupported");
+	const legacy = value.receiptVersion === void 0;
+	if (!onlyFields(value, [
+		"version",
+		"receiptVersion",
+		"transactionId",
+		"provider",
+		"settingsNs",
+		"requestDigest",
+		"digest",
+		"plan",
+		"phase",
+		"completed",
+		"outcome",
+		"error",
+		"legacyInput"
+	])) return fail("provider-transaction-in-doubt", "provider journal contains unsupported fields");
+	const plan = value.plan;
+	if (typeof value.transactionId !== "string" || !UUID.test(value.transactionId) || typeof value.provider !== "string" || !PROVIDER.test(value.provider) || typeof value.settingsNs !== "string" || typeof value.digest !== "string" || !SHA256.test(value.digest) || !record(plan) || !onlyFields(plan, [
+		"settingsPath",
+		"ops",
+		"expectedRevision",
+		"expectedUserDigest",
+		"requestDigest",
+		"credential"
+	]) || !strings(plan.settingsPath) || !pathOps(plan.ops) || typeof plan.expectedRevision !== "number" || !Number.isSafeInteger(plan.expectedRevision) || plan.expectedRevision < 0) return fail("provider-transaction-in-doubt", "provider journal identity or plan is invalid");
+	if (legacy && plan.expectedUserDigest !== void 0) return fail("provider-transaction-in-doubt", "legacy provider plan cannot assert a current before-image");
+	try {
+		settingsNamespace(value.settingsNs);
+	} catch {
+		return fail("provider-transaction-in-doubt", "provider journal namespace is invalid");
+	}
+	for (const field of ["expectedUserDigest", "requestDigest"]) if (plan[field] !== void 0 && (typeof plan[field] !== "string" || !SHA256.test(plan[field]))) return fail("provider-transaction-in-doubt", "provider plan binding is invalid");
+	let credential;
+	if (plan.credential !== void 0) {
+		const data = plan.credential;
+		if (!record(data) || !onlyFields(data, data.op === "set" ? [
+			"op",
+			"ref",
+			"valueDigest",
+			"before"
+		] : [
+			"op",
+			"ref",
+			"before"
+		]) || typeof data.ref !== "string") return fail("provider-transaction-in-doubt", "provider credential plan is invalid");
+		try {
+			credentialRef(data.ref);
+		} catch {
+			return fail("provider-transaction-in-doubt", "provider credential reference is invalid");
+		}
+		if (data.op === "unset") credential = {
+			op: "unset",
+			ref: data.ref
+		};
+		else if (data.op === "set" && typeof data.valueDigest === "string" && SHA256.test(data.valueDigest)) credential = {
+			op: "set",
+			ref: data.ref,
+			valueDigest: data.valueDigest
+		};
+		else return fail("provider-transaction-in-doubt", "provider credential plan is invalid");
+		if (data.before !== void 0) {
+			const before = data.before;
+			if (legacy || !record(before) || !onlyFields(before, ["valueDigest", "source"]) || before.valueDigest !== null && (typeof before.valueDigest !== "string" || !SHA256.test(before.valueDigest)) || before.source !== void 0 && (typeof before.source !== "string" || before.source.length === 0) || before.valueDigest === null && before.source !== void 0) return fail("provider-transaction-in-doubt", "provider credential before-image is invalid");
+			credential.before = {
+				valueDigest: before.valueDigest,
+				...before.source === void 0 ? {} : { source: before.source }
+			};
 		}
 	}
-	remoteFailure("provider-transaction-in-doubt", `provider "${provider}" has a legacy transaction that needs an exact retry`, {
-		provider,
-		transactionId
-	});
-}
-function isCredentialPlan(value) {
-	if (!isRecord(value) || typeof value.ref !== "string") return false;
-	return value.op === "unset" ? value.valueDigest === void 0 : value.op === "set" && typeof value.valueDigest === "string";
-}
-function secretFreeFailure(failure) {
+	if (!isPhase(value.phase)) return fail("provider-transaction-in-doubt", "provider journal phase is invalid");
+	const parsedPlan = {
+		settingsPath: plan.settingsPath,
+		ops: plan.ops,
+		expectedRevision: plan.expectedRevision,
+		...typeof plan.expectedUserDigest === "string" ? { expectedUserDigest: plan.expectedUserDigest } : {},
+		...typeof plan.requestDigest === "string" ? { requestDigest: plan.requestDigest } : {},
+		...credential === void 0 ? {} : { credential }
+	};
+	if (!deepEqualJson(plan.ops, canonicalOps(plan.ops))) return fail("provider-transaction-in-doubt", "provider plan contains unsupported operation fields");
+	const ops = parsedPlan.ops;
+	if (ops.length === 0 && credential === void 0) return fail("provider-transaction-in-doubt", "provider plan contains no operation");
+	if (ops.length > 64 || ops.some((op, index) => ops.some((other, otherIndex) => index !== otherIndex && prefix(op.path, other.path)))) return fail("provider-transaction-in-doubt", "provider plan operations overlap or exceed the limit");
+	if ((legacy ? legacyPlanDigest(value.provider, value.settingsNs, parsedPlan) : planDigest(value.provider, value.settingsNs, parsedPlan)) !== value.digest) return fail("provider-transaction-in-doubt", "provider journal digest does not match its plan");
+	const legacyInput = legacy ? {
+		settingsPath: [...parsedPlan.settingsPath],
+		digest: parsedPlan.requestDigest ?? legacyPlanDigest(value.provider, value.settingsNs, parsedPlan)
+	} : parseLegacyInput(value.legacyInput);
+	const requestDigest = legacy ? plannedInputDigest(value.provider, value.settingsNs, parsedPlan) : value.requestDigest;
+	if (typeof requestDigest !== "string" || !SHA256.test(requestDigest)) return fail("provider-transaction-in-doubt", "provider request binding is invalid");
+	const completed = {};
+	if (!legacy) {
+		if (!record(value.completed)) return fail("provider-transaction-in-doubt", "provider receipt history is invalid");
+		for (const [id, item] of Object.entries(value.completed)) {
+			if (!UUID.test(id)) return fail("provider-transaction-in-doubt", "provider receipt history is invalid");
+			completed[id] = parseReceipt(item);
+		}
+	} else if (value.completed !== void 0 || value.requestDigest !== void 0 || value.legacyInput !== void 0) return fail("provider-transaction-in-doubt", "provider journal mixes incompatible formats");
+	const error = value.error === void 0 && legacy && value.phase === "done" && value.outcome !== "committed" ? value.outcome === "committed-not-live" ? {
+		code: "provider-registration-rejected",
+		message: "provider settings were stored but did not activate",
+		details: { provider: value.provider }
+	} : {
+		code: "settings-rejected",
+		message: "provider settings write was rejected",
+		details: { ns: value.settingsNs }
+	} : storedFailure(value.error);
+	const identity = {
+		version: 1,
+		receiptVersion: 1,
+		transactionId: value.transactionId,
+		provider: value.provider,
+		settingsNs: value.settingsNs,
+		requestDigest,
+		digest: planDigest(value.provider, value.settingsNs, parsedPlan),
+		plan: parsedPlan,
+		...legacyInput === void 0 ? {} : { legacyInput },
+		completed
+	};
+	if (value.phase === "done") {
+		const receipt = parseReceipt({
+			requestDigest,
+			outcome: value.outcome,
+			error,
+			legacyInput
+		});
+		if (legacy) completed[value.transactionId] = receipt;
+		if (!deepEqualJson(completed[value.transactionId], receipt)) return fail("provider-transaction-in-doubt", "provider terminal receipt disagrees with its history");
+		return {
+			...identity,
+			...receipt,
+			phase: value.phase
+		};
+	}
+	if (value.outcome !== void 0 || error !== void 0 || Object.hasOwn(completed, value.transactionId)) return fail("provider-transaction-in-doubt", "unfinished provider transaction has a terminal receipt");
 	return {
-		code: failure.code,
-		message: failure.message,
-		details: Object.fromEntries(Object.entries(failure.details).filter(([key]) => !/key|token|secret|password/i.test(key)))
+		...identity,
+		phase: value.phase
 	};
 }
-function isRemoteFailure(value) {
-	return isRecord(value) && typeof value.code === "string" && typeof value.message === "string" && isRecord(value.details);
-}
-function isRecord(value) {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-/** Read a mutable AbortSignal after an await without retaining stale flow narrowing. */
-function isAborted(signal) {
-	return signal.aborted;
-}
-/** Validate a path mutation at the Remote boundary before domain mutation sees it. */
-function isSettingsPathOperation(value) {
-	if (!isRecord(value)) return false;
-	return (value.op === "set" || value.op === "unset") && Array.isArray(value.path) && value.path.every((part) => typeof part === "string");
-}
-/** Preserve a typed Remote failure through the strict Gateway's Error-only control flow. */
-function throwRemoteFailure(failure) {
-	throw new TypertLookupFailure(failure);
-}
-function remoteFailure(code, message, details) {
-	throwRemoteFailure({
-		code,
-		message,
-		details
-	});
-}
-function errorMessage(error) {
-	return error instanceof Error ? error.message : String(error);
-}
+/** Each runtime drains its accepted work; shared service identities own resource serialization. */
+var ProviderTransactions = class {
+	ctx;
+	runtime;
+	pending = /* @__PURE__ */ new Set();
+	stopped = false;
+	constructor(ctx, runtime) {
+		this.ctx = ctx;
+		this.runtime = runtime;
+		ctx.effect(() => async () => {
+			this.stopped = true;
+			await Promise.allSettled(this.pending);
+		}, "llm.provider-transactions");
+	}
+	/**
+	* Serialize shared configuration resources; unrelated namespaces and ordinary streaming remain independent.
+	* @param input - Native request, snapshotted before waiting for the previous write.
+	* @param signal - cancellation before durable claim; committed work retains ownership.
+	* @returns the redacted committed state, or a typed recovery failure.
+	*/
+	async mutate(input, signal) {
+		const request = requestSnapshot(input);
+		return this.run(request.provider, signal, (settings, credentials) => withResources(settings, [request.settingsNs], () => this.execute(settings, credentials, request, signal)));
+	}
+	/**
+	* Read the stored phase without claiming, upgrading, or executing the transaction.
+	* @param input - provider and caller-held transaction id.
+	* @returns durable state and write-only credential requirement, never the plan or value.
+	*/
+	async status(input) {
+		const request = transactionIdentity(input);
+		return this.track(() => this.query(request));
+	}
+	async query(request) {
+		const credentials = this.ctx.get("credentials");
+		if (credentials === void 0) return fail("service-unavailable", "provider transaction journal is unavailable");
+		const { journal } = await this.read(credentials, request.provider);
+		if (journal === void 0) return {
+			state: "absent",
+			needsCredential: false
+		};
+		const current = journal.transactionId === request.transactionId;
+		const receipt = journal.completed[request.transactionId];
+		let state;
+		if (current) state = journal.phase === "done" ? journal.outcome : journal.phase;
+		else {
+			if (receipt === void 0) return {
+				state: "absent",
+				needsCredential: false
+			};
+			state = receipt.outcome;
+		}
+		let needsCredential = false;
+		if (current && journal.phase !== "done" && journal.plan.credential?.op === "set") {
+			const resolved = await this.resolveCredential(credentials, journal.plan.credential.ref);
+			needsCredential = resolved === void 0 || hash(resolved.value) !== journal.plan.credential.valueDigest;
+		}
+		return {
+			state,
+			needsCredential,
+			settingsNs: journal.settingsNs,
+			...isOutcome(state) ? { live: current && state === "committed" && this.runtime.listProviders().some((provider) => provider.id === request.provider) } : {}
+		};
+	}
+	/**
+	* Continue the captured durable plan under the same journal, namespace and reference leases as new writes.
+	* @param input - stored transaction identity and an optional write-only missing credential.
+	* @param signal - cancellation before claim only; claimed work remains owned until settlement.
+	* @returns the committed redacted state, or the durable terminal/recovery failure.
+	*/
+	async resume(input, signal) {
+		const request = transactionIdentity(input);
+		const value = snapshot(input);
+		if (!record(value) || value.credentialValue !== void 0 && (typeof value.credentialValue !== "string" || value.credentialValue.trim() === "")) return fail("input-invalid", "provider recovery credential must be a non-empty string");
+		const supplied = value.credentialValue;
+		return this.run(request.provider, signal, async (settings, credentials) => {
+			const captured = await this.read(credentials, request.provider);
+			const journal = captured.journal;
+			if (journal === void 0 || journal.transactionId !== request.transactionId && journal.completed[request.transactionId] === void 0) return fail("provider-transaction-in-doubt", "the requested provider transaction is not retained");
+			return withResources(settings, [journal.settingsNs], async () => {
+				let credential;
+				const user = settings.describe().find((entry) => entry.ns === journal.settingsNs)?.user;
+				const unverifiableWrite = (journal.phase === "prepared" || journal.phase === "credential-staged") && !satisfied(user, journal.plan.ops) && journal.plan.expectedUserDigest === void 0;
+				if (journal.phase !== "done" && journal.transactionId === request.transactionId && !unverifiableWrite) {
+					const planned = journal.plan.credential;
+					if (planned?.op === "unset") credential = {
+						op: "unset",
+						ref: planned.ref
+					};
+					else if (planned?.op === "set") {
+						const stored = await this.resolveCredential(credentials, planned.ref);
+						const secret = supplied ?? stored?.value;
+						if (secret === void 0 || hash(secret) !== planned.valueDigest) return fail("provider-transaction-needs-credential", "transaction needs its write-only credential again", {
+							provider: request.provider,
+							transactionId: request.transactionId,
+							ref: planned.ref
+						});
+						credential = {
+							op: "set",
+							ref: planned.ref,
+							value: secret
+						};
+					}
+				}
+				return this.execute(settings, credentials, {
+					...request,
+					settingsNs: journal.settingsNs,
+					ops: journal.plan.ops,
+					expectedRevision: journal.plan.expectedRevision,
+					...credential === void 0 ? {} : { credential }
+				}, signal, {
+					...captured,
+					journal
+				});
+			});
+		});
+	}
+	async run(provider, signal, action) {
+		if (this.stopped) return fail("service-unavailable", "provider transaction owner is stopped");
+		if (execution.getStore()?.active) return fail("provider-transaction-reentrant", "provider mutation cannot be nested in a running transaction");
+		if (signal.aborted) return fail("cancelled", "provider transaction was cancelled before durable claim");
+		const settings = this.ctx.get("settings");
+		const credentials = this.ctx.get("credentials");
+		if (settings === void 0 || credentials === void 0) return fail("service-unavailable", "provider mutation requires settings and credentials owners");
+		return this.track(() => withResources(credentials, [`journal:${provider}`], async () => {
+			if (this.stopped) return fail("service-unavailable", "provider transaction owner is stopped");
+			if (signal.aborted) return fail("cancelled", "provider transaction was cancelled before durable claim");
+			const scope = { active: true };
+			try {
+				return await execution.run(scope, () => action(settings, credentials));
+			} finally {
+				scope.active = false;
+			}
+		}));
+	}
+	async track(operation) {
+		if (this.stopped) return fail("service-unavailable", "provider transaction owner is stopped");
+		const pending = operation();
+		this.pending.add(pending);
+		try {
+			return await pending;
+		} finally {
+			this.pending.delete(pending);
+		}
+	}
+	async execute(settings, credentials, request, signal, restoring) {
+		const namespace = settingsNamespace(request.settingsNs);
+		const captured = restoring ?? await this.read(credentials, request.provider);
+		const previous = captured.journal;
+		const before = settings.describe().find((entry) => entry.ns === namespace);
+		let declaration = this.runtime.listConfigurableProviders().find((entry) => entry.provider === request.provider && entry.settingsNs === request.settingsNs);
+		if (declaration === void 0 && before !== void 0 && previous !== void 0 && previous.transactionId === request.transactionId && previous.settingsNs === request.settingsNs && previous.plan.settingsPath.length > 0 && previous.plan.credential?.op !== "set" && previous.plan.ops.some((op) => op.op === "unset" && deepEqualJson(op.path, previous.plan.settingsPath)) && satisfied(before.user, previous.plan.ops) && !pathValue(before.value, previous.plan.settingsPath).present && !this.runtime.listConfigurableProviders().some((entry) => entry.settingsNs === request.settingsNs && (prefix(entry.settingsPath, previous.plan.settingsPath) || prefix(previous.plan.settingsPath, entry.settingsPath)))) declaration = {
+			provider: previous.provider,
+			settingsNs: previous.settingsNs,
+			settingsPath: previous.plan.settingsPath
+		};
+		if (declaration === void 0) return fail("settings-rejected", "provider does not own the requested settings namespace");
+		const digest = restoring === void 0 ? inputDigest(request) : restoring.journal.requestDigest;
+		if (previous !== void 0 && previous.transactionId !== request.transactionId && previous.phase !== "done") return fail("provider-transaction-in-doubt", "provider has an unfinished configuration transaction");
+		if (previous !== void 0) {
+			const receipt = previous.completed[request.transactionId];
+			if (receipt !== void 0) {
+				if (restoring === void 0 && !this.matches(receipt, request)) return fail("provider-transaction-in-doubt", "transaction id was reused with different input");
+				await this.claim(credentials, captured, previous, signal);
+				this.checkReceipt(receipt);
+				return this.result(settings, credentials, request, declaration.settingsPath, void 0);
+			}
+		}
+		if (previous?.transactionId === request.transactionId && restoring === void 0 && !this.matches(previous, request)) return fail("provider-transaction-in-doubt", "transaction id was reused with different input");
+		if (before === void 0) return fail("settings-rejected", "provider settings namespace is not registered");
+		const replay = previous?.transactionId === request.transactionId ? previous : void 0;
+		const configured = request.credential?.op === "set" && (await credentials.describe(ref(request.credential.ref))).configured;
+		const plan = replay?.plan ?? {
+			...makePlan(declaration, before.value, request, configured),
+			expectedUserDigest: hashJson({ user: before.user })
+		};
+		if (!deepEqualJson(plan.settingsPath, declaration.settingsPath)) return fail("provider-transaction-in-doubt", "provider profile ownership changed during recovery");
+		return withResources(credentials, [
+			...references(before.value, plan.settingsPath).keys(),
+			...references(apply(before.value, plan.ops), plan.settingsPath).keys(),
+			...request.credential === void 0 ? [] : [request.credential.ref],
+			...plan.credential === void 0 ? [] : [plan.credential.ref]
+		].map((ref) => `reference:${ref}`), async () => {
+			if (replay === void 0) {
+				if (before.revision !== request.expectedRevision) return this.conflict(request.settingsNs, request.expectedRevision, before.revision);
+				if (plan.credential !== void 0) plan.credential.before = credentialCondition(await this.resolveCredential(credentials, plan.credential.ref));
+			}
+			this.preflight(settings, declaration, before.value, plan, request, replay !== void 0 && satisfied(before.user, plan.ops));
+			if (plan.credential !== void 0 && !(await credentials.describe(ref(plan.credential.ref))).writable) return fail("credential-rejected", "provider credential is read-only");
+			if (signal.aborted) return fail("cancelled", "provider transaction was cancelled before durable claim");
+			let journal = replay ?? {
+				version: 1,
+				receiptVersion: 1,
+				transactionId: request.transactionId,
+				provider: request.provider,
+				settingsNs: request.settingsNs,
+				requestDigest: digest,
+				digest: planDigest(request.provider, request.settingsNs, plan),
+				plan,
+				phase: "prepared",
+				completed: { ...previous?.completed }
+			};
+			await this.claim(credentials, captured, journal, signal);
+			const advance = async (phase) => {
+				const next = {
+					...journal,
+					phase
+				};
+				await this.write(credentials, journal, next);
+				journal = next;
+			};
+			const finish = async (...result) => {
+				const [outcome, error] = result;
+				const identity = {
+					requestDigest: journal.requestDigest,
+					...journal.legacyInput === void 0 ? {} : { legacyInput: journal.legacyInput }
+				};
+				const receipt = outcome === "committed" ? {
+					...identity,
+					outcome
+				} : {
+					...identity,
+					outcome,
+					error
+				};
+				const next = {
+					...journal,
+					...receipt,
+					phase: "done",
+					completed: {
+						...journal.completed,
+						[request.transactionId]: receipt
+					}
+				};
+				const condition = outcome === "committed" && plan.credential !== void 0 ? {
+					ref: ref(plan.credential.ref),
+					expected: { valueDigest: plan.credential.op === "set" ? plan.credential.valueDigest : null }
+				} : void 0;
+				await this.write(credentials, journal, next, condition);
+				journal = next;
+			};
+			const rollback = async (failure) => {
+				if (plan.credential?.op === "set" && plan.credential.before?.valueDigest === null) try {
+					await credentials.unset(ref(plan.credential.ref), { valueDigest: plan.credential.valueDigest });
+				} catch (error) {
+					if (!(error instanceof CredentialConflictError)) return fail("provider-transaction-in-doubt", "staged credential rollback did not complete");
+				}
+				await finish("rolled-back", failure);
+				throw new TypertRemoteFailure(failure);
+			};
+			const credentialConflict = async () => {
+				const failure = {
+					code: "credential-rejected",
+					message: "provider credential changed before commit",
+					details: { provider: request.provider }
+				};
+				await finish("committed-not-live", failure);
+				throw new TypertRemoteFailure(failure);
+			};
+			if (replay !== void 0 && (journal.phase === "prepared" || journal.phase === "credential-staged") && !satisfied(before.user, plan.ops) && (plan.expectedUserDigest === void 0 || plan.expectedUserDigest !== hashJson({ user: before.user }))) return rollback(this.settingsFailure(request.settingsNs, /* @__PURE__ */ new Error("provider settings changed after claim")));
+			if (journal.phase === "prepared") {
+				if (plan.credential?.op === "set") await this.applyCredential(credentials, plan.credential, request.credential);
+				await advance("credential-staged");
+			}
+			if (journal.phase === "credential-staged") {
+				const current = settings.describe().find((entry) => entry.ns === namespace);
+				if (current === void 0) return fail("provider-transaction-in-doubt", "provider settings owner disappeared");
+				if (!satisfied(current.user, plan.ops)) {
+					const revision = plan.expectedUserDigest !== void 0 && plan.expectedUserDigest === hashJson({ user: current.user }) ? current.revision : plan.expectedRevision;
+					try {
+						await settings.mutate(namespace, plan.ops, revision);
+					} catch (error) {
+						const after = settings.describe().find((entry) => entry.ns === namespace);
+						if (after === void 0 || !satisfied(after.user, plan.ops)) return rollback(this.settingsFailure(request.settingsNs, error));
+					}
+				}
+				await advance("settings-applied");
+			}
+			const committed = settings.describe().find((entry) => entry.ns === namespace);
+			if (committed === void 0) return fail("provider-transaction-in-doubt", "provider settings disappeared after persistence");
+			if (!satisfied(committed.user, plan.ops)) return fail("provider-transaction-in-doubt", "provider settings no longer match the committed plan");
+			let accepted;
+			try {
+				accepted = await settings.settle(namespace, committed.revision);
+			} catch (error) {
+				const failure = this.settingsFailure(request.settingsNs, error);
+				await finish("committed-not-live", failure);
+				throw new TypertRemoteFailure(failure);
+			}
+			const expectedLive = plan.settingsPath.length === 0 || pathValue(committed.value, plan.settingsPath).present;
+			if (!accepted || this.runtime.listProviders().some((provider) => provider.id === request.provider) !== expectedLive) {
+				const failure = {
+					code: "provider-registration-rejected",
+					message: "provider settings were stored but did not activate",
+					details: { provider: request.provider }
+				};
+				await finish("committed-not-live", failure);
+				throw new TypertRemoteFailure(failure);
+			}
+			if (journal.phase === "settings-applied") {
+				if (plan.credential?.op === "unset") try {
+					await this.applyCredential(credentials, plan.credential, request.credential);
+				} catch (error) {
+					if (error instanceof CredentialConflictError) return credentialConflict();
+					throw error;
+				}
+				await advance("credential-applied");
+			}
+			try {
+				await finish("committed");
+			} catch (error) {
+				if (error instanceof CredentialConflictError) return credentialConflict();
+				throw error;
+			}
+			return this.result(settings, credentials, request, plan.settingsPath, plan.credential?.ref);
+		});
+	}
+	checkReceipt(receipt) {
+		if (receipt.outcome !== "committed") throw new TypertRemoteFailure(receipt.error);
+	}
+	matches(receipt, request) {
+		if (receipt.requestDigest === inputDigest(request)) return true;
+		if (receipt.legacyInput === void 0) return false;
+		const credential = request.credential === void 0 ? void 0 : request.credential.op === "unset" ? {
+			op: "unset",
+			ref: request.credential.ref
+		} : {
+			op: "set",
+			ref: request.credential.ref,
+			valueDigest: hash(request.credential.value)
+		};
+		return legacyPlanDigest(request.provider, request.settingsNs, {
+			settingsPath: receipt.legacyInput.settingsPath,
+			ops: [...request.ops],
+			expectedRevision: request.expectedRevision,
+			...credential === void 0 ? {} : { credential }
+		}) === receipt.legacyInput.digest;
+	}
+	async read(credentials, provider) {
+		try {
+			const stored = structuredClone(await credentials.readRecord(credentialKey("llm-remote", provider)));
+			const journal = parseJournal(stored);
+			if (journal !== void 0 && journal.provider !== provider) return fail("provider-transaction-in-doubt", "provider journal ownership is invalid");
+			return {
+				stored,
+				journal
+			};
+		} catch (error) {
+			if (error instanceof TypertRemoteFailure) throw error;
+			return fail("service-unavailable", "provider transaction journal is unavailable");
+		}
+	}
+	async claim(credentials, captured, next, signal) {
+		try {
+			await credentials.modifyRecord(credentialKey("llm-remote", next.provider), (current) => {
+				if (signal.aborted) return fail("cancelled", "provider transaction was cancelled before durable claim");
+				if (!deepEqualJson(current, captured.stored)) return fail("provider-transaction-in-doubt", "provider transaction ownership changed before claim");
+				const proposed = {
+					kind: "grant",
+					payload: next
+				};
+				return Promise.resolve(deepEqualJson(current, proposed) ? void 0 : proposed);
+			});
+		} catch (error) {
+			if (error instanceof TypertRemoteFailure) throw error;
+			return fail("provider-transaction-in-doubt", "provider journal claim failed");
+		}
+	}
+	async resolveCredential(credentials, reference) {
+		try {
+			return await credentials.resolve(ref(reference));
+		} catch {
+			return fail("service-unavailable", "provider credential is unavailable");
+		}
+	}
+	preflight(settings, declaration, before, plan, request, settingsAlreadyApplied) {
+		for (const op of plan.ops) if (!prefix(op.path, declaration.settingsPath)) return fail("settings-rejected", "provider cannot mutate a sibling profile");
+		const next = apply(before, plan.ops);
+		const beforeRefs = references(before, declaration.settingsPath);
+		const afterRefs = references(next, declaration.settingsPath);
+		if (plan.credential?.op === "set" && !afterRefs.has(plan.credential.ref)) return fail("credential-rejected", "credential is not bound to the resulting profile");
+		if (plan.credential?.op === "unset" && (!settingsAlreadyApplied && !beforeRefs.has(plan.credential.ref) || afterRefs.has(plan.credential.ref))) return fail("credential-rejected", "cannot remove an unrelated or still-referenced credential");
+		const values = new Map(settings.describe().map((entry) => [String(entry.ns), entry.value]));
+		const uses = this.runtime.listConfigurableProviders().flatMap((entry) => [...references(values.get(entry.settingsNs), entry.settingsPath).keys()].map((ref) => ({
+			ref,
+			provider: entry.provider,
+			fingerprint: fingerprint(entry, values.get(entry.settingsNs))
+		})));
+		if (request.credential !== void 0 && uses.some((use) => use.ref === request.credential?.ref && use.provider !== request.provider)) return fail("credential-ownership-rejected", "requested credential belongs to another provider");
+		for (const ref of afterRefs.keys()) {
+			const conflicts = uses.filter((use) => use.ref === ref && (use.provider !== declaration.provider || use.fingerprint !== fingerprint(declaration, next)));
+			if (conflicts.some((use) => use.provider !== declaration.provider) || conflicts.length > 0 && plan.credential?.ref !== ref) return fail("credential-ownership-rejected", "credential belongs to another provider or endpoint");
+			if (!uses.some((use) => use.ref === ref && use.provider === declaration.provider && use.fingerprint === fingerprint(declaration, next)) && !(plan.credential?.op === "set" && plan.credential.ref === ref)) return fail("credential-ownership-required", "a new endpoint reference requires an explicit credential value");
+		}
+		if (plan.credential?.op === "unset" && uses.some((use) => use.ref === plan.credential?.ref && use.provider !== declaration.provider)) return fail("credential-ownership-rejected", "credential is still owned by another provider");
+		try {
+			const secrets = settings.previewMutation(settingsNamespace(request.settingsNs), plan.ops).secrets;
+			if (plan.ops.some((op) => op.op === "set" && secrets.some((secret) => prefix(op.path, secret.path) || prefix(secret.path, op.path) && pathValue(op.value, secret.path.slice(op.path.length)).present))) return fail("settings-rejected", "provider settings transactions cannot carry literal secret fields");
+		} catch (error) {
+			if (error instanceof TypertRemoteFailure) throw error;
+			throw new TypertRemoteFailure(this.settingsFailure(request.settingsNs, error));
+		}
+	}
+	async write(credentials, expected, next, condition) {
+		try {
+			await credentials.modifyRecord(credentialKey("llm-remote", next.provider), (current) => {
+				if (!deepEqualJson(parseJournal(current), expected)) return fail("provider-transaction-in-doubt", "provider journal ownership changed during commit");
+				return Promise.resolve({
+					kind: "grant",
+					payload: next
+				});
+			}, condition === void 0 ? [] : [condition]);
+		} catch (error) {
+			if (error instanceof TypertRemoteFailure || error instanceof CredentialConflictError) throw error;
+			return fail("provider-transaction-in-doubt", "provider transaction progress could not be persisted");
+		}
+	}
+	async applyCredential(credentials, plan, supplied) {
+		const reference = ref(plan.ref);
+		const current = await credentials.resolve(reference);
+		if (plan.op === "unset") {
+			if (current === void 0) return;
+			if (plan.before === void 0) return fail("provider-transaction-in-doubt", "credential removal has no durable before-image");
+			try {
+				await credentials.unset(reference, plan.before);
+			} catch (error) {
+				if (error instanceof CredentialConflictError) throw error;
+				if (await credentials.resolve(reference) !== void 0) return fail("provider-transaction-in-doubt", "credential removal did not complete");
+			}
+			return;
+		}
+		if (current !== void 0 && hash(current.value) === plan.valueDigest) return;
+		if (current !== void 0) return fail("provider-transaction-in-doubt", "the staged credential reference now holds a different value");
+		if (supplied?.op !== "set" || hash(supplied.value) !== plan.valueDigest) return fail("provider-transaction-needs-credential", "transaction needs its write-only credential again");
+		try {
+			await credentials.set(reference, supplied.value, { valueDigest: null });
+		} catch {
+			const after = await credentials.resolve(reference);
+			if (after === void 0 || hash(after.value) !== plan.valueDigest) return fail("provider-transaction-in-doubt", "credential staging did not complete");
+		}
+	}
+	conflict(ns, expected, actual) {
+		return fail("settings-conflict", "provider settings revision changed", {
+			ns,
+			expected,
+			actual
+		});
+	}
+	settingsFailure(ns, error) {
+		return error instanceof SettingsConflictError ? {
+			code: "settings-conflict",
+			message: "provider settings revision changed",
+			details: {
+				ns,
+				expected: error.expected,
+				actual: error.actual
+			}
+		} : {
+			code: "settings-rejected",
+			message: "provider settings write was rejected",
+			details: { ns }
+		};
+	}
+	async result(settings, credentials, request, settingsPath, credentialRef) {
+		const descriptor = settings.describe({ redactSecrets: true }).find((entry) => entry.ns === request.settingsNs);
+		if (descriptor === void 0) return fail("provider-registration-rejected", "committed provider settings are unavailable");
+		const expectedLive = settingsPath.length === 0 || pathValue(descriptor.value, settingsPath).present;
+		if (this.runtime.listProviders().some((entry) => entry.id === request.provider) !== expectedLive) return fail("provider-registration-rejected", "committed provider route does not match its settings");
+		const info = credentialRef === void 0 ? void 0 : await credentials.describe(ref(credentialRef));
+		return {
+			settings: remoteNamespaceView(descriptor),
+			...info === void 0 ? {} : { credential: {
+				configured: info.configured,
+				writable: info.writable,
+				...info.source === void 0 ? {} : { source: info.source }
+			} },
+			live: { accepted: true }
+		};
+	}
+};
 //#endregion
 //#region lib/types/attribution.js
 /**
@@ -2116,119 +1820,6 @@ function userAgent(identity = APP_IDENTITY) {
 function attributionHeaders(identity = APP_IDENTITY) {
 	return { "user-agent": userAgent(identity) };
 }
-//#endregion
-//#region lib/types/adapter.js
-/**
-* The adapter contract surface: what a provider adapter implements, what a
-* registration returns, and the prepared-call snapshot. Provider packages
-* (pi-ai, deepseek) depend on this module; the runtime imports it too.
-*
-* @module @deepseek-ai/dsh-llm/adapter
-*/
-/**
-* Build one live image-access resolver from the provider composition's service lookups.
-* Keeping this in the adapter contract layer gives every provider the same attachment/path
-* behavior without making the provider-neutral LLM package own a filesystem service.
-* @param resolveAttachments - resolves the currently mounted attachment store.
-* @param mapHostPath - maps a host path through the currently mounted filesystem service.
-* @returns a resolver that observes both services at call time.
-*/
-function createImageAttachmentAccessResolver(resolveAttachments, mapHostPath) {
-	return (ref) => {
-		const attachments = resolveAttachments();
-		return attachments === void 0 ? void 0 : resolveImageAttachmentAccess(attachments, mapHostPath, ref);
-	};
-}
-/**
-* Provider-wire adapter for the harness message and stream vocabulary. Register implementations
-* with `ctx.llm.registerAdapter(providers, adapter)`. Every provider HTTP request must include
-* `attributionHeaders()`; prove the headers are added in the wire request or library header hook. The direct-fetch
-* DeepSeek and library-backed pi-ai adapters meet this contract through different internals.
-*/
-var LlmAdapter = class {
-	/**
-	* Describe one provider route owned by this adapter.
-	* @param provider - a route passed to `registerAdapter()` for this instance.
-	* @returns detached display metadata whose id must equal `provider`.
-	*/
-	providerInfo(provider) {
-		return {
-			id: provider,
-			name: provider
-		};
-	}
-	/**
-	* Return the provider-owned retry policy captured with this route.
-	* @param _provider - a route passed to `registerAdapter()` for this instance.
-	* @returns a resolved policy, or `undefined` to use the normal defaults.
-	*/
-	providerRetryPolicy(_provider) {}
-	/**
-	* Resolve synchronous provider-side request-image pricing for one exact
-	* route. Adapters without visual-token billing return undefined.
-	* @param _provider - one provider route owned by this adapter.
-	* @param _model - exact model id whose image input will be priced.
-	* @returns synchronous image-pricing metadata, or `undefined` when unsupported.
-	*/
-	imageRequestPricing(_provider, _model) {}
-	/**
-	* List models this adapter can currently advertise for one owned provider.
-	* The result is advisory: an adapter may accept unlisted model ids, and
-	* consumers must not turn absence into request rejection.
-	* @param _provider - one provider route owned by this adapter.
-	* @returns discoverable models in adapter-preferred order.
-	*/
-	listModels(_provider) {
-		return Promise.resolve([]);
-	}
-	/**
-	* Resolve all metadata available for one exact model. This query is
-	* independent of the advisory catalog and does not validate request routing.
-	* @param provider - one provider route owned by this adapter.
-	* @param model - exact model id passed to {@link GenerateOptions.model}.
-	* @param _signal - cancellation for this exact-model lookup; asynchronous
-	*   implementations must settle promptly after it aborts.
-	* @returns provider/model identity plus any context, call-default, and reasoning metadata.
-	*/
-	resolveModel(provider, model, _signal) {
-		return Promise.resolve({
-			provider,
-			id: model,
-			name: model
-		});
-	}
-	/**
-	* Perform a protocol-native, non-generative authentication/metadata probe
-	* when the adapter supports one. Returning `undefined` asks LlmRuntime to use
-	* its explicitly classified minimal-generation fallback.
-	* @param _provider - exact registered provider route.
-	* @param _model - exact configured model id.
-	* @param _signal - owner cancellation signal.
-	* @returns the non-generative mode, or undefined for the bounded fallback.
-	*/
-	verifyProvider(_provider, _model, _signal) {
-		return Promise.resolve(void 0);
-	}
-	/**
-	* Bind exact model metadata and the eventual request dispatch to one adapter generation.
-	* Dynamic adapters override this so settings changes between preparation and
-	* dispatch cannot combine one generation's capabilities with another's endpoint.
-	* @param provider - registered provider route.
-	* @param model - exact model id.
-	* @param signal - cancellation for model resolution.
-	* @returns model metadata and a one-generation stream entry point.
-	*/
-	async prepareCall(provider, model, signal) {
-		return {
-			model: await this.resolveModel(provider, model, signal),
-			stream: (options) => this.stream(options)
-		};
-	}
-};
-/**
-* The abstract `llm` service: an adapter registry plus a streaming model-call
-* API, interceptable via the `llm/stream` waterfall.
-*/
 //#endregion
 //#region lib/types/assembler.js
 /**
@@ -2530,16 +2121,171 @@ var __disposeResources = (function(SuppressedError) {
 	return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
 /**
-* Stable identity for the exact endpoint/protocol a one-shot discovery
-* credential may reach. The fingerprint contains no credential material.
-* @param baseURL - candidate endpoint typed by the caller.
-* @param api - candidate wire protocol, defaulted like the discovery owner.
-* @returns SHA-256 endpoint identity.
+* Typed error for LLM-related failures. Extends {@link HarnessError}, so the
+* `code` string (e.g. `AUTH`, `RATE_LIMIT`, `NO_ADAPTER`) is shared taxonomy.
+*/
+var LlmError = class extends HarnessError {
+	/** Serializable facts retained beside this live Error. */
+	failure;
+	/**
+	* @param message - non-empty human-readable failure summary.
+	* @param code - non-empty stable provider-neutral machine code.
+	* @param options - optional cause and validated serializable provider facts.
+	*/
+	constructor(message, code, options) {
+		if (typeof message !== "string" || message.length === 0) throw new Error("LlmError message must be a non-empty string");
+		if (typeof code !== "string" || code.length === 0) throw new Error("LlmError code must be a non-empty string");
+		if (options?.status !== void 0 && (!Number.isInteger(options.status) || options.status < 100 || options.status > 599)) throw new Error("LlmError status must be an integer from 100 through 599");
+		if (options?.providerRetryAfterMs !== void 0 && (!Number.isFinite(options.providerRetryAfterMs) || options.providerRetryAfterMs <= 0)) throw new Error("LlmError providerRetryAfterMs must be a positive finite number");
+		if (options?.requestId !== void 0 && (typeof options.requestId !== "string" || options.requestId.length === 0)) throw new Error("LlmError requestId must be a non-empty string");
+		super(message, code, options);
+		this.name = "LlmError";
+		this.failure = Object.freeze({
+			message,
+			code,
+			...options?.status === void 0 ? {} : { status: options.status },
+			...options?.providerRetryAfterMs === void 0 ? {} : { providerRetryAfterMs: options.providerRetryAfterMs },
+			...options?.requestId === void 0 ? {} : { requestId: options.requestId }
+		});
+	}
+};
+/**
+* Accept one supplied credential, or refuse it as unusable.
+*
+* A stored key arrives from the credentials seam, a `.env` line, or a shell
+* export, all of which pick up surrounding whitespace, so trimming is silent.
+* Anything else fails here rather than inside `fetch`, whose ByteString
+* refusal names a UTF-16 code point instead of the setting to change. The key
+* never enters the message: `ref` names where to fix it, and echoing any part
+* of a secret into a log or a UI is the failure this diagnosis avoids.
+*
+* Lives beside {@link LlmError} rather than in `./api-key.ts` so the predicate
+* module stays dependency-free; both adapters share this one diagnosis instead
+* of keeping near-identical local copies.
+* @param raw - the credential exactly as supplied.
+* @param pkg - the refusing package name, prefixed to the diagnostic.
+* @param ref - the credential reference the value resolved through.
+* @returns the trimmed, usable key.
+*/
+function assertUsableApiKey(raw, pkg, ref) {
+	const checked = normalizeApiKey(raw);
+	if (checked.ok) return checked.value;
+	throw new LlmError(checked.reason === "empty" ? `${pkg}: the API key resolved from ${ref} is blank; set ${ref} to the raw key (the web Models page writes it) or export it in the launching environment` : `${pkg}: the API key resolved from ${ref} contains characters no HTTP header can carry; set ${ref} to the raw key alone (the web Models page writes it)`, INVALID_CREDENTIAL_CODE);
+}
+/**
+* Provider-wire adapter for the harness message and stream vocabulary. Register implementations
+* with `ctx.llm.registerAdapter(providers, adapter)`. Every provider HTTP request must include
+* `attributionHeaders()`; prove the headers are added in the wire request or library header hook. The direct-fetch
+* DeepSeek and library-backed pi-ai adapters meet this contract through different internals.
+*/
+var LlmAdapter = class {
+	/**
+	* Describe one provider route owned by this adapter.
+	* @param provider - a route passed to `registerAdapter()` for this instance.
+	* @returns detached display metadata whose id must equal `provider`.
+	*/
+	providerInfo(provider) {
+		return {
+			id: provider,
+			name: provider
+		};
+	}
+	/**
+	* Return the provider-owned retry policy captured with this route.
+	* @param _provider - a route passed to `registerAdapter()` for this instance.
+	* @returns a resolved policy, or `undefined` to use the normal defaults.
+	*/
+	providerRetryPolicy(_provider) {}
+	/**
+	* Resolve provider-side request-image pricing for one exact model route.
+	* The default declares none, so consumers fall back to their own neutral
+	* estimate. Implementations must answer synchronously without I/O; the
+	* token meter resolves this per measurement.
+	* @param _provider - a route passed to `registerAdapter()` for this instance.
+	* @param _model - exact model id passed to {@link GenerateOptions.model}.
+	* @returns route-owned image pricing, or `undefined` when the route declares none.
+	*/
+	imageRequestPricing(_provider, _model) {}
+	/**
+	* List models this adapter can currently advertise for one owned provider.
+	* The result is advisory: an adapter may accept unlisted model ids, and
+	* consumers must not turn absence into request rejection.
+	* @param _provider - one provider route owned by this adapter.
+	* @returns discoverable models in adapter-preferred order.
+	*/
+	listModels(_provider) {
+		return Promise.resolve([]);
+	}
+	/**
+	* Resolve all metadata available for one exact model. This query is
+	* independent of the advisory catalog and does not validate request routing.
+	* @param provider - one provider route owned by this adapter.
+	* @param model - exact model id passed to {@link GenerateOptions.model}.
+	* @param _signal - cancellation for this exact-model lookup; asynchronous
+	*   implementations must settle promptly after it aborts.
+	* @returns provider/model identity plus any context, call-default, and reasoning metadata.
+	*/
+	resolveModel(provider, model, _signal) {
+		return Promise.resolve({
+			provider,
+			id: model,
+			name: model
+		});
+	}
+	/**
+	* Attempt a protocol-native, non-generative exact-route verification.
+	* @param _provider - registered provider route.
+	* @param _model - exact configured model.
+	* @param _signal - owner cancellation signal.
+	* @returns metadata proof, reachability-only evidence, or undefined for a bounded generation fallback.
+	*/
+	verifyProvider(_provider, _model, _signal) {
+		return Promise.resolve(void 0);
+	}
+	/**
+	* Bind exact model metadata and the eventual request dispatch to one adapter generation.
+	* Dynamic adapters override this so settings changes between preparation and
+	* dispatch cannot combine one generation's capabilities with another's endpoint.
+	* @param provider - registered provider route.
+	* @param model - exact model id.
+	* @param signal - cancellation for model resolution.
+	* @returns model metadata and a one-generation stream entry point.
+	*/
+	async prepareCall(provider, model, signal) {
+		return {
+			model: await this.resolveModel(provider, model, signal),
+			stream: (options) => this.stream(options)
+		};
+	}
+};
+async function verificationSettles(operation, graceMs) {
+	const env_1 = {
+		stack: [],
+		error: void 0,
+		hasError: false
+	};
+	try {
+		const expired = Promise.withResolvers();
+		__addDisposableResource(env_1, addAbortListener(__addDisposableResource(env_1, deadline(void 0, graceMs, "LLM_VERIFICATION_CANCEL_TIMEOUT"), false).signal, () => {
+			expired.resolve(false);
+		}), false);
+		return await Promise.race([Promise.allSettled([operation]).then(() => true), expired.promise]);
+	} catch (e_1) {
+		env_1.error = e_1;
+		env_1.hasError = true;
+	} finally {
+		__disposeResources(env_1);
+	}
+}
+/**
+* Identify the exact endpoint and protocol authorized for a one-shot discovery credential.
+* @param baseURL - candidate endpoint supplied by the caller.
+* @param api - candidate protocol, defaulted like the discovery owner.
+* @returns credential-free SHA-256 endpoint identity.
 */
 function modelDiscoveryEndpointFingerprint(baseURL, api) {
-	const endpoint = baseURL.replace(/\/+$/, "");
 	return createHash("sha256").update(JSON.stringify({
-		endpoint,
+		endpoint: baseURL.replace(/\/+$/u, ""),
 		api: api ?? "openai-completions"
 	})).digest("hex");
 }
@@ -2550,31 +2296,35 @@ function modelDiscoveryEndpointFingerprint(baseURL, api) {
 let LlmRuntime = (() => {
 	let _classSuper = TypertRemoteService;
 	let _instanceExtraInitializers = [];
-	let _remoteProviders_decorators;
+	let _remoteVerifyProvider_decorators;
 	let _remoteMutateProvider_decorators;
 	let _remoteProviderTransaction_decorators;
 	let _remoteResumeProvider_decorators;
+	let _remoteProviders_decorators;
 	let _remoteModels_decorators;
+	let _listProviders_decorators;
+	let _listConfigurableProviders_decorators;
 	let _remoteDiscoverModels_decorators;
-	let _remoteVerifyProvider_decorators;
 	return class LlmRuntime extends _classSuper {
 		static {
 			const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
-			_remoteProviders_decorators = [Remote("providers")];
+			_remoteVerifyProvider_decorators = [Remote("verifyProvider")];
 			_remoteMutateProvider_decorators = [Remote("mutateProvider")];
 			_remoteProviderTransaction_decorators = [Remote("providerTransaction")];
 			_remoteResumeProvider_decorators = [Remote("resumeProvider")];
+			_remoteProviders_decorators = [Remote("providers")];
 			_remoteModels_decorators = [Remote("models")];
+			_listProviders_decorators = [Remote];
+			_listConfigurableProviders_decorators = [Remote];
 			_remoteDiscoverModels_decorators = [Remote("discoverModels")];
-			_remoteVerifyProvider_decorators = [Remote("verifyProvider")];
-			__esDecorate(this, null, _remoteProviders_decorators, {
+			__esDecorate(this, null, _remoteVerifyProvider_decorators, {
 				kind: "method",
-				name: "remoteProviders",
+				name: "remoteVerifyProvider",
 				static: false,
 				private: false,
 				access: {
-					has: (obj) => "remoteProviders" in obj,
-					get: (obj) => obj.remoteProviders
+					has: (obj) => "remoteVerifyProvider" in obj,
+					get: (obj) => obj.remoteVerifyProvider
 				},
 				metadata: _metadata
 			}, null, _instanceExtraInitializers);
@@ -2611,6 +2361,17 @@ let LlmRuntime = (() => {
 				},
 				metadata: _metadata
 			}, null, _instanceExtraInitializers);
+			__esDecorate(this, null, _remoteProviders_decorators, {
+				kind: "method",
+				name: "remoteProviders",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "remoteProviders" in obj,
+					get: (obj) => obj.remoteProviders
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
 			__esDecorate(this, null, _remoteModels_decorators, {
 				kind: "method",
 				name: "remoteModels",
@@ -2619,6 +2380,28 @@ let LlmRuntime = (() => {
 				access: {
 					has: (obj) => "remoteModels" in obj,
 					get: (obj) => obj.remoteModels
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate(this, null, _listProviders_decorators, {
+				kind: "method",
+				name: "listProviders",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "listProviders" in obj,
+					get: (obj) => obj.listProviders
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate(this, null, _listConfigurableProviders_decorators, {
+				kind: "method",
+				name: "listConfigurableProviders",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "listConfigurableProviders" in obj,
+					get: (obj) => obj.listConfigurableProviders
 				},
 				metadata: _metadata
 			}, null, _instanceExtraInitializers);
@@ -2633,17 +2416,6 @@ let LlmRuntime = (() => {
 				},
 				metadata: _metadata
 			}, null, _instanceExtraInitializers);
-			__esDecorate(this, null, _remoteVerifyProvider_decorators, {
-				kind: "method",
-				name: "remoteVerifyProvider",
-				static: false,
-				private: false,
-				access: {
-					has: (obj) => "remoteVerifyProvider" in obj,
-					get: (obj) => obj.remoteVerifyProvider
-				},
-				metadata: _metadata
-			}, null, _instanceExtraInitializers);
 			if (_metadata) Object.defineProperty(this, Symbol.metadata, {
 				enumerable: true,
 				configurable: true,
@@ -2651,92 +2423,294 @@ let LlmRuntime = (() => {
 				value: _metadata
 			});
 		}
-		adapters = (__runInitializers(this, _instanceExtraInitializers), /* @__PURE__ */ new Map());
+		static Config = z.object({
+			verificationTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(15e3),
+			verificationCancellationGraceMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(2e3)
+		});
+		config = __runInitializers(this, _instanceExtraInitializers);
+		verificationLifetime = new AbortController();
+		verifications = /* @__PURE__ */ new Map();
+		providerTransactions;
+		adapters = /* @__PURE__ */ new Map();
 		directory = /* @__PURE__ */ new Map();
 		discoveries = /* @__PURE__ */ new Map();
-		verifications = /* @__PURE__ */ new Map();
-		constructor(ctx) {
+		constructor(ctx, config = {}) {
+			const resolved = LlmRuntime.Config(config);
+			for (const field of ["verificationTimeoutMs", "verificationCancellationGraceMs"]) if (!Number.isFinite(resolved[field])) throw new Error(`llm: ${field} must be finite`);
 			super(ctx, "llm");
-			ctx.effect(() => () => {
-				for (const state of this.verifications.values()) state.controller.abort(new LlmError("LLM runtime disposed during provider verification", "ABORTED"));
-			}, "llm.providerVerifications");
-			ctx.inject(["settings"], (sctx) => {
-				this.syncProtectedSettingsNamespaces(sctx.settings);
+			this.config = resolved;
+			this.providerTransactions = new ProviderTransactions(ctx, this);
+			ctx.effect(() => async () => {
+				this.verificationLifetime.abort();
+				if (!await verificationSettles(Promise.allSettled(this.verifications.values()), this.config.verificationCancellationGraceMs)) throw new LlmError("provider verification ignored runtime disposal and remains owner-tracked", "VERIFICATION_STILL_RUNNING");
+			}, "llm.provider-verification");
+			ctx.inject(["settings"], (settingsCtx) => {
+				this.protectProviderSettings(settingsCtx);
+				settingsCtx.on("llm/adapters-updated", () => {
+					this.protectProviderSettings(settingsCtx);
+				});
 			});
 		}
-		/** Keep generic Settings Remote writes out of provider-owned namespaces. */
-		syncProtectedSettingsNamespaces(settings = this.ctx.get("settings")) {
-			if (settings === void 0) return;
-			const namespaces = [...new Set([...this.directory.values()].map((entry) => settingsNamespace(entry.settingsNs)))];
-			settings.setRemoteProtectedNamespaces(namespaces);
+		protectProviderSettings(ctx) {
+			const namespaces = this.listConfigurableProviders().map((entry) => settingsNamespace(entry.settingsNs));
+			ctx.settings.setRemoteProtectedNamespaces([...new Set(namespaces)]);
 		}
 		/**
-		* Read configurable providers through the domain-owned Native Remote.
-		* @returns the redacted configurable-provider catalog.
-		*/
-		remoteProviders() {
-			return listRemoteProviders(this.remoteRuntime());
-		}
-		/**
-		* Commit one idempotent provider settings/credential transaction.
-		* @param request - provider mutation and expected revision.
-		* @param signal - Caller cancellation before durable claim; claimed commits retain ownership until settled.
-		* @returns the committed provider mutation result.
-		*/
-		async remoteMutateProvider(request, signal) {
-			return mutateRemoteProvider(this.remoteRuntime(), this.ctx, request, signal);
-		}
-		/**
-		* Read the durable, secret-free state of one provider mutation.
-		* @param request - Provider id and transaction UUID to inspect.
-		* @returns Current durable phase and whether a staged credential is still required.
-		*/
-		async remoteProviderTransaction(request) {
-			return providerTransactionStatus(this.remoteRuntime(), this.ctx, request);
-		}
-		/**
-		* Continue one journaled provider mutation after Host or app restart.
-		* @param request - Provider id, transaction UUID, and optional write-only credential replay.
-		* @param signal - Caller cancellation before resuming a durable commit.
-		* @returns Committed provider view or the transaction's durable terminal failure.
-		*/
-		async remoteResumeProvider(request, signal) {
-			return resumeRemoteProvider(this.remoteRuntime(), this.ctx, request, signal);
-		}
-		/**
-		* Read the failure-isolated host-scoped model catalog.
-		* @returns the model catalog grouped by provider.
-		*/
-		async remoteModels() {
-			return listRemoteModels(this.remoteRuntime());
-		}
-		/**
-		* Interrogate a draft endpoint with an optional write-only one-shot key.
-		* @param request - draft endpoint and discovery options.
-		* @param signal - caller-owned cancellation signal.
-		* @returns discovered models and provider diagnostics.
-		*/
-		async remoteDiscoverModels(request, signal) {
-			return discoverRemoteModels(this.remoteRuntime(), request, signal);
-		}
-		/**
-		* Execute one bounded exact provider/model/auth probe.
-		* @param request - Exact provider and model route to verify.
-		* @param signal - Caller cancellation combined with the Host verification deadline.
-		* @returns Verification mode used by the adapter or fallback request.
+		* Run one bounded exact-route probe without returning provider output or credentials.
+		* @param request - configured provider and model to verify.
+		* @param signal - caller cancellation combined with the configured Host deadline.
+		* @returns authentication evidence, or explicitly unverified catalog reachability.
 		*/
 		async remoteVerifyProvider(request, signal) {
-			return verifyRemoteProvider(this.remoteRuntime(), request, signal);
+			const env_2 = {
+				stack: [],
+				error: void 0,
+				hasError: false
+			};
+			try {
+				if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(request.provider) || request.model.trim() === "") throw new TypertRemoteFailure({
+					code: "input-invalid",
+					message: "provider verification needs a valid provider and model",
+					details: {}
+				});
+				const bounded = __addDisposableResource(env_2, deadline(signal, this.config.verificationTimeoutMs, "LLM_PROVIDER_VERIFICATION_TIMEOUT"), false);
+				let mode;
+				try {
+					mode = await this.verifyModel(request.provider, request.model, bounded.signal);
+				} catch (error) {
+					if (error instanceof LlmError && error.code === "VERIFICATION_STILL_RUNNING") throw new TypertRemoteFailure({
+						code: "provider-verification-still-running",
+						message: "provider verification remains owner-tracked",
+						details: {
+							provider: request.provider,
+							model: request.model,
+							state: "still-running"
+						}
+					});
+					if (signal.aborted) throw new TypertRemoteFailure({
+						code: "cancelled",
+						message: "provider verification was cancelled",
+						details: {}
+					});
+					if (timeoutOf(bounded.signal, "LLM_PROVIDER_VERIFICATION_TIMEOUT") !== void 0) throw new TypertRemoteFailure({
+						code: "provider-verification-timeout",
+						message: "provider verification timed out",
+						details: {
+							provider: request.provider,
+							model: request.model
+						}
+					});
+					throw new TypertRemoteFailure({
+						code: "provider-verification-failed",
+						message: "provider/model authentication verification failed",
+						details: {
+							provider: request.provider,
+							model: request.model
+						}
+					});
+				}
+				return mode === "endpoint-catalog" ? {
+					provider: request.provider,
+					model: request.model,
+					verified: false,
+					mode,
+					classification: "reachability-only"
+				} : {
+					provider: request.provider,
+					model: request.model,
+					verified: true,
+					mode
+				};
+			} catch (e_2) {
+				env_2.error = e_2;
+				env_2.hasError = true;
+			} finally {
+				__disposeResources(env_2);
+			}
 		}
-		/** Present only public LLM operations to the Remote adapter. */
-		remoteRuntime() {
+		/**
+		* Verify one exact route while retaining admission until cancelled work actually settles.
+		* @param provider - registered provider route.
+		* @param model - exact configured model.
+		* @param signal - owner cancellation and deadline.
+		* @returns native metadata evidence or a bounded one-token generation handshake.
+		*/
+		async verifyModel(provider, model, signal) {
+			const env_3 = {
+				stack: [],
+				error: void 0,
+				hasError: false
+			};
+			try {
+				if (signal.aborted || this.verificationLifetime.signal.aborted) throw new LlmError("provider verification aborted", "ABORTED");
+				const key = JSON.stringify([provider, model]);
+				if (this.verifications.has(key)) throw new LlmError("provider verification is still running", "VERIFICATION_STILL_RUNNING");
+				const registration = this.registration(provider);
+				const ownedSignal = AbortSignal.any([signal, this.verificationLifetime.signal]);
+				const operation = Promise.resolve().then(() => this.performProviderVerification(registration, provider, model, ownedSignal));
+				this.verifications.set(key, operation);
+				const settled = operation.then((mode) => ({
+					kind: "completed",
+					mode
+				}), (error) => ({
+					kind: "failed",
+					error
+				})).finally(() => {
+					this.verifications.delete(key);
+				});
+				const aborted = Promise.withResolvers();
+				__addDisposableResource(env_3, addAbortListener(ownedSignal, () => {
+					aborted.resolve(void 0);
+				}), false);
+				const result = await Promise.race([settled, aborted.promise.then(() => ({ kind: "aborted" }))]);
+				if (result.kind === "completed") {
+					if (ownedSignal.aborted) throw new LlmError("provider verification aborted", "ABORTED");
+					return result.mode;
+				}
+				if (result.kind === "failed") throw result.error;
+				if (!await verificationSettles(settled, this.config.verificationCancellationGraceMs)) throw new LlmError("provider verification ignored cancellation and is still running", "VERIFICATION_STILL_RUNNING");
+				throw new LlmError("provider verification aborted", "ABORTED");
+			} catch (e_3) {
+				env_3.error = e_3;
+				env_3.hasError = true;
+			} finally {
+				__disposeResources(env_3);
+			}
+		}
+		async performProviderVerification(registration, provider, model, signal) {
+			signal.throwIfAborted();
+			const native = await registration.adapter.verifyProvider(provider, model, signal);
+			if (native !== void 0) return native;
+			const call = await registration.adapter.prepareCall(provider, model, signal);
+			const info = this.normalizeModelInfo(registration, model, call.model);
+			const config = this.resolveCallWithInfo({
+				provider,
+				model,
+				maxTokens: 1
+			}, info).config;
+			let finish;
+			for await (const chunk of call.stream({
+				...config,
+				signal,
+				messages: [createUserMessage({
+					content: [{
+						type: "text",
+						text: "."
+					}],
+					source: {
+						kind: "plugin",
+						plugin: "llm-verification"
+					}
+				})]
+			})) if (chunk.type === "finish") finish = chunk.reason;
+			signal.throwIfAborted();
+			if (finish === void 0) throw new LlmError("provider verification stream closed without a terminal frame", "STREAM_CLOSED");
+			if (finish.kind === "error" || finish.kind === "aborted") throw new LlmError(finish.failure.message, finish.failure.code);
+			return "minimal-generation";
+		}
+		/**
+		* Commit a Native profile and credential change through the existing storage owners.
+		* @param request - caller-stable transaction identity, revision and profile edits.
+		* @param signal - cancellation before durable claim; claimed work keeps its ownership.
+		* @returns committed redacted settings only after owner activation succeeds.
+		*/
+		remoteMutateProvider(request, signal) {
+			return this.providerTransactions.mutate(request, signal);
+		}
+		/**
+		* Inspect a durable provider transaction without changing its journal or credentials.
+		* @param request - provider and transaction identity retained by the native client.
+		* @returns the recorded phase or outcome and whether recovery needs a write-only credential.
+		*/
+		remoteProviderTransaction(request) {
+			return this.providerTransactions.status(request);
+		}
+		/**
+		* Resume the existing durable plan instead of rebuilding edits from a refreshed UI.
+		* @param request - stored transaction identity and optional missing credential.
+		* @param signal - cancellation before durable claim only.
+		* @returns the redacted committed state or the transaction's recovery failure.
+		*/
+		remoteResumeProvider(request, signal) {
+			return this.providerTransactions.resume(request, signal);
+		}
+		/**
+		* Join the configurable directory with live adapter routes for Native Settings.
+		* @returns declared and active-only provider rows, without credentials.
+		*/
+		remoteProviders() {
+			const live = this.listProviders();
+			const active = new Set(live.map((provider) => provider.id));
+			const declared = /* @__PURE__ */ new Set();
+			const providers = this.listConfigurableProviders().map((entry) => {
+				declared.add(entry.provider);
+				return {
+					provider: entry.provider,
+					displayName: entry.displayName,
+					settingsNs: entry.settingsNs,
+					settingsPath: [...entry.settingsPath],
+					active: active.has(entry.provider),
+					...entry.declared === void 0 ? {} : { declared: entry.declared },
+					...entry.error === void 0 ? {} : { error: entry.error },
+					...entry.migrationRequired === void 0 ? {} : { migrationRequired: structuredClone(entry.migrationRequired) }
+				};
+			});
+			for (const provider of live) if (!declared.has(provider.id)) providers.push({
+				provider: provider.id,
+				displayName: provider.name,
+				settingsNs: "",
+				settingsPath: [],
+				active: true
+			});
+			return { providers };
+		}
+		/**
+		* Read the host model catalog with failure isolation between providers.
+		* @returns model groups and value-free provider failures.
+		*/
+		async remoteModels() {
+			const catalogs = await Promise.all(this.listProviders().map(async (provider) => {
+				try {
+					const models = await this.listModels(provider.id);
+					const rows = await Promise.all(models.map(async (model) => {
+						const resolved = await this.resolveModelInfo(provider.id, model.id);
+						return {
+							id: model.id,
+							name: model.name,
+							...model.description === void 0 ? {} : { description: model.description },
+							...resolved.defaultMaxTokens === void 0 ? {} : { defaultMaxTokens: resolved.defaultMaxTokens },
+							...resolved.reasoning === void 0 ? {} : { reasoning: {
+								efforts: resolved.reasoning.efforts.map((effort) => ({
+									id: String(effort.id),
+									name: effort.name,
+									...effort.description === void 0 ? {} : { description: effort.description }
+								})),
+								...resolved.reasoning.defaultEffort === void 0 ? {} : { defaultEffort: String(resolved.reasoning.defaultEffort) }
+							} }
+						};
+					}));
+					return {
+						kind: "group",
+						group: {
+							id: provider.id,
+							name: provider.name,
+							models: rows
+						}
+					};
+				} catch {
+					return {
+						kind: "failure",
+						failure: {
+							id: provider.id,
+							name: provider.name,
+							message: "provider model catalog unavailable"
+						}
+					};
+				}
+			}));
 			return {
-				listProviders: () => this.listProviders(),
-				listConfigurableProviders: () => this.listConfigurableProviders(),
-				listModels: (provider) => this.listModels(provider),
-				resolveModelInfo: (provider, model, signal) => this.resolveModelInfo(provider, model, signal),
-				discoverModels: (settingsNs, request) => this.discoverModels(settingsNs, request),
-				verifyModel: (provider, model, signal) => this.verifyModel(provider, model, signal)
+				groups: catalogs.flatMap((entry) => entry.kind === "group" && entry.group.models.length > 0 ? [entry.group] : []),
+				failures: catalogs.flatMap((entry) => entry.kind === "failure" ? [entry.failure] : [])
 			};
 		}
 		/** Notify topology observers without letting one broken listener veto the commit. */
@@ -2761,21 +2735,6 @@ let LlmRuntime = (() => {
 			this.ctx.logger.warn("llm: an llm/adapters-updated listener failed");
 			this.ctx.logger.warn(error);
 		}
-		/** Release a fire-and-forget registration without leaking cleanup failures. */
-		disposeRegistration(dispose, owner) {
-			try {
-				Promise.resolve(dispose()).catch((error) => {
-					this.warnRegistrationDisposalFailure(owner, error);
-				});
-			} catch (error) {
-				this.warnRegistrationDisposalFailure(owner, error);
-			}
-		}
-		/** Record a registration cleanup failure through the service logger. */
-		warnRegistrationDisposalFailure(owner, error) {
-			this.ctx.logger.warn(`llm: ${owner}: disposal failed`);
-			this.ctx.logger.warn(error);
-		}
 		/**
 		* Register an adapter for the given provider routes. Throws `LlmError` with code
 		* `DUPLICATE_ADAPTER` if any provider already has an adapter (all-or-nothing).
@@ -2797,9 +2756,7 @@ let LlmRuntime = (() => {
 					this.emitAdaptersUpdated();
 				};
 			}.bind(this), "llm.registerAdapter()");
-			const handle = (() => {
-				this.disposeRegistration(dispose, "registerAdapter()");
-			});
+			const handle = (() => void dispose());
 			handle.replace = (next) => {
 				if (released) throw new LlmError("a disposed adapter registration cannot replace its routes", "REGISTRATION_DISPOSED");
 				this.commitRoutes(owned, this.prepareRoutes(next, adapter, owned));
@@ -2878,23 +2835,17 @@ let LlmRuntime = (() => {
 				const own = new Set(held.map((entry) => entry.provider));
 				for (const entry of candidates) {
 					if (entry.provider.length === 0 || entry.displayName.length === 0 || entry.settingsNs.length === 0) throw new LlmError("configurable providers need a non-empty provider, displayName, and settingsNs", "INVALID_DIRECTORY");
-					settingsNamespace(entry.settingsNs);
 					if (entry.settingsPath.some((segment) => segment.length === 0)) throw new LlmError(`configurable provider "${entry.provider}" has an empty settingsPath segment`, "INVALID_DIRECTORY");
-					if (entry.migrationRequired !== void 0 && (entry.migrationRequired.fields.length === 0 || entry.migrationRequired.fields.some((field) => field.length === 0))) throw new LlmError(`configurable provider "${entry.provider}" has invalid migration metadata`, "INVALID_DIRECTORY");
 					if (this.directory.has(entry.provider) && !own.has(entry.provider) || detached.some((seen) => seen.provider === entry.provider)) throw new LlmError(`configurable provider "${entry.provider}" is already declared`, "DUPLICATE_DIRECTORY");
 					detached.push({
 						...entry,
 						settingsPath: [...entry.settingsPath],
-						...entry.migrationRequired === void 0 ? {} : { migrationRequired: {
-							code: entry.migrationRequired.code,
-							fields: [...entry.migrationRequired.fields]
-						} }
+						...entry.migrationRequired === void 0 ? {} : { migrationRequired: structuredClone(entry.migrationRequired) }
 					});
 				}
 				for (const entry of held) this.directory.delete(entry.provider);
 				for (const entry of detached) this.directory.set(entry.provider, entry);
 				held = detached;
-				this.syncProtectedSettingsNamespaces();
 				this.emitAdaptersUpdated();
 			};
 			const dispose = this.ctx.effect(function* () {
@@ -2904,13 +2855,10 @@ let LlmRuntime = (() => {
 					disposed = true;
 					for (const entry of held) this.directory.delete(entry.provider);
 					held = [];
-					this.syncProtectedSettingsNamespaces();
 					this.emitAdaptersUpdated();
 				};
 			}.bind(this), "llm.registerConfigurableProviders()");
-			const handle = (() => {
-				this.disposeRegistration(dispose, "registerConfigurableProviders()");
-			});
+			const handle = (() => void dispose());
 			handle.replace = (next) => {
 				if (disposed) throw new LlmError("this configurable-provider registration was disposed", "REGISTRATION_DISPOSED");
 				commit(next);
@@ -2925,10 +2873,7 @@ let LlmRuntime = (() => {
 			return [...this.directory.values()].map((entry) => ({
 				...entry,
 				settingsPath: [...entry.settingsPath],
-				...entry.migrationRequired === void 0 ? {} : { migrationRequired: {
-					code: entry.migrationRequired.code,
-					fields: [...entry.migrationRequired.fields]
-				} }
+				...entry.migrationRequired === void 0 ? {} : { migrationRequired: structuredClone(entry.migrationRequired) }
 			}));
 		}
 		/**
@@ -2938,7 +2883,7 @@ let LlmRuntime = (() => {
 		* directory, and because a provider being *added* has no route to name yet.
 		* Disposed with the fiber.
 		* @param settingsNs - the namespace whose profiles this discovery serves.
-		* @param discover - interrogates one endpoint; must honor `request.signal`.
+		* @param discover - interrogates one endpoint and must honor the supplied signal.
 		* @returns the disposer that withdraws the offer.
 		*/
 		registerModelDiscovery(settingsNs, discover) {
@@ -2950,9 +2895,7 @@ let LlmRuntime = (() => {
 					this.discoveries.delete(settingsNs);
 				};
 			}.bind(this), "llm.registerModelDiscovery()");
-			return () => {
-				this.disposeRegistration(dispose, "registerModelDiscovery()");
-			};
+			return () => void dispose();
 		}
 		/**
 		* Interrogate one provider endpoint for the models it advertises. The
@@ -2961,22 +2904,28 @@ let LlmRuntime = (() => {
 		* candidate metadata a surface may offer for adoption.
 		* @param settingsNs - namespace whose registered discovery serves this draft.
 		* @param request - the endpoint, protocol, and one-shot credential to use.
+		* @param signal - caller cancellation.
 		* @returns the advertised models, deduplicated in endpoint order.
 		*/
-		async discoverModels(settingsNs, request) {
+		async discoverModels(settingsNs, request, signal) {
 			const discover = this.discoveries.get(settingsNs);
 			if (discover === void 0) throw new LlmError(`no model discovery is registered for "${settingsNs}"`, "NO_DISCOVERY");
 			if ((request.provider ?? "").length === 0 && (request.baseURL ?? "").length === 0) throw new LlmError("model discovery needs a provider route or a baseURL", "INVALID_DISCOVERY");
-			const bound = request.apiKey === void 0 ? request : {
-				...request,
-				credentialEndpointFingerprint: modelDiscoveryEndpointFingerprint(request.baseURL ?? "", request.api)
-			};
-			if (request.apiKey !== void 0 && (request.baseURL ?? "").length === 0) throw new LlmError("a one-shot discovery credential requires its exact candidate baseURL", "INVALID_DISCOVERY");
-			const discovered = await discover(bound);
+			let bound = request;
+			if (request.apiKey !== void 0) {
+				const endpoint = request.baseURL;
+				if (endpoint === void 0 || endpoint.length === 0) throw new LlmError("a one-shot discovery credential requires its exact candidate baseURL", "INVALID_DISCOVERY");
+				bound = {
+					...request,
+					credentialEndpointFingerprint: modelDiscoveryEndpointFingerprint(endpoint, request.api)
+				};
+			}
+			const discovered = signal === void 0 ? await discover(bound) : await discover(bound, signal);
 			const seen = /* @__PURE__ */ new Set();
 			const models = [];
 			for (const model of discovered) {
 				if (typeof model.id !== "string" || model.id.length === 0 || seen.has(model.id)) continue;
+				for (const capacity of [model.contextWindow, model.maxTokens]) if (capacity !== void 0 && (!Number.isSafeInteger(capacity) || capacity <= 0)) throw new LlmError("model discovery returned an invalid capacity", "INVALID_MODEL_INFO");
 				seen.add(model.id);
 				models.push({
 					id: model.id,
@@ -2988,6 +2937,44 @@ let LlmRuntime = (() => {
 			return models;
 		}
 		/**
+		* Remote adapter for one draft provider interrogation.
+		* @param request - namespace, endpoint, protocol, and one-shot credential to use.
+		* @param signal - caller cancellation supplied by the Remote carrier.
+		* @returns advertised models in the Native response envelope.
+		* @throws TypertRemoteFailure with `model-discovery-failed` when discovery refuses or fails.
+		*/
+		async remoteDiscoverModels(request, signal) {
+			const checkCancellation = () => {
+				if (signal.aborted) throw new TypertRemoteFailure({
+					code: "cancelled",
+					message: "model discovery was cancelled",
+					details: {}
+				});
+			};
+			checkCancellation();
+			try {
+				const { settingsNs, ...draft } = request;
+				const models = await this.discoverModels(settingsNs, draft, signal);
+				checkCancellation();
+				return { models: models.map((model) => ({
+					id: model.id,
+					...model.name === void 0 ? {} : { name: model.name },
+					...model.contextWindow === void 0 ? {} : { contextWindow: model.contextWindow },
+					...model.maxTokens === void 0 ? {} : { maxTokens: model.maxTokens }
+				})) };
+			} catch {
+				checkCancellation();
+				throw new TypertRemoteFailure({
+					code: "model-discovery-failed",
+					message: "provider model discovery failed",
+					details: {
+						settingsNs: request.settingsNs,
+						...request.baseURL === void 0 ? {} : { baseURL: request.baseURL }
+					}
+				});
+			}
+		}
+		/**
 		* Resolve the retry policy captured when one provider route was registered.
 		* @param provider - registered provider route to inspect.
 		* @returns the provider-owned policy, with normal defaults already resolved.
@@ -2996,11 +2983,13 @@ let LlmRuntime = (() => {
 			return this.registration(provider).retryPolicy;
 		}
 		/**
-		* Resolve route-owned request-image pricing without performing I/O. Unknown
-		* routes intentionally degrade to heuristic pricing for historical logs.
-		* @param provider - provider route whose registered adapter owns pricing.
-		* @param model - exact model id whose image occurrences will be priced.
-		* @returns route-owned pricing, or `undefined` when the route supplies none.
+		* Resolve provider-side request-image pricing for one exact route, or
+		* `undefined` when the provider is unregistered or declares none. Unknown
+		* providers degrade to `undefined` rather than throwing because callers
+		* price durable history whose route may no longer be mounted.
+		* @param provider - provider route named by a request header.
+		* @param model - exact model id named by the same header.
+		* @returns the owning adapter's image pricing for the route, when declared.
 		*/
 		imageRequestPricing(provider, model) {
 			return this.adapters.get(provider)?.adapter.imageRequestPricing(provider, model);
@@ -3043,90 +3032,6 @@ let LlmRuntime = (() => {
 		async resolveModelInfo(provider, model, signal) {
 			return this.resolveModelInfoFor(this.registration(provider), model, signal);
 		}
-		/**
-		* Prove an exact provider/model route can authenticate and complete a bounded
-		* request. The caller supplies the deadline signal; no output is retained or
-		* returned to configuration surfaces.
-		* @param provider - Registered provider route to authenticate.
-		* @param model - Exact model id to probe.
-		* @param signal - Caller-owned deadline and cancellation signal.
-		* @returns Adapter-native or bounded fallback verification mode.
-		*/
-		async verifyModel(provider, model, signal) {
-			signal.throwIfAborted();
-			const key = `${provider}\0${model}`;
-			if (this.verifications.has(key)) throw new LlmError(`provider verification for "${provider}/${model}" is still running`, "VERIFICATION_STILL_RUNNING");
-			const registration = this.registration(provider);
-			const controller = new AbortController();
-			const operation = this.performProviderVerification(registration, provider, model, controller.signal);
-			const state = {
-				controller,
-				operation
-			};
-			this.verifications.set(key, state);
-			operation.then(() => {
-				if (this.verifications.get(key) === state) this.verifications.delete(key);
-			}, () => {
-				if (this.verifications.get(key) === state) this.verifications.delete(key);
-			});
-			const aborted = Promise.withResolvers();
-			const forwardAbort = () => {
-				aborted.resolve("aborted");
-			};
-			signal.addEventListener("abort", forwardAbort, { once: true });
-			if (signal.aborted) forwardAbort();
-			try {
-				const outcome = await Promise.race([operation.then((mode) => ({
-					kind: "completed",
-					mode
-				}), (error) => ({
-					kind: "failed",
-					error
-				})), aborted.promise.then(() => ({ kind: "aborted" }))]);
-				if (outcome.kind === "completed") {
-					signal.throwIfAborted();
-					return outcome.mode;
-				}
-				if (outcome.kind === "failed") throw outcome.error;
-				controller.abort(signal.reason);
-				if (!await settlesWithin(operation, 2e3)) throw new LlmError(`provider verification for "${provider}/${model}" ignored cancellation and is still running`, "VERIFICATION_STILL_RUNNING");
-				signal.throwIfAborted();
-				throw new LlmError("provider verification aborted", "ABORTED");
-			} finally {
-				signal.removeEventListener("abort", forwardAbort);
-			}
-		}
-		/** Adapter-native metadata probe, falling back to one discarded-token handshake. */
-		async performProviderVerification(registration, provider, model, signal) {
-			const native = await registration.adapter.verifyProvider(provider, model, signal);
-			if (native !== void 0) return native;
-			const adapterCall = await registration.adapter.prepareCall(provider, model, signal);
-			const modelInfo = this.normalizeModelInfo(registration, model, adapterCall.model);
-			const config = this.resolveCallWithInfo({
-				provider,
-				model,
-				maxTokens: 1
-			}, modelInfo).config;
-			let finish;
-			for await (const chunk of adapterCall.stream({
-				...config,
-				messages: [createUserMessage({
-					content: [{
-						type: "text",
-						text: "."
-					}],
-					source: {
-						kind: "plugin",
-						plugin: "llm-verification"
-					}
-				})],
-				signal
-			})) if (chunk.type === "finish") finish = chunk.reason;
-			signal.throwIfAborted();
-			if (finish === void 0) throw new LlmError("provider verification stream closed without a terminal frame", "STREAM_CLOSED");
-			if (finish.kind === "error" || finish.kind === "aborted") throw new LlmError(finish.failure.message, finish.failure.code);
-			return "minimal-generation";
-		}
 		async resolveModelInfoFor(registration, model, signal) {
 			const resolved = await registration.adapter.resolveModel(registration.provider.id, model, signal);
 			return this.normalizeModelInfo(registration, model, resolved);
@@ -3136,7 +3041,7 @@ let LlmRuntime = (() => {
 			const provider = registration.provider.id;
 			if (typeof resolved.provider !== "string" || resolved.provider !== provider || typeof resolved.id !== "string" || resolved.id !== model || typeof resolved.name !== "string" || resolved.name.length === 0 || resolved.description !== void 0 && typeof resolved.description !== "string") throw new LlmError(`adapter returned invalid exact model metadata for provider "${provider}" model "${model}"`, "INVALID_MODEL_INFO");
 			const context = resolved.context;
-			if (context !== void 0 && (!Number.isInteger(context.contextWindow) || context.contextWindow <= 0)) throw new LlmError(`adapter returned invalid context metadata for provider "${provider}" model "${model}"`, "INVALID_MODEL_CONTEXT");
+			if (context !== void 0 && (!Number.isSafeInteger(context.contextWindow) || context.contextWindow <= 0)) throw new LlmError(`adapter returned invalid context metadata for provider "${provider}" model "${model}"`, "INVALID_MODEL_CONTEXT");
 			const inputModalities = this.detachedModalities(resolved.inputModalities);
 			const defaultMaxTokens = resolved.defaultMaxTokens;
 			if (defaultMaxTokens !== void 0 && (!Number.isSafeInteger(defaultMaxTokens) || defaultMaxTokens <= 0)) throw new LlmError(`adapter returned invalid default maxTokens for provider "${provider}" model "${model}"`, "INVALID_MODEL_MAX_TOKENS");
@@ -3346,12 +3251,9 @@ let LlmRuntime = (() => {
 					yield item.value;
 				}
 			} finally {
-				if (!completed) try {
+				if (!completed) {
 					const close = iterator.return?.bind(iterator);
 					if (close) await close();
-				} catch (error) {
-					this.ctx.logger.warn("llm: adapter stream cleanup failed");
-					this.ctx.logger.warn(error);
 				}
 			}
 		}
@@ -3361,9 +3263,8 @@ let LlmRuntime = (() => {
 		* and the target provider. Final adapter selection remains fixed through
 		* asynchronous exact-model resolution and dispatch. Adapter selection,
 		* dispatch, and iteration failures become terminal `error` or `aborted`
-		* finish chunks; middleware, nested-call, and consumer failures remain
-		* thrown. A downstream-close cleanup failure is logged so it cannot mask
-		* the consumer's own completion or failure.
+		* finish chunks; middleware, nested-call, cleanup, and consumer failures
+		* remain thrown.
 		* @param options - the full request; `options.provider` selects the adapter.
 		* @returns the chunk stream, possibly wrapped by `llm/stream` listeners.
 		*/
@@ -3389,26 +3290,5 @@ function adapterFailureChunk(error, signal) {
 		}
 	};
 }
-/** Wait briefly for an aborted adapter operation to prove ownership quiescence. */
-async function settlesWithin(operation, timeoutMs) {
-	const env_1 = {
-		stack: [],
-		error: void 0,
-		hasError: false
-	};
-	try {
-		const timeout = __addDisposableResource(env_1, deadline(void 0, timeoutMs, "LLM_ABORT_QUIESCENCE_TIMEOUT"), false);
-		return await Promise.race([operation.then(() => true, () => true), new Promise((resolve) => {
-			timeout.signal.addEventListener("abort", () => {
-				resolve(false);
-			}, { once: true });
-		})]);
-	} catch (e_1) {
-		env_1.error = e_1;
-		env_1.hasError = true;
-	} finally {
-		__disposeResources(env_1);
-	}
-}
 //#endregion
-export { APP_IDENTITY, BlockAssembler, CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_WINDOW_EXCEEDED_CODE, CallId, EMPTY_RESPONSE_CODE, HarnessError, INVALID_CREDENTIAL_CODE, LlmAdapter, LlmError, LlmRuntime, LlmRuntime as default, MessageId, OFFLOADED_IMAGE_TEXT, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, assertNever, assertUsableApiKey, attributionHeaders, boundContextSummary, callConfigEquals, contentHasImage, createAssistantMessage, createImageAttachmentAccessResolver, createMessage, createToolResultMessage, createUserMessage, deepFreeze, errorChain, freezeMessage, isAgentLoopRequest, isContextWindowExceededError, isCredentialHeaderName, isHarnessError, isQuotaExceededError, isTokenDelta, markAgentLoopRequest, modelDiscoveryEndpointFingerprint, normalizeApiKey, offloadRequestImages, offloadRequestImagesWithPolicy, offloadedImagePrefixCount, offloadedImageText, projectImagesForTextModel, projectRemoteModel, requestImageHandleText, resolveImageAttachmentAccess, resolveRetryPolicy, textOnlyImageText, userAgent };
+export { APP_IDENTITY, BlockAssembler, CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_WINDOW_EXCEEDED_CODE, CallId, EMPTY_RESPONSE_CODE, HarnessError, INVALID_CREDENTIAL_CODE, LlmAdapter, LlmError, LlmRuntime, LlmRuntime as default, MessageId, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, assertNever, assertUsableApiKey, attributionHeaders, boundContextSummary, callConfigEquals, contentHasImage, createAssistantMessage, createMessage, createToolResultMessage, createUserMessage, deepFreeze, errorChain, freezeMessage, isAgentLoopRequest, isContextWindowExceededError, isCredentialHeaderName, isHarnessError, isQuotaExceededError, markAgentLoopRequest, modelDiscoveryEndpointFingerprint, normalizeApiKey, offloadRequestImagesWithPolicy, offloadedImagePrefixCount, offloadedImageText, projectImagesForTextModel, requestImageHandleText, resolveImageAttachmentAccess, resolveRetryPolicy, textOnlyImageText, userAgent };

@@ -18,6 +18,8 @@ export interface WorkspaceEmitResult extends ModelEmitResult {
 
 /** Behavior switches for one {@link WorkspaceTypertGenerator}. */
 export interface WorkspaceTypertGeneratorOptions {
+  /** Host compiler aggregate selected by a product-specific build. */
+  readonly hostConfig?: string
   /**
    * Run the per-package syntactic/semantic diagnostic pass before analysis
    * (default true). Pass false only when the same orchestration already
@@ -53,6 +55,7 @@ export class WorkspaceTypertGenerator {
     return new WorkspaceAnalyzer({
       root: this.root,
       caches: this.caches,
+      ...(this.options.hostConfig === undefined ? {} : { hostConfig: this.options.hostConfig }),
       ...(faces === undefined ? {} : { faces }),
     }).discoverPackages()
   }
@@ -69,6 +72,7 @@ export class WorkspaceTypertGenerator {
       root: this.root,
       packages: selected,
       caches: this.caches,
+      ...(this.options.hostConfig === undefined ? {} : { hostConfig: this.options.hostConfig }),
       ...(faces === undefined ? {} : { faces }),
       ...(this.options.checkDiagnostics === undefined ? {} : { checkDiagnostics: this.options.checkDiagnostics }),
     }).analyze()

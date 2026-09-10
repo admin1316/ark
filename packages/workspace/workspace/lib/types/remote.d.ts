@@ -1,5 +1,5 @@
-/** Generated Remote wire types owned by the workspace domain. */
-import type { SessionId } from '@deepseek-ai/dsh-session';
+/** Workspace Remote records and cancellation results. */
+import type { SessionId } from '@deepseek-ai/dsh-session/types';
 import type { WorkspaceId } from './types.ts';
 /** A complete Workspace projection safe for the Native Remote boundary. */
 export interface WorkspaceRemoteView {
@@ -26,93 +26,65 @@ export interface WorkspaceRemoteSuccess<Value> {
 }
 /** One Workspace Remote response. */
 export type WorkspaceRemoteResult<Value> = WorkspaceRemoteSuccess<Value> | WorkspaceRemoteFailure;
-/**
- * Describes the workspace remote list value value used by this package.
- */
+/** Workspace order and archived-session membership in one directory response. */
 export interface WorkspaceRemoteListValue {
     readonly items: readonly WorkspaceRemoteView[];
     readonly archivedSessionIds: readonly SessionId[];
 }
-/**
- * Describes the workspace remote create request value used by this package.
- */
+/** Host path requested for a Workspace. */
 export interface WorkspaceRemoteCreateRequest {
     readonly path: string;
 }
-/**
- * Describes the workspace remote create value value used by this package.
- */
+/** Workspace result distinguishing creation from reuse. */
 export interface WorkspaceRemoteCreateValue {
     readonly workspace: WorkspaceRemoteView;
     readonly created: boolean;
 }
-/**
- * Describes the workspace remote rename request value used by this package.
- */
+/** New display title addressed by stable Workspace identity. */
 export interface WorkspaceRemoteRenameRequest {
     readonly workspaceId: WorkspaceId;
     readonly title: string;
 }
-/**
- * Describes the workspace remote workspace value value used by this package.
- */
+/** Updated Workspace projection returned by a mutation. */
 export interface WorkspaceRemoteWorkspaceValue {
     readonly workspace: WorkspaceRemoteView;
 }
-/**
- * Describes the workspace remote delete request value used by this package.
- */
+/** Workspace identity selected for removal. */
 export interface WorkspaceRemoteDeleteRequest {
     readonly workspaceId: WorkspaceId;
 }
-/**
- * Describes the workspace remote deleted value value used by this package.
- */
+/** Confirmation that the requested Workspace removal completed. */
 export interface WorkspaceRemoteDeletedValue {
     readonly deleted: true;
 }
-/**
- * Describes the workspace remote insert before request value used by this package.
- */
+/** Workspace move; an absent anchor appends it to the directory. */
 export interface WorkspaceRemoteInsertBeforeRequest {
     readonly workspaceId: WorkspaceId;
     readonly beforeWorkspaceId?: WorkspaceId;
 }
-/**
- * Describes the workspace remote order value value used by this package.
- */
+/** Committed Workspace order after a move. */
 export interface WorkspaceRemoteOrderValue {
     readonly workspaceIds: readonly WorkspaceId[];
 }
-/**
- * Describes the workspace remote insert session before request value used by this package.
- */
+/** Session move within one Workspace; an absent anchor appends it. */
 export interface WorkspaceRemoteInsertSessionBeforeRequest {
     readonly workspaceId: WorkspaceId;
     readonly sessionId: SessionId;
     readonly beforeSessionId?: SessionId;
 }
-/**
- * Describes the workspace remote archive request value used by this package.
- */
+/** Session identity selected for archive or restore. */
 export interface WorkspaceRemoteArchiveRequest {
     readonly sessionId: SessionId;
 }
-/**
- * Describes the workspace remote archived value value used by this package.
- */
+/** Committed archived-session membership. */
 export interface WorkspaceRemoteArchivedValue {
     readonly archivedSessionIds: readonly SessionId[];
 }
-/**
- * Describes the workspace remote delete archived request value used by this package.
- */
+/** Archived root whose persisted subtree is selected for permanent deletion. */
 export interface WorkspaceRemoteDeleteArchivedRequest {
     readonly sessionId: SessionId;
 }
-/**
- * Describes the workspace remote delete archived value value used by this package.
- */
+/** Completed deletion and the remaining archived-session membership. */
 export interface WorkspaceRemoteDeleteArchivedValue {
     readonly deleted: true;
     readonly archivedSessionIds: readonly SessionId[];

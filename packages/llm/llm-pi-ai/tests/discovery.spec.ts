@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime, { userAgent } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { modelDiscoveryEndpointFingerprint, userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { discoverModels } from '../src/discovery.ts'
@@ -77,7 +77,7 @@ describe('catalog-route model discovery', () => {
     const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'from-the-endpoint' }] }) })
     const ctx = await harness()
 
-    const models = await ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek', baseURL: server.url })
+    const models = await ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek' })
 
     // pi-ai's own registry is the authority for its own providers, and it
     // carries what a listing endpoint would not disclose.
@@ -90,6 +90,14 @@ describe('catalog-route model discovery', () => {
   it('needs no endpoint for a route the catalog describes', async () => {
     const ctx = await harness()
     await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek' })).resolves.not.toHaveLength(0)
+  })
+
+  it('interrogates an explicit endpoint even when the provider has an installed catalog', async () => {
+    const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'endpoint-model' }] }) })
+    const ctx = await harness()
+    expect(await ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek', baseURL: server.url }))
+      .toEqual([{ id: 'endpoint-model' }])
+    expect(server.paths).toEqual(['/models'])
   })
 
   it('says where a route the catalog does not describe must get its models', async () => {
@@ -106,6 +114,19 @@ describe('catalog-route model discovery', () => {
 })
 
 describe('draft-provider model discovery', () => {
+  it('keeps models while discarding unrepresentable capacities and retaining valid alternatives', async () => {
+    const server = await listingServer({ body: JSON.stringify({ data: [
+      { id: 'alternative', context_window: 1e100, context_length: 128000, max_tokens: 1e100 },
+      { id: 'unknown', context_window: Number.MAX_SAFE_INTEGER + 1, max_tokens: 1e100 },
+      { id: 'exact', context_window: Number.MAX_SAFE_INTEGER, max_tokens: Number.MAX_SAFE_INTEGER },
+    ] }) })
+    const ctx = await harness()
+    expect(await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })).toEqual([
+      { id: 'alternative', contextWindow: 128000 }, { id: 'unknown' },
+      { id: 'exact', contextWindow: Number.MAX_SAFE_INTEGER, maxTokens: Number.MAX_SAFE_INTEGER },
+    ])
+  })
+
   it('reads an OpenAI-compatible listing and keeps the capacities it discloses', async () => {
     const server = await listingServer({
       body: JSON.stringify({
@@ -146,12 +167,9 @@ describe('draft-provider model discovery', () => {
     expect(server.headers[0]?.authorization).toBeUndefined()
   })
 
-  it('authenticates a configured route the draft cannot supply a key for', async () => {
-    // What the Models page actually sends after a key is saved: the form holds
-    // the redacted descriptor, so the draft names the route and the endpoint
-    // and no credential at all. Interrogating unauthenticated would answer 401
-    // and read as a wrong key.
+  it('never lends a stored route key to a draft endpoint and uses only an explicit one-shot key', async () => {
     const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'm' }] }) })
+    const candidate = await listingServer({ body: JSON.stringify({ data: [{ id: 'candidate' }] }) })
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     process.env['ACME_GATEWAY_KEY'] = 'stored-key'
@@ -168,6 +186,7 @@ describe('draft-provider model discovery', () => {
     })
 
     await ctx.llm.discoverModels('llm-pi-ai', { provider: 'acme-gateway', baseURL: server.url })
+    await ctx.llm.discoverModels('llm-pi-ai', { provider: 'acme-gateway', baseURL: candidate.url })
     // A key typed into the form is the one being tested — possibly the
     // replacement for the stored one — so it wins.
     await ctx.llm.discoverModels('llm-pi-ai', { provider: 'acme-gateway', baseURL: server.url, apiKey: 'typed' })
@@ -175,7 +194,8 @@ describe('draft-provider model discovery', () => {
     await ctx.llm.discoverModels('llm-pi-ai', { provider: 'not-declared-yet', baseURL: server.url })
 
     expect(server.headers.map(headers => headers.authorization))
-      .toEqual(['Bearer stored-key', 'Bearer typed', undefined])
+      .toEqual([undefined, 'Bearer typed', undefined])
+    expect(candidate.headers[0]?.authorization).toBeUndefined()
   })
 
   it('leaves a catalog route\'s credential unresolved, having never reached the network', async () => {
@@ -332,11 +352,31 @@ describe('draft-provider model discovery', () => {
 })
 
 describe('probe key format', () => {
+  it.each([undefined, 'incorrect-fingerprint'])('rejects a credential without its exact endpoint binding: %s', async (binding) => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    await expect(discoverModels({ baseURL: 'https://candidate.invalid/v1', apiKey: 'synthetic-secret',
+      ...binding === undefined ? {} : { credentialEndpointFingerprint: binding },
+    })).rejects.toMatchObject({ code: 'INVALID_DISCOVERY_CREDENTIAL_SCOPE' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('refuses redirected discovery without forwarding the key to another endpoint', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 302, headers: { location: 'https://another.invalid/models' } }))
+    vi.stubGlobal('fetch', fetch)
+    const ctx = await harness()
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: 'https://candidate.invalid/v1', apiKey: 'synthetic-secret' }))
+      .rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(fetch.mock.calls[0]?.[1]).toMatchObject({ redirect: 'manual' })
+  })
+
   it('reports an illegal probe key as a credential fault, not an unreachable endpoint', async () => {
     await expect(discoverModels({
       baseURL: 'https://acme.test',
       api: 'openai-completions',
       apiKey: 'sk-\u{1F600}',
+      credentialEndpointFingerprint: modelDiscoveryEndpointFingerprint('https://acme.test'),
     })).rejects.toMatchObject({ code: 'INVALID_CREDENTIAL' })
   })
 
@@ -349,6 +389,7 @@ describe('probe key format', () => {
       baseURL: 'https://acme.test',
       api: 'openai-completions',
       apiKey: '',
+      credentialEndpointFingerprint: modelDiscoveryEndpointFingerprint('https://acme.test'),
     })).rejects.toMatchObject({ code: 'INVALID_CREDENTIAL' })
   })
 

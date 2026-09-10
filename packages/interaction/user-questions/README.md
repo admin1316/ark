@@ -1,5 +1,5 @@
 ---
-description: "Waterfall-based question and answer service for tools, permission plugins, local answerers, and Agent-scoped Web interactions."
+description: "Question and answer service for tools, scoped answerers, and a native Host UI provider."
 kind: "package-reference"
 ---
 
@@ -27,6 +27,7 @@ User-interaction Service Definition. It owns `ctx.userQuestions`, the service a 
 ### Public API
 
 - `ctx.userQuestions.ask(request): Promise<AskUserQuestionAnswer>` Dispatch the answerer waterfall and wait for the first accepted answer.
+- `ctx.userQuestions.registerProvider(provider): () => void` Register the single Host UI fallback used when listeners delegate. Duplicate registration rejects with `DUPLICATE_PROVIDER`; disposing the calling fiber or returned disposer withdraws the provider. Ark's native event service owns its pending requests and their cancellation.
 
 ### Key Types
 
@@ -38,7 +39,7 @@ User-interaction Service Definition. It owns `ctx.userQuestions`, the service a 
 
 For a single-select question, `custom` overrides the selected choice and `selected` is empty. For a multi-select question, `custom` may supplement the labels in `selected`. A UI may preserve a skipped item as `{ id, selected: [] }`, keeping the existing answer shape while retaining other answers in the batch.
 
-When a request carries an agent, `ask()` authenticates its exact identity through the live `AgentRegistry` and admits only a runtime root. Durable lineage is not authority: a session with historical delegation depth may ask after it is resumed as a new runtime root, while a live child owned by another agent is rejected even if its durable depth is zero. The Web answerer receives only Agent-scoped requests; an agentless programmatic request remains available to unscoped local waterfall listeners and fails with `NO_PROVIDER` when none accepts it.
+When a request carries an agent, `ask()` authenticates its exact identity through the live `AgentRegistry` and admits only a runtime root. Durable lineage is not authority: a session with historical delegation depth may ask after it is resumed as a new runtime root, while a live child owned by another agent is rejected even if its durable depth is zero. Scoped answerers receive only matching requests. An agentless request reaches unscoped listeners and the Host fallback; `NO_PROVIDER` means neither accepted it.
 
 ### Presentation intent
 
@@ -47,7 +48,7 @@ When a request carries an agent, `ask()` authenticates its exact identity throug
 <a id="role"></a>
 ## Role
 
-This is the Service Definition package. Consumers such as `@deepseek-ai/dsh-tool-ask-user` depend on this service; the Web client contributes an Agent-scoped answerer through Remote Events. The loop stays unchanged: a tool call awaits the waterfall result, and that result resumes the normal agent loop.
+This is the Service Definition package. Consumers such as `@deepseek-ai/dsh-tool-ask-user` depend on this service; Ark's native event service registers the Host UI fallback. Local plugins may compose scoped answerers before that fallback. A tool call awaits the answer and then resumes the normal agent loop.
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -62,7 +63,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Agent-scoped Web answering** — Remote Events route the shipped Web answerer only when the request carries a live Agent scope; agentless callers need an unscoped local waterfall listener.
+- **Provider-owned request lifetime** — the UI provider must withdraw cancelled requests and settle pending answers when it unloads; unregistering only prevents new requests from reaching it.
 - **The vocabulary is the question-form shape only** — selectable options plus optional custom text; richer interaction shapes (file pickers, diff-preview confirmations) have no seam vocabulary yet.
 
 

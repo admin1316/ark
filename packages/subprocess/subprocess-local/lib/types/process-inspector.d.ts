@@ -54,16 +54,12 @@ export interface ProcessInspector {
      * @param shellPid Persistent terminal shell process identifier.
      * @returns Whether a group member is blocked reading the shell's terminal input.
      */
-    isStdinWaiting(pgid: number, shellPid?: number): boolean;
+    isStdinWaiting(pgid: number, shellPid: number): boolean;
     /**
      * Read the process table once and answer tree, session, and liveness from it.
      * @returns A process-table observation whose reads are shared.
      */
-    snapshot?(): ProcessSnapshot;
-    /** Legacy tree projection retained for callers compiled against rc.2. */
-    processTree(rootPid: number): ProcessIdentity[];
-    /** Legacy session projection retained for callers compiled against rc.2. */
-    processSession(sessionId: number): ProcessIdentity[];
+    snapshot(): ProcessSnapshot;
     /**
      * Return whether the exact identity is a non-quiescent process right now.
      *
@@ -94,10 +90,8 @@ export interface ProcessInspector {
 export interface ProcessInspectorInternals {
     readFile(path: string): string;
     readDir(path: string): string[];
-    /** Optional for legacy injected fakes that exercise only process-table reads. */
-    readLink?(path: string): string;
-    /** Optional for legacy injected fakes that exercise only process-table reads. */
-    stat?(path: string): FileStatus;
+    readLink(path: string): string;
+    stat(path: string): FileStatus;
     open(path: string): number;
     read(fd: number, buffer: Buffer, length: number, position: number): number;
     close(fd: number): void;

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -88,7 +88,7 @@ function callTool(
 ) {
   return ctx.tools.execute({
     signal,
-    callId: ToolCallId(`call-${++calls}`),
+    callId: CallId(`call-${++calls}`),
     name,
     arguments: args,
     ...agent !== undefined ? { agent: agent as never } : {},

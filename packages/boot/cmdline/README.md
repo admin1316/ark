@@ -10,6 +10,7 @@ A launcher calls `provideCmdline(ctx, host)` before any tree entry mounts, which
 
 - `ctx.cmdlineArgs` — the invocation's inner arguments. `get()` is the whole interface, and it returns a snapshot: `dsh --profile tui --resume abc` yields `['--resume', 'abc']`.
 - `ctx.appExit` — a bounded process-exit request, wired to the launcher's shutdown controller.
+- `ctx.appReady` — optional launcher-owned readiness notification supplied through `host.ready`. `onReady(listener)` returns a disposer and notifies once boot and Host setup commit; launchers without this phase omit the service.
 
 An embedding host with no command line provides an empty list; that is the honest answer, not a missing value.
 

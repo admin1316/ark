@@ -55,28 +55,63 @@ var __esDecorate = (this && this.__esDecorate) || function (ctor, descriptorIn, 
     done = true;
 };
 import { stat } from 'node:fs/promises';
-import { Remote, TypertLookupFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
+import { dirname } from 'node:path';
+import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command';
 import z from '@deepseek-ai/schemastery';
+import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope';
 import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
-import { discoverPresets, USER_PRESET_DIR } from "./discovery.js";
-import { copyComposition, deleteComposition, readComposition } from "./authoring.js";
+import { discoverPresets, SHIPPED_PRESET_ROOT, USER_PRESET_DIR } from "./discovery.js";
+import { copyComposition, deleteComposition, readComposition, InvalidPresetIdError, PresetExistsError, PresetNotWritableError, } from "./authoring.js";
 import { mountPreset, serviceForAgent, standingMountFor } from "./mount.js";
-import { PresetExistsError, PresetNotWritableError } from "./authoring.js";
-import { PresetMountError, UnknownPresetError } from "./preset.js";
+import { PresetLockedError, PresetMountError, UnknownPresetError, } from "./preset.js";
+import { agentPresetProjectionDefinition } from "./session.js";
 /** Settings namespace carrying the user's chosen default preset. */
 export const SETTINGS_NAMESPACE = 'agent-presets';
+/** Construct one typed preset failure for the Remote carrier. */
+function remotePresetFailure(code, message, details) {
+    return new TypertRemoteFailure({ code, message, details });
+}
+/** Map one preset rejection to its stable Remote code and details. */
+function presetFailure(error, agentPreset) {
+    if (error instanceof UnknownPresetError) {
+        return remotePresetFailure('agent-preset-not-found', error.message, { agentPreset: error.presetId, available: [...error.available] });
+    }
+    if (error instanceof PresetMountError) {
+        return remotePresetFailure('agent-preset-invalid', error.message, { agentPreset: error.presetId, reason: error.reason });
+    }
+    if (error instanceof InvalidPresetIdError || error instanceof PresetExistsError) {
+        return remotePresetFailure('agent-preset-invalid', error.message, { agentPreset: error.presetId, reason: error.message });
+    }
+    if (error instanceof PresetNotWritableError) {
+        return remotePresetFailure('agent-preset-read-only', error.message, { agentPreset, reason: error.message });
+    }
+    if (error instanceof PresetLockedError) {
+        return remotePresetFailure('agent-preset-locked', `session "${error.sessionId}" has already started; its agent preset is fixed`, { sessionId: error.sessionId, agentPreset: error.presetId });
+    }
+    return undefined;
+}
+/** Refuse an empty preset id before invoking a domain operation. */
+function validatePresetId(value, field) {
+    if (value.length === 0) {
+        throw remotePresetFailure('bad-request', `${field} must be a non-empty string`, {});
+    }
+}
+/** Throw the stable preset failure or the caller's operation-specific fallback. */
+function rejectPreset(error, agentPreset, fallbackMessage) {
+    throw presetFailure(error, agentPreset) ?? remotePresetFailure('internal', fallbackMessage, {});
+}
 /** Runtime schema for the user-writable slice. */
 export const AgentPresetSettingsSchema = z.object({
     default: z.string(),
 });
-export { COMPOSITION_FILE, discoverPresets, scanRoot } from "./discovery.js";
+export { COMPOSITION_FILE, discoverPresets, scanRoot, SHIPPED_PRESET_ROOT } from "./discovery.js";
 export { METADATA_FILE, readPresetMetadata, renderPresetMetadata, } from "./metadata.js";
 export { inactiveRows, leakedServices, livePresetMounts, mountPreset, serviceForAgent, standingMountFor, } from "./mount.js";
-export { copyComposition, deleteComposition, InvalidPresetIdError, PresetExistsError, ReservedPresetIdError, PresetNotWritableError, readComposition, writableRoot, } from "./authoring.js";
-export { resolveSessionPreset } from "./session.js";
-export { PresetMountError, UnknownPresetError } from "./preset.js";
+export { copyComposition, deleteComposition, InvalidPresetIdError, PresetExistsError, PresetNotWritableError, readComposition, writableRoot, } from "./authoring.js";
+export { agentPresetProjectionDefinition, resolveSessionPreset } from "./session.js";
+export { PresetLockedError, PresetMountError, UnknownPresetError } from "./preset.js";
 /**
  * Registry over the deployment's agent presets.
  *
@@ -87,27 +122,27 @@ export { PresetMountError, UnknownPresetError } from "./preset.js";
 let AgentPresets = (() => {
     let _classSuper = TypertRemoteService;
     let _instanceExtraInitializers = [];
-    let _remoteList_decorators;
-    let _remoteSelect_decorators;
-    let _remoteRead_decorators;
-    let _remoteCopy_decorators;
+    let _remoteExportList_decorators;
+    let _readDocument_decorators;
+    let _remoteExportCopy_decorators;
+    let _remoteExportDelete_decorators;
     let _remoteOpenDocument_decorators;
-    let _remoteRemove_decorators;
+    let _remoteSelect_decorators;
     return class AgentPresets extends _classSuper {
         static {
             const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
-            _remoteList_decorators = [Remote('list')];
-            _remoteSelect_decorators = [Remote('select')];
-            _remoteRead_decorators = [Remote('read')];
-            _remoteCopy_decorators = [Remote('copy')];
+            _remoteExportList_decorators = [Remote('list')];
+            _readDocument_decorators = [Remote('read')];
+            _remoteExportCopy_decorators = [Remote('copy')];
+            _remoteExportDelete_decorators = [Remote('remove')];
             _remoteOpenDocument_decorators = [Remote('openDocument')];
-            _remoteRemove_decorators = [Remote('remove')];
-            __esDecorate(this, null, _remoteList_decorators, { kind: "method", name: "remoteList", static: false, private: false, access: { has: obj => "remoteList" in obj, get: obj => obj.remoteList }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _remoteSelect_decorators, { kind: "method", name: "remoteSelect", static: false, private: false, access: { has: obj => "remoteSelect" in obj, get: obj => obj.remoteSelect }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _remoteRead_decorators, { kind: "method", name: "remoteRead", static: false, private: false, access: { has: obj => "remoteRead" in obj, get: obj => obj.remoteRead }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _remoteCopy_decorators, { kind: "method", name: "remoteCopy", static: false, private: false, access: { has: obj => "remoteCopy" in obj, get: obj => obj.remoteCopy }, metadata: _metadata }, null, _instanceExtraInitializers);
+            _remoteSelect_decorators = [Remote('select')];
+            __esDecorate(this, null, _remoteExportList_decorators, { kind: "method", name: "remoteExportList", static: false, private: false, access: { has: obj => "remoteExportList" in obj, get: obj => obj.remoteExportList }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _readDocument_decorators, { kind: "method", name: "readDocument", static: false, private: false, access: { has: obj => "readDocument" in obj, get: obj => obj.readDocument }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _remoteExportCopy_decorators, { kind: "method", name: "remoteExportCopy", static: false, private: false, access: { has: obj => "remoteExportCopy" in obj, get: obj => obj.remoteExportCopy }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _remoteExportDelete_decorators, { kind: "method", name: "remoteExportDelete", static: false, private: false, access: { has: obj => "remoteExportDelete" in obj, get: obj => obj.remoteExportDelete }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _remoteOpenDocument_decorators, { kind: "method", name: "remoteOpenDocument", static: false, private: false, access: { has: obj => "remoteOpenDocument" in obj, get: obj => obj.remoteOpenDocument }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _remoteRemove_decorators, { kind: "method", name: "remoteRemove", static: false, private: false, access: { has: obj => "remoteRemove" in obj, get: obj => obj.remoteRemove }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _remoteSelect_decorators, { kind: "method", name: "remoteSelect", static: false, private: false, access: { has: obj => "remoteSelect" in obj, get: obj => obj.remoteSelect }, metadata: _metadata }, null, _instanceExtraInitializers);
             if (_metadata) Object.defineProperty(this, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
         }
         config = __runInitializers(this, _instanceExtraInitializers);
@@ -119,21 +154,33 @@ let AgentPresets = (() => {
                 path: z.string().required(),
                 trust: z.union(['system', 'user']).default('user'),
             })).default([]),
+            includeShippedRoot: z.boolean().default(true),
             includeUserRoot: z.boolean().default(true),
-            /** Ids the deployment refuses to author; the profile supplies its own list. */
-            reservedIds: z.array(z.string()).default([]),
         });
         /**
-         * The roots discovery and authoring actually scan: every configured root in
+         * The roots discovery and authoring actually scan: the package's shipped
+         * root unless `includeShippedRoot` is false, then every configured root in
          * order, then the harness-home user root unless `includeUserRoot` is false.
          *
          * Derived once, because a root set that changed between `list()` and the
          * `copy()` acting on its answer would author into a directory the caller
-         * never saw. Appending rather than prepending keeps an earlier configured
-         * root winning a duplicate id, so a shipped preset still shadows a
-         * locally authored directory that claimed its name.
+         * never saw. The shipped root comes FIRST and the user root LAST because an
+         * earlier root wins a duplicate id: a shipped preset shadows any directory
+         * that claimed its name, and a configured root still shadows a locally
+         * authored one.
          */
         resolvedRoots;
+        /**
+         * Where a row's package name resolves from: the base URL of the composition
+         * this roster was loaded by, which is inside the installed harness.
+         *
+         * Discovery needs it because a preset's own directory is the wrong base for
+         * a package name — a locally authored preset lives under the user's home,
+         * where Node's upward `node_modules` walk never reaches the harness's
+         * dependencies. The mount already resolves rows this way; holding the same
+         * base here is what lets health answer the question before a session does.
+         */
+        harnessBase;
         /**
          * The user layer over `config.default`, present only while a settings
          * provider is composed. Held rather than snapshotted so a hot-reloaded
@@ -158,9 +205,21 @@ let AgentPresets = (() => {
             super(ctx, 'agentPresets', { namespace: 'agentPreset' });
             this.config = config;
             this.selfCtx = ctx;
-            this.resolvedRoots = config.includeUserRoot
-                ? [...config.roots, { path: dshHomePath(USER_PRESET_DIR), trust: 'user' }]
-                : [...config.roots];
+            const { baseUrl } = ctx;
+            if (baseUrl === undefined) {
+                // Self-contained misconfiguration, so it fails at load: without a base
+                // the roster can neither resolve a row nor tell a healthy preset from
+                // one naming a package that is gone, and the silent alternative is the
+                // exact failure this check exists to report.
+                throw new Error('agent-presets: the roster needs `ctx.baseUrl` to resolve the plugins a composition names; '
+                    + 'compose it under a Loader, or set the base on the context this plugin is applied to');
+            }
+            this.harnessBase = baseUrl;
+            this.resolvedRoots = [
+                ...config.includeShippedRoot ? [{ path: SHIPPED_PRESET_ROOT, trust: 'system' }] : [],
+                ...config.roots,
+                ...config.includeUserRoot ? [{ path: dshHomePath(USER_PRESET_DIR), trust: 'user' }] : [],
+            ];
             // Deliberately not `installSettingsSection`: that helper exists to re-judge
             // what a consumer DERIVED from the source — memoized resolutions,
             // registration-level facts — across attach, detach, and change. Nothing
@@ -174,6 +233,9 @@ let AgentPresets = (() => {
                     this.settingsService = undefined;
                 }, 'agentPresets.settings()');
             });
+            ctx.inject(['sessionProjections'], (projectionCtx) => {
+                projectionCtx.sessionProjections.register(agentPresetProjectionDefinition);
+            });
             // Advisory, not fatal: a synchronous `agent/created` listener that throws
             // VETOES publication, and this service must not, because composing an agent
             // outside the roster is legal — `recompose` binds exactly such a bare agent
@@ -183,9 +245,9 @@ let AgentPresets = (() => {
             // Note](../../../../.agents/notes/implemented/architecture/2026-08-10-host-plane-ownership-after-presets.md).
             //
             // Known false positive: a session created bare and bound later by
-            // `recompose` is warned about once, before its first bind. No shipped flow
-            // does that today — the Web surface mounts in `setup` and children join
-            // through `composeFrom` before publication.
+            // `recompose` is warned about once, before its first bind. Shipped Web
+            // sessions mount in `setup`, and children join through `composeFrom`
+            // before publication.
             ctx.on('agent/created', ({ agent }) => {
                 if (this.resolvedRoots.length === 0)
                     return;
@@ -218,17 +280,20 @@ let AgentPresets = (() => {
          * @returns the presets, first-root-wins per id.
          */
         async list() {
-            return await discoverPresets(this.resolvedRoots);
+            return await discoverPresets(this.resolvedRoots, this.harnessBase);
         }
         /**
-         * List the current preset roster without exposing any Host path.
-         * @returns the redacted preset catalog and authoring capabilities.
+         * The roster off the Host: {@link list} projected to path-free rows, with
+         * the default marked and this deployment's authoring capability beside it.
+         *
+         * Whether a client can open a preset's directory is the Host's own opener
+         * capability, not a roster property — a caller needing both joins them.
+         * @returns the rows and the authoring capability.
          */
-        async remoteList() {
+        async remoteExportList() {
             const defaultId = this.defaultId;
-            const presets = await this.list();
             return {
-                presets: presets.map(preset => ({
+                presets: (await this.list()).map(preset => ({
                     id: preset.id,
                     trust: preset.trust,
                     isDefault: preset.id === defaultId,
@@ -239,110 +304,6 @@ let AgentPresets = (() => {
                 authorable: this.authorable,
                 hasDocument: this.authorable,
             };
-        }
-        /**
-         * Recompose one blank agent under a different preset. The Agent lookup is
-         * supplied by the gateway, so a caller never submits an arbitrary context.
-         * @param agent - gateway-resolved Agent whose blank session is recomposed.
-         * @param agentPreset - preset id to compose for the Agent.
-         * @returns the selected preset id.
-         */
-        async remoteSelect(agent, agentPreset) {
-            const sessionId = String(agent.id);
-            const run = async () => {
-                if (agent.session.events.some(event => event.type === 'turn/start')) {
-                    throwRemotePresetFailure('agent-preset-locked', `session "${sessionId}" has already started; its agent preset is fixed`, { sessionId, agentPreset });
-                }
-                try {
-                    const preset = await this.recompose(agent.ctx, agentPreset);
-                    agent.session.append('agent-preset/selected', { agentPreset: preset.id });
-                }
-                catch (error) {
-                    remotePresetFailure(agentPreset, error);
-                }
-            };
-            const previous = this.remoteSwitches.get(sessionId) ?? Promise.resolve();
-            const next = previous.catch(() => undefined).then(run);
-            this.remoteSwitches.set(sessionId, next);
-            try {
-                await next;
-            }
-            finally {
-                if (this.remoteSwitches.get(sessionId) === next)
-                    this.remoteSwitches.delete(sessionId);
-            }
-            const preset = this.composedPreset(agent.ctx);
-            if (preset === undefined) {
-                throwRemotePresetFailure('internal', 'agent preset did not remain composed after selection', {});
-            }
-            return { agentPreset: preset };
-        }
-        /**
-         * Privileged read of one composition; gateway policy must mark this route privileged.
-         * @param agentPreset - preset id to read.
-         * @returns the preset document without exposing its Host path.
-         */
-        async remoteRead(agentPreset) {
-            try {
-                const preset = await this.resolve(agentPreset);
-                return {
-                    agentPreset: preset.id,
-                    trust: preset.trust,
-                    content: await this.read(preset.id),
-                    ...preset.name === undefined ? {} : { name: preset.name },
-                    ...preset.description === undefined ? {} : { description: preset.description },
-                };
-            }
-            catch (error) {
-                remotePresetFailure(agentPreset, error);
-            }
-        }
-        /**
-         * Create one user-owned preset from a named existing source.
-         * @param from - source preset id to copy.
-         * @param agentPreset - id for the new user-owned preset.
-         * @param name - optional display name for the new preset.
-         * @returns the new preset id.
-         */
-        async remoteCopy(from, agentPreset, name) {
-            try {
-                await this.copy(from, agentPreset, name);
-                return { agentPreset };
-            }
-            catch (error) {
-                remotePresetFailure(agentPreset, error);
-            }
-        }
-        /**
-         * Authorize, but do not resolve or launch, a user-owned preset directory.
-         * The Host re-resolves this id and owns the macOS LaunchServices handoff.
-         * @param agentPreset - user-owned preset id to open.
-         * @returns the authorized native document target.
-         */
-        async remoteOpenDocument(agentPreset) {
-            try {
-                const preset = await this.resolve(agentPreset);
-                if (preset.trust !== 'user')
-                    throw new PresetNotWritableError(preset.id, 'it ships with the deployment');
-                return { agentPreset: preset.id, requiresNativeHandoff: true };
-            }
-            catch (error) {
-                remotePresetFailure(agentPreset, error);
-            }
-        }
-        /**
-         * Delete one locally authored preset.
-         * @param agentPreset - user-owned preset id to delete.
-         * @returns an empty object after deletion.
-         */
-        async remoteRemove(agentPreset) {
-            try {
-                await this.remove(agentPreset);
-                return {};
-            }
-            catch (error) {
-                remotePresetFailure(agentPreset, error);
-            }
         }
         /**
          * Resolve one preset by id.
@@ -399,8 +360,6 @@ let AgentPresets = (() => {
          * standing compositions. WeakMap: entries die with their agents.
          */
         bindings = new WeakMap();
-        /** One per-session ordering chain for Remote preset switches. */
-        remoteSwitches = new Map();
         /**
          * Compose one agent from a preset: ensure the preset's standing mount, then
          * parent the agent's scope key to it so the mount's registrations and
@@ -478,10 +437,11 @@ let AgentPresets = (() => {
             return standingMountFor(agentCtx)?.presetId;
         }
         /**
-         * The roots this roster scans, which is not `config.roots`: it is every
-         * configured root in order, then the harness-home user root unless
-         * `includeUserRoot` is false. Read this — not the config field — to answer
-         * whether a roster is composed at all, so one derivation decides it.
+         * The roots this roster scans, which is not `config.roots`: the package's
+         * shipped root unless `includeShippedRoot` is false, every configured root
+         * in order, then the harness-home user root unless `includeUserRoot` is
+         * false. Read this — not the config field — to answer whether a roster is
+         * composed at all, so one derivation decides it.
          */
         get roots() {
             return this.resolvedRoots;
@@ -498,6 +458,29 @@ let AgentPresets = (() => {
          */
         async read(id) {
             return await readComposition(await this.resolve(id));
+        }
+        /**
+         * One preset's composition text with the roster row it belongs to.
+         * @param agentPreset - the preset id.
+         * @returns the composition beside its trust and published metadata.
+         * @throws {TypertRemoteFailure} `bad-request` for an empty id, or
+         * `agent-preset-not-found` when no configured root supplies it.
+         */
+        async readDocument(agentPreset) {
+            validatePresetId(agentPreset, 'agentPreset');
+            try {
+                const preset = await this.resolve(agentPreset);
+                return {
+                    agentPreset: preset.id,
+                    trust: preset.trust,
+                    content: await this.read(preset.id),
+                    ...preset.name === undefined ? {} : { name: preset.name },
+                    ...preset.description === undefined ? {} : { description: preset.description },
+                };
+            }
+            catch (error) {
+                rejectPreset(error, agentPreset, 'agent preset document read failed');
+            }
         }
         /**
          * Create a locally authored preset by copying an existing one whole.
@@ -522,14 +505,35 @@ let AgentPresets = (() => {
             if ((await this.list()).some(preset => preset.id === id)) {
                 throw new PresetExistsError(id);
             }
-            await copyComposition(this.resolvedRoots, source, id, name, this.config.reservedIds);
+            await copyComposition(this.resolvedRoots, source, id, name);
             // A settled mount under this id can only be stale (its preset was deleted
             // from disk outside `remove`); the new preset must not inherit it. Every
             // session already joined keeps the generation it runs on regardless.
             this.standing.delete(id);
         }
         /**
+         * Copy one preset through the Remote API.
+         * @param from - the source preset id.
+         * @param agentPreset - the new preset id.
+         * @param name - the copy's optional display name.
+         * @returns the id after the copy is stored.
+         * @throws {TypertRemoteFailure} with the corresponding stable preset code
+         * and details when the copy is refused.
+         */
+        async remoteExportCopy(from, agentPreset, name) {
+            validatePresetId(from, 'from');
+            validatePresetId(agentPreset, 'agentPreset');
+            try {
+                await this.copy(from, agentPreset, name);
+                return { agentPreset };
+            }
+            catch (error) {
+                rejectPreset(error, agentPreset, 'agent preset copy failed');
+            }
+        }
+        /**
          * Delete a locally authored preset.
+         *
          * @param id - the preset id.
          * @throws when the preset is unknown or ships with the deployment.
          */
@@ -547,6 +551,74 @@ let AgentPresets = (() => {
             if (this.settings?.get().default !== id)
                 return;
             await this.settingsService?.mutate(settingsNamespace(SETTINGS_NAMESPACE), [{ op: 'unset', path: ['default'] }]);
+        }
+        /**
+         * Delete one preset through the Remote API.
+         * @param agentPreset - the preset id.
+         * @returns an empty acknowledgement after deletion.
+         * @throws {TypertRemoteFailure} with the corresponding stable preset code
+         * and details when deletion is refused.
+         */
+        async remoteExportDelete(agentPreset) {
+            validatePresetId(agentPreset, 'agentPreset');
+            try {
+                await this.remove(agentPreset);
+                return {};
+            }
+            catch (error) {
+                rejectPreset(error, agentPreset, 'agent preset removal failed');
+            }
+        }
+        /**
+         * Open only a user-authored preset resolved by the service's own roster.
+         * @param agentPreset - user preset id, never a caller-supplied path.
+         * @param signal - native command cancellation.
+         * @returns a handoff confirmation or the directory when this host has no opener.
+         */
+        async remoteOpenDocument(agentPreset, signal) {
+            validatePresetId(agentPreset, 'agentPreset');
+            const checkCancellation = () => {
+                if (signal.aborted)
+                    throw remotePresetFailure('cancelled', 'agent preset open was cancelled', {});
+            };
+            checkCancellation();
+            let preset;
+            try {
+                preset = await this.resolve(agentPreset);
+                if (preset.trust !== 'user')
+                    throw new PresetNotWritableError(preset.id, 'it ships with the deployment');
+            }
+            catch (error) {
+                checkCancellation();
+                rejectPreset(error, agentPreset, 'agent preset document resolution failed');
+            }
+            checkCancellation();
+            const directory = dirname(preset.path);
+            if (!this.canOpenPresetDirectory())
+                return { opened: false, path: directory };
+            try {
+                await this.openPresetDirectory(directory, signal);
+            }
+            catch {
+                // Native command diagnostics can contain host paths or environment values.
+                checkCancellation();
+                throw remotePresetFailure('internal', 'agent preset document open failed', {});
+            }
+            checkCancellation();
+            return { opened: true };
+        }
+        /** @returns whether this Host can hand a directory to its native desktop. */
+        canOpenPresetDirectory() {
+            return canOpenNativePath();
+        }
+        /**
+         * Dispatch the directory already authorized by the preset roster.
+         * @param path - resolved user-preset directory.
+         * @param signal - caller cancellation.
+         * @returns completion of the native opening command.
+         */
+        openPresetDirectory(path, signal) {
+            return openNativePath(path, signal);
         }
         /**
          * One agent's instance of a service its preset mounted.
@@ -581,7 +653,9 @@ let AgentPresets = (() => {
          * state to restore. The re-link runs through the binding this roster kept
          * from the agent's mount — dsh-scope's only re-link authority. An agent
          * that never composed one has nothing to re-link: the switch is then the
-         * agent's first bind, exactly a mount.
+         * agent's first bind, exactly a mount. A committed re-link emits
+         * `tools/change` because changing the parent scope changes the Agent's
+         * resolved tool set without adding or removing registry entries.
          * @param agentCtx - the agent's scope context.
          * @param id - the preset to compose the agent from instead.
          * @returns the preset now installed.
@@ -601,7 +675,76 @@ let AgentPresets = (() => {
             else {
                 binding.rebind(standing.key);
             }
+            // Reparenting changes every scope-layered tool view without adding or
+            // removing a registration. Publish the registry's normal invalidation so
+            // Agent-owned overlays can reconcile with the new ancestry.
+            try {
+                this.ctx.emit('tools/change');
+            }
+            catch (error) {
+                this.ctx.logger.warn(`agent-presets: tools/change listener failed after recomposing an Agent: ${String(error)}`);
+            }
             return preset;
+        }
+        /**
+         * Serializes {@link select} per session. Two concurrent selects would both
+         * pass the blank check, and the second re-link would then find the record
+         * the first already replaced — leaving two compositions registered into one
+         * agent layer. A client's `busy` flag is not enforcement: the wire is
+         * reachable directly.
+         *
+         * Entries hold a failure-swallowing guard rather than the turn itself, so a
+         * refused switch does not reject the next caller's chain.
+         */
+        switches = new Map();
+        /**
+         * Compose a blank session's agent from a different preset and record it.
+         * @param agent - the session's live agent, resolved from the wire identity.
+         * @param agentPreset - the preset to compose the agent from instead.
+         * @returns the preset id that was recorded.
+         * @throws {TypertRemoteFailure} with `bad-request`, `agent-preset-locked`,
+         * `agent-preset-not-found`, or `agent-preset-invalid` when refused.
+         */
+        async select(agent, agentPreset) {
+            validatePresetId(agentPreset, 'agentPreset');
+            const queued = this.switches.get(agent.id) ?? Promise.resolve();
+            const turn = queued.then(() => this.swap(agent, agentPreset));
+            const guard = turn.catch(() => undefined);
+            this.switches.set(agent.id, guard);
+            try {
+                return await turn;
+            }
+            catch (error) {
+                return rejectPreset(error, agentPreset, 'agent preset selection failed');
+            }
+            finally {
+                if (this.switches.get(agent.id) === guard)
+                    this.switches.delete(agent.id);
+            }
+        }
+        /**
+         * Select through the existing serialized session-composition owner.
+         * @param agent - exact Agent resolved by the Gateway.
+         * @param agentPreset - requested preset id.
+         * @returns the preset committed to the session log.
+         */
+        async remoteSelect(agent, agentPreset) {
+            return { agentPreset: await this.select(agent, agentPreset) };
+        }
+        /** One queued switch: re-check, recompose, then record what the agent runs. */
+        async swap(agent, agentPreset) {
+            // Re-read inside the queue: an earlier switch may have run, and a
+            // conversation may have started, since this call was queued. A turn is one
+            // model-loop execution; standalone plugin events never open one, so a
+            // session that has only run commands is still blank.
+            if (agent.session.events.some(event => event.type === 'turn/start')) {
+                throw new PresetLockedError(agent.id, agentPreset);
+            }
+            const preset = await this.recompose(agent.ctx, agentPreset);
+            // Recorded only after the swap committed: the log states what the agent
+            // runs, and a rejected mount leaves the previous composition.
+            agent.session.append('agent-preset/selected', { agentPreset: preset.id });
+            return preset.id;
         }
         /**
          * The standing scope key of one preset, for a host reader with no agent.
@@ -669,39 +812,6 @@ let AgentPresets = (() => {
     };
 })();
 export { AgentPresets };
-/** Throw one explicitly classified serializable Remote failure. */
-function throwRemotePresetFailure(code, message, details) {
-    throw new TypertLookupFailure({ code, message, details });
-}
-/** Classify one authoring or mounting failure without exposing a composition path. */
-function remotePresetFailure(agentPreset, error) {
-    if (error instanceof UnknownPresetError) {
-        throw new TypertLookupFailure({
-            code: 'agent-preset-not-found',
-            message: error.message,
-            details: { agentPreset: error.presetId, available: [...error.available] },
-        });
-    }
-    if (error instanceof PresetNotWritableError) {
-        throw new TypertLookupFailure({
-            code: 'agent-preset-read-only',
-            message: error.message,
-            details: { agentPreset, reason: error.message },
-        });
-    }
-    if (error instanceof PresetMountError) {
-        throw new TypertLookupFailure({
-            code: 'agent-preset-broken',
-            message: error.message,
-            details: { agentPreset: error.presetId, reason: error.reason },
-        });
-    }
-    throw new TypertLookupFailure({
-        code: 'internal',
-        message: error instanceof Error ? error.message : String(error),
-        details: {},
-    });
-}
 /** Read one composition file's stamp, or undefined when it cannot be statted. */
 async function compositionStamp(path) {
     try {

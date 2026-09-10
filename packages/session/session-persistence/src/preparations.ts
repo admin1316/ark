@@ -268,6 +268,19 @@ export class SessionPreparations<Source extends PreparedSource, CommitState> {
   }
 
   /**
+   * Discard an unreserved cached source before permanent deletion.
+   * @param id - session identity being removed.
+   * @returns false while an exclusive preparation owns the identity.
+   */
+  discardForDelete(id: SessionId): boolean {
+    const entry = this.entries.get(id)
+    if (entry === undefined) return true
+    if (entry.phase === 'committing' || entry.phase === 'reserved') return false
+    this.remove(entry)
+    return true
+  }
+
+  /**
    * Remove a completed entry for an already-serialized append adoption.
    * @param id - adopted session identity.
    * @returns the prepared source, or undefined when no ready entry exists.

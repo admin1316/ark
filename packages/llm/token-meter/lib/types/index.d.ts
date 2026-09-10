@@ -22,21 +22,25 @@ export declare class TokenMeter extends Service {
     /**
      * Measure current request pressure and surface through the durable tail.
      *
-     * Provider usage is reused only when the latest successful call's canonical
-     * request envelope matches `requestHeader` and its total is no lower than
-     * that call's full heuristic anchor; otherwise the complete envelope and
-     * surface are heuristically repriced.
+     * The effective envelope's routed provider/model selects the request-image
+     * pricing every node is priced under: a route whose adapter declares image
+     * pricing charges each retained image its visual tokens plus its
+     * model-visible text, while other routes keep the fixed heuristic. Provider
+     * usage is reused only when the latest successful call's canonical request
+     * envelope matches `requestHeader` and its total is no lower than that
+     * call's full route-priced anchor; otherwise the complete envelope and
+     * surface are repriced.
      *
-     * `requestHeader` affects request pressure only; surface fields always
-     * describe the current session surface. Every call clones those positional
-     * nodes, so measurement is O(surface).
+     * `requestHeader` replaces the latest logged envelope for pressure and node
+     * pricing; the node set always describes the current session surface. Every
+     * call clones those positional nodes, so measurement is O(surface).
      *
      * @param session - session to replay through its current durable tail.
      * @param requestHeader - optional effective request envelope replacing the latest logged header.
      * @returns a detached deeply immutable pressure and surface measurement.
      */
     measure(session: Session, requestHeader?: EpochHeader): TokenMeasurement;
-    /** Resolve route-owned request-image pricing without performing I/O. */
+    /** Resolve the routed model's image pricing, when the llm service and route declare one. */
     private _routeImagePricing;
     /**
      * Heuristically price one model-visible message (instance face of the pure
@@ -48,9 +52,9 @@ export declare class TokenMeter extends Service {
     /** Catch one session's fold up to the current durable tail. */
     private _sync;
     /**
-     * Validate and prepare every fallible part before mutating replay state.
-     * A malformed event remains unread on every retry instead of partially
-     * applying the same mutation more than once.
+     * Run every fallible step — surface plan and anchor validation — before
+     * mutating replay state, so a malformed event remains unread on every
+     * retry instead of half-applying.
      */
     private _foldEvent;
     /**

@@ -24,4 +24,6 @@ Two security gaps surfaced while diagnosing a live "DeepSeek API request failed"
 
 ## Consequences
 
+The [native Settings projection decision](2026-09-09-native-settings-ownership-and-redaction.md) supersedes the blanket refusal of union/intersection secrets and closes schema-default redaction. This note retains the independent backup and diagnostic rationale.
+
 117 package tests (atomic-write, credentials-local, settings-file) plus 158 settings tests plus 383 api-proxy tests pass; the new branches carry their own tests (backup content/mode/no-op/rethrow; union/intersect/transform/root fail-closed; secret-free union passthrough). The runtime copies in `jiuzhang-runtime` and the Ark harness profile were rebuilt and verified with an end-to-end credentials write producing a correct 0600 `.bak`. The session-archive in-flight changes in the same api-proxy file coexist and pass.

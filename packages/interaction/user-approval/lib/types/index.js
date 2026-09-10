@@ -189,7 +189,7 @@ export class ApprovalService extends Service {
         // SYNCHRONOUSLY (before its first await) must land in the same rejection
         // path as an async one — `Promise.resolve(call())` would let it escape
         // the containment into the caller.
-        const answer = Promise.resolve().then(() => this.ctx.waterfall(scopeTarget(this, req.agent), 'approval/request', req, () => Promise.resolve('unavailable'))).then(
+        const answer = Promise.resolve().then(() => this.ctx.waterfall(scopeTarget(req.agent, req.agent), 'approval/request', req, () => Promise.resolve('unavailable'))).then(
         // Normalize a rogue (non-vocabulary) answerer return to the fail-closed
         // outcome instead of leaking it into callers' closed-union switches.
         outcome => OUTCOMES.includes(outcome) ? outcome : 'unavailable', 

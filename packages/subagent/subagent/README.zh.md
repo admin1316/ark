@@ -56,6 +56,8 @@ kind: "package-reference"
 
 -----
 
+原生控制使用 `subagent/list`、`subagent/history`、`subagent/prompt` 和 `subagent/interrupt`。提示携带稳定 UUID 和确切的存活父代理查找。`followupReceipt` 仅在 Session 落盘屏障完成后返回；精确重试返回原消息 id，不会再次插入或冷恢复，内容或父身份冲突则拒绝。继承的 fork 历史不能证明子会话自身的收据。取消会阻止新的接收，但不打断接收后的落盘等待；落盘失败会保留已接收工作供重试。仅返回 MessageId 的 `followup` 共用该持久化行为。历史读取核对直接子会话目录，并约束 Session 所有者返回的分页必须属于预期父会话，不会恢复 Agent。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

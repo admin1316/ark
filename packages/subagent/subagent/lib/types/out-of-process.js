@@ -34,10 +34,16 @@ function limitSubagentDiagnostic(diagnostic) {
     return utf8Decoder.decode(bytes.subarray(0, prefixBytes))
         + DIAGNOSTIC_TRUNCATION_SUFFIX;
 }
+/** Enforce the byte limit on a provider-returned diagnostic. */
+function normalizeSubagentDiagnostic(result) {
+    return result.diagnostic === undefined
+        ? result
+        : { ...result, diagnostic: limitSubagentDiagnostic(result.diagnostic) };
+}
 /**
  * The capability advertisement of an out-of-process backend: NONE. A child in
  * another process cannot honor parent-enforced start features
- * (`outputSchema`/`maxDepth`/`toolFilter`/`persona`), so the service rejects a
+ * (`agentOptions`/`outputSchema`/`maxDepth`/`toolFilter`/`persona`), so the service rejects a
  * request needing any of them before `start` runs — never accepted-then-ignored.
  */
 export const NO_START_CAPABILITIES = Object.freeze({
@@ -149,7 +155,8 @@ function toError(value) {
  * rejects after publication. A normally completed or rejected attempt resolves
  * as `aborted` when cancellation already settled locally; another rejection is
  * flattened to `stopReason: 'error'` through the contained diagnostic sink.
- * The abort listener is removed on every path.
+ * Provider-returned diagnostics use the same byte limit. The abort listener is
+ * removed on every path.
  * @param parts - the attempt, output snapshot, cancellation state, sink, and signal wiring.
  * @returns the terminal result (never a rejection).
  */
@@ -158,7 +165,7 @@ export async function settleRunResult(parts) {
         const result = await parts.attempt();
         return parts.cancelled()
             ? { output: parts.collectOutput(), stopReason: 'aborted' }
-            : result;
+            : normalizeSubagentDiagnostic(result);
     }
     catch (error) {
         // Cover a rejection already queued when cancellation arrives.

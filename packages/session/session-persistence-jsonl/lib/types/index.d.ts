@@ -7,7 +7,7 @@
  */
 import { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import { SessionPersistence, type PersistenceBackend, type SessionLocation, type SessionPersistenceSnapshot, type SessionInspection, type SessionPersistenceRevision as PersistenceRevision, type SessionRawArtifact, type StoredPrefix } from '@deepseek-ai/dsh-session-persistence';
+import { SessionPersistence, type BorrowedSessionSource, type PersistenceBackend, type SessionLocation, type SessionPersistenceSnapshot, type SessionInspection, type SessionPersistenceRevision as PersistenceRevision, type SessionRawArtifact, type StoredPrefix } from '@deepseek-ai/dsh-session-persistence';
 import type { Session, SessionEvent, SessionId, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session';
 import { type JsonlCompression } from './format.ts';
 export type { JsonlCompression } from './format.ts';
@@ -75,6 +75,7 @@ export declare class JsonlSessionPersistence extends SessionPersistence implemen
     prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>;
     load(id: SessionId): Promise<SessionInspection>;
     inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection>;
+    borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource>;
     readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<{
         meta: SessionHeader;
         events: SessionEvent[];
@@ -118,14 +119,16 @@ export declare class JsonlSessionPersistence extends SessionPersistence implemen
     private readZstdPrefix;
     /** Durably append a batch, lazily materializing the file when not yet present. */
     appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void>;
-    /** Durably create a header-only session artifact for standard lifecycle APIs. */
+    /** Materialize a header-only JSONL artifact for an explicitly durable empty session. */
     materializeHeader(meta: SessionHeader): Promise<void>;
+    private withMutation;
     /**
-     * Atomically remove the whole session directory from discovery, then clean
-     * its deterministic tombstone. A post-rename failure remains retryable.
+     * Move a session out of discovery before removing its owned directory.
+     * @param id - exact stored identity, encoded before use in any path.
+     * @returns whether stored data or a retryable tombstone was removed.
      */
     deleteStored(id: SessionId): Promise<boolean>;
-    private deleteStoredLocked;
+    private removeTombstone;
     /**
      * Make a crash repair durable: truncate a torn tail, restore complete events
      * decoded from it, then append synthetic closers. Two fsync'd steps — the seam

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { zstdCompressSync } from 'node:zlib'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { CallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import {
   decodeStorageRecord,
   MAX_PACKED_DATA_BYTES,
@@ -92,10 +92,10 @@ describe('SQLite compression', () => {
     const events = [
       ...[0, 1, 2].map(seq => event(seq, seq, { type: 'reasoning-delta', index: 1, text: `${seq}` })),
       ...[3, 4, 5].map(seq => event(seq, seq, {
-        type: 'tool-call-delta', index: 2, id: ToolCallId('named'), name: 'write', argumentsDelta: `${seq}`,
+        type: 'tool-call-delta', index: 2, id: CallId('named'), name: 'write', argumentsDelta: `${seq}`,
       })),
       ...[6, 7, 8].map(seq => event(seq, seq, {
-        type: 'tool-call-delta', index: 3, id: ToolCallId('unnamed'), argumentsDelta: `${seq}`,
+        type: 'tool-call-delta', index: 3, id: CallId('unnamed'), argumentsDelta: `${seq}`,
       })),
     ]
     const records = packChunkRuns(events)
@@ -135,7 +135,7 @@ describe('SQLite compression', () => {
       event(2, Number.MAX_SAFE_INTEGER, { type: 'text-delta', index: 0, text: 'c' }),
     ]
     const toolName = [0, 1, 2].map(seq => event(seq, seq, {
-      type: 'tool-call-delta', index: 0, id: ToolCallId('id'),
+      type: 'tool-call-delta', index: 0, id: CallId('id'),
       ...seq === 2 ? {} : { name: 'write' }, argumentsDelta: 'x',
     }))
     for (const events of [gap, step, block, unsafeTime, toolName]) {

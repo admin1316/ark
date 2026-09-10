@@ -1,0 +1,1 @@
+{"version":3,"file":"invariant.d.ts","sourceRoot":"","sources":["../../src/invariant.ts"],"names":[],"mappings":"AAAA,+EAA+E;AAC/E,OAAO,KAAK,EAAE,OAAO,EAAE,MAAM,qBAAqB,CAAA;AAMlD,eAAO,MAAM,IAAI,mBAAmB,CAAA;AACpC,eAAO,MAAM,MAAM,UAAiB,CAAA;AAcpC;;;;GAIG;AACH,eAAO,MAAM,KAAK,GAAI,KAAK,OAAO,KAAG,OAAO,CAAC,MAAM,IAAI,CAAoE,CAAA"}

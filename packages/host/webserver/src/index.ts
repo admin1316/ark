@@ -278,7 +278,7 @@ export class WebServer extends Service {
   private readonly prefixes = new Map<string, WebRoute>()
   private readonly upgrades = new Map<string, WebUpgradeRoute>()
   private readonly upgradedSockets = new Set<Duplex>()
-  private readonly indexTaps: ((html: string) => string)[] = []
+  private readonly indexTaps: ((html: string, req?: IncomingMessage) => string)[] = []
   private fallback: WebRoute['handler'] | undefined
   private server!: Server
   private apiServer: Server | undefined

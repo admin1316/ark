@@ -12,6 +12,34 @@ function SessionPersistenceRevision(value) {
 	return value;
 }
 //#endregion
+//#region lib/types/errors.js
+/** Stable failures exposed by the session-persistence service. */
+/** A live Session or exclusive preparation still owns the identity being deleted. */
+var SessionPersistenceDeleteBlockedError = class extends Error {
+	sessionId;
+	reason;
+	/**
+	* @param sessionId - identity whose deletion was refused.
+	* @param reason - live publication or exclusive resume reservation.
+	*/
+	constructor(sessionId, reason) {
+		super(reason === "live" ? `cannot delete session "${sessionId}" while it is live` : `cannot delete session "${sessionId}" while its persisted preparation is reserved`);
+		this.sessionId = sessionId;
+		this.reason = reason;
+		this.name = "SessionPersistenceDeleteBlockedError";
+	}
+};
+/** The requested Session identity has no materialized durable log. */
+var SessionPersistenceNotFoundError = class extends Error {
+	sessionId;
+	/** @param sessionId - absent durable Session identity. */
+	constructor(sessionId) {
+		super(`session "${sessionId}" not found`);
+		this.sessionId = sessionId;
+		this.name = "SessionPersistenceNotFoundError";
+	}
+};
+//#endregion
 //#region lib/types/preparations.js
 /**
 * Bounded sharing and exclusive reservation of unpublished Sessions.
@@ -45,6 +73,45 @@ var SessionPreparations = class {
 		const source = entry.source ?? loaded;
 		if (this.entries.get(id) === entry && entry.phase === "ready") this.touch(entry);
 		return source;
+	}
+	/**
+	* Borrow one prepared source and pin its ready entry against LRU eviction.
+	* @param id - session identity.
+	* @param load - cold loader used when no entry exists.
+	* @param signal - optional cancellation signal while waiting.
+	* @returns a caller-owned observation lease.
+	*/
+	async borrow(id, load, signal) {
+		const entry = this.entryFor(id, load);
+		const pinned = this.entries.get(id) === entry;
+		if (pinned) entry.pins += 1;
+		let loaded;
+		try {
+			loaded = signal === void 0 ? await entry.result : await observeQueuedAbort(entry.result, signal);
+		} catch (error) {
+			if (pinned && this.entries.get(id) === entry) {
+				entry.pins -= 1;
+				if (entry.phase === "ready") this.touch(entry);
+			}
+			throw error;
+		}
+		const source = entry.source ?? loaded;
+		if (this.entries.get(id) !== entry) return {
+			source,
+			[Symbol.dispose]: () => {}
+		};
+		if (entry.phase === "ready") this.touch(entry);
+		let released = false;
+		return {
+			source,
+			[Symbol.dispose]: () => {
+				if (released) return;
+				released = true;
+				if (this.entries.get(id) !== entry) return;
+				entry.pins -= 1;
+				if (entry.phase === "ready") this.touch(entry);
+			}
+		};
 	}
 	/**
 	* Reserve one ready source after committing its pending durable repair.
@@ -172,10 +239,9 @@ var SessionPreparations = class {
 		if (phase === "committing" || phase === "reserved") throw new Error(`cannot append session "${id}" while its persisted preparation is reserved`);
 	}
 	/**
-	* Discard non-exclusive cached state before durable deletion. A committing or
-	* reserved preparation owns an unpublished Session and blocks deletion.
-	* @param id - session identity selected for deletion.
-	* @returns whether no exclusive preparation owns the identity.
+	* Discard an unreserved cached source before permanent deletion.
+	* @param id - session identity being removed.
+	* @returns false while an exclusive preparation owns the identity.
 	*/
 	discardForDelete(id) {
 		const entry = this.entries.get(id);
@@ -202,7 +268,8 @@ var SessionPreparations = class {
 		const entry = {
 			id,
 			result: deferred.promise,
-			phase: "loading"
+			phase: "loading",
+			pins: 0
 		};
 		this.entries.set(id, entry);
 		let loading;
@@ -249,7 +316,7 @@ var SessionPreparations = class {
 		for (const candidate of this.entries.values()) if (candidate.phase === "ready") readyCount += 1;
 		if (readyCount <= this.capacity) return;
 		for (const [id, candidate] of this.entries) {
-			if (candidate.phase !== "ready") continue;
+			if (candidate.phase !== "ready" || candidate.pins > 0) continue;
 			this.entries.delete(id);
 			return;
 		}
@@ -460,28 +527,12 @@ var SessionPersistenceCorruptionError = class extends Error {
 		this.name = "SessionPersistenceCorruptionError";
 	}
 };
-/** A permanent delete was refused because an in-memory owner still controls the id. */
-var SessionPersistenceDeleteBlockedError = class extends Error {
-	sessionId;
-	reason;
-	/**
-	* @param sessionId - identity whose deletion was refused.
-	* @param reason - live publication or unpublished resume reservation.
-	*/
-	constructor(sessionId, reason) {
-		super(reason === "live" ? `cannot delete session "${sessionId}" while it is live` : `cannot delete session "${sessionId}" while its persisted preparation is reserved`);
-		this.sessionId = sessionId;
-		this.reason = reason;
-		this.name = "SessionPersistenceDeleteBlockedError";
-	}
-};
 /**
 * The stored log is intact but this runtime cannot faithfully interpret it:
 * the header carries an unsupported format version, or an event's type is
-* unknown to this build and the event is not marked ignorable. Distinct from
-* {@link SessionPersistenceCorruptionError} — nothing is damaged; the raw log
-* remains readable at {@link location} when the backend keeps one artifact
-* per session.
+* unknown to this build. Distinct from {@link SessionPersistenceCorruptionError}
+* — nothing is damaged; the raw log remains readable at {@link location} when
+* the backend keeps one artifact per session.
 */
 var SessionFormatUnsupportedError = class extends Error {
 	location;
@@ -500,7 +551,7 @@ var SessionFormatUnsupportedError = class extends Error {
 * Direction-aware refusal text for a stored session whose format version this
 * build does not read. Shared by the coordinator's load-time check and by
 * backends that must refuse BEFORE decoding version-dependent structure (a
-* future format may not satisfy today's structural checks at all, and the
+* future format may not satisfy this build's structural checks at all, and the
 * user must see "upgrade the harness", never "corrupt").
 * @param id - the stored session id, for message context.
 * @param version - the stored format version.
@@ -834,13 +885,14 @@ var PersistenceCoordinator = class {
 		return this.serialize(snapshot.id, () => this.createCore(snapshot));
 	}
 	/**
-	* Materialize one live session without inventing a synthetic event.
-	* @param session - The session input.
+	* Materialize one exact live session without inventing a session event.
+	* @param session - live session already registered through the write path.
 	*/
 	async ensureMaterialized(session) {
 		await this.flush(session);
 		await this.serialize(session.id, async () => {
 			const state = this.states.get(session.id);
+			/* v8 ignore next -- successful live flush always initializes the exact session state. */
 			if (state === void 0) throw new Error(`session "${session.id}" is not registered for persistence`);
 			if (state.materialized) return;
 			if (this.backend.materializeHeader === void 0) throw new Error("session persistence backend cannot materialize an empty session");
@@ -871,25 +923,26 @@ var PersistenceCoordinator = class {
 		return this.serialize(id, () => this.appendCore(id, batch));
 	}
 	/**
-	* Permanently remove one cold, unreserved session. The operation waits for a
-	* disposed live owner's final drain, then shares the same per-id chain as
-	* append, load, and repair. The deletion event is emitted after that chain is
-	* released so derived stores can purge without deadlocking a same-id writer.
-	* @param id - session identity to delete.
-	* @returns whether the backend contained a materialized session.
+	* Delete after final retirement and release the write chain before derived-store cleanup.
+	* @param id - exact session identity to delete.
+	* @returns whether stored data was removed.
+	* @throws while the session or its preparation is still owned, or cleanup fails.
 	*/
 	async delete(id) {
 		await this.waitForRetirement(id);
 		const deleted = await this.serialize(id, async () => {
 			if (this.ctx.sessions.get(id) !== void 0 || this.states.get(id)?.owner !== void 0) throw new SessionPersistenceDeleteBlockedError(id, "live");
 			if (!this.preparations.discardForDelete(id)) throw new SessionPersistenceDeleteBlockedError(id, "reserved");
-			const staleControllers = [...this.live].filter(([candidate]) => candidate.header.id === id).map(([candidate]) => candidate);
 			const removed = await this.backend.deleteStored(id);
 			this.states.delete(id);
-			for (const candidate of staleControllers) this.live.delete(candidate);
+			for (const [candidate] of this.live) if (candidate.header.id === id) this.live.delete(candidate);
 			return removed;
 		});
-		await this.ctx.parallel("session-persistence/deleted", id);
+		try {
+			await this.ctx.parallel("session-persistence/deleted", id);
+		} catch (error) {
+			throw new Error(`session "${id}" was deleted but derived cleanup failed; retry deletion to finish cleanup`, { cause: error });
+		}
 		return deleted;
 	}
 	async appendCore(id, events) {
@@ -984,6 +1037,67 @@ var PersistenceCoordinator = class {
 		}
 	}
 	/**
+	* Borrow one exact logical view while pinning its reusable prepared Session.
+	* @param id - persisted session to observe.
+	* @param signal - optional cancellation for preparation work.
+	* @returns a disposable observation retaining the prepared source.
+	*/
+	async borrowSession(id, signal) {
+		for (;;) {
+			signal?.throwIfAborted();
+			if (this.retirements.has(id)) await this.waitForRetirement(id, signal);
+			const live = this.ctx.sessions.get(id);
+			if (live !== void 0) return {
+				source: "live",
+				inspection: this.inspectLive(live),
+				[Symbol.dispose]: () => {}
+			};
+			const observation = await this.preparations.borrow(id, () => this.serialize(id, () => this.prepareCore(id)), signal);
+			const source = observation.source;
+			try {
+				const attached = this.ctx.sessions.get(id);
+				if (attached !== void 0) {
+					observation[Symbol.dispose]();
+					return {
+						source: "live",
+						inspection: this.inspectLive(attached),
+						[Symbol.dispose]: () => {}
+					};
+				}
+				const current = await this.serialize(id, () => this.isPreparedSourceCurrent(source, signal), signal);
+				const published = this.ctx.sessions.get(id);
+				if (published !== void 0) {
+					observation[Symbol.dispose]();
+					return {
+						source: "live",
+						inspection: this.inspectLive(published),
+						[Symbol.dispose]: () => {}
+					};
+				}
+				if (current || this.preparations.discardReady(id, source) === "retained") return {
+					source: "prepared",
+					inspection: source.inspection,
+					revision: source.revision,
+					preparedSession: source.session,
+					[Symbol.dispose]: () => {
+						observation[Symbol.dispose]();
+					}
+				};
+			} catch (error) {
+				observation[Symbol.dispose]();
+				signal?.throwIfAborted();
+				const attached = this.ctx.sessions.get(id);
+				if (attached !== void 0) return {
+					source: "live",
+					inspection: this.inspectLive(attached),
+					[Symbol.dispose]: () => {}
+				};
+				throw error;
+			}
+			observation[Symbol.dispose]();
+		}
+	}
+	/**
 	* Read the stored events from `fromSeq` onward, detached and non-mutating
 	* (the read-from-seq primitive behind the service's `readFrom`). Runs on
 	* the same per-id chain as writes; a backend with the seek-capable
@@ -1010,7 +1124,7 @@ var PersistenceCoordinator = class {
 				throw error;
 			}
 			signal?.throwIfAborted();
-			if (suffix === void 0) throw new Error(`session "${id}" not found`);
+			if (suffix === void 0) throw new SessionPersistenceNotFoundError(id);
 			this.assertStoredId(id, suffix.meta);
 			this.assertVersion(suffix.meta);
 			if (suffix.events.some(needsLegacyPrefix)) {
@@ -1038,7 +1152,7 @@ var PersistenceCoordinator = class {
 		signal?.throwIfAborted();
 		const stored = await this.backend.loadStored(id, signal);
 		signal?.throwIfAborted();
-		if (stored === void 0) throw new Error(`session "${id}" not found`);
+		if (stored === void 0) throw new SessionPersistenceNotFoundError(id);
 		this.assertStoredId(id, stored.meta);
 		this.assertVersion(stored.meta);
 		const events = snapshotStoredEvents(stored.events, id);
@@ -1051,7 +1165,7 @@ var PersistenceCoordinator = class {
 	/** Read, repair in memory, validate, and freeze one cold source once. */
 	async prepareCore(id) {
 		const stored = await this.backend.loadStored(id);
-		if (stored === void 0) throw new Error(`session "${id}" not found`);
+		if (stored === void 0) throw new SessionPersistenceNotFoundError(id);
 		try {
 			const { meta, events, revision, tornMarker } = stored;
 			this.assertStoredId(id, meta);
@@ -1117,7 +1231,7 @@ var PersistenceCoordinator = class {
 		const state = this.states.get(session.id);
 		/* v8 ignore next -- successful flush always publishes this live session's durable state */
 		if (state === void 0) throw new Error(`session "${session.id}" lost persistence state during load`);
-		if (events.length === 0) throw new Error(`session "${session.id}" not found`);
+		if (events.length === 0 && !state.materialized) throw new Error(`session "${session.id}" not found`);
 		if (interruptedTurnClosers(events).length > 0) throw new Error(`cannot load session "${session.id}" while its live turn is open; use the live Session or wait for the turn to close`);
 		return Object.freeze({
 			meta: state.meta,
@@ -1171,19 +1285,16 @@ var PersistenceCoordinator = class {
 		throw this.unsupported(meta, sessionFormatVersionRefusal(meta.id, meta.version));
 	}
 	/**
-	* Refuse a log containing an event type this build does not know, unless the
-	* writer marked the event ignorable: an unrecognized required event may
-	* change how the rest of the log must be interpreted, so silently skipping
-	* it would reconstruct a wrong session (the envelope contract on
-	* `SessionEvent.ignorable`). Runs on NORMALIZED events — after
-	* `snapshotStoredEvents`/`adoptStoredEvents` has upgraded the legacy shapes
-	* this build still reads and rejected the ones it does not, so those keep
-	* their specific diagnostics.
+	* Refuse a log containing an event type this build does not know: silently
+	* skipping an unknown event could reconstruct a wrong session. Runs on
+	* NORMALIZED events — after `snapshotStoredEvents`/`adoptStoredEvents` has
+	* upgraded the legacy shapes this build still reads and rejected the ones it
+	* does not, so those keep their specific diagnostics.
 	*/
 	assertEventsSupported(meta, events) {
 		for (const event of events) {
-			if (KNOWN_SESSION_EVENT_TYPES.has(event.type) || event.ignorable === true) continue;
-			throw this.unsupported(meta, `session "${meta.id}" contains event type "${event.type}" (seq ${event.seq}) unknown to this harness and not marked ignorable; refusing to interpret the log — it was likely written by a newer harness`);
+			if (KNOWN_SESSION_EVENT_TYPES.has(event.type)) continue;
+			throw this.unsupported(meta, `session "${meta.id}" contains event type "${event.type}" (seq ${event.seq}) unknown to this harness; refusing to interpret the log — it was likely written by a newer harness`);
 		}
 	}
 	/** Build a format refusal that points at the raw artifact when the backend has one. */
@@ -1436,9 +1547,10 @@ var SessionPersistence = class extends Service {
 		return Promise.reject(/* @__PURE__ */ new Error("this session persistence backend does not expose raw artifacts"));
 	}
 	/**
-	* Materialize a live session header even when it has no events.
-	* @param _session - live session whose header must become durable.
-	* @returns completion after materialization; the default rejects unsupported backends.
+	* Ensure a live session has a durable header even when it has no events.
+	* Ordinary sessions remain lazily materialized; lifecycle frontends call
+	* this only when an empty session itself is a durable resumable resource.
+	* @param _session - exact live session whose registered header is materialized.
 	*/
 	ensureMaterialized(_session) {
 		return Promise.reject(/* @__PURE__ */ new Error("this session persistence backend cannot materialize an empty session"));
@@ -1467,4 +1579,4 @@ var SessionPersistence = class extends Service {
 	}
 };
 //#endregion
-export { DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS, PersistenceCoordinator, SessionFormatUnsupportedError, SessionPersistence, SessionPersistence as default, SessionPersistenceCorruptionError, SessionPersistenceDeleteBlockedError, SessionPersistenceRevision, sessionFormatVersionRefusal };
+export { DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS, PersistenceCoordinator, SessionFormatUnsupportedError, SessionPersistence, SessionPersistence as default, SessionPersistenceCorruptionError, SessionPersistenceDeleteBlockedError, SessionPersistenceNotFoundError, SessionPersistenceRevision, sessionFormatVersionRefusal };

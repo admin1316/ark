@@ -21,12 +21,13 @@
  * @module @deepseek-ai/dsh-agent-presets
  */
 import { Context } from '@deepseek-ai/cordis';
-import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import z from '@deepseek-ai/schemastery';
+import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import { type ScopeKey } from '@deepseek-ai/dsh-scope';
 import type { Agent } from '@deepseek-ai/dsh-agent';
+import type { AgentPresetDocument, AgentPresetDocumentOpen, AgentPresetRemoved, AgentPresetRoster, AgentPresetSelection } from './types.ts';
 import { type AgentPreset, type Config, type PresetRoot } from './preset.ts';
-import type { RemoteAgentPresetCatalog, RemoteAgentPresetDocument, RemoteAgentPresetOpenTarget } from './types.ts';
+export type * from './types.ts';
 /** Settings namespace carrying the user's chosen default preset. */
 export declare const SETTINGS_NAMESPACE = "agent-presets";
 /** The user-writable slice of this plugin's config. */
@@ -36,14 +37,14 @@ export interface AgentPresetSettings {
 }
 /** Runtime schema for the user-writable slice. */
 export declare const AgentPresetSettingsSchema: z<AgentPresetSettings>;
-export { COMPOSITION_FILE, discoverPresets, scanRoot } from './discovery.ts';
+export { COMPOSITION_FILE, discoverPresets, scanRoot, SHIPPED_PRESET_ROOT } from './discovery.ts';
 export { METADATA_FILE, readPresetMetadata, renderPresetMetadata, type PresetMetadata, } from './metadata.ts';
 export { inactiveRows, leakedServices, livePresetMounts, mountPreset, serviceForAgent, standingMountFor, type JoinedPresetMount, type PresetMount, } from './mount.ts';
-export { copyComposition, deleteComposition, InvalidPresetIdError, PresetExistsError, ReservedPresetIdError, PresetNotWritableError, readComposition, writableRoot, } from './authoring.ts';
-export { resolveSessionPreset, type PresetBearingSession } from './session.ts';
-export { PresetMountError, UnknownPresetError } from './preset.ts';
+export { copyComposition, deleteComposition, InvalidPresetIdError, PresetExistsError, PresetNotWritableError, readComposition, writableRoot, } from './authoring.ts';
+export { agentPresetProjectionDefinition, resolveSessionPreset } from './session.ts';
+export type { PresetBearingSession } from './session.ts';
+export { PresetLockedError, PresetMountError, UnknownPresetError } from './preset.ts';
 export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts';
-export type { RemoteAgentPresetCatalog, RemoteAgentPresetDocument, RemoteAgentPresetEntry, RemoteAgentPresetOpenTarget, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         agentPresets: AgentPresets;
@@ -62,16 +63,29 @@ export declare class AgentPresets extends TypertRemoteService {
     /** Runtime schema for the preset roster. */
     static Config: z<Config>;
     /**
-     * The roots discovery and authoring actually scan: every configured root in
+     * The roots discovery and authoring actually scan: the package's shipped
+     * root unless `includeShippedRoot` is false, then every configured root in
      * order, then the harness-home user root unless `includeUserRoot` is false.
      *
      * Derived once, because a root set that changed between `list()` and the
      * `copy()` acting on its answer would author into a directory the caller
-     * never saw. Appending rather than prepending keeps an earlier configured
-     * root winning a duplicate id, so a shipped preset still shadows a
-     * locally authored directory that claimed its name.
+     * never saw. The shipped root comes FIRST and the user root LAST because an
+     * earlier root wins a duplicate id: a shipped preset shadows any directory
+     * that claimed its name, and a configured root still shadows a locally
+     * authored one.
      */
     private readonly resolvedRoots;
+    /**
+     * Where a row's package name resolves from: the base URL of the composition
+     * this roster was loaded by, which is inside the installed harness.
+     *
+     * Discovery needs it because a preset's own directory is the wrong base for
+     * a package name — a locally authored preset lives under the user's home,
+     * where Node's upward `node_modules` walk never reaches the harness's
+     * dependencies. The mount already resolves rows this way; holding the same
+     * base here is what lets health answer the question before a session does.
+     */
+    private readonly harnessBase;
     /**
      * The user layer over `config.default`, present only while a settings
      * provider is composed. Held rather than snapshotted so a hot-reloaded
@@ -107,49 +121,14 @@ export declare class AgentPresets extends TypertRemoteService {
      */
     list(): Promise<AgentPreset[]>;
     /**
-     * List the current preset roster without exposing any Host path.
-     * @returns the redacted preset catalog and authoring capabilities.
+     * The roster off the Host: {@link list} projected to path-free rows, with
+     * the default marked and this deployment's authoring capability beside it.
+     *
+     * Whether a client can open a preset's directory is the Host's own opener
+     * capability, not a roster property — a caller needing both joins them.
+     * @returns the rows and the authoring capability.
      */
-    remoteList(): Promise<RemoteAgentPresetCatalog>;
-    /**
-     * Recompose one blank agent under a different preset. The Agent lookup is
-     * supplied by the gateway, so a caller never submits an arbitrary context.
-     * @param agent - gateway-resolved Agent whose blank session is recomposed.
-     * @param agentPreset - preset id to compose for the Agent.
-     * @returns the selected preset id.
-     */
-    remoteSelect(agent: Agent, agentPreset: string): Promise<{
-        agentPreset: string;
-    }>;
-    /**
-     * Privileged read of one composition; gateway policy must mark this route privileged.
-     * @param agentPreset - preset id to read.
-     * @returns the preset document without exposing its Host path.
-     */
-    remoteRead(agentPreset: string): Promise<RemoteAgentPresetDocument>;
-    /**
-     * Create one user-owned preset from a named existing source.
-     * @param from - source preset id to copy.
-     * @param agentPreset - id for the new user-owned preset.
-     * @param name - optional display name for the new preset.
-     * @returns the new preset id.
-     */
-    remoteCopy(from: string, agentPreset: string, name?: string): Promise<{
-        agentPreset: string;
-    }>;
-    /**
-     * Authorize, but do not resolve or launch, a user-owned preset directory.
-     * The Host re-resolves this id and owns the macOS LaunchServices handoff.
-     * @param agentPreset - user-owned preset id to open.
-     * @returns the authorized native document target.
-     */
-    remoteOpenDocument(agentPreset: string): Promise<RemoteAgentPresetOpenTarget>;
-    /**
-     * Delete one locally authored preset.
-     * @param agentPreset - user-owned preset id to delete.
-     * @returns an empty object after deletion.
-     */
-    remoteRemove(agentPreset: string): Promise<Record<never, never>>;
+    remoteExportList(): Promise<AgentPresetRoster>;
     /**
      * Resolve one preset by id.
      *
@@ -191,8 +170,6 @@ export declare class AgentPresets extends TypertRemoteService {
      * standing compositions. WeakMap: entries die with their agents.
      */
     private readonly bindings;
-    /** One per-session ordering chain for Remote preset switches. */
-    private readonly remoteSwitches;
     /**
      * Compose one agent from a preset: ensure the preset's standing mount, then
      * parent the agent's scope key to it so the mount's registrations and
@@ -245,10 +222,11 @@ export declare class AgentPresets extends TypertRemoteService {
      */
     composedPreset(agentCtx: Context): string | undefined;
     /**
-     * The roots this roster scans, which is not `config.roots`: it is every
-     * configured root in order, then the harness-home user root unless
-     * `includeUserRoot` is false. Read this — not the config field — to answer
-     * whether a roster is composed at all, so one derivation decides it.
+     * The roots this roster scans, which is not `config.roots`: the package's
+     * shipped root unless `includeShippedRoot` is false, every configured root
+     * in order, then the harness-home user root unless `includeUserRoot` is
+     * false. Read this — not the config field — to answer whether a roster is
+     * composed at all, so one derivation decides it.
      */
     get roots(): readonly PresetRoot[];
     /** Whether this deployment has a root locally authored presets go to. */
@@ -260,6 +238,14 @@ export declare class AgentPresets extends TypertRemoteService {
      * @throws when no configured root supplies that id.
      */
     read(id: string): Promise<string>;
+    /**
+     * One preset's composition text with the roster row it belongs to.
+     * @param agentPreset - the preset id.
+     * @returns the composition beside its trust and published metadata.
+     * @throws {TypertRemoteFailure} `bad-request` for an empty id, or
+     * `agent-preset-not-found` when no configured root supplies it.
+     */
+    readDocument(agentPreset: string): Promise<AgentPresetDocument>;
     /**
      * Create a locally authored preset by copying an existing one whole.
      *
@@ -277,11 +263,46 @@ export declare class AgentPresets extends TypertRemoteService {
      */
     copy(from: string, id: string, name?: string): Promise<void>;
     /**
+     * Copy one preset through the Remote API.
+     * @param from - the source preset id.
+     * @param agentPreset - the new preset id.
+     * @param name - the copy's optional display name.
+     * @returns the id after the copy is stored.
+     * @throws {TypertRemoteFailure} with the corresponding stable preset code
+     * and details when the copy is refused.
+     */
+    remoteExportCopy(from: string, agentPreset: string, name?: string): Promise<AgentPresetSelection>;
+    /**
      * Delete a locally authored preset.
+     *
      * @param id - the preset id.
      * @throws when the preset is unknown or ships with the deployment.
      */
     remove(id: string): Promise<void>;
+    /**
+     * Delete one preset through the Remote API.
+     * @param agentPreset - the preset id.
+     * @returns an empty acknowledgement after deletion.
+     * @throws {TypertRemoteFailure} with the corresponding stable preset code
+     * and details when deletion is refused.
+     */
+    remoteExportDelete(agentPreset: string): Promise<AgentPresetRemoved>;
+    /**
+     * Open only a user-authored preset resolved by the service's own roster.
+     * @param agentPreset - user preset id, never a caller-supplied path.
+     * @param signal - native command cancellation.
+     * @returns a handoff confirmation or the directory when this host has no opener.
+     */
+    remoteOpenDocument(agentPreset: string, signal: AbortSignal): Promise<AgentPresetDocumentOpen>;
+    /** @returns whether this Host can hand a directory to its native desktop. */
+    protected canOpenPresetDirectory(): boolean;
+    /**
+     * Dispatch the directory already authorized by the preset roster.
+     * @param path - resolved user-preset directory.
+     * @param signal - caller cancellation.
+     * @returns completion of the native opening command.
+     */
+    protected openPresetDirectory(path: string, signal: AbortSignal): Promise<void>;
     /**
      * One agent's instance of a service its preset mounted.
      *
@@ -315,13 +336,44 @@ export declare class AgentPresets extends TypertRemoteService {
      * state to restore. The re-link runs through the binding this roster kept
      * from the agent's mount — dsh-scope's only re-link authority. An agent
      * that never composed one has nothing to re-link: the switch is then the
-     * agent's first bind, exactly a mount.
+     * agent's first bind, exactly a mount. A committed re-link emits
+     * `tools/change` because changing the parent scope changes the Agent's
+     * resolved tool set without adding or removing registry entries.
      * @param agentCtx - the agent's scope context.
      * @param id - the preset to compose the agent from instead.
      * @returns the preset now installed.
      * @throws when the preset is unknown or its composition is unusable.
      */
     recompose(agentCtx: Context, id: string): Promise<AgentPreset>;
+    /**
+     * Serializes {@link select} per session. Two concurrent selects would both
+     * pass the blank check, and the second re-link would then find the record
+     * the first already replaced — leaving two compositions registered into one
+     * agent layer. A client's `busy` flag is not enforcement: the wire is
+     * reachable directly.
+     *
+     * Entries hold a failure-swallowing guard rather than the turn itself, so a
+     * refused switch does not reject the next caller's chain.
+     */
+    private readonly switches;
+    /**
+     * Compose a blank session's agent from a different preset and record it.
+     * @param agent - the session's live agent, resolved from the wire identity.
+     * @param agentPreset - the preset to compose the agent from instead.
+     * @returns the preset id that was recorded.
+     * @throws {TypertRemoteFailure} with `bad-request`, `agent-preset-locked`,
+     * `agent-preset-not-found`, or `agent-preset-invalid` when refused.
+     */
+    select(agent: Agent, agentPreset: string): Promise<string>;
+    /**
+     * Select through the existing serialized session-composition owner.
+     * @param agent - exact Agent resolved by the Gateway.
+     * @param agentPreset - requested preset id.
+     * @returns the preset committed to the session log.
+     */
+    remoteSelect(agent: Agent, agentPreset: string): Promise<AgentPresetSelection>;
+    /** One queued switch: re-check, recompose, then record what the agent runs. */
+    private swap;
     /**
      * The standing scope key of one preset, for a host reader with no agent.
      *

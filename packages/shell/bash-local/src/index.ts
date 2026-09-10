@@ -74,6 +74,8 @@ function assertPositiveFinite(name: string, value: number): void {
   }
 }
 
+let windowsBashExecutable: string | undefined
+
 /**
  * The bash executable this executor spawns, memoized per process. POSIX keeps
  * the bare name: `execvp` PATH resolution never searches the working
@@ -91,8 +93,6 @@ function assertPositiveFinite(name: string, value: number): void {
  * @returns the argv head for `bash -c` invocations.
  * @throws on win32 when PATH offers only the system-directory WSL launcher.
  */
-let windowsBashExecutable: string | undefined
-
 export function resolveBashExecutable(platform: NodeJS.Platform = process.platform): string {
   if (platform !== 'win32') return 'bash'
   windowsBashExecutable ??= scanWindowsBashExecutable()

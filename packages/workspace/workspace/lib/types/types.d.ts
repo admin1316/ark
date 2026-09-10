@@ -5,8 +5,7 @@
  * @module @deepseek-ai/dsh-workspace/src/types
  */
 import type { Branded } from '@deepseek-ai/dsh-brand';
-export type * from './remote.ts';
-import type { SessionId } from '@deepseek-ai/dsh-session';
+import type { SessionId } from '@deepseek-ai/dsh-session/types';
 /**
  * Identifies one workspace record. A generated uuid, never the path: path
  * normalization rewrites paths, and a reference anchor must stay stable.
@@ -90,4 +89,5 @@ export interface Workspace {
      */
     status(): Promise<'ok' | 'missing-dir'>;
 }
+export type { WorkspaceRemoteView, WorkspaceRemoteFailure, WorkspaceRemoteSuccess, WorkspaceRemoteResult, WorkspaceRemoteListValue, WorkspaceRemoteCreateRequest, WorkspaceRemoteCreateValue, WorkspaceRemoteRenameRequest, WorkspaceRemoteWorkspaceValue, WorkspaceRemoteDeleteRequest, WorkspaceRemoteDeletedValue, WorkspaceRemoteInsertBeforeRequest, WorkspaceRemoteOrderValue, WorkspaceRemoteInsertSessionBeforeRequest, WorkspaceRemoteArchiveRequest, WorkspaceRemoteArchivedValue, WorkspaceRemoteDeleteArchivedRequest, WorkspaceRemoteDeleteArchivedValue, } from './remote.ts';
 //# sourceMappingURL=types.d.ts.map

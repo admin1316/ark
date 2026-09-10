@@ -124,6 +124,7 @@ MCP guarantees tool-name uniqueness only [within one server](https://modelcontex
 - A native harness tool named `search` is unaffected.
 - Duplicate `serverName` config fails the later instance at load (see Configuration).
 - A server listing the same tool name twice is an invalid tool list: the sync throws and the previous generation stays registered.
+- Repeated continuation cursors reject discovery before swapping generations, including cycles through empty pages; a later complete refresh remains possible.
 - A registry conflict during the swap can only mean a foreign tool squats on this server's `mcp__<serverName>__` namespace: the partial generation is rolled back (zero tools from this server) and the error is logged loudly.
 
 Tools are never silently skipped; which tools are available never depends on plugin load order.

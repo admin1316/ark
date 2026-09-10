@@ -21,10 +21,14 @@ const external = [
 // src/index.ts for source packages) to an absolute path and passes it via
 // TSDOWN_ENTRY — path anchoring never depends on the config location.
 const entry = process.env.TSDOWN_ENTRY
+if (entry === undefined || !existsSync(entry)) throw new Error('TSDOWN_ENTRY must name an existing source entry')
+const packageRoot = process.cwd()
 
 export default defineConfig({
+  cwd: packageRoot,
   entry: [entry],
-  outDir: 'lib',
+  outDir: resolve(packageRoot, 'lib'),
+  clean: false,
   format: 'esm',
   dts: true,
   sourcemap: false,

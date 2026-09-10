@@ -9,14 +9,15 @@ import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
-import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
+import { getBuiltinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all'
 import { createModels, getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { Api, Model, OpenAICompletionsCompat, Provider } from '@earendil-works/pi-ai'
-import { resolveProfiles } from '../src/config.ts'
+import { Config, assertServiceable, resolveProfiles } from '../src/config.ts'
 import { buildProvider, supportedProtocols } from '../src/provider.ts'
 import { assemble } from './assemble.ts'
 import { memoryAuth } from './auth-double.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
+import { catalogModels, catalogProvider, catalogProviderIds } from '../src/catalog.ts'
 
 const homes: string[] = []
 
@@ -74,6 +75,58 @@ async function harness(config: LlmPiAi.Config): Promise<Context> {
   await ctx.plugin(LlmPiAi, config)
   return ctx
 }
+
+describe('Bailian pay-as-you-go presets', () => {
+  it('does not borrow plan credentials and delegates raw streaming to the existing Qwen owner', async () => {
+    const provider = catalogProvider('bailian-cn')!
+    const auth = provider.auth.apiKey!
+    const input = { ctx: { env: vi.fn(async () => 'wrong-plan-key'), fileExists: async () => false },
+      signal: new AbortController().signal }
+    expect(await auth.resolve(input)).toBeUndefined()
+    expect(await auth.resolve({ ...input, credential: { type: 'api_key', key: 'ordinary-key' } }))
+      .toMatchObject({ auth: { apiKey: 'ordinary-key' } })
+    expect(input.ctx.env).not.toHaveBeenCalled()
+    const owner = catalogProvider('qwen-token-plan')!
+    const dispatch = vi.spyOn(owner, 'stream').mockImplementation(() => { throw new Error('raw-stream-boundary') })
+    try {
+      const model = provider.getModels()[0]!
+      const context = { messages: [] }
+      const options = { apiKey: 'ordinary-key' }
+      expect(() => provider.stream(model, context, options)).toThrow('raw-stream-boundary')
+      expect(dispatch).toHaveBeenCalledWith(model, context, options)
+    } finally { dispatch.mockRestore() }
+  })
+  it.each([
+    ['bailian-cn', 'https://dashscope.aliyuncs.com/compatible-mode/v1'],
+    ['bailian-intl', 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'],
+  ])('keeps %s on its ordinary API endpoint with canonical Qwen capabilities', async (provider, endpoint) => {
+    expect(catalogProviderIds()).toContain(provider)
+    expect(catalogProvider(provider)?.baseUrl).toBe(endpoint)
+    const originals = catalogModels('qwen-token-plan')
+    for (const model of catalogModels(provider).values()) {
+      const original = originals.get(model.id)
+      expect(model).toEqual({ ...original, provider, baseUrl: endpoint,
+        compat: { ...original?.compat, maxTokensField: 'max_tokens' } })
+      expect(model.input).toContain('image')
+      expect(model.reasoning).toBe(true)
+      expect(model.maxTokens).toBe(131_072)
+    }
+    const server = await mockServer([{ events: textEvents }, { events: textEvents }])
+    const ctx = await harness({ providers: { [provider]: { apiKeyEnv: KEY_ENV,
+      baseURL: `${server.url}/compatible-mode/v1` } } })
+    const result = await assemble(ctx, { provider, model: 'qwen3.8-flash', messages: [createUserMessage({
+      content: [{ type: 'text', text: 'hi' }], source: { kind: 'plugin', plugin: 'test' },
+    })] })
+    expect(result.finish).toEqual({ kind: 'stop' })
+    expect(server.paths).toEqual(['/compatible-mode/v1/chat/completions'])
+    expect(server.headers[0]?.authorization).toBe('Bearer test-key')
+    expect(server.requests[0]).toMatchObject({ model: 'qwen3.8-flash', stream: true })
+    expect(await ctx.llm.verifyModel(provider, 'qwen3.8-flash', new AbortController().signal)).toBe('minimal-generation')
+    expect(server.paths).toEqual(['/compatible-mode/v1/chat/completions', '/compatible-mode/v1/chat/completions'])
+    expect(server.requests[1]).toMatchObject({ max_tokens: 1 })
+    await ctx.fiber.dispose()
+  })
+})
 
 describe('hand-declared providers', () => {
   it('serves a route pi-ai has never heard of from its own declaration', async () => {
@@ -358,14 +411,15 @@ describe('hand-declared providers', () => {
     expect(server.requests).toHaveLength(0)
   })
 
-  it('authenticates an unauthenticated route through a configured header', async () => {
+  it('authenticates a keyless route through a credential-backed header', async () => {
+    vi.stubEnv(KEY_ENV, 'Bearer local')
     const server = await mockServer([{ events: textEvents }])
     const ctx = await harness({
       providers: {
         'local-llm': {
           api: 'openai-completions',
           baseURL: `${server.url}/v1`,
-          headers: { Authorization: 'Bearer local' },
+          credentialHeaders: { Authorization: KEY_ENV },
           models: [{ id: 'qwen3', contextWindow: 32_768, maxTokens: 2048 }],
         },
       },
@@ -757,6 +811,60 @@ describe('modelOverrides', () => {
 })
 
 describe('compat switches', () => {
+  it('keeps only independently valid ids during deferred catalog repair', () => {
+    const profile = { api: 'openai-completions', baseURL: 'https://fixture.invalid',
+      models: [{ id: 'duplicate' }, { id: 'duplicate' }, { id: 'good' }, { id: '' }] }
+    const resolved = resolveProfiles({ local: profile }, 'deferred').get('local')
+    expect(resolved?.piProvider?.getModels().map(model => model.id)).toEqual(['good'])
+    expect([...resolved?.modelErrors.keys() ?? []]).toEqual(['duplicate', ''])
+    expect(() => { assertServiceable({}) }).not.toThrow()
+    const faulty: LlmPiAi.PiAiProviderProfile = { api: 'openai-completions', baseURL: 'https://fixture.invalid',
+      models: [{ get id(): string { throw new TypeError('fixture catalog access failure') } }] }
+    expect(() => resolveProfiles({ local: faulty }, 'deferred')).toThrow('fixture catalog access failure')
+  })
+
+  it.each(['thinking_token_budget', 'thinking_budget', 'thinking_budget_tokens'] as const)
+  ('preserves the declared %s budget, priority and thinking-template capabilities', (field) => {
+    const compat = { thinkingTokenBudgetField: field, vllmPriority: -1,
+      thinkingFormat: 'chat-template' as const, chatTemplateKwargs: { budget: { $var: 'thinking.budget' as const } } }
+    const parsed = Config({ providers: { local: { api: 'openai-completions', baseURL: 'https://fixture.invalid',
+      compat, models: [{ id: 'local-model' }],
+    } } })
+    expect(resolveProfiles(parsed.providers).get('local')?.piProvider.getModels()[0]?.compat).toMatchObject(compat)
+  })
+
+  it('preserves model-owned output-limit, per-turn effort and fallback metadata', () => {
+    const parsed = Config({ providers: {
+      responses: { api: 'openai-responses', baseURL: 'https://fixture.invalid',
+        compat: { supportsMaxOutputTokens: false }, models: [{ id: 'local-responses' }] },
+      messages: { api: 'anthropic-messages', baseURL: 'https://fixture.invalid',
+        compat: { supportsMidConvoEffort: true, forceAdaptiveThinking: true }, models: [{ id: 'local-messages' }] },
+    } })
+    const profiles = resolveProfiles(parsed.providers)
+    expect(profiles.get('responses')?.piProvider.getModels()[0]?.compat).toMatchObject({ supportsMaxOutputTokens: false })
+    expect(profiles.get('messages')?.piProvider.getModels()[0]?.compat).toMatchObject({ supportsMidConvoEffort: true })
+    const catalog = getBuiltinModels('anthropic')
+    const fallback = catalog.find(model => model.compat?.allowedFallbackModels?.length)
+    expect(fallback).toBeDefined()
+    const retained = resolveProfiles({ anthropic: {} }).get('anthropic')?.piProvider.getModels().find(model => model.id === fallback?.id)
+    expect(retained?.compat).toEqual(fallback?.compat)
+  })
+
+  it('rejects effort-only controls without the adaptive-thinking protocol they require', () => {
+    expect(() => resolveProfiles({ local: { api: 'anthropic-messages', baseURL: 'https://fixture.invalid',
+      compat: { supportsMidConvoEffort: true }, models: [{ id: 'local-messages' }],
+    } })).toThrow('requires forceAdaptiveThinking for supportsMidConvoEffort')
+  })
+
+  function mixedCatalog() {
+    for (const provider of getBuiltinProviders()) {
+      const catalog: readonly Model<Api>[] = getBuiltinModels(provider)
+      const completions = catalog.find(model => model.api === 'openai-completions')
+      const responses = catalog.find(model => model.api === 'openai-responses')
+      if (completions !== undefined && responses !== undefined) return { provider, completions, responses }
+    }
+    throw new Error('the installed catalog has no mixed Completions/Responses route')
+  }
   /** The materialized models of one route, keyed by id. */
   function modelsOf(providers: Record<string, LlmPiAi.PiAiProviderProfile>, route: string): Map<string, Model<Api>> {
     const models = resolveProfiles(providers).get(route)?.piProvider.getModels() ?? []
@@ -796,19 +904,14 @@ describe('compat switches', () => {
   })
 
   it('skips models of other protocols on a mixed route instead of failing them', () => {
-    // xai ships both completions and responses models, so a route-level switch
-    // must land on the former without invalidating the latter.
-    const catalog = getBuiltinModels('xai') as readonly Model<Api>[]
-    const completions = catalog.find(model => model.api === 'openai-completions')
-    const responses = catalog.find(model => model.api === 'openai-responses')
-    if (completions === undefined || responses === undefined) throw new Error('xai no longer ships a mixed catalog')
+    const { provider, completions, responses } = mixedCatalog()
 
     const models = modelsOf({
-      xai: {
+      [provider]: {
         compat: { supportsReasoningEffort: false },
         models: [{ id: completions.id }, { id: responses.id }],
       },
-    }, 'xai')
+    }, provider)
 
     expect((models.get(completions.id)?.compat as OpenAICompletionsCompat).supportsReasoningEffort).toBe(false)
     expect(models.get(responses.id)?.compat).toEqual(responses.compat)
@@ -877,18 +980,15 @@ describe('compat switches', () => {
   })
 
   it('lands each route switch only on the models whose protocol declares it', () => {
-    const catalog = getBuiltinModels('xai') as readonly Model<Api>[]
-    const completions = catalog.find(model => model.api === 'openai-completions')
-    const responses = catalog.find(model => model.api === 'openai-responses')
-    if (completions === undefined || responses === undefined) throw new Error('xai no longer ships a mixed catalog')
+    const { provider, completions, responses } = mixedCatalog()
 
     const models = modelsOf({
-      xai: {
+      [provider]: {
         // Both protocols take the first switch; only completions takes the second.
         compat: { supportsDeveloperRole: false, thinkingFormat: 'openai' },
         models: [{ id: completions.id }, { id: responses.id }],
       },
-    }, 'xai')
+    }, provider)
 
     const onCompletions = models.get(completions.id)?.compat as OpenAICompletionsCompat
     expect(onCompletions.supportsDeveloperRole).toBe(false)

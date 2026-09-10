@@ -8,14 +8,26 @@ import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, type ToolCallId } from '@deepseek-ai/dsh-llm'
-import { scopeTarget } from '@deepseek-ai/dsh-scope'
+import { createUserMessage, type CallId } from '@deepseek-ai/dsh-llm'
+import { scopeTarget, type Scoped } from '@deepseek-ai/dsh-scope'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
     approval: ApprovalService
+  }
+  interface Events {
+    /**
+     * Ask scoped answerers; call next to delegate an unclaimed request.
+     * @param req - borrowed live Agent request and cancellation signal.
+     * @mode waterfall
+     */
+    'approval/request'(
+      this: Scoped<Agent>,
+      req: ApprovalRequest,
+      next: () => Promise<ApprovalOutcome>,
+    ): Promise<ApprovalOutcome>
   }
 }
 
@@ -38,7 +50,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 
 import { ApprovalRequestId } from './types.ts'
-import type { ApprovalOutcome, ApprovalRequestEvent } from './types.ts'
+import type { ApprovalOutcome } from './types.ts'
 
 export { ApprovalRequestId } from './types.ts'
 export type { ApprovalOutcome } from './types.ts'
@@ -115,7 +127,7 @@ export function setApprovalPolicy(session: Session, policy: ApprovalPolicy): voi
  * Readonly same-process permission question. `callId` links to an already
  * presented tool call, so arguments are not duplicated here.
  */
-export interface ApprovalRequest extends ApprovalRequestEvent {
+export interface ApprovalRequest {
   /**
    * The agent on whose behalf the question is asked. Routes the question (a
    * UI answerer only answers for agents it owns) and receives the audit
@@ -128,7 +140,7 @@ export interface ApprovalRequest extends ApprovalRequestEvent {
    * The exact tool call being decided, when the asker has one — lets a UI
    * attach the prompt to the tool call it already streamed.
    */
-  readonly callId?: ToolCallId
+  readonly callId?: CallId
   /** The asker's human-readable explanation of WHY it is asking. */
   readonly reason?: string
   /**

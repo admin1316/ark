@@ -48,6 +48,8 @@ export interface DshBundleManifest {
 export interface DshProfileManifest {
   /** Ordered bundle layer list (package names). */
   bundles?: string[]
+  /** Apply patch edits live, or freeze them for this launch; defaults to live. */
+  patchReload?: 'live' | 'startup'
 }
 
 /**
@@ -86,6 +88,8 @@ export interface ProfileLayer {
 export interface Profile {
   /** The profile name (its directory basename). */
   name: string
+  /** Resolved patch lifecycle for the launcher. */
+  patchReload: 'live' | 'startup'
   /** Absolute profile directory. */
   dir: string
   /** Bundle layers in `dsh.profile.bundles` order. */
@@ -358,6 +362,10 @@ export function loadProfile(
     initProfile(dir, template)
   }
   const manifest = readProfileManifest(binName, dir)
+  const patchReload: unknown = manifest.dsh?.profile?.patchReload ?? 'live'
+  if (patchReload !== 'live' && patchReload !== 'startup') {
+    throw new Error(`${binName}: profile ${JSON.stringify(name)} has invalid dsh.profile.patchReload`)
+  }
   // A hand-written profile manifest may omit the dsh section entirely.
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const layers = bundles.map((packageName): ProfileLayer => {
@@ -374,7 +382,7 @@ export function loadProfile(
   const patches = options.userLayer !== false && existsSync(patchPath)
     ? loadOverlayPatches(binName, patchPath)
     : []
-  return { name, dir, layers, patchPath, patches }
+  return { name, dir, layers, patchPath, patches, patchReload }
 }
 
 /**

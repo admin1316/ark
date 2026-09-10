@@ -25,6 +25,10 @@ export function isTypertRemoteSegment(value: string): boolean {
 export class TypertLookupFailure<Failure = unknown> extends Error {
   /** Adapter-owned failure returned to the caller. */
   readonly failure: Failure
+  /** Public code mirrored for direct Remote callers. */
+  readonly code: string | undefined
+  /** Public structured context mirrored for direct Remote callers. */
+  readonly details: unknown
 
   /**
    * Wrap one adapter failure without exposing the rejected identity.
@@ -34,7 +38,33 @@ export class TypertLookupFailure<Failure = unknown> extends Error {
     super('Typert lookup policy rejected the requested identity')
     this.name = 'TypertLookupFailure'
     this.failure = failure
+    const record = typeof failure === 'object' && failure !== null ? failure : undefined
+    this.code = record !== undefined && 'code' in record && typeof record.code === 'string'
+      ? record.code : undefined
+    this.details = record !== undefined && 'details' in record ? record.details : undefined
   }
+}
+
+/**
+ * Validate the public failure payload shared by strict Remote adapters.
+ * @param value - Untrusted thrown or decoded value.
+ * @returns Whether code, message, and structured details are present.
+ */
+export function isRemoteFailurePayload(value: unknown): value is RemoteFailure {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    && 'code' in value && typeof value.code === 'string'
+    && 'message' in value && typeof value.message === 'string'
+    && 'details' in value && typeof value.details === 'object'
+    && value.details !== null && !Array.isArray(value.details)
+}
+
+/**
+ * Preserve an already classified strict Remote rejection.
+ * @param value - Untrusted thrown value.
+ * @returns Whether the exception wraps a complete Remote failure payload.
+ */
+export function isTypertRemoteFailure(value: unknown): value is TypertLookupFailure<RemoteFailure> {
+  return value instanceof TypertLookupFailure && isRemoteFailurePayload(value.failure)
 }
 
 /** A business Remote rejection preserved by unary and stream carriers. */

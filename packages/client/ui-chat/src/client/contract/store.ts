@@ -3,13 +3,13 @@
 import type { TurnProcessGeneration } from './turn-process.ts'
 
 /** Tool call identity as carried by Chat nodes. */
-export type ToolCallId = string
+export type CallId = string
 
 /** Selection target for the Chat details linkage channel. */
 export interface SelectionTarget {
   turnSeq: number
   stepSeq?: number
-  callId?: ToolCallId
+  callId?: CallId
   toolName?: string
 }
 

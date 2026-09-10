@@ -77,9 +77,9 @@ interface AskUserQuestionItem {
 interface AskUserQuestionRequest {
   /** Questions to display. */
   questions: AskUserQuestionItem[]
-  /** Exact live calling agent, when the request came from an agent tool call. */
+  /** Exact live Agent owning this request, when present. */
   agent?: Agent
-  /** Abort signal for the owning tool/step. */
+  /** Lifetime of the pending request. */
   signal?: AbortSignal
 }
 ```
@@ -113,8 +113,13 @@ interface AskUserQuestionAnswer {
 同一上下文中只能有一个活跃的提供方。提供方注册绑定到 effect，因此 HMR（热模块替换）或 dispose（资源释放）会移除当前活跃的 UI。
 
 ```ts type-equiv
-/** UI-side provider for user questions. */
+/** The single Host UI provider for requests not claimed by scoped answerers. */
 interface UserQuestionProvider {
+  /**
+   * Collect a human answer without retaining a cancelled request.
+   * @param request - borrowed request with its owning signal.
+   * @returns the selected or typed answers.
+   */
   ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>
 }
 ```
@@ -145,19 +150,19 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.userQuestions` — `UserQuestionService`
 
-`ctx.userQuestions`: one active UI provider plus an `ask()` API.
+`ctx.userQuestions`: validation plus the scoped answerer waterfall.
 
 ```ts cordis-catalog
 /**
- * Register the UI provider. Only one provider may be active in a context.
- *
- * @param provider UI-side implementation that collects answers.
- * @returns Disposer that unregisters this provider.
+ * Register the Host UI fallback, owned by the calling fiber.
+ * @param provider - answer collector for requests not claimed by scoped listeners.
+ * @returns an idempotent disposer withdrawing this provider.
+ * @throws when another Host UI provider is registered.
  */
 registerProvider(provider: UserQuestionProvider): () => void
 
 /**
- * Ask the active UI provider and wait for the user's answer.
+ * Ask the scoped answerer waterfall and wait for the user's answer.
  *
  * When a caller supplies an agent, human interaction is valid only for the
  * exact live runtime root. Runtime ownership, not durable session lineage,
@@ -167,12 +172,36 @@ registerProvider(provider: UserQuestionProvider): () => void
  *
  * @param request Questions, owner agent, and abort signal.
  * @returns The answer chosen or typed by the human.
- * @throws {UserQuestionError} code `CALLER_NOT_LIVE` when a supplied
- *   agent is not the registry's exact live instance, or `DELEGATED_CALLER`
- *   when that live agent is owned by another agent.
+ * @throws {UserQuestionError} code `ASK_ABORTED` when the supplied signal
+ *   is already or becomes aborted, `CALLER_NOT_LIVE` when a supplied agent
+ *   is not the registry's exact live instance, or `DELEGATED_CALLER` when
+ *   that live agent is owned by another agent.
  */
 async ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>
 ```
+
+Source: [`packages/interaction/user-questions/src/index.ts`](../../packages/interaction/user-questions/src/index.ts)
+
+<a id="user-questions-events"></a>
+
+### `user-questions/*` events
+
+<a id="user-questionsrequest--waterfall"></a>
+
+#### `user-questions/request` — waterfall
+
+Ask scoped answerers; call next to delegate an unclaimed request.
+
+```ts cordis-catalog
+/**
+ * Ask scoped answerers; call next to delegate an unclaimed request.
+ * @param request - borrowed Host request and cancellation signal.
+ * @mode waterfall
+ */
+'user-questions/request'( this: Scoped<Agent>, request: AskUserQuestionRequest, next: () => Promise<AskUserQuestionAnswer>, ): Promise<AskUserQuestionAnswer>
+```
+
+Types: [Agent](core.zh.md) · [Scoped](scope.zh.md)
 
 Source: [`packages/interaction/user-questions/src/index.ts`](../../packages/interaction/user-questions/src/index.ts)
 <!-- END GENERATED cordis-surface -->

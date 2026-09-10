@@ -122,11 +122,9 @@ function descriptorIdentity(event) {
         : { mode: 'continuable', label: descriptor.label, seq: event.seq };
 }
 /**
- * Fold a derived display/cache mode/label from `subagent/descriptor` events,
+ * Fold the durable mode/label identity from `subagent/descriptor` events,
  * last-wins: a fork seed may replay an ancestor's descriptor, and the child's
- * own descriptor must override it. Classification does not trust this value;
- * listing and cold resume strictly fold exactly one descriptor from the own
- * suffix — the same reset discipline as
+ * own descriptor must override it — the same reset discipline as
  * {@link subagentTimingProjectionDefinition}. A malformed or unknown-version
  * payload resets to the `null` sentinel instead of throwing, so a fork of a
  * healthy ancestor never inherits an identity its own descriptor failed to

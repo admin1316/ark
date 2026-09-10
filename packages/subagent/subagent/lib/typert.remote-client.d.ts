@@ -4,27 +4,27 @@ import type {
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { RemoteSubagentCatalog, RemoteSubagentHistory, RemoteSubagentInterruptReceipt, RemoteSubagentPromptReceipt } from '@deepseek-ai/dsh-subagent/types'
+import type { SessionId, SessionRemoteHistoryValue } from '@deepseek-ai/dsh-session/types'
+import type { RemoteSubagentPromptReceipt, SubagentCatalog, SubagentInterruptReceipt } from '@deepseek-ai/dsh-subagent/client'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$7375626167656e74 {
-    history: (parentSessionId: string, childSessionId: string, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentHistory>>
-    interrupt: (parentSessionId: string, childSessionId: string) => Promise<RemoteResult<RemoteSubagentInterruptReceipt>>
-    list: (parentSessionId: string, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentCatalog>>
-    prompt: (agentId: SessionId, childSessionId: string, content: ContentBlock[], invocationId: string, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentPromptReceipt>>
+    history: (parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal?: AbortSignal) => Promise<RemoteResult<SessionRemoteHistoryValue>>
+    interrupt: (parentSessionId: SessionId, childSessionId: SessionId) => Promise<RemoteResult<SubagentInterruptReceipt>>
+    list: (parentSessionId: SessionId, signal?: AbortSignal) => Promise<RemoteResult<SubagentCatalog>>
+    prompt: (agentId: SessionId, childSessionId: SessionId, content: ContentBlock[], invocationId: string, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentPromptReceipt>>
   }
   interface TypertRemoteMap {
-    'subagent/history': (parentSessionId: string, childSessionId: string, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentHistory>>
-    'subagent/interrupt': (parentSessionId: string, childSessionId: string) => Promise<RemoteResult<RemoteSubagentInterruptReceipt>>
-    'subagent/list': (parentSessionId: string, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentCatalog>>
-    'subagent/prompt': (agentId: SessionId, childSessionId: string, content: ContentBlock[], invocationId: string, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentPromptReceipt>>
+    'subagent/history': (parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal?: AbortSignal) => Promise<RemoteResult<SessionRemoteHistoryValue>>
+    'subagent/interrupt': (parentSessionId: SessionId, childSessionId: SessionId) => Promise<RemoteResult<SubagentInterruptReceipt>>
+    'subagent/list': (parentSessionId: SessionId, signal?: AbortSignal) => Promise<RemoteResult<SubagentCatalog>>
+    'subagent/prompt': (agentId: SessionId, childSessionId: SessionId, content: ContentBlock[], invocationId: string, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentPromptReceipt>>
   }
   interface TypertRemoteNamespaceMap {
     'subagent': TypertRemoteNamespace$7375626167656e74
   }
   interface TypertRemoteScopeMap {
-    'agent:subagent/prompt': (childSessionId: string, content: ContentBlock[], invocationId: string, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentPromptReceipt>>
+    'agent:subagent/prompt': (childSessionId: SessionId, content: ContentBlock[], invocationId: string, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentPromptReceipt>>
   }
 }
 

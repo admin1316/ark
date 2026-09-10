@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage, ToolCallId  } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, CallId  } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt, { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
@@ -107,7 +107,7 @@ async function runCode(
 ): Promise<ToolExecutionResult> {
   return ctx.tools.execute({
     signal: testToolSignal,
-    callId: ToolCallId('call-1'),
+    callId: CallId('call-1'),
     name: RUN_CODE_NAME,
     arguments: { code, description: extras.description ?? 'Run the test program' },
     ...extras.agent ? { agent: extras.agent } : {},
@@ -162,7 +162,7 @@ describe('mode-aware wire contribution', () => {
     const assembly = await systemPrompt.assemble()
     // Registered (the deployment is non-native) but empty, so the renderer
     // drops it: `both` executes the native call the rule would forbid.
-    expect(assembly.sections.find(section => section.name === 'tools:ptc-only')?.text).toBe('')
+    expect(assembly.sections.find(section => section.name === 'tools:code-only')?.text).toBe('')
     expect(assembly.tools.map(tool => tool.name)).toContain('echo')
   })
 
@@ -295,10 +295,10 @@ describe('mode-aware wire contribution', () => {
       execute: () => Promise.resolve([{ type: 'text' as const, text: 'impostor' }]),
     })
 
-    expect(() => scope.ctx.tools.register(impostor)).toThrow(/reserved for the PTC mode presentation transport/)
-    expect(() => ctx.tools.register(impostor)).toThrow(/reserved for the PTC mode presentation transport/)
-    expect(() => scope.ctx.tools.restrict({ allow: [RUN_CODE_NAME] })).toThrow(/cannot name reserved PTC mode presentation transport/)
-    expect(() => scope.ctx.tools.restrict({ deny: [RUN_CODE_NAME] })).toThrow(/cannot name reserved PTC mode presentation transport/)
+    expect(() => scope.ctx.tools.register(impostor)).toThrow(/reserved for the Code Mode presentation transport/)
+    expect(() => ctx.tools.register(impostor)).toThrow(/reserved for the Code Mode presentation transport/)
+    expect(() => scope.ctx.tools.restrict({ allow: [RUN_CODE_NAME] })).toThrow(/cannot name reserved Code Mode presentation transport/)
+    expect(() => scope.ctx.tools.restrict({ deny: [RUN_CODE_NAME] })).toThrow(/cannot name reserved Code Mode presentation transport/)
     scope.ctx.systemPrompt.section({
       name: 'scoped-note',
       order: FIRST_PARTY_SECTION_ORDER.TOOLS_SDK - 10,
@@ -1637,9 +1637,9 @@ describe('the run_code dispatch bridge', () => {
       content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     session.append('tool/code-dispatch', {
-      rootCallId: ToolCallId('p1'),
-      parentCallId: ToolCallId('p1'),
-      subCallId: ToolCallId('p1:code:1'),
+      rootCallId: CallId('p1'),
+      parentCallId: CallId('p1'),
+      subCallId: CallId('p1:code:1'),
       name: 'echo',
       arguments: { value: 'x' },
       isError: false,
@@ -1679,7 +1679,7 @@ describe('the run_code dispatch bridge', () => {
     registerEcho(ctx, 'write')
     const result = await registry.execute({
       signal: testToolSignal,
-      callId: ToolCallId('call-1'),
+      callId: CallId('call-1'),
       name: 'write',
       arguments: { text: 'hello' },
     })
@@ -1701,7 +1701,7 @@ describe('the run_code dispatch bridge', () => {
     aborted.abort()
     const result = await registry.execute({
       signal: aborted.signal,
-      callId: ToolCallId('call-1'),
+      callId: CallId('call-1'),
       name: 'write',
       arguments: { text: 'hello' },
     })
@@ -1733,7 +1733,7 @@ describe('per-agent presentation', () => {
     // mode is its own rather than the deployment's.
     const denied = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: ToolCallId('coded-direct'),
+      callId: CallId('coded-direct'),
       name: 'echo',
       arguments: { value: 'coded' },
       agent,
@@ -1769,14 +1769,14 @@ describe('per-agent presentation', () => {
     // `dsh-agent-tool-presentation` produces.
     expect(ctx.tools.executionMode({
       signal: testToolSignal,
-      callId: ToolCallId('preset-coded-schedule'),
+      callId: CallId('preset-coded-schedule'),
       name: 'echo',
       arguments: { value: 'joined' },
       agent: joined.agent,
     })).toEqual({ kind: 'exclusive' })
     const denied = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: ToolCallId('preset-coded-direct'),
+      callId: CallId('preset-coded-direct'),
       name: 'echo',
       arguments: { value: 'joined' },
       agent: joined.agent,
@@ -1789,7 +1789,7 @@ describe('per-agent presentation', () => {
     expect(native.tools.map(tool => tool.name)).toEqual(['echo'])
     const allowed = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: ToolCallId('native-sibling-direct'),
+      callId: CallId('native-sibling-direct'),
       name: 'echo',
       arguments: { value: 'loner' },
       agent: loner.agent,

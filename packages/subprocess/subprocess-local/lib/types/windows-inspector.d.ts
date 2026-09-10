@@ -52,9 +52,7 @@ export declare class WindowsProcessInspector implements ProcessInspector {
     private readonly internals;
     constructor(internals?: WindowsProcessInspectorInternals);
     foregroundPgid(shellPid: number): number;
-    isStdinWaiting(_pgid: number, _shellPid?: number): boolean;
-    processTree(rootPid: number): ProcessIdentity[];
-    processSession(sessionId: number): ProcessIdentity[];
+    isStdinWaiting(_pgid: number, _shellPid: number): boolean;
     isAlive(identity: ProcessIdentity): boolean;
     snapshot(): ProcessSnapshot;
     signalGroup(pgid: number, signal: SubprocessTerminalSignal): void;

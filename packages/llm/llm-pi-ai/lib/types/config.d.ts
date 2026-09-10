@@ -17,7 +17,6 @@ import type { CacheRetention, ModelThinkingLevel, Provider, ThinkingBudgets, Tra
 import z from '@deepseek-ai/schemastery';
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials';
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm';
-import type { RedactedValue } from '@deepseek-ai/dsh-settings';
 import type { PiAiCompatProfile, PiAiModality, PiAiModelOverride, PiAiModelProfile } from './catalog.ts';
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 export declare const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300000;
@@ -33,7 +32,7 @@ export declare const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300000;
 export declare const DEFAULT_MAX_REQUEST_IMAGE_BYTES: number;
 /** Default total-pixel budget preserves the complete 2048px normalized attachment. */
 export declare const DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET: number;
-/** Default raw encoded-byte cap before inline base64 expansion. */
+/** Default raw encoded-byte target before inline base64 expansion; the smallest quality-ladder output is used when no quality fits. */
 export declare const DEFAULT_REQUEST_IMAGE_MAX_BYTES: number;
 /** Context capacity assumed for a model neither configuration nor the catalog sizes. */
 export declare const DEFAULT_CONTEXT_WINDOW = 262144;
@@ -113,11 +112,7 @@ export interface PiAiProviderProfile {
     defaultInput?: PiAiModality[];
     /** Provider request headers; Harness attribution wins reserved names. */
     headers?: Record<string, string>;
-    /**
-     * Provider request headers whose values are credentials. Values are
-     * credential references, never literal header values; they resolve for each
-     * request through the same credential owner as `apiKeyEnv`.
-     */
+    /** Header values resolved through the credential service instead of stored in settings. */
     credentialHeaders?: Record<string, string>;
     /** Provider-neutral pi-ai reasoning level. */
     reasoning?: ModelThinkingLevel;
@@ -142,7 +137,10 @@ export interface PiAiProviderProfile {
     maxRequestImageBytes?: number;
     /** Total-pixel budget for each deterministic inline request version. */
     requestImagePixelBudget?: number;
-    /** Raw encoded-byte cap for each deterministic inline request version. */
+    /**
+     * Raw encoded-byte target for each deterministic inline request version;
+     * the smallest quality-ladder output is used when no quality fits.
+     */
     requestImageMaxBytes?: number;
     /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
     retryPolicy?: RetryPolicyConfig;
@@ -155,11 +153,12 @@ export interface ResolvedPiAiProviderProfile extends Omit<PiAiProviderProfile, '
     displayName: string;
     /** Validated credential reference, when one is configured. */
     apiKeyEnv?: CredentialRef;
-    /** Header-name to validated credential-reference mapping. */
-    credentialHeaders?: Readonly<Record<string, CredentialRef>>;
-    /** Legacy literal credential headers were redacted and this route is disabled pending migration. */
+    /** Validated references for credential-backed headers. */
+    credentialHeaders?: Record<string, CredentialRef>;
+    /** Literal credential headers remain on disk but cannot activate a route. */
     migrationRequired?: {
-        readonly headers: readonly string[];
+        headers: string[];
+        fields?: string[][];
     };
     /** Positive finite provider-idle interval after defaulting. */
     streamIdleTimeoutMs: number;
@@ -167,17 +166,19 @@ export interface ResolvedPiAiProviderProfile extends Omit<PiAiProviderProfile, '
     maxRequestImageBytes: number;
     /** Positive total-pixel request-version budget after defaulting. */
     requestImagePixelBudget: number;
-    /** Positive raw request-version byte cap after defaulting. */
+    /** Positive raw request-version byte target after defaulting; the smallest quality-ladder output is used when no quality fits. */
     requestImageMaxBytes: number;
     /** Immutable retry policy captured with this provider route. */
     retryPolicy: ResolvedRetryPolicy;
     /**
-     * The pi-ai provider this route registers, built from the resolved models.
-     * Construction happens here so an unserviceable protocol or an underspecified
-     * model fails with the rest of resolution, leaving the last good route set
-     * serving requests.
+     * Serviceable models for this route. Absent when a retained catalog failure
+     * prevents construction; the configured route remains available for repair.
      */
-    piProvider: Provider;
+    piProvider?: Provider;
+    /** Catalog drift requiring configuration repair; independent models remain available. */
+    catalogError?: string;
+    /** Per-model configuration failures retained during stored reads. */
+    modelErrors: ReadonlyMap<string, string>;
     /**
      * Per-request output caps this profile explicitly configured, by model id.
      * The seam materializes one only into a request that names no cap of its
@@ -194,53 +195,101 @@ export interface Config {
      */
     providers?: Record<string, PiAiProviderProfile>;
 }
+/** Provider profile fields shared by configuration validation and public-settings projection. */
+export declare const ProviderProfileSchema: z<Schemastery.ObjectS<{
+    apiKeyEnv: z<string, string>;
+    displayName: z<string, string>;
+    api: z<string, string>;
+    baseURL: z<string, string>;
+    models: z<PiAiModelProfile[], PiAiModelProfile[]>;
+    modelOverrides: z<import("@deepseek-ai/cosmokit").Dict<PiAiModelOverride, string>, import("@deepseek-ai/cosmokit").Dict<PiAiModelOverride, string>>;
+    compat: z<PiAiCompatProfile>;
+    defaultContextWindow: z<number, number>;
+    defaultMaxTokens: z<number, number>;
+    defaultInput: z<("text" | "image")[], ("text" | "image")[]>;
+    headers: z<import("@deepseek-ai/cosmokit").Dict<string, string>, import("@deepseek-ai/cosmokit").Dict<string, string>>;
+    credentialHeaders: z<import("@deepseek-ai/cosmokit").Dict<string, string>, import("@deepseek-ai/cosmokit").Dict<string, string>>;
+    reasoning: z<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+    thinkingBudgets: z<Schemastery.ObjectS<{
+        minimal: z<number, number>;
+        low: z<number, number>;
+        medium: z<number, number>;
+        high: z<number, number>;
+    }>, Schemastery.ObjectT<{
+        minimal: z<number, number>;
+        low: z<number, number>;
+        medium: z<number, number>;
+        high: z<number, number>;
+    }>>;
+    cacheRetention: z<"none" | "short" | "long", "none" | "short" | "long">;
+    transport: z<"auto" | "sse" | "websocket" | "websocket-cached", "auto" | "sse" | "websocket" | "websocket-cached">;
+    timeoutMs: z<number, number>;
+    websocketConnectTimeoutMs: z<number, number>;
+    streamIdleTimeoutMs: z<number, number>;
+    maxRequestImageBytes: z<number, number>;
+    requestImagePixelBudget: z<number, number>;
+    requestImageMaxBytes: z<number, number>;
+    retryPolicy: z<RetryPolicyConfig>;
+}>, Schemastery.ObjectT<{
+    apiKeyEnv: z<string, string>;
+    displayName: z<string, string>;
+    api: z<string, string>;
+    baseURL: z<string, string>;
+    models: z<PiAiModelProfile[], PiAiModelProfile[]>;
+    modelOverrides: z<import("@deepseek-ai/cosmokit").Dict<PiAiModelOverride, string>, import("@deepseek-ai/cosmokit").Dict<PiAiModelOverride, string>>;
+    compat: z<PiAiCompatProfile>;
+    defaultContextWindow: z<number, number>;
+    defaultMaxTokens: z<number, number>;
+    defaultInput: z<("text" | "image")[], ("text" | "image")[]>;
+    headers: z<import("@deepseek-ai/cosmokit").Dict<string, string>, import("@deepseek-ai/cosmokit").Dict<string, string>>;
+    credentialHeaders: z<import("@deepseek-ai/cosmokit").Dict<string, string>, import("@deepseek-ai/cosmokit").Dict<string, string>>;
+    reasoning: z<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+    thinkingBudgets: z<Schemastery.ObjectS<{
+        minimal: z<number, number>;
+        low: z<number, number>;
+        medium: z<number, number>;
+        high: z<number, number>;
+    }>, Schemastery.ObjectT<{
+        minimal: z<number, number>;
+        low: z<number, number>;
+        medium: z<number, number>;
+        high: z<number, number>;
+    }>>;
+    cacheRetention: z<"none" | "short" | "long", "none" | "short" | "long">;
+    transport: z<"auto" | "sse" | "websocket" | "websocket-cached", "auto" | "sse" | "websocket" | "websocket-cached">;
+    timeoutMs: z<number, number>;
+    websocketConnectTimeoutMs: z<number, number>;
+    streamIdleTimeoutMs: z<number, number>;
+    maxRequestImageBytes: z<number, number>;
+    requestImagePixelBudget: z<number, number>;
+    requestImageMaxBytes: z<number, number>;
+    retryPolicy: z<RetryPolicyConfig>;
+}>>;
 /** Runtime schema for {@link Config}. */
 export declare const Config: z<Config>;
 /**
- * Reject a section this adapter could not serve. Registered as the settings
- * namespace's validator, so an unserviceable profile is refused where it is
- * *written* — `settings.mutate` answers `settings-rejected` with the offending
- * route and model named — instead of being stored and then quietly disabling
- * every route in the namespace. It stays a validator rather than a schema
- * transform because the schema is also the shape a configuration surface
- * renders and the value an absent section resolves to; wrapping it would break
- * both.
+ * Reject new or changed unserviceable profiles before persistence. Unchanged
+ * catalog-invalid profiles do not block repair of an independent provider.
  * @param config - the resolved section to check.
+ * @param previous - current section; omission validates all configured profiles.
  * @throws Error naming the route and model that cannot be served.
  */
-export declare function assertServiceable(config: Config): void;
+export declare function assertServiceable(config: Config, previous?: Config): void;
 /**
- * Reject new writes that would create or retain legacy literal credentials.
- * @param config - Proposed provider section to validate before a settings write.
- * @throws Error when profile resolution fails or a route retains literal credential headers.
+ * Refuse new writes containing literal credential headers without changing existing data.
+ * @param config - proposed provider configuration.
+ * @param previous - current section used to identify changed provider profiles.
+ * @throws when any profile still requires credential-header migration.
  */
-export declare function assertWritableConfig(config: Config): void;
-/**
- * Permit one or more existing legacy literals to be removed while refusing any
- * new, changed, or non-progressing literal. This lets a large namespace migrate
- * entry by entry without re-opening the unsafe write surface.
- * @param previous - Provider section containing the existing legacy header entries.
- * @param next - Proposed section; any remaining legacy entries must be unchanged
- *   in provider, header name, and value, and fewer than in `previous`.
- * @throws Error when legacy entries remain and are added, changed, or not reduced in count.
- */
-export declare function assertMigrationProgress(previous: Config, next: Config): void;
-/**
- * Redact legacy literal credential headers without exposing their values.
- * @param value - Settings section to project; non-null, non-array objects are
- *   cloned, while other inputs pass through unchanged without redaction records.
- * @returns The projected section and removed header paths with set/unset flags;
- *   the input is not mutated and removal records contain no header values.
- * @throws When an object input cannot be structured-cloned.
- */
-export declare function redactPiAiSecrets(value: unknown): RedactedValue;
+export declare function assertWritableConfig(config: Config, previous?: Config): void;
 /**
  * Validate profiles and return a detached route-keyed map suitable for
  * per-request reads. This is the one explicit resolve step, so an omitted dict
  * resolves to the empty (dormant) route set here rather than through a hidden
  * fallback, and each route's models and pi-ai provider are materialized once.
  * @param providers - configured provider profiles keyed by route.
+ * @param validation - strict writes reject catalog errors; deferred reads retain repair diagnostics.
  * @returns validated profiles in configuration order.
  */
-export declare function resolveProfiles(providers: Readonly<Record<string, PiAiProviderProfile>> | undefined): Map<string, ResolvedPiAiProviderProfile>;
+export declare function resolveProfiles(providers: Readonly<Record<string, PiAiProviderProfile>> | undefined, validation?: 'strict' | 'deferred'): Map<string, ResolvedPiAiProviderProfile>;
 //# sourceMappingURL=config.d.ts.map

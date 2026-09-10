@@ -6,8 +6,6 @@
  * @module @deepseek-ai/dsh-web-search-deepseek/provider
  */
 import type { WebSearchProvider, WebSearchRequest, WebSearchResult } from '@deepseek-ai/dsh-web';
-/** Credential reference (environment-variable name) resolved per search; the config default. */
-export declare const DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY";
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials';
 import type { AnthropicResponse, ContentBlock } from './types.ts';
 /** Stable id this provider registers under. */

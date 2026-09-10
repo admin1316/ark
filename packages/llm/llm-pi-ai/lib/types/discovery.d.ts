@@ -2,10 +2,9 @@
  * Answering "which models can this provider serve?" for the configuration
  * surface's "fetch available models" action.
  *
- * A route the installed pi-ai catalog ships is answered from that catalog only
- * while the draft keeps its installed endpoint. Supplying a `baseURL` means the
- * user is editing an actual gateway endpoint, so that endpoint is always
- * interrogated instead of returning unrelated built-in models.
+ * A known route without an endpoint override uses the installed catalog.
+ * An explicit endpoint is interrogated with only a caller-supplied credential
+ * bound to that exact endpoint and protocol; stored credentials are not reused.
  *
  * Neither path is a catalog refresh. Nothing here is stored: the request
  * carries a draft the user is still editing, and the reply is candidate
@@ -20,17 +19,13 @@
  *
  * @module dsh-llm-pi-ai/discovery
  */
-import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from '@deepseek-ai/dsh-llm';
-type ScopedDiscoveryRequest = LlmModelDiscoveryRequest & {
-    credentialEndpointFingerprint?: string;
-};
+import type { LlmDiscoveredModel, LlmModelDiscoveryOperation } from '@deepseek-ai/dsh-llm';
 /**
  * Interrogate one draft provider endpoint for the models it advertises.
- * @param request - the endpoint, protocol, and one-shot credential to use.
+ * @param request - endpoint, protocol, cancellation and any Host-bound one-shot credential.
  * @returns the advertised models in endpoint order.
  * @throws LlmError when the protocol has no readable listing, the endpoint
  *   refuses or fails the request, or the reply is not a model listing.
  */
-export declare function discoverModels(request: ScopedDiscoveryRequest): Promise<readonly LlmDiscoveredModel[]>;
-export {};
+export declare function discoverModels(request: LlmModelDiscoveryOperation): Promise<readonly LlmDiscoveredModel[]>;
 //# sourceMappingURL=discovery.d.ts.map

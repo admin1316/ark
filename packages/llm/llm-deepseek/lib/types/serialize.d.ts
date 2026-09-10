@@ -5,8 +5,7 @@
  * string-only tool messages in a separate user message.
  * @module dsh-llm-deepseek/serialize
  */
-import type { ImageAttachmentAccessResolver } from '@deepseek-ai/dsh-llm';
-import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm';
+import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm';
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment';
 import type { WireMessage, WireRequest } from './types.ts';
 /** Adapter-level request defaults (from plugin config). */
@@ -30,6 +29,8 @@ export interface ImageSerializationOptions {
     representation: ImageRequestRepresentation;
     /** Request versions prepared for the conservatively retained normalized attachments, keyed by attachment id. */
     requestImages: ReadonlyMap<ImageAttachmentRef['attachmentId'], RequestImageAttachment>;
+    /** Resolve current tool access independently from deterministic request-image versions. */
+    resolveImageAccess?: ImageAttachmentAccessResolver;
     /** Positive bound on accumulated represented image bytes. */
     maxRequestImageBytes: number;
     /** Maximum represented images in one request. */
@@ -38,8 +39,6 @@ export interface ImageSerializationOptions {
     byteQuantum?: number;
     /** Image-count removal step applied after the request exceeds its count bound. */
     countQuantum?: number;
-    /** Resolve a normalized image path in the current model execution world. */
-    resolveImageAccess?: ImageAttachmentAccessResolver;
 }
 /** Durable message and image ordinal used in provider diagnostics. */
 export interface ImageWireLocation {
@@ -75,10 +74,10 @@ export declare function serializeMessagesWithImages(messages: readonly Message[]
 export declare function serializeRequest(options: GenerateOptions, defaults?: RequestDefaults): WireRequest;
 /**
  * Build one image-capable request while keeping durable bytes out of session
- * messages. Oversized oldest images become deterministic text after their
+ * messages. Oversized oldest images become per-image text after their
  * exact request-version byte lengths are known and before provider serialization.
  * @param options - harness request containing image-capable user content.
- * @param images - attachment resolver, request bound, and cancellation.
+ * @param images - request versions, optional current access resolver, and request bounds.
  * @param defaults - adapter-level thinking defaults.
  * @returns the fully materialized DeepSeek request body.
  */

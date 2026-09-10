@@ -10,7 +10,7 @@ import z from '@deepseek-ai/schemastery';
 export { WEB_SEARCH_MAX_QUERIES, WEB_SEARCH_MAX_RESULTS, applyWebSearchTool, formatSearchOutput, presentSearchCall, presentSearchResult, searchMetaFromValue, searchMetaFromResult } from './search.ts';
 export type { WebSearchMeta } from './search.ts';
 export { applyWebFetchTool, formatFetchOutput, formatFetchOutputState, parseFetchArgs, presentFetchCall, presentFetchResult, fetchMetaFromValue, fetchMetaFromResult } from './fetch.ts';
-export type { WebFetchFormattedOutput, WebFetchMeta } from './fetch.ts';
+export type { WebFetchMeta, WebFetchFormattedOutput } from './fetch.ts';
 /** Cordis plugin name used by loader diagnostics. */
 export declare const name = "tool-web";
 /** Services required by the web tool suite. */

@@ -6,9 +6,35 @@ import { z as z$1 } from "zod";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { randomUUID } from "node:crypto";
 import { foldSubagentDescriptor } from "@deepseek-ai/dsh-subagent";
+//#region lib/types/brand.js
+/**
+* Brand the root Session identity as its implicit Team identity.
+* @param id - root Session identity.
+* @returns the unchanged string with the Team brand.
+*/
+function TeamId(id) {
+	return id;
+}
+/**
+* Brand a validated Team-local task identity.
+* @param id - task identity.
+* @returns the unchanged string with the task brand.
+*/
+function TeamTaskId(id) {
+	return id;
+}
+/**
+* Brand a generated durable message identity.
+* @param id - message identity.
+* @returns the unchanged string with the message brand.
+*/
+function TeamMessageId(id) {
+	return id;
+}
+//#endregion
 //#region lib/types/error.js
-/** Typed Agent Teams failures. */
-/** Stable failure raised by the Team domain. */
+/** Stable Team errors and bounded diagnostics. */
+/** Failure raised by the Team domain. */
 var TeamError = class extends HarnessError {
 	constructor(message, code, options) {
 		super(message, code, options);
@@ -16,9 +42,9 @@ var TeamError = class extends HarnessError {
 	}
 };
 /**
-* Render an arbitrary thrown value without replacing the original rejection.
-* @param error - caught value used in a diagnostic or durable failure record.
-* @returns one bounded single-line description.
+* Describe an arbitrary failure without replacing its original identity.
+* @param error - caught failure.
+* @returns a single-line description with bounded inspection depth.
 */
 function errorMessage(error) {
 	if (error instanceof Error) return error.message;
@@ -31,16 +57,16 @@ function errorMessage(error) {
 }
 //#endregion
 //#region lib/types/activity.js
-/** One-shot Team change waiters independent of durable state projection. */
-/** Owns current Team change waiters and releases each at most once. */
+/** One-shot Team waiters, separate from durable state projection. */
+/** Owns current change waiters and releases each at most once. */
 var TeamActivity = class {
 	waiters = /* @__PURE__ */ new Map();
 	closed = false;
 	/**
-	* Wait for one later Team-domain or member-status change.
+	* Wait for a later Team or member-status change.
 	* @param id - Team whose next edge wakes the caller.
-	* @param timeoutMs - bounded wait duration from ten seconds through one hour.
-	* @param signal - caller cancellation for this wait only.
+	* @param timeoutMs - integer duration from ten seconds through one hour.
+	* @param signal - cancellation of this wait only.
 	* @returns whether the wait ended by timeout.
 	*/
 	async wait(id, timeoutMs, signal) {
@@ -48,14 +74,10 @@ var TeamActivity = class {
 		signal.throwIfAborted();
 		if (this.closed) return { timedOut: false };
 		return { timedOut: !await new Promise((resolve, reject) => {
-			let waiters = this.waiters.get(id);
-			if (waiters === void 0) {
-				waiters = /* @__PURE__ */ new Set();
-				this.waiters.set(id, waiters);
-			}
+			const waiters = this.waiters.get(id) ?? /* @__PURE__ */ new Set();
+			this.waiters.set(id, waiters);
 			let settled = false;
 			const finish = (settle) => {
-				/* v8 ignore next -- timeout, abort, and notification may race after one winner removes the others. */
 				if (settled) return;
 				settled = true;
 				clearTimeout(timer);
@@ -70,25 +92,16 @@ var TeamActivity = class {
 					reject(reason instanceof Error ? reason : new TeamError(`wait_agent aborted: ${errorMessage(reason)}`, "TEAM_WAIT_ABORTED"));
 				});
 			};
-			const waiter = { resolve: () => {
-				finish(() => {
-					resolve(true);
-				});
-			} };
+			const waiter = { resolve: () => finish(() => resolve(true)) };
 			waiters.add(waiter);
-			const timer = setTimeout(() => {
-				finish(() => {
-					resolve(false);
-				});
-			}, timeoutMs);
+			const timer = setTimeout(() => finish(() => resolve(false)), timeoutMs);
 			signal.addEventListener("abort", onAbort, { once: true });
-			/* v8 ignore next -- requires an abort in the synchronous gap between the pre-check and listener registration. */
 			if (signal.aborted) onAbort();
 		}) };
 	}
 	/**
-	* Wake and remove every current waiter for one Team.
-	* @param id - Team whose current waiters observe the change.
+	* Wake every current waiter for one Team.
+	* @param id - Team whose waiters observe the change.
 	*/
 	notify(id) {
 		const waiters = this.waiters.get(id);
@@ -96,7 +109,7 @@ var TeamActivity = class {
 		this.waiters.delete(id);
 		for (const waiter of waiters) waiter.resolve();
 	}
-	/** Close admission and wake every current waiter during runtime disposal. */
+	/** Close admission and release current waiters during disposal. */
 	close() {
 		this.closed = true;
 		for (const waiters of this.waiters.values()) for (const waiter of waiters) waiter.resolve();
@@ -104,42 +117,10 @@ var TeamActivity = class {
 	}
 };
 //#endregion
-//#region lib/types/types.js
-/** Public Agent Teams identities, durable records, and service request values. */
-/**
-* Brand one root Session identity as its implicit Team identity.
-* @param id - Root Session identity.
-* @returns the same string branded as a Team identity.
-*/
-function TeamId(id) {
-	return id;
-}
-/**
-* Brand a validated task id.
-* @param id - Team-local task identity.
-* @returns the same string branded as a Team task identity.
-*/
-function TeamTaskId(id) {
-	return id;
-}
-/**
-* Brand a generated peer-message id.
-* @param id - Durable mailbox message identity.
-* @returns the same string branded as a Team message identity.
-*/
-function TeamMessageId(id) {
-	return id;
-}
-//#endregion
 //#region lib/types/task-graph.js
-/** Complete dependency validation for current Team task snapshots. */
-/** Package-private task dependency failure retained for command error mapping. */
+/** Task dependency error retained for command error mapping. */
 var TeamTaskGraphError = class extends Error {
 	violation;
-	/**
-	* @param message - concrete invalid dependency relation.
-	* @param violation - stable relation category used by Team commands.
-	*/
 	constructor(message, violation) {
 		super(message);
 		this.violation = violation;
@@ -147,10 +128,10 @@ var TeamTaskGraphError = class extends Error {
 	}
 };
 /**
-* Validate the complete active task graph after replacing one candidate snapshot.
-* @param current - current task snapshots before the candidate event.
+* Validate the entire active task graph with one candidate replacement.
+* @param current - task snapshots before the proposed event.
 * @param candidate - new or next-revision task snapshot.
-* @throws {TeamTaskGraphError} when an active dependency is missing, duplicated, self-referential, or cyclic.
+* @throws for missing, duplicate, self-referential, or cyclic dependencies.
 */
 function assertTaskGraphCandidate(current, candidate) {
 	const tasks = new Map(current);
@@ -182,17 +163,17 @@ function assertTaskGraphCandidate(current, candidate) {
 }
 //#endregion
 //#region lib/types/fold.js
-/** Strict replay fold for Agent Teams log-only events. */
+/** Strict replay of Team records owned by one Lead Session. */
 const nonNegativeSafeInteger = z$1.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const positiveSafeInteger = nonNegativeSafeInteger.min(1);
-const sessionIdSchema = z$1.string().min(1).transform((value) => SessionId(value));
-const teamIdSchema = z$1.string().min(1).transform((value) => TeamId(value));
+const sessionIdSchema = z$1.string().min(1).transform(SessionId);
+const teamIdSchema = z$1.string().min(1).transform(TeamId);
 const numericTaskIdPattern = /^task-(\d+)$/u;
 const teamTaskIdSchema = z$1.string().min(1).refine((value) => {
 	const match = numericTaskIdPattern.exec(value);
 	return match === null || Number.isSafeInteger(Number(match[1]));
-}, { message: "numeric task id suffix must be a safe integer" }).transform((value) => TeamTaskId(value));
-const teamMessageIdSchema = z$1.string().min(1).transform((value) => TeamMessageId(value));
+}, { message: "numeric task id suffix must be a safe integer" }).transform(TeamTaskId);
+const teamMessageIdSchema = z$1.string().min(1).transform(TeamMessageId);
 const coreContentBlockTypes = new Set([
 	"text",
 	"reasoning",
@@ -280,31 +261,33 @@ const teamEventSelectorSchema = z$1.object({
 	version: nonNegativeSafeInteger,
 	teamId: teamIdSchema
 }).loose();
-const teamMemberEventSchema = z$1.object({
-	version: z$1.literal(1),
-	teamId: teamIdSchema,
-	member: teamMemberSnapshotSchema
-}).strict();
-const teamTaskEventSchema = z$1.object({
-	version: z$1.literal(1),
-	teamId: teamIdSchema,
-	task: teamTaskSnapshotSchema
-}).strict();
-const teamMessageQueuedEventSchema = z$1.object({
-	version: z$1.literal(1),
-	teamId: teamIdSchema,
-	message: teamMessageSnapshotSchema
-}).strict();
-const teamMessageDeliveredEventSchema = z$1.object({
-	version: z$1.literal(1),
-	teamId: teamIdSchema,
-	messageId: teamMessageIdSchema,
-	targetId: sessionIdSchema
-}).strict();
+const teamEventSchemas = {
+	"team/member": z$1.object({
+		version: z$1.literal(1),
+		teamId: teamIdSchema,
+		member: teamMemberSnapshotSchema
+	}).strict(),
+	"team/task": z$1.object({
+		version: z$1.literal(1),
+		teamId: teamIdSchema,
+		task: teamTaskSnapshotSchema
+	}).strict(),
+	"team/message/queued": z$1.object({
+		version: z$1.literal(1),
+		teamId: teamIdSchema,
+		message: teamMessageSnapshotSchema
+	}).strict(),
+	"team/message/delivered": z$1.object({
+		version: z$1.literal(1),
+		teamId: teamIdSchema,
+		messageId: teamMessageIdSchema,
+		targetId: sessionIdSchema
+	}).strict()
+};
 /**
-* Construct an empty Team fold for one root Session.
-* @param rootId - Session whose TeamId selects applicable records.
-* @returns mutable empty replay state.
+* Construct an empty fold for a root Session.
+* @param rootId - root identity selecting the Team's records.
+* @returns detached empty state.
 */
 function emptyTeamFoldState(rootId) {
 	return {
@@ -318,14 +301,13 @@ function emptyTeamFoldState(rootId) {
 	};
 }
 /**
-* Test whether a Session event belongs to the Team domain.
+* Identify Team-owned event tags.
 * @param event - candidate Session event.
-* @returns whether the event has a Team-owned type.
+* @returns whether the event belongs to the Team domain.
 */
 function isTeamEvent(event) {
 	return event.type === "team/member" || event.type === "team/task" || event.type === "team/message/queued" || event.type === "team/message/delivered";
 }
-/** Decode one persisted Team value and retain the schema failure as its cause. */
 function parsePersisted(type, schema, value) {
 	try {
 		return schema.parse(value);
@@ -333,31 +315,8 @@ function parsePersisted(type, schema, value) {
 		throw new Error(`persisted Agent Teams ${type} payload is invalid`, { cause: error });
 	}
 }
-/** Decode the complete current-version payload selected by one Team event type. */
-function parseCurrentTeamEvent(event) {
-	switch (event.type) {
-		case "team/member": return {
-			...event,
-			data: parsePersisted(event.type, teamMemberEventSchema, event.data)
-		};
-		case "team/task": return {
-			...event,
-			data: parsePersisted(event.type, teamTaskEventSchema, event.data)
-		};
-		case "team/message/queued": return {
-			...event,
-			data: parsePersisted(event.type, teamMessageQueuedEventSchema, event.data)
-		};
-		case "team/message/delivered": return {
-			...event,
-			data: parsePersisted(event.type, teamMessageDeliveredEventSchema, event.data)
-		};
-		/* v8 ignore next 2 -- TeamEventType is closed and every member is handled above. */
-		default: return event;
-	}
-}
 /**
-* Apply one event, ignoring Team records inherited by a different root fork.
+* Apply one validated record, ignoring records inherited by another root fork.
 * @param state - mutable Team replay state.
 * @param event - next contiguous Session event.
 */
@@ -368,7 +327,8 @@ function applyTeamEvent(state, event) {
 		if (selector.teamId !== state.id) return;
 		throw new Error(`unsupported Agent Teams event version ${String(selector.version)}`);
 	}
-	const decoded = parseCurrentTeamEvent(event);
+	parsePersisted(event.type, teamEventSchemas[event.type], event.data);
+	const decoded = structuredClone(event);
 	if (decoded.data.teamId !== state.id) return;
 	switch (decoded.type) {
 		case "team/member": {
@@ -414,15 +374,13 @@ function applyTeamEvent(state, event) {
 			state.delivered.add(decoded.data.messageId);
 			break;
 		}
-		/* v8 ignore next 2 -- TeamEventType is closed and every member is handled above. */
-		default: return;
 	}
 }
 /**
-* Replay one root Session into its current Team state.
-* @param rootId - root Session identity selecting Team-owned records.
+* Replay the Lead log into the current Team state.
+* @param rootId - root Session identity selecting Team records.
 * @param events - complete contiguous Session log.
-* @returns mutable replay state at the end of the log.
+* @returns detached replay state at the supplied log end.
 */
 function foldTeam(rootId, events) {
 	const state = emptyTeamFoldState(rootId);
@@ -431,32 +389,27 @@ function foldTeam(rootId, events) {
 }
 //#endregion
 //#region lib/types/journal.js
-/** Serialized Team transactions over the exact live Lead Session log. */
-/** Owns per-Lead transaction order and committed Team event publication. */
+/** Owns per-Lead transaction order and durable Team publication. */
 var TeamJournal = class {
 	ctx;
 	onCommit;
 	tails = /* @__PURE__ */ new Map();
-	/**
-	* @param ctx - Team service context with the injected Session service.
-	* @param onCommit - synchronous notification after the Team event flush succeeds.
-	*/
 	constructor(ctx, onCommit) {
 		this.ctx = ctx;
 		this.onCommit = onCommit;
 	}
 	/**
-	* Fold authoritative Team state for one exact live Lead.
-	* @param root - exact live Team Lead.
-	* @returns current replay state selected by the Lead Team id.
+	* Fold authoritative state for an exact live Lead.
+	* @param root - live Lead Agent.
+	* @returns replay state selected by its Team identity.
 	*/
 	state(root) {
 		return foldTeam(root.id, root.session.events);
 	}
 	/**
-	* Serialize one Lead's asynchronous mutation operation.
-	* @param rootId - Lead Session identity selecting the transaction queue.
-	* @param operation - complete read-check-append operation.
+	* Serialize one complete read-check-append operation for a Lead.
+	* @param rootId - Lead identity selecting the queue.
+	* @param operation - admitted asynchronous operation.
 	* @returns the operation result.
 	*/
 	async transact(rootId, operation) {
@@ -470,43 +423,40 @@ var TeamJournal = class {
 		}
 	}
 	/**
-	* Append and checkpoint one root-owned Team event before publication.
-	* @param root - exact live Lead whose Session owns the event.
+	* Append and flush a Team event before notifying observers.
+	* @param root - exact live Lead owning the log.
 	* @param type - Team event discriminant.
-	* @param data - payload correlated with the event type.
+	* @param data - matching event payload.
 	*/
 	async appendAndFlush(root, type, data) {
-		root.session.append.bind(root.session)(type, data);
+		root.session.append(type, data);
 		await this.ctx.sessions.flush(root.session);
 		this.onCommit(root);
 	}
 };
 //#endregion
 //#region lib/types/lifecycle.js
-/** Shared admission cutoff and bounded settlement for the Team runtime. */
-/** Owns the single Team runtime cancellation fact and disposal timeout. */
+/** Shared admission cutoff and bounded Team shutdown. */
+/** Owns the cancellation fact shared by all Team runtime operations. */
 var TeamRuntimeLifecycle = class {
 	disposalTimeoutMs;
 	controller = new AbortController();
-	/**
-	* @param disposalTimeoutMs - maximum wait for one disposal settlement operation.
-	*/
+	disposalDeadline;
 	constructor(disposalTimeoutMs) {
 		this.disposalTimeoutMs = disposalTimeoutMs;
 	}
-	/** Signal aborted exactly when Team runtime admission closes. */
+	/** Cancellation shared by all admitted runtime operations. */
 	get signal() {
 		return this.controller.signal;
 	}
-	/** Whether Team runtime admission is closed. */
+	/** Whether shutdown has closed admission, independently of completed cleanup. */
 	get disposed() {
 		return this.signal.aborted;
 	}
-	/** The exact cancellation reason used to distinguish expected disposal rejection. */
+	/** Original cancellation reason used to distinguish shutdown from unexpected failure. */
 	get reason() {
 		return this.signal.reason;
 	}
-	/** Whether a rejection is the runtime cancellation, directly or through an Error cause chain. */
 	isCancellation(reason) {
 		const seen = /* @__PURE__ */ new Set();
 		let current = reason;
@@ -519,14 +469,16 @@ var TeamRuntimeLifecycle = class {
 		}
 		return false;
 	}
-	/** Close Team runtime admission and cancel admitted interruptible work. */
+	/** Close admission and cancel interruptible work. */
 	close() {
+		if (this.disposed) return;
+		this.disposalDeadline = Date.now() + this.disposalTimeoutMs;
 		this.controller.abort(new TeamError("Agent Teams service disposed", "TEAM_DISPOSED"));
 	}
 	/**
 	* Await admitted operations and retain failures other than runtime cancellation.
-	* @param operations - admitted operations captured after the admission cutoff.
-	* @param failures - aggregate destination for unexpected rejection or timeout.
+	* @param operations - operations captured after admission closes.
+	* @param failures - destination for unexpected rejections or timeouts.
 	*/
 	async settle(operations, failures) {
 		if (operations.length === 0) return;
@@ -538,16 +490,14 @@ var TeamRuntimeLifecycle = class {
 		}
 	}
 	/**
-	* Bound one runtime settlement operation.
-	* @param operation - settlement that may otherwise block HMR or process shutdown.
-	* @returns the operation result.
+	* Bound one shutdown operation.
+	* @param operation - settlement that might otherwise wait indefinitely.
+	* @returns the operation's result.
 	*/
 	async withTimeout(operation) {
 		let timer;
 		const timeout = new Promise((_resolve, reject) => {
-			timer = setTimeout(() => {
-				reject(new TeamError(`Agent Teams runtime disposal exceeded ${this.disposalTimeoutMs}ms`, "TEAM_DISPOSAL_TIMEOUT"));
-			}, this.disposalTimeoutMs);
+			timer = setTimeout(() => reject(new TeamError(`Agent Teams runtime disposal exceeded ${this.disposalTimeoutMs}ms`, "TEAM_DISPOSAL_TIMEOUT")), this.disposalDeadline === void 0 ? this.disposalTimeoutMs : Math.max(0, this.disposalDeadline - Date.now()));
 		});
 		try {
 			return await Promise.race([operation, timeout]);
@@ -558,8 +508,6 @@ var TeamRuntimeLifecycle = class {
 };
 //#endregion
 //#region lib/types/session-message.js
-/** Durable Session-message acceptance checks shared by provisioning and mailbox recovery. */
-/** Fold the durable inbox suffix into the messages still awaiting a claim. */
 function pendingInboxMessages(events) {
 	const inbox = {
 		"next-turn": [],
@@ -572,22 +520,22 @@ function pendingInboxMessages(events) {
 	return [...inbox["next-turn"], ...inbox["next-step"]];
 }
 /**
-* Test whether one message is model-visible or still durably pending.
-* @param events - one Session's non-inherited event suffix.
-* @param predicate - identity check for the accepted message.
-* @returns whether history or the current inbox contains a match.
+* Check visible history and the remaining durable inbox for a message identity.
+* @param events - non-inherited Session event suffix.
+* @param predicate - message identity check.
+* @returns whether a visible or still-pending message matches.
 */
 function messageAccepted(events, predicate) {
 	return events.some((event) => event.type === "user/message" && predicate(event.data)) || pendingInboxMessages(events).some(predicate);
 }
 //#endregion
 //#region lib/types/validation.js
-/** Input normalization shared by Team roster and task commands. */
+/** Input normalization shared by roster and task commands. */
 /**
-* Normalize one required human-authored string.
-* @param value - raw input value.
+* Normalize a required human-authored string.
+* @param value - raw input.
 * @param field - diagnostic field name.
-* @param maxLength - maximum normalized character count.
+* @param maxLength - normalized character limit.
 * @returns trimmed non-empty text.
 */
 function requiredText(value, field, maxLength) {
@@ -597,9 +545,9 @@ function requiredText(value, field, maxLength) {
 	return text;
 }
 /**
-* Normalize one workspace-relative path prefix without treating it as a lock.
-* @param value - user-authored path prefix.
-* @returns normalized slash-separated prefix.
+* Normalize an advisory workspace-relative path prefix, not a write lock.
+* @param value - authored path prefix.
+* @returns slash-separated relative prefix.
 */
 function writeScope(value) {
 	const normalized = value.replaceAll("\\", "/").replace(/^\.\//u, "").replace(/\/+$/u, "");
@@ -609,14 +557,14 @@ function writeScope(value) {
 }
 //#endregion
 //#region lib/types/roster.js
-/** Team membership, continuable-child provisioning, and roster-owned teardown. */
+/** Exact Team membership and continuable-child lifecycle. */
 const MEMBER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 /**
-* Resolve one active Team member by model-facing name, including the Lead pseudo-row.
-* @param root - exact live Team Lead.
+* Resolve an active teammate name or the Lead pseudo-row.
+* @param root - exact live Lead.
 * @param state - current Team fold.
-* @param rawName - candidate member name.
-* @returns resolved durable id and normalized name.
+* @param rawName - member name to resolve.
+* @returns durable identity and normalized name.
 */
 function resolveActiveMember(root, state, rawName) {
 	const name = rawName.trim();
@@ -632,19 +580,13 @@ function resolveActiveMember(root, state, rawName) {
 		name
 	};
 }
-/** Owns Team identities and the lifecycle of rostered continuable children. */
+/** Owns roster identities and their continuable children. */
 var TeamRoster = class {
 	ctx;
 	journal;
 	lifecycle;
 	maxMembers;
 	inFlightCreations = /* @__PURE__ */ new Set();
-	/**
-	* @param ctx - Team service context with Agent, Session, persistence, and subagent services.
-	* @param journal - authoritative Lead-log transaction owner.
-	* @param lifecycle - shared Team runtime admission cutoff.
-	* @param maxMembers - maximum immutable roster entries per Team.
-	*/
 	constructor(ctx, journal, lifecycle, maxMembers) {
 		this.ctx = ctx;
 		this.journal = journal;
@@ -652,9 +594,9 @@ var TeamRoster = class {
 		this.maxMembers = maxMembers;
 	}
 	/**
-	* Resolve one exact live Agent's Team role.
-	* @param agent - exact live Agent used as the authority credential.
-	* @returns its root, Team identity, role, and model-facing name.
+	* Require membership of an exact live Agent.
+	* @param agent - calling Agent identity.
+	* @returns its current Team and role.
 	*/
 	membership(agent) {
 		const membership = this.tryMembership(agent);
@@ -662,9 +604,9 @@ var TeamRoster = class {
 		return membership;
 	}
 	/**
-	* Resolve a caller without throwing for scoped installation and lifecycle observers.
-	* @param agent - candidate exact live Agent.
-	* @returns Team membership, or undefined for non-Team subagents and stale identities.
+	* Resolve membership without admitting stale identities or foreign subagents.
+	* @param agent - candidate live Agent.
+	* @returns current membership, or undefined when it cannot be established.
 	*/
 	tryMembership(agent) {
 		if (this.ctx.agents.get(agent.id) !== agent) return void 0;
@@ -680,13 +622,6 @@ var TeamRoster = class {
 						role: "teammate",
 						name: member.name
 					};
-					if (this.subagentDescriptor(agent)) return void 0;
-					return {
-						root: agent,
-						id: TeamId(agent.id),
-						role: "lead",
-						name: "lead"
-					};
 				}
 			}
 			if (this.subagentDescriptor(agent)) return void 0;
@@ -701,13 +636,12 @@ var TeamRoster = class {
 		}
 	}
 	/**
-	* List the runtime-enriched roster visible to one Team member.
-	* @param membership - exact caller membership resolved by this roster.
+	* List the roster with current runtime status.
+	* @param membership - exact caller membership.
 	* @returns Lead and teammate rows in creation order.
 	*/
 	list(membership) {
 		const { root } = membership;
-		const state = this.journal.state(root);
 		const result = [{
 			id: root.id,
 			name: "lead",
@@ -716,7 +650,7 @@ var TeamRoster = class {
 			...root.options.model === void 0 ? {} : { model: root.options.model },
 			diagnostics: []
 		}];
-		for (const member of state.members.values()) {
+		for (const member of this.journal.state(root).members.values()) {
 			const live = this.ctx.agents.get(member.id);
 			const model = live?.options.model ?? root.options.model;
 			result.push({
@@ -734,10 +668,10 @@ var TeamRoster = class {
 		return result;
 	}
 	/**
-	* Create one named, continuable direct child of the Team Lead.
-	* @param caller - exact live Lead Agent.
-	* @param request - immutable name, description, prompt, context mode, provider, and cancellation.
-	* @returns the active roster row.
+	* Admit one Lead-owned teammate creation before the shutdown cutoff.
+	* @param caller - exact live Lead.
+	* @param request - teammate identity, initial message, provider and cancellation.
+	* @returns the active member after durable prompt acceptance.
 	*/
 	async spawn(caller, request) {
 		if (this.lifecycle.disposed) throw new TeamError("Agent Teams service is disposing", "TEAM_DISPOSED");
@@ -750,16 +684,16 @@ var TeamRoster = class {
 		}
 	}
 	/**
-	* Return admitted creation operations captured for ordered disposal.
-	* @returns detached snapshot ordered only by Set insertion.
+	* Capture admitted creations before ordered disposal.
+	* @returns creation operations that have not settled.
 	*/
 	pendingCreations() {
 		return [...this.inFlightCreations];
 	}
 	/**
-	* Reconcile provisioning state when one Team member Session starts.
+	* Reconcile provisioning when a Team Lead starts.
 	* @param agent - newly started exact live Agent.
-	* @param signal - shared runtime cancellation.
+	* @param signal - runtime cancellation.
 	*/
 	async recoverFor(agent, signal) {
 		signal.throwIfAborted();
@@ -767,16 +701,15 @@ var TeamRoster = class {
 		if (membership?.role === "lead") await this.reconcileProvisioning(membership.root, signal);
 	}
 	/**
-	* Interrupt one live teammate turn without clearing its pending inbox.
-	* @param caller - exact live Lead Agent.
+	* Interrupt a teammate turn without discarding its pending inbox.
+	* @param caller - exact live Lead.
 	* @param targetName - durable teammate name.
-	* @returns the target status sampled before cancellation.
+	* @returns status immediately before cancellation.
 	*/
 	interrupt(caller, targetName) {
 		const membership = this.membership(caller);
 		if (membership.role !== "lead") throw new TeamError("only the Team Lead can interrupt teammates", "TEAM_LEAD_REQUIRED");
-		const state = this.journal.state(membership.root);
-		const target = resolveActiveMember(membership.root, state, targetName);
+		const target = resolveActiveMember(membership.root, this.journal.state(membership.root), targetName);
 		if (target.id === membership.root.id) throw new TeamError("the Team Lead cannot interrupt itself", "TEAM_INVALID_TARGET");
 		const live = this.ctx.agents.get(target.id);
 		if (live === void 0) return { previousStatus: "inactive" };
@@ -788,8 +721,8 @@ var TeamRoster = class {
 		return { previousStatus };
 	}
 	/**
-	* Group exact live roster children by their current Lead for runtime teardown.
-	* @returns each live Lead and the roster child ids currently in the Agent registry.
+	* Group currently live roster children for owner-checked teardown.
+	* @returns child session identities grouped by their exact current Lead.
 	*/
 	liveChildrenByRoot() {
 		const teams = /* @__PURE__ */ new Map();
@@ -805,14 +738,13 @@ var TeamRoster = class {
 		return teams;
 	}
 	/**
-	* Release exact teammate Activations through the continuation lifecycle owner.
-	* @param root - exact live Team Lead authorizing release.
-	* @param childIds - selected roster child ids.
+	* Release selected teammate activations through their continuation owner.
+	* @param root - exact Lead authorizing release.
+	* @param childIds - selected roster children.
 	*/
 	async stopTeammates(root, childIds) {
 		await this.lifecycle.withTimeout(this.ctx.subagents.drainContinuableChildren(root, childIds));
 	}
-	/** Perform one creation admitted before the Team runtime disposal cutoff. */
 	async spawnAdmitted(caller, request) {
 		const membership = this.membership(caller);
 		if (membership.role !== "lead") throw new TeamError("only the Team Lead can create teammates", "TEAM_LEAD_REQUIRED");
@@ -840,9 +772,8 @@ var TeamRoster = class {
 				member
 			});
 		});
-		let started;
 		try {
-			started = await this.ctx.subagents.startContinuable({
+			const started = await this.ctx.subagents.startContinuable({
 				childId,
 				provider: request.provider,
 				label: description,
@@ -877,16 +808,14 @@ var TeamRoster = class {
 			try {
 				await this.stopTeammates(root, [childId]);
 			} catch (cleanupError) {
-				/* v8 ignore next -- requires the independently tested HMR settlement conflict and cleanup failure together. */
 				throw new AggregateError([conflict, cleanupError], "provisioning conflict cleanup failed");
 			}
 			throw conflict;
 		}
 		return { member: this.memberView(active) };
 	}
-	/** Flush the accepted initial inbox item before the Lead can commit `active`. */
 	async checkpointInitialPrompt(childId, messageId, signal) {
-		while (true) {
+		for (;;) {
 			signal.throwIfAborted();
 			const session = this.ctx.sessions.get(childId);
 			if (session === void 0) {
@@ -897,10 +826,10 @@ var TeamRoster = class {
 			const progress = Promise.withResolvers();
 			progress.promise.catch(() => void 0);
 			const stopEvent = this.ctx.on("session/event", (candidate) => {
-				if (candidate === session) progress.resolve();
+				if (candidate === session) progress.resolve(void 0);
 			});
 			const stopDisposed = this.ctx.on("session/disposed", (candidate) => {
-				if (candidate === session) progress.resolve();
+				if (candidate === session) progress.resolve(void 0);
 			});
 			const onAbort = () => {
 				const reason = signal.reason;
@@ -920,7 +849,6 @@ var TeamRoster = class {
 			}
 		}
 	}
-	/** Settle provisioning-only members from their independently durable child Sessions. */
 	async reconcileProvisioning(root, signal) {
 		const provisioning = [...this.journal.state(root).members.values()].filter((member) => member.phase === "provisioning");
 		for (const member of provisioning) {
@@ -932,8 +860,8 @@ var TeamRoster = class {
 				const loaded = await this.ctx.sessionPersistence.inspect(member.id, signal);
 				const suffix = loaded.events.slice(loaded.meta.seedLength ?? 0);
 				const descriptor = foldSubagentDescriptor(suffix);
-				const acceptedInitialPrompt = messageAccepted(suffix, (message) => message.source.kind === "user");
-				if (loaded.meta.parentSession === root.id && descriptor?.mode === "continuable" && descriptor.provider === member.provider && acceptedInitialPrompt) phase = "active";
+				const accepted = messageAccepted(suffix, (message) => message.source.kind === "user");
+				if (loaded.meta.parentSession === root.id && descriptor?.mode === "continuable" && descriptor.provider === member.provider && accepted) phase = "active";
 				else failure = "persisted child Session does not match the provisioned continuation";
 			} catch (error) {
 				failure = `child Session recovery failed: ${errorMessage(error)}`;
@@ -956,7 +884,6 @@ var TeamRoster = class {
 			});
 		}
 	}
-	/** Build one runtime member row after successful creation. */
 	memberView(member) {
 		const live = this.ctx.agents.get(member.id);
 		return {
@@ -971,16 +898,13 @@ var TeamRoster = class {
 			diagnostics: []
 		};
 	}
-	/** Validate a never-reused model-facing teammate name. */
 	memberName(value) {
 		if (!MEMBER_NAME.test(value) || value.length > 64 || value === "lead") throw new TeamError("teammate name must be lower-kebab-case, at most 64 characters, and not \"lead\"", "TEAM_INVALID_MEMBER_NAME");
 		return value;
 	}
-	/** Append one terminal provisioning edge unless recovery already settled it. */
-	async settleProvisioning(root, terminal) {
+	settleProvisioning(root, terminal) {
 		return this.journal.transact(root.id, async () => {
 			const current = this.journal.state(root).members.get(terminal.id);
-			/* v8 ignore next 3 -- the append-only provisioning event is committed by this operation before settlement. */
 			if (current === void 0) throw new TeamError(`provisioned teammate "${terminal.id}" disappeared`, "TEAM_PROVISIONING_CONFLICT");
 			if (current.phase !== "provisioning") return current.phase;
 			await this.journal.appendAndFlush(root, "team/member", {
@@ -991,15 +915,14 @@ var TeamRoster = class {
 			return terminal.phase === "active" ? "active" : "failed";
 		});
 	}
-	/** Whether a Session's own suffix identifies a provider-owned subagent child. */
 	subagentDescriptor(agent) {
 		return foldSubagentDescriptor(agent.session.events.slice(agent.session.header.seedLength ?? 0)) !== void 0;
 	}
 };
 //#endregion
 //#region lib/types/mailbox.js
-/** Durable Team mailbox admission, target-local dispatch, acknowledgement, and recovery. */
-/** Owns every process-local state transition for the durable Team mailbox. */
+/** Durable Team mailbox admission, ordered dispatch and acknowledgement. */
+/** Owns process-local admission and delivery state for the durable mailbox. */
 var TeamMailbox = class {
 	ctx;
 	journal;
@@ -1011,14 +934,6 @@ var TeamMailbox = class {
 	activeDispatches = /* @__PURE__ */ new Map();
 	inFlightMessages = /* @__PURE__ */ new Set();
 	inFlightDispatches = /* @__PURE__ */ new Set();
-	/**
-	* @param ctx - Team service context with Agent, Session, persistence, and subagent services.
-	* @param journal - authoritative Lead-log transaction owner.
-	* @param roster - Team membership and member-name resolver.
-	* @param lifecycle - shared Team runtime admission cutoff.
-	* @param maxPendingMessagesPerMember - per-target queued-minus-delivered limit.
-	* @param maxMessageBytes - maximum complete sender-framed delivery size.
-	*/
 	constructor(ctx, journal, roster, lifecycle, maxPendingMessagesPerMember, maxMessageBytes) {
 		this.ctx = ctx;
 		this.journal = journal;
@@ -1028,22 +943,21 @@ var TeamMailbox = class {
 		this.maxMessageBytes = maxMessageBytes;
 	}
 	/**
-	* Queue one durable peer message, then attempt immediate delivery.
-	* @param caller - exact live sending Team member.
-	* @param request - target name, content, scheduling mode, and pre-queue cancellation.
-	* @returns durable message identity and immediate-delivery observation.
+	* Queue a durable peer message, then attempt delivery.
+	* @param caller - exact live sending member.
+	* @param request - target, content, delivery mode and pre-queue cancellation.
+	* @returns durable identity and immediate acceptance observation.
 	*/
 	async send(caller, request) {
 		if (this.lifecycle.disposed) throw new TeamError("Agent Teams service is disposing", "TEAM_DISPOSED");
-		const operation = this.sendAdmitted(caller, {
+		return await this.trackDispatch(this.sendAdmitted(caller, {
 			...request,
 			signal: AbortSignal.any([request.signal, this.lifecycle.signal])
-		});
-		return await this.trackDispatch(operation);
+		}));
 	}
 	/**
-	* Observe target-side durable receipts and checkpoint their Lead-log acknowledgement.
-	* @param session - exact target Session receiving the event.
+	* Checkpoint a target's receipt before acknowledging it in the Lead log.
+	* @param session - exact target Session.
 	* @param event - newly appended Session event.
 	*/
 	observeSessionEvent(session, event) {
@@ -1058,9 +972,9 @@ var TeamMailbox = class {
 		this.trackDispatch(acknowledgement);
 	}
 	/**
-	* Retry durable pending messages relevant to one started Team member.
-	* @param agent - newly started exact live Agent.
-	* @param signal - shared runtime cancellation.
+	* Retry pending messages relevant to a newly started member.
+	* @param agent - exact live member.
+	* @param signal - runtime cancellation.
 	*/
 	async recoverFor(agent, signal) {
 		signal.throwIfAborted();
@@ -1075,13 +989,12 @@ var TeamMailbox = class {
 		}
 	}
 	/**
-	* Return admitted dispatch and acknowledgement operations captured for disposal.
-	* @returns detached snapshot ordered only by Set insertion.
+	* Capture admitted mailbox work before shutdown waits for it.
+	* @returns admitted dispatch and acknowledgement operations.
 	*/
 	pendingDispatches() {
 		return [...this.inFlightDispatches];
 	}
-	/** Queue and dispatch one mailbox item admitted before the disposal cutoff. */
 	async sendAdmitted(caller, request) {
 		const membership = this.roster.membership(caller);
 		request.signal.throwIfAborted();
@@ -1092,9 +1005,9 @@ var TeamMailbox = class {
 			const state = this.journal.state(root);
 			const target = resolveActiveMember(root, state, request.target);
 			if (target.id === caller.id) throw new TeamError("a Team member cannot message itself", "TEAM_SELF_MESSAGE");
-			const pendingForTarget = [...state.messages.values()].filter((candidate) => candidate.targetId === target.id && !state.delivered.has(candidate.id)).length;
-			if (pendingForTarget >= this.maxPendingMessagesPerMember) throw new TeamError(`teammate "${target.name}" has ${pendingForTarget} pending messages`, "TEAM_MAILBOX_FULL");
-			const queued = {
+			const pending = [...state.messages.values()].filter((candidate) => candidate.targetId === target.id && !state.delivered.has(candidate.id)).length;
+			if (pending >= this.maxPendingMessagesPerMember) throw new TeamError(`teammate "${target.name}" has ${pending} pending messages`, "TEAM_MAILBOX_FULL");
+			const message = {
 				id: TeamMessageId(`team-message-${randomUUID()}`),
 				senderId: caller.id,
 				senderName: membership.name,
@@ -1102,15 +1015,15 @@ var TeamMailbox = class {
 				delivery: request.delivery,
 				content
 			};
-			if (Buffer.byteLength(JSON.stringify(this.deliveryContent(queued)), "utf8") > this.maxMessageBytes) throw new TeamError(`team message exceeds ${this.maxMessageBytes} bytes`, "TEAM_MESSAGE_TOO_LARGE");
+			if (Buffer.byteLength(JSON.stringify(this.deliveryContent(message)), "utf8") > this.maxMessageBytes) throw new TeamError(`team message exceeds ${this.maxMessageBytes} bytes`, "TEAM_MESSAGE_TOO_LARGE");
 			await this.journal.appendAndFlush(root, "team/message/queued", {
 				version: 1,
 				teamId: TeamId(root.id),
-				message: queued
+				message
 			});
 			return {
-				message: queued,
-				dispatch: this.tryDispatch(root, queued, request.signal)
+				message,
+				dispatch: this.tryDispatch(root, message, request.signal)
 			};
 		});
 		const accepted = await queued.dispatch;
@@ -1119,10 +1032,8 @@ var TeamMailbox = class {
 			status: accepted ? "accepted" : "queued"
 		};
 	}
-	/** Attempt one queued message exactly once in this process at a time. */
 	tryDispatch(root, message, signal) {
-		if (this.lifecycle.disposed) return Promise.resolve(false);
-		if (this.inFlightMessages.has(message.id)) return Promise.resolve(false);
+		if (this.lifecycle.disposed || this.inFlightMessages.has(message.id)) return Promise.resolve(false);
 		this.inFlightMessages.add(message.id);
 		const operation = this.trackDispatch(this.tryDispatchAdmitted(root, message, AbortSignal.any([signal, this.lifecycle.signal])));
 		const forget = () => {
@@ -1131,24 +1042,20 @@ var TeamMailbox = class {
 		operation.then(forget, forget);
 		return operation;
 	}
-	/** Track one dispatch transaction through delivery admission or contained failure. */
 	trackDispatch(operation) {
 		this.inFlightDispatches.add(operation);
-		operation.then(() => {
+		const forget = () => {
 			this.inFlightDispatches.delete(operation);
-		}, () => {
-			this.inFlightDispatches.delete(operation);
-		});
+		};
+		operation.then(forget, forget);
 		return operation;
 	}
-	/** Attempt one queued message admitted before the service lifecycle cutoff. */
 	async tryDispatchAdmitted(root, message, signal) {
 		const active = this.activeDispatches.get(message.targetId);
 		const live = message.targetId === root.id ? root : this.ctx.agents.get(message.targetId);
 		if (active !== void 0 && live !== void 0 && message.delivery === "quiet" && this.messagePrecedes(root, message.id, active.id)) return await this.dispatchOnce(root, message, signal);
 		return await this.serializeDispatch(message, () => this.dispatchOnce(root, message, signal));
 	}
-	/** Serialize delivery admission for one durable target in queued order. */
 	async serializeDispatch(message, operation) {
 		const targetId = message.targetId;
 		const prior = this.dispatchTails.get(targetId) ?? Promise.resolve();
@@ -1160,9 +1067,7 @@ var TeamMailbox = class {
 				this.activeDispatches.delete(targetId);
 			}
 		};
-		/* v8 ignore next -- dispatch tails absorb rejection, so the recovery callback is a fail-safe backstop. */
 		const run = prior.then(dispatch, dispatch);
-		/* v8 ignore next -- dispatchOnce contains delivery failures and serializeDispatch itself does not throw. */
 		const tail = run.then(() => void 0, () => void 0);
 		this.dispatchTails.set(targetId, tail);
 		try {
@@ -1171,7 +1076,6 @@ var TeamMailbox = class {
 			if (this.dispatchTails.get(targetId) === tail) this.dispatchTails.delete(targetId);
 		}
 	}
-	/** Attempt one queued delivery after target-local ordering admits it. */
 	async dispatchOnce(root, message, signal) {
 		try {
 			const target = message.targetId === root.id ? root : this.ctx.agents.get(message.targetId);
@@ -1189,11 +1093,8 @@ var TeamMailbox = class {
 					content,
 					source
 				});
-				if (message.delivery === "wakeup") {
-					root.followup(input);
-					return await this.checkpointDelivered(root, root.session, message.id);
-				}
-				root.inject(input);
+				if (message.delivery === "wakeup") root.followup(input);
+				else root.inject(input);
 				return await this.checkpointDelivered(root, root.session, message.id);
 			}
 			if (message.delivery === "quiet") {
@@ -1223,21 +1124,18 @@ var TeamMailbox = class {
 			return false;
 		}
 	}
-	/** Whether `left` was durably queued before `right` in one Lead log. */
 	messagePrecedes(root, left, right) {
 		const ids = [...this.journal.state(root).messages.keys()];
 		return ids.indexOf(left) < ids.indexOf(right);
 	}
-	/** Flush one live target receipt before the Lead records its delivered edge. */
 	async checkpointDelivered(root, target, messageId) {
 		await this.ctx.sessions.flush(target);
 		if (!this.targetRecorded(target, messageId)) return false;
 		await this.markDelivered(root, messageId, target.id);
 		return true;
 	}
-	/** Record delivery unless the acknowledgement already exists. */
-	async markDelivered(root, messageId, targetId) {
-		await this.journal.transact(root.id, async () => {
+	markDelivered(root, messageId, targetId) {
+		return this.journal.transact(root.id, async () => {
 			const state = this.journal.state(root);
 			if (state.delivered.has(messageId)) return;
 			const queued = state.messages.get(messageId);
@@ -1250,18 +1148,15 @@ var TeamMailbox = class {
 			});
 		});
 	}
-	/** Whether a target Session already contains the durable message identity. */
 	targetRecorded(session, messageId) {
 		return messageAccepted(session.events.slice(session.header.seedLength ?? 0), (message) => message.source.kind === "team-message" && message.source.messageId === messageId);
 	}
-	/** Frame peer content with stable sender and message identity for the receiving model. */
 	deliveryContent(message) {
 		return [{
 			type: "text",
 			text: `Team message ${message.id} from ${message.senderName}:`
 		}, ...structuredClone(message.content)];
 	}
-	/** Inspect an inactive target before cold resume; uncertainty keeps the mailbox queued. */
 	async persistedTargetRecorded(targetId, messageId, signal) {
 		try {
 			const stored = await this.ctx.sessionPersistence.inspect(targetId, signal);
@@ -1274,35 +1169,29 @@ var TeamMailbox = class {
 };
 //#endregion
 //#region lib/types/task-board.js
-/** Shared Team task DAG commands and runtime-enriched views. */
-/** Whether two normalized file or directory prefixes overlap on path components. */
-function scopesOverlap(left, right) {
-	return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
-}
 const TASK_GRAPH_ERROR_CODES = {
 	missing: "TEAM_TASK_NOT_FOUND",
 	duplicate: "TEAM_INVALID_ARGUMENT",
 	cycle: "TEAM_TASK_DEPENDENCY_CYCLE"
 };
-/** Owns Team task limits, authorization, transitions, and derived views. */
+function scopesOverlap(left, right) {
+	return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+}
+/** Owns task limits, authorization, revisions and derived views. */
 var TeamTaskBoard = class {
 	journal;
 	maxTasks;
-	/**
-	* @param journal - authoritative Lead-log transaction owner.
-	* @param maxTasks - maximum non-deleted tasks retained by one Team.
-	*/
 	constructor(journal, maxTasks) {
 		this.journal = journal;
 		this.maxTasks = maxTasks;
 	}
 	/**
-	* Create one unowned pending task in the Team Lead log.
-	* @param membership - exact caller membership resolved by the Team roster.
-	* @param request - task text, blockers, and advisory write scopes.
-	* @returns the revision-one task view.
+	* Create an unowned pending task in the Lead log.
+	* @param membership - exact caller membership.
+	* @param request - task text, blockers and advisory write scopes.
+	* @returns revision-one view after durability.
 	*/
-	async create(membership, request) {
+	create(membership, request) {
 		const { root } = membership;
 		return this.journal.transact(root.id, async () => {
 			const state = this.journal.state(root);
@@ -1328,10 +1217,10 @@ var TeamTaskBoard = class {
 		});
 	}
 	/**
-	* Return one task, including a deleted tombstone.
-	* @param membership - exact caller membership resolved by the Team roster.
+	* Read one task, including its deleted tombstone.
+	* @param membership - exact caller membership.
 	* @param id - Team-local task identity.
-	* @returns the latest task value and derived readiness diagnostics.
+	* @returns latest runtime-enriched view.
 	*/
 	get(membership, id) {
 		const { root } = membership;
@@ -1341,9 +1230,9 @@ var TeamTaskBoard = class {
 		return this.taskView(root, state, task);
 	}
 	/**
-	* List current non-deleted tasks in numeric creation order.
-	* @param membership - exact caller membership resolved by the Team roster.
-	* @returns detached current task views.
+	* List non-deleted tasks in creation order.
+	* @param membership - exact caller membership.
+	* @returns detached task views.
 	*/
 	list(membership) {
 		const { root } = membership;
@@ -1351,13 +1240,13 @@ var TeamTaskBoard = class {
 		return [...state.tasks.values()].filter((task) => task.status !== "deleted").map((task) => this.taskView(root, state, task));
 	}
 	/**
-	* Compare-and-set one authorized task transition.
-	* @param caller - exact live Team member authorizing the mutation.
-	* @param membership - caller role and exact live Lead.
-	* @param request - task identity, expected revision, action, and action fields.
-	* @returns the committed next task revision.
+	* Compare-and-set an authorized transition.
+	* @param caller - exact live calling Agent.
+	* @param membership - caller's Team role and Lead.
+	* @param request - identity, expected revision, action and action fields.
+	* @returns committed next-revision view.
 	*/
-	async update(caller, membership, request) {
+	update(caller, membership, request) {
 		const root = membership.root;
 		return this.journal.transact(root.id, async () => {
 			const state = this.journal.state(root);
@@ -1365,10 +1254,10 @@ var TeamTaskBoard = class {
 			if (current === void 0) throw new TeamError(`team task "${request.taskId}" not found`, "TEAM_TASK_NOT_FOUND");
 			if (current.revision !== request.expectedRevision) throw new TeamError(`stale team task "${current.id}" revision ${request.expectedRevision}; current revision is ${current.revision}`, "TEAM_TASK_STALE_REVISION");
 			if (current.status === "deleted") throw new TeamError(`team task "${current.id}" is deleted`, "TEAM_TASK_DELETED");
+			if (current.revision === Number.MAX_SAFE_INTEGER) throw new TeamError("Team task revision space exhausted", "TEAM_TASK_LIMIT");
 			const lead = membership.role === "lead";
-			const owner = current.ownerId === caller.id;
 			const authorizeOwner = () => {
-				if (!lead && !owner) throw new TeamError("task mutation requires its owner or Team Lead", "TEAM_TASK_UNAUTHORIZED");
+				if (!lead && current.ownerId !== caller.id) throw new TeamError("task mutation requires its owner or Team Lead", "TEAM_TASK_UNAUTHORIZED");
 			};
 			let next;
 			switch (request.action) {
@@ -1452,7 +1341,6 @@ var TeamTaskBoard = class {
 					};
 					break;
 				}
-				/* v8 ignore next 2 -- TeamTaskAction is closed and every member is handled above. */
 				default: throw new TeamError(`unsupported task action ${String(request.action)}`, "TEAM_INVALID_ARGUMENT");
 			}
 			const task = {
@@ -1468,7 +1356,6 @@ var TeamTaskBoard = class {
 			return this.taskView(root, state, task);
 		});
 	}
-	/** Validate and de-duplicate dependency ids against the current task graph. */
 	dependencies(values, state, self) {
 		const seen = /* @__PURE__ */ new Set();
 		const result = [];
@@ -1482,35 +1369,24 @@ var TeamTaskBoard = class {
 		}
 		return result;
 	}
-	/** Normalize and de-duplicate task write scopes. */
 	writeScopes(values) {
 		return [...new Set(values.map(writeScope))];
 	}
-	/** Map shared task-graph validation onto stable command error codes. */
 	assertTaskGraph(state, candidate) {
 		try {
 			assertTaskGraphCandidate(state.tasks, candidate);
 		} catch (error) {
-			/* v8 ignore next -- the shared validator is the only statement in the try and throws this exact error. */
 			if (!(error instanceof TeamTaskGraphError)) throw error;
 			throw new TeamError(error.message, TASK_GRAPH_ERROR_CODES[error.violation], { cause: error });
 		}
 	}
-	/** Whether all current blockers completed. */
 	taskReady(state, task) {
 		return task.blockedBy.every((id) => state.tasks.get(id)?.status === "completed");
 	}
-	/** Remove an optional owner field under exactOptionalPropertyTypes. */
 	withoutOwner(task) {
 		const { ownerId: _ownerId, ...without } = task;
 		return without;
 	}
-	/**
-	* Build one task view with owner name, readiness, and advisory write overlaps.
-	* A committing caller may pass its pre-append fold because `task` supplies the
-	* new value explicitly; owner names, blocker readiness, and other task scopes
-	* do not change when that snapshot is appended.
-	*/
 	taskView(root, state, task) {
 		const ownerName = task.ownerId === void 0 ? void 0 : task.ownerId === root.id ? "lead" : state.members.get(task.ownerId)?.name;
 		const warnings = /* @__PURE__ */ new Set();
@@ -1534,18 +1410,19 @@ var TeamTaskBoard = class {
 };
 //#endregion
 //#region lib/types/index.js
-/** Agent Teams service façade over roster, mailbox, task, and runtime lifecycle owners. */
-const DEFAULT_MAX_MEMBERS = 8;
-const DEFAULT_MAX_TASKS = 256;
-const DEFAULT_MAX_PENDING_MESSAGES = 64;
-const DEFAULT_MAX_MESSAGE_BYTES = 65536;
-const DEFAULT_DISPOSAL_TIMEOUT_MS = 5e3;
-/** Validate one positive safe-integer deployment limit. */
+/** Team service over roster, durable mailbox, task board and runtime lifetime owners. */
+const DEFAULTS = {
+	maxMembers: 8,
+	maxTasks: 256,
+	maxPendingMessagesPerMember: 64,
+	maxMessageBytes: 65536,
+	disposalTimeoutMs: 5e3
+};
 function positiveLimit(name, value) {
 	if (!Number.isSafeInteger(value) || value < 1) throw new TeamError(`${name} must be a positive safe integer`, "TEAM_INVALID_CONFIG");
 	return value;
 }
-/** Agent Teams service backed by the exact live Lead Session log. */
+/** Agent Teams backed by the exact live Lead's durable Session log. */
 var TeamService = class extends Service {
 	static inject = [
 		"agents",
@@ -1554,13 +1431,12 @@ var TeamService = class extends Service {
 		"subagents"
 	];
 	static Config = z.object({
-		maxMembers: z.number().step(1).min(1).default(DEFAULT_MAX_MEMBERS),
-		maxTasks: z.number().step(1).min(1).default(DEFAULT_MAX_TASKS),
-		maxPendingMessagesPerMember: z.number().step(1).min(1).default(DEFAULT_MAX_PENDING_MESSAGES),
-		maxMessageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_MESSAGE_BYTES),
-		disposalTimeoutMs: z.number().step(1).min(1).default(DEFAULT_DISPOSAL_TIMEOUT_MS)
+		maxMembers: z.number().step(1).min(1).default(DEFAULTS.maxMembers),
+		maxTasks: z.number().step(1).min(1).default(DEFAULTS.maxTasks),
+		maxPendingMessagesPerMember: z.number().step(1).min(1).default(DEFAULTS.maxPendingMessagesPerMember),
+		maxMessageBytes: z.number().step(1).min(1).default(DEFAULTS.maxMessageBytes),
+		disposalTimeoutMs: z.number().step(1).min(1).default(DEFAULTS.disposalTimeoutMs)
 	});
-	/** Validated deployment limits used by every Team operation. */
 	config;
 	activity;
 	lifecycle;
@@ -1568,29 +1444,24 @@ var TeamService = class extends Service {
 	roster;
 	mailbox;
 	tasks;
+	recoveries = /* @__PURE__ */ new Set();
 	constructor(ctx, config = {}) {
 		super(ctx, "agentTeams");
 		this.config = {
-			maxMembers: positiveLimit("maxMembers", config.maxMembers ?? DEFAULT_MAX_MEMBERS),
-			maxTasks: positiveLimit("maxTasks", config.maxTasks ?? DEFAULT_MAX_TASKS),
-			maxPendingMessagesPerMember: positiveLimit("maxPendingMessagesPerMember", config.maxPendingMessagesPerMember ?? DEFAULT_MAX_PENDING_MESSAGES),
-			maxMessageBytes: positiveLimit("maxMessageBytes", config.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES),
-			disposalTimeoutMs: positiveLimit("disposalTimeoutMs", config.disposalTimeoutMs ?? DEFAULT_DISPOSAL_TIMEOUT_MS)
+			maxMembers: positiveLimit("maxMembers", config.maxMembers ?? DEFAULTS.maxMembers),
+			maxTasks: positiveLimit("maxTasks", config.maxTasks ?? DEFAULTS.maxTasks),
+			maxPendingMessagesPerMember: positiveLimit("maxPendingMessagesPerMember", config.maxPendingMessagesPerMember ?? DEFAULTS.maxPendingMessagesPerMember),
+			maxMessageBytes: positiveLimit("maxMessageBytes", config.maxMessageBytes ?? DEFAULTS.maxMessageBytes),
+			disposalTimeoutMs: positiveLimit("disposalTimeoutMs", config.disposalTimeoutMs ?? DEFAULTS.disposalTimeoutMs)
 		};
 		this.activity = new TeamActivity();
 		this.lifecycle = new TeamRuntimeLifecycle(this.config.disposalTimeoutMs);
-		this.journal = new TeamJournal(ctx, (root) => {
-			this.activity.notify(TeamId(root.id));
-		});
+		this.journal = new TeamJournal(ctx, (root) => this.activity.notify(TeamId(root.id)));
 		this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers);
 		this.mailbox = new TeamMailbox(ctx, this.journal, this.roster, this.lifecycle, this.config.maxPendingMessagesPerMember, this.config.maxMessageBytes);
 		this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks);
-		ctx.on("session/event", (session, event) => {
-			this.mailbox.observeSessionEvent(session, event);
-		});
-		ctx.on("agent/session-start", ({ agent }) => {
-			this.scheduleRecovery(agent);
-		});
+		ctx.on("session/event", (session, event) => this.mailbox.observeSessionEvent(session, event));
+		ctx.on("agent/session-start", ({ agent }) => this.scheduleRecovery(agent));
 		ctx.on("agent/status", ({ agent }) => {
 			const membership = this.roster.tryMembership(agent);
 			if (membership !== void 0) this.activity.notify(membership.id);
@@ -1599,122 +1470,122 @@ var TeamService = class extends Service {
 		for (const agent of ctx.agents.list()) this.scheduleRecovery(agent);
 	}
 	/**
-	* Resolve one exact live Agent's Team role.
-	* @param agent - exact live Agent used as the authority credential.
-	* @returns its root, Team identity, role, and model-facing name.
+	* Require the caller's current live team membership.
+	* @param agent - exact live caller.
+	* @returns current Team role.
 	*/
 	membership(agent) {
 		return this.roster.membership(agent);
 	}
 	/**
-	* List the runtime-enriched roster visible to one Team member.
-	* @param agent - exact live Team member.
-	* @returns Lead and teammate rows in creation order.
+	* Read the live member's team roster.
+	* @param agent - exact live member.
+	* @returns roster in creation order.
 	*/
 	listMembers(agent) {
 		return this.roster.list(this.roster.membership(agent));
 	}
 	/**
-	* Create one named, continuable direct child of the Team Lead.
-	* @param caller - exact live Lead Agent.
-	* @param request - immutable name, description, prompt, context mode, provider, and cancellation.
-	* @returns the active roster row.
+	* Create a teammate under the live Lead's roster and runtime lifetime.
+	* @param caller - exact Lead.
+	* @param request - creation request.
+	* @returns durable active member.
 	*/
 	async spawnTeammate(caller, request) {
 		return await this.roster.spawn(caller, request);
 	}
 	/**
-	* Queue one durable peer message, then attempt immediate delivery.
-	* @param caller - exact live sending Team member.
-	* @param request - target name, content, scheduling mode, and pre-queue cancellation.
-	* @returns durable message identity and immediate-delivery observation.
+	* Admit a peer message through the durable team mailbox.
+	* @param caller - exact sender.
+	* @param request - peer message.
+	* @returns durable admission result.
 	*/
 	async sendMessage(caller, request) {
 		return await this.mailbox.send(caller, request);
 	}
 	/**
-	* Create one unowned pending task in the Team Lead log.
-	* @param caller - exact live Team member creating the task.
-	* @param request - task text, blockers, and advisory write scopes.
-	* @returns the revision-one task view.
+	* Add a task to the caller's durable team board.
+	* @param caller - exact member.
+	* @param request - new task fields.
+	* @returns committed task view.
 	*/
 	async createTask(caller, request) {
 		return await this.tasks.create(this.roster.membership(caller), request);
 	}
 	/**
-	* Return one task, including a deleted tombstone.
-	* @param caller - exact live Team member reading the task.
-	* @param id - Team-local task identity.
-	* @returns the latest task value and derived readiness diagnostics.
+	* Read one task from the caller's team board.
+	* @param caller - exact member.
+	* @param id - task identity.
+	* @returns latest task, including tombstones.
 	*/
 	getTask(caller, id) {
 		return this.tasks.get(this.roster.membership(caller), id);
 	}
 	/**
-	* List current non-deleted tasks in numeric creation order.
-	* @param caller - exact live Team member reading the board.
-	* @returns detached current task views.
+	* Read visible tasks from the caller's team board.
+	* @param caller - exact member.
+	* @returns non-deleted tasks.
 	*/
 	listTasks(caller) {
 		return this.tasks.list(this.roster.membership(caller));
 	}
 	/**
-	* Compare-and-set one authorized task transition.
-	* @param caller - exact live Team member authorizing the mutation.
-	* @param request - task identity, expected revision, action, and action fields.
-	* @returns the committed next task revision.
+	* Commit a revision-checked team task mutation.
+	* @param caller - exact member.
+	* @param request - revision-checked mutation.
+	* @returns committed task view.
 	*/
 	async updateTask(caller, request) {
 		return await this.tasks.update(caller, this.roster.membership(caller), request);
 	}
 	/**
-	* Wait for the next Team-domain or member-status change.
-	* @param caller - exact live Team member waiting for activity.
-	* @param timeoutMs - bounded wait duration from ten seconds through one hour.
-	* @param signal - caller cancellation for the wait only.
-	* @returns one observed change or a timeout result.
+	* Wait for activity in the caller's team without retaining ownership after cancellation.
+	* @param caller - exact member.
+	* @param timeoutMs - bounded wait.
+	* @param signal - wait cancellation.
+	* @returns change or timeout.
 	*/
 	async waitForChange(caller, timeoutMs, signal) {
-		const membership = this.roster.membership(caller);
-		return await this.activity.wait(membership.id, timeoutMs, signal);
+		return await this.activity.wait(this.roster.membership(caller).id, timeoutMs, signal);
 	}
 	/**
-	* Interrupt one live teammate turn without clearing its pending inbox.
-	* @param caller - exact live Lead Agent.
-	* @param targetName - durable teammate name.
-	* @returns the target status sampled before cancellation.
+	* Interrupt a teammate owned by the live Lead.
+	* @param caller - exact Lead.
+	* @param targetName - teammate name.
+	* @returns status before interruption.
 	*/
 	interrupt(caller, targetName) {
 		return this.roster.interrupt(caller, targetName);
 	}
 	/**
-	* Resolve a caller without throwing, used by scoped-tool installation and observers.
-	* @param agent - candidate exact live Agent.
-	* @returns Team membership, or undefined for non-Team subagents and stale identities.
+	* Probe membership without admitting stale or foreign callers.
+	* @param agent - candidate caller.
+	* @returns membership or undefined for stale or foreign identities.
 	*/
 	tryMembership(agent) {
 		return this.roster.tryMembership(agent);
 	}
-	/** Queue one contained recovery pass after publication has unwound. */
 	scheduleRecovery(agent) {
 		queueMicrotask(() => {
 			if (this.lifecycle.disposed) return;
-			this.recoverFor(agent).catch((error) => {
-				if (this.lifecycle.disposed) return;
-				this.ctx.logger.warn(`Agent Teams recovery for "${agent.id}" failed: ${errorMessage(error)}`);
+			const operation = this.recoverFor(agent).catch((error) => {
+				if (!this.lifecycle.disposed) this.ctx.logger.warn(`Agent Teams recovery for "${agent.id}" failed: ${errorMessage(error)}`);
+			});
+			this.recoveries.add(operation);
+			operation.then(() => {
+				this.recoveries.delete(operation);
 			});
 		});
 	}
-	/** Reconcile roster provisioning before retrying that member's pending mailbox. */
 	async recoverFor(agent) {
 		await this.roster.recoverFor(agent, this.lifecycle.signal);
 		await this.mailbox.recoverFor(agent, this.lifecycle.signal);
 	}
-	/** Stop Team-owned live branches and release every waiter before service disposal completes. */
 	async disposeRuntime() {
 		this.lifecycle.close();
 		this.activity.close();
 		const failures = [];
+		await this.lifecycle.settle([...this.recoveries], failures);
 		await this.lifecycle.settle(this.roster.pendingCreations(), failures);
 		await this.lifecycle.settle(this.mailbox.pendingDispatches(), failures);
 		for (const [root, childIds] of this.roster.liveChildrenByRoot()) try {

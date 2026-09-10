@@ -153,12 +153,12 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * @param patchFiles - `--patch` overlay paths, in argv order.
  * @returns the profile and its patch layers.
  */
-async function composeProfile(
+function composeProfile(
   name: string,
   patchFiles: readonly string[],
-): Promise<ComposedProfile> {
+): ComposedProfile {
   const profile = prepareProfile(name)
-  await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
+  healProfilesModuleFallback(INSTALL_ANCHOR)
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
@@ -207,7 +207,7 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @returns the settled root context and the shutdown controller.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const composed = await composeProfile(options.profile, options.patchFiles)
+  const composed = composeProfile(options.profile, options.patchFiles)
   const app: { current?: Context } = {}
   const appReady = createAppReady()
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })

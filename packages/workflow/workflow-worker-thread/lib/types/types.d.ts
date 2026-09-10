@@ -18,8 +18,6 @@ export interface WorkerLimits {
     maxTotalAgents: number;
     /** Items accepted by one `parallel()`/`pipeline()` call. */
     maxItemsPerCall: number;
-    /** Total `phase()` + `log()` calls per run (the narration-flood backstop). */
-    maxNarrationEvents: number;
     /** vm timeout for the script's initial synchronous slice (inside the worker). */
     syncTimeoutMs: number;
 }

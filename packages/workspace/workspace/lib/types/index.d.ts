@@ -5,16 +5,16 @@
  * @module @deepseek-ai/dsh-workspace
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { SessionId } from '@deepseek-ai/dsh-session';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
+import type { SessionId } from '@deepseek-ai/dsh-session';
 export { WorkspaceMoveInvalidError } from './entity.ts';
 import type { Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts';
 import type { WorkspaceRemoteArchiveRequest, WorkspaceRemoteArchivedValue, WorkspaceRemoteCreateRequest, WorkspaceRemoteCreateValue, WorkspaceRemoteDeleteArchivedRequest, WorkspaceRemoteDeleteArchivedValue, WorkspaceRemoteDeleteRequest, WorkspaceRemoteDeletedValue, WorkspaceRemoteInsertBeforeRequest, WorkspaceRemoteInsertSessionBeforeRequest, WorkspaceRemoteListValue, WorkspaceRemoteOrderValue, WorkspaceRemoteRenameRequest, WorkspaceRemoteResult, WorkspaceRemoteWorkspaceValue, WorkspaceSessionRetirer } from './remote.ts';
+export type * from './remote.ts';
 export type { Workspace } from './types.ts';
 export { workspaceDomainState, workspaceRecord, workspaceDomainSpec } from './spec.ts';
 export type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts';
 export { realpathNormalize } from './paths.ts';
-export type * from './remote.ts';
 /** Identifies one workspace record (see `src/types.ts` for the brand rationale). */
 export type WorkspaceId = WorkspaceIdBrand;
 /**
@@ -38,6 +38,10 @@ export declare class WorkspaceUnknownSessionError extends Error {
 export declare class WorkspaceSessionDeletionBlockedError extends Error {
     readonly sessionId: SessionId;
     readonly reason: 'not-archived' | 'resident' | 'reserved';
+    /**
+     * @param sessionId - Session whose deletion was refused.
+     * @param reason - The archive, residency, or reservation condition preventing deletion.
+     */
     constructor(sessionId: SessionId, reason: 'not-archived' | 'resident' | 'reserved');
 }
 /** A workspace reorder named a source or anchor absent from the durable registry order. */
@@ -48,36 +52,35 @@ export declare class WorkspaceOrderInvalidError extends Error {
      */
     constructor(workspaceId: WorkspaceId);
 }
-/** A rename request would collide with another Workspace's display title. */
-export declare class WorkspaceNameConflictError extends Error {
-    readonly workspaceName: string;
-    constructor(workspaceName: string);
-}
-/** A Remote rename supplied an empty title after normalization. */
-export declare class WorkspaceTitleInvalidError extends Error {
-    constructor();
-}
 declare module '@deepseek-ai/cordis' {
     interface Context {
         workspaceRegistry: WorkspaceRegistry;
-        /** Optional exact lifecycle disposer used only by archived-session deletion. */
         workspaceSessionRetirer?: WorkspaceSessionRetirer;
     }
     interface Events {
         /**
-         * Complete committed archive set after a non-delete mutation.
-         * @param archivedSessionIds - Current archived session identities in durable order.
+         * Committed archive overlay after a non-delete mutation.
+         * @param archivedSessionIds - current archive identities in durable order.
          * @mode emit
          */
         'workspace/archived-sessions-changed'(archivedSessionIds: readonly SessionId[]): void;
         /**
-         * One permanently deleted identity after log/account/archive commits.
-         * @param sessionId - Root session identity that was permanently deleted.
-         * @param archivedSessionIds - Remaining archived session identities in durable order.
+         * Permanently removed identity after log, account and archive commits.
+         * @param sessionId - deleted identity.
+         * @param archivedSessionIds - remaining archive overlay.
          * @mode emit
          */
         'workspace/session-deleted'(sessionId: SessionId, archivedSessionIds: readonly SessionId[]): void;
     }
+}
+/** A rename would collide with another Workspace title. */
+export declare class WorkspaceNameConflictError extends Error {
+    readonly workspaceName: string;
+    constructor(workspaceName: string);
+}
+/** A rename supplied no visible title. */
+export declare class WorkspaceTitleInvalidError extends Error {
+    constructor();
 }
 /**
  * Durable workspace registry. Startup waits for `sessionPersistence`, builds
@@ -115,12 +118,10 @@ export declare class WorkspaceRegistry extends TypertRemoteService {
      */
     create(path: string, title?: string): Promise<Workspace>;
     /**
-     * Create one Workspace or resolve the existing canonical path in the same
-     * registry serialization slot.  The `created` bit is therefore not guessed
-     * from a stale preflight lookup.
-     * @param path - Existing directory to own, in any path spelling.
-     * @param title - Display title used only when a new record is created.
-     * @returns the workspace and whether a new record was created.
+     * Resolve canonical ownership and creation status in the same serialized operation.
+     * @param path - existing directory.
+     * @param title - initial title when a record is created.
+     * @returns workspace and whether this operation created it.
      */
     createOrResolve(path: string, title?: string): Promise<{
         workspace: Workspace;
@@ -140,67 +141,75 @@ export declare class WorkspaceRegistry extends TypertRemoteService {
      */
     list(): Workspace[];
     /**
-     * List durable Workspaces and the archive overlay through the generated Remote boundary.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the workspace list and archived-session overlay.
+     * Project the native workspace list without persistence reads.
+     * @param signal - request cancellation.
+     * @returns durable rows and archive overlay.
      */
     remoteExportList(signal: AbortSignal): WorkspaceRemoteResult<WorkspaceRemoteListValue>;
     /**
-     * Create or resolve one canonical existing directory through the generated Remote boundary.
-     * @param request - directory path to create or resolve.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the workspace result and creation flag.
+     * Create or resolve a workspace registration through the native API.
+     * @param request - existing directory to own.
+     * @param signal - cancellation.
+     * @returns row and atomic creation flag.
      */
     remoteExportCreate(request: WorkspaceRemoteCreateRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteCreateValue>>;
     /**
-     * Rename one Workspace without exposing the registry's write chain to transport code.
-     * @param request - workspace id and replacement title.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the renamed workspace result.
+     * Rename a registered workspace through the native API.
+     * @param request - workspace and replacement title.
+     * @param signal - cancellation.
+     * @returns renamed row.
      */
     remoteExportRename(request: WorkspaceRemoteRenameRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>;
     /**
-     * Remove only a Workspace registration; neither files nor session logs are touched.
-     * @param request - workspace id to remove.
-     * @param signal - caller-owned cancellation signal.
-     * @returns confirmation of the registration removal.
+     * Remove a workspace registration without deleting files or session logs.
+     * @param request - registration to remove.
+     * @param signal - cancellation.
+     * @returns confirmation; files and logs remain.
      */
     remoteExportDelete(request: WorkspaceRemoteDeleteRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeletedValue>>;
     /**
-     * Reorder Workspace rows using DOM-insertBefore semantics.
-     * @param request - workspace and optional anchor ids.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the resulting workspace order.
+     * Reorder a workspace through the native API.
+     * @param request - workspace and optional anchor.
+     * @param signal - cancellation.
+     * @returns durable order.
      */
     remoteExportInsertBefore(request: WorkspaceRemoteInsertBeforeRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteOrderValue>>;
     /**
-     * Reorder an accounted Session inside one Workspace.
-     * @param request - workspace, session, and optional anchor ids.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the updated workspace result.
+     * Reorder a session within its workspace account.
+     * @param request - workspace, session and optional anchor.
+     * @param signal - cancellation.
+     * @returns updated account.
      */
     remoteExportInsertSessionBefore(request: WorkspaceRemoteInsertSessionBeforeRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>;
     /**
-     * Archive one Session without changing its Workspace account or log.
-     * @param request - session id to archive.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the archived-session ids after the operation.
+     * Archive a session through the native API while retaining its log.
+     * @param request - session to archive.
+     * @param signal - cancellation.
+     * @returns committed archive overlay.
      */
     remoteExportArchiveSession(request: WorkspaceRemoteArchiveRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>;
     /**
-     * Restore one archived Session without changing its retained Workspace position.
-     * @param request - archived session id to restore.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the archived-session ids after the operation.
+     * Restore an archived session to the visible workspace projection.
+     * @param request - archived session to restore.
+     * @param signal - cancellation.
+     * @returns committed archive overlay.
      */
     remoteExportUnarchiveSession(request: WorkspaceRemoteArchiveRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>;
     /**
-     * Permanently delete an archived Session only through the exact lifecycle-retirement capability.
-     * @param request - archived session id to delete.
-     * @param signal - caller-owned cancellation signal.
-     * @returns deletion confirmation and remaining archived-session ids.
+     * Permanently delete an archived root through its existing lifecycle owners.
+     * @param request - archived root to delete.
+     * @param signal - cancellation.
+     * @returns deletion and archive state.
      */
     remoteExportDeleteArchivedSession(request: WorkspaceRemoteDeleteArchivedRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeleteArchivedValue>>;
+    private remoteOperation;
+    /**
+     * Persist a non-empty, unique workspace title before publishing it.
+     * @param id - registered workspace.
+     * @param title - visible replacement title.
+     * @returns renamed workspace after durability.
+     */
+    rename(id: WorkspaceId, title: string): Promise<Workspace>;
     /**
      * Delete one workspace registration while retaining its directory and every
      * session log. The durable order is updated before the table deletion; a
@@ -210,13 +219,6 @@ export declare class WorkspaceRegistry extends TypertRemoteService {
      * @returns `true` when a record was deleted, `false` when it was unknown.
      */
     delete(id: WorkspaceId): Promise<boolean>;
-    /**
-     * Rename one Workspace through the same serialization chain as all registry writes.
-     * @param id - Workspace registration to rename.
-     * @param title - replacement display title.
-     * @returns the renamed workspace.
-     */
-    rename(id: WorkspaceId, title: string): Promise<Workspace>;
     /**
      * Move one workspace within the durable display order, DOM-insertBefore-like.
      * With an anchor it lands before that workspace; without one it appends.
@@ -233,15 +235,15 @@ export declare class WorkspaceRegistry extends TypertRemoteService {
      */
     get archivedSessionIds(): readonly SessionId[];
     /**
-     * Capture the in-process permanent-deletion generation for publication fencing.
-     * @param sessionId - Session identity whose deletion generation is read.
-     * @returns Current admission generation for the session.
+     * Capture the deletion generation before asynchronously loading a session.
+     * @param sessionId - identity to observe.
+     * @returns its in-process permanent-deletion generation.
      */
     sessionAdmissionRevision(sessionId: SessionId): number;
     /**
-     * Revalidate a publication against archive membership and deletion races.
-     * @param sessionId - Session identity being published.
-     * @param revision - Admission generation captured before the asynchronous work.
+     * Reject publication while a session is archived or its deletion raced the load.
+     * @param sessionId - identity being published.
+     * @param revision - generation captured before asynchronous work.
      */
     assertSessionAdmission(sessionId: SessionId, revision: number): void;
     /**
@@ -253,22 +255,18 @@ export declare class WorkspaceRegistry extends TypertRemoteService {
      */
     archiveSession(sessionId: SessionId): Promise<void>;
     /**
-     * Remove an existing session from the archive set without touching its log/account slot.
-     * @param sessionId - Archived session identity to restore.
-     * @returns Resolution after the archive mutation is durable.
+     * Remove a known session from the durable archive overlay.
+     * @param sessionId - archived identity to restore.
+     * @returns settlement after durable archive removal.
      */
     unarchiveSession(sessionId: SessionId): Promise<void>;
     /**
-     * Permanently delete one archived session and every retained descendant.
-     * Logs commit descendant-first before workspace accounts and archive state;
-     * a later failure leaves the root archive marker available for retry.
-     * @param sessionId - Archived root session identity to delete.
-     * @param retireResident - Callback that retires a live/resident session before log deletion.
-     * @returns Resolution after all retained records and archive state are durable.
+     * Delete an archived root and retained descendants before committing account and archive removal.
+     * @param sessionId - archived root identity.
+     * @param retireResident - exact lifecycle owner used to retire resident sessions.
+     * @returns settlement after logs, derived cleanup, accounts and archive state commit.
      */
     deleteArchivedSession(sessionId: SessionId, retireResident?: (residentSessionId: SessionId) => Promise<void>): Promise<void>;
-    /** Finish a crash-left delete whose authoritative log disappeared first. */
-    private reconcileStaleArchivedSessions;
     /**
      * Whether a session is live, header-indexed, or present in a fresh
      * persistence listing. Only a definite miss returns false — a failing
@@ -284,8 +282,6 @@ export declare class WorkspaceRegistry extends TypertRemoteService {
      * @returns the workspace owning the canonical path, when one exists.
      */
     resolveByPath(path: string): Promise<Workspace | undefined>;
-    /** Run one Remote mutation with cancellation and known business failures kept explicit. */
-    private remoteOperation;
     private createCanonical;
     private deleteKnown;
     /**

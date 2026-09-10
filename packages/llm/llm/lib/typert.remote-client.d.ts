@@ -3,11 +3,13 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { RemoteLlmDiscoveredModelsResult, RemoteLlmDiscoverModelsRequest, RemoteLlmModelsResult, RemoteLlmProviderMutationRequest, RemoteLlmProviderMutationResult, RemoteLlmProviderResumeRequest, RemoteLlmProvidersResult, RemoteLlmProviderTransactionRequest, RemoteLlmProviderTransactionResult, RemoteLlmProviderVerificationRequest, RemoteLlmProviderVerificationResult } from '@deepseek-ai/dsh-llm/types'
+import type { LlmConfigurableProvider, LlmProviderInfo, RemoteLlmDiscoveredModelsResult, RemoteLlmDiscoverModelsRequest, RemoteLlmModelsResult, RemoteLlmProviderMutationRequest, RemoteLlmProviderMutationResult, RemoteLlmProviderResumeRequest, RemoteLlmProvidersResult, RemoteLlmProviderTransactionRequest, RemoteLlmProviderTransactionResult, RemoteLlmProviderVerificationRequest, RemoteLlmProviderVerificationResult } from '@deepseek-ai/dsh-llm/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6c6c6d {
     discoverModels: (request: RemoteLlmDiscoverModelsRequest, signal?: AbortSignal) => Promise<RemoteResult<RemoteLlmDiscoveredModelsResult>>
+    listConfigurableProviders: () => Promise<RemoteResult<LlmConfigurableProvider[]>>
+    listProviders: () => Promise<RemoteResult<LlmProviderInfo[]>>
     models: () => Promise<RemoteResult<RemoteLlmModelsResult>>
     mutateProvider: (request: RemoteLlmProviderMutationRequest, signal?: AbortSignal) => Promise<RemoteResult<RemoteLlmProviderMutationResult>>
     providers: () => Promise<RemoteResult<RemoteLlmProvidersResult>>
@@ -17,6 +19,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
   interface TypertRemoteMap {
     'llm/discoverModels': (request: RemoteLlmDiscoverModelsRequest, signal?: AbortSignal) => Promise<RemoteResult<RemoteLlmDiscoveredModelsResult>>
+    'llm/listConfigurableProviders': () => Promise<RemoteResult<LlmConfigurableProvider[]>>
+    'llm/listProviders': () => Promise<RemoteResult<LlmProviderInfo[]>>
     'llm/models': () => Promise<RemoteResult<RemoteLlmModelsResult>>
     'llm/mutateProvider': (request: RemoteLlmProviderMutationRequest, signal?: AbortSignal) => Promise<RemoteResult<RemoteLlmProviderMutationResult>>
     'llm/providers': () => Promise<RemoteResult<RemoteLlmProvidersResult>>

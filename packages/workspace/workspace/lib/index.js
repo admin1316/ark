@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import { Service } from "@deepseek-ai/cordis";
-import { SessionPersistenceDeleteBlockedError } from "@deepseek-ai/dsh-session-persistence";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
+import { SessionPersistenceDeleteBlockedError } from "@deepseek-ai/dsh-session-persistence";
 import { z } from "zod";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
@@ -172,8 +172,8 @@ var WorkspaceEntity = class {
 //#region lib/types/spec.js
 /**
 * The workspace domain declaration: record schema and the `defineDomain` spec
-* the registry opens. The zod schema is the durable-boundary validator today
-* and the direct source of the RPC wire projection in a later phase.
+* the registry opens. The zod schema validates the shipped format at the
+* durability boundary and is the direct source of a future RPC wire projection.
 * @module @deepseek-ai/dsh-workspace/src/spec
 */
 /** Workspace id schema at the durable boundary; branding has no runtime representation. */
@@ -238,7 +238,6 @@ const workspaceDomainSpec = defineDomain({
 });
 //#endregion
 //#region lib/types/remote.js
-/** Generated Remote wire types owned by the workspace domain. */
 /**
 * Direct-call cancellation result; the Remote carrier independently preserves cancellation too.
 * @returns The value produced by workspace remote cancelled.
@@ -307,10 +306,6 @@ var __esDecorate = function(ctor, descriptorIn, decorators, contextIn, initializ
 function WorkspaceId(id) {
 	return id;
 }
-/** Read cancellation after an awaited operation without carrying stale flow narrowing across the yield. */
-function workspaceCancelledAfterAwait(signal) {
-	return signal.aborted ? workspaceRemoteCancelled() : void 0;
-}
 /**
 * An archiveSession request named a session neither live nor in session
 * persistence — a definite miss only; storage faults propagate as themselves.
@@ -330,6 +325,10 @@ var WorkspaceUnknownSessionError = class extends Error {
 var WorkspaceSessionDeletionBlockedError = class extends Error {
 	sessionId;
 	reason;
+	/**
+	* @param sessionId - Session whose deletion was refused.
+	* @param reason - The archive, residency, or reservation condition preventing deletion.
+	*/
 	constructor(sessionId, reason) {
 		const message = reason === "not-archived" ? `cannot permanently delete session '${sessionId}': it is not archived` : reason === "resident" ? `cannot permanently delete session '${sessionId}' while it is live or resident` : `cannot permanently delete session '${sessionId}' while resume holds a reservation`;
 		super(message);
@@ -350,7 +349,7 @@ var WorkspaceOrderInvalidError = class extends Error {
 		this.name = "WorkspaceOrderInvalidError";
 	}
 };
-/** A rename request would collide with another Workspace's display title. */
+/** A rename would collide with another Workspace title. */
 var WorkspaceNameConflictError = class extends Error {
 	workspaceName;
 	constructor(workspaceName) {
@@ -359,7 +358,7 @@ var WorkspaceNameConflictError = class extends Error {
 		this.name = "WorkspaceNameConflictError";
 	}
 };
-/** A Remote rename supplied an empty title after normalization. */
+/** A rename supplied no visible title. */
 var WorkspaceTitleInvalidError = class extends Error {
 	constructor() {
 		super("workspace title must be non-empty");
@@ -368,7 +367,6 @@ var WorkspaceTitleInvalidError = class extends Error {
 };
 const sameIds = (left, right) => left.length === right.length && left.every((id, index) => id === right[index]);
 const compareHeaders = (left, right) => right.createdAt - left.createdAt || String(left.id).localeCompare(String(right.id));
-/** Project one durable Workspace entity without leaking its mutable implementation object. */
 function workspaceRemoteView(workspace) {
 	return {
 		workspaceId: workspace.id,
@@ -379,7 +377,6 @@ function workspaceRemoteView(workspace) {
 		updatedAt: workspace.updatedAt
 	};
 }
-/** Build one stable Remote business failure. */
 function workspaceRemoteError(code, error, details) {
 	return {
 		ok: false,
@@ -390,7 +387,6 @@ function workspaceRemoteError(code, error, details) {
 		}
 	};
 }
-/** Map only domain rejections; storage and other infrastructure faults remain loud. */
 function workspaceRemoteFailure(error) {
 	if (error instanceof WorkspaceOrderInvalidError) return workspaceRemoteError("workspace-not-found", error, { workspaceId: String(error.workspaceId) });
 	if (error instanceof WorkspaceNameConflictError) return workspaceRemoteError("workspace-name-conflict", error, { name: error.workspaceName });
@@ -402,7 +398,10 @@ function workspaceRemoteFailure(error) {
 		reason: error.reason
 	});
 }
-/** Return one retained lineage in deterministic descendant-first order. */
+function workspaceCancelledAfterAwait(signal) {
+	return signal.aborted ? workspaceRemoteCancelled() : void 0;
+}
+/** Compute a validated descendant-first order without consuming the JavaScript call stack. */
 function sessionDeletionPostOrder(rootSessionId, headers) {
 	const byId = /* @__PURE__ */ new Map();
 	for (const header of headers) {
@@ -413,28 +412,43 @@ function sessionDeletionPostOrder(rootSessionId, headers) {
 	const children = /* @__PURE__ */ new Map();
 	for (const header of byId.values()) {
 		if (header.parentSession === void 0) continue;
-		const siblings = children.get(header.parentSession);
-		if (siblings === void 0) children.set(header.parentSession, [header.id]);
-		else siblings.push(header.id);
+		const siblings = children.get(header.parentSession) ?? [];
+		siblings.push(header.id);
+		children.set(header.parentSession, siblings);
 	}
 	for (const siblings of children.values()) siblings.sort((a, b) => String(a).localeCompare(String(b)));
 	const visiting = /* @__PURE__ */ new Set();
 	const path = [];
-	const postOrder = [];
-	const visit = (sessionId) => {
-		if (visiting.has(sessionId)) {
-			const start = path.indexOf(sessionId);
-			throw new Error(`cannot permanently delete session '${rootSessionId}': retained lineage cycle ${[...path.slice(start), sessionId].join(" -> ")}`);
+	const order = [];
+	const stack = [{
+		id: rootSessionId,
+		exiting: false
+	}];
+	while (stack.length > 0) {
+		const frame = stack.pop();
+		if (frame === void 0) break;
+		if (frame.exiting) {
+			path.pop();
+			visiting.delete(frame.id);
+			order.push(frame.id);
+			continue;
 		}
-		visiting.add(sessionId);
-		path.push(sessionId);
-		for (const child of children.get(sessionId) ?? []) visit(child);
-		path.pop();
-		visiting.delete(sessionId);
-		postOrder.push(sessionId);
-	};
-	visit(rootSessionId);
-	return postOrder;
+		if (visiting.has(frame.id)) {
+			const start = path.indexOf(frame.id);
+			throw new Error(`cannot permanently delete session '${rootSessionId}': retained lineage cycle ${[...path.slice(start), frame.id].join(" -> ")}`);
+		}
+		visiting.add(frame.id);
+		path.push(frame.id);
+		stack.push({
+			id: frame.id,
+			exiting: true
+		});
+		for (const child of [...children.get(frame.id) ?? []].reverse()) stack.push({
+			id: child,
+			exiting: false
+		});
+	}
+	return order;
 }
 /**
 * Durable workspace registry. Startup waits for `sessionPersistence`, builds
@@ -613,7 +627,6 @@ let WorkspaceRegistry = (() => {
 			await this.indexLiveSessions();
 			this.validateStoredState(this.requireState());
 			this.rebuildEntities();
-			await this.reconcileStaleArchivedSessions();
 			this.reportFilteredCandidates();
 		}
 		/**
@@ -631,26 +644,15 @@ let WorkspaceRegistry = (() => {
 			return (await this.createOrResolve(path, title)).workspace;
 		}
 		/**
-		* Create one Workspace or resolve the existing canonical path in the same
-		* registry serialization slot.  The `created` bit is therefore not guessed
-		* from a stale preflight lookup.
-		* @param path - Existing directory to own, in any path spelling.
-		* @param title - Display title used only when a new record is created.
-		* @returns the workspace and whether a new record was created.
+		* Resolve canonical ownership and creation status in the same serialized operation.
+		* @param path - existing directory.
+		* @param title - initial title when a record is created.
+		* @returns workspace and whether this operation created it.
 		*/
 		async createOrResolve(path, title) {
 			const canonical = await realpathNormalize(path);
 			if (!(await stat(canonical)).isDirectory()) throw new Error(`cannot create a workspace at '${canonical}': path is not a directory`);
-			return await this.enqueueOperation(async () => {
-				for (const entity of this.entities.values()) if (entity.path === canonical) return {
-					workspace: entity,
-					created: false
-				};
-				return {
-					workspace: await this.createCanonical(canonical, title),
-					created: true
-				};
-			});
+			return await this.enqueueOperation(() => this.createCanonical(canonical, title));
 		}
 		/**
 		* Look up a workspace by id.
@@ -674,9 +676,9 @@ let WorkspaceRegistry = (() => {
 			});
 		}
 		/**
-		* List durable Workspaces and the archive overlay through the generated Remote boundary.
-		* @param signal - caller-owned cancellation signal.
-		* @returns the workspace list and archived-session overlay.
+		* Project the native workspace list without persistence reads.
+		* @param signal - request cancellation.
+		* @returns durable rows and archive overlay.
 		*/
 		remoteExportList(signal) {
 			if (signal.aborted) return workspaceRemoteCancelled();
@@ -689,10 +691,10 @@ let WorkspaceRegistry = (() => {
 			};
 		}
 		/**
-		* Create or resolve one canonical existing directory through the generated Remote boundary.
-		* @param request - directory path to create or resolve.
-		* @param signal - caller-owned cancellation signal.
-		* @returns the workspace result and creation flag.
+		* Create or resolve a workspace registration through the native API.
+		* @param request - existing directory to own.
+		* @param signal - cancellation.
+		* @returns row and atomic creation flag.
 		*/
 		async remoteExportCreate(request, signal) {
 			if (signal.aborted) return workspaceRemoteCancelled();
@@ -714,42 +716,42 @@ let WorkspaceRegistry = (() => {
 			}
 		}
 		/**
-		* Rename one Workspace without exposing the registry's write chain to transport code.
-		* @param request - workspace id and replacement title.
-		* @param signal - caller-owned cancellation signal.
-		* @returns the renamed workspace result.
+		* Rename a registered workspace through the native API.
+		* @param request - workspace and replacement title.
+		* @param signal - cancellation.
+		* @returns renamed row.
 		*/
-		async remoteExportRename(request, signal) {
+		remoteExportRename(request, signal) {
 			return this.remoteOperation(signal, async () => ({ workspace: workspaceRemoteView(await this.rename(request.workspaceId, request.title)) }));
 		}
 		/**
-		* Remove only a Workspace registration; neither files nor session logs are touched.
-		* @param request - workspace id to remove.
-		* @param signal - caller-owned cancellation signal.
-		* @returns confirmation of the registration removal.
+		* Remove a workspace registration without deleting files or session logs.
+		* @param request - registration to remove.
+		* @param signal - cancellation.
+		* @returns confirmation; files and logs remain.
 		*/
-		async remoteExportDelete(request, signal) {
+		remoteExportDelete(request, signal) {
 			return this.remoteOperation(signal, async () => {
 				if (!await this.delete(request.workspaceId)) throw new WorkspaceOrderInvalidError(request.workspaceId);
 				return { deleted: true };
 			});
 		}
 		/**
-		* Reorder Workspace rows using DOM-insertBefore semantics.
-		* @param request - workspace and optional anchor ids.
-		* @param signal - caller-owned cancellation signal.
-		* @returns the resulting workspace order.
+		* Reorder a workspace through the native API.
+		* @param request - workspace and optional anchor.
+		* @param signal - cancellation.
+		* @returns durable order.
 		*/
-		async remoteExportInsertBefore(request, signal) {
+		remoteExportInsertBefore(request, signal) {
 			return this.remoteOperation(signal, async () => ({ workspaceIds: [...await this.insertBefore(request.workspaceId, request.beforeWorkspaceId)] }));
 		}
 		/**
-		* Reorder an accounted Session inside one Workspace.
-		* @param request - workspace, session, and optional anchor ids.
-		* @param signal - caller-owned cancellation signal.
-		* @returns the updated workspace result.
+		* Reorder a session within its workspace account.
+		* @param request - workspace, session and optional anchor.
+		* @param signal - cancellation.
+		* @returns updated account.
 		*/
-		async remoteExportInsertSessionBefore(request, signal) {
+		remoteExportInsertSessionBefore(request, signal) {
 			return this.remoteOperation(signal, async () => {
 				const workspace = this.get(request.workspaceId);
 				if (workspace === void 0) throw new WorkspaceOrderInvalidError(request.workspaceId);
@@ -758,36 +760,36 @@ let WorkspaceRegistry = (() => {
 			});
 		}
 		/**
-		* Archive one Session without changing its Workspace account or log.
-		* @param request - session id to archive.
-		* @param signal - caller-owned cancellation signal.
-		* @returns the archived-session ids after the operation.
+		* Archive a session through the native API while retaining its log.
+		* @param request - session to archive.
+		* @param signal - cancellation.
+		* @returns committed archive overlay.
 		*/
-		async remoteExportArchiveSession(request, signal) {
+		remoteExportArchiveSession(request, signal) {
 			return this.remoteOperation(signal, async () => {
 				await this.archiveSession(request.sessionId);
 				return { archivedSessionIds: [...this.archivedSessionIds] };
 			});
 		}
 		/**
-		* Restore one archived Session without changing its retained Workspace position.
-		* @param request - archived session id to restore.
-		* @param signal - caller-owned cancellation signal.
-		* @returns the archived-session ids after the operation.
+		* Restore an archived session to the visible workspace projection.
+		* @param request - archived session to restore.
+		* @param signal - cancellation.
+		* @returns committed archive overlay.
 		*/
-		async remoteExportUnarchiveSession(request, signal) {
+		remoteExportUnarchiveSession(request, signal) {
 			return this.remoteOperation(signal, async () => {
 				await this.unarchiveSession(request.sessionId);
 				return { archivedSessionIds: [...this.archivedSessionIds] };
 			});
 		}
 		/**
-		* Permanently delete an archived Session only through the exact lifecycle-retirement capability.
-		* @param request - archived session id to delete.
-		* @param signal - caller-owned cancellation signal.
-		* @returns deletion confirmation and remaining archived-session ids.
+		* Permanently delete an archived root through its existing lifecycle owners.
+		* @param request - archived root to delete.
+		* @param signal - cancellation.
+		* @returns deletion and archive state.
 		*/
-		async remoteExportDeleteArchivedSession(request, signal) {
+		remoteExportDeleteArchivedSession(request, signal) {
 			return this.remoteOperation(signal, async () => {
 				const retirer = this.ctx.get("workspaceSessionRetirer");
 				await this.deleteArchivedSession(request.sessionId, retirer === void 0 ? void 0 : (id) => retirer.retireArchivedSession(id, signal));
@@ -797,22 +799,27 @@ let WorkspaceRegistry = (() => {
 				};
 			});
 		}
-		/**
-		* Delete one workspace registration while retaining its directory and every
-		* session log. The durable order is updated before the table deletion; a
-		* failed table write restores the prior order and keeps the entity
-		* published. Unknown ids are an idempotent no-op for domain callers.
-		* @param id - Workspace registration to remove.
-		* @returns `true` when a record was deleted, `false` when it was unknown.
-		*/
-		delete(id) {
-			return this.enqueueOperation(() => this.deleteKnown(id));
+		async remoteOperation(signal, operation) {
+			if (signal.aborted) return workspaceRemoteCancelled();
+			try {
+				const value = await operation();
+				return workspaceCancelledAfterAwait(signal) ?? {
+					ok: true,
+					value
+				};
+			} catch (error) {
+				const cancellation = workspaceCancelledAfterAwait(signal);
+				if (cancellation !== void 0) return cancellation;
+				const failure = workspaceRemoteFailure(error);
+				if (failure !== void 0) return failure;
+				throw error;
+			}
 		}
 		/**
-		* Rename one Workspace through the same serialization chain as all registry writes.
-		* @param id - Workspace registration to rename.
-		* @param title - replacement display title.
-		* @returns the renamed workspace.
+		* Persist a non-empty, unique workspace title before publishing it.
+		* @param id - registered workspace.
+		* @param title - visible replacement title.
+		* @returns renamed workspace after durability.
 		*/
 		rename(id, title) {
 			const normalized = title.trim();
@@ -825,6 +832,17 @@ let WorkspaceRegistry = (() => {
 				await workspace.setTitle(normalized);
 				return workspace;
 			});
+		}
+		/**
+		* Delete one workspace registration while retaining its directory and every
+		* session log. The durable order is updated before the table deletion; a
+		* failed table write restores the prior order and keeps the entity
+		* published. Unknown ids are an idempotent no-op for domain callers.
+		* @param id - Workspace registration to remove.
+		* @returns `true` when a record was deleted, `false` when it was unknown.
+		*/
+		delete(id) {
+			return this.enqueueOperation(() => this.deleteKnown(id));
 		}
 		/**
 		* Move one workspace within the durable display order, DOM-insertBefore-like.
@@ -864,21 +882,21 @@ let WorkspaceRegistry = (() => {
 			return this.requireState().archivedSessionIds;
 		}
 		/**
-		* Capture the in-process permanent-deletion generation for publication fencing.
-		* @param sessionId - Session identity whose deletion generation is read.
-		* @returns Current admission generation for the session.
+		* Capture the deletion generation before asynchronously loading a session.
+		* @param sessionId - identity to observe.
+		* @returns its in-process permanent-deletion generation.
 		*/
 		sessionAdmissionRevision(sessionId) {
 			return this.sessionDeletionEpoch.get(sessionId) ?? 0;
 		}
 		/**
-		* Revalidate a publication against archive membership and deletion races.
-		* @param sessionId - Session identity being published.
-		* @param revision - Admission generation captured before the asynchronous work.
+		* Reject publication while a session is archived or its deletion raced the load.
+		* @param sessionId - identity being published.
+		* @param revision - generation captured before asynchronous work.
 		*/
 		assertSessionAdmission(sessionId, revision) {
 			if (this.requireState().archivedSessionIds.includes(sessionId)) throw new Error(`cannot publish session '${sessionId}' while it is archived`);
-			if (this.deletingSessions.has(sessionId) || (this.sessionDeletionEpoch.get(sessionId) ?? 0) !== revision) throw new Error(`cannot publish session '${sessionId}': permanent deletion raced this lifecycle`);
+			if (this.deletingSessions.has(sessionId) || this.sessionAdmissionRevision(sessionId) !== revision) throw new Error(`cannot publish session '${sessionId}': permanent deletion raced this lifecycle`);
 		}
 		/**
 		* Archive one session durably. The session must exist (live or in session
@@ -901,9 +919,9 @@ let WorkspaceRegistry = (() => {
 			});
 		}
 		/**
-		* Remove an existing session from the archive set without touching its log/account slot.
-		* @param sessionId - Archived session identity to restore.
-		* @returns Resolution after the archive mutation is durable.
+		* Remove a known session from the durable archive overlay.
+		* @param sessionId - archived identity to restore.
+		* @returns settlement after durable archive removal.
 		*/
 		unarchiveSession(sessionId) {
 			return this.enqueueOperation(async () => {
@@ -921,22 +939,20 @@ let WorkspaceRegistry = (() => {
 			});
 		}
 		/**
-		* Permanently delete one archived session and every retained descendant.
-		* Logs commit descendant-first before workspace accounts and archive state;
-		* a later failure leaves the root archive marker available for retry.
-		* @param sessionId - Archived root session identity to delete.
-		* @param retireResident - Callback that retires a live/resident session before log deletion.
-		* @returns Resolution after all retained records and archive state are durable.
+		* Delete an archived root and retained descendants before committing account and archive removal.
+		* @param sessionId - archived root identity.
+		* @param retireResident - exact lifecycle owner used to retire resident sessions.
+		* @returns settlement after logs, derived cleanup, accounts and archive state commit.
 		*/
 		deleteArchivedSession(sessionId, retireResident) {
 			return this.enqueueOperation(async () => {
 				if (!this.requireState().archivedSessionIds.includes(sessionId)) throw new WorkspaceSessionDeletionBlockedError(sessionId, "not-archived");
 				const fenced = /* @__PURE__ */ new Set();
-				const observedHeaders = [];
-				const fence = (candidateId) => {
-					this.sessionDeletionEpoch.set(candidateId, (this.sessionDeletionEpoch.get(candidateId) ?? 0) + 1);
-					this.deletingSessions.add(candidateId);
-					fenced.add(candidateId);
+				const observedHeaders = [...this.headers.values()];
+				const fence = (id) => {
+					this.sessionDeletionEpoch.set(id, this.sessionAdmissionRevision(id) + 1);
+					this.deletingSessions.add(id);
+					fenced.add(id);
 				};
 				fence(sessionId);
 				try {
@@ -981,13 +997,6 @@ let WorkspaceRegistry = (() => {
 				}
 			});
 		}
-		/** Finish a crash-left delete whose authoritative log disappeared first. */
-		async reconcileStaleArchivedSessions() {
-			if (this.requireState().archivedSessionIds.length === 0) return;
-			const retained = new Set((await this.ctx.sessionPersistence.list()).map((header) => header.id));
-			for (const session of this.ctx.get("sessions")?.list() ?? []) retained.add(session.id);
-			for (const id of [...this.requireState().archivedSessionIds]) if (!retained.has(id)) await this.deleteArchivedSession(id);
-		}
 		/**
 		* Whether a session is live, header-indexed, or present in a fresh
 		* persistence listing. Only a definite miss returns false — a failing
@@ -1011,27 +1020,11 @@ let WorkspaceRegistry = (() => {
 			const canonical = await realpathNormalize(path);
 			for (const entity of this.entities.values()) if (entity.path === canonical) return entity;
 		}
-		/** Run one Remote mutation with cancellation and known business failures kept explicit. */
-		async remoteOperation(signal, operation) {
-			if (signal.aborted) return workspaceRemoteCancelled();
-			try {
-				const value = await operation();
-				const cancellation = workspaceCancelledAfterAwait(signal);
-				if (cancellation !== void 0) return cancellation;
-				return {
-					ok: true,
-					value
-				};
-			} catch (error) {
-				const cancellation = workspaceCancelledAfterAwait(signal);
-				if (cancellation !== void 0) return cancellation;
-				const failure = workspaceRemoteFailure(error);
-				if (failure !== void 0) return failure;
-				throw error;
-			}
-		}
 		async createCanonical(canonical, title) {
-			for (const entity of this.entities.values()) if (entity.path === canonical) return entity;
+			for (const entity of this.entities.values()) if (entity.path === canonical) return {
+				workspace: entity,
+				created: false
+			};
 			const workspaceName = title ?? basename(canonical);
 			const table = this.requireTable();
 			const state = this.requireState();
@@ -1090,7 +1083,10 @@ let WorkspaceRegistry = (() => {
 				}
 				throw error;
 			}
-			return entity;
+			return {
+				workspace: entity,
+				created: true
+			};
 		}
 		async deleteKnown(id) {
 			const entity = this.entities.get(id);

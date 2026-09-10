@@ -1,10 +1,11 @@
 import z from "@deepseek-ai/schemastery";
 import { readdirSync } from "node:fs";
-import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, truncate, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, truncate } from "node:fs/promises";
 import { dirname, join, parse, resolve, toNamespacedPath } from "node:path";
 import { performance } from "node:perf_hooks";
 import { scheduler } from "node:timers/promises";
 import { randomBytes } from "node:crypto";
+import { withFileLock } from "@deepseek-ai/dsh-atomic-write";
 import { DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS, PersistenceCoordinator, SessionFormatUnsupportedError, SessionPersistence, SessionPersistenceRevision, sessionFormatVersionRefusal } from "@deepseek-ai/dsh-session-persistence";
 import { SESSION_FORMAT_VERSION, decodeSeqRanges, decodeStorageRecord, encodeSeqRanges, packChunkRuns } from "@deepseek-ai/dsh-session";
 import { constants, createZstdDecompress, zstdCompress, zstdDecompress, zstdDecompressSync } from "node:zlib";
@@ -160,9 +161,9 @@ function logPath(root, cwd, id, compression) {
 * Serialize an event batch as JSONL lines (no trailing newline). With
 * `packChunks` on, delta-chunk runs pack into `text-chunks` /
 * `reasoning-chunks` / `tool-call-chunks` storage rows; off writes one event
-* per line, byte-identical to the pre-packing layout. Reading is layout-blind
-* either way ({@link scanLog} always decodes rows), so the switch changes only
-* newly written bytes.
+* per line. Both modes range-encode provenance at the storage boundary.
+* Reading is layout-blind either way ({@link scanLog} always decodes rows),
+* so the switch changes only newly written bytes.
 * @param events - the batch to serialize, in log order.
 * @param packChunks - whether to pack delta runs into storage rows.
 * @returns the batch's JSONL text; the writer adds the final newline.
@@ -174,6 +175,9 @@ function eventLines(events, packChunks) {
 * Losslessly shrink a record's `sourceEventSeqs` for the log: consecutive
 * runs of at least three seqs become `[start, end]` pairs, and any other list
 * stays verbatim.
+* @param record - one stored record (event or packed row).
+* @returns the record with its provenance in storage form (widened from the
+*   in-memory `number[]`; {@link expandProvenanceFromStorage} restores it).
 */
 function encodeProvenanceForStorage(record) {
 	if (!("sourceEventSeqs" in record)) return record;
@@ -182,7 +186,12 @@ function encodeProvenanceForStorage(record) {
 		sourceEventSeqs: encodeSeqRanges(record.sourceEventSeqs)
 	};
 }
-/** Expand a parsed line's storage-form provenance back to `number[]`. */
+/**
+* Expand a parsed line's storage-form provenance back to `number[]`.
+* @param parsed - the JSON-parsed value of one stored line.
+* @returns the value with provenance expanded.
+* @throws when the record or its storage-form provenance is malformed.
+*/
 function expandProvenanceFromStorage(parsed) {
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new TypeError("stored session records must be objects");
 	const record = parsed;
@@ -197,8 +206,8 @@ function expandProvenanceFromStorage(parsed) {
 /**
 * Refuse a header carrying a format version this build does not read BEFORE
 * validating the current header shape or decoding any event row: a future
-* format need not satisfy today's structural checks at all, and its user must
-* see "upgrade the harness", never "corrupt session log".
+* format need not satisfy this build's structural checks at all, and its user
+* must see "upgrade the harness", never "corrupt session log".
 * @param parsed - the JSON-parsed first line of a session artifact.
 */
 function refuseForeignFormatVersion(parsed) {
@@ -681,7 +690,7 @@ function win32Error(syscall, win32Code, path, dest) {
 	error.win32Code = win32Code;
 	return error;
 }
-function isENOENT$2(error) {
+function isENOENT$1(error) {
 	return error?.code === "ENOENT";
 }
 function isEEXIST(error) {
@@ -695,7 +704,7 @@ async function assertDirectory(path) {
 		error.path = path;
 		throw error;
 	} catch (error) {
-		if (isENOENT$2(error)) return false;
+		if (isENOENT$1(error)) return false;
 		throw error;
 	}
 }
@@ -707,38 +716,8 @@ async function assertDirectory(path) {
 * @param replacement - the final path, which must not already exist.
 */
 async function publishNewFileWin32(existing, replacement) {
-	await movePathWriteThroughWin32(existing, replacement);
-}
-/**
-* Move a path without replacement using Windows write-through semantics.
-* @param existing - The existing input.
-* @param replacement - The replacement input.
-*/
-async function movePathWriteThroughWin32(existing, replacement) {
 	const api = await win32();
 	if (api.moveFileExW(toNamespacedPath(existing), toNamespacedPath(replacement), MOVEFILE_WRITE_THROUGH) === 0) throw win32Error("MoveFileExW", api.getLastError(), existing, replacement);
-}
-/**
-* Remove a tombstone tree and confirm that its directory entry is gone.
-* @param target - The target input.
-*/
-async function removeTreeConfirmedWin32(target) {
-	const namespaced = toNamespacedPath(target);
-	await rm(namespaced, {
-		recursive: true,
-		force: true
-	});
-	try {
-		await lstat(namespaced);
-	} catch (error) {
-		if (isENOENT$2(error)) return;
-		throw error;
-	}
-	const error = /* @__PURE__ */ new Error(`Windows delete tombstone "${target}" still exists after recursive cleanup`);
-	error.code = "EIO";
-	error.syscall = "rm";
-	error.path = target;
-	throw error;
 }
 /**
 * Create `target` and its missing ancestors with durable Windows namespace
@@ -774,134 +753,6 @@ async function createLeafDirectoryWin32(parent, target) {
 	}
 }
 //#endregion
-//#region lib/types/delete.js
-/** Crash-recoverable deterministic deletion tombstones for JSONL sessions. */
-/** No valid encoded Session id can collide with this raw project-local name. */
-const DELETE_TOMBSTONE_DIR = "~delete";
-function isENOENT$1(error) {
-	return error?.code === "ENOENT";
-}
-/**
-* Locate one crash-left deterministic tombstone across project directories.
-* @param listProjectDirs - The list project dirs input.
-* @param id - The id input.
-* @returns The value produced by find delete tombstone.
-*/
-async function findDeleteTombstone(listProjectDirs, id) {
-	const matches = [];
-	for (const project of await listProjectDirs()) {
-		const path = join(project, DELETE_TOMBSTONE_DIR, encodeSegment(id));
-		try {
-			if ((await stat(path)).isDirectory()) matches.push(path);
-		} catch (error) {
-			if (!isENOENT$1(error)) throw error;
-		}
-	}
-	if (matches.length > 1) throw new Error(`duplicate JSONL delete tombstone for session id "${id}" appears in multiple project directories`);
-	return matches[0];
-}
-/**
-* Recursively clear one tombstone and durably sync its parent.
-* @param syncDirPosix - The sync dir posix input.
-* @param path - The path input.
-*/
-async function removeDeleteTombstone(syncDirPosix, path) {
-	if (process.platform === "win32") await removeTreeConfirmedWin32(path);
-	else {
-		await rm(path, {
-			recursive: true,
-			force: true
-		});
-		await syncDirPosix(dirname(path));
-	}
-}
-/**
-* Scavenge every crash-left tombstone before accepting storage reads/writes.
-* @param syncDirPosix - The sync dir posix input.
-* @param project - The project input.
-*/
-async function scavengeDeleteTombstones(syncDirPosix, project) {
-	const root = join(project, DELETE_TOMBSTONE_DIR);
-	let info;
-	try {
-		info = await lstat(root);
-	} catch (error) {
-		if (isENOENT$1(error)) return;
-		throw error;
-	}
-	if (!info.isDirectory()) throw new Error(`invalid JSONL delete tombstone root is not an owned directory: "${root}"`);
-	const entries = (await readdir(root, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name));
-	for (const entry of entries) if (!entry.isDirectory()) throw new Error(`invalid JSONL delete tombstone is not an owned directory: "${join(root, entry.name)}"`);
-	for (const entry of entries) await removeDeleteTombstone(syncDirPosix, join(root, entry.name));
-	await removeDeleteTombstone(syncDirPosix, root);
-}
-//#endregion
-//#region lib/types/lock.js
-/** Cross-process per-session writer lock for JSONL materialize/append/repair/delete. */
-/** Root-level directory reserved for writer locks. */
-const LOCK_DIR = ".dsh-locks";
-const LOCK_RETRY_INITIAL_MS = 20;
-const LOCK_RETRY_MAX_MS = 200;
-const LOCK_TIMEOUT_MS = 1e4;
-/**
-* Run one physical mutation while holding this root/session writer lock.
-* @param root - The root input.
-* @param id - The id input.
-* @param operation - The operation input.
-* @returns The value produced by with session id lock.
-*/
-async function withSessionIdLock(root, id, operation) {
-	const lockDir = join(root, LOCK_DIR);
-	await mkdir(lockDir, {
-		recursive: true,
-		mode: 448
-	});
-	const lockPath = join(lockDir, encodeSegment(id));
-	const deadline = Date.now() + LOCK_TIMEOUT_MS;
-	let delay = LOCK_RETRY_INITIAL_MS;
-	for (;;) try {
-		await writeFile(lockPath, `${process.pid}\n`, {
-			mode: 384,
-			flag: "wx"
-		});
-		break;
-	} catch (error) {
-		if (error?.code !== "EEXIST") throw error;
-		if (await isStaleSessionLock(lockPath)) {
-			await rm(lockPath, { force: true });
-			continue;
-		}
-		if (Date.now() >= deadline) throw new Error(`session-persistence-jsonl: timed out waiting for the writer lock at "${lockPath}"`);
-		await scheduler.wait(delay);
-		delay = Math.min(delay * 2, LOCK_RETRY_MAX_MS);
-	}
-	try {
-		return await operation();
-	} finally {
-		await rm(lockPath, { force: true });
-	}
-}
-/**
-* A dead or malformed lock holder can be reclaimed.
-* @param lockPath - The lock path input.
-* @returns The value produced by is stale session lock.
-*/
-async function isStaleSessionLock(lockPath) {
-	let pid;
-	try {
-		pid = Number((await readFile(lockPath, "utf8")).trim());
-	} catch {
-		return true;
-	}
-	if (!Number.isInteger(pid) || pid <= 0) return true;
-	try {
-		process.kill(pid, 0);
-		return false;
-	} catch (error) {
-		return error.code === "ESRCH";
-	}
-}
-//#endregion
 //#region lib/types/index.js
 /**
 * JSONL durable session-persistence backend. It stores a header and contiguous
@@ -912,6 +763,8 @@ async function isStaleSessionLock(lockPath) {
 */
 const DEFAULT_PACK_CHUNKS = true;
 const DEFAULT_COMPRESSION = "zstd";
+const DELETE_TOMBSTONE_DIR = "~delete";
+const WRITER_LOCK_DIR = "~locks";
 /**
 * Internal scheduling constant, not deployment configuration: balance
 * frame-boundary event-loop yields against `setImmediate` overhead. One frame
@@ -1007,6 +860,9 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 	}
 	inspect(id, signal) {
 		return this.coordinator.inspect(id, signal);
+	}
+	borrowSession(id, signal) {
+		return this.coordinator.borrowSession(id, signal);
 	}
 	readFrom(id, fromSeq, signal) {
 		return this.coordinator.readFrom(id, fromSeq, signal);
@@ -1206,63 +1062,80 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 	}
 	/** Durably append a batch, lazily materializing the file when not yet present. */
 	async appendBatch(meta, events, isMaterialized) {
-		await this.ensureRootEncoding();
-		await withSessionIdLock(this.root, meta.id, async () => {
+		await this.withMutation(meta.id, async () => {
 			if (isMaterialized) await this.appendLines(meta, events);
 			else await this.materialize(meta, events);
 		});
 	}
-	/** Durably create a header-only session artifact for standard lifecycle APIs. */
+	/** Materialize a header-only JSONL artifact for an explicitly durable empty session. */
 	async materializeHeader(meta) {
+		await this.withMutation(meta.id, () => this.materialize(meta, []));
+	}
+	async withMutation(id, operation) {
 		await this.ensureRootEncoding();
-		await withSessionIdLock(this.root, meta.id, () => this.materialize(meta, []));
+		const locks = join(this.root, WRITER_LOCK_DIR);
+		await mkdir(locks, {
+			recursive: true,
+			mode: 448
+		});
+		if (!(await lstat(locks)).isDirectory()) throw new Error(`invalid session writer lock directory: "${locks}"`);
+		return withFileLock(join(locks, encodeSegment(id)), operation);
 	}
 	/**
-	* Atomically remove the whole session directory from discovery, then clean
-	* its deterministic tombstone. A post-rename failure remains retryable.
+	* Move a session out of discovery before removing its owned directory.
+	* @param id - exact stored identity, encoded before use in any path.
+	* @returns whether stored data or a retryable tombstone was removed.
 	*/
 	async deleteStored(id) {
-		await this.ensureRootEncoding();
-		return withSessionIdLock(this.root, id, () => this.deleteStoredLocked(id));
-	}
-	async deleteStoredLocked(id) {
-		let removed = false;
-		const pending = await findDeleteTombstone((signal) => this.listProjectDirs(signal), id);
-		if (pending !== void 0) {
-			await removeDeleteTombstone((dir) => this.syncDirPosix(dir), pending);
-			removed = true;
-		}
-		const path = await this.findLog(id);
-		if (path === void 0) return removed;
-		const dir = dirname(path);
-		const project = dirname(dir);
-		const first = this.compression === "zstd" ? await this.readFirstZstdLine(path) : await this.readFirstLine(path);
-		const meta = first === void 0 ? void 0 : parseHeaderMeta(first);
-		if (meta === void 0) throw new Error(`corrupt session log: invalid header line in "${path}"`);
-		await this.assertStoredIdentity(path, meta, id);
-		const tombstoneRoot = join(project, DELETE_TOMBSTONE_DIR);
-		const tombstone = join(tombstoneRoot, encodeSegment(id));
-		if (process.platform === "win32") await ensureDurableDirectoryWin32(tombstoneRoot);
-		else {
-			await mkdir(tombstoneRoot, {
+		return this.withMutation(id, async () => {
+			const tombstones = [];
+			for (const project of await this.listProjectDirs()) {
+				const root = join(project, DELETE_TOMBSTONE_DIR);
+				try {
+					if (!(await lstat(root)).isDirectory()) throw new Error(`invalid session deletion directory: "${root}"`);
+					const pending = join(root, encodeSegment(id));
+					if (!(await lstat(pending)).isDirectory()) throw new Error(`invalid session deletion tombstone: "${pending}"`);
+					tombstones.push(pending);
+				} catch (error) {
+					if (!isENOENT(error)) throw error;
+				}
+			}
+			if (tombstones.length > 1) throw new Error(`duplicate session deletion tombstones for "${id}"`);
+			for (const pending of tombstones) await this.removeTombstone(pending);
+			const path = await this.findLog(id);
+			if (path === void 0) return tombstones.length > 0;
+			const directory = dirname(path);
+			if (!(await lstat(directory)).isDirectory() || !(await lstat(path)).isFile()) throw new Error(`session deletion requires an ordinary directory and log: "${path}"`);
+			const first = this.compression === "zstd" ? await this.readFirstZstdLine(path) : await this.readFirstLine(path);
+			const header = first === void 0 ? void 0 : parseHeaderMeta(first);
+			if (header === void 0) throw new Error(`corrupt session log: invalid header line in "${path}"`);
+			await this.assertStoredIdentity(path, header, id);
+			const project = dirname(directory);
+			const tombstoneRoot = join(project, DELETE_TOMBSTONE_DIR);
+			if (process.platform === "win32") await ensureDurableDirectoryWin32(tombstoneRoot);
+			else await mkdir(tombstoneRoot, {
 				recursive: true,
 				mode: 448
 			});
-			await this.syncDirPosix(project);
-		}
-		try {
-			if (process.platform === "win32") await movePathWriteThroughWin32(dir, tombstone);
-			else await rename(dir, tombstone);
-		} catch (error) {
-			if (isENOENT(error)) return removed;
-			throw error;
-		}
-		if (process.platform !== "win32") {
-			await this.syncDirPosix(project);
-			await this.syncDirPosix(tombstoneRoot);
-		}
-		await removeDeleteTombstone((parent) => this.syncDirPosix(parent), tombstone);
-		return true;
+			if (!(await lstat(tombstoneRoot)).isDirectory()) throw new Error(`invalid session deletion directory: "${tombstoneRoot}"`);
+			const tombstone = join(tombstoneRoot, encodeSegment(id));
+			if (process.platform === "win32") await publishNewFileWin32(directory, tombstone);
+			else {
+				await this.syncDirPosix(project);
+				await rename(directory, tombstone);
+				await this.syncDirPosix(project);
+				await this.syncDirPosix(tombstoneRoot);
+			}
+			await this.removeTombstone(tombstone);
+			return true;
+		});
+	}
+	async removeTombstone(path) {
+		await rm(path, {
+			recursive: true,
+			force: false
+		});
+		if (process.platform !== "win32") await this.syncDirPosix(dirname(path));
 	}
 	/**
 	* Make a crash repair durable: truncate a torn tail, restore complete events
@@ -1270,7 +1143,7 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 	* does not require this to be atomic.
 	*/
 	async commitRepair(meta, tornMarker, closers) {
-		await withSessionIdLock(this.root, meta.id, async () => {
+		await this.withMutation(meta.id, async () => {
 			if (tornMarker !== void 0) await this.repair(meta, tornMarker.truncateTo);
 			const repairedEvents = [...tornMarker?.recoveredEvents ?? [], ...closers];
 			if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents);
@@ -1624,7 +1497,7 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 			signal?.throwIfAborted();
 			const entries = await readdir(this.root, { withFileTypes: true });
 			signal?.throwIfAborted();
-			return entries.filter((e) => e.isDirectory() && e.name !== ".dsh-locks").map((e) => join(this.root, e.name));
+			return entries.filter((e) => e.isDirectory() && e.name !== WRITER_LOCK_DIR && e.name !== ".dsh-locks").map((e) => join(this.root, e.name));
 		} catch (error) {
 			if (isENOENT(error)) return [];
 			throw error;
@@ -1637,7 +1510,7 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 		signal?.throwIfAborted();
 		const legacy = entries.find((entry) => entry.isFile() && (entry.name.endsWith(".jsonl") || entry.name.endsWith(".jsonl.zstd")));
 		if (legacy !== void 0) throw this.legacyLayout(join(project, legacy.name));
-		return entries.filter((entry) => entry.isDirectory() && entry.name !== "~delete").map((entry) => join(project, entry.name));
+		return entries.filter((entry) => entry.isDirectory() && entry.name !== DELETE_TOMBSTONE_DIR).map((entry) => join(project, entry.name));
 	}
 	/** Reject a root that already belongs to the other physical encoding. */
 	ensureRootEncoding() {
@@ -1645,12 +1518,9 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 		return this.rootEncodingCheck;
 	}
 	async checkRootEncoding() {
-		for (const project of await this.listProjectDirs()) {
-			await scavengeDeleteTombstones((dir) => this.syncDirPosix(dir), project);
-			for (const dir of await this.listSessionDirs(project)) {
-				const incompatible = join(dir, `session${logSuffix(this.oppositeCompression())}`);
-				if (await this.exists(incompatible)) throw this.encodingMismatch(incompatible);
-			}
+		for (const project of await this.listProjectDirs()) for (const dir of await this.listSessionDirs(project)) {
+			const incompatible = join(dir, `session${logSuffix(this.oppositeCompression())}`);
+			if (await this.exists(incompatible)) throw this.encodingMismatch(incompatible);
 		}
 	}
 	async rejectLegacyFlatArtifact(project, id, signal) {

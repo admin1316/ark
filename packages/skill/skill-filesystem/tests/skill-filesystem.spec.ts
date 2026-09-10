@@ -422,7 +422,7 @@ describe('FileSystemSkillProvider', () => {
     expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['linked-dir', 'linked-flat'])
   })
 
-  it('uses the filesystem service for discovery, reads, and project-root lookup', async () => {
+  it('uses the filesystem service for project roots and host I/O for user and bundled roots', async () => {
     const home = await tempDir('skill-read-fs')
     const project = await tempDir('skill-project-root-backend')
     const nestedCwd = join(project, 'packages/app')
@@ -457,9 +457,12 @@ describe('FileSystemSkillProvider', () => {
 
     expect((await ctx.skills.list({ cwd: nestedCwd })).map(skill => [skill.name, skill.source])).toEqual([
       ['backend-root', 'project-agents'],
+      ['resolve-fail', 'user-dsh'],
+      ['stat-fail', 'user-dsh'],
       ['text-skill', 'user-dsh'],
     ])
     expect(fs.listDirCalls).toBeGreaterThan(0)
+    expect((await ctx.skills.get('text-skill'))?.content).toBe('Text body.')
     expect(await ctx.skills.get('binary-skill')).toBeUndefined()
 
     const bundled = await tempDir('skill-backend-bundled')
@@ -479,15 +482,15 @@ describe('FileSystemSkillProvider', () => {
 
   it('reports transient root reads as incomplete without caching an empty catalog', async () => {
     const home = await tempDir('skill-transient-root')
-    const root = join(home, '.agents/skills')
+    const root = join(home, 'custom-skills')
     await writeSkill(root, 'stable-skill', 'Stable skill')
     const ctx = new Context()
     await ctx.plugin(TestFileSystem)
     const fs = ctx.fs as TestFileSystem
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
-      agentsHome: join(home, '.agents'),
+      includeDefaultRoots: false,
+      customSkillDirs: [root],
       watch: false,
     })
 
@@ -514,7 +517,7 @@ describe('FileSystemSkillProvider', () => {
 
   it('distinguishes transient filesystem entry failures from confirmed disappearance', async () => {
     const home = await tempDir('skill-transient-entry')
-    const root = join(home, '.agents/skills')
+    const root = join(home, 'custom-skills')
     const path = join(root, 'stable-skill/SKILL.md')
     await writeSkill(root, 'stable-skill', 'Stable skill')
     const ctx = new Context()
@@ -522,8 +525,8 @@ describe('FileSystemSkillProvider', () => {
     const fs = ctx.fs as TestFileSystem
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
-      agentsHome: join(home, '.agents'),
+      includeDefaultRoots: false,
+      customSkillDirs: [root],
       watch: false,
     })
     const invalidate = (): void => {
@@ -565,13 +568,18 @@ describe('FileSystemSkillProvider', () => {
 
   it('forwards cancellation to filesystem reads while loading a skill', async () => {
     const home = await tempDir('skill-read-abort')
-    await writeSkill(join(home, '.dsh/skills'), 'abortable-skill', 'Abortable skill')
+    const root = join(home, 'custom-skills')
+    await writeSkill(root, 'abortable-skill', 'Abortable skill')
 
     const ctx = new Context()
     await ctx.plugin(TestFileSystem)
     const fs = ctx.fs as TestFileSystem
     await ctx.plugin(SkillRegistry)
-    await ctx.plugin(SkillFileSystem, { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
+    await ctx.plugin(SkillFileSystem, {
+      includeDefaultRoots: false,
+      customSkillDirs: [root],
+      watch: false,
+    })
     expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['abortable-skill'])
 
     fs.statSignals = []

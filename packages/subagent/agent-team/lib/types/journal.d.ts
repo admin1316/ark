@@ -1,39 +1,33 @@
-/** Serialized Team transactions over the exact live Lead Session log. */
+/** Serialized transactions over the exact Lead Session log. */
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { Context } from '@deepseek-ai/cordis';
 import type { SessionEventMap, SessionId } from '@deepseek-ai/dsh-session';
-import type { TeamFoldState } from './fold.ts';
-type MutableTeamEventType = 'team/member' | 'team/task' | 'team/message/queued' | 'team/message/delivered';
-/** Owns per-Lead transaction order and committed Team event publication. */
+import { type TeamEventType, type TeamFoldState } from './fold.ts';
+/** Owns per-Lead transaction order and durable Team publication. */
 export declare class TeamJournal {
     private readonly ctx;
     private readonly onCommit;
     private readonly tails;
-    /**
-     * @param ctx - Team service context with the injected Session service.
-     * @param onCommit - synchronous notification after the Team event flush succeeds.
-     */
     constructor(ctx: Context, onCommit: (root: Agent) => void);
     /**
-     * Fold authoritative Team state for one exact live Lead.
-     * @param root - exact live Team Lead.
-     * @returns current replay state selected by the Lead Team id.
+     * Fold authoritative state for an exact live Lead.
+     * @param root - live Lead Agent.
+     * @returns replay state selected by its Team identity.
      */
     state(root: Agent): TeamFoldState;
     /**
-     * Serialize one Lead's asynchronous mutation operation.
-     * @param rootId - Lead Session identity selecting the transaction queue.
-     * @param operation - complete read-check-append operation.
+     * Serialize one complete read-check-append operation for a Lead.
+     * @param rootId - Lead identity selecting the queue.
+     * @param operation - admitted asynchronous operation.
      * @returns the operation result.
      */
     transact<T>(rootId: SessionId, operation: () => Promise<T>): Promise<T>;
     /**
-     * Append and checkpoint one root-owned Team event before publication.
-     * @param root - exact live Lead whose Session owns the event.
+     * Append and flush a Team event before notifying observers.
+     * @param root - exact live Lead owning the log.
      * @param type - Team event discriminant.
-     * @param data - payload correlated with the event type.
+     * @param data - matching event payload.
      */
-    appendAndFlush<T extends MutableTeamEventType>(root: Agent, type: T, data: SessionEventMap[T]): Promise<void>;
+    appendAndFlush<T extends TeamEventType>(root: Agent, type: T, data: SessionEventMap[T]): Promise<void>;
 }
-export {};
 //# sourceMappingURL=journal.d.ts.map

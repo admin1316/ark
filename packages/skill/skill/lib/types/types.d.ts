@@ -1,12 +1,11 @@
-/** Client-safe projection types for the Native `skills/list` Remote method. */
-/** One user-invocable skill row. */
+/** One user-invocable skill row exposed by the Native skill catalog. */
 export interface RemoteSkillEntry {
     readonly name: string;
     readonly description: string;
     readonly whenToUse?: string;
     readonly modelInvocable: boolean;
 }
-/** Effective user-invocable catalog for one resolved session project/scope. */
+/** User-invocable catalog for a resolved session project and scope. */
 export interface RemoteSkillCatalog {
     readonly skills: readonly RemoteSkillEntry[];
 }

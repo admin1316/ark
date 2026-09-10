@@ -32,46 +32,63 @@ const ContentBlockRemoteCodec$schema = z.union([z.object({
   'content': z.array(z.lazy(() => ContentBlockRemoteCodec$schema)),
   'isError': z.boolean().optional(),
 })])
-const RemoteSubagentJsonValueRemoteCodec$schema = z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSubagentJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSubagentJsonValueRemoteCodec$schema))])
-const _deepseek_ai_dsh_subagent_subagent_history_parameter_0$schema = z.string()
-const _deepseek_ai_dsh_subagent_subagent_history_parameter_1$schema = z.string()
+const JsonValueRemoteCodec$schema = z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))])
+const _deepseek_ai_dsh_subagent_subagent_history_parameter_0$schema = z.intersection(z.string(), z.unknown())
+const _deepseek_ai_dsh_subagent_subagent_history_parameter_1$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_2$schema = z.union([z.literal("one-shot"), z.literal("continuable")])
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_3$schema = z.union([z.undefined(), z.number()])
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_4$schema = z.union([z.undefined(), z.number()])
 const _deepseek_ai_dsh_subagent_subagent_history_result$schema = z.object({
-  'events': z.array(z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSubagentJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSubagentJsonValueRemoteCodec$schema))])).readonly(),
+  'events': z.array(z.object({
+  'event': z.object({
+  'type': z.string().readonly(),
+  'seq': z.number().readonly(),
+  'time': z.number().readonly(),
+  'data': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))]).readonly(),
+  'sourceEventSeqs': z.array(z.number()).readonly().optional(),
+  'surfaceOp': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))]).readonly().optional(),
+  'ignorable': z.literal(true).readonly().optional(),
+}).readonly(),
+  'view': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))]).readonly().optional(),
+})).readonly(),
   'hasMore': z.boolean().readonly(),
+  'projections': z.object({
+  'asOfSeq': z.number().readonly(),
+  'values': z.record(z.string(), z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))])).readonly(),
+}).readonly().optional(),
 })
-const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_0$schema = z.string()
-const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_1$schema = z.string()
+const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_0$schema = z.intersection(z.string(), z.unknown())
+const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_1$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_interrupt_result$schema = z.object({
   'accepted': z.literal(true).readonly(),
 })
-const _deepseek_ai_dsh_subagent_subagent_list_parameter_0$schema = z.string()
+const _deepseek_ai_dsh_subagent_subagent_list_parameter_0$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_list_result$schema = z.object({
-  'entries': z.array(z.union([z.object({
+  'entries': z.array(z.union([z.intersection(z.object({
   'kind': z.literal("child").readonly(),
-  'id': z.string().readonly(),
+  'id': z.intersection(z.string(), z.unknown()).readonly(),
   'activity': z.union([z.literal("running"), z.literal("inactive")]).readonly(),
   'hasChildren': z.boolean().readonly(),
+}), z.object({
   'mode': z.literal("one-shot").readonly(),
   'label': z.string().readonly().optional(),
-}), z.object({
+})), z.intersection(z.object({
   'kind': z.literal("child").readonly(),
-  'id': z.string().readonly(),
+  'id': z.intersection(z.string(), z.unknown()).readonly(),
   'activity': z.union([z.literal("running"), z.literal("inactive")]).readonly(),
   'hasChildren': z.boolean().readonly(),
+}), z.object({
   'mode': z.literal("continuable").readonly(),
   'label': z.string().readonly(),
-}), z.object({
+})), z.object({
   'kind': z.literal("diagnostic").readonly(),
-  'id': z.string().readonly(),
+  'id': z.intersection(z.string(), z.unknown()).readonly(),
   'reason': z.union([z.literal("corrupt"), z.literal("unsupported"), z.literal("unavailable")]).readonly(),
 })])).readonly(),
   'parentAvailable': z.boolean().readonly(),
 })
 const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_0$schema = z.intersection(z.string(), z.unknown())
-const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_1$schema = z.string()
+const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_1$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_2$schema = z.array(z.union([z.object({
   'type': z.literal("text"),
   'text': z.string(),
@@ -106,7 +123,7 @@ const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_2$schema = z.array(z.u
 const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_3$schema = z.string()
 const _deepseek_ai_dsh_subagent_subagent_prompt_result$schema = z.object({
   'invocationId': z.string().readonly(),
-  'messageId': z.string().readonly(),
+  'messageId': z.intersection(z.string(), z.unknown()).readonly(),
   'durable': z.literal(true).readonly(),
   'duplicate': z.boolean().readonly(),
 })
@@ -128,7 +145,7 @@ export const TYPERT_REMOTE = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/history:parentSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_history_parameter_0$schema,
           },
         },
@@ -138,7 +155,7 @@ export const TYPERT_REMOTE = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/history:childSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_history_parameter_1$schema,
           },
         },
@@ -178,10 +195,10 @@ export const TYPERT_REMOTE = {
       cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-subagent/types#RemoteSubagentHistory',
+        typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteHistoryValue',
         schema: _deepseek_ai_dsh_subagent_subagent_history_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":436,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":528,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/interrupt',
@@ -197,7 +214,7 @@ export const TYPERT_REMOTE = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/interrupt:parentSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_0$schema,
           },
         },
@@ -207,24 +224,24 @@ export const TYPERT_REMOTE = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/interrupt:childSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_1$schema,
           },
         },
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-subagent/types#RemoteSubagentInterruptReceipt',
+        typeSymbol: '@deepseek-ai/dsh-subagent/client#SubagentInterruptReceipt',
         schema: _deepseek_ai_dsh_subagent_subagent_interrupt_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":532,"column":3},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":583,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/list',
       service: 'subagents',
       namespace: 'subagent',
       method: 'list',
-      implementation: 'remoteList',
+      implementation: 'remoteExportList',
       invocation: { kind: 'direct' },
       parameters: [
         {
@@ -233,7 +250,7 @@ export const TYPERT_REMOTE = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/list:parentSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_list_parameter_0$schema,
           },
         },
@@ -241,10 +258,10 @@ export const TYPERT_REMOTE = {
       cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-subagent/types#RemoteSubagentCatalog',
+        typeSymbol: '@deepseek-ai/dsh-subagent/client#SubagentCatalog',
         schema: _deepseek_ai_dsh_subagent_subagent_list_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":403,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":425,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/prompt',
@@ -275,7 +292,7 @@ export const TYPERT_REMOTE = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/prompt:childSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_prompt_parameter_1$schema,
           },
         },
@@ -303,10 +320,10 @@ export const TYPERT_REMOTE = {
       cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-subagent/types#RemoteSubagentPromptReceipt',
+        typeSymbol: '@deepseek-ai/dsh-subagent/client#RemoteSubagentPromptReceipt',
         schema: _deepseek_ai_dsh_subagent_subagent_prompt_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":492,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":561,"column":9},
     },
   ],
 }

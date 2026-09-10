@@ -12,14 +12,6 @@
  * @module @deepseek-ai/dsh-agent-presets/authoring
  */
 import { type AgentPreset, type PresetRoot } from './preset.ts';
-/** A preset id reserved by the deployment's authoring policy. */
-export declare class ReservedPresetIdError extends Error {
-    /** The rejected id. */
-    readonly presetId: string;
-    constructor(
-    /** The rejected id. */
-    presetId: string);
-}
 /** A preset id that cannot be used as a directory name under a root. */
 export declare class InvalidPresetIdError extends Error {
     /** The rejected id. */
@@ -78,9 +70,8 @@ export declare function readComposition(preset: AgentPreset): Promise<string>;
  * @returns the absolute path of the new preset directory.
  * @throws when the id is unusable or already occupied on disk, or the
  * deployment configures no writable root.
- * @param reservedIds - The reserved ids input.
  */
-export declare function copyComposition(roots: readonly PresetRoot[], source: AgentPreset, id: string, name?: string, reservedIds?: readonly string[]): Promise<string>;
+export declare function copyComposition(roots: readonly PresetRoot[], source: AgentPreset, id: string, name?: string): Promise<string>;
 /**
  * Delete a locally authored preset.
  *

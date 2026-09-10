@@ -8,7 +8,7 @@ import { Document, isMap, isScalar, parseDocument } from "yaml";
 import { withFileLock, writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
 import { canonicalizeWatchPath, resolveDshHome } from "@deepseek-ai/dsh-home-paths";
 import { launchEnvironmentOf } from "@deepseek-ai/dsh-launch-environment";
-import { CredentialProvider, credentialRef, parseCredentialKey } from "@deepseek-ai/dsh-credentials";
+import { CredentialProvider, assertCredentialCondition, credentialRef, parseCredentialKey } from "@deepseek-ai/dsh-credentials";
 //#region lib/types/index.js
 /**
 * Credentials provider over `$DSH_HOME/.credentials.yaml` (or the macOS login
@@ -641,24 +641,12 @@ var LocalCredentialProvider = class extends CredentialProvider {
 			writable: true
 		});
 	}
-	async set(ref, value) {
+	async set(ref, value, expected) {
 		if (value.length === 0) throw new Error(`credentials-local: an empty value cannot be stored for "${ref}"; use unset`);
-		this.assertUnshadowed(ref, "set");
-		if (this.mode === "keychain") {
-			await this.keychainSet(ref, value);
-			this.notifyUpdated(ref);
-			return;
-		}
-		await this.write(ref, value);
+		await this.write(ref, value, expected);
 	}
-	async unset(ref) {
-		this.assertUnshadowed(ref, "unset");
-		if (this.mode === "keychain") {
-			await this.keychainUnset(ref);
-			this.notifyUpdated(ref);
-			return;
-		}
-		await this.write(ref, void 0);
+	async unset(ref, expected) {
+		await this.write(ref, void 0, expected);
 	}
 	readRecord(key) {
 		return Promise.resolve(this.records.get(key));
@@ -681,8 +669,12 @@ var LocalCredentialProvider = class extends CredentialProvider {
 			kind: record.kind
 		})));
 	}
-	async modifyRecord(key, mutate) {
+	async modifyRecord(key, mutate, references = []) {
 		if (this.isClosed()) throw new Error(`credentials-local is disposed: cannot modify "${key}"`);
+		const conditions = references.map(({ ref, expected }) => ({
+			ref,
+			expected: { ...expected }
+		}));
 		return this.enqueue(async () => {
 			if (this.isClosed()) throw new Error(`credentials-local was disposed before the queued "${key}" modify ran`);
 			await mkdir(dirname(this.spec.filename), {
@@ -691,6 +683,7 @@ var LocalCredentialProvider = class extends CredentialProvider {
 			});
 			return withFileLock(this.spec.filename, async () => {
 				await this.reconcileFromDisk();
+				for (const { ref, expected } of conditions) assertCredentialCondition(ref, await this.resolve(ref), expected);
 				const current = this.records.get(key);
 				const next = await mutate(current);
 				if (next === void 0) return current;
@@ -744,8 +737,9 @@ var LocalCredentialProvider = class extends CredentialProvider {
 		});
 	}
 	/** Queue one line edit; entry checks reject early, the queue re-judges them at run time. */
-	async write(ref, value) {
+	async write(ref, value, expected) {
 		const verb = value === void 0 ? "unset" : "set";
+		const condition = expected === void 0 ? void 0 : { ...expected };
 		if (this.isClosed()) throw new Error(`credentials-local is disposed: cannot ${verb} "${ref}"`);
 		this.assertUnshadowed(ref, verb);
 		return this.enqueue(async () => {
@@ -757,6 +751,13 @@ var LocalCredentialProvider = class extends CredentialProvider {
 			});
 			await withFileLock(this.spec.filename, async () => {
 				await this.reconcileFromDisk();
+				if (condition !== void 0) assertCredentialCondition(ref, await this.resolve(ref), condition);
+				if (this.mode === "keychain") {
+					if (value === void 0) await this.keychainUnset(ref);
+					else await this.keychainSet(ref, value);
+					this.notifyUpdated(ref);
+					return;
+				}
 				const existing = this.values.get(ref);
 				if (value === void 0 && existing === void 0) return;
 				const nextText = renderRef(this.text, ref, value);

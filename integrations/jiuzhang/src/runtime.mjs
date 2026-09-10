@@ -83,7 +83,7 @@ export async function purgeReservedJiuzhangPreset(home) {
   const homeRoot = validateHome(home)
   await validateOwnedDirectory(homeRoot, await lstat(homeRoot), false)
 
-  const sourceParent = await walkOwnedDirectoryChain(homeRoot, ['.agent-presets'], false)
+  const sourceParent = await walkOwnedDirectoryChain(homeRoot, ['.agent-presets'], false, { ownerOnly: false })
   const source = join(homeRoot, '.agent-presets', 'jiuzhang')
   const sourceInfo = sourceParent === undefined ? undefined : await optionalLstat(source)
 
@@ -436,7 +436,7 @@ async function validateOwnedDirectory(path, info, ownerOnly) {
   return realpath(path)
 }
 
-async function walkOwnedDirectoryChain(home, parts, create) {
+async function walkOwnedDirectoryChain(home, parts, create, { ownerOnly = true } = {}) {
   let current = home
   let currentReal = await validateOwnedDirectory(home, await lstat(home), false)
   for (const part of parts) {
@@ -447,7 +447,7 @@ async function walkOwnedDirectoryChain(home, parts, create) {
       await mkdir(child, { mode: 0o700 })
       info = await lstat(child)
     }
-    const childReal = await validateOwnedDirectory(child, info, true)
+    const childReal = await validateOwnedDirectory(child, info, ownerOnly)
     if (dirname(childReal) !== currentReal) {
       throw new Error(`Ark-owned directory escapes its validated parent: ${child}`)
     }

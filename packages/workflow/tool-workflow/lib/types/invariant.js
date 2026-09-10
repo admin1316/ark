@@ -57,9 +57,6 @@ function applyEvent(trace, event, fail) {
     const runId = stringId(data.runId, `${event.type} runId`, fail);
     switch (event.type) {
         case 'tool-workflow/run-start': {
-            if (data.rootCallId !== undefined) {
-                stringId(data.rootCallId, 'tool-workflow/run-start rootCallId', fail);
-            }
             if (typeof data.name !== 'string' || data.name.length === 0) {
                 fail('tool-workflow/run-start name must be a non-empty string');
             }

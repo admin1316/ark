@@ -69,6 +69,8 @@ kind: "package-reference"
 
 启动后，服务器的工具会以 `mcp__<serverName>__<tool>` 形式出现——试着用一条提示词调用其中一个。如果初始连接失败，harness 仍会启动，但该服务器的工具不会出现，并会记录一条错误；设置 `failOnStartupError: true` 可让启动失败改为中止 harness。
 
+重复的 `tools/list` 后续分页游标会使本次发现失败，包括经由空页形成的循环。刷新失败时，此前的工具仍可调用；后续完整列表会替换它们。客户端不会在循环分页上无限等待。
+
 ### 工具命名与共存
 
 模型看到每个工具都带有稳定的服务器限定名称：`mcp__<serverName>__<rawName>`，例如 `mcp__github__create_issue`——与 Claude Code 和 Codex 使用的命名形态相同。只要服务器保持相同的工具名称，名称就保持不变，因此会话历史与权限规则在重启和重载后仍然有效。两个服务器可以同时提供名为 `search` 的工具，分别以 `mcp__github__search` 和 `mcp__web__search` 共存。

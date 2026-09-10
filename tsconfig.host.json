@@ -117,6 +117,17 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/boot/native-api-runner" },
+    { "path": "./packages/boot/profile-runner" },
+    { "path": "./packages/bundle/native-api-app" },
+    { "path": "./packages/host/connection" },
+    { "path": "./packages/host/native-events" },
+    { "path": "./packages/host/session-remote-operations" },
+    { "path": "./packages/host/workbench" },
+    { "path": "./packages/host/knowledge-wiki" },
+    { "path": "./packages/host/knowledge-wiki-tools" },
+    { "path": "./packages/subagent/agent-team" },
+    { "path": "./packages/subagent/tool-agent-team" },
     { "path": "./vendor/cosmokit" },
     { "path": "./vendor/schemastery" },
     { "path": "./vendor/cordis" },

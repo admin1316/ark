@@ -61,7 +61,7 @@ export interface PlanModeConfig {
  * @param config Raw plugin config.
  * @returns A detached validated config.
  */
-export declare function resolvePlanModeConfig(config: PlanModeConfig): PlanModeConfig;
+export declare function resolveConfig(config: PlanModeConfig): PlanModeConfig;
 /**
  * Whether plan mode is active after the first `end` events. The last
  * `plan/mode` wins; a prefix with none is inactive.

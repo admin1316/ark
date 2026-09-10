@@ -6,9 +6,54 @@
 import type { Branded } from '@deepseek-ai/dsh-brand';
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
 import type { CallId, ProviderRequestId, ReasoningEffortId } from './brand.ts';
+import type { Message } from './message.ts';
 import type { RemoteCredentialView } from '@deepseek-ai/dsh-credentials/types';
 import type { RemoteSettingsNamespaceView, RemoteSettingsPathOp } from '@deepseek-ai/dsh-settings/types';
-import type { Message } from './message.ts';
+/** Write-only credential change committed with one provider's profile edits. */
+export type RemoteLlmCredentialMutation = {
+    readonly op: 'set';
+    readonly ref: string;
+    readonly value: string;
+} | {
+    readonly op: 'unset';
+    readonly ref: string;
+};
+/** Retry-addressed Native provider configuration transaction. */
+export interface RemoteLlmProviderMutationRequest {
+    readonly transactionId: string;
+    readonly provider: string;
+    readonly settingsNs: string;
+    readonly ops: readonly RemoteSettingsPathOp[];
+    readonly expectedRevision: number;
+    readonly credential?: RemoteLlmCredentialMutation;
+}
+/** Current redacted state after the owner accepts the committed configuration, including route removal. */
+export interface RemoteLlmProviderMutationResult {
+    readonly settings: RemoteSettingsNamespaceView;
+    readonly credential?: RemoteCredentialView;
+    readonly live?: {
+        readonly accepted: true;
+    };
+}
+/** Secret-free lookup of one durable provider configuration transaction. */
+export interface RemoteLlmProviderTransactionRequest {
+    readonly provider: string;
+    readonly transactionId: string;
+}
+/** Persisted phases and terminal outcomes; querying does not advance them. */
+export interface RemoteLlmProviderTransactionResult {
+    readonly state: 'absent' | 'prepared' | 'credential-staged' | 'settings-applied' | 'credential-applied' | 'committed' | 'rolled-back' | 'committed-not-live';
+    readonly needsCredential: boolean;
+    readonly settingsNs?: string;
+    readonly live?: boolean;
+}
+/** Continue the stored plan without reconstructing its operations in the client. */
+export interface RemoteLlmProviderResumeRequest {
+    readonly provider: string;
+    readonly transactionId: string;
+    /** Write-only value needed only when its recorded credential has not been staged. */
+    readonly credentialValue?: string;
+}
 declare module '@deepseek-ai/cordis' {
     interface Events {
         /**
@@ -51,7 +96,7 @@ export interface ReasoningBlock {
  * A durable raster image reference, valid in user or assistant content. The
  * block is deliberately role-neutral; assistant-side rendering is forward
  * compatibility — the current production adapters declare text-only output,
- * so only user content carries images today.
+ * so only user messages may carry images.
  */
 export interface ImageBlock {
     type: 'image';
@@ -125,22 +170,44 @@ export type FinishReason = FinishReasonMap[keyof FinishReasonMap];
 export interface TokenUsage {
     inputTokens: number;
     outputTokens: number;
-    /** Exact provider-reported aggregate prompt plus output total, when available. */
+    /**
+     * Exact full-call total including aggregate prompt and output tokens.
+     *
+     * Adapters preserve a provider total or derive it from authoritative
+     * aggregate prompt/output counters; they omit it when unavailable or
+     * inconsistent.
+     */
     totalTokens?: number;
     cacheReadTokens?: number;
     cacheWriteTokens?: number;
     reasoningTokens?: number;
 }
-/** Provider-side price for one ordered image occurrence in a model request. */
+/**
+ * Request price of one ordered image occurrence under one exact model route's
+ * request projection. Every occurrence resolves to the pair the wire actually
+ * carries: provider visual tokens for a retained image, plus the model-visible
+ * text sent with or instead of it (request-preview handle, offload placeholder,
+ * or text-only substitution). The caller prices `text` with its own text
+ * estimator so provider pricing never fixes a text tokenization.
+ */
 export interface LlmImageRequestPrice {
-    /** Provider visual tokens; zero when the occurrence is text-only represented. */
+    /** Provider visual tokens for the retained request image; 0 when only text represents this occurrence. */
     visualTokens: number;
-    /** Model-visible text sent with or instead of the image. */
+    /** Model-visible text sent for this occurrence, to be priced by the caller's text estimator. */
     text: string;
 }
-/** Synchronous route-owned request-image pricing used by the token meter. */
+/**
+ * Provider-side request-image pricing for one exact model route. Implemented
+ * by adapters whose provider charges visual tokens; consumers (the token
+ * meter) resolve it synchronously per measurement, so implementations must not
+ * perform I/O.
+ */
 export interface LlmImageRequestPricing {
-    /** Return one price per image occurrence, preserving request order. */
+    /**
+     * Price every image occurrence of one request projection.
+     * @param images - durable image references in request order, one entry per occurrence.
+     * @returns one price per occurrence, aligned by index with `images`.
+     */
     priceImages(images: readonly ImageAttachmentRef[]): readonly LlmImageRequestPrice[];
 }
 /** Display metadata for one registered provider route. */
@@ -184,167 +251,18 @@ export interface LlmConfigurableProvider {
      * from outside.
      */
     declared?: boolean;
-    /** Safe, value-free reason this route is withheld until an explicit migration. */
-    migrationRequired?: {
-        readonly code: 'credential-headers';
-        readonly fields: readonly string[];
-    };
+    /** Configuration diagnostic retained for repair; unaffected models may remain serviceable. */
+    error?: string;
+    /** Stored credential fields that require explicit migration before this route can activate. */
+    migrationRequired?: LlmProviderMigration;
 }
-/** Provider row exposed by the native `llm/providers` Remote method. */
-export interface RemoteLlmProviderView {
-    /** Canonical provider route id. */
-    readonly provider: string;
-    /** Display name owned by the adapter. */
-    readonly displayName: string;
-    /** Settings namespace that configures the provider, if one exists. */
-    readonly settingsNs: string;
-    /** Profile path within the provider settings namespace. */
-    readonly settingsPath: readonly string[];
-    /** Whether a live adapter currently serves this route. */
-    readonly active: boolean;
-    /** Whether the owner calls this a declared, user-configured route. */
-    readonly declared?: boolean;
-    /** Value-free migration state; affected credential values remain redacted. */
-    readonly migrationRequired?: {
-        readonly code: 'credential-headers';
-        readonly fields: readonly string[];
-    };
-}
-/** Result of the native `llm/providers` Remote method. */
-export interface RemoteLlmProvidersResult {
-    readonly providers: readonly RemoteLlmProviderView[];
-}
-/** One selectable reasoning effort in a native model catalog row. */
-export interface RemoteLlmReasoningEffort {
-    readonly id: string;
-    readonly name: string;
-    readonly description?: string;
-}
-/** Reasoning controls exported for one exact provider/model route. */
-export interface RemoteLlmReasoning {
-    readonly efforts: readonly RemoteLlmReasoningEffort[];
-    readonly defaultEffort?: string;
-}
-/** One model row in the native host-scoped catalog. */
-export interface RemoteLlmModelView {
-    readonly id: string;
-    readonly name: string;
-    readonly description?: string;
-    /** Adapter-configured output cap when one is declared for this exact model. */
-    readonly defaultMaxTokens?: number;
-    readonly reasoning?: RemoteLlmReasoning;
-}
-/** One provider group in the native host-scoped model catalog. */
-export interface RemoteLlmModelGroup {
-    readonly id: string;
-    readonly name: string;
-    readonly models: readonly RemoteLlmModelView[];
-}
-/** A provider whose model catalog could not be resolved without failing others. */
-export interface RemoteLlmCatalogFailure {
-    readonly id: string;
-    readonly name: string;
-    readonly message: string;
-}
-/** Result of the native `llm/models` Remote method. */
-export interface RemoteLlmModelsResult {
-    readonly groups: readonly RemoteLlmModelGroup[];
-    readonly failures: readonly RemoteLlmCatalogFailure[];
-}
-/** One write-only credential change bundled with a provider settings mutation. */
-export type RemoteLlmCredentialMutation = {
-    readonly op: 'set';
-    readonly ref: string;
-    readonly value: string;
-} | {
-    readonly op: 'unset';
-    readonly ref: string;
-};
-/** Idempotent configuration transaction accepted by `llm/mutateProvider`. */
-export interface RemoteLlmProviderMutationRequest {
-    /** Stable retry id. Retrying with different input is refused. */
-    readonly transactionId: string;
-    /** Provider route whose declared settings entry owns this transaction. */
-    readonly provider: string;
-    /** Settings namespace addressed by every `ops` path. */
-    readonly settingsNs: string;
-    /** Non-overlapping settings edits. Their values never enter the durable journal. */
-    readonly ops: readonly RemoteSettingsPathOp[];
-    /** Revision observed by the configuration surface. */
-    readonly expectedRevision: number;
-    /** Optional write-only reference change. */
-    readonly credential?: RemoteLlmCredentialMutation;
-}
-/** Redacted receipt of one committed provider configuration transaction. */
-export interface RemoteLlmProviderMutationResult {
-    readonly settings: RemoteSettingsNamespaceView;
-    readonly credential?: RemoteCredentialView;
-    /** The persisted profile is also the generation currently serving this route. */
-    /** Added after legacy clients shipped; absence means the older response version. */
-    readonly live?: {
-        readonly accepted: true;
-    };
-}
-/** Secret-free lookup for one durable provider transaction. */
-export interface RemoteLlmProviderTransactionRequest {
-    readonly provider: string;
-    readonly transactionId: string;
-}
-/** Durable transaction state; credential material is never part of this view. */
-export interface RemoteLlmProviderTransactionResult {
-    readonly state: 'absent' | 'prepared' | 'credential-staged' | 'settings-applied' | 'credential-applied' | 'committed' | 'rolled-back' | 'committed-not-live';
-    readonly needsCredential: boolean;
-    readonly settingsNs?: string;
-    readonly live?: boolean;
-}
-/** Restart-safe continuation of a journaled provider transaction. */
-export interface RemoteLlmProviderResumeRequest {
-    readonly provider: string;
-    readonly transactionId: string;
-    /** Write-only replacement for a secret the process never persisted. */
-    readonly credentialValue?: string;
-}
-/** Exact provider/model/auth probe accepted by `llm/verifyProvider`. */
-export interface RemoteLlmProviderVerificationRequest {
-    readonly provider: string;
-    readonly model: string;
-}
-/** How an adapter proved the exact route could authenticate. */
-export type LlmProviderVerificationMode = 'metadata-auth' | 'endpoint-catalog' | 'minimal-generation';
-/** A successful bounded probe. Failures use the normal typed Remote error path. */
-export type RemoteLlmProviderVerificationResult = {
-    readonly provider: string;
-    readonly model: string;
-    readonly verified: true;
-    /** Auth-protected metadata probes are non-generative; fallback output is discarded. */
-    readonly mode: Exclude<LlmProviderVerificationMode, 'endpoint-catalog'>;
-} | {
-    readonly provider: string;
-    readonly model: string;
-    /** A public metadata endpoint proves reachability/catalog only, never auth. */
-    readonly verified: false;
-    readonly mode: 'endpoint-catalog';
-    readonly classification: 'reachability-only';
-};
-/** One model discovered from a draft configuration without storing its secret. */
-export interface RemoteLlmDiscoveredModel {
-    readonly id: string;
-    readonly name?: string;
-    readonly contextWindow?: number;
-    readonly maxTokens?: number;
-}
-/** Draft endpoint input accepted by `llm/discoverModels`. */
-export interface RemoteLlmDiscoverModelsRequest {
-    readonly settingsNs: string;
-    readonly provider?: string;
-    readonly baseURL?: string;
-    readonly api?: string;
-    /** Write-only one-shot credential; no return type carries it. */
-    readonly apiKey?: string;
-}
-/** Result of `llm/discoverModels`. */
-export interface RemoteLlmDiscoveredModelsResult {
-    readonly models: readonly RemoteLlmDiscoveredModel[];
+/** Value-free configuration repair requirements; paths are relative to the provider profile. */
+export interface LlmProviderMigration {
+    readonly code: 'credential-headers' | 'credential-fields';
+    readonly fields: readonly string[];
+    readonly paths?: readonly (readonly string[])[];
+    /** Deployment-owned paths cannot be removed through the user settings layer. */
+    readonly inheritedPaths?: readonly (readonly string[])[];
 }
 /**
  * One interrogation of a provider endpoint that configuration has not stored
@@ -355,8 +273,8 @@ export interface RemoteLlmDiscoveredModelsResult {
 export interface LlmModelDiscoveryRequest {
     /**
      * Route the draft is editing, when it edits an existing one. A route whose
-     * adapter already knows its models answers from that knowledge only when no
-     * endpoint override is supplied; an explicit baseURL is always interrogated.
+     * adapter already knows its models answers locally only when no endpoint
+     * override is supplied; an explicit baseURL is interrogated.
      */
     provider?: string;
     /**
@@ -368,14 +286,96 @@ export interface LlmModelDiscoveryRequest {
     api?: string;
     /** Credential for this interrogation alone; the harness never stores it. */
     apiKey?: string;
-    /**
-     * Host-owned binding between the one-shot credential and this exact endpoint
-     * plus protocol. Callers never supply it directly; `LlmRuntime` stamps it
-     * immediately before invoking the registered discovery owner.
-     */
+}
+/** Native draft discovery request; the one-shot key is never persisted or returned. */
+export interface RemoteLlmDiscoverModelsRequest extends LlmModelDiscoveryRequest {
+    readonly settingsNs: string;
+}
+/** Native discovery response envelope. */
+export interface RemoteLlmDiscoveredModelsResult {
+    readonly models: readonly LlmDiscoveredModel[];
+}
+/** Evidence obtained by an exact provider/model probe; catalog reachability does not prove authentication. */
+export type LlmProviderVerificationMode = 'metadata-auth' | 'endpoint-catalog' | 'minimal-generation';
+/** Exact configured route requested by a configuration-time verification. */
+export interface RemoteLlmProviderVerificationRequest {
+    readonly provider: string;
+    readonly model: string;
+}
+/** Endpoint reachability alone is not authentication proof. */
+export type RemoteLlmProviderVerificationResult = {
+    readonly provider: string;
+    readonly model: string;
+    readonly verified: true;
+    readonly mode: Exclude<LlmProviderVerificationMode, 'endpoint-catalog'>;
+} | {
+    readonly provider: string;
+    readonly model: string;
+    readonly verified: false;
+    readonly mode: 'endpoint-catalog';
+    readonly classification: 'reachability-only';
+};
+/** Configuration directory row joined with current adapter availability. */
+export interface RemoteLlmProviderView {
+    /** Configuration diagnostic supplied by the provider owner. */
+    error?: string;
+    readonly provider: string;
+    readonly displayName: string;
+    readonly settingsNs: string;
+    readonly settingsPath: readonly string[];
+    readonly active: boolean;
+    readonly declared?: boolean;
+    readonly migrationRequired?: LlmProviderMigration;
+}
+/** Native provider directory, including dormant configurable routes. */
+export interface RemoteLlmProvidersResult {
+    readonly providers: readonly RemoteLlmProviderView[];
+}
+/** Reasoning controls for the exact model generation used by a catalog read. */
+export interface RemoteLlmReasoning {
+    readonly efforts: readonly {
+        readonly id: string;
+        readonly name: string;
+        readonly description?: string;
+    }[];
+    readonly defaultEffort?: string;
+}
+/** Native model row without provider-internal data. */
+export interface RemoteLlmModelView {
+    readonly id: string;
+    readonly name: string;
+    readonly description?: string;
+    readonly defaultMaxTokens?: number;
+    readonly reasoning?: RemoteLlmReasoning;
+}
+/** Host-scoped model groups; an unavailable provider does not hide other groups. */
+export interface RemoteLlmModelsResult {
+    readonly groups: readonly {
+        readonly id: string;
+        readonly name: string;
+        readonly models: readonly RemoteLlmModelView[];
+    }[];
+    readonly failures: readonly {
+        readonly id: string;
+        readonly name: string;
+        readonly message: string;
+    }[];
+}
+/** Provider-side discovery request with operation-local cancellation attached. */
+export interface LlmModelDiscoveryOperation extends LlmModelDiscoveryRequest {
+    /** Host-owned binding between a one-shot credential and its exact endpoint/protocol. */
     credentialEndpointFingerprint?: string;
     /** Caller cancellation; implementations must settle promptly after it aborts. */
     signal?: AbortSignal;
+}
+/** Stable failure returned by the `llm/discoverModels` Remote method. */
+export interface LlmModelDiscoveryError {
+    readonly code: 'model-discovery-failed';
+    readonly message: string;
+    readonly details: {
+        readonly settingsNs: string;
+        readonly baseURL?: string;
+    };
 }
 /**
  * One model an endpoint reports about itself. Every field but the id is

@@ -11,8 +11,6 @@ import { WebError } from "@deepseek-ai/dsh-web";
 * The wire format and native `fetch` client are provider-private and do not use `ctx.llm`.
 * @module @deepseek-ai/dsh-web-search-deepseek/provider
 */
-/** Credential reference (environment-variable name) resolved per search; the config default. */
-const DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY";
 /** Stable id this provider registers under. */
 const DEEPSEEK_PROVIDER_ID = "deepseek-official";
 /**
@@ -237,6 +235,7 @@ function isPositiveInteger(value) {
 const name = "web-search-deepseek";
 /** The web seam this provider registers into. */
 const inject = ["web"];
+const DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY";
 const Config = z.object({
 	apiKey: z.string().role("secret"),
 	apiKeyEnv: z.string().role("credential-ref").default(DEFAULT_API_KEY_ENV),
@@ -264,7 +263,7 @@ const WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE = settingsNamespace("web-search-dee
 * @returns options for one search.
 */
 function resolveOptions(ctx, config) {
-	const apiKeyEnv = credentialRef(config.apiKeyEnv ?? "DEEPSEEK_API_KEY");
+	const apiKeyEnv = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV);
 	const literalApiKey = config.apiKey !== void 0 && config.apiKey.length > 0 ? config.apiKey : void 0;
 	return {
 		...literalApiKey === void 0 ? {} : { apiKey: literalApiKey },

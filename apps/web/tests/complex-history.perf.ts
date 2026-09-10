@@ -11,7 +11,7 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import {
-  ToolCallId,
+  CallId,
   createAssistantMessage,
   createToolResultMessage,
   createUserMessage,
@@ -233,7 +233,7 @@ function appendToolStep(
   toolCount: number,
 ): void {
   const calls = Array.from({ length: toolCount }, (_, index) => {
-    const callId = ToolCallId(`perf-call-${String(turn)}-${String(index)}`)
+    const callId = CallId(`perf-call-${String(turn)}-${String(index)}`)
     const args = JSON.stringify({
       turn,
       index,
@@ -467,7 +467,7 @@ function soakTurn(index: number): ConversationTurnSpec {
 }
 
 function toolStream(index: number, marker: string): StreamChunk[] {
-  const callId = ToolCallId(`performance-tool-${marker.toLowerCase()}-${String(index)}`)
+  const callId = CallId(`performance-tool-${marker.toLowerCase()}-${String(index)}`)
   const args = JSON.stringify({
     command: `printf '${marker}\\n'`,
     description: `Emit performance marker ${String(index)}`,

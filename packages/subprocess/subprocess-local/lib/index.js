@@ -73,12 +73,6 @@ var WindowsProcessInspector = class {
 	isStdinWaiting(_pgid, _shellPid) {
 		return false;
 	}
-	processTree(rootPid) {
-		return this.snapshot().tree(rootPid);
-	}
-	processSession(sessionId) {
-		return this.snapshot().session(sessionId);
-	}
 	isAlive(identity) {
 		const state = this.internals.processState(identity.pid);
 		return state?.active === true && state.started === identity.started;
@@ -330,7 +324,6 @@ function linuxDeviceNumber(value) {
 function readLinuxTerminalDevice(internals, pid, ttyDevice, tid) {
 	const terminalDevice = linuxDeviceNumber(ttyDevice);
 	if (terminalDevice === 0) return void 0;
-	if (internals.readLink === void 0 || internals.stat === void 0) return void 0;
 	const path = tid === void 0 ? `/proc/${pid}/fd/0` : `/proc/${pid}/task/${tid}/fd/0`;
 	try {
 		if (internals.readLink(path) === "/dev/tty") return terminalDevice;
@@ -415,11 +408,7 @@ function epollHasStdin(internals, pid, tid, epfd) {
 	try {
 		return internals.readFile(`/proc/${pid}/task/${tid}/fdinfo/${epfd}`).split("\n").some((line) => /^tfd:\s+0\b/.test(line.trim()));
 	} catch (_unreadableFdInfo) {
-		try {
-			return internals.readFile(`/proc/${pid}/fdinfo/${epfd}`).split("\n").some((line) => /^tfd:\s+0\b/.test(line.trim()));
-		} catch (_legacyUnreadableFdInfo) {
-			return false;
-		}
+		return false;
 	}
 }
 const SYSCALLS = {
@@ -459,12 +448,6 @@ var PosixProcessInspector = class {
 	internals;
 	constructor(internals) {
 		this.internals = internals;
-	}
-	processTree(rootPid) {
-		return this.snapshot().tree(rootPid);
-	}
-	processSession(sessionId) {
-		return this.snapshot().session(sessionId);
 	}
 	signalGroup(pgid, signal) {
 		this.internals.kill(-pgid, signal);
@@ -533,16 +516,6 @@ var LinuxProcessInspector = class extends PosixProcessInspector {
 	isStdinWaiting(pgid, shellPid) {
 		const tables = linuxSyscallTables(this.arch);
 		if (tables === void 0) return false;
-		if (shellPid === void 0) {
-			for (const pid of numericEntries(this.internals, "/proc")) {
-				if (readLinuxStat(this.internals, pid)?.pgrp !== pgid) continue;
-				for (const tid of numericEntries(this.internals, `/proc/${pid}/task`)) {
-					const syscall = readSyscall(this.internals, pid, tid);
-					if (syscall !== void 0 && syscallWaitsOnStdin(this.internals, pid, tid, syscall, tables)) return true;
-				}
-			}
-			return false;
-		}
 		const shell = readLinuxStat(this.internals, shellPid);
 		if (shell === void 0) return false;
 		const terminalDevice = readLinuxTerminalDevice(this.internals, shellPid, shell.ttyDevice);
@@ -664,10 +637,6 @@ function childEnv(extra) {
 */
 function sleepTick() {
 	return setTimeout$1(15);
-}
-/** Re-read a mutable AbortSignal after an awaited process-tree poll. */
-function signalAborted(signal) {
-	return signal.aborted;
 }
 let spillCounter = 0;
 let defaultSpillDir;
@@ -898,16 +867,7 @@ function spawnSubprocess(spec, internals = {}) {
 	const stderrCollector = collectStream(errMode, child.stderr, "stderr");
 	let graceTimer;
 	let treeExitObserved = false;
-	/** True once the exit observer stopped polling without confirming the tree is gone. */
-	let treeExitGivenUp = false;
 	let treeExitObservation;
-	/**
-	* Absolute deadline (ms) for the whole-tree exit observation, extended by
-	* every terminate/wait call. An unkillable member (e.g. uninterruptible
-	* sleep that ignores SIGKILL) must not make teardown await forever. The 0
-	* seed is never observed: every observer start extends the deadline first.
-	*/
-	let treeExitDeadline = 0;
 	let settled = false;
 	const pid = child.pid ?? -1;
 	/** Whether the detached tree's root (or POSIX group) is still alive. */
@@ -935,20 +895,11 @@ function spawnSubprocess(spec, internals = {}) {
 	/**
 	* Start or reuse the handle's single whole-tree exit observer. The first
 	* confirmed absence is a permanent no-more-signals boundary: it cancels a
-	* pending escalation before this process-group id can be reused. The
-	* observation is bounded so a tree that can never exit (a member stuck in
-	* uninterruptible sleep ignores SIGKILL) stops teardown at the deadline
-	* instead of hanging forever; every call slides that deadline to one grace
-	* for the graceful tier plus one grace for the forced tier to take effect.
+	* pending escalation before this process-group id can be reused.
 	*/
 	const observeTreeExit = () => {
-		treeExitDeadline = Math.max(treeExitDeadline, Date.now() + spec.graceMs * 2);
 		treeExitObservation ??= (async () => {
-			while (treeAlive() && Date.now() < treeExitDeadline) await sleepTick();
-			if (treeAlive()) {
-				treeExitGivenUp = true;
-				return;
-			}
+			while (treeAlive()) await sleepTick();
 			treeExitObserved = true;
 			if (graceTimer !== void 0) clearTimeout(graceTimer);
 			graceTimer = void 0;
@@ -963,10 +914,6 @@ function spawnSubprocess(spec, internals = {}) {
 	};
 	const terminate = () => {
 		if (treeExitObserved || graceTimer !== void 0) return;
-		if (treeExitGivenUp) {
-			treeExitGivenUp = false;
-			treeExitObservation = void 0;
-		}
 		observeTreeExit();
 		if (treeExitObserved) return;
 		kill("SIGTERM");
@@ -1017,21 +964,25 @@ function spawnSubprocess(spec, internals = {}) {
 		}
 	});
 	const waitForExit = async (signal) => {
+		const observed = observeTreeExit();
 		if (treeExitObserved) return true;
+		if (signal?.aborted) return false;
 		if (signal === void 0) {
-			await observeTreeExit();
-			return treeExitObserved;
+			await observed;
+			return true;
 		}
-		if (signalAborted(signal)) return false;
-		while (treeAlive()) {
-			await sleepTick();
-			if (signalAborted(signal)) return false;
+		const aborted = Promise.withResolvers();
+		const onAbort = () => {
+			aborted.resolve(false);
+		};
+		signal.addEventListener("abort", onAbort, { once: true });
+		/* v8 ignore next -- closes the event-loop race between the preceding aborted check and listener registration. */
+		if (signal.aborted) onAbort();
+		try {
+			return await Promise.race([observed.then(() => true), aborted.promise]);
+		} finally {
+			signal.removeEventListener("abort", onAbort);
 		}
-		treeExitObserved = true;
-		treeExitGivenUp = false;
-		if (graceTimer !== void 0) clearTimeout(graceTimer);
-		graceTimer = void 0;
-		return true;
 	};
 	return {
 		pid,
@@ -1055,20 +1006,6 @@ function spawnSubprocess(spec, internals = {}) {
 /** Local node-pty terminal-process implementation for the subprocess seam. */
 function delay(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-/**
-* Adapt rc.2 test and embedding inspectors to the alpha snapshot contract.
-* Real inspectors expose `snapshot`; older integrations still expose separate
-* tree/session reads, and retaining that adapter keeps the optimization
-* source-compatible without reintroducing repeated scans in production.
-*/
-function processSnapshot(inspector) {
-	if (typeof inspector.snapshot === "function") return inspector.snapshot();
-	return {
-		tree: (rootPid) => inspector.processTree(rootPid),
-		session: (sessionId) => inspector.processSession(sessionId),
-		alive: (identity) => inspector.isAlive(identity)
-	};
 }
 function signalName(number) {
 	if (number === void 0 || number === 0) return null;
@@ -1111,7 +1048,7 @@ var LocalTerminalHandle = class {
 		this.graceMs = graceMs;
 		this.platform = platform;
 		this.pid = terminal.pid;
-		this.rootIdentity = processSnapshot(inspector).tree(this.pid).find((member) => member.pid === this.pid);
+		this.rootIdentity = inspector.snapshot().tree(this.pid).find((member) => member.pid === this.pid);
 		this.done = this.outcome.promise;
 		this.dataDisposable = terminal.onData((data) => {
 			this.output.write(Buffer$1.from(data, "utf8"));
@@ -1131,7 +1068,7 @@ var LocalTerminalHandle = class {
 		this.terminal.write(data);
 	}
 	async inspectForeground() {
-		this.descendants(processSnapshot(this.inspector));
+		this.descendants(this.inspector.snapshot());
 		const processGroupId = this.inspector.foregroundPgid(this.pid);
 		if (processGroupId === void 0) return void 0;
 		return {
@@ -1196,10 +1133,10 @@ var LocalTerminalHandle = class {
 	async waitForMembers(members) {
 		if (members.length === 0) return [];
 		const until = Date.now() + this.graceMs;
-		let survivors = this.survivors(members, processSnapshot(this.inspector));
+		let survivors = this.survivors(members, this.inspector.snapshot());
 		while (survivors.length > 0 && Date.now() < until) {
 			await delay(Math.min(25, Math.max(1, until - Date.now())));
-			survivors = this.survivors(members, processSnapshot(this.inspector));
+			survivors = this.survivors(members, this.inspector.snapshot());
 		}
 		return survivors;
 	}
@@ -1211,7 +1148,7 @@ var LocalTerminalHandle = class {
 	forceStopDescendants() {
 		let members = this.trackedDescendants;
 		try {
-			members = this.descendants(processSnapshot(this.inspector));
+			members = this.descendants(this.inspector.snapshot());
 		} catch (_processTableUnavailableDuringHostExit) {}
 		this.signalMembers(members, "SIGKILL");
 	}
@@ -1227,13 +1164,13 @@ var LocalTerminalHandle = class {
 		return members;
 	}
 	async stopDescendants() {
-		const captured = this.descendants(processSnapshot(this.inspector));
+		const captured = this.descendants(this.inspector.snapshot());
 		this.signalMembers(captured, "SIGTERM");
 		const capturedSurvivors = await this.waitForMembers(captured);
-		const members = this.unionMembers(capturedSurvivors, this.descendants(processSnapshot(this.inspector)));
+		const members = this.unionMembers(capturedSurvivors, this.descendants(this.inspector.snapshot()));
 		this.signalMembers(members, "SIGKILL");
 		const survivors = await this.waitForMembers(members);
-		const observed = processSnapshot(this.inspector);
+		const observed = this.inspector.snapshot();
 		return this.survivors(this.unionMembers(survivors, this.descendants(observed)), observed);
 	}
 	async stopShell() {
@@ -1359,9 +1296,7 @@ var LocalSubprocessRuntime = class extends SubprocessRuntime {
 		const pending = [];
 		for (const handle of this.live) {
 			handle.terminate();
-			pending.push(handle.done.catch(() => {}).then(async () => {
-				if (!await handle.waitForExit()) this.ctx.logger.warn(`subprocess tree ${handle.pid} did not confirm exit within the observation deadline; giving up the wait`);
-			}));
+			pending.push(handle.done.catch(() => {}).then(() => handle.waitForExit()));
 		}
 		for (const terminal of this.terminals) pending.push(terminal.terminate());
 		const failures = (await Promise.allSettled(pending)).flatMap((outcome) => outcome.status === "rejected" ? [outcome.reason] : []);
@@ -1398,8 +1333,8 @@ var LocalSubprocessRuntime = class extends SubprocessRuntime {
 	spawn(spec) {
 		const handle = spawnSubprocess(spec, this.internals);
 		this.live.add(handle);
-		const release = () => handle.waitForExit().then((exited) => {
-			if (exited) this.live.delete(handle);
+		const release = () => handle.waitForExit().then(() => {
+			this.live.delete(handle);
 		});
 		handle.done.then(release, release);
 		return handle;

@@ -9,7 +9,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import type { ReplayEntry, ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { createChatScrollFixture, type ChatScrollFixture } from './chat-scroll-fixture.ts'
@@ -35,7 +35,7 @@ const LIVE_TEXT_PROMPT = 'CHAT_SCROLL_LIVE_USER Continue this long conversation 
 const LIVE_TEXT_FIRST = 'CHAT_SCROLL_LIVE_FIRST'
 const LIVE_TEXT_DONE = 'CHAT_SCROLL_LIVE_DONE'
 const LIVE_TOOL_PROMPT = 'CHAT_SCROLL_TOOL_USER Run the requested diagnostic and then summarize it.'
-const LIVE_TOOL_CALL_ID = ToolCallId('chat-scroll-live-tool-call')
+const LIVE_TOOL_CALL_ID = CallId('chat-scroll-live-tool-call')
 const LIVE_TOOL_RESULT = 'CHAT_SCROLL_LIVE_TOOL_RESULT'
 const LIVE_TOOL_FIRST = 'CHAT_SCROLL_TOOL_STREAM_FIRST'
 const LIVE_TOOL_DONE = 'CHAT_SCROLL_TOOL_STREAM_DONE'

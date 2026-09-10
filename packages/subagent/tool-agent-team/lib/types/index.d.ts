@@ -1,19 +1,21 @@
-/** Scoped model-facing tools for the opt-in Agent Teams runtime. */
+/** Agent-scoped model tools over the Team service. */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 /** Cordis plugin name. */
 export declare const name = "tool-agent-team";
-/** Services required by the Team tool plugin. */
+/** Services required by Team tools. */
 export declare const inject: string[];
-/** Tool routing configuration. */
+/** Continuable provider routes used for new teammates. */
 export interface Config {
-    /** Continuable-subagent provider used for fresh teammates. */
     readonly freshProvider?: string;
-    /** Continuable-subagent provider used for completed-prefix fork teammates. */
     readonly forkProvider?: string;
 }
-/** Loader schema for the opt-in Team tool plugin. */
+/** Validated defaults for teammate creation. */
 export declare const Config: z<Config>;
-/** Install Team tools in every live or subsequently published Team member scope. */
+/**
+ * Install the Team tool set in exact live member scopes.
+ * @param ctx - owning composition context.
+ * @param config - continuable provider routes.
+ */
 export declare function apply(ctx: Context, config?: Config): void;
 //# sourceMappingURL=index.d.ts.map

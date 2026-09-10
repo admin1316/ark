@@ -7,6 +7,15 @@
  * @module @deepseek-ai/dsh-credentials/types
  */
 import type { Branded } from '@deepseek-ai/dsh-brand';
+/** Value-free source and writability facts for configuration UIs. */
+export interface CredentialInfo {
+    /** Whether the provider would currently resolve a value. */
+    configured: boolean;
+    /** Source supplying the value; absent while unconfigured. */
+    source?: string;
+    /** Whether the provider permits writing this reference. */
+    writable: boolean;
+}
 /** Nominal reference to one credential: a POSIX-style environment-variable name. */
 export type CredentialRef = Branded<'CredentialRef'>;
 /**

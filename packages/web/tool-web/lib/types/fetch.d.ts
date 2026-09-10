@@ -21,15 +21,6 @@ export declare function parseFetchArgs(args: {
 }): {
     url: string;
 };
-/** Public immutable projection for non-tool consumers reusing the same conversion owner. */
-export interface WebFetchFormattedOutput {
-    readonly text: string;
-    readonly markdown: string;
-    /** Framing-aware state for the model-facing `text` projection. */
-    readonly truncated: boolean;
-    /** Body-only state for the native-reader `markdown` projection. */
-    readonly markdownTruncated: boolean;
-}
 /**
  * Format a fetch result as one model-facing text block, bounded as a whole.
  *
@@ -38,11 +29,18 @@ export interface WebFetchFormattedOutput {
  * @returns the complete text from {@link renderFetchOutput}.
  */
 export declare function formatFetchOutput(result: WebFetchResult, maxOutputChars: number): string;
+/** Detached value projections for the model and Native reader. */
+export interface WebFetchFormattedOutput {
+    readonly text: string;
+    readonly markdown: string;
+    readonly truncated: boolean;
+    readonly markdownTruncated: boolean;
+}
 /**
- * Return model-framed text and body-only Markdown from one cached conversion.
- * @param result - the seam's fetch outcome.
- * @param maxOutputChars - shared cap applied independently to each projection.
- * @returns both projections and their projection-specific truncation states.
+ * Reuse bounded conversion while keeping model framing out of the Native document body.
+ * @param result - fetch outcome; mutable direct-call values are not memoized.
+ * @param maxOutputChars - non-negative safe-integer cap applied independently to each projection.
+ * @returns detached strings and their projection-specific truncation flags.
  */
 export declare function formatFetchOutputState(result: WebFetchResult, maxOutputChars: number): WebFetchFormattedOutput;
 /**

@@ -7,6 +7,7 @@
   },
   "files": [
     "src/index.ts",
+    "src/agent-lookup.ts",
     "src/invariant.ts",
     "src/remote-events.ts",
     "src/types.ts"

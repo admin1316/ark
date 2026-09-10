@@ -26,6 +26,17 @@ function adapter(options: {
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('non-generative exact-model verification boundaries', () => {
+  it.each([404, 405])('defers HTTP %s model-detail responses to exact generation rather than declaring success', async (status) => {
+    const fetch = vi.fn(async () => new Response(null, { status }))
+    vi.stubGlobal('fetch', fetch)
+    await expect(adapter().verifyProvider(provider, model, new AbortController().signal)).resolves.toBeUndefined()
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+  it('refuses retained literal credentials when the adapter is called without the plugin registry', async () => {
+    const direct = adapter({ profile: { headers: { Authorization: 'synthetic-private' } } })
+    await expect(direct.verifyProvider(provider, model, new AbortController().signal)).rejects.toMatchObject({ code: 'MISSING_CREDENTIAL' })
+  })
+
   it('does not fetch unsupported protocols or routes without any credential', async () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
@@ -47,7 +58,7 @@ describe('non-generative exact-model verification boundaries', () => {
   })
 
   it.each([
-    [401, 'AUTH'], [403, 'AUTH'], [404, 'UNKNOWN_MODEL'], [503, 'VERIFICATION_FAILED'],
+    [401, 'AUTH'], [403, 'AUTH'], [503, 'VERIFICATION_FAILED'],
   ] as const)('keeps HTTP %s authoritative even when response cancellation fails', async (status, code) => {
     const cancel = vi.fn(() => { throw new Error('body cancellation failed') })
     const body = new ReadableStream<Uint8Array>({ cancel })
@@ -75,6 +86,37 @@ describe('non-generative exact-model verification boundaries', () => {
     vi.stubGlobal('fetch', async () => new Response(null))
     await expect(adapter().verifyProvider(provider, model, new AbortController().signal))
       .rejects.toMatchObject({ code: 'VERIFICATION_FAILED', message: 'provider verification returned no metadata' })
+  })
+
+  it.each([
+    ['not-json', 'VERIFICATION_FAILED'],
+    [JSON.stringify({ id: 'wrong-model' }), 'INVALID_MODEL_INFO'],
+    [JSON.stringify({ id: model, provider: 'wrong-provider' }), 'INVALID_MODEL_INFO'],
+  ])('refuses invalid or mismatched metadata %#', async (body, code) => {
+    const fetch = vi.fn(async () => new Response(body))
+    vi.stubGlobal('fetch', fetch)
+    await expect(adapter().verifyProvider(provider, model, new AbortController().signal)).rejects.toMatchObject({ code })
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('cancels a response delivered after caller cancellation without reading or challenging it', async () => {
+    const owner = new AbortController()
+    const cancel = vi.fn()
+    const fetch = vi.fn(async () => {
+      owner.abort()
+      return new Response(new ReadableStream<Uint8Array>({ cancel }))
+    })
+    vi.stubGlobal('fetch', fetch)
+    await expect(adapter().verifyProvider(provider, model, owner.signal)).rejects.toMatchObject({ code: 'ABORTED' })
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+
+  it('reports only reachability when exact metadata is available without credentials', async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ id: model })))
+    vi.stubGlobal('fetch', fetch)
+    await expect(adapter().verifyProvider(provider, model, new AbortController().signal)).resolves.toBe('endpoint-catalog')
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   it.each(['null', '[]', 'true', '"text"'])('rejects non-object metadata %s', async (body) => {
@@ -118,6 +160,21 @@ describe('non-generative exact-model verification boundaries', () => {
     expect(new Headers(requests[1]?.headers).get('authorization')).toBeNull()
     expect(requests.every(request => request.method === 'GET' && request.body === undefined && request.redirect === 'manual')).toBe(true)
     expect(cancel).toHaveBeenCalledOnce()
+  })
+
+  it('removes every explicit credential header from the challenge even when its name looks public', async () => {
+    const headers: Headers[] = []
+    vi.stubGlobal('fetch', async (_url: string | URL, init?: RequestInit) => {
+      headers.push(new Headers(init?.headers))
+      return headers.length === 1 ? new Response(JSON.stringify({ id: model })) : new Response(null, { status: 401 })
+    })
+    await expect(adapter({ key: null,
+      profile: { headers: { 'X-Public': 'public' }, credentialHeaders: { 'X-Vendor-Proof': 'FIXTURE_REF' } },
+      headers: { 'X-Vendor-Proof': 'synthetic-proof' },
+    }).verifyProvider(provider, model, new AbortController().signal)).resolves.toBe('metadata-auth')
+    expect(headers[0]?.get('x-vendor-proof')).toBe('synthetic-proof')
+    expect(headers[1]?.get('x-vendor-proof')).toBeNull()
+    expect(headers[1]?.get('x-public')).toBe('public')
   })
 
   it.each([

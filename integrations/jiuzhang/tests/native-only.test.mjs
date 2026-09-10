@@ -110,8 +110,9 @@ test('Ark uses a native SwiftUI interface and a dedicated API-only bundle', asyn
   assert.match(delegate, /NSWindow\.allowsAutomaticWindowTabbing = false/)
   assert.match(delegate, /window\.titleVisibility = \.hidden/)
   assert.match(delegate, /window\.tabbingMode = \.disallowed/)
-  assert.match(delegate, /prepareDefaultKnowledgeProject\(\)/)
-  assert.match(delegate, /JiuzhangShellContract\.defaultWikiRoot\(\)/)
+  assert.match(delegate, /prepareDefaultKnowledgeProject\(locations: locations\)/)
+  assert.match(delegate, /let wiki = locations\.wikiRoot/)
+  assert.match(delegate, /let root = locations\.knowledgeRoot/)
   assert.match(shellContract, /Application Support[\s\S]*Ark[\s\S]*Knowledge/)
   assert.match(shellContract, /protectedWorkspaceReason[\s\S]*Ark 应用与内嵌 runtime[\s\S]*Ark 产品数据目录/)
   assert.match(model, /ArkEventPump/)
@@ -334,9 +335,10 @@ test('Ark uses a native SwiftUI interface and a dedicated API-only bundle', asyn
   assert.ok(model.includes('@Published public private(set) var trajectoryRecords'))
   assert.ok(trajectoryView.includes('model.trajectoryRecords'))
   assert.ok(!trajectoryView.includes('records(from: model.events)'))
-  // A1 Issue 1：New Session effort 目录保留（最近会话目录分组缓存优先于 settings fallback）
-  assert.ok(model.includes('lastKnownModelGroups = catalog.groups'))
-  assert.ok(model.includes('lastKnownModelGroups ?? providers.compactMap'))
+  // New-session choices use the refreshed Host catalog, never historical session rows.
+  assert.ok(model.includes('hostModelGroups = groups'))
+  assert.ok(model.includes('let groups = availableModelGroups'))
+  assert.ok(!model.includes('lastKnownModelGroups'))
   // A1 Issue 2：工作区头行整块可点（满宽 label + contentShape）
   assert.ok(rootView.includes('.frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)'))
   // workbenchRoot teardown closure：禁止 live root identity 直绑（防 destructive recreation）

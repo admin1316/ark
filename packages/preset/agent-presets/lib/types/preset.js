@@ -20,12 +20,30 @@ export class UnknownPresetError extends Error {
     available;
     constructor(
     /** The id that was requested. */
-    presetId, 
+    presetId,
     /** Ids the roster does supply, for the caller to offer instead. */
     available) {
         super(`agent-presets: preset "${presetId}" not found (available: ${available.join(', ') || 'none'})`);
         this.presetId = presetId;
         this.available = available;
+    }
+}
+/**
+ * The session's composition is fixed: its conversation has started, so its
+ * history was produced under the preset it runs and swapping the composition
+ * would leave logged tool calls the new one cannot make.
+ */
+export class PresetLockedError extends Error {
+    sessionId;
+    presetId;
+    constructor(
+    /** The session whose composition is already fixed. */
+    sessionId,
+    /** The preset that was refused. */
+    presetId) {
+        super(`agent-presets: session "${sessionId}" has already started; its agent preset is fixed`);
+        this.sessionId = sessionId;
+        this.presetId = presetId;
     }
 }
 /** A preset exists but its composition cannot be installed. */
@@ -34,7 +52,7 @@ export class PresetMountError extends Error {
     reason;
     constructor(
     /** The preset whose composition failed. */
-    presetId, 
+    presetId,
     /** Why it failed, without this package's own message prefix. */
     reason, options) {
         super(`agent-presets: preset "${presetId}" failed to mount: ${reason}`, options);

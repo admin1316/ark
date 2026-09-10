@@ -14,7 +14,11 @@ Cancellation is checked before every mutation and around asynchronous reads. His
 
 ## Prompt identity
 
+Child-history callers may supply `expectedParentSessionId`. The history owner checks it against the actual source header before rendering events, so a prior catalog lookup cannot authorize a page from a replacement Session with another parent. A mismatch returns `subagent-unauthorized` without page data.
+
 Every `SessionRemotePromptRequest` carries a required opaque `invocationId`. The service validates it and persists it with the exact user message beside the optional canonical client time zone. This preserves optimistic-message reconciliation without leaking a transport RPC identity into the Session domain.
+
+A leading slash line resolves against the command registry first. When no command claims it, the service consults the live Agent's skill registry and admits only an exact user-invocable skill name, preserving the user's text unchanged for `dsh-tool-skill` to inject at `agent/pre-step`; every other unmatched slash line returns `unknown-command`.
 
 ## Model Experience
 

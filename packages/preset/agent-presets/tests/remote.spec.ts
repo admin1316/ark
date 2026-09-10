@@ -142,7 +142,7 @@ describe('the roster a client reads', () => {
 
     // Composing no presets is a valid deployment: every session then shares
     // the host composition, and nothing can be written either.
-    expect(roster).toEqual({ presets: [], authorable: false })
+    expect(roster).toEqual({ presets: [], authorable: false, hasDocument: false })
   })
 })
 
@@ -211,7 +211,7 @@ describe('reading one composition', () => {
     expect(availableOf(failure)).toEqual(expect.arrayContaining(['minimal', 'standard']))
   })
 
-  it('keeps the legacy internal diagnostic for an unrelated read failure', async () => {
+  it('contains the storage diagnostic for an unrelated read failure', async () => {
     const ctx = await harness()
     vi.spyOn(ctx.agentPresets, 'read').mockRejectedValueOnce(new Error('disk failed'))
 
@@ -219,7 +219,7 @@ describe('reading one composition', () => {
 
     expect(failure).toEqual({
       code: 'internal',
-      message: 'agent preset "standard": Error: disk failed',
+      message: 'agent preset document read failed',
       details: {},
     })
   })
@@ -327,7 +327,7 @@ describe('authoring over Remote', () => {
     expect(availableOf(missing)).toEqual(expect.arrayContaining(['minimal', 'standard']))
   })
 
-  it('keeps the legacy internal diagnostic for an unrelated authoring failure', async () => {
+  it('contains the storage diagnostic for an unrelated authoring failure', async () => {
     const ctx = await harness()
     vi.spyOn(ctx.agentPresets, 'copy').mockRejectedValueOnce(new Error('copy failed'))
 
@@ -335,7 +335,7 @@ describe('authoring over Remote', () => {
 
     expect(failure).toEqual({
       code: 'internal',
-      message: 'agent preset "mine": Error: copy failed',
+      message: 'agent preset copy failed',
       details: {},
     })
   })
@@ -356,7 +356,7 @@ describe('switching one session\'s composition', () => {
     const ctx = await harness()
     const agent = await agentOn(ctx, 'sel-1', 'standard')
 
-    expect(await ctx.agentPresets.select(agent, 'minimal')).toBe('minimal')
+    expect(await ctx.agentPresets.remoteSelect(agent, 'minimal')).toEqual({ agentPreset: 'minimal' })
 
     // The header is written once at creation, so the switch lives in the log:
     // that is what a restart replays and what every projection resolves from.
@@ -447,7 +447,7 @@ describe('switching one session\'s composition', () => {
     expect(reasonOf(failure)).not.toBe('')
   })
 
-  it('keeps the legacy internal diagnostic for an unrelated switch failure', async () => {
+  it('contains the composition diagnostic for an unrelated switch failure', async () => {
     const ctx = await harness()
     const agent = await agentOn(ctx, 'sel-internal', 'standard')
     vi.spyOn(ctx.agentPresets, 'recompose').mockRejectedValueOnce(new Error('mount failed'))
@@ -456,7 +456,7 @@ describe('switching one session\'s composition', () => {
 
     expect(failure).toEqual({
       code: 'internal',
-      message: 'failed to select agent preset "minimal": Error: mount failed',
+      message: 'agent preset selection failed',
       details: {},
     })
   })

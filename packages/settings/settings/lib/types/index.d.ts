@@ -9,10 +9,10 @@ import { Context, Service } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import type z from '@deepseek-ai/schemastery';
 import type { RedactedSecret, RedactedValue } from './redact.ts';
-import type { RemoteSettingsDescription, RemoteSettingsDocumentOpenResult, RemoteSettingsJsonObject, RemoteSettingsNamespaceView, RemoteSettingsPathOp, SettingsNamespace, SettingsUpdateSource } from './types.ts';
+import type { RemoteSettingsDescription, RemoteSettingsDocumentOpenResult, RemoteSettingsJsonObject, RemoteSettingsJsonValue, RemoteSettingsNamespaceView, RemoteSettingsPathOp, SettingsNamespace, SettingsUpdateSource } from './types.ts';
 export { redactSecrets } from './redact.ts';
 export type { RedactedSecret, RedactedValue } from './redact.ts';
-export type { RemoteSettingsDescription, RemoteSettingsDocumentOpenResult, RemoteSettingsJsonObject, RemoteSettingsJsonValue, RemoteSettingsNamespaceView, RemoteSettingsPathOp, RemoteSettingsSecretView, SettingsNamespace, SettingsUpdateSource, } from './types.ts';
+export type { SettingsNamespace, SettingsUpdateSource } from './types.ts';
 /**
  * Brand a raw string as a {@link SettingsNamespace}.
  * @param value - candidate namespace; lowercase kebab-case, as in plugin short names.
@@ -147,12 +147,16 @@ export declare class SettingsConflictError extends Error {
      */
     constructor(ns: SettingsNamespace, expected: number, actual: number);
 }
-/** A namespace owner failed to stop its callbacks within the replacement deadline. */
+/** A namespace cannot be replaced until its previous owner's work stops. */
 export declare class SettingsRegistrationQuiescenceError extends Error {
     readonly ns: SettingsNamespace;
     readonly timeoutMs: number;
-    /** Stable diagnostic code for a namespace owner that exceeded its stop deadline. */
+    /** Replacement remains blocked while the previous registration is stopping. */
     readonly code = "SETTINGS_REGISTRATION_QUIESCENCE_TIMEOUT";
+    /**
+     * @param ns - namespace whose owner is still stopping.
+     * @param timeoutMs - elapsed replacement deadline.
+     */
     constructor(ns: SettingsNamespace, timeoutMs: number);
 }
 /**
@@ -185,11 +189,10 @@ export declare abstract class SettingsProvider extends TypertRemoteService {
     private readonly writeQueues;
     /** In-flight watcher invocation segments, drained by the dispose teardown. */
     private readonly pendingTails;
-    /** Namespaces whose public Remote writes are owned by a higher-level domain transaction. */
-    private remoteProtectedNamespaces;
+    private readonly remoteProtectedNamespaces;
     /** Set at service dispose: refuse new writes while queued ones drain. */
     private stopped;
-    /** Finite owner replacement deadline; tests may override with a smaller value. */
+    /** Deadline for an old namespace owner to release writes and callbacks. */
     protected get registrationQuiescenceTimeoutMs(): number;
     /** Opaque read of {@link stopped}: control flow cannot narrow it across awaits. */
     private isStopped;
@@ -249,77 +252,67 @@ export declare abstract class SettingsProvider extends TypertRemoteService {
      */
     describe(options?: SettingsDescribeOptions): SettingsDescriptor[];
     /**
-     * Read every registered settings namespace through the Native Remote plane.
-     * The projection is always redacted, so write-only fields can never leave
-     * this service through a configuration read.
-     * @returns the redacted settings namespace catalog.
+     * Read redacted settings and deployment facts without revealing a local path.
+     * @returns every registered namespace in registration order.
      */
     remoteDescribe(): RemoteSettingsDescription;
     /**
-     * Materialize and open this provider's own local configuration document.
-     * The generated strict Remote descriptor carries only transport cancellation;
-     * no caller-provided filesystem path can cross this boundary. The Gateway
-     * binds every strict Remote route to its loopback-only carrier.
-     * @param signal - caller-owned cancellation propagated into the native command.
-     * @returns confirmation that the Host opened the owned document.
+     * Prepare and open only the document owned by this provider.
+     * @param signal - transport cancellation, including the native command.
+     * @returns confirmation of the editor handoff; cancellation rejects.
      */
     remoteOpenDocument(signal: AbortSignal): Promise<RemoteSettingsDocumentOpenResult>;
     /**
-     * Merge one namespace's redacted-safe patch through the Remote plane.
-     * @param ns - settings namespace to update.
-     * @param patch - redacted-safe fields to merge.
-     * @param expectedRevision - optional revision for optimistic concurrency.
-     * @returns the updated redacted namespace view.
+     * Merge fields without reconstructing a redacted section.
+     * @param ns - namespace to update.
+     * @param patch - JSON fields to merge.
+     * @param expectedRevision - revision read by the caller.
+     * @returns the updated redacted namespace.
      */
     remoteUpdate(ns: string, patch: RemoteSettingsJsonObject, expectedRevision?: number): Promise<RemoteSettingsNamespaceView>;
     /**
-     * Replace one namespace's full user layer through the Remote plane.
-     * @param ns - settings namespace to replace.
-     * @param section - replacement user-layer fields.
-     * @param expectedRevision - optional revision for optimistic concurrency.
-     * @returns the updated redacted namespace view.
+     * Replace the whole user layer, removing omitted overrides.
+     * @param ns - namespace to replace.
+     * @param section - complete new user layer, not a redacted readback.
+     * @param expectedRevision - revision read by the caller.
+     * @returns the updated redacted namespace.
      */
     remoteReplace(ns: string, section: RemoteSettingsJsonObject, expectedRevision?: number): Promise<RemoteSettingsNamespaceView>;
     /**
-     * Apply path-addressed edits without reconstructing hidden secret fields.
-     * @param ns - settings namespace to mutate.
-     * @param ops - path-addressed mutation operations.
-     * @param expectedRevision - optional revision for optimistic concurrency.
-     * @returns the updated redacted namespace view.
+     * Apply ordered edits while preserving untouched hidden fields.
+     * @param ns - namespace to mutate.
+     * @param ops - path-addressed JSON edits.
+     * @param expectedRevision - revision read by the caller.
+     * @returns the updated redacted namespace.
      */
     remoteMutate(ns: string, ops: readonly RemoteSettingsPathOp[], expectedRevision?: number): Promise<RemoteSettingsNamespaceView>;
-    /** Authoritative Remote adapter for every settings write verb. */
     private remoteWrite;
-    /** Return the provider-owned local document only when it is absolute. */
     private ownedDocumentPath;
-    /** Native editor handoff seam; subclasses may replace it only for their Host integration. */
+    /**
+     * Hand the provider-owned file to a native text editor, without a shell.
+     * @param path - absolute provider document path.
+     * @param signal - caller lifetime.
+     * @returns completion of the native handoff command.
+     */
     protected openDocumentInNativeEditor(path: string, signal: AbortSignal): Promise<void>;
+    /**
+     * Reserve generic Remote writes for namespaces with a domain transaction owner.
+     * @param namespaces - this calling fiber's complete protected set; other owners retain their reservations.
+     */
+    setRemoteProtectedNamespaces(namespaces: readonly SettingsNamespace[]): void;
+    /**
+     * Wait for the owner's callbacks for an exact persisted revision.
+     * @param ns - registered namespace.
+     * @param revision - exact revision to observe; superseded revisions reject.
+     * @returns whether every owner callback accepted the revision, not merely whether it persisted.
+     */
+    settle(ns: SettingsNamespace, revision: number): Promise<boolean>;
     /**
      * Read one registered namespace's resolved value.
      * @param ns - the namespace to read.
      * @returns the resolved value, or `undefined` while unregistered.
      */
     get(ns: SettingsNamespace): unknown;
-    /**
-     * Replace the set of namespaces whose wire writes belong to another domain
-     * transaction. Same-process owners still use update/replace/mutate directly;
-     * only the generic Settings Remote is denied.
-     * @param namespaces - complete current protected set.
-     */
-    setRemoteProtectedNamespaces(namespaces: readonly SettingsNamespace[]): void;
-    /**
-     * Wait until the owner callbacks produced by one exact persisted revision
-     * settle. The pending settlement is bound at the revision bump itself, so
-     * callers racing a commit — even re-entry from user code read during the
-     * commit's own equality walk — observe the real outcome. Configuration
-     * transactions use this after a write so persistence cannot be reported as
-     * live activation while an adapter rejected the new route. Ordinary settings
-     * writes keep their existing failure-isolated behavior.
-     * @param ns - namespace whose exact revision must settle.
-     * @param revision - exact revision from a descriptor or document notification.
-     * @returns true only when every owner callback for that revision succeeded.
-     */
-    settle(ns: SettingsNamespace, revision: number): Promise<boolean>;
     /**
      * Merge a patch into one registered namespace's user layer, validate the
      * resolved candidate, persist through the provider, then commit and emit.
@@ -357,13 +350,10 @@ export declare abstract class SettingsProvider extends TypertRemoteService {
      */
     mutate(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>;
     /**
-     * Validate one path mutation against the current section without persisting
-     * it, and enumerate every schema-declared secret path in the resolved
-     * candidate. Transaction owners use this before journaling so write-only
-     * values can never be copied into an ordinary receipt.
-     * @param ns - registered namespace to inspect.
-     * @param ops - proposed path operations.
-     * @returns secret positions in the validated candidate.
+     * Validate a mutation and locate its secrets before a domain owner journals it.
+     * @param ns - registered namespace.
+     * @param ops - proposed ordered edits; nothing is persisted.
+     * @returns secret positions in the resolved candidate.
      */
     previewMutation(ns: SettingsNamespace, ops: readonly SettingsPathOp[]): {
         secrets: RedactedSecret[];
@@ -383,14 +373,8 @@ export declare abstract class SettingsProvider extends TypertRemoteService {
     /** Resolve one namespace value: schema defaults, then `base`, then the user layer. */
     private resolve;
     /**
-     * Advance a namespace's revision when its RAW section changed. The new
-     * revision's settlement promise is bound here — before any value walk can
-     * run user code: commit's equality walk reads value properties, and an
-     * accessor re-entering settle(ns, revision) during it must await the real
-     * outcome, never a stale recorded promise and never an early success. Raw
-     * equality is separate: storing an override equal to the composition base
-     * leaves the resolved value alone but changes what the document says, which
-     * is exactly what a configuration surface must re-read.
+     * Bind settlement before any commit notification can re-enter settle().
+     * Raw changes advance the revision even when the resolved value is unchanged.
      */
     private bumpRevision;
     /** Contained fan-out of `settings/document-updated`, mirroring {@link commit}'s. */
@@ -403,11 +387,18 @@ export declare abstract class SettingsProvider extends TypertRemoteService {
     private warnListenerFailure;
 }
 /**
- * Convert one already-redacted descriptor into the stable Remote projection.
- * @param descriptor - The descriptor input.
- * @returns The value produced by remote namespace view.
+ * Project an already-redacted descriptor as detached, lossless Remote data.
+ * @param descriptor - descriptor obtained with secret redaction enabled.
+ * @returns a namespace view that carries no provider-owned object references.
  */
 export declare function remoteNamespaceView(descriptor: SettingsDescriptor): RemoteSettingsNamespaceView;
+/**
+ * Detach lossless JSON through the same validator used by settings writes.
+ * This does not redact secrets; callers own whether the input may cross a wire or journal.
+ * @param value - JSON-compatible input to snapshot before asynchronous work.
+ * @returns a detached value; unsupported numbers, sparse arrays and cycles reject.
+ */
+export declare function snapshotSettingsJson(value: unknown): RemoteSettingsJsonValue;
 /** Hooks a consumer hands to {@link installSettingsSection}. */
 export interface SettingsSectionHooks<T> {
     /**
@@ -428,9 +419,9 @@ export interface SettingsSectionHooks<T> {
      * @param value - the resolved section, schema-valid by construction.
      */
     validate?: (value: T) => void;
-    /** Reject newly written legacy/unsafe values while still allowing startup migration. */
+    /** Reject newly written unsafe values while allowing stored-value migration. */
     validateWrite?: (value: T) => void;
-    /** Remove owner-specific sensitive values from every descriptor layer. */
+    /** Remove owner-specific secrets from each descriptor layer. */
     redact?: (value: unknown) => RedactedValue;
 }
 /**

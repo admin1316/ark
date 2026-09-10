@@ -44,7 +44,7 @@
 import { Context, Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { CredentialProvider } from '@deepseek-ai/dsh-credentials';
-import type { CredentialInfo, CredentialKey, CredentialRecord, CredentialRecordEntry, CredentialRecordInfo, CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials';
+import type { CredentialCondition, CredentialInfo, CredentialKey, CredentialRecord, CredentialRecordEntry, CredentialRecordInfo, CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials';
 /** Basename of the credentials document inside the harness home. */
 export declare const CREDENTIALS_FILENAME = ".credentials.yaml";
 /** Plugin config: file location and hot-reload behavior. */
@@ -166,12 +166,15 @@ export declare class LocalCredentialProvider extends CredentialProvider {
     describe(ref: CredentialRef): Promise<CredentialInfo>;
     /** The `.env` fallback description for a reference, or "not configured". */
     private describeDotenvFallback;
-    set(ref: CredentialRef, value: string): Promise<void>;
-    unset(ref: CredentialRef): Promise<void>;
+    set(ref: CredentialRef, value: string, expected?: CredentialCondition): Promise<void>;
+    unset(ref: CredentialRef, expected?: CredentialCondition): Promise<void>;
     readRecord(key: CredentialKey): Promise<CredentialRecord | undefined>;
     describeRecord(key: CredentialKey): Promise<CredentialRecordInfo>;
     listRecords(): Promise<readonly CredentialRecordEntry[]>;
-    modifyRecord(key: CredentialKey, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>): Promise<CredentialRecord | undefined>;
+    modifyRecord(key: CredentialKey, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>, references?: readonly {
+        ref: CredentialRef;
+        expected: CredentialCondition;
+    }[]): Promise<CredentialRecord | undefined>;
     deleteRecord(key: CredentialKey): Promise<void>;
     /** Queue one exclusive document operation behind every earlier one. */
     private enqueue;

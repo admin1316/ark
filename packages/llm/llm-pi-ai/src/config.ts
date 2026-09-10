@@ -19,6 +19,7 @@ import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { deepEqualJson } from '@deepseek-ai/dsh-settings'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import {
@@ -26,9 +27,11 @@ import {
   CHAT_TEMPLATE_VARS,
   MAX_TOKENS_FIELDS,
   MODALITIES,
+  PiAiCatalogError,
   resolveRouteModels,
   SUPPORTED_THINKING_FORMATS,
   THINKING_LEVELS,
+  THINKING_BUDGET_FIELDS,
 } from './catalog.ts'
 import type {
   PiAiCompatProfile,
@@ -36,8 +39,10 @@ import type {
   PiAiModelOverride,
   PiAiModelProfile,
   PiAiReasoningEfforts,
+  RouteCatalog,
 } from './catalog.ts'
 import { buildProvider, supportedProtocols } from './provider.ts'
+import { redactPiAiSecrets, resolveProfileHeaders } from './headers.ts'
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
@@ -146,6 +151,8 @@ export interface PiAiProviderProfile {
   defaultInput?: PiAiModality[]
   /** Provider request headers; Harness attribution wins reserved names. */
   headers?: Record<string, string>
+  /** Header values resolved through the credential service instead of stored in settings. */
+  credentialHeaders?: Record<string, string>
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */
@@ -180,13 +187,17 @@ export interface PiAiProviderProfile {
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
 export interface ResolvedPiAiProviderProfile
-  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'> {
+  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'credentialHeaders' | 'retryPolicy' | 'models' | 'displayName'> {
   /** Harness route key and the `Models` collection key (the configuration dict key). */
   provider: string
   /** Resolved display name for selectors and configuration surfaces. */
   displayName: string
   /** Validated credential reference, when one is configured. */
   apiKeyEnv?: CredentialRef
+  /** Validated references for credential-backed headers. */
+  credentialHeaders?: Record<string, CredentialRef>
+  /** Literal credential headers remain on disk but cannot activate a route. */
+  migrationRequired?: { headers: string[]; fields?: string[][] }
   /** Positive finite provider-idle interval after defaulting. */
   streamIdleTimeoutMs: number
   /** Positive request-level base64 image payload bound after defaulting. */
@@ -198,12 +209,14 @@ export interface ResolvedPiAiProviderProfile
   /** Immutable retry policy captured with this provider route. */
   retryPolicy: ResolvedRetryPolicy
   /**
-   * The pi-ai provider this route registers, built from the resolved models.
-   * Construction happens here so an unserviceable protocol or an underspecified
-   * model fails with the rest of resolution, leaving the last good route set
-   * serving requests.
+   * Serviceable models for this route. Absent when a retained catalog failure
+   * prevents construction; the configured route remains available for repair.
    */
-  piProvider: Provider
+  piProvider?: Provider
+  /** Catalog drift requiring configuration repair; independent models remain available. */
+  catalogError?: string
+  /** Per-model configuration failures retained during stored reads. */
+  modelErrors: ReadonlyMap<string, string>
   /**
    * Per-request output caps this profile explicitly configured, by model id.
    * The seam materializes one only into a request that names no cap of its
@@ -247,6 +260,10 @@ const chatTemplateKwarg: z<ChatTemplateKwargValue> = z.union([
 ])
 
 const compatProfile: z<PiAiCompatProfile> = z.object({
+  thinkingTokenBudgetField: z.union(THINKING_BUDGET_FIELDS),
+  vllmPriority: z.number(),
+  supportsMaxOutputTokens: z.boolean(),
+  supportsMidConvoEffort: z.boolean(),
   supportsStore: z.boolean(),
   supportsDeveloperRole: z.boolean(),
   supportsReasoningEffort: z.boolean(),
@@ -311,7 +328,8 @@ const modelProfile: z<PiAiModelProfile> = z.object({
 /** A {@link modelProfile} whose id lives in the `modelOverrides` dict key. */
 const modelOverride: z<PiAiModelOverride> = z.object(modelFields)
 
-const profile = z.object({
+/** Provider profile fields shared by configuration validation and public-settings projection. */
+export const ProviderProfileSchema = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
   displayName: z.string(),
   api: z.union(supportedProtocols()),
@@ -323,6 +341,7 @@ const profile = z.object({
   defaultMaxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
   defaultInput: z.array(z.union(MODALITIES)).default([...DEFAULT_INPUT]),
   headers: z.dict(z.string()),
+  credentialHeaders: z.dict(z.string().role('credential-ref')),
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
   cacheRetention: z.union(['none', 'short', 'long']),
@@ -338,23 +357,37 @@ const profile = z.object({
 
 /** Runtime schema for {@link Config}. */
 export const Config: z<Config> = z.object({
-  providers: z.dict(profile).default({}),
+  providers: z.dict(ProviderProfileSchema).default({}),
 })
 
 /**
- * Reject a section this adapter could not serve. Registered as the settings
- * namespace's validator, so an unserviceable profile is refused where it is
- * *written* — `settings.mutate` answers `settings-rejected` with the offending
- * route and model named — instead of being stored and then quietly disabling
- * every route in the namespace. It stays a validator rather than a schema
- * transform because the schema is also the shape a configuration surface
- * renders and the value an absent section resolves to; wrapping it would break
- * both.
+ * Reject new or changed unserviceable profiles before persistence. Unchanged
+ * catalog-invalid profiles do not block repair of an independent provider.
  * @param config - the resolved section to check.
+ * @param previous - current section; omission validates all configured profiles.
  * @throws Error naming the route and model that cannot be served.
  */
-export function assertServiceable(config: Config): void {
-  resolveProfiles(config.providers)
+export function assertServiceable(config: Config, previous?: Config): void {
+  resolveProfiles(changedProviders(config, previous))
+}
+
+function changedProviders(config: Config, previous: Config | undefined): Record<string, PiAiProviderProfile> {
+  return Object.fromEntries(Object.entries(config.providers ?? {}).filter(([provider, profile]) =>
+    !deepEqualJson(profile, previous?.providers?.[provider])))
+}
+
+/**
+ * Refuse new writes containing literal credential headers without changing existing data.
+ * @param config - proposed provider configuration.
+ * @param previous - current section used to identify changed provider profiles.
+ * @throws when any profile still requires credential-header migration.
+ */
+export function assertWritableConfig(config: Config, previous?: Config): void {
+  const providers = changedProviders(config, previous)
+  resolveProfiles(providers)
+  if (redactPiAiSecrets(config, Config).secrets.some(secret => secret.set)) {
+    throw new Error('llm-pi-ai: credential headers must use credential references')
+  }
 }
 
 /** Reject removed pre-release profile fields and name their replacements. */
@@ -381,10 +414,12 @@ function rejectRemovedFields(provider: string, source: PiAiProviderProfile): voi
  * resolves to the empty (dormant) route set here rather than through a hidden
  * fallback, and each route's models and pi-ai provider are materialized once.
  * @param providers - configured provider profiles keyed by route.
+ * @param validation - strict writes reject catalog errors; deferred reads retain repair diagnostics.
  * @returns validated profiles in configuration order.
  */
 export function resolveProfiles(
   providers: Readonly<Record<string, PiAiProviderProfile>> | undefined,
+  validation: 'strict' | 'deferred' = 'strict',
 ): Map<string, ResolvedPiAiProviderProfile> {
   if (Array.isArray(providers)) {
     throw new Error('llm-pi-ai: providers is now a dict keyed by provider route, not an array of profiles')
@@ -433,18 +468,35 @@ export function resolveProfiles(
     // always shown route keys, and a catalog route must not silently rename
     // itself on every configuration surface just because it gained a profile.
     const displayName = source.displayName ?? provider
-    const catalog = resolveRouteModels({
-      provider,
-      ...source.api === undefined ? {} : { api: source.api },
-      ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
-      ...source.models === undefined ? {} : { models: source.models },
-      ...source.modelOverrides === undefined ? {} : { modelOverrides: source.modelOverrides },
-      ...source.compat === undefined ? {} : { compat: source.compat },
-      defaultInput,
-      defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
-      defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
-    })
-    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    let catalog: RouteCatalog | undefined
+    let piProvider: Provider | undefined
+    let catalogError: string | undefined
+    try {
+      catalog = resolveRouteModels({
+        provider,
+        ...source.api === undefined ? {} : { api: source.api },
+        ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
+        ...source.models === undefined ? {} : { models: source.models },
+        ...source.modelOverrides === undefined ? {} : { modelOverrides: source.modelOverrides },
+        ...source.compat === undefined ? {} : { compat: source.compat },
+        defaultInput,
+        defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
+        defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
+      }, validation)
+      catalogError = catalog.modelErrors.values().next().value
+      piProvider = buildProvider({ provider, displayName,
+        ...source.api === undefined ? {} : { api: source.api },
+        ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
+        models: catalog.models,
+        namesCredential: source.apiKeyEnv !== undefined || Object.keys(source.credentialHeaders ?? {}).length > 0,
+      })
+    } catch (error) {
+      if (validation === 'strict' || !(error instanceof PiAiCatalogError)) throw error
+      catalogError ??= error.message
+    }
+    const {
+      apiKeyEnv, credentialHeaders: _credentialHeaders, headers: _headers, retryPolicy, models: _models, displayName: _displayName, ...rest
+    } = source
     resolved.set(provider, {
       ...rest,
       provider,
@@ -455,17 +507,12 @@ export function resolveProfiles(
       requestImagePixelBudget,
       requestImageMaxBytes,
       retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
-      ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
+      ...resolveProfileHeaders(provider, source, ProviderProfileSchema),
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
-      configuredMaxTokens: catalog.configuredMaxTokens,
-      piProvider: buildProvider({
-        provider,
-        displayName,
-        ...source.api === undefined ? {} : { api: source.api },
-        ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
-        models: catalog.models,
-        namesCredential: apiKeyEnv !== undefined,
-      }),
+      configuredMaxTokens: catalog?.configuredMaxTokens ?? new Map(),
+      modelErrors: catalog?.modelErrors ?? new Map(),
+      ...piProvider === undefined ? {} : { piProvider },
+      ...catalogError === undefined ? {} : { catalogError },
     })
   }
   return resolved

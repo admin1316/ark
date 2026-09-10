@@ -2860,6 +2860,9 @@ struct NativeAssistantMarkdownProjectionState: Sendable {
   ] = [:]
   private(set) var installedSourceIDs = Set<NativeAssistantMarkdownSourceID>()
   private var requestTokens: [NativeAssistantMarkdownSourceID: UUID] = [:]
+  private var readyByID: [NativeAssistantMarkdownSourceID: (
+    request: NativeAssistantMarkdownProjectionRequest, blocks: [NativeGFMBlock]
+  )] = [:]
 
   mutating func reconcile(
     sessionID: String?,
@@ -2880,9 +2883,13 @@ struct NativeAssistantMarkdownProjectionState: Sendable {
       self.sessionID = sessionID
       invalidatedSourceIDs.formUnion(requestedSourcesByID.keys)
       requestTokens.removeAll()
+      readyByID.removeAll()
       installedSourceIDs.removeAll()
     } else {
-      for id in invalidatedSourceIDs { requestTokens.removeValue(forKey: id) }
+      for id in invalidatedSourceIDs {
+        requestTokens.removeValue(forKey: id)
+        readyByID.removeValue(forKey: id)
+      }
       installedSourceIDs.subtract(invalidatedSourceIDs)
     }
     requestedSourcesByID = nextSourcesByID
@@ -2922,10 +2929,28 @@ struct NativeAssistantMarkdownProjectionState: Sendable {
     return true
   }
 
+  /// Retain completions until the next presentation batch. Installation still
+  /// checks the current session, source and request token when the batch drains.
+  mutating func stage(_ blocks: [NativeGFMBlock], for request: NativeAssistantMarkdownProjectionRequest) {
+    guard requestTokens[request.source.id] == request.token else { return }
+    readyByID[request.source.id] = (request, blocks)
+  }
+
+  mutating func takeReadyBlocks() -> [NativeAssistantMarkdownSourceID: [NativeGFMBlock]] {
+    let ready = readyByID
+    readyByID.removeAll(keepingCapacity: true)
+    var installed: [NativeAssistantMarkdownSourceID: [NativeGFMBlock]] = [:]
+    for (id, result) in ready where accept(result.request) {
+      installed[id] = result.blocks
+    }
+    return installed
+  }
+
   @discardableResult
   mutating func cancel(_ request: NativeAssistantMarkdownProjectionRequest) -> Bool {
     guard requestTokens[request.source.id] == request.token else { return false }
     requestTokens.removeValue(forKey: request.source.id)
+    readyByID.removeValue(forKey: request.source.id)
     return true
   }
 }
@@ -2962,11 +2987,10 @@ private struct NativeChatSnapshot {
   }
 
   func installing(
-    _ blocks: [NativeGFMBlock],
-    for id: NativeAssistantMarkdownSourceID
+    _ blocks: [NativeAssistantMarkdownSourceID: [NativeGFMBlock]]
   ) -> NativeChatSnapshot {
     var projected = markdownBlocksBySourceID
-    projected[id] = blocks
+    projected.merge(blocks) { _, new in new }
     return NativeChatSnapshot(
       entries: entries,
       context: context,
@@ -2994,6 +3018,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   private var cancellables = Set<AnyCancellable>()
   private var markdownProjectionState = NativeAssistantMarkdownProjectionState()
   private var markdownTasks: [NativeAssistantMarkdownSourceID: Task<Void, Never>] = [:]
+  private var markdownPublishTask: Task<Void, Never>?
 
   init(model: ArkAppModel) {
     snapshot = NativeChatSnapshot(
@@ -3064,6 +3089,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   }
 
   deinit {
+    markdownPublishTask?.cancel()
     for task in markdownTasks.values { task.cancel() }
   }
 
@@ -3082,6 +3108,8 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       requestedSources: nextSources
     )
     if reconciliation.sessionChanged {
+      markdownPublishTask?.cancel()
+      markdownPublishTask = nil
       for task in markdownTasks.values { task.cancel() }
       markdownTasks.removeAll()
     } else {
@@ -3108,13 +3136,25 @@ private final class NativeChatTranscriptFeed: ObservableObject {
           self?.cancelMarkdownRequest(request)
           return
         }
-        guard markdownProjectionState.accept(request) else { return }
+        markdownProjectionState.stage(blocks, for: request)
         markdownTasks.removeValue(forKey: source.id)
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-          self.snapshot = self.snapshot.installing(blocks, for: source.id)
-        }
+        scheduleMarkdownPublication()
+      }
+    }
+  }
+
+  private func scheduleMarkdownPublication() {
+    guard markdownPublishTask == nil else { return }
+    markdownPublishTask = Task { [weak self] in
+      try? await Task.sleep(nanoseconds: 16_000_000)
+      guard !Task.isCancelled, let self else { return }
+      markdownPublishTask = nil
+      let ready = markdownProjectionState.takeReadyBlocks()
+      guard !ready.isEmpty else { return }
+      var transaction = Transaction(animation: nil)
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+        self.snapshot = self.snapshot.installing(ready)
       }
     }
   }
@@ -5253,6 +5293,9 @@ private struct NativeMessageActions: View {
       Spacer(minLength: 6)
       Text(actionTail)
         .lineLimit(1)
+        .help(presentation.language == .zh
+          ? "首响应是首个流事件，不保证已出现正文。tok/s 使用提供方报告的输出 Token（可能含思考），按已完成模型流的耗时计算，不含工具执行或重试等待；不是正文出字速度。"
+          : "First response measures the first stream event, not necessarily visible text. tok/s uses provider-reported output tokens (possibly including reasoning) over completed model streams, excluding tool execution and retry waits; it is not visible-text speed.")
     }
     .font(.system(size: max(10, fontSize - 5)))
     .foregroundStyle(ArkPalette.secondary)
@@ -6618,32 +6661,16 @@ private struct NativeComposer: View {
             Spacer()
             Menu {
               if let catalog = model.composerModelCatalog {
-                ForEach(catalog.groups) { group in
-                  Menu(group.name) {
-                    ForEach(group.models) { item in
-                      if let efforts = item.reasoning?.efforts, !efforts.isEmpty {
-                        Menu(item.name) {
-                          ForEach(efforts) { effort in
-                            Button {
-                              model.selectModel(ArkModelSelection(
-                                provider: group.id,
-                                model: item.id,
-                                reasoningEffort: effort.id
-                              ))
-                            } label: {
-                              Label(effort.name, systemImage: selectedModelMenuCheckmark(
-                                provider: group.id, modelID: item.id, effort: effort.id))
-                            }
-                          }
-                        }
-                      } else {
-                        Button {
-                          model.selectModel(ArkModelSelection(provider: group.id, model: item.id))
-                        } label: {
-                          Label(item.name, systemImage: selectedModelMenuCheckmark(
-                            provider: group.id, modelID: item.id, effort: nil))
-                        }
-                      }
+                ForEach(ArkProviderPresentation.groups(ArkProviderPresentation.primaryModelGroups(catalog.groups), id: { $0.id }, name: { $0.name })) { family in
+                  Menu {
+                    ForEach(family.entries) { group in
+                      providerModelItems(group)
+                    }
+                  } label: {
+                    Label {
+                      Text(family.name)
+                    } icon: {
+                      ArkProviderMark(providerID: family.entries.first?.id ?? family.id, label: family.name, size: 16)
                     }
                   }
                 }
@@ -6752,6 +6779,30 @@ private struct NativeComposer: View {
         language: model.languagePreference,
         confirm: { model.setPermissionPreset("danger-full-access") }
       )
+    }
+  }
+
+  @ViewBuilder
+  private func providerModelItems(_ group: ArkModelProviderGroup) -> some View {
+    ForEach(group.models) { item in
+      if let efforts = item.reasoning?.efforts, !efforts.isEmpty {
+        Menu(item.name) {
+          ForEach(efforts) { effort in
+            Button {
+              model.selectModel(ArkModelSelection(provider: group.id, model: item.id, reasoningEffort: effort.id))
+            } label: {
+              Label(effort.name, systemImage: selectedModelMenuCheckmark(
+                provider: group.id, modelID: item.id, effort: effort.id))
+            }
+          }
+        }
+      } else {
+        Button {
+          model.selectModel(ArkModelSelection(provider: group.id, model: item.id))
+        } label: {
+          Label(item.name, systemImage: selectedModelMenuCheckmark(provider: group.id, modelID: item.id, effort: nil))
+        }
+      }
     }
   }
 
@@ -8156,7 +8207,7 @@ private struct NativeWikiView: View, Equatable {
             submitKnowledgeURL()
           }
           .buttonStyle(.borderedProminent)
-          .disabled(ArkKnowledgeIngestInput.normalizedHTTPURL(importURL) == nil || feed.ingestBusy)
+          .disabled(ArkHTTPURLInput.normalizedHTTPURL(importURL) == nil || feed.ingestBusy)
         }
       }
       .padding(22)
@@ -8296,7 +8347,7 @@ private struct NativeWikiView: View, Equatable {
   }
 
   private func submitKnowledgeURL() {
-    guard let value = ArkKnowledgeIngestInput.normalizedHTTPURL(importURL) else { return }
+    guard let value = ArkHTTPURLInput.normalizedHTTPURL(importURL) else { return }
     if model.importKnowledgeURL(value) {
       importURL = ""
       showImportURL = false
@@ -8305,7 +8356,7 @@ private struct NativeWikiView: View, Equatable {
 
   private var importURLValidationError: String? {
     let value = importURL.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !value.isEmpty, ArkKnowledgeIngestInput.normalizedHTTPURL(value) == nil else { return nil }
+    guard !value.isEmpty, ArkHTTPURLInput.normalizedHTTPURL(value) == nil else { return nil }
     return ArkL10n.text(.wikiImportURLInvalid, feed.language)
   }
 }
@@ -10062,7 +10113,16 @@ private struct NativeSubagentModelSelectionCard: View {
   }
 
   private var groups: [ArkModelProviderGroup] {
-    model.composerModelCatalog?.groups ?? []
+    model.availableModelGroups
+  }
+
+  private var selectedAvailableRoutes: [ArkModelSelection] {
+    groups.flatMap { group in
+      group.models.compactMap { item in
+        selectedRoutes.contains(routeKey(provider: group.id, model: item.id))
+          ? ArkModelSelection(provider: group.id, model: item.id) : nil
+      }
+    }
   }
 
   var body: some View {
@@ -10085,11 +10145,11 @@ private struct NativeSubagentModelSelectionCard: View {
         .accessibilityLabel(ArkL10n.text(.subagentModelSelectionEnabled, model.languagePreference))
       }
 
-      if groups.isEmpty {
+      if enabled && groups.isEmpty {
         Text(ArkL10n.text(.subagentModelSelectionNoModels, model.languagePreference))
           .font(.system(size: 11))
           .foregroundStyle(ArkPalette.secondary)
-      } else {
+      } else if enabled {
         VStack(alignment: .leading, spacing: 7) {
           ForEach(groups) { group in
             VStack(alignment: .leading, spacing: 4) {
@@ -10122,20 +10182,14 @@ private struct NativeSubagentModelSelectionCard: View {
       HStack {
         Spacer()
         Button(ArkL10n.text(.commonSave, model.languagePreference)) {
-          let routes = groups.flatMap { group in
-            group.models.compactMap { item -> ArkModelSelection? in
-              selectedRoutes.contains(routeKey(provider: group.id, model: item.id))
-                ? ArkModelSelection(provider: group.id, model: item.id)
-                : nil
-            }
-          }
+          let routes = selectedAvailableRoutes
           Task { _ = await model.saveSubagentModelSelection(enabled: enabled, routes: routes) }
         }
         .buttonStyle(.borderedProminent)
         .disabled(
           model.settingsSnapshot?.writable != true
             || model.settingsBusy
-            || (enabled && selectedRoutes.isEmpty)
+            || (enabled && selectedAvailableRoutes.isEmpty)
         )
       }
     }
@@ -10173,22 +10227,31 @@ private struct NativeModelsSettings: View {
   @State private var addingProviderID: String?
   @State private var showCustomProvider = false
 
-  private var visibleProviders: [ArkProviderView] {
-    model.providers.filter { provider in
-      providerIsConfigured(provider) || addingProviderID == provider.id
+  private var providerFamilies: [ArkProviderPresentation.Group<ArkProviderView>] {
+    ArkProviderPresentation.groups(ArkProviderPresentation.standardChoices(model.providers, id: { $0.id }), id: { $0.id }, name: { $0.displayName })
+  }
+
+  private var visibleFamilies: [ArkProviderPresentation.Group<ArkProviderView>] {
+    providerFamilies.filter { family in
+      family.entries.contains { providerIsConfigured($0) || addingProviderID == $0.id }
     }
   }
 
   private var addableProviders: [ArkProviderView] {
-    dormantProviders.filter { provider in
-      addingProviderID != provider.id
+    dormantFamilies.compactMap { $0.entries.first }.filter { addingProviderID != $0.id }
+  }
+
+  private var dormantFamilies: [ArkProviderPresentation.Group<ArkProviderView>] {
+    providerFamilies.filter { family in
+      !family.entries.contains(where: providerIsConfigured)
+        && family.entries.contains { !$0.settingsNamespace.isEmpty }
     }
   }
 
-  private var dormantProviders: [ArkProviderView] {
-    model.providers.filter { provider in
-      !providerIsConfigured(provider) && provider.settingsNamespace != ""
-    }
+  private func selectedProvider(in family: ArkProviderPresentation.Group<ArkProviderView>) -> ArkProviderView? {
+    family.entries.first { provider in model.availableModelGroups.contains { $0.id == provider.id } }
+      ?? family.entries.first(where: providerIsConfigured)
+      ?? family.entries.first
   }
 
   private var anyUsableProvider: Bool {
@@ -10214,7 +10277,7 @@ private struct NativeModelsSettings: View {
       HStack {
         VStack(alignment: .leading, spacing: 3) {
           Text("模型").font(.system(size: 16, weight: .medium))
-          Text("填入各提供方的 API 密钥即可使用其模型。")
+          Text("内置地址、协议和模型目录。填入密钥并选择模型；特殊平台按其要求完成认证。")
             .font(.system(size: 14)).foregroundStyle(ArkPalette.secondary)
         }
         Spacer()
@@ -10225,21 +10288,29 @@ private struct NativeModelsSettings: View {
       .padding(22)
       Divider().overlay(ArkPalette.border)
       ScrollView {
-        LazyVStack(spacing: 12) {
+        // Expanding settings cards need stable geometry and draft lifetimes across scrolling.
+        VStack(spacing: 12) {
           if model.settingsSnapshot?.namespaces.contains(where: { $0.id == "subagent-model-selection" }) == true {
             NativeSubagentModelSelectionCard(model: model)
           }
-          ForEach(visibleProviders) { provider in
+          ForEach(visibleFamilies) { family in
+            if let provider = selectedProvider(in: family) {
+            let addingFamily = addingProviderID.map { ArkProviderPresentation.familyID(for: $0) } == family.id
             VStack(alignment: .leading, spacing: 8) {
-              if addingProviderID == provider.id {
+              if addingFamily {
                 HStack {
                   Text("提供方").font(.system(size: 12, weight: .medium))
                   Picker("提供方", selection: Binding(
-                    get: { addingProviderID ?? provider.id },
-                    set: { addingProviderID = $0 }
+                    get: { family.id },
+                    set: { id in addingProviderID = dormantFamilies.first { $0.id == id }?.entries.first?.id }
                   )) {
-                    ForEach(dormantProviders) { candidate in
-                      Text(candidate.displayName).tag(candidate.id)
+                    ForEach(dormantFamilies) { candidate in
+                      Label {
+                        Text(candidate.name)
+                      } icon: {
+                        ArkProviderMark(providerID: candidate.entries.first?.id ?? candidate.id, label: candidate.name, size: 16)
+                      }
+                      .tag(candidate.id)
                     }
                   }
                   .labelsHidden()
@@ -10252,14 +10323,18 @@ private struct NativeModelsSettings: View {
               NativeProviderSettingsCard(
                 model: model,
                 provider: provider,
-                startsExpanded: addingProviderID == provider.id
+                startsExpanded: addingFamily || !providerIsConfigured(provider)
                   || (!anyUsableProvider && provider.settingsPath.isEmpty
                     && model.credentialStates[model.credentialReference(for: provider)]?.configured != true),
-                onCancel: addingProviderID == provider.id ? { addingProviderID = nil } : nil
+                onCancel: addingFamily ? {
+                  addingProviderID = nil
+                } : nil
               )
+              .id(provider.id)
+            }
             }
           }
-          if visibleProviders.isEmpty, !model.settingsBusy {
+          if visibleFamilies.isEmpty, !model.settingsBusy {
             NativeSettingsEmpty(title: "没有 Provider", icon: "cpu", detail: "本机服务没有报告可配置的 Provider。")
           }
 
@@ -10319,6 +10394,9 @@ private struct NativeProviderSettingsCard: View {
   @State private var models: [NativeProviderModelDraft] = []
   @State private var advanced = false
   @State private var showDiscoveredModels = false
+  @State private var migrateLegacyCredentials = false
+  @State private var connectionTest: Task<Void, Never>?
+  @State private var connectionStatus: String?
 
   init(
     model: ArkAppModel,
@@ -10351,6 +10429,11 @@ private struct NativeProviderSettingsCard: View {
     return inputs.count == models.count && Set(inputs.map(\.id)).count == inputs.count
   }
 
+  private var endpointInvalid: Bool {
+    !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && ArkHTTPURLInput.normalizedHTTPURL(baseURL) == nil
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 11) {
@@ -10360,15 +10443,10 @@ private struct NativeProviderSettingsCard: View {
           if opening { loadDraft() }
         } label: {
           HStack(spacing: 11) {
-            Image(systemName: "cpu")
-              .font(.system(size: 12))
-              .frame(width: 24, height: 24)
-              .background(ArkPalette.raised, in: RoundedRectangle(cornerRadius: 6))
+            ArkProviderMark(providerID: provider.id, label: provider.displayName)
             VStack(alignment: .leading, spacing: 2) {
-              Text(provider.displayName).font(.system(size: 13, weight: .semibold))
-              Text(provider.id)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(ArkPalette.secondary)
+              Text(ArkProviderPresentation.displayName(for: provider.id, fallback: provider.displayName))
+                .font(.system(size: 13, weight: .semibold))
             }
             Spacer(minLength: 12)
             Text(statusLabel)
@@ -10405,6 +10483,39 @@ private struct NativeProviderSettingsCard: View {
       }
       .padding(.horizontal, 13)
       .frame(minHeight: 56)
+      if let diagnostic = provider.configurationError {
+        NativeSettingsNotice(text: diagnostic, color: .orange, icon: "exclamationmark.triangle")
+          .padding(.horizontal, 13)
+        Button(ArkL10n.text(.settingsOpenConfigFile, model.languagePreference), action: model.openSettingsDocument)
+          .padding(.horizontal, 13)
+      }
+      if let transaction = model.providerTransactionStates[provider.id], transaction.state != .absent {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("此前的配置保存需要确认：\(transaction.state.rawValue)")
+            .font(.system(size: 11, weight: .medium))
+          Text("恢复仅处理此前的保存，不会提交下方的新草稿。无法安全续写时会保留现有配置并报告失败。")
+            .font(.system(size: 11))
+            .foregroundStyle(ArkPalette.secondary)
+          if transaction.needsCredential {
+            Text("如需补回密钥，请在展开后的 API 密钥框输入此前同一密钥，再点击恢复；密钥不会写入草稿或回执。")
+              .font(.system(size: 11))
+              .foregroundStyle(ArkPalette.secondary)
+          }
+          Button(transaction.state.isTerminal ? "确认此前保存结果" : "恢复此前保存") {
+            Task {
+              let replaySecret = secret.isEmpty ? nil : normalizedAPIKey(secret)
+              let restored = await model.restoreProviderConfiguration(
+                provider: provider, transactionID: transaction.transactionID, credentialValue: replaySecret
+              )
+              secret = ""
+              if restored { loadDraft() }
+            }
+          }
+          .disabled(model.settingsBusy)
+        }
+        .padding(14)
+        .background(ArkPalette.raised)
+      }
       if expanded {
         Divider().overlay(ArkPalette.border)
         VStack(alignment: .leading, spacing: 12) {
@@ -10415,12 +10526,8 @@ private struct NativeProviderSettingsCard: View {
               icon: "lock"
             )
           } else {
-            NativeProviderField(
-              title: "凭据引用",
-              hint: "密钥保存在 macOS Keychain；设置文件只保存此引用。"
-            ) {
-              TextField("DEEPSEEK_API_KEY", text: $credentialRef)
-            }
+            Text("API Key 保存在 macOS Keychain，不写入模型设置文件。")
+              .font(.system(size: 10)).foregroundStyle(ArkPalette.secondary)
             SecureField(state?.configured == true ? "已配置；留空保持不变" : "输入 API 密钥", text: $secret)
               .textFieldStyle(.roundedBorder)
               .accessibilityLabel("API 密钥")
@@ -10428,14 +10535,57 @@ private struct NativeProviderSettingsCard: View {
               controls: ArkProviderLoginRegistry.controls(for: provider.id),
               language: model.languagePreference
             )
+            if let migration = provider.migrationRequired {
+              NativeSettingsNotice(
+                text: "旧凭据字段需要迁移：\(migration.fields.joined(separator: "、"))。字段值不会显示。",
+                color: .orange, icon: "exclamationmark.shield"
+              )
+              if migration.canMigrateUserFields {
+                Toggle("移除用户层旧明文字段，并用上方新输入的密钥保存到凭据服务", isOn: $migrateLegacyCredentials)
+                  .accessibilityIdentifier("ark.provider.\(provider.id).migrate")
+              } else {
+                Text("这些字段来自部署配置或缺少安全处理路径，需先修正配置来源；这里不会覆盖部署配置。")
+                  .font(.system(size: 10))
+                  .foregroundStyle(ArkPalette.secondary)
+              }
+            }
             if normalizedAPIKey(secret) == nil {
               Text("API 密钥格式无效，请重新粘贴。")
                 .font(.system(size: 10))
                 .foregroundStyle(Color.red)
             }
 
+            if provider.settingsNamespace == "llm-pi-ai" {
+              HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                  Text("模型").font(.system(size: 12, weight: .medium))
+                  Text(models.isEmpty
+                    ? (provider.declared == true ? "尚未添加模型" : "使用此提供方的全部内置模型")
+                    : "已选择 \(models.count) 个模型")
+                    .foregroundStyle(ArkPalette.secondary)
+                }
+                Spacer()
+                Button("选择模型") {
+                  model.clearDiscoveredModels()
+                  showDiscoveredModels = true
+                  model.discoverProviderModels(
+                    provider: provider, baseURL: baseURL, api: api,
+                    unsavedAPIKey: normalizedAPIKey(secret) ?? ""
+                  )
+                }
+                .disabled(endpointInvalid || model.modelDiscoveryBusy || normalizedAPIKey(secret) == nil)
+                .accessibilityIdentifier("ark.provider.\(provider.id).models")
+                if !models.isEmpty && provider.declared != true {
+                  Button("使用全部内置模型") { models = [] }
+                }
+              }
+            }
+
             DisclosureGroup(isExpanded: $advanced) {
               VStack(alignment: .leading, spacing: 12) {
+                NativeProviderField(title: "凭据引用") {
+                  TextField("凭据引用", text: $credentialRef)
+                }
                 if provider.declared == true {
                   NativeProviderField(title: "显示名称") {
                     TextField(provider.displayName, text: $displayName)
@@ -10450,33 +10600,53 @@ private struct NativeProviderSettingsCard: View {
                     .pickerStyle(.menu)
                   }
                 }
-                NativeProviderField(title: "API 地址") {
-                  TextField("使用 Provider 默认地址", text: $baseURL)
+                NativeProviderField(title: "自定义 API 地址（可选）") {
+                  TextField("留空使用内置默认地址，无需填写请求路径", text: $baseURL)
+                }
+                if endpointInvalid {
+                  NativeSettingsNotice(text: "请输入包含主机名的 HTTP 或 HTTPS 地址。", color: .red, icon: "exclamationmark.triangle")
                 }
                 NativeProviderModelEditor(models: $models)
-                if provider.settingsNamespace == "llm-pi-ai" {
-                  Button("获取可用模型") {
-                    model.clearDiscoveredModels()
-                    showDiscoveredModels = true
-                    model.discoverProviderModels(
-                      provider: provider,
-                      baseURL: baseURL,
-                      api: api,
-                      unsavedAPIKey: normalizedAPIKey(secret) ?? ""
-                    )
-                  }
-                  .disabled(model.modelDiscoveryBusy || normalizedAPIKey(secret) == nil)
-                }
               }
               .padding(.top, 12)
             } label: {
-              Text("自定义设置")
+              Text("高级设置：地址、协议与模型覆盖")
                 .font(.system(size: 12, weight: .medium))
             }
             .padding(.top, 4)
             .overlay(alignment: .top) { Divider().overlay(ArkPalette.border) }
 
+            if let connectionStatus {
+              Text(connectionStatus).font(.system(size: 11)).textSelection(.enabled)
+            }
             HStack {
+              Button(connectionTest == nil ? "测试连接" : "取消测试") {
+                if let connectionTest {
+                  connectionTest.cancel()
+                  self.connectionTest = nil
+                  connectionStatus = "测试已取消"
+                } else if let savedModel = model.availableModelGroups.first(where: { $0.id == provider.id })?.models.first {
+                  connectionStatus = "正在验证已保存配置：\(savedModel.name)…"
+                  connectionTest = Task {
+                    defer { if !Task.isCancelled { connectionTest = nil } }
+                    do {
+                      let result = try await model.verifyProviderConnection(provider: provider.id, model: savedModel.id)
+                      guard !Task.isCancelled else { return }
+                      connectionStatus = result.verified
+                        ? (result.mode == "minimal-generation"
+                          ? "模型调用验证通过：\(savedModel.name)"
+                          : "密钥验证通过：\(savedModel.name)；生成与额度以实际请求为准")
+                        : "地址可达，但未验证密钥与模型权限"
+                    } catch {
+                      guard !Task.isCancelled else { return }
+                      connectionStatus = "连接未通过：\(error.localizedDescription)"
+                    }
+                  }
+                }
+              }
+              .disabled(connectionTest == nil && (model.settingsBusy || !secret.isEmpty
+                || model.availableModelGroups.first(where: { $0.id == provider.id })?.models.isEmpty != false))
+              .help("验证已保存配置的首个模型，可能产生少量 Token 用量。修改后请先保存。")
               Spacer()
               Button("取消") {
                 loadDraft()
@@ -10494,7 +10664,8 @@ private struct NativeProviderSettingsCard: View {
                     displayName: displayName,
                     baseURL: baseURL,
                     api: api,
-                    models: models.compactMap(\.input)
+                    models: models.compactMap(\.input),
+                    migrateLegacyCredentials: migrateLegacyCredentials
                   )
                   if saved {
                     secret = ""
@@ -10504,7 +10675,9 @@ private struct NativeProviderSettingsCard: View {
                 }
               }
               .buttonStyle(.borderedProminent)
-              .disabled(!modelsValid || normalizedAPIKey(secret) == nil || model.settingsBusy || state?.writable == false)
+              .disabled(endpointInvalid || !modelsValid || normalizedAPIKey(secret) == nil || model.settingsBusy || state?.writable == false)
+              .disabled(provider.migrationRequired != nil
+                && (provider.migrationRequired?.canMigrateUserFields != true || !migrateLegacyCredentials || secret.isEmpty))
             }
           }
         }
@@ -10515,6 +10688,12 @@ private struct NativeProviderSettingsCard: View {
     }
     .background(ArkPalette.shell, in: RoundedRectangle(cornerRadius: 12))
     .overlay(RoundedRectangle(cornerRadius: 12).stroke(ArkPalette.border))
+    .onDisappear { connectionTest?.cancel(); connectionTest = nil }
+    .onChange(of: model.settingsSnapshot?.namespaces.first(where: { $0.id == provider.settingsNamespace })?.revision) { _ in
+      connectionTest?.cancel()
+      connectionTest = nil
+      connectionStatus = nil
+    }
     .confirmationDialog("删除 \(provider.displayName)？", isPresented: $confirmProfileRemoval) {
       Button("删除 Provider 和托管凭据", role: .destructive) { model.removeProviderProfile(provider) }
       Button("取消", role: .cancel) {}
@@ -10576,9 +10755,7 @@ private struct NativeProviderLoginControls: View {
 
 private var statusLabel: String {
     if state?.configured == true {
-      return provider.active
-        ? ArkL10n.text(.statusConfigured, model.languagePreference)
-        : ArkL10n.text(.statusCredentialSaved, model.languagePreference)
+      return ArkL10n.text(.statusCredentialSaved, model.languagePreference)
     }
     return provider.active
       ? ArkL10n.text(.statusRegistered, model.languagePreference)
@@ -10586,11 +10763,12 @@ private var statusLabel: String {
   }
 
   private var statusColor: Color {
-    if state?.configured == true { return .green }
+    if state?.configured == true { return ArkPalette.secondary }
     return provider.active ? .orange : ArkPalette.secondary
   }
 
   private func loadDraft() {
+    migrateLegacyCredentials = false
     credentialRef = model.credentialReference(for: provider)
     displayName = provider.displayName
     guard let namespace = model.settingsSnapshot?.namespaces.first(where: { $0.id == provider.settingsNamespace }),
@@ -10603,10 +10781,15 @@ private var statusLabel: String {
       return NativeProviderModelDraft(
         modelID: id,
         name: row["name"]?.stringValue ?? "",
-        contextWindow: row["contextWindow"]?.numberValue.map { String(Int($0)) } ?? "",
-        maxTokens: row["maxTokens"]?.numberValue.map { String(Int($0)) } ?? ""
+        contextWindow: capacityText(row["contextWindow"]),
+        maxTokens: capacityText(row["maxTokens"])
       )
     }
+  }
+
+  private func capacityText(_ value: JSONValue?) -> String {
+    guard let number = value?.numberValue else { return "" }
+    return Int(exactly: number).map(String.init) ?? String(number)
   }
 }
 
@@ -10628,7 +10811,7 @@ private struct NativeCustomProviderEditor: View {
   private var valid: Bool {
     providerID.range(of: #"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"#, options: .regularExpression) != nil
       && !model.providers.contains(where: { $0.id == providerID })
-      && ["http", "https"].contains(URL(string: baseURL)?.scheme?.lowercased() ?? "")
+      && ArkHTTPURLInput.normalizedHTTPURL(baseURL) != nil
       && !modelInputs.isEmpty
       && modelInputs.count == models.count
       && Set(modelInputs.map(\.id)).count == modelInputs.count
@@ -10666,7 +10849,7 @@ private struct NativeCustomProviderEditor: View {
         TextField("https://gateway.example/v1", text: $baseURL)
       }
       if !baseURL.isEmpty,
-         !["http", "https"].contains(URL(string: baseURL)?.scheme?.lowercased() ?? "") {
+         ArkHTTPURLInput.normalizedHTTPURL(baseURL) == nil {
         Text("请输入以 http:// 或 https:// 开头的 API 地址。")
           .font(.system(size: 10))
           .foregroundStyle(Color.red)
@@ -10691,7 +10874,7 @@ private struct NativeCustomProviderEditor: View {
           unsavedAPIKey: normalizedAPIKey(secret) ?? ""
         )
       }
-      .disabled(baseURL.isEmpty || model.modelDiscoveryBusy || normalizedAPIKey(secret) == nil)
+      .disabled(ArkHTTPURLInput.normalizedHTTPURL(baseURL) == nil || model.modelDiscoveryBusy || normalizedAPIKey(secret) == nil)
       NativeProviderField(title: "API 密钥", hint: "可留空以使用 Provider 自己的环境、OAuth 或 ADC 认证。") {
         SecureField("输入 API 密钥", text: $secret)
       }
@@ -10713,9 +10896,7 @@ private struct NativeCustomProviderEditor: View {
               baseURL: baseURL,
               api: api,
               models: modelInputs,
-              credentialRef: providerID.uppercased().map {
-                $0.isLetter || $0.isNumber ? String($0) : "_"
-              }.joined() + "_API_KEY",
+              credentialRef: model.newCredentialReference(for: providerID),
               secret: normalizedSecret
             )
             if saved { isPresented = false }
@@ -10813,6 +10994,15 @@ private struct NativeDiscoveredModelsSheet: View {
   @Binding var models: [NativeProviderModelDraft]
   @Binding var isPresented: Bool
   @State private var selected = Set<String>()
+  @State private var search = ""
+
+  private var filteredModels: [ArkDiscoveredModel] {
+    let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+    return model.discoveredModels.filter {
+      query.isEmpty || $0.id.localizedCaseInsensitiveContains(query)
+        || ($0.name?.localizedCaseInsensitiveContains(query) ?? false)
+    }
+  }
 
   private var current: [String] {
     models.map { $0.modelID.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
@@ -10820,10 +11010,14 @@ private struct NativeDiscoveredModelsSheet: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      Text("获取可用模型").font(.system(size: 18, weight: .semibold))
-      Text("发现只读取候选，不会修改 Provider；采纳后仍需在原编辑器中保存。")
+      Text("选择模型").font(.system(size: 18, weight: .semibold))
+      Text("目录来自提供方定义，不代表账号已获访问权限。模型能力按各模型保留；采纳后仍需保存。")
         .font(.system(size: 11))
         .foregroundStyle(ArkPalette.secondary)
+
+      TextField("搜索模型名称或 ID", text: $search)
+        .textFieldStyle(.roundedBorder)
+        .accessibilityIdentifier("ark.provider.models.search")
 
       if model.modelDiscoveryBusy {
         HStack { ProgressView(); Text("正在读取模型目录…") }
@@ -10832,7 +11026,7 @@ private struct NativeDiscoveredModelsSheet: View {
         NativeSettingsNotice(text: error, color: .red, icon: "exclamationmark.triangle")
         Spacer()
       } else {
-        List(model.discoveredModels) { candidate in
+        List(filteredModels) { candidate in
           Toggle(isOn: Binding(
             get: { selected.contains(candidate.id) },
             set: { enabled in
@@ -10855,6 +11049,9 @@ private struct NativeDiscoveredModelsSheet: View {
       }
 
       HStack {
+        Button("选择搜索结果") { selected.formUnion(filteredModels.map(\.id)) }
+          .disabled(model.modelDiscoveryBusy)
+        Button("清空选择") { selected.removeAll() }
         Spacer()
         Button("取消") { isPresented = false }
         Button("采纳所选") {
@@ -10885,6 +11082,7 @@ private struct NativeDiscoveredModelsSheet: View {
       let existing = Set(current)
       selected = Set(candidates.map(\.id).filter { !existing.contains($0) })
     }
+    .onDisappear { model.clearDiscoveredModels() }
   }
 }
 

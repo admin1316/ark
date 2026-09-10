@@ -1,7 +1,7 @@
 /** Message value types, identity, and immutable construction helpers. */
 
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
-import { MessageId, type ToolCallId } from './brand.ts'
+import { MessageId, type CallId } from './brand.ts'
 import { deepFreeze } from './call-config.ts'
 import type { ContentBlock, ToolResultBlock } from './types.ts'
 
@@ -27,7 +27,7 @@ export interface ModelMessageSource extends AssistantProvenance {
 /** Required source of a user-role message carrying one tool result. */
 export interface ToolMessageSource {
   kind: 'tool'
-  callId: ToolCallId
+  callId: CallId
 }
 
 /**
@@ -219,7 +219,7 @@ export function createAssistantMessage(
 
 /** Input whose acceptance creates one tool-result message. */
 export interface ToolResultMessageInput {
-  readonly callId: ToolCallId
+  readonly callId: CallId
   readonly content: ContentBlock[]
   readonly isError: boolean
 }

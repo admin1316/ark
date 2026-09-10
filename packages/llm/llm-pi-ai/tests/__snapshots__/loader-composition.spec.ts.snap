@@ -1,0 +1,251 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`llm-pi-ai real dormant composition > carries private endpoint budgets and priority through the Loader and provider wire 1`] = `
+{
+  "content": [
+    {
+      "text": "hello",
+      "type": "text",
+    },
+  ],
+  "finish": {
+    "kind": "stop",
+  },
+  "request": {
+    "chat_template_kwargs": {
+      "budget": 4096,
+    },
+    "max_completion_tokens": 32768,
+    "messages": [
+      {
+        "content": "hello",
+        "role": "user",
+      },
+    ],
+    "model": "local-thinking",
+    "priority": -1,
+    "store": false,
+    "stream": true,
+    "stream_options": {
+      "include_usage": true,
+    },
+    "thinking_budget": 4096,
+  },
+}
+`;
+
+exports[`llm-pi-ai real dormant composition > keeps catalog-invalid settings repairable without blocking independent providers 1`] = `
+{
+  "broken": {
+    "active": true,
+    "declared": false,
+    "displayName": "openai",
+    "error": "llm-pi-ai: provider "openai" modelOverrides names "removed-catalog-model", which the installed catalog does not describe",
+    "provider": "openai",
+    "settingsNs": "llm-pi-ai",
+    "settingsPath": [
+      "providers",
+      "openai",
+    ],
+  },
+  "repaired": {
+    "active": true,
+    "declared": false,
+    "displayName": "openai",
+    "provider": "openai",
+    "settingsNs": "llm-pi-ai",
+    "settingsPath": [
+      "providers",
+      "openai",
+    ],
+  },
+}
+`;
+
+exports[`llm-pi-ai real dormant composition > preserves provider-native effort through two assembled turns without a session format migration 1`] = `
+{
+  "first": {
+    "content": [
+      {
+        "text": "hello",
+        "type": "text",
+      },
+    ],
+    "finish": {
+      "kind": "stop",
+    },
+    "source": {
+      "kind": "model",
+      "model": "claude-fixture",
+      "provider": "local",
+      "replayState": {
+        "blocks": [
+          {
+            "type": "text",
+          },
+        ],
+        "response": {
+          "api": "anthropic-messages",
+          "kind": "pi-ai",
+          "model": "claude-fixture",
+          "provider": "local",
+          "providerThinkingLevel": "high",
+          "responseId": "msg-effort-fixture",
+          "stopReason": "stop",
+          "version": 2,
+        },
+      },
+    },
+  },
+  "requests": [
+    {
+      "max_tokens": 32768,
+      "messages": [
+        {
+          "content": [
+            {
+              "cache_control": {
+                "type": "ephemeral",
+              },
+              "text": "hello",
+              "type": "text",
+            },
+          ],
+          "role": "user",
+        },
+        {
+          "content": [],
+          "output_config": {
+            "effort": "high",
+          },
+          "role": "system",
+        },
+      ],
+      "model": "claude-fixture",
+      "output_config": {
+        "effort": "high",
+      },
+      "stream": true,
+      "thinking": {
+        "block_binding": {
+          "prefix_mismatch_behavior": "drop_block",
+        },
+        "display": "summarized",
+        "type": "adaptive",
+      },
+    },
+    {
+      "max_tokens": 32768,
+      "messages": [
+        {
+          "content": "hello",
+          "role": "user",
+        },
+        {
+          "content": [],
+          "output_config": {
+            "effort": "high",
+          },
+          "role": "system",
+        },
+        {
+          "content": [
+            {
+              "text": "hello",
+              "type": "text",
+            },
+          ],
+          "role": "assistant",
+        },
+        {
+          "content": [
+            {
+              "cache_control": {
+                "type": "ephemeral",
+              },
+              "text": "hello",
+              "type": "text",
+            },
+          ],
+          "role": "user",
+        },
+        {
+          "content": [],
+          "output_config": {
+            "effort": "low",
+          },
+          "role": "system",
+        },
+      ],
+      "model": "claude-fixture",
+      "output_config": {
+        "effort": "high",
+      },
+      "stream": true,
+      "thinking": {
+        "block_binding": {
+          "prefix_mismatch_behavior": "drop_block",
+        },
+        "display": "summarized",
+        "type": "adaptive",
+      },
+    },
+  ],
+  "second": {
+    "content": [
+      {
+        "text": "hello",
+        "type": "text",
+      },
+    ],
+    "finish": {
+      "kind": "stop",
+    },
+    "source": {
+      "kind": "model",
+      "model": "claude-fixture",
+      "provider": "local",
+      "replayState": {
+        "blocks": [
+          {
+            "type": "text",
+          },
+        ],
+        "response": {
+          "api": "anthropic-messages",
+          "kind": "pi-ai",
+          "model": "claude-fixture",
+          "provider": "local",
+          "providerThinkingLevel": "low",
+          "responseId": "msg-effort-fixture",
+          "stopReason": "stop",
+          "version": 2,
+        },
+      },
+    },
+  },
+}
+`;
+
+exports[`llm-pi-ai real dormant composition > verifies exact metadata through the Loader, live settings and credential owner without a generation request 1`] = `
+{
+  "requests": [
+    {
+      "credential": true,
+      "path": "/v1/models/exact-model",
+      "publicHeader": "public",
+    },
+    {
+      "credential": false,
+      "path": "/v1/models/exact-model",
+      "publicHeader": "public",
+    },
+  ],
+  "result": {
+    "mode": "metadata-auth",
+    "model": "exact-model",
+    "provider": "fixture-gateway",
+    "verified": true,
+  },
+}
+`;

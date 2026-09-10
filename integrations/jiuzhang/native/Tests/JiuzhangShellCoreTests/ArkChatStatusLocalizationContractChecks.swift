@@ -264,7 +264,9 @@ func runArkChatStatusLocalizationContractChecks() {
       && ArkL10n.format(.messageMetricDuration, .en, arguments: ["1.2s"])
         == "Duration 1.2s"
       && ArkL10n.format(.messageMetricFirstToken, .en, arguments: ["900ms"])
-        == "First token 900ms"
+        == "First response 900ms"
+      && ArkL10n.format(.messageMetricFirstToken, .zh, arguments: ["900ms"])
+        == "首响应 900ms"
       && ArkL10n.text(.sessionActivityFailed, .en) == "Task stopped unexpectedly"
       && ArkL10n.format(.queueCount, .en, arguments: ["2"]) == "2 queued messages",
     "native chat localizes dynamic metrics, activity state, and queue counts"

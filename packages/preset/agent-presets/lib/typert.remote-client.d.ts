@@ -3,31 +3,31 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { RemoteAgentPresetCatalog, RemoteAgentPresetDocument, RemoteAgentPresetOpenTarget } from '@deepseek-ai/dsh-agent-presets/types'
+import type { AgentPresetDocument, AgentPresetDocumentOpen, AgentPresetRemoved, AgentPresetRoster, AgentPresetSelection } from '@deepseek-ai/dsh-agent-presets/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6167656e74507265736574 {
-    copy: (from: string, agentPreset: string, name?: string) => Promise<RemoteResult<{ agentPreset: string; }>>
-    list: () => Promise<RemoteResult<RemoteAgentPresetCatalog>>
-    openDocument: (agentPreset: string) => Promise<RemoteResult<RemoteAgentPresetOpenTarget>>
-    read: (agentPreset: string) => Promise<RemoteResult<RemoteAgentPresetDocument>>
-    remove: (agentPreset: string) => Promise<RemoteResult<Record<never, never>>>
-    select: (agentId: SessionId, agentPreset: string) => Promise<RemoteResult<{ agentPreset: string; }>>
+    copy: (from: string, agentPreset: string, name?: string) => Promise<RemoteResult<AgentPresetSelection>>
+    list: () => Promise<RemoteResult<AgentPresetRoster>>
+    openDocument: (agentPreset: string, signal?: AbortSignal) => Promise<RemoteResult<AgentPresetDocumentOpen>>
+    read: (agentPreset: string) => Promise<RemoteResult<AgentPresetDocument>>
+    remove: (agentPreset: string) => Promise<RemoteResult<AgentPresetRemoved>>
+    select: (agentId: SessionId, agentPreset: string) => Promise<RemoteResult<AgentPresetSelection>>
   }
   interface TypertRemoteMap {
-    'agentPreset/copy': (from: string, agentPreset: string, name?: string) => Promise<RemoteResult<{ agentPreset: string; }>>
-    'agentPreset/list': () => Promise<RemoteResult<RemoteAgentPresetCatalog>>
-    'agentPreset/openDocument': (agentPreset: string) => Promise<RemoteResult<RemoteAgentPresetOpenTarget>>
-    'agentPreset/read': (agentPreset: string) => Promise<RemoteResult<RemoteAgentPresetDocument>>
-    'agentPreset/remove': (agentPreset: string) => Promise<RemoteResult<Record<never, never>>>
-    'agentPreset/select': (agentId: SessionId, agentPreset: string) => Promise<RemoteResult<{ agentPreset: string; }>>
+    'agentPreset/copy': (from: string, agentPreset: string, name?: string) => Promise<RemoteResult<AgentPresetSelection>>
+    'agentPreset/list': () => Promise<RemoteResult<AgentPresetRoster>>
+    'agentPreset/openDocument': (agentPreset: string, signal?: AbortSignal) => Promise<RemoteResult<AgentPresetDocumentOpen>>
+    'agentPreset/read': (agentPreset: string) => Promise<RemoteResult<AgentPresetDocument>>
+    'agentPreset/remove': (agentPreset: string) => Promise<RemoteResult<AgentPresetRemoved>>
+    'agentPreset/select': (agentId: SessionId, agentPreset: string) => Promise<RemoteResult<AgentPresetSelection>>
   }
   interface TypertRemoteNamespaceMap {
     'agentPreset': TypertRemoteNamespace$6167656e74507265736574
   }
   interface TypertRemoteScopeMap {
-    'agent:agentPreset/select': (agentPreset: string) => Promise<RemoteResult<{ agentPreset: string; }>>
+    'agent:agentPreset/select': (agentPreset: string) => Promise<RemoteResult<AgentPresetSelection>>
   }
 }
 

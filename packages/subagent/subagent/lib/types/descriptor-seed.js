@@ -1,5 +1,5 @@
 /**
- * Seeding of a session-backed child's durable descriptor event: the model-hidden
+ * Seeding of a continuable child's durable descriptor event: the model-hidden
  * record of the child's declared composition before its first request, so a
  * later cold resume can reconstruct it from its own log.
  *
@@ -7,7 +7,7 @@
  */
 import { Session } from '@deepseek-ai/dsh-session';
 /**
- * Build a one-shot or continuable child's creation seed: any inherited parent-history prefix followed
+ * Build the child's creation seed: any inherited parent-history prefix followed
  * by one model-hidden, between-turn `descriptor` event. Staging through a
  * `Session` assigns the sequence number and enforces the same lossless-JSON
  * rules the durable log does.

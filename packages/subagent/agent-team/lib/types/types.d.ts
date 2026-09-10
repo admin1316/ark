@@ -4,28 +4,10 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import type { SessionId } from '@deepseek-ai/dsh-session';
 /** Identifies the implicit team rooted at one top-level Session. */
 export type TeamId = Branded<'TeamId'>;
-/**
- * Brand one root Session identity as its implicit Team identity.
- * @param id - Root Session identity.
- * @returns the same string branded as a Team identity.
- */
-export declare function TeamId(id: SessionId | string): TeamId;
 /** Stable identifier for one task in a Team. */
 export type TeamTaskId = Branded<'TeamTaskId'>;
-/**
- * Brand a validated task id.
- * @param id - Team-local task identity.
- * @returns the same string branded as a Team task identity.
- */
-export declare function TeamTaskId(id: string): TeamTaskId;
 /** Stable identifier for one durable peer message. */
 export type TeamMessageId = Branded<'TeamMessageId'>;
-/**
- * Brand a generated peer-message id.
- * @param id - Durable mailbox message identity.
- * @returns the same string branded as a Team message identity.
- */
-export declare function TeamMessageId(id: string): TeamMessageId;
 /** Durable teammate lifecycle. */
 export type TeamMemberPhase = 'provisioning' | 'active' | 'failed';
 /** Whole durable value written on every teammate lifecycle change. */

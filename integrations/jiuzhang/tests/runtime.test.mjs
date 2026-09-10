@@ -23,6 +23,7 @@ import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { runtimeAssetSource } from '../src/runtime-plan.mjs'
 import { composeEntries } from '../../../packages/boot/app-boot/lib/index.js'
 import { prepareProfile } from '../../../packages/boot/profile-runner/lib/index.js'
 import {
@@ -350,6 +351,24 @@ test('the launcher resolves the dedicated built Ark native API runner', async ()
   assert.match(path, /packages\/boot\/native-api-runner\/lib\/bin\.js$/)
 })
 
+test('ordinary user preset directory permissions remain readable without weakening recovery privacy', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'ark-preset-parent-mode-'))
+  const parent = join(home, '.agent-presets')
+  try {
+    await mkdir(parent, { mode: 0o755 })
+    await chmod(parent, 0o755)
+    assert.equal((await purgeReservedJiuzhangPreset(home)).status, 'absent')
+    assert.equal((await lstat(parent)).mode & 0o777, 0o755)
+    await mkdir(join(parent, 'jiuzhang'), { mode: 0o755 })
+    await writeFile(join(parent, 'jiuzhang', 'preset.json'), '{}')
+    const recovered = await purgeReservedJiuzhangPreset(home)
+    assert.equal(recovered.status, 'recovered')
+    assert.equal((await lstat(dirname(recovered.recovery))).mode & 0o777, 0o700)
+    await chmod(parent, 0o777)
+    await assert.rejects(purgeReservedJiuzhangPreset(home), /writable by group or others/)
+  } finally { await rm(home, { recursive: true, force: true }) }
+})
+
 test('only the dedicated Native runner resolves the jiuzhang profile with dangerous tools disabled and public fetch enabled', async () => {
   const home = await mkdtemp(join(tmpdir(), 'jiuzhang-harness-'))
   try {
@@ -357,7 +376,7 @@ test('only the dedicated Native runner resolves the jiuzhang profile with danger
     await assert.rejects(
       execFileAsync(
         process.execPath,
-        [join(resolveRepositoryRoot(), 'apps/cli/lib/bin.js'), '--profile', 'jiuzhang', '--dump-config'],
+        ['--import', 'tsx', join(resolveRepositoryRoot(), 'apps/cli/src/bin.ts'), '--profile', 'jiuzhang', '--dump-config'],
         { env: createLaunchEnvironment(home, process.env), maxBuffer: 2_000_000 },
       ),
       /cannot resolve profile bundle "@deepseek-ai\/dsh-native-api-app"/,
@@ -488,9 +507,11 @@ test('the same launcher pair serves a standalone runtime rooted beside its asset
       await mkdir(packageRoot, { recursive: true })
       await writeFile(join(packageRoot, 'package.json'), JSON.stringify({ name, version: '0.0.0' }))
     }
-    await cp(join(launcherSrc, 'start.mjs'), join(runtimeRoot, 'start.mjs'))
-    await cp(join(launcherSrc, 'runtime.mjs'), join(runtimeRoot, 'runtime.mjs'))
-    await cp(join(launcherSrc, 'runtime-closure.mjs'), join(runtimeRoot, 'runtime-closure.mjs'))
+    for (const asset of runtimePolicy.requiredFiles) {
+      const destination = join(runtimeRoot, asset)
+      await mkdir(dirname(destination), { recursive: true })
+      await cp(runtimeAssetSource(dirname(dirname(integrationRoot)), asset), destination)
+    }
     await writeFile(
       join(runtimeRoot, 'package.json'),
       JSON.stringify({

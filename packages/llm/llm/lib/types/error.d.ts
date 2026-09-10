@@ -1,5 +1,3 @@
-import type { LlmFailure } from './types.ts';
-import type { ProviderRequestId } from './brand.ts';
 /**
  * Harness error base with a stable machine-routable code and chained cause.
  * Package errors extend it so tool results and replay can retain failure class.
@@ -72,46 +70,4 @@ export declare function errorChain(value: unknown): string;
  * @returns true only for real instances; duck-typed or cross-realm errors do not narrow.
  */
 export declare function isHarnessError(value: unknown): value is HarnessError;
-/** Structured provider facts and cause accepted by {@link LlmError}. */
-export interface LlmErrorOptions extends ErrorOptions {
-    /** Valid HTTP status observed at the provider boundary. */
-    status?: number;
-    /** Positive finite provider-requested delay in milliseconds. */
-    providerRetryAfterMs?: number;
-    /** Non-empty opaque provider request id. */
-    requestId?: ProviderRequestId;
-}
-/**
- * Typed error for LLM-related failures. Extends {@link HarnessError}, so the
- * `code` string (e.g. `AUTH`, `RATE_LIMIT`, `NO_ADAPTER`) is shared taxonomy.
- */
-export declare class LlmError extends HarnessError {
-    /** Serializable facts retained beside this live Error. */
-    readonly failure: LlmFailure;
-    /**
-     * @param message - non-empty human-readable failure summary.
-     * @param code - non-empty stable provider-neutral machine code.
-     * @param options - optional cause and validated serializable provider facts.
-     */
-    constructor(message: string, code: string, options?: LlmErrorOptions);
-}
-/**
- * Accept one supplied credential, or refuse it as unusable.
- *
- * A stored key arrives from the credentials seam, a `.env` line, or a shell
- * export, all of which pick up surrounding whitespace, so trimming is silent.
- * Anything else fails here rather than inside `fetch`, whose ByteString
- * refusal names a UTF-16 code point instead of the setting to change. The key
- * never enters the message: `ref` names where to fix it, and echoing any part
- * of a secret into a log or a UI is the failure this diagnosis avoids.
- *
- * Lives beside {@link LlmError} rather than in `./api-key.ts` so the predicate
- * module stays dependency-free; both adapters share this one diagnosis instead
- * of keeping near-identical local copies.
- * @param raw - the credential exactly as supplied.
- * @param pkg - the refusing package name, prefixed to the diagnostic.
- * @param ref - the credential reference the value resolved through.
- * @returns the trimmed, usable key.
- */
-export declare function assertUsableApiKey(raw: string, pkg: string, ref: string): string;
 //# sourceMappingURL=error.d.ts.map

@@ -28,7 +28,7 @@ Status: implemented
 
 可配置提供方目录跟随 profiles，因此每当一条声明路由出现或离开它都会变化。「撤销旧注册再新建一个」表达不了这件事：注册表拒绝的候选集合——比如一份键为 `deepseek-official` 的 profile，而 `llm-deepseek` 已声明了它——会让本插件的整个目录被撤走、Models 页变空，而且是静默的，因为 settings 变更回调把失败容住了。因此 `registerConfigurableProviders` 改为返回带 `replace(entries)` 的句柄，其「候选集先整体校验」的原子性与 `registerAdapter` 相同，插件改用它。被拒的替换只付出一条诊断；先前的条目继续服务。
 
-解析失败得响亮，并点名出问题的路由与模型：catalog 未描述的模型会回落到该路由自己的 `defaultContextWindow`／`defaultMaxTokens`，因此只公布 id 的列表也能得到可服务的路由；catalog 未提供的路由需要 `api`、`baseURL` 和非空的 `models` 列表。由于构造出的 `Provider` 是解析结果的一部分，协议或模型出错时最后可用的路由集合会继续服务——与此前坏的 settings 快照的行为完全一致。
+严格写入会点名出问题的路由与模型。目录未描述的模型使用路由的 `defaultContextWindow`／`defaultMaxTokens`；手工声明路由需要 `api`、`baseURL` 和非空的 `models`。已存储配置中的目录失效遵循[原生目录恢复决策](../bug-fix/2026-09-09-native-catalog-upgrade-recovery.zh.md)：保留修复诊断和独立有效的模型，不阻止 Settings 注册。上述不可变请求快照和目录原子更新规则保持不变。
 
 可配置提供方目录现在是已安装 catalog **与**当前 profile 声明的每条路由的并集，并在该集合变化时重新登记。没有这个并集，手工声明的路由就没有 settings 地址，任何配置界面都无法展示或编辑它。
 

@@ -23,11 +23,13 @@ const ARK_RUNTIME_REPOSITORY_INPUTS = [
   'pnpm-workspace.yaml',
   'tsconfig.base.json',
   'tsconfig.host.json',
+  'tsconfig.native.json',
   'tsconfig.json',
   'tsdown.config.ts',
   'scripts/build-host-bundles.ts',
   'scripts/tsdown-host-package.config.ts',
   'integrations/jiuzhang/src/pack-runtime.mjs',
+  'integrations/jiuzhang/src/build-native.mjs',
   'integrations/jiuzhang/src/runtime-plan.mjs',
   'integrations/jiuzhang/src/runtime-closure.mjs',
   'integrations/jiuzhang/native/build-app.sh',
@@ -264,7 +266,7 @@ function scriptFileCandidates(manifest) {
   return [...new Set(values)]
 }
 
-async function sourceInputFiles(repositoryRoot, packageRoot, manifest, packlist) {
+async function sourceInputFiles(repositoryRoot, packageRoot, manifest, packlist, sourceOnly) {
   const files = new Set()
   const addFile = async path => {
     const physical = resolve(path)
@@ -298,16 +300,23 @@ async function sourceInputFiles(repositoryRoot, packageRoot, manifest, packlist)
       || /^tsconfig\..+\.json$/u.test(entry.name)
     )) files.add(path)
   }
-  for (const tree of PACKAGE_INPUT_TREES) await addTree(join(packageRoot, tree))
+  for (const tree of PACKAGE_INPUT_TREES) {
+    if (sourceOnly && tree === 'lib') continue
+    await addTree(join(packageRoot, tree))
+  }
   for (const entry of packlist ?? []) await addFile(join(repositoryRoot, entry.sourcePath))
-  for (const candidate of scriptFileCandidates(manifest)) await addFile(resolve(packageRoot, candidate))
+  for (const candidate of scriptFileCandidates(manifest)) {
+    const path = resolve(packageRoot, candidate)
+    if (sourceOnly && path.startsWith(`${join(packageRoot, 'lib')}/`)) continue
+    await addFile(path)
+  }
   return [...files].sort()
 }
 
-async function sourceInputDigest(repositoryRoot, packageRoot, manifest, packlist) {
+async function sourceInputDigest(repositoryRoot, packageRoot, manifest, packlist, sourceOnly) {
   const digest = createHash('sha256')
   const inputs = []
-  for (const path of await sourceInputFiles(repositoryRoot, packageRoot, manifest, packlist)) {
+  for (const path of await sourceInputFiles(repositoryRoot, packageRoot, manifest, packlist, sourceOnly)) {
     const inputPath = relative(repositoryRoot, path).replaceAll('\\', '/')
     const fileSha256 = createHash('sha256').update(await readFile(path)).digest('hex')
     digest.update(`${inputPath}\u0000${fileSha256}\n`)
@@ -628,6 +637,9 @@ function supportsArkRuntimeTarget(manifest) {
 
 /** Resolve one runtime-template asset back to its current repository source. */
 export function runtimeAssetSource(repositoryRoot, relativePath) {
+  if (relativePath === 'patches/@earendil-works+pi-ai@0.85.1.patch') {
+    return join(repositoryRoot, relativePath)
+  }
   if (ARK_RUNTIME_PROFILE_FILES.has(relativePath)) {
     return join(repositoryRoot, 'integrations/jiuzhang/profile', relativePath.slice('jiuzhang/profile/'.length))
   }
@@ -640,10 +652,13 @@ export function runtimeAssetSource(repositoryRoot, relativePath) {
 /**
  * Build the exact current-source workspace closure rooted at Ark's dedicated runner.
  * @param {string} root - absolute DeepSeek Harness repository root.
- * @param {{requireBuilt?: boolean, allowForbiddenAnalysis?: boolean, allowIdentityAnalysis?: boolean, verifyPacklists?: boolean}} options - build controls.
+ * @param {{requireBuilt?: boolean, allowForbiddenAnalysis?: boolean, allowIdentityAnalysis?: boolean, verifyPacklists?: boolean, sourceOnly?: boolean}} options - sourceOnly derives compiler inputs without accepting them as a package receipt.
  * @returns {Promise<object>} deterministic closure plan for pack and receipt generation.
  */
 export async function createArkRuntimePlan(root, options = {}) {
+  if (options.sourceOnly === true && (options.requireBuilt === true || options.verifyPacklists === true)) {
+    throw new Error('Ark source-only compiler planning cannot attest built packages or packlists')
+  }
   if (!isAbsolute(root)) throw new Error('Ark runtime plan root must be absolute')
   const repositoryRoot = await realpath(resolve(root))
   const policyPath = join(repositoryRoot, 'integrations/jiuzhang/profile/forbidden-runtime-packages.json')
@@ -768,6 +783,7 @@ export async function createArkRuntimePlan(root, options = {}) {
         record.packageRoot,
         record.manifest,
         packlist,
+        options.sourceOnly === true,
       )
       packages[index] = {
         name,
@@ -806,6 +822,7 @@ export async function createArkRuntimePlan(root, options = {}) {
     options.allowIdentityAnalysis,
   )
   const digest = createHash('sha256')
+  if (options.sourceOnly === true) digest.update('ark-compiler-source-only\n')
   for (const entry of packages) {
     digest.update(`${entry.name}\u0000${entry.version}\u0000${entry.manifestSha256}\u0000${entry.sourceSha256}\n`)
   }
@@ -818,6 +835,7 @@ export async function createArkRuntimePlan(root, options = {}) {
   const sourceDigest = digest.digest('hex')
   return {
     version: 3,
+    inputPlane: options.sourceOnly === true ? 'source' : 'package',
     target: ARK_RUNTIME_TARGET.id,
     deferredPlatforms: ['win-x64'],
     roots: [...ARK_RUNTIME_ROOT_PACKAGES],

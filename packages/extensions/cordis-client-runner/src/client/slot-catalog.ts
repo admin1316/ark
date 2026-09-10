@@ -121,7 +121,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'Optional detail for the Tool call correlated with an approval request.',
     registerOptions: [],
     ownerProps: [
-      '/** Stable identity handed to an optional approval-detail renderer. */\nexport interface ApprovalDetailOwnerProps {\n  /** Tool call correlated with the request. */\n  callId: ToolCallId\n}',
+      '/** Stable identity handed to an optional approval-detail renderer. */\nexport interface ApprovalDetailOwnerProps {\n  /** Tool call correlated with the request. */\n  callId: CallId\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -266,7 +266,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Stable owner currency delivered to a keyed Chat renderer. */\nexport interface ChatNodeOwnerProps {\n  selectedCallId?: ToolCallId | undefined\n  cwd?: string | undefined\n  openFile: (path: string) => void\n  inspectCall: (callId: ToolCallId) => void\n  forkAt: (seq: number) => void\n  renderMessageImages: RenderMessageImages\n  fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined\n  /** Turn-process state when this Node belongs to a projected Turn. */\n  turnProcess?: TurnProcessOwnerProps | undefined\n}',
+      '/** Stable owner currency delivered to a keyed Chat renderer. */\nexport interface ChatNodeOwnerProps {\n  selectedCallId?: CallId | undefined\n  cwd?: string | undefined\n  openFile: (path: string) => void\n  inspectCall: (callId: CallId) => void\n  forkAt: (seq: number) => void\n  renderMessageImages: RenderMessageImages\n  fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined\n  /** Turn-process state when this Node belongs to a projected Turn. */\n  turnProcess?: TurnProcessOwnerProps | undefined\n}',
     ],
     ownerPropsReferences: [
       'MarkdownFileMentions',

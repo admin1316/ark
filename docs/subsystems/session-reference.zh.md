@@ -129,6 +129,27 @@ Types: [Agent](core.zh.md)
 
 Source: [`packages/context/file-reference/src/index.ts`](../../packages/context/file-reference/src/index.ts)
 
+<a id="ctxsessionfilereferences--sessionfilereferences"></a>
+
+### `ctx.sessionFileReferences` — `SessionFileReferences`
+
+Host Remote adapter over the composed file-reference provider.
+
+```ts cordis-catalog
+/**
+ * List file and directory candidates for one Agent's working directory.
+ * @param agent - target Agent resolved from the Session identity on the wire.
+ * @param query - path text following `@` or `@"`.
+ * @param signal - caller cancellation.
+ * @returns deterministic path-only candidates from the composed provider.
+ */
+@Remote list( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>
+```
+
+Types: [Agent](core.zh.md)
+
+Source: [`packages/api/session-controller/src/file-references.ts`](../../packages/api/session-controller/src/file-references.ts)
+
 <a id="ctxsessionreferenceresolver--sessionreferenceresolver"></a>
 
 ### `ctx.sessionReferenceResolver` — `SessionReferenceResolver`

@@ -89,6 +89,14 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
 
   // --- Service API (delegated to the coordinator) ---
 
+  delete(id: SessionId): Promise<boolean> {
+    return this.coordinator.delete(id)
+  }
+
+  deleteStored(id: SessionId): Promise<boolean> {
+    return Promise.resolve(this.store.delete(id))
+  }
+
   locate(_meta: SessionHeader): undefined {
     return undefined
   }
@@ -193,6 +201,7 @@ class ControlledBackend implements PersistenceBackend<never> {
   readonly name = 'session-persistence-controlled'
   readonly store: MemoryStore = new Map()
   readonly lifecycle: string[] = []
+  deleteStored(id: SessionId): Promise<boolean> { return Promise.resolve(this.store.delete(id)) }
   lastAppendedBatch: readonly SessionEvent[] | undefined
   appendAttempts = 0
   loadAttempts = 0

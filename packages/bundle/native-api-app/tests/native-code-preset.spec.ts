@@ -1,80 +1,24 @@
 /** Real Native Host composition for the shared Code preset and run_code. */
 
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { boot, healProfilesModuleFallback, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
-import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-tools'
-
-const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
-const basePatch = join(repoRoot, 'packages/bundle/base/cordis.patch.yml')
-const nativePatch = join(repoRoot, 'packages/bundle/native-api-app/cordis.patch.yml')
-const profilePatch = join(repoRoot, 'integrations/jiuzhang/profile/cordis.patch.yml')
-const nativeRunnerAnchor = join(repoRoot, 'packages/boot/native-api-runner/package.json')
-const sharedPresetRoot = join(repoRoot, 'packages/boot/profile-runner/config/agent-presets')
+import { createNativePresetRuntime } from './native-preset-runtime.ts'
 
 describe('Native Code preset composition', () => {
   let context: Context
-  let home: string
-  let previousHome: string | undefined
+  let dispose: (() => Promise<void>) | undefined
 
   beforeAll(async () => {
-    home = await mkdtemp(join(tmpdir(), 'dsh-native-code-preset-'))
-    previousHome = process.env.DSH_HOME
-    process.env.DSH_HOME = home
-    healProfilesModuleFallback(nativeRunnerAnchor, home)
-    const profileDir = join(home, 'profiles', 'native-code')
-    await mkdir(profileDir, { recursive: true })
-    const rootConfig = join(profileDir, 'cordis.yml')
-    await writeFile(rootConfig, '[]\n')
-    const patches: PatchOptions[] = [
-      ...loadOverlayPatches('dsh-native-test', basePatch),
-      ...loadOverlayPatches('dsh-native-test', nativePatch),
-      ...loadOverlayPatches('dsh-native-test', profilePatch),
-      { id: 'settings', config: { path: join(home, 'settings.yaml'), watch: false } },
-      { id: 'credentials', config: { mode: 'file' } },
-      { id: 'storage-json', config: { root: join(home, 'storages') } },
-      {
-        id: 'knowledge-wiki',
-        config: {
-          wikiRoot: join(home, 'knowledge/wiki'),
-          mainRoot: join(home, 'knowledge'),
-          apiKey: '',
-          llmProvider: 'deepseek-official',
-          llmModel: 'deepseek-v4-flash',
-        },
-      },
-      {
-        id: 'agent-presets',
-        config: {
-          default: 'standard',
-          roots: [{ path: sharedPresetRoot, trust: 'system' }],
-          includeUserRoot: false,
-        },
-      },
-      { id: 'webserver', disabled: true },
-      { id: 'native-api-runtime', disabled: true },
-      { id: 'host-connection', disabled: true },
-      { id: 'native-events', disabled: true },
-      { id: 'session-telemetry-otel', disabled: true },
-    ]
-    context = await boot('dsh-native-test', rootConfig, patches, (ctx) => {
-      provideCmdline(ctx, { args: ['--port', '0'], exit: () => {} })
-    })
+    const runtime = await createNativePresetRuntime()
+    context = runtime.context
+    dispose = runtime.dispose
   }, 120_000)
 
   afterAll(async () => {
-    await context?.fiber.dispose()
-    if (previousHome === undefined) delete process.env.DSH_HOME
-    else process.env.DSH_HOME = previousHome
-    if (home !== undefined) await rm(home, { recursive: true, force: true })
+    await dispose?.()
   })
 
   it('mounts code while a standard Agent remains live without cross-preset Team registration', async () => {

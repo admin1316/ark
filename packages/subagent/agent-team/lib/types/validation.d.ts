@@ -1,16 +1,15 @@
-/** Input normalization shared by Team roster and task commands. */
 /**
- * Normalize one required human-authored string.
- * @param value - raw input value.
+ * Normalize a required human-authored string.
+ * @param value - raw input.
  * @param field - diagnostic field name.
- * @param maxLength - maximum normalized character count.
+ * @param maxLength - normalized character limit.
  * @returns trimmed non-empty text.
  */
 export declare function requiredText(value: string, field: string, maxLength: number): string;
 /**
- * Normalize one workspace-relative path prefix without treating it as a lock.
- * @param value - user-authored path prefix.
- * @returns normalized slash-separated prefix.
+ * Normalize an advisory workspace-relative path prefix, not a write lock.
+ * @param value - authored path prefix.
+ * @returns slash-separated relative prefix.
  */
 export declare function writeScope(value: string): string;
 //# sourceMappingURL=validation.d.ts.map

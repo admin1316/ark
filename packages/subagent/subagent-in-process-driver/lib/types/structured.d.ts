@@ -4,7 +4,7 @@
  * scope, so concurrent runs do not interact and disposal leaves no global residue. The prompt
  * contribution is ordinary reconstructed request state.
  *
- * Capture commits only after the authoritative `tools/result` succeeds; Code Mode capture also
+ * Capture commits only after the authoritative `tools/result` succeeds; PTC mode capture also
  * waits for the enclosing `run_code` result. The terminal result marker and monotonic tool
  * guard prevent later calls from reopening a completed structured run.
  * @module @deepseek-ai/dsh-subagent-in-process-driver/structured
@@ -14,8 +14,8 @@ import { type ObjectJsonSchema } from '@deepseek-ai/dsh-tools';
 /** The model-facing tool name a structured child must call to finish. */
 export declare const STRUCTURED_OUTPUT_TOOL = "structured_output";
 /**
- * The instruction registered as the child's trailing (order-190, the end of
- * the tool-guidance band) scoped prompt section: the demand travels with the
+ * The instruction registered as the child's trailing scoped prompt section:
+ * the demand travels with the
  * tool, as ordinary prompt state of exactly one agent.
  */
 export declare const STRUCTURED_OUTPUT_INSTRUCTION: string;

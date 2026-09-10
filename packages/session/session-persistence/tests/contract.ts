@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest'
 import { SESSION_FORMAT_VERSION, Session, SessionId, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SurfaceEventType, SurfaceIntent } from '@deepseek-ai/dsh-session'
-import { ToolCallId, MessageId, createMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, MessageId, createMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionPersistence } from '../src/index.ts'
 
 /** A backend under test plus its teardown. */
@@ -83,6 +83,94 @@ export function appendLog(session: Session, events: readonly SessionEvent[]): vo
  */
 export function runPersistenceContract(name: string, make: () => Promise<ContractBackend>): void {
   describe(`SessionPersistence contract: ${name}`, () => {
+    it('deletes a cold session and awaits cleanup after releasing its write chain', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const m = meta('delete-cold', '/work')
+        await persistence.create(m)
+        await persistence.append(m.id, oneTurnLog())
+        await persistence.inspect(m.id)
+        const notified = Promise.withResolvers<undefined>()
+        const cleanup = Promise.withResolvers<undefined>()
+        persistence.ctx.on('session-persistence/deleted', async (id) => {
+          expect(id).toBe(m.id)
+          await expect(persistence.inspect(id)).rejects.toThrow('not found')
+          notified.resolve(undefined)
+          await cleanup.promise
+        })
+        let settled = false
+        const deleting = persistence.delete(m.id).then((removed) => { settled = true; return removed })
+        await notified.promise
+        expect(settled).toBe(false)
+        cleanup.resolve(undefined)
+        await expect(deleting).resolves.toBe(true)
+        expect(await persistence.list()).toEqual([])
+        await expect(persistence.delete(m.id)).resolves.toBe(false)
+      } finally {
+        await dispose()
+      }
+    })
+
+    it('retries failed derived cleanup even after the durable session is gone', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const m = meta('delete-cleanup-retry')
+        await persistence.create(m)
+        await persistence.append(m.id, oneTurnLog())
+        let calls = 0
+        persistence.ctx.on('session-persistence/deleted', () => {
+          calls++
+          if (calls === 1) throw new Error('derived cleanup failed')
+        })
+        let cleaned = 0
+        persistence.ctx.on('session-persistence/deleted', () => { cleaned++ })
+        await expect(persistence.delete(m.id)).rejects.toThrow('derived cleanup failed; retry deletion')
+        expect(cleaned).toBe(1)
+        expect(await persistence.list()).toEqual([])
+        await expect(persistence.delete(m.id)).resolves.toBe(false)
+        expect(calls).toBe(2)
+        expect(cleaned).toBe(2)
+      } finally {
+        await dispose()
+      }
+    })
+
+    it('refuses deletion while a preparation reserves the stored identity', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const m = meta('delete-reserved')
+        const log = oneTurnLog()
+        await persistence.create(m)
+        await persistence.append(m.id, log)
+        const prepared = await persistence.prepare(m.id)
+        try {
+          await expect(persistence.delete(m.id)).rejects.toMatchObject({
+            name: 'SessionPersistenceDeleteBlockedError', reason: 'reserved',
+          })
+        } finally {
+          prepared[Symbol.dispose]()
+        }
+        expect((await persistence.inspect(m.id)).events).toEqual(log)
+        await expect(persistence.delete(m.id)).resolves.toBe(true)
+      } finally {
+        await dispose()
+      }
+    })
+
+    it('refuses deletion of a live session', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const id = SessionId('delete-live')
+        const session = persistence.ctx.sessions.create(id)
+        await expect(persistence.delete(id)).rejects.toMatchObject({
+          name: 'SessionPersistenceDeleteBlockedError', reason: 'live',
+        })
+        expect(persistence.ctx.sessions.get(id)).toBe(session)
+      } finally {
+        await dispose()
+      }
+    })
+
     it('round-trips a session: create + append → load returns identical meta and byte-identical events', async () => {
       const { persistence, dispose } = await make()
       try {
@@ -184,7 +272,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
             message: createMessage({
               role: 'assistant',
               content: [
-                { type: 'tool-call', id: ToolCallId('call-x'), name: 'bash', arguments: '{}' },
+                { type: 'tool-call', id: CallId('call-x'), name: 'bash', arguments: '{}' },
               ],
               source: {
                 kind: 'model',
@@ -205,8 +293,8 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         const synthetic = loaded.events.find(e => e.type === 'tool/result')
         expect(synthetic?.type === 'tool/result' && synthetic.data).toMatchObject({
           message: {
-            source: { kind: 'tool', callId: ToolCallId('call-x') },
-            content: [{ type: 'tool-result', toolCallId: ToolCallId('call-x'), isError: true }],
+            source: { kind: 'tool', callId: CallId('call-x') },
+            content: [{ type: 'tool-result', toolCallId: CallId('call-x'), isError: true }],
           },
           error: { code: TOOL_NOT_STARTED },
         })
@@ -215,7 +303,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         const call = loaded.events.findLast(e => e.type === 'assistant/message')
         const callId = call?.type === 'assistant/message'
           && call.data.message.content.find(b => b.type === 'tool-call')
-        expect(callId && callId.type === 'tool-call' && callId.id).toBe(ToolCallId('call-x'))
+        expect(callId && callId.type === 'tool-call' && callId.id).toBe(CallId('call-x'))
       } finally {
         await dispose()
       }
@@ -234,7 +322,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
             message: createMessage({
               role: 'assistant',
               content: [
-                { type: 'tool-call', id: ToolCallId('call-risk'), name: 'write', arguments: '{}' },
+                { type: 'tool-call', id: CallId('call-risk'), name: 'write', arguments: '{}' },
               ],
               source: {
                 kind: 'model',
@@ -242,7 +330,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
               },
             }),
           }, surfaceOp: 'append' },
-          { type: 'tool/call', seq: 3, time: 4, data: { turn: 1, step: 1, callId: ToolCallId('call-risk'), name: 'write', arguments: '{}' } },
+          { type: 'tool/call', seq: 3, time: 4, data: { turn: 1, step: 1, callId: CallId('call-risk'), name: 'write', arguments: '{}' } },
         ])
 
         const loaded = await persistence.load(m.id)
@@ -258,7 +346,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         const resumed = Session.create(m.id, loaded.events, loaded.meta)
         const resumedResult = resumed.deriveMessages().find(message => message.content.some(block => block.type === 'tool-result'))
         expect(resumedResult?.content[0]).toMatchObject({
-          type: 'tool-result', toolCallId: ToolCallId('call-risk'), isError: true,
+          type: 'tool-result', toolCallId: CallId('call-risk'), isError: true,
         })
       } finally {
         await dispose()

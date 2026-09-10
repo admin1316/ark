@@ -94,7 +94,7 @@ This section explains how discovery and watching are organized; the observable b
 
 ### Design concept
 
-The provider is built on two separations. First, catalog versus body: discovery parses frontmatter into summaries, while every load re-reads the file, so body edits need no hash, revision, or cache invalidation. Second, discovery versus watching: `list()` scans roots and resolves the project root through `ctx.fs` when a filesystem service is present (falling back to abortable Node I/O), while a separate watch manager owns Chokidar handles, missing-root probes, and invalidation.
+The provider is built on two separations. First, catalog versus body: discovery parses frontmatter into summaries, while every load re-reads the file, so body edits need no hash, revision, or cache invalidation. Second, discovery versus watching: project and custom roots use `ctx.fs` when that service is present, while operator-owned user roots and bundled roots use abortable host Node I/O so an Agent's workspace filesystem cannot hide them. A separate watch manager owns Chokidar handles, missing-root probes, and invalidation.
 
 ### Source map
 
@@ -105,7 +105,7 @@ The provider is built on two separations. First, catalog versus body: discovery 
 
 ### Discovery flow
 
-Discovery resolves the root list for the lookup cwd, asks the watch manager to attach to each root, then scans each root's direct entries: directory bundles resolve `<name>/SKILL.md`, flat files resolve `<name>.md`. Each file is parsed for frontmatter — `name` must be kebab-case, `description` is required, and the invocation keys resolve through the strict boolean grammar — and candidates carry the root's source label and rank so the registry can merge them with other providers. Confirmed missing paths are valid empty state; malformed or non-text entries warn and skip.
+Discovery resolves the root list for the lookup cwd, asks the watch manager to attach to each root, then scans each root's direct entries: directory bundles resolve `<name>/SKILL.md`, flat files resolve `<name>.md`. Each file is parsed for frontmatter — `name` must be kebab-case, `description` is required, and the invocation keys resolve through the strict boolean grammar — and candidates retain the root's source, rank, and host-read classification so later body loads use the same filesystem authority as discovery. Confirmed missing paths are valid empty state; malformed or non-text entries warn and skip, while an unexpected entry failure makes the observation incomplete without discarding readable siblings.
 
 ### Watching and invalidation
 

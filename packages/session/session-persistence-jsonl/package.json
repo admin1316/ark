@@ -38,6 +38,7 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-atomic-write": "workspace:^",
     "koffi": "^3.1.0",
     "@deepseek-ai/schemastery": "workspace:^"
   },

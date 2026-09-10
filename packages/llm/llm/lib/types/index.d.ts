@@ -6,23 +6,24 @@
  * @module @deepseek-ai/dsh-llm
  */
 import { Context } from '@deepseek-ai/cordis';
+import z from '@deepseek-ai/schemastery';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import type { GenerateOptions, LlmConfigurableProvider, LlmDiscoveredModel, LlmImageRequestPricing, LlmModelDiscoveryRequest, LlmModelInfo, LlmResolvedModelInfo, LlmProviderInfo, LlmProviderVerificationMode, RemoteLlmDiscoverModelsRequest, RemoteLlmDiscoveredModelsResult, RemoteLlmModelsResult, RemoteLlmProviderMutationRequest, RemoteLlmProviderMutationResult, RemoteLlmProviderResumeRequest, RemoteLlmProviderTransactionRequest, RemoteLlmProviderTransactionResult, RemoteLlmProviderVerificationRequest, RemoteLlmProviderVerificationResult, RemoteLlmProvidersResult, StreamChunk } from './types.ts';
+import type { GenerateOptions, LlmConfigurableProvider, LlmDiscoveredModel, LlmFailure, LlmImageRequestPricing, LlmModelContext, LlmModelDiscoveryRequest, LlmModelDiscoveryOperation, LlmModelInfo, LlmResolvedModelInfo, RemoteLlmDiscoverModelsRequest, RemoteLlmDiscoveredModelsResult, RemoteLlmModelsResult, RemoteLlmProvidersResult, LlmProviderInfo, LlmProviderVerificationMode, ModelModality, StreamChunk } from './types.ts';
 import type { ResolvedRetryPolicy } from './retry-policy.ts';
-import type { LlmCallConfig } from './call-config.ts';
-import { LlmAdapter, type AdapterRegistrationHandle, type DirectoryRegistrationHandle, type PreparedLlmCall } from './adapter.ts';
+import type { ProviderRequestId } from './brand.ts';
+import type { LlmCallConfig, LlmCallConfigAdapterDefaults } from './call-config.ts';
+import { HarnessError } from './error.ts';
+import type { RemoteLlmProviderMutationRequest, RemoteLlmProviderMutationResult, RemoteLlmProviderResumeRequest, RemoteLlmProviderTransactionRequest, RemoteLlmProviderTransactionResult, RemoteLlmProviderVerificationRequest, RemoteLlmProviderVerificationResult } from './types.ts';
 export * from './attribution.ts';
 export * from './brand.ts';
 export * from './never.ts';
 export * from './error.ts';
-export * from './adapter.ts';
 export * from './api-key.ts';
 export * from './types.ts';
 export * from './content.ts';
 export * from './message.ts';
 export * from './retry-policy.ts';
 export { BlockAssembler } from './assembler.ts';
-export { isCredentialHeaderName, projectRemoteModel } from './remote.ts';
 export { callConfigEquals, deepFreeze, isAgentLoopRequest, markAgentLoopRequest } from './call-config.ts';
 export type { LlmCallConfig, LlmCallConfigAdapterDefaults } from './call-config.ts';
 declare module '@deepseek-ai/cordis' {
@@ -45,12 +46,201 @@ declare module '@deepseek-ai/cordis' {
         'llm/stream'(this: LlmRuntime, options: GenerateOptions, next: () => AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>;
     }
 }
+/** Structured provider facts and cause accepted by {@link LlmError}. */
+export interface LlmErrorOptions extends ErrorOptions {
+    /** Valid HTTP status observed at the provider boundary. */
+    status?: number;
+    /** Positive finite provider-requested delay in milliseconds. */
+    providerRetryAfterMs?: number;
+    /** Non-empty opaque provider request id. */
+    requestId?: ProviderRequestId;
+}
 /**
- * Stable identity for the exact endpoint/protocol a one-shot discovery
- * credential may reach. The fingerprint contains no credential material.
- * @param baseURL - candidate endpoint typed by the caller.
- * @param api - candidate wire protocol, defaulted like the discovery owner.
- * @returns SHA-256 endpoint identity.
+ * Typed error for LLM-related failures. Extends {@link HarnessError}, so the
+ * `code` string (e.g. `AUTH`, `RATE_LIMIT`, `NO_ADAPTER`) is shared taxonomy.
+ */
+export declare class LlmError extends HarnessError {
+    /** Serializable facts retained beside this live Error. */
+    readonly failure: LlmFailure;
+    /**
+     * @param message - non-empty human-readable failure summary.
+     * @param code - non-empty stable provider-neutral machine code.
+     * @param options - optional cause and validated serializable provider facts.
+     */
+    constructor(message: string, code: string, options?: LlmErrorOptions);
+}
+/**
+ * Accept one supplied credential, or refuse it as unusable.
+ *
+ * A stored key arrives from the credentials seam, a `.env` line, or a shell
+ * export, all of which pick up surrounding whitespace, so trimming is silent.
+ * Anything else fails here rather than inside `fetch`, whose ByteString
+ * refusal names a UTF-16 code point instead of the setting to change. The key
+ * never enters the message: `ref` names where to fix it, and echoing any part
+ * of a secret into a log or a UI is the failure this diagnosis avoids.
+ *
+ * Lives beside {@link LlmError} rather than in `./api-key.ts` so the predicate
+ * module stays dependency-free; both adapters share this one diagnosis instead
+ * of keeping near-identical local copies.
+ * @param raw - the credential exactly as supplied.
+ * @param pkg - the refusing package name, prefixed to the diagnostic.
+ * @param ref - the credential reference the value resolved through.
+ * @returns the trimmed, usable key.
+ */
+export declare function assertUsableApiKey(raw: string, pkg: string, ref: string): string;
+/** One model call whose config and adapter registration were resolved together. */
+export interface PreparedLlmCall {
+    /** Detached, deep-frozen config with any adapter-owned default materialized. */
+    readonly config: LlmCallConfig;
+    /** Immutable retry policy captured with the adapter registration. */
+    readonly retryPolicy: ResolvedRetryPolicy;
+    /** Detached context metadata resolved with the registration-bound call. */
+    readonly context?: LlmModelContext;
+    /** Exact model modalities captured with the adapter dispatch generation. */
+    readonly inputModalities?: readonly ModelModality[];
+    /** Config fields materialized by the captured adapter rather than proposed by the caller. */
+    readonly adapterDefaults: LlmCallConfigAdapterDefaults;
+    /**
+     * Dispatch this call once through the registration captured during
+     * preparation. The request's call-config fields must match {@link config};
+     * reuse or mismatch fails with `INVALID_PREPARED_CALL`.
+     * @param options - fully assembled request carrying the prepared config.
+     * @returns the chunk stream, including the `llm/stream` waterfall.
+     */
+    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;
+}
+/** One adapter-owned model-resolution generation bound to its eventual stream call. */
+export interface PreparedAdapterCall {
+    /** Exact model metadata from the same adapter generation as {@link stream}. */
+    readonly model: LlmResolvedModelInfo;
+    /** Dispatch through that generation without re-reading dynamic connection facts. */
+    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;
+}
+/**
+ * Provider-wire adapter for the harness message and stream vocabulary. Register implementations
+ * with `ctx.llm.registerAdapter(providers, adapter)`. Every provider HTTP request must include
+ * `attributionHeaders()`; prove the headers are added in the wire request or library header hook. The direct-fetch
+ * DeepSeek and library-backed pi-ai adapters meet this contract through different internals.
+ */
+export declare abstract class LlmAdapter {
+    /**
+     * Describe one provider route owned by this adapter.
+     * @param provider - a route passed to `registerAdapter()` for this instance.
+     * @returns detached display metadata whose id must equal `provider`.
+     */
+    providerInfo(provider: string): LlmProviderInfo;
+    /**
+     * Return the provider-owned retry policy captured with this route.
+     * @param _provider - a route passed to `registerAdapter()` for this instance.
+     * @returns a resolved policy, or `undefined` to use the normal defaults.
+     */
+    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;
+    /**
+     * Resolve provider-side request-image pricing for one exact model route.
+     * The default declares none, so consumers fall back to their own neutral
+     * estimate. Implementations must answer synchronously without I/O; the
+     * token meter resolves this per measurement.
+     * @param _provider - a route passed to `registerAdapter()` for this instance.
+     * @param _model - exact model id passed to {@link GenerateOptions.model}.
+     * @returns route-owned image pricing, or `undefined` when the route declares none.
+     */
+    imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;
+    /**
+     * List models this adapter can currently advertise for one owned provider.
+     * The result is advisory: an adapter may accept unlisted model ids, and
+     * consumers must not turn absence into request rejection.
+     * @param _provider - one provider route owned by this adapter.
+     * @returns discoverable models in adapter-preferred order.
+     */
+    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;
+    /**
+     * Resolve all metadata available for one exact model. This query is
+     * independent of the advisory catalog and does not validate request routing.
+     * @param provider - one provider route owned by this adapter.
+     * @param model - exact model id passed to {@link GenerateOptions.model}.
+     * @param _signal - cancellation for this exact-model lookup; asynchronous
+     *   implementations must settle promptly after it aborts.
+     * @returns provider/model identity plus any context, call-default, and reasoning metadata.
+     */
+    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;
+    /**
+     * Attempt a protocol-native, non-generative exact-route verification.
+     * @param _provider - registered provider route.
+     * @param _model - exact configured model.
+     * @param _signal - owner cancellation signal.
+     * @returns metadata proof, reachability-only evidence, or undefined for a bounded generation fallback.
+     */
+    verifyProvider(_provider: string, _model: string, _signal: AbortSignal): Promise<LlmProviderVerificationMode | undefined>;
+    /**
+     * Bind exact model metadata and the eventual request dispatch to one adapter generation.
+     * Dynamic adapters override this so settings changes between preparation and
+     * dispatch cannot combine one generation's capabilities with another's endpoint.
+     * @param provider - registered provider route.
+     * @param model - exact model id.
+     * @param signal - cancellation for model resolution.
+     * @returns model metadata and a one-generation stream entry point.
+     */
+    prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;
+    /**
+     * Stream one model call as raw chunks. The only required method.
+     * @param options - the fully-assembled request; implementations must honor `options.signal`.
+     * @returns the chunk stream, obeying the adapter contract documented on `StreamChunk`.
+     */
+    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;
+}
+/**
+ * What {@link LlmRuntime.registerAdapter} returns: the disposer, plus an
+ * atomic route replacement for the same adapter instance.
+ */
+export interface AdapterRegistrationHandle {
+    /** Release every route this registration currently holds. */
+    (): void;
+    /**
+     * Replace this registration's routes with `providers`, keeping the same
+     * adapter instance. The candidate set is validated in full first — a
+     * conflict with another adapter, an invalid name, or bad provider metadata
+     * throws and leaves the current routes untouched — and the swap itself is
+     * one synchronous section, so no request can observe a gap. An empty array
+     * is legal here (a settings section that emptied holds zero routes while
+     * staying registered), unlike an empty initial registration.
+     *
+     * Throws `LlmError` with code `REGISTRATION_DISPOSED` once the registration
+     * has been released: its routes are gone and its disposer has already run,
+     * so anything registered afterwards would have no owner left to release it.
+     * @param providers - the complete next route set for this registration.
+     */
+    replace(providers: string[]): void;
+}
+/**
+ * A live configurable-provider registration, disposable and atomically
+ * replaceable — the directory counterpart of {@link AdapterRegistrationHandle}.
+ */
+export interface DirectoryRegistrationHandle {
+    /** Withdraw every entry this registration currently holds. */
+    (): void;
+    /**
+     * Replace this registration's entries with `entries`. The candidate set is
+     * validated in full first — an entry another registration already declares,
+     * a duplicate within the set, or invalid metadata throws and leaves the
+     * current entries untouched — and the swap is one synchronous section, so no
+     * reader observes a gap. An empty array is legal here, unlike an empty
+     * initial registration.
+     *
+     * Throws `LlmError` with code `REGISTRATION_DISPOSED` once the registration
+     * has been disposed.
+     */
+    replace(entries: readonly LlmConfigurableProvider[]): void;
+}
+/** Configuration-time verification deadlines, resolved before the LLM service starts. */
+export interface LlmRuntimeConfig {
+    verificationTimeoutMs: number;
+    verificationCancellationGraceMs: number;
+}
+/**
+ * Identify the exact endpoint and protocol authorized for a one-shot discovery credential.
+ * @param baseURL - candidate endpoint supplied by the caller.
+ * @param api - candidate protocol, defaulted like the discovery owner.
+ * @returns credential-free SHA-256 endpoint identity.
  */
 export declare function modelDiscoveryEndpointFingerprint(baseURL: string, api?: string): string;
 /**
@@ -58,67 +248,66 @@ export declare function modelDiscoveryEndpointFingerprint(baseURL: string, api?:
  * API, interceptable via the `llm/stream` waterfall.
  */
 export declare class LlmRuntime extends TypertRemoteService {
+    static Config: z<Partial<LlmRuntimeConfig>, LlmRuntimeConfig>;
+    private readonly config;
+    private readonly verificationLifetime;
+    private readonly verifications;
+    private readonly providerTransactions;
     private adapters;
     private directory;
     private discoveries;
-    private readonly verifications;
-    constructor(ctx: Context);
-    /** Keep generic Settings Remote writes out of provider-owned namespaces. */
-    private syncProtectedSettingsNamespaces;
+    constructor(ctx: Context, config?: Partial<LlmRuntimeConfig>);
+    private protectProviderSettings;
     /**
-     * Read configurable providers through the domain-owned Native Remote.
-     * @returns the redacted configurable-provider catalog.
+     * Run one bounded exact-route probe without returning provider output or credentials.
+     * @param request - configured provider and model to verify.
+     * @param signal - caller cancellation combined with the configured Host deadline.
+     * @returns authentication evidence, or explicitly unverified catalog reachability.
      */
-    remoteProviders(): RemoteLlmProvidersResult;
+    remoteVerifyProvider(request: RemoteLlmProviderVerificationRequest, signal: AbortSignal): Promise<RemoteLlmProviderVerificationResult>;
     /**
-     * Commit one idempotent provider settings/credential transaction.
-     * @param request - provider mutation and expected revision.
-     * @param signal - Caller cancellation before durable claim; claimed commits retain ownership until settled.
-     * @returns the committed provider mutation result.
+     * Verify one exact route while retaining admission until cancelled work actually settles.
+     * @param provider - registered provider route.
+     * @param model - exact configured model.
+     * @param signal - owner cancellation and deadline.
+     * @returns native metadata evidence or a bounded one-token generation handshake.
      */
-    remoteMutateProvider(request: RemoteLlmProviderMutationRequest, signal?: AbortSignal): Promise<RemoteLlmProviderMutationResult>;
+    verifyModel(provider: string, model: string, signal: AbortSignal): Promise<LlmProviderVerificationMode>;
+    private performProviderVerification;
     /**
-     * Read the durable, secret-free state of one provider mutation.
-     * @param request - Provider id and transaction UUID to inspect.
-     * @returns Current durable phase and whether a staged credential is still required.
+     * Commit a Native profile and credential change through the existing storage owners.
+     * @param request - caller-stable transaction identity, revision and profile edits.
+     * @param signal - cancellation before durable claim; claimed work keeps its ownership.
+     * @returns committed redacted settings only after owner activation succeeds.
+     */
+    remoteMutateProvider(request: RemoteLlmProviderMutationRequest, signal: AbortSignal): Promise<RemoteLlmProviderMutationResult>;
+    /**
+     * Inspect a durable provider transaction without changing its journal or credentials.
+     * @param request - provider and transaction identity retained by the native client.
+     * @returns the recorded phase or outcome and whether recovery needs a write-only credential.
      */
     remoteProviderTransaction(request: RemoteLlmProviderTransactionRequest): Promise<RemoteLlmProviderTransactionResult>;
     /**
-     * Continue one journaled provider mutation after Host or app restart.
-     * @param request - Provider id, transaction UUID, and optional write-only credential replay.
-     * @param signal - Caller cancellation before resuming a durable commit.
-     * @returns Committed provider view or the transaction's durable terminal failure.
+     * Resume the existing durable plan instead of rebuilding edits from a refreshed UI.
+     * @param request - stored transaction identity and optional missing credential.
+     * @param signal - cancellation before durable claim only.
+     * @returns the redacted committed state or the transaction's recovery failure.
      */
-    remoteResumeProvider(request: RemoteLlmProviderResumeRequest, signal?: AbortSignal): Promise<RemoteLlmProviderMutationResult>;
+    remoteResumeProvider(request: RemoteLlmProviderResumeRequest, signal: AbortSignal): Promise<RemoteLlmProviderMutationResult>;
     /**
-     * Read the failure-isolated host-scoped model catalog.
-     * @returns the model catalog grouped by provider.
+     * Join the configurable directory with live adapter routes for Native Settings.
+     * @returns declared and active-only provider rows, without credentials.
+     */
+    remoteProviders(): RemoteLlmProvidersResult;
+    /**
+     * Read the host model catalog with failure isolation between providers.
+     * @returns model groups and value-free provider failures.
      */
     remoteModels(): Promise<RemoteLlmModelsResult>;
-    /**
-     * Interrogate a draft endpoint with an optional write-only one-shot key.
-     * @param request - draft endpoint and discovery options.
-     * @param signal - caller-owned cancellation signal.
-     * @returns discovered models and provider diagnostics.
-     */
-    remoteDiscoverModels(request: RemoteLlmDiscoverModelsRequest, signal: AbortSignal): Promise<RemoteLlmDiscoveredModelsResult>;
-    /**
-     * Execute one bounded exact provider/model/auth probe.
-     * @param request - Exact provider and model route to verify.
-     * @param signal - Caller cancellation combined with the Host verification deadline.
-     * @returns Verification mode used by the adapter or fallback request.
-     */
-    remoteVerifyProvider(request: RemoteLlmProviderVerificationRequest, signal: AbortSignal): Promise<RemoteLlmProviderVerificationResult>;
-    /** Present only public LLM operations to the Remote adapter. */
-    private remoteRuntime;
     /** Notify topology observers without letting one broken listener veto the commit. */
     private emitAdaptersUpdated;
     /** Contained-listener diagnostic shared by the sync and async failure paths. */
     private warnAdaptersListenerFailure;
-    /** Release a fire-and-forget registration without leaking cleanup failures. */
-    private disposeRegistration;
-    /** Record a registration cleanup failure through the service logger. */
-    private warnRegistrationDisposalFailure;
     /**
      * Register an adapter for the given provider routes. Throws `LlmError` with code
      * `DUPLICATE_ADAPTER` if any provider already has an adapter (all-or-nothing).
@@ -168,10 +357,10 @@ export declare class LlmRuntime extends TypertRemoteService {
      * directory, and because a provider being *added* has no route to name yet.
      * Disposed with the fiber.
      * @param settingsNs - the namespace whose profiles this discovery serves.
-     * @param discover - interrogates one endpoint; must honor `request.signal`.
+     * @param discover - interrogates one endpoint and must honor the supplied signal.
      * @returns the disposer that withdraws the offer.
      */
-    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>): () => void;
+    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryOperation, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;
     /**
      * Interrogate one provider endpoint for the models it advertises. The
      * request describes a draft, not a stored route, so nothing here reads or
@@ -179,9 +368,18 @@ export declare class LlmRuntime extends TypertRemoteService {
      * candidate metadata a surface may offer for adoption.
      * @param settingsNs - namespace whose registered discovery serves this draft.
      * @param request - the endpoint, protocol, and one-shot credential to use.
+     * @param signal - caller cancellation.
      * @returns the advertised models, deduplicated in endpoint order.
      */
-    discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>;
+    discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;
+    /**
+     * Remote adapter for one draft provider interrogation.
+     * @param request - namespace, endpoint, protocol, and one-shot credential to use.
+     * @param signal - caller cancellation supplied by the Remote carrier.
+     * @returns advertised models in the Native response envelope.
+     * @throws TypertRemoteFailure with `model-discovery-failed` when discovery refuses or fails.
+     */
+    remoteDiscoverModels(request: RemoteLlmDiscoverModelsRequest, signal: AbortSignal): Promise<RemoteLlmDiscoveredModelsResult>;
     /**
      * Resolve the retry policy captured when one provider route was registered.
      * @param provider - registered provider route to inspect.
@@ -189,11 +387,13 @@ export declare class LlmRuntime extends TypertRemoteService {
      */
     providerRetryPolicy(provider: string): ResolvedRetryPolicy;
     /**
-     * Resolve route-owned request-image pricing without performing I/O. Unknown
-     * routes intentionally degrade to heuristic pricing for historical logs.
-     * @param provider - provider route whose registered adapter owns pricing.
-     * @param model - exact model id whose image occurrences will be priced.
-     * @returns route-owned pricing, or `undefined` when the route supplies none.
+     * Resolve provider-side request-image pricing for one exact route, or
+     * `undefined` when the provider is unregistered or declares none. Unknown
+     * providers degrade to `undefined` rather than throwing because callers
+     * price durable history whose route may no longer be mounted.
+     * @param provider - provider route named by a request header.
+     * @param model - exact model id named by the same header.
+     * @returns the owning adapter's image pricing for the route, when declared.
      */
     imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;
     /** Detach typed adapter-owned modality metadata. */
@@ -215,18 +415,6 @@ export declare class LlmRuntime extends TypertRemoteService {
      * @returns exact model identity plus available context and reasoning metadata.
      */
     resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;
-    /**
-     * Prove an exact provider/model route can authenticate and complete a bounded
-    * request. The caller supplies the deadline signal; no output is retained or
-    * returned to configuration surfaces.
-     * @param provider - Registered provider route to authenticate.
-     * @param model - Exact model id to probe.
-     * @param signal - Caller-owned deadline and cancellation signal.
-     * @returns Adapter-native or bounded fallback verification mode.
-     */
-    verifyModel(provider: string, model: string, signal: AbortSignal): Promise<LlmProviderVerificationMode>;
-    /** Adapter-native metadata probe, falling back to one discarded-token handshake. */
-    private performProviderVerification;
     private resolveModelInfoFor;
     /** Validate and detach one adapter-returned exact model result. */
     private normalizeModelInfo;
@@ -268,9 +456,8 @@ export declare class LlmRuntime extends TypertRemoteService {
      * and the target provider. Final adapter selection remains fixed through
      * asynchronous exact-model resolution and dispatch. Adapter selection,
      * dispatch, and iteration failures become terminal `error` or `aborted`
-     * finish chunks; middleware, nested-call, and consumer failures remain
-     * thrown. A downstream-close cleanup failure is logged so it cannot mask
-     * the consumer's own completion or failure.
+     * finish chunks; middleware, nested-call, cleanup, and consumer failures
+     * remain thrown.
      * @param options - the full request; `options.provider` selects the adapter.
      * @returns the chunk stream, possibly wrapped by `llm/stream` listeners.
      */

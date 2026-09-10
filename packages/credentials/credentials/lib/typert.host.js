@@ -45,7 +45,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-credentials/types#RemoteCredentialsDescription',
         schema: _deepseek_ai_dsh_credentials_credentials_describe_result$schema,
       },
-      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":288,"column":9},
+      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":330,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-credentials#credentials/set',
@@ -81,7 +81,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-credentials#credentials/set:result',
         schema: _deepseek_ai_dsh_credentials_credentials_set_result$schema,
       },
-      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":318,"column":9},
+      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":360,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-credentials#credentials/unset',
@@ -107,7 +107,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-credentials#credentials/unset:result',
         schema: _deepseek_ai_dsh_credentials_credentials_unset_result$schema,
       },
-      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":339,"column":9},
+      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":381,"column":9},
     },
   ],
   model: {
@@ -137,16 +137,16 @@ export const TYPERT = {
           {
             "kind": "method",
             "name": "set",
-            "signature": "abstract set(ref: CredentialRef, value: string): Promise<void>",
+            "signature": "abstract set(ref: CredentialRef, value: string, expected?: CredentialCondition): Promise<void>",
             "summary": "Durably store one value in the provider-managed writable source.",
-            "jsDoc": "/**\n * Durably store one value in the provider-managed writable source. Rejects\n * while a read-only source shadows the reference — the write would appear\n * to succeed while resolution keeps returning the shadowing value — and\n * rejects an empty value (use {@link unset}).\n * @param ref - the reference to store.\n * @param value - the non-empty secret value.\n */"
+            "jsDoc": "/**\n * Durably store one value in the provider-managed writable source. Rejects\n * while a read-only source shadows the reference — the write would appear\n * to succeed while resolution keeps returning the shadowing value — and\n * rejects an empty value (use {@link unset}).\n * @param ref - the reference to store.\n * @param value - the non-empty secret value.\n * @param expected - optional condition checked under the same exclusion as all reference writes; a mismatch rejects without writing.\n */"
           },
           {
             "kind": "method",
             "name": "unset",
-            "signature": "abstract unset(ref: CredentialRef): Promise<void>",
+            "signature": "abstract unset(ref: CredentialRef, expected?: CredentialCondition): Promise<void>",
             "summary": "Remove one reference from the provider-managed writable source; removing an absent reference is a no-op.",
-            "jsDoc": "/**\n * Remove one reference from the provider-managed writable source; removing\n * an absent reference is a no-op. Rejects while a read-only source shadows\n * the reference, like {@link set}.\n * @param ref - the reference to remove.\n */"
+            "jsDoc": "/**\n * Remove one reference from the provider-managed writable source; removing\n * an absent reference is a no-op. Rejects while a read-only source shadows\n * the reference, like {@link set}.\n * @param ref - the reference to remove.\n * @param expected - optional condition checked under the same exclusion as all reference writes; a mismatch rejects without deleting.\n */"
           },
           {
             "kind": "method",
@@ -172,9 +172,9 @@ export const TYPERT = {
           {
             "kind": "method",
             "name": "modifyRecord",
-            "signature": "abstract modifyRecord( key: CredentialKey, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>, ): Promise<CredentialRecord | undefined>",
+            "signature": "abstract modifyRecord( key: CredentialKey, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>, references?: readonly { ref: CredentialRef; expected: CredentialCondition }[], ): Promise<CredentialRecord | undefined>",
             "summary": "Serialized read-modify-write over one record — the only write path.",
-            "jsDoc": "/**\n * Serialized read-modify-write over one record — the only write path.\n * `mutate` sees the record as it stands at the moment the write is\n * exclusive, and returning `undefined` leaves the entry untouched. Exclusion\n * holds across processes where the backing store supports it, which is what\n * makes a token refresh safe: two processes rotating one refresh token\n * concurrently would otherwise lose whichever wrote first.\n * @param key - the record to modify.\n * @param mutate - receives the current record and returns its replacement, or `undefined` to leave it.\n * @returns the record after the write, or the current one when `mutate` declined.\n */"
+            "jsDoc": "/**\n * Serialized read-modify-write over one record — the only write path.\n * `mutate` sees the record as it stands at the moment the write is\n * exclusive, and returning `undefined` leaves the entry untouched. Exclusion\n * holds across processes where the backing store supports it, which is what\n * makes a token refresh safe: two processes rotating one refresh token\n * concurrently would otherwise lose whichever wrote first.\n * @param key - the record to modify.\n * @param mutate - receives the current record and returns its replacement, or `undefined` to leave it.\n * @param references - optional conditions checked before `mutate`, with exclusion held through commit.\n * Callbacks must not enqueue writes on this provider.\n * @returns the record after the write, or the current one when `mutate` declined.\n */"
           },
           {
             "kind": "method",
@@ -213,6 +213,10 @@ export const TYPERT = {
           {
             "name": "Branded",
             "declaration": "export type Branded<B extends string> = string & { readonly [BRAND]: B; };"
+          },
+          {
+            "name": "CredentialCondition",
+            "declaration": "export interface CredentialCondition {\n    valueDigest: string | null;\n    source?: string;\n}"
           },
           {
             "name": "CredentialInfo",

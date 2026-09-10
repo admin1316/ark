@@ -84,6 +84,14 @@ export interface SubagentCatalog {
   readonly parentAvailable: boolean
 }
 
+/** Persistent acknowledgement for a Native caller's idempotent prompt. */
+export interface RemoteSubagentPromptReceipt {
+  readonly invocationId: string
+  readonly messageId: MessageId
+  readonly durable: true
+  readonly duplicate: boolean
+}
+
 /** Durable parent/child address that selects subagent transport in the client. */
 export type SubagentAddress =
   & {
@@ -134,6 +142,10 @@ export interface SubagentControlErrorDetailsMap {
   'subagent-unauthorized': { readonly childSessionId: SessionId }
   'subagent-delivery-unavailable': { readonly childSessionId: SessionId }
   'subagent-projections-unavailable': Record<never, never>
+  'input-invalid': { readonly childSessionId: SessionId }
+  'subagent-not-found': { readonly parentSessionId: SessionId; readonly childSessionId: SessionId }
+  'subagent-catalog-diagnostic': { readonly childSessionId: SessionId; readonly reason: string }
+  'service-unavailable': Record<never, never>
   internal: Record<never, never>
 }
 

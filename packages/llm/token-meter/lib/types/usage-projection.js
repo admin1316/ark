@@ -76,11 +76,11 @@ const contextPressureStateSchema = z.object({
  * Token-meter's session projection unit.
  *
  * Usage chunks provide an early sample that survives a later request failure;
- * an assistant message provides the final sample for the same turn/step. A
- * repeated sample replaces that step's earlier value instead of double
- * counting it. The single `last` slot relies on the session-log invariant
- * that usage reports for one turn/step are adjacent: once a later step begins,
- * a legal log never reports usage for an earlier step again.
+ * an assistant message provides the final sample for the same attempt. A
+ * repeated sample replaces that attempt's earlier value instead of double
+ * counting it, while `llm/retry-started` closes the replacement slot so the
+ * retried attempt adds to the total. The single `last` slot relies on the
+ * session-log invariant that usage reports for one attempt are adjacent.
  */
 export const tokenUsageProjectionDefinition = {
     key: 'tokenUsage',

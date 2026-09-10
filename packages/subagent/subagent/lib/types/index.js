@@ -4,10 +4,8 @@
  * child before returning its run, so fulfillment is the single publication and
  * ownership-transfer boundary.
  *
- * Unlike the bash seam (one executor per context, second load throws), MULTIPLE
- * providers coexist here: each registers under a unique name and a caller picks
- * one by name. The shape mirrors the LLM adapter registry
- * (`LlmRuntime.registerAdapter`), not the single-service bash executor.
+ * Multiple providers coexist: each registers under a unique name and callers
+ * select one by name.
  *
  * This package owns the Service Definition role of the capability seam. Service Providers
  * (`@deepseek-ai/dsh-subagent-spawn-in-process`, `-fork`, `-acp`) and the model-facing
@@ -64,9 +62,10 @@ var __esDecorate = (this && this.__esDecorate) || function (ctor, descriptorIn, 
     if (target) Object.defineProperty(target, contextIn.name, descriptor);
     done = true;
 };
-import { isTypertRemoteFailure, Remote, TypertLookupFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import { scopeTarget } from '@deepseek-ai/dsh-scope';
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools';
+import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
+import { canonicalClientTimeZone, catalogView, rejectCatalogRead, rejectControl, rejectPrompt, validateControlRequest, } from "./control.js";
 import { SubagentError } from "./error.js";
 import { assertSubagentMaxDepth } from "./depth.js";
 import { createActivationObserver, createLifecycleEmitter, observeRun } from "./lifecycle.js";
@@ -88,18 +87,18 @@ export { appendDelegatedPolicyOverrides, applyChildComposition, captureDelegated
 let SubagentRuntime = (() => {
     let _classSuper = TypertRemoteService;
     let _instanceExtraInitializers = [];
-    let _remoteList_decorators;
+    let _remoteExportList_decorators;
     let _remoteHistory_decorators;
     let _remotePrompt_decorators;
     let _remoteInterrupt_decorators;
     return class SubagentRuntime extends _classSuper {
         static {
             const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
-            _remoteList_decorators = [Remote('list')];
+            _remoteExportList_decorators = [Remote('list')];
             _remoteHistory_decorators = [Remote('history')];
             _remotePrompt_decorators = [Remote('prompt')];
             _remoteInterrupt_decorators = [Remote('interrupt')];
-            __esDecorate(this, null, _remoteList_decorators, { kind: "method", name: "remoteList", static: false, private: false, access: { has: obj => "remoteList" in obj, get: obj => obj.remoteList }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _remoteExportList_decorators, { kind: "method", name: "remoteExportList", static: false, private: false, access: { has: obj => "remoteExportList" in obj, get: obj => obj.remoteExportList }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _remoteHistory_decorators, { kind: "method", name: "remoteHistory", static: false, private: false, access: { has: obj => "remoteHistory" in obj, get: obj => obj.remoteHistory }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _remotePrompt_decorators, { kind: "method", name: "remotePrompt", static: false, private: false, access: { has: obj => "remotePrompt" in obj, get: obj => obj.remotePrompt }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _remoteInterrupt_decorators, { kind: "method", name: "remoteInterrupt", static: false, private: false, access: { has: obj => "remoteInterrupt" in obj, get: obj => obj.remoteInterrupt }, metadata: _metadata }, null, _instanceExtraInitializers);
@@ -137,9 +136,9 @@ let SubagentRuntime = (() => {
         }
         /**
          * Establish one durable continuable child and deliver its initial prompt.
-         * Resolves only after the child's inbox insertion crosses the configured
-         * Session durability barrier; it does not wait for the turn to finish. A
-         * failure before inbox acceptance rolls the child back entirely.
+         * Resolves when the child's inbox accepts that prompt, without waiting for the
+         * turn to start or for the message to reach the Session log; any earlier
+         * failure rejects with no ids and rolls back the child entirely.
          * @param spec - provider, delegation request, and caller cancellation.
          * @returns the durable child id and the accepted prompt's message id.
          * @throws when continuation services are unavailable or materialization fails.
@@ -158,7 +157,7 @@ let SubagentRuntime = (() => {
          * @param content - user-role content to deliver.
          * @param options - the message source fields and caller cancellation, which stops the
          *   operation only before inbox acceptance.
-         * @returns the durably accepted message's inbox id.
+         * @returns the accepted message's inbox id after the Session flush barrier, without waiting for model completion.
          * @throws when continuation services are unavailable, parent authority is
          *   rejected, or the message was not admitted.
          */
@@ -166,20 +165,12 @@ let SubagentRuntime = (() => {
             return this.requireContinuations().followup(parent, childId, content, options);
         }
         /**
-         * Deliver a continuable child's FIFO follow-up and expose its durable receipt.
-         * Exact invocation retries reuse the original message id without another turn;
-         * {@link SubagentContinuationManager.followupReceipt} owns retry validation.
-         * The durability wait continues after inbox acceptance despite caller cancellation;
-         * persistence failure rejects without retracting the accepted message.
-         * @param parent - Exact live direct parent authorizing this delivery.
-         * @param childId - Durable child session id, resumed if a new delivery needs it.
-         * @param content - User-role content, unchanged when retrying an invocation.
-         * @param options - Durable source, optional matching `subagent-prompt` invocation
-         *   key, and cancellation that owns new admission only until inbox acceptance.
-         * @returns The accepted message id, `durable: true`, and whether this is a
-         *   duplicate invocation; receipt success does not wait for turn completion.
-         * @throws When continuation services are unavailable, delivery is unauthorized,
-         *   invocation validation or admission fails, or resume/persistence fails.
+         * Deliver through the continuation owner's durable retry boundary.
+         * @param parent - exact live direct parent.
+         * @param childId - durable child session id.
+         * @param content - content to deliver once per invocation.
+         * @param options - source, retry identity, and pre-admission cancellation.
+         * @returns receipt after the Session flush barrier; a failed flush does not retract acceptance.
          */
         async followupReceipt(parent, childId, content, options) {
             return this.requireContinuations().followupReceipt(parent, childId, content, options);
@@ -225,7 +216,7 @@ let SubagentRuntime = (() => {
          * @returns the exact Cordis effect disposer.
          */
         registerContinuableSetup(contribution) {
-            // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+            // oxlint-disable-next-line typescript/no-misused-promises -- synchronous disposer
             return this.ctx.effect(() => this.setupRegistry.register(contribution), 'subagents.registerContinuableSetup()');
         }
         /**
@@ -263,23 +254,16 @@ let SubagentRuntime = (() => {
         }
         /**
          * Enumerate the parent's direct session-backed subagents without loading or
-         * resuming an Agent and without any query service: the listing merges the live
-         * session store with optional session persistence (live-preferred) and
-         * serves each child's durable mode/label by applying the same strict
-         * `foldSubagentDescriptor()` used by cold resume to the child's own suffix.
-         * Exactly one own descriptor is valid; derived projection/cache state cannot
-         * override it or hide a duplicate. Per-child diagnostics contain malformed,
-         * missing, inherited-only, or duplicate identity and isolate failed reads.
-         * Absent persistence, enumeration is
-         * live-only (a cold child cannot be resumed then either, so its absence is
-         * capability absence, not an error). This service consults no Agent
-         * registrations, Activations, or providers.
+         * resuming an Agent. The Session query service supplies one live-preferred
+         * corpus and shared point observations; the projection cache supplies
+         * immutable descriptor hits without opening cold logs. The registered
+         * `subagent` projection remains the sole mode/label classifier.
          *
-         * Every persistence read receives `signal`, and the listing rechecks
-         * cancellation around each of those awaits. Read rejections that settle
+         * Every query receives `signal`, and the listing rechecks cancellation
+         * around each await. Read rejections that settle
          * after an abort become a stable `SubagentError` with code `CANCELLED`.
          * @param parentSessionId - parent session whose direct children are listed.
-         * @param signal - caller-owned cancellation forwarded to persistence reads
+         * @param signal - caller-owned cancellation forwarded to Session queries
          *   and observed around every read await.
          * @returns children and per-child diagnostics ordered by `createdAt`, then id.
          * @throws {@link SubagentError} when the projection registry or the session
@@ -287,156 +271,6 @@ let SubagentRuntime = (() => {
          */
         listChildren(parentSessionId, signal) {
             return listSubagentChildren(this.ctx, parentSessionId, signal);
-        }
-        /**
-         * List durable direct children without loading or resuming either side.
-         * @param parentSessionId - parent session whose direct children are listed.
-         * @param signal - caller-owned cancellation signal.
-         * @returns the child catalog and availability metadata.
-         */
-        async remoteList(parentSessionId, signal) {
-            const parent = parentSessionId;
-            try {
-                const entries = await this.listChildren(parent, signal);
-                if (signal.aborted)
-                    remoteSubagentFailure('cancelled', 'subagent catalog read was cancelled', {});
-                return {
-                    entries: entries.map(entry => entry.kind === 'child'
-                        ? {
-                            ...entry,
-                            activity: this.ctx.get('agents')?.get(entry.id)?.status === 'running' ? 'running' : 'inactive',
-                        }
-                        : entry),
-                    parentAvailable: this.ctx.get('agents')?.get(parent)?.status !== undefined,
-                };
-            }
-            catch (error) {
-                if (isTypertRemoteFailure(error))
-                    throw error;
-                remoteSubagentError(error, signal, 'subagent catalog read failed');
-            }
-        }
-        /**
-         * Read a bounded raw transcript only after the durable direct-child address
-         * has been verified. This never resumes either Agent.
-         * @param parentSessionId - parent session that owns the child.
-         * @param childSessionId - direct child session to read.
-         * @param mode - child mode required by the operation.
-         * @param beforeSeq - optional exclusive sequence cursor.
-         * @param maxMessages - optional maximum number of messages.
-         * @param signal - caller-owned cancellation signal.
-         * @returns the Session-owned bounded page; when `hasMore` is true, its first
-         * event sequence is the exclusive cursor for the next older request.
-         */
-        async remoteHistory(parentSessionId, childSessionId, mode, beforeSeq, maxMessages, signal) {
-            const parent = parentSessionId;
-            const child = childSessionId;
-            const entry = await this.remoteChild(parent, child, mode, signal);
-            if (entry.kind !== 'child') {
-                remoteSubagentFailure('subagent-catalog-diagnostic', `subagent "${childSessionId}" is ${entry.reason}`, {
-                    parentSessionId,
-                    childSessionId,
-                    reason: entry.reason,
-                });
-            }
-            const sessions = this.ctx.get('sessions');
-            if (sessions === undefined) {
-                remoteSubagentFailure('service-unavailable', 'subagent history requires the Session service', {});
-            }
-            const attached = sessions.get(child);
-            if (attached !== undefined && attached.header.parentSession !== parent) {
-                remoteSubagentFailure('subagent-unauthorized', 'subagent parent changed during history read', { childSessionId });
-            }
-            const page = await sessions.remoteExportHistory({
-                sessionId: child,
-                ...beforeSeq === undefined ? {} : { beforeSeq },
-                ...maxMessages === undefined ? {} : { maxMessages },
-            }, signal);
-            if (signal.aborted)
-                remoteSubagentFailure('cancelled', 'subagent history read was cancelled', {});
-            if (!page.ok) {
-                const details = page.error.details;
-                remoteSubagentFailure(page.error.code, page.error.message, details !== null && typeof details === 'object' && !Array.isArray(details) ? details : {});
-            }
-            return {
-                events: page.value.events,
-                hasMore: page.value.hasMore,
-            };
-        }
-        /**
-         * Deliver one human message through the exact live direct parent.
-         * @param agent - live parent Agent authorized to deliver the message.
-         * @param childSessionId - direct child session to prompt.
-         * @param content - user message content blocks.
-         * @param invocationId - caller-stable UUID used to deduplicate uncertain retries.
-         * @param signal - caller-owned cancellation signal.
-         * @returns the accepted message receipt.
-         */
-        async remotePrompt(agent, childSessionId, content, invocationId, signal) {
-            if (signal.aborted)
-                remoteSubagentFailure('cancelled', 'subagent prompt was cancelled', {});
-            const child = childSessionId;
-            await this.remoteChild(agent.id, child, 'continuable', signal);
-            try {
-                const receipt = await this.followupReceipt(agent, child, content, {
-                    source: {
-                        kind: 'subagent-prompt',
-                        form: 'relay',
-                        senderSessionId: agent.id,
-                        invocationId,
-                    },
-                    invocationId,
-                    signal,
-                });
-                return {
-                    invocationId,
-                    messageId: String(receipt.messageId),
-                    durable: true,
-                    duplicate: receipt.duplicate,
-                };
-            }
-            catch (error) {
-                if (isTypertRemoteFailure(error))
-                    throw error;
-                remoteSubagentError(error, signal, 'subagent prompt failed', { childSessionId });
-            }
-        }
-        /**
-         * Interrupt a continuable child under its durable direct-parent address.
-         * @param parentSessionId - parent session that owns the child.
-         * @param childSessionId - continuable child session to interrupt.
-         * @returns confirmation that interruption was accepted.
-         */
-        remoteInterrupt(parentSessionId, childSessionId) {
-            try {
-                this.interrupt(childSessionId, {
-                    kind: 'user',
-                    parentSessionId: parentSessionId,
-                });
-                return { accepted: true };
-            }
-            catch (error) {
-                remoteSubagentError(error, undefined, 'subagent interrupt failed', { childSessionId });
-            }
-        }
-        /** Verify the requested child and mode against the one catalog authority. */
-        async remoteChild(parentSessionId, childSessionId, mode, signal) {
-            try {
-                const entries = await this.listChildren(parentSessionId, signal);
-                const entry = entries.find(candidate => candidate.id === childSessionId);
-                if (entry === undefined || (entry.kind === 'child' && entry.mode !== mode)) {
-                    remoteSubagentFailure('subagent-not-found', `session "${childSessionId}" is not a ${mode} direct child of "${parentSessionId}"`, {
-                        parentSessionId,
-                        childSessionId,
-                    });
-                }
-                return entry;
-            }
-            catch (error) {
-                if (isTypertRemoteFailure(error))
-                    throw error;
-                remoteSubagentError(error, signal, 'subagent catalog read failed');
-            }
         }
         /**
          * Enumerate the root's complete session-backed subagent tree in stable
@@ -457,6 +291,176 @@ let SubagentRuntime = (() => {
             return listSubagentDescendants(this.ctx, rootSessionId, signal);
         }
         /**
+         * Remote face of {@link listChildren} for one browser: the durable listing
+         * plus live Agent activity and the delivery-time parent availability hint.
+         * Parent availability is a hint; {@link prompt} performs the authoritative
+         * check. Named apart from the provider-name {@link list}, which owns the
+         * member.
+         * @param parentSessionId - parent session whose direct children are listed.
+         * @param signal - carrier cancellation forwarded to Session queries.
+         * @returns the catalog view for that parent.
+         * @throws {TypertRemoteFailure} `bad-request` for an empty parent id,
+         *   `cancelled` for an aborted read, `subagent-projections-unavailable` when
+         *   the deployment has no projection registry, otherwise `internal`.
+         */
+        async remoteExportList(parentSessionId, signal) {
+            validateControlRequest('subagent.list', { parentSessionId });
+            try {
+                return catalogView(this.ctx, parentSessionId, await this.listChildren(parentSessionId, signal));
+            }
+            catch (error) {
+                return rejectCatalogRead(error, signal);
+            }
+        }
+        /**
+         * Deliver one browser-authored message to a continuable child through the
+         * exact live direct parent, retaining the caller-minted request identity and
+         * validated browser zone on the accepted message. Success identifies the
+         * message the child's FIFO inbox accepted; later execution is independent of
+         * this call.
+         * @param request - durable address, minted identity, content, and optional browser zone.
+         * @param signal - carrier cancellation, owning the call until inbox acceptance.
+         * @returns the accepted message's inbox identity.
+         * @throws {TypertRemoteFailure} `bad-request`, `invalid-time-zone`,
+         *   `subagent-parent-unavailable`, `subagent-not-resumable`,
+         *   `subagent-unauthorized`, `subagent-delivery-unavailable`, `cancelled`, or
+         *   `internal`.
+         */
+        async prompt(request, signal) {
+            const { parentSessionId, childSessionId, clientTimeZone } = request;
+            validateControlRequest('subagent.prompt', request);
+            const canonicalTimeZone = clientTimeZone === undefined
+                ? undefined
+                : canonicalClientTimeZone(clientTimeZone);
+            if (clientTimeZone !== undefined && canonicalTimeZone === undefined) {
+                return rejectControl('invalid-time-zone', 'clientTimeZone must be UTC or a valid IANA Area/Location name', { value: clientTimeZone });
+            }
+            const parent = this.ctx.get('agents')?.get(parentSessionId);
+            if (parent === undefined) {
+                return rejectControl('subagent-parent-unavailable', `parent session "${parentSessionId}" is not live`, { parentSessionId });
+            }
+            const source = {
+                kind: 'user',
+                rpcId: request.requestId,
+                ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
+            };
+            const content = [...request.content];
+            try {
+                return { messageId: await this.followup(parent, childSessionId, content, { source, signal }) };
+            }
+            catch (error) {
+                return rejectPrompt(error, childSessionId, signal);
+            }
+        }
+        /**
+         * Remote face of {@link interrupt} under one durable parent address. No
+         * catalog, history, persistence, or parent Agent lookup runs: the core
+         * primitive alone authorizes the address against the live Activation, which
+         * is what keeps a live child interruptible while its parent Agent is offline.
+         * Absent, idle, and already-completed targets are accepted no-ops there.
+         * @param childSessionId - durable child session id to interrupt.
+         * @param parentSessionId - durable direct parent whose authority is claimed.
+         * @param mode - required continuable-address discriminator.
+         * @returns acknowledgement that the cancel signal was admitted, not that the target is quiescent.
+         * @throws {TypertRemoteFailure} `bad-request` for an empty id,
+         *   `subagent-unauthorized` when the address does not own the live target,
+         *   otherwise `internal`.
+         */
+        interruptByParent(childSessionId, parentSessionId, mode) {
+            validateControlRequest('subagent.interrupt', { childSessionId, parentSessionId, mode });
+            try {
+                this.interrupt(childSessionId, { kind: 'user', parentSessionId });
+            }
+            catch (error) {
+                if (error instanceof SubagentError && error.code === 'UNAUTHORIZED') {
+                    return rejectControl('subagent-unauthorized', 'subagent does not belong to this parent', { childSessionId });
+                }
+                return rejectControl('internal', 'subagent interrupt failed', {});
+            }
+            return { accepted: true };
+        }
+        /**
+         * Read the Session owner's bounded page after verifying the direct-child address.
+         * @param parentSessionId - durable parent authorizing the read.
+         * @param childSessionId - direct child session id.
+         * @param mode - expected child mode.
+         * @param beforeSeq - exclusive cursor for an older page.
+         * @param maxMessages - bounded message count, validated by the Session owner.
+         * @param signal - read cancellation; neither Agent is resumed.
+         * @returns the original Session page, including its presentation projections.
+         */
+        async remoteHistory(parentSessionId, childSessionId, mode, beforeSeq, maxMessages, signal) {
+            await this.requireRemoteChild(parentSessionId, childSessionId, mode, signal);
+            const sessions = this.ctx.get('sessions');
+            if (sessions === undefined)
+                return rejectControl('service-unavailable', 'subagent history requires the Session service', {});
+            const page = await sessions.remoteExportHistory({
+                sessionId: childSessionId, expectedParentSessionId: parentSessionId,
+                ...beforeSeq === undefined ? {} : { beforeSeq },
+                ...maxMessages === undefined ? {} : { maxMessages },
+            }, signal);
+            if (signal.aborted)
+                return rejectControl('cancelled', 'subagent history read was cancelled', {});
+            if (!page.ok) {
+                const details = page.error.details;
+                throw new TypertRemoteFailure({
+                    code: page.error.code, message: page.error.message,
+                    details: details !== null && typeof details === 'object' && !Array.isArray(details) ? details : {},
+                });
+            }
+            return page.value;
+        }
+        /**
+         * Submit a Native draft under its stable retry identity through the live parent.
+         * @param agent - exact parent Agent supplied by the Gateway lookup.
+         * @param childSessionId - continuable direct child.
+         * @param content - human message content.
+         * @param invocationId - caller-stable UUID; conflicting reuse rejects.
+         * @param signal - cancellation before acceptance, not during the durability wait.
+         * @returns an original or newly committed message receipt.
+         */
+        async remotePrompt(agent, childSessionId, content, invocationId, signal) {
+            await this.requireRemoteChild(agent.id, childSessionId, 'continuable', signal);
+            try {
+                const receipt = await this.followupReceipt(agent, childSessionId, content, {
+                    source: { kind: 'subagent-prompt', form: 'relay', senderSessionId: agent.id, invocationId },
+                    invocationId, signal,
+                });
+                return { invocationId, ...receipt };
+            }
+            catch (error) {
+                return rejectPrompt(error, childSessionId, signal);
+            }
+        }
+        /**
+         * Interrupt a child using the continuation manager's direct-parent authority.
+         * @param parentSessionId - durable parent address.
+         * @param childSessionId - continuable child; absent targets are accepted no-ops.
+         * @returns signal admission, not completion of child teardown.
+         */
+        remoteInterrupt(parentSessionId, childSessionId) {
+            return this.interruptByParent(childSessionId, parentSessionId, 'continuable');
+        }
+        async requireRemoteChild(parentSessionId, childSessionId, mode, signal) {
+            validateControlRequest('subagent.history', { parentSessionId, childSessionId, mode });
+            let entries;
+            try {
+                entries = await this.listChildren(parentSessionId, signal);
+            }
+            catch (error) {
+                return rejectCatalogRead(error, signal);
+            }
+            if (signal.aborted)
+                return rejectControl('cancelled', 'subagent catalog read was cancelled', {});
+            const entry = entries.find(candidate => candidate.id === childSessionId);
+            if (entry === undefined || (entry.kind === 'child' && entry.mode !== mode)) {
+                return rejectControl('subagent-not-found', 'requested direct child is absent', { parentSessionId, childSessionId });
+            }
+            if (entry.kind === 'diagnostic') {
+                return rejectControl('subagent-catalog-diagnostic', 'requested child cannot be read', { childSessionId, reason: entry.reason });
+            }
+        }
+        /**
          * Register a provider under its name. Registration is effect-scoped and HMR
          * safe; removing a provider blocks new starts but does not revoke runs that
          * were already returned to their holders.
@@ -465,7 +469,7 @@ let SubagentRuntime = (() => {
          */
         registerProvider(provider) {
             const name = provider.name;
-            // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+            // oxlint-disable-next-line typescript/no-misused-promises -- synchronous disposer
             return this.ctx.effect(function* () {
                 if (this.providers.has(name)) {
                     throw new SubagentError(`a subagent provider named "${name}" is already registered`, 'DUPLICATE_PROVIDER');
@@ -564,7 +568,7 @@ let SubagentRuntime = (() => {
                 { when: request.persona !== undefined, cap: 'persona' },
             ];
             for (const { when, cap } of needs) {
-                if (when && provider.capabilities[cap] === false) {
+                if (when && !provider.capabilities[cap]) {
                     throw new SubagentError(`subagent provider "${provider.name}" does not support the "${cap}" capability`, 'UNSUPPORTED_CAPABILITY');
                 }
             }
@@ -572,30 +576,5 @@ let SubagentRuntime = (() => {
     };
 })();
 export { SubagentRuntime };
-/** Convert the subagent seam's typed failures into transport-safe Remote errors. */
-function remoteSubagentError(error, signal, fallback, details = {}) {
-    if (signal?.aborted || (error instanceof SubagentError && error.code === 'CANCELLED')) {
-        remoteSubagentFailure('cancelled', 'subagent operation was cancelled', {});
-    }
-    if (error instanceof SubagentError) {
-        if (error.code === 'INVALID_INVOCATION' || error.code === 'IDEMPOTENCY_CONFLICT') {
-            remoteSubagentFailure('input-invalid', error.message, details);
-        }
-        if (error.code === 'UNAUTHORIZED') {
-            remoteSubagentFailure('subagent-unauthorized', error.message, details);
-        }
-        if (error.code === 'CONTINUATION_UNAVAILABLE'
-            || error.code === 'DRAINING'
-            || error.code === 'ACTIVATION_CLOSING'
-            || error.code === 'PERSISTENCE_UNAVAILABLE') {
-            remoteSubagentFailure('subagent-delivery-unavailable', error.message, details);
-        }
-    }
-    remoteSubagentFailure('internal', `${fallback}: ${error instanceof Error ? error.message : String(error)}`, details);
-}
-/** Throw a serializable Remote failure. */
-function remoteSubagentFailure(code, message, details) {
-    throw new TypertLookupFailure({ code, message, details });
-}
 export default SubagentRuntime;
 //# sourceMappingURL=index.js.map

@@ -27,6 +27,8 @@ export interface PiAiReplayResponse {
   model: string
   responseModel?: string
   responseId?: string
+  /** Exact provider-native effort for this historical response; absent in older envelopes. */
+  providerThinkingLevel?: string
   stopReason: AssistantMessage['stopReason']
 }
 
@@ -78,6 +80,7 @@ export function toPiReplayState(message: AssistantMessage): ReplayEnvelope {
     model: message.model,
     ...message.responseModel === undefined ? {} : { responseModel: message.responseModel },
     ...message.responseId === undefined ? {} : { responseId: message.responseId },
+    ...message.providerThinkingLevel === undefined ? {} : { providerThinkingLevel: message.providerThinkingLevel },
     stopReason: message.stopReason,
   }
   return {
@@ -123,6 +126,9 @@ function readReplayState(value: unknown): PiAiReplayState {
   }
   if (response['responseModel'] !== undefined && typeof response['responseModel'] !== 'string') return invalidReplay('responseModel must be a string')
   if (response['responseId'] !== undefined && typeof response['responseId'] !== 'string') return invalidReplay('responseId must be a string')
+  if (response['providerThinkingLevel'] !== undefined && typeof response['providerThinkingLevel'] !== 'string') {
+    return invalidReplay('providerThinkingLevel must be a string')
+  }
   const blocks = envelope['blocks']
   if (!Array.isArray(blocks)) return invalidReplay('blocks must be an array')
   for (const [index, value] of blocks.entries()) {
@@ -215,6 +221,7 @@ function replayedAssistant(message: Message, source: ModelMessageSource, rawStat
     model: state.response.model,
     ...state.response.responseModel === undefined ? {} : { responseModel: state.response.responseModel },
     ...state.response.responseId === undefined ? {} : { responseId: state.response.responseId },
+    ...state.response.providerThinkingLevel === undefined ? {} : { providerThinkingLevel: state.response.providerThinkingLevel },
     usage: emptyPiUsage(),
     stopReason: state.response.stopReason,
     timestamp: 0,

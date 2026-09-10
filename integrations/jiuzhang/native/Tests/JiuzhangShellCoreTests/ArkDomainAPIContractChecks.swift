@@ -140,11 +140,11 @@ func runArkDomainAPIContractChecks() {
     "native Wiki queue fails closed on malformed task identity"
   )
   check(
-    ArkKnowledgeIngestInput.normalizedHTTPURL("  https://example.com/article  ")
+    ArkHTTPURLInput.normalizedHTTPURL("  https://example.com/article  ")
       == "https://example.com/article"
-      && ArkKnowledgeIngestInput.normalizedHTTPURL("file:///tmp/private.md") == nil
-      && ArkKnowledgeIngestInput.normalizedHTTPURL("javascript:alert(1)") == nil
-      && ArkKnowledgeIngestInput.normalizedHTTPURL("https:///missing-host") == nil,
+      && ArkHTTPURLInput.normalizedHTTPURL("file:///tmp/private.md") == nil
+      && ArkHTTPURLInput.normalizedHTTPURL("javascript:alert(1)") == nil
+      && ArkHTTPURLInput.normalizedHTTPURL("https:///missing-host") == nil,
     "native Wiki URL import admits only normalized http(s) inputs with a host"
   )
   let conflictedWrite = try? ArkDomainAPIContract.knowledgeWrite(from: .object([

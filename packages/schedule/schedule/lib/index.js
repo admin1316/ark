@@ -1,5 +1,4 @@
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
-import { isRecord } from "@deepseek-ai/dsh-sdk-protocol";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 //#region lib/types/domain.js
 /**
@@ -54,6 +53,10 @@ var ScheduleInputError = class extends Error {
 */
 function ScheduleId(value) {
 	return value;
+}
+/** Whether an unknown value is a non-array object. */
+function isRecord(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /** Require exactly the named durable object keys. */
 function hasExactKeys(value, expected) {
@@ -658,7 +661,7 @@ function renderThrown(value) {
 	return value instanceof Error ? value.message : String(value);
 }
 /** One process-local, disposable projection of an exact agent's durable schedules. */
-var ScheduleRuntime = class ScheduleRuntime {
+var ScheduleRuntime = class {
 	ctx;
 	agent;
 	stop = Promise.withResolvers();
@@ -745,8 +748,6 @@ var ScheduleRuntime = class ScheduleRuntime {
 		this.timer = void 0;
 	}
 	/** Arm one bounded timer segment; every wake rechecks the wall clock. */
-	/** Backoff before retrying a framing/followup failure so a due reminder is not silently lost. */
-	static DISPATCH_RETRY_DELAY_MS = 3e4;
 	arm(target, now) {
 		const delay = Math.min(target - now, MAX_TIMER_DELAY_MS);
 		this.timer = setTimeout(() => {
@@ -834,7 +835,6 @@ var ScheduleRuntime = class ScheduleRuntime {
 					this.agent.followup(message);
 				} catch (error) {
 					if (this.isLive()) this.ctx.logger.warn(`schedule: framing or followup failed for agent "${this.agent.id}": ${renderThrown(error)}`);
-					this.arm(Date.now() + ScheduleRuntime.DISPATCH_RETRY_DELAY_MS, Date.now());
 					return Promise.resolve(false);
 				}
 				try {

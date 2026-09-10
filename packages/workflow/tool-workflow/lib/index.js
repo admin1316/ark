@@ -68,10 +68,9 @@ function createWorkflowRecorder(ctx) {
 		})) active.delete(info.id);
 	});
 	return {
-		start(session, run, rootCallId) {
+		start(session, run) {
 			if (append(session, "tool-workflow/run-start", {
 				runId: run.id,
-				rootCallId,
 				name: run.meta.name
 			})) active.set(run.id, session);
 		},
@@ -241,7 +240,7 @@ function apply(ctx, config) {
 				signal: exec.signal
 			});
 			const recordsRun = exec.parent === void 0;
-			if (recordsRun) recorder.start(parent.session, run, exec.rootCallId);
+			if (recordsRun) recorder.start(parent.session, run);
 			const onAbort = () => {
 				run.cancel("parent step aborted");
 			};

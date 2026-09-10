@@ -103,10 +103,10 @@ func runArkChatScrollContractChecks() {
         && feed?.contains("let reconciliation = reconcileMarkdownSources(model: model)") == true
         && feed?.contains("reconciliation.sessionChanged\n        ? [:]") == true
         && feed?.contains("markdownProjectionState.beginRequest(for: source)") == true
-        && feed?.contains("markdownProjectionState.accept(request)") == true
+        && feed?.contains("markdownProjectionState.stage(blocks, for: request)") == true
         && feed?.contains("markdownProjectionState.cancel(request)") == true
         && feed?.contains("for task in markdownTasks.values { task.cancel() }") == true
-        && feed?.contains("snapshot.installing(blocks, for: source.id)") == true
+        && feed?.contains("snapshot.installing(ready)") == true
         && feed?.contains("transaction.disablesAnimations = true") == true
         && feed?.contains("markdownSessionID") == false
         && feed?.contains("markdownRequestTokens") == false
@@ -318,6 +318,42 @@ func runArkChatScrollContractChecks() {
     cancelled && !acceptedAfterCancellation && cancelledRevision == 0,
     "cancelled final-Markdown completion cannot install or advance content revision"
   )
+
+  var batchState = NativeAssistantMarkdownProjectionState()
+  let batchSources = (0..<128).map {
+    NativeAssistantMarkdownSource(
+      id: NativeAssistantMarkdownSourceID(messageID: $0, sourceSlot: 0),
+      source: "answer \($0)"
+    )
+  }
+  _ = batchState.reconcile(sessionID: "batch-a", requestedSources: batchSources)
+  for source in batchSources {
+    if let request = batchState.beginRequest(for: source) {
+      batchState.stage([.paragraph([.text(source.source)])], for: request)
+    }
+  }
+  check(batchState.installedSourceIDs.isEmpty, "staged Markdown does not publish individual completions")
+  check(batchState.takeReadyBlocks().count == 128, "128 completed Markdown sources drain in one batch")
+  check(batchState.takeReadyBlocks().isEmpty, "a drained Markdown batch cannot publish twice")
+
+  _ = batchState.reconcile(sessionID: "batch-b", requestedSources: [sourceA])
+  if let request = batchState.beginRequest(for: sourceA) {
+    batchState.stage([.paragraph([.text("stale")])], for: request)
+    _ = batchState.reconcile(sessionID: "batch-c", requestedSources: [sourceA])
+    check(batchState.takeReadyBlocks().isEmpty, "session switches discard staged Markdown before publication")
+    batchState.stage([.paragraph([.text("late")])], for: request)
+    check(batchState.takeReadyBlocks().isEmpty, "late completions cannot re-enter another session's batch")
+  }
+  if let request = batchState.beginRequest(for: sourceA) {
+    batchState.stage([.paragraph([.text("changed")])], for: request)
+    _ = batchState.reconcile(sessionID: "batch-c", requestedSources: [sourceB])
+    check(batchState.takeReadyBlocks().isEmpty, "changed source bytes discard an already staged result")
+  }
+  if let request = batchState.beginRequest(for: sourceB) {
+    batchState.stage([.paragraph([.text("cancelled")])], for: request)
+    _ = batchState.cancel(request)
+    check(batchState.takeReadyBlocks().isEmpty, "cancellation discards a staged result before publication")
+  }
 
   check(
     !NativeAssistantMarkdownPrefixPolicy.hasContent(

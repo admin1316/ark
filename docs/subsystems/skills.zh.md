@@ -242,6 +242,25 @@ interface Config {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxsessionskillcatalog--sessionskillcatalog"></a>
+
+### `ctx.sessionSkillCatalog` — `SessionSkillCatalog`
+
+Host service backing `ctx.remote.skills` without activating a cold Agent.
+
+```ts cordis-catalog
+/**
+ * List the user-invocable skills visible to one Session composition.
+ * @param request - Session identity whose cwd and preset select the catalog view.
+ * @param signal - caller lifetime carried by the Remote transport; admitted catalog reads retain their existing completion semantics.
+ * @returns user-invocable skill metadata without loading skill bodies.
+ * @throws TypertRemoteFailure when the Session cannot be inspected or no registry can serve it.
+ */
+@Remote async list(request: SkillListRequest, signal: AbortSignal): Promise<SkillListValue>
+```
+
+Source: [`packages/api/session-controller/src/skill-catalog.ts`](../../packages/api/session-controller/src/skill-catalog.ts)
+
 <a id="ctxskills--skillregistry"></a>
 
 ### `ctx.skills` — `SkillRegistry`
@@ -284,12 +303,11 @@ register(skill: SkillRegistration): () => void
 async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>
 
 /**
- * List user-invocable skills for one gateway-resolved Agent. The session's
- * stored cwd and the agent's scope are the only lookup inputs; no raw host
- * path crosses the Remote wire.
- * @param agent - gateway-resolved Agent whose skill scope is listed.
- * @param signal - caller-owned cancellation signal.
- * @returns the user-invocable skill catalog.
+ * List user-invocable skills for a gateway-resolved Agent.
+ * @param agent - Agent whose persisted cwd and scope determine visibility.
+ * @param signal - Caller-owned cancellation signal.
+ * @returns The user-invocable catalog without skill bodies.
+ * @throws TypertLookupFailure for cancellation, absent cwd, or provider failures.
  */
 @Remote('list') async remoteList(agent: Agent, signal: AbortSignal): Promise<RemoteSkillCatalog>
 

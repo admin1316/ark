@@ -2,9 +2,9 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { ModelSelectionPolicy } from './model-selection.ts';
 /**
- * Register discovery for one session-captured route policy.
- * @param ctx - The ctx input.
- * @param policy - The policy input.
+ * Register `list_subagent_models` for one owning delegation-tool instance.
+ * @param ctx - Context whose tool registry owns the fixed discovery definition.
+ * @param policy - Route policy captured for this Session.
  */
 export declare function registerListSubagentModels(ctx: Context, policy: ModelSelectionPolicy): void;
 //# sourceMappingURL=list-models.d.ts.map

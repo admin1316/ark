@@ -52,9 +52,10 @@ import { Document, isMap, isScalar, parseDocument, type YAMLError } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
-import { CredentialProvider, credentialRef, parseCredentialKey } from '@deepseek-ai/dsh-credentials'
+import { CredentialProvider, assertCredentialCondition, credentialRef, parseCredentialKey } from '@deepseek-ai/dsh-credentials'
 import type {
   ApiKeyRecord,
+  CredentialCondition,
   CredentialInfo,
   CredentialKey,
   CredentialRecord,
@@ -785,27 +786,15 @@ export class LocalCredentialProvider extends CredentialProvider {
     return Promise.resolve({ configured: false, writable: true })
   }
 
-  override async set(ref: CredentialRef, value: string): Promise<void> {
+  override async set(ref: CredentialRef, value: string, expected?: CredentialCondition): Promise<void> {
     if (value.length === 0) {
       throw new Error(`credentials-local: an empty value cannot be stored for "${ref}"; use unset`)
     }
-    this.assertUnshadowed(ref, 'set')
-    if (this.mode === 'keychain') {
-      await this.keychainSet(ref, value)
-      this.notifyUpdated(ref)
-      return
-    }
-    await this.write(ref, value)
+    await this.write(ref, value, expected)
   }
 
-  override async unset(ref: CredentialRef): Promise<void> {
-    this.assertUnshadowed(ref, 'unset')
-    if (this.mode === 'keychain') {
-      await this.keychainUnset(ref)
-      this.notifyUpdated(ref)
-      return
-    }
-    await this.write(ref, undefined)
+  override async unset(ref: CredentialRef, expected?: CredentialCondition): Promise<void> {
+    await this.write(ref, undefined, expected)
   }
 
   override readRecord(key: CredentialKey): Promise<CredentialRecord | undefined> {
@@ -833,8 +822,10 @@ export class LocalCredentialProvider extends CredentialProvider {
   override async modifyRecord(
     key: CredentialKey,
     mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>,
+    references: readonly { ref: CredentialRef; expected: CredentialCondition }[] = [],
   ): Promise<CredentialRecord | undefined> {
     if (this.isClosed()) throw new Error(`credentials-local is disposed: cannot modify "${key}"`)
+    const conditions = references.map(({ ref, expected }) => ({ ref, expected: { ...expected } }))
     return this.enqueue(async () => {
       if (this.isClosed()) {
         throw new Error(`credentials-local was disposed before the queued "${key}" modify ran`)
@@ -845,6 +836,9 @@ export class LocalCredentialProvider extends CredentialProvider {
         // stands now, not as this process last saw it — another process may
         // have rotated it since.
         await this.reconcileFromDisk()
+        for (const { ref, expected } of conditions) {
+          assertCredentialCondition(ref, await this.resolve(ref), expected)
+        }
         const current = this.records.get(key)
         const next = await mutate(current)
         if (next === undefined) return current
@@ -909,8 +903,9 @@ export class LocalCredentialProvider extends CredentialProvider {
   /* jscpd:ignore-end */
 
   /** Queue one line edit; entry checks reject early, the queue re-judges them at run time. */
-  private async write(ref: CredentialRef, value: string | undefined): Promise<void> {
+  private async write(ref: CredentialRef, value: string | undefined, expected?: CredentialCondition): Promise<void> {
     const verb = value === undefined ? 'unset' : 'set'
+    const condition = expected === undefined ? undefined : { ...expected }
     if (this.isClosed()) {
       throw new Error(`credentials-local is disposed: cannot ${verb} "${ref}"`)
     }
@@ -930,6 +925,13 @@ export class LocalCredentialProvider extends CredentialProvider {
         // window, a change the watcher missed, or another process's write —
         // so the line edit below can never resurrect a stale document.
         await this.reconcileFromDisk()
+        if (condition !== undefined) assertCredentialCondition(ref, await this.resolve(ref), condition)
+        if (this.mode === 'keychain') {
+          if (value === undefined) await this.keychainUnset(ref)
+          else await this.keychainSet(ref, value)
+          this.notifyUpdated(ref)
+          return
+        }
         const existing = this.values.get(ref)
         if (value === undefined && existing === undefined) return
         const nextText = renderRef(this.text, ref, value)

@@ -10,12 +10,16 @@
  * @module @deepseek-ai/dsh-skill
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { Remote, TypertLookupFailure, TypertRemoteService, isTypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import { assertNever } from '@deepseek-ai/dsh-llm'
 import { NamedEntries, ScopedLayers, scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer } from '@deepseek-ai/dsh-scope'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
+import type { RemoteSkillCatalog } from './types.ts'
+export type { RemoteSkillCatalog, RemoteSkillEntry } from './types.ts'
 
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const DEFAULT_COLLECT_CACHE_ENTRIES = 128
@@ -354,7 +358,7 @@ class SkillLayer implements ScopeLayer {
  * It exposes sorted invocation-neutral summaries and loads full skill bodies
  * on demand.
  */
-export class SkillRegistry extends Service {
+export class SkillRegistry extends TypertRemoteService {
   static Config: Schema<Config> = z.object({
     collectCacheMaxEntries: z.number().default(DEFAULT_COLLECT_CACHE_ENTRIES),
   })
@@ -372,7 +376,7 @@ export class SkillRegistry extends Service {
   private nextScopeId = 1
 
   constructor(ctx: Context, config: Config = {}) {
-    super(ctx, 'skills')
+    super(ctx, 'skills', { namespace: 'skill' })
     this.collectCacheMaxEntries = config.collectCacheMaxEntries ?? DEFAULT_COLLECT_CACHE_ENTRIES
     assertPositiveInteger('collectCacheMaxEntries', this.collectCacheMaxEntries)
   }
@@ -470,6 +474,35 @@ export class SkillRegistry extends Service {
    */
   async list(options: SkillViewOptions = {}): Promise<SkillSummary[]> {
     return (await this.snapshot(options)).skills
+  }
+
+  /**
+   * List user-invocable skills for a gateway-resolved Agent.
+   * @param agent - Agent whose persisted cwd and scope determine visibility.
+   * @param signal - Caller-owned cancellation signal.
+   * @returns The user-invocable catalog without skill bodies.
+   * @throws TypertLookupFailure for cancellation, absent cwd, or provider failures.
+   */
+  @Remote('list')
+  async remoteList(agent: Agent, signal: AbortSignal): Promise<RemoteSkillCatalog> {
+    if (signal.aborted) remoteSkillFailure('cancelled', 'skill listing was cancelled', {})
+    const cwd = agent.session.header.cwd
+    if (cwd === undefined) remoteSkillFailure('session-unavailable', `session "${agent.id}" has no project cwd`, { sessionId: String(agent.id) })
+    const registry = agent.ctx.get('skills') ?? this
+    try {
+      const skills = (await registry.list({ cwd, scope: scopeOf(agent.ctx), signal })).filter(isUserInvocable)
+      if (isAborted(signal)) remoteSkillFailure('cancelled', 'skill listing was cancelled', {})
+      return { skills: skills.map(skill => ({
+        name: skill.name,
+        description: skill.description,
+        ...(skill.whenToUse === undefined ? {} : { whenToUse: skill.whenToUse }),
+        modelInvocable: skill.invocation.modelInvocable,
+      })) }
+    } catch (error) {
+      if (isTypertRemoteFailure(error)) throw error
+      if (isAborted(signal)) remoteSkillFailure('cancelled', 'skill listing was cancelled', {})
+      remoteSkillFailure('internal', `skill listing failed: ${error instanceof Error ? error.message : String(error)}`, {})
+    }
   }
 
   /**
@@ -866,3 +899,15 @@ function errorMessage(error: unknown): string {
 }
 
 export default SkillRegistry
+
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted
+}
+
+function remoteSkillFailure(
+  code: 'cancelled' | 'session-unavailable' | 'internal',
+  message: string,
+  details: Record<string, string>,
+): never {
+  throw new TypertLookupFailure({ code, message, details })
+}

@@ -28,8 +28,9 @@ function completedTurnPrefix(parent) {
 }
 /**
 * The fork provider. Supports `depthLimit` and `outputSchema` (via the shared
-* in-process structured runtime), plus `toolFilter`/`persona` (scoped
-* restrict() and a scoped shadowing persona section).
+* in-process structured runtime), `agentOptions` (merged over the parent
+* route), and `toolFilter`/`persona` (scoped restrict() and a scoped shadowing
+* persona section).
 */
 var ForkInProcessProvider = class {
 	name;

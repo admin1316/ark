@@ -2,47 +2,50 @@
 import type { ContentBlock } from './types.ts';
 import type { Message } from './message.ts';
 import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment';
-/** Execution-world path that model tools can use to read a normalized image. */
+/** Execution-world path that model tools can use to read one normalized attachment. */
 export interface ImageAttachmentAccess {
+    /** Absolute path to immutable normalized bytes; callers must treat it as read-only. */
     readonlyPath: string;
 }
-/** Resolve current execution-world access for one durable image reference. */
+/**
+ * Resolve current execution-world access for one durable image reference.
+ * @param ref - durable normalized attachment reference.
+ * @returns a read-only execution-world path, or undefined when unavailable.
+ */
 export type ImageAttachmentAccessResolver = (ref: ImageAttachmentRef) => ImageAttachmentAccess | undefined;
 /**
- * Map a host-backed attachment path into the current filesystem execution world.
- * @param attachments - The attachments input.
- * @param mapHostPath - The map host path input.
- * @param ref - The ref input.
- * @returns The value produced by resolve image attachment access.
+ * Bridge one attachment provider's host object location into the mounted
+ * tool execution world. The consumer supplies the current filesystem
+ * provider's mapping without making attachment or LLM definitions depend on it.
+ * @param attachments - provider that owns the normalized attachment object.
+ * @param mapHostPath - map one absolute host path into the current tool execution world.
+ * @param ref - durable normalized attachment reference.
+ * @returns a read-only execution-world path, or undefined when either provider exposes no mapping.
+ * @throws an attachment error when the durable reference is invalid.
  */
 export declare function resolveImageAttachmentAccess(attachments: AttachmentStore, mapHostPath: (hostPath: string) => string | undefined, ref: ImageAttachmentRef): ImageAttachmentAccess | undefined;
-/** Model-facing stand-in for an image removed to fit a provider request bound. */
-export declare const OFFLOADED_IMAGE_TEXT = "[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]";
 /**
  * Stable text shown to a model that cannot accept one durable image reference.
- * @param ref - durable master reference omitted from the request.
+ * @param ref - durable normalized attachment omitted from the request.
  * @returns deterministic text-only placeholder.
  */
 export declare function textOnlyImageText(ref: ImageAttachmentRef): string;
 /**
- * Stable model-facing handle for one exact request image.
- * @param version - exact request image shown beside the text.
+ * Stable model-facing handle for one exact request image. Identity comes from
+ * the occurrence's own durable reference: request versions are prepared per
+ * attachment id, so one shared version may serve occurrences whose display
+ * names differ.
+ * @param ref - the occurrence's durable normalized attachment.
+ * @param version - exact request-image dimensions shown beside the text.
+ * @param access - optional path resolved for the current tool execution world.
  * @returns attachment handle and request-image dimensions.
- */
-export declare function requestImageHandleText(version: RequestImageAttachment): string;
-/**
- * Provides the request image handle text operation.
- * @param ref - The ref input.
- * @param version - The version input.
- * @param access - The access input.
- * @returns The value produced by request image handle text.
  */
 export declare function requestImageHandleText(ref: ImageAttachmentRef, version: Pick<RequestImageAttachment, 'width' | 'height'>, access?: ImageAttachmentAccess): string;
 /**
- * Stable placeholder for an image omitted by request limits.
- * @param ref - The ref input.
- * @param access - The access input.
- * @returns The value produced by offloaded image text.
+ * Stable per-image placeholder for a request-limit omission.
+ * @param ref - durable normalized attachment omitted from this request.
+ * @param access - optional provider-resolved path for model tools.
+ * @returns identity, normalized metadata, and the available recovery path.
  */
 export declare function offloadedImageText(ref: ImageAttachmentRef, access?: ImageAttachmentAccess): string;
 /**
@@ -66,18 +69,11 @@ export interface RequestImageOffloadPolicy {
     byteQuantum?: number;
     /** Whether byte accounting uses raw file bytes or inline base64 length. */
     representation: 'raw' | 'base64';
-    /** Resolve the encoded request-version length; omission uses master attachment bytes. */
+    /** Resolve the encoded request-version length; omission uses normalized attachment bytes. */
     byteLength?: (ref: ImageAttachmentRef) => number;
     /** Build the model-visible replacement for each omitted attachment. */
-    placeholder?: (ref: ImageAttachmentRef) => string;
+    placeholder: (ref: ImageAttachmentRef) => string;
 }
-/**
- * Return the number of oldest image occurrences removed by the policy.
- * @param lengths - The lengths input.
- * @param policy - The policy input.
- * @returns The value produced by offloaded image prefix count.
- */
-export declare function offloadedImagePrefixCount(lengths: readonly number[], policy: Pick<RequestImageOffloadPolicy, 'maxImages' | 'maxBytes' | 'countQuantum' | 'byteQuantum'>): number;
 /**
  * Project durable image history into deterministic text for an exact text-only model.
  * @param messages - complete request history.
@@ -85,15 +81,15 @@ export declare function offloadedImagePrefixCount(lengths: readonly number[], po
  */
 export declare function projectImagesForTextModel(messages: readonly Message[]): readonly Message[];
 /**
- * Return transient request messages whose oldest images are replaced until
- * their accumulated base64 payload fits the configured bound. The selection
- * is deterministic from durable message order and attachment metadata; a
- * provider can serialize the returned messages without reading omitted bytes.
- * @param messages - complete request history, oldest first.
- * @param maxRequestImageBytes - positive bound on total base64 image payload; undefined preserves every image.
- * @returns the original messages when they already fit, otherwise shallow message copies with replaced content trees.
+ * Number of oldest image occurrences one request projection removes, in whole
+ * count and byte quanta, once a route budget is exceeded. The result depends
+ * only on the represented lengths, so provider request pricing reproduces the
+ * exact serialization decision without building the projected messages.
+ * @param lengths - represented byte length of every occurrence, in request order.
+ * @param policy - count/byte budgets and removal quanta; unbounded when absent.
+ * @returns how many leading occurrences the projection replaces with placeholders.
  */
-export declare function offloadRequestImages(messages: readonly Message[], maxRequestImageBytes: number | undefined): readonly Message[];
+export declare function offloadedImagePrefixCount(lengths: readonly number[], policy: Pick<RequestImageOffloadPolicy, 'maxImages' | 'maxBytes' | 'countQuantum' | 'byteQuantum'>): number;
 /**
  * Return a deterministic transient projection whose oldest images are replaced
  * in whole count and byte quanta after a route budget is exceeded. The target

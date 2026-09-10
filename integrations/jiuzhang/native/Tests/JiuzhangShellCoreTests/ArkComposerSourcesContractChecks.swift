@@ -556,7 +556,7 @@ private func runComposerSourceShapeChecks() {
     "native submission adjudicates commands and serializes references before the prompt sink"
   )
   check(
-    root?.contains("NativeComposerSuggestionPanel(model: model)") == true
+    root?.contains("NativeComposerSuggestionPanel(model: model,") == true
       && root?.contains("model.openComposerSourceLauncher") == true
       && root?.contains("composerLauncherTasksSection") == true
       && root?.contains("composerLauncherPluginsSection") == true
@@ -591,7 +591,7 @@ private func runComposerSourceShapeChecks() {
   ),
   let overlayRange = composer.range(of: ".overlay(alignment: .top) {"),
   let sheetRange = composer.range(of: ".sheet(isPresented: $showDangerConfirmation) {") {
-    let launcher = "NativeComposerSuggestionPanel(model: model)"
+    let launcher = "NativeComposerSuggestionPanel(model: model,"
     let totalLauncherCount = composer.components(separatedBy: launcher).count - 1
     let sizingLauncherCount = sizingBody.components(separatedBy: launcher).count - 1
     let overlayLauncherCount = launcherOverlay.components(separatedBy: launcher).count - 1

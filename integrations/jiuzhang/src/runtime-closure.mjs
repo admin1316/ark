@@ -114,19 +114,53 @@ export function assertJavaScriptModuleSyntax(
   }
 }
 
-function assertJavaScriptPathSyntax(path, label, nodeExecutable) {
+// Compile without linking or evaluating package code. Bounded batches amortize
+// Node startup while keeping parser objects out of the launcher's heap.
+const syntaxBatchProgram = String.raw`
+import { readFileSync } from 'node:fs'
+import { findPackageJSON } from 'node:module'
+import { pathToFileURL } from 'node:url'
+import { compileFunction, SourceTextModule } from 'node:vm'
+const packageTypes = new Map()
+for (const { path, label } of JSON.parse(readFileSync(0, 'utf8'))) {
+  try {
+    const source = readFileSync(path, 'utf8').replace(/^#![^\r\n]*/u, '')
+    const manifestPath = findPackageJSON(pathToFileURL(path))
+    if (!packageTypes.has(manifestPath)) {
+      packageTypes.set(manifestPath, manifestPath === undefined ? undefined
+        : JSON.parse(readFileSync(manifestPath, 'utf8')).type)
+    }
+    const type = packageTypes.get(manifestPath)
+    const module = path.endsWith('.mjs') || (path.endsWith('.js') && type === 'module')
+    if (module) new SourceTextModule(source, { identifier: path })
+    else {
+      try { compileFunction(source, ['exports', 'require', 'module', '__filename', '__dirname'], { filename: path }) }
+      catch (error) {
+        if (!path.endsWith('.js') || type === 'commonjs') throw error
+        new SourceTextModule(source, { identifier: path })
+      }
+    }
+  } catch (error) {
+    process.stderr.write('Ark runtime has an unparseable JavaScript entry ' + label + ': ' + error.message + '\n')
+    process.exit(1)
+  }
+}
+`
+
+function assertJavaScriptPathsSyntax(entries, nodeExecutable) {
+  if (entries.length === 0) return
   const result = spawnSync(
     nodeExecutable,
-    ['--check', path],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    ['--experimental-vm-modules', '--input-type=module', '-e', syntaxBatchProgram],
+    { input: JSON.stringify(entries), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
   )
   if (result.error !== undefined) {
-    throw new Error(`Ark runtime could not syntax-check ${label}: ${result.error.message}`)
+    throw new Error(`Ark runtime could not syntax-check ${entries[0].label}: ${result.error.message}`)
   }
   if (result.status !== 0) {
     const detail = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
     const outcome = result.signal === null ? `exit ${String(result.status)}` : `signal ${result.signal}`
-    throw new Error(`Ark runtime has an unparseable JavaScript entry ${label} (${outcome})${detail === '' ? '' : `\n${detail}`}`)
+    throw new Error(`Ark runtime JavaScript syntax batch failed (${outcome})${detail === '' ? '' : `\n${detail}`}`)
   }
 }
 
@@ -198,7 +232,7 @@ function resolveRelativeModule(fromEntry, specifier, available) {
   return undefined
 }
 
-async function actualJavaScriptEntries(record, nodeExecutable) {
+async function actualJavaScriptEntries(record, syntaxEntries) {
   const availableList = await collectJavaScriptFiles(record.packageRoot)
   const available = new Set(availableList)
   const declared = packageJavaScriptEntries(record.manifest)
@@ -234,7 +268,7 @@ async function actualJavaScriptEntries(record, nodeExecutable) {
       throw new Error(`Ark runtime package ${record.name} has a linked JavaScript entry: ${entry}`)
     }
     const source = await readFile(path, 'utf8')
-    assertJavaScriptPathSyntax(path, `${record.name}:${entry}`, nodeExecutable)
+    syntaxEntries.push({ path, label: `${record.name}:${entry}` })
     for (const match of source.matchAll(staticImportPattern)) {
       const imported = resolveRelativeModule(entry, match[1], available)
       if (imported === undefined && match[1].startsWith('.')) {
@@ -575,8 +609,9 @@ export async function createArkRuntimeManifest(runtimePath, policyPath, options 
   }
   const nodeExecutable = options.nodeExecutable ?? process.execPath
   const packages = []
+  const syntaxEntries = []
   for (const record of records.sort((left, right) => left.locator.localeCompare(right.locator))) {
-    const javaScript = await actualJavaScriptEntries(record, nodeExecutable)
+    const javaScript = await actualJavaScriptEntries(record, syntaxEntries)
     packages.push({
       name: record.name,
       version: record.version,
@@ -590,6 +625,9 @@ export async function createArkRuntimeManifest(runtimePath, policyPath, options 
       javaScriptEntries: javaScript.entries,
       unresolvedRelativeImports: javaScript.unresolvedRelativeImports,
     })
+  }
+  for (let index = 0; index < syntaxEntries.length; index += 256) {
+    assertJavaScriptPathsSyntax(syntaxEntries.slice(index, index + 256), nodeExecutable)
   }
   const versionsByName = new Map()
   for (const record of packages) {

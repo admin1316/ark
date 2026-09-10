@@ -1,41 +1,35 @@
 import { z } from "zod";
 import { SessionId } from "@deepseek-ai/dsh-session";
-//#region lib/types/types.js
-/** Public Agent Teams identities, durable records, and service request values. */
+//#region lib/types/brand.js
 /**
-* Brand one root Session identity as its implicit Team identity.
-* @param id - Root Session identity.
-* @returns the same string branded as a Team identity.
+* Brand the root Session identity as its implicit Team identity.
+* @param id - root Session identity.
+* @returns the unchanged string with the Team brand.
 */
 function TeamId(id) {
 	return id;
 }
 /**
-* Brand a validated task id.
-* @param id - Team-local task identity.
-* @returns the same string branded as a Team task identity.
+* Brand a validated Team-local task identity.
+* @param id - task identity.
+* @returns the unchanged string with the task brand.
 */
 function TeamTaskId(id) {
 	return id;
 }
 /**
-* Brand a generated peer-message id.
-* @param id - Durable mailbox message identity.
-* @returns the same string branded as a Team message identity.
+* Brand a generated durable message identity.
+* @param id - message identity.
+* @returns the unchanged string with the message brand.
 */
 function TeamMessageId(id) {
 	return id;
 }
 //#endregion
 //#region lib/types/task-graph.js
-/** Complete dependency validation for current Team task snapshots. */
-/** Package-private task dependency failure retained for command error mapping. */
+/** Task dependency error retained for command error mapping. */
 var TeamTaskGraphError = class extends Error {
 	violation;
-	/**
-	* @param message - concrete invalid dependency relation.
-	* @param violation - stable relation category used by Team commands.
-	*/
 	constructor(message, violation) {
 		super(message);
 		this.violation = violation;
@@ -43,10 +37,10 @@ var TeamTaskGraphError = class extends Error {
 	}
 };
 /**
-* Validate the complete active task graph after replacing one candidate snapshot.
-* @param current - current task snapshots before the candidate event.
+* Validate the entire active task graph with one candidate replacement.
+* @param current - task snapshots before the proposed event.
 * @param candidate - new or next-revision task snapshot.
-* @throws {TeamTaskGraphError} when an active dependency is missing, duplicated, self-referential, or cyclic.
+* @throws for missing, duplicate, self-referential, or cyclic dependencies.
 */
 function assertTaskGraphCandidate(current, candidate) {
 	const tasks = new Map(current);
@@ -78,17 +72,17 @@ function assertTaskGraphCandidate(current, candidate) {
 }
 //#endregion
 //#region lib/types/fold.js
-/** Strict replay fold for Agent Teams log-only events. */
+/** Strict replay of Team records owned by one Lead Session. */
 const nonNegativeSafeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const positiveSafeInteger = nonNegativeSafeInteger.min(1);
-const sessionIdSchema = z.string().min(1).transform((value) => SessionId(value));
-const teamIdSchema = z.string().min(1).transform((value) => TeamId(value));
+const sessionIdSchema = z.string().min(1).transform(SessionId);
+const teamIdSchema = z.string().min(1).transform(TeamId);
 const numericTaskIdPattern = /^task-(\d+)$/u;
 const teamTaskIdSchema = z.string().min(1).refine((value) => {
 	const match = numericTaskIdPattern.exec(value);
 	return match === null || Number.isSafeInteger(Number(match[1]));
-}, { message: "numeric task id suffix must be a safe integer" }).transform((value) => TeamTaskId(value));
-const teamMessageIdSchema = z.string().min(1).transform((value) => TeamMessageId(value));
+}, { message: "numeric task id suffix must be a safe integer" }).transform(TeamTaskId);
+const teamMessageIdSchema = z.string().min(1).transform(TeamMessageId);
 const coreContentBlockTypes = new Set([
 	"text",
 	"reasoning",
@@ -176,31 +170,33 @@ const teamEventSelectorSchema = z.object({
 	version: nonNegativeSafeInteger,
 	teamId: teamIdSchema
 }).loose();
-const teamMemberEventSchema = z.object({
-	version: z.literal(1),
-	teamId: teamIdSchema,
-	member: teamMemberSnapshotSchema
-}).strict();
-const teamTaskEventSchema = z.object({
-	version: z.literal(1),
-	teamId: teamIdSchema,
-	task: teamTaskSnapshotSchema
-}).strict();
-const teamMessageQueuedEventSchema = z.object({
-	version: z.literal(1),
-	teamId: teamIdSchema,
-	message: teamMessageSnapshotSchema
-}).strict();
-const teamMessageDeliveredEventSchema = z.object({
-	version: z.literal(1),
-	teamId: teamIdSchema,
-	messageId: teamMessageIdSchema,
-	targetId: sessionIdSchema
-}).strict();
+const teamEventSchemas = {
+	"team/member": z.object({
+		version: z.literal(1),
+		teamId: teamIdSchema,
+		member: teamMemberSnapshotSchema
+	}).strict(),
+	"team/task": z.object({
+		version: z.literal(1),
+		teamId: teamIdSchema,
+		task: teamTaskSnapshotSchema
+	}).strict(),
+	"team/message/queued": z.object({
+		version: z.literal(1),
+		teamId: teamIdSchema,
+		message: teamMessageSnapshotSchema
+	}).strict(),
+	"team/message/delivered": z.object({
+		version: z.literal(1),
+		teamId: teamIdSchema,
+		messageId: teamMessageIdSchema,
+		targetId: sessionIdSchema
+	}).strict()
+};
 /**
-* Construct an empty Team fold for one root Session.
-* @param rootId - Session whose TeamId selects applicable records.
-* @returns mutable empty replay state.
+* Construct an empty fold for a root Session.
+* @param rootId - root identity selecting the Team's records.
+* @returns detached empty state.
 */
 function emptyTeamFoldState(rootId) {
 	return {
@@ -214,14 +210,13 @@ function emptyTeamFoldState(rootId) {
 	};
 }
 /**
-* Test whether a Session event belongs to the Team domain.
+* Identify Team-owned event tags.
 * @param event - candidate Session event.
-* @returns whether the event has a Team-owned type.
+* @returns whether the event belongs to the Team domain.
 */
 function isTeamEvent(event) {
 	return event.type === "team/member" || event.type === "team/task" || event.type === "team/message/queued" || event.type === "team/message/delivered";
 }
-/** Decode one persisted Team value and retain the schema failure as its cause. */
 function parsePersisted(type, schema, value) {
 	try {
 		return schema.parse(value);
@@ -229,31 +224,8 @@ function parsePersisted(type, schema, value) {
 		throw new Error(`persisted Agent Teams ${type} payload is invalid`, { cause: error });
 	}
 }
-/** Decode the complete current-version payload selected by one Team event type. */
-function parseCurrentTeamEvent(event) {
-	switch (event.type) {
-		case "team/member": return {
-			...event,
-			data: parsePersisted(event.type, teamMemberEventSchema, event.data)
-		};
-		case "team/task": return {
-			...event,
-			data: parsePersisted(event.type, teamTaskEventSchema, event.data)
-		};
-		case "team/message/queued": return {
-			...event,
-			data: parsePersisted(event.type, teamMessageQueuedEventSchema, event.data)
-		};
-		case "team/message/delivered": return {
-			...event,
-			data: parsePersisted(event.type, teamMessageDeliveredEventSchema, event.data)
-		};
-		/* v8 ignore next 2 -- TeamEventType is closed and every member is handled above. */
-		default: return event;
-	}
-}
 /**
-* Apply one event, ignoring Team records inherited by a different root fork.
+* Apply one validated record, ignoring records inherited by another root fork.
 * @param state - mutable Team replay state.
 * @param event - next contiguous Session event.
 */
@@ -264,7 +236,8 @@ function applyTeamEvent(state, event) {
 		if (selector.teamId !== state.id) return;
 		throw new Error(`unsupported Agent Teams event version ${String(selector.version)}`);
 	}
-	const decoded = parseCurrentTeamEvent(event);
+	parsePersisted(event.type, teamEventSchemas[event.type], event.data);
+	const decoded = structuredClone(event);
 	if (decoded.data.teamId !== state.id) return;
 	switch (decoded.type) {
 		case "team/member": {
@@ -310,15 +283,13 @@ function applyTeamEvent(state, event) {
 			state.delivered.add(decoded.data.messageId);
 			break;
 		}
-		/* v8 ignore next 2 -- TeamEventType is closed and every member is handled above. */
-		default: return;
 	}
 }
 /**
-* Replay one root Session into its current Team state.
-* @param rootId - root Session identity selecting Team-owned records.
+* Replay the Lead log into the current Team state.
+* @param rootId - root Session identity selecting Team records.
 * @param events - complete contiguous Session log.
-* @returns mutable replay state at the end of the log.
+* @returns detached replay state at the supplied log end.
 */
 function foldTeam(rootId, events) {
 	const state = emptyTeamFoldState(rootId);
@@ -327,13 +298,9 @@ function foldTeam(rootId, events) {
 }
 //#endregion
 //#region lib/types/invariant.js
-/** Package-owned relational checks for Agent Teams durable records. */
 const PACKAGE_NAME = "@deepseek-ai/dsh-agent-team";
-/** Cordis companion plugin name. */
 const name = "team-invariant";
-/** Invariant registry required by the companion. */
 const inject = ["invariants"];
-/** Validate candidate Team events against the committed prefix before append. */
 const install = Object.assign((ctx, fail) => {
 	ctx.on("internal/dispatch", (_mode, eventName, args) => {
 		if (eventName !== "session/event") return;
@@ -342,13 +309,16 @@ const install = Object.assign((ctx, fail) => {
 		try {
 			applyTeamEvent(foldTeam(session.id, session.events), event);
 		} catch (error) {
-			/* v8 ignore next -- the strict Team fold throws Error instances. */
 			const message = error instanceof Error ? error.message : String(error);
 			fail(`session event ${event.seq} violates the Agent Teams stream: ${message}`);
 		}
 	}, { global: true });
 }, { inject: ["sessions"] });
-/** Register the package invariant companion. */
+/**
+* Register Team event invariants.
+* @param ctx - invariant registry owner.
+* @returns registration disposer after installation.
+*/
 const apply = (ctx) => Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install));
 //#endregion
 export { apply, inject, name };

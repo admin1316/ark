@@ -278,6 +278,10 @@ export class AgentRegistry extends Service {
       typeCtx.typert.contexts.registerHost('agent', {
         wire: 'agentId',
         wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
+        identity: (candidate) => {
+          const agent = candidate.agent
+          return agent !== undefined && this.get(agent.id) === agent ? agent.id : undefined
+        },
         resolve: sessionId => this.get(sessionId)?.ctx,
       })
     })

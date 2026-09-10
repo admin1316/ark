@@ -281,8 +281,11 @@ if let resourceFiles = try? FileManager.default.contentsOfDirectory(
 if let knowledgeHost = try? String(contentsOf: knowledgeHostURL, encoding: .utf8) {
   check(knowledgeHost.contains("expectedContent?: string"), "Wiki Host supports compare-and-swap saves")
   check(knowledgeHost.contains("current !== request.expectedContent"), "Wiki Host rejects external modification conflicts")
-  check(knowledgeHost.contains("renameSync(temporary, full)"), "Wiki Host commits page saves atomically")
-  check(knowledgeHost.contains("mode: 0o600"), "Wiki Host creates private temporary save files")
+  let filesystem = (try? String(contentsOf: knowledgeHostURL.deletingLastPathComponent().appendingPathComponent("filesystem.ts"), encoding: .utf8)) ?? ""
+  check(knowledgeHost.contains("atomicWriteFile(full, request.content)")
+    && filesystem.contains("renameSync(temporary, path)"), "Wiki Host commits page saves atomically")
+  check(filesystem.contains("mode = 0o600")
+    && filesystem.contains("constants.O_EXCL"), "Wiki Host creates private temporary save files")
   check(!knowledgeHost.contains("writeFileSync(full, request.content)"), "Wiki Host never overwrites canonical pages directly")
 } else {
   check(false, "Wiki Host lifecycle source is readable")
@@ -641,7 +644,7 @@ check(
 )
 
 let harnessHome = URL(
-  fileURLWithPath: "/Users/example/Library/Application Support/Ark/Harness"
+  fileURLWithPath: "/Users/example/Library/Application Support/Ark/Harness", isDirectory: true
 )
 let dataLocations = try! JiuzhangShellContract.launchDataLocations(
   info: [:], productionRoot: harnessHome.deletingLastPathComponent()

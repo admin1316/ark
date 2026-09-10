@@ -7,12 +7,47 @@ public struct ArkProviderView: Identifiable, Equatable, Sendable {
   public let settingsPath: [String]
   public let active: Bool
   public let declared: Bool?
+  public let migrationRequired: ArkProviderMigration?
+  public let configurationError: String?
+
+  public init(id: String, displayName: String, settingsNamespace: String, settingsPath: [String],
+              active: Bool, declared: Bool? = nil, migrationRequired: ArkProviderMigration? = nil,
+              configurationError: String? = nil) {
+    self.id = id
+    self.displayName = displayName
+    self.settingsNamespace = settingsNamespace
+    self.settingsPath = settingsPath
+    self.active = active
+    self.declared = declared
+    self.migrationRequired = migrationRequired
+    self.configurationError = configurationError
+  }
+}
+
+/// The Host names unsafe fields without returning their values or granting writes to deployment configuration.
+public struct ArkProviderMigration: Equatable, Sendable {
+  public let code: String
+  public let fields: [String]
+  public let paths: [[String]]?
+  public let inheritedPaths: [[String]]?
+
+  public var canMigrateUserFields: Bool {
+    guard let paths, !paths.isEmpty, let inheritedPaths else { return false }
+    return inheritedPaths.isEmpty
+  }
 }
 
 public struct ArkCredentialView: Equatable, Sendable {
   public let configured: Bool
   public let source: String?
   public let writable: Bool
+}
+
+public struct ArkProviderVerification: Equatable, Sendable {
+  public let provider: String
+  public let model: String
+  public let verified: Bool
+  public let mode: String
 }
 
 public struct ArkSettingsNamespace: Identifiable, Equatable, Sendable {
@@ -41,6 +76,36 @@ public struct ArkSettingsSnapshot: Equatable, Sendable {
     self.hasDocument = hasDocument
     self.namespaces = namespaces
   }
+
+  /// Read only the route's declared settings address; absent profiles cannot borrow sibling credentials.
+  public static func credentialReference(
+    for provider: ArkProviderView, namespaces: [ArkSettingsNamespace]
+  ) -> String {
+    if let reference = namespaces.first(where: { $0.id == provider.settingsNamespace })?
+      .value.value(at: provider.settingsPath)?["apiKeyEnv"]?.stringValue,
+      !reference.isEmpty {
+      return reference
+    }
+    return suggestedCredentialReference(for: provider.id, namespaces: namespaces)
+  }
+
+  /// Suggestions avoid references already present in settings; the Host remains the write-ownership authority.
+  public static func suggestedCredentialReference(
+    for providerID: String, namespaces: [ArkSettingsNamespace]
+  ) -> String {
+    let name = providerID.uppercased().map { character in
+      character.isLetter || character.isNumber ? String(character) : "_"
+    }.joined() + "_API_KEY"
+    let occupied = Set(namespaces.flatMap { $0.value.strings(forKey: "apiKeyEnv") })
+    if !occupied.contains(name) { return name }
+    var candidate = "ARK_" + name
+    var suffix = 2
+    while occupied.contains(candidate) {
+      candidate = "ARK_" + name + "_" + String(suffix)
+      suffix += 1
+    }
+    return candidate
+  }
 }
 
 public struct ArkDiscoveredModel: Identifiable, Equatable, Sendable {
@@ -60,6 +125,32 @@ public enum ArkProviderCredentialMutation: Equatable, Sendable {
   case unset(ref: String)
 }
 
+public enum ArkProviderTransactionState: String, Equatable, Sendable {
+  case absent
+  case prepared
+  case credentialStaged = "credential-staged"
+  case settingsApplied = "settings-applied"
+  case credentialApplied = "credential-applied"
+  case committed
+  case rolledBack = "rolled-back"
+  case committedNotLive = "committed-not-live"
+
+  public var isTerminal: Bool {
+    switch self {
+    case .committed, .rolledBack, .committedNotLive: return true
+    case .absent, .prepared, .credentialStaged, .settingsApplied, .credentialApplied: return false
+    }
+  }
+}
+
+public struct ArkProviderTransactionStatus: Equatable, Sendable {
+  public let transactionID: String
+  public let state: ArkProviderTransactionState
+  public let needsCredential: Bool
+  public let settingsNamespace: String?
+  public let live: Bool?
+}
+
 /// One durable idempotency key per Provider while its Host saga is unfinished.
 /// The secret and mutation payload never enter UserDefaults.
 public final class ArkProviderTransactionRegistry {
@@ -72,7 +163,7 @@ public final class ArkProviderTransactionRegistry {
 
   public func transactionID(for provider: String) -> String {
     let key = Self.prefix + provider
-    if let existing = defaults.string(forKey: key), !existing.isEmpty {
+    if let existing = pendingTransactionID(for: provider) {
       return existing
     }
     let created = UUID().uuidString.lowercased()
@@ -80,8 +171,21 @@ public final class ArkProviderTransactionRegistry {
     return created
   }
 
-  public func clear(provider: String) {
+  /// A read does not allocate a new pending transaction.
+  public func pendingTransactionID(for provider: String) -> String? {
+    guard let value = defaults.string(forKey: Self.prefix + provider), !value.isEmpty else { return nil }
+    return value
+  }
+
+  public func clear(provider: String, transactionID: String? = nil) {
+    if let transactionID, pendingTransactionID(for: provider) != transactionID { return }
     defaults.removeObject(forKey: Self.prefix + provider)
+  }
+
+  /// A late reply cannot clear a newer pending operation, and transient failures retain their identity.
+  public func acknowledge(provider: String, transactionID: String, state: ArkProviderTransactionState) {
+    guard state.isTerminal else { return }
+    clear(provider: provider, transactionID: transactionID)
   }
 }
 
@@ -128,20 +232,49 @@ private func decodedSettingsNamespace(_ row: JSONValue) throws -> ArkSettingsNam
 extension ArkAPIClient {
   public func providers() async throws -> [ArkProviderView] {
     let value = try await remoteCall(method: "llm/providers")
-    return value["providers"]?.arrayValue?.compactMap { row in
+    return try value["providers"]?.arrayValue?.compactMap { row in
       guard let id = row["provider"]?.stringValue,
         let name = row["displayName"]?.stringValue,
         let namespace = row["settingsNs"]?.stringValue
       else { return nil }
+      if let diagnostic = row["error"], diagnostic != .null, diagnostic.stringValue == nil {
+        throw ArkAPIError(message: "Provider configuration diagnostic must be text")
+      }
       return ArkProviderView(
         id: id,
         displayName: name,
         settingsNamespace: namespace,
         settingsPath: row["settingsPath"]?.arrayValue?.compactMap(\.stringValue) ?? [],
         active: row["active"]?.boolValue == true,
-        declared: row["declared"]?.boolValue
+        declared: row["declared"]?.boolValue,
+        migrationRequired: try Self.providerMigration(row["migrationRequired"]),
+        configurationError: row["error"]?.stringValue
       )
     } ?? []
+  }
+
+  private static func providerMigration(_ value: JSONValue?) throws -> ArkProviderMigration? {
+    guard let value else { return nil }
+    guard let code = value["code"]?.stringValue,
+          ["credential-headers", "credential-fields"].contains(code),
+          let fields = value["fields"]?.arrayValue,
+          fields.allSatisfy({ $0.stringValue?.isEmpty == false })
+    else { throw ArkAPIError(message: "Provider 凭据迁移信息无效") }
+    func paths(_ value: JSONValue?) throws -> [[String]]? {
+      guard let value else { return nil }
+      guard let rows = value.arrayValue else { throw ArkAPIError(message: "Provider 凭据迁移路径无效") }
+      return try rows.map { row in
+        guard let path = row.arrayValue, !path.isEmpty,
+              path.allSatisfy({ part in
+                guard let name = part.stringValue, !name.isEmpty else { return false }
+                return !["__proto__", "prototype", "constructor"].contains(name)
+              })
+        else { throw ArkAPIError(message: "Provider 凭据迁移路径无效") }
+        return path.compactMap(\.stringValue)
+      }
+    }
+    return ArkProviderMigration(code: code, fields: fields.compactMap(\.stringValue),
+      paths: try paths(value["paths"]), inheritedPaths: try paths(value["inheritedPaths"]))
   }
 
   public func settingsSnapshot() async throws -> ArkSettingsSnapshot {
@@ -190,6 +323,19 @@ extension ArkAPIClient {
     }
   }
 
+  /// Verify the exact saved route; the Host may generate a minimal probe when metadata cannot prove authentication.
+  public func verifyProvider(provider: String, model: String) async throws -> ArkProviderVerification {
+    let value = try await remoteRequest(method: "llm/verifyProvider", request: [
+      "provider": .string(provider), "model": .string(model),
+    ])
+    guard value["provider"]?.stringValue == provider, value["model"]?.stringValue == model,
+      let verified = value["verified"]?.boolValue, let mode = value["mode"]?.stringValue,
+      (verified && ["metadata-auth", "minimal-generation"].contains(mode))
+        || (!verified && mode == "endpoint-catalog" && value["classification"]?.stringValue == "reachability-only")
+    else { throw ArkAPIError(message: "模型连接验证响应无效") }
+    return ArkProviderVerification(provider: provider, model: model, verified: verified, mode: mode)
+  }
+
   public func setCredential(ref: String, value: String) async throws {
     _ = try await remoteCall(
       method: "credentials/set",
@@ -218,9 +364,18 @@ extension ArkAPIClient {
   ) async throws -> [ArkDiscoveredModel] {
     var payload: [String: JSONValue] = ["settingsNs": .string(settingsNamespace)]
     if let provider, !provider.isEmpty { payload["provider"] = .string(provider) }
-    if let baseURL, !baseURL.isEmpty { payload["baseURL"] = .string(baseURL) }
+    if let baseURL, !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      guard let normalized = ArkHTTPURLInput.normalizedHTTPURL(baseURL) else {
+        throw ArkAPIError(message: "Base URL 必须是有效的 HTTP 或 HTTPS 地址")
+      }
+      payload["baseURL"] = .string(normalized)
+    }
     if let api, !api.isEmpty { payload["api"] = .string(api) }
-    if let apiKey, !apiKey.isEmpty { payload["apiKey"] = .string(apiKey) }
+    // Built-in catalog reads need no credential. A one-shot key may only ride
+    // with the explicit candidate endpoint that the Host binds it to.
+    if payload["baseURL"] != nil, let apiKey, !apiKey.isEmpty {
+      payload["apiKey"] = .string(apiKey)
+    }
     let value = try await remoteRequest(method: "llm/discoverModels", request: payload)
     guard let rows = value["models"]?.arrayValue else {
       throw ArkAPIError(message: "模型发现响应无效")
@@ -232,10 +387,19 @@ extension ArkAPIClient {
       return ArkDiscoveredModel(
         id: id,
         name: row["name"]?.stringValue,
-        contextWindow: row["contextWindow"]?.numberValue.map(Int.init),
-        maxTokens: row["maxTokens"]?.numberValue.map(Int.init)
+        contextWindow: try Self.modelCapacity(row["contextWindow"], field: "contextWindow"),
+        maxTokens: try Self.modelCapacity(row["maxTokens"], field: "maxTokens")
       )
     }
+  }
+
+  /// Model capacities share JSON's exact integer range; malformed wire values cannot trap Swift conversion.
+  private static func modelCapacity(_ value: JSONValue?, field: String) throws -> Int? {
+    guard let value else { return nil }
+    guard let number = value.numberValue, number > 0, number <= 9_007_199_254_740_991,
+          let integer = Int(exactly: number)
+    else { throw ArkAPIError(message: "模型目录返回了无效的 \(field)") }
+    return integer
   }
 
   public func mutateSetting(
@@ -279,11 +443,20 @@ extension ArkAPIClient {
     guard !mutations.isEmpty || credential != nil else {
       throw ArkAPIError(message: "Provider 更新不能为空")
     }
+    let normalizedMutations = try mutations.map { mutation -> ArkSettingMutation in
+      guard case .set(let path, let value) = mutation,
+        path == ["providers", provider, "baseURL"] || path == ["baseURL"]
+      else { return mutation }
+      guard let raw = value.stringValue, let normalized = ArkHTTPURLInput.normalizedHTTPURL(raw) else {
+        throw ArkAPIError(message: "Base URL 必须是有效的 HTTP 或 HTTPS 地址")
+      }
+      return .set(path: path, value: .string(normalized))
+    }
     var payload: [String: JSONValue] = [
       "transactionId": .string(transactionID),
       "provider": .string(provider),
       "settingsNs": .string(namespace),
-      "ops": .array(encodedSettingMutations(mutations)),
+      "ops": .array(encodedSettingMutations(normalizedMutations)),
       "expectedRevision": .number(Double(expectedRevision)),
     ]
     if let credential {
@@ -305,6 +478,32 @@ extension ArkAPIClient {
     guard let settings = value["settings"] else {
       throw ArkAPIError(message: "Provider 更新响应无效")
     }
+    return try decodedSettingsNamespace(settings)
+  }
+
+  public func providerTransaction(provider: String, transactionID: String) async throws -> ArkProviderTransactionStatus {
+    let value = try await remoteRequest(method: "llm/providerTransaction", request: [
+      "provider": .string(provider), "transactionId": .string(transactionID),
+    ])
+    guard let rawState = value["state"]?.stringValue,
+      let state = ArkProviderTransactionState(rawValue: rawState),
+      let needsCredential = value["needsCredential"]?.boolValue
+    else { throw ArkAPIError(message: "Provider 恢复状态响应无效") }
+    return ArkProviderTransactionStatus(
+      transactionID: transactionID, state: state, needsCredential: needsCredential,
+      settingsNamespace: value["settingsNs"]?.stringValue, live: value["live"]?.boolValue
+    )
+  }
+
+  public func resumeProvider(
+    provider: String, transactionID: String, credentialValue: String? = nil
+  ) async throws -> ArkSettingsNamespace {
+    var request: [String: JSONValue] = [
+      "provider": .string(provider), "transactionId": .string(transactionID),
+    ]
+    if let credentialValue { request["credentialValue"] = .string(credentialValue) }
+    let value = try await remoteRequest(method: "llm/resumeProvider", request: request)
+    guard let settings = value["settings"] else { throw ArkAPIError(message: "Provider 恢复响应无效") }
     return try decodedSettingsNamespace(settings)
   }
 }

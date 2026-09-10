@@ -7,6 +7,7 @@ import { LAUNCHER_BIN, LAUNCHER_FAILURE_EXIT, grantArgs, launcherPath, probe } f
 import z from "@deepseek-ai/schemastery";
 import { assertNever } from "@deepseek-ai/dsh-llm";
 import { SandboxProvider, SandboxUnavailableError, writableRoots } from "@deepseek-ai/dsh-sandbox";
+import { AclWriteGrant, assertTempRootOutsideWorkspace, tempWriteSid, workspaceWriteSid } from "@deepseek-ai/dsh-sandbox-windows-acl";
 //#region lib/types/profiles.js
 /**
 * Internal platform-profile builders for the local sandbox provider.
@@ -73,51 +74,6 @@ function seatbeltProfileArgs(policy) {
 	return ["-p", forms.join(" ")];
 }
 //#endregion
-//#region lib/types/windows-acl-backend.js
-/**
-* Platform-gated access to the optional Windows ACL backend. The package is
-* never resolved on non-win32 hosts; Windows fails loudly when the reviewed
-* backend is absent or exports an incompatible contract.
-*
-* @module @deepseek-ai/dsh-sandbox-local/windows-acl-backend
-*/
-const INCOMPATIBLE_WINDOWS_ACL_BACKEND = "sandbox-local: @deepseek-ai/dsh-sandbox-windows-acl exports an incompatible backend contract";
-/** Whether a runtime value can own callable module/class properties. */
-function isObjectLike(value) {
-	return typeof value === "object" && value !== null || typeof value === "function";
-}
-/** Validate every consumed export before the loader dereferences any of them. */
-function isWindowsAclModule(value) {
-	if (!isObjectLike(value) || !isObjectLike(value.AclWriteGrant)) return false;
-	return typeof value.AclWriteGrant.create === "function" && typeof value.assertTempRootOutsideWorkspace === "function" && typeof value.tempWriteSid === "function" && typeof value.workspaceWriteSid === "function";
-}
-/**
-* Load the optional Windows backend only for an actual win32 runtime.
-* @param platform - runtime platform whose backend may be loaded.
-* @param options - injected importer/resolver for the platform contract test.
-* @returns the typed backend on win32 and `undefined` everywhere else.
-*/
-async function loadWindowsAclBackend(platform, options = {}) {
-	if (platform !== "win32") return void 0;
-	const importer = options.importer ?? (() => import("@deepseek-ai/dsh-sandbox-windows-acl"));
-	const resolver = options.resolver ?? ((specifier) => import.meta.resolve(specifier));
-	let imported;
-	try {
-		imported = await importer();
-	} catch (error) {
-		throw new Error("sandbox-local: win32 requires the optional @deepseek-ai/dsh-sandbox-windows-acl backend; install it for the Windows runtime", { cause: error });
-	}
-	if (!isWindowsAclModule(imported)) throw new Error(INCOMPATIBLE_WINDOWS_ACL_BACKEND);
-	const backend = imported;
-	return {
-		AclWriteGrant: backend.AclWriteGrant,
-		assertTempRootOutsideWorkspace: backend.assertTempRootOutsideWorkspace,
-		tempWriteSid: backend.tempWriteSid,
-		workspaceWriteSid: backend.workspaceWriteSid,
-		resolveRunnerEntry: resolver
-	};
-}
-//#endregion
 //#region lib/types/index.js
 /**
 * Local sandbox backend. It selects the platform runner chain (Linux bwrap then
@@ -140,13 +96,6 @@ async function loadWindowsAclBackend(platform, options = {}) {
 * restricting list and NTFS hard links alias one file object across paths.
 * @module @deepseek-ai/dsh-sandbox-local
 */
-const platformWindowsAclBackend = await loadWindowsAclBackend(process.platform);
-/**
-* Resolve the Apple-provided Seatbelt launcher by its trusted system path.
-* Looking it up through PATH would let an untrusted workspace substitute the
-* confinement executable before the policy is applied.
-*/
-const MACOS_SEATBELT_EXECUTABLE = "/usr/bin/sandbox-exec";
 /** Probe whether `bwrap` can create the profile; the provider caches the bounded result. */
 function defaultProbeBwrap(timeoutMs) {
 	return spawnSync("bwrap", [
@@ -229,7 +178,7 @@ const PLATFORM_CHAINS = {
 * Enforcement completeness a rung claims when selected WITHOUT a probe (a
 * chain of one). `bwrap` and Seatbelt govern every promised file effect by
 * construction, so the claim is a profile fact; `landlock` is listed for the
-* table's totality but is unreachable unprobed today (the Linux chain has
+* table's totality but is unreachable without a probe (the Linux chain has
 * two rungs, so it is only ever selected through its probe, whose report is
 * what distinguishes full from per-ABI-partial — and the launcher additionally
 * self-reports partial enforcement on stderr at every confined run).
@@ -275,7 +224,7 @@ const DENIAL_SIGNATURES = {
 * cleanup failure reported on a non-zero child exit) is never misclassified
 * as "the command did not run". Keep the Landlock tuple aligned with the
 * assembled snapshot fixture at
-* `examples/acp-agent/tests/fixtures/partial-landlock-sandbox.ts`.
+* `packages/test-support/session-snapshot/tests/fixtures/partial-landlock-sandbox.ts`.
 */
 const RUNNER_FAILURE_RULES = {
 	bwrap: [{ fatalSignatures: ["bwrap: "] }],
@@ -293,7 +242,7 @@ const RUNNER_FAILURE_RULES = {
 /**
 * Local process-sandbox provider. Registers as `ctx.sandbox`. Caches the
 * chain verdict and, on the windows-acl rung, the write grants
-* ({@link WindowsAclWriteGrant}: the standing workspace-root grant per workspace
+* ({@link AclWriteGrant}: the standing workspace-root grant per workspace
 * and the revocable private-temp grant per live session/workspace pair, the
 * latter revoked on provider dispose); the one-time probes spawn nothing
 * else.
@@ -413,7 +362,7 @@ var LocalSandboxProvider = class extends SandboxProvider {
 			"--mode",
 			policy.mode,
 			"--write-sid",
-			this.windowsAclBackend().workspaceWriteSid(policy.workspaceRoot),
+			workspaceWriteSid(policy.workspaceRoot),
 			"--temp-write-sid",
 			temp.writeSid
 		];
@@ -432,11 +381,10 @@ var LocalSandboxProvider = class extends SandboxProvider {
 	* @returns the pair's private temp directory and write capability.
 	*/
 	materializeAclGrant(sessionId, workspaceRoot) {
-		const backend = this.windowsAclBackend();
-		backend.assertTempRootOutsideWorkspace(workspaceRoot, tmpdir());
-		const writeSid = backend.workspaceWriteSid(workspaceRoot);
+		assertTempRootOutsideWorkspace(workspaceRoot, tmpdir());
+		const writeSid = workspaceWriteSid(workspaceRoot);
 		if (!this.workspaceGrants.has(workspaceRoot)) {
-			const grant = backend.AclWriteGrant.create(writeSid);
+			const grant = AclWriteGrant.create(writeSid);
 			try {
 				grant.add(workspaceRoot, true);
 			} catch (error) {
@@ -453,10 +401,10 @@ var LocalSandboxProvider = class extends SandboxProvider {
 		const existing = this.tempCapabilities.get(key);
 		if (existing !== void 0) return existing;
 		const tempDir = mkdtempSync(join(tmpdir(), "dsh-"));
-		const tempSid = backend.tempWriteSid(tempDir);
+		const tempSid = tempWriteSid(tempDir);
 		let grant;
 		try {
-			grant = backend.AclWriteGrant.create(tempSid);
+			grant = AclWriteGrant.create(tempSid);
 			grant.add(tempDir);
 		} catch (error) {
 			const cleanupFailures = [];
@@ -565,13 +513,7 @@ var LocalSandboxProvider = class extends SandboxProvider {
 	}
 	/** The `sandbox-exec` executable to probe and exec (test hook over the system one). */
 	seatbeltExec() {
-		return this.internals.seatbeltExec ?? MACOS_SEATBELT_EXECUTABLE;
-	}
-	/** Resolve the Win32-only implementation or fail with one explicit owner diagnostic. */
-	windowsAclBackend() {
-		const backend = this.internals.windowsAclBackend ?? platformWindowsAclBackend;
-		if (backend === void 0) throw new Error("sandbox-local: windows-acl was selected on a non-win32 runtime without an injected backend; the optional @deepseek-ai/dsh-sandbox-windows-acl package is loaded only on win32");
-		return backend;
+		return this.internals.seatbeltExec ?? "sandbox-exec";
 	}
 	/**
 	* The windows-acl runner argv prefix: the built lib/runner.js entry when
@@ -582,12 +524,9 @@ var LocalSandboxProvider = class extends SandboxProvider {
 	windowsAclRunnerInvocation() {
 		const override = this.internals.windowsAclRunnerArgs;
 		if (override !== void 0) return override;
-		const builtEntryOverride = this.internals.windowsAclRunnerEntry;
-		if (builtEntryOverride !== void 0 && existsSync(builtEntryOverride)) return [process.execPath, builtEntryOverride];
-		const backend = this.windowsAclBackend();
-		const builtEntry = builtEntryOverride ?? fileURLToPath(backend.resolveRunnerEntry("@deepseek-ai/dsh-sandbox-windows-acl/runner"));
+		const builtEntry = this.internals.windowsAclRunnerEntry ?? fileURLToPath(import.meta.resolve("@deepseek-ai/dsh-sandbox-windows-acl/runner"));
 		if (existsSync(builtEntry)) return [process.execPath, builtEntry];
-		const sourceEntry = fileURLToPath(backend.resolveRunnerEntry("@deepseek-ai/dsh-sandbox-windows-acl/src/runner.ts"));
+		const sourceEntry = fileURLToPath(import.meta.resolve("@deepseek-ai/dsh-sandbox-windows-acl/src/runner.ts"));
 		return [
 			process.execPath,
 			"--import",
@@ -597,4 +536,4 @@ var LocalSandboxProvider = class extends SandboxProvider {
 	}
 };
 //#endregion
-export { LocalSandboxProvider, LocalSandboxProvider as default, bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs };
+export { LocalSandboxProvider, LocalSandboxProvider as default };

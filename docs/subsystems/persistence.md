@@ -286,9 +286,10 @@ readRaw(_id: SessionId, signal?: AbortSignal): Promise<SessionRawArtifact | unde
 abstract create(meta: SessionHeader): Promise<void>
 
 /**
- * Materialize a live session header even when it has no events.
- * @param _session - live session whose header must become durable.
- * @returns completion after materialization; the default rejects unsupported backends.
+ * Ensure a live session has a durable header even when it has no events.
+ * Ordinary sessions remain lazily materialized; lifecycle frontends call
+ * this only when an empty session itself is a durable resumable resource.
+ * @param _session - exact live session whose registered header is materialized.
  */
 ensureMaterialized(_session: Session): Promise<void>
 
@@ -303,11 +304,10 @@ ensureMaterialized(_session: Session): Promise<void>
 abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
 
 /**
- * Permanently remove one session's durable log. Implementations serialize
- * deletion with every operation for the same id and reject while that id is
- * live or held by an unpublished resume preparation.
- * @param id - session identity to delete.
- * @returns `true` when a materialized log was removed, `false` when absent.
+ * Permanently remove an unowned session and await derived-data cleanup.
+ * @param id - exact session identity to remove.
+ * @returns whether stored data was removed; absence still notifies cleanup for retries.
+ * @throws while a live or prepared session owns the identity, or deletion fails.
  */
 abstract delete(id: SessionId): Promise<boolean>
 
@@ -354,6 +354,17 @@ abstract load(id: SessionId): Promise<SessionInspection>
  * @returns the validated header and current logical event log.
  */
 abstract inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection>
+
+/**
+ * Borrow one exact inspection while retaining any reusable prepared source.
+ * A cold observation must pin the exact prepared Session that a later
+ * {@link prepare} reserves. Implementations must not degrade this operation
+ * to a detached {@link inspect} result.
+ * @param id - persisted session to observe.
+ * @param signal - optional cancellation for preparation work.
+ * @returns a disposable immutable observation.
+ */
+abstract borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource>
 
 /**
  * Read the stored events from `fromSeq` onward — the read-from-seq
@@ -407,14 +418,12 @@ Source: [`packages/session/session-persistence/src/index.ts`](../../packages/ses
 
 #### `session-persistence/deleted` — parallel
 
-One durable session log was permanently removed (or confirmed absent on retry). Awaited consumers clear session-derived state before deletion returns to the archive lifecycle.
+Purge derived data after a durable deletion; failure rejects the delete request.
 
 ```ts cordis-catalog
 /**
- * One durable session log was permanently removed (or confirmed absent on
- * retry). Awaited consumers clear session-derived state before deletion
- * returns to the archive lifecycle.
- * @param sessionId - permanently deleted session identity.
+ * Purge derived data after a durable deletion; failure rejects the delete request.
+ * @param sessionId - permanently deleted identity.
  * @mode parallel
  */
 'session-persistence/deleted'(sessionId: SessionId): Promise<void> | void

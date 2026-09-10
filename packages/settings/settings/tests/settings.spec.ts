@@ -626,6 +626,8 @@ describe('third review regressions', () => {
     ['a symbol', { value: Symbol('x') }, /symbol at \$\.value/],
     ['a non-finite number', { value: Number.NaN }, /non-finite number at \$\.value/],
     ['an undefined array entry', { value: [undefined] }, /undefined at \$\.value\[0\]/],
+    ['a sparse array', { value: Array(1) }, /undefined at \$\.value\[0\]/],
+    ['negative zero', { value: -0 }, /negative zero at \$\.value/],
     ['a class instance', { value: Object.create({ marker: true }) as object }, /non-plain object at \$\.value/],
   ])('rejects %s that structuredClone would admit', async (_label, patch, message) => {
     const { ctx } = await boot()

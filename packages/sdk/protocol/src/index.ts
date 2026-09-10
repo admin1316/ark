@@ -9,6 +9,7 @@
  */
 
 export { JsonRpcLineTransport, JsonRpcResponseError } from './transport.ts'
+export { isRecord } from './record.ts'
 export type { JsonRpcTransportPeer } from './transport.ts'
 export type {
   HarnessSdkNotificationMap,

@@ -4,37 +4,36 @@ import z from '@deepseek-ai/schemastery';
 import { type AllowedModelRoute } from './model-selection.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
+        /** User preference sampled when a new Agent receives its delegation tools. */
         subagentModelSelection: SubagentModelSelectionConfig;
     }
 }
-/** User-settings namespace for the model-selection authority. */
+/** User-settings section for model-selectable subagent delegation. */
 export declare const SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE: import("@deepseek-ai/dsh-settings").SettingsNamespace;
-/**
- * Describes the subagent model selection settings value used by this package.
- */
+/** Stored user preference; the shipped composition defaults it off. */
 export interface SubagentModelSelectionSettings {
+    /** Whether newly composed top-level Sessions receive model selection. */
     enabled: boolean;
+    /** Exact child LLM routes offered to newly composed top-level Sessions. */
     allowedModels: AllowedModelRoute[];
 }
-/**
- * Defines the subagent model selection settings schema constant used by this package.
- */
+/** Schema served to settings clients for the opt-in preference. */
 export declare const SUBAGENT_MODEL_SELECTION_SETTINGS_SCHEMA: z<SubagentModelSelectionSettings>;
-/**
- * Describes the config value used by this package.
- */
+/** Optional deployment base for the preference. */
 export interface Config {
+    /** Initial enabled state inherited when the user document does not override it. */
     enabled?: boolean;
+    /** Initial route list inherited when the user document does not override it. */
     allowedModels?: AllowedModelRoute[];
 }
-/** Singleton settings owner sampled when a new eligible Agent is published. */
+/** Singleton settings owner read by delegation tools when an Agent is published. */
 export declare class SubagentModelSelectionConfig extends Service {
     static Config: z<Config>;
     private source;
     constructor(ctx: Context, config?: Config);
     /**
-     * Read the current model-selection authority as a detached snapshot.
-     * @returns the enabled flag and detached allowed-model routes.
+     * Read a detached selection preference for the next eligible Agent publication.
+     * @returns the enabled state and exact allowed routes.
      */
     current(): SubagentModelSelectionSettings;
     private validate;

@@ -115,6 +115,7 @@ interface ParsedSkill {
 interface LocalLocator {
   path: string
   directory: string
+  trustedHost?: boolean
 }
 
 interface ResolvedWatchConfig {
@@ -180,16 +181,6 @@ export class FileSystemSkillProvider implements SkillProvider {
    *   failure returns readable candidates as an incomplete observation.
    */
   async list(options: SkillLookupOptions): Promise<SkillCandidate[] | SkillProviderObservation> {
-    try {
-      const { appendFileSync } = await import('node:fs')
-      const rootsDebug = await this.roots(options.cwd)
-      appendFileSync('/tmp/skill-admission-debug.log', `[provider] libHasTrustedHost=${s.includes('trustedHost: true')} dshHome=${this.dshHome} agentsHome=${this.agentsHome} includeDefaultRoots=${this.includeDefaultRoots} roots=${JSON.stringify(rootsDebug)}\n`)
-    } catch (debugError) {
-      try {
-        const { appendFileSync } = await import('node:fs')
-        appendFileSync('/tmp/skill-admission-debug.log', `[provider] debug threw: ${debugError instanceof Error ? debugError.message : String(debugError)}\n`)
-      } catch {}
-    }
     const roots = await this.roots(options.cwd)
     let complete = true
     try {
@@ -200,21 +191,9 @@ export class FileSystemSkillProvider implements SkillProvider {
     }
     const candidates: SkillCandidate[] = []
     for (const root of roots) {
-      let found: SkillCandidate[] = []
-      try {
-        found = await discoverRoot(root, this.ctx, this.name)
-      } catch (error) {
-        try {
-          const { appendFileSync } = await import('node:fs')
-          appendFileSync('/tmp/skill-admission-debug.log', `[provider] discoverRoot ${root.source} THREW: ${error instanceof Error ? error.message : String(error)}\n`)
-        } catch {}
-        throw error
-      }
-      try {
-        const { appendFileSync } = await import('node:fs')
-        appendFileSync('/tmp/skill-admission-debug.log', `[provider] discoverRoot ${root.source} (${root.path}) -> ${found.length} skills: ${found.slice(0, 8).map(x => x.name).join(',')}\n`)
-      } catch {}
-      candidates.push(...found)
+      const found = await discoverRoot(root, this.ctx, this.name)
+      candidates.push(...found.candidates)
+      if (!found.complete) complete = false
     }
     return complete ? candidates : { candidates, complete }
   }
@@ -227,7 +206,7 @@ export class FileSystemSkillProvider implements SkillProvider {
    */
   async get(candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> {
     const locator = candidate.locator as LocalLocator
-    const parsed = await parseSkillFile(locator.path, this.ctx, options.signal, candidate.source === 'bundled')
+    const parsed = await parseSkillFile(locator.path, this.ctx, options.signal, locator.trustedHost === true)
     if (parsed === undefined) return undefined
     return {
       name: parsed.name,
@@ -743,9 +722,16 @@ function hasErrorCode(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code
 }
 
-async function discoverRoot(root: SkillRoot, ctx: Context, provider: string): Promise<SkillCandidate[]> {
+async function discoverRoot(root: SkillRoot, ctx: Context, provider: string): Promise<SkillProviderObservation> {
   const skills: SkillCandidate[] = []
-  const entries = await listSkillRootEntries(root, ctx)
+  let complete = true
+  let entries: SkillRootEntry[]
+  try {
+    entries = await listSkillRootEntries(root, ctx)
+  } catch (error) {
+    ctx.logger.warn(`skill root ${root.path} skipped: ${errorMessage(error)}`)
+    return { candidates: skills, complete: false }
+  }
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (root.skipSystem && entry.name === '.system') continue
     const locator = entry.type === 'directory'
@@ -754,7 +740,14 @@ async function discoverRoot(root: SkillRoot, ctx: Context, provider: string): Pr
         ? { path: entry.path, directory: root.path }
         : undefined
     if (locator === undefined) continue
-    const parsed = await parseSkillFile(locator.path, ctx, undefined, root.trustedHost === true)
+    let parsed: ParsedSkill | undefined
+    try {
+      parsed = await parseSkillFile(locator.path, ctx, undefined, root.trustedHost === true)
+    } catch (error) {
+      ctx.logger.warn(`skill file ${locator.path} ignored: ${errorMessage(error)}`)
+      complete = false
+      continue
+    }
     if (parsed === undefined) continue
     skills.push({
       name: parsed.name,
@@ -764,13 +757,13 @@ async function discoverRoot(root: SkillRoot, ctx: Context, provider: string): Pr
       provider,
       source: root.source,
       rank: root.rank,
-      locator,
+      locator: { ...locator, ...(root.trustedHost === true ? { trustedHost: true } : {}) },
       resourceBase: { kind: 'directory', path: locator.directory },
       path: locator.path,
       ...parsed.metadata !== undefined ? { metadata: parsed.metadata } : {},
     })
   }
-  return skills
+  return { candidates: skills, complete }
 }
 
 async function listSkillRootEntries(root: SkillRoot, ctx: Context): Promise<SkillRootEntry[]> {
@@ -872,7 +865,13 @@ async function readSkillText(ctx: Context, path: string, signal?: AbortSignal, t
     return await readSkillTextFromFileSystem(ctx, fs, path, signal)
   }
   try {
-    return await readFile(path, { encoding: 'utf8', signal })
+    const bytes = await readFile(path, { signal })
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    } catch (error) {
+      ctx.logger.warn(`skill file ${path} ignored: ${errorMessage(error)}`)
+      return undefined
+    }
   } catch (error) {
     signal?.throwIfAborted()
     if (isAbsentSkillPathError(error)) return undefined

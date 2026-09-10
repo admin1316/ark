@@ -149,6 +149,99 @@ abstract capability(): DirectoryPickerCapability
 
 Source: [`packages/host/directory-picker/src/index.ts`](../../packages/host/directory-picker/src/index.ts)
 
+<a id="ctxdirectorypickercontroller--directorypickercontroller"></a>
+
+### `ctx.directoryPickerController` — `DirectoryPickerController`
+
+Host service backing the generated `ctx.remote.directoryPicker` namespace. The seam it exports is abstract and therefore never a Loader entry of its own, so this controller carries the wire verbs: one composed backend serves either the native chooser or the browse primitives, and a verb the composition cannot serve is refused rather than approximated.
+
+```ts cordis-catalog
+/**
+ * Open the host's OS chooser for a Remote caller.
+ * @param signal - caller lifetime; abort terminates the chooser.
+ * @returns the chosen absolute path, or null when the operator cancels.
+ */
+@Remote('pick') async pick(signal: AbortSignal): Promise<string | null>
+
+/**
+ * List one directory level for a Remote caller's in-app browser.
+ * @param path - absolute directory to list; absent lists the home directory.
+ * @param signal - caller lifetime; abort stops the backend's scan instead of
+ *   letting it outlive a disconnected caller.
+ * @returns the level's listing with its ancestry.
+ */
+@Remote('list') async list(path: string | undefined, signal: AbortSignal): Promise<DirectoryListing>
+
+/**
+ * Create one child directory for a Remote caller's in-app browser.
+ * @param path - absolute existing parent directory.
+ * @param name - single non-blank path segment.
+ * @returns the created directory's absolute path.
+ */
+@Remote('createDirectory') async createDirectory(path: string, name: string): Promise<string>
+```
+
+Source: [`packages/api/workspace-controller/src/directory-picker.ts`](../../packages/api/workspace-controller/src/directory-picker.ts)
+
+<a id="ctxworkspacecontroller--workspacecontroller"></a>
+
+### `ctx.workspaceController` — `WorkspaceController`
+
+Host service backing the generated `ctx.remote.workspace` namespace.
+
+```ts cordis-catalog
+/**
+ * Create or idempotently resolve one Workspace over an existing directory.
+ * @param request - directory path to register.
+ * @returns the Workspace and whether this call created it.
+ */
+@Remote('create') create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>
+
+/**
+ * Rename one Workspace to a unique non-blank title.
+ * @param request - Workspace identity and proposed title.
+ * @returns the updated Workspace projection.
+ */
+@Remote('rename') rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue>
+
+/**
+ * Remove one Workspace registration while retaining files and Sessions.
+ * @param request - Workspace identity to remove.
+ * @returns deletion confirmation.
+ */
+@Remote('delete') delete(request: WorkspaceDeleteRequest): Promise<WorkspaceDeleteValue>
+
+/**
+ * Move one Workspace within the registry display order.
+ * @param request - moved Workspace and optional anchor.
+ * @returns the complete resulting Workspace order.
+ */
+@Remote('insertBefore') insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue>
+
+/**
+ * Move one accounted Session within a Workspace.
+ * @param request - Workspace, Session, and optional anchor identities.
+ * @returns the updated Workspace projection.
+ */
+@Remote('insertSessionBefore') insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>
+
+/**
+ * Hide one known Session from Workspace grouping surfaces.
+ * @param request - Session identity to archive.
+ * @returns the complete resulting archive set.
+ */
+@Remote('archiveSession') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>
+
+/**
+ * Stream a complete Workspace baseline followed by ordered increments.
+ * @param signal - generation cancellation.
+ * @returns baseline followed by ordered Workspace increments.
+ */
+@Remote({ mode: 'stream' }) follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame>
+```
+
+Source: [`packages/api/workspace-controller/src/index.ts`](../../packages/api/workspace-controller/src/index.ts)
+
 <a id="ctxworkspaceregistry--workspaceregistry"></a>
 
 ### `ctx.workspaceRegistry` — `WorkspaceRegistry`
@@ -170,12 +263,10 @@ Durable workspace registry. Startup waits for `sessionPersistence`, builds one c
 async create(path: string, title?: string): Promise<Workspace>
 
 /**
- * Create one Workspace or resolve the existing canonical path in the same
- * registry serialization slot.  The `created` bit is therefore not guessed
- * from a stale preflight lookup.
- * @param path - Existing directory to own, in any path spelling.
- * @param title - Display title used only when a new record is created.
- * @returns the workspace and whether a new record was created.
+ * Resolve canonical ownership and creation status in the same serialized operation.
+ * @param path - existing directory.
+ * @param title - initial title when a record is created.
+ * @returns workspace and whether this operation created it.
  */
 async createOrResolve(path: string, title?: string): Promise<{ workspace: Workspace; created: boolean }>
 
@@ -195,75 +286,83 @@ get(id: WorkspaceId): Workspace | undefined
 list(): Workspace[]
 
 /**
- * List durable Workspaces and the archive overlay through the generated Remote boundary.
- * @param signal - caller-owned cancellation signal.
- * @returns the workspace list and archived-session overlay.
+ * Project the native workspace list without persistence reads.
+ * @param signal - request cancellation.
+ * @returns durable rows and archive overlay.
  */
 @Remote('list') remoteExportList(signal: AbortSignal): WorkspaceRemoteResult<WorkspaceRemoteListValue>
 
 /**
- * Create or resolve one canonical existing directory through the generated Remote boundary.
- * @param request - directory path to create or resolve.
- * @param signal - caller-owned cancellation signal.
- * @returns the workspace result and creation flag.
+ * Create or resolve a workspace registration through the native API.
+ * @param request - existing directory to own.
+ * @param signal - cancellation.
+ * @returns row and atomic creation flag.
  */
-@Remote('create') async remoteExportCreate( request: WorkspaceRemoteCreateRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteCreateValue>>
+@Remote('create') async remoteExportCreate(request: WorkspaceRemoteCreateRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteCreateValue>>
 
 /**
- * Rename one Workspace without exposing the registry's write chain to transport code.
- * @param request - workspace id and replacement title.
- * @param signal - caller-owned cancellation signal.
- * @returns the renamed workspace result.
+ * Rename a registered workspace through the native API.
+ * @param request - workspace and replacement title.
+ * @param signal - cancellation.
+ * @returns renamed row.
  */
-@Remote('rename') async remoteExportRename( request: WorkspaceRemoteRenameRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>
+@Remote('rename') remoteExportRename(request: WorkspaceRemoteRenameRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>
 
 /**
- * Remove only a Workspace registration; neither files nor session logs are touched.
- * @param request - workspace id to remove.
- * @param signal - caller-owned cancellation signal.
- * @returns confirmation of the registration removal.
+ * Remove a workspace registration without deleting files or session logs.
+ * @param request - registration to remove.
+ * @param signal - cancellation.
+ * @returns confirmation; files and logs remain.
  */
-@Remote('delete') async remoteExportDelete( request: WorkspaceRemoteDeleteRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeletedValue>>
+@Remote('delete') remoteExportDelete(request: WorkspaceRemoteDeleteRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeletedValue>>
 
 /**
- * Reorder Workspace rows using DOM-insertBefore semantics.
- * @param request - workspace and optional anchor ids.
- * @param signal - caller-owned cancellation signal.
- * @returns the resulting workspace order.
+ * Reorder a workspace through the native API.
+ * @param request - workspace and optional anchor.
+ * @param signal - cancellation.
+ * @returns durable order.
  */
-@Remote('insertBefore') async remoteExportInsertBefore( request: WorkspaceRemoteInsertBeforeRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteOrderValue>>
+@Remote('insertBefore') remoteExportInsertBefore(request: WorkspaceRemoteInsertBeforeRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteOrderValue>>
 
 /**
- * Reorder an accounted Session inside one Workspace.
- * @param request - workspace, session, and optional anchor ids.
- * @param signal - caller-owned cancellation signal.
- * @returns the updated workspace result.
+ * Reorder a session within its workspace account.
+ * @param request - workspace, session and optional anchor.
+ * @param signal - cancellation.
+ * @returns updated account.
  */
-@Remote('insertSessionBefore') async remoteExportInsertSessionBefore( request: WorkspaceRemoteInsertSessionBeforeRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>
+@Remote('insertSessionBefore') remoteExportInsertSessionBefore(request: WorkspaceRemoteInsertSessionBeforeRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>
 
 /**
- * Archive one Session without changing its Workspace account or log.
- * @param request - session id to archive.
- * @param signal - caller-owned cancellation signal.
- * @returns the archived-session ids after the operation.
+ * Archive a session through the native API while retaining its log.
+ * @param request - session to archive.
+ * @param signal - cancellation.
+ * @returns committed archive overlay.
  */
-@Remote('archiveSession') async remoteExportArchiveSession( request: WorkspaceRemoteArchiveRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>
+@Remote('archiveSession') remoteExportArchiveSession(request: WorkspaceRemoteArchiveRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>
 
 /**
- * Restore one archived Session without changing its retained Workspace position.
- * @param request - archived session id to restore.
- * @param signal - caller-owned cancellation signal.
- * @returns the archived-session ids after the operation.
+ * Restore an archived session to the visible workspace projection.
+ * @param request - archived session to restore.
+ * @param signal - cancellation.
+ * @returns committed archive overlay.
  */
-@Remote('unarchiveSession') async remoteExportUnarchiveSession( request: WorkspaceRemoteArchiveRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>
+@Remote('unarchiveSession') remoteExportUnarchiveSession(request: WorkspaceRemoteArchiveRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>
 
 /**
- * Permanently delete an archived Session only through the exact lifecycle-retirement capability.
- * @param request - archived session id to delete.
- * @param signal - caller-owned cancellation signal.
- * @returns deletion confirmation and remaining archived-session ids.
+ * Permanently delete an archived root through its existing lifecycle owners.
+ * @param request - archived root to delete.
+ * @param signal - cancellation.
+ * @returns deletion and archive state.
  */
-@Remote('deleteArchivedSession') async remoteExportDeleteArchivedSession( request: WorkspaceRemoteDeleteArchivedRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeleteArchivedValue>>
+@Remote('deleteArchivedSession') remoteExportDeleteArchivedSession(request: WorkspaceRemoteDeleteArchivedRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeleteArchivedValue>>
+
+/**
+ * Persist a non-empty, unique workspace title before publishing it.
+ * @param id - registered workspace.
+ * @param title - visible replacement title.
+ * @returns renamed workspace after durability.
+ */
+rename(id: WorkspaceId, title: string): Promise<Workspace>
 
 /**
  * Delete one workspace registration while retaining its directory and every
@@ -276,14 +375,6 @@ list(): Workspace[]
 delete(id: WorkspaceId): Promise<boolean>
 
 /**
- * Rename one Workspace through the same serialization chain as all registry writes.
- * @param id - Workspace registration to rename.
- * @param title - replacement display title.
- * @returns the renamed workspace.
- */
-rename(id: WorkspaceId, title: string): Promise<Workspace>
-
-/**
  * Move one workspace within the durable display order, DOM-insertBefore-like.
  * With an anchor it lands before that workspace; without one it appends.
  * @param id - Workspace to move.
@@ -293,16 +384,16 @@ rename(id: WorkspaceId, title: string): Promise<Workspace>
 insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly WorkspaceId[]>
 
 /**
- * Capture the in-process permanent-deletion generation for publication fencing.
- * @param sessionId - Session identity whose deletion generation is read.
- * @returns Current admission generation for the session.
+ * Capture the deletion generation before asynchronously loading a session.
+ * @param sessionId - identity to observe.
+ * @returns its in-process permanent-deletion generation.
  */
 sessionAdmissionRevision(sessionId: SessionId): number
 
 /**
- * Revalidate a publication against archive membership and deletion races.
- * @param sessionId - Session identity being published.
- * @param revision - Admission generation captured before the asynchronous work.
+ * Reject publication while a session is archived or its deletion raced the load.
+ * @param sessionId - identity being published.
+ * @param revision - generation captured before asynchronous work.
  */
 assertSessionAdmission(sessionId: SessionId, revision: number): void
 
@@ -316,21 +407,19 @@ assertSessionAdmission(sessionId: SessionId, revision: number): void
 archiveSession(sessionId: SessionId): Promise<void>
 
 /**
- * Remove an existing session from the archive set without touching its log/account slot.
- * @param sessionId - Archived session identity to restore.
- * @returns Resolution after the archive mutation is durable.
+ * Remove a known session from the durable archive overlay.
+ * @param sessionId - archived identity to restore.
+ * @returns settlement after durable archive removal.
  */
 unarchiveSession(sessionId: SessionId): Promise<void>
 
 /**
- * Permanently delete one archived session and every retained descendant.
- * Logs commit descendant-first before workspace accounts and archive state;
- * a later failure leaves the root archive marker available for retry.
- * @param sessionId - Archived root session identity to delete.
- * @param retireResident - Callback that retires a live/resident session before log deletion.
- * @returns Resolution after all retained records and archive state are durable.
+ * Delete an archived root and retained descendants before committing account and archive removal.
+ * @param sessionId - archived root identity.
+ * @param retireResident - exact lifecycle owner used to retire resident sessions.
+ * @returns settlement after logs, derived cleanup, accounts and archive state commit.
  */
-deleteArchivedSession( sessionId: SessionId, retireResident?: (residentSessionId: SessionId) => Promise<void>, ): Promise<void>
+deleteArchivedSession(sessionId: SessionId, retireResident?: (residentSessionId: SessionId) => Promise<void>): Promise<void>
 
 /**
  * Resolve by canonical directory path without creating or mutating a
@@ -354,12 +443,12 @@ Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/w
 
 #### `workspace/archived-sessions-changed` — emit
 
-Complete committed archive set after a non-delete mutation.
+Committed archive overlay after a non-delete mutation.
 
 ```ts cordis-catalog
 /**
- * Complete committed archive set after a non-delete mutation.
- * @param archivedSessionIds - Current archived session identities in durable order.
+ * Committed archive overlay after a non-delete mutation.
+ * @param archivedSessionIds - current archive identities in durable order.
  * @mode emit
  */
 'workspace/archived-sessions-changed'(archivedSessionIds: readonly SessionId[]): void
@@ -373,13 +462,13 @@ Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/w
 
 #### `workspace/session-deleted` — emit
 
-One permanently deleted identity after log/account/archive commits.
+Permanently removed identity after log, account and archive commits.
 
 ```ts cordis-catalog
 /**
- * One permanently deleted identity after log/account/archive commits.
- * @param sessionId - Root session identity that was permanently deleted.
- * @param archivedSessionIds - Remaining archived session identities in durable order.
+ * Permanently removed identity after log, account and archive commits.
+ * @param sessionId - deleted identity.
+ * @param archivedSessionIds - remaining archive overlay.
  * @mode emit
  */
 'workspace/session-deleted'(sessionId: SessionId, archivedSessionIds: readonly SessionId[]): void

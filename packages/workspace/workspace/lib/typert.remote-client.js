@@ -206,7 +206,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_archiveSession_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":503,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":432,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/create',
@@ -233,7 +233,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_create_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":409,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":345,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/delete',
@@ -260,7 +260,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_delete_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":451,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":383,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/deleteArchivedSession',
@@ -287,7 +287,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_deleteArchivedSession_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":537,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":464,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/insertBefore',
@@ -314,7 +314,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_insertBefore_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":468,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":399,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/insertSessionBefore',
@@ -341,7 +341,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_insertSessionBefore_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":484,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":414,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/list',
@@ -358,7 +358,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_list_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":391,"column":3},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":333,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/rename',
@@ -385,7 +385,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_rename_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":435,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":368,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/unarchiveSession',
@@ -412,7 +412,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_unarchiveSession_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":520,"column":9},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":448,"column":3},
     },
   ],
 }

@@ -47,7 +47,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-skill/types#RemoteSkillCatalog',
         schema: _deepseek_ai_dsh_skill_skill_list_result$schema,
       },
-      sourceLocation: {"file":"packages/skill/skill/src/index.ts","line":489,"column":9},
+      sourceLocation: {"file":"packages/skill/skill/src/index.ts","line":487,"column":9},
     },
   ],
   model: {
@@ -85,8 +85,8 @@ export const TYPERT = {
             "kind": "method",
             "name": "remoteList",
             "signature": "@Remote('list') async remoteList(agent: Agent, signal: AbortSignal): Promise<RemoteSkillCatalog>",
-            "summary": "List user-invocable skills for one gateway-resolved Agent.",
-            "jsDoc": "/**\n * List user-invocable skills for one gateway-resolved Agent. The session's\n * stored cwd and the agent's scope are the only lookup inputs; no raw host\n * path crosses the Remote wire.\n * @param agent - gateway-resolved Agent whose skill scope is listed.\n * @param signal - caller-owned cancellation signal.\n * @returns the user-invocable skill catalog.\n */"
+            "summary": "List user-invocable skills for a gateway-resolved Agent.",
+            "jsDoc": "/**\n * List user-invocable skills for a gateway-resolved Agent.\n * @param agent - Agent whose persisted cwd and scope determine visibility.\n * @param signal - Caller-owned cancellation signal.\n * @returns The user-invocable catalog without skill bodies.\n * @throws TypertLookupFailure for cancellation, absent cwd, or provider failures.\n */"
           },
           {
             "kind": "method",
@@ -202,7 +202,7 @@ export const TYPERT = {
           },
           {
             "name": "ContinuableSubagentDescriptorData",
-            "declaration": "export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: 'continuable';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}"
+            "declaration": "export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: 'continuable';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly agentReasoningEffort?: ReasoningEffortId;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}"
           },
           {
             "name": "CoordinatorMessageSource",
@@ -310,7 +310,7 @@ export const TYPERT = {
           },
           {
             "name": "MessageSourceMap",
-            "declaration": "export interface MessageSourceMap {\n    user: { kind: 'user'; };\n    plugin: { kind: 'plugin'; plugin: string; } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    goal: GoalMessageSource;\n    coordinator: CoordinatorMessageSource;\n    'subagent-prompt': SubagentPromptMessageSource;\n    'subagent-report': SubagentReportMessageSource;\n    'subagent-settled': SubagentSettledMessageSource;\n    'session-reference': SessionReferenceSource;\n    'skill-invocation': SkillInvocationSource;\n}"
+            "declaration": "export interface MessageSourceMap {\n    user: { kind: 'user'; };\n    plugin: { kind: 'plugin'; plugin: string; } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    goal: GoalMessageSource;\n    coordinator: CoordinatorMessageSource;\n    'subagent-report': SubagentReportMessageSource;\n    'subagent-settled': SubagentSettledMessageSource;\n    'subagent-prompt': SubagentPromptMessageSource;\n    'session-reference': SessionReferenceSource;\n    'skill-invocation': SkillInvocationSource;\n}"
           },
           {
             "name": "ModelMessageSource",
@@ -370,7 +370,7 @@ export const TYPERT = {
           },
           {
             "name": "SessionEventMap",
-            "declaration": "export interface SessionEventMap {\n    'turn/start': { turn: number; };\n    'turn/end': { turn: number; reason: TurnEndReason; };\n    'step/start': { turn: number; step: number; };\n    'step/end': { turn: number; step: number; };\n    'user/message': UserMessage;\n    'assistant/chunk': { turn: number; step: number; chunk: StreamChunk; };\n    'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true; };\n    'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string; };\n    'tool/result': { turn: number; step: number; message: ToolResultMessage; error?: { name: string; code: string; }; meta?: JsonValue; };\n    'todo/write': { todos: TodoItem[]; };\n    'request/header': { header: EpochHeader; reason: RequestHeaderReason; };\n    'request/context': RequestContext;\n    'session/end-seed': Record<string, never>;\n    'agent/inbox/spliced': { target: InboxTarget; start: number; removedCount?: number; inserted: UserMessage[]; outcome?: 'canceled'; };\n    'agent-preset/selected': { agentPreset: string; };\n    'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource; };\n    'command/done': { commandId: CommandId; kind: 'success' | 'error'; text?: string; sourceEventSeq?: number; };\n    'goal/change': GoalChangeMeta;\n    'approval/asked': { id: ApprovalRequestId; toolName: string; callId?: CallId; reason?: string; };\n    'approval/decided': { id: ApprovalRequestId; outcome: ApprovalOutcome; };\n    'approval/policy': { policy: ApprovalPolicy; source?: 'delegation'; };\n    'tool/code-dispatch-start': CodeDispatchStartEventData;\n    'tool/code-dispatch': CodeDispatchEventData;\n    'subagent/descriptor': SubagentDescriptorData;\n    'sandbox/mode': { mode: SandboxMode; source?: 'delegation'; };\n    'session/title': SessionTitleEventData;\n    'compaction/start': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; };\n    'compaction/summary': { compactionId: CompactionId; sourceCommandId?: CommandId; summary: ContentBlock[]; shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; provider: string; model: string; maxTokens?: number; usage?: TokenUsage; } & ({ rawOutput: ContentBlock[]; llmStreamCall: true; } | { rawOutput?: ContentBlock[]; llmStreamCall?: never; });\n    'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string; };\n    'compaction/prune': { shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; };\n}"
+            "declaration": "export interface SessionEventMap {\n    'turn/start': { turn: number; };\n    'turn/end': { turn: number; reason: TurnEndReason; };\n    'step/start': { turn: number; step: number; };\n    'step/end': { turn: number; step: number; };\n    'user/message': UserMessage;\n    'assistant/chunk': { turn: number; step: number; chunk: StreamChunk; };\n    'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true; };\n    'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string; };\n    'tool/result': { turn: number; step: number; message: ToolResultMessage; error?: { name: string; code: string; }; meta?: JsonValue; };\n    'todo/write': { todos: TodoItem[]; };\n    'request/header': { header: EpochHeader; reason: RequestHeaderReason; };\n    'request/context': RequestContext;\n    'session/end-seed': Record<string, never>;\n    'agent/inbox/spliced': { target: InboxTarget; start: number; removedCount?: number; inserted: UserMessage[]; outcome?: 'canceled'; };\n    'approval/asked': { id: ApprovalRequestId; toolName: string; callId?: CallId; reason?: string; };\n    'approval/decided': { id: ApprovalRequestId; outcome: ApprovalOutcome; };\n    'approval/policy': { policy: ApprovalPolicy; source?: 'delegation'; };\n    'tool/code-dispatch-start': CodeDispatchStartEventData;\n    'tool/code-dispatch': CodeDispatchEventData;\n    'agent-preset/selected': { agentPreset: string; };\n    'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource; };\n    'command/done': { commandId: CommandId; kind: 'success' | 'error'; text?: string; sourceEventSeq?: number; };\n    'goal/change': GoalChangeMeta;\n    'subagent/descriptor': SubagentDescriptorData;\n    'session/title': SessionTitleEventData;\n    'sandbox/mode': { mode: SandboxMode; source?: 'delegation'; };\n    'compaction/start': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; };\n    'compaction/summary': { compactionId: CompactionId; sourceCommandId?: CommandId; summary: ContentBlock[]; shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; provider: string; model: string; maxTokens?: number; usage?: TokenUsage; } & ({ rawOutput: ContentBlock[]; llmStreamCall: true; } | { rawOutput?: ContentBlock[]; llmStreamCall?: never; });\n    'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string; };\n    'compaction/prune': { shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; };\n}"
           },
           {
             "name": "SessionEventType",
@@ -486,7 +486,7 @@ export const TYPERT = {
           },
           {
             "name": "SubagentSettledMessageSource",
-            "declaration": "export interface SubagentSettledMessageSource {\n    readonly kind: 'subagent-settled';\n    readonly form: 'notice';\n    readonly summary: string;\n    readonly senderSessionId: SessionId;\n    readonly settlementId: string;\n}"
+            "declaration": "export interface SubagentSettledMessageSource {\n    readonly kind: 'subagent-settled';\n    readonly form: 'notice';\n    readonly summary: string;\n    readonly senderSessionId: SessionId;\n}"
           },
           {
             "name": "SurfaceEventType",

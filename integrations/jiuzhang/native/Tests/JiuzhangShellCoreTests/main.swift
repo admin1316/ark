@@ -47,6 +47,7 @@ let expectedContractGroups = [
   "shell-parity",
   "trajectory",
   "settings",
+  "provider-recovery-wire",
   "files-tabs",
   "files-race",
   "workbench-draft-journal",
@@ -106,6 +107,7 @@ runContractGroup("reasoning-effort", runArkReasoningEffortContractChecks)
 runContractGroup("shell-parity", runArkShellParityContractChecks)
 runContractGroup("trajectory", runArkTrajectoryContractChecks)
 runContractGroup("settings", runArkSettingsContractChecks)
+await runAsyncContractGroup("provider-recovery-wire", runArkProviderRecoveryContractChecks)
 runContractGroup("files-tabs", runArkFilesTabsContractChecks)
 await runAsyncContractGroup("files-race", runArkFilesRaceContractChecks)
 await runAsyncContractGroup("workbench-draft-journal", runArkWorkbenchDraftJournalContractChecks)

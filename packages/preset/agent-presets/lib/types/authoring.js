@@ -17,17 +17,6 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write';
 import { expandHomePath } from '@deepseek-ai/dsh-home-paths';
 import { METADATA_FILE, renderPresetMetadata } from "./metadata.js";
 import { PRESET_ID } from "./preset.js";
-/** A preset id reserved by the deployment's authoring policy. */
-export class ReservedPresetIdError extends Error {
-    presetId;
-    constructor(
-    /** The rejected id. */
-    presetId) {
-        super(`agent-presets: preset id ${JSON.stringify(presetId)} is reserved and cannot be created`);
-        this.presetId = presetId;
-        this.name = 'ReservedPresetIdError';
-    }
-}
 /** A preset id that cannot be used as a directory name under a root. */
 export class InvalidPresetIdError extends Error {
     presetId;
@@ -134,11 +123,8 @@ async function tightenModes(dir) {
  * @returns the absolute path of the new preset directory.
  * @throws when the id is unusable or already occupied on disk, or the
  * deployment configures no writable root.
- * @param reservedIds - The reserved ids input.
  */
-export async function copyComposition(roots, source, id, name, reservedIds = []) {
-    if (reservedIds.includes(id))
-        throw new ReservedPresetIdError(id);
+export async function copyComposition(roots, source, id, name) {
     if (!PRESET_ID.test(id))
         throw new InvalidPresetIdError(id);
     const dir = join(writableRoot(roots), id);

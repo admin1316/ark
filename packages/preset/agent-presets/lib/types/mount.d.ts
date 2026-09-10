@@ -21,10 +21,10 @@ import { type AgentPreset } from './preset.ts';
 export interface PresetMount {
     /** The preset the subtree was composed from. */
     readonly presetId: string;
-    /** The Loader tree for active package provenance and diagnostics. */
-    readonly tree: EntryTree;
     /** The mounted subtree's fiber. */
     readonly fiber: Fiber;
+    /** Loader entry tree whose active rows form this standing composition. */
+    readonly tree: EntryTree;
     /** The standing scope key agents are parented to (undefined only in torn-down records). */
     readonly key: ScopeKey | undefined;
 }
@@ -70,8 +70,8 @@ export declare function standingMountFor(agentCtx: Context): JoinedPresetMount |
  * cannot collide, and an entry-local realm is invisible to everything outside
  * the group — including the agent's own scope context and the host. That is
  * right for the rows inside the group and wrong for one caller: a request that
- * is ABOUT a session but arrives from outside it, which is every session-scoped
- * Remote request entering through the Host gateway.
+ * is ABOUT a session but arrives from outside it, which is every browser RPC
+ * the api-proxy serves.
  *
  * Ownership is the same relation {@link leakedServices} reads, inverted: there
  * it names implementations a subtree published into the ROOT realm, here it

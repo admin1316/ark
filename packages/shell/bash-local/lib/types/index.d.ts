@@ -43,6 +43,24 @@ export interface Config {
 /** The shape after schemastery applied the defaults (cwd has none). */
 type ResolvedConfig = Required<Omit<Config, 'cwd'>> & Pick<Config, 'cwd'>;
 /**
+ * The bash executable this executor spawns, memoized per process. POSIX keeps
+ * the bare name: `execvp` PATH resolution never searches the working
+ * directory, so a hostile `workdir` cannot plant a binary. Windows resolves
+ * once to an absolute path for the same reason plus a Windows-specific trap:
+ * `C:\Windows\System32\bash.exe` is the WSL launcher, and CreateProcess's
+ * search order (app dir, working directory, System32, Windows, PATH) would
+ * silently route a sandboxed `bash -c` into the WSL VM — outside the
+ * windows-acl restricted token, the ACL deny SIDs, and the workspace
+ * entirely. The scan mirrors the PATH segment order, skips the system
+ * directories, and fails closed when no real bash distribution (Git for
+ * Windows, MSYS2, Cygwin) is installed, rather than pretending the sandbox
+ * still applies.
+ * @param platform - the platform to resolve for; defaults to this process's.
+ * @returns the argv head for `bash -c` invocations.
+ * @throws on win32 when PATH offers only the system-directory WSL launcher.
+ */
+export declare function resolveBashExecutable(platform?: NodeJS.Platform): string;
+/**
  * Reject a resolved section this executor could not run with. The schema
  * expresses neither "positive and finite" nor the timer bound `graceMs` has to
  * fit, so a stored value is refused where it is written instead of failing at

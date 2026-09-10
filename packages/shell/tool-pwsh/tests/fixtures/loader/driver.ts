@@ -8,7 +8,7 @@
 
 import { writeFile } from 'node:fs/promises'
 import { boot, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { CallId } from '@deepseek-ai/dsh-llm'
 
 const configPath = process.argv[2]
 if (configPath === undefined) throw new Error('tool-pwsh driver requires a config path')
@@ -21,7 +21,7 @@ try {
 
   const foreground = await ctx.tools.execute({
     signal: new AbortController().signal,
-    callId: ToolCallId('loader-fg'),
+    callId: CallId('loader-fg'),
     name: 'pwsh',
     arguments: { command: 'Write-Output loader-ok', description: 'loader foreground' },
   })
@@ -29,7 +29,7 @@ try {
 
   const background = await ctx.tools.execute({
     signal: new AbortController().signal,
-    callId: ToolCallId('loader-bg'),
+    callId: CallId('loader-bg'),
     name: 'pwsh',
     arguments: {
       command: 'Start-Sleep -Milliseconds 200; Write-Output loader-bg-ok',
@@ -46,7 +46,7 @@ try {
   while (Date.now() < deadline) {
     const read = await ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: ToolCallId('loader-bg-read'),
+      callId: CallId('loader-bg-read'),
       name: 'job_output',
       arguments: { job_id: jobId },
     })

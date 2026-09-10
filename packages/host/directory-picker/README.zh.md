@@ -6,6 +6,8 @@
 
 原生选择器失败保持为带类型的错误，并由 Host API 边界映射。设计依据、与 `ctx.fs` 的切分、策略裁决见 [目录选择能力 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-07-28-directory-picker-capability-seam.zh.md)。
 
+`@deepseek-ai/dsh-host-directory-picker/types` 导出客户端安全的 `DirectoryEntry` 和 `DirectoryListing` 类型，不加载 Host 服务。
+
 ## 模型体验
 
 无。该 seam 服务于 GUI 宿主的目录选择；这里没有任何内容进入模型请求。

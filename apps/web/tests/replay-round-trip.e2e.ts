@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import {
   assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
@@ -120,7 +120,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     if (agent === undefined) throw new Error(`the settled Web agent ${settledSessionId} is no longer live`)
     const result = await scaffold.ctx.tools.execute({
       signal: AbortSignal.timeout(5_000),
-      callId: ToolCallId('web-url-probe'),
+      callId: CallId('web-url-probe'),
       name: 'bash',
       arguments: {
         command: 'printf \'%s\\n\' "$DSH_WEB_URL"',

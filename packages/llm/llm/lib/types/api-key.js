@@ -13,6 +13,14 @@
  */
 const LEGAL_API_KEY = /^[\x21-\x7E]+$/;
 /**
+ * Identify header names whose non-empty values must use credential storage.
+ * @param name - header name, compared case-insensitively.
+ * @returns whether the name carries authentication, tokens, passwords or cookies.
+ */
+export function isCredentialHeaderName(name) {
+    return /authorization|api[-_]?key|auth[-_]?token|access[-_]?token|token|secret|credential|password|cookie/iu.test(name.trim());
+}
+/**
  * Judge one *supplied* API key, trimming surrounding whitespace first.
  *
  * Trimming is silent because a padded key has one unambiguous reading; every

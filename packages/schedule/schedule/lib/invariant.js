@@ -1,4 +1,3 @@
-import { isRecord } from "@deepseek-ai/dsh-sdk-protocol";
 const MIN_FOUR_DIGIT_YEAR_MS = Date.parse("0001-01-01T00:00:00.000Z");
 const MAX_FOUR_DIGIT_YEAR_MS = Date.parse("9999-12-31T23:59:59.999Z");
 const UTC_INSTANT = /^(?!0000)\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z$/;
@@ -23,6 +22,10 @@ var ScheduleLogError = class extends Error {
 */
 function ScheduleId(value) {
 	return value;
+}
+/** Whether an unknown value is a non-array object. */
+function isRecord(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /** Require exactly the named durable object keys. */
 function hasExactKeys(value, expected) {

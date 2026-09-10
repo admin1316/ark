@@ -6,19 +6,37 @@ const RemoteSettingsJsonValueRemoteCodec$schema2 = z.union([z.literal(null), z.s
 const RemoteSettingsJsonValueRemoteCodec$schema3 = z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema3)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema3))])
 const _deepseek_ai_dsh_llm_llm_discoverModels_parameter_0$schema = z.object({
   'settingsNs': z.string().readonly(),
-  'provider': z.string().readonly().optional(),
-  'baseURL': z.string().readonly().optional(),
-  'api': z.string().readonly().optional(),
-  'apiKey': z.string().readonly().optional(),
+  'provider': z.string().optional(),
+  'baseURL': z.string().optional(),
+  'api': z.string().optional(),
+  'apiKey': z.string().optional(),
 })
 const _deepseek_ai_dsh_llm_llm_discoverModels_result$schema = z.object({
   'models': z.array(z.object({
-  'id': z.string().readonly(),
-  'name': z.string().readonly().optional(),
-  'contextWindow': z.number().readonly().optional(),
-  'maxTokens': z.number().readonly().optional(),
+  'id': z.string(),
+  'name': z.string().optional(),
+  'contextWindow': z.number().optional(),
+  'maxTokens': z.number().optional(),
 })).readonly(),
 })
+const _deepseek_ai_dsh_llm_llm_listConfigurableProviders_result$schema = z.array(z.object({
+  'provider': z.string(),
+  'displayName': z.string(),
+  'settingsNs': z.string(),
+  'settingsPath': z.array(z.string()),
+  'declared': z.boolean().optional(),
+  'error': z.string().optional(),
+  'migrationRequired': z.object({
+  'code': z.union([z.literal("credential-headers"), z.literal("credential-fields")]).readonly(),
+  'fields': z.array(z.string()).readonly(),
+  'paths': z.array(z.array(z.string())).readonly().optional(),
+  'inheritedPaths': z.array(z.array(z.string())).readonly().optional(),
+}).optional(),
+}))
+const _deepseek_ai_dsh_llm_llm_listProviders_result$schema = z.array(z.object({
+  'id': z.string(),
+  'name': z.string(),
+}))
 const _deepseek_ai_dsh_llm_llm_models_result$schema = z.object({
   'groups': z.array(z.object({
   'id': z.string().readonly(),
@@ -51,7 +69,7 @@ const _deepseek_ai_dsh_llm_llm_mutateProvider_parameter_0$schema = z.object({
   'ops': z.array(z.union([z.object({
   'op': z.literal("set").readonly(),
   'path': z.array(z.string()).readonly(),
-  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2))]).readonly(),
+  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema))]).readonly(),
 }), z.object({
   'op': z.literal("unset").readonly(),
   'path': z.array(z.string()).readonly(),
@@ -69,10 +87,10 @@ const _deepseek_ai_dsh_llm_llm_mutateProvider_parameter_0$schema = z.object({
 const _deepseek_ai_dsh_llm_llm_mutateProvider_result$schema = z.object({
   'settings': z.object({
   'ns': z.string().readonly(),
-  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema))]).readonly(),
-  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema))]).readonly(),
-  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema))]).readonly().optional(),
-  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema))]).readonly().optional(),
+  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2))]).readonly(),
+  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2))]).readonly(),
+  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2))]).readonly().optional(),
+  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2))]).readonly().optional(),
   'applies': z.union([z.literal("live"), z.literal("restart")]).readonly(),
   'secrets': z.array(z.object({
   'path': z.array(z.string()).readonly(),
@@ -91,6 +109,7 @@ const _deepseek_ai_dsh_llm_llm_mutateProvider_result$schema = z.object({
 })
 const _deepseek_ai_dsh_llm_llm_providers_result$schema = z.object({
   'providers': z.array(z.object({
+  'error': z.string().optional(),
   'provider': z.string().readonly(),
   'displayName': z.string().readonly(),
   'settingsNs': z.string().readonly(),
@@ -98,8 +117,10 @@ const _deepseek_ai_dsh_llm_llm_providers_result$schema = z.object({
   'active': z.boolean().readonly(),
   'declared': z.boolean().readonly().optional(),
   'migrationRequired': z.object({
-  'code': z.literal("credential-headers").readonly(),
+  'code': z.union([z.literal("credential-headers"), z.literal("credential-fields")]).readonly(),
   'fields': z.array(z.string()).readonly(),
+  'paths': z.array(z.array(z.string())).readonly().optional(),
+  'inheritedPaths': z.array(z.array(z.string())).readonly().optional(),
 }).readonly().optional(),
 })).readonly(),
 })
@@ -189,7 +210,37 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmDiscoveredModelsResult',
         schema: _deepseek_ai_dsh_llm_llm_discoverModels_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":214,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":899,"column":9},
+    },
+    {
+      id: '@deepseek-ai/dsh-llm#llm/listConfigurableProviders',
+      service: 'llm',
+      namespace: 'llm',
+      method: 'listConfigurableProviders',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-llm#llm/listConfigurableProviders:result',
+        schema: _deepseek_ai_dsh_llm_llm_listConfigurableProviders_result$schema,
+      },
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":801,"column":3},
+    },
+    {
+      id: '@deepseek-ai/dsh-llm#llm/listProviders',
+      service: 'llm',
+      namespace: 'llm',
+      method: 'listProviders',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-llm#llm/listProviders:result',
+        schema: _deepseek_ai_dsh_llm_llm_listProviders_result$schema,
+      },
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":728,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/models',
@@ -205,7 +256,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmModelsResult',
         schema: _deepseek_ai_dsh_llm_llm_models_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":203,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":571,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/mutateProvider',
@@ -232,7 +283,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmProviderMutationResult',
         schema: _deepseek_ai_dsh_llm_llm_mutateProvider_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":171,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":514,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/providers',
@@ -248,7 +299,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmProvidersResult',
         schema: _deepseek_ai_dsh_llm_llm_providers_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":160,"column":3},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":544,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/providerTransaction',
@@ -274,7 +325,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmProviderTransactionResult',
         schema: _deepseek_ai_dsh_llm_llm_providerTransaction_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":181,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":524,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/resumeProvider',
@@ -301,7 +352,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmProviderMutationResult',
         schema: _deepseek_ai_dsh_llm_llm_resumeProvider_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":194,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":535,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/verifyProvider',
@@ -328,7 +379,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmProviderVerificationResult',
         schema: _deepseek_ai_dsh_llm_llm_verifyProvider_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":228,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":430,"column":9},
     },
   ],
   model: {
@@ -343,52 +394,52 @@ export const TYPERT = {
         "members": [
           {
             "kind": "method",
-            "name": "remoteProviders",
-            "signature": "@Remote('providers') remoteProviders(): RemoteLlmProvidersResult",
-            "summary": "Read configurable providers through the domain-owned Native Remote.",
-            "jsDoc": "/**\n * Read configurable providers through the domain-owned Native Remote.\n * @returns the redacted configurable-provider catalog.\n */"
+            "name": "remoteVerifyProvider",
+            "signature": "@Remote('verifyProvider') async remoteVerifyProvider( request: RemoteLlmProviderVerificationRequest, signal: AbortSignal, ): Promise<RemoteLlmProviderVerificationResult>",
+            "summary": "Run one bounded exact-route probe without returning provider output or credentials.",
+            "jsDoc": "/**\n * Run one bounded exact-route probe without returning provider output or credentials.\n * @param request - configured provider and model to verify.\n * @param signal - caller cancellation combined with the configured Host deadline.\n * @returns authentication evidence, or explicitly unverified catalog reachability.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "verifyModel",
+            "signature": "async verifyModel(provider: string, model: string, signal: AbortSignal): Promise<LlmProviderVerificationMode>",
+            "summary": "Verify one exact route while retaining admission until cancelled work actually settles.",
+            "jsDoc": "/**\n * Verify one exact route while retaining admission until cancelled work actually settles.\n * @param provider - registered provider route.\n * @param model - exact configured model.\n * @param signal - owner cancellation and deadline.\n * @returns native metadata evidence or a bounded one-token generation handshake.\n */"
           },
           {
             "kind": "method",
             "name": "remoteMutateProvider",
-            "signature": "@Remote('mutateProvider') async remoteMutateProvider(request: RemoteLlmProviderMutationRequest, signal?: AbortSignal): Promise<RemoteLlmProviderMutationResult>",
-            "summary": "Commit one idempotent provider settings/credential transaction.",
-            "jsDoc": "/**\n * Commit one idempotent provider settings/credential transaction.\n * @param request - provider mutation and expected revision.\n * @param signal - Caller cancellation before durable claim; claimed commits retain ownership until settled.\n * @returns the committed provider mutation result.\n */"
+            "signature": "@Remote('mutateProvider') remoteMutateProvider(request: RemoteLlmProviderMutationRequest, signal: AbortSignal): Promise<RemoteLlmProviderMutationResult>",
+            "summary": "Commit a Native profile and credential change through the existing storage owners.",
+            "jsDoc": "/**\n * Commit a Native profile and credential change through the existing storage owners.\n * @param request - caller-stable transaction identity, revision and profile edits.\n * @param signal - cancellation before durable claim; claimed work keeps its ownership.\n * @returns committed redacted settings only after owner activation succeeds.\n */"
           },
           {
             "kind": "method",
             "name": "remoteProviderTransaction",
-            "signature": "@Remote('providerTransaction') async remoteProviderTransaction( request: RemoteLlmProviderTransactionRequest, ): Promise<RemoteLlmProviderTransactionResult>",
-            "summary": "Read the durable, secret-free state of one provider mutation.",
-            "jsDoc": "/**\n * Read the durable, secret-free state of one provider mutation.\n * @param request - Provider id and transaction UUID to inspect.\n * @returns Current durable phase and whether a staged credential is still required.\n */"
+            "signature": "@Remote('providerTransaction') remoteProviderTransaction(request: RemoteLlmProviderTransactionRequest): Promise<RemoteLlmProviderTransactionResult>",
+            "summary": "Inspect a durable provider transaction without changing its journal or credentials.",
+            "jsDoc": "/**\n * Inspect a durable provider transaction without changing its journal or credentials.\n * @param request - provider and transaction identity retained by the native client.\n * @returns the recorded phase or outcome and whether recovery needs a write-only credential.\n */"
           },
           {
             "kind": "method",
             "name": "remoteResumeProvider",
-            "signature": "@Remote('resumeProvider') async remoteResumeProvider(request: RemoteLlmProviderResumeRequest, signal?: AbortSignal): Promise<RemoteLlmProviderMutationResult>",
-            "summary": "Continue one journaled provider mutation after Host or app restart.",
-            "jsDoc": "/**\n * Continue one journaled provider mutation after Host or app restart.\n * @param request - Provider id, transaction UUID, and optional write-only credential replay.\n * @param signal - Caller cancellation before resuming a durable commit.\n * @returns Committed provider view or the transaction's durable terminal failure.\n */"
+            "signature": "@Remote('resumeProvider') remoteResumeProvider(request: RemoteLlmProviderResumeRequest, signal: AbortSignal): Promise<RemoteLlmProviderMutationResult>",
+            "summary": "Resume the existing durable plan instead of rebuilding edits from a refreshed UI.",
+            "jsDoc": "/**\n * Resume the existing durable plan instead of rebuilding edits from a refreshed UI.\n * @param request - stored transaction identity and optional missing credential.\n * @param signal - cancellation before durable claim only.\n * @returns the redacted committed state or the transaction's recovery failure.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteProviders",
+            "signature": "@Remote('providers') remoteProviders(): RemoteLlmProvidersResult",
+            "summary": "Join the configurable directory with live adapter routes for Native Settings.",
+            "jsDoc": "/**\n * Join the configurable directory with live adapter routes for Native Settings.\n * @returns declared and active-only provider rows, without credentials.\n */"
           },
           {
             "kind": "method",
             "name": "remoteModels",
             "signature": "@Remote('models') async remoteModels(): Promise<RemoteLlmModelsResult>",
-            "summary": "Read the failure-isolated host-scoped model catalog.",
-            "jsDoc": "/**\n * Read the failure-isolated host-scoped model catalog.\n * @returns the model catalog grouped by provider.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remoteDiscoverModels",
-            "signature": "@Remote('discoverModels') async remoteDiscoverModels( request: RemoteLlmDiscoverModelsRequest, signal: AbortSignal, ): Promise<RemoteLlmDiscoveredModelsResult>",
-            "summary": "Interrogate a draft endpoint with an optional write-only one-shot key.",
-            "jsDoc": "/**\n * Interrogate a draft endpoint with an optional write-only one-shot key.\n * @param request - draft endpoint and discovery options.\n * @param signal - caller-owned cancellation signal.\n * @returns discovered models and provider diagnostics.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remoteVerifyProvider",
-            "signature": "@Remote('verifyProvider') async remoteVerifyProvider( request: RemoteLlmProviderVerificationRequest, signal: AbortSignal, ): Promise<RemoteLlmProviderVerificationResult>",
-            "summary": "Execute one bounded exact provider/model/auth probe.",
-            "jsDoc": "/**\n * Execute one bounded exact provider/model/auth probe.\n * @param request - Exact provider and model route to verify.\n * @param signal - Caller cancellation combined with the Host verification deadline.\n * @returns Verification mode used by the adapter or fallback request.\n */"
+            "summary": "Read the host model catalog with failure isolation between providers.",
+            "jsDoc": "/**\n * Read the host model catalog with failure isolation between providers.\n * @returns model groups and value-free provider failures.\n */"
           },
           {
             "kind": "method",
@@ -400,7 +451,7 @@ export const TYPERT = {
           {
             "kind": "method",
             "name": "listProviders",
-            "signature": "listProviders(): LlmProviderInfo[]",
+            "signature": "@Remote listProviders(): LlmProviderInfo[]",
             "summary": "Describe provider routes with a registered adapter.",
             "jsDoc": "/**\n * Describe provider routes with a registered adapter.\n * @returns detached provider metadata in registration order.\n */"
           },
@@ -414,23 +465,30 @@ export const TYPERT = {
           {
             "kind": "method",
             "name": "listConfigurableProviders",
-            "signature": "listConfigurableProviders(): LlmConfigurableProvider[]",
+            "signature": "@Remote listConfigurableProviders(): LlmConfigurableProvider[]",
             "summary": "List every declared configurable provider, registered or dormant.",
             "jsDoc": "/**\n * List every declared configurable provider, registered or dormant.\n * @returns detached directory entries in declaration order.\n */"
           },
           {
             "kind": "method",
             "name": "registerModelDiscovery",
-            "signature": "registerModelDiscovery( settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>, ): () => void",
+            "signature": "registerModelDiscovery( settingsNs: string, discover: ( request: LlmModelDiscoveryOperation, signal?: AbortSignal, ) => Promise<readonly LlmDiscoveredModel[]>, ): () => void",
             "summary": "Offer to interrogate provider endpoints on behalf of the settings namespace this plugin owns.",
-            "jsDoc": "/**\n * Offer to interrogate provider endpoints on behalf of the settings\n * namespace this plugin owns. The namespace is the key because that is what\n * a configuration surface already holds from the configurable-provider\n * directory, and because a provider being *added* has no route to name yet.\n * Disposed with the fiber.\n * @param settingsNs - the namespace whose profiles this discovery serves.\n * @param discover - interrogates one endpoint; must honor `request.signal`.\n * @returns the disposer that withdraws the offer.\n */"
+            "jsDoc": "/**\n * Offer to interrogate provider endpoints on behalf of the settings\n * namespace this plugin owns. The namespace is the key because that is what\n * a configuration surface already holds from the configurable-provider\n * directory, and because a provider being *added* has no route to name yet.\n * Disposed with the fiber.\n * @param settingsNs - the namespace whose profiles this discovery serves.\n * @param discover - interrogates one endpoint and must honor the supplied signal.\n * @returns the disposer that withdraws the offer.\n */"
           },
           {
             "kind": "method",
             "name": "discoverModels",
-            "signature": "async discoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, ): Promise<LlmDiscoveredModel[]>",
+            "signature": "async discoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal, ): Promise<LlmDiscoveredModel[]>",
             "summary": "Interrogate one provider endpoint for the models it advertises.",
-            "jsDoc": "/**\n * Interrogate one provider endpoint for the models it advertises. The\n * request describes a draft, not a stored route, so nothing here reads or\n * writes settings or credentials — the caller owns both, and the reply is\n * candidate metadata a surface may offer for adoption.\n * @param settingsNs - namespace whose registered discovery serves this draft.\n * @param request - the endpoint, protocol, and one-shot credential to use.\n * @returns the advertised models, deduplicated in endpoint order.\n */"
+            "jsDoc": "/**\n * Interrogate one provider endpoint for the models it advertises. The\n * request describes a draft, not a stored route, so nothing here reads or\n * writes settings or credentials — the caller owns both, and the reply is\n * candidate metadata a surface may offer for adoption.\n * @param settingsNs - namespace whose registered discovery serves this draft.\n * @param request - the endpoint, protocol, and one-shot credential to use.\n * @param signal - caller cancellation.\n * @returns the advertised models, deduplicated in endpoint order.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteDiscoverModels",
+            "signature": "@Remote('discoverModels') async remoteDiscoverModels( request: RemoteLlmDiscoverModelsRequest, signal: AbortSignal, ): Promise<RemoteLlmDiscoveredModelsResult>",
+            "summary": "Remote adapter for one draft provider interrogation.",
+            "jsDoc": "/**\n * Remote adapter for one draft provider interrogation.\n * @param request - namespace, endpoint, protocol, and one-shot credential to use.\n * @param signal - caller cancellation supplied by the Remote carrier.\n * @returns advertised models in the Native response envelope.\n * @throws TypertRemoteFailure with `model-discovery-failed` when discovery refuses or fails.\n */"
           },
           {
             "kind": "method",
@@ -443,8 +501,8 @@ export const TYPERT = {
             "kind": "method",
             "name": "imageRequestPricing",
             "signature": "imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined",
-            "summary": "Resolve route-owned request-image pricing without performing I/O.",
-            "jsDoc": "/**\n * Resolve route-owned request-image pricing without performing I/O. Unknown\n * routes intentionally degrade to heuristic pricing for historical logs.\n * @param provider - provider route whose registered adapter owns pricing.\n * @param model - exact model id whose image occurrences will be priced.\n * @returns route-owned pricing, or `undefined` when the route supplies none.\n */"
+            "summary": "Resolve provider-side request-image pricing for one exact route, or `undefined` when the provider is unregistered or declares none.",
+            "jsDoc": "/**\n * Resolve provider-side request-image pricing for one exact route, or\n * `undefined` when the provider is unregistered or declares none. Unknown\n * providers degrade to `undefined` rather than throwing because callers\n * price durable history whose route may no longer be mounted.\n * @param provider - provider route named by a request header.\n * @param model - exact model id named by the same header.\n * @returns the owning adapter's image pricing for the route, when declared.\n */"
           },
           {
             "kind": "method",
@@ -459,13 +517,6 @@ export const TYPERT = {
             "signature": "async resolveModelInfo( provider: string, model: string, signal?: AbortSignal, ): Promise<LlmResolvedModelInfo>",
             "summary": "Resolve and validate all metadata from the adapter that owns one exact route.",
             "jsDoc": "/**\n * Resolve and validate all metadata from the adapter that owns one exact\n * route. The result is detached from adapter-owned objects; catalog\n * membership remains advisory and does not control request routing.\n * @param provider - registered provider route to inspect.\n * @param model - exact model id passed to the adapter.\n * @param signal - optional cancellation for adapter-owned asynchronous lookup.\n * @returns exact model identity plus available context and reasoning metadata.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "verifyModel",
-            "signature": "async verifyModel(provider: string, model: string, signal: AbortSignal): Promise<LlmProviderVerificationMode>",
-            "summary": "Prove an exact provider/model route can authenticate and complete a bounded request.",
-            "jsDoc": "/**\n * Prove an exact provider/model route can authenticate and complete a bounded\n* request. The caller supplies the deadline signal; no output is retained or\n* returned to configuration surfaces.\n * @param provider - Registered provider route to authenticate.\n * @param model - Exact model id to probe.\n * @param signal - Caller-owned deadline and cancellation signal.\n * @returns Adapter-native or bounded fallback verification mode.\n */"
           },
           {
             "kind": "method",
@@ -486,7 +537,7 @@ export const TYPERT = {
             "name": "stream",
             "signature": "stream(options: GenerateOptions): AsyncIterable<StreamChunk>",
             "summary": "Stream one model call as raw chunks (token-level deltas).",
-            "jsDoc": "/**\n * Stream one model call as raw chunks (token-level deltas). Replay state is\n * retained only when the same adapter instance owns its historical provider\n * and the target provider. Final adapter selection remains fixed through\n * asynchronous exact-model resolution and dispatch. Adapter selection,\n * dispatch, and iteration failures become terminal `error` or `aborted`\n * finish chunks; middleware, nested-call, and consumer failures remain\n * thrown. A downstream-close cleanup failure is logged so it cannot mask\n * the consumer's own completion or failure.\n * @param options - the full request; `options.provider` selects the adapter.\n * @returns the chunk stream, possibly wrapped by `llm/stream` listeners.\n */"
+            "jsDoc": "/**\n * Stream one model call as raw chunks (token-level deltas). Replay state is\n * retained only when the same adapter instance owns its historical provider\n * and the target provider. Final adapter selection remains fixed through\n * asynchronous exact-model resolution and dispatch. Adapter selection,\n * dispatch, and iteration failures become terminal `error` or `aborted`\n * finish chunks; middleware, nested-call, cleanup, and consumer failures\n * remain thrown.\n * @param options - the full request; `options.provider` selects the adapter.\n * @returns the chunk stream, possibly wrapped by `llm/stream` listeners.\n */"
           }
         ],
         "types": [
@@ -584,7 +635,7 @@ export const TYPERT = {
           },
           {
             "name": "LlmConfigurableProvider",
-            "declaration": "export interface LlmConfigurableProvider {\n    provider: string;\n    displayName: string;\n    settingsNs: string;\n    settingsPath: readonly string[];\n    declared?: boolean;\n    migrationRequired?: { readonly code: 'credential-headers'; readonly fields: readonly string[]; };\n}"
+            "declaration": "export interface LlmConfigurableProvider {\n    provider: string;\n    displayName: string;\n    settingsNs: string;\n    settingsPath: readonly string[];\n    declared?: boolean;\n    error?: string;\n    migrationRequired?: LlmProviderMigration;\n}"
           },
           {
             "name": "LlmDiscoveredModel",
@@ -607,8 +658,12 @@ export const TYPERT = {
             "declaration": "export interface LlmModelContext {\n    contextWindow: number;\n}"
           },
           {
+            "name": "LlmModelDiscoveryOperation",
+            "declaration": "export interface LlmModelDiscoveryOperation extends LlmModelDiscoveryRequest {\n    credentialEndpointFingerprint?: string;\n    signal?: AbortSignal;\n}"
+          },
+          {
             "name": "LlmModelDiscoveryRequest",
-            "declaration": "export interface LlmModelDiscoveryRequest {\n    provider?: string;\n    baseURL?: string;\n    api?: string;\n    apiKey?: string;\n    credentialEndpointFingerprint?: string;\n    signal?: AbortSignal;\n}"
+            "declaration": "export interface LlmModelDiscoveryRequest {\n    provider?: string;\n    baseURL?: string;\n    api?: string;\n    apiKey?: string;\n}"
           },
           {
             "name": "LlmModelInfo",
@@ -621,6 +676,10 @@ export const TYPERT = {
           {
             "name": "LlmProviderInfo",
             "declaration": "export interface LlmProviderInfo {\n    id: string;\n    name: string;\n}"
+          },
+          {
+            "name": "LlmProviderMigration",
+            "declaration": "export interface LlmProviderMigration {\n    readonly code: 'credential-headers' | 'credential-fields';\n    readonly fields: readonly string[];\n    readonly paths?: readonly (readonly string[])[];\n    readonly inheritedPaths?: readonly (readonly string[])[];\n}"
           },
           {
             "name": "LlmProviderVerificationMode",
@@ -648,7 +707,7 @@ export const TYPERT = {
           },
           {
             "name": "MessageSourceMap",
-            "declaration": "export interface MessageSourceMap {\n    user: { kind: 'user'; };\n    plugin: { kind: 'plugin'; plugin: string; } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    goal: GoalMessageSource;\n    coordinator: CoordinatorMessageSource;\n    'subagent-prompt': SubagentPromptMessageSource;\n    'subagent-report': SubagentReportMessageSource;\n    'subagent-settled': SubagentSettledMessageSource;\n    'session-reference': SessionReferenceSource;\n    'skill-invocation': SkillInvocationSource;\n}"
+            "declaration": "export interface MessageSourceMap {\n    user: { kind: 'user'; };\n    plugin: { kind: 'plugin'; plugin: string; } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    goal: GoalMessageSource;\n    coordinator: CoordinatorMessageSource;\n    'subagent-report': SubagentReportMessageSource;\n    'subagent-settled': SubagentSettledMessageSource;\n    'subagent-prompt': SubagentPromptMessageSource;\n    'session-reference': SessionReferenceSource;\n    'skill-invocation': SkillInvocationSource;\n}"
           },
           {
             "name": "ModelMessageSource",
@@ -687,32 +746,20 @@ export const TYPERT = {
             "declaration": "export interface RemoteCredentialView {\n    readonly configured: boolean;\n    readonly source?: string;\n    readonly writable: boolean;\n}"
           },
           {
-            "name": "RemoteLlmCatalogFailure",
-            "declaration": "export interface RemoteLlmCatalogFailure {\n    readonly id: string;\n    readonly name: string;\n    readonly message: string;\n}"
-          },
-          {
             "name": "RemoteLlmCredentialMutation",
             "declaration": "export type RemoteLlmCredentialMutation = { readonly op: 'set'; readonly ref: string; readonly value: string; } | { readonly op: 'unset'; readonly ref: string; };"
           },
           {
-            "name": "RemoteLlmDiscoveredModel",
-            "declaration": "export interface RemoteLlmDiscoveredModel {\n    readonly id: string;\n    readonly name?: string;\n    readonly contextWindow?: number;\n    readonly maxTokens?: number;\n}"
-          },
-          {
             "name": "RemoteLlmDiscoveredModelsResult",
-            "declaration": "export interface RemoteLlmDiscoveredModelsResult {\n    readonly models: readonly RemoteLlmDiscoveredModel[];\n}"
+            "declaration": "export interface RemoteLlmDiscoveredModelsResult {\n    readonly models: readonly LlmDiscoveredModel[];\n}"
           },
           {
             "name": "RemoteLlmDiscoverModelsRequest",
-            "declaration": "export interface RemoteLlmDiscoverModelsRequest {\n    readonly settingsNs: string;\n    readonly provider?: string;\n    readonly baseURL?: string;\n    readonly api?: string;\n    readonly apiKey?: string;\n}"
-          },
-          {
-            "name": "RemoteLlmModelGroup",
-            "declaration": "export interface RemoteLlmModelGroup {\n    readonly id: string;\n    readonly name: string;\n    readonly models: readonly RemoteLlmModelView[];\n}"
+            "declaration": "export interface RemoteLlmDiscoverModelsRequest extends LlmModelDiscoveryRequest {\n    readonly settingsNs: string;\n}"
           },
           {
             "name": "RemoteLlmModelsResult",
-            "declaration": "export interface RemoteLlmModelsResult {\n    readonly groups: readonly RemoteLlmModelGroup[];\n    readonly failures: readonly RemoteLlmCatalogFailure[];\n}"
+            "declaration": "export interface RemoteLlmModelsResult {\n    readonly groups: readonly { readonly id: string; readonly name: string; readonly models: readonly RemoteLlmModelView[]; }[];\n    readonly failures: readonly { readonly id: string; readonly name: string; readonly message: string; }[];\n}"
           },
           {
             "name": "RemoteLlmModelView",
@@ -752,15 +799,11 @@ export const TYPERT = {
           },
           {
             "name": "RemoteLlmProviderView",
-            "declaration": "export interface RemoteLlmProviderView {\n    readonly provider: string;\n    readonly displayName: string;\n    readonly settingsNs: string;\n    readonly settingsPath: readonly string[];\n    readonly active: boolean;\n    readonly declared?: boolean;\n    readonly migrationRequired?: { readonly code: 'credential-headers'; readonly fields: readonly string[]; };\n}"
+            "declaration": "export interface RemoteLlmProviderView {\n    error?: string;\n    readonly provider: string;\n    readonly displayName: string;\n    readonly settingsNs: string;\n    readonly settingsPath: readonly string[];\n    readonly active: boolean;\n    readonly declared?: boolean;\n    readonly migrationRequired?: LlmProviderMigration;\n}"
           },
           {
             "name": "RemoteLlmReasoning",
-            "declaration": "export interface RemoteLlmReasoning {\n    readonly efforts: readonly RemoteLlmReasoningEffort[];\n    readonly defaultEffort?: string;\n}"
-          },
-          {
-            "name": "RemoteLlmReasoningEffort",
-            "declaration": "export interface RemoteLlmReasoningEffort {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n}"
+            "declaration": "export interface RemoteLlmReasoning {\n    readonly efforts: readonly { readonly id: string; readonly name: string; readonly description?: string; }[];\n    readonly defaultEffort?: string;\n}"
           },
           {
             "name": "RemoteSettingsJsonValue",
@@ -824,7 +867,7 @@ export const TYPERT = {
           },
           {
             "name": "SubagentSettledMessageSource",
-            "declaration": "export interface SubagentSettledMessageSource {\n    readonly kind: 'subagent-settled';\n    readonly form: 'notice';\n    readonly summary: string;\n    readonly senderSessionId: SessionId;\n    readonly settlementId: string;\n}"
+            "declaration": "export interface SubagentSettledMessageSource {\n    readonly kind: 'subagent-settled';\n    readonly form: 'notice';\n    readonly summary: string;\n    readonly senderSessionId: SessionId;\n}"
           },
           {
             "name": "TextBlock",

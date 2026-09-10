@@ -41,6 +41,7 @@ var __esDecorate = (this && this.__esDecorate) || function (ctor, descriptorIn, 
     if (target) Object.defineProperty(target, contextIn.name, descriptor);
     done = true;
 };
+import { createHash } from 'node:crypto';
 import { Remote, TypertLookupFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 const REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** Both halves of a {@link CredentialKey}; the `/` between them is what keeps it out of {@link REF_PATTERN}. */
@@ -130,6 +131,39 @@ export function credentialKeyScope(key) {
  */
 export function credentialKeyId(key) {
     return key.slice(key.indexOf('/') + 1);
+}
+/** The reference changed before its conditional write; no requested write occurred. */
+export class CredentialConflictError extends Error {
+    ref;
+    /** @param ref - the reference whose condition no longer holds. */
+    constructor(ref) {
+        super(`credential reference "${ref}" changed before its conditional write`);
+        this.ref = ref;
+        this.name = 'CredentialConflictError';
+    }
+}
+/**
+ * Capture a reference's value and source without retaining its secret.
+ * @param current - the resolved reference, or absence.
+ * @returns the condition for a later provider-owned conditional write.
+ */
+export function credentialCondition(current) {
+    return current === undefined ? { valueDigest: null }
+        : { valueDigest: createHash('sha256').update(current.value).digest('hex'), source: current.source };
+}
+/**
+ * Check a conditional write while the provider holds its write exclusion.
+ * @param ref - the reference being checked.
+ * @param current - its current resolved value.
+ * @param expected - the required value digest and optional source.
+ * @returns nothing when the condition matches.
+ * @throws CredentialConflictError without including secret values or digests.
+ */
+export function assertCredentialCondition(ref, current, expected) {
+    const actual = credentialCondition(current);
+    if (actual.valueDigest !== expected.valueDigest || (expected.source !== undefined && actual.source !== expected.source)) {
+        throw new CredentialConflictError(ref);
+    }
 }
 /**
  * Abstract credential service over two key spaces that answer two questions.

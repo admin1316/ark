@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-06-provider-transaction-execution-ownership.md
-2026-09-06-provider-transaction-execution-ownership.md: cc5badacc4b5fa5e66036bd0f2eb3c6e358ec8c7
-2026-09-06-provider-transaction-execution-ownership.zh.md: 9f2339f8ab6178200c08bba32b1321c570578b21
+2026-09-06-provider-transaction-execution-ownership.md: c43ce4e3538afb4735c9606ec004af2164499651
+2026-09-06-provider-transaction-execution-ownership.zh.md: 96e26da2ea1282629abbd1da4924382c8c31e3f4

@@ -1,0 +1,1441 @@
+{
+  "baselineSha256": "807f1c8de95b79bbaae3c38eb212db3deaea0212dbb8b8f85d220b66f17d0953",
+  "scenarios": [
+    {
+      "name": "empty",
+      "events": [],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [],
+          "messages": [],
+          "delivered": [],
+          "nextTaskNumber": 1
+        }
+      }
+    },
+    {
+      "name": "member active",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "provisioning"
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "active"
+            }
+          },
+          "seq": 1,
+          "time": 2
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [
+            [
+              "worker",
+              {
+                "id": "worker",
+                "name": "researcher",
+                "description": "Research",
+                "provider": "spawn",
+                "context": "fresh",
+                "phase": "active"
+              }
+            ]
+          ],
+          "names": [
+            [
+              "researcher",
+              "worker"
+            ]
+          ],
+          "tasks": [],
+          "messages": [],
+          "delivered": [],
+          "nextTaskNumber": 1
+        }
+      }
+    },
+    {
+      "name": "member failed",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "provisioning"
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "failed",
+              "error": "failed"
+            }
+          },
+          "seq": 1,
+          "time": 2
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [
+            [
+              "worker",
+              {
+                "id": "worker",
+                "name": "researcher",
+                "description": "Research",
+                "provider": "spawn",
+                "context": "fresh",
+                "phase": "failed",
+                "error": "failed"
+              }
+            ]
+          ],
+          "names": [
+            [
+              "researcher",
+              "worker"
+            ]
+          ],
+          "tasks": [],
+          "messages": [],
+          "delivered": [],
+          "nextTaskNumber": 1
+        }
+      }
+    },
+    {
+      "name": "missing provisioning",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "active"
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "error": "teammate \"researcher\" must begin provisioning"
+      }
+    },
+    {
+      "name": "name reuse",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "provisioning"
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker-2",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "provisioning"
+            }
+          },
+          "seq": 1,
+          "time": 2
+        }
+      ],
+      "expected": {
+        "error": "teammate name \"researcher\" is reused by another member"
+      }
+    },
+    {
+      "name": "immutable provider",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "provisioning"
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "fork",
+              "context": "fresh",
+              "phase": "active"
+            }
+          },
+          "seq": 1,
+          "time": 2
+        }
+      ],
+      "expected": {
+        "error": "teammate \"worker\" changed immutable identity fields"
+      }
+    },
+    {
+      "name": "terminal transition",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "provisioning"
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "active"
+            }
+          },
+          "seq": 1,
+          "time": 2
+        },
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "failed"
+            }
+          },
+          "seq": 2,
+          "time": 3
+        }
+      ],
+      "expected": {
+        "error": "teammate \"researcher\" has an invalid active -> failed transition"
+      }
+    },
+    {
+      "name": "foreign supported team",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "other",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "provisioning"
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [],
+          "messages": [],
+          "delivered": [],
+          "nextTaskNumber": 1
+        }
+      }
+    },
+    {
+      "name": "foreign future team",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 2,
+            "teamId": "other"
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [],
+          "messages": [],
+          "delivered": [],
+          "nextTaskNumber": 1
+        }
+      }
+    },
+    {
+      "name": "own future team",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 2,
+            "teamId": "lead"
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "error": "unsupported Agent Teams event version 2"
+      }
+    },
+    {
+      "name": "extra member field",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": "worker",
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "provisioning",
+              "unexpected": true
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "error": "persisted Agent Teams team/member payload is invalid"
+      }
+    },
+    {
+      "name": "bad member identity",
+      "events": [
+        {
+          "type": "team/member",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "member": {
+              "id": 12,
+              "name": "researcher",
+              "description": "Research",
+              "provider": "spawn",
+              "context": "fresh",
+              "phase": "provisioning"
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "error": "persisted Agent Teams team/member payload is invalid"
+      }
+    },
+    {
+      "name": "task created",
+      "events": [
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [
+            [
+              "task-1",
+              {
+                "id": "task-1",
+                "revision": 1,
+                "subject": "First",
+                "description": "Details",
+                "status": "pending",
+                "blockedBy": [],
+                "writeScopes": []
+              }
+            ]
+          ],
+          "messages": [],
+          "delivered": [],
+          "nextTaskNumber": 2
+        }
+      }
+    },
+    {
+      "name": "task revision gap",
+      "events": [
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 2,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "error": "team task \"task-1\" must begin at revision 1"
+      }
+    },
+    {
+      "name": "task repeated revision",
+      "events": [
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 1,
+          "time": 2
+        }
+      ],
+      "expected": {
+        "error": "team task \"task-1\" revision is not contiguous"
+      }
+    },
+    {
+      "name": "dependency",
+      "events": [
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-2",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [
+                "task-1"
+              ],
+              "writeScopes": []
+            }
+          },
+          "seq": 1,
+          "time": 2
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [
+            [
+              "task-1",
+              {
+                "id": "task-1",
+                "revision": 1,
+                "subject": "First",
+                "description": "Details",
+                "status": "pending",
+                "blockedBy": [],
+                "writeScopes": []
+              }
+            ],
+            [
+              "task-2",
+              {
+                "id": "task-2",
+                "revision": 1,
+                "subject": "First",
+                "description": "Details",
+                "status": "pending",
+                "blockedBy": [
+                  "task-1"
+                ],
+                "writeScopes": []
+              }
+            ]
+          ],
+          "messages": [],
+          "delivered": [],
+          "nextTaskNumber": 3
+        }
+      }
+    },
+    {
+      "name": "dependency cycle",
+      "events": [
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-2",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [
+                "task-1"
+              ],
+              "writeScopes": []
+            }
+          },
+          "seq": 1,
+          "time": 2
+        },
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 2,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [
+                "task-2"
+              ],
+              "writeScopes": []
+            }
+          },
+          "seq": 2,
+          "time": 3
+        }
+      ],
+      "expected": {
+        "error": "task dependency cycle includes \"task-1\""
+      }
+    },
+    {
+      "name": "missing dependency",
+      "events": [
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [
+                "missing"
+              ],
+              "writeScopes": []
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "error": "blocker task \"missing\" for \"task-1\" is missing or deleted"
+      }
+    },
+    {
+      "name": "duplicate dependency",
+      "events": [
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-2",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [
+                "task-1",
+                "task-1"
+              ],
+              "writeScopes": []
+            }
+          },
+          "seq": 1,
+          "time": 2
+        }
+      ],
+      "expected": {
+        "error": "team task \"task-2\" repeats blocker \"task-1\""
+      }
+    },
+    {
+      "name": "deleted blocker",
+      "events": [
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-2",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [
+                "task-1"
+              ],
+              "writeScopes": []
+            }
+          },
+          "seq": 1,
+          "time": 2
+        },
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-1",
+              "revision": 2,
+              "subject": "First",
+              "description": "Details",
+              "status": "deleted",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 2,
+          "time": 3
+        }
+      ],
+      "expected": {
+        "error": "blocker task \"task-1\" for \"task-2\" is missing or deleted"
+      }
+    },
+    {
+      "name": "unsafe task suffix",
+      "events": [
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-9007199254740992",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "error": "persisted Agent Teams team/task payload is invalid"
+      }
+    },
+    {
+      "name": "last safe suffix",
+      "events": [
+        {
+          "type": "team/task",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "task": {
+              "id": "task-9007199254740991",
+              "revision": 1,
+              "subject": "First",
+              "description": "Details",
+              "status": "pending",
+              "blockedBy": [],
+              "writeScopes": []
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [
+            [
+              "task-9007199254740991",
+              {
+                "id": "task-9007199254740991",
+                "revision": 1,
+                "subject": "First",
+                "description": "Details",
+                "status": "pending",
+                "blockedBy": [],
+                "writeScopes": []
+              }
+            ]
+          ],
+          "messages": [],
+          "delivered": [],
+          "nextTaskNumber": 9007199254740991
+        }
+      }
+    },
+    {
+      "name": "queued delivered",
+      "events": [
+        {
+          "type": "team/message/queued",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "message": {
+              "id": "message-1",
+              "senderId": "lead",
+              "senderName": "lead",
+              "targetId": "worker",
+              "delivery": "quiet",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "hello"
+                }
+              ]
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/message/delivered",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "messageId": "message-1",
+            "targetId": "worker"
+          },
+          "seq": 1,
+          "time": 2
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [],
+          "messages": [
+            [
+              "message-1",
+              {
+                "id": "message-1",
+                "senderId": "lead",
+                "senderName": "lead",
+                "targetId": "worker",
+                "delivery": "quiet",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "hello"
+                  }
+                ]
+              }
+            ]
+          ],
+          "delivered": [
+            "message-1"
+          ],
+          "nextTaskNumber": 1
+        }
+      }
+    },
+    {
+      "name": "duplicate queue",
+      "events": [
+        {
+          "type": "team/message/queued",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "message": {
+              "id": "message-1",
+              "senderId": "lead",
+              "senderName": "lead",
+              "targetId": "worker",
+              "delivery": "quiet",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "hello"
+                }
+              ]
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/message/queued",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "message": {
+              "id": "message-1",
+              "senderId": "lead",
+              "senderName": "lead",
+              "targetId": "worker",
+              "delivery": "quiet",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "hello"
+                }
+              ]
+            }
+          },
+          "seq": 1,
+          "time": 2
+        }
+      ],
+      "expected": {
+        "error": "team message \"message-1\" was queued twice"
+      }
+    },
+    {
+      "name": "missing queue",
+      "events": [
+        {
+          "type": "team/message/delivered",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "messageId": "message-1",
+            "targetId": "worker"
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "error": "team message \"message-1\" was delivered before queueing"
+      }
+    },
+    {
+      "name": "target changed",
+      "events": [
+        {
+          "type": "team/message/queued",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "message": {
+              "id": "message-1",
+              "senderId": "lead",
+              "senderName": "lead",
+              "targetId": "worker",
+              "delivery": "quiet",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "hello"
+                }
+              ]
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/message/delivered",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "messageId": "message-1",
+            "targetId": "other"
+          },
+          "seq": 1,
+          "time": 2
+        }
+      ],
+      "expected": {
+        "error": "team message \"message-1\" target changed"
+      }
+    },
+    {
+      "name": "duplicate acknowledgement",
+      "events": [
+        {
+          "type": "team/message/queued",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "message": {
+              "id": "message-1",
+              "senderId": "lead",
+              "senderName": "lead",
+              "targetId": "worker",
+              "delivery": "quiet",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "hello"
+                }
+              ]
+            }
+          },
+          "seq": 0,
+          "time": 1
+        },
+        {
+          "type": "team/message/delivered",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "messageId": "message-1",
+            "targetId": "worker"
+          },
+          "seq": 1,
+          "time": 2
+        },
+        {
+          "type": "team/message/delivered",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "messageId": "message-1",
+            "targetId": "worker"
+          },
+          "seq": 2,
+          "time": 3
+        }
+      ],
+      "expected": {
+        "error": "team message \"message-1\" was delivered twice"
+      }
+    },
+    {
+      "name": "bad known block",
+      "events": [
+        {
+          "type": "team/message/queued",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "message": {
+              "id": "message-1",
+              "senderId": "lead",
+              "senderName": "lead",
+              "targetId": "worker",
+              "delivery": "quiet",
+              "content": [
+                {
+                  "type": "text",
+                  "text": 5
+                }
+              ]
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "error": "persisted Agent Teams team/message/queued payload is invalid"
+      }
+    },
+    {
+      "name": "extension block",
+      "events": [
+        {
+          "type": "team/message/queued",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "message": {
+              "id": "message-1",
+              "senderId": "lead",
+              "senderName": "lead",
+              "targetId": "worker",
+              "delivery": "quiet",
+              "content": [
+                {
+                  "type": "extension-visual",
+                  "custom": {
+                    "value": 1
+                  }
+                }
+              ]
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [],
+          "messages": [
+            [
+              "message-1",
+              {
+                "id": "message-1",
+                "senderId": "lead",
+                "senderName": "lead",
+                "targetId": "worker",
+                "delivery": "quiet",
+                "content": [
+                  {
+                    "type": "extension-visual",
+                    "custom": {
+                      "value": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          ],
+          "delivered": [],
+          "nextTaskNumber": 1
+        }
+      }
+    },
+    {
+      "name": "nested tool result",
+      "events": [
+        {
+          "type": "team/message/queued",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "message": {
+              "id": "message-1",
+              "senderId": "lead",
+              "senderName": "lead",
+              "targetId": "worker",
+              "delivery": "quiet",
+              "content": [
+                {
+                  "type": "tool-result",
+                  "toolCallId": "call-1",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "ok"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [],
+          "messages": [
+            [
+              "message-1",
+              {
+                "id": "message-1",
+                "senderId": "lead",
+                "senderName": "lead",
+                "targetId": "worker",
+                "delivery": "quiet",
+                "content": [
+                  {
+                    "type": "tool-result",
+                    "toolCallId": "call-1",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "ok"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          ],
+          "delivered": [],
+          "nextTaskNumber": 1
+        }
+      }
+    },
+    {
+      "name": "image block",
+      "events": [
+        {
+          "type": "team/message/queued",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "message": {
+              "id": "message-1",
+              "senderId": "lead",
+              "senderName": "lead",
+              "targetId": "worker",
+              "delivery": "quiet",
+              "content": [
+                {
+                  "type": "image",
+                  "attachment": {
+                    "attachmentId": "image-1",
+                    "mediaType": "image/png",
+                    "bytes": 32,
+                    "width": 1,
+                    "height": 1
+                  }
+                }
+              ]
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [],
+          "messages": [
+            [
+              "message-1",
+              {
+                "id": "message-1",
+                "senderId": "lead",
+                "senderName": "lead",
+                "targetId": "worker",
+                "delivery": "quiet",
+                "content": [
+                  {
+                    "type": "image",
+                    "attachment": {
+                      "attachmentId": "image-1",
+                      "mediaType": "image/png",
+                      "bytes": 32,
+                      "width": 1,
+                      "height": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          ],
+          "delivered": [],
+          "nextTaskNumber": 1
+        }
+      }
+    },
+    {
+      "name": "bad image block",
+      "events": [
+        {
+          "type": "team/message/queued",
+          "data": {
+            "version": 1,
+            "teamId": "lead",
+            "message": {
+              "id": "message-1",
+              "senderId": "lead",
+              "senderName": "lead",
+              "targetId": "worker",
+              "delivery": "quiet",
+              "content": [
+                {
+                  "type": "image",
+                  "attachment": {
+                    "attachmentId": "image-1",
+                    "mediaType": "image/png",
+                    "bytes": 32,
+                    "width": 0,
+                    "height": 1
+                  }
+                }
+              ]
+            }
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "error": "persisted Agent Teams team/message/queued payload is invalid"
+      }
+    },
+    {
+      "name": "ignore unrelated event",
+      "events": [
+        {
+          "type": "turn/start",
+          "data": {
+            "turn": 1
+          },
+          "seq": 0,
+          "time": 1
+        }
+      ],
+      "expected": {
+        "state": {
+          "id": "lead",
+          "members": [],
+          "names": [],
+          "tasks": [],
+          "messages": [],
+          "delivered": [],
+          "nextTaskNumber": 1
+        }
+      }
+    }
+  ]
+}

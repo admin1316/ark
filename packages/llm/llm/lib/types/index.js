@@ -91,42 +91,211 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
     var e = new Error(message);
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
+import { addAbortListener } from 'node:events';
 import { createHash } from 'node:crypto';
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import { settingsNamespace } from '@deepseek-ai/dsh-settings';
+import z from '@deepseek-ai/schemastery';
+import { deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout';
+import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import { createUserMessage, freezeMessage } from "./message.js";
 import { resolveRetryPolicy } from "./retry-policy.js";
 import { callConfigEquals, deepFreeze } from "./call-config.js";
-import { LlmError } from "./error.js";
+import { HarnessError, INVALID_CREDENTIAL_CODE } from "./error.js";
 import { normalizeLlmFailure } from "./adapter-failure.js";
-import { deadline } from '@deepseek-ai/dsh-timeout';
+import { normalizeApiKey } from "./api-key.js";
 import { contentHasImage, projectImagesForTextModel } from "./content.js";
-import { discoverRemoteModels, listRemoteModels, listRemoteProviders, mutateRemoteProvider, providerTransactionStatus, resumeRemoteProvider, verifyRemoteProvider, } from "./remote.js";
+import { settingsNamespace } from '@deepseek-ai/dsh-settings';
+import { ProviderTransactions } from "./provider-transaction.js";
 export * from "./attribution.js";
 export * from "./brand.js";
 export * from "./never.js";
 export * from "./error.js";
-export * from "./adapter.js";
 export * from "./api-key.js";
 export * from "./types.js";
 export * from "./content.js";
 export * from "./message.js";
 export * from "./retry-policy.js";
 export { BlockAssembler } from "./assembler.js";
-export { isCredentialHeaderName, projectRemoteModel } from "./remote.js";
 export { callConfigEquals, deepFreeze, isAgentLoopRequest, markAgentLoopRequest } from "./call-config.js";
 /**
- * Stable identity for the exact endpoint/protocol a one-shot discovery
- * credential may reach. The fingerprint contains no credential material.
- * @param baseURL - candidate endpoint typed by the caller.
- * @param api - candidate wire protocol, defaulted like the discovery owner.
- * @returns SHA-256 endpoint identity.
+ * Typed error for LLM-related failures. Extends {@link HarnessError}, so the
+ * `code` string (e.g. `AUTH`, `RATE_LIMIT`, `NO_ADAPTER`) is shared taxonomy.
+ */
+export class LlmError extends HarnessError {
+    /** Serializable facts retained beside this live Error. */
+    failure;
+    /**
+     * @param message - non-empty human-readable failure summary.
+     * @param code - non-empty stable provider-neutral machine code.
+     * @param options - optional cause and validated serializable provider facts.
+     */
+    constructor(message, code, options) {
+        if (typeof message !== 'string' || message.length === 0)
+            throw new Error('LlmError message must be a non-empty string');
+        if (typeof code !== 'string' || code.length === 0)
+            throw new Error('LlmError code must be a non-empty string');
+        if (options?.status !== undefined
+            && (!Number.isInteger(options.status) || options.status < 100 || options.status > 599)) {
+            throw new Error('LlmError status must be an integer from 100 through 599');
+        }
+        if (options?.providerRetryAfterMs !== undefined
+            && (!Number.isFinite(options.providerRetryAfterMs) || options.providerRetryAfterMs <= 0)) {
+            throw new Error('LlmError providerRetryAfterMs must be a positive finite number');
+        }
+        if (options?.requestId !== undefined
+            && (typeof options.requestId !== 'string' || options.requestId.length === 0)) {
+            throw new Error('LlmError requestId must be a non-empty string');
+        }
+        super(message, code, options);
+        this.name = 'LlmError';
+        this.failure = Object.freeze({
+            message,
+            code,
+            ...options?.status === undefined ? {} : { status: options.status },
+            ...options?.providerRetryAfterMs === undefined ? {} : { providerRetryAfterMs: options.providerRetryAfterMs },
+            ...options?.requestId === undefined ? {} : { requestId: options.requestId },
+        });
+    }
+}
+/**
+ * Accept one supplied credential, or refuse it as unusable.
+ *
+ * A stored key arrives from the credentials seam, a `.env` line, or a shell
+ * export, all of which pick up surrounding whitespace, so trimming is silent.
+ * Anything else fails here rather than inside `fetch`, whose ByteString
+ * refusal names a UTF-16 code point instead of the setting to change. The key
+ * never enters the message: `ref` names where to fix it, and echoing any part
+ * of a secret into a log or a UI is the failure this diagnosis avoids.
+ *
+ * Lives beside {@link LlmError} rather than in `./api-key.ts` so the predicate
+ * module stays dependency-free; both adapters share this one diagnosis instead
+ * of keeping near-identical local copies.
+ * @param raw - the credential exactly as supplied.
+ * @param pkg - the refusing package name, prefixed to the diagnostic.
+ * @param ref - the credential reference the value resolved through.
+ * @returns the trimmed, usable key.
+ */
+export function assertUsableApiKey(raw, pkg, ref) {
+    const checked = normalizeApiKey(raw);
+    if (checked.ok)
+        return checked.value;
+    // The Models page is named as the writer it usually is, not as the only one:
+    // the same value can arrive from a hand-edited .env or a shell export in a
+    // composition that mounts no credentials seam at all, where directing the
+    // user to a page that deployment does not serve would be a dead end.
+    throw new LlmError(checked.reason === 'empty'
+        ? `${pkg}: the API key resolved from ${ref} is blank; set ${ref} to the raw key`
+            + ' (the web Models page writes it) or export it in the launching environment'
+        : `${pkg}: the API key resolved from ${ref} contains characters no HTTP header can carry;`
+            + ` set ${ref} to the raw key alone (the web Models page writes it)`, INVALID_CREDENTIAL_CODE);
+}
+/**
+ * Provider-wire adapter for the harness message and stream vocabulary. Register implementations
+ * with `ctx.llm.registerAdapter(providers, adapter)`. Every provider HTTP request must include
+ * `attributionHeaders()`; prove the headers are added in the wire request or library header hook. The direct-fetch
+ * DeepSeek and library-backed pi-ai adapters meet this contract through different internals.
+ */
+export class LlmAdapter {
+    /**
+     * Describe one provider route owned by this adapter.
+     * @param provider - a route passed to `registerAdapter()` for this instance.
+     * @returns detached display metadata whose id must equal `provider`.
+     */
+    providerInfo(provider) {
+        return { id: provider, name: provider };
+    }
+    /**
+     * Return the provider-owned retry policy captured with this route.
+     * @param _provider - a route passed to `registerAdapter()` for this instance.
+     * @returns a resolved policy, or `undefined` to use the normal defaults.
+     */
+    providerRetryPolicy(_provider) {
+        return undefined;
+    }
+    /**
+     * Resolve provider-side request-image pricing for one exact model route.
+     * The default declares none, so consumers fall back to their own neutral
+     * estimate. Implementations must answer synchronously without I/O; the
+     * token meter resolves this per measurement.
+     * @param _provider - a route passed to `registerAdapter()` for this instance.
+     * @param _model - exact model id passed to {@link GenerateOptions.model}.
+     * @returns route-owned image pricing, or `undefined` when the route declares none.
+     */
+    imageRequestPricing(_provider, _model) {
+        return undefined;
+    }
+    /**
+     * List models this adapter can currently advertise for one owned provider.
+     * The result is advisory: an adapter may accept unlisted model ids, and
+     * consumers must not turn absence into request rejection.
+     * @param _provider - one provider route owned by this adapter.
+     * @returns discoverable models in adapter-preferred order.
+     */
+    listModels(_provider) {
+        return Promise.resolve([]);
+    }
+    /**
+     * Resolve all metadata available for one exact model. This query is
+     * independent of the advisory catalog and does not validate request routing.
+     * @param provider - one provider route owned by this adapter.
+     * @param model - exact model id passed to {@link GenerateOptions.model}.
+     * @param _signal - cancellation for this exact-model lookup; asynchronous
+     *   implementations must settle promptly after it aborts.
+     * @returns provider/model identity plus any context, call-default, and reasoning metadata.
+     */
+    resolveModel(provider, model, _signal) {
+        return Promise.resolve({ provider, id: model, name: model });
+    }
+    /**
+     * Attempt a protocol-native, non-generative exact-route verification.
+     * @param _provider - registered provider route.
+     * @param _model - exact configured model.
+     * @param _signal - owner cancellation signal.
+     * @returns metadata proof, reachability-only evidence, or undefined for a bounded generation fallback.
+     */
+    verifyProvider(_provider, _model, _signal) {
+        return Promise.resolve(undefined);
+    }
+    /**
+     * Bind exact model metadata and the eventual request dispatch to one adapter generation.
+     * Dynamic adapters override this so settings changes between preparation and
+     * dispatch cannot combine one generation's capabilities with another's endpoint.
+     * @param provider - registered provider route.
+     * @param model - exact model id.
+     * @param signal - cancellation for model resolution.
+     * @returns model metadata and a one-generation stream entry point.
+     */
+    async prepareCall(provider, model, signal) {
+        return {
+            model: await this.resolveModel(provider, model, signal),
+            stream: options => this.stream(options),
+        };
+    }
+}
+async function verificationSettles(operation, graceMs) {
+    const env_1 = { stack: [], error: void 0, hasError: false };
+    try {
+        const expired = Promise.withResolvers();
+        const timer = __addDisposableResource(env_1, deadline(undefined, graceMs, 'LLM_VERIFICATION_CANCEL_TIMEOUT'), false);
+        const _listener = __addDisposableResource(env_1, addAbortListener(timer.signal, () => { expired.resolve(false); }), false);
+        return await Promise.race([Promise.allSettled([operation]).then(() => true), expired.promise]);
+    }
+    catch (e_1) {
+        env_1.error = e_1;
+        env_1.hasError = true;
+    }
+    finally {
+        __disposeResources(env_1);
+    }
+}
+/**
+ * Identify the exact endpoint and protocol authorized for a one-shot discovery credential.
+ * @param baseURL - candidate endpoint supplied by the caller.
+ * @param api - candidate protocol, defaulted like the discovery owner.
+ * @returns credential-free SHA-256 endpoint identity.
  */
 export function modelDiscoveryEndpointFingerprint(baseURL, api) {
-    const endpoint = baseURL.replace(/\/+$/, '');
     return createHash('sha256').update(JSON.stringify({
-        endpoint,
-        api: api ?? 'openai-completions',
+        endpoint: baseURL.replace(/\/+$/u, ''), api: api ?? 'openai-completions',
     })).digest('hex');
 }
 /**
@@ -136,121 +305,268 @@ export function modelDiscoveryEndpointFingerprint(baseURL, api) {
 let LlmRuntime = (() => {
     let _classSuper = TypertRemoteService;
     let _instanceExtraInitializers = [];
-    let _remoteProviders_decorators;
+    let _remoteVerifyProvider_decorators;
     let _remoteMutateProvider_decorators;
     let _remoteProviderTransaction_decorators;
     let _remoteResumeProvider_decorators;
+    let _remoteProviders_decorators;
     let _remoteModels_decorators;
+    let _listProviders_decorators;
+    let _listConfigurableProviders_decorators;
     let _remoteDiscoverModels_decorators;
-    let _remoteVerifyProvider_decorators;
     return class LlmRuntime extends _classSuper {
         static {
             const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
-            _remoteProviders_decorators = [Remote('providers')];
+            _remoteVerifyProvider_decorators = [Remote('verifyProvider')];
             _remoteMutateProvider_decorators = [Remote('mutateProvider')];
             _remoteProviderTransaction_decorators = [Remote('providerTransaction')];
             _remoteResumeProvider_decorators = [Remote('resumeProvider')];
+            _remoteProviders_decorators = [Remote('providers')];
             _remoteModels_decorators = [Remote('models')];
+            _listProviders_decorators = [Remote];
+            _listConfigurableProviders_decorators = [Remote];
             _remoteDiscoverModels_decorators = [Remote('discoverModels')];
-            _remoteVerifyProvider_decorators = [Remote('verifyProvider')];
-            __esDecorate(this, null, _remoteProviders_decorators, { kind: "method", name: "remoteProviders", static: false, private: false, access: { has: obj => "remoteProviders" in obj, get: obj => obj.remoteProviders }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _remoteVerifyProvider_decorators, { kind: "method", name: "remoteVerifyProvider", static: false, private: false, access: { has: obj => "remoteVerifyProvider" in obj, get: obj => obj.remoteVerifyProvider }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _remoteMutateProvider_decorators, { kind: "method", name: "remoteMutateProvider", static: false, private: false, access: { has: obj => "remoteMutateProvider" in obj, get: obj => obj.remoteMutateProvider }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _remoteProviderTransaction_decorators, { kind: "method", name: "remoteProviderTransaction", static: false, private: false, access: { has: obj => "remoteProviderTransaction" in obj, get: obj => obj.remoteProviderTransaction }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _remoteResumeProvider_decorators, { kind: "method", name: "remoteResumeProvider", static: false, private: false, access: { has: obj => "remoteResumeProvider" in obj, get: obj => obj.remoteResumeProvider }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _remoteProviders_decorators, { kind: "method", name: "remoteProviders", static: false, private: false, access: { has: obj => "remoteProviders" in obj, get: obj => obj.remoteProviders }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _remoteModels_decorators, { kind: "method", name: "remoteModels", static: false, private: false, access: { has: obj => "remoteModels" in obj, get: obj => obj.remoteModels }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _listProviders_decorators, { kind: "method", name: "listProviders", static: false, private: false, access: { has: obj => "listProviders" in obj, get: obj => obj.listProviders }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _listConfigurableProviders_decorators, { kind: "method", name: "listConfigurableProviders", static: false, private: false, access: { has: obj => "listConfigurableProviders" in obj, get: obj => obj.listConfigurableProviders }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _remoteDiscoverModels_decorators, { kind: "method", name: "remoteDiscoverModels", static: false, private: false, access: { has: obj => "remoteDiscoverModels" in obj, get: obj => obj.remoteDiscoverModels }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _remoteVerifyProvider_decorators, { kind: "method", name: "remoteVerifyProvider", static: false, private: false, access: { has: obj => "remoteVerifyProvider" in obj, get: obj => obj.remoteVerifyProvider }, metadata: _metadata }, null, _instanceExtraInitializers);
             if (_metadata) Object.defineProperty(this, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
         }
-        adapters = (__runInitializers(this, _instanceExtraInitializers), new Map());
+        static Config = z.object({
+            verificationTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(15_000),
+            verificationCancellationGraceMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(2_000),
+        });
+        config = __runInitializers(this, _instanceExtraInitializers);
+        verificationLifetime = new AbortController();
+        verifications = new Map();
+        providerTransactions;
+        adapters = new Map();
         directory = new Map();
         discoveries = new Map();
-        verifications = new Map();
-        constructor(ctx) {
+        constructor(ctx, config = {}) {
+            const resolved = LlmRuntime.Config(config);
+            for (const field of ['verificationTimeoutMs', 'verificationCancellationGraceMs']) {
+                if (!Number.isFinite(resolved[field]))
+                    throw new Error(`llm: ${field} must be finite`);
+            }
             super(ctx, 'llm');
-            ctx.effect(() => () => {
-                for (const state of this.verifications.values()) {
-                    state.controller.abort(new LlmError('LLM runtime disposed during provider verification', 'ABORTED'));
+            this.config = resolved;
+            this.providerTransactions = new ProviderTransactions(ctx, this);
+            ctx.effect(() => async () => {
+                this.verificationLifetime.abort();
+                if (!await verificationSettles(Promise.allSettled(this.verifications.values()), this.config.verificationCancellationGraceMs)) {
+                    throw new LlmError('provider verification ignored runtime disposal and remains owner-tracked', 'VERIFICATION_STILL_RUNNING');
                 }
-            }, 'llm.providerVerifications');
-            ctx.inject(['settings'], (sctx) => {
-                this.syncProtectedSettingsNamespaces(sctx.settings);
+            }, 'llm.provider-verification');
+            ctx.inject(['settings'], (settingsCtx) => {
+                this.protectProviderSettings(settingsCtx);
+                settingsCtx.on('llm/adapters-updated', () => { this.protectProviderSettings(settingsCtx); });
             });
         }
-        /** Keep generic Settings Remote writes out of provider-owned namespaces. */
-        syncProtectedSettingsNamespaces(settings = this.ctx.get('settings')) {
-            if (settings === undefined)
-                return;
-            const namespaces = [...new Set([...this.directory.values()].map(entry => settingsNamespace(entry.settingsNs)))];
-            settings.setRemoteProtectedNamespaces(namespaces);
+        protectProviderSettings(ctx) {
+            const namespaces = this.listConfigurableProviders().map(entry => settingsNamespace(entry.settingsNs));
+            ctx.settings.setRemoteProtectedNamespaces([...new Set(namespaces)]);
         }
         /**
-         * Read configurable providers through the domain-owned Native Remote.
-         * @returns the redacted configurable-provider catalog.
-         */
-        remoteProviders() {
-            return listRemoteProviders(this.remoteRuntime());
-        }
-        /**
-         * Commit one idempotent provider settings/credential transaction.
-         * @param request - provider mutation and expected revision.
-         * @param signal - Caller cancellation before durable claim; claimed commits retain ownership until settled.
-         * @returns the committed provider mutation result.
-         */
-        async remoteMutateProvider(request, signal) {
-            return mutateRemoteProvider(this.remoteRuntime(), this.ctx, request, signal);
-        }
-        /**
-         * Read the durable, secret-free state of one provider mutation.
-         * @param request - Provider id and transaction UUID to inspect.
-         * @returns Current durable phase and whether a staged credential is still required.
-         */
-        async remoteProviderTransaction(request) {
-            return providerTransactionStatus(this.remoteRuntime(), this.ctx, request);
-        }
-        /**
-         * Continue one journaled provider mutation after Host or app restart.
-         * @param request - Provider id, transaction UUID, and optional write-only credential replay.
-         * @param signal - Caller cancellation before resuming a durable commit.
-         * @returns Committed provider view or the transaction's durable terminal failure.
-         */
-        async remoteResumeProvider(request, signal) {
-            return resumeRemoteProvider(this.remoteRuntime(), this.ctx, request, signal);
-        }
-        /**
-         * Read the failure-isolated host-scoped model catalog.
-         * @returns the model catalog grouped by provider.
-         */
-        async remoteModels() {
-            return listRemoteModels(this.remoteRuntime());
-        }
-        /**
-         * Interrogate a draft endpoint with an optional write-only one-shot key.
-         * @param request - draft endpoint and discovery options.
-         * @param signal - caller-owned cancellation signal.
-         * @returns discovered models and provider diagnostics.
-         */
-        async remoteDiscoverModels(request, signal) {
-            return discoverRemoteModels(this.remoteRuntime(), request, signal);
-        }
-        /**
-         * Execute one bounded exact provider/model/auth probe.
-         * @param request - Exact provider and model route to verify.
-         * @param signal - Caller cancellation combined with the Host verification deadline.
-         * @returns Verification mode used by the adapter or fallback request.
+         * Run one bounded exact-route probe without returning provider output or credentials.
+         * @param request - configured provider and model to verify.
+         * @param signal - caller cancellation combined with the configured Host deadline.
+         * @returns authentication evidence, or explicitly unverified catalog reachability.
          */
         async remoteVerifyProvider(request, signal) {
-            return verifyRemoteProvider(this.remoteRuntime(), request, signal);
+            const env_2 = { stack: [], error: void 0, hasError: false };
+            try {
+                if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(request.provider) || request.model.trim() === '') {
+                    throw new TypertRemoteFailure({ code: 'input-invalid', message: 'provider verification needs a valid provider and model', details: {} });
+                }
+                const bounded = __addDisposableResource(env_2, deadline(signal, this.config.verificationTimeoutMs, 'LLM_PROVIDER_VERIFICATION_TIMEOUT'), false);
+                let mode;
+                try {
+                    mode = await this.verifyModel(request.provider, request.model, bounded.signal);
+                }
+                catch (error) {
+                    if (error instanceof LlmError && error.code === 'VERIFICATION_STILL_RUNNING') {
+                        throw new TypertRemoteFailure({ code: 'provider-verification-still-running', message: 'provider verification remains owner-tracked',
+                            details: { provider: request.provider, model: request.model, state: 'still-running' } });
+                    }
+                    if (signal.aborted)
+                        throw new TypertRemoteFailure({ code: 'cancelled', message: 'provider verification was cancelled', details: {} });
+                    if (timeoutOf(bounded.signal, 'LLM_PROVIDER_VERIFICATION_TIMEOUT') !== undefined) {
+                        throw new TypertRemoteFailure({ code: 'provider-verification-timeout', message: 'provider verification timed out',
+                            details: { provider: request.provider, model: request.model } });
+                    }
+                    throw new TypertRemoteFailure({ code: 'provider-verification-failed', message: 'provider/model authentication verification failed',
+                        details: { provider: request.provider, model: request.model } });
+                }
+                return mode === 'endpoint-catalog'
+                    ? { provider: request.provider, model: request.model, verified: false, mode, classification: 'reachability-only' }
+                    : { provider: request.provider, model: request.model, verified: true, mode };
+            }
+            catch (e_2) {
+                env_2.error = e_2;
+                env_2.hasError = true;
+            }
+            finally {
+                __disposeResources(env_2);
+            }
         }
-        /** Present only public LLM operations to the Remote adapter. */
-        remoteRuntime() {
+        /**
+         * Verify one exact route while retaining admission until cancelled work actually settles.
+         * @param provider - registered provider route.
+         * @param model - exact configured model.
+         * @param signal - owner cancellation and deadline.
+         * @returns native metadata evidence or a bounded one-token generation handshake.
+         */
+        async verifyModel(provider, model, signal) {
+            const env_3 = { stack: [], error: void 0, hasError: false };
+            try {
+                if (signal.aborted || this.verificationLifetime.signal.aborted)
+                    throw new LlmError('provider verification aborted', 'ABORTED');
+                const key = JSON.stringify([provider, model]);
+                if (this.verifications.has(key))
+                    throw new LlmError('provider verification is still running', 'VERIFICATION_STILL_RUNNING');
+                const registration = this.registration(provider);
+                const ownedSignal = AbortSignal.any([signal, this.verificationLifetime.signal]);
+                const operation = Promise.resolve().then(() => this.performProviderVerification(registration, provider, model, ownedSignal));
+                this.verifications.set(key, operation);
+                const settled = operation.then(mode => ({ kind: 'completed', mode }), (error) => ({ kind: 'failed', error }))
+                    .finally(() => { this.verifications.delete(key); });
+                const aborted = Promise.withResolvers();
+                const _listener = __addDisposableResource(env_3, addAbortListener(ownedSignal, () => { aborted.resolve(undefined); }), false);
+                const result = await Promise.race([settled, aborted.promise.then(() => ({ kind: 'aborted' }))]);
+                if (result.kind === 'completed') {
+                    if (ownedSignal.aborted)
+                        throw new LlmError('provider verification aborted', 'ABORTED');
+                    return result.mode;
+                }
+                if (result.kind === 'failed')
+                    throw result.error;
+                if (!await verificationSettles(settled, this.config.verificationCancellationGraceMs)) {
+                    throw new LlmError('provider verification ignored cancellation and is still running', 'VERIFICATION_STILL_RUNNING');
+                }
+                throw new LlmError('provider verification aborted', 'ABORTED');
+            }
+            catch (e_3) {
+                env_3.error = e_3;
+                env_3.hasError = true;
+            }
+            finally {
+                __disposeResources(env_3);
+            }
+        }
+        async performProviderVerification(registration, provider, model, signal) {
+            signal.throwIfAborted();
+            const native = await registration.adapter.verifyProvider(provider, model, signal);
+            if (native !== undefined)
+                return native;
+            const call = await registration.adapter.prepareCall(provider, model, signal);
+            const info = this.normalizeModelInfo(registration, model, call.model);
+            const config = this.resolveCallWithInfo({ provider, model, maxTokens: 1 }, info).config;
+            let finish;
+            for await (const chunk of call.stream({ ...config, signal, messages: [createUserMessage({
+                        content: [{ type: 'text', text: '.' }], source: { kind: 'plugin', plugin: 'llm-verification' },
+                    })] }))
+                if (chunk.type === 'finish')
+                    finish = chunk.reason;
+            signal.throwIfAborted();
+            if (finish === undefined)
+                throw new LlmError('provider verification stream closed without a terminal frame', 'STREAM_CLOSED');
+            if (finish.kind === 'error' || finish.kind === 'aborted')
+                throw new LlmError(finish.failure.message, finish.failure.code);
+            return 'minimal-generation';
+        }
+        /**
+         * Commit a Native profile and credential change through the existing storage owners.
+         * @param request - caller-stable transaction identity, revision and profile edits.
+         * @param signal - cancellation before durable claim; claimed work keeps its ownership.
+         * @returns committed redacted settings only after owner activation succeeds.
+         */
+        remoteMutateProvider(request, signal) {
+            return this.providerTransactions.mutate(request, signal);
+        }
+        /**
+         * Inspect a durable provider transaction without changing its journal or credentials.
+         * @param request - provider and transaction identity retained by the native client.
+         * @returns the recorded phase or outcome and whether recovery needs a write-only credential.
+         */
+        remoteProviderTransaction(request) {
+            return this.providerTransactions.status(request);
+        }
+        /**
+         * Resume the existing durable plan instead of rebuilding edits from a refreshed UI.
+         * @param request - stored transaction identity and optional missing credential.
+         * @param signal - cancellation before durable claim only.
+         * @returns the redacted committed state or the transaction's recovery failure.
+         */
+        remoteResumeProvider(request, signal) {
+            return this.providerTransactions.resume(request, signal);
+        }
+        /**
+         * Join the configurable directory with live adapter routes for Native Settings.
+         * @returns declared and active-only provider rows, without credentials.
+         */
+        remoteProviders() {
+            const live = this.listProviders();
+            const active = new Set(live.map(provider => provider.id));
+            const declared = new Set();
+            const providers = this.listConfigurableProviders().map((entry) => {
+                declared.add(entry.provider);
+                return {
+                    provider: entry.provider, displayName: entry.displayName,
+                    settingsNs: entry.settingsNs, settingsPath: [...entry.settingsPath], active: active.has(entry.provider),
+                    ...entry.declared === undefined ? {} : { declared: entry.declared },
+                    ...entry.error === undefined ? {} : { error: entry.error },
+                    ...entry.migrationRequired === undefined ? {} : { migrationRequired: structuredClone(entry.migrationRequired) },
+                };
+            });
+            for (const provider of live) {
+                if (!declared.has(provider.id))
+                    providers.push({
+                        provider: provider.id, displayName: provider.name, settingsNs: '', settingsPath: [], active: true,
+                    });
+            }
+            return { providers };
+        }
+        /**
+         * Read the host model catalog with failure isolation between providers.
+         * @returns model groups and value-free provider failures.
+         */
+        async remoteModels() {
+            const catalogs = await Promise.all(this.listProviders().map(async (provider) => {
+                try {
+                    const models = await this.listModels(provider.id);
+                    const rows = await Promise.all(models.map(async (model) => {
+                        const resolved = await this.resolveModelInfo(provider.id, model.id);
+                        return {
+                            id: model.id, name: model.name,
+                            ...model.description === undefined ? {} : { description: model.description },
+                            ...resolved.defaultMaxTokens === undefined ? {} : { defaultMaxTokens: resolved.defaultMaxTokens },
+                            ...resolved.reasoning === undefined ? {} : { reasoning: {
+                                    efforts: resolved.reasoning.efforts.map(effort => ({
+                                        id: String(effort.id), name: effort.name,
+                                        ...effort.description === undefined ? {} : { description: effort.description },
+                                    })),
+                                    ...resolved.reasoning.defaultEffort === undefined ? {} : { defaultEffort: String(resolved.reasoning.defaultEffort) },
+                                } },
+                        };
+                    }));
+                    return { kind: 'group', group: { id: provider.id, name: provider.name, models: rows } };
+                }
+                catch {
+                    // Provider diagnostics can contain request headers; the catalog returns no raw error.
+                    return { kind: 'failure', failure: {
+                            id: provider.id, name: provider.name, message: 'provider model catalog unavailable',
+                        } };
+                }
+            }));
             return {
-                listProviders: () => this.listProviders(),
-                listConfigurableProviders: () => this.listConfigurableProviders(),
-                listModels: provider => this.listModels(provider),
-                resolveModelInfo: (provider, model, signal) => this.resolveModelInfo(provider, model, signal),
-                discoverModels: (settingsNs, request) => this.discoverModels(settingsNs, request),
-                verifyModel: (provider, model, signal) => this.verifyModel(provider, model, signal),
+                groups: catalogs.flatMap(entry => entry.kind === 'group' && entry.group.models.length > 0 ? [entry.group] : []),
+                failures: catalogs.flatMap(entry => entry.kind === 'failure' ? [entry.failure] : []),
             };
         }
         /** Notify topology observers without letting one broken listener veto the commit. */
@@ -287,22 +603,6 @@ let LlmRuntime = (() => {
             this.ctx.logger.warn('llm: an llm/adapters-updated listener failed');
             this.ctx.logger.warn(error);
         }
-        /** Release a fire-and-forget registration without leaking cleanup failures. */
-        disposeRegistration(dispose, owner) {
-            try {
-                void Promise.resolve(dispose()).catch((error) => {
-                    this.warnRegistrationDisposalFailure(owner, error);
-                });
-            }
-            catch (error) {
-                this.warnRegistrationDisposalFailure(owner, error);
-            }
-        }
-        /** Record a registration cleanup failure through the service logger. */
-        warnRegistrationDisposalFailure(owner, error) {
-            this.ctx.logger.warn(`llm: ${owner}: disposal failed`);
-            this.ctx.logger.warn(error);
-        }
         /**
          * Register an adapter for the given provider routes. Throws `LlmError` with code
          * `DUPLICATE_ADAPTER` if any provider already has an adapter (all-or-nothing).
@@ -330,11 +630,9 @@ let LlmRuntime = (() => {
                     this.emitAdaptersUpdated();
                 };
             }.bind(this), 'llm.registerAdapter()');
-            // The public handle is synchronous fire-and-forget: cleanup diagnostics
-            // are logged, never leaked as a throw or unhandled rejection.
-            const handle = (() => {
-                this.disposeRegistration(dispose, 'registerAdapter()');
-            });
+            // ctx.effect's disposer returns Promise<void>; our disposer API is
+            // synchronous fire-and-forget — discard the (always-resolved) promise.
+            const handle = (() => void dispose());
             handle.replace = (next) => {
                 // Registering here would leak: the effect's disposer already ran, so
                 // nothing remains to release whatever this call would put in the map.
@@ -423,36 +721,21 @@ let LlmRuntime = (() => {
                     if (entry.provider.length === 0 || entry.displayName.length === 0 || entry.settingsNs.length === 0) {
                         throw new LlmError('configurable providers need a non-empty provider, displayName, and settingsNs', 'INVALID_DIRECTORY');
                     }
-                    settingsNamespace(entry.settingsNs);
                     if (entry.settingsPath.some(segment => segment.length === 0)) {
                         throw new LlmError(`configurable provider "${entry.provider}" has an empty settingsPath segment`, 'INVALID_DIRECTORY');
-                    }
-                    if (entry.migrationRequired !== undefined
-                        && (entry.migrationRequired.fields.length === 0
-                            || entry.migrationRequired.fields.some(field => field.length === 0))) {
-                        throw new LlmError(`configurable provider "${entry.provider}" has invalid migration metadata`, 'INVALID_DIRECTORY');
                     }
                     if ((this.directory.has(entry.provider) && !own.has(entry.provider))
                         || detached.some(seen => seen.provider === entry.provider)) {
                         throw new LlmError(`configurable provider "${entry.provider}" is already declared`, 'DUPLICATE_DIRECTORY');
                     }
-                    detached.push({
-                        ...entry,
-                        settingsPath: [...entry.settingsPath],
-                        ...entry.migrationRequired === undefined ? {} : {
-                            migrationRequired: {
-                                code: entry.migrationRequired.code,
-                                fields: [...entry.migrationRequired.fields],
-                            },
-                        },
-                    });
+                    detached.push({ ...entry, settingsPath: [...entry.settingsPath],
+                        ...entry.migrationRequired === undefined ? {} : { migrationRequired: structuredClone(entry.migrationRequired) } });
                 }
                 for (const entry of held)
                     this.directory.delete(entry.provider);
                 for (const entry of detached)
                     this.directory.set(entry.provider, entry);
                 held = detached;
-                this.syncProtectedSettingsNamespaces();
                 this.emitAdaptersUpdated();
             };
             const dispose = this.ctx.effect(function* () {
@@ -465,13 +748,10 @@ let LlmRuntime = (() => {
                     for (const entry of held)
                         this.directory.delete(entry.provider);
                     held = [];
-                    this.syncProtectedSettingsNamespaces();
                     this.emitAdaptersUpdated();
                 };
             }.bind(this), 'llm.registerConfigurableProviders()');
-            const handle = (() => {
-                this.disposeRegistration(dispose, 'registerConfigurableProviders()');
-            });
+            const handle = (() => void dispose());
             handle.replace = (next) => {
                 if (disposed) {
                     throw new LlmError('this configurable-provider registration was disposed', 'REGISTRATION_DISPOSED');
@@ -485,16 +765,8 @@ let LlmRuntime = (() => {
          * @returns detached directory entries in declaration order.
          */
         listConfigurableProviders() {
-            return [...this.directory.values()].map(entry => ({
-                ...entry,
-                settingsPath: [...entry.settingsPath],
-                ...entry.migrationRequired === undefined ? {} : {
-                    migrationRequired: {
-                        code: entry.migrationRequired.code,
-                        fields: [...entry.migrationRequired.fields],
-                    },
-                },
-            }));
+            return [...this.directory.values()].map(entry => ({ ...entry, settingsPath: [...entry.settingsPath],
+                ...entry.migrationRequired === undefined ? {} : { migrationRequired: structuredClone(entry.migrationRequired) } }));
         }
         /**
          * Offer to interrogate provider endpoints on behalf of the settings
@@ -503,7 +775,7 @@ let LlmRuntime = (() => {
          * directory, and because a provider being *added* has no route to name yet.
          * Disposed with the fiber.
          * @param settingsNs - the namespace whose profiles this discovery serves.
-         * @param discover - interrogates one endpoint; must honor `request.signal`.
+         * @param discover - interrogates one endpoint and must honor the supplied signal.
          * @returns the disposer that withdraws the offer.
          */
         registerModelDiscovery(settingsNs, discover) {
@@ -519,9 +791,7 @@ let LlmRuntime = (() => {
                     this.discoveries.delete(settingsNs);
                 };
             }.bind(this), 'llm.registerModelDiscovery()');
-            return () => {
-                this.disposeRegistration(dispose, 'registerModelDiscovery()');
-            };
+            return () => void dispose();
         }
         /**
          * Interrogate one provider endpoint for the models it advertises. The
@@ -530,9 +800,10 @@ let LlmRuntime = (() => {
          * candidate metadata a surface may offer for adoption.
          * @param settingsNs - namespace whose registered discovery serves this draft.
          * @param request - the endpoint, protocol, and one-shot credential to use.
+         * @param signal - caller cancellation.
          * @returns the advertised models, deduplicated in endpoint order.
          */
-        async discoverModels(settingsNs, request) {
+        async discoverModels(settingsNs, request, signal) {
             const discover = this.discoveries.get(settingsNs);
             if (discover === undefined) {
                 throw new LlmError(`no model discovery is registered for "${settingsNs}"`, 'NO_DISCOVERY');
@@ -542,21 +813,25 @@ let LlmRuntime = (() => {
             if ((request.provider ?? '').length === 0 && (request.baseURL ?? '').length === 0) {
                 throw new LlmError('model discovery needs a provider route or a baseURL', 'INVALID_DISCOVERY');
             }
-            const bound = request.apiKey === undefined
-                ? request
-                : {
-                    ...request,
-                    credentialEndpointFingerprint: modelDiscoveryEndpointFingerprint(request.baseURL ?? '', request.api),
-                };
-            if (request.apiKey !== undefined && (request.baseURL ?? '').length === 0) {
-                throw new LlmError('a one-shot discovery credential requires its exact candidate baseURL', 'INVALID_DISCOVERY');
+            let bound = request;
+            if (request.apiKey !== undefined) {
+                const endpoint = request.baseURL;
+                if (endpoint === undefined || endpoint.length === 0) {
+                    throw new LlmError('a one-shot discovery credential requires its exact candidate baseURL', 'INVALID_DISCOVERY');
+                }
+                bound = { ...request, credentialEndpointFingerprint: modelDiscoveryEndpointFingerprint(endpoint, request.api) };
             }
-            const discovered = await discover(bound);
+            const discovered = signal === undefined ? await discover(bound) : await discover(bound, signal);
             const seen = new Set();
             const models = [];
             for (const model of discovered) {
                 if (typeof model.id !== 'string' || model.id.length === 0 || seen.has(model.id))
                     continue;
+                for (const capacity of [model.contextWindow, model.maxTokens]) {
+                    if (capacity !== undefined && (!Number.isSafeInteger(capacity) || capacity <= 0)) {
+                        throw new LlmError('model discovery returned an invalid capacity', 'INVALID_MODEL_INFO');
+                    }
+                }
                 seen.add(model.id);
                 models.push({
                     id: model.id,
@@ -568,6 +843,43 @@ let LlmRuntime = (() => {
             return models;
         }
         /**
+         * Remote adapter for one draft provider interrogation.
+         * @param request - namespace, endpoint, protocol, and one-shot credential to use.
+         * @param signal - caller cancellation supplied by the Remote carrier.
+         * @returns advertised models in the Native response envelope.
+         * @throws TypertRemoteFailure with `model-discovery-failed` when discovery refuses or fails.
+         */
+        async remoteDiscoverModels(request, signal) {
+            const checkCancellation = () => {
+                if (signal.aborted)
+                    throw new TypertRemoteFailure({ code: 'cancelled', message: 'model discovery was cancelled', details: {} });
+            };
+            checkCancellation();
+            try {
+                const { settingsNs, ...draft } = request;
+                const models = await this.discoverModels(settingsNs, draft, signal);
+                checkCancellation();
+                return { models: models.map(model => ({
+                        id: model.id,
+                        ...model.name === undefined ? {} : { name: model.name },
+                        ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
+                        ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+                    })) };
+            }
+            catch {
+                // One-shot credentials and provider response details must not escape the request.
+                checkCancellation();
+                throw new TypertRemoteFailure({
+                    code: 'model-discovery-failed',
+                    message: 'provider model discovery failed',
+                    details: {
+                        settingsNs: request.settingsNs,
+                        ...request.baseURL === undefined ? {} : { baseURL: request.baseURL },
+                    },
+                });
+            }
+        }
+        /**
          * Resolve the retry policy captured when one provider route was registered.
          * @param provider - registered provider route to inspect.
          * @returns the provider-owned policy, with normal defaults already resolved.
@@ -576,11 +888,13 @@ let LlmRuntime = (() => {
             return this.registration(provider).retryPolicy;
         }
         /**
-         * Resolve route-owned request-image pricing without performing I/O. Unknown
-         * routes intentionally degrade to heuristic pricing for historical logs.
-         * @param provider - provider route whose registered adapter owns pricing.
-         * @param model - exact model id whose image occurrences will be priced.
-         * @returns route-owned pricing, or `undefined` when the route supplies none.
+         * Resolve provider-side request-image pricing for one exact route, or
+         * `undefined` when the provider is unregistered or declares none. Unknown
+         * providers degrade to `undefined` rather than throwing because callers
+         * price durable history whose route may no longer be mounted.
+         * @param provider - provider route named by a request header.
+         * @param model - exact model id named by the same header.
+         * @returns the owning adapter's image pricing for the route, when declared.
          */
         imageRequestPricing(provider, model) {
             return this.adapters.get(provider)?.adapter.imageRequestPricing(provider, model);
@@ -633,86 +947,6 @@ let LlmRuntime = (() => {
         async resolveModelInfo(provider, model, signal) {
             return this.resolveModelInfoFor(this.registration(provider), model, signal);
         }
-        /**
-         * Prove an exact provider/model route can authenticate and complete a bounded
-        * request. The caller supplies the deadline signal; no output is retained or
-        * returned to configuration surfaces.
-         * @param provider - Registered provider route to authenticate.
-         * @param model - Exact model id to probe.
-         * @param signal - Caller-owned deadline and cancellation signal.
-         * @returns Adapter-native or bounded fallback verification mode.
-         */
-        async verifyModel(provider, model, signal) {
-            signal.throwIfAborted();
-            const key = `${provider}\0${model}`;
-            if (this.verifications.has(key)) {
-                throw new LlmError(`provider verification for "${provider}/${model}" is still running`, 'VERIFICATION_STILL_RUNNING');
-            }
-            const registration = this.registration(provider);
-            const controller = new AbortController();
-            const operation = this.performProviderVerification(registration, provider, model, controller.signal);
-            const state = { controller, operation };
-            this.verifications.set(key, state);
-            void operation.then(() => { if (this.verifications.get(key) === state)
-                this.verifications.delete(key); }, () => { if (this.verifications.get(key) === state)
-                this.verifications.delete(key); });
-            const aborted = Promise.withResolvers();
-            const forwardAbort = () => { aborted.resolve('aborted'); };
-            signal.addEventListener('abort', forwardAbort, { once: true });
-            if (signal.aborted)
-                forwardAbort();
-            try {
-                const outcome = await Promise.race([
-                    operation.then(mode => ({ kind: 'completed', mode }), (error) => ({ kind: 'failed', error })),
-                    aborted.promise.then(() => ({ kind: 'aborted' })),
-                ]);
-                if (outcome.kind === 'completed') {
-                    signal.throwIfAborted();
-                    return outcome.mode;
-                }
-                if (outcome.kind === 'failed')
-                    throw outcome.error;
-                controller.abort(signal.reason);
-                if (!await settlesWithin(operation, 2_000)) {
-                    throw new LlmError(`provider verification for "${provider}/${model}" ignored cancellation and is still running`, 'VERIFICATION_STILL_RUNNING');
-                }
-                signal.throwIfAborted();
-                throw new LlmError('provider verification aborted', 'ABORTED');
-            }
-            finally {
-                signal.removeEventListener('abort', forwardAbort);
-            }
-        }
-        /** Adapter-native metadata probe, falling back to one discarded-token handshake. */
-        async performProviderVerification(registration, provider, model, signal) {
-            const native = await registration.adapter.verifyProvider(provider, model, signal);
-            if (native !== undefined)
-                return native;
-            const adapterCall = await registration.adapter.prepareCall(provider, model, signal);
-            const modelInfo = this.normalizeModelInfo(registration, model, adapterCall.model);
-            const config = this.resolveCallWithInfo({ provider, model, maxTokens: 1 }, modelInfo).config;
-            let finish;
-            for await (const chunk of adapterCall.stream({
-                ...config,
-                messages: [createUserMessage({
-                        // Smallest portable fallback: one punctuation token in, at most one
-                        // token out, and every output chunk is discarded by this owner.
-                        content: [{ type: 'text', text: '.' }],
-                        source: { kind: 'plugin', plugin: 'llm-verification' },
-                    })],
-                signal,
-            })) {
-                if (chunk.type === 'finish')
-                    finish = chunk.reason;
-            }
-            signal.throwIfAborted();
-            if (finish === undefined)
-                throw new LlmError('provider verification stream closed without a terminal frame', 'STREAM_CLOSED');
-            if (finish.kind === 'error' || finish.kind === 'aborted') {
-                throw new LlmError(finish.failure.message, finish.failure.code);
-            }
-            return 'minimal-generation';
-        }
         async resolveModelInfoFor(registration, model, signal) {
             const resolved = await registration.adapter.resolveModel(registration.provider.id, model, signal);
             return this.normalizeModelInfo(registration, model, resolved);
@@ -730,7 +964,7 @@ let LlmRuntime = (() => {
                 throw new LlmError(`adapter returned invalid exact model metadata for provider "${provider}" model "${model}"`, 'INVALID_MODEL_INFO');
             }
             const context = resolved.context;
-            if (context !== undefined && (!Number.isInteger(context.contextWindow) || context.contextWindow <= 0)) {
+            if (context !== undefined && (!Number.isSafeInteger(context.contextWindow) || context.contextWindow <= 0)) {
                 throw new LlmError(`adapter returned invalid context metadata for provider "${provider}" model "${model}"`, 'INVALID_MODEL_CONTEXT');
             }
             // Capability metadata rides through: an explicit modality omission is
@@ -977,15 +1211,9 @@ let LlmRuntime = (() => {
             }
             finally {
                 if (!completed) {
-                    try {
-                        const close = iterator.return?.bind(iterator);
-                        if (close)
-                            await close();
-                    }
-                    catch (error) {
-                        this.ctx.logger.warn('llm: adapter stream cleanup failed');
-                        this.ctx.logger.warn(error);
-                    }
+                    const close = iterator.return?.bind(iterator);
+                    if (close)
+                        await close();
                 }
             }
         }
@@ -995,9 +1223,8 @@ let LlmRuntime = (() => {
          * and the target provider. Final adapter selection remains fixed through
          * asynchronous exact-model resolution and dispatch. Adapter selection,
          * dispatch, and iteration failures become terminal `error` or `aborted`
-         * finish chunks; middleware, nested-call, and consumer failures remain
-         * thrown. A downstream-close cleanup failure is logged so it cannot mask
-         * the consumer's own completion or failure.
+         * finish chunks; middleware, nested-call, cleanup, and consumer failures
+         * remain thrown.
          * @param options - the full request; `options.provider` selects the adapter.
          * @returns the chunk stream, possibly wrapped by `llm/stream` listeners.
          */
@@ -1021,24 +1248,4 @@ function adapterFailureChunk(error, signal) {
     };
 }
 export default LlmRuntime;
-/** Wait briefly for an aborted adapter operation to prove ownership quiescence. */
-async function settlesWithin(operation, timeoutMs) {
-    const env_1 = { stack: [], error: void 0, hasError: false };
-    try {
-        const timeout = __addDisposableResource(env_1, deadline(undefined, timeoutMs, 'LLM_ABORT_QUIESCENCE_TIMEOUT'), false);
-        return await Promise.race([
-            operation.then(() => true, () => true),
-            new Promise((resolve) => {
-                timeout.signal.addEventListener('abort', () => { resolve(false); }, { once: true });
-            }),
-        ]);
-    }
-    catch (e_1) {
-        env_1.error = e_1;
-        env_1.hasError = true;
-    }
-    finally {
-        __disposeResources(env_1);
-    }
-}
 //# sourceMappingURL=index.js.map

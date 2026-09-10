@@ -3,6 +3,12 @@
  * adapter that puts one in an HTTP header.
  * @module @deepseek-ai/dsh-llm/api-key
  */
+/**
+ * Identify header names whose non-empty values must use credential storage.
+ * @param name - header name, compared case-insensitively.
+ * @returns whether the name carries authentication, tokens, passwords or cookies.
+ */
+export declare function isCredentialHeaderName(name: string): boolean;
 /** Why a supplied API key cannot be used. */
 export type ApiKeyRejection = 'empty' | 'illegalCharacters';
 /** The verdict on one supplied API key. */

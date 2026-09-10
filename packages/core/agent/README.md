@@ -10,6 +10,8 @@ The optional `@deepseek-ai/dsh-agent/invariant` companion registers this package
 
 Tracks live agents and carries the initiating Agent through asynchronous driver work without importing the concrete loop package.
 
+When Typert is present, the registry contributes bidirectional Agent Context identity. Identification accepts only the exact Agent currently registered under its ID; unowned contexts, retired Agents, and stale same-ID instances have no live identity. Lookup resolves the registered Agent's Context.
+
 ### Public API
 
 The scoped-registration surface: `Agent.ctx` is the agent's scope context (`dsh-scope`, key = the agent) — register tools/sections/variables/listeners through it for that agent alone, all unwound on disposal. `agentEvents(ctx, agent)` is the fused dispatcher for ordinary agent-subject operations (carrier + injected subject in one move); its notification mode invokes every listener and contains both synchronous throws and returned-promise rejections. The registry lifecycle pair reuses one stable routing carrier. `assembleContextFor(agent)` builds the per-agent assembly context (`agent` + `scope` together). `installModelSelection(agentCtx, selection)` snapshots a mutable provider/model/reasoning-effort selection during prompt assembly, applies its provider and model to prompt variables, and applies the complete selection to request routing for one step; an absent selected effort clears an inherited effort so adapter/provider defaults apply. `CreateAgentOptions.setup(agentCtx)` and `ResumeAgentOptions.setup(agentCtx)` compose a fresh or resumed agent's scoped world while both objects remain unpublished. Setup is trusted, composition-only same-process code: drive the agent only after creation resolves.

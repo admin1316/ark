@@ -1,4 +1,6 @@
 node_modules/
+.pnpm-store/
 .build/
+.native-build/
 *.log
 .DS_Store

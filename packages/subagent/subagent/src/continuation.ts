@@ -22,6 +22,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   Agent,
@@ -31,7 +32,7 @@ import type {
   CreateAgentOptions,
 } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId, boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, MessageId, MessageSource, UserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
@@ -90,11 +91,20 @@ export interface SubagentSettledMessageSource {
   readonly senderSessionId: SessionId
 }
 
+/** Durable attribution and retry identity for a human prompt to a child. */
+export interface SubagentPromptMessageSource {
+  readonly kind: 'subagent-prompt'
+  readonly form: 'relay'
+  readonly senderSessionId: SessionId
+  readonly invocationId: string
+}
+
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     coordinator: CoordinatorMessageSource
     'subagent-report': SubagentReportMessageSource
     'subagent-settled': SubagentSettledMessageSource
+    'subagent-prompt': SubagentPromptMessageSource
   }
 }
 
@@ -153,6 +163,15 @@ export interface SubagentFollowupOptions {
   readonly source: MessageSource
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
+  /** Stable UUID carried by a subagent-prompt source; absent for other sources. */
+  readonly invocationId?: string
+}
+
+/** Receipt returned only after the accepted message crosses the Session flush barrier. */
+export interface DurableSubagentMessageReceipt {
+  readonly messageId: MessageId
+  readonly durable: true
+  readonly duplicate: boolean
 }
 
 /**
@@ -470,8 +489,7 @@ export class SubagentContinuationManager {
       })
       return this.submitMaterialized(
         activation,
-        request.prompt,
-        { kind: 'user' },
+        createUserMessage({ content: request.prompt, source: { kind: 'user' } }),
         parent,
         spec.signal,
       )
@@ -500,7 +518,7 @@ export class SubagentContinuationManager {
    * @param childId - the durable child session id.
    * @param content - the user-role content to deliver.
    * @param options - the message source fields and caller cancellation.
-   * @returns the accepted message's inbox id.
+   * @returns the accepted message's inbox id after the Session flush barrier, without waiting for model completion.
    * @throws when parent authority, availability, or admission rejects the delivery.
    */
   async followup(
@@ -509,11 +527,32 @@ export class SubagentContinuationManager {
     content: ContentBlock[],
     options: SubagentFollowupOptions,
   ): Promise<MessageId> {
+    return (await this.followupReceipt(parent, childId, content, options)).messageId
+  }
+
+  /**
+   * Deliver once per invocation and wait for durable storage, not model completion.
+   * @param parent - exact live direct parent.
+   * @param childId - child identity shared across activations.
+   * @param content - immutable-at-admission message content.
+   * @param options - source, optional retry UUID, and pre-admission cancellation.
+   * @returns the original or newly accepted durable message receipt.
+   */
+  async followupReceipt(
+    parent: Agent,
+    childId: SessionId,
+    content: ContentBlock[],
+    options: SubagentFollowupOptions,
+  ): Promise<DurableSubagentMessageReceipt> {
     this.assertAdmitting(parent)
+    this.requirePersistence()
+    options.signal.throwIfAborted()
+    const message = createUserMessage({ content, source: options.source })
+    this.assertInvocationContract(message, options.invocationId, parent.id)
     while (true) {
       const live = await this.locks.run(childId, async () => {
         const activation = this.activations.get(childId)
-        if (activation === undefined) return this.coldResume(parent, childId, content, options)
+        if (activation === undefined) return this.coldResume(parent, childId, message, options)
         // A delivery that arrives after the disposal transaction began must not
         // reach a handle being torn down; wait for release, then cold-resume.
         /* v8 ignore next 3 -- the send-versus-dispose cutoff: reaching this arm needs a
@@ -523,7 +562,16 @@ export class SubagentContinuationManager {
         if (activation.disposal !== undefined) {
           return activation.disposal.then(() => undefined, () => undefined)
         }
-        return this.submitAdmitted(activation, content, options.source, parent, options.signal)
+        this.authorizeLineage(parent, childId, activation.handle.agent.session.header.parentSession)
+        const session = activation.handle.agent.session
+        const duplicate = this.invocationReceipt(session.events.slice(session.header.seedLength ?? 0), message, options.invocationId)
+        if (duplicate !== undefined) {
+          await this.flushAccepted(activation)
+          return duplicate
+        }
+        const messageId = this.submitAdmitted(activation, message, parent, options.signal)
+        await this.flushAccepted(activation)
+        return { messageId, durable: true, duplicate: false } satisfies DurableSubagentMessageReceipt
       })
       /* v8 ignore start -- only the lost-cutoff arm above returns undefined, so only that
        * race reaches the retry below, which then cold-resumes a new Activation. */
@@ -949,9 +997,9 @@ export class SubagentContinuationManager {
   private async coldResume(
     parent: Agent,
     childId: SessionId,
-    content: ContentBlock[],
+    message: UserMessage,
     options: SubagentFollowupOptions,
-  ): Promise<MessageId> {
+  ): Promise<DurableSubagentMessageReceipt> {
     const query = this.requireSessionQuery()
     let observation: SessionObservation
     try {
@@ -980,6 +1028,17 @@ export class SubagentContinuationManager {
         'NOT_RESUMABLE',
       )
     }
+    const duplicate = this.invocationReceipt(source.events.slice(source.header.seedLength ?? 0), message, options.invocationId)
+    if (duplicate !== undefined) {
+      if (source.source === 'live') {
+        const session = this.ctx.sessions.get(childId)
+        if (session === undefined || !await this.ctx.sessions.flush(session)) {
+          throw new SubagentError('subagent receipt has no live durability owner', 'PERSISTENCE_UNAVAILABLE')
+        }
+        await this.requirePersistence().ensureMaterialized(session)
+      }
+      return duplicate
+    }
     let activation: Activation
     try {
       activation = await this.materialize({
@@ -1001,27 +1060,28 @@ export class SubagentContinuationManager {
       if (error instanceof SubagentError) throw error
       throw new SubagentError(`subagent "${childId}" is unavailable`, 'NOT_RESUMABLE', { cause: error })
     }
-    return await this.submitMaterialized(activation, content, options.source, parent, options.signal)
+    const messageId = await this.submitMaterialized(activation, message, parent, options.signal)
+    // A failed flush does not retract an already accepted inbox message; a retry must find it.
+    await this.flushAccepted(activation)
+    return { messageId, durable: true, duplicate: false }
   }
 
   /**
    * Submit to a freshly materialized Activation or roll it back completely.
    * @param activation - the just-published Activation to admit or release.
-   * @param content - the initial or resumed message content.
-   * @param source - durable fields naming who supplied the accepted message.
+   * @param message - identified immutable message, including durable source fields.
    * @param parent - the live direct parent authorizing admission.
    * @param signal - caller cancellation owning admission until acceptance.
    * @returns the accepted inbox message id.
    */
   private async submitMaterialized(
     activation: Activation,
-    content: ContentBlock[],
-    source: MessageSource,
+    message: UserMessage,
     parent: Agent,
     signal: AbortSignal,
   ): Promise<MessageId> {
     try {
-      return this.submitAdmitted(activation, content, source, parent, signal)
+      return this.submitAdmitted(activation, message, parent, signal)
     } catch (error: unknown) {
       /* v8 ignore next -- rollback disposal failures must not mask the
        * pre-acceptance signal, drain, or lifecycle failure. */
@@ -1202,14 +1262,12 @@ export class SubagentContinuationManager {
    */
   private submit(
     activation: Activation,
-    content: ContentBlock[],
-    source: MessageSource,
+    message: UserMessage,
     parent: Agent,
   ): MessageId {
     // Parent-originated delivery keeps the parent live through ownership, so
     // establish it before the message can enter the child's inbox.
     this.acquireOwnership(parent, activation.childId)
-    const message = createUserMessage({ content, source })
     const accepted = this.admitWaking(activation, message.id, () => {
       activation.handle.agent.followup(message)
     })
@@ -1253,8 +1311,7 @@ export class SubagentContinuationManager {
    */
   private submitAdmitted(
     activation: Activation,
-    content: ContentBlock[],
-    source: MessageSource,
+    message: UserMessage,
     parent: Agent,
     signal: AbortSignal,
   ): MessageId {
@@ -1273,7 +1330,58 @@ export class SubagentContinuationManager {
       activation.childId,
       activation.handle.agent.session.header.parentSession,
     )
-    return this.submit(activation, content, source, parent)
+    return this.submit(activation, message, parent)
+  }
+
+  private async flushAccepted(activation: Activation): Promise<void> {
+    const child = activation.handle.agent
+    const persistence = this.requirePersistence()
+    if (!await child.ctx.sessions.flush(child.session)) {
+      throw new SubagentError('subagent accepted a message without a durability listener', 'PERSISTENCE_UNAVAILABLE')
+    }
+    // A listener's participation alone is not proof that the storage owner committed the cut.
+    await persistence.ensureMaterialized(child.session)
+  }
+
+  private assertInvocationContract(message: UserMessage, invocationId: string | undefined, parentId: SessionId): void {
+    if (message.source.kind !== 'subagent-prompt') {
+      if (invocationId !== undefined) throw new SubagentError('subagent invocation requires its durable source', 'INVALID_INVOCATION')
+      return
+    }
+    if (invocationId === undefined || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(invocationId)) {
+      throw new SubagentError('subagent prompt invocationId must be a canonical UUID', 'INVALID_INVOCATION')
+    }
+    if (message.source.invocationId !== invocationId || message.source.senderSessionId !== parentId) {
+      throw new SubagentError('subagent prompt invocation does not match its source', 'INVALID_INVOCATION')
+    }
+  }
+
+  private invocationReceipt(
+    events: readonly SessionEvent[], candidate: UserMessage, invocationId: string | undefined,
+  ): DurableSubagentMessageReceipt | undefined {
+    if (invocationId === undefined) return undefined
+    const matches = new Map<MessageId, UserMessage>()
+    for (const event of events) {
+      const messages = event.type === 'agent/inbox/spliced' ? event.data.inserted
+        : event.type === 'user/message' ? [event.data] : []
+      for (const message of messages) {
+        if (message.source.kind !== 'subagent-prompt' || message.source.invocationId !== invocationId) continue
+        const previous = matches.get(message.id)
+        if (previous !== undefined && !isDeepStrictEqual(previous, message)) {
+          throw new SubagentError('subagent message identity has conflicting persisted values', 'IDEMPOTENCY_CONFLICT')
+        }
+        matches.set(message.id, message)
+      }
+    }
+    const [existing, ...additional] = matches.values()
+    if (existing === undefined) return undefined
+    if (additional.length > 0) throw new SubagentError('subagent invocation resolves to multiple messages', 'IDEMPOTENCY_CONFLICT')
+    if (!isDeepStrictEqual(existing.content, candidate.content)
+      || existing.source.kind !== 'subagent-prompt' || candidate.source.kind !== 'subagent-prompt'
+      || existing.source.senderSessionId !== candidate.source.senderSessionId) {
+      throw new SubagentError('subagent invocation was reused with different input', 'IDEMPOTENCY_CONFLICT')
+    }
+    return { messageId: existing.id, durable: true, duplicate: true }
   }
 
   /**

@@ -84,6 +84,8 @@ A preset whose composition is missing, unparsable, not a list of named plugin ro
 
 -----
 
+Native clients use the `agentPreset` Remote namespace. Copy and selection return `{ agentPreset }`, removal returns an empty acknowledgement, and the roster includes `hasDocument`. Opening resolves a user-owned preset id through the roster and uses the Host's native directory opener; it accepts cancellation but never a caller-selected path. Shipped presets are not opened for editing. Selection uses the same serialized blank-session switch as same-process callers.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

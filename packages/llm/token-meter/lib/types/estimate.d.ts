@@ -10,9 +10,11 @@ import type { EpochHeader } from '@deepseek-ai/dsh-session';
 /** Role-field framing overhead added to every priced message. */
 export declare const ROLE_OVERHEAD = 4;
 /**
- * Structural JSON price used for route-owned image references and extensions.
- * @param block - The block input.
- * @returns The value produced by estimate structural block.
+ * Structural JSON price of one block outside the typed pricing arms: the
+ * fixed heuristic for merge-extended blocks and for image references, whose
+ * request price is route-owned rather than fixed.
+ * @param block - block to price without mutation.
+ * @returns heuristic tokens for the block's JSON structure.
  */
 export declare function estimateStructuralBlock(block: ContentBlock): number;
 /**

@@ -11,7 +11,7 @@
  * The policy only decides WHEN to spill and composes the notice.
  *
  * A second arm applies the SAME cap to the durable log: the
- * `tools/code-dispatch-log` waterfall bounds the `tool/code-dispatch` event's
+ * `tools/ptc-dispatch-log` waterfall bounds the `tool/code-dispatch` event's
  * copy of an oversized `run_code` sub-call result (the program's value is
  * untouched; UIs and replay read the full text through the spill artifact).
  *

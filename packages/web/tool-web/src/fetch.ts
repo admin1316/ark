@@ -269,6 +269,10 @@ const TRUNCATION_FOOTER = '\n\n(Content truncated. Fetch a more specific URL or 
 interface RenderedFetch {
   /** The complete bounded output — header, rendered body, and truncation footer. */
   text: string
+  /** Body-only projection for the Native reader, bounded independently of model framing. */
+  markdown: string
+  /** Whether the provider, source prefix or body-only cap removed body content. */
+  markdownTruncated: boolean
   /**
    * True when the provider capped the body, a pre-conversion source cut applied,
    * or the complete output exceeded `maxOutputChars`. This is the effective
@@ -329,12 +333,14 @@ const renderCache = new WeakMap<WebFetchResult, Map<number, RenderedFetch>>()
 function computeFetchOutput(result: WebFetchResult, maxOutputChars: number): RenderedFetch {
   const header = `Fetched ${result.url} (HTTP ${result.statusCode})\n\n${EXTERNAL_WEB_CONTENT_NOTICE}\n\n`
   const rendered = renderBody(result.body, maxOutputChars)
+  const markdown = rendered.text.slice(0, maxOutputChars)
+  const markdownTruncated = result.truncated || rendered.sourceTruncated || rendered.text.length > maxOutputChars
   const prefix = `${header}${rendered.text}`
   const truncated = result.truncated || rendered.sourceTruncated || prefix.length > maxOutputChars
   const full = `${prefix}${truncated ? TRUNCATION_FOOTER : ''}`
-  if (full.length <= maxOutputChars) return { text: full, truncated }
-  if (maxOutputChars < TRUNCATION_FOOTER.length) return { text: full.slice(0, maxOutputChars), truncated }
-  return { text: `${prefix.slice(0, maxOutputChars - TRUNCATION_FOOTER.length)}${TRUNCATION_FOOTER}`, truncated }
+  if (full.length <= maxOutputChars) return { text: full, markdown, truncated, markdownTruncated }
+  if (maxOutputChars < TRUNCATION_FOOTER.length) return { text: full.slice(0, maxOutputChars), markdown, truncated, markdownTruncated }
+  return { text: `${prefix.slice(0, maxOutputChars - TRUNCATION_FOOTER.length)}${TRUNCATION_FOOTER}`, markdown, truncated, markdownTruncated }
 }
 
 /**
@@ -346,6 +352,28 @@ function computeFetchOutput(result: WebFetchResult, maxOutputChars: number): Ren
  */
 export function formatFetchOutput(result: WebFetchResult, maxOutputChars: number): string {
   return renderFetchOutput(result, maxOutputChars).text
+}
+
+/** Detached value projections for the model and Native reader. */
+export interface WebFetchFormattedOutput {
+  readonly text: string
+  readonly markdown: string
+  readonly truncated: boolean
+  readonly markdownTruncated: boolean
+}
+
+/**
+ * Reuse bounded conversion while keeping model framing out of the Native document body.
+ * @param result - fetch outcome; mutable direct-call values are not memoized.
+ * @param maxOutputChars - non-negative safe-integer cap applied independently to each projection.
+ * @returns detached strings and their projection-specific truncation flags.
+ */
+export function formatFetchOutputState(result: WebFetchResult, maxOutputChars: number): WebFetchFormattedOutput {
+  if (!Number.isSafeInteger(maxOutputChars) || maxOutputChars < 0) throw new RangeError('maxOutputChars must be a non-negative safe integer')
+  const rendered = Object.isFrozen(result) && Object.isFrozen(result.body)
+    ? renderFetchOutput(result, maxOutputChars)
+    : computeFetchOutput(result, maxOutputChars)
+  return { text: rendered.text, markdown: rendered.markdown, truncated: rendered.truncated, markdownTruncated: rendered.markdownTruncated }
 }
 
 /**

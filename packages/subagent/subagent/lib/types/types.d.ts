@@ -14,56 +14,6 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session';
 import type { ObjectJsonSchema, ToolRestriction } from '@deepseek-ai/dsh-tools';
 import type { SubagentDescriptorData } from './descriptor.ts';
-/** Lossless JSON data permitted through the Native subagent Remote boundary. */
-export type RemoteSubagentJsonValue = null | boolean | number | string | RemoteSubagentJsonValue[] | {
-    [key: string]: RemoteSubagentJsonValue;
-};
-/** Durable direct-child row returned by the Native `subagents/list` Remote method. */
-export type RemoteSubagentListEntry = {
-    readonly kind: 'child';
-    readonly id: string;
-    readonly activity: 'running' | 'inactive';
-    readonly hasChildren: boolean;
-    readonly mode: 'one-shot';
-    readonly label?: string;
-} | {
-    readonly kind: 'child';
-    readonly id: string;
-    readonly activity: 'running' | 'inactive';
-    readonly hasChildren: boolean;
-    readonly mode: 'continuable';
-    readonly label: string;
-} | {
-    readonly kind: 'diagnostic';
-    readonly id: string;
-    readonly reason: 'corrupt' | 'unsupported' | 'unavailable';
-};
-/** Durable direct-child catalog plus its live-parent availability hint. */
-export interface RemoteSubagentCatalog {
-    readonly entries: readonly RemoteSubagentListEntry[];
-    readonly parentAvailable: boolean;
-}
-/** A bounded raw transcript page for one already-verified direct child. */
-export interface RemoteSubagentHistory {
-    /** Existing durable events; presentation projections remain a gateway integration concern. */
-    readonly events: readonly RemoteSubagentJsonValue[];
-    readonly hasMore: boolean;
-}
-/** Durable idempotent receipt for one Native continuable-child prompt. */
-export interface RemoteSubagentPromptReceipt {
-    /** Caller-supplied invocation identity echoed after validation. */
-    readonly invocationId: string;
-    /** Stable message identity; exact retries return the same value. */
-    readonly messageId: string;
-    /** Always true: success is returned only after the Session flush barrier. */
-    readonly durable: true;
-    /** Whether this invocation was already present instead of newly inserted. */
-    readonly duplicate: boolean;
-}
-/** Uniform acknowledgement that an interrupt was admitted. */
-export interface RemoteSubagentInterruptReceipt {
-    readonly accepted: true;
-}
 /** Identifies one accepted subagent run across its lifecycle event pair. */
 export type SubagentRunId = Branded<'SubagentRunId'>;
 /**
@@ -126,9 +76,7 @@ export interface SubagentRunEndInfo {
  * to `maxDepth`; the other names match.
  */
 export interface SubagentCapabilities {
-    /** Whether the provider honors child provider/model/reasoning/maxTokens overrides. */
-    /** Optional during the compatibility window; explicit `false` rejects overrides. */
-    readonly agentOptions?: boolean;
+    readonly agentOptions: boolean;
     readonly outputSchema: boolean;
     readonly depthLimit: boolean;
     readonly toolFilter: boolean;
@@ -160,6 +108,13 @@ export interface SubagentStartRequest {
      * remaining turn work when it fires afterward.
      */
     readonly signal: AbortSignal;
+    /**
+     * Optional host-Agent provider, model, reasoning-effort, and output-token
+     * overrides. Requires {@link SubagentCapabilities.agentOptions}; in-process
+     * providers merge them over the parent Agent's options when they create the
+     * child, while the DSH SDK provider merges them over its instance defaults
+     * before initializing the separate child runtime.
+     */
     readonly agentOptions?: AgentOptions;
     /**
      * Object-rooted JSON Schema within `assertObjectJsonSchema`'s enforced subset. Start rejects
@@ -336,7 +291,12 @@ export interface SubagentProvider {
      * It says nothing about tool registration, injected services, or authority inheritance.
      */
     readonly inheritsParentContext: boolean;
-    /** Provider-owned default route for providers whose child process has its own model config. */
+    /**
+     * Optional static provider-owned provider/model route for one-shot Agent
+     * options. Consumers merge tool/model overrides over these values before
+     * preflight; providers whose route derives from the parent omit it. The value
+     * is detached immutable data and requires `agentOptions` support.
+     */
     readonly agentRouteDefaults?: Readonly<{
         provider: string;
         model: string;

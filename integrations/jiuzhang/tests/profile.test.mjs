@@ -80,6 +80,7 @@ test('the jiuzhang profile disables telemetry and persistent sqlite', async () =
   assert.ok(Array.isArray(rows))
   const byId = new Map(rows.map(row => [row.id, row]))
   assert.equal(byId.get('agent-presets')?.config?.default, 'standard')
+  assert.equal(byId.get('agent-presets')?.config?.includeShippedRoot, false, 'launcher-owned Native presets must not be shadowed')
   assert.deepEqual(byId.get('agent-presets')?.config?.reservedIds, ['jiuzhang'])
   assert.equal(byId.get('session-telemetry-otel')?.disabled, true)
   assert.equal(byId.has('webserver'), false, 'the API bundle retains the --port startup expression')

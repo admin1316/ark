@@ -1,19 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
-//#region lib/types/record.js
-/**
-* Shared record predicate for decoded protocol and durable JSON values.
-* @module @deepseek-ai/dsh-sdk-protocol/record
-*/
-/**
-* Whether `value` can be read as a string-keyed record.
-* @param value - The value to inspect.
-* @returns `true` for a non-null, non-array object.
-*/
-function isRecord(value) {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-//#endregion
 //#region lib/types/transport.js
 /**
 * Newline-delimited JSON-RPC 2.0 over byte streams. Frames with `id` and
@@ -193,7 +179,7 @@ var JsonRpcLineTransport = class {
 		} catch {
 			return;
 		}
-		if (!isRecord(message)) return;
+		if (!message || typeof message !== "object") return;
 		const frame = message;
 		const id = frame.id;
 		const method = frame.method;
@@ -256,11 +242,22 @@ var JsonRpcLineTransport = class {
 };
 /** Normalize JSON-RPC `params` to a plain object (arrays and scalars collapse to `{}`). */
 function objectParams(params) {
-	return isRecord(params) ? params : {};
+	return params && typeof params === "object" && !Array.isArray(params) ? params : {};
 }
 /** Normalize an abort reason into the rejection Error (a non-Error reason is stringified). */
 function abortError(reason) {
 	return reason instanceof Error ? reason : /* @__PURE__ */ new Error(`JSON-RPC request aborted: ${String(reason)}`);
+}
+//#endregion
+//#region lib/types/record.js
+/** Shared record predicate for decoded protocol and durable JSON values. */
+/**
+* Test whether a parsed value is a string-keyed object rather than an array.
+* @param value - decoded protocol or durable JSON value.
+* @returns whether the value is a non-null, non-array object.
+*/
+function isRecord(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 //#endregion
 export { JsonRpcLineTransport, JsonRpcResponseError, isRecord };

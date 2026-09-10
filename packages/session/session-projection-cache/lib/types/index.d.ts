@@ -1,20 +1,24 @@
 /**
  * Persisted projection cache (`ctx.sessionProjectionCache`): durable
- * checkpoints of every client-visible or explicitly persisted projection unit's state, one record per
- * session on the domain data form (`session_projcache` domain — the shipped
- * json backend lands it beside `workspace.json`). The cache is a fold
- * shortcut, never an authority: a row is possibly stale (its `seq`
- * says how stale) but never wrong, so every write path is fail-soft (a lost
- * write costs a longer tail replay on the next cold read) and a
- * `ver` mismatch discards the row instead of migrating it. Design
- * authority: the session-projection RFC
+ * checkpoints of every projection unit's state, one record per session on
+ * the `session_projcache` domain (`per-record` layout — the shipped json
+ * backend stores one document per session under its root). Reads and writes
+ * share ONE coherent state: the domain's in-memory tables serve every read
+ * synchronously, and each write lands on the domain's write chain (durability
+ * first, then memory), so a read can never observe a disk write the memory
+ * has not applied, or a memory value the disk does not hold. The cache is a
+ * fold shortcut, never an authority: a row
+ * is possibly stale (its `seq` says how stale) but never wrong, so every
+ * write path is fail-soft (a lost write costs a longer tail replay on the
+ * next cold read) and a `ver` mismatch discards the row instead of migrating
+ * it. Design authority: the session-projection RFC
  * (.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md).
  * @module @deepseek-ai/dsh-session-projection-cache
  */
 import { Context, Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import type { Session, SessionHeader, SessionId } from '@deepseek-ai/dsh-session';
-import type { ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection';
+import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session';
+import type { ProjectionSnapshot, SessionProjectionMap } from '@deepseek-ai/dsh-session-projection';
 export { checkpointIdentity, checkpointRecord, checkpointRow, projectionCacheDomainSpec } from './spec.ts';
 export type { CheckpointIdentity, CheckpointRecord } from './spec.ts';
 declare module '@deepseek-ai/cordis' {
@@ -25,8 +29,9 @@ declare module '@deepseek-ai/cordis' {
 /**
  * Plugin config. Both throttle triggers are deployment choices with no
  * universally correct value, so the composition states them explicitly
- * (cordis.yml); the two mandatory write points (`turn/end` and session
- * disposal) are policy, not tunables, and always fire.
+ * (cordis.yml); the three mandatory write points (session creation,
+ * `turn/end`, and session disposal) are policy, not tunables, and always
+ * fire.
  */
 export interface Config {
     /** Committed events per session that force a durable checkpoint write between mandatory points. */
@@ -38,11 +43,11 @@ export declare const Config: z<Config>;
 /**
  * The persisted projection cache service. Opens the `session_projcache`
  * domain at init, checkpoints live sessions on a throttled write-behind
- * (count/interval triggers from {@link Config}) plus two mandatory points —
- * `turn/end` and session disposal (the live-to-cold moment) — and serves the
- * cold-read ladder: cached row, persistence `readFrom` tail, registry
- * `restore`, durable write-back. Every durable write is fail-soft: failures
- * log a warning and the cache self-heals on the next write or cold read.
+ * (count/interval triggers from {@link Config}) plus three mandatory points —
+ * session creation, `turn/end`, and session disposal (the live-to-cold
+ * moment) — and serves the
+ * cached rows for a session header. Every durable write is fail-soft:
+ * failures log a warning and the cache self-heals on the next write.
  */
 export declare class SessionProjectionCache extends Service {
     config: Config;
@@ -50,29 +55,17 @@ export declare class SessionProjectionCache extends Service {
     static Config: z<Config>;
     private table?;
     private readonly dirty;
-    /** Per-id durable mutation chain: a delete waits for older write-back and wins. */
-    private readonly mutations;
-    /**
-     * Synchronous invalidation generation for cold reads that are still awaiting
-     * persistence. A delete increments before it joins the mutation chain, so a
-     * read that predates it cannot enqueue a stale write after deletion wins.
-     */
-    private readonly deletionEpoch;
     constructor(ctx: Context, config: Config);
     /** Open the domain and install the write-behind listeners. */
     protected [Service.init](): Promise<void>;
-    /**
-     * Remove rows with no authoritative stored or live Session. This startup
-     * sweep covers crash-left deletion completion that occurred before this
-     * plugin registered its persistence event listener.
-     */
-    private pruneOrphanRows;
     /**
      * The stored record for one session, accepted only when its bound log
      * identity matches `expected`. A session id names a slot, not a lifecycle:
      * a recreated id or a persistence store swapped under a surviving cache
      * must not let an old record seed state folded from an unrelated log.
-     * Synchronous from the domain's in-memory state.
+     * Synchronous from the domain's in-memory state — the same state every
+     * write mutated, so a read can never go around the write chain to the
+     * medium.
      * @param id - the session whose record is read.
      * @param expected - the log identity the caller holds (live or stored header).
      * @returns the identity-matching record, or `undefined` (absent or unrelated).
@@ -80,61 +73,63 @@ export declare class SessionProjectionCache extends Service {
     private recordFor;
     /**
      * The zero-I/O listing read: whole values viewed straight from the stored
-     * rows (version-matching keys only), each cut carried with its watermark
-     * so a client value store can seed under its higher-seq-wins rule — as
-     * stale as the last durable checkpoint but never wrong, and never from an
+     * rows (version-matching keys only), each cut carried with its watermark so
+     * a client value store can seed under its higher-seq-wins rule — as stale
+     * as the last durable checkpoint but never wrong, and never from an
      * unrelated log (the caller's header is the identity witness). Fresher
-     * paths (the history tail baseline, {@link coldSnapshot}) supersede these
-     * values whenever a session is actually opened.
+     * paths (the history tail baseline) supersede these values whenever a
+     * session is actually opened.
      * @param meta - the listed session's header (identity witness; no log read).
+     * @param keys - optional projection keys required by the caller's audience.
      * @returns the cut (`asOfSeq` = lowest served-row watermark), or
      *   `undefined` when no usable row exists for this lifecycle.
      */
-    cachedSnapshot(meta: SessionHeader): ProjectionSnapshot | undefined;
+    cachedSnapshot(meta: SessionHeader, keys?: readonly Extract<keyof SessionProjectionMap, string>[]): ProjectionSnapshot | undefined;
     /**
-     * Durably checkpoint one live session NOW (both mandatory points call
+     * Hydrate projection cells for an already-prepared Session without another
+     * persistence read. The cache seeds matching rows; the supplied exact log
+     * advances every unit to the observation cut. No checkpoint is written
+     * because the logical observation may contain recovery events not yet durable.
+     * @param session - exact unpublished Session retained by persistence.
+     * @param meta - observed lifecycle header.
+     * @param events - exact logical event prefix represented by the observation.
+     * @returns all projection values at the event cut.
+     */
+    hydratePrepared(session: Session, meta: SessionHeader, events: readonly SessionEvent[]): ProjectionSnapshot;
+    /**
+     * Durably checkpoint one live session NOW (all mandatory points call
      * this; tests and carriers may too). The registry cut is snapshotted at
-     * this boundary (states are live references), then the whole record is
-     * replaced. NOT fail-soft — callers on the fail-soft paths contain it.
+     * this boundary (states are live references), then the session's record is
+     * replaced on the domain's write chain. NOT fail-soft — callers on the
+     * fail-soft paths contain it.
      * @param session - the live session to checkpoint.
      * @returns resolution after durability and event emission.
      */
     write(session: Session): Promise<void>;
     /**
-     * Permanently remove one session-derived checkpoint row. Idempotent and
-     * serialized with writes for the same id, so a cold read that started
-     * before log deletion cannot publish a row after this call resolves.
-     * @param id - permanently deleted session identity.
+     * Cold-read one session's projections from its complete log. Each unit is
+     * seeded from the identity-checked cached rows — the registry skips `apply`
+     * for the already-folded prefix (events at or below the row's `seq`) — and
+     * the refreshed checkpoint is written back (fail-soft, fire-and-forget), so
+     * the first cold read creates the cache row and later ones seed from it.
+     * The caller supplies the complete log in seq order: this service never
+     * consults the persistence layer.
+     * @param meta - the stored session header (identity witness).
+     * @param events - the session's complete log, in seq order.
+     * @returns the projection cut at the log end.
      */
-    delete(id: SessionId): Promise<void>;
-    /**
-     * Cold-read one persisted session's projections with zero full-log load:
-     * cached rows + a persistence `readFrom` tail from the registry's restore
-     * floor, refolded by the registry and written back (fail-soft) so the next
-     * cold read starts closer. A cache row invalidated by a shrunk log
-     * (crash-repair truncation) triggers one full re-read from seq 0 — the
-     * ladder's slow rung, still no crash. Rejects when the session has no
-     * persisted log (`not found` from the persistence seam).
-     * @param id - the persisted session to read.
-     * @param signal - optional cancellation for the persistence reads.
-     * @returns the snapshot cut at the stored log end.
-     */
-    coldSnapshot(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot>;
+    coldSnapshot(meta: SessionHeader, events: readonly SessionEvent[]): ProjectionSnapshot;
     private installWritePath;
     /**
      * One fail-soft durable checkpoint. Every caller has work by construction:
      * the throttle triggers only fire dirty (markClean clears the timer with
-     * the counter) and the two mandatory points write unconditionally.
+     * the counter) and the mandatory points write unconditionally.
      */
     private flushSoft;
     /** Reset one session's dirty bookkeeping (its checkpoint is being written). */
     private markClean;
     /** Replace one session's stored record with its log identity and a detached snapshot of `rows`. */
     private put;
-    /** Serialize durable row mutations by Session id and retire settled tails. */
-    private serializeMutation;
-    /** Fail-soft {@link put}: cache writes must never fail their caller's read or event path. */
-    private putSoft;
     private requireTable;
 }
 export default SessionProjectionCache;

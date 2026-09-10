@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { credentialCondition, credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider } from '../src/index.ts'
 
@@ -86,14 +89,38 @@ afterEach(async () => {
 })
 
 async function boot(): Promise<Context> {
+  const root = await mkdtemp(join(tmpdir(), 'ark-keychain-contract-'))
+  cleanups.push(() => rm(root, { recursive: true, force: true }))
   const ctx = new Context()
-  const fiber = ctx.plugin(LocalCredentialProvider, { mode: 'keychain', keychainService: 'ark.test' })
+  const fiber = ctx.plugin(LocalCredentialProvider, { path: join(root, 'credentials.yaml'), mode: 'keychain', keychainService: 'ark.test' })
   cleanups.push(async () => { await fiber.dispose() })
   await fiber
   return ctx
 }
 
 describe('keychain credential mode', () => {
+  it('refuses conditional removal of a replacement and excludes writes during a checked record commit', async () => {
+    const ctx = await boot()
+    await ctx.credentials.set(KEY, 'first-synthetic')
+    const before = credentialCondition(await ctx.credentials.resolve(KEY))
+    await ctx.credentials.set(KEY, 'replacement-synthetic')
+    await expect(ctx.credentials.unset(KEY, before)).rejects.toMatchObject({ name: 'CredentialConflictError' })
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const expected = credentialCondition(await ctx.credentials.resolve(KEY))
+    const record = ctx.credentials.modifyRecord(credentialKey('fixture', 'journal'), async () => {
+      entered.resolve(undefined)
+      await release.promise
+      expect(await ctx.credentials.resolve(KEY)).toMatchObject({ value: 'replacement-synthetic' })
+      return { kind: 'grant', payload: { committed: true } }
+    }, [{ ref: KEY, expected }])
+    await entered.promise
+    const write = ctx.credentials.set(KEY, 'later-synthetic')
+    release.resolve(undefined)
+    await Promise.all([record, write])
+    expect(await ctx.credentials.resolve(KEY)).toMatchObject({ value: 'later-synthetic' })
+  })
+
   it('stores, resolves, describes, and unsets through the login Keychain service', async () => {
     const ctx = await boot()
     const ref: CredentialRef = KEY

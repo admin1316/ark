@@ -36,6 +36,8 @@ export interface DshBundleManifest {
 export interface DshProfileManifest {
     /** Ordered bundle layer list (package names). */
     bundles?: string[];
+    /** Apply patch edits live, or freeze them for this launch; defaults to live. */
+    patchReload?: 'live' | 'startup';
 }
 /**
  * The profile-launcher slice of the `dsh`-owned package.json section. A
@@ -70,6 +72,8 @@ export interface ProfileLayer {
 export interface Profile {
     /** The profile name (its directory basename). */
     name: string;
+    /** Resolved patch lifecycle for the launcher. */
+    patchReload: 'live' | 'startup';
     /** Absolute profile directory. */
     dir: string;
     /** Bundle layers in `dsh.profile.bundles` order. */

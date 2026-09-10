@@ -1,7 +1,8 @@
 /**
  * Client-safe type surface of the user-settings seam: the namespace brand, the
- * commit-origin union, and the seam's Cordis event declarations. Types only —
- * no runtime code, and nothing here reaches a Host-only symbol, so a Client
+ * commit-origin union, the redacted views a configuration surface reads over
+ * the Remote wire, and the seam's Cordis event declarations. Types only — no
+ * runtime code, and nothing here reaches a Host-only symbol, so a Client
  * compilation face reads exactly the signatures the Host emits.
  *
  * @module @deepseek-ai/dsh-settings/types
@@ -11,55 +12,97 @@ import type { Branded } from '@deepseek-ai/dsh-brand';
 export type SettingsNamespace = Branded<'SettingsNamespace'>;
 /** Origin of one committed settings change. */
 export type SettingsUpdateSource = 'update' | 'provider';
-/** Lossless JSON data permitted through the Native settings Remote boundary. */
+/** One schema-declared secret slot inside a redacted namespace value. */
+export interface SettingsSecretView {
+    /** Path from the section root to the removed field. */
+    path: string[];
+    /** Whether the slot currently holds a value; the value itself never rides. */
+    set: boolean;
+}
+/**
+ * Wire view of one registered namespace, always read under `redactSecrets`. The
+ * JSON-valued fields are `RemoteSettingsJsonValue` rather than the descriptor's `unknown`
+ * because the Remote boundary admits no unconstrained data.
+ */
+export interface SettingsNamespaceView {
+    /** Namespace key (`llm-deepseek`, `llm-pi-ai`, …). */
+    ns: string;
+    /** Serialized schemastery schema envelope (`schema.toJSON()`); rehydrate with `new Schema(json)`. */
+    schema: RemoteSettingsJsonValue;
+    /** Redacted resolved value (schema defaults → composition base → user layer). */
+    value: RemoteSettingsJsonValue;
+    /** Redacted composition base layer, when the registrant declared one. */
+    base?: RemoteSettingsJsonValue;
+    /** Redacted raw user section, when one exists; a field's presence here marks it user-overridden. */
+    user?: RemoteSettingsJsonValue;
+    /** When the owner applies changes. */
+    applies: 'live' | 'restart';
+    /** Every schema-declared secret slot with its configured state. */
+    secrets: SettingsSecretView[];
+    /**
+     * Monotonic revision of the raw user section this view was read at. Send it
+     * back as `expectedRevision` on a write so a stale editor is refused rather
+     * than silently overwriting a concurrent change.
+     */
+    revision: number;
+}
+/**
+ * One path-addressed edit carried by a remote settings write. `set` writes the
+ * value at the path, creating intermediate objects; `unset` removes it. The
+ * empty path addresses the section root.
+ */
+export type SettingsPathOpView = {
+    op: 'set';
+    path: string[];
+    value: RemoteSettingsJsonValue;
+} | {
+    op: 'unset';
+    path: string[];
+};
+/** Every registered namespace with the deployment facts a configuration page renders around them. */
+export interface SettingsDescribeValue {
+    /** Whether the provider accepts writes; `false` disables every write control. */
+    writable: boolean;
+    /** Whether a file-backed provider owns a local document, without exposing its Host path. */
+    hasDocument: boolean;
+    /** One view per registered namespace. */
+    namespaces: SettingsNamespaceView[];
+}
+/** Lossless data admitted by the native Settings Remote methods. */
 export type RemoteSettingsJsonValue = null | boolean | number | string | RemoteSettingsJsonValue[] | {
     [key: string]: RemoteSettingsJsonValue;
 };
-/** JSON object accepted for a settings section or merge patch. */
-export type RemoteSettingsJsonObject = {
+/** A namespace section or merge patch carried by the native Remote. */
+export interface RemoteSettingsJsonObject {
     [key: string]: RemoteSettingsJsonValue;
-};
-/** One schema-declared secret position in a redacted Remote settings view. */
+}
+/** A write-only field's position and configured state, never its value. */
 export interface RemoteSettingsSecretView {
-    /** Path from the namespace root to the write-only field. */
     readonly path: readonly string[];
-    /** Whether the write-only field currently has a stored value. */
     readonly set: boolean;
 }
-/** A redacted namespace projection exposed by the `settings/*` Remote owner. */
+/** Detached, redacted namespace returned by native reads and writes. */
 export interface RemoteSettingsNamespaceView {
-    /** Registered namespace identifier. */
     readonly ns: string;
-    /** Serialized schemastery schema for the native configuration form. */
     readonly schema: RemoteSettingsJsonValue;
-    /** Resolved value with every secret-role field removed. */
     readonly value: RemoteSettingsJsonValue;
-    /** Redacted composition base when the namespace declared one. */
     readonly base?: RemoteSettingsJsonValue;
-    /** Redacted raw user layer when one exists. */
     readonly user?: RemoteSettingsJsonValue;
-    /** Whether the owner applies a successful write live or on restart. */
     readonly applies: 'live' | 'restart';
-    /** Write-only slots and their configured state. */
     readonly secrets: readonly RemoteSettingsSecretView[];
-    /** Monotonic raw-user-section revision used for compare-and-swap writes. */
     readonly revision: number;
 }
-/** Complete result of the redacted `settings/describe` Remote method. */
+/** Native settings catalog, without provider filesystem paths. */
 export interface RemoteSettingsDescription {
-    /** Whether this deployment accepts settings writes. */
     readonly writable: boolean;
-    /** Whether a local editable document exists for a native host handoff. */
     readonly hasDocument: boolean;
-    /** Every currently registered namespace in registration order. */
     readonly namespaces: readonly RemoteSettingsNamespaceView[];
 }
-/** Success value of the privileged `settings/openDocument` native handoff. */
+/** Confirmation of a provider-owned native editor handoff. */
 export interface RemoteSettingsDocumentOpenResult {
-    /** The Host prepared and handed its owned settings document to a text editor. */
     readonly opened: true;
 }
-/** One path-addressed Remote settings mutation. */
+/** Ordered edits that do not require restating hidden fields. */
 export type RemoteSettingsPathOp = {
     readonly op: 'set';
     readonly path: readonly string[];
@@ -76,8 +119,8 @@ declare module '@deepseek-ai/cordis' {
          * the change; never emitted when the resolved value is deep-equal.
          * Listener failures are contained and logged — a sync throw and an async
          * rejection alike — except `INVARIANT`-coded failures, which rethrow
-         * after fan-out; a reentrant commit stops delivery of the superseded value
-         * to later listeners. That rethrow reaches the emitter only from
+         * after fan-out; reentrant publication stops delivery of superseded values.
+         * That rethrow reaches the emitter only from
          * synchronous listeners, so invariant checks on this event must not be
          * async functions.
          * @param ns - the namespace whose resolved value changed.
@@ -93,9 +136,9 @@ declare module '@deepseek-ai/cordis' {
          * stays deep-equal-gated; this one exists for configuration surfaces,
          * which must learn that a field went from inherited to overridden (same
          * resolved value, different meaning) and that their held revision is
-         * stale. Exact-revision settlement is bound before notification, which
-         * does not itself imply activation. Reentrant publication stops delivery
-         * of the superseded revision. Listener containment matches `settings/updated`.
+         * stale. Exact-revision settlement is bound before notification; persistence
+         * does not imply activation. Reentrant publication stops superseded revision
+         * delivery. Listener containment matches `settings/updated`.
          * @param ns - the namespace whose stored section changed.
          * @param revision - the namespace's new revision.
          * @mode emit

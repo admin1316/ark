@@ -32,6 +32,16 @@ interface Fixture {
 
 const disposers: (() => Promise<void>)[] = []
 
+it('provides the launcher readiness service only when supplied', () => {
+  const ctx = new Context()
+  const ready = { onReady: vi.fn(() => () => {}) }
+  provideCmdline(ctx, { args: [], exit: () => {}, ready })
+  expect(ctx.appReady).toBe(ready)
+  const bare = new Context()
+  provideCmdline(bare, { args: [], exit: () => {} })
+  expect(bare.get('appReady')).toBeUndefined()
+})
+
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
   vi.restoreAllMocks()

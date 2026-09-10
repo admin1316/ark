@@ -9,7 +9,6 @@
  */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { JsonValue } from '@deepseek-ai/dsh-session/types'
 
 /** Nominal id of one registered settings namespace. */
 export type SettingsNamespace = Branded<'SettingsNamespace'>
@@ -27,20 +26,20 @@ export interface SettingsSecretView {
 
 /**
  * Wire view of one registered namespace, always read under `redactSecrets`. The
- * JSON-valued fields are `JsonValue` rather than the descriptor's `unknown`
+ * JSON-valued fields are `RemoteSettingsJsonValue` rather than the descriptor's `unknown`
  * because the Remote boundary admits no unconstrained data.
  */
 export interface SettingsNamespaceView {
   /** Namespace key (`llm-deepseek`, `llm-pi-ai`, …). */
   ns: string
   /** Serialized schemastery schema envelope (`schema.toJSON()`); rehydrate with `new Schema(json)`. */
-  schema: JsonValue
+  schema: RemoteSettingsJsonValue
   /** Redacted resolved value (schema defaults → composition base → user layer). */
-  value: JsonValue
+  value: RemoteSettingsJsonValue
   /** Redacted composition base layer, when the registrant declared one. */
-  base?: JsonValue
+  base?: RemoteSettingsJsonValue
   /** Redacted raw user section, when one exists; a field's presence here marks it user-overridden. */
-  user?: JsonValue
+  user?: RemoteSettingsJsonValue
   /** When the owner applies changes. */
   applies: 'live' | 'restart'
   /** Every schema-declared secret slot with its configured state. */
@@ -59,7 +58,7 @@ export interface SettingsNamespaceView {
  * empty path addresses the section root.
  */
 export type SettingsPathOpView =
-  | { op: 'set'; path: string[]; value: JsonValue }
+  | { op: 'set'; path: string[]; value: RemoteSettingsJsonValue }
   | { op: 'unset'; path: string[] }
 
 /** Every registered namespace with the deployment facts a configuration page renders around them. */
@@ -72,6 +71,50 @@ export interface SettingsDescribeValue {
   namespaces: SettingsNamespaceView[]
 }
 
+/** Lossless data admitted by the native Settings Remote methods. */
+export type RemoteSettingsJsonValue = null | boolean | number | string
+  | RemoteSettingsJsonValue[] | { [key: string]: RemoteSettingsJsonValue }
+
+/** A namespace section or merge patch carried by the native Remote. */
+export interface RemoteSettingsJsonObject {
+  [key: string]: RemoteSettingsJsonValue
+}
+
+/** A write-only field's position and configured state, never its value. */
+export interface RemoteSettingsSecretView {
+  readonly path: readonly string[]
+  readonly set: boolean
+}
+
+/** Detached, redacted namespace returned by native reads and writes. */
+export interface RemoteSettingsNamespaceView {
+  readonly ns: string
+  readonly schema: RemoteSettingsJsonValue
+  readonly value: RemoteSettingsJsonValue
+  readonly base?: RemoteSettingsJsonValue
+  readonly user?: RemoteSettingsJsonValue
+  readonly applies: 'live' | 'restart'
+  readonly secrets: readonly RemoteSettingsSecretView[]
+  readonly revision: number
+}
+
+/** Native settings catalog, without provider filesystem paths. */
+export interface RemoteSettingsDescription {
+  readonly writable: boolean
+  readonly hasDocument: boolean
+  readonly namespaces: readonly RemoteSettingsNamespaceView[]
+}
+
+/** Confirmation of a provider-owned native editor handoff. */
+export interface RemoteSettingsDocumentOpenResult {
+  readonly opened: true
+}
+
+/** Ordered edits that do not require restating hidden fields. */
+export type RemoteSettingsPathOp =
+  | { readonly op: 'set'; readonly path: readonly string[]; readonly value: RemoteSettingsJsonValue }
+  | { readonly op: 'unset'; readonly path: readonly string[] }
+
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
@@ -80,7 +123,8 @@ declare module '@deepseek-ai/cordis' {
      * the change; never emitted when the resolved value is deep-equal.
      * Listener failures are contained and logged — a sync throw and an async
      * rejection alike — except `INVARIANT`-coded failures, which rethrow
-     * after every listener ran; that rethrow reaches the emitter only from
+     * after fan-out; reentrant publication stops delivery of superseded values.
+     * That rethrow reaches the emitter only from
      * synchronous listeners, so invariant checks on this event must not be
      * async functions.
      * @param ns - the namespace whose resolved value changed.
@@ -97,7 +141,9 @@ declare module '@deepseek-ai/cordis' {
      * stays deep-equal-gated; this one exists for configuration surfaces,
      * which must learn that a field went from inherited to overridden (same
      * resolved value, different meaning) and that their held revision is
-     * stale. Listener containment matches `settings/updated`.
+     * stale. Exact-revision settlement is bound before notification; persistence
+     * does not imply activation. Reentrant publication stops superseded revision
+     * delivery. Listener containment matches `settings/updated`.
      * @param ns - the namespace whose stored section changed.
      * @param revision - the namespace's new revision.
      * @mode emit

@@ -8,18 +8,30 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
-import { scopeTarget } from '@deepseek-ai/dsh-scope'
+import { scopeTarget, type Scoped } from '@deepseek-ai/dsh-scope'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
     userQuestions: UserQuestionService
   }
+  interface Events {
+    /**
+     * Ask scoped answerers; call next to delegate an unclaimed request.
+     * @param request - borrowed Host request and cancellation signal.
+     * @mode waterfall
+     */
+    'user-questions/request'(
+      this: Scoped<Agent>,
+      request: AskUserQuestionRequest,
+      next: () => Promise<AskUserQuestionAnswer>,
+    ): Promise<AskUserQuestionAnswer>
+  }
 }
 
 import type {
-  AskUserQuestionAnswer, AskUserQuestionRequestEvent,
+  AskUserQuestionAnswer, AskUserQuestionItem,
 } from './types.ts'
 
 export type {
@@ -28,7 +40,24 @@ export type {
 } from './types.ts'
 
 /** Request for a human answer. */
-export interface AskUserQuestionRequest extends AskUserQuestionRequestEvent {}
+export interface AskUserQuestionRequest {
+  /** Questions to display. */
+  questions: AskUserQuestionItem[]
+  /** Exact live Agent owning this request, when present. */
+  agent?: Agent
+  /** Lifetime of the pending request. */
+  signal?: AbortSignal
+}
+
+/** The single Host UI provider for requests not claimed by scoped answerers. */
+export interface UserQuestionProvider {
+  /**
+   * Collect a human answer without retaining a cancelled request.
+   * @param request - borrowed request with its owning signal.
+   * @returns the selected or typed answers.
+   */
+  ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>
+}
 
 /** Stable error taxonomy for user-questions failures. */
 export class UserQuestionError extends HarnessError {
@@ -63,8 +92,27 @@ function restoreUserQuestionError(reason: unknown): unknown {
 
 /** `ctx.userQuestions`: validation plus the scoped answerer waterfall. */
 export class UserQuestionService extends Service {
+  private provider: UserQuestionProvider | undefined
+
   constructor(ctx: Context) {
     super(ctx, 'userQuestions')
+  }
+
+  /**
+   * Register the Host UI fallback, owned by the calling fiber.
+   * @param provider - answer collector for requests not claimed by scoped listeners.
+   * @returns an idempotent disposer withdrawing this provider.
+   * @throws when another Host UI provider is registered.
+   */
+  registerProvider(provider: UserQuestionProvider): () => void {
+    const dispose = this.ctx.effect(function* (this: UserQuestionService) {
+      if (this.provider !== undefined) {
+        throw new UserQuestionError('a user-questions provider is already registered', 'DUPLICATE_PROVIDER')
+      }
+      this.provider = provider
+      yield () => { this.provider = undefined }
+    }.bind(this), 'userQuestions.registerProvider()')
+    return () => { void dispose() }
   }
 
   /**
@@ -127,10 +175,9 @@ export class UserQuestionService extends Service {
           'BAD_INTENT')
       }
     }
-    const noAnswerer = () => Promise.reject(new UserQuestionError(
-      'no user-questions answerer accepted the request',
-      'NO_PROVIDER',
-    ))
+    const noAnswerer = () => this.provider === undefined
+      ? Promise.reject(new UserQuestionError('no user-questions answerer accepted the request', 'NO_PROVIDER'))
+      : this.provider.ask(request)
     try {
       return await (agent === undefined
         ? this.ctx.waterfall('user-questions/request', request, noAnswerer)

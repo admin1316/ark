@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { CallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import SessionPersistenceJsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -85,7 +85,7 @@ function packingMatrixLog(): SessionEvent[] {
       chunk: {
         type: 'tool-call-delta' as const,
         index: 2,
-        id: ToolCallId('named-call'),
+        id: CallId('named-call'),
         name: 'write',
         argumentsDelta: `{${index}`,
       },
@@ -95,7 +95,7 @@ function packingMatrixLog(): SessionEvent[] {
       chunk: {
         type: 'tool-call-delta' as const,
         index: 3,
-        id: ToolCallId('unnamed-call'),
+        id: CallId('unnamed-call'),
         argumentsDelta: `${index}}`,
       },
       time: 3_000 + index,
@@ -161,13 +161,13 @@ const streamChunkArbitrary: fc.Arbitrary<StreamChunk> = fc.oneof(
   fc.record({
     type: fc.constant<'tool-call-delta'>('tool-call-delta'),
     index: fc.nat(2),
-    id: fc.constantFrom(ToolCallId('call-1'), ToolCallId('call-2')),
+    id: fc.constantFrom(CallId('call-1'), CallId('call-2')),
     argumentsDelta: fc.string(),
   }),
   fc.record({
     type: fc.constant<'tool-call-delta'>('tool-call-delta'),
     index: fc.nat(2),
-    id: fc.constantFrom(ToolCallId('call-1'), ToolCallId('call-2')),
+    id: fc.constantFrom(CallId('call-1'), CallId('call-2')),
     name: fc.constantFrom('read', 'write'),
     argumentsDelta: fc.string(),
   }),

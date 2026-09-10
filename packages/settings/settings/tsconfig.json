@@ -21,7 +21,10 @@
       "path": "../../util/brand"
     },
     {
-      "path": "../../core/session"
+      "path": "../../util/native-command"
+    },
+    {
+      "path": "../../typert/protocol"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

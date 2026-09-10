@@ -7,22 +7,35 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { addAbortListener } from 'node:events'
+import { createHash } from 'node:crypto'
+import z from '@deepseek-ai/schemastery'
+import { deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   GenerateOptions,
+  FinishReason,
   LlmConfigurableProvider,
   LlmDiscoveredModel,
   LlmFailure,
   LlmImageRequestPricing,
   LlmModelContext,
   LlmModelDiscoveryRequest,
+  LlmModelDiscoveryOperation,
   LlmModelInfo,
   LlmResolvedModelInfo,
+  RemoteLlmDiscoverModelsRequest,
+  RemoteLlmDiscoveredModelsResult,
+  RemoteLlmModelsResult,
+  RemoteLlmModelView,
+  RemoteLlmProvidersResult,
+  RemoteLlmProviderView,
   LlmProviderInfo,
+  LlmProviderVerificationMode,
   ModelModality,
   StreamChunk,
 } from './types.ts'
-import { freezeMessage, type Message } from './message.ts'
+import { createUserMessage, freezeMessage, type Message } from './message.ts'
 import { resolveRetryPolicy } from './retry-policy.ts'
 import type { ResolvedRetryPolicy } from './retry-policy.ts'
 import type { ProviderRequestId } from './brand.ts'
@@ -32,6 +45,13 @@ import { HarnessError, INVALID_CREDENTIAL_CODE } from './error.ts'
 import { normalizeLlmFailure } from './adapter-failure.ts'
 import { normalizeApiKey } from './api-key.ts'
 import { contentHasImage, projectImagesForTextModel } from './content.ts'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { ProviderTransactions } from './provider-transaction.ts'
+import type {
+  RemoteLlmProviderMutationRequest, RemoteLlmProviderMutationResult, RemoteLlmProviderResumeRequest,
+  RemoteLlmProviderTransactionRequest, RemoteLlmProviderTransactionResult,
+  RemoteLlmProviderVerificationRequest, RemoteLlmProviderVerificationResult,
+} from './types.ts'
 
 export * from './attribution.ts'
 export * from './brand.ts'
@@ -251,6 +271,17 @@ export abstract class LlmAdapter {
   }
 
   /**
+   * Attempt a protocol-native, non-generative exact-route verification.
+   * @param _provider - registered provider route.
+   * @param _model - exact configured model.
+   * @param _signal - owner cancellation signal.
+   * @returns metadata proof, reachability-only evidence, or undefined for a bounded generation fallback.
+   */
+  verifyProvider(_provider: string, _model: string, _signal: AbortSignal): Promise<LlmProviderVerificationMode | undefined> {
+    return Promise.resolve(undefined)
+  }
+
+  /**
    * Bind exact model metadata and the eventual request dispatch to one adapter generation.
    * Dynamic adapters override this so settings changes between preparation and
    * dispatch cannot combine one generation's capabilities with another's endpoint.
@@ -319,20 +350,255 @@ export interface DirectoryRegistrationHandle {
   replace(entries: readonly LlmConfigurableProvider[]): void
 }
 
+/** Configuration-time verification deadlines, resolved before the LLM service starts. */
+export interface LlmRuntimeConfig {
+  verificationTimeoutMs: number
+  verificationCancellationGraceMs: number
+}
+
+async function verificationSettles(operation: Promise<unknown>, graceMs: number): Promise<boolean> {
+  const expired = Promise.withResolvers<boolean>()
+  using timer = deadline(undefined, graceMs, 'LLM_VERIFICATION_CANCEL_TIMEOUT')
+  using _listener = addAbortListener(timer.signal, () => { expired.resolve(false) })
+  return await Promise.race([Promise.allSettled([operation]).then(() => true), expired.promise])
+}
+
+/**
+ * Identify the exact endpoint and protocol authorized for a one-shot discovery credential.
+ * @param baseURL - candidate endpoint supplied by the caller.
+ * @param api - candidate protocol, defaulted like the discovery owner.
+ * @returns credential-free SHA-256 endpoint identity.
+ */
+export function modelDiscoveryEndpointFingerprint(baseURL: string, api?: string): string {
+  return createHash('sha256').update(JSON.stringify({
+    endpoint: baseURL.replace(/\/+$/u, ''), api: api ?? 'openai-completions',
+  })).digest('hex')
+}
+
 /**
  * The abstract `llm` service: an adapter registry plus a streaming model-call
  * API, interceptable via the `llm/stream` waterfall.
  */
 export class LlmRuntime extends TypertRemoteService {
+  static Config: z<Partial<LlmRuntimeConfig>, LlmRuntimeConfig> = z.object({
+    verificationTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(15_000),
+    verificationCancellationGraceMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(2_000),
+  })
+  private readonly config: LlmRuntimeConfig
+  private readonly verificationLifetime = new AbortController()
+  private readonly verifications = new Map<string, Promise<unknown>>()
+  private readonly providerTransactions: ProviderTransactions
   private adapters = new Map<string, AdapterRegistration>()
   private directory = new Map<string, LlmConfigurableProvider>()
   private discoveries = new Map<
     string,
-    (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>
+    (request: LlmModelDiscoveryOperation, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>
   >()
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: Partial<LlmRuntimeConfig> = {}) {
+    const resolved = LlmRuntime.Config(config)
+    for (const field of ['verificationTimeoutMs', 'verificationCancellationGraceMs'] as const) {
+      if (!Number.isFinite(resolved[field])) throw new Error(`llm: ${field} must be finite`)
+    }
     super(ctx, 'llm')
+    this.config = resolved
+    this.providerTransactions = new ProviderTransactions(ctx, this)
+    ctx.effect(() => async () => {
+      this.verificationLifetime.abort()
+      if (!await verificationSettles(Promise.allSettled(this.verifications.values()), this.config.verificationCancellationGraceMs)) {
+        throw new LlmError('provider verification ignored runtime disposal and remains owner-tracked', 'VERIFICATION_STILL_RUNNING')
+      }
+    }, 'llm.provider-verification')
+    ctx.inject(['settings'], (settingsCtx) => {
+      this.protectProviderSettings(settingsCtx)
+      settingsCtx.on('llm/adapters-updated', () => { this.protectProviderSettings(settingsCtx) })
+    })
+  }
+
+  private protectProviderSettings(ctx: Context): void {
+    const namespaces = this.listConfigurableProviders().map(entry => settingsNamespace(entry.settingsNs))
+    ctx.settings.setRemoteProtectedNamespaces([...new Set(namespaces)])
+  }
+
+  /**
+   * Run one bounded exact-route probe without returning provider output or credentials.
+   * @param request - configured provider and model to verify.
+   * @param signal - caller cancellation combined with the configured Host deadline.
+   * @returns authentication evidence, or explicitly unverified catalog reachability.
+   */
+  @Remote('verifyProvider')
+  async remoteVerifyProvider(
+    request: RemoteLlmProviderVerificationRequest, signal: AbortSignal,
+  ): Promise<RemoteLlmProviderVerificationResult> {
+    if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(request.provider) || request.model.trim() === '') {
+      throw new TypertRemoteFailure({ code: 'input-invalid', message: 'provider verification needs a valid provider and model', details: {} })
+    }
+    using bounded = deadline(signal, this.config.verificationTimeoutMs, 'LLM_PROVIDER_VERIFICATION_TIMEOUT')
+    let mode: LlmProviderVerificationMode
+    try { mode = await this.verifyModel(request.provider, request.model, bounded.signal) }
+    catch (error) {
+      if (error instanceof LlmError && error.code === 'VERIFICATION_STILL_RUNNING') {
+        throw new TypertRemoteFailure({ code: 'provider-verification-still-running', message: 'provider verification remains owner-tracked',
+          details: { provider: request.provider, model: request.model, state: 'still-running' } })
+      }
+      if (signal.aborted) throw new TypertRemoteFailure({ code: 'cancelled', message: 'provider verification was cancelled', details: {} })
+      if (timeoutOf(bounded.signal, 'LLM_PROVIDER_VERIFICATION_TIMEOUT') !== undefined) {
+        throw new TypertRemoteFailure({ code: 'provider-verification-timeout', message: 'provider verification timed out',
+          details: { provider: request.provider, model: request.model } })
+      }
+      throw new TypertRemoteFailure({ code: 'provider-verification-failed', message: 'provider/model authentication verification failed',
+        details: { provider: request.provider, model: request.model } })
+    }
+    return mode === 'endpoint-catalog'
+      ? { provider: request.provider, model: request.model, verified: false, mode, classification: 'reachability-only' }
+      : { provider: request.provider, model: request.model, verified: true, mode }
+  }
+
+  /**
+   * Verify one exact route while retaining admission until cancelled work actually settles.
+   * @param provider - registered provider route.
+   * @param model - exact configured model.
+   * @param signal - owner cancellation and deadline.
+   * @returns native metadata evidence or a bounded one-token generation handshake.
+   */
+  async verifyModel(provider: string, model: string, signal: AbortSignal): Promise<LlmProviderVerificationMode> {
+    if (signal.aborted || this.verificationLifetime.signal.aborted) throw new LlmError('provider verification aborted', 'ABORTED')
+    const key = JSON.stringify([provider, model])
+    if (this.verifications.has(key)) throw new LlmError('provider verification is still running', 'VERIFICATION_STILL_RUNNING')
+    const registration = this.registration(provider)
+    const ownedSignal = AbortSignal.any([signal, this.verificationLifetime.signal])
+    const operation = Promise.resolve().then(() => this.performProviderVerification(registration, provider, model, ownedSignal))
+    this.verifications.set(key, operation)
+    const settled = operation.then(mode => ({ kind: 'completed' as const, mode }), (error: unknown) => ({ kind: 'failed' as const, error }))
+      .finally(() => { this.verifications.delete(key) })
+    const aborted = Promise.withResolvers<undefined>()
+    using _listener = addAbortListener(ownedSignal, () => { aborted.resolve(undefined) })
+    const result = await Promise.race([settled, aborted.promise.then(() => ({ kind: 'aborted' as const }))])
+    if (result.kind === 'completed') {
+      if (ownedSignal.aborted) throw new LlmError('provider verification aborted', 'ABORTED')
+      return result.mode
+    }
+    if (result.kind === 'failed') throw result.error
+    if (!await verificationSettles(settled, this.config.verificationCancellationGraceMs)) {
+      throw new LlmError('provider verification ignored cancellation and is still running', 'VERIFICATION_STILL_RUNNING')
+    }
+    throw new LlmError('provider verification aborted', 'ABORTED')
+  }
+
+  private async performProviderVerification(
+    registration: AdapterRegistration, provider: string, model: string, signal: AbortSignal,
+  ): Promise<LlmProviderVerificationMode> {
+    signal.throwIfAborted()
+    const native = await registration.adapter.verifyProvider(provider, model, signal)
+    if (native !== undefined) return native
+    const call = await registration.adapter.prepareCall(provider, model, signal)
+    const info = this.normalizeModelInfo(registration, model, call.model)
+    const config = this.resolveCallWithInfo({ provider, model, maxTokens: 1 }, info).config
+    let finish: FinishReason | undefined
+    for await (const chunk of call.stream({ ...config, signal, messages: [createUserMessage({
+      content: [{ type: 'text', text: '.' }], source: { kind: 'plugin', plugin: 'llm-verification' },
+    })] })) if (chunk.type === 'finish') finish = chunk.reason
+    signal.throwIfAborted()
+    if (finish === undefined) throw new LlmError('provider verification stream closed without a terminal frame', 'STREAM_CLOSED')
+    if (finish.kind === 'error' || finish.kind === 'aborted') throw new LlmError(finish.failure.message, finish.failure.code)
+    return 'minimal-generation'
+  }
+
+  /**
+   * Commit a Native profile and credential change through the existing storage owners.
+   * @param request - caller-stable transaction identity, revision and profile edits.
+   * @param signal - cancellation before durable claim; claimed work keeps its ownership.
+   * @returns committed redacted settings only after owner activation succeeds.
+   */
+  @Remote('mutateProvider')
+  remoteMutateProvider(request: RemoteLlmProviderMutationRequest, signal: AbortSignal): Promise<RemoteLlmProviderMutationResult> {
+    return this.providerTransactions.mutate(request, signal)
+  }
+
+  /**
+   * Inspect a durable provider transaction without changing its journal or credentials.
+   * @param request - provider and transaction identity retained by the native client.
+   * @returns the recorded phase or outcome and whether recovery needs a write-only credential.
+   */
+  @Remote('providerTransaction')
+  remoteProviderTransaction(request: RemoteLlmProviderTransactionRequest): Promise<RemoteLlmProviderTransactionResult> {
+    return this.providerTransactions.status(request)
+  }
+
+  /**
+   * Resume the existing durable plan instead of rebuilding edits from a refreshed UI.
+   * @param request - stored transaction identity and optional missing credential.
+   * @param signal - cancellation before durable claim only.
+   * @returns the redacted committed state or the transaction's recovery failure.
+   */
+  @Remote('resumeProvider')
+  remoteResumeProvider(request: RemoteLlmProviderResumeRequest, signal: AbortSignal): Promise<RemoteLlmProviderMutationResult> {
+    return this.providerTransactions.resume(request, signal)
+  }
+
+  /**
+   * Join the configurable directory with live adapter routes for Native Settings.
+   * @returns declared and active-only provider rows, without credentials.
+   */
+  @Remote('providers')
+  remoteProviders(): RemoteLlmProvidersResult {
+    const live = this.listProviders()
+    const active = new Set(live.map(provider => provider.id))
+    const declared = new Set<string>()
+    const providers: RemoteLlmProviderView[] = this.listConfigurableProviders().map((entry) => {
+      declared.add(entry.provider)
+      return {
+        provider: entry.provider, displayName: entry.displayName,
+        settingsNs: entry.settingsNs, settingsPath: [...entry.settingsPath], active: active.has(entry.provider),
+        ...entry.declared === undefined ? {} : { declared: entry.declared },
+        ...entry.error === undefined ? {} : { error: entry.error },
+        ...entry.migrationRequired === undefined ? {} : { migrationRequired: structuredClone(entry.migrationRequired) },
+      }
+    })
+    for (const provider of live) {
+      if (!declared.has(provider.id)) providers.push({
+        provider: provider.id, displayName: provider.name, settingsNs: '', settingsPath: [], active: true,
+      })
+    }
+    return { providers }
+  }
+
+  /**
+   * Read the host model catalog with failure isolation between providers.
+   * @returns model groups and value-free provider failures.
+   */
+  @Remote('models')
+  async remoteModels(): Promise<RemoteLlmModelsResult> {
+    const catalogs = await Promise.all(this.listProviders().map(async (provider) => {
+      try {
+        const models = await this.listModels(provider.id)
+        const rows = await Promise.all(models.map(async (model): Promise<RemoteLlmModelView> => {
+          const resolved = await this.resolveModelInfo(provider.id, model.id)
+          return {
+            id: model.id, name: model.name,
+            ...model.description === undefined ? {} : { description: model.description },
+            ...resolved.defaultMaxTokens === undefined ? {} : { defaultMaxTokens: resolved.defaultMaxTokens },
+            ...resolved.reasoning === undefined ? {} : { reasoning: {
+              efforts: resolved.reasoning.efforts.map(effort => ({
+                id: String(effort.id), name: effort.name,
+                ...effort.description === undefined ? {} : { description: effort.description },
+              })),
+              ...resolved.reasoning.defaultEffort === undefined ? {} : { defaultEffort: String(resolved.reasoning.defaultEffort) },
+            } },
+          }
+        }))
+        return { kind: 'group' as const, group: { id: provider.id, name: provider.name, models: rows } }
+      } catch {
+        // Provider diagnostics can contain request headers; the catalog returns no raw error.
+        return { kind: 'failure' as const, failure: {
+          id: provider.id, name: provider.name, message: 'provider model catalog unavailable',
+        } }
+      }
+    }))
+    return {
+      groups: catalogs.flatMap(entry => entry.kind === 'group' && entry.group.models.length > 0 ? [entry.group] : []),
+      failures: catalogs.flatMap(entry => entry.kind === 'failure' ? [entry.failure] : []),
+    }
   }
 
   /** Notify topology observers without letting one broken listener veto the commit. */
@@ -495,7 +761,8 @@ export class LlmRuntime extends TypertRemoteService {
           || detached.some(seen => seen.provider === entry.provider)) {
           throw new LlmError(`configurable provider "${entry.provider}" is already declared`, 'DUPLICATE_DIRECTORY')
         }
-        detached.push({ ...entry, settingsPath: [...entry.settingsPath] })
+        detached.push({ ...entry, settingsPath: [...entry.settingsPath],
+          ...entry.migrationRequired === undefined ? {} : { migrationRequired: structuredClone(entry.migrationRequired) } })
       }
       for (const entry of held) this.directory.delete(entry.provider)
       for (const entry of detached) this.directory.set(entry.provider, entry)
@@ -532,7 +799,8 @@ export class LlmRuntime extends TypertRemoteService {
    */
   @Remote
   listConfigurableProviders(): LlmConfigurableProvider[] {
-    return [...this.directory.values()].map(entry => ({ ...entry, settingsPath: [...entry.settingsPath] }))
+    return [...this.directory.values()].map(entry => ({ ...entry, settingsPath: [...entry.settingsPath],
+      ...entry.migrationRequired === undefined ? {} : { migrationRequired: structuredClone(entry.migrationRequired) } }))
   }
 
   /**
@@ -548,7 +816,7 @@ export class LlmRuntime extends TypertRemoteService {
   registerModelDiscovery(
     settingsNs: string,
     discover: (
-      request: LlmModelDiscoveryRequest,
+      request: LlmModelDiscoveryOperation,
       signal?: AbortSignal,
     ) => Promise<readonly LlmDiscoveredModel[]>,
   ): () => void {
@@ -591,13 +859,24 @@ export class LlmRuntime extends TypertRemoteService {
     if ((request.provider ?? '').length === 0 && (request.baseURL ?? '').length === 0) {
       throw new LlmError('model discovery needs a provider route or a baseURL', 'INVALID_DISCOVERY')
     }
-    const discovered = signal === undefined
-      ? await discover(request)
-      : await discover(request, signal)
+    let bound: LlmModelDiscoveryOperation = request
+    if (request.apiKey !== undefined) {
+      const endpoint = request.baseURL
+      if (endpoint === undefined || endpoint.length === 0) {
+        throw new LlmError('a one-shot discovery credential requires its exact candidate baseURL', 'INVALID_DISCOVERY')
+      }
+      bound = { ...request, credentialEndpointFingerprint: modelDiscoveryEndpointFingerprint(endpoint, request.api) }
+    }
+    const discovered = signal === undefined ? await discover(bound) : await discover(bound, signal)
     const seen = new Set<string>()
     const models: LlmDiscoveredModel[] = []
     for (const model of discovered) {
       if (typeof model.id !== 'string' || model.id.length === 0 || seen.has(model.id)) continue
+      for (const capacity of [model.contextWindow, model.maxTokens]) {
+        if (capacity !== undefined && (!Number.isSafeInteger(capacity) || capacity <= 0)) {
+          throw new LlmError('model discovery returned an invalid capacity', 'INVALID_MODEL_INFO')
+        }
+      }
       seen.add(model.id)
       models.push({
         id: model.id,
@@ -611,26 +890,38 @@ export class LlmRuntime extends TypertRemoteService {
 
   /**
    * Remote adapter for one draft provider interrogation.
-   * @param settingsNs - namespace whose registered discovery serves this draft.
-   * @param request - endpoint, protocol, and one-shot credential to use.
+   * @param request - namespace, endpoint, protocol, and one-shot credential to use.
    * @param signal - caller cancellation supplied by the Remote carrier.
-   * @returns advertised models in endpoint order.
+   * @returns advertised models in the Native response envelope.
    * @throws TypertRemoteFailure with `model-discovery-failed` when discovery refuses or fails.
    */
   @Remote('discoverModels')
   async remoteDiscoverModels(
-    settingsNs: string,
-    request: LlmModelDiscoveryRequest,
+    request: RemoteLlmDiscoverModelsRequest,
     signal: AbortSignal,
-  ): Promise<LlmDiscoveredModel[]> {
+  ): Promise<RemoteLlmDiscoveredModelsResult> {
+    const checkCancellation = () => {
+      if (signal.aborted) throw new TypertRemoteFailure({ code: 'cancelled', message: 'model discovery was cancelled', details: {} })
+    }
+    checkCancellation()
     try {
-      return await this.discoverModels(settingsNs, request, signal)
-    } catch (error: unknown) {
+      const { settingsNs, ...draft } = request
+      const models = await this.discoverModels(settingsNs, draft, signal)
+      checkCancellation()
+      return { models: models.map(model => ({
+        id: model.id,
+        ...model.name === undefined ? {} : { name: model.name },
+        ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
+        ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+      })) }
+    } catch {
+      // One-shot credentials and provider response details must not escape the request.
+      checkCancellation()
       throw new TypertRemoteFailure({
         code: 'model-discovery-failed',
-        message: error instanceof Error ? error.message : String(error),
+        message: 'provider model discovery failed',
         details: {
-          settingsNs,
+          settingsNs: request.settingsNs,
           ...request.baseURL === undefined ? {} : { baseURL: request.baseURL },
         },
       })
@@ -747,7 +1038,7 @@ export class LlmRuntime extends TypertRemoteService {
       )
     }
     const context = resolved.context
-    if (context !== undefined && (!Number.isInteger(context.contextWindow) || context.contextWindow <= 0)) {
+    if (context !== undefined && (!Number.isSafeInteger(context.contextWindow) || context.contextWindow <= 0)) {
       throw new LlmError(
         `adapter returned invalid context metadata for provider "${provider}" model "${model}"`,
         'INVALID_MODEL_CONTEXT',

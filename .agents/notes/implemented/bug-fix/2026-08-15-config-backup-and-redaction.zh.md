@@ -24,4 +24,6 @@ Status: implemented
 
 ## 结果
 
+[原生 Settings 投影决策](2026-09-09-native-settings-ownership-and-redaction.zh.md)替代了对 union/intersection 机密的一律拒绝，并补齐 schema 默认值脱敏。本记录保留独立的备份与诊断理由。
+
 117 个包测试（atomic-write、credentials-local、settings-file）加 158 个 settings 测试加 383 个 api-proxy 测试全部通过；新分支自带测试（备份内容/权限/空操作/重抛；union/intersect/transform/根级 fail-closed；无 secret 的 union 放行）。`jiuzhang-runtime` 与 Ark harness profile 中的运行时副本已重建，并以一次端到端凭据写入验证产生了正确的 0600 `.bak`。同一 api-proxy 文件中的在途 session-archive 改动与之共存并通过。

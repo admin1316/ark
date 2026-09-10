@@ -10,21 +10,22 @@ const AllowedModelRouteSchema = z.object({
 });
 /**
 * Stable identity for one provider/model pair.
-* @param route - The route input.
-* @returns The value produced by model route key.
+* @param route - Exact provider/model route.
+* @returns Opaque key for equality checks.
 */
 function modelRouteKey(route) {
 	return `${route.provider}\0${route.model}`;
 }
 /**
-* Reject malformed or duplicate route policy entries at a boundary.
-* @param routes - The routes input.
-* @returns The value produced by assert allowed model routes.
+* Reject malformed or duplicate route policy entries at a durable or configuration boundary.
+* @param routes - Candidate exact routes to validate.
+* @returns an assertion that the candidate is a validated exact-route array.
 */
 function assertAllowedModelRoutes(routes) {
 	if (!Array.isArray(routes)) throw new Error("subagent model selection requires an array of routes");
 	const seen = /* @__PURE__ */ new Set();
-	for (const candidate of routes) {
+	const candidates = routes;
+	for (const candidate of candidates) {
 		if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate) || !("provider" in candidate) || typeof candidate.provider !== "string" || !("model" in candidate) || typeof candidate.model !== "string" || candidate.provider.length === 0 || candidate.model.length === 0) throw new Error("subagent model selection requires non-empty provider and model ids");
 		const route = {
 			provider: candidate.provider,
@@ -38,16 +39,14 @@ function assertAllowedModelRoutes(routes) {
 //#endregion
 //#region lib/types/model-selection-settings.js
 /** Host-owned opt-in setting for model-selectable subagent delegation. */
-/** User-settings namespace for the model-selection authority. */
+/** User-settings section for model-selectable subagent delegation. */
 const SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE = settingsNamespace("subagent-model-selection");
-/**
-* Defines the subagent model selection settings schema constant used by this package.
-*/
+/** Schema served to settings clients for the opt-in preference. */
 const SUBAGENT_MODEL_SELECTION_SETTINGS_SCHEMA = z.object({
 	enabled: z.boolean().default(false),
 	allowedModels: z.array(AllowedModelRouteSchema).default([])
 });
-/** Singleton settings owner sampled when a new eligible Agent is published. */
+/** Singleton settings owner read by delegation tools when an Agent is published. */
 var SubagentModelSelectionConfig = class extends Service {
 	static Config = z.object({
 		enabled: z.boolean().default(false),
@@ -56,6 +55,7 @@ var SubagentModelSelectionConfig = class extends Service {
 	source;
 	constructor(ctx, config = {}) {
 		super(ctx, "subagentModelSelection");
+		/* v8 ignore next */
 		const entry = {
 			enabled: config.enabled ?? false,
 			allowedModels: config.allowedModels ?? []
@@ -73,8 +73,8 @@ var SubagentModelSelectionConfig = class extends Service {
 		});
 	}
 	/**
-	* Read the current model-selection authority as a detached snapshot.
-	* @returns the enabled flag and detached allowed-model routes.
+	* Read a detached selection preference for the next eligible Agent publication.
+	* @returns the enabled state and exact allowed routes.
 	*/
 	current() {
 		const current = this.source();

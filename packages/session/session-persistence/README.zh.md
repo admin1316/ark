@@ -47,6 +47,8 @@ const headers = await ctx.sessionPersistence.list()        // every stored sessi
 
 ### 恢复与崩溃恢复
 
+`delete(id)` 永久移除未存活、未被预约的会话，释放写入链后等待 `session-persistence/deleted` 清理。存活或已预约的身份以 `SessionPersistenceDeleteBlockedError` 拒绝。关联数据清理失败时，持久删除已经完成，但请求仍会失败；重试相同删除时，即使会话已不存在也会通知清理。后端向协调器提供 `deleteStored` 并保留这一顺序。
+
 恢复就是 `load` 加会话准备：存储日志连同其头部血缘一起返回，因此恢复后的 agent（智能体）看到相同的历史与组装。中途崩溃的会话重新加载时，其被中断的最终轮次会保留并保持平衡：`load` 为未获回答的调用追加合成 `tool/result` 与 `turn/end {interrupted}` closer，而不是丢弃事件——单个轮次可能很大，而这些事件在崩溃前已持久写入。只有从未完整写入的撕裂尾部碎片会被丢弃。
 
 ### 失败与恢复

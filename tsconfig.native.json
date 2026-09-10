@@ -1,0 +1,492 @@
+{
+  "extends": "./tsconfig.base.json",
+  "files": [],
+  "references": [
+    {
+      "path": "./vendor/cordis"
+    },
+    {
+      "path": "./vendor/group"
+    },
+    {
+      "path": "./vendor/hmr"
+    },
+    {
+      "path": "./vendor/include"
+    },
+    {
+      "path": "./vendor/loader"
+    },
+    {
+      "path": "./vendor/timer"
+    },
+    {
+      "path": "./vendor/cosmokit"
+    },
+    {
+      "path": "./packages/core/agent"
+    },
+    {
+      "path": "./packages/core/agent-default-model"
+    },
+    {
+      "path": "./packages/context/agent-instructions"
+    },
+    {
+      "path": "./packages/core/agent-loop"
+    },
+    {
+      "path": "./packages/preset/agent-presets"
+    },
+    {
+      "path": "./packages/subagent/agent-team"
+    },
+    {
+      "path": "./packages/core/agent-tool-presentation"
+    },
+    {
+      "path": "./packages/identity/anonymous-user-id"
+    },
+    {
+      "path": "./packages/api/gateway/tsconfig.host.json"
+    },
+    {
+      "path": "./packages/api/remotes/tsconfig.host.json"
+    },
+    {
+      "path": "./packages/boot/app-boot"
+    },
+    {
+      "path": "./packages/util/atomic-write"
+    },
+    {
+      "path": "./packages/attachment/attachment"
+    },
+    {
+      "path": "./packages/attachment/attachment-local"
+    },
+    {
+      "path": "./packages/credentials/authorization"
+    },
+    {
+      "path": "./packages/bundle/base"
+    },
+    {
+      "path": "./packages/shell/bash-local"
+    },
+    {
+      "path": "./packages/shell/bash-sandbox"
+    },
+    {
+      "path": "./packages/util/brand"
+    },
+    {
+      "path": "./packages/boot/cmdline"
+    },
+    {
+      "path": "./packages/code-runtime/code-runtime"
+    },
+    {
+      "path": "./packages/code-runtime/code-runtime-worker-thread"
+    },
+    {
+      "path": "./packages/compaction/command-compact"
+    },
+    {
+      "path": "./packages/feedback/command-feedback"
+    },
+    {
+      "path": "./packages/goal/command-goal"
+    },
+    {
+      "path": "./packages/interaction/commands"
+    },
+    {
+      "path": "./packages/compaction/compaction"
+    },
+    {
+      "path": "./packages/compaction/compaction-basic"
+    },
+    {
+      "path": "./packages/compaction/compaction-tool-result-pruner"
+    },
+    {
+      "path": "./packages/credentials/credentials"
+    },
+    {
+      "path": "./packages/credentials/credentials-local"
+    },
+    {
+      "path": "./packages/llm/deepseek-llm-api-extensions"
+    },
+    {
+      "path": "./packages/context/file-reference"
+    },
+    {
+      "path": "./packages/context/file-reference-local"
+    },
+    {
+      "path": "./packages/fs/fs"
+    },
+    {
+      "path": "./packages/fs/fs-local"
+    },
+    {
+      "path": "./packages/fs/fs-observation-policy"
+    },
+    {
+      "path": "./packages/fs/fs-sandbox"
+    },
+    {
+      "path": "./packages/goal/goal"
+    },
+    {
+      "path": "./packages/goal/goal-round-driver"
+    },
+    {
+      "path": "./packages/util/home-paths"
+    },
+    {
+      "path": "./packages/host/connection"
+    },
+    {
+      "path": "./packages/host/directory-picker"
+    },
+    {
+      "path": "./packages/host/directory-picker-native"
+    },
+    {
+      "path": "./packages/host/native-events"
+    },
+    {
+      "path": "./packages/host/plugin-inventory"
+    },
+    {
+      "path": "./packages/host/session-remote-operations"
+    },
+    {
+      "path": "./packages/host/webserver"
+    },
+    {
+      "path": "./packages/host/workbench"
+    },
+    {
+      "path": "./packages/runtime-diagnostics/invariants"
+    },
+    {
+      "path": "./packages/jobs/jobs"
+    },
+    {
+      "path": "./packages/jobs/jobs-local"
+    },
+    {
+      "path": "./packages/host/knowledge-wiki"
+    },
+    {
+      "path": "./packages/util/launch-environment"
+    },
+    {
+      "path": "./packages/llm/llm"
+    },
+    {
+      "path": "./packages/llm/llm-deepseek"
+    },
+    {
+      "path": "./packages/llm/llm-pi-ai"
+    },
+    {
+      "path": "./packages/llm/llm-retry"
+    },
+    {
+      "path": "./packages/feedback/message-feedback"
+    },
+    {
+      "path": "./packages/bundle/native-api-app"
+    },
+    {
+      "path": "./packages/boot/native-api-runner"
+    },
+    {
+      "path": "./packages/util/native-command"
+    },
+    {
+      "path": "./packages/util/output-retention"
+    },
+    {
+      "path": "./packages/interaction/permission-presets"
+    },
+    {
+      "path": "./packages/preset/persona"
+    },
+    {
+      "path": "./packages/plan/plan-mode"
+    },
+    {
+      "path": "./packages/llm/plugin-package-inventory-deepseek"
+    },
+    {
+      "path": "./packages/boot/profile-runner"
+    },
+    {
+      "path": "./packages/shell/pwsh-local"
+    },
+    {
+      "path": "./packages/shell/pwsh-sandbox"
+    },
+    {
+      "path": "./packages/guard/repeat-tool-reminder"
+    },
+    {
+      "path": "./packages/sandbox/sandbox"
+    },
+    {
+      "path": "./packages/sandbox/sandbox-local"
+    },
+    {
+      "path": "./packages/sandbox/sandbox-policy"
+    },
+    {
+      "path": "./packages/sandbox/sandbox-windows-acl"
+    },
+    {
+      "path": "./packages/schedule/schedule"
+    },
+    {
+      "path": "./packages/core/scope"
+    },
+    {
+      "path": "./packages/sdk/protocol"
+    },
+    {
+      "path": "./packages/core/session"
+    },
+    {
+      "path": "./packages/session/session-checkpoint-policy"
+    },
+    {
+      "path": "./packages/session/session-log-deepseek"
+    },
+    {
+      "path": "./packages/session/session-persistence"
+    },
+    {
+      "path": "./packages/session/session-persistence-jsonl"
+    },
+    {
+      "path": "./packages/session/session-projection"
+    },
+    {
+      "path": "./packages/session/session-projection-cache"
+    },
+    {
+      "path": "./packages/session-query/session-query"
+    },
+    {
+      "path": "./packages/session-query/session-query-sqlite"
+    },
+    {
+      "path": "./packages/context/session-reference"
+    },
+    {
+      "path": "./packages/session/session-stats"
+    },
+    {
+      "path": "./packages/session/session-telemetry"
+    },
+    {
+      "path": "./packages/session/session-telemetry-otel"
+    },
+    {
+      "path": "./packages/session/session-title"
+    },
+    {
+      "path": "./packages/session/session-title-first-prompt-llm"
+    },
+    {
+      "path": "./packages/session/session-title-llm"
+    },
+    {
+      "path": "./packages/settings/settings"
+    },
+    {
+      "path": "./packages/settings/settings-file"
+    },
+    {
+      "path": "./packages/shell/shell"
+    },
+    {
+      "path": "./packages/shell/shell-env"
+    },
+    {
+      "path": "./packages/skill/skill"
+    },
+    {
+      "path": "./packages/skill/skill-badge"
+    },
+    {
+      "path": "./packages/skill/skill-filesystem"
+    },
+    {
+      "path": "./packages/spill/spill"
+    },
+    {
+      "path": "./packages/spill/spill-local"
+    },
+    {
+      "path": "./packages/spill/spill-policy"
+    },
+    {
+      "path": "./packages/storage/storage"
+    },
+    {
+      "path": "./packages/storage/storage-domain"
+    },
+    {
+      "path": "./packages/storage/storage-json"
+    },
+    {
+      "path": "./packages/subagent/subagent"
+    },
+    {
+      "path": "./packages/subagent/subagent-fork-in-process"
+    },
+    {
+      "path": "./packages/subagent/subagent-in-process-driver"
+    },
+    {
+      "path": "./packages/subagent/subagent-spawn-in-process"
+    },
+    {
+      "path": "./packages/subprocess/subprocess"
+    },
+    {
+      "path": "./packages/subprocess/subprocess-local"
+    },
+    {
+      "path": "./packages/core/system-prompt"
+    },
+    {
+      "path": "./packages/terminal/terminal"
+    },
+    {
+      "path": "./packages/terminal/terminal-bash"
+    },
+    {
+      "path": "./packages/util/timeout"
+    },
+    {
+      "path": "./packages/llm/token-meter"
+    },
+    {
+      "path": "./packages/subagent/tool-agent-team"
+    },
+    {
+      "path": "./packages/interaction/tool-ask-user"
+    },
+    {
+      "path": "./packages/shell/tool-bash"
+    },
+    {
+      "path": "./packages/shell/tool-bash-persistent"
+    },
+    {
+      "path": "./packages/guard/timeout-policy"
+    },
+    {
+      "path": "./packages/fs/tool-fs"
+    },
+    {
+      "path": "./packages/fs/tool-fs-search"
+    },
+    {
+      "path": "./packages/goal/tool-goal"
+    },
+    {
+      "path": "./packages/jobs/tool-jobs"
+    },
+    {
+      "path": "./packages/host/knowledge-wiki-tools"
+    },
+    {
+      "path": "./packages/shell/tool-pwsh"
+    },
+    {
+      "path": "./packages/shell/tool-pwsh-persistent"
+    },
+    {
+      "path": "./packages/workflow/tool-ralph"
+    },
+    {
+      "path": "./packages/skill/tool-skill"
+    },
+    {
+      "path": "./packages/fs/tool-str-replace-editor"
+    },
+    {
+      "path": "./packages/subagent/tool-subagent"
+    },
+    {
+      "path": "./packages/subagent/tool-subagent-control"
+    },
+    {
+      "path": "./packages/subagent/tool-subagent-report"
+    },
+    {
+      "path": "./packages/todo/tool-todo"
+    },
+    {
+      "path": "./packages/web/tool-web"
+    },
+    {
+      "path": "./packages/workflow/tool-workflow"
+    },
+    {
+      "path": "./packages/core/tools"
+    },
+    {
+      "path": "./packages/typert/loader"
+    },
+    {
+      "path": "./packages/typert/protocol"
+    },
+    {
+      "path": "./packages/typert/registry"
+    },
+    {
+      "path": "./packages/interaction/user-approval"
+    },
+    {
+      "path": "./packages/interaction/user-questions"
+    },
+    {
+      "path": "./packages/util/crypto"
+    },
+    {
+      "path": "./packages/web/web"
+    },
+    {
+      "path": "./packages/web/web-fetch-http"
+    },
+    {
+      "path": "./packages/web/web-search-deepseek"
+    },
+    {
+      "path": "./packages/subprocess/win32-process"
+    },
+    {
+      "path": "./packages/workflow/workflow"
+    },
+    {
+      "path": "./packages/workflow/workflow-worker-thread"
+    },
+    {
+      "path": "./packages/workspace/workspace"
+    },
+    {
+      "path": "./native/landlock-run/packages/entry"
+    },
+    {
+      "path": "./vendor/schemastery"
+    }
+  ]
+}

@@ -31,17 +31,51 @@ function validateTodos(value, fail) {
 		if (typeof status !== "string" || !TODO_STATUSES.has(status)) fail(`todo/write carries unknown status ${JSON.stringify(status)}`);
 	}
 }
-/** Validate the package-owned event fields and ignore unrelated events. */
-function validateEvent(event, fail) {
-	if (event.type === "todo/write") validateTodos(event.data.todos, fail);
+/** Advance the trace after one event has committed. */
+function advanceTrace(trace, event) {
+	if (event.type === "turn/start") trace.open = true;
+	if (event.type === "turn/end") trace.open = false;
+}
+/** Validate one package-owned event against the preceding committed trace. */
+function validateEvent(event, trace, fail) {
+	if (event.type !== "todo/write") return;
+	validateTodos(event.data.todos, fail);
+	if (!trace.open) fail("todo/write appended outside any open turn");
+}
+/** Validate one existing log in a single pass and return its tail trace. */
+function seedTrace(session, fail) {
+	const trace = { open: false };
+	for (const event of session.events) {
+		validateEvent(event, trace, fail);
+		advanceTrace(trace, event);
+	}
+	return trace;
 }
 /** Install validation for loaded and newly appended whole-list todo snapshots. */
 const install = Object.assign((ctx, fail) => {
-	for (const session of ctx.sessions.list()) for (const event of session.events) validateEvent(event, fail);
+	const traces = /* @__PURE__ */ new WeakMap();
+	const seed = (session) => {
+		traces.set(session, seedTrace(session, fail));
+	};
+	const traceFor = (session) => {
+		let trace = traces.get(session);
+		if (trace === void 0) {
+			trace = seedTrace(session, fail);
+			traces.set(session, trace);
+		}
+		return trace;
+	};
+	for (const session of ctx.sessions.list()) seed(session);
+	ctx.on("session/created", (session) => {
+		seed(session);
+	}, { global: true });
 	ctx.on("internal/dispatch", (_mode, eventName, args) => {
 		if (eventName !== "session/event") return;
-		const event = args[1];
-		validateEvent(event, fail);
+		const [session, event] = args;
+		validateEvent(event, traceFor(session), fail);
+	}, { global: true });
+	ctx.on("session/event", (session, event) => {
+		advanceTrace(traceFor(session), event);
 	}, { global: true });
 }, { inject: ["sessions"] });
 /**

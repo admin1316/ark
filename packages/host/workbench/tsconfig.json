@@ -1,0 +1,15 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../../web/tool-web" },
+    { "path": "../../web/web" },
+    { "path": "../../typert/protocol" }
+  ]
+}

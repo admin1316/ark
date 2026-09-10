@@ -29,7 +29,7 @@ const _deepseek_ai_dsh_settings_settings_mutate_parameter_0$schema = z.string()
 const _deepseek_ai_dsh_settings_settings_mutate_parameter_1$schema = z.array(z.union([z.object({
   'op': z.literal("set").readonly(),
   'path': z.array(z.string()).readonly(),
-  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6))]).readonly(),
+  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7))]).readonly(),
 }), z.object({
   'op': z.literal("unset").readonly(),
   'path': z.array(z.string()).readonly(),
@@ -37,10 +37,10 @@ const _deepseek_ai_dsh_settings_settings_mutate_parameter_1$schema = z.array(z.u
 const _deepseek_ai_dsh_settings_settings_mutate_parameter_2$schema = z.union([z.undefined(), z.number()])
 const _deepseek_ai_dsh_settings_settings_mutate_result$schema = z.object({
   'ns': z.string().readonly(),
-  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7))]).readonly(),
-  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7))]).readonly(),
-  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7))]).readonly().optional(),
-  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema7))]).readonly().optional(),
+  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6))]).readonly(),
+  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6))]).readonly(),
+  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6))]).readonly().optional(),
+  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema6))]).readonly().optional(),
   'applies': z.union([z.literal("live"), z.literal("restart")]).readonly(),
   'secrets': z.array(z.object({
   'path': z.array(z.string()).readonly(),
@@ -52,14 +52,14 @@ const _deepseek_ai_dsh_settings_settings_openDocument_result$schema = z.object({
   'opened': z.literal(true).readonly(),
 })
 const _deepseek_ai_dsh_settings_settings_replace_parameter_0$schema = z.string()
-const _deepseek_ai_dsh_settings_settings_replace_parameter_1$schema = z.record(z.string(), z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4))]))
+const _deepseek_ai_dsh_settings_settings_replace_parameter_1$schema = z.record(z.string(), z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5))]))
 const _deepseek_ai_dsh_settings_settings_replace_parameter_2$schema = z.union([z.undefined(), z.number()])
 const _deepseek_ai_dsh_settings_settings_replace_result$schema = z.object({
   'ns': z.string().readonly(),
-  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5))]).readonly(),
-  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5))]).readonly(),
-  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5))]).readonly().optional(),
-  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema5))]).readonly().optional(),
+  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4))]).readonly(),
+  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4))]).readonly(),
+  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4))]).readonly().optional(),
+  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema4))]).readonly().optional(),
   'applies': z.union([z.literal("live"), z.literal("restart")]).readonly(),
   'secrets': z.array(z.object({
   'path': z.array(z.string()).readonly(),
@@ -101,7 +101,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsDescription',
         schema: _deepseek_ai_dsh_settings_settings_describe_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":665,"column":3},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":632,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/mutate',
@@ -148,7 +148,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsNamespaceView',
         schema: _deepseek_ai_dsh_settings_settings_mutate_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":751,"column":9},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":711,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/openDocument',
@@ -165,7 +165,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsDocumentOpenResult',
         schema: _deepseek_ai_dsh_settings_settings_openDocument_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":682,"column":9},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":646,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/replace',
@@ -212,7 +212,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsNamespaceView',
         schema: _deepseek_ai_dsh_settings_settings_replace_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":735,"column":9},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":699,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/update',
@@ -259,7 +259,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsNamespaceView',
         schema: _deepseek_ai_dsh_settings_settings_update_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":719,"column":9},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":687,"column":3},
     },
   ],
 }

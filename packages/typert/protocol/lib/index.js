@@ -21,9 +21,9 @@ function isTypertRemoteSegment(value) {
 var TypertLookupFailure = class extends Error {
 	/** Adapter-owned failure returned to the caller. */
 	failure;
-	/** Machine-readable public code mirrored for direct Remote invocation. */
+	/** Public code mirrored for direct Remote callers. */
 	code;
-	/** Public structured context mirrored for direct Remote invocation. */
+	/** Public structured context mirrored for direct Remote callers. */
 	details;
 	/**
 	* Wrap one adapter failure without exposing the rejected identity.
@@ -34,26 +34,40 @@ var TypertLookupFailure = class extends Error {
 		this.name = "TypertLookupFailure";
 		this.failure = failure;
 		const record = typeof failure === "object" && failure !== null ? failure : void 0;
-		this.code = typeof record?.code === "string" ? record.code : void 0;
-		this.details = record?.details;
+		this.code = record !== void 0 && "code" in record && typeof record.code === "string" ? record.code : void 0;
+		this.details = record !== void 0 && "details" in record ? record.details : void 0;
 	}
 };
 /**
-* Validate the public failure shape shared by strict Remote adapters.
+* Validate the public failure payload shared by strict Remote adapters.
 * @param value - Untrusted thrown or decoded value.
-* @returns whether the value is a complete strict Remote failure payload.
+* @returns Whether code, message, and structured details are present.
 */
 function isRemoteFailurePayload(value) {
-	return typeof value === "object" && value !== null && !Array.isArray(value) && typeof value.code === "string" && typeof value.message === "string" && typeof value.details === "object" && value.details !== null && !Array.isArray(value.details);
+	return typeof value === "object" && value !== null && !Array.isArray(value) && "code" in value && typeof value.code === "string" && "message" in value && typeof value.message === "string" && "details" in value && typeof value.details === "object" && value.details !== null && !Array.isArray(value.details);
 }
 /**
-* Recognize one already-classified strict Remote failure without relabeling it.
+* Preserve an already classified strict Remote rejection.
 * @param value - Untrusted thrown value.
-* @returns whether the value wraps a complete strict Remote failure payload.
+* @returns Whether the exception wraps a complete Remote failure payload.
 */
 function isTypertRemoteFailure(value) {
 	return value instanceof TypertLookupFailure && isRemoteFailurePayload(value.failure);
 }
+/** A business Remote rejection preserved by unary and stream carriers. */
+var TypertRemoteFailure = class extends Error {
+	/** Stable caller-facing failure payload. */
+	failure;
+	/**
+	* Wrap one business rejection for transport without changing its code or details.
+	* @param failure - business failure returned unchanged to the caller.
+	*/
+	constructor(failure) {
+		super(failure.message);
+		this.name = "TypertRemoteFailure";
+		this.failure = failure;
+	}
+};
 const markers = /* @__PURE__ */ new WeakMap();
 /**
 * Bind one visible Service field to a Cordis key and Remote namespace.
@@ -87,15 +101,25 @@ var TypertRemoteService = class extends Service {
 		this.typertRemote = bindTypertRemote(this, this.name, options);
 	}
 };
-function Remote(methodOrExportName, context) {
-	if (typeof methodOrExportName === "string") {
-		validateName("Remote export name", methodOrExportName);
-		return function(_method, decoratorContext) {
-			addMarkerInitializer(decoratorContext, { kind: "direct" }, methodOrExportName);
-		};
+function Remote(methodExportOrOptions, context) {
+	if (typeof methodExportOrOptions === "string") {
+		validateName("Remote export name", methodExportOrOptions);
+		return remoteDecorator({ kind: "direct" }, void 0, methodExportOrOptions);
+	}
+	if (typeof methodExportOrOptions === "object") {
+		if (remoteOptionMode(methodExportOrOptions) !== "stream" || Reflect.ownKeys(methodExportOrOptions).length !== 1) throw new TypeError("typert-protocol: Remote options must contain exactly mode: \"stream\"");
+		return remoteDecorator({ kind: "direct" }, "stream");
 	}
 	if (context === void 0) throw new TypeError("typert-protocol: Remote decorator context is missing");
 	addMarkerInitializer(context, { kind: "direct" });
+}
+function remoteOptionMode(options) {
+	return Reflect.get(options, "mode");
+}
+function remoteDecorator(invocation, mode, exportName) {
+	return function(_method, context) {
+		addMarkerInitializer(context, invocation, mode, exportName);
+	};
 }
 /**
 * Create a decorator for a method resolved from one Remote Scope.
@@ -106,12 +130,10 @@ function Remote(methodOrExportName, context) {
 function RemoteScope(key, exportName) {
 	validateName("Scope key", key);
 	if (exportName !== void 0) validateName("Remote export name", exportName);
-	return function(_method, context) {
-		addMarkerInitializer(context, {
-			kind: "context",
-			context: key
-		}, exportName);
-	};
+	return remoteDecorator({
+		kind: "context",
+		context: key
+	}, void 0, exportName);
 }
 /**
 * Read Remote markers attached to a live Service by decorator initializers.
@@ -127,16 +149,16 @@ function remoteMethods(service) {
 		...marker
 	}));
 }
-function addMarkerInitializer(context, invocation, exportName) {
+function addMarkerInitializer(context, invocation, mode, exportName) {
 	if (context.private || context.static || typeof context.name !== "string") throw new TypeError("typert-protocol: Remote decorators require a public instance method with a string name");
 	const method = context.name;
 	context.addInitializer(function() {
 		const prototype = Object.getPrototypeOf(this);
 		if (prototype === null) throw new TypeError(`typert-protocol: cannot mark Remote method "${method}" on an object without a prototype`);
-		mark(prototype, method, invocation, exportName);
+		mark(prototype, method, invocation, mode, exportName);
 	});
 }
-function mark(prototype, method, invocation, exportName) {
+function mark(prototype, method, invocation, mode, exportName) {
 	let table = markers.get(prototype);
 	if (table === void 0) {
 		table = /* @__PURE__ */ new Map();
@@ -144,11 +166,12 @@ function mark(prototype, method, invocation, exportName) {
 	}
 	const marker = {
 		...exportName === void 0 || exportName === method ? {} : { exportName },
+		...mode === void 0 ? {} : { mode },
 		invocation: Object.freeze(invocation)
 	};
 	const current = table.get(method);
 	if (current !== void 0) {
-		if (current.exportName === marker.exportName && sameInvocation(current.invocation, invocation)) return;
+		if (current.exportName === marker.exportName && current.mode === marker.mode && sameInvocation(current.invocation, invocation)) return;
 		throw new Error(`typert-protocol: Remote method "${method}" has conflicting invocation markers`);
 	}
 	table.set(method, Object.freeze(marker));
@@ -160,4 +183,4 @@ function validateName(subject, value) {
 	if (!isTypertRemoteSegment(value)) throw new TypeError(`typert-protocol: ${subject} must contain only RPC endpoint segment characters`);
 }
 //#endregion
-export { Remote, RemoteScope, TypertLookupFailure, TypertRemoteService, bindTypertRemote, isRemoteFailurePayload, isTypertRemoteFailure, isTypertRemoteSegment, remoteMethods };
+export { Remote, RemoteScope, TypertLookupFailure, TypertRemoteFailure, TypertRemoteService, bindTypertRemote, isRemoteFailurePayload, isTypertRemoteFailure, isTypertRemoteSegment, remoteMethods };

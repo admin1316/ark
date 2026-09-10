@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import SkillRegistry, {
   isModelInvocable,
@@ -58,6 +59,33 @@ function scopedSkills(ctx: Context): SkillRegistry {
 }
 
 describe('SkillRegistry registry', () => {
+  it('serves scoped user-invocable Remote metadata without loading bodies', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const scope = createScope(ctx, { preset: 'remote' })
+    // Remote catalog reads only the resolved identity, header and scope; no driver is run.
+    const agent = { id: 'remote-session', session: { header: { cwd: '/workspace' } }, ctx: scope.ctx } as unknown as Agent
+    const get = vi.fn(async () => { throw new Error('catalog must not read bodies') })
+    scopedSkills(scope.ctx).registerProvider(() => ({
+      name: 'remote-test',
+      list: async () => [
+        { ...memorySkill('user-only', 'Explicit skill', 100), provider: 'remote-test', invocation: { userInvocable: true, modelInvocable: false } },
+        { ...memorySkill('model-only', 'Model skill', 100), provider: 'remote-test', invocation: { userInvocable: false, modelInvocable: true } },
+      ],
+      get,
+    }))
+    try {
+      await expect(ctx.skills.remoteList(agent, new AbortController().signal)).resolves.toEqual({
+        skills: [{ name: 'user-only', description: 'Explicit skill', modelInvocable: false }],
+      })
+      expect(get).not.toHaveBeenCalled()
+      await expect(ctx.skills.remoteList(agent, AbortSignal.abort())).rejects.toMatchObject({ code: 'cancelled' })
+    } finally {
+      await scope.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('registers providers, resolves duplicates first-wins, and disposes providers', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)

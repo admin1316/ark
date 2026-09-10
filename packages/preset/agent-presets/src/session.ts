@@ -15,6 +15,7 @@
  */
 
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -30,6 +31,12 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 
 const agentPresetSchema = z.union([z.string(), z.null()])
+
+/** The persisted header and ordered log needed to reconstruct a session's preset. */
+export interface PresetBearingSession {
+  readonly header: SessionHeader
+  readonly events: readonly SessionEvent[]
+}
 
 /** Current Session preset, initialized from its header and advanced by selection events. */
 export const agentPresetProjectionDefinition = {
@@ -55,10 +62,7 @@ export const agentPresetProjectionDefinition = {
  * @param session - the session's header and event log.
  * @returns the preset id, or `undefined` when the deployment composes none.
  */
-export function resolveSessionPreset(session: {
-  events: ReadonlyArray<{ type?: string; data?: { agentPreset?: string } }>
-  header: { agentPreset?: string }
-}): string | undefined {
+export function resolveSessionPreset(session: PresetBearingSession): string | undefined {
   for (let index = session.events.length - 1; index >= 0; index -= 1) {
     const event = session.events[index]
     if (event?.type === 'agent-preset/selected') return event.data.agentPreset

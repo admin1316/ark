@@ -94,10 +94,10 @@ var SessionCorpus = class {
 			return snapshot;
 		}
 		const persistence = this._persistence;
-		if (persistence === void 0) throw notFound(sessionId);
+		if (persistence === void 0) throw notFound$1(sessionId);
 		const listed = (await listPersisted(persistence, signal)).find((header) => header.id === sessionId);
 		signal?.throwIfAborted();
-		if (listed === void 0) throw notFound(sessionId);
+		if (listed === void 0) throw notFound$1(sessionId);
 		const loaded = await inspectPersisted(persistence, sessionId, signal);
 		signal?.throwIfAborted();
 		const attached = this._ctx.sessions.get(sessionId);
@@ -140,7 +140,7 @@ var SessionCorpus = class {
 			for (const sessionId of unresolved) resolved.set(sessionId, {
 				sessionId,
 				status: "rejected",
-				reason: notFound(sessionId)
+				reason: notFound$1(sessionId)
 			});
 			return orderedResults(ids, resolved);
 		}
@@ -165,7 +165,7 @@ var SessionCorpus = class {
 				resolved.set(sessionId, attached === void 0 ? {
 					sessionId,
 					status: "rejected",
-					reason: notFound(sessionId)
+					reason: notFound$1(sessionId)
 				} : projectSource(sessionId, sourceLive(attached), project, signal));
 				return;
 			}
@@ -246,7 +246,7 @@ async function listPersisted(persistence, signal) {
 		return await persistence.list(signal);
 	} catch (error) {
 		if (signal?.aborted) signal.throwIfAborted();
-		throw new SessionQueryError(`session persistence listing failed: ${errorMessage(error)}`, "SESSION_QUERY_PERSISTENCE_FAILED", { cause: error });
+		throw new SessionQueryError(`session persistence listing failed: ${errorMessage$1(error)}`, "SESSION_QUERY_PERSISTENCE_FAILED", { cause: error });
 	}
 }
 async function inspectPersisted(persistence, sessionId, signal) {
@@ -254,8 +254,8 @@ async function inspectPersisted(persistence, sessionId, signal) {
 		return await persistence.inspect(sessionId, signal);
 	} catch (error) {
 		if (signal?.aborted) signal.throwIfAborted();
-		if (error instanceof Error && error.name === "SessionPersistenceCorruptionError") throw new SessionQueryError(`stored session "${sessionId}" is corrupt: ${errorMessage(error)}`, "SESSION_QUERY_CORRUPT_SESSION", { cause: error });
-		throw new SessionQueryError(`failed to inspect session "${sessionId}": ${errorMessage(error)}`, "SESSION_QUERY_PERSISTENCE_FAILED", { cause: error });
+		if (error instanceof Error && error.name === "SessionPersistenceCorruptionError") throw new SessionQueryError(`stored session "${sessionId}" is corrupt: ${errorMessage$1(error)}`, "SESSION_QUERY_CORRUPT_SESSION", { cause: error });
+		throw new SessionQueryError(`failed to inspect session "${sessionId}": ${errorMessage$1(error)}`, "SESSION_QUERY_PERSISTENCE_FAILED", { cause: error });
 	}
 }
 function snapshotLive(session) {
@@ -267,11 +267,138 @@ function snapshotLive(session) {
 function compareSessions(a, b) {
 	return b.header.createdAt - a.header.createdAt || a.header.id.localeCompare(b.header.id);
 }
-function notFound(sessionId) {
+function notFound$1(sessionId) {
 	return new SessionQueryError(`session "${sessionId}" not found`, "SESSION_QUERY_SESSION_NOT_FOUND");
+}
+function errorMessage$1(error) {
+	return error instanceof Error ? error.message : "unknown error";
+}
+//#endregion
+//#region lib/types/observation.js
+/** Shared live/prepared observations for Session page and lifecycle consumers. */
+/** Builds point observations without a corpus listing preflight. */
+var SessionObservationReader = class {
+	ctx;
+	/** @param ctx - context carrying Session and optional persistence/projection services. */
+	constructor(ctx) {
+		this.ctx = ctx;
+	}
+	/**
+	* Observe one live-preferred Session and retain a cold preparation until disposal.
+	* @param sessionId - logical Session identity.
+	* @param options - cancellation and all-or-none projection computation for this read.
+	* @returns one exact immutable observation.
+	*/
+	async read(sessionId, options = {}) {
+		const { signal, projectionMode = "all" } = options;
+		for (;;) {
+			throwIfObservationAborted(signal);
+			const live = this.ctx.sessions.get(sessionId);
+			if (live !== void 0) return this.live(live, projectionMode);
+			const persistence = this.ctx.get("sessionPersistence");
+			if (persistence === void 0) throw notFound(sessionId);
+			let borrowed;
+			try {
+				borrowed = await persistence.borrowSession(sessionId, signal);
+			} catch (error) {
+				throwIfObservationAborted(signal);
+				if (hasErrorName(error, "SessionPersistenceNotFoundError")) throw notFound(sessionId, error);
+				if (hasErrorName(error, "SessionPersistenceCorruptionError")) throw new SessionQueryError(`stored session "${sessionId}" is corrupt: ${error.message}`, "SESSION_QUERY_CORRUPT_SESSION", { cause: error });
+				throw new SessionQueryError(`failed to observe session "${sessionId}": ${errorMessage(error)}`, "SESSION_QUERY_PERSISTENCE_FAILED", { cause: error });
+			}
+			try {
+				throwIfObservationAborted(signal);
+				if (borrowed.inspection.meta.id !== sessionId) throw new SessionQueryError(`session persistence returned "${borrowed.inspection.meta.id}" for "${sessionId}"`, "SESSION_QUERY_SOURCE_CONFLICT");
+				const attached = this.ctx.sessions.get(sessionId);
+				if (attached !== void 0) {
+					const liveObservation = this.live(attached, projectionMode);
+					borrowed[Symbol.dispose]();
+					return liveObservation;
+				}
+				if (borrowed.source === "live") {
+					borrowed[Symbol.dispose]();
+					continue;
+				}
+				const prepared = borrowed;
+				const events = prepared.inspection.events;
+				let projections;
+				try {
+					projections = projectionMode === "none" ? void 0 : this.preparedProjections(prepared, events);
+				} catch (error) {
+					throw new SessionQueryError(`failed to project session "${sessionId}": ${errorMessage(error)}`, "SESSION_QUERY_CORRUPT_SESSION", { cause: error });
+				}
+				let references = 1;
+				const lease = () => {
+					let disposed = false;
+					return {
+						source: "prepared",
+						header: prepared.inspection.meta,
+						events,
+						cursor: events.at(-1)?.seq ?? -1,
+						revision: prepared.revision,
+						...projections === void 0 ? {} : { projections },
+						retain: () => {
+							if (disposed || references === 0) throw new Error(`session observation "${sessionId}" is disposed`);
+							references += 1;
+							return lease();
+						},
+						[Symbol.dispose]: () => {
+							if (disposed) return;
+							disposed = true;
+							references -= 1;
+							if (references === 0) prepared[Symbol.dispose]();
+						}
+					};
+				};
+				return lease();
+			} catch (error) {
+				borrowed[Symbol.dispose]();
+				throw error;
+			}
+		}
+	}
+	live(session, projectionMode) {
+		const events = Object.freeze([...session.events]);
+		const projections = projectionMode === "none" ? void 0 : this.ctx.get("sessionProjections")?.snapshot(session);
+		const lease = () => {
+			let disposed = false;
+			return {
+				source: "live",
+				header: session.header,
+				events,
+				cursor: events.at(-1)?.seq ?? -1,
+				...projections === void 0 ? {} : { projections },
+				retain: () => {
+					if (disposed) throw new Error(`session observation "${session.id}" is disposed`);
+					return lease();
+				},
+				[Symbol.dispose]: () => {
+					disposed = true;
+				}
+			};
+		};
+		return lease();
+	}
+	preparedProjections(observation, events) {
+		const registry = this.ctx.get("sessionProjections");
+		if (registry === void 0) return void 0;
+		const prepared = observation.preparedSession;
+		const cache = this.ctx.get("sessionProjectionCache");
+		return cache === void 0 ? registry.hydrate(prepared, {}, events, 0) : cache.hydratePrepared(prepared, observation.inspection.meta, events);
+	}
+};
+function throwIfObservationAborted(signal) {
+	if (signal?.aborted !== true) return;
+	throw new SessionQueryError("session observation was aborted", "SESSION_QUERY_ABORTED", { cause: signal.reason });
+}
+function notFound(sessionId, cause) {
+	return new SessionQueryError(`session "${sessionId}" not found`, "SESSION_QUERY_SESSION_NOT_FOUND", cause === void 0 ? void 0 : { cause });
 }
 function errorMessage(error) {
 	return error instanceof Error ? error.message : "unknown error";
+}
+function hasErrorName(error, name) {
+	return error instanceof Error && error.name === name;
 }
 //#endregion
 //#region lib/types/extraction.js
@@ -786,6 +913,7 @@ var SessionQueryEngine = class extends Service {
 	static inject = ["sessions"];
 	_readWindowMax;
 	_corpus;
+	_observations;
 	constructor(ctx, config = {}) {
 		super(ctx, "sessionQuery");
 		this._readWindowMax = config.readWindowMax ?? 50;
@@ -793,6 +921,16 @@ var SessionQueryEngine = class extends Service {
 		const persistedInspectConcurrency = config.persistedInspectConcurrency ?? 4;
 		if (!Number.isSafeInteger(persistedInspectConcurrency) || persistedInspectConcurrency < 1) throw new SessionQueryError("session-query: persistedInspectConcurrency must be a positive safe integer", "SESSION_QUERY_INVALID_CONFIG");
 		this._corpus = new SessionCorpus(ctx, persistedInspectConcurrency);
+		this._observations = new SessionObservationReader(ctx);
+	}
+	/**
+	* Observe one exact live or prepared Session without a persistence listing preflight.
+	* @param sessionId - logical Session identity.
+	* @param options - cancellation and projection selection for this read.
+	* @returns a caller-owned observation lease.
+	*/
+	observeSession(sessionId, options = {}) {
+		return this._observations.read(sessionId, options);
 	}
 	/**
 	* List the complete logical corpus using live-preferred records.

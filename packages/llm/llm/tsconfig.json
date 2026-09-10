@@ -8,6 +8,9 @@
     "src"
   ],
   "references": [
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../credentials/credentials" },
+    { "path": "../../settings/settings" },
     {
       "path": "../../../vendor/cosmokit"
     },

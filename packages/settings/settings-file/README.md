@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-settings-file` keeps every namespace's user settings in one YAML or JSON document, by default `settings.yaml` under the harness home: users can edit the document directly — changes take effect live — or write through the service, which merges concurrent edits safely. YAML writes preserve comments, anchors, and formatting on every untouched node, and a section owned by a plugin that is not loaded is never dropped. Boot fails loud on an invalid document; a live reload that fails keeps the last good sections and warns rather than taking the process down.
+`dsh-settings-file` keeps every namespace's user settings in one YAML or JSON document, by default `settings.yaml` under the harness home: users can edit the document directly — changes take effect live — or write through the service, which preserves sibling changes and rejects conflicting namespace edits. YAML writes preserve comments, anchors, and formatting on every untouched node, and a section owned by a plugin that is not loaded is never dropped. Boot fails loud on an invalid document; a live reload that fails keeps the last good sections and warns rather than taking the process down.
 
 ## Table of Contents
 
@@ -54,7 +54,7 @@ The document is a YAML or JSON mapping of namespace to user section. Users can e
 
 ### Writing through the service
 
-Writes through `ctx.settings` never lose concurrent changes: an external edit still in flight, a change the watcher missed, or another process's write is merged into the document before the write lands. YAML edits are leaf-level diffs: only changed values are set and only removed keys deleted, so comments, anchors, and formatting survive on every untouched node and on the key of every changed pair; a changed array or other non-map value replaces wholesale. JSON documents re-serialize without comments. If the on-disk document turned invalid, the write fails loud instead of overwriting the user's manual edit.
+Writes through `ctx.settings` re-read the document under the writer lock. Unobserved changes to sibling namespaces are preserved; if the target namespace differs from the writer's captured section, the write is refused and the caller must refresh before retrying. YAML edits are leaf-level diffs: only changed values are set and only removed keys deleted, so comments, anchors, and formatting survive on every untouched node and on the key of every changed pair; a changed array or other non-map value replaces wholesale. JSON documents re-serialize without comments. If the on-disk document turned invalid, the write fails loud instead of overwriting the user's manual edit.
 
 The lock has a 2-second acquisition deadline with exponential backoff; a contender that times out leaves the existing lock in place, because lock age cannot distinguish a crashed owner from a paused live writer — orphan lock recovery is an operator action. The document is created `0600` under an owner-only `0700` directory and replaced atomically through a random-suffix temp sibling that never follows a planted symlink.
 
@@ -62,7 +62,7 @@ The lock has a 2-second acquisition deadline with exponential backoff; a contend
 
 - An unsupported extension fails at load — the format comes from the extension (`.yaml`, `.yml`, `.json`).
 - A missing document is an empty store; deleting the file returns to that state.
-- An invalid on-disk document at runtime blocks nothing but keeps the last good sections; a write refuses to overwrite it.
+- Live reads retain the last good sections after an invalid on-disk edit; writes refuse to overwrite it.
 - `prepareDocument()` materializes an absent document as an empty owner-only file before a native editor opens it.
 
 -----
@@ -134,7 +134,7 @@ No direct invalidation; the consuming plugin owns any request-prefix changes.
 
 These limits define when the provider is a poor fit or needs special operational care. They are current package constraints, not a task backlog.
 
-- **Same-namespace conflicts stay last-write-wins** — the writer lock and read-modify-write keep concurrent writers from dropping each other's namespaces, but two writers editing one namespace still resolve to the later write; there is no per-value merge or revision check.
+- **Conflicting namespace edits require a refresh** — the provider compares the target section under the file lock instead of merging conflicting values. The service's in-process revision and this on-disk comparison have separate responsibilities; neither silently overwrites an unobserved edit.
 - **A missed watcher event stays unseen until the next signal** — reads never re-stat the file, so a change the watcher fails to report is only folded in by the next event, the next write, or a restart.
 - **Comment preservation is YAML-only and map-shaped** — JSON documents re-serialize without comments, and comments inside a changed array, or attached inline to a changed scalar value, go with the value they described.
 - **No value indirection** — sections hold literal values; `${env:VAR}`-style references for secrets are a deferred seam-level feature.

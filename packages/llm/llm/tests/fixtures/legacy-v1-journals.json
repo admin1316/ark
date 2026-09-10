@@ -1,0 +1,282 @@
+{
+  "source": "preserved implementation oracle, synthetic files only",
+  "modules": [
+    {
+      "name": "@deepseek-ai/cordis",
+      "path": "/Users/hui/Ark-Recovery-20260908/baseline-bPgRLb/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/cordis/lib/index.js"
+    },
+    {
+      "name": "@deepseek-ai/schemastery",
+      "path": "/Users/hui/Ark-Recovery-20260908/baseline-bPgRLb/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/schemastery/lib/index.cjs"
+    },
+    {
+      "name": "@deepseek-ai/dsh-settings-file",
+      "path": "/Users/hui/Ark-Recovery-20260908/baseline-bPgRLb/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-settings-file/lib/index.js"
+    },
+    {
+      "name": "@deepseek-ai/dsh-settings",
+      "path": "/Users/hui/Ark-Recovery-20260908/baseline-bPgRLb/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-settings/lib/index.js"
+    },
+    {
+      "name": "@deepseek-ai/dsh-credentials-local",
+      "path": "/Users/hui/Ark-Recovery-20260908/baseline-bPgRLb/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-credentials-local/lib/index.js"
+    },
+    {
+      "name": "@deepseek-ai/dsh-credentials",
+      "path": "/Users/hui/Ark-Recovery-20260908/baseline-bPgRLb/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-credentials/lib/index.js"
+    },
+    {
+      "name": "@deepseek-ai/dsh-llm",
+      "path": "/Users/hui/Ark-Recovery-20260908/baseline-bPgRLb/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-llm/lib/index.js"
+    },
+    {
+      "name": "@deepseek-ai/dsh-launch-environment",
+      "path": "/Users/hui/Ark-Recovery-20260908/baseline-bPgRLb/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-launch-environment/lib/index.js"
+    }
+  ],
+  "journals": [
+    {
+      "kind": "grant",
+      "payload": {
+        "version": 1,
+        "transactionId": "11111111-1111-4111-8111-111111111111",
+        "digest": "89f3ee727e50022d9617d6e2aa417cc275f1aa39de3ac7b42bbdc55d83b8511a",
+        "provider": "alpha",
+        "settingsNs": "legacy-fixture",
+        "plan": {
+          "settingsPath": [
+            "alpha"
+          ],
+          "ops": [
+            {
+              "op": "set",
+              "path": [
+                "alpha",
+                "model"
+              ],
+              "value": "fixture-model"
+            }
+          ],
+          "expectedRevision": 0
+        },
+        "phase": "prepared"
+      }
+    },
+    {
+      "kind": "grant",
+      "payload": {
+        "version": 1,
+        "transactionId": "11111111-1111-4111-8111-111111111111",
+        "digest": "89f3ee727e50022d9617d6e2aa417cc275f1aa39de3ac7b42bbdc55d83b8511a",
+        "provider": "alpha",
+        "settingsNs": "legacy-fixture",
+        "plan": {
+          "settingsPath": [
+            "alpha"
+          ],
+          "ops": [
+            {
+              "op": "set",
+              "path": [
+                "alpha",
+                "model"
+              ],
+              "value": "fixture-model"
+            }
+          ],
+          "expectedRevision": 0
+        },
+        "phase": "settings-applied"
+      }
+    },
+    {
+      "kind": "grant",
+      "payload": {
+        "version": 1,
+        "transactionId": "11111111-1111-4111-8111-111111111111",
+        "digest": "89f3ee727e50022d9617d6e2aa417cc275f1aa39de3ac7b42bbdc55d83b8511a",
+        "provider": "alpha",
+        "settingsNs": "legacy-fixture",
+        "plan": {
+          "settingsPath": [
+            "alpha"
+          ],
+          "ops": [
+            {
+              "op": "set",
+              "path": [
+                "alpha",
+                "model"
+              ],
+              "value": "fixture-model"
+            }
+          ],
+          "expectedRevision": 0
+        },
+        "phase": "done",
+        "outcome": "committed"
+      }
+    },
+    {
+      "kind": "grant",
+      "payload": {
+        "version": 1,
+        "transactionId": "22222222-2222-4222-8222-222222222222",
+        "digest": "ee41d15f82571f0fc32b3977476e4dc1e812b1b6e1f101d24cf99a1283f4687c",
+        "provider": "alpha",
+        "settingsNs": "legacy-fixture",
+        "plan": {
+          "settingsPath": [
+            "alpha"
+          ],
+          "ops": [
+            {
+              "op": "set",
+              "path": [
+                "alpha",
+                "apiKeyEnv"
+              ],
+              "value": "ARK_SYNTHETIC_LEGACY"
+            }
+          ],
+          "expectedRevision": 1,
+          "credential": {
+            "op": "set",
+            "ref": "ARK_SYNTHETIC_LEGACY",
+            "valueDigest": "a4ab66c022d4214fa7cb06addd8d796a90403b4e10671695566a0cb43a6056be"
+          }
+        },
+        "phase": "prepared"
+      }
+    },
+    {
+      "kind": "grant",
+      "payload": {
+        "version": 1,
+        "transactionId": "22222222-2222-4222-8222-222222222222",
+        "digest": "ee41d15f82571f0fc32b3977476e4dc1e812b1b6e1f101d24cf99a1283f4687c",
+        "provider": "alpha",
+        "settingsNs": "legacy-fixture",
+        "plan": {
+          "settingsPath": [
+            "alpha"
+          ],
+          "ops": [
+            {
+              "op": "set",
+              "path": [
+                "alpha",
+                "apiKeyEnv"
+              ],
+              "value": "ARK_SYNTHETIC_LEGACY"
+            }
+          ],
+          "expectedRevision": 1,
+          "credential": {
+            "op": "set",
+            "ref": "ARK_SYNTHETIC_LEGACY",
+            "valueDigest": "a4ab66c022d4214fa7cb06addd8d796a90403b4e10671695566a0cb43a6056be"
+          }
+        },
+        "phase": "credential-staged"
+      }
+    },
+    {
+      "kind": "grant",
+      "payload": {
+        "version": 1,
+        "transactionId": "22222222-2222-4222-8222-222222222222",
+        "digest": "ee41d15f82571f0fc32b3977476e4dc1e812b1b6e1f101d24cf99a1283f4687c",
+        "provider": "alpha",
+        "settingsNs": "legacy-fixture",
+        "plan": {
+          "settingsPath": [
+            "alpha"
+          ],
+          "ops": [
+            {
+              "op": "set",
+              "path": [
+                "alpha",
+                "apiKeyEnv"
+              ],
+              "value": "ARK_SYNTHETIC_LEGACY"
+            }
+          ],
+          "expectedRevision": 1,
+          "credential": {
+            "op": "set",
+            "ref": "ARK_SYNTHETIC_LEGACY",
+            "valueDigest": "a4ab66c022d4214fa7cb06addd8d796a90403b4e10671695566a0cb43a6056be"
+          }
+        },
+        "phase": "settings-applied"
+      }
+    },
+    {
+      "kind": "grant",
+      "payload": {
+        "version": 1,
+        "transactionId": "22222222-2222-4222-8222-222222222222",
+        "digest": "ee41d15f82571f0fc32b3977476e4dc1e812b1b6e1f101d24cf99a1283f4687c",
+        "provider": "alpha",
+        "settingsNs": "legacy-fixture",
+        "plan": {
+          "settingsPath": [
+            "alpha"
+          ],
+          "ops": [
+            {
+              "op": "set",
+              "path": [
+                "alpha",
+                "apiKeyEnv"
+              ],
+              "value": "ARK_SYNTHETIC_LEGACY"
+            }
+          ],
+          "expectedRevision": 1,
+          "credential": {
+            "op": "set",
+            "ref": "ARK_SYNTHETIC_LEGACY",
+            "valueDigest": "a4ab66c022d4214fa7cb06addd8d796a90403b4e10671695566a0cb43a6056be"
+          }
+        },
+        "phase": "credential-applied"
+      }
+    },
+    {
+      "kind": "grant",
+      "payload": {
+        "version": 1,
+        "transactionId": "22222222-2222-4222-8222-222222222222",
+        "digest": "ee41d15f82571f0fc32b3977476e4dc1e812b1b6e1f101d24cf99a1283f4687c",
+        "provider": "alpha",
+        "settingsNs": "legacy-fixture",
+        "plan": {
+          "settingsPath": [
+            "alpha"
+          ],
+          "ops": [
+            {
+              "op": "set",
+              "path": [
+                "alpha",
+                "apiKeyEnv"
+              ],
+              "value": "ARK_SYNTHETIC_LEGACY"
+            }
+          ],
+          "expectedRevision": 1,
+          "credential": {
+            "op": "set",
+            "ref": "ARK_SYNTHETIC_LEGACY",
+            "valueDigest": "a4ab66c022d4214fa7cb06addd8d796a90403b4e10671695566a0cb43a6056be"
+          }
+        },
+        "phase": "done",
+        "outcome": "committed"
+      }
+    }
+  ]
+}

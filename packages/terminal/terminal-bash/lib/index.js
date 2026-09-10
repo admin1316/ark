@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { TerminalBackendCleanupError, TerminalError } from "@deepseek-ai/dsh-terminal";
 import { effectiveSandboxMode } from "@deepseek-ai/dsh-sandbox-policy";
 import { ENCODING_PREAMBLE, resolvePwshPath } from "@deepseek-ai/dsh-pwsh-local";
@@ -231,7 +232,8 @@ function normalizeTerminalText(text) {
 }
 //#endregion
 //#region lib/types/session.js
-/** Persistent PTY session over the subprocess seam's terminal primitive. */
+/** Persistent PTY session with bounded output, readiness, and terminal-protocol replies. */
+const { Terminal: HeadlessTerminal } = createRequire(import.meta.url)("@xterm/headless");
 function utf8Tail(text, maxBytes) {
 	if (Buffer.byteLength(text) <= maxBytes) return {
 		text,
@@ -361,6 +363,9 @@ var LocalPtySession = class {
 	motd = "";
 	pid;
 	decoder = new TextDecoder();
+	/** Protocol state only; the sanitizer and bounded buffers own returned text. */
+	emulator;
+	emulatorData;
 	sanitizer;
 	scrollback;
 	outputEnded = Promise.withResolvers();
@@ -383,10 +388,34 @@ var LocalPtySession = class {
 	closing = false;
 	closePromise;
 	transportFailure;
+	emulatorWrites = Promise.resolve();
+	emulatorWriteDone;
+	emulatorBuffer = "";
+	emulatorWriting = false;
+	responseWrites = Promise.resolve();
+	pendingResponseWrites = 0;
+	emulatorClosed = false;
 	constructor(terminal, config) {
 		this.terminal = terminal;
 		this.config = config;
 		this.pid = terminal.pid;
+		this.emulator = new HeadlessTerminal({
+			cols: config.cols,
+			rows: config.rows,
+			scrollback: 0
+		});
+		this.emulatorData = this.emulator.onData((data) => {
+			this.pendingResponseWrites += 1;
+			const response = this.responseWrites.then(async () => {
+				await this.terminal.write(data);
+			});
+			this.responseWrites = response.then(() => {
+				this.finishResponseWrite();
+			}, (error) => {
+				this.finishResponseWrite();
+				if (!this.emulatorClosed && !this.closing) this.onTransportFailure(error);
+			});
+		});
 		this.sanitizer = new TerminalSanitizer(config.maxReadBytes);
 		this.scrollback = new BoundedTextBuffer(config.scrollbackMaxBytes, config.scrollbackLines);
 		terminal.output.on("data", this.onTerminalData);
@@ -437,7 +466,7 @@ var LocalPtySession = class {
 			this.activeAbort = () => request.signal?.removeEventListener("abort", onAbort);
 		}
 		this.activeDeadlineTimer = setTimeout(() => {
-			if (this.active === operation) this.settleActive("timeout", this.activeWrite !== void 0 || this.interrupting === operation);
+			if (this.active === operation) this.settleActive("timeout", this.activeWrite !== void 0 || this.interrupting === operation || this.protocolWorkPending());
 		}, this.config.timeoutMs);
 		this.beginSend(operation, request);
 		return operation;
@@ -445,8 +474,13 @@ var LocalPtySession = class {
 	async beginSend(operation, request) {
 		let foreground;
 		try {
+			if (this.protocolWorkPending()) await this.drainTerminalProtocol();
+			const emulatorWrites = this.emulatorWrites;
+			const responseWrites = this.responseWrites;
 			foreground = await this.terminal.inspectForeground();
+			if (this.protocolStateChanged(emulatorWrites, responseWrites)) foreground = await this.inspectForegroundAfterProtocol();
 		} catch (error) {
+			if (this.protocolWorkPending()) await this.drainTerminalProtocol();
 			if (this.active === operation && !this.closing && this.interrupting !== operation) this.failActive(error);
 			return;
 		}
@@ -466,7 +500,7 @@ var LocalPtySession = class {
 			}
 			if (operation.cancelRequested) return;
 			if (this.active === operation && operation.settled) {
-				this.clearActive();
+				this.releaseSettledActive();
 				return;
 			}
 			if (this.active === operation && !this.closing) {
@@ -474,7 +508,7 @@ var LocalPtySession = class {
 				this.schedulePoll(operation);
 			}
 		} catch (error) {
-			if (this.active === operation && !this.closing) if (operation.settled) this.clearActive();
+			if (this.active === operation && !this.closing) if (operation.settled) this.releaseSettledActive();
 			else this.failActive(error);
 		}
 	}
@@ -534,14 +568,18 @@ var LocalPtySession = class {
 	}
 	onTerminalData = (chunk) => {
 		const bytes = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
-		this.onData(this.decoder.decode(bytes, { stream: true }));
+		const data = this.decoder.decode(bytes, { stream: true });
+		this.queueEmulatorData(data);
+		this.onData(data);
 	};
 	onTerminalEnd = () => {
 		this.onData(this.decoder.decode());
 		this.appendOutput(this.sanitizer.flush());
+		this.closeEmulator();
 		this.outputEnded.resolve();
 	};
 	onTerminalError = (error) => {
+		this.closeEmulator();
 		this.onTransportFailure(error);
 		this.outputEnded.resolve();
 	};
@@ -578,6 +616,7 @@ var LocalPtySession = class {
 			exitCode: null,
 			signal: null
 		};
+		this.closeEmulator();
 		this.failActive(failure);
 		this.terminal.terminate().catch(() => {});
 	}
@@ -603,7 +642,11 @@ var LocalPtySession = class {
 				this.settleActive("session_exit");
 				return;
 			}
-			const foreground = await this.terminal.inspectForeground();
+			if (this.protocolWorkPending()) await this.drainTerminalProtocol();
+			const emulatorWrites = this.emulatorWrites;
+			const responseWrites = this.responseWrites;
+			let foreground = await this.terminal.inspectForeground();
+			if (this.protocolStateChanged(emulatorWrites, responseWrites)) foreground = await this.inspectForegroundAfterProtocol();
 			if (this.active !== operation || this.closing || this.interrupting === operation) return;
 			const idleFor = Date.now() - this.lastOutputAt;
 			if (this.promptSeen && foreground !== void 0 && this.shellPgid === void 0) this.shellPgid = foreground.processGroupId;
@@ -621,12 +664,98 @@ var LocalPtySession = class {
 			const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0;
 			if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) this.settleActive("inferred_idle");
 		} catch (error) {
+			if (this.protocolWorkPending()) await this.drainTerminalProtocol();
 			if (this.active === operation && !this.closing && this.interrupting !== operation) this.failActive(error);
 		} finally {
 			this.polling = false;
 			const active = this.active;
 			if (active !== void 0 && this.pollingReady === active) this.schedulePoll(active);
 		}
+	}
+	/** Wait until generated replies reach the provider before another send can publish. */
+	async drainTerminalProtocol() {
+		for (;;) {
+			const emulatorWrites = this.emulatorWrites;
+			await emulatorWrites;
+			const responseWrites = this.responseWrites;
+			await responseWrites;
+			if (emulatorWrites === this.emulatorWrites && responseWrites === this.responseWrites && !this.protocolWorkPending()) return;
+		}
+	}
+	/** Sample foreground state only after protocol replies are quiet for the entire inspection. */
+	async inspectForegroundAfterProtocol() {
+		for (;;) {
+			if (this.protocolWorkPending()) await this.drainTerminalProtocol();
+			const emulatorWrites = this.emulatorWrites;
+			const responseWrites = this.responseWrites;
+			const foreground = await this.terminal.inspectForeground();
+			if (!this.protocolStateChanged(emulatorWrites, responseWrites)) return foreground;
+		}
+	}
+	protocolStateChanged(emulatorWrites, responseWrites) {
+		return emulatorWrites !== this.emulatorWrites || responseWrites !== this.responseWrites || this.protocolWorkPending();
+	}
+	protocolWorkPending() {
+		return this.emulatorWriteDone !== void 0 || this.pendingResponseWrites > 0;
+	}
+	queueEmulatorData(data) {
+		if (this.emulatorClosed) return;
+		this.emulatorBuffer += data;
+		if (this.emulatorWriteDone === void 0) {
+			const idle = Promise.withResolvers();
+			this.emulatorWrites = idle.promise;
+			this.emulatorWriteDone = () => {
+				idle.resolve(void 0);
+			};
+		}
+		this.pumpEmulator();
+	}
+	pumpEmulator() {
+		if (this.emulatorWriting || this.emulatorClosed) return;
+		if (this.emulatorBuffer.length === 0) {
+			const done = this.emulatorWriteDone;
+			this.emulatorWriteDone = void 0;
+			done?.();
+			this.releaseSettledActive();
+			return;
+		}
+		const data = this.emulatorBuffer;
+		this.emulatorBuffer = "";
+		this.emulatorWriting = true;
+		try {
+			this.emulator.write(data, () => {
+				this.emulatorWriting = false;
+				this.pumpEmulator();
+			});
+		} catch (error) {
+			this.emulatorWriting = false;
+			this.emulatorBuffer = "";
+			const done = this.emulatorWriteDone;
+			this.emulatorWriteDone = void 0;
+			done?.();
+			this.releaseSettledActive();
+			if (!this.closing) this.onTransportFailure(error);
+		}
+	}
+	finishResponseWrite() {
+		this.pendingResponseWrites -= 1;
+		this.releaseSettledActive();
+	}
+	releaseSettledActive() {
+		const operation = this.active;
+		if (operation === void 0 || !operation.settled || this.activeWrite !== void 0 || this.interrupting === operation || this.protocolWorkPending()) return;
+		this.clearActive();
+	}
+	closeEmulator() {
+		if (this.emulatorClosed) return;
+		this.emulatorClosed = true;
+		this.emulatorBuffer = "";
+		this.emulatorWriting = false;
+		const done = this.emulatorWriteDone;
+		this.emulatorWriteDone = void 0;
+		done?.();
+		this.emulatorData.dispose();
+		this.emulator.dispose();
 	}
 	settleActive(waitReason, retainOwnership = false) {
 		const operation = this.active;
@@ -681,7 +810,7 @@ var LocalPtySession = class {
 		} finally {
 			if (this.interrupting === operation) this.interrupting = void 0;
 		}
-		if (this.active === operation && operation.settled) this.clearActive();
+		if (this.active === operation && operation.settled) this.releaseSettledActive();
 		else if (this.active === operation && !this.closing) {
 			this.pollingReady = operation;
 			this.schedulePoll(operation, 0);
@@ -689,6 +818,7 @@ var LocalPtySession = class {
 	}
 	async closeOnce(reason) {
 		this.stopPolling();
+		this.closeEmulator();
 		try {
 			await this.terminal.terminate();
 		} catch (error) {
@@ -776,7 +906,8 @@ function spawnArgv(ctx, config, policy) {
 		mode: policy.mode
 	}).argv;
 }
-async function startupSession(session, dialect, signal) {
+async function startupSession(session, dialect, timeoutMs, signal) {
+	let startupOperation;
 	const start = async () => {
 		if (dialect === "bash") {
 			await session.initialize(signal);
@@ -785,36 +916,44 @@ async function startupSession(session, dialect, signal) {
 		let viewport = "";
 		for (;;) {
 			const first = viewport.length === 0;
-			const result = await session.startSend({
+			startupOperation = session.startSend({
 				text: first ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP : "",
 				submit: first,
 				...signal !== void 0 ? { signal } : {}
-			}).done;
+			});
+			const result = await startupOperation.done;
 			if (result.waitReason === "session_exit") throw new Error("PTY shell exited during startup");
 			if (result.waitReason === "timeout") throw new Error("PTY shell did not reach readiness before startup timeout");
 			viewport = result.viewport;
-			const scrollback = session.read({
-				offset: 0,
-				count: 20
-			}).text;
-			if (viewport.includes("dsh> ") || scrollback.includes("dsh> ")) break;
+			if (result.waitReason === "stdin_read") break;
 		}
 		session.motd = viewport;
 	};
-	if (signal === void 0) {
-		await start();
-		return;
+	const races = [];
+	let onAbort;
+	if (signal !== void 0) {
+		const aborted = Promise.withResolvers();
+		onAbort = () => {
+			aborted.reject(signal.reason);
+		};
+		signal.addEventListener("abort", onAbort, { once: true });
+		races.push(aborted.promise);
 	}
-	const aborted = Promise.withResolvers();
-	const onAbort = () => {
-		aborted.reject(signal.reason);
-	};
-	signal.addEventListener("abort", onAbort, { once: true });
+	let deadlineTimer;
+	if (dialect === "pwsh") {
+		const deadline = Promise.withResolvers();
+		deadlineTimer = setTimeout(() => {
+			startupOperation?.cancel();
+			deadline.reject(/* @__PURE__ */ new Error("PTY shell did not reach readiness before startup timeout"));
+		}, timeoutMs);
+		races.push(deadline.promise);
+	}
 	try {
-		signal.throwIfAborted();
-		await Promise.race([start(), aborted.promise]);
+		signal?.throwIfAborted();
+		await Promise.race([start(), ...races]);
 	} finally {
-		signal.removeEventListener("abort", onAbort);
+		if (deadlineTimer !== void 0) clearTimeout(deadlineTimer);
+		if (signal !== void 0 && onAbort !== void 0) signal.removeEventListener("abort", onAbort);
 	}
 }
 /** Local shell backend registered under the configured type. */
@@ -848,7 +987,7 @@ var BashTerminalBackend = class {
 		});
 		const session = this.createSession(terminal, this.config);
 		try {
-			await startupSession(session, this.config.shellDialect, spec.signal);
+			await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal);
 			return session;
 		} catch (error) {
 			try {

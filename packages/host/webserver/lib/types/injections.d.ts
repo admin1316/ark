@@ -33,6 +33,11 @@ export type IndexInjection =
     placement: IndexInjectionPlacement;
     src: string;
 }
+/** Fetch a classic script early without executing it. */
+ | {
+    kind: 'script-preload';
+    src: string;
+}
 /** A `<style>` element in the head. `text` must not contain `</style`, which would close the element early. */
  | {
     kind: 'style';

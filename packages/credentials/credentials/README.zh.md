@@ -46,6 +46,8 @@ await ctx.credentials.deleteRecord(key)                  // no-op when absent
 
 `modifyRecord` 是唯一写路径，因为正确的写入依赖当前值：刷新 token 是「读—决定—替换」，变更函数必须看到写入取得独占那一刻的记录。独占跨进程成立，这正是防止两个进程同时轮换同一个 refresh token、丢掉先写那一个的机制。变更函数返回 `undefined` 表示保持原状，不写盘也不发通知。
 
+`set` 和 `unset` 接受可选的 `CredentialCondition`：值的 SHA-256 摘要（`null` 表示不存在），以及可选的来源。`credentialCondition(resolveResult)` 捕获该条件而不保留秘密。提供方在与普通引用写入相同的独占区间内检查条件，不匹配时以 `CredentialConflictError` 拒绝。`modifyRecord` 可以要求引用条件，并把独占保持到记录提交；其回调不得在该提供方上排队写入。
+
 `listRecords` 存在，尽管引用那一半刻意不提供枚举。引用可以从 settings schema（`apiKeyEnv` 字段）被发现；记录没有这条路径，无法枚举的界面就无法显示用户已授权了什么，也找不到已卸载插件留下的孤儿。
 
 `grant` 记录的 `payload` 是不透明的：seam 从不读取、校验或重塑它。唯一约束是它能经受 JSON 往返，提供方在写入与读出两个方向都强制这一点——存储无法逐字读回的值会被拒绝，而不是有损地存下。

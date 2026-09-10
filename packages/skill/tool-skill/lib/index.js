@@ -174,7 +174,7 @@ function apply(ctx, config = {}) {
 		}
 		if (injections.length === 0) return decision;
 		return {
-			kind: "enter",
+			...decision,
 			messages: [...decision.messages, ...injections]
 		};
 	});
@@ -198,17 +198,17 @@ function apply(ctx, config = {}) {
 		const history = catalogHistory(agent);
 		const existing = catalogMessage(decision.messages);
 		if (history.visibleDigest === digest) return existing === void 0 ? decision : {
-			kind: "enter",
+			...decision,
 			messages: decision.messages.filter((message) => message.id !== existing.message.id)
 		};
 		if (existing !== void 0 && digestCatalogEntries(existing.entries) === digest) return decision;
 		if (!history.published && skills.length === 0) return existing === void 0 ? decision : {
-			kind: "enter",
+			...decision,
 			messages: decision.messages.filter((message) => message.id !== existing.message.id)
 		};
 		const catalog = history.published ? renderCatalogUpdate(entries) : renderCatalogMessage(entries);
 		return {
-			kind: "enter",
+			...decision,
 			messages: existing === void 0 ? [...decision.messages, catalog] : decision.messages.map((message) => message.id === existing.message.id ? catalog : message)
 		};
 	});
@@ -334,7 +334,6 @@ function catalogMessage(messages) {
 		};
 	}
 }
-/** Normalized, length-bounded description exactly as the catalog publishes it (unescaped). */
 function catalogDescription(value, maxLength) {
 	const normalized = value.replaceAll(/\s+/g, " ").trim();
 	return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`;

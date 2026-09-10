@@ -21,7 +21,7 @@
       "path": "../../preset/agent-presets"
     },
     {
-      "path": "../../api/remotes"
+      "path": "../../api/remotes/tsconfig.host.json"
     },
     {
       "path": "../../attachment/attachment"
@@ -55,6 +55,9 @@
     },
     {
       "path": "../../session/session-title"
+    },
+    {
+      "path": "../../skill/skill"
     },
     {
       "path": "../../core/scope"

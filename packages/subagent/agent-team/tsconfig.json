@@ -1,0 +1,57 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../core/agent-loop"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../../session/session-persistence-jsonl"
+    },
+    {
+      "path": "../../session/session-persistence-sqlite"
+    },
+    {
+      "path": "../../test-support/agent-loop-testkit"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../subagent"
+    },
+    {
+      "path": "../subagent-fork-in-process"
+    },
+    {
+      "path": "../subagent-spawn-in-process"
+    }
+  ]
+}

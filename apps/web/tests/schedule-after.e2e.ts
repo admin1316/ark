@@ -6,7 +6,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
-import { ToolCallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -121,7 +121,7 @@ class BrowserZoneAtAdapter extends LlmAdapter {
       this.selectedAt = localAt(target, AT_BROWSER_ZONE)
       this.scheduledAt = new Date(target).toISOString()
       const argumentsJson = JSON.stringify({ prompt: AT_PROMPT, at: this.selectedAt })
-      const callId = ToolCallId('schedule-at-browser-zone')
+      const callId = CallId('schedule-at-browser-zone')
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield {
         type: 'tool-call-delta',
@@ -258,7 +258,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     await workspace.attachSession(afterHandle.agent.id)
     const afterCreated = await scaffold.ctx.tools.execute({
       signal: AbortSignal.timeout(10_000),
-      callId: ToolCallId('schedule-after-create'),
+      callId: CallId('schedule-after-create'),
       name: 'schedule_create',
       arguments: { prompt: AFTER_PROMPT, after_seconds: 1 },
       agent: afterHandle.agent,
@@ -314,7 +314,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     await workspace.attachSession(everyHandle.agent.id)
     const everyListed = await scaffold.ctx.tools.execute({
       signal: AbortSignal.timeout(10_000),
-      callId: ToolCallId('schedule-every-list'),
+      callId: CallId('schedule-every-list'),
       name: 'schedule_list',
       arguments: {},
       agent: everyHandle.agent,

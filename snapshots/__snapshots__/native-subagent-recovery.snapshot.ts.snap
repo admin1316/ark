@@ -1,0 +1,74 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Native child retries preserve one durable message and one later model turn through Loader 1`] = `
+{
+  "catalog": {
+    "entries": [
+      {
+        "activity": "inactive",
+        "hasChildren": false,
+        "id": "<child-id>",
+        "kind": "child",
+        "label": "Native worker",
+        "mode": "continuable",
+      },
+    ],
+    "parentAvailable": true,
+  },
+  "coldRetry": {
+    "duplicate": true,
+    "durable": true,
+    "invocationId": "11111111-1111-4111-8111-111111111111",
+    "messageId": "<message-id>",
+  },
+  "delivered": [
+    {
+      "content": [
+        {
+          "text": "one durable Native request",
+          "type": "text",
+        },
+      ],
+      "source": {
+        "form": "relay",
+        "invocationId": "11111111-1111-4111-8111-111111111111",
+        "kind": "subagent-prompt",
+        "senderSessionId": "<parent-id>",
+      },
+    },
+  ],
+  "modelTurns": 2,
+  "providers": {
+    "providers": [
+      {
+        "active": true,
+        "displayName": "mock",
+        "provider": "mock",
+        "settingsNs": "",
+        "settingsPath": [],
+      },
+    ],
+  },
+  "receipts": [
+    {
+      "duplicate": false,
+      "durable": true,
+      "invocationId": "11111111-1111-4111-8111-111111111111",
+      "messageId": "<message-id>",
+    },
+    {
+      "duplicate": true,
+      "durable": true,
+      "invocationId": "11111111-1111-4111-8111-111111111111",
+      "messageId": "<message-id>",
+    },
+    {
+      "duplicate": true,
+      "durable": true,
+      "invocationId": "11111111-1111-4111-8111-111111111111",
+      "messageId": "<message-id>",
+    },
+  ],
+  "sameMessage": true,
+}
+`;

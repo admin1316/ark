@@ -48,7 +48,12 @@ async function harness(options: HarnessOptions = {}) {
   const list = vi.fn(async () => listed)
   const load = vi.fn(() => { throw new Error('event bodies must not be loaded') })
   const inspect = vi.fn(() => { throw new Error('event bodies must not be inspected') })
-  ctx.provide('sessionPersistence', { list, load, inspect } as never)
+  const deleteSession = vi.fn(async (id: SessionId) => {
+    const found = listed.some(item => item.id === id)
+    listed = listed.filter(item => item.id !== id)
+    return found
+  })
+  ctx.provide('sessionPersistence', { list, load, inspect, delete: deleteSession } as never)
 
   if (options.sessionStore === true) {
     await ctx.plugin(SessionStore)
@@ -75,6 +80,7 @@ async function harness(options: HarnessOptions = {}) {
     list,
     load,
     inspect,
+    deleteSession,
     setSessions: (headers: SessionHeader[]) => { listed = headers },
   }
 }
@@ -940,5 +946,86 @@ describe('registry-global session archive', () => {
     )
     const upgraded = await harness({ pool: legacy })
     expect(upgraded.registry.archivedSessionIds).toEqual([])
+  })
+})
+
+describe('native Workspace restoration', () => {
+  it('reports canonical creation atomically and restores rename/cancellation responses', async () => {
+    const dir = await makeDir('native-create')
+    const run = await harness()
+    const [first, second] = await Promise.all([run.registry.createOrResolve(dir), run.registry.createOrResolve(dir)])
+    expect([first.created, second.created]).toEqual([true, false])
+    expect(first.workspace).toBe(second.workspace)
+    const signal = new AbortController().signal
+    await expect(run.registry.remoteExportRename({ workspaceId: first.workspace.id, title: ' Renamed ' }, signal))
+      .resolves.toMatchObject({ ok: true, value: { workspace: { title: 'Renamed' } } })
+    await expect(run.registry.remoteExportRename({ workspaceId: first.workspace.id, title: ' ' }, signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'arguments-invalid' } })
+    const cancelled = new AbortController()
+    cancelled.abort()
+    expect(run.registry.remoteExportList(cancelled.signal)).toMatchObject({ ok: false, error: { code: 'cancelled' } })
+  })
+
+  it('deletes descendants first and fences both pending and stale publication attempts', async () => {
+    const dir = await makeDir('native-delete')
+    const root = header('root', dir)
+    const child: SessionHeader = { ...header('child', dir), parentSession: root.id }
+    const grandchild: SessionHeader = { ...header('grandchild', dir), parentSession: child.id }
+    const other = header('unrelated', dir)
+    const run = await harness({ sessions: [root, child, grandchild, other] })
+    const generation = run.registry.sessionAdmissionRevision(child.id)
+    await run.registry.archiveSession(root.id)
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const remove = run.deleteSession.getMockImplementation()!
+    run.deleteSession.mockImplementationOnce(async (id) => {
+      entered.resolve(undefined)
+      await release.promise
+      return remove(id)
+    })
+    const notifications: SessionId[] = []
+    run.ctx.on('workspace/session-deleted', (id) => { notifications.push(id) })
+    const deleting = run.registry.deleteArchivedSession(root.id)
+    await entered.promise
+    expect(() => run.registry.assertSessionAdmission(child.id, generation)).toThrow('permanent deletion raced')
+    expect(notifications).toEqual([])
+    release.resolve(undefined)
+    await deleting
+    expect(run.deleteSession.mock.calls.map(([id]) => id)).toEqual([grandchild.id, child.id, root.id])
+    expect(notifications).toEqual([grandchild.id, child.id, root.id])
+    expect(run.registry.archivedSessionIds).toEqual([])
+    expect(run.registry.list()[0]?.sessionIds).toEqual([other.id])
+    expect(() => run.registry.assertSessionAdmission(child.id, generation)).toThrow('permanent deletion raced')
+  })
+
+  it('retains retry evidence after a partial delete and clears every affected account on retry', async () => {
+    const dir = await makeDir('native-delete-retry')
+    const root = header('root', dir)
+    const child: SessionHeader = { ...header('child', dir), parentSession: root.id }
+    const run = await harness({ sessions: [root, child] })
+    await run.registry.archiveSession(root.id)
+    const remove = run.deleteSession.getMockImplementation()!
+    run.deleteSession.mockImplementationOnce(remove).mockRejectedValueOnce(new Error('storage unavailable'))
+    await expect(run.registry.deleteArchivedSession(root.id)).rejects.toThrow('storage unavailable')
+    expect(run.registry.archivedSessionIds).toEqual([root.id])
+    expect((await run.list()).map(item => item.id)).toEqual([root.id])
+    await run.registry.deleteArchivedSession(root.id)
+    expect(run.registry.archivedSessionIds).toEqual([])
+    expect(run.registry.list()[0]?.sessionIds).toEqual([])
+  })
+
+  it('rejects lineage cycles before touching logs and restores archive membership without changing accounts', async () => {
+    const dir = await makeDir('native-delete-cycle')
+    const root: SessionHeader = { ...header('root', dir), parentSession: SessionId('child') }
+    const child: SessionHeader = { ...header('child', dir), parentSession: root.id }
+    const run = await harness({ sessions: [root, child] })
+    const account = [...run.registry.list()[0]!.sessionIds]
+    await expect(run.registry.deleteArchivedSession(root.id)).rejects.toMatchObject({ reason: 'not-archived' })
+    await run.registry.archiveSession(root.id)
+    await expect(run.registry.deleteArchivedSession(root.id)).rejects.toThrow('retained lineage cycle')
+    expect(run.deleteSession).not.toHaveBeenCalled()
+    await run.registry.unarchiveSession(root.id)
+    expect(run.registry.archivedSessionIds).toEqual([])
+    expect(run.registry.list()[0]?.sessionIds).toEqual(account)
   })
 })

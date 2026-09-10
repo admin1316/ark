@@ -42,6 +42,8 @@ await ctx.credentials.deleteRecord(key)                  // no-op when absent
 
 `modifyRecord` is the only write path because a correct write depends on the current value: a token refresh is read-decide-replace, and the mutation must see the record as it stands at the moment the write is exclusive. Exclusion holds across processes, which is what stops two of them rotating one refresh token and losing whichever wrote first. Returning `undefined` from the mutation leaves the entry untouched and announces nothing.
 
+`set` and `unset` accept an optional `CredentialCondition`: a SHA-256 value digest, or `null` for absence, plus an optional source. `credentialCondition(resolveResult)` captures that condition without retaining the secret. A provider checks it under the same exclusion as ordinary reference writes and rejects a mismatch with `CredentialConflictError`. `modifyRecord` can require reference conditions under exclusion held through the record commit; its callback must not enqueue writes on that provider.
+
 `listRecords` exists even though the reference half has no enumeration by design. References are discovered from settings schemas (`apiKeyEnv` fields); records have no such path, so a surface that cannot list them cannot show what a user is authorized for, nor find an orphan left by an uninstalled plugin.
 
 A `grant` record's `payload` is opaque: the seam never reads, validates, or reshapes it. The one constraint is that it survives a JSON round trip, which the provider enforces on the way in and on the way out — a value the store could not read back exactly as written is refused rather than stored lossily.

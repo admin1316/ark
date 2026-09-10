@@ -41,8 +41,6 @@ export declare class ScheduleRuntime {
     /** Cancel the currently armed timer, if any. */
     private clearTimer;
     /** Arm one bounded timer segment; every wake rechecks the wall clock. */
-    /** Backoff before retrying a framing/followup failure so a due reminder is not silently lost. */
-    private static readonly DISPATCH_RETRY_DELAY_MS;
     private arm;
     /** Await one public idle boundary without holding admission or creating a retry timer. */
     private waitForIdle;

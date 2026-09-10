@@ -65,6 +65,8 @@ scope.update({ density: 'compact' })   // merges into the user section and persi
 
 ### 写入值
 
+`settle(ns, revision)` 等待某个精确持久化修订对应的所有者回调，并报告它们是否成功。持久化本身不等于生效。期间发生新写入或所有者释放会拒绝该等待。卸载 namespace 会保留其名称，直到已接收的写入和已启动的回调完成；超时的所有者仍保留该名称。已卸载的 scope 不能通过替换后的注册写入。
+
 `update(ns, patch)` 把普通对象 patch 深合并进用户分节——绝不进 `base`——校验解析候选值、经提供方持久化后提交。`replace(ns, section)` 整体替换用户分节，是删除/重置路径：`replace({})` 重新继承 `base` 与 schema 默认值。`mutate(ns, ops)` 在写入排到队首那一刻的分节上按序施加 `{ op: 'set' | 'unset', path }` 编辑——这是持有不完整（例如脱敏后）视图的调用方的删除路径，因为按协议接口返回的内容重建分节再整体替换，会删掉协议从未回传的每个字段。
 
 每次写入都会拒绝与 JSON 不兼容的数据（`Date`、`Map`、`BigInt`、非有限数或循环引用会在任何内容持久化前以 `$` 为根的路径报错）、拒绝只读提供方上的写入，并可接受可选的 `expectedRevision`：把 descriptor 中的 `revision` 传回，namespace 已越过该值时写入会被 `SettingsConflictError` 拒绝，而不是覆盖先完成写入的一方。
@@ -74,6 +76,8 @@ scope.update({ density: 'compact' })   // merges into the user section and persi
 `describe()` 为每个已注册 namespace 返回一条 descriptor：序列化 schema、解析值、分离的 `base` 与 `user` 层（字段出现在 `user` 中即标记为用户覆盖）、生效时机与 namespace 的 revision。每个协议接口都必须传入 `redactSecrets: true`：它从每一层剥离 `role('secret')` 字段，并把它们枚举为 `{ path, set }` slot，让页面可以渲染只写输入而不接触任何机密。`documentPath` 与 `prepareDocument()` 在提供方拥有用户可编辑文件时把它暴露给原生编辑器。
 
 ### 事件与失败
+
+原生 `settings/*` Remote 方法归此提供方所有。读取和写入回复均为脱敏后的独立副本，schema 元数据中的机密默认值也会移除。`openDocument` 接受取消信号，不接受调用方指定的路径，只打开提供方未发生变化的绝对文档路径。领域事务所有者可以保护 namespace，拒绝通用 Remote 写入，同时保留同进程写入能力。写入失败会保留修订冲突信息，但不会暴露可能含有机密的提供方诊断。
 
 `settings/updated (ns, next, prev, source)` 在每次已提交变更后触发——进程内写入（`source: 'update'`）或外部观察到的编辑（`source: 'provider'`）——解析值深相等时绝不触发。`settings/document-updated (ns, revision)` 在原始用户分节发生变化时触发，即使解析值没有变——已打开的编辑器正需要它来得知字段从继承变为覆盖。schema 拒绝的存量分节在重载时保留该 namespace 的最后可用值并告警；注册时同样的失败会直接拒绝注册。
 
@@ -110,7 +114,7 @@ scope.update({ density: 'compact' })   // merges into the user section and persi
 
 ### 变更检测与事件
 
-`commit` 用 seam 的 `deepEqualJson` 谓词比较解析值，并逐监听器扇出 `settings/updated`。`bumpRevision` 比较原始分节并携带新 revision 发出 `settings/document-updated`；它与解析值检查相互独立。两个扇出以相同方式隔离监听器异常。
+`bumpRevision` 比较原始分节并绑定精确修订的完成结果。`commit` 先安装解析值、排入所有者回调，再通知 `settings/document-updated`；仅在解析值变化时发出 `settings/updated`。两种通知都隔离监听器失败，并在重入发布后停止投递已被替代的状态。
 
 ### 客户端安全类型
 
@@ -149,7 +153,7 @@ scope.update({ density: 'compact' })   // merges into the user section and persi
 这些限制说明本服务何时不合适或需要特别注意。它们是当前包约束，不是任务积压。
 
 - **单一用户层**——解析只认识 schema 默认值、一个组合 `base` 与一个用户文档；它不记录每个解析值由哪一层提供。
-- **`redactSecrets` 并非一条可被证明的协议边界**——遍历器只跟随 `object`/`dict`/`array` 容器，因此只能经由 union、intersection 或 transform 抵达的 `role('secret')` 字段会被原样返回，且 `secrets` 列表为空；序列化 schema 还会把 secret 字段的默认值带给每个客户端。两种情况都不会被拒绝；机密无法经由被遍历的容器抵达的 schema，绝不可注册到暴露于协议的 namespace 上。fail-closed 的 `describeForWire()`——拒绝自己无法证明安全的 schema，并对序列化封装与错误文本做净化——是暂缓的答案。
+- **机密 schema 需要可证明的结构**——支持 object、dict、array、tuple、union 和 intersection 关系。字典键 schema 参与引用发现；含机密的键会被拒绝，避免暴露键名。解析值、被覆盖的层及 schema 默认值中的错误形状机密容器都会被拒绝，即使更高层已让生效配置合法。所有分支都会贡献机密位置，因此存在歧义的分支可能隐藏原本公开的字段。机密数组位置变为 `null`。含机密的不支持的 transform、无法解析的 schema 引用及机密字面量 schema 会被拒绝，不会穿过 Remote。所有者必须声明机密；任意未标记字符串无法被自动识别为凭据。
 - **跨进程并发由提供方定义**——服务仅在进程内按 namespace 串行写入；跨进程并发按提供方行为收敛（文件提供方在写锁下读-改-写，因此并发写入者不会丢掉彼此的 namespace，同 namespace 冲突按后写胜出解决）。
 
 <a id="dev-note"></a>
@@ -158,6 +162,6 @@ scope.update({ density: 'compact' })   // merges into the user section and persi
 <details>
 <summary>维护者的工作上下文——点击展开</summary>
 
-本开发备注是维护者的工作上下文：尚未决定的开放设计方向。它明确非权威——已发布的行为、限制与已接受的理由见上文各节与包代码。代码 TODO 中记录的开放方向：把公开的 `ns` 参数更名为 `namespace`（API、提供方约定、实现、测试与消费方同步）；注册释放时停用所有 watcher 并等待其 tail，让回调不越过 registrant fiber 存活；替换注册从持久化分节重新解析，让进行中的旧写入不会把它留成陈旧值；改用属性安全的对象构造，让 `__proto__` 这类合法 JSON 键保持为自有数据。fail-closed 的 `describeForWire()` 净化器是上文脱敏限制的暂缓答案。
+此非权威章节记录把 `ns` 更名为 `namespace` 的提议，范围包括 API、提供方、测试和消费方。公开行为和限制仍以上文为准。
 
 </details>

@@ -75,6 +75,8 @@ await ctx.sessionPersistence.append(id, events)
 
 ### Startup and safe operation
 
+Permanent deletion uses a schema-validated `BEGIN IMMEDIATE` transaction. Removing the exact session key cascades its event rows; commit completes before the coordinator notifies derived-store cleanup. No schema migration is needed for this operation.
+
 A fresh database initializes directly at schema version 19 with 64 KiB pages. Existing files are never retuned: databases with any other version, a foreign application identity, an unversioned non-pristine schema, or unexpected schema objects are rejected before any data is exposed or changed. This pre-release provider ships no migration. Every statement and fixed pragma comes from packaged `.sql` resources in `resources/sql/`, and runtime values are bound as SQLite parameters, so package code never assembles query text.
 
 Each connection disables SQLite trusted schemas and memory-mapped I/O, verifies the requested journal mode, and pins `synchronous=FULL` so a resolved append remains durable across an OS crash or power loss. On POSIX, the database parent directory and file must belong to the current user, the parent must not be group/world-writable, and the file must grant no group or world permissions; Windows additionally rejects symbolic links and non-regular files, while ACL restriction stays the deployment's job. Path and ownership failures reject plugin initialization; Node's SQLite driver loads lazily on the first persistence operation. Ordinary `create` stays lazy until the first append, while `ensureMaterialized` writes a session metadata row with no event rows.

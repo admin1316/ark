@@ -1,3 +1,4 @@
+import { randomUUID } from "@deepseek-ai/dsh-util-crypto";
 import { AttachmentError, admitEncodedImages } from "@deepseek-ai/dsh-attachment";
 import { NamedEntries, ScopedLayers } from "@deepseek-ai/dsh-scope";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
@@ -241,7 +242,7 @@ let CommandRuntime = (() => {
 		/** Monotonic per-instance counter behind {@link mintCommandId}. */
 		commandSeq = 0;
 		/** Instance token keeping minted ids unique across process restarts over one resumed log. */
-		instanceToken = crypto.randomUUID().slice(0, 8);
+		instanceToken = randomUUID().slice(0, 8);
 		constructor(ctx) {
 			super(ctx, "commands");
 		}

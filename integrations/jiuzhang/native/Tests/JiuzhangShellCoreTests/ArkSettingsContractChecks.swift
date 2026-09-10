@@ -1,9 +1,64 @@
 import Foundation
-import JiuzhangShellCore
+@testable import JiuzhangShellCore
 @testable import JiuzhangShellUI
 
 /// ui-theme 写入闸门的行为契约：single-flight + latest-intent 合并。
 func runArkSettingsContractChecks() {
+  func namespace(_ id: String, _ value: JSONValue) -> ArkSettingsNamespace {
+    ArkSettingsNamespace(id: id, schema: .object([:]), value: value, base: nil, user: nil,
+      secrets: [], applies: "live", revision: 1)
+  }
+  func route(_ id: String) -> ArkProviderView {
+    ArkProviderView(id: id, displayName: id, settingsNamespace: "llm-pi-ai",
+      settingsPath: ["providers", id], active: false)
+  }
+  let stored = [
+    namespace("llm-deepseek", .object(["apiKeyEnv": .string("DEEPSEEK_API_KEY")])),
+    namespace("llm-pi-ai", .object(["providers": .object([
+      "openai": .object(["apiKeyEnv": .string("SAVED_OPENAI_REFERENCE")]),
+      "empty": .object(["metadata": .object(["apiKeyEnv": .string("NESTED_NOT_A_CREDENTIAL")])]),
+    ])])),
+  ]
+  check(ArkSettingsSnapshot.credentialReference(for: route("deepseek"), namespaces: stored) == "ARK_DEEPSEEK_API_KEY",
+    "an absent DeepSeek route neither borrows a sibling reference nor collides with the official route")
+  check(ArkSettingsSnapshot.credentialReference(for: route("openai"), namespaces: stored) == "SAVED_OPENAI_REFERENCE",
+    "existing explicit route references remain unchanged")
+  check(ArkSettingsSnapshot.credentialReference(for: route("empty"), namespaces: stored) == "EMPTY_API_KEY",
+    "credential lookup does not descend into nested profile metadata")
+  let official = ArkProviderView(id: "deepseek-official", displayName: "DeepSeek", settingsNamespace: "llm-deepseek",
+    settingsPath: [], active: true)
+  check(ArkSettingsSnapshot.credentialReference(for: official, namespaces: stored) == "DEEPSEEK_API_KEY",
+    "a root-scoped provider retains its own configured reference")
+  let collision = stored + [namespace("custom", .object(["apiKeyEnv": .string("ARK_DEEPSEEK_API_KEY")]))]
+  check(ArkSettingsSnapshot.credentialReference(for: route("deepseek"), namespaces: collision) == "ARK_DEEPSEEK_API_KEY_2",
+    "a custom reference cannot collide with the suggested alternate reference")
+  check(ArkSettingsSnapshot.credentialReference(for: route("fresh-provider"), namespaces: []) == "FRESH_PROVIDER_API_KEY",
+    "an unloaded settings namespace yields a route-specific draft reference")
+  let catalogRoutes = [
+    "amazon-bedrock", "ant-ling", "anthropic", "azure-openai-responses", "baseten", "cerebras",
+    "cloudflare-ai-gateway", "cloudflare-workers-ai", "deepseek", "fireworks", "github-copilot",
+    "google", "google-vertex", "groq", "huggingface", "kimi-coding", "minimax", "minimax-cn",
+    "mistral", "moonshotai", "moonshotai-cn", "nvidia", "openai", "openai-codex", "opencode",
+    "opencode-go", "openrouter", "qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual",
+    "together", "vercel-ai-gateway", "xai", "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn",
+    "xiaomi-token-plan-sgp", "zai", "zai-coding-cn",
+  ]
+  let references = catalogRoutes.map { ArkSettingsSnapshot.credentialReference(for: route($0), namespaces: stored) }
+  check(Set(references).count == catalogRoutes.count,
+    "all installed catalog routes resolve independent draft references in a partially configured namespace")
+  check(zip(catalogRoutes, references).allSatisfy { id, ref in
+    id == "openai" || ref != "SAVED_OPENAI_REFERENCE"
+  }, "new catalog routes cannot inherit the already configured OpenAI reference")
+  let providerRows = ["openai", "openai-codex", "minimax", "minimax-cn", "moonshotai", "moonshot", "custom-proxy"]
+  let families = ArkProviderPresentation.groups(providerRows, id: { $0 }, name: { $0 })
+  check(families.count == 5, "same-brand providers share a presentation group without swallowing custom routes")
+  check(families[0].entries == ["openai", "openai-codex"]
+    && families[1].entries == ["minimax", "minimax-cn"],
+    "provider variants retain their independent routing identities and source order")
+  check(ArkProviderPresentation.familyID(for: "moonshotai") != ArkProviderPresentation.familyID(for: "moonshot"),
+    "a custom route named like a brand cannot impersonate that brand group")
+  check(families.flatMap(\.entries) == providerRows, "provider grouping does not remove supported routes")
+
   var fontDraft = ArkChatDisplaySliderDraft(
     persistedValue: 16,
     bounds: 12...24,
@@ -121,16 +176,38 @@ func runArkSettingsContractChecks() {
   if let transactionDefaults = UserDefaults(suiteName: suite) {
     defer { transactionDefaults.removePersistentDomain(forName: suite) }
     let firstRegistry = ArkProviderTransactionRegistry(defaults: transactionDefaults)
+    check(
+      firstRegistry.pendingTransactionID(for: "deepseek-official") == nil,
+      "reading provider recovery state does not create a transaction"
+    )
     let firstID = firstRegistry.transactionID(for: "deepseek-official")
     let restartedRegistry = ArkProviderTransactionRegistry(defaults: transactionDefaults)
     check(
       restartedRegistry.transactionID(for: "deepseek-official") == firstID,
       "native provider transaction id survives an app-model restart"
     )
-    restartedRegistry.clear(provider: "deepseek-official")
+    for state: ArkProviderTransactionState in [.absent, .prepared, .credentialStaged, .settingsApplied, .credentialApplied] {
+      restartedRegistry.acknowledge(provider: "deepseek-official", transactionID: firstID, state: state)
+      check(
+        restartedRegistry.pendingTransactionID(for: "deepseek-official") == firstID,
+        "nonterminal provider status retains pending identity"
+      )
+    }
+    restartedRegistry.acknowledge(provider: "deepseek-official", transactionID: firstID, state: .committed)
+    let nextID = restartedRegistry.transactionID(for: "deepseek-official")
     check(
-      restartedRegistry.transactionID(for: "deepseek-official") != firstID,
+      nextID != firstID,
       "native provider transaction id clears only after a terminal outcome"
+    )
+    restartedRegistry.acknowledge(provider: "deepseek-official", transactionID: firstID, state: .committed)
+    check(
+      restartedRegistry.pendingTransactionID(for: "deepseek-official") == nextID,
+      "late provider completion cannot clear a newer transaction"
+    )
+    restartedRegistry.acknowledge(provider: "deepseek-official", transactionID: nextID, state: .rolledBack)
+    check(
+      restartedRegistry.pendingTransactionID(for: "deepseek-official") == nil,
+      "verified rollback releases the native pending identity"
     )
   } else {
     check(false, "native provider transaction registry fixture is available")
@@ -182,6 +259,11 @@ func runArkSettingsContractChecks() {
     settingsSourceSlice(model, from: "public func removeProviderProfile", through: "public func discoverProviderModels"),
     settingsSourceSlice(model, from: "public func addCustomProvider", through: "public func openSettingsDocument"),
   ]
+  let providerLayout = settingsSourceSlice(rootView, from: "private struct NativeModelsSettings:",
+    through: "private struct NativeProviderSettingsCard:")
+  check(providerLayout?.contains("VStack(spacing: 12)") == true
+    && providerLayout?.contains("LazyVStack") == false,
+    "expandable provider cards retain eager layout ownership; live scrolling acceptance remains separate")
   check(
     providerWrites.allSatisfy { block in
       block?.contains("commitProviderMutation(") == true
@@ -189,8 +271,17 @@ func runArkSettingsContractChecks() {
         && block?.contains("client.unsetCredential(") == false
     }
       && model.contains("let updated = try await client.mutateProvider(")
-      && model.contains("code != \"provider-transaction-in-doubt\""),
+      && model.contains("providerTransactions.acknowledge(")
+      && model.contains("try? await client.providerTransaction("),
     "every cross-store provider write uses the atomic Host transaction without split credential calls"
+  )
+  check(
+    core.contains("method: \"llm/providerTransaction\"")
+      && core.contains("method: \"llm/resumeProvider\"")
+      && model.contains("public func restoreProviderConfiguration(")
+      && rootView.contains("model.restoreProviderConfiguration(")
+      && rootView.contains("transactionID: transaction.transactionID"),
+    "native Settings exposes explicit recovery through the existing provider transaction owner"
   )
 
   let appearanceWrite = settingsSourceSlice(

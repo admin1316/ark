@@ -149,6 +149,7 @@ describe('AgentRegistry', () => {
     await agentFiber
     await ctx.plugin(TypertRegistry)
     const agent = stubAgent('remote-agent')
+    agent.ctx.agent = agent
     const disposeAgent = ctx.agents.register(agent)
 
     const lookup = ctx.typert.lookups.get('agent')
@@ -160,9 +161,15 @@ describe('AgentRegistry', () => {
     })
     expect(lookup?.resolve(agent.id)).toBe(agent)
     expect(ctx.typert.contexts.getHost('agent')?.resolve(agent.id)).toBe(agent.ctx)
+    expect(ctx.typert.contexts.identifyHost(agent.ctx)).toEqual({ kind: 'agent', identity: agent.id })
+    expect(ctx.typert.contexts.identifyHost(ctx)).toBeUndefined()
+    const staleContext = ctx.extend()
+    Object.defineProperty(staleContext, 'agent', { value: stubAgent('remote-agent') })
+    expect(ctx.typert.contexts.identifyHost(staleContext)).toBeUndefined()
 
     disposeAgent()
     expect(lookup?.resolve(agent.id)).toBeUndefined()
+    expect(ctx.typert.contexts.identifyHost(agent.ctx)).toBeUndefined()
     await agentFiber.dispose()
     expect(ctx.typert.lookups.get('agent')).toBeUndefined()
     expect(ctx.typert.contexts.getHost('agent')).toBeUndefined()

@@ -5648,7 +5648,11 @@ let KnowledgeWikiService = (() => {
 				const { execFileSync } = await import("node:child_process");
 				return {
 					ok: true,
-					entries: execFileSync("/usr/bin/unzip", ["-l", request.path], { encoding: "utf8" }).split("\n").slice(3, -2).map((line) => line.trim().replace(/^.*\s/u, "")).filter(Boolean).slice(0, 200)
+					entries: execFileSync("/usr/bin/unzip", [
+						"-l",
+						"--",
+						request.path
+					], { encoding: "utf8" }).split("\n").slice(3, -2).map((line) => line.trim().replace(/^.*\s/u, "")).filter(Boolean).slice(0, 200)
 				};
 			} catch (error) {
 				return {

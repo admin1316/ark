@@ -1,4 +1,5 @@
 import z from "@deepseek-ai/schemastery";
+import { scopeChainOf, scopeOf } from "@deepseek-ai/dsh-scope";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { assertSubagentMaxDepth, parentAgentOptionsForDelegation, settleRun } from "@deepseek-ai/dsh-subagent";
 import { FIRST_PARTY_SECTION_ORDER } from "@deepseek-ai/dsh-system-prompt";
@@ -9,21 +10,22 @@ z.object({
 });
 /**
 * Stable identity for one provider/model pair.
-* @param route - The route input.
-* @returns The value produced by model route key.
+* @param route - Exact provider/model route.
+* @returns Opaque key for equality checks.
 */
 function modelRouteKey(route) {
 	return `${route.provider}\0${route.model}`;
 }
 /**
-* Reject malformed or duplicate route policy entries at a boundary.
-* @param routes - The routes input.
-* @returns The value produced by assert allowed model routes.
+* Reject malformed or duplicate route policy entries at a durable or configuration boundary.
+* @param routes - Candidate exact routes to validate.
+* @returns an assertion that the candidate is a validated exact-route array.
 */
 function assertAllowedModelRoutes(routes) {
 	if (!Array.isArray(routes)) throw new Error("subagent model selection requires an array of routes");
 	const seen = /* @__PURE__ */ new Set();
-	for (const candidate of routes) {
+	const candidates = routes;
+	for (const candidate of candidates) {
 		if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate) || !("provider" in candidate) || typeof candidate.provider !== "string" || !("model" in candidate) || typeof candidate.model !== "string" || candidate.provider.length === 0 || candidate.model.length === 0) throw new Error("subagent model selection requires non-empty provider and model ids");
 		const route = {
 			provider: candidate.provider,
@@ -36,22 +38,25 @@ function assertAllowedModelRoutes(routes) {
 }
 /**
 * Whether a call explicitly selects any child LLM value.
-* @param request - The request input.
-* @returns The value produced by has delegation model request.
+* @param request - Model-facing route fields from the tool call.
+* @returns Whether at least one route or effort field is present.
 */
 function hasDelegationModelRequest(request) {
-	return request.provider !== void 0 || request.model !== void 0 || request.reasoning_effort !== void 0 || request.max_tokens !== void 0;
+	return request.provider !== void 0 || request.model !== void 0 || request.reasoning_effort !== void 0;
 }
+/** Reject an empty model-facing route value at the tool JSON boundary. */
 function assertNonEmpty(value, field) {
 	if (value !== void 0 && value.length === 0) throw new Error(`child LLM \`${field}\` must be non-empty`);
 }
 /**
-* Merge model-supplied route fields over configured child defaults.
-* @param parentOptions - The parent options input.
-* @param configured - The configured input.
-* @param request - The request input.
-* @param enabled - The enabled input.
-* @returns The value produced by requested agent options.
+* Merge model-supplied selection fields over configured child defaults.
+* Provider and model form one route and must be supplied together. Changing
+* that route without an effort clears the configured route-owned effort.
+* @param parentOptions - Current parent values that supply missing child values.
+* @param configured - Tool-instance child defaults.
+* @param request - Model-facing route override.
+* @param enabled - Whether this tool instance permits model-facing selection.
+* @returns Child Agent options, preserving omission when no layer contributes one.
 */
 function requestedAgentOptions(parentOptions, configured, request, enabled) {
 	if (!hasDelegationModelRequest(request)) return configured;
@@ -59,7 +64,6 @@ function requestedAgentOptions(parentOptions, configured, request, enabled) {
 	assertNonEmpty(request.provider, "provider");
 	assertNonEmpty(request.model, "model");
 	assertNonEmpty(request.reasoning_effort, "reasoning_effort");
-	if (request.max_tokens !== void 0 && (!Number.isSafeInteger(request.max_tokens) || request.max_tokens <= 0)) throw new Error("child LLM `max_tokens` must be a positive safe integer");
 	if (request.provider === void 0 !== (request.model === void 0)) throw new Error("child LLM `provider` and `model` must be supplied together");
 	const baselineProvider = configured?.provider ?? parentOptions.provider;
 	const baselineModel = configured?.model ?? parentOptions.model;
@@ -71,16 +75,17 @@ function requestedAgentOptions(parentOptions, configured, request, enabled) {
 			provider: request.provider,
 			model: request.model
 		},
-		...request.reasoning_effort === void 0 ? {} : { reasoningEffort: ReasoningEffortId(request.reasoning_effort) },
-		...request.max_tokens === void 0 ? {} : { maxTokens: request.max_tokens }
+		...request.reasoning_effort === void 0 ? {} : { reasoningEffort: ReasoningEffortId(request.reasoning_effort) }
 	};
 }
 /**
-* Enforce the session-captured route allowlist for explicit choices.
-* @param policy - The policy input.
-* @param parentOptions - The parent options input.
-* @param requested - The requested input.
-* @param request - The request input.
+* Enforce a settings-owned route list at the operation that creates the child.
+* Pure inheritance remains outside this policy because no model-facing choice
+* occurred; any explicit route or effort field must resolve to an allowed route.
+* @param policy - Selection authority captured for this Session.
+* @param parentOptions - Current parent values that supply missing child values.
+* @param requested - Effective child options after request/config merging.
+* @param request - Model-facing selection fields from the tool call.
 */
 function assertAllowedModelSelection(policy, parentOptions, requested, request) {
 	if (policy === void 0 || !hasDelegationModelRequest(request)) return;
@@ -91,12 +96,22 @@ function assertAllowedModelSelection(policy, parentOptions, requested, request) 
 	throw new Error(`child LLM route "${provider}/${model}" is not allowed for this Session`);
 }
 /**
-* Resolve and validate one exact child route through the live LLM adapter.
-* @param llm - The llm input.
-* @param parentOptions - The parent options input.
-* @param requested - The requested input.
-* @param signal - The signal input.
-* @param inheritParentReasoningEffort - The inherit parent reasoning effort input.
+* Whether configured Agent options require route validation before delegation.
+* @param options - Tool-instance child defaults.
+* @returns Whether configured provider, model, or effort values must be resolved.
+*/
+function hasConfiguredLlmSelection(options) {
+	return options?.provider !== void 0 || options?.model !== void 0 || options?.reasoningEffort !== void 0;
+}
+/**
+* Resolve an effective child route through its live adapter before the child is
+* created. The LLM runtime owns provider lookup, exact-model metadata, effort
+* validation, and adapter defaults.
+* @param llm - Live LLM runtime.
+* @param parentOptions - Current parent values whose compatible fields the child inherits.
+* @param requested - Per-child options after request/config merging.
+* @param signal - Tool-call cancellation signal.
+* @param inheritParentReasoningEffort - Whether an omitted effort may inherit from the parent route.
 */
 async function preflightChildLlmRoute(llm, parentOptions, requested, signal, inheritParentReasoningEffort = true) {
 	const provider = requested?.provider ?? parentOptions.provider;
@@ -107,22 +122,25 @@ async function preflightChildLlmRoute(llm, parentOptions, requested, signal, inh
 	await llm.resolveCallConfig({
 		provider,
 		model,
-		...reasoningEffort === void 0 ? {} : { reasoningEffort },
-		...requested?.maxTokens === void 0 ? {} : { maxTokens: requested.maxTokens }
+		...reasoningEffort === void 0 ? {} : { reasoningEffort }
 	}, signal);
 }
 //#endregion
 //#region lib/types/list-models.js
 /** Model-facing discovery of LLM routes available to child Agents. */
-function registeredProvider(llm, policy, providerID) {
-	const provider = llm.listProviders().find((candidate) => candidate.id === providerID);
+/** Resolve one registered provider with a model-correctable diagnostic. */
+function registeredProvider(llm, policy, providerId) {
+	const providers = llm.listProviders();
+	const provider = providers.find((candidate) => candidate.id === providerId);
 	if (provider !== void 0) return provider;
-	const available = llm.listProviders().filter((candidate) => policy.routes.some((route) => route.provider === candidate.id)).map((candidate) => candidate.id).join(", ") || "(none)";
-	throw new Error(`LLM provider "${providerID}" is not registered; available providers: ${available}`);
+	const available = providers.filter((candidate) => policy.routes.some((route) => route.provider === candidate.id)).map((candidate) => candidate.id).join(", ") || "(none)";
+	throw new Error(`LLM provider "${providerId}" is not registered; available providers: ${available}`);
 }
+/** Render one advertised or resolved model. */
 function modelLine(provider, model) {
 	return `${provider}/${model.id} — ${model.name}${model.description === void 0 ? "" : `: ${model.description}`}`;
 }
+/** Read the requested provider, advertised models, or exact-model efforts. */
 async function listSubagentModels(ctx, policy, request, signal) {
 	const llm = ctx.get("llm");
 	if (llm === void 0) throw new Error("cannot discover child LLM routes because the `llm` service is unavailable");
@@ -146,14 +164,14 @@ async function listSubagentModels(ctx, policy, request, signal) {
 	return `${modelLine(provider.id, model)}\nReasoning efforts:\n${efforts}`;
 }
 /**
-* Register discovery for one session-captured route policy.
-* @param ctx - The ctx input.
-* @param policy - The policy input.
+* Register `list_subagent_models` for one owning delegation-tool instance.
+* @param ctx - Context whose tool registry owns the fixed discovery definition.
+* @param policy - Route policy captured for this Session.
 */
 function registerListSubagentModels(ctx, policy) {
 	ctx.tools.register(defineTool({
 		name: "list_subagent_models",
-		description: "Discover LLM routes for subagents without changing the current Agent. Call with no arguments to list registered providers, with `provider` to list its advertised models, or with `provider` and `model` to inspect that exact model and its reasoning efforts. Use the returned ids with a delegation tool.",
+		description: "Discover LLM routes for subagents without changing the current Agent. Call with no arguments to list registered providers, with `provider` to list its advertised models, or with `provider` and `model` to inspect that exact model and its reasoning efforts. Catalog membership is advisory: an adapter may accept an unlisted model id. Use the returned ids with a delegation tool's `provider`, `model`, and `reasoning_effort` fields.",
 		parameters: {
 			provider: {
 				type: "string",
@@ -161,7 +179,7 @@ function registerListSubagentModels(ctx, policy) {
 			},
 			model: {
 				type: "string",
-				description: "Exact model id to inspect. Requires provider; omit to list that provider's models."
+				description: "Exact model id to inspect. Requires provider; omit to list that provider's advertised models."
 			}
 		},
 		output: {
@@ -180,27 +198,26 @@ function registerListSubagentModels(ctx, policy) {
 //#region lib/types/model-selection-state.js
 /** Durable per-session state for the user-controlled model-selection opt-in. */
 /**
-* Read the session-captured route list, or undefined for fixed-route sessions.
-* @param session - The session input.
-* @returns The value produced by subagent model selection policy.
+* Read the exact route list captured for a model-selectable definition.
+* @param session - session whose durable decision is read.
+* @returns a detached route list, or undefined for the fixed-route definition.
 */
 function subagentModelSelectionPolicy(session) {
 	const event = session.events.find((candidate) => candidate.type === "subagent/model-selection-policy");
 	if (event?.type !== "subagent/model-selection-policy") return void 0;
 	const { allowedModels } = event.data;
 	assertAllowedModelRoutes(allowedModels);
-	if (allowedModels.length === 0) throw new Error("subagent/model-selection-policy requires at least one route");
-	return allowedModels.map((route) => ({ ...route }));
+	const routes = allowedModels.map((route) => ({ ...route }));
+	if (routes.length === 0) throw new Error("subagent/model-selection-policy requires at least one route");
+	return routes;
 }
 /**
-* Append the allowlist once, before the session can make a model-facing choice.
-* @param session - The session input.
-* @param allowedModels - The allowed models input.
+* Append the route policy once, before its definition can reach a model request.
+* @param session - session receiving the model-selectable definition.
+* @param allowedModels - exact routes the definition may select explicitly.
 */
 function recordSubagentModelSelection(session, allowedModels) {
 	if (subagentModelSelectionPolicy(session) !== void 0) return;
-	assertAllowedModelRoutes(allowedModels);
-	if (allowedModels.length === 0) throw new Error("subagent model selection requires at least one allowed model");
 	session.append("subagent/model-selection-policy", { allowedModels: allowedModels.map((route) => ({ ...route })) });
 }
 //#endregion
@@ -339,230 +356,284 @@ function apply(ctx, config) {
 	const continuable = (config.backgroundMode ?? "one-shot") === "continuable";
 	const toolName = config.toolName ?? "subagent";
 	const modelSelectionCapable = config.modelSelectionSettings === true;
-	const modelSelectionSettings = modelSelectionCapable ? ctx.get("subagentModelSelection") : void 0;
-	if (modelSelectionCapable && modelSelectionSettings === void 0) throw new Error("tool-subagent: `modelSelectionSettings` requires @deepseek-ai/dsh-tool-subagent/model-selection-settings in the Host scope");
-	const selectionForParent = (parent) => {
-		if (!modelSelectionCapable) return {
-			policy: void 0,
-			enabled: false
-		};
-		const existing = subagentModelSelectionPolicy(parent.session);
-		if (existing !== void 0) return {
-			policy: { routes: existing },
-			enabled: true
-		};
-		const current = modelSelectionSettings?.current();
-		if (current?.enabled !== true) return {
-			policy: void 0,
-			enabled: false
-		};
-		recordSubagentModelSelection(parent.session, current.allowedModels);
-		return {
-			policy: { routes: current.allowedModels },
-			enabled: true
-		};
+	const assertSubagentProviderConfiguration = (subagentProvider) => {
+		if (typeof config.maxDepth === "number" && !subagentProvider.capabilities.depthLimit) throw new Error(`tool-subagent: provider "${subagentProvider.name}" cannot enforce maxDepth (no depthLimit capability) — set maxDepth: 'provider-managed' to leave the recursion budget to the provider`);
+		if (config.agentOptions !== void 0 && !subagentProvider.capabilities.agentOptions) throw new Error(`tool-subagent: provider "${subagentProvider.name}" does not support child agentOptions`);
+		if (modelSelectionCapable && !subagentProvider.capabilities.agentOptions) throw new Error(`tool-subagent: provider "${subagentProvider.name}" does not support child model selection`);
+		if (continuable && subagentProvider.prepareContinuable === void 0) throw new Error(`tool-subagent: provider "${subagentProvider.name}" does not support \`backgroundMode: continuable\``);
 	};
-	if (modelSelectionCapable) {
-		const current = modelSelectionSettings?.current();
-		if (current?.enabled === true) registerListSubagentModels(ctx, { routes: current.allowedModels });
-	}
-	let disposeTool;
-	const mount = (provider) => {
-		if (typeof config.maxDepth === "number" && !provider.capabilities.depthLimit) throw new Error(`tool-subagent: provider "${provider.name}" cannot enforce maxDepth (no depthLimit capability) — set maxDepth: 'provider-managed' to leave the recursion budget to the provider`);
-		if (modelSelectionCapable && provider.capabilities.agentOptions === false) throw new Error(`tool-subagent: provider "${provider.name}" does not support child model selection`);
-		const wording = providerWording(provider.inheritsParentContext);
-		if (continuable && provider.prepareContinuable === void 0) throw new Error(`tool-subagent: provider "${provider.name}" does not support \`backgroundMode: continuable\``);
-		disposeTool = ctx.tools.register(defineTool({
-			name: toolName,
-			description: wording.description + (backgroundEnabled ? continuable ? " This tool runs in the background by default, returns a durable subagent id after its initial inbox receipt is flushed, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a durable outcome notice and avoids repeating a byte-identical explicit report; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result." : " This call waits for the result by default. Set `run_in_background: true` to return a job id; collect with `job_output` and stop with `job_kill`." : " This call waits for the subagent and returns its result.") + (modelSelectionCapable ? " When enabled for this session, use `provider`, `model`, `reasoning_effort`, and `max_tokens` to choose an authorized child route and output budget; use `list_subagent_models` before selecting a route. Omit them to inherit the configured values." : ""),
-			parameters: {
-				description: {
-					type: "string",
-					required: true,
-					description: "A short (3-5 word) description of the delegated task, for display."
-				},
-				prompt: {
-					type: "string",
-					required: true,
-					description: wording.promptDescription
-				},
-				...modelSelectionCapable ? {
-					provider: {
-						type: "string",
-						description: "Authorized child LLM provider. Supply together with model; omit both to inherit the configured route."
-					},
-					model: {
-						type: "string",
-						description: "Exact child model id. Supply together with provider; omit both to inherit the configured route."
-					},
-					reasoning_effort: {
-						type: "string",
-						description: "Provider-owned reasoning effort for the selected child route."
-					},
-					max_tokens: {
-						type: "integer",
-						description: "Positive safe-integer maximum output tokens for each child model request."
-					}
-				} : {},
-				...backgroundEnabled ? { run_in_background: {
-					type: "boolean",
-					description: continuable ? "Whether to run in the background and return a durable subagent id immediately. Defaults to true. Set false to wait for the result when your next action depends on it." : "Whether to run as a background job and return its id. Defaults to false; collect with job_output or stop with job_kill."
-				} } : {}
-			},
-			output: {
-				schema: { oneOf: [
-					{
-						type: "object",
-						additionalProperties: false,
-						properties: {
-							kind: {
+	ctx.on("subagent/provider-added", (subagentProvider) => {
+		if (subagentProvider.name === config.provider) assertSubagentProviderConfiguration(subagentProvider);
+	});
+	const initialProvider = ctx.subagents.getProvider(config.provider);
+	if (initialProvider !== void 0) assertSubagentProviderConfiguration(initialProvider);
+	const install = (runtimeCtx, modelSelectionPolicy) => {
+		const modelSelectionEnabled = modelSelectionPolicy !== void 0;
+		if (modelSelectionPolicy !== void 0) registerListSubagentModels(runtimeCtx, modelSelectionPolicy);
+		let mounted;
+		const mount = (subagentProvider) => {
+			assertSubagentProviderConfiguration(subagentProvider);
+			const wording = providerWording(subagentProvider.inheritsParentContext);
+			const providerRouteDefaults = subagentProvider.agentRouteDefaults;
+			const choiceDescription = !modelSelectionEnabled ? "" : (providerRouteDefaults !== void 0 ? " Child LLM selection is optional. Omit `provider`, `model`, and `reasoning_effort` to use configured child defaults and this provider's route defaults. Supply `provider` and `model` together after using `list_subagent_models` to inspect advertised routes and efforts. Changing the effective route without naming an effort uses the selected model's default effort." : " Child LLM selection is optional. Omit `provider`, `model`, and `reasoning_effort` to use configured child defaults and inherit compatible missing values from the parent Agent. Supply `provider` and `model` together after using `list_subagent_models` to inspect advertised routes and efforts. Changing the effective route without naming an effort uses the selected model's default effort.") + (subagentProvider.inheritsParentContext ? " Changing the route can prevent provider-side reuse of the inherited conversation prefix." : "");
+			mounted = {
+				subagentProvider,
+				disposeTool: runtimeCtx.tools.register(defineTool({
+					name: toolName,
+					description: wording.description + (backgroundEnabled ? continuable ? " This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result." : " This call waits for the result by default. Set `run_in_background: true` to return a job id; collect with `job_output` and stop with `job_kill`." : " This call waits for the subagent and returns its result.") + choiceDescription,
+					parameters: {
+						description: {
+							type: "string",
+							required: true,
+							description: "A short (3-5 word) description of the delegated task, for display."
+						},
+						prompt: {
+							type: "string",
+							required: true,
+							description: wording.promptDescription
+						},
+						...modelSelectionEnabled ? {
+							provider: {
 								type: "string",
-								required: true,
-								const: "background"
+								description: providerRouteDefaults !== void 0 ? "LLM provider route for the child. Supply together with model; omit both to use configured child defaults or this provider's route defaults." : "LLM provider route for the child. Supply together with model; omit both to use configured child defaults or inherit the parent route."
 							},
-							jobId: {
+							model: {
 								type: "string",
-								required: true
+								description: providerRouteDefaults !== void 0 ? "Model id interpreted by provider. Supply together with provider; omit both to use configured child defaults or this provider's route defaults." : "Model id interpreted by provider. Supply together with provider; omit both to use configured child defaults or inherit the parent route."
+							},
+							reasoning_effort: {
+								type: "string",
+								description: providerRouteDefaults !== void 0 ? "Adapter-owned reasoning effort for the effective child route. Omit to use a compatible configured effort or the selected model's default." : "Adapter-owned reasoning effort for the effective child route. Omit to inherit a compatible configured/parent effort or use a newly selected model's default."
 							}
-						}
+						} : {},
+						...backgroundEnabled ? { run_in_background: {
+							type: "boolean",
+							description: continuable ? "Whether to run in the background and return a durable subagent id immediately. Defaults to true. Set false to wait for the result when your next action depends on it." : "Whether to run as a background job and return its id. Defaults to false; collect with job_output or stop with job_kill."
+						} } : {}
 					},
-					{
-						type: "object",
-						additionalProperties: false,
-						properties: {
-							kind: {
-								type: "string",
-								required: true,
-								const: "continuable"
-							},
-							subagentId: {
-								type: "string",
-								required: true
-							}
-						}
-					},
-					{
-						type: "object",
-						additionalProperties: false,
-						properties: {
-							kind: {
-								type: "string",
-								required: true,
-								const: "foreground"
-							},
-							runId: {
-								type: "string",
-								required: true
-							},
-							output: {
-								type: "array",
-								required: true,
-								items: { type: "json" }
-							}
-						}
-					}
-				] },
-				render: (_args, value) => [{
-					type: "text",
-					text: value.kind === "background" ? `started background subagent job ${value.jobId}` : value.kind === "continuable" ? `started subagent ${value.subagentId}` : outputValueText(value.output)
-				}]
-			},
-			presentCall: (args) => ({
-				card: "generic",
-				title: `Delegate: ${args.description}`,
-				kind: "other",
-				rawInput: {
-					semanticKind: "subagent",
-					description: args.description
-				}
-			}),
-			isConcurrencySafe: () => true,
-			async execute(args, exec) {
-				const parent = exec.agent;
-				if (!parent) throw new Error("subagent tool requires a calling agent (exec.agent was undefined)");
-				const modelRequest = args;
-				const parentOptions = parentAgentOptionsForDelegation(parent);
-				const selection = selectionForParent(parent);
-				const requestedOptions = requestedAgentOptions(parentOptions, config.agentOptions, modelRequest, selection.enabled);
-				assertAllowedModelSelection(selection.policy, parentOptions, requestedOptions, modelRequest);
-				const hasEffectiveRoute = requestedOptions?.provider !== void 0 && requestedOptions.model !== void 0;
-				if (hasDelegationModelRequest(modelRequest) || hasEffectiveRoute) {
-					const llm = ctx.get("llm");
-					if (llm === void 0) throw new Error("cannot resolve the selected child LLM route because the `llm` service is unavailable");
-					await preflightChildLlmRoute(llm, parentOptions, requestedOptions, exec.signal);
-				}
-				const maxDepth = typeof config.maxDepth === "number" ? config.maxDepth : void 0;
-				const request = {
-					label: args.description,
-					prompt: [{
-						type: "text",
-						text: args.prompt
-					}],
-					parent,
-					...requestedOptions !== void 0 ? { agentOptions: requestedOptions } : {},
-					...config.persona !== void 0 ? { persona: config.persona } : {},
-					...config.toolFilter !== void 0 ? { toolFilter: config.toolFilter } : {},
-					...maxDepth !== void 0 ? { maxDepth } : {}
-				};
-				if (resolveDelegationRun(args, {
-					backgroundEnabled,
-					continuable
-				}).runInBackground) {
-					if (continuable) return {
-						kind: "continuable",
-						subagentId: (await ctx.subagents.startContinuable({
-							provider: config.provider,
-							label: args.description,
-							request,
-							signal: exec.signal
-						})).childId
-					};
-					const jobs = ctx.get("jobs");
-					if (jobs === void 0) throw new Error("background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs");
-					return {
-						kind: "background",
-						jobId: jobs.start({
-							kind: "subagent",
-							label: args.description,
-							owner: parent,
-							run: () => {
-								const controller = new AbortController();
-								return {
-									cancel: (reason) => {
-										controller.abort(reason ?? "background subagent task killed");
+					output: {
+						schema: { oneOf: [
+							{
+								type: "object",
+								additionalProperties: false,
+								properties: {
+									kind: {
+										type: "string",
+										required: true,
+										const: "background"
 									},
-									done: settleStart(ctx.subagents.start(config.provider, {
-										...request,
-										signal: controller.signal
-									}), controller.signal)
-								};
+									jobId: {
+										type: "string",
+										required: true
+									}
+								}
+							},
+							{
+								type: "object",
+								additionalProperties: false,
+								properties: {
+									kind: {
+										type: "string",
+										required: true,
+										const: "continuable"
+									},
+									subagentId: {
+										type: "string",
+										required: true
+									}
+								}
+							},
+							{
+								type: "object",
+								additionalProperties: false,
+								properties: {
+									kind: {
+										type: "string",
+										required: true,
+										const: "foreground"
+									},
+									runId: {
+										type: "string",
+										required: true
+									},
+									output: {
+										type: "array",
+										required: true,
+										items: { type: "json" }
+									}
+								}
 							}
-						})
-					};
-				}
-				return settleForegroundRun(await ctx.subagents.start(config.provider, {
-					...request,
-					signal: exec.signal
-				}));
-			}
-		}));
+						] },
+						render: (_args, value) => [{
+							type: "text",
+							text: value.kind === "background" ? `started background subagent job ${value.jobId}` : value.kind === "continuable" ? `started subagent ${value.subagentId}` : outputValueText(value.output)
+						}]
+					},
+					isConcurrencySafe: () => true,
+					async execute(args, exec) {
+						const parent = exec.agent;
+						if (!parent) throw new Error("subagent tool requires a calling agent (exec.agent was undefined)");
+						const modelRequest = args;
+						const parentOptions = parentAgentOptionsForDelegation(parent);
+						const requiresRoutePreflight = hasDelegationModelRequest(modelRequest) || hasConfiguredLlmSelection(config.agentOptions);
+						const requestedChildAgentOptions = requestedAgentOptions(parentOptions, requiresRoutePreflight && providerRouteDefaults !== void 0 ? {
+							...providerRouteDefaults,
+							...config.agentOptions
+						} : config.agentOptions, modelRequest, modelSelectionEnabled);
+						assertAllowedModelSelection(modelSelectionPolicy, parentOptions, requestedChildAgentOptions, modelRequest);
+						if (requiresRoutePreflight) {
+							const llm = runtimeCtx.get("llm");
+							if (llm === void 0) throw new Error("cannot resolve the selected child LLM route because the `llm` service is unavailable");
+							await preflightChildLlmRoute(llm, parentOptions, requestedChildAgentOptions, exec.signal, providerRouteDefaults === void 0);
+							if (runtimeCtx.subagents.getProvider(config.provider) !== subagentProvider) throw new Error(`subagent provider "${config.provider}" changed while resolving the child LLM route; retry the delegation`);
+						}
+						exec.signal.throwIfAborted();
+						const maxDepth = typeof config.maxDepth === "number" ? config.maxDepth : void 0;
+						const request = {
+							label: args.description,
+							prompt: [{
+								type: "text",
+								text: args.prompt
+							}],
+							parent,
+							...requestedChildAgentOptions !== void 0 ? { agentOptions: requestedChildAgentOptions } : {},
+							...config.persona !== void 0 ? { persona: config.persona } : {},
+							...config.toolFilter !== void 0 ? { toolFilter: config.toolFilter } : {},
+							...maxDepth !== void 0 ? { maxDepth } : {}
+						};
+						if (resolveDelegationRun(args, {
+							backgroundEnabled,
+							continuable
+						}).runInBackground) {
+							if (continuable) return {
+								kind: "continuable",
+								subagentId: (await runtimeCtx.subagents.startContinuable({
+									provider: config.provider,
+									label: args.description,
+									request,
+									signal: exec.signal
+								})).childId
+							};
+							const jobs = runtimeCtx.get("jobs");
+							if (jobs === void 0) throw new Error("background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs");
+							return {
+								kind: "background",
+								jobId: jobs.start({
+									kind: "subagent",
+									label: args.description,
+									owner: parent,
+									run: () => {
+										const controller = new AbortController();
+										return {
+											cancel: (reason) => {
+												controller.abort(reason ?? "background subagent task killed");
+											},
+											done: settleStart(runtimeCtx.subagents.start(config.provider, {
+												...request,
+												signal: controller.signal
+											}), controller.signal)
+										};
+									}
+								})
+							};
+						}
+						return settleForegroundRun(await runtimeCtx.subagents.start(config.provider, {
+							...request,
+							signal: exec.signal
+						}));
+					}
+				}))
+			};
+		};
+		runtimeCtx.on("subagent/provider-added", (subagentProvider) => {
+			if (subagentProvider.name === config.provider && mounted === void 0) mount(subagentProvider);
+		});
+		runtimeCtx.on("subagent/provider-removed", (name) => {
+			if (name !== config.provider || mounted === void 0) return;
+			mounted.disposeTool();
+			mounted = void 0;
+		});
+		const present = runtimeCtx.subagents.getProvider(config.provider);
+		if (present !== void 0) mount(present);
+		else runtimeCtx.logger.info(`subagent provider "${config.provider}" not registered yet; the "${config.toolName ?? "subagent"}" tool will register when it appears`);
+		if (backgroundEnabled && continuable) runtimeCtx.systemPrompt.section({
+			name: `tool:${toolName}`,
+			order: SUBAGENT_SECTION_ORDER,
+			text: (context) => mounted === void 0 || runtimeCtx.tools.get(toolName, context.scope) === void 0 ? "" : `Use ${toolName} in the background by default. Start independent delegations together in one assistant message and continue useful work while they run. Set \`run_in_background: false\` only when your next action depends on that subagent's result. When a background run settles, the runtime sends you a notice containing its outcome and any final assistant message.`
+		});
 	};
-	ctx.on("subagent/provider-added", (provider) => {
-		if (provider.name === config.provider && disposeTool === void 0) mount(provider);
+	if (config.modelSelectionSettings !== true) {
+		install(ctx, void 0);
+		return;
+	}
+	const settings = ctx.get("subagentModelSelection");
+	if (settings === void 0) throw new Error("tool-subagent: `modelSelectionSettings` requires @deepseek-ai/dsh-tool-subagent/model-selection-settings in the Host scope");
+	const compositionScope = scopeOf(ctx);
+	if (compositionScope === void 0) throw new Error("tool-subagent: `modelSelectionSettings` requires an Agent or preset scope");
+	const selectForAgent = (agent) => {
+		let allowedModels = subagentModelSelectionPolicy(agent.session);
+		if (allowedModels === void 0) {
+			const parentId = agent.session.header.origin === "subagent" ? agent.session.header.parentSession : void 0;
+			if (parentId !== void 0) {
+				const parent = ctx.get("agents")?.get(parentId);
+				allowedModels = parent === void 0 ? void 0 : subagentModelSelectionPolicy(parent.session);
+			} else if (agent.session.firstLiveSeq === 0) {
+				const current = settings.current();
+				allowedModels = current.enabled ? current.allowedModels : void 0;
+			}
+		}
+		if (allowedModels !== void 0) recordSubagentModelSelection(agent.session, allowedModels);
+		return allowedModels === void 0 ? void 0 : { routes: allowedModels };
+	};
+	const agent = ctx.agent;
+	if (agent !== void 0) {
+		install(ctx, selectForAgent(agent));
+		return;
+	}
+	const agents = ctx.get("agents");
+	/* v8 ignore next -- Agent and preset scopes are minted only by the Agent registry. */
+	if (agents === void 0) throw new Error("tool-subagent: scoped model-selection settings require the Agent registry");
+	const scopedInstalls = /* @__PURE__ */ new WeakMap();
+	const installing = /* @__PURE__ */ new WeakSet();
+	const belongsToComposition = (candidate) => scopeChainOf(scopeOf(candidate.ctx)).includes(compositionScope);
+	const installScoped = (candidate) => {
+		if (scopedInstalls.has(candidate) || installing.has(candidate)) return;
+		installing.add(candidate);
+		let fiber;
+		try {
+			const policy = selectForAgent(candidate);
+			fiber = candidate.ctx.inject([
+				"tools",
+				"subagents",
+				"systemPrompt"
+			], (runtimeCtx) => {
+				install(runtimeCtx, policy);
+			});
+		} finally {
+			installing.delete(candidate);
+		}
+		scopedInstalls.set(candidate, fiber);
+	};
+	const removeScoped = (candidate) => {
+		const fiber = scopedInstalls.get(candidate);
+		if (fiber === void 0) return;
+		scopedInstalls.delete(candidate);
+		/* v8 ignore next 3 -- Cordis Fiber disposal contains registration cleanup failures; this is the final diagnostic sink. */
+		fiber.dispose().catch((error) => {
+			ctx.logger.warn(`tool-subagent: failed to remove recomposed Agent "${candidate.id}" definitions: ${String(error)}`);
+		});
+	};
+	const reconcileComposedAgents = () => {
+		for (const candidate of agents.list()) if (belongsToComposition(candidate)) installScoped(candidate);
+		else removeScoped(candidate);
+	};
+	ctx.on("agent/created", ({ agent: created }) => {
+		installScoped(created);
 	});
-	ctx.on("subagent/provider-removed", (name) => {
-		if (name !== config.provider || disposeTool === void 0) return;
-		disposeTool();
-		disposeTool = void 0;
+	ctx.on("agent/disposed", ({ agent: disposed }) => {
+		removeScoped(disposed);
 	});
-	const present = ctx.subagents.getProvider(config.provider);
-	if (present !== void 0) mount(present);
-	else ctx.logger.info(`subagent provider "${config.provider}" not registered yet; the "${config.toolName ?? "subagent"}" tool will register when it appears`);
-	if (backgroundEnabled && continuable) ctx.systemPrompt.section({
-		name: `tool:${toolName}`,
-		order: SUBAGENT_SECTION_ORDER,
-		text: (context) => disposeTool === void 0 || ctx.tools.get(toolName, context.scope) === void 0 ? "" : `Use ${toolName} in the background by default. Start independent delegations together in one assistant message and continue useful work while they run. Set \`run_in_background: false\` only when your next action depends on that subagent's result. When a background run settles, the runtime sends you a durable outcome notice and does not repeat a byte-identical explicit report.`
-	});
+	ctx.on("tools/change", reconcileComposedAgents);
 }
 //#endregion
 export { Config, apply, inject, name };

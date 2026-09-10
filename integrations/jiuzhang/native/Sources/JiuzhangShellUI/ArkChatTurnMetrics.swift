@@ -41,8 +41,11 @@ struct ArkChatTurnProjection: Equatable, Sendable {
     var end: Date?
     var stepStart: Date?
     var firstChunk: Date?
+    var callFirstChunk: Date?
     var lastChunk: Date?
     var outputTokens = 0
+    var generationSeconds = 0.0
+    var hasUnmeasuredOutput = false
   }
 
   private var accumulators: [Int: Accumulator] = [:]
@@ -89,13 +92,32 @@ struct ArkChatTurnProjection: Equatable, Sendable {
       }
     case "step/start":
       value.stepStart = value.stepStart ?? event.time
+      value.callFirstChunk = nil
+      value.lastChunk = nil
     case "assistant/chunk":
       value.firstChunk = value.firstChunk ?? event.time
+      value.callFirstChunk = value.callFirstChunk ?? event.time
       value.lastChunk = event.time
+      if event.data["chunk"]?["type"]?.stringValue == "finish",
+         let reason = event.data["chunk"]?["reason"]?["kind"]?.stringValue,
+         reason == "error" || reason == "aborted" {
+        value.callFirstChunk = nil
+        value.lastChunk = nil
+      }
     case "assistant/message":
-      value.outputTokens += event.data["usage"]?["outputTokens"]?.numberValue.map(Int.init)
+      let output = event.data["usage"]?["outputTokens"]?.numberValue.map(Int.init)
         ?? event.data["usage"]?["output"]?.numberValue.map(Int.init)
         ?? 0
+      if output > 0 {
+        if let elapsed = duration(value.callFirstChunk, value.lastChunk), elapsed > 0 {
+          value.outputTokens += output
+          value.generationSeconds += elapsed
+        } else {
+          value.hasUnmeasuredOutput = true
+        }
+      }
+      value.callFirstChunk = nil
+      value.lastChunk = nil
     default:
       break
     }
@@ -104,10 +126,11 @@ struct ArkChatTurnProjection: Equatable, Sendable {
   }
 
   private func metrics(for value: Accumulator) -> ArkChatTurnMetrics {
-    let decodeSeconds = duration(value.firstChunk, value.lastChunk)
+    // Sum completed model streams, excluding tool execution and retry backoff.
+    // Provider output counts may include reasoning, not just visible prose.
     let tokensPerSecond: Double? =
-      if value.outputTokens > 0, let decodeSeconds, decodeSeconds > 0 {
-        Double(value.outputTokens) / decodeSeconds
+      if !value.hasUnmeasuredOutput, value.outputTokens > 0, value.generationSeconds > 0 {
+        Double(value.outputTokens) / value.generationSeconds
       } else {
         nil
       }

@@ -64,7 +64,8 @@ import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deeps
 import { PiAiAdapter } from './adapter.ts'
 import { authContextFrom, credentialStoreFrom } from './auth.ts'
 import { catalogProviderIds } from './catalog.ts'
-import { assertServiceable, Config, resolveProfiles } from './config.ts'
+import { assertWritableConfig, Config, ProviderProfileSchema, resolveProfiles } from './config.ts'
+import { redactPiAiSecrets, resolveProfileHeaders } from './headers.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
 import { registerPiAiFlows } from './login.ts'
@@ -114,14 +115,21 @@ function registrationFacts(profiles: ReadonlyMap<string, ResolvedPiAiProviderPro
  * catalog entry, so without this union it would have no settings address and
  * configuration surfaces could neither show nor edit it.
  * @param profiles - the currently resolved provider profiles.
+ * @param base - deployment configuration, whose fields cannot be removed by user-layer edits.
  * @returns the directory entries in catalog order, declared routes last.
  */
 function directoryEntries(
   profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile>,
+  base: Config,
 ): LlmConfigurableProvider[] {
   const catalog = new Set(catalogProviderIds())
   const entries = new Map<string, LlmConfigurableProvider>()
-  const declare = (provider: string, displayName: string): void => {
+  const declare = (provider: string, displayName: string, profile?: ResolvedPiAiProviderProfile): void => {
+    const migration = profile?.migrationRequired
+    const inherited = migration === undefined ? undefined
+      : resolveProfileHeaders(provider, base.providers?.[provider] ?? {}, ProviderProfileSchema).migrationRequired
+    const paths = (value: NonNullable<ResolvedPiAiProviderProfile['migrationRequired']>) =>
+      [...value.headers.map(name => ['headers', name]), ...value.fields ?? []]
     entries.set(provider, {
       provider,
       displayName,
@@ -131,10 +139,16 @@ function directoryEntries(
       // narrowing a shipped provider's models stores a profile too, and that
       // route is still one pi-ai knows.
       declared: !catalog.has(provider),
+      ...profile?.catalogError === undefined ? {} : { error: profile.catalogError },
+      ...migration === undefined ? {} : { migrationRequired: {
+        code: migration.fields === undefined ? 'credential-headers' : 'credential-fields',
+        fields: [...migration.headers, ...migration.fields?.map(path => path.join('.')) ?? []],
+        paths: paths(migration), inheritedPaths: inherited === undefined ? [] : paths(inherited),
+      } },
     })
   }
   for (const provider of catalog) declare(provider, provider)
-  for (const [provider, profile] of profiles) declare(provider, profile.displayName)
+  for (const [provider, profile] of profiles) declare(provider, profile.displayName, profile)
   return [...entries.values()]
 }
 
@@ -142,25 +156,26 @@ function directoryEntries(
 export function apply(ctx: Context, config: Config): void {
   let current: () => Config = () => config
   let lastRaw: Config | undefined
-  let memoized: ReadonlyMap<string, ResolvedPiAiProviderProfile> | undefined
+  let memoized: {
+    all: ReadonlyMap<string, ResolvedPiAiProviderProfile>
+    routable: ReadonlyMap<string, ResolvedPiAiProviderProfile>
+  } | undefined
   /**
    * The resolved profiles for the current configuration, memoized by the raw
    * snapshot's identity — which is also what makes the adapter's own snapshot
    * stable across operations that observe no change.
    *
-   * No fallback for an unserviceable snapshot lives here: the section schema
-   * resolves the whole profile set, so a write that could not be served is
-   * refused where it is written, and the settings seam keeps a namespace's
-   * last good value for a stored section that fails. Anything reaching this
-   * point has already resolved once.
+   * Stored catalog failures remain beside independently serviceable models.
+   * Scalar configuration errors still reject; credential migration still
+   * withholds the route from registration.
    */
-  const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
+  const profiles = () => {
     const raw = current()
     if (raw === lastRaw && memoized !== undefined) return memoized
-    const next = resolveProfiles(raw.providers)
+    const next = resolveProfiles(raw.providers, 'deferred')
     lastRaw = raw
-    memoized = next
-    return next
+    memoized = { all: next, routable: new Map([...next].filter(([, profile]) => profile.migrationRequired === undefined)) }
+    return memoized
   }
   profiles()
 
@@ -189,13 +204,28 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
+  const resolveCredentialHeaders = async (_provider: string, profile: ResolvedPiAiProviderProfile): Promise<Record<string, string>> => {
+    const headers = new Map<string, string>()
+    for (const [header, reference] of Object.entries(profile.credentialHeaders ?? {})) {
+      const credentials = ctx.get('credentials')
+      const value = credentials === undefined ? launchEnvironmentOf(ctx).get(reference)?.value
+        : (await credentials.resolve(reference))?.value
+      if (value === undefined || value.length === 0) throw new LlmError('credential-backed provider header is not configured', 'MISSING_CREDENTIAL')
+      try { new Headers([[header, value]]) }
+      catch { throw new LlmError('credential-backed provider header is not valid for HTTP', 'INVALID_CREDENTIAL') }
+      headers.set(header, value)
+    }
+    return Object.fromEntries(headers)
+  }
+
   // One store and one ambient context for the whole plugin instance: both read
   // through `ctx` per call, so they stay correct across the collection rebuilds
   // a configuration change causes, and a sign-in survives one.
   const auth = { credentials: credentialStoreFrom(ctx), authContext: authContextFrom(ctx) }
   const adapter = new PiAiAdapter({
-    profiles,
+    profiles: () => profiles().routable,
     resolveApiKey,
+    resolveCredentialHeaders,
     auth,
     resolveAttachments: () => ctx.get('attachments'),
     resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(
@@ -223,7 +253,7 @@ export function apply(ctx: Context, config: Config): void {
   let directory: DirectoryRegistrationHandle | undefined
   let directoryFacts: unknown
   const ensureDirectory = (): void => {
-    const entries = directoryEntries(profiles())
+    const entries = directoryEntries(profiles().all, config)
     if (deepEqualJson(entries, directoryFacts)) return
     // Atomic replace, never dispose-then-register: a route another adapter
     // family already declares (a profile keyed `deepseek-official`) would
@@ -238,28 +268,9 @@ export function apply(ctx: Context, config: Config): void {
     directoryFacts = entries
   }
   ensureDirectory()
-  /**
-   * The credential a named route already resolves, for an interrogation whose
-   * draft carries none. A route being declared for the first time names no
-   * profile yet, and a profile that names no credential defers to pi-ai's own
-   * discovery, so both answer `undefined` and the endpoint is asked
-   * unauthenticated — the same posture a request to that route would take.
-   */
-  const storedApiKey = async (provider: string | undefined): Promise<string | undefined> => {
-    if (provider === undefined) return undefined
-    const profile = profiles().get(provider)
-    if (profile === undefined) return undefined
-    return resolveApiKey(provider, profile)
-  }
-  // Interrogating an endpoint is a configuration-time action over a draft, so
-  // it is offered for the whole namespace rather than per route: the provider
-  // a surface is adding does not exist yet. The draft is the whole request
-  // except the credential: a configuration surface edits a redacted descriptor
-  // and never holds a stored secret, so an already-configured route supplies
-  // its own here rather than being interrogated unauthenticated.
+  // Draft discovery never borrows the credential of a possibly different stored endpoint.
   ctx.llm.registerModelDiscovery(NS, (request, signal) => discoverModels(
     { ...request, ...signal === undefined ? {} : { signal } },
-    () => storedApiKey(request.provider),
   ))
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below. A bare
@@ -268,7 +279,7 @@ export function apply(ctx: Context, config: Config): void {
   let registration: AdapterRegistrationHandle | undefined
   let registeredFacts: unknown
   const ensureRegistrationFacts = (): void => {
-    const facts = registrationFacts(profiles())
+    const facts = registrationFacts(profiles().routable)
     if (deepEqualJson(facts, registeredFacts)) return
     // The registry captures the route set and each route's retry policy at
     // registration, so a change to either must re-register. The swap is
@@ -276,7 +287,7 @@ export function apply(ctx: Context, config: Config): void {
     // conflicting route leaves the previous routes serving requests, and
     // `registeredFacts` only advances once the registry actually holds the
     // new set — so returning to a working configuration always re-applies.
-    const routes = [...profiles().keys()]
+    const routes = [...profiles().routable.keys()]
     if (registration === undefined) {
       // Dormant bare mount: nothing is registered until a section supplies
       // profiles, and an empty section keeps it that way.
@@ -296,7 +307,9 @@ export function apply(ctx: Context, config: Config): void {
     // Refuse an unserviceable section where it is written: without this a
     // schema-valid profile the adapter cannot serve would be stored and then
     // silently disable every route in this namespace.
-    validate: assertServiceable,
+    validate: (value) => { resolveProfiles(value.providers, 'deferred') },
+    validateWrite: (value) => { assertWritableConfig(value, current()) },
+    redact: value => redactPiAiSecrets(value, Config),
     setSource: (source) => {
       current = source
     },

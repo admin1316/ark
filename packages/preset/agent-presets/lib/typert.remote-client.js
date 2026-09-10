@@ -5,7 +5,7 @@ const _deepseek_ai_dsh_agent_presets_agentPreset_copy_parameter_0$schema = z.str
 const _deepseek_ai_dsh_agent_presets_agentPreset_copy_parameter_1$schema = z.string()
 const _deepseek_ai_dsh_agent_presets_agentPreset_copy_parameter_2$schema = z.union([z.undefined(), z.string()])
 const _deepseek_ai_dsh_agent_presets_agentPreset_copy_result$schema = z.object({
-  'agentPreset': z.string(),
+  'agentPreset': z.string().readonly(),
 })
 const _deepseek_ai_dsh_agent_presets_agentPreset_list_result$schema = z.object({
   'presets': z.array(z.object({
@@ -20,10 +20,12 @@ const _deepseek_ai_dsh_agent_presets_agentPreset_list_result$schema = z.object({
   'hasDocument': z.boolean().readonly(),
 })
 const _deepseek_ai_dsh_agent_presets_agentPreset_openDocument_parameter_0$schema = z.string()
-const _deepseek_ai_dsh_agent_presets_agentPreset_openDocument_result$schema = z.object({
-  'agentPreset': z.string().readonly(),
-  'requiresNativeHandoff': z.literal(true).readonly(),
-})
+const _deepseek_ai_dsh_agent_presets_agentPreset_openDocument_result$schema = z.union([z.object({
+  'opened': z.literal(true).readonly(),
+}), z.object({
+  'opened': z.literal(false).readonly(),
+  'path': z.string().readonly(),
+})])
 const _deepseek_ai_dsh_agent_presets_agentPreset_read_parameter_0$schema = z.string()
 const _deepseek_ai_dsh_agent_presets_agentPreset_read_result$schema = z.object({
   'agentPreset': z.string().readonly(),
@@ -33,11 +35,11 @@ const _deepseek_ai_dsh_agent_presets_agentPreset_read_result$schema = z.object({
   'description': z.string().readonly().optional(),
 })
 const _deepseek_ai_dsh_agent_presets_agentPreset_remove_parameter_0$schema = z.string()
-const _deepseek_ai_dsh_agent_presets_agentPreset_remove_result$schema = z.object({})
+const _deepseek_ai_dsh_agent_presets_agentPreset_remove_result$schema = z.record(z.string(), z.never())
 const _deepseek_ai_dsh_agent_presets_agentPreset_select_parameter_0$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_agent_presets_agentPreset_select_parameter_1$schema = z.string()
 const _deepseek_ai_dsh_agent_presets_agentPreset_select_result$schema = z.object({
-  'agentPreset': z.string(),
+  'agentPreset': z.string().readonly(),
 })
 
 export const TYPERT_REMOTE = {
@@ -48,7 +50,7 @@ export const TYPERT_REMOTE = {
       service: 'agentPresets',
       namespace: 'agentPreset',
       method: 'copy',
-      implementation: 'remoteCopy',
+      implementation: 'remoteExportCopy',
       invocation: { kind: 'direct' },
       parameters: [
         {
@@ -85,26 +87,26 @@ export const TYPERT_REMOTE = {
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets#agentPreset/copy:result',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetSelection',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_copy_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":311,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":567,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-agent-presets#agentPreset/list',
       service: 'agentPresets',
       namespace: 'agentPreset',
       method: 'list',
-      implementation: 'remoteList',
+      implementation: 'remoteExportList',
       invocation: { kind: 'direct' },
       parameters: [
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#RemoteAgentPresetCatalog',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetRoster',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_list_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":221,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":324,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-agent-presets#agentPreset/openDocument',
@@ -125,19 +127,20 @@ export const TYPERT_REMOTE = {
           },
         },
       ],
+      cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#RemoteAgentPresetOpenTarget',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetDocumentOpen',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_openDocument_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":327,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":627,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-agent-presets#agentPreset/read',
       service: 'agentPresets',
       namespace: 'agentPreset',
       method: 'read',
-      implementation: 'remoteRead',
+      implementation: 'readDocument',
       invocation: { kind: 'direct' },
       parameters: [
         {
@@ -153,17 +156,17 @@ export const TYPERT_REMOTE = {
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#RemoteAgentPresetDocument',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetDocument',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_read_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":288,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":511,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-agent-presets#agentPreset/remove',
       service: 'agentPresets',
       namespace: 'agentPreset',
       method: 'remove',
-      implementation: 'remoteRemove',
+      implementation: 'remoteExportDelete',
       invocation: { kind: 'direct' },
       parameters: [
         {
@@ -179,10 +182,10 @@ export const TYPERT_REMOTE = {
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets#agentPreset/remove:result',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetRemoved',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_remove_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":343,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":610,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-agent-presets#agentPreset/select',
@@ -220,10 +223,10 @@ export const TYPERT_REMOTE = {
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-agent-presets#agentPreset/select:result',
+        typeSymbol: '@deepseek-ai/dsh-agent-presets/types#AgentPresetSelection',
         schema: _deepseek_ai_dsh_agent_presets_agentPreset_select_result$schema,
       },
-      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":246,"column":9},
+      sourceLocation: {"file":"packages/preset/agent-presets/src/index.ts","line":778,"column":9},
     },
   ],
 }

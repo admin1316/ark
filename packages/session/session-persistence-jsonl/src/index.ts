@@ -9,11 +9,12 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { readdirSync } from 'node:fs'
-import { open, mkdir, readFile, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
+import { open, mkdir, readFile, readdir, realpath, link, lstat, rename, rm, stat, truncate } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
+import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import {
   DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
   SessionPersistence, SessionPersistenceRevision, PersistenceCoordinator, SessionFormatUnsupportedError,
@@ -38,6 +39,8 @@ export type { JsonlCompression } from './format.ts'
 
 const DEFAULT_PACK_CHUNKS = true
 const DEFAULT_COMPRESSION: JsonlCompression = 'zstd'
+const DELETE_TOMBSTONE_DIR = '~delete'
+const WRITER_LOCK_DIR = '~locks'
 /**
  * Internal scheduling constant, not deployment configuration: balance
  * frame-boundary event-loop yields against `setImmediate` overhead. One frame
@@ -185,6 +188,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   append(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
     return this.coordinator.append(id, events)
+  }
+
+  delete(id: SessionId): Promise<boolean> {
+    return this.coordinator.delete(id)
   }
 
   override prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
@@ -430,17 +437,77 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   /** Durably append a batch, lazily materializing the file when not yet present. */
   async appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void> {
-    await this.ensureRootEncoding()
-    if (isMaterialized) {
-      await this.appendLines(meta, events)
-    } else {
-      await this.materialize(meta, events)
-    }
+    await this.withMutation(meta.id, async () => {
+      if (isMaterialized) await this.appendLines(meta, events)
+      else await this.materialize(meta, events)
+    })
   }
 
   /** Materialize a header-only JSONL artifact for an explicitly durable empty session. */
   async materializeHeader(meta: SessionHeader): Promise<void> {
-    await this.materialize(meta, [])
+    await this.withMutation(meta.id, () => this.materialize(meta, []))
+  }
+
+  private async withMutation<T>(id: SessionId, operation: () => Promise<T>): Promise<T> {
+    await this.ensureRootEncoding()
+    const locks = join(this.root, WRITER_LOCK_DIR)
+    await mkdir(locks, { recursive: true, mode: 0o700 })
+    if (!(await lstat(locks)).isDirectory()) throw new Error(`invalid session writer lock directory: "${locks}"`)
+    return withFileLock(join(locks, encodeSegment(id)), operation)
+  }
+
+  /**
+   * Move a session out of discovery before removing its owned directory.
+   * @param id - exact stored identity, encoded before use in any path.
+   * @returns whether stored data or a retryable tombstone was removed.
+   */
+  async deleteStored(id: SessionId): Promise<boolean> {
+    return this.withMutation(id, async () => {
+      const tombstones: string[] = []
+      for (const project of await this.listProjectDirs()) {
+        const root = join(project, DELETE_TOMBSTONE_DIR)
+        try {
+          if (!(await lstat(root)).isDirectory()) throw new Error(`invalid session deletion directory: "${root}"`)
+          const pending = join(root, encodeSegment(id))
+          if (!(await lstat(pending)).isDirectory()) throw new Error(`invalid session deletion tombstone: "${pending}"`)
+          tombstones.push(pending)
+        } catch (error) {
+          if (!isENOENT(error)) throw error
+        }
+      }
+      if (tombstones.length > 1) throw new Error(`duplicate session deletion tombstones for "${id}"`)
+      for (const pending of tombstones) await this.removeTombstone(pending)
+      const path = await this.findLog(id)
+      if (path === undefined) return tombstones.length > 0
+      const directory = dirname(path)
+      if (!(await lstat(directory)).isDirectory() || !(await lstat(path)).isFile()) {
+        throw new Error(`session deletion requires an ordinary directory and log: "${path}"`)
+      }
+      const first = this.compression === 'zstd' ? await this.readFirstZstdLine(path) : await this.readFirstLine(path)
+      const header = first === undefined ? undefined : parseHeaderMeta(first)
+      if (header === undefined) throw new Error(`corrupt session log: invalid header line in "${path}"`)
+      await this.assertStoredIdentity(path, header, id)
+      const project = dirname(directory)
+      const tombstoneRoot = join(project, DELETE_TOMBSTONE_DIR)
+      if (process.platform === 'win32') await ensureDurableDirectoryWin32(tombstoneRoot)
+      else await mkdir(tombstoneRoot, { recursive: true, mode: 0o700 })
+      if (!(await lstat(tombstoneRoot)).isDirectory()) throw new Error(`invalid session deletion directory: "${tombstoneRoot}"`)
+      const tombstone = join(tombstoneRoot, encodeSegment(id))
+      if (process.platform === 'win32') await publishNewFileWin32(directory, tombstone)
+      else {
+        await this.syncDirPosix(project)
+        await rename(directory, tombstone)
+        await this.syncDirPosix(project)
+        await this.syncDirPosix(tombstoneRoot)
+      }
+      await this.removeTombstone(tombstone)
+      return true
+    })
+  }
+
+  private async removeTombstone(path: string): Promise<void> {
+    await rm(path, { recursive: true, force: false })
+    if (process.platform !== 'win32') await this.syncDirPosix(dirname(path))
   }
 
   /**
@@ -453,9 +520,11 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     tornMarker: JsonlTornMarker | undefined,
     closers: readonly SessionEvent[],
   ): Promise<void> {
-    if (tornMarker !== undefined) await this.repair(meta, tornMarker.truncateTo)
-    const repairedEvents = [...(tornMarker?.recoveredEvents ?? []), ...closers]
-    if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents)
+    await this.withMutation(meta.id, async () => {
+      if (tornMarker !== undefined) await this.repair(meta, tornMarker.truncateTo)
+      const repairedEvents = [...(tornMarker?.recoveredEvents ?? []), ...closers]
+      if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents)
+    })
     if (tornMarker !== undefined) this.ctx.logger.warn(`${this.name}: session "${meta.id}" recovered from a torn tail; incomplete tail bytes were discarded`)
   }
 
@@ -872,7 +941,8 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       signal?.throwIfAborted()
       const entries = await readdir(this.root, { withFileTypes: true })
       signal?.throwIfAborted()
-      return entries.filter(e => e.isDirectory()).map(e => join(this.root, e.name))
+      return entries.filter(e => e.isDirectory() && e.name !== WRITER_LOCK_DIR && e.name !== '.dsh-locks')
+        .map(e => join(this.root, e.name))
     } catch (error) {
       // Only an absent root means no sessions; rethrow every other I/O failure.
       if (isENOENT(error)) return []
@@ -888,7 +958,8 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     const legacy = entries.find(entry =>
       entry.isFile() && (entry.name.endsWith('.jsonl') || entry.name.endsWith('.jsonl.zstd')))
     if (legacy !== undefined) throw this.legacyLayout(join(project, legacy.name))
-    return entries.filter(entry => entry.isDirectory()).map(entry => join(project, entry.name))
+    return entries.filter(entry => entry.isDirectory() && entry.name !== DELETE_TOMBSTONE_DIR)
+      .map(entry => join(project, entry.name))
   }
 
   /** Reject a root that already belongs to the other physical encoding. */

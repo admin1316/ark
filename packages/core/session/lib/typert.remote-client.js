@@ -98,6 +98,7 @@ const _deepseek_ai_dsh_session_session_fork_result$schema = z.union([z.object({
 })])
 const _deepseek_ai_dsh_session_session_history_parameter_0$schema = z.object({
   'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
   'beforeSeq': z.number().readonly().optional(),
   'maxMessages': z.number().readonly().optional(),
 })

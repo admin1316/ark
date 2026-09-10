@@ -5,13 +5,14 @@ import { z as z$1 } from "zod";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 //#region lib/types/spec.js
 /**
-* The session-projcache domain declaration: one `sessions` table keyed by
+* The projection-cache domain declaration: one `sessions` table keyed by
 * {@link SessionId}, each record the full projection checkpoint for one
-* session (`key → {ver, seq, val}` rows). The spec object
-* is the single source of the domain's identity, version, and record schema;
-* the storage-domain routing decides the medium (the shipped composition's
-* json backend lands it at `<root>/session_projcache.json`, beside
-* `workspace.json`).
+* session (`key → {ver, seq, val}` rows). The spec object is the single
+* source of the domain's identity, version, layout, and record schema; the
+* storage-domain routing decides the medium (the shipped composition's json
+* backend stores the domain `per-record`: one document per session under
+* `<root>/session_projcache/sessions/`, so a checkpoint write rewrites one
+* session's document instead of the whole unit).
 * @module @deepseek-ai/dsh-session-projection-cache/src/spec
 */
 /**
@@ -32,9 +33,9 @@ const checkpointRow = z$1.object({
 * that distinguish one session lifecycle from another under the same id. A
 * session id names a slot, not a lifecycle — a deleted-then-recreated id, or
 * a persistence root swapped under a surviving cache, would otherwise let an
-* old row pass every watermark check and seed state folded from an unrelated
-* log. Reads validate this against the live header (listing) or the stored
-* header (cold read) before accepting any row.
+* old record pass every watermark check and seed state folded from an
+* unrelated log. Reads validate this against the live header (listing) or
+* the stored header (cold read) before accepting any record.
 */
 const checkpointIdentity = z$1.object({
 	createdAt: z$1.number().int().nonnegative(),
@@ -51,27 +52,34 @@ const checkpointRecord = z$1.object({
 	rows: z$1.record(z$1.string(), checkpointRow)
 });
 /**
-* The session-projcache domain spec. Version bumps discard the whole medium
-* (cache semantics: a stale or unreadable cache costs a longer tail replay,
-* never a wrong value).
+* The session-projcache domain spec. The `per-record` layout scopes version
+* bumps per session: after a bump, a stale session document is discarded on
+* open (cache semantics — a stale or unreadable cache costs a longer tail
+* replay, never a wrong value) while the rest of the domain stays usable,
+* instead of rejecting the whole medium.
 */
 const projectionCacheDomainSpec = defineDomain({
 	name: "session_projcache",
-	version: 3,
+	version: 4,
+	layout: "per-record",
 	tables: { sessions: domainTable(checkpointRecord) }
 });
 //#endregion
 //#region lib/types/index.js
 /**
 * Persisted projection cache (`ctx.sessionProjectionCache`): durable
-* checkpoints of every client-visible or explicitly persisted projection unit's state, one record per
-* session on the domain data form (`session_projcache` domain — the shipped
-* json backend lands it beside `workspace.json`). The cache is a fold
-* shortcut, never an authority: a row is possibly stale (its `seq`
-* says how stale) but never wrong, so every write path is fail-soft (a lost
-* write costs a longer tail replay on the next cold read) and a
-* `ver` mismatch discards the row instead of migrating it. Design
-* authority: the session-projection RFC
+* checkpoints of every projection unit's state, one record per session on
+* the `session_projcache` domain (`per-record` layout — the shipped json
+* backend stores one document per session under its root). Reads and writes
+* share ONE coherent state: the domain's in-memory tables serve every read
+* synchronously, and each write lands on the domain's write chain (durability
+* first, then memory), so a read can never observe a disk write the memory
+* has not applied, or a memory value the disk does not hold. The cache is a
+* fold shortcut, never an authority: a row
+* is possibly stale (its `seq` says how stale) but never wrong, so every
+* write path is fail-soft (a lost write costs a longer tail replay on the
+* next cold read) and a `ver` mismatch discards the row instead of migrating
+* it. Design authority: the session-projection RFC
 * (.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md).
 * @module @deepseek-ai/dsh-session-projection-cache
 */
@@ -82,31 +90,22 @@ const Config = z.object({
 /**
 * The persisted projection cache service. Opens the `session_projcache`
 * domain at init, checkpoints live sessions on a throttled write-behind
-* (count/interval triggers from {@link Config}) plus two mandatory points —
-* `turn/end` and session disposal (the live-to-cold moment) — and serves the
-* cold-read ladder: cached row, persistence `readFrom` tail, registry
-* `restore`, durable write-back. Every durable write is fail-soft: failures
-* log a warning and the cache self-heals on the next write or cold read.
+* (count/interval triggers from {@link Config}) plus three mandatory points —
+* session creation, `turn/end`, and session disposal (the live-to-cold
+* moment) — and serves the
+* cached rows for a session header. Every durable write is fail-soft:
+* failures log a warning and the cache self-heals on the next write.
 */
 var SessionProjectionCache = class extends Service {
 	config;
 	static inject = [
 		"storageDomain",
 		"sessionProjections",
-		"sessionPersistence",
 		"sessions"
 	];
 	static Config = Config;
 	table;
 	dirty = /* @__PURE__ */ new Map();
-	/** Per-id durable mutation chain: a delete waits for older write-back and wins. */
-	mutations = /* @__PURE__ */ new Map();
-	/**
-	* Synchronous invalidation generation for cold reads that are still awaiting
-	* persistence. A delete increments before it joins the mutation chain, so a
-	* read that predates it cannot enqueue a stale write after deletion wins.
-	*/
-	deletionEpoch = /* @__PURE__ */ new Map();
 	constructor(ctx, config) {
 		super(ctx, "sessionProjectionCache");
 		this.config = config;
@@ -116,28 +115,16 @@ var SessionProjectionCache = class extends Service {
 		const domain = await this.ctx.storageDomain.open(projectionCacheDomainSpec);
 		this.ctx.effect(() => () => domain.close(), "sessionProjectionCache.domainClose");
 		this.table = domain.table("sessions");
-		await this.pruneOrphanRows();
 		this.installWritePath();
-	}
-	/**
-	* Remove rows with no authoritative stored or live Session. This startup
-	* sweep covers crash-left deletion completion that occurred before this
-	* plugin registered its persistence event listener.
-	*/
-	async pruneOrphanRows() {
-		const retained = new Set((await this.ctx.sessionPersistence.list()).map((header) => header.id));
-		for (const session of this.ctx.sessions.list()) retained.add(session.id);
-		for (const id of this.requireTable().keys()) {
-			if (retained.has(id)) continue;
-			await this.delete(id);
-		}
 	}
 	/**
 	* The stored record for one session, accepted only when its bound log
 	* identity matches `expected`. A session id names a slot, not a lifecycle:
 	* a recreated id or a persistence store swapped under a surviving cache
 	* must not let an old record seed state folded from an unrelated log.
-	* Synchronous from the domain's in-memory state.
+	* Synchronous from the domain's in-memory state — the same state every
+	* write mutated, so a read can never go around the write chain to the
+	* medium.
 	* @param id - the session whose record is read.
 	* @param expected - the log identity the caller holds (live or stored header).
 	* @returns the identity-matching record, or `undefined` (absent or unrelated).
@@ -149,32 +136,53 @@ var SessionProjectionCache = class extends Service {
 	}
 	/**
 	* The zero-I/O listing read: whole values viewed straight from the stored
-	* rows (version-matching keys only), each cut carried with its watermark
-	* so a client value store can seed under its higher-seq-wins rule — as
-	* stale as the last durable checkpoint but never wrong, and never from an
+	* rows (version-matching keys only), each cut carried with its watermark so
+	* a client value store can seed under its higher-seq-wins rule — as stale
+	* as the last durable checkpoint but never wrong, and never from an
 	* unrelated log (the caller's header is the identity witness). Fresher
-	* paths (the history tail baseline, {@link coldSnapshot}) supersede these
-	* values whenever a session is actually opened.
+	* paths (the history tail baseline) supersede these values whenever a
+	* session is actually opened.
 	* @param meta - the listed session's header (identity witness; no log read).
+	* @param keys - optional projection keys required by the caller's audience.
 	* @returns the cut (`asOfSeq` = lowest served-row watermark), or
 	*   `undefined` when no usable row exists for this lifecycle.
 	*/
-	cachedSnapshot(meta) {
+	cachedSnapshot(meta, keys) {
 		const record = this.recordFor(meta.id, identityOf(meta));
 		if (record === void 0) return void 0;
-		const values = this.ctx.sessionProjections.viewCheckpoint(record.rows);
-		const keys = Object.keys(values);
-		if (keys.length === 0) return void 0;
+		const values = this.ctx.sessionProjections.viewCheckpoint(record.rows, keys);
+		const servedKeys = Object.keys(values);
+		if (servedKeys.length === 0) return void 0;
 		return {
-			asOfSeq: Math.min(...keys.map((key) => record.rows[key].seq)),
+			asOfSeq: Math.min(...servedKeys.map((key) => record.rows[key].seq)),
 			values
 		};
 	}
 	/**
-	* Durably checkpoint one live session NOW (both mandatory points call
+	* Hydrate projection cells for an already-prepared Session without another
+	* persistence read. The cache seeds matching rows; the supplied exact log
+	* advances every unit to the observation cut. No checkpoint is written
+	* because the logical observation may contain recovery events not yet durable.
+	* @param session - exact unpublished Session retained by persistence.
+	* @param meta - observed lifecycle header.
+	* @param events - exact logical event prefix represented by the observation.
+	* @returns all projection values at the event cut.
+	*/
+	hydratePrepared(session, meta, events) {
+		const record = this.recordFor(meta.id, identityOf(meta));
+		if (record === void 0) return this.ctx.sessionProjections.hydrate(session, {}, events, 0);
+		try {
+			return this.ctx.sessionProjections.hydrate(session, record.rows, events, 0);
+		} catch {
+			return this.ctx.sessionProjections.hydrate(session, {}, events, 0);
+		}
+	}
+	/**
+	* Durably checkpoint one live session NOW (all mandatory points call
 	* this; tests and carriers may too). The registry cut is snapshotted at
-	* this boundary (states are live references), then the whole record is
-	* replaced. NOT fail-soft — callers on the fail-soft paths contain it.
+	* this boundary (states are live references), then the session's record is
+	* replaced on the domain's write chain. NOT fail-soft — callers on the
+	* fail-soft paths contain it.
 	* @param session - the live session to checkpoint.
 	* @returns resolution after durability and event emission.
 	*/
@@ -185,54 +193,25 @@ var SessionProjectionCache = class extends Service {
 		await this.put(session.id, identityOf(session.header), rows);
 	}
 	/**
-	* Permanently remove one session-derived checkpoint row. Idempotent and
-	* serialized with writes for the same id, so a cold read that started
-	* before log deletion cannot publish a row after this call resolves.
-	* @param id - permanently deleted session identity.
+	* Cold-read one session's projections from its complete log. Each unit is
+	* seeded from the identity-checked cached rows — the registry skips `apply`
+	* for the already-folded prefix (events at or below the row's `seq`) — and
+	* the refreshed checkpoint is written back (fail-soft, fire-and-forget), so
+	* the first cold read creates the cache row and later ones seed from it.
+	* The caller supplies the complete log in seq order: this service never
+	* consults the persistence layer.
+	* @param meta - the stored session header (identity witness).
+	* @param events - the session's complete log, in seq order.
+	* @returns the projection cut at the log end.
 	*/
-	delete(id) {
-		this.deletionEpoch.set(id, (this.deletionEpoch.get(id) ?? 0) + 1);
-		return this.serializeMutation(id, async () => {
-			await this.requireTable().delete(id);
+	coldSnapshot(meta, events) {
+		const restored = this.ctx.sessionProjections.restore(this.recordFor(meta.id, identityOf(meta))?.rows ?? {}, events, 0, meta);
+		this.put(meta.id, identityOf(meta), restored.checkpoint).catch((error) => {
+			this.ctx.logger.warn(`session projection cache: cold-read write-back for "${meta.id}" failed (cache stays stale): ${String(error)}`);
 		});
-	}
-	/**
-	* Cold-read one persisted session's projections with zero full-log load:
-	* cached rows + a persistence `readFrom` tail from the registry's restore
-	* floor, refolded by the registry and written back (fail-soft) so the next
-	* cold read starts closer. A cache row invalidated by a shrunk log
-	* (crash-repair truncation) triggers one full re-read from seq 0 — the
-	* ladder's slow rung, still no crash. Rejects when the session has no
-	* persisted log (`not found` from the persistence seam).
-	* @param id - the persisted session to read.
-	* @param signal - optional cancellation for the persistence reads.
-	* @returns the snapshot cut at the stored log end.
-	*/
-	async coldSnapshot(id, signal) {
-		const deletionEpoch = this.deletionEpoch.get(id) ?? 0;
-		const record = this.requireTable().get(id);
-		const cached = record?.rows ?? {};
-		const floor = this.ctx.sessionProjections.restoreFloor(cached);
-		const persistence = this.ctx.sessionPersistence;
-		if (floor === void 0) return {
-			asOfSeq: (await persistence.readFrom(id, 0, signal)).events.at(-1)?.seq ?? -1,
-			values: {}
-		};
-		let restored;
-		const tail = await persistence.readFrom(id, floor, signal);
-		const related = record === void 0 || identityMatches(record.identity, identityOf(tail.meta));
-		try {
-			if (!related) throw new Error("unrelated log identity");
-			restored = this.ctx.sessionProjections.restore(cached, tail.events, floor);
-		} catch {
-			const whole = await persistence.readFrom(id, 0, signal);
-			restored = this.ctx.sessionProjections.restore({}, whole.events, 0);
-		}
-		if ((this.deletionEpoch.get(id) ?? 0) === deletionEpoch) await this.putSoft(id, identityOf(tail.meta), restored.checkpoint, "cold-read write-back");
 		return restored.snapshot;
 	}
 	installWritePath() {
-		this.ctx.on("session-persistence/deleted", (sessionId) => this.delete(sessionId));
 		this.ctx.on("session/event", (session, event) => {
 			if (event.type === "turn/end") {
 				this.flushSoft(session, "turn/end");
@@ -252,6 +231,9 @@ var SessionProjectionCache = class extends Service {
 				this.flushSoft(session, "interval");
 			}, this.config.writeIntervalMs);
 		});
+		this.ctx.on("session/created", (session) => {
+			this.flushSoft(session, "create");
+		});
 		this.ctx.on("session/disposed", (session) => {
 			this.flushSoft(session, "detach");
 			this.markClean(session);
@@ -265,7 +247,7 @@ var SessionProjectionCache = class extends Service {
 	/**
 	* One fail-soft durable checkpoint. Every caller has work by construction:
 	* the throttle triggers only fire dirty (markClean clears the timer with
-	* the counter) and the two mandatory points write unconditionally.
+	* the counter) and the mandatory points write unconditionally.
 	*/
 	async flushSoft(session, trigger) {
 		try {
@@ -288,27 +270,10 @@ var SessionProjectionCache = class extends Service {
 	async put(id, identity, rows) {
 		const detached = snapshotJsonValue(rows);
 		if (detached === void 0) throw new TypeError("projection checkpoint is not losslessly JSON-serializable (a unit state violates the plain-JSON contract)");
-		await this.serializeMutation(id, () => this.requireTable().put(id, {
+		await this.requireTable().put(id, {
 			identity,
 			rows: detached
-		}));
-	}
-	/** Serialize durable row mutations by Session id and retire settled tails. */
-	serializeMutation(id, operation) {
-		const current = (this.mutations.get(id) ?? Promise.resolve()).catch(() => void 0).then(operation);
-		this.mutations.set(id, current);
-		current.finally(() => {
-			if (this.mutations.get(id) === current) this.mutations.delete(id);
-		}).catch(() => void 0);
-		return current;
-	}
-	/** Fail-soft {@link put}: cache writes must never fail their caller's read or event path. */
-	async putSoft(id, identity, rows, what) {
-		try {
-			await this.put(id, identity, rows);
-		} catch (error) {
-			this.ctx.logger.warn(`session projection cache: ${what} for "${id}" failed (cache stays stale): ${String(error)}`);
-		}
+		});
 	}
 	requireTable() {
 		/* v8 ignore next -- Service.init assigns the table before the service becomes injectable */

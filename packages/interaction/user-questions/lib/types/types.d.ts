@@ -1,9 +1,4 @@
-/**
- * Wire-safe question and answer types, free of cordis/service imports so
- * generated Remote and Native event contracts can consume them without loading
- * this package's Context augmentation.
- * @module @deepseek-ai/dsh-user-questions/types
- */
+/** Wire-safe question and answer records. @module @deepseek-ai/dsh-user-questions/types */
 /** One selectable answer offered to the user. */
 export interface AskUserQuestionOption {
     /** User-facing label. */

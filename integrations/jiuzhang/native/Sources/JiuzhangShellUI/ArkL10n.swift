@@ -1447,7 +1447,7 @@ public enum ArkL10n {
       zh: "仅可从已完成轮次的最后一条消息分支",
       en: "Only the final message of a completed turn can be forked"),
     .messageMetricDuration: Entry(zh: "用时 {0}", en: "Duration {0}"),
-    .messageMetricFirstToken: Entry(zh: "首 token {0}", en: "First token {0}"),
+    .messageMetricFirstToken: Entry(zh: "首响应 {0}", en: "First response {0}"),
     .chatDisplayTitle: Entry(zh: "会话显示", en: "Conversation Display"),
     .chatDisplayAdjust: Entry(zh: "调整会话显示", en: "Adjust Conversation Display"),
     .chatDisplayDetail: Entry(

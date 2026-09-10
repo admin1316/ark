@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, {
-  ToolCallId,
+  CallId,
   LlmAdapter,
   ReasoningEffortId,
 } from '@deepseek-ai/dsh-llm'
@@ -91,7 +91,7 @@ let counter = 0
 function call(ctx: Context, args: unknown) {
   return ctx.tools.execute({
     signal: testToolSignal,
-    callId: ToolCallId(`list-models-${++counter}`),
+    callId: CallId(`list-models-${++counter}`),
     name: 'list_subagent_models',
     arguments: args,
   })

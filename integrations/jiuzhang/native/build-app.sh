@@ -1944,6 +1944,9 @@ install -m 0644 "${native_root}/Resources/Info.plist" "${app_path}/Contents/Info
 "${node_executable}" "${native_root}/candidate-data.mjs" apply "${app_path}/Contents/Info.plist"
 install -m 0644 "${scratch}/AppIcon.icns" "${app_path}/Contents/Resources/AppIcon.icns"
 install -m 0644 "${wiki_background_source}" "${app_path}/Contents/Resources/WikiNeuralBackground.png"
+"${node_executable}" "${native_root}/provider-icons.mjs" "${native_root}/Resources/ProviderIcons"
+/usr/bin/ditto "${native_root}/Resources/ProviderIcons" "${app_path}/Contents/Resources/ProviderIcons"
+"${node_executable}" "${native_root}/provider-icons.mjs" "${app_path}/Contents/Resources/ProviderIcons"
 
 # The package adapter above resolves this bundle from the standard sealed
 # Contents/Resources location in Ark.app.

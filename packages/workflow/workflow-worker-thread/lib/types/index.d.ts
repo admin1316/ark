@@ -22,8 +22,6 @@ export interface Config {
     maxTotalAgents?: number;
     /** Items accepted by a single `parallel()`/`pipeline()` call (default 4096). */
     maxItemsPerCall?: number;
-    /** Total `phase()` + `log()` calls one run may emit (the narration-flood backstop, default 5000). */
-    maxNarrationEvents?: number;
     /** vm timeout for the script's initial synchronous slice, inside the worker (default 5000 ms). */
     syncTimeoutMs?: number;
     /**

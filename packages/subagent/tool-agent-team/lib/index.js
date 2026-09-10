@@ -3,22 +3,20 @@ import { TeamTaskId } from "@deepseek-ai/dsh-agent-team";
 import { scopeChainOf, scopeOf } from "@deepseek-ai/dsh-scope";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 //#region lib/types/index.js
-/** Scoped model-facing tools for the opt-in Agent Teams runtime. */
 /** Cordis plugin name. */
 const name = "tool-agent-team";
-/** Services required by the Team tool plugin. */
+/** Services required by Team tools. */
 const inject = [
 	"agents",
 	"agentTeams",
 	"tools",
 	"systemPrompt"
 ];
-/** Loader schema for the opt-in Team tool plugin. */
+/** Validated defaults for teammate creation. */
 const Config = z.object({
 	freshProvider: z.string().default("spawn"),
 	forkProvider: z.string().default("fork")
 });
-/** Model-facing collaboration guidance shared by Lead and teammates. */
 const POLICY = `Agent Teams is available in this session, but create teammates only when the user explicitly asks to use Agent Teams or teammates.
 
 The Team Lead and all teammates share the same working directory and filesystem. Edits are immediately visible to every member. Split write work into disjoint scopes, record expected write scopes on shared tasks, and use task dependencies when work must be ordered. Write-scope overlap is advisory, not a lock.
@@ -28,11 +26,6 @@ Prefer read/edit/write for file changes. If a file operation returns FS_STALE_VE
 Use send_message for quiet information that must not start an idle teammate. Use followup_task when the target should run another turn. A delivered peer item starts with its stable message id and sender name. A successful send is already durable even when its result says queued; do not resend it. Shared-task workflow is list, get, claim with the current revision, perform the work, then complete. Task readiness never starts an owner. Before wait_agent, use list_agents and make sure another required member is running or provisioning; use followup_task first when the required member is inactive. wait_agent observes only changes after that call starts, never wakes a member, and returns noProgress immediately when no other member can produce a change. Re-list after wakeup or timeout. The Lead must wait for required teammates before giving the final answer.`;
 const ACTIVE_WAIT_STATUSES = new Set(["running", "provisioning"]);
 const NO_ACTIVE_PEER_MESSAGE = "No other Team member is running or provisioning. wait_agent cannot make progress or wake inactive teammates. Re-list with list_agents and team_task_list, then use followup_task to wake each required inactive teammate before waiting again.";
-/**
-* One roster row, matching `TeamMemberView`. The Lead pseudo-row omits the
-* teammate-only provisioning fields, so only identity, role, status, and
-* diagnostics are required.
-*/
 const MEMBER_VIEW_SCHEMA = {
 	type: "object",
 	additionalProperties: false,
@@ -75,7 +68,6 @@ const MEMBER_VIEW_SCHEMA = {
 		}
 	}
 };
-/** One shared task, matching the public `TeamTaskView`. */
 const TASK_VIEW_SCHEMA = {
 	type: "object",
 	additionalProperties: false,
@@ -155,7 +147,6 @@ const SEND_VALUE_SCHEMA = {
 		}
 	}
 };
-/** `noProgress` is present only on the model-only shortcut that skips the wait. */
 const WAIT_VALUE_SCHEMA = {
 	type: "object",
 	additionalProperties: false,
@@ -206,13 +197,6 @@ const TASK_LIST_VALUE_SCHEMA = {
 		nextCursor: { type: "integer" }
 	}
 };
-/**
-* Declare one canonical output schema with compact model-facing JSON. Every
-* Team result is a fixed record, so the declared schema is what makes the
-* compiler check `execute` against the value the model is promised.
-* @param schema - canonical value schema for one tool.
-* @returns the `output` declaration accepted by {@link defineTool}.
-*/
 function jsonOutput(schema) {
 	return {
 		schema,
@@ -222,26 +206,22 @@ function jsonOutput(schema) {
 		}]
 	};
 }
-/** Recover the exact caller guaranteed by Agent-scoped tool discovery. */
 function callingAgent(agent, toolName) {
-	/* v8 ignore next 2 -- Team tools are registered only in an exact Agent scope, so discovery supplies this carrier. */
 	if (agent === void 0) throw new Error(`${toolName} requires a calling Agent`);
 	return agent;
 }
-/** Register the complete Team tool set in one exact registration scope. */
 function install(scoped, ctx, config, membershipForPrompt) {
 	const disposers = [];
-	const register = (disposer) => {
-		disposers.push(disposer);
+	const register = (dispose) => {
+		disposers.push(dispose);
 	};
 	try {
 		register(scoped.systemPrompt.section({
 			name: "team:policy",
 			order: 60,
-			text: ({ scope }) => {
-				const membership = membershipForPrompt(scope);
-				if (membership === void 0) return POLICY;
-				return `${POLICY}\n\nYour Team role is ${membership.role}; your Team name is ${membership.name}; Team id is ${membership.id}.`;
+			text: () => {
+				const membership = membershipForPrompt();
+				return membership === void 0 ? POLICY : `${POLICY}\n\nYour Team role is ${membership.role}; your Team name is ${membership.name}; Team id is ${membership.id}.`;
 			}
 		}));
 		register(scoped.tools.register(defineTool({
@@ -323,7 +303,7 @@ function install(scoped, ctx, config, membershipForPrompt) {
 			description: "List the Lead and every durable teammate with current runtime status.",
 			parameters: {},
 			output: jsonOutput(MEMBER_LIST_VALUE_SCHEMA),
-			async execute(_args, exec) {
+			execute(_args, exec) {
 				return Promise.resolve(ctx.agentTeams.listMembers(callingAgent(exec.agent, "list_agents")));
 			}
 		})));
@@ -358,7 +338,7 @@ function install(scoped, ctx, config, membershipForPrompt) {
 				description: "Teammate name."
 			} },
 			output: jsonOutput(INTERRUPT_VALUE_SCHEMA),
-			async execute(args, exec) {
+			execute(args, exec) {
 				return Promise.resolve(ctx.agentTeams.interrupt(callingAgent(exec.agent, "interrupt_agent"), args.target));
 			}
 		})));
@@ -429,8 +409,7 @@ function install(scoped, ctx, config, membershipForPrompt) {
 			},
 			output: jsonOutput(TASK_LIST_VALUE_SCHEMA),
 			execute(args, exec) {
-				const status = args.status;
-				const filtered = ctx.agentTeams.listTasks(callingAgent(exec.agent, "team_task_list")).filter((task) => (status === void 0 || task.status === status) && (args.owner === void 0 || (args.owner === "unowned" ? task.ownerName === void 0 : task.ownerName === args.owner)) && (args.ready === void 0 || task.ready === args.ready));
+				const filtered = ctx.agentTeams.listTasks(callingAgent(exec.agent, "team_task_list")).filter((task) => (args.status === void 0 || task.status === args.status) && (args.owner === void 0 || (args.owner === "unowned" ? task.ownerName === void 0 : task.ownerName === args.owner)) && (args.ready === void 0 || task.ready === args.ready));
 				const cursor = args.cursor ?? 0;
 				const limit = args.limit ?? 50;
 				if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error("cursor must be a non-negative safe integer");
@@ -450,7 +429,7 @@ function install(scoped, ctx, config, membershipForPrompt) {
 				description: "Shared task id."
 			} },
 			output: jsonOutput(TASK_VIEW_SCHEMA),
-			async execute(args, exec) {
+			execute(args, exec) {
 				return Promise.resolve(ctx.agentTeams.getTask(callingAgent(exec.agent, "team_task_get"), TeamTaskId(args.task_id)));
 			}
 		})));
@@ -528,7 +507,11 @@ function install(scoped, ctx, config, membershipForPrompt) {
 		for (const dispose of disposers.reverse()) dispose();
 	};
 }
-/** Install Team tools in every live or subsequently published Team member scope. */
+/**
+* Install the Team tool set in exact live member scopes.
+* @param ctx - owning composition context.
+* @param config - continuable provider routes.
+*/
 function apply(ctx, config = {}) {
 	const resolved = {
 		freshProvider: config.freshProvider ?? "spawn",
@@ -546,9 +529,7 @@ function apply(ctx, config = {}) {
 		installed.set(agent, install(agent.ctx, ctx, resolved, () => ctx.agentTeams.tryMembership(agent)));
 	};
 	for (const agent of ctx.agents.list()) maybeInstall(agent);
-	ctx.on("agent/created", ({ agent }) => {
-		maybeInstall(agent);
-	});
+	ctx.on("agent/created", ({ agent }) => maybeInstall(agent));
 	ctx.on("agent-preset/selected", (sessionId) => {
 		const agent = ctx.agents.get(sessionId);
 		if (agent === void 0) return;
@@ -556,13 +537,9 @@ function apply(ctx, config = {}) {
 			uninstall(agent);
 			return;
 		}
-		queueMicrotask(() => {
-			maybeInstall(agent);
-		});
+		queueMicrotask(() => maybeInstall(agent));
 	});
-	ctx.on("agent/disposed", ({ agent }) => {
-		uninstall(agent);
-	});
+	ctx.on("agent/disposed", ({ agent }) => uninstall(agent));
 	ctx.effect(() => () => {
 		for (const dispose of installed.values()) dispose();
 		installed.clear();

@@ -65,6 +65,8 @@ scope.update({ density: 'compact' })   // merges into the user section and persi
 
 ### Writing values
 
+`settle(ns, revision)` waits for the owner callbacks for an exact persisted revision and reports whether they succeeded. Persistence alone does not imply activation. An intervening write or owner disposal rejects the wait. Unloading a namespace reserves its name until accepted writes and started callbacks finish; a timed-out owner remains reserved. An unloaded scope cannot write through a replacement registration.
+
 `update(ns, patch)` deep-merges a plain-object patch into the user section only — never into `base` — validates the resolved candidate, persists through the provider, then commits. `replace(ns, section)` sets the user section wholesale, which is the removal/reset path: `replace({})` re-inherits `base` and schema defaults. `mutate(ns, ops)` applies ordered `{ op: 'set' | 'unset', path }` edits to the section as it stands when the write reaches the front of the queue — the removal path for a caller holding an incomplete (for example redacted) view, because rebuilding a section from what a wire surface returned and replacing it wholesale would delete every field the wire never sent back.
 
 Every write rejects non-JSON-compatible data (a `Date`, `Map`, `BigInt`, non-finite number, or circular reference fails with its `$`-rooted path before anything persists), rejects on a read-only provider, and accepts an optional `expectedRevision`: pass back the `revision` from a descriptor, and a namespace that moved past it refuses the write with `SettingsConflictError` instead of overwriting the writer that landed first.
@@ -74,6 +76,8 @@ Every write rejects non-JSON-compatible data (a `Date`, `Map`, `BigInt`, non-fin
 `describe()` returns one descriptor per registered namespace: the serialized schema, the resolved value, the detached `base` and `user` layers (a field's presence in `user` marks it user-overridden), the effect timing, and the namespace's revision. Pass `redactSecrets: true` on every wire surface: it strips `role('secret')` fields from every layer and enumerates them as `{ path, set }` slots so a page can render write-only inputs without ever receiving a secret. `documentPath` and `prepareDocument()` expose the provider's user-editable file to a native editor when one exists.
 
 ### Events and failures
+
+The native `settings/*` Remote methods belong to this provider. Reads and write replies are detached and redacted, including secret defaults in schema metadata. `openDocument` accepts cancellation but no caller-selected path, and opens only the provider's unchanged absolute document path. Domain transaction owners can protect namespaces from generic Remote writes while retaining same-process writes. Write failures preserve revision conflicts but omit provider diagnostics that could contain secrets.
 
 `settings/updated (ns, next, prev, source)` fires after each committed change — an in-process write (`source: 'update'`) or an externally observed edit (`source: 'provider'`) — and never when the resolved value is deep-equal. `settings/document-updated (ns, revision)` fires whenever the raw user section changed, even when the resolved value did not, which is what an open editor needs to learn that a field went from inherited to overridden. A stored section the schema rejects keeps the namespace's last good value and warns on reload; at registration the same failure rejects the registration itself.
 
@@ -110,7 +114,7 @@ Each write snapshots its input at call time (detaching and validating JSON-shape
 
 ### Change detection and events
 
-`commit` compares resolved values with the seam's `deepEqualJson` predicate and fans `settings/updated` out one listener at a time. `bumpRevision` compares raw sections and emits `settings/document-updated` with the new revision; it runs independently of the resolved-value check. Both fan-outs contain listener failures the same way.
+`bumpRevision` compares raw sections and binds exact-revision settlement. `commit` installs the resolved value and queues owner callbacks before announcing `settings/document-updated`, then emits `settings/updated` only for a changed resolved value. Both fan-outs contain listener failures and stop delivering a superseded state after reentrant publication.
 
 ### Client-safe types
 
@@ -149,7 +153,7 @@ No direct invalidation; a consumer that folds a settings value into the request 
 These limits define when the service is a poor fit or needs special care. They are current package constraints, not a task backlog.
 
 - **Single user layer** — resolution knows schema defaults, one composition `base`, and one user document; it does not record which layer supplied each resolved value.
-- **`redactSecrets` is not a proven wire boundary** — the walker follows `object`/`dict`/`array` containers, so a `role('secret')` field reachable only through a union, intersection, or transform is returned verbatim with an empty `secrets` list, and the serialized schema carries a secret field's default to every client. Neither case is rejected; a schema whose secrets are not reachable through the walked containers must not be registered on a wire-exposed namespace. A fail-closed `describeForWire()` — one that refuses a schema it cannot prove safe and sanitizes the serialized envelope and error text — is the deferred answer.
+- **Secret schemas need provable structure** — object, dict, array, tuple, union, and intersection relations are supported. Dictionary key schemas participate in reference discovery; secret-bearing keys reject rather than exposing key names. Malformed secret-bearing containers reject in resolved values, overridden layers and schema defaults, even when a higher layer makes the effective configuration valid. Every branch contributes secret positions; an ambiguous branch can therefore hide an otherwise public field. Secret array positions become `null`. Secret-bearing unsupported transforms, unresolved schema references, and secret literal schemas reject instead of crossing the Remote. Owners must declare secrets; unmarked arbitrary strings cannot be identified as credentials.
 - **Cross-process concurrency is provider-defined** — the service serializes writes per namespace in-process only; concurrent processes converge by provider behavior (the file provider read-modify-writes under a writer lock, so namespaces survive concurrent writers and same-namespace conflicts resolve last-write-wins).
 
 <a id="dev-note"></a>
@@ -158,6 +162,6 @@ These limits define when the service is a poor fit or needs special care. They a
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-This Dev Note is working context for maintainers: open design directions that are not decided. It is explicitly non-authoritative — shipped behavior, limits, and accepted rationale live in the sections above and the package code. Open directions, tracked in code TODOs: rename the public `ns` parameter to `namespace` across the API, provider contract, implementations, tests, and consumers; deactivate watchers and await their tails on registration disposal so callbacks cannot outlive the registrant fiber; re-resolve a replacement registration from its persisted section so an in-flight old write cannot leave it stale; and use property-safe object construction so valid JSON keys such as `__proto__` remain own data. The fail-closed `describeForWire()` sanitizer is the deferred answer to the redaction limitation above.
+This non-authoritative section tracks the proposed rename of `ns` to `namespace` across the API, providers, tests, and consumers. Public behavior and limitations remain defined above.
 
 </details>

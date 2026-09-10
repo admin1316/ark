@@ -39,12 +39,12 @@ var __esDecorate = (this && this.__esDecorate) || function (ctor, descriptorIn, 
     if (target) Object.defineProperty(target, contextIn.name, descriptor);
     done = true;
 };
-import { isAbsolute } from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { isAbsolute } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
-import { openNativeTextDocument } from '@deepseek-ai/dsh-native-command';
+import { openNativeTextFile } from '@deepseek-ai/dsh-native-command';
 import { Remote, TypertLookupFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import { redactSecrets } from "./redact.js";
+import { redactSecrets, redactSettingsSchema } from "./redact.js";
 export { redactSecrets } from "./redact.js";
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9-]*$/;
 /**
@@ -81,7 +81,7 @@ export function deepEqualJson(a, b) {
     const keys = Object.keys(left);
     if (keys.length !== Object.keys(right).length)
         return false;
-    return keys.every(key => key in right && deepEqualJson(left[key], right[key]));
+    return keys.every(key => Object.hasOwn(right, key) && deepEqualJson(left[key], right[key]));
 }
 /**
  * A write refused because the namespace moved since the caller read it. The
@@ -107,12 +107,16 @@ export class SettingsConflictError extends Error {
         this.actual = actual;
     }
 }
-/** A namespace owner failed to stop its callbacks within the replacement deadline. */
+/** A namespace cannot be replaced until its previous owner's work stops. */
 export class SettingsRegistrationQuiescenceError extends Error {
     ns;
     timeoutMs;
-    /** Stable diagnostic code for a namespace owner that exceeded its stop deadline. */
+    /** Replacement remains blocked while the previous registration is stopping. */
     code = 'SETTINGS_REGISTRATION_QUIESCENCE_TIMEOUT';
+    /**
+     * @param ns - namespace whose owner is still stopping.
+     * @param timeoutMs - elapsed replacement deadline.
+     */
     constructor(ns, timeoutMs) {
         super(`settings namespace "${ns}" did not quiesce within ${String(timeoutMs)}ms; replacement remains blocked`);
         this.ns = ns;
@@ -145,7 +149,7 @@ function applyPathOp(section, op) {
         const { [head]: _removed, ...kept } = section;
         return kept;
     }
-    const child = section[head];
+    const child = Object.hasOwn(section, head) ? section[head] : undefined;
     if (!isPlainObject(child)) {
         // Unsetting through an absent path is already satisfied; setting through
         // one creates the intermediate objects it needs.
@@ -154,6 +158,21 @@ function applyPathOp(section, op) {
         return { ...section, [head]: applyPathOp({}, { ...op, path: rest }) };
     }
     return { ...section, [head]: applyPathOp(child, { ...op, path: rest }) };
+}
+function validateSettingsPathOps(ns, ops) {
+    if (!Array.isArray(ops))
+        throw new TypeError(`settings mutate for "${ns}" must be an array of path ops`);
+    for (const op of ops) {
+        if (!isPlainObject(op) || (op['op'] !== 'set' && op['op'] !== 'unset')) {
+            throw new TypeError(`settings mutate for "${ns}" ops must be {op:'set'|'unset', path}`);
+        }
+        if (!Array.isArray(op['path']) || op['path'].some(part => typeof part !== 'string')) {
+            throw new TypeError(`settings mutate for "${ns}" op paths must be arrays of strings`);
+        }
+        if (op['op'] === 'set' && !Object.hasOwn(op, 'value')) {
+            throw new TypeError(`settings mutate for "${ns}" set ops must include a JSON value`);
+        }
+    }
 }
 /** Human label for a value that lossless JSON cannot represent (numbers reject inline). */
 function describeRejected(value) {
@@ -186,35 +205,41 @@ function cloneJsonShaped(root, reject) {
         if (typeof value === 'number') {
             if (!Number.isFinite(value))
                 throw reject('a non-finite number', path);
+            if (Object.is(value, -0))
+                throw reject('negative zero', path);
             return value;
         }
         if (Array.isArray(value)) {
             if (visiting.has(value))
                 throw reject('a circular reference', path);
             visiting.add(value);
-            const entries = value.map((entry, index) => clone(entry, `${path}[${index}]`));
+            const entries = [];
+            for (let index = 0; index < value.length; index++)
+                entries.push(clone(value[index], `${path}[${index}]`));
             // Un-mark on exit so one object referenced twice without a cycle passes.
             visiting.delete(value);
             return entries;
         }
-        if (isPlainObject(value)) {
-            if (visiting.has(value))
-                throw reject('a circular reference', path);
-            visiting.add(value);
-            // TODO(settings-json-properties): Use property-safe construction here and
-            // in mergeLayers so valid JSON keys such as "__proto__" remain own data.
-            const out = {};
-            for (const [key, entry] of Object.entries(value)) {
-                if (entry === undefined)
-                    continue;
-                out[key] = clone(entry, `${path}.${key}`);
-            }
-            visiting.delete(value);
-            return out;
-        }
+        if (isPlainObject(value))
+            return cloneObject(value, path);
         throw reject(describeRejected(value), path);
     };
-    return clone(root, '$');
+    const cloneObject = (value, path) => {
+        if (visiting.has(value))
+            throw reject('a circular reference', path);
+        visiting.add(value);
+        const out = {};
+        for (const [key, entry] of Object.entries(value)) {
+            if (entry === undefined)
+                continue;
+            Object.defineProperty(out, key, {
+                value: clone(entry, `${path}.${key}`), enumerable: true, writable: true, configurable: true,
+            });
+        }
+        visiting.delete(value);
+        return out;
+    };
+    return cloneObject(root, '$');
 }
 /**
  * Layer `over` onto `under`: plain objects merge recursively, every other
@@ -230,7 +255,10 @@ function mergeLayers(under, over) {
         return over;
     const merged = { ...under };
     for (const [key, value] of Object.entries(over)) {
-        merged[key] = key in merged ? mergeLayers(merged[key], value) : value;
+        Object.defineProperty(merged, key, {
+            value: Object.hasOwn(merged, key) ? mergeLayers(merged[key], value) : value,
+            enumerable: true, writable: true, configurable: true,
+        });
     }
     return merged;
 }
@@ -242,39 +270,21 @@ function deepFreeze(value) {
         deepFreeze(entry);
     return Object.freeze(value);
 }
-function validateSettingsPathOps(ns, ops) {
-    if (!Array.isArray(ops))
-        throw new TypeError(`settings mutate for "${ns}" must be an array of path ops`);
-    for (const op of ops) {
-        if (!isPlainObject(op) || (op['op'] !== 'set' && op['op'] !== 'unset')) {
-            throw new TypeError(`settings mutate for "${ns}" ops must be {op:'set'|'unset', path}`);
-        }
-        if (!Array.isArray(op['path']) || op['path'].some(part => typeof part !== 'string')) {
-            throw new TypeError(`settings mutate for "${ns}" op paths must be arrays of strings`);
-        }
-    }
-}
-/** Await one owner drain for a finite interval without leaving a live timer. */
-async function settlesBefore(operation, timeoutMs) {
-    let timer;
-    const timeout = new Promise((resolve) => {
-        timer = setTimeout(resolve, timeoutMs, false);
-        timer.unref();
-    });
-    try {
-        return await Promise.race([operation.then(() => true), timeout]);
-    }
-    finally {
-        /* v8 ignore next -- the executor assigns the timer synchronously, before try begins */
-        if (timer !== undefined)
-            clearTimeout(timer);
-    }
-}
-/** Re-read lifecycle state after an await, where static narrowing is stale. */
+const watcherExecution = new AsyncLocalStorage();
 function isRegistrationActive(registration) {
     return registration.active;
 }
-const watcherExecution = new AsyncLocalStorage();
+async function settlesBefore(operation, timeoutMs) {
+    const timeout = Promise.withResolvers();
+    const timer = setTimeout(timeout.resolve, timeoutMs, false);
+    timer.unref();
+    try {
+        return await Promise.race([operation.then(() => true), timeout.promise]);
+    }
+    finally {
+        clearTimeout(timer);
+    }
+}
 /**
  * Abstract settings service. Providers implement raw-document storage
  * (`load`/`persist`) and push external changes through {@link Settings.publish};
@@ -311,13 +321,12 @@ let SettingsProvider = (() => {
         writeQueues = new Map();
         /** In-flight watcher invocation segments, drained by the dispose teardown. */
         pendingTails = new Set();
-        /** Namespaces whose public Remote writes are owned by a higher-level domain transaction. */
-        remoteProtectedNamespaces = new Set();
+        remoteProtectedNamespaces = new Map();
         /** Set at service dispose: refuse new writes while queued ones drain. */
         stopped = false;
-        /** Finite owner replacement deadline; tests may override with a smaller value. */
+        /** Deadline for an old namespace owner to release writes and callbacks. */
         get registrationQuiescenceTimeoutMs() {
-            return 5_000;
+            return 5000;
         }
         /** Opaque read of {@link stopped}: control flow cannot narrow it across awaits. */
         isStopped() {
@@ -373,6 +382,8 @@ let SettingsProvider = (() => {
          * @returns the owner scope for reads, observation, and updates.
          */
         register(ns, schema, options) {
+            if (this.isStopped())
+                throw new Error(`settings service is disposed: "${ns}" cannot be registered`);
             const existing = this.registrations.get(ns);
             if (existing !== undefined) {
                 if (existing.quiescenceTimedOut) {
@@ -396,63 +407,50 @@ let SettingsProvider = (() => {
                 revision: 0,
                 watchers: new Set(),
                 active: true,
-                settlementRevision: 0,
                 settlement: Promise.resolve(true),
                 quiescenceTimedOut: false,
             };
             this.ctx.effect(() => {
                 this.registrations.set(ns, registration);
                 return async () => {
-                    // Close admission synchronously, then retain the namespace slot until
-                    // both an already-started persist and every already-started owner
-                    // callback settle. A replacement therefore cannot attach to stale
-                    // in-memory state while the former owner is still changing storage.
                     registration.active = false;
                     for (const watcher of registration.watchers)
                         watcher.active = false;
                     const write = this.writeQueues.get(ns);
-                    const currentWatcher = watcherExecution.getStore();
-                    const watcherTails = [...registration.watchers]
-                        .filter(watcher => currentWatcher?.registration !== registration || currentWatcher.watcher !== watcher)
+                    const current = watcherExecution.getStore();
+                    // A watcher may unload its own plugin; waiting on itself would deadlock.
+                    const tails = [...registration.watchers]
+                        .filter(watcher => current?.registration !== registration || current.watcher !== watcher)
                         .map(watcher => watcher.tail);
-                    const tails = [
-                        ...(write === undefined ? [] : [write]),
-                        ...watcherTails,
-                    ];
-                    const quiescence = Promise.allSettled(tails).then(() => undefined);
+                    const quiescence = Promise.allSettled([...write === undefined ? [] : [write], ...tails])
+                        .then(() => undefined);
                     if (!await settlesBefore(quiescence, this.registrationQuiescenceTimeoutMs)) {
                         registration.quiescenceTimedOut = true;
-                        for (const tail of watcherTails)
-                            this.pendingTails.delete(tail);
-                        if (write !== undefined && this.writeQueues.get(ns) === write)
-                            this.writeQueues.delete(ns);
-                        this.ctx.logger.error('settings: namespace "%s" did not quiesce within %dms; replacement remains blocked', ns, this.registrationQuiescenceTimeoutMs);
-                        // Keep the inactive registration as the sole namespace owner until
-                        // its old work eventually settles. No replacement can overlap it.
-                        void quiescence.then(() => {
-                            /* v8 ignore next -- a timed-out owner blocks replacement, so it still owns the namespace when its work settles */
-                            if (this.registrations.get(ns) === registration)
-                                this.registrations.delete(ns);
-                        });
+                        void quiescence.then(() => this.registrations.delete(ns));
                         throw new SettingsRegistrationQuiescenceError(ns, this.registrationQuiescenceTimeoutMs);
                     }
-                    /* v8 ignore next -- the registering disposer is the sole deleter of its own registration */
-                    if (this.registrations.get(ns) === registration)
-                        this.registrations.delete(ns);
+                    this.registrations.delete(ns);
                 };
             }, `settings.register(${JSON.stringify(String(ns))})`);
+            const requireOwner = () => {
+                if (!registration.active || this.registrations.get(ns) !== registration || this.isStopped()) {
+                    throw new Error(`settings namespace "${ns}" registration is disposed`);
+                }
+            };
             return {
                 get: () => registration.resolved,
                 watch: (callback) => {
+                    requireOwner();
                     const watcher = { callback: callback, tail: Promise.resolve(), active: true };
                     registration.watchers.add(watcher);
                     return () => {
                         watcher.active = false;
-                        registration.watchers.delete(watcher);
+                        // Unsubscription stops new calls, but the namespace still owns a started call.
+                        void watcher.tail.then(() => registration.watchers.delete(watcher));
                     };
                 },
-                update: patch => this.update(ns, patch),
-                replace: section => this.replace(ns, section),
+                update: async (patch) => { requireOwner(); await this.update(ns, patch); },
+                replace: async (section) => { requireOwner(); await this.replace(ns, section); },
             };
         }
         /**
@@ -492,6 +490,7 @@ let SettingsProvider = (() => {
                 const redacted = redact(registration.resolved);
                 return {
                     ...descriptor,
+                    schema: redactSettingsSchema(schema),
                     value: redacted.value,
                     ...base === undefined ? {} : { base: redact(base).value },
                     ...detachedUser === undefined ? {} : { user: redact(detachedUser).value },
@@ -500,10 +499,8 @@ let SettingsProvider = (() => {
             });
         }
         /**
-         * Read every registered settings namespace through the Native Remote plane.
-         * The projection is always redacted, so write-only fields can never leave
-         * this service through a configuration read.
-         * @returns the redacted settings namespace catalog.
+         * Read redacted settings and deployment facts without revealing a local path.
+         * @returns every registered namespace in registration order.
          */
         remoteDescribe() {
             return {
@@ -513,108 +510,145 @@ let SettingsProvider = (() => {
             };
         }
         /**
-         * Materialize and open this provider's own local configuration document.
-         * The generated strict Remote descriptor carries only transport cancellation;
-         * no caller-provided filesystem path can cross this boundary. The Gateway
-         * binds every strict Remote route to its loopback-only carrier.
-         * @param signal - caller-owned cancellation propagated into the native command.
-         * @returns confirmation that the Host opened the owned document.
+         * Prepare and open only the document owned by this provider.
+         * @param signal - transport cancellation, including the native command.
+         * @returns confirmation of the editor handoff; cancellation rejects.
          */
         async remoteOpenDocument(signal) {
-            if (signal.aborted)
-                throw remoteSettingsOpenFailure('cancelled', 'settings document open was aborted');
+            const checkCancellation = () => {
+                if (signal.aborted)
+                    throw new TypertLookupFailure({
+                        code: 'cancelled', message: 'settings document open was aborted', details: {},
+                    });
+            };
+            const fail = (message) => new TypertLookupFailure({ code: 'internal', message, details: {} });
+            checkCancellation();
             const documentPath = this.ownedDocumentPath();
-            if (documentPath === undefined) {
-                throw remoteSettingsOpenFailure('internal', 'settings provider has no local document to open');
-            }
+            if (documentPath === undefined)
+                throw fail('settings provider has no local document to open');
             let preparedPath;
             try {
                 preparedPath = await this.prepareDocument();
             }
             catch {
-                if (isAborted(signal))
-                    throw remoteSettingsOpenFailure('cancelled', 'settings document preparation was aborted');
-                throw remoteSettingsOpenFailure('internal', 'settings document preparation failed');
+                // Storage errors can contain Host paths or document contents; expose neither.
+                checkCancellation();
+                throw fail('settings document preparation failed');
             }
-            if (isAborted(signal))
-                throw remoteSettingsOpenFailure('cancelled', 'settings document open was aborted');
+            checkCancellation();
             if (preparedPath !== documentPath || this.ownedDocumentPath() !== documentPath) {
-                throw remoteSettingsOpenFailure('internal', 'settings provider did not prepare its owned local document');
+                throw fail('settings provider did not prepare its owned local document');
             }
             try {
                 await this.openDocumentInNativeEditor(documentPath, signal);
             }
             catch {
-                if (isAborted(signal))
-                    throw remoteSettingsOpenFailure('cancelled', 'settings document open was aborted');
-                throw remoteSettingsOpenFailure('internal', 'settings document open failed');
+                // Native process diagnostics are not safe Remote error payloads.
+                checkCancellation();
+                throw fail('settings document open failed');
             }
-            if (isAborted(signal))
-                throw remoteSettingsOpenFailure('cancelled', 'settings document open was aborted');
+            checkCancellation();
             return { opened: true };
         }
         /**
-         * Merge one namespace's redacted-safe patch through the Remote plane.
-         * @param ns - settings namespace to update.
-         * @param patch - redacted-safe fields to merge.
-         * @param expectedRevision - optional revision for optimistic concurrency.
-         * @returns the updated redacted namespace view.
+         * Merge fields without reconstructing a redacted section.
+         * @param ns - namespace to update.
+         * @param patch - JSON fields to merge.
+         * @param expectedRevision - revision read by the caller.
+         * @returns the updated redacted namespace.
          */
-        async remoteUpdate(ns, patch, expectedRevision) {
-            return this.remoteWrite(ns, 'update', patch, expectedRevision);
+        remoteUpdate(ns, patch, expectedRevision) {
+            return this.remoteWrite(ns, namespace => this.update(namespace, patch, expectedRevision));
         }
         /**
-         * Replace one namespace's full user layer through the Remote plane.
-         * @param ns - settings namespace to replace.
-         * @param section - replacement user-layer fields.
-         * @param expectedRevision - optional revision for optimistic concurrency.
-         * @returns the updated redacted namespace view.
+         * Replace the whole user layer, removing omitted overrides.
+         * @param ns - namespace to replace.
+         * @param section - complete new user layer, not a redacted readback.
+         * @param expectedRevision - revision read by the caller.
+         * @returns the updated redacted namespace.
          */
-        async remoteReplace(ns, section, expectedRevision) {
-            return this.remoteWrite(ns, 'replace', section, expectedRevision);
+        remoteReplace(ns, section, expectedRevision) {
+            return this.remoteWrite(ns, namespace => this.replace(namespace, section, expectedRevision));
         }
         /**
-         * Apply path-addressed edits without reconstructing hidden secret fields.
-         * @param ns - settings namespace to mutate.
-         * @param ops - path-addressed mutation operations.
-         * @param expectedRevision - optional revision for optimistic concurrency.
-         * @returns the updated redacted namespace view.
+         * Apply ordered edits while preserving untouched hidden fields.
+         * @param ns - namespace to mutate.
+         * @param ops - path-addressed JSON edits.
+         * @param expectedRevision - revision read by the caller.
+         * @returns the updated redacted namespace.
          */
-        async remoteMutate(ns, ops, expectedRevision) {
-            return this.remoteWrite(ns, 'mutate', ops, expectedRevision);
+        remoteMutate(ns, ops, expectedRevision) {
+            return this.remoteWrite(ns, namespace => this.mutate(namespace, ops, expectedRevision));
         }
-        /** Authoritative Remote adapter for every settings write verb. */
-        async remoteWrite(ns, mode, value, expectedRevision) {
+        async remoteWrite(ns, write) {
             let namespace;
             try {
                 namespace = settingsNamespace(ns);
-                if (this.remoteProtectedNamespaces.has(namespace)) {
-                    throw new Error(`settings namespace "${ns}" accepts writes only through its owning domain transaction`);
+                if ([...this.remoteProtectedNamespaces.values()].some(namespaces => namespaces.has(namespace))) {
+                    throw new Error('namespace writes belong to its domain transaction');
                 }
-                if (mode === 'update')
-                    await this.update(namespace, value, expectedRevision);
-                else if (mode === 'replace')
-                    await this.replace(namespace, value, expectedRevision);
-                else
-                    await this.mutate(namespace, value, expectedRevision);
+                await write(namespace);
             }
             catch (error) {
-                remoteSettingsFailure(ns, error);
+                if (error instanceof SettingsConflictError)
+                    throw new TypertLookupFailure({
+                        code: 'settings-conflict', message: error.message,
+                        details: { ns, expected: error.expected, actual: error.actual },
+                    });
+                throw new TypertLookupFailure({
+                    code: 'settings-rejected', message: `settings write for "${ns}" was rejected`, details: { ns },
+                });
             }
             const descriptor = this.describe({ redactSecrets: true }).find(candidate => candidate.ns === namespace);
-            if (descriptor === undefined) {
-                remoteSettingsFailure(ns, new Error(`settings namespace "${ns}" was disposed after ${mode}`), 'internal');
-            }
+            if (descriptor === undefined)
+                throw new TypertLookupFailure({
+                    code: 'internal', message: 'settings write did not complete', details: {},
+                });
             return remoteNamespaceView(descriptor);
         }
-        /** Return the provider-owned local document only when it is absolute. */
         ownedDocumentPath() {
             const path = this.documentPath;
             return path !== undefined && isAbsolute(path) ? path : undefined;
         }
-        /** Native editor handoff seam; subclasses may replace it only for their Host integration. */
+        /**
+         * Hand the provider-owned file to a native text editor, without a shell.
+         * @param path - absolute provider document path.
+         * @param signal - caller lifetime.
+         * @returns completion of the native handoff command.
+         */
         openDocumentInNativeEditor(path, signal) {
-            return openNativeTextDocument(path, signal);
+            return openNativeTextFile(path, signal);
+        }
+        /**
+         * Reserve generic Remote writes for namespaces with a domain transaction owner.
+         * @param namespaces - this calling fiber's complete protected set; other owners retain their reservations.
+         */
+        setRemoteProtectedNamespaces(namespaces) {
+            const owner = this.ctx.fiber;
+            if (!this.remoteProtectedNamespaces.has(owner)) {
+                this.ctx.effect(() => () => { this.remoteProtectedNamespaces.delete(owner); }, 'settings.remote-domain-protection');
+            }
+            this.remoteProtectedNamespaces.set(owner, new Set(namespaces));
+        }
+        /**
+         * Wait for the owner's callbacks for an exact persisted revision.
+         * @param ns - registered namespace.
+         * @param revision - exact revision to observe; superseded revisions reject.
+         * @returns whether every owner callback accepted the revision, not merely whether it persisted.
+         */
+        async settle(ns, revision) {
+            const registration = this.registrations.get(ns);
+            if (registration === undefined || !registration.active)
+                throw new Error(`settings namespace "${ns}" is not registered`);
+            if (registration.revision !== revision)
+                throw new SettingsConflictError(ns, revision, registration.revision);
+            const accepted = await registration.settlement;
+            if (this.registrations.get(ns) !== registration || !isRegistrationActive(registration)) {
+                throw new Error(`settings namespace "${ns}" was disposed while revision ${String(revision)} settled`);
+            }
+            if (registration.revision !== revision)
+                throw new SettingsConflictError(ns, revision, registration.revision);
+            return accepted;
         }
         /**
          * Read one registered namespace's resolved value.
@@ -623,49 +657,6 @@ let SettingsProvider = (() => {
          */
         get(ns) {
             return this.registrations.get(ns)?.resolved;
-        }
-        /**
-         * Replace the set of namespaces whose wire writes belong to another domain
-         * transaction. Same-process owners still use update/replace/mutate directly;
-         * only the generic Settings Remote is denied.
-         * @param namespaces - complete current protected set.
-         */
-        setRemoteProtectedNamespaces(namespaces) {
-            this.remoteProtectedNamespaces = new Set(namespaces);
-        }
-        /**
-         * Wait until the owner callbacks produced by one exact persisted revision
-         * settle. The pending settlement is bound at the revision bump itself, so
-         * callers racing a commit — even re-entry from user code read during the
-         * commit's own equality walk — observe the real outcome. Configuration
-         * transactions use this after a write so persistence cannot be reported as
-         * live activation while an adapter rejected the new route. Ordinary settings
-         * writes keep their existing failure-isolated behavior.
-         * @param ns - namespace whose exact revision must settle.
-         * @param revision - exact revision from a descriptor or document notification.
-         * @returns true only when every owner callback for that revision succeeded.
-         */
-        async settle(ns, revision) {
-            const registration = this.registrations.get(ns);
-            if (registration === undefined || !registration.active) {
-                throw new Error(`settings namespace "${ns}" is not registered`);
-            }
-            if (registration.revision !== revision) {
-                throw new SettingsConflictError(ns, revision, registration.revision);
-            }
-            /* v8 ignore next -- the bump itself binds each revision's settlement, so settlementRevision never trails revision at settle() */
-            const settlement = registration.settlementRevision === revision
-                ? registration.settlement
-                : Promise.resolve(true);
-            const accepted = await settlement;
-            const current = this.registrations.get(ns);
-            if (current !== registration || !isRegistrationActive(registration)) {
-                throw new Error(`settings namespace "${ns}" was disposed while revision ${String(revision)} settled`);
-            }
-            if (registration.revision !== revision) {
-                throw new SettingsConflictError(ns, revision, registration.revision);
-            }
-            return accepted;
         }
         /**
          * Merge a patch into one registered namespace's user layer, validate the
@@ -707,38 +698,32 @@ let SettingsProvider = (() => {
          *   namespace that moved past it rejects with {@link SettingsConflictError}.
          */
         async mutate(ns, ops, expectedRevision) {
-            validateSettingsPathOps(ns, ops);
             return this.write(ns, ops, 'mutate', expectedRevision);
         }
         /**
-         * Validate one path mutation against the current section without persisting
-         * it, and enumerate every schema-declared secret path in the resolved
-         * candidate. Transaction owners use this before journaling so write-only
-         * values can never be copied into an ordinary receipt.
-         * @param ns - registered namespace to inspect.
-         * @param ops - proposed path operations.
-         * @returns secret positions in the validated candidate.
+         * Validate a mutation and locate its secrets before a domain owner journals it.
+         * @param ns - registered namespace.
+         * @param ops - proposed ordered edits; nothing is persisted.
+         * @returns secret positions in the resolved candidate.
          */
         previewMutation(ns, ops) {
             const registration = this.registrations.get(ns);
-            if (registration === undefined || !registration.active) {
+            if (registration === undefined || !registration.active)
                 throw new Error(`settings namespace "${ns}" is not registered`);
-            }
-            validateSettingsPathOps(ns, ops);
             const snapshot = cloneJsonShaped({ ops }, (label, path) => new TypeError(`settings mutate for "${ns}" must contain only JSON-compatible data (found ${label} at ${path})`));
-            const current = this.section(ns) ?? {};
-            const section = snapshot['ops'].reduce(applyPathOp, current);
-            const resolved = this.resolve(registration.schema, registration.base, section, registration.validate);
-            registration.validateWrite?.(resolved);
-            const redact = registration.redact
-                ?? ((value) => redactSecrets(registration.schema, value));
-            return { secrets: redact(resolved).secrets };
+            const edits = snapshot['ops'];
+            validateSettingsPathOps(ns, edits);
+            const section = edits.reduce(applyPathOp, this.section(ns) ?? {});
+            const next = this.resolve(registration.schema, registration.base, section, registration.validate);
+            registration.validateWrite?.(next);
+            const redact = registration.redact ?? ((value) => redactSecrets(registration.schema, value));
+            return { secrets: redact(next).secrets };
         }
         /** Validate a write, then queue it on the namespace's serialized write chain. */
         write(ns, input, mode, expectedRevision) {
             const verb = mode === 'merge' ? 'update' : mode === 'replace' ? 'replace' : 'mutate';
             const registration = this.registrations.get(ns);
-            if (registration === undefined) {
+            if (registration === undefined || !registration.active) {
                 throw new Error(`settings namespace "${ns}" is not registered`);
             }
             if (this.isStopped()) {
@@ -746,6 +731,9 @@ let SettingsProvider = (() => {
             }
             if (!this.writable) {
                 throw new Error(`settings provider is read-only: "${ns}" cannot be updated in-process`);
+            }
+            if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) {
+                throw new TypeError('settings expectedRevision must be a non-negative safe integer');
             }
             // A mutate's ops array is wrapped so one JSON-shape walk covers both
             // shapes; merge/replace carry the section itself.
@@ -762,6 +750,12 @@ let SettingsProvider = (() => {
             // the caller may keep mutating while the write waits its turn. The same
             // walk rejects values that JSON cannot preserve (see cloneJsonShaped).
             const snapshot = cloneJsonShaped(payload, (label, path) => new TypeError(`settings ${verb} for "${ns}" must contain only JSON-compatible data (found ${label} at ${path})`));
+            let edits = [];
+            if (mode === 'mutate') {
+                const ops = snapshot['ops'];
+                validateSettingsPathOps(ns, ops);
+                edits = ops;
+            }
             const previous = this.writeQueues.get(ns) ?? Promise.resolve();
             // Chain past a failed predecessor: one rejected write must not poison the
             // namespace queue for every later caller.
@@ -785,9 +779,12 @@ let SettingsProvider = (() => {
                     ? mergeLayers(current, snapshot)
                     : mode === 'replace'
                         ? snapshot
-                        : snapshot['ops'].reduce(applyPathOp, current);
+                        : edits.reduce(applyPathOp, current);
                 const next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate));
                 registration.validateWrite?.(next);
+                if (registration.revision === Number.MAX_SAFE_INTEGER && !deepEqualJson(current, section)) {
+                    throw new RangeError(`settings namespace "${ns}" revision space is exhausted`);
+                }
                 await this.persist(ns, section);
                 // The write reached storage either way; the cache must say so. Commit
                 // only when this registration is still the namespace owner — a fiber
@@ -825,6 +822,8 @@ let SettingsProvider = (() => {
             }
             this.document = doc;
             for (const registration of this.registrations.values()) {
+                if (!registration.active || this.isStopped())
+                    continue;
                 let next;
                 try {
                     next = deepFreeze(this.resolve(registration.schema, registration.base, this.section(registration.ns), registration.validate));
@@ -859,21 +858,17 @@ let SettingsProvider = (() => {
             return value;
         }
         /**
-         * Advance a namespace's revision when its RAW section changed. The new
-         * revision's settlement promise is bound here — before any value walk can
-         * run user code: commit's equality walk reads value properties, and an
-         * accessor re-entering settle(ns, revision) during it must await the real
-         * outcome, never a stale recorded promise and never an early success. Raw
-         * equality is separate: storing an override equal to the composition base
-         * leaves the resolved value alone but changes what the document says, which
-         * is exactly what a configuration surface must re-read.
+         * Bind settlement before any commit notification can re-enter settle().
+         * Raw changes advance the revision even when the resolved value is unchanged.
          */
         bumpRevision(registration, before, after) {
             if (deepEqualJson(before, after))
                 return false;
+            if (registration.revision === Number.MAX_SAFE_INTEGER) {
+                throw new RangeError(`settings namespace "${registration.ns}" revision space is exhausted`);
+            }
             registration.revision += 1;
             const settlement = Promise.withResolvers();
-            registration.settlementRevision = registration.revision;
             registration.settlement = settlement.promise;
             registration.settlementResolver = settlement.resolve;
             return true;
@@ -884,8 +879,7 @@ let SettingsProvider = (() => {
             let invariantFailure;
             const args = ['settings/document-updated', ns, revision];
             for (const listener of this.ctx.events.dispatch('emit', args)) {
-                // Reentrant publication may replace the revision before the next observer.
-                if (this.registrations.get(ns) !== registration || registration?.revision !== revision)
+                if (this.registrations.get(ns) !== registration || registration?.revision !== revision || !registration.active)
                     break;
                 try {
                     const returned = listener(ns, revision);
@@ -908,20 +902,21 @@ let SettingsProvider = (() => {
         }
         /** Commit a resolved value when changed: swap, notify watchers, emit the event. */
         commit(registration, next, source, documentChanged) {
+            const revision = registration.revision;
+            const resolveSettlement = registration.settlementResolver;
+            delete registration.settlementResolver;
             const prev = registration.resolved;
             if (deepEqualJson(next, prev)) {
-                if (documentChanged) {
-                    // A raw-only revision has no owner callbacks, so it settles true; the
-                    // pending promise bound at the bump is resolved in place.
-                    registration.settlementResolver?.(true);
-                    registration.settlementResolver = undefined;
-                    this.emitDocumentUpdated(registration.ns, registration.revision);
-                }
+                resolveSettlement?.(true);
+                if (documentChanged)
+                    this.emitDocumentUpdated(registration.ns, revision);
                 return;
             }
             registration.resolved = next;
             const outcomes = [];
             for (const watcher of [...registration.watchers]) {
+                if (!watcher.active)
+                    continue;
                 // Serialize per watcher: invocations of one callback run one at a time
                 // in commit order, so a slow stale invocation can never apply after a
                 // newer one. Sync throws and async rejections land in the same handler.
@@ -931,33 +926,22 @@ let SettingsProvider = (() => {
                 const outcome = watcher.tail
                     .then(() => {
                     if (!watcher.active || !registration.active || this.isStopped())
-                        return true;
+                        return;
                     return watcherExecution.run({ registration, watcher }, () => watcher.callback(next, prev));
                 })
                     .then(() => true, (error) => {
                     this.warnWatcherFailure(registration.ns, error);
                     return false;
                 });
+                outcomes.push(outcome);
                 const segment = outcome.then(() => undefined);
                 watcher.tail = segment;
                 this.pendingTails.add(segment);
                 void segment.then(() => this.pendingTails.delete(segment));
-                outcomes.push(outcome);
             }
-            // Consume the pending settlement bound at the bump. The resolver is
-            // captured, not re-read, so an older commit can never resolve a newer
-            // revision's binding; re-entrant settle() calls that raced the equality
-            // walk above now observe the real outcome.
-            const resolveSettlement = registration.settlementResolver;
-            registration.settlementResolver = undefined;
-            void (outcomes.length === 0
-                ? Promise.resolve(true)
-                : Promise.all(outcomes).then(results => results.every(Boolean)))
-                .then(accepted => resolveSettlement?.(accepted));
-            // Synchronous observers can query settlement or publish another revision.
-            // Bind this revision's value and watcher tails before exposing either event.
+            void Promise.all(outcomes).then(results => resolveSettlement?.(results.every(Boolean)));
             if (documentChanged)
-                this.emitDocumentUpdated(registration.ns, registration.revision);
+                this.emitDocumentUpdated(registration.ns, revision);
             // Fan the event out one listener at a time (the plain emit stops at the
             // first throwing listener, starving the rest). Invariant violations are
             // harness-fatal by design and rethrow after every listener ran; any other
@@ -966,7 +950,8 @@ let SettingsProvider = (() => {
             let invariantFailure;
             const args = ['settings/updated', registration.ns, next, prev, source];
             for (const listener of this.ctx.events.dispatch('emit', args)) {
-                if (this.registrations.get(registration.ns) !== registration || registration.resolved !== next)
+                if (this.registrations.get(registration.ns) !== registration || !registration.active
+                    || registration.resolved !== next || registration.revision !== revision)
                     break;
                 try {
                     const returned = listener(registration.ns, next, prev, source);
@@ -1004,46 +989,33 @@ let SettingsProvider = (() => {
 })();
 export { SettingsProvider };
 /**
- * Convert one already-redacted descriptor into the stable Remote projection.
- * @param descriptor - The descriptor input.
- * @returns The value produced by remote namespace view.
+ * Project an already-redacted descriptor as detached, lossless Remote data.
+ * @param descriptor - descriptor obtained with secret redaction enabled.
+ * @returns a namespace view that carries no provider-owned object references.
  */
 export function remoteNamespaceView(descriptor) {
     return {
         ns: String(descriptor.ns),
-        schema: descriptor.schema,
-        value: descriptor.value,
-        ...descriptor.base === undefined ? {} : { base: descriptor.base },
-        ...descriptor.user === undefined ? {} : { user: descriptor.user },
+        schema: snapshotSettingsJson(descriptor.schema),
+        value: snapshotSettingsJson(descriptor.value),
+        ...descriptor.base === undefined ? {} : { base: snapshotSettingsJson(descriptor.base) },
+        ...descriptor.user === undefined ? {} : { user: snapshotSettingsJson(descriptor.user) },
         applies: descriptor.applies,
         secrets: (descriptor.secrets ?? []).map(secret => ({ path: [...secret.path], set: secret.set })),
         revision: descriptor.revision,
     };
 }
-/** Throw a serializable Remote failure without ever carrying a secret value. */
-function remoteSettingsFailure(ns, error, fallback = 'settings-rejected') {
-    if (error instanceof SettingsConflictError) {
-        throw new TypertLookupFailure({
-            code: 'settings-conflict',
-            message: error.message,
-            details: { ns, expected: error.expected, actual: error.actual },
-        });
-    }
-    throw new TypertLookupFailure({
-        code: fallback,
-        message: fallback === 'settings-rejected'
-            ? `settings write for "${ns}" was rejected`
-            : 'settings write did not complete',
-        details: fallback === 'settings-rejected' ? { ns } : {},
-    });
-}
-/** Preserve one native document-opening failure through the strict Gateway. */
-function remoteSettingsOpenFailure(code, message) {
-    return new TypertLookupFailure({ code, message, details: {} });
-}
-/** Re-read a mutable AbortSignal after an awaited native operation. */
-function isAborted(signal) {
-    return signal.aborted;
+/**
+ * Detach lossless JSON through the same validator used by settings writes.
+ * This does not redact secrets; callers own whether the input may cross a wire or journal.
+ * @param value - JSON-compatible input to snapshot before asynchronous work.
+ * @returns a detached value; unsupported numbers, sparse arrays and cycles reject.
+ */
+export function snapshotSettingsJson(value) {
+    const detached = cloneJsonShaped({ value }, () => new TypeError('settings descriptor contains non-JSON data'))['value'];
+    if (detached === undefined)
+        throw new TypeError('settings descriptor contains non-JSON data');
+    return detached;
 }
 /**
  * Value mirror of the `FiberState` members {@link isUnloading} compares

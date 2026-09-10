@@ -1,9 +1,11 @@
-/** Package-owned relational checks for Agent Teams durable records. */
+/** Relational checks over Team records and their committed Lead-log prefix. */
 import type { Context } from '@deepseek-ai/cordis';
-/** Cordis companion plugin name. */
 export declare const name = "team-invariant";
-/** Invariant registry required by the companion. */
 export declare const inject: string[];
-/** Register the package invariant companion. */
+/**
+ * Register Team event invariants.
+ * @param ctx - invariant registry owner.
+ * @returns registration disposer after installation.
+ */
 export declare const apply: (ctx: Context) => Promise<() => void>;
 //# sourceMappingURL=invariant.d.ts.map

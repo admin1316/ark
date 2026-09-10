@@ -34,6 +34,12 @@ function appendEvent(seq: number, sources?: number[]): SessionEvent {
 class TracePersistence extends SessionPersistence {
   override readonly supportsRawArtifacts = false
 
+  async delete(id: SessionIdType): Promise<boolean> {
+    const removed = TracePersistence.entries.delete(id)
+    await this.ctx.parallel('session-persistence/deleted', id)
+    return removed
+  }
+
   static entries = new Map<SessionIdType, { meta: SessionHeader; events: SessionEvent[] }>()
   static listCalls = 0
   static inspectCalls = 0

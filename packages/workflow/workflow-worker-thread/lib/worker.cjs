@@ -248,8 +248,6 @@ var WorkflowExecution = class {
 	children;
 	/** 1-based count of `agent()` calls started (the `agentsStarted` result field). */
 	started = 0;
-	/** Cumulative `phase()` + `log()` calls so far, charged against `maxNarrationEvents`. */
-	narrationEvents = 0;
 	activeSlots = 0;
 	slotWaiters = [];
 	cancelReason;
@@ -583,7 +581,6 @@ var WorkflowExecution = class {
 	phase(title) {
 		this.throwIfCancelled();
 		if (typeof title !== "string" || title.length === 0) throw new _deepseek_ai_dsh_workflow.WorkflowError("phase() requires a non-empty title string", "INVALID_ARGUMENT");
-		this.chargeNarration("phase");
 		this.currentPhase = title;
 		this.observer.phase(title);
 	}
@@ -591,17 +588,7 @@ var WorkflowExecution = class {
 	log(message) {
 		this.throwIfCancelled();
 		if (typeof message !== "string") throw new _deepseek_ai_dsh_workflow.WorkflowError("log() requires a message string", "INVALID_ARGUMENT");
-		this.chargeNarration("log");
 		this.observer.log(message);
-	}
-	/**
-	* Charge one `phase()`/`log()` call against the per-run narration budget so
-	* a runaway script cannot flood the host event bus and session log.
-	* @param hook - the hook being charged, named in the cap error.
-	*/
-	chargeNarration(hook) {
-		this.narrationEvents += 1;
-		if (this.narrationEvents > this.limits.maxNarrationEvents) throw new _deepseek_ai_dsh_workflow.WorkflowError(`${hook}() called ${this.narrationEvents} times — over the per-run narration cap (${this.limits.maxNarrationEvents}); raise maxNarrationEvents in the engine config or reduce narration`, "NARRATION_CAP");
 	}
 };
 //#endregion

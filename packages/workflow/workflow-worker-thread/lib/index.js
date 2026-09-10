@@ -848,7 +848,6 @@ var WorkerThreadWorkflowEngine = class extends WorkflowEngine {
 		maxConcurrentAgents: z.natural().default(0),
 		maxTotalAgents: z.natural().min(1).default(1e3),
 		maxItemsPerCall: z.natural().min(1).default(4096),
-		maxNarrationEvents: z.natural().min(1).default(5e3),
 		syncTimeoutMs: z.natural().min(1).default(5e3),
 		disposeGraceMs: z.natural().default(5e3)
 	});
@@ -881,7 +880,6 @@ var WorkerThreadWorkflowEngine = class extends WorkflowEngine {
 			maxConcurrentAgents: this.config.maxConcurrentAgents === 0 ? Math.min(16, Math.max(1, availableParallelism() - 2)) : this.config.maxConcurrentAgents,
 			maxTotalAgents,
 			maxItemsPerCall: this.config.maxItemsPerCall,
-			maxNarrationEvents: this.config.maxNarrationEvents,
 			syncTimeoutMs: this.config.syncTimeoutMs
 		};
 		const init = {

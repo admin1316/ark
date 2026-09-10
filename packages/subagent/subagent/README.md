@@ -56,6 +56,8 @@ Requests that need a capability the chosen provider lacks fail loudly at start r
 
 -----
 
+Native controls use `subagent/list`, `subagent/history`, `subagent/prompt`, and `subagent/interrupt`. Prompts carry a stable UUID and the exact live parent lookup. `followupReceipt` returns only after the Session flush barrier; an exact retry returns the original message id without another insertion or cold resume, while conflicting content or parent identity rejects. Inherited fork history does not establish a child's own receipt. Cancellation prevents new acceptance but does not interrupt its durability wait; a flush failure retains accepted work for retry. The MessageId-only `followup` shares this durability behavior. History verifies the direct-child catalog and constrains the Session-owned page to its expected parent without resuming an Agent.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

@@ -1,8 +1,8 @@
-name: CI master
+name: CI main
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
     inputs:
       suite:
@@ -38,7 +38,7 @@ jobs:
   # pull-request runs are scoped to their own merge ref and help nobody
   # else. Runs in seconds when the image version already has a cache.
   wine-apt-cache:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     name: wine apt cache
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -73,9 +73,9 @@ jobs:
   # persistent pnpm store and tool caches make them redundant (and saving here
   # would poison the hosted cache namespace with self-hosted paths).
   serial-linux-selfhosted:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    name: serial / linux (self-hosted standby)
-    runs-on: [self-hosted, linux, x64, vm-backup]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: serial / linux
+    runs-on: ubuntu-24.04
     steps:
       # DSH_ARCHIVE_BASE_REF below compares the frozen-archive gate against
       # github.event.before, so full history is required: depth 2 would miss it
@@ -156,9 +156,9 @@ jobs:
   # (and saving here would poison the hosted cache namespace with self-hosted
   # paths).
   serial-windows:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    name: serial / windows (self-hosted standby)
-    runs-on: [self-hosted, dsh-win-ci, windows]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: serial / windows
+    runs-on: windows-2025
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6

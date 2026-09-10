@@ -34,13 +34,13 @@ interface ResolvedCredential {
 `describe(ref)` 在绝不暴露值的前提下回应配置界面：引用当前是否可解析、来自哪一层、`set` 当前能否成功。本地提供方把由当前进程环境供值的引用报告为 `writable: false`——那样的写入会表面成功而解析持续返回遮蔽值，因此 seam 直接拒绝，界面也得以提前把该引用渲染为只读。
 
 ```ts type-equiv
-/** Source and writability facts for one reference, safe for configuration UIs — never the value. */
+/** Value-free source and writability facts for configuration UIs. */
 interface CredentialInfo {
-  /** Whether {@link CredentialProvider.resolve} would currently return a value. */
+  /** Whether the provider would currently resolve a value. */
   configured: boolean
-  /** Source layer currently supplying the value; absent while unconfigured. */
+  /** Source supplying the value; absent while unconfigured. */
   source?: string
-  /** Whether {@link CredentialProvider.set} would currently succeed for this reference. */
+  /** Whether the provider permits writing this reference. */
   writable: boolean
 }
 ```
@@ -48,6 +48,10 @@ interface CredentialInfo {
 ## 已提交的变更
 
 `credentials/reference-updated (ref)` 在提供方管理的来源发生已提交变更后发出——`set`、`unset` 或在存储中观察到的外部编辑。进程环境自身的变化不可观测，永不发出事件。消费方不需要该事件（它们按操作重新解析）；它服务于配置界面刷新「已配置」徽标。
+
+## 条件写入
+
+`CredentialCondition` 携带 `valueDigest: string | null` 和可选的 `source`；空摘要要求引用不存在。`credentialCondition` 从解析值捕获条件，不保留秘密。提供方在与无条件引用更新相同的写入独占区间内检查条件；不匹配时抛出 `CredentialConflictError`，不执行请求的修改。带检查的 `modifyRecord` 把引用值的独占保持到记录提交。[本地提供方](../../packages/credentials/credentials-local/README.zh.md)定义参与写入方和相同值的限制。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -154,16 +158,18 @@ abstract describe(ref: CredentialRef): Promise<CredentialInfo>
  * rejects an empty value (use {@link unset}).
  * @param ref - the reference to store.
  * @param value - the non-empty secret value.
+ * @param expected - optional condition checked under the same exclusion as all reference writes; a mismatch rejects without writing.
  */
-abstract set(ref: CredentialRef, value: string): Promise<void>
+abstract set(ref: CredentialRef, value: string, expected?: CredentialCondition): Promise<void>
 
 /**
  * Remove one reference from the provider-managed writable source; removing
  * an absent reference is a no-op. Rejects while a read-only source shadows
  * the reference, like {@link set}.
  * @param ref - the reference to remove.
+ * @param expected - optional condition checked under the same exclusion as all reference writes; a mismatch rejects without deleting.
  */
-abstract unset(ref: CredentialRef): Promise<void>
+abstract unset(ref: CredentialRef, expected?: CredentialCondition): Promise<void>
 
 /**
  * Read one stored record. The value is returned as its owner wrote it; a
@@ -199,9 +205,11 @@ abstract listRecords(): Promise<readonly CredentialRecordEntry[]>
  * concurrently would otherwise lose whichever wrote first.
  * @param key - the record to modify.
  * @param mutate - receives the current record and returns its replacement, or `undefined` to leave it.
+ * @param references - optional conditions checked before `mutate`, with exclusion held through commit.
+ * Callbacks must not enqueue writes on this provider.
  * @returns the record after the write, or the current one when `mutate` declined.
  */
-abstract modifyRecord( key: CredentialKey, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>, ): Promise<CredentialRecord | undefined>
+abstract modifyRecord( key: CredentialKey, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>, references?: readonly { ref: CredentialRef; expected: CredentialCondition }[], ): Promise<CredentialRecord | undefined>
 
 /**
  * Remove one record; removing an absent record is a no-op.
@@ -235,6 +243,42 @@ abstract deleteRecord(key: CredentialKey): Promise<void>
 ```
 
 Source: [`packages/credentials/credentials/src/index.ts`](../../packages/credentials/credentials/src/index.ts)
+
+<a id="ctxcredentialscontroller--credentialscontroller"></a>
+
+### `ctx.credentialsController` — `CredentialsController`
+
+Host service backing the generated `ctx.remote.credentials` namespace. It carries every wire obligation the credential seam itself does not: the batch fan-out bound, the field-by-field view projection, the reference-grammar guard, and the refusal mapping. Secret values cross in one direction only — no method here returns one.
+
+```ts cordis-catalog
+/**
+ * Describe several references for one configuration surface. Batched because
+ * a settings page describes every reference its rows name at once, and one
+ * round trip keeps those rows from settling separately.
+ * @param refs - reference names, at most {@link MAX_DESCRIBE_REFS}; a name outside the grammar rejects the whole call as `bad-request`.
+ * @returns one view per requested name, keyed by that name.
+ * @throws TypertRemoteFailure when the request is invalid or no credential provider is mounted.
+ */
+@Remote async describe(refs: string[]): Promise<Record<string, CredentialInfo>>
+
+/**
+ * Store one value from a configuration surface. The value crosses the wire in
+ * this direction only: no read path returns it.
+ * @param ref - reference name to store under.
+ * @param value - the non-empty secret value.
+ * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
+ */
+@Remote async set(ref: string, value: string): Promise<void>
+
+/**
+ * Remove one reference from a configuration surface.
+ * @param ref - reference name to remove.
+ * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
+ */
+@Remote async unset(ref: string): Promise<void>
+```
+
+Source: [`packages/api/settings-controller/src/credentials.ts`](../../packages/api/settings-controller/src/credentials.ts)
 
 <a id="authorization-events"></a>
 

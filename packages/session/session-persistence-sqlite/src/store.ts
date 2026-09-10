@@ -211,6 +211,24 @@ export class SqliteStore implements PersistenceBackend<number> {
     }
   }
 
+  /**
+   * Delete the session and cascade its events in one validated transaction.
+   * @param id - exact durable session key.
+   * @returns whether the session row existed.
+   */
+  async deleteStored(id: SessionId): Promise<boolean> {
+    await this.open()
+    this.db.exec(sql('begin-immediate'))
+    try {
+      validateSchemaForMutation(this.databaseConstructor, this.db, this.databasePath)
+      const result = this.db.prepare(sql('delete-session')).run(id)
+      this.db.exec(sql('commit'))
+      return result.changes !== 0 && result.changes !== 0n
+    } catch (error: unknown) {
+      this.rollback(error, 'delete')
+    }
+  }
+
   async commitRepair(
     meta: SessionHeader,
     tornMarker: number | undefined,

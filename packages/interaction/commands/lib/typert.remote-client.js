@@ -81,7 +81,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-commands#commands/execute:result',
         schema: _deepseek_ai_dsh_commands_commands_execute_result$schema,
       },
-      sourceLocation: {"file":"packages/interaction/commands/src/index.ts","line":329,"column":9},
+      sourceLocation: {"file":"packages/interaction/commands/src/index.ts","line":330,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-commands#commands/list',
@@ -111,7 +111,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-commands#commands/list:result',
         schema: _deepseek_ai_dsh_commands_commands_list_result$schema,
       },
-      sourceLocation: {"file":"packages/interaction/commands/src/index.ts","line":285,"column":3},
+      sourceLocation: {"file":"packages/interaction/commands/src/index.ts","line":286,"column":3},
     },
   ],
 }

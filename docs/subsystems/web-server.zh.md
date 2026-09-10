@@ -142,11 +142,15 @@ registerFallback(handler: WebRoute['handler']): () => void
 /**
  * Register a raw-HTML index transform, the escape hatch for markup no
  * {@link IndexInjection} row expresses: {@link renderIndex} applies taps in
- * registration order after rendering the structured rows.
- * @param transform - pure html-to-html function.
+ * registration order after rendering the structured rows. The transform
+ * receives the request the index response answers, forwarded by the
+ * fallback owner through {@link applyIndexTaps}; request-aware taps (the
+ * launch-token plant) gate credentials on it, so an owner that cannot
+ * forward the request gets the legacy request-blind behavior.
+ * @param transform - pure html-to-html function over the rendered document.
  * @returns the disposer removing the transform.
  */
-tapIndex(transform: (html: string) => string): () => void
+tapIndex(transform: (html: string, req?: IncomingMessage) => string): () => void
 
 /**
  * Security headers the index-document owner must attach to every index
@@ -159,11 +163,16 @@ indexSecurityHeaders(): Record<string, string>
 
 /**
  * Run an index.html body through the registered taps in registration order
- * — called by the fallback owner on every index response it renders.
+ * — called by the fallback owner on every index response it renders. The
+ * owner forwards the request being answered so request-aware taps can gate
+ * credential content on it; omitting it makes credential-carrying taps fail
+ * closed on all-interfaces hosts, and selects request-blind behavior only
+ * where no credential decision depends on it.
  * @param html - the raw index.html body.
+ * @param req - the request the index response answers, when available.
  * @returns the transformed body.
  */
-applyIndexTaps(html: string): string
+applyIndexTaps(html: string, req?: IncomingMessage): string
 
 /**
  * Gather the structured injection table: one `webserver/index-inject` emit,
@@ -177,9 +186,10 @@ collectIndexInjections(): IndexInjection[]
  * Render one index.html body: the structured injection table first, then
  * the raw `tapIndex` transforms over the result.
  * @param html - the raw index.html body.
+ * @param req - the request the index response answers, when available.
  * @returns the transformed body.
  */
-renderIndex(html: string): string
+renderIndex(html: string, req?: IncomingMessage): string
 ```
 
 Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)

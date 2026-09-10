@@ -6,6 +6,8 @@ The host workspace-directory picker is a capability seam. The abstract `Director
 
 Native picker failures remain typed and are mapped by the Host API boundary. Design rationale, the `ctx.fs` separation, and the policy decisions live in [the directory-picker capability seam Agent Note](../../../.agents/notes/implemented/architecture/2026-07-28-directory-picker-capability-seam.md).
 
+`@deepseek-ai/dsh-host-directory-picker/types` exports the client-safe `DirectoryEntry` and `DirectoryListing` types without loading the Host service.
+
 ## Model Experience
 
 None, as the seam serves the GUI host's directory selection; nothing here reaches a model request.

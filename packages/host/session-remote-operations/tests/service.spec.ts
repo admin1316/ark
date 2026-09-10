@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdir,  writeFile,  mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -190,6 +190,20 @@ async function harness(cwd: string): Promise<MutableHarness> {
 }
 
 describe('SessionRemoteOperationsService', () => {
+  it('checks child history authority on the actual source header before presenting events', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-child-history-owner-'))
+    temporary.push(cwd)
+    const state = await harness(cwd)
+    const session = Session.create(SessionId('child'), undefined, {
+      ...header('child', cwd), parentSession: SessionId('actual-parent'), origin: 'subagent',
+    })
+    state.sessions.set('child', session)
+    const operations = state.ctx.get('sessionRemoteOperations')!
+    await expect(operations.history({ sessionId: session.id, expectedParentSessionId: SessionId('stale-parent') },
+      new AbortController().signal)).resolves.toMatchObject({ ok: false, error: { code: 'subagent-unauthorized' } })
+    await expect(operations.history({ sessionId: session.id, expectedParentSessionId: SessionId('actual-parent') },
+      new AbortController().signal)).resolves.toMatchObject({ ok: true, value: { events: [], hasMore: false } })
+  })
   it('provides both Host ports, reads live state directly, and short-circuits pre-cancelled calls', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'dsh-session-remote-'))
     temporary.push(cwd)
@@ -270,50 +284,44 @@ describe('SessionRemoteOperationsService', () => {
   })
 
   it('admits an unknown slash-command naming an installed skill as a skill prompt', async () => {
-    const skillHome = await mkdtemp(join(tmpdir(), 'dsh-session-skills-'))
-    temporary.push(skillHome)
-    const skillDir = join(skillHome, 'skills', 'translation-studio')
-    await mkdir(skillDir, { recursive: true })
-    await writeFile(join(skillDir, 'SKILL.md'), '# 翻译工作室\n长文翻译方法论：术语表、分段续跑、双语校对。')
-    const previousHome = process.env.DSH_HOME
-    process.env.DSH_HOME = skillHome
-    try {
-      const cwd = await mkdtemp(join(tmpdir(), 'dsh-session-remote-'))
-      temporary.push(cwd)
-      const state = await harness(cwd)
-      const session = emptySession('session-skill', cwd)
-      const agent = fakeAgent(session)
-      state.sessions.set(String(session.id), session)
-      state.agents.set(String(session.id), agent)
-      state.roots.push(agent)
-      const operations = state.ctx.sessionRemoteOperations as SessionRemoteOperationsService
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-session-remote-'))
+    temporary.push(cwd)
+    const state = await harness(cwd)
+    const session = emptySession('session-skill', cwd)
+    const agent = fakeAgent(session)
+    const list = vi.fn().mockResolvedValue([{
+      name: 'translation-studio',
+      invocation: { modelInvocable: true, userInvocable: true },
+    }])
+    agent.ctx.provide('skills', { list } as never)
+    state.sessions.set(String(session.id), session)
+    state.agents.set(String(session.id), agent)
+    state.roots.push(agent)
+    const operations = state.ctx.sessionRemoteOperations as SessionRemoteOperationsService
+    const signal = new AbortController().signal
 
-      await expect(operations.prompt({
-        sessionId: session.id,
-        invocationId: SessionPromptInvocationId('skill-known'),
-        mode: 'queue',
-        content: [{ type: 'text', text: '/translation-studio 把这篇翻成英文' }],
-      }, new AbortController().signal)).resolves.toEqual({ ok: true, value: { accepted: true } })
-      expect(agent.followup).toHaveBeenCalledTimes(1)
-      const admitted = agent.followup.mock.calls[0]?.[0]
-      expect(admitted.content[0].text).toContain('用户调用了 translation-studio 技能。任务：把这篇翻成英文')
-      expect(admitted.content[0].text).toContain('把这篇翻成英文')
-      expect(admitted.content[0].text).toContain('术语表')
+    await expect(operations.prompt({
+      sessionId: session.id,
+      invocationId: SessionPromptInvocationId('skill-known'),
+      mode: 'queue',
+      content: [{ type: 'text', text: '/translation-studio 把这篇翻成英文' }],
+    }, signal)).resolves.toEqual({ ok: true, value: { accepted: true } })
+    expect(agent.followup).toHaveBeenCalledTimes(1)
+    expect(agent.followup.mock.calls[0]?.[0]).toMatchObject({
+      content: [{ type: 'text', text: '/translation-studio 把这篇翻成英文' }],
+    })
+    expect(list).toHaveBeenCalledWith({ cwd, scope: agent, signal })
 
-      await expect(operations.prompt({
-        sessionId: session.id,
-        invocationId: SessionPromptInvocationId('skill-unknown'),
-        mode: 'queue',
-        content: [{ type: 'text', text: '/no-such-skill' }],
-      }, new AbortController().signal)).resolves.toMatchObject({
-        ok: false,
-        error: { code: 'unknown-command' },
-      })
-      expect(agent.followup).toHaveBeenCalledTimes(1)
-    } finally {
-      if (previousHome === undefined) delete process.env.DSH_HOME
-      else process.env.DSH_HOME = previousHome
-    }
+    await expect(operations.prompt({
+      sessionId: session.id,
+      invocationId: SessionPromptInvocationId('skill-unknown'),
+      mode: 'queue',
+      content: [{ type: 'text', text: '/no-such-skill' }],
+    }, new AbortController().signal)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'unknown-command' },
+    })
+    expect(agent.followup).toHaveBeenCalledTimes(1)
   })
 
   it('routes an exact slash-command prompt through CommandRuntime and never into the model inbox', async () => {

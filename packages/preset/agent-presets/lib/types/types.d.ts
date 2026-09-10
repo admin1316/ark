@@ -1,35 +1,105 @@
-/** Client-safe event declarations owned by the agent-preset domain. */
+/** Client-safe payloads and event declarations owned by the agent-preset domain. */
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
-/** One preset row for the Native `agentPresets/list` Remote catalog. */
-export interface RemoteAgentPresetEntry {
+import type { PresetTrust } from './preset.ts';
+export type { PresetTrust } from './preset.ts';
+/**
+ * One roster row as a client reads it. Path-free: a preset is addressed by id
+ * everywhere off the Host, and the composition's location is the Host's own.
+ */
+export interface AgentPresetRow {
+    /** Stable identifier; also the label's fallback. */
     readonly id: string;
-    readonly trust: 'system' | 'user';
+    /** Trust of the root this preset was discovered under. */
+    readonly trust: PresetTrust;
+    /** Whether a session naming no preset composes this one. */
     readonly isDefault: boolean;
+    /** Display name the preset published. */
     readonly name?: string;
+    /** One sentence on what this preset is for. */
     readonly description?: string;
+    /** Why this preset cannot compose a session; absent when it can. */
     readonly broken?: string;
 }
-/** Current Native agent-preset catalog and its authoring affordances. */
-export interface RemoteAgentPresetCatalog {
-    readonly presets: readonly RemoteAgentPresetEntry[];
+/** The roster one deployment currently supplies, with its authoring capability. */
+export interface AgentPresetRoster {
+    /** Every preset the configured roots supply, first-root-wins per id. */
+    readonly presets: readonly AgentPresetRow[];
+    /** Whether this deployment has a root locally authored presets go to. */
     readonly authorable: boolean;
-    /** Whether a user-owned preset can resolve to a host-side directory. */
+    /** Whether user-authored preset documents can be requested by id. */
     readonly hasDocument: boolean;
 }
-/** Privileged read-only view of one resolved preset composition. */
-export interface RemoteAgentPresetDocument {
+/** The preset committed by a native copy or selection operation. */
+export interface AgentPresetSelection {
     readonly agentPreset: string;
-    readonly trust: 'system' | 'user';
+}
+/** Confirmation of deletion without exposing a filesystem target. */
+export type AgentPresetRemoved = Record<string, never>;
+/** Native handoff, or a directory to display on a host without an opener. */
+export type AgentPresetDocumentOpen = {
+    readonly opened: true;
+} | {
+    readonly opened: false;
+    readonly path: string;
+};
+/** Stable details for agent-preset failures returned by the Remote namespace. */
+export interface AgentPresetErrorDetailsMap {
+    /** A required preset id is empty. */
+    'bad-request': Record<never, never>;
+    /** Cancellation prevented completion of a native handoff. */
+    cancelled: Record<never, never>;
+    /** No configured root supplies the requested id. */
+    'agent-preset-not-found': {
+        readonly agentPreset: string;
+        readonly available: readonly string[];
+    };
+    /** The id is unusable, already taken, or its composition cannot be installed. */
+    'agent-preset-invalid': {
+        readonly agentPreset: string;
+        readonly reason: string;
+    };
+    /** The preset ships with the deployment and is not the user's to change. */
+    'agent-preset-read-only': {
+        readonly agentPreset: string;
+        readonly reason: string;
+    };
+    /** The session's conversation has started, so its composition is fixed. */
+    'agent-preset-locked': {
+        readonly sessionId: SessionId;
+        readonly agentPreset: string;
+    };
+    /** The preset operation failed without a caller-actionable classification. */
+    internal: Record<never, never>;
+}
+/** One agent-preset refusal as a client reads it. */
+export type AgentPresetError = {
+    [Code in keyof AgentPresetErrorDetailsMap]: {
+        readonly code: Code;
+        readonly message: string;
+        readonly details: AgentPresetErrorDetailsMap[Code];
+    };
+}[keyof AgentPresetErrorDetailsMap];
+/** One preset's composition text beside the row it belongs to. */
+export interface AgentPresetDocument {
+    /** The preset the composition belongs to. */
+    readonly agentPreset: string;
+    /** Trust of the root this preset was discovered under. */
+    readonly trust: PresetTrust;
+    /** The composition exactly as stored. */
     readonly content: string;
+    /** Display name the preset published. */
     readonly name?: string;
+    /** One sentence on what this preset is for. */
     readonly description?: string;
 }
-/** Opaque handoff receipt for one user-authored preset. */
-export interface RemoteAgentPresetOpenTarget {
-    /** The preset id the native Host must resolve again before opening. */
-    readonly agentPreset: string;
-    /** The Remote endpoint authorizes the handoff but never leaks a Host path. */
-    readonly requiresNativeHandoff: true;
+declare module '@deepseek-ai/dsh-session-projection/types' {
+    interface SessionProjectionStateMap {
+        agentPreset: string | null;
+    }
+    interface SessionProjectionMap {
+        /** Preset the Session runs, or null when the deployment composes none. */
+        agentPreset: string | null;
+    }
 }
 declare module '@deepseek-ai/cordis' {
     interface Events {

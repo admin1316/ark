@@ -98,8 +98,6 @@ export declare class SqliteSessionQueryEngine extends SessionQueryEngine {
     private _ensureReady;
     private _serialized;
     private _reconcile;
-    /** Remove every derived row for one authoritative Session deletion. */
-    private _purgeDeletedSession;
     private _observeStable;
     private _mainGeneration;
     private _deleteSession;

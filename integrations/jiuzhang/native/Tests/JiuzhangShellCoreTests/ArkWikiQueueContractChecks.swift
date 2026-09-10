@@ -46,7 +46,7 @@ func runArkWikiQueueContractChecks() {
     "native Wiki queue polls only while active, backs off, and refreshes once on completion"
   )
   check(
-    model.contains("ArkKnowledgeIngestInput.normalizedHTTPURL(rawValue)")
+    model.contains("ArkHTTPURLInput.normalizedHTTPURL(rawValue)")
       && model.contains("client.enqueueKnowledgeIngest(inputs: [normalized])")
       && model.contains("installKnowledgeIngestQueue(queue)"),
     "native Wiki URL import validates then joins the single queue owner"
@@ -69,7 +69,7 @@ func runArkWikiQueueContractChecks() {
       && root.contains("ark.wiki.ingest.url-error")
       && root.contains("model.importKnowledgeURL(value)")
       && root.contains("private var importURLValidationError: String?")
-      && root.contains("ArkKnowledgeIngestInput.normalizedHTTPURL(value) == nil")
+      && root.contains("ArkHTTPURLInput.normalizedHTTPURL(value) == nil")
       && root.contains("@State private var importURLError") == false
       && root.contains(".frame(minHeight: 18)")
       && root.contains(".frame(width: 520, height: 210)")

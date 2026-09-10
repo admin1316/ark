@@ -1,32 +1,28 @@
-/** Shared admission cutoff and bounded settlement for the Team runtime. */
-/** Owns the single Team runtime cancellation fact and disposal timeout. */
+/** Owns the cancellation fact shared by all Team runtime operations. */
 export declare class TeamRuntimeLifecycle {
     private readonly disposalTimeoutMs;
     private readonly controller;
-    /**
-     * @param disposalTimeoutMs - maximum wait for one disposal settlement operation.
-     */
+    private disposalDeadline;
     constructor(disposalTimeoutMs: number);
-    /** Signal aborted exactly when Team runtime admission closes. */
+    /** Cancellation shared by all admitted runtime operations. */
     get signal(): AbortSignal;
-    /** Whether Team runtime admission is closed. */
+    /** Whether shutdown has closed admission, independently of completed cleanup. */
     get disposed(): boolean;
-    /** The exact cancellation reason used to distinguish expected disposal rejection. */
+    /** Original cancellation reason used to distinguish shutdown from unexpected failure. */
     get reason(): unknown;
-    /** Whether a rejection is the runtime cancellation, directly or through an Error cause chain. */
     private isCancellation;
-    /** Close Team runtime admission and cancel admitted interruptible work. */
+    /** Close admission and cancel interruptible work. */
     close(): void;
     /**
      * Await admitted operations and retain failures other than runtime cancellation.
-     * @param operations - admitted operations captured after the admission cutoff.
-     * @param failures - aggregate destination for unexpected rejection or timeout.
+     * @param operations - operations captured after admission closes.
+     * @param failures - destination for unexpected rejections or timeouts.
      */
     settle(operations: readonly Promise<unknown>[], failures: unknown[]): Promise<void>;
     /**
-     * Bound one runtime settlement operation.
-     * @param operation - settlement that may otherwise block HMR or process shutdown.
-     * @returns the operation result.
+     * Bound one shutdown operation.
+     * @param operation - settlement that might otherwise wait indefinitely.
+     * @returns the operation's result.
      */
     withTimeout<T>(operation: Promise<T>): Promise<T>;
 }

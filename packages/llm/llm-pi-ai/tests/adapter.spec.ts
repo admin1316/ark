@@ -363,7 +363,8 @@ describe('PiAiAdapter provider routing', () => {
         openai: {
           apiKeyEnv: 'PI_TEST_KEY',
           baseURL: `${server.url}/api/projects/openai/openai/v1`,
-          headers: { 'api-key': 'test-key', Authorization: '' },
+          credentialHeaders: { 'api-key': 'PI_TEST_KEY' },
+          headers: { Authorization: '' },
         },
       },
     })

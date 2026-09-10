@@ -9,12 +9,14 @@ func runArkWikiProjectLifecycleContractChecks() {
     .deletingLastPathComponent()
     .deletingLastPathComponent()
   let hostURL = repositoryRoot.appendingPathComponent("packages/host/knowledge-wiki/src/index.ts")
+  let filesystemURL = hostURL.deletingLastPathComponent().appendingPathComponent("filesystem.ts")
 
   guard
     let model = try? String(contentsOf: modelURL, encoding: .utf8),
     let root = try? String(contentsOf: rootURL, encoding: .utf8),
     let l10n = try? String(contentsOf: l10nURL, encoding: .utf8),
-    let host = try? String(contentsOf: hostURL, encoding: .utf8)
+    let host = try? String(contentsOf: hostURL, encoding: .utf8),
+    let filesystem = try? String(contentsOf: filesystemURL, encoding: .utf8)
   else {
     check(false, "Wiki project lifecycle sources are readable")
     return
@@ -27,8 +29,9 @@ func runArkWikiProjectLifecycleContractChecks() {
   )
   check(
     host.contains("invalid knowledge project registry")
-      && host.contains("flag: 'wx'")
-      && host.contains("renameSync(temporary, file)")
+      && host.contains("atomicWriteFile(file,")
+      && filesystem.contains("constants.O_EXCL")
+      && filesystem.contains("renameSync(temporary, path)")
       && host.contains("known.includes(target) || existsSync(join(target, 'wiki'))") == false,
     "Host project registry fails closed, writes atomically, and rejects stale unregistered selection"
   )

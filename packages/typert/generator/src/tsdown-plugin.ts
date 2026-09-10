@@ -105,7 +105,12 @@ export function typertPlugin(pluginOptions: TypertPluginOptions = {}): TypertPlu
   }
 }
 
-function emitArtifacts(packageDir: string, artifacts: readonly WorkspaceEmitResult[]): void {
+/**
+ * Write generated reflection artifacts for one validated package output root.
+ * @param packageDir - owning package directory.
+ * @param artifacts - generated faces for this exact package.
+ */
+export function emitArtifacts(packageDir: string, artifacts: readonly WorkspaceEmitResult[]): void {
   const output = join(packageDir, 'lib')
   mkdirSync(output, { recursive: true })
   let emittedRemote = false

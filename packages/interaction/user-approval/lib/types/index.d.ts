@@ -7,7 +7,7 @@ import { Context, Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { type CallId } from '@deepseek-ai/dsh-llm';
-import type { Scoped } from '@deepseek-ai/dsh-scope';
+import { type Scoped } from '@deepseek-ai/dsh-scope';
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session';
 declare module '@deepseek-ai/cordis' {
     interface Context {
@@ -15,40 +15,15 @@ declare module '@deepseek-ai/cordis' {
     }
     interface Events {
         /**
-         * Ask composed answerers for one decision. Return an outcome to claim the
-         * request or call `next()`; failure yields the fail-closed default.
-         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
-         * @param req - the pending decision (agent, tool identity, reason, signal).
+         * Ask scoped answerers; call next to delegate an unclaimed request.
+         * @param req - borrowed live Agent request and cancellation signal.
          * @mode waterfall
          */
-        'approval/request'(this: Scoped<ApprovalService>, req: ApprovalRequest, next: () => Promise<ApprovalOutcome>): Promise<ApprovalOutcome>;
+        'approval/request'(this: Scoped<Agent>, req: ApprovalRequest, next: () => Promise<ApprovalOutcome>): Promise<ApprovalOutcome>;
     }
 }
 declare module '@deepseek-ai/dsh-session/types' {
     interface SessionEventMap {
-        /**
-         * An approval question was put to the answerer chain — log-only audit
-         * (like `hook/*`; NOT a surface event, carries no `surfaceOp`). `id` pairs
-         * it with the `approval/decided` that always follows; `toolName` is the
-         * tool the question is about, `callId` the exact tool call when the asker
-         * had one, `reason` the asker's human-readable explanation (e.g. a hook's
-         * permission-decision reason).
-         */
-        'approval/asked': {
-            id: ApprovalRequestId;
-            toolName: string;
-            callId?: CallId;
-            reason?: string;
-        };
-        /**
-         * The outcome of a prior `approval/asked` (same `id`) — log-only audit.
-         * Exactly one per ask, appended when the outcome is known: a decision, a
-         * cancellation, or the fail-closed `'unavailable'`.
-         */
-        'approval/decided': {
-            id: ApprovalRequestId;
-            outcome: ApprovalOutcome;
-        };
         /**
          * The session's approval policy was switched — log-only, durable,
          * replayable, never in the model transcript (the model learns the policy
@@ -64,7 +39,6 @@ declare module '@deepseek-ai/dsh-session/types' {
         };
     }
 }
-import { ApprovalRequestId } from './types.ts';
 import type { ApprovalOutcome } from './types.ts';
 export { ApprovalRequestId } from './types.ts';
 export type { ApprovalOutcome } from './types.ts';

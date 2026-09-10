@@ -50,6 +50,7 @@ import type {
   ImageAttachmentAccess,
   LlmModelInfo,
   LlmProviderInfo,
+  LlmProviderVerificationMode,
   LlmResolvedModelInfo,
   PreparedAdapterCall,
   ReasoningEffortId as ReasoningEffortIdType,
@@ -61,6 +62,7 @@ import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
 import { toStreamChunks } from './stream.ts'
+import { verifyExactModel } from './verification.ts'
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
 interface PiAiSnapshot {
@@ -83,6 +85,8 @@ export interface PiAiAdapterOptions {
    * `MISSING_CREDENTIAL` rather than falling back.
    */
   resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<string | undefined>
+  /** Resolve reference-backed headers from the same captured profile as the API key. */
+  resolveCredentialHeaders?: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<Record<string, string>>
   /**
    * How every collection this adapter builds resolves auth the request-level
    * `apiKey` override does not cover. Required rather than optional: a
@@ -202,11 +206,15 @@ function reasoningInfo(
 }
 
 /** Merge deployment headers while removing case-insensitive attribution collisions. */
-function requestHeaders(headers: Readonly<Record<string, string>> | undefined): Record<string, string> {
+function requestHeaders(
+  headers: Readonly<Record<string, string>> | undefined,
+  credentialHeaders: Record<string, string>,
+): Record<string, string> {
   const attribution = attributionHeaders()
   const reserved = new Set(Object.keys(attribution).map(name => name.toLowerCase()))
   return {
     ...Object.fromEntries(Object.entries(headers ?? {}).filter(([name]) => !reserved.has(name.toLowerCase()))),
+    ...Object.fromEntries(Object.entries(credentialHeaders).filter(([name]) => !reserved.has(name.toLowerCase()))),
     ...attribution,
   }
 }
@@ -233,7 +241,9 @@ export class PiAiAdapter extends LlmAdapter {
     const profiles = this.config.profiles()
     if (this.snapshot?.profiles === profiles) return this.snapshot
     const models: MutableModels = createModels(this.config.auth)
-    for (const profile of profiles.values()) models.setProvider(profile.piProvider)
+    for (const profile of profiles.values()) {
+      if (profile.piProvider !== undefined) models.setProvider(profile.piProvider)
+    }
     this.snapshot = { profiles, models }
     return this.snapshot
   }
@@ -244,12 +254,16 @@ export class PiAiAdapter extends LlmAdapter {
     if (profile === undefined) {
       throw new LlmError(`pi-ai adapter does not own provider "${provider}"`, 'NO_ADAPTER')
     }
+    if (profile.migrationRequired !== undefined) throw new LlmError('provider credential headers require migration to credential references', 'MISSING_CREDENTIAL')
     return profile
   }
 
   /** The configured descriptor for one exact route/model pair within one snapshot. */
   private modelOf(snapshot: PiAiSnapshot, provider: string, model: string): Model<Api> {
-    this.profileOf(snapshot, provider)
+    const profile = this.profileOf(snapshot, provider)
+    const failure = profile.modelErrors.get(model)
+      ?? (profile.piProvider === undefined ? profile.catalogError : undefined)
+    if (failure !== undefined) throw new LlmError(failure, 'INVALID_CONFIG')
     const resolved = snapshot.models.getModel(provider, model)
     if (resolved === undefined) {
       throw new LlmError(`pi-ai provider "${provider}" has no configured model "${model}"`, 'UNKNOWN_MODEL')
@@ -290,6 +304,29 @@ export class PiAiAdapter extends LlmAdapter {
       const snapshot = this.current()
       return this.modelInfo(snapshot, provider, model)
     })
+  }
+
+  private async credentialHeaders(provider: string, profile: ResolvedPiAiProviderProfile): Promise<Record<string, string>> {
+    if (profile.credentialHeaders !== undefined && this.config.resolveCredentialHeaders === undefined) {
+      throw new LlmError('provider has credential-backed headers but no credential resolver', 'MISSING_CREDENTIAL')
+    }
+    return await this.config.resolveCredentialHeaders?.(provider, profile) ?? {}
+  }
+
+  override async verifyProvider(provider: string, model: string, signal: AbortSignal): Promise<LlmProviderVerificationMode | undefined> {
+    const snapshot = this.current()
+    const profile = this.profileOf(snapshot, provider)
+    const resolved = this.modelOf(snapshot, provider, model)
+    // Bailian's generation endpoint is authoritative; OpenAI-style model-detail GET is not required there.
+    if (provider === 'bailian-cn' || provider === 'bailian-intl') return undefined
+    if (resolved.api !== 'openai-completions' && resolved.api !== 'openai-responses') return undefined
+    const apiKey = await this.config.resolveApiKey(provider, profile)
+    const credentials = await this.credentialHeaders(provider, profile)
+    if (apiKey === undefined && Object.keys(credentials).length === 0) return undefined
+    const headers = requestHeaders(profile.headers, credentials)
+    if (apiKey !== undefined && !Object.keys(headers).some(name => name.toLowerCase() === 'authorization')) headers.authorization = `Bearer ${apiKey}`
+    return verifyExactModel({ baseURL: resolved.baseUrl, provider, model, headers,
+      publicHeaders: requestHeaders(profile.headers, {}), signal })
   }
 
   private modelInfo(snapshot: PiAiSnapshot, provider: string, model: string): LlmResolvedModelInfo {
@@ -341,6 +378,7 @@ export class PiAiAdapter extends LlmAdapter {
       options.reasoningEffort ?? profile.reasoning,
     )
     const apiKey = await this.config.resolveApiKey(options.provider, profile)
+    const credentialHeaders = await this.credentialHeaders(options.provider, profile)
 
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -380,7 +418,7 @@ export class PiAiAdapter extends LlmAdapter {
         signal: watchdog.signal,
         // Profile headers are deployment-owned; attribution names are
         // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
+        headers: requestHeaders(profile.headers, credentialHeaders),
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal)[Symbol.asyncIterator]()
       let exhausted = false

@@ -11,7 +11,7 @@ Source: [`packages/todo/tool-todo/src/types.ts`](../../packages/todo/tool-todo/s
 ```ts type-equiv
 /**
  * One entry in an agent's todo list — the unit of the `todo/write`
- * whole-list snapshot declared by this package.
+ * {@link SessionEventMap} event's whole-list snapshot.
  *
  * Deliberately minimal: a human-readable `content` line and a three-state
  * `status`. No id, priority, or `activeForm` — the list is replaced wholesale

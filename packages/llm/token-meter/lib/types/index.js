@@ -10,7 +10,8 @@ import { canonicalHeader, headerEquals, isSurfaceEvent } from '@deepseek-ai/dsh-
 import { contextBreakdownProjectionDefinition } from "./breakdown-projection.js";
 import { contextPressureProjectionDefinition, tokenUsageProjectionDefinition } from "./usage-projection.js";
 import { estimateContent, estimateHeader, estimateMessage, ROLE_OVERHEAD } from "./estimate.js";
-import { commitSurfaceTokens, planSurfaceTokens, priceSurface } from "./surface-fold.js";
+import { commitSurfaceTokens, planSurfaceTokens } from "./surface-fold.js";
+import { priceSurface } from "./route-pricing.js";
 /** Sum disjoint provider usage buckets without double-counting reasoning output. */
 function usageTokens(usage) {
     return usage.inputTokens
@@ -56,14 +57,18 @@ export class TokenMeter extends Service {
     /**
      * Measure current request pressure and surface through the durable tail.
      *
-     * Provider usage is reused only when the latest successful call's canonical
-     * request envelope matches `requestHeader` and its total is no lower than
-     * that call's full heuristic anchor; otherwise the complete envelope and
-     * surface are heuristically repriced.
+     * The effective envelope's routed provider/model selects the request-image
+     * pricing every node is priced under: a route whose adapter declares image
+     * pricing charges each retained image its visual tokens plus its
+     * model-visible text, while other routes keep the fixed heuristic. Provider
+     * usage is reused only when the latest successful call's canonical request
+     * envelope matches `requestHeader` and its total is no lower than that
+     * call's full route-priced anchor; otherwise the complete envelope and
+     * surface are repriced.
      *
-     * `requestHeader` affects request pressure only; surface fields always
-     * describe the current session surface. Every call clones those positional
-     * nodes, so measurement is O(surface).
+     * `requestHeader` replaces the latest logged envelope for pressure and node
+     * pricing; the node set always describes the current session surface. Every
+     * call clones those positional nodes, so measurement is O(surface).
      *
      * @param session - session to replay through its current durable tail.
      * @param requestHeader - optional effective request envelope replacing the latest logged header.
@@ -74,29 +79,34 @@ export class TokenMeter extends Service {
         const header = requestHeader === undefined
             ? state.header
             : canonicalHeader(requestHeader);
-        const anchor = state.anchor;
         const pricing = this._routeImagePricing(header);
-        const priced = priceSurface(state.surface, pricing);
+        const surface = priceSurface(state.surface, pricing);
+        const anchor = state.anchor;
         let baseline;
         let surfaceDeltaTokens;
         if (anchor !== undefined && optionalHeaderEquals(anchor.header, header)) {
-            const anchorSurfaceTokens = priceSurface(anchor.nodes, pricing).surfaceTokens + anchor.assistantTokens;
-            const usage = anchor.usage;
-            const usageTotal = usage === undefined ? undefined : usageTokens(usage);
+            // Matching headers share one route, so the anchored snapshot reprices
+            // under the same pricing as the current surface and the signed delta
+            // compares like with like.
+            const anchorSurfaceTokens = priceSurface(anchor.nodes, pricing).surfaceTokens
+                + anchor.assistantTokens;
             const estimatedAnchorTokens = estimateHeader(header) + anchorSurfaceTokens;
-            baseline = usage !== undefined && usageTotal !== undefined && usageTotal >= estimatedAnchorTokens
-                ? { kind: 'usage', tokens: usageTotal, usage }
+            const usage = anchor.usage;
+            // Signed heuristic deltas remain conservative only from an anchor
+            // that is at least as large as the matching full heuristic price.
+            baseline = usage !== undefined && usageTokens(usage) >= estimatedAnchorTokens
+                ? { kind: 'usage', tokens: usageTokens(usage), usage }
                 : { kind: 'estimated', tokens: estimatedAnchorTokens };
-            surfaceDeltaTokens = priced.surfaceTokens - anchorSurfaceTokens;
+            surfaceDeltaTokens = surface.surfaceTokens - anchorSurfaceTokens;
         }
-        else if (header === undefined && priced.surfaceTokens === 0) {
+        else if (header === undefined && surface.surfaceTokens === 0) {
             baseline = { kind: 'none', tokens: 0 };
             surfaceDeltaTokens = 0;
         }
         else {
             baseline = {
                 kind: 'estimated',
-                tokens: estimateHeader(header) + priced.surfaceTokens,
+                tokens: estimateHeader(header) + surface.surfaceTokens,
             };
             surfaceDeltaTokens = 0;
         }
@@ -105,14 +115,16 @@ export class TokenMeter extends Service {
             baseline,
             surfaceDeltaTokens,
             totalTokens: Math.max(0, baseline.tokens + surfaceDeltaTokens),
-            surfaceTokens: priced.surfaceTokens,
-            nodes: priced.nodes,
+            surfaceTokens: surface.surfaceTokens,
+            nodes: surface.nodes,
         }));
     }
-    /** Resolve route-owned request-image pricing without performing I/O. */
+    /** Resolve the routed model's image pricing, when the llm service and route declare one. */
     _routeImagePricing(header) {
         const config = header?.config;
-        return config === undefined ? undefined : this.ctx.get('llm')?.imageRequestPricing(config.provider, config.model);
+        if (config === undefined)
+            return undefined;
+        return this.ctx.get('llm')?.imageRequestPricing(config.provider, config.model);
     }
     /**
      * Heuristically price one model-visible message (instance face of the pure
@@ -131,7 +143,6 @@ export class TokenMeter extends Service {
                 consumedEvents: 0,
                 header: undefined,
                 surface: [],
-                surfaceTokens: 0,
                 stepStart: undefined,
                 anchor: undefined,
             };
@@ -146,9 +157,9 @@ export class TokenMeter extends Service {
         return state;
     }
     /**
-     * Validate and prepare every fallible part before mutating replay state.
-     * A malformed event remains unread on every retry instead of partially
-     * applying the same mutation more than once.
+     * Run every fallible step — surface plan and anchor validation — before
+     * mutating replay state, so a malformed event remains unread on every
+     * retry instead of half-applying.
      */
     _foldEvent(session, state, event) {
         let nextHeader = state.header;
@@ -175,7 +186,7 @@ export class TokenMeter extends Service {
             default:
                 break;
         }
-        const surface = isSurfaceEvent(event)
+        const plan = isSurfaceEvent(event)
             ? planSurfaceTokens(state.surface, event)
             : undefined;
         if (event.type === 'assistant/message') {
@@ -187,21 +198,28 @@ export class TokenMeter extends Service {
             }
             // assistant/message is surface-mandatory at every append/seed boundary.
             // oxlint-disable-next-line typescript/no-non-null-assertion
-            const eventTokens = surface.tokens;
-            nextAnchor = {
-                header: nextHeader,
-                nodes: stepStart.nodes,
-                assistantTokens: event.data.usage === undefined
-                    ? eventTokens
-                    : this._estimateProviderAssistant(session, event, eventTokens),
-                usage: event.data.usage,
-            };
+            const eventTokens = plan.tokens;
+            if (event.data.usage !== undefined && nextHeader !== undefined) {
+                nextAnchor = {
+                    header: nextHeader,
+                    nodes: stepStart.nodes,
+                    assistantTokens: this._estimateProviderAssistant(session, event, eventTokens),
+                    usage: event.data.usage,
+                };
+            }
+            else {
+                nextAnchor = {
+                    header: nextHeader,
+                    nodes: stepStart.nodes,
+                    assistantTokens: eventTokens,
+                    usage: undefined,
+                };
+            }
         }
         state.header = nextHeader;
         state.stepStart = nextStepStart;
-        if (surface !== undefined) {
-            commitSurfaceTokens(state.surface, surface);
-            state.surfaceTokens += surface.deltaTokens;
+        if (plan !== undefined) {
+            commitSurfaceTokens(state.surface, plan);
         }
         state.anchor = nextAnchor;
     }

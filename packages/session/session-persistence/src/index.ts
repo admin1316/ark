@@ -14,6 +14,7 @@ import type { SessionPersistenceRevision } from './revision.ts'
 export type { SessionHeader } from '@deepseek-ai/dsh-session'
 export { SessionPersistenceRevision } from './revision.ts'
 export { SessionPersistenceNotFoundError } from './errors.ts'
+export { SessionPersistenceDeleteBlockedError } from './errors.ts'
 
 /** Lightweight immutable source identity returned without loading a full log. */
 export interface SessionPersistenceSnapshot {
@@ -81,6 +82,14 @@ export type {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionPersistence: SessionPersistence
+  }
+  interface Events {
+    /**
+     * Purge derived data after a durable deletion; failure rejects the delete request.
+     * @param sessionId - permanently deleted identity.
+     * @mode parallel
+     */
+    'session-persistence/deleted'(sessionId: SessionId): Promise<void> | void
   }
 }
 
@@ -172,6 +181,14 @@ export abstract class SessionPersistence extends Service {
    * @param events - the contiguous batch to persist, in seq order.
    */
   abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
+
+  /**
+   * Permanently remove an unowned session and await derived-data cleanup.
+   * @param id - exact session identity to remove.
+   * @returns whether stored data was removed; absence still notifies cleanup for retries.
+   * @throws while a live or prepared session owns the identity, or deletion fails.
+   */
+  abstract delete(id: SessionId): Promise<boolean>
 
   /**
    * Prepare the exact unpublished Session used by resume. Implementations may

@@ -55,7 +55,7 @@ function firstHeading(plan) {
 * @param config Raw plugin config.
 * @returns A detached validated config.
 */
-function resolvePlanModeConfig(config) {
+function resolveConfig(config) {
 	const section = config.section;
 	if (typeof section !== "string") throw new Error("PlanModeConfig needs a string `section`");
 	if (section.trim() === "") throw new Error("PlanModeConfig needs a non-empty `section`");
@@ -129,7 +129,7 @@ var PlanModeController = class extends Service {
 	pendingIntents = /* @__PURE__ */ new WeakMap();
 	constructor(ctx, config = { section: "" }) {
 		super(ctx, "planMode");
-		this.section = resolvePlanModeConfig(config).section;
+		this.section = resolveConfig(config).section;
 		let disposed = false;
 		ctx.on("agent/pre-step", async ({ agent, signal }, next) => {
 			const decision = await next();
@@ -423,4 +423,4 @@ var PlanModeController = class extends Service {
 	}
 };
 //#endregion
-export { EXIT_PLAN_MODE, PlanModeController, PlanModeController as default, foldPlanMode, resolvePlanModeConfig };
+export { EXIT_PLAN_MODE, PlanModeController, PlanModeController as default, foldPlanMode, resolveConfig };

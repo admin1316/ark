@@ -4,10 +4,8 @@
  * child before returning its run, so fulfillment is the single publication and
  * ownership-transfer boundary.
  *
- * Unlike the bash seam (one executor per context, second load throws), MULTIPLE
- * providers coexist here: each registers under a unique name and a caller picks
- * one by name. The shape mirrors the LLM adapter registry
- * (`LlmRuntime.registerAdapter`), not the single-service bash executor.
+ * Multiple providers coexist: each registers under a unique name and callers
+ * select one by name.
  *
  * This package owns the Service Definition role of the capability seam. Service Providers
  * (`@deepseek-ai/dsh-subagent-spawn-in-process`, `-fork`, `-acp`) and the model-facing
@@ -31,19 +29,21 @@
  * @module @deepseek-ai/dsh-subagent
  */
 import { Context } from '@deepseek-ai/cordis';
-import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import type { Scoped } from '@deepseek-ai/dsh-scope';
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { SessionId } from '@deepseek-ai/dsh-session';
-import type { SubagentProvider, SubagentRun, SubagentRunEndInfo, SubagentRunInfo, SubagentStartRequest, RemoteSubagentCatalog, RemoteSubagentHistory, RemoteSubagentInterruptReceipt, RemoteSubagentPromptReceipt } from './types.ts';
-import type { ContinuableStart, ContinuableStartSpec, DurableSubagentMessageReceipt, SubagentFollowupOptions, SubagentInterruptAuthority, SubagentReportOptions } from './continuation.ts';
+import type { SessionRemoteHistoryValue } from '@deepseek-ai/dsh-session/types';
+import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
+import type { SubagentCatalog, SubagentInterruptReceipt, SubagentPromptReceipt, SubagentPromptRequest, RemoteSubagentPromptReceipt } from './control-types.ts';
+import type { SubagentProvider, SubagentRun, SubagentRunEndInfo, SubagentRunInfo, SubagentStartRequest } from './types.ts';
+import type { ContinuableStart, ContinuableStartSpec, SubagentFollowupOptions, SubagentInterruptAuthority, SubagentReportOptions, DurableSubagentMessageReceipt } from './continuation.ts';
 import type { ContinuableSetupContribution } from './activation-setup-registry.ts';
 import type { SubagentDescendantListEntry, SubagentListEntry } from './list-children.ts';
 export * from './out-of-process.ts';
 export { AssistantOutputFold, finalAssistantOutput } from './assistant-output.ts';
 export { SubagentRunId } from './types.ts';
-export type { ContinuableCreateRequest, ContinuableCreateSpec, ResolvedSubagentStartRequest, SubagentCapabilities, SubagentProvider, SubagentResult, SubagentRun, SubagentStartRequest, SubagentStopReason, SubagentStopReasonMap, RemoteSubagentCatalog, RemoteSubagentHistory, RemoteSubagentInterruptReceipt, RemoteSubagentJsonValue, RemoteSubagentListEntry, RemoteSubagentPromptReceipt, } from './types.ts';
+export type { ContinuableCreateRequest, ContinuableCreateSpec, ResolvedSubagentStartRequest, SubagentCapabilities, SubagentProvider, SubagentResult, SubagentRun, SubagentStartRequest, SubagentStopReason, SubagentStopReasonMap, } from './types.ts';
 export { foldSubagentDescriptor, snapshotSubagentDescriptor, SUBAGENT_DESCRIPTOR_VERSION, } from './descriptor.ts';
 export type { ContinuableSubagentDescriptorData, ContinuableSubagentDescriptorInput, OneShotSubagentDescriptorData, OneShotSubagentDescriptorInput, SubagentDescriptorData, SubagentDescriptorInput, } from './descriptor.ts';
 export { seedDescriptorTurn } from './descriptor-seed.ts';
@@ -52,9 +52,10 @@ export { settleRun } from './run-settlement.ts';
 export { assertSubagentMaxDepth, delegationDepthOf } from './depth.ts';
 export { appendDelegatedPolicyOverrides, applyChildComposition, captureDelegatedPolicyOverrides, childSessionMeta, parentAgentOptionsForDelegation, resolveChildAgentOptions, resolveChildDepth, SubagentDepthError, } from './child-agent.ts';
 export type { ChildComposition, DelegatedPolicyOverrides } from './child-agent.ts';
-export type { ContinuableStart, ContinuableStartSpec, CoordinatorMessageSource, DurableSubagentMessageReceipt, SubagentFollowupOptions, SubagentInterruptAuthority, SubagentReportDelivery, SubagentReportMessageSource, SubagentReportOptions, SubagentSettledMessageSource, } from './continuation.ts';
+export type { ContinuableStart, ContinuableStartSpec, CoordinatorMessageSource, SubagentFollowupOptions, SubagentInterruptAuthority, SubagentReportDelivery, SubagentReportMessageSource, SubagentReportOptions, SubagentSettledMessageSource, SubagentPromptMessageSource, DurableSubagentMessageReceipt, } from './continuation.ts';
 export type { ContinuableSetupContribution } from './activation-setup-registry.ts';
-export type { SubagentDescendantListEntry, SubagentListEntry } from './list-children.ts';
+export type * from './control-types.ts';
+export type { SubagentDescendantListEntry } from './list-children.ts';
 export type { SubagentRunEndInfo, SubagentRunInfo } from './types.ts';
 export type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts';
 declare module '@deepseek-ai/cordis' {
@@ -111,9 +112,9 @@ export declare class SubagentRuntime extends TypertRemoteService {
     constructor(ctx: Context);
     /**
      * Establish one durable continuable child and deliver its initial prompt.
-     * Resolves only after the child's inbox insertion crosses the configured
-     * Session durability barrier; it does not wait for the turn to finish. A
-     * failure before inbox acceptance rolls the child back entirely.
+     * Resolves when the child's inbox accepts that prompt, without waiting for the
+     * turn to start or for the message to reach the Session log; any earlier
+     * failure rejects with no ids and rolls back the child entirely.
      * @param spec - provider, delegation request, and caller cancellation.
      * @returns the durable child id and the accepted prompt's message id.
      * @throws when continuation services are unavailable or materialization fails.
@@ -130,26 +131,18 @@ export declare class SubagentRuntime extends TypertRemoteService {
      * @param content - user-role content to deliver.
      * @param options - the message source fields and caller cancellation, which stops the
      *   operation only before inbox acceptance.
-     * @returns the durably accepted message's inbox id.
+     * @returns the accepted message's inbox id after the Session flush barrier, without waiting for model completion.
      * @throws when continuation services are unavailable, parent authority is
      *   rejected, or the message was not admitted.
      */
     followup(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<MessageId>;
     /**
-     * Deliver a continuable child's FIFO follow-up and expose its durable receipt.
-     * Exact invocation retries reuse the original message id without another turn;
-     * {@link SubagentContinuationManager.followupReceipt} owns retry validation.
-     * The durability wait continues after inbox acceptance despite caller cancellation;
-     * persistence failure rejects without retracting the accepted message.
-     * @param parent - Exact live direct parent authorizing this delivery.
-     * @param childId - Durable child session id, resumed if a new delivery needs it.
-     * @param content - User-role content, unchanged when retrying an invocation.
-     * @param options - Durable source, optional matching `subagent-prompt` invocation
-     *   key, and cancellation that owns new admission only until inbox acceptance.
-     * @returns The accepted message id, `durable: true`, and whether this is a
-     *   duplicate invocation; receipt success does not wait for turn completion.
-     * @throws When continuation services are unavailable, delivery is unauthorized,
-     *   invocation validation or admission fails, or resume/persistence fails.
+     * Deliver through the continuation owner's durable retry boundary.
+     * @param parent - exact live direct parent.
+     * @param childId - durable child session id.
+     * @param content - content to deliver once per invocation.
+     * @param options - source, retry identity, and pre-admission cancellation.
+     * @returns receipt after the Session flush barrier; a failed flush does not retract acceptance.
      */
     followupReceipt(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<DurableSubagentMessageReceipt>;
     /**
@@ -213,68 +206,22 @@ export declare class SubagentRuntime extends TypertRemoteService {
     drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;
     /**
      * Enumerate the parent's direct session-backed subagents without loading or
-     * resuming an Agent and without any query service: the listing merges the live
-     * session store with optional session persistence (live-preferred) and
-     * serves each child's durable mode/label by applying the same strict
-     * `foldSubagentDescriptor()` used by cold resume to the child's own suffix.
-     * Exactly one own descriptor is valid; derived projection/cache state cannot
-     * override it or hide a duplicate. Per-child diagnostics contain malformed,
-     * missing, inherited-only, or duplicate identity and isolate failed reads.
-     * Absent persistence, enumeration is
-     * live-only (a cold child cannot be resumed then either, so its absence is
-     * capability absence, not an error). This service consults no Agent
-     * registrations, Activations, or providers.
+     * resuming an Agent. The Session query service supplies one live-preferred
+     * corpus and shared point observations; the projection cache supplies
+     * immutable descriptor hits without opening cold logs. The registered
+     * `subagent` projection remains the sole mode/label classifier.
      *
-     * Every persistence read receives `signal`, and the listing rechecks
-     * cancellation around each of those awaits. Read rejections that settle
+     * Every query receives `signal`, and the listing rechecks cancellation
+     * around each await. Read rejections that settle
      * after an abort become a stable `SubagentError` with code `CANCELLED`.
      * @param parentSessionId - parent session whose direct children are listed.
-     * @param signal - caller-owned cancellation forwarded to persistence reads
+     * @param signal - caller-owned cancellation forwarded to Session queries
      *   and observed around every read await.
      * @returns children and per-child diagnostics ordered by `createdAt`, then id.
      * @throws {@link SubagentError} when the projection registry or the session
      *   store is not mounted, or the caller cancels the listing.
      */
     listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;
-    /**
-     * List durable direct children without loading or resuming either side.
-     * @param parentSessionId - parent session whose direct children are listed.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the child catalog and availability metadata.
-     */
-    remoteList(parentSessionId: string, signal: AbortSignal): Promise<RemoteSubagentCatalog>;
-    /**
-     * Read a bounded raw transcript only after the durable direct-child address
-     * has been verified. This never resumes either Agent.
-     * @param parentSessionId - parent session that owns the child.
-     * @param childSessionId - direct child session to read.
-     * @param mode - child mode required by the operation.
-     * @param beforeSeq - optional exclusive sequence cursor.
-     * @param maxMessages - optional maximum number of messages.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the Session-owned bounded page; when `hasMore` is true, its first
-     * event sequence is the exclusive cursor for the next older request.
-     */
-    remoteHistory(parentSessionId: string, childSessionId: string, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal: AbortSignal): Promise<RemoteSubagentHistory>;
-    /**
-     * Deliver one human message through the exact live direct parent.
-     * @param agent - live parent Agent authorized to deliver the message.
-     * @param childSessionId - direct child session to prompt.
-     * @param content - user message content blocks.
-     * @param invocationId - caller-stable UUID used to deduplicate uncertain retries.
-     * @param signal - caller-owned cancellation signal.
-     * @returns the accepted message receipt.
-     */
-    remotePrompt(agent: Agent, childSessionId: string, content: ContentBlock[], invocationId: string, signal: AbortSignal): Promise<RemoteSubagentPromptReceipt>;
-    /**
-     * Interrupt a continuable child under its durable direct-parent address.
-     * @param parentSessionId - parent session that owns the child.
-     * @param childSessionId - continuable child session to interrupt.
-     * @returns confirmation that interruption was accepted.
-     */
-    remoteInterrupt(parentSessionId: string, childSessionId: string): RemoteSubagentInterruptReceipt;
-    /** Verify the requested child and mode against the one catalog authority. */
-    private remoteChild;
     /**
      * Enumerate the root's complete session-backed subagent tree in stable
      * pre-order from one live-preferred corpus, without loading or resuming an
@@ -291,6 +238,79 @@ export declare class SubagentRuntime extends TypertRemoteService {
      * @throws {@link SubagentError} under the same conditions as {@link listChildren}.
      */
     listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;
+    /**
+     * Remote face of {@link listChildren} for one browser: the durable listing
+     * plus live Agent activity and the delivery-time parent availability hint.
+     * Parent availability is a hint; {@link prompt} performs the authoritative
+     * check. Named apart from the provider-name {@link list}, which owns the
+     * member.
+     * @param parentSessionId - parent session whose direct children are listed.
+     * @param signal - carrier cancellation forwarded to Session queries.
+     * @returns the catalog view for that parent.
+     * @throws {TypertRemoteFailure} `bad-request` for an empty parent id,
+     *   `cancelled` for an aborted read, `subagent-projections-unavailable` when
+     *   the deployment has no projection registry, otherwise `internal`.
+     */
+    remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>;
+    /**
+     * Deliver one browser-authored message to a continuable child through the
+     * exact live direct parent, retaining the caller-minted request identity and
+     * validated browser zone on the accepted message. Success identifies the
+     * message the child's FIFO inbox accepted; later execution is independent of
+     * this call.
+     * @param request - durable address, minted identity, content, and optional browser zone.
+     * @param signal - carrier cancellation, owning the call until inbox acceptance.
+     * @returns the accepted message's inbox identity.
+     * @throws {TypertRemoteFailure} `bad-request`, `invalid-time-zone`,
+     *   `subagent-parent-unavailable`, `subagent-not-resumable`,
+     *   `subagent-unauthorized`, `subagent-delivery-unavailable`, `cancelled`, or
+     *   `internal`.
+     */
+    prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>;
+    /**
+     * Remote face of {@link interrupt} under one durable parent address. No
+     * catalog, history, persistence, or parent Agent lookup runs: the core
+     * primitive alone authorizes the address against the live Activation, which
+     * is what keeps a live child interruptible while its parent Agent is offline.
+     * Absent, idle, and already-completed targets are accepted no-ops there.
+     * @param childSessionId - durable child session id to interrupt.
+     * @param parentSessionId - durable direct parent whose authority is claimed.
+     * @param mode - required continuable-address discriminator.
+     * @returns acknowledgement that the cancel signal was admitted, not that the target is quiescent.
+     * @throws {TypertRemoteFailure} `bad-request` for an empty id,
+     *   `subagent-unauthorized` when the address does not own the live target,
+     *   otherwise `internal`.
+     */
+    interruptByParent(childSessionId: SessionId, parentSessionId: SessionId, mode: 'continuable'): SubagentInterruptReceipt;
+    /**
+     * Read the Session owner's bounded page after verifying the direct-child address.
+     * @param parentSessionId - durable parent authorizing the read.
+     * @param childSessionId - direct child session id.
+     * @param mode - expected child mode.
+     * @param beforeSeq - exclusive cursor for an older page.
+     * @param maxMessages - bounded message count, validated by the Session owner.
+     * @param signal - read cancellation; neither Agent is resumed.
+     * @returns the original Session page, including its presentation projections.
+     */
+    remoteHistory(parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal: AbortSignal): Promise<SessionRemoteHistoryValue>;
+    /**
+     * Submit a Native draft under its stable retry identity through the live parent.
+     * @param agent - exact parent Agent supplied by the Gateway lookup.
+     * @param childSessionId - continuable direct child.
+     * @param content - human message content.
+     * @param invocationId - caller-stable UUID; conflicting reuse rejects.
+     * @param signal - cancellation before acceptance, not during the durability wait.
+     * @returns an original or newly committed message receipt.
+     */
+    remotePrompt(agent: Agent, childSessionId: SessionId, content: ContentBlock[], invocationId: string, signal: AbortSignal): Promise<RemoteSubagentPromptReceipt>;
+    /**
+     * Interrupt a child using the continuation manager's direct-parent authority.
+     * @param parentSessionId - durable parent address.
+     * @param childSessionId - continuable child; absent targets are accepted no-ops.
+     * @returns signal admission, not completion of child teardown.
+     */
+    remoteInterrupt(parentSessionId: SessionId, childSessionId: SessionId): SubagentInterruptReceipt;
+    private requireRemoteChild;
     /**
      * Register a provider under its name. Registration is effect-scoped and HMR
      * safe; removing a provider blocks new starts but does not revoke runs that

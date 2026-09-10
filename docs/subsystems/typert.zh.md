@@ -84,6 +84,8 @@ interface InvocationDescriptor {
   readonly method: string
   /** Service member invoked when the exported method name is an alias. */
   readonly implementation?: string
+  /** Absent for unary calls; stream calls validate and deliver every yielded item. */
+  readonly mode?: 'stream'
   /** Receiver selection mode. */
   readonly invocation:
     | { readonly kind: 'direct' }
@@ -95,7 +97,7 @@ interface InvocationDescriptor {
     }
   /** Optional consuming-Context projection for one direct lookup parameter. */
   readonly scope?: {
-    /** Context kind whose Client binder supplies the identity. */
+    /** Context kind whose Client adapter supplies the identity. */
     readonly context: string
     /** Lookup parameter wire field replaced by the Context identity. */
     readonly wire: string
@@ -107,7 +109,7 @@ interface InvocationDescriptor {
     /** Reserved final Host method parameter. */
     readonly parameter: 'signal'
   }
-  /** Codec for the resolved method result. */
+  /** Codec for the unary result or each yielded stream item. */
   readonly result: TypertCodec
   /** Source declaration used only for diagnostics. */
   readonly sourceLocation?: InvocationSourceLocation
@@ -153,26 +155,58 @@ interface TypertClientRemote extends TypertRemoteNamespaceMap {
    */
   $mount(contribution: TypertRemoteContribution): Promise<TypertDisposer>
   /**
-   * Subscribe to one forwarded Host event; delivery is one-way, in registration
-   * order, and isolates a throwing listener from the rest.
+   * Subscribe to one forwarded Host event. Notifications run in registration
+   * order and isolate failures; scoped waterfalls return, delegate through
+   * `next()`, or reject the Host dispatch.
    * @template Event - forwarded event name selected by the Host assembly.
    * @param event - forwarded Host event name, unchanged on the wire.
-   * @param listener - receives the Host's argument list as declared by Cordis `Events`.
+   * @param listener - receives the Client projection of the Cordis `Events` declaration.
    * @returns disposer owned by the calling fiber.
    */
-  $on<Event extends TypertRemoteEvent>(event: Event, listener: Events[Event]): () => void
+  $on<Event extends TypertRemoteEvent>(event: Event, listener: TypertClientEventListener<Event>): () => void
+}
+```
+
+```ts type-equiv
+/** Stable failures produced before or after a strict business invocation. */
+type TypertGatewayErrorCode =
+  | 'arguments-invalid'
+  | 'binding-invalid'
+  | 'cancelled'
+  | 'context-failed'
+  | 'context-not-found'
+  | 'context-unavailable'
+  | 'definition-invalid'
+  | 'definition-unavailable'
+  | 'input-invalid'
+  | 'invocation-unavailable'
+  | 'lookup-failed'
+  | 'lookup-not-found'
+  | 'lookup-unavailable'
+  | 'method-unavailable'
+  | 'provider-mismatch'
+  | 'result-invalid'
+  | 'service-unavailable'
+```
+
+```ts type-equiv
+/** Host dispatcher installed on Connection's shared `/api` channel. */
+interface TypertGateway {
   /**
-   * Hand one decoded forwarded frame to the subscription table. The carrier
-   * owning the Host frame sink calls this; a consumer subscribes with
-   * {@link TypertClientRemote.$on} and never calls it.
-   *
-   * `event` is a plain string because this is the wire boundary: the name is
-   * whatever the Host assembly's allowlist selected, and one nobody subscribed
-   * to is dropped silently.
-   * @param event - forwarded Host event name, exactly as the Host emitted it.
-   * @param args - the Host argument list, already JSON-decoded.
+   * Report whether the live strict registry owns one slash Remote endpoint.
+   * @param endpoint - channel-relative endpoint.
+   * @returns `true` for a live or withdrawn strict definition.
    */
-  $dispatch(event: string, args: readonly unknown[]): void
+  claims(endpoint: string): boolean
+
+  /**
+   * Invoke one strict Remote endpoint and settle in the nested Remote result used by Native clients.
+   * @param endpoint - canonical `<namespace>/<method>` endpoint.
+   * @param payload - exact `{ args }` Remote payload.
+   * @param signal - carrier cancellation lifetime.
+   * @returns validated business value or a stable Remote failure.
+   */
+  invoke(endpoint: string, payload: unknown, signal: AbortSignal): Promise<RemoteResult<unknown>>
 }
 ```
 

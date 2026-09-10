@@ -1,13 +1,14 @@
 /**
  * Service Definition for the user-questions capability seam (`ctx.userQuestions`): a UI-backed service for
  * pausing an agent tool call until the human answers a question. The model-
- * facing tool lives in `@deepseek-ai/dsh-tool-ask-user`; UI packages provide
- * the single active provider.
+ * facing tool lives in `@deepseek-ai/dsh-tool-ask-user`; UI packages compose
+ * answerers on the Agent-scoped Cordis waterfall.
  *
  * @module @deepseek-ai/dsh-user-questions
  */
 import { Service } from '@deepseek-ai/cordis';
 import { HarnessError } from '@deepseek-ai/dsh-llm';
+import { scopeTarget } from '@deepseek-ai/dsh-scope';
 /** Stable error taxonomy for user-questions failures. */
 export class UserQuestionError extends HarnessError {
     constructor(message, code, options) {
@@ -15,17 +16,34 @@ export class UserQuestionError extends HarnessError {
         this.name = 'UserQuestionError';
     }
 }
-/** `ctx.userQuestions`: one active UI provider plus an `ask()` API. */
+function abortedQuestion(cause) {
+    return new UserQuestionError('ask_user_question was aborted before the user answered', 'ASK_ABORTED', cause === undefined ? undefined : { cause });
+}
+function isRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function restoreUserQuestionError(reason) {
+    if (reason instanceof UserQuestionError)
+        return reason;
+    if (isRecord(reason)
+        && reason.name === 'UserQuestionError'
+        && typeof reason.message === 'string'
+        && typeof reason.code === 'string') {
+        return new UserQuestionError(reason.message, reason.code, { cause: reason });
+    }
+    return reason;
+}
+/** `ctx.userQuestions`: validation plus the scoped answerer waterfall. */
 export class UserQuestionService extends Service {
     provider;
     constructor(ctx) {
         super(ctx, 'userQuestions');
     }
     /**
-     * Register the UI provider. Only one provider may be active in a context.
-     *
-     * @param provider UI-side implementation that collects answers.
-     * @returns Disposer that unregisters this provider.
+     * Register the Host UI fallback, owned by the calling fiber.
+     * @param provider - answer collector for requests not claimed by scoped listeners.
+     * @returns an idempotent disposer withdrawing this provider.
+     * @throws when another Host UI provider is registered.
      */
     registerProvider(provider) {
         const dispose = this.ctx.effect(function* () {
@@ -33,14 +51,12 @@ export class UserQuestionService extends Service {
                 throw new UserQuestionError('a user-questions provider is already registered', 'DUPLICATE_PROVIDER');
             }
             this.provider = provider;
-            yield () => {
-                this.provider = undefined;
-            };
-        }.bind(this), 'userInteraction.registerProvider()');
-        return () => void dispose();
+            yield () => { this.provider = undefined; };
+        }.bind(this), 'userQuestions.registerProvider()');
+        return () => { void dispose(); };
     }
     /**
-     * Ask the active UI provider and wait for the user's answer.
+     * Ask the scoped answerer waterfall and wait for the user's answer.
      *
      * When a caller supplies an agent, human interaction is valid only for the
      * exact live runtime root. Runtime ownership, not durable session lineage,
@@ -50,13 +66,14 @@ export class UserQuestionService extends Service {
      *
      * @param request Questions, owner agent, and abort signal.
      * @returns The answer chosen or typed by the human.
-     * @throws {UserQuestionError} code `CALLER_NOT_LIVE` when a supplied
-     *   agent is not the registry's exact live instance, or `DELEGATED_CALLER`
-     *   when that live agent is owned by another agent.
+     * @throws {UserQuestionError} code `ASK_ABORTED` when the supplied signal
+     *   is already or becomes aborted, `CALLER_NOT_LIVE` when a supplied agent
+     *   is not the registry's exact live instance, or `DELEGATED_CALLER` when
+     *   that live agent is owned by another agent.
      */
     async ask(request) {
         if (request.signal?.aborted) {
-            throw new UserQuestionError('ask_user_question was aborted before the user answered', 'ASK_ABORTED');
+            throw abortedQuestion();
         }
         if (request.questions.length === 0) {
             throw new UserQuestionError('ask_user_question requires at least one question', 'EMPTY_QUESTIONS');
@@ -91,10 +108,23 @@ export class UserQuestionService extends Service {
                 throw new UserQuestionError(`question ${question.id} declares intent ${intent.kind} without the detail it reviews`, 'BAD_INTENT');
             }
         }
-        if (this.provider === undefined) {
-            throw new UserQuestionError('no user-questions provider is registered', 'NO_PROVIDER');
+        const noAnswerer = () => this.provider === undefined
+            ? Promise.reject(new UserQuestionError('no user-questions answerer accepted the request', 'NO_PROVIDER'))
+            : this.provider.ask(request);
+        try {
+            return await (agent === undefined
+                ? this.ctx.waterfall('user-questions/request', request, noAnswerer)
+                : this.ctx.waterfall(scopeTarget(agent, agent), 'user-questions/request', { ...request, agent }, noAnswerer));
         }
-        return this.provider.ask(request);
+        catch (error) {
+            const restored = restoreUserQuestionError(error);
+            if (restored instanceof UserQuestionError)
+                throw restored;
+            if (request.signal?.aborted) {
+                throw abortedQuestion(error);
+            }
+            throw restored;
+        }
     }
 }
 export default UserQuestionService;

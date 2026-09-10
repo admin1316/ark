@@ -6,7 +6,7 @@ import { scopeTarget } from "@deepseek-ai/dsh-scope";
 //#region lib/types/types.js
 /**
 * Wire-safe approval identifiers and outcome vocabulary, free of
-* cordis/service imports so generated Remote and Native event contracts can
+* cordis/service imports so browser type chains can
 * consume them without loading this package's Context augmentation.
 * @module @deepseek-ai/dsh-user-approval/types
 */
@@ -186,7 +186,7 @@ var ApprovalService = class extends Service {
 		const signal = req.signal;
 		if (signal?.aborted) return "cancelled";
 		if (this.effectivePolicy(session) === "never") return "rejected";
-		const answer = Promise.resolve().then(() => this.ctx.waterfall(scopeTarget(this, req.agent), "approval/request", req, () => Promise.resolve("unavailable"))).then((outcome) => OUTCOMES.includes(outcome) ? outcome : "unavailable", () => "unavailable");
+		const answer = Promise.resolve().then(() => this.ctx.waterfall(scopeTarget(req.agent, req.agent), "approval/request", req, () => Promise.resolve("unavailable"))).then((outcome) => OUTCOMES.includes(outcome) ? outcome : "unavailable", () => "unavailable");
 		if (signal === void 0) return answer;
 		return await new Promise((resolve) => {
 			const onAbort = () => {

@@ -33,6 +33,8 @@ Choose this adapter when the same composition serves several providers, when a r
 
 ### Configure provider routes
 
+The `bailian-cn` and `bailian-intl` presets use Alibaba Cloud's ordinary pay-as-you-go APIs with explicit credential references, independently of Token Plan credentials. Their initial advisory catalog includes Qwen3.8 Flash and Max, retaining the installed canonical models' reasoning and image metadata. Endpoint and model overrides remain available. The [official endpoint reference](https://help.aliyun.com/en/model-studio/base-url) defines which endpoint matches a key; these presets do not infer account region or copy another route's key. Exact connection verification uses the existing bounded minimal-generation probe and can consume tokens. A saved credential alone is not authentication proof.
+
 Each profile may set a `retryPolicy`; omission uses normal mode with five retries. `apiKeyEnv` is a credential reference resolved per request through the harness credential seam, so no secret enters the configuration file; a reference that resolves to nothing fails the request with `MISSING_CREDENTIAL`. Omitting it leaves the route configured-but-keyless, which for an installed catalog route defers to pi-ai's provider-native ambient discovery.
 
 ```yaml
@@ -73,6 +75,8 @@ Each profile may set a `retryPolicy`; omission uses normal mode with five retrie
 | Field | Default | Meaning |
 |---|---|---|
 | `apiKeyEnv` | absent | Credential reference resolved per request; omission defers to pi-ai ambient discovery |
+| `credentialHeaders` | none | Header-name to credential-reference mapping, resolved per request without storing values in settings |
+| `headers` | none | Public request fields; non-empty credential-bearing fields require `credentialHeaders` |
 | `displayName` | provider name | Label shown by selector surfaces |
 | `api` | catalog protocol | Wire protocol; only needed for routes the catalog does not supply |
 | `baseURL` | catalog endpoint | Endpoint of every model on the route |
@@ -94,7 +98,7 @@ A provider pi-ai ships a login for can be signed into through the harness author
 
 ### Resolve the model catalog
 
-A profile's `models` list replaces the route's installed catalog rather than extending it; each entry defaults its unset fields from the installed model of the same id, so narrowing a route to two models, correcting one capacity, or adding a model newer than the installed catalog are one-line edits. `modelOverrides` reshapes individual installed-catalog models without that cost — correct one model, keep the other thirty-seven — and is refused when set beside a `models` list, on a hand-declared route, or naming a model the catalog does not describe, because a silently unchanged model would be a typo someone hunts for later.
+A profile's `models` list replaces the route's installed catalog rather than extending it; each entry defaults its unset fields from the installed model of the same id. `modelOverrides` reshapes individual installed-catalog models without replacing the rest. New writes reject overrides beside a `models` list, on a hand-declared route, or naming a missing catalog model. Stored catalog drift retains a repair diagnostic and does not remove independently valid models or the Settings entry.
 
 ### Run with reasoning and wire compatibility
 
@@ -102,13 +106,21 @@ A profile's `models` list replaces the route's installed catalog rather than ext
 
 ### Change configuration at runtime
 
-Profiles are re-read once per operation through the optional settings seam: the base and the user's `llm-pi-ai:` settings section merge per provider, so a user can add a route, override one field of a composition route, or point a route at another proxy, all effective on the next request with no restart. A section the adapter could not serve is refused where it is written — `settings.mutate` answers `settings-rejected` — and a stored section that later fails keeps the namespace's last good value. When the route set or a route's retry policy changes, the plugin re-registers atomically: a conflicting route leaves the previous routes serving.
+Profiles are re-read once per operation through the optional settings seam: the base and user settings merge per provider, and a successful edit affects the next request without a restart. New or changed unserviceable profiles are refused before persistence. Unchanged catalog-invalid profiles do not block editing an independent provider, but literal credentials still block writes until explicitly migrated. Native Settings displays retained catalog diagnostics. Scalar failures keep the namespace's last good value. Route-set and retry-policy changes re-register atomically; a conflicting route leaves previous routes serving.
+
+Private endpoints can declare reasoning-budget field spellings, vLLM priority and support for output-token parameters. Per-turn Anthropic effort requires adaptive thinking. The version-2 adapter replay envelope retains the exact provider-native effort across later turns; this does not migrate session logs. Catalog-owned capability and fallback-model metadata remain intact.
 
 ### Discover models from endpoints
 
-The plugin answers "which models can this provider serve?" for a route a configuration surface is editing or drafting. A route the installed catalog ships is answered from that catalog with no network call; only a route the catalog does not describe is interrogated over the wire (`openai-completions` and `openai-responses` shapes). The reply is candidate metadata a surface may offer for adoption — nothing is stored, and `settings.yaml` remains the only thing that decides what a route serves.
+The plugin answers "which models can this provider serve?" for a route a configuration surface is editing or drafting. A known route without an endpoint override uses the installed catalog; an explicit endpoint is interrogated over the wire (`openai-completions` and `openai-responses` shapes). A one-shot credential is bound by the LLM owner to that exact endpoint and protocol, and redirects are refused. Discovery never borrows a stored route's key. Invalid capacity values are omitted rather than converted to unsafe integers. Replies are candidate metadata for explicit adoption, not persisted catalog changes.
 
 ### Failures and recovery
+
+Non-empty literal credential headers keep their profile inactive and expose only `migrationRequired` field names in the provider directory. Settings reads redact these values independently from the resolved, base and user layers; malformed secret-bearing containers fail closed. Writes containing such values are rejected without changing disk. Use `credentialHeaders` references instead; an explicit empty `Authorization` remains a supported non-secret protocol override. Case-insensitive duplicate header names are rejected, including collisions between public and credential-backed headers. Credentials under unusual header names must also use `credentialHeaders`; public fields are not a secret-discovery mechanism.
+
+Every field absent from the live configuration schema is hidden and refused on write, regardless of its name. Declared dictionary keys, template values and model-capability fields remain intact. Malformed declared values, credential references, cycles and non-JSON objects are refused without echoing their values. Profile-local requirements expose relative `paths`; `inheritedPaths` identify deployment-owned fields. Native Settings requires explicit consent and a newly entered key before removing user-owned fields through the existing provider transaction. Deployment-owned fields and incomplete migration metadata block that action instead of guessing a cleanup.
+
+For authenticated OpenAI-compatible routes, verification fetches the exact model metadata without following redirects, enforces a 64 KiB body limit, then repeats the request without any credential-backed fields. Only a 401 or 403 challenge response establishes `metadata-auth`; public metadata establishes reachability only. Other protocols and routes without an explicit credential defer to the LLM service's bounded generation handshake. The [verification decision](../../../.agents/notes/implemented/bug-fix/2026-09-09-provider-verification-and-header-ownership.md) records ownership and limitations.
 
 A route pi-ai does not ship needs `api`, `baseURL`, and a non-empty `models` list; an unserviceable profile is refused where it is written, naming the route and model. Failures carry stable codes: a credential that cannot be used fails with `INVALID_CREDENTIAL` naming the route and reference, a route whose `apiKeyEnv` reference resolves to nothing fails with `MISSING_CREDENTIAL`, an unconfigured model fails with `UNKNOWN_MODEL`, and terminal provider failures distinguish `QUOTA` from transient `RATE_LIMIT`. `GenerateOptions.stop` is rejected with `UNSUPPORTED_OPTION` because pi-ai's common streaming UI cannot guarantee it across providers.
 
@@ -126,6 +138,8 @@ This section explains the design behind the adapter; the observable behavior is 
 
 The adapter is built on immutable snapshots and per-operation resolution. Each operation captures a whole snapshot — the profiles plus a `createModels()` collection holding the `Provider` each route built — before its first `await`, and a configuration change builds a new collection rather than mutating the one in use, so a request that started under one configuration never finishes under another. A route's own credential reference resolves through the harness seam and rides as the request's `apiKey` option, which pi-ai treats as the highest-priority auth override — that is what keeps the fail-loud reference semantics. Everything that override does not cover reaches pi-ai through the collection's own auth: the credential store holds the records a login wrote and a refresh rotates (addressed as `llm-pi-ai/<provider id>`), and the auth context answers the ambient questions a provider asks while resolving. Both are stable across snapshots, so a configuration change rebuilds the collection without forgetting who is signed in.
 
+The pinned pi-ai Responses parser preserves a non-empty server `model` field from creation and terminal responses in `responseModel`; terminal metadata takes precedence. The existing replay envelope retains that field and the response id independently of the requested model alias. Missing fields remain absent. These are provider reports, not independent verification of a gateway's underlying model.
+
 ### Source map
 
 | File | Role |
@@ -134,6 +148,8 @@ The adapter is built on immutable snapshots and per-operation resolution. Each o
 | [`src/auth.ts`](src/auth.ts) | The credential store and ambient auth context over the harness credential plane |
 | [`src/login.ts`](src/login.ts) | Authorization flows for the installed providers that ship a login |
 | [`src/config.ts`](src/config.ts) | Profile schema, resolution, and serviceability checks |
+| [`src/headers.ts`](src/headers.ts) | Header admission and secret-safe settings projection |
+| [`src/verification.ts`](src/verification.ts) | Bounded exact-model metadata and authentication challenge |
 | [`src/catalog.ts`](src/catalog.ts) | Installed-catalog integration and drift gates |
 | [`src/provider.ts`](src/provider.ts) | The supported-protocol table and provider construction |
 | [`src/context.ts`](src/context.ts) | Harness-to-pi-ai context conversion, image handling, replay restore |
@@ -210,11 +226,11 @@ These limits define where the adapter stops and future work begins. They are cur
 - **Provider-native discovery answers through this plugin's ambient context** — a route naming no credential defers to the catalog provider's own resolution, which asks for environment values (`AZURE_OPENAI_API_KEY`, `AWS_PROFILE`, and each provider's own set) and for local credential files. Both questions are answered here: the credential seam is consulted before the process environment, and file existence is checked against the host process's filesystem with `~` expanded. What it cannot do is *read* a credential file's contents — a provider that parses `~/.aws/credentials` itself does so directly, outside the seam.
 - **Settings can add or override routes, not remove composition routes** — the user layer merges over the composition base, so deleting a `cordis.yml`-provided provider is a composition change.
 - **The layered merge has no delete for dict keys** — a `reasoningEfforts` level, `modelOverrides` entry, or `compat` field the base declares can be overridden but not removed by the user layer.
-- **`headers` can carry a credential the redactor never sees** — the profile's `headers` dict is plain strings; store credentials as `apiKeyEnv` references.
+- **Public header names do not prove public values** — credential-looking names are redacted and refused on write, but arbitrary vendor-specific secrets must be explicitly declared through `credentialHeaders`.
 - **A route's catalog never refreshes itself** — the catalog is whatever `settings.yaml` says; nothing here queries a provider for the models it serves.
 - **One wire protocol per route** — a mixed-protocol catalog route cannot host a model of the other protocol; splitting the provider across two route keys is the workaround.
 - **A modality declaration is not verified** — a model declaring `image` its gateway does not serve is refused by the provider after prompt admission. The durable image remains in history and the same misdeclared model can fail again; switching to a text-only model remains possible because the shared LLM runtime projects image references into stable text for that request.
-- **An unauthenticated route depends on its protocol** — a route naming no credential resolves as configured-but-keyless, but pi-ai's OpenAI-compatible implementation still requires an API key or an `Authorization` header, so a keyless local server needs a placeholder credential referenced by `apiKeyEnv` or an `Authorization` entry in `headers`.
+- **An unauthenticated route depends on its protocol** — a route naming no credential resolves as configured-but-keyless, but pi-ai's OpenAI-compatible implementation still requires an API key or an `Authorization` header, so a keyless local server needs a placeholder referenced by `apiKeyEnv` or `credentialHeaders`.
 - **`GenerateOptions.stop` is unsupported** — pi-ai's common stream options cannot guarantee stop-sequence behavior across providers.
 - **In-history `system` messages use pi-ai's common context conversion** — provider-specific placement follows pi-ai rather than a harness-owned wire override.
 - **Provider HTTP status is unavailable** — pi-ai error events do not expose a stable HTTP status across providers.

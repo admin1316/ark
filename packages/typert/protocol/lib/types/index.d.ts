@@ -4,8 +4,7 @@
  * @module @deepseek-ai/dsh-typert-protocol
  */
 import { Service, type Context } from '@deepseek-ai/cordis';
-import type { TypertContextMap } from './types.ts';
-import type { RemoteFailure } from './types.ts';
+import type { RemoteFailure, TypertContextMap } from './types.ts';
 /**
  * Test one generated Remote name against the Connection endpoint grammar.
  * @param value - namespace, method, lookup, or Context segment.
@@ -19,9 +18,9 @@ export declare function isTypertRemoteSegment(value: string): boolean;
 export declare class TypertLookupFailure<Failure = unknown> extends Error {
     /** Adapter-owned failure returned to the caller. */
     readonly failure: Failure;
-    /** Machine-readable public code mirrored for direct Remote invocation. */
+    /** Public code mirrored for direct Remote callers. */
     readonly code: string | undefined;
-    /** Public structured context mirrored for direct Remote invocation. */
+    /** Public structured context mirrored for direct Remote callers. */
     readonly details: unknown;
     /**
      * Wrap one adapter failure without exposing the rejected identity.
@@ -30,18 +29,28 @@ export declare class TypertLookupFailure<Failure = unknown> extends Error {
     constructor(failure: Failure);
 }
 /**
- * Validate the public failure shape shared by strict Remote adapters.
+ * Validate the public failure payload shared by strict Remote adapters.
  * @param value - Untrusted thrown or decoded value.
- * @returns whether the value is a complete strict Remote failure payload.
+ * @returns Whether code, message, and structured details are present.
  */
 export declare function isRemoteFailurePayload(value: unknown): value is RemoteFailure;
 /**
- * Recognize one already-classified strict Remote failure without relabeling it.
+ * Preserve an already classified strict Remote rejection.
  * @param value - Untrusted thrown value.
- * @returns whether the value wraps a complete strict Remote failure payload.
+ * @returns Whether the exception wraps a complete Remote failure payload.
  */
 export declare function isTypertRemoteFailure(value: unknown): value is TypertLookupFailure<RemoteFailure>;
-export type { InvocationDescriptor, InvocationParameterDescriptor, InvocationSourceLocation, RemoteFailure, RemoteResult, TypertClientRemote, TypertClientContextBinder, TypertCodec, TypertContext, TypertContextMap, TypertContextRegistry, TypertContextWire, TypertDisposer, TypertForwardableEvent, TypertHostContextProvider, TypertHostContextResolver, TypertLocalRegistry, TypertLookup, TypertLookupDefinition, TypertLookupHost, TypertLookupMap, TypertLookupProvider, TypertLookupResolver, TypertLookupRegistry, TypertLookupWire, TypertRemoteScopeApi, TypertRemoteScopeMap, TypertRemoteScopeNamespace, TypertRemoteContribution, TypertRemoteEvent, TypertRemoteEventSelection, TypertRemoteMap, TypertRemoteNamespace, TypertRemoteNamespaceMap, TypertRemoteRegistry, TypertRegistryChange, TypertRegistryListener, TypertSchema, TypertRegistryContract, } from './types.ts';
+/** A business Remote rejection preserved by unary and stream carriers. */
+export declare class TypertRemoteFailure extends Error {
+    /** Stable caller-facing failure payload. */
+    readonly failure: RemoteFailure;
+    /**
+     * Wrap one business rejection for transport without changing its code or details.
+     * @param failure - business failure returned unchanged to the caller.
+     */
+    constructor(failure: RemoteFailure);
+}
+export type { InvocationDescriptor, InvocationParameterDescriptor, InvocationSourceLocation, RemoteFailure, RemoteResult, TypertClientEventListener, TypertClientRemote, TypertClientContextAdapter, TypertCodec, TypertContext, TypertContextAdapter, TypertContextMap, TypertContextRegistry, TypertContextWire, TypertDisposer, TypertForwardableEvent, TypertForwardableEventEntry, TypertHostContextAdapter, TypertHostContextIdentity, TypertHostContextResolver, TypertLocalRegistry, TypertLookup, TypertLookupDefinition, TypertLookupHost, TypertLookupMap, TypertLookupProvider, TypertLookupResolver, TypertLookupRegistry, TypertLookupWire, TypertRemoteScopeApi, TypertRemoteScopeMap, TypertRemoteScopeNamespace, TypertRemoteContribution, TypertRemoteEvent, TypertRemoteEventSelection, TypertRemoteMap, TypertRemoteNamespace, TypertRemoteNamespaceMap, TypertRemoteRegistry, TypertRegistryChange, TypertRegistryListener, TypertSchema, TypertRegistryContract, } from './types.ts';
 /** Options for an explicit Service-to-Gateway binding. */
 export interface TypertGatewayBindingOptions {
     /** Wire namespace; defaults to the Cordis service key. */
@@ -66,7 +75,14 @@ export interface RemoteMethodMarker {
     readonly method: string;
     /** Endpoint method when it differs from the implementation member. */
     readonly exportName?: string;
+    /** Stream methods yield many independently validated result items. */
+    readonly mode?: 'stream';
     readonly invocation: RemoteInvocationMarker;
+}
+/** Options for a non-unary Remote method. */
+export interface RemoteMethodOptions {
+    /** Deliver each Iterable item over the shared logical-stream carrier. */
+    readonly mode: 'stream';
 }
 type RemoteMethodDecorator = <This extends object, Args extends unknown[], Result>(method: (this: This, ...args: Args) => Result, context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>) => void;
 /**
@@ -96,11 +112,11 @@ export declare abstract class TypertRemoteService<out T = never> extends Service
  */
 export declare function Remote<This extends object, Args extends unknown[], Result>(_method: (this: This, ...args: Args) => Result, context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>): void;
 /**
- * Mark one public instance method under a distinct exported method name.
- * @param exportName - Remote endpoint method, without a namespace or slash.
+ * Mark one public instance method under an exported name or as a logical stream.
+ * @param option - endpoint method name or stream delivery mode.
  * @returns a standard method decorator.
  */
-export declare function Remote(exportName: string): RemoteMethodDecorator;
+export declare function Remote(option: string | RemoteMethodOptions): RemoteMethodDecorator;
 /**
  * Create a decorator for a method resolved from one Remote Scope.
  * @param key - scope key declared through the Context map.

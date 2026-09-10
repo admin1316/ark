@@ -1,5 +1,5 @@
 import { SandboxUnavailableError } from "@deepseek-ai/dsh-sandbox";
-import { LocalBashExecutor } from "@deepseek-ai/dsh-bash-local";
+import { LocalBashExecutor, resolveBashExecutable } from "@deepseek-ai/dsh-bash-local";
 import { accessSync, constants, statSync } from "node:fs";
 //#region lib/types/helpers.js
 /**
@@ -227,7 +227,7 @@ var SandboxBashExecutor = class extends LocalBashExecutor {
 	*/
 	confine(command, policy) {
 		return this.ctx.sandbox.confine([
-			"bash",
+			resolveBashExecutable(),
 			"-c",
 			command
 		], policy);

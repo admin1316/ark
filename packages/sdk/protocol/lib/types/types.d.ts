@@ -18,7 +18,7 @@ export interface InitializeParams {
     provider: string;
     /** Model name every SDK-created agent runs on (the server may mount a fallback adapter; see `HarnessSdkJsonRpcServer.initialize`). */
     model: string;
-    /** Optional adapter-owned reasoning effort for the selected route. */
+    /** Optional adapter-owned reasoning effort for the selected provider/model route. */
     reasoningEffort?: ReasoningEffortId;
     /** Optional positive output-token cap inherited by SDK-created agents and their in-process descendants. */
     maxTokens?: number;
@@ -38,13 +38,15 @@ export interface SessionPromptParams {
     /** The prompt content blocks, sent verbatim as the user message. */
     contentBlocks: SdkPromptContentBlock[];
 }
-/** Inline raster input admitted into the runtime attachment store. */
+/** Inline raster input admitted into the runtime's durable attachment store. */
 export interface SdkEncodedImageBlock {
     type: 'image';
+    /** Canonical base64-encoded raster bytes. */
     data: string;
+    /** Declared raster MIME type, verified during admission. */
     mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
 }
-/** Prompt blocks accepted by the SDK wire, including transient inline images. */
+/** SDK prompt input: ordinary durable blocks plus inline images awaiting admission. */
 export type SdkPromptContentBlock = ContentBlock | SdkEncodedImageBlock;
 /** Durable enqueue receipt for one prompt. */
 export interface SessionPromptResult {

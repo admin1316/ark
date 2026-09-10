@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -66,7 +66,7 @@ function call(
 ) {
   return ctx.tools.execute({
     signal,
-    callId: ToolCallId(`persistent-bash-${++callNumber}`),
+    callId: CallId(`persistent-bash-${++callNumber}`),
     name: 'bash',
     arguments: { command },
     ...owner === undefined ? {} : { agent: owner },

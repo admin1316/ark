@@ -288,12 +288,11 @@ let SkillRegistry = (() => {
 			return (await this.snapshot(options)).skills;
 		}
 		/**
-		* List user-invocable skills for one gateway-resolved Agent. The session's
-		* stored cwd and the agent's scope are the only lookup inputs; no raw host
-		* path crosses the Remote wire.
-		* @param agent - gateway-resolved Agent whose skill scope is listed.
-		* @param signal - caller-owned cancellation signal.
-		* @returns the user-invocable skill catalog.
+		* List user-invocable skills for a gateway-resolved Agent.
+		* @param agent - Agent whose persisted cwd and scope determine visibility.
+		* @param signal - Caller-owned cancellation signal.
+		* @returns The user-invocable catalog without skill bodies.
+		* @throws TypertLookupFailure for cancellation, absent cwd, or provider failures.
 		*/
 		async remoteList(agent, signal) {
 			if (signal.aborted) remoteSkillFailure("cancelled", "skill listing was cancelled", {});
@@ -657,11 +656,9 @@ function errorMessage(error) {
 		return "[unrenderable thrown value]";
 	}
 }
-/** Read a mutable AbortSignal after an await without retaining stale flow narrowing. */
 function isAborted(signal) {
 	return signal.aborted;
 }
-/** Throw a serializable Remote failure. */
 function remoteSkillFailure(code, message, details) {
 	throw new TypertLookupFailure({
 		code,

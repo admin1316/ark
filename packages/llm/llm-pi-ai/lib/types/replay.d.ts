@@ -30,6 +30,8 @@ export interface PiAiReplayResponse {
     model: string;
     responseModel?: string;
     responseId?: string;
+    /** Exact provider-native effort for this historical response; absent in older envelopes. */
+    providerThinkingLevel?: string;
     stopReason: AssistantMessage['stopReason'];
 }
 /**

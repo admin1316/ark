@@ -47,6 +47,8 @@ const headers = await ctx.sessionPersistence.list()        // every stored sessi
 
 ### Resuming and crash recovery
 
+`delete(id)` permanently removes a cold, unreserved session and awaits `session-persistence/deleted` cleanup after releasing its write chain. Live or reserved identities reject with `SessionPersistenceDeleteBlockedError`. A cleanup failure rejects after the durable removal; retrying the same deletion also notifies when the session is already absent. Backends provide `deleteStored` to the coordinator and preserve this ordering.
+
 Resume is `load` plus session preparation: the stored log comes back with its header lineage intact, so a resumed agent sees the same history and composition. A session that crashed mid-turn reloads with its interrupted final turn preserved and balanced: `load` appends synthetic `tool/result` and `turn/end {interrupted}` closers for unanswered calls instead of dropping the events — a single turn can be large, and those events were durably written before the crash. Only a never-fully-written torn tail fragment is discarded.
 
 ### Failures and recovery

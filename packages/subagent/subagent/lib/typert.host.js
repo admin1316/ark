@@ -32,46 +32,63 @@ const ContentBlockRemoteCodec$schema = z.union([z.object({
   'content': z.array(z.lazy(() => ContentBlockRemoteCodec$schema)),
   'isError': z.boolean().optional(),
 })])
-const RemoteSubagentJsonValueRemoteCodec$schema = z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSubagentJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSubagentJsonValueRemoteCodec$schema))])
-const _deepseek_ai_dsh_subagent_subagent_history_parameter_0$schema = z.string()
-const _deepseek_ai_dsh_subagent_subagent_history_parameter_1$schema = z.string()
+const JsonValueRemoteCodec$schema = z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))])
+const _deepseek_ai_dsh_subagent_subagent_history_parameter_0$schema = z.intersection(z.string(), z.unknown())
+const _deepseek_ai_dsh_subagent_subagent_history_parameter_1$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_2$schema = z.union([z.literal("one-shot"), z.literal("continuable")])
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_3$schema = z.union([z.undefined(), z.number()])
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_4$schema = z.union([z.undefined(), z.number()])
 const _deepseek_ai_dsh_subagent_subagent_history_result$schema = z.object({
-  'events': z.array(z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSubagentJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSubagentJsonValueRemoteCodec$schema))])).readonly(),
+  'events': z.array(z.object({
+  'event': z.object({
+  'type': z.string().readonly(),
+  'seq': z.number().readonly(),
+  'time': z.number().readonly(),
+  'data': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))]).readonly(),
+  'sourceEventSeqs': z.array(z.number()).readonly().optional(),
+  'surfaceOp': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))]).readonly().optional(),
+  'ignorable': z.literal(true).readonly().optional(),
+}).readonly(),
+  'view': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))]).readonly().optional(),
+})).readonly(),
   'hasMore': z.boolean().readonly(),
+  'projections': z.object({
+  'asOfSeq': z.number().readonly(),
+  'values': z.record(z.string(), z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))])).readonly(),
+}).readonly().optional(),
 })
-const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_0$schema = z.string()
-const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_1$schema = z.string()
+const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_0$schema = z.intersection(z.string(), z.unknown())
+const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_1$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_interrupt_result$schema = z.object({
   'accepted': z.literal(true).readonly(),
 })
-const _deepseek_ai_dsh_subagent_subagent_list_parameter_0$schema = z.string()
+const _deepseek_ai_dsh_subagent_subagent_list_parameter_0$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_list_result$schema = z.object({
-  'entries': z.array(z.union([z.object({
+  'entries': z.array(z.union([z.intersection(z.object({
   'kind': z.literal("child").readonly(),
-  'id': z.string().readonly(),
+  'id': z.intersection(z.string(), z.unknown()).readonly(),
   'activity': z.union([z.literal("running"), z.literal("inactive")]).readonly(),
   'hasChildren': z.boolean().readonly(),
+}), z.object({
   'mode': z.literal("one-shot").readonly(),
   'label': z.string().readonly().optional(),
-}), z.object({
+})), z.intersection(z.object({
   'kind': z.literal("child").readonly(),
-  'id': z.string().readonly(),
+  'id': z.intersection(z.string(), z.unknown()).readonly(),
   'activity': z.union([z.literal("running"), z.literal("inactive")]).readonly(),
   'hasChildren': z.boolean().readonly(),
+}), z.object({
   'mode': z.literal("continuable").readonly(),
   'label': z.string().readonly(),
-}), z.object({
+})), z.object({
   'kind': z.literal("diagnostic").readonly(),
-  'id': z.string().readonly(),
+  'id': z.intersection(z.string(), z.unknown()).readonly(),
   'reason': z.union([z.literal("corrupt"), z.literal("unsupported"), z.literal("unavailable")]).readonly(),
 })])).readonly(),
   'parentAvailable': z.boolean().readonly(),
 })
 const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_0$schema = z.intersection(z.string(), z.unknown())
-const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_1$schema = z.string()
+const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_1$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_2$schema = z.array(z.union([z.object({
   'type': z.literal("text"),
   'text': z.string(),
@@ -106,7 +123,7 @@ const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_2$schema = z.array(z.u
 const _deepseek_ai_dsh_subagent_subagent_prompt_parameter_3$schema = z.string()
 const _deepseek_ai_dsh_subagent_subagent_prompt_result$schema = z.object({
   'invocationId': z.string().readonly(),
-  'messageId': z.string().readonly(),
+  'messageId': z.intersection(z.string(), z.unknown()).readonly(),
   'durable': z.literal(true).readonly(),
   'duplicate': z.boolean().readonly(),
 })
@@ -131,7 +148,7 @@ export const TYPERT = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/history:parentSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_history_parameter_0$schema,
           },
         },
@@ -141,7 +158,7 @@ export const TYPERT = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/history:childSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_history_parameter_1$schema,
           },
         },
@@ -181,10 +198,10 @@ export const TYPERT = {
       cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-subagent/types#RemoteSubagentHistory',
+        typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteHistoryValue',
         schema: _deepseek_ai_dsh_subagent_subagent_history_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":436,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":528,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/interrupt',
@@ -200,7 +217,7 @@ export const TYPERT = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/interrupt:parentSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_0$schema,
           },
         },
@@ -210,24 +227,24 @@ export const TYPERT = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/interrupt:childSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_1$schema,
           },
         },
       ],
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-subagent/types#RemoteSubagentInterruptReceipt',
+        typeSymbol: '@deepseek-ai/dsh-subagent/client#SubagentInterruptReceipt',
         schema: _deepseek_ai_dsh_subagent_subagent_interrupt_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":532,"column":3},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":583,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/list',
       service: 'subagents',
       namespace: 'subagent',
       method: 'list',
-      implementation: 'remoteList',
+      implementation: 'remoteExportList',
       invocation: { kind: 'direct' },
       parameters: [
         {
@@ -236,7 +253,7 @@ export const TYPERT = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/list:parentSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_list_parameter_0$schema,
           },
         },
@@ -244,10 +261,10 @@ export const TYPERT = {
       cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-subagent/types#RemoteSubagentCatalog',
+        typeSymbol: '@deepseek-ai/dsh-subagent/client#SubagentCatalog',
         schema: _deepseek_ai_dsh_subagent_subagent_list_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":403,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":425,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/prompt',
@@ -278,7 +295,7 @@ export const TYPERT = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-subagent#subagent/prompt:childSessionId',
+            typeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
             schema: _deepseek_ai_dsh_subagent_subagent_prompt_parameter_1$schema,
           },
         },
@@ -306,10 +323,10 @@ export const TYPERT = {
       cancellation: { parameter: 'signal' },
       result: {
         mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-subagent/types#RemoteSubagentPromptReceipt',
+        typeSymbol: '@deepseek-ai/dsh-subagent/client#RemoteSubagentPromptReceipt',
         schema: _deepseek_ai_dsh_subagent_subagent_prompt_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":492,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":561,"column":9},
     },
   ],
   model: {
@@ -327,21 +344,21 @@ export const TYPERT = {
             "name": "startContinuable",
             "signature": "async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>",
             "summary": "Establish one durable continuable child and deliver its initial prompt.",
-            "jsDoc": "/**\n * Establish one durable continuable child and deliver its initial prompt.\n * Resolves only after the child's inbox insertion crosses the configured\n * Session durability barrier; it does not wait for the turn to finish. A\n * failure before inbox acceptance rolls the child back entirely.\n * @param spec - provider, delegation request, and caller cancellation.\n * @returns the durable child id and the accepted prompt's message id.\n * @throws when continuation services are unavailable or materialization fails.\n */"
+            "jsDoc": "/**\n * Establish one durable continuable child and deliver its initial prompt.\n * Resolves when the child's inbox accepts that prompt, without waiting for the\n * turn to start or for the message to reach the Session log; any earlier\n * failure rejects with no ids and rolls back the child entirely.\n * @param spec - provider, delegation request, and caller cancellation.\n * @returns the durable child id and the accepted prompt's message id.\n * @throws when continuation services are unavailable or materialization fails.\n */"
           },
           {
             "kind": "method",
             "name": "followup",
             "signature": "async followup( parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions, ): Promise<MessageId>",
             "summary": "Deliver one later message to a continuable child as its next FIFO turn.",
-            "jsDoc": "/**\n * Deliver one later message to a continuable child as its next FIFO turn. A\n * resident child's Agent inbox accepts it directly (waking a `waiting`\n * Activation), while an absent one is cold-resumed from its persisted\n * Session. The Agent inbox is the only queue, so every accepted message has\n * one observable order.\n * @param parent - the exact live direct parent authorizing this delivery.\n * @param childId - durable child session id.\n * @param content - user-role content to deliver.\n * @param options - the message source fields and caller cancellation, which stops the\n *   operation only before inbox acceptance.\n * @returns the durably accepted message's inbox id.\n * @throws when continuation services are unavailable, parent authority is\n *   rejected, or the message was not admitted.\n */"
+            "jsDoc": "/**\n * Deliver one later message to a continuable child as its next FIFO turn. A\n * resident child's Agent inbox accepts it directly (waking a `waiting`\n * Activation), while an absent one is cold-resumed from its persisted\n * Session. The Agent inbox is the only queue, so every accepted message has\n * one observable order.\n * @param parent - the exact live direct parent authorizing this delivery.\n * @param childId - durable child session id.\n * @param content - user-role content to deliver.\n * @param options - the message source fields and caller cancellation, which stops the\n *   operation only before inbox acceptance.\n * @returns the accepted message's inbox id after the Session flush barrier, without waiting for model completion.\n * @throws when continuation services are unavailable, parent authority is\n *   rejected, or the message was not admitted.\n */"
           },
           {
             "kind": "method",
             "name": "followupReceipt",
             "signature": "async followupReceipt( parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions, ): Promise<DurableSubagentMessageReceipt>",
-            "summary": "Deliver a continuable child's FIFO follow-up and expose its durable receipt.",
-            "jsDoc": "/**\n * Deliver a continuable child's FIFO follow-up and expose its durable receipt.\n * Exact invocation retries reuse the original message id without another turn;\n * {@link SubagentContinuationManager.followupReceipt} owns retry validation.\n * The durability wait continues after inbox acceptance despite caller cancellation;\n * persistence failure rejects without retracting the accepted message.\n * @param parent - Exact live direct parent authorizing this delivery.\n * @param childId - Durable child session id, resumed if a new delivery needs it.\n * @param content - User-role content, unchanged when retrying an invocation.\n * @param options - Durable source, optional matching `subagent-prompt` invocation\n *   key, and cancellation that owns new admission only until inbox acceptance.\n * @returns The accepted message id, `durable: true`, and whether this is a\n *   duplicate invocation; receipt success does not wait for turn completion.\n * @throws When continuation services are unavailable, delivery is unauthorized,\n *   invocation validation or admission fails, or resume/persistence fails.\n */"
+            "summary": "Deliver through the continuation owner's durable retry boundary.",
+            "jsDoc": "/**\n * Deliver through the continuation owner's durable retry boundary.\n * @param parent - exact live direct parent.\n * @param childId - durable child session id.\n * @param content - content to deliver once per invocation.\n * @param options - source, retry identity, and pre-admission cancellation.\n * @returns receipt after the Session flush barrier; a failed flush does not retract acceptance.\n */"
           },
           {
             "kind": "method",
@@ -382,36 +399,8 @@ export const TYPERT = {
             "kind": "method",
             "name": "listChildren",
             "signature": "listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>",
-            "summary": "Enumerate the parent's direct session-backed subagents without loading or resuming an Agent and without any query service: the listing merges the live session store with optional session persistence (live-preferred) and serves each child's durable mode/label by applying the same strict `foldSubagentDescriptor()` used by cold resume to the child's own suffix.",
-            "jsDoc": "/**\n * Enumerate the parent's direct session-backed subagents without loading or\n * resuming an Agent and without any query service: the listing merges the live\n * session store with optional session persistence (live-preferred) and\n * serves each child's durable mode/label by applying the same strict\n * `foldSubagentDescriptor()` used by cold resume to the child's own suffix.\n * Exactly one own descriptor is valid; derived projection/cache state cannot\n * override it or hide a duplicate. Per-child diagnostics contain malformed,\n * missing, inherited-only, or duplicate identity and isolate failed reads.\n * Absent persistence, enumeration is\n * live-only (a cold child cannot be resumed then either, so its absence is\n * capability absence, not an error). This service consults no Agent\n * registrations, Activations, or providers.\n *\n * Every persistence read receives `signal`, and the listing rechecks\n * cancellation around each of those awaits. Read rejections that settle\n * after an abort become a stable `SubagentError` with code `CANCELLED`.\n * @param parentSessionId - parent session whose direct children are listed.\n * @param signal - caller-owned cancellation forwarded to persistence reads\n *   and observed around every read await.\n * @returns children and per-child diagnostics ordered by `createdAt`, then id.\n * @throws {@link SubagentError} when the projection registry or the session\n *   store is not mounted, or the caller cancels the listing.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remoteList",
-            "signature": "@Remote('list') async remoteList(parentSessionId: string, signal: AbortSignal): Promise<RemoteSubagentCatalog>",
-            "summary": "List durable direct children without loading or resuming either side.",
-            "jsDoc": "/**\n * List durable direct children without loading or resuming either side.\n * @param parentSessionId - parent session whose direct children are listed.\n * @param signal - caller-owned cancellation signal.\n * @returns the child catalog and availability metadata.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remoteHistory",
-            "signature": "@Remote('history') async remoteHistory( parentSessionId: string, childSessionId: string, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal: AbortSignal, ): Promise<RemoteSubagentHistory>",
-            "summary": "Read a bounded raw transcript only after the durable direct-child address has been verified.",
-            "jsDoc": "/**\n * Read a bounded raw transcript only after the durable direct-child address\n * has been verified. This never resumes either Agent.\n * @param parentSessionId - parent session that owns the child.\n * @param childSessionId - direct child session to read.\n * @param mode - child mode required by the operation.\n * @param beforeSeq - optional exclusive sequence cursor.\n * @param maxMessages - optional maximum number of messages.\n * @param signal - caller-owned cancellation signal.\n * @returns the Session-owned bounded page; when `hasMore` is true, its first\n * event sequence is the exclusive cursor for the next older request.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remotePrompt",
-            "signature": "@Remote('prompt') async remotePrompt( agent: Agent, childSessionId: string, content: ContentBlock[], invocationId: string, signal: AbortSignal, ): Promise<RemoteSubagentPromptReceipt>",
-            "summary": "Deliver one human message through the exact live direct parent.",
-            "jsDoc": "/**\n * Deliver one human message through the exact live direct parent.\n * @param agent - live parent Agent authorized to deliver the message.\n * @param childSessionId - direct child session to prompt.\n * @param content - user message content blocks.\n * @param invocationId - caller-stable UUID used to deduplicate uncertain retries.\n * @param signal - caller-owned cancellation signal.\n * @returns the accepted message receipt.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "remoteInterrupt",
-            "signature": "@Remote('interrupt') remoteInterrupt(parentSessionId: string, childSessionId: string): RemoteSubagentInterruptReceipt",
-            "summary": "Interrupt a continuable child under its durable direct-parent address.",
-            "jsDoc": "/**\n * Interrupt a continuable child under its durable direct-parent address.\n * @param parentSessionId - parent session that owns the child.\n * @param childSessionId - continuable child session to interrupt.\n * @returns confirmation that interruption was accepted.\n */"
+            "summary": "Enumerate the parent's direct session-backed subagents without loading or resuming an Agent.",
+            "jsDoc": "/**\n * Enumerate the parent's direct session-backed subagents without loading or\n * resuming an Agent. The Session query service supplies one live-preferred\n * corpus and shared point observations; the projection cache supplies\n * immutable descriptor hits without opening cold logs. The registered\n * `subagent` projection remains the sole mode/label classifier.\n *\n * Every query receives `signal`, and the listing rechecks cancellation\n * around each await. Read rejections that settle\n * after an abort become a stable `SubagentError` with code `CANCELLED`.\n * @param parentSessionId - parent session whose direct children are listed.\n * @param signal - caller-owned cancellation forwarded to Session queries\n *   and observed around every read await.\n * @returns children and per-child diagnostics ordered by `createdAt`, then id.\n * @throws {@link SubagentError} when the projection registry or the session\n *   store is not mounted, or the caller cancels the listing.\n */"
           },
           {
             "kind": "method",
@@ -419,6 +408,48 @@ export const TYPERT = {
             "signature": "listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>",
             "summary": "Enumerate the root's complete session-backed subagent tree in stable pre-order from one live-preferred corpus, without loading or resuming an Agent.",
             "jsDoc": "/**\n * Enumerate the root's complete session-backed subagent tree in stable\n * pre-order from one live-preferred corpus, without loading or resuming an\n * Agent. Ordinary sessions and one-shot children remain traversal nodes so\n * continuable descendants below them are discovered; each returned entry\n * adds its durable `parentId` and root-relative `depth`. Identity resolution,\n * diagnostics, optional persistence, and cancellation follow the same\n * projection-backed contract as {@link listChildren}.\n * @param rootSessionId - session whose complete descendant tree is listed.\n * @param signal - caller-owned cancellation forwarded to persistence reads\n *   and observed around every read await.\n * @returns children and per-candidate diagnostics with tree position, in\n *   stable pre-order.\n * @throws {@link SubagentError} under the same conditions as {@link listChildren}.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteExportList",
+            "signature": "@Remote('list') async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>",
+            "summary": "Remote face of {@link listChildren} for one browser: the durable listing plus live Agent activity and the delivery-time parent availability hint.",
+            "jsDoc": "/**\n * Remote face of {@link listChildren} for one browser: the durable listing\n * plus live Agent activity and the delivery-time parent availability hint.\n * Parent availability is a hint; {@link prompt} performs the authoritative\n * check. Named apart from the provider-name {@link list}, which owns the\n * member.\n * @param parentSessionId - parent session whose direct children are listed.\n * @param signal - carrier cancellation forwarded to Session queries.\n * @returns the catalog view for that parent.\n * @throws {TypertRemoteFailure} `bad-request` for an empty parent id,\n *   `cancelled` for an aborted read, `subagent-projections-unavailable` when\n *   the deployment has no projection registry, otherwise `internal`.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "prompt",
+            "signature": "async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>",
+            "summary": "Deliver one browser-authored message to a continuable child through the exact live direct parent, retaining the caller-minted request identity and validated browser zone on the accepted message.",
+            "jsDoc": "/**\n * Deliver one browser-authored message to a continuable child through the\n * exact live direct parent, retaining the caller-minted request identity and\n * validated browser zone on the accepted message. Success identifies the\n * message the child's FIFO inbox accepted; later execution is independent of\n * this call.\n * @param request - durable address, minted identity, content, and optional browser zone.\n * @param signal - carrier cancellation, owning the call until inbox acceptance.\n * @returns the accepted message's inbox identity.\n * @throws {TypertRemoteFailure} `bad-request`, `invalid-time-zone`,\n *   `subagent-parent-unavailable`, `subagent-not-resumable`,\n *   `subagent-unauthorized`, `subagent-delivery-unavailable`, `cancelled`, or\n *   `internal`.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "interruptByParent",
+            "signature": "interruptByParent( childSessionId: SessionId, parentSessionId: SessionId, mode: 'continuable', ): SubagentInterruptReceipt",
+            "summary": "Remote face of {@link interrupt} under one durable parent address.",
+            "jsDoc": "/**\n * Remote face of {@link interrupt} under one durable parent address. No\n * catalog, history, persistence, or parent Agent lookup runs: the core\n * primitive alone authorizes the address against the live Activation, which\n * is what keeps a live child interruptible while its parent Agent is offline.\n * Absent, idle, and already-completed targets are accepted no-ops there.\n * @param childSessionId - durable child session id to interrupt.\n * @param parentSessionId - durable direct parent whose authority is claimed.\n * @param mode - required continuable-address discriminator.\n * @returns acknowledgement that the cancel signal was admitted, not that the target is quiescent.\n * @throws {TypertRemoteFailure} `bad-request` for an empty id,\n *   `subagent-unauthorized` when the address does not own the live target,\n *   otherwise `internal`.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteHistory",
+            "signature": "@Remote('history') async remoteHistory( parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal: AbortSignal, ): Promise<SessionRemoteHistoryValue>",
+            "summary": "Read the Session owner's bounded page after verifying the direct-child address.",
+            "jsDoc": "/**\n * Read the Session owner's bounded page after verifying the direct-child address.\n * @param parentSessionId - durable parent authorizing the read.\n * @param childSessionId - direct child session id.\n * @param mode - expected child mode.\n * @param beforeSeq - exclusive cursor for an older page.\n * @param maxMessages - bounded message count, validated by the Session owner.\n * @param signal - read cancellation; neither Agent is resumed.\n * @returns the original Session page, including its presentation projections.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "remotePrompt",
+            "signature": "@Remote('prompt') async remotePrompt( agent: Agent, childSessionId: SessionId, content: ContentBlock[], invocationId: string, signal: AbortSignal, ): Promise<RemoteSubagentPromptReceipt>",
+            "summary": "Submit a Native draft under its stable retry identity through the live parent.",
+            "jsDoc": "/**\n * Submit a Native draft under its stable retry identity through the live parent.\n * @param agent - exact parent Agent supplied by the Gateway lookup.\n * @param childSessionId - continuable direct child.\n * @param content - human message content.\n * @param invocationId - caller-stable UUID; conflicting reuse rejects.\n * @param signal - cancellation before acceptance, not during the durability wait.\n * @returns an original or newly committed message receipt.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteInterrupt",
+            "signature": "@Remote('interrupt') remoteInterrupt(parentSessionId: SessionId, childSessionId: SessionId): SubagentInterruptReceipt",
+            "summary": "Interrupt a child using the continuation manager's direct-parent authority.",
+            "jsDoc": "/**\n * Interrupt a child using the continuation manager's direct-parent authority.\n * @param parentSessionId - durable parent address.\n * @param childSessionId - continuable child; absent targets are accepted no-ops.\n * @returns signal admission, not completion of child teardown.\n */"
           },
           {
             "kind": "method",
@@ -560,7 +591,7 @@ export const TYPERT = {
           },
           {
             "name": "ContinuableStart",
-            "declaration": "export interface ContinuableStart {\n    readonly childId: SessionId;\n    readonly messageId: MessageId;\n    readonly durable: true;\n}"
+            "declaration": "export interface ContinuableStart {\n    readonly childId: SessionId;\n    readonly messageId: MessageId;\n}"
           },
           {
             "name": "ContinuableStartSpec",
@@ -568,7 +599,7 @@ export const TYPERT = {
           },
           {
             "name": "ContinuableSubagentDescriptorData",
-            "declaration": "export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: 'continuable';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}"
+            "declaration": "export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: 'continuable';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly agentReasoningEffort?: ReasoningEffortId;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}"
           },
           {
             "name": "CoordinatorMessageSource",
@@ -692,7 +723,7 @@ export const TYPERT = {
           },
           {
             "name": "MessageSourceMap",
-            "declaration": "export interface MessageSourceMap {\n    user: { kind: 'user'; };\n    plugin: { kind: 'plugin'; plugin: string; } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    goal: GoalMessageSource;\n    coordinator: CoordinatorMessageSource;\n    'subagent-prompt': SubagentPromptMessageSource;\n    'subagent-report': SubagentReportMessageSource;\n    'subagent-settled': SubagentSettledMessageSource;\n    'session-reference': SessionReferenceSource;\n    'skill-invocation': SkillInvocationSource;\n}"
+            "declaration": "export interface MessageSourceMap {\n    user: { kind: 'user'; };\n    plugin: { kind: 'plugin'; plugin: string; } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    goal: GoalMessageSource;\n    coordinator: CoordinatorMessageSource;\n    'subagent-report': SubagentReportMessageSource;\n    'subagent-settled': SubagentSettledMessageSource;\n    'subagent-prompt': SubagentPromptMessageSource;\n    'session-reference': SessionReferenceSource;\n    'skill-invocation': SkillInvocationSource;\n}"
           },
           {
             "name": "ModelMessageSource",
@@ -719,28 +750,8 @@ export const TYPERT = {
             "declaration": "export type ReasoningEffortId = Branded<'ReasoningEffortId'>;"
           },
           {
-            "name": "RemoteSubagentCatalog",
-            "declaration": "export interface RemoteSubagentCatalog {\n    readonly entries: readonly RemoteSubagentListEntry[];\n    readonly parentAvailable: boolean;\n}"
-          },
-          {
-            "name": "RemoteSubagentHistory",
-            "declaration": "export interface RemoteSubagentHistory {\n    readonly events: readonly RemoteSubagentJsonValue[];\n    readonly hasMore: boolean;\n}"
-          },
-          {
-            "name": "RemoteSubagentInterruptReceipt",
-            "declaration": "export interface RemoteSubagentInterruptReceipt {\n    readonly accepted: true;\n}"
-          },
-          {
-            "name": "RemoteSubagentJsonValue",
-            "declaration": "export type RemoteSubagentJsonValue = null | boolean | number | string | RemoteSubagentJsonValue[] | { [key: string]: RemoteSubagentJsonValue; };"
-          },
-          {
-            "name": "RemoteSubagentListEntry",
-            "declaration": "export type RemoteSubagentListEntry = { readonly kind: 'child'; readonly id: string; readonly activity: 'running' | 'inactive'; readonly hasChildren: boolean; readonly mode: 'one-shot'; readonly label?: string; } | { readonly kind: 'child'; readonly id: string; readonly activity: 'running' | 'inactive'; readonly hasChildren: boolean; readonly mode: 'continuable'; readonly label: string; } | { readonly kind: 'diagnostic'; readonly id: string; readonly reason: 'corrupt' | 'unsupported' | 'unavailable'; };"
-          },
-          {
             "name": "RemoteSubagentPromptReceipt",
-            "declaration": "export interface RemoteSubagentPromptReceipt {\n    readonly invocationId: string;\n    readonly messageId: string;\n    readonly durable: true;\n    readonly duplicate: boolean;\n}"
+            "declaration": "export interface RemoteSubagentPromptReceipt {\n    readonly invocationId: string;\n    readonly messageId: MessageId;\n    readonly durable: true;\n    readonly duplicate: boolean;\n}"
           },
           {
             "name": "ReplayEnvelope",
@@ -772,7 +783,7 @@ export const TYPERT = {
           },
           {
             "name": "SessionEventMap",
-            "declaration": "export interface SessionEventMap {\n    'turn/start': { turn: number; };\n    'turn/end': { turn: number; reason: TurnEndReason; };\n    'step/start': { turn: number; step: number; };\n    'step/end': { turn: number; step: number; };\n    'user/message': UserMessage;\n    'assistant/chunk': { turn: number; step: number; chunk: StreamChunk; };\n    'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true; };\n    'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string; };\n    'tool/result': { turn: number; step: number; message: ToolResultMessage; error?: { name: string; code: string; }; meta?: JsonValue; };\n    'todo/write': { todos: TodoItem[]; };\n    'request/header': { header: EpochHeader; reason: RequestHeaderReason; };\n    'request/context': RequestContext;\n    'session/end-seed': Record<string, never>;\n    'agent/inbox/spliced': { target: InboxTarget; start: number; removedCount?: number; inserted: UserMessage[]; outcome?: 'canceled'; };\n    'agent-preset/selected': { agentPreset: string; };\n    'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource; };\n    'command/done': { commandId: CommandId; kind: 'success' | 'error'; text?: string; sourceEventSeq?: number; };\n    'goal/change': GoalChangeMeta;\n    'approval/asked': { id: ApprovalRequestId; toolName: string; callId?: CallId; reason?: string; };\n    'approval/decided': { id: ApprovalRequestId; outcome: ApprovalOutcome; };\n    'approval/policy': { policy: ApprovalPolicy; source?: 'delegation'; };\n    'tool/code-dispatch-start': CodeDispatchStartEventData;\n    'tool/code-dispatch': CodeDispatchEventData;\n    'subagent/descriptor': SubagentDescriptorData;\n    'sandbox/mode': { mode: SandboxMode; source?: 'delegation'; };\n    'session/title': SessionTitleEventData;\n    'compaction/start': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; };\n    'compaction/summary': { compactionId: CompactionId; sourceCommandId?: CommandId; summary: ContentBlock[]; shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; provider: string; model: string; maxTokens?: number; usage?: TokenUsage; } & ({ rawOutput: ContentBlock[]; llmStreamCall: true; } | { rawOutput?: ContentBlock[]; llmStreamCall?: never; });\n    'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string; };\n    'compaction/prune': { shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; };\n}"
+            "declaration": "export interface SessionEventMap {\n    'turn/start': { turn: number; };\n    'turn/end': { turn: number; reason: TurnEndReason; };\n    'step/start': { turn: number; step: number; };\n    'step/end': { turn: number; step: number; };\n    'user/message': UserMessage;\n    'assistant/chunk': { turn: number; step: number; chunk: StreamChunk; };\n    'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true; };\n    'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string; };\n    'tool/result': { turn: number; step: number; message: ToolResultMessage; error?: { name: string; code: string; }; meta?: JsonValue; };\n    'todo/write': { todos: TodoItem[]; };\n    'request/header': { header: EpochHeader; reason: RequestHeaderReason; };\n    'request/context': RequestContext;\n    'session/end-seed': Record<string, never>;\n    'agent/inbox/spliced': { target: InboxTarget; start: number; removedCount?: number; inserted: UserMessage[]; outcome?: 'canceled'; };\n    'approval/asked': { id: ApprovalRequestId; toolName: string; callId?: CallId; reason?: string; };\n    'approval/decided': { id: ApprovalRequestId; outcome: ApprovalOutcome; };\n    'approval/policy': { policy: ApprovalPolicy; source?: 'delegation'; };\n    'tool/code-dispatch-start': CodeDispatchStartEventData;\n    'tool/code-dispatch': CodeDispatchEventData;\n    'agent-preset/selected': { agentPreset: string; };\n    'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource; };\n    'command/done': { commandId: CommandId; kind: 'success' | 'error'; text?: string; sourceEventSeq?: number; };\n    'goal/change': GoalChangeMeta;\n    'subagent/descriptor': SubagentDescriptorData;\n    'session/title': SessionTitleEventData;\n    'sandbox/mode': { mode: SandboxMode; source?: 'delegation'; };\n    'compaction/start': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; };\n    'compaction/summary': { compactionId: CompactionId; sourceCommandId?: CommandId; summary: ContentBlock[]; shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; provider: string; model: string; maxTokens?: number; usage?: TokenUsage; } & ({ rawOutput: ContentBlock[]; llmStreamCall: true; } | { rawOutput?: ContentBlock[]; llmStreamCall?: never; });\n    'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string; };\n    'compaction/prune': { shadowedRange: { start: number; end: number; }; shadowedSeqs: number[]; shadowedTokenCount: number; };\n}"
           },
           {
             "name": "SessionEventType",
@@ -789,6 +800,22 @@ export const TYPERT = {
           {
             "name": "SessionReferenceSource",
             "declaration": "export interface SessionReferenceSource {\n    kind: 'session-reference';\n    form: 'recall';\n    version: 1;\n    references: { sessionId: string; label: string; capturedThroughSeq: number | null; compacted: boolean; originalMessages: number; retainedMessages: number; omittedMessages: number; omittedBytes: number; truncated: boolean; inputIndex: number; }[];\n}"
+          },
+          {
+            "name": "SessionRemoteEvent",
+            "declaration": "export interface SessionRemoteEvent {\n    readonly type: string;\n    readonly seq: number;\n    readonly time: number;\n    readonly data: JsonValue;\n    readonly sourceEventSeqs?: readonly number[];\n    readonly surfaceOp?: JsonValue;\n    readonly ignorable?: true;\n}"
+          },
+          {
+            "name": "SessionRemoteHistoryEntry",
+            "declaration": "export interface SessionRemoteHistoryEntry {\n    readonly event: SessionRemoteEvent;\n    readonly view?: JsonValue;\n}"
+          },
+          {
+            "name": "SessionRemoteHistoryValue",
+            "declaration": "export interface SessionRemoteHistoryValue {\n    readonly events: readonly SessionRemoteHistoryEntry[];\n    readonly hasMore: boolean;\n    readonly projections?: SessionRemoteProjections;\n}"
+          },
+          {
+            "name": "SessionRemoteProjections",
+            "declaration": "export interface SessionRemoteProjections {\n    readonly asOfSeq: number;\n    readonly values: Record<string, JsonValue>;\n}"
           },
           {
             "name": "SessionSurface",
@@ -820,7 +847,11 @@ export const TYPERT = {
           },
           {
             "name": "SubagentCapabilities",
-            "declaration": "export interface SubagentCapabilities {\n    readonly agentOptions?: boolean;\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n}"
+            "declaration": "export interface SubagentCapabilities {\n    readonly agentOptions: boolean;\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n}"
+          },
+          {
+            "name": "SubagentCatalog",
+            "declaration": "export interface SubagentCatalog {\n    readonly entries: readonly SubagentListEntry[];\n    readonly parentAvailable: boolean;\n}"
           },
           {
             "name": "SubagentDescendantListEntry",
@@ -836,11 +867,15 @@ export const TYPERT = {
           },
           {
             "name": "SubagentFollowupOptions",
-            "declaration": "export interface SubagentFollowupOptions {\n    readonly source: MessageSource;\n    readonly invocationId?: string;\n    readonly signal: AbortSignal;\n}"
+            "declaration": "export interface SubagentFollowupOptions {\n    readonly source: MessageSource;\n    readonly signal: AbortSignal;\n    readonly invocationId?: string;\n}"
           },
           {
             "name": "SubagentInterruptAuthority",
             "declaration": "export type SubagentInterruptAuthority = { readonly kind: 'user'; readonly parentSessionId: SessionId; } | { readonly kind: 'ancestor'; readonly agent: Agent; };"
+          },
+          {
+            "name": "SubagentInterruptReceipt",
+            "declaration": "export interface SubagentInterruptReceipt {\n    readonly accepted: true;\n}"
           },
           {
             "name": "SubagentListEntry",
@@ -849,6 +884,18 @@ export const TYPERT = {
           {
             "name": "SubagentPromptMessageSource",
             "declaration": "export interface SubagentPromptMessageSource {\n    readonly kind: 'subagent-prompt';\n    readonly form: 'relay';\n    readonly senderSessionId: SessionId;\n    readonly invocationId: string;\n}"
+          },
+          {
+            "name": "SubagentPromptReceipt",
+            "declaration": "export interface SubagentPromptReceipt {\n    readonly messageId: MessageId;\n}"
+          },
+          {
+            "name": "SubagentPromptRequest",
+            "declaration": "export interface SubagentPromptRequest {\n    readonly requestId: SubagentPromptRequestId;\n    readonly parentSessionId: SessionId;\n    readonly childSessionId: SessionId;\n    readonly mode: 'continuable';\n    readonly content: ContentBlock[];\n    readonly clientTimeZone?: string;\n}"
+          },
+          {
+            "name": "SubagentPromptRequestId",
+            "declaration": "export type SubagentPromptRequestId = Branded<'session-request-id'>;"
           },
           {
             "name": "SubagentProvider",
@@ -876,7 +923,7 @@ export const TYPERT = {
           },
           {
             "name": "SubagentSettledMessageSource",
-            "declaration": "export interface SubagentSettledMessageSource {\n    readonly kind: 'subagent-settled';\n    readonly form: 'notice';\n    readonly summary: string;\n    readonly senderSessionId: SessionId;\n    readonly settlementId: string;\n}"
+            "declaration": "export interface SubagentSettledMessageSource {\n    readonly kind: 'subagent-settled';\n    readonly form: 'notice';\n    readonly summary: string;\n    readonly senderSessionId: SessionId;\n}"
           },
           {
             "name": "SubagentStartRequest",

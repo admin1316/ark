@@ -31,10 +31,14 @@ test('current Ark runtime analysis maps its dedicated runner, security packages,
   assert.match(plan.sourceIdentity.commit, /^[a-f0-9]{40}$/)
   assert.equal(plan.sourceIdentity.sourceSnapshotSha256, plan.sourceDigest)
   assert.match(plan.sourceIdentity.dirtyDiffSha256, /^[a-f0-9]{64}$/)
+  assert.ok(plan.requiredFiles.some(entry => entry.path === 'patches/@earendil-works+pi-ai@0.85.1.patch'),
+    'Responses metadata patch bytes must be included in the sealed runtime plan')
   assert.equal(plan.externalResolutions.length > 150, true)
   for (const input of [
     'pnpm-lock.yaml',
     'scripts/build-host-bundles.ts',
+    'integrations/jiuzhang/src/build-native.mjs',
+    'tsconfig.native.json',
     'scripts/tsdown-host-package.config.ts',
     'tsdown.config.ts',
     'integrations/jiuzhang/src/pack-runtime.mjs',
@@ -46,11 +50,9 @@ test('current Ark runtime analysis maps its dedicated runner, security packages,
   assert.ok(plan.packages.every(entry => /^[a-f0-9]{64}$/u.test(entry.sourceSha256)))
   for (const name of required) assert.ok(names.has(name), `${name} must be in the current Ark closure plan`)
   assert.ok(names.has('@deepseek-ai/node-addon-landlock-run'), 'the portable Landlock seam remains in the closure')
-  assert.equal(
-    names.has('@deepseek-ai/dsh-sandbox-windows-acl'),
-    false,
-    'the macos-arm64 plan must omit the win32-only optional ACL backend',
-  )
+  const sandboxManifest = JSON.parse(await readFile(join(repositoryRoot, 'packages/sandbox/sandbox-local/package.json'), 'utf8'))
+  assert.ok(sandboxManifest.dependencies['@deepseek-ai/dsh-sandbox-windows-acl'])
+  assert.ok(names.has('@deepseek-ai/dsh-sandbox-windows-acl'), 'the closure retains the sandbox owner’s required shared helper dependency')
   assert.equal(names.has('@deepseek-ai/node-addon-landlock-run-linux-arm64'), false)
   assert.equal(names.has('@deepseek-ai/node-addon-landlock-run-linux-x64'), false)
   if (plan.forbiddenPackages.length === 0) {
@@ -113,6 +115,10 @@ test('plan-only pack writes an exact current-source closure receipt without buil
 
 test('runtime pack has one pinned offline lock/install owner and atomically publishes only a sealed runtime', async () => {
   const source = await readFile(join(repositoryRoot, 'integrations/jiuzhang/src/pack-runtime.mjs'), 'utf8')
+  assert.ok(source.includes("run(process.execPath, ['integrations/jiuzhang/src/build-native.mjs'], repositoryRoot)"))
+  assert.ok(!source.includes("['run', 'build:lib:host']"))
+  assert.ok(!source.includes('nativeRunnerImports.length === 0'))
+  assert.ok(source.includes("packedMember(requiredTarball('@deepseek-ai/dsh-native-api-runner'), 'package/lib/index.js', repositoryRoot)"))
   assert.match(source, /const lockCommand = \['pnpm', 'install', '--lockfile-only', '--offline', '--ignore-scripts'\]/u)
   assert.match(source, /const installCommand = \['pnpm', 'install', '--offline', '--frozen-lockfile'\]/u)
   assert.match(source, /actualPackageManagerVersion !== packageManagerVersion/u)

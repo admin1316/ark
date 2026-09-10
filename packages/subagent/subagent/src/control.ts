@@ -21,6 +21,11 @@ const IANA_TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+.-]*(?:\/[A-Za-z0-9_+.-]+)+$/
 const SESSION_ID_SCHEMA = z.string().min(1)
 const CONTROL_ID_SCHEMAS = {
   'subagent.list': z.object({ parentSessionId: SESSION_ID_SCHEMA }),
+  'subagent.history': z.object({
+    parentSessionId: SESSION_ID_SCHEMA,
+    childSessionId: SESSION_ID_SCHEMA,
+    mode: z.enum(['one-shot', 'continuable']),
+  }),
   'subagent.prompt': z.object({
     parentSessionId: SESSION_ID_SCHEMA,
     childSessionId: SESSION_ID_SCHEMA,
@@ -150,6 +155,9 @@ export function rejectPrompt(error: unknown, childSessionId: SessionId, signal: 
   }
   if (error instanceof SubagentError) {
     switch (error.code) {
+      case 'INVALID_INVOCATION':
+      case 'IDEMPOTENCY_CONFLICT':
+        return rejectControl('input-invalid', error.message, { childSessionId })
       case 'NOT_RESUMABLE':
         return rejectControl('subagent-not-resumable', 'subagent cannot be resumed', { childSessionId })
       case 'UNAUTHORIZED':

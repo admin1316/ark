@@ -6,19 +6,37 @@ const RemoteSettingsJsonValueRemoteCodec$schema2 = z.union([z.literal(null), z.s
 const RemoteSettingsJsonValueRemoteCodec$schema3 = z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema3)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema3))])
 const _deepseek_ai_dsh_llm_llm_discoverModels_parameter_0$schema = z.object({
   'settingsNs': z.string().readonly(),
-  'provider': z.string().readonly().optional(),
-  'baseURL': z.string().readonly().optional(),
-  'api': z.string().readonly().optional(),
-  'apiKey': z.string().readonly().optional(),
+  'provider': z.string().optional(),
+  'baseURL': z.string().optional(),
+  'api': z.string().optional(),
+  'apiKey': z.string().optional(),
 })
 const _deepseek_ai_dsh_llm_llm_discoverModels_result$schema = z.object({
   'models': z.array(z.object({
-  'id': z.string().readonly(),
-  'name': z.string().readonly().optional(),
-  'contextWindow': z.number().readonly().optional(),
-  'maxTokens': z.number().readonly().optional(),
+  'id': z.string(),
+  'name': z.string().optional(),
+  'contextWindow': z.number().optional(),
+  'maxTokens': z.number().optional(),
 })).readonly(),
 })
+const _deepseek_ai_dsh_llm_llm_listConfigurableProviders_result$schema = z.array(z.object({
+  'provider': z.string(),
+  'displayName': z.string(),
+  'settingsNs': z.string(),
+  'settingsPath': z.array(z.string()),
+  'declared': z.boolean().optional(),
+  'error': z.string().optional(),
+  'migrationRequired': z.object({
+  'code': z.union([z.literal("credential-headers"), z.literal("credential-fields")]).readonly(),
+  'fields': z.array(z.string()).readonly(),
+  'paths': z.array(z.array(z.string())).readonly().optional(),
+  'inheritedPaths': z.array(z.array(z.string())).readonly().optional(),
+}).optional(),
+}))
+const _deepseek_ai_dsh_llm_llm_listProviders_result$schema = z.array(z.object({
+  'id': z.string(),
+  'name': z.string(),
+}))
 const _deepseek_ai_dsh_llm_llm_models_result$schema = z.object({
   'groups': z.array(z.object({
   'id': z.string().readonly(),
@@ -51,7 +69,7 @@ const _deepseek_ai_dsh_llm_llm_mutateProvider_parameter_0$schema = z.object({
   'ops': z.array(z.union([z.object({
   'op': z.literal("set").readonly(),
   'path': z.array(z.string()).readonly(),
-  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2))]).readonly(),
+  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema))]).readonly(),
 }), z.object({
   'op': z.literal("unset").readonly(),
   'path': z.array(z.string()).readonly(),
@@ -69,10 +87,10 @@ const _deepseek_ai_dsh_llm_llm_mutateProvider_parameter_0$schema = z.object({
 const _deepseek_ai_dsh_llm_llm_mutateProvider_result$schema = z.object({
   'settings': z.object({
   'ns': z.string().readonly(),
-  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema))]).readonly(),
-  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema))]).readonly(),
-  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema))]).readonly().optional(),
-  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema))]).readonly().optional(),
+  'schema': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2))]).readonly(),
+  'value': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2))]).readonly(),
+  'base': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2))]).readonly().optional(),
+  'user': z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2)), z.record(z.string(), z.lazy(() => RemoteSettingsJsonValueRemoteCodec$schema2))]).readonly().optional(),
   'applies': z.union([z.literal("live"), z.literal("restart")]).readonly(),
   'secrets': z.array(z.object({
   'path': z.array(z.string()).readonly(),
@@ -91,6 +109,7 @@ const _deepseek_ai_dsh_llm_llm_mutateProvider_result$schema = z.object({
 })
 const _deepseek_ai_dsh_llm_llm_providers_result$schema = z.object({
   'providers': z.array(z.object({
+  'error': z.string().optional(),
   'provider': z.string().readonly(),
   'displayName': z.string().readonly(),
   'settingsNs': z.string().readonly(),
@@ -98,8 +117,10 @@ const _deepseek_ai_dsh_llm_llm_providers_result$schema = z.object({
   'active': z.boolean().readonly(),
   'declared': z.boolean().readonly().optional(),
   'migrationRequired': z.object({
-  'code': z.literal("credential-headers").readonly(),
+  'code': z.union([z.literal("credential-headers"), z.literal("credential-fields")]).readonly(),
   'fields': z.array(z.string()).readonly(),
+  'paths': z.array(z.array(z.string())).readonly().optional(),
+  'inheritedPaths': z.array(z.array(z.string())).readonly().optional(),
 }).readonly().optional(),
 })).readonly(),
 })
@@ -186,7 +207,37 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmDiscoveredModelsResult',
         schema: _deepseek_ai_dsh_llm_llm_discoverModels_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":214,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":899,"column":9},
+    },
+    {
+      id: '@deepseek-ai/dsh-llm#llm/listConfigurableProviders',
+      service: 'llm',
+      namespace: 'llm',
+      method: 'listConfigurableProviders',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-llm#llm/listConfigurableProviders:result',
+        schema: _deepseek_ai_dsh_llm_llm_listConfigurableProviders_result$schema,
+      },
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":801,"column":3},
+    },
+    {
+      id: '@deepseek-ai/dsh-llm#llm/listProviders',
+      service: 'llm',
+      namespace: 'llm',
+      method: 'listProviders',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-llm#llm/listProviders:result',
+        schema: _deepseek_ai_dsh_llm_llm_listProviders_result$schema,
+      },
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":728,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/models',
@@ -202,7 +253,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmModelsResult',
         schema: _deepseek_ai_dsh_llm_llm_models_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":203,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":571,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/mutateProvider',
@@ -229,7 +280,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmProviderMutationResult',
         schema: _deepseek_ai_dsh_llm_llm_mutateProvider_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":171,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":514,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/providers',
@@ -245,7 +296,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmProvidersResult',
         schema: _deepseek_ai_dsh_llm_llm_providers_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":160,"column":3},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":544,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/providerTransaction',
@@ -271,7 +322,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmProviderTransactionResult',
         schema: _deepseek_ai_dsh_llm_llm_providerTransaction_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":181,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":524,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/resumeProvider',
@@ -298,7 +349,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmProviderMutationResult',
         schema: _deepseek_ai_dsh_llm_llm_resumeProvider_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":194,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":535,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-llm#llm/verifyProvider',
@@ -325,7 +376,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-llm/types#RemoteLlmProviderVerificationResult',
         schema: _deepseek_ai_dsh_llm_llm_verifyProvider_result$schema,
       },
-      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":228,"column":9},
+      sourceLocation: {"file":"packages/llm/llm/src/index.ts","line":430,"column":9},
     },
   ],
 }

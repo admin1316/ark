@@ -20,9 +20,7 @@ export interface RetryInternals {
     random?: () => number;
 }
 /**
- * Install provider-routed normal or policy-requested always recovery. The
- * Agent Loop's authoritative finite turn budget still bounds every new model
- * attempt and the total elapsed retry wait.
+ * Install provider-routed normal or unbounded request recovery.
  * @param ctx - plugin context that owns the listener and active waits.
  * @param config - empty executor config; provider registrations own policy.
  * @param internals - non-serializable deterministic hooks for tests.

@@ -176,6 +176,10 @@ public struct ArkChatStatusProjection: Sendable {
       appendCompactionCheckpoint(event)
     case "request/context":
       appendRequestContext(event)
+    case "request/header":
+      appendInvocationConfiguration(event)
+    case "assistant/message":
+      appendInvocationReceipt(event)
     case "llm/retry", "llm/retry-started":
       appendRetry(event)
     case "turn/end":
@@ -347,6 +351,51 @@ public struct ArkChatStatusProjection: Sendable {
       title: ArkL10n.text(.statusRequestContextTitle, language),
       detail: "\(provider) · \(model)\(capacity)",
       body: Self.pretty(event.data)
+    )
+  }
+
+  private mutating func appendInvocationConfiguration(_ event: ArkHistoryEvent) {
+    guard let config = event.data["header"]?["config"],
+          let provider = config["provider"]?.stringValue,
+          let model = config["model"]?.stringValue else { return }
+    let effort = config["reasoningEffort"]?.stringValue
+      ?? event.data["header"]?["adapterDefaults"]?["reasoningEffort"]?.stringValue
+    let detail = "\(provider) · \(model) · \(effort ?? (language == .zh ? "提供方默认思考设置" : "Provider default reasoning"))"
+    rows["invocation-config-\(event.id)"] = ArkChatStatus(
+      id: "invocation-config-\(event.id)", sequence: event.id, turn: turn(for: event),
+      kind: .context, title: language == .zh ? "调用配置" : "Invocation configuration",
+      detail: detail,
+      body: language == .zh
+        ? "\(detail)\n来自持久化请求配置；不是服务端型号证明。思考档位越高，响应可能越慢。"
+        : "\(detail)\nRecorded request configuration, not proof of the server model. Higher reasoning effort may increase latency."
+    )
+  }
+
+  private mutating func appendInvocationReceipt(_ event: ArkHistoryEvent) {
+    guard let source = event.data["message"]?["source"],
+          source["kind"]?.stringValue == "model",
+          let provider = source["provider"]?.stringValue,
+          let requested = source["model"]?.stringValue else { return }
+    let response = source["replayState"]?["response"]
+    let knownReplay = response?["kind"]?.stringValue == "pi-ai"
+      && response?["version"]?.numberValue == 2
+    let reported = knownReplay ? response?["responseModel"]?.stringValue : nil
+    let responseID = knownReplay ? response?["responseId"]?.stringValue : nil
+    let missing = language == .zh ? "未提供可用的服务端型号记录" : "No recorded server model available"
+    let identity = reported.flatMap { $0.isEmpty ? nil : $0 } ?? missing
+    var lines = language == .zh
+      ? ["提供方：\(provider)", "请求型号：\(requested)", "服务端报告：\(identity)"]
+      : ["Provider: \(provider)", "Requested model: \(requested)", "Server reported: \(identity)"]
+    if let responseID, !responseID.isEmpty {
+      lines.append("Response ID: \(responseID)")
+    }
+    lines.append(language == .zh
+      ? "平台报告不是独立型号认证；模型自述不作为证据。未记录的字段不会用配置名补齐。"
+      : "Provider reports are not independent model verification. Model self-identification is not evidence; missing fields are not filled from configuration.")
+    rows["invocation-receipt-\(event.id)"] = ArkChatStatus(
+      id: "invocation-receipt-\(event.id)", sequence: event.id, turn: turn(for: event),
+      kind: .context, title: language == .zh ? "调用回执" : "Invocation receipt",
+      detail: "\(provider) · \(requested)", body: lines.joined(separator: "\n")
     )
   }
 

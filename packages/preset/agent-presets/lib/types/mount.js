@@ -13,12 +13,12 @@
  * same preset collides with the first.
  * @module @deepseek-ai/dsh-agent-presets/mount
  */
-import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Context } from '@deepseek-ai/cordis';
 import { Include } from '@deepseek-ai/cordis-plugin-include';
 import { scopeOf, scopeParentOf } from '@deepseek-ai/dsh-scope';
 import { PresetMountError } from "./preset.js";
+import { classifyRowSpecifier } from "./specifier.js";
 /**
  * Subtrees captured by config identity. A subtree plugged directly (rather than
  * created as a loader entry) never links itself to an `Entry`, so this is the
@@ -56,24 +56,27 @@ class PresetTree extends Include {
      * filesystem path names neither base and becomes a file URL before Node's
      * ESM loader receives it, which is required for drive-letter paths on
      * Windows.
+     *
+     * {@link classifyRowSpecifier} makes that split, so discovery's health check
+     * resolves every row from the same base this import uses.
      * @param name - the module specifier from the row.
      * @param getOuterStack - the loader's stack composer for import diagnostics.
      * @returns the imported module, or the `cordis:` builtin.
      */
     import(name, getOuterStack) {
-        const specifier = isAbsolute(name) ? pathToFileURL(name).href : name;
+        const row = classifyRowSpecifier(name);
         const base = harnessBase.get(this.config);
         /* v8 ignore next -- every PresetTree is constructed by `mountPreset`, which records the base first */
         if (base === undefined)
-            return super.import(specifier, getOuterStack);
-        if (name.startsWith('.') || name.startsWith('cordis:'))
-            return super.import(name, getOuterStack);
+            return super.import(row.specifier, getOuterStack);
+        if (row.kind === 'builtin' || row.kind === 'preset')
+            return super.import(row.specifier, getOuterStack);
         const internal = this.ctx.loader.internal;
         /* v8 ignore next -- Node always supplies the internal module loader; the branch keeps a
            hypothetical embedder from losing the row's name in a resolution error. */
         if (internal === undefined)
-            return super.import(specifier, getOuterStack);
-        return internal.import(specifier, base, {});
+            return super.import(row.specifier, getOuterStack);
+        return internal.import(row.specifier, base, {});
     }
     /**
      * A preset is an input, never a persistence target.
@@ -87,7 +90,7 @@ class PresetTree extends Include {
      * backs every session that names it.
      *
      * Dropping the write drops the `loader/config-update` the inherited method
-     * emits with it. Nothing observes one for a preset subtree today, and a
+     * emits with it. No consumer observes one for a preset subtree, and a
      * future "edit your preset while it runs" flow needs a deliberate
      * persistence path rather than this method's return.
      */
@@ -203,8 +206,8 @@ export function standingMountFor(agentCtx) {
  * cannot collide, and an entry-local realm is invisible to everything outside
  * the group — including the agent's own scope context and the host. That is
  * right for the rows inside the group and wrong for one caller: a request that
- * is ABOUT a session but arrives from outside it, which is every session-scoped
- * Remote request entering through the Host gateway.
+ * is ABOUT a session but arrives from outside it, which is every browser RPC
+ * the api-proxy serves.
  *
  * Ownership is the same relation {@link leakedServices} reads, inverted: there
  * it names implementations a subtree published into the ROOT realm, here it
@@ -267,12 +270,33 @@ export function inactiveRows(tree) {
     return lines;
 }
 /**
+ * The causes of `error` whose detail its own message does not already carry.
+ *
+ * `AggregateError` names none of its causes in its own message, so its
+ * `errors` are the branches. The Loader's per-row wrapper takes the opposite
+ * approach: it appends `cause.message` to the message it builds and keeps the
+ * cause only as `error.cause`, so following a plain chain would print every
+ * line twice. That leaves exactly one lossy shape — a wrapped row whose cause
+ * is an `AggregateError`. Its message ends with the aggregate's own line and
+ * drops the `errors` behind it, which is how a failed group reports as
+ * "loader entries failed to apply" and names none of the rows that failed.
+ * @param error - the failure to read branches from.
+ * @returns the branches to render beneath `error.message`, possibly empty.
+ */
+function detailBranches(error) {
+    if (error instanceof AggregateError)
+        return error.errors;
+    return error.cause instanceof AggregateError ? error.cause.errors : [];
+}
+/**
  * The reportable text of a mount failure.
  *
  * The loader reports several failed rows as one `AggregateError`, whose own
  * message names none of them; without flattening, a composition that fails on
  * two rows says only "loader entries failed to apply" and the operator has
- * nothing to act on.
+ * nothing to act on. Nested groups indent under the row that owns them, so a
+ * composition failing inside a group still names the rows rather than the
+ * group alone.
  * @param error - the value the mount rejected with.
  * @returns a single-line-per-cause description.
  */
@@ -282,9 +306,13 @@ function mountDetail(error) {
        rejections are Errors. The fallback keeps a hostile value readable. */
     if (!(error instanceof Error))
         return String(error);
-    if (!(error instanceof AggregateError))
+    const branches = detailBranches(error);
+    if (branches.length === 0)
         return error.message;
-    return [error.message, ...error.errors.map(cause => `- ${mountDetail(cause)}`)].join('\n');
+    return [
+        error.message,
+        ...branches.map(branch => `- ${mountDetail(branch).replaceAll('\n', '\n  ')}`),
+    ].join('\n');
 }
 /**
  * Mount `preset` under `agentCtx` and return only once every row is usable.
@@ -330,7 +358,7 @@ export async function mountPreset(agentCtx, preset) {
             throw new Error(`row(s) published process-global service(s) [${leaked.join(', ')}]; `
                 + 'a preset service must sit behind an `isolate` realm or move to the host composition');
         }
-        mounts.add({ presetId: preset.id, tree, fiber, key: scopeOf(agentCtx) });
+        mounts.add({ presetId: preset.id, fiber, tree, key: scopeOf(agentCtx) });
     }
     catch (error) {
         try {

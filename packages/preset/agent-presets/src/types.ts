@@ -29,12 +29,27 @@ export interface AgentPresetRoster {
   readonly presets: readonly AgentPresetRow[]
   /** Whether this deployment has a root locally authored presets go to. */
   readonly authorable: boolean
+  /** Whether user-authored preset documents can be requested by id. */
+  readonly hasDocument: boolean
 }
+
+/** The preset committed by a native copy or selection operation. */
+export interface AgentPresetSelection {
+  readonly agentPreset: string
+}
+
+/** Confirmation of deletion without exposing a filesystem target. */
+export type AgentPresetRemoved = Record<string, never>
+
+/** Native handoff, or a directory to display on a host without an opener. */
+export type AgentPresetDocumentOpen = { readonly opened: true } | { readonly opened: false; readonly path: string }
 
 /** Stable details for agent-preset failures returned by the Remote namespace. */
 export interface AgentPresetErrorDetailsMap {
   /** A required preset id is empty. */
   'bad-request': Record<never, never>
+  /** Cancellation prevented completion of a native handoff. */
+  cancelled: Record<never, never>
   /** No configured root supplies the requested id. */
   'agent-preset-not-found': { readonly agentPreset: string; readonly available: readonly string[] }
   /** The id is unusable, already taken, or its composition cannot be installed. */

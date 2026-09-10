@@ -90,7 +90,7 @@ No direct invalidation; credentials never enter a request prefix.
 ## Known Limitations and Deferred Work
 
 - **Every write keeps a pre-write `.bak` sibling** — `backupFile` from `dsh-atomic-write` copies the document before the replacement commit, so the state before any write is recoverable by restoring `<document>.bak`; absent sources write no backup.
-- **Same-reference concurrent writes are last-write-wins** — the writer lock and the read-modify-write keep concurrent writers from dropping each other's entries, but two writers editing one reference still resolve to the later write; there is no revision check.
+- **Unconditional same-reference writes are last-write-wins** — conditional writes compare value digests and optional sources under the document lock. Reference writes in both modes and checked record commits share that lock and the provider queue. Writers using another document path or directly changing the Keychain do not participate in this exclusion; digest comparison also does not identify an intervening change back to an identical value.
 - **A same-UID process can read the document in `file` mode** — see [Security boundary](#security-boundary): the file-effect sandbox modes do not deny reads. `keychain` mode removes reference values from that document but retains structured records there.
 - **Environment changes are invisible** — the snapshot is frozen at launch, so a variable exported after startup reaches neither resolution nor `describe`; changing an environment-sourced credential takes a restart.
 - **Atomic, not crash-durable** — inherited from `dsh-atomic-write`; the store re-reads on boot.

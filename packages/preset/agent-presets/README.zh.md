@@ -84,6 +84,8 @@ agent-presets:
 
 -----
 
+原生客户端使用 `agentPreset` Remote 命名空间。复制和选择返回 `{ agentPreset }`，删除返回空确认，名单包含 `hasDocument`。打开操作通过名单解析用户拥有的 preset id，再使用 Host 原生目录打开器；它接受取消，但从不接受调用方指定的路径。随附 preset 不会被打开供编辑。选择操作与同进程调用方共用串行化的空白会话切换。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

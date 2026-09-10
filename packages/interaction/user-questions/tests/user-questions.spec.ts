@@ -12,7 +12,7 @@ interface QuestionAnswerer {
 }
 
 function registerAnswerer(ctx: Context, answerer: QuestionAnswerer): () => void {
-  return ctx.on('user-questions/request', request => answerer.ask(request))
+  return ctx.userQuestions.registerProvider(answerer)
 }
 
 function provider(answer = 'approved'): QuestionAnswerer & { seen: AskUserQuestionRequest[] } {
@@ -37,6 +37,26 @@ function stubAgent(id: string, delegationDepth = 0): Agent {
 }
 
 describe('UserQuestionService', () => {
+  it('rejects a second Host provider and preserves a replacement after stale disposal', async () => {
+    const ctx = new Context()
+    await ctx.plugin(UserQuestionService)
+    const dispose = registerAnswerer(ctx, provider('first'))
+    expect(() => registerAnswerer(ctx, provider('duplicate'))).toThrow('already registered')
+    dispose()
+    const replacement = provider('replacement')
+    const fiber = ctx.plugin({
+      inject: ['userQuestions'],
+      apply(owner) { owner.userQuestions.registerProvider(replacement) },
+    })
+    await fiber
+    dispose()
+    await expect(ctx.userQuestions.ask({ questions: [{ id: 'q', question: 'Choose' }] }))
+      .resolves.toEqual({ answers: [{ id: 'q', selected: ['replacement'] }] })
+    await fiber.dispose()
+    await expect(ctx.userQuestions.ask({ questions: [{ id: 'q', question: 'Choose' }] }))
+      .rejects.toMatchObject({ code: 'NO_PROVIDER' })
+    await ctx.fiber.dispose()
+  })
   it('delegates ask requests to the registered provider', async () => {
     const ctx = new Context()
     await ctx.plugin(UserQuestionService)

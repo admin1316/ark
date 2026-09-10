@@ -1,7 +1,9 @@
+import { statSync } from "node:fs";
 import z from "@deepseek-ai/schemastery";
 import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from "@deepseek-ai/dsh-shell";
 import { installSettingsSection } from "@deepseek-ai/dsh-settings";
 import { MAX_TIMER_DELAY_MS, clampTimeout, deadline, timeoutOf } from "@deepseek-ai/dsh-timeout";
+import { delimiter, join } from "node:path";
 //#region lib/types/index.js
 /**
 * Local Service Provider for the bash capability seam over the subprocess
@@ -99,6 +101,46 @@ function finalOutput(reader) {
 }
 function assertPositiveFinite(name, value) {
 	if (!Number.isFinite(value) || value <= 0) throw new Error(`bash-local: ${name} must be a positive finite number`);
+}
+let windowsBashExecutable;
+/**
+* The bash executable this executor spawns, memoized per process. POSIX keeps
+* the bare name: `execvp` PATH resolution never searches the working
+* directory, so a hostile `workdir` cannot plant a binary. Windows resolves
+* once to an absolute path for the same reason plus a Windows-specific trap:
+* `C:\Windows\System32\bash.exe` is the WSL launcher, and CreateProcess's
+* search order (app dir, working directory, System32, Windows, PATH) would
+* silently route a sandboxed `bash -c` into the WSL VM — outside the
+* windows-acl restricted token, the ACL deny SIDs, and the workspace
+* entirely. The scan mirrors the PATH segment order, skips the system
+* directories, and fails closed when no real bash distribution (Git for
+* Windows, MSYS2, Cygwin) is installed, rather than pretending the sandbox
+* still applies.
+* @param platform - the platform to resolve for; defaults to this process's.
+* @returns the argv head for `bash -c` invocations.
+* @throws on win32 when PATH offers only the system-directory WSL launcher.
+*/
+function resolveBashExecutable(platform = process.platform) {
+	if (platform !== "win32") return "bash";
+	windowsBashExecutable ??= scanWindowsBashExecutable();
+	return windowsBashExecutable;
+}
+/** One PATH walk for a non-system `bash.exe`, fail-closed. */
+function scanWindowsBashExecutable() {
+	const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+	const systemDirectories = new Set([
+		systemRoot,
+		join(systemRoot, "System32"),
+		join(systemRoot, "SysWOW64")
+	].map((directory) => directory.toLowerCase()));
+	for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+		if (directory.trim() === "" || systemDirectories.has(directory.toLowerCase())) continue;
+		const candidate = join(directory, "bash.exe");
+		try {
+			if (statSync(candidate).isFile()) return candidate;
+		} catch {}
+	}
+	throw new Error("bash-local: no bash.exe found on PATH outside the Windows system directories — the system-directory launcher is WSL, which runs outside the sandbox. Install Git for Windows (or MSYS2/Cygwin) and put its bin directory on PATH.");
 }
 /**
 * Reject a resolved section this executor could not run with. The schema
@@ -212,7 +254,7 @@ var LocalBashExecutor = class LocalBashExecutor extends ShellExecutor {
 	}
 	async run(spec) {
 		return this.runArgv(spec, [
-			"bash",
+			resolveBashExecutable(),
 			"-c",
 			spec.command
 		]);
@@ -255,7 +297,7 @@ var LocalBashExecutor = class LocalBashExecutor extends ShellExecutor {
 	}
 	start(spec) {
 		return this.startArgv(spec, [
-			"bash",
+			resolveBashExecutable(),
 			"-c",
 			spec.command
 		]);
@@ -330,4 +372,4 @@ var LocalBashExecutor = class LocalBashExecutor extends ShellExecutor {
 	onProcessDone(_proc, _stderr, _spawnFailed, _spawnError) {}
 };
 //#endregion
-export { ENV_OVERRIDES, LocalBashExecutor, LocalBashExecutor as default, assertServiceableBashConfig };
+export { ENV_OVERRIDES, LocalBashExecutor, LocalBashExecutor as default, assertServiceableBashConfig, resolveBashExecutable };

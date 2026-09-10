@@ -5,13 +5,10 @@
  * @module @deepseek-ai/dsh-tool-workflow/types
  */
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
-import type { CallId } from '@deepseek-ai/dsh-llm/brand';
 import type { WorkflowAgentOutcome, WorkflowRunId, WorkflowStopReason } from '@deepseek-ai/dsh-workflow/types';
 /** Opens one durable top-level workflow run record. */
 export interface ToolWorkflowRunStartData {
     readonly runId: WorkflowRunId;
-    /** Owning root call. Optional only when replaying legacy pre-owner records. */
-    readonly rootCallId?: CallId;
     readonly name: string;
 }
 /** Records one workflow member after its child Session is published. */
@@ -37,7 +34,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     interface SessionEventMap {
         /**
          * Opens one top-level workflow record.
-         * @param data - stable run identity, owning root tool call, and display name.
+         * @param data - stable run identity and display name.
          */
         'tool-workflow/run-start': ToolWorkflowRunStartData;
         /**

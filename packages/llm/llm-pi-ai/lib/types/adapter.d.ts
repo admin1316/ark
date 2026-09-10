@@ -27,9 +27,8 @@
  */
 import type { AuthContext, CredentialStore } from '@earendil-works/pi-ai';
 import { LlmAdapter } from '@deepseek-ai/dsh-llm';
-import type { ImageAttachmentAccessResolver, LlmImageRequestPricing } from '@deepseek-ai/dsh-llm';
-import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, PreparedAdapterCall, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm';
-import type { AttachmentStore } from '@deepseek-ai/dsh-attachment';
+import type { GenerateOptions, ImageAttachmentAccess, LlmModelInfo, LlmProviderInfo, LlmProviderVerificationMode, LlmResolvedModelInfo, PreparedAdapterCall, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm';
+import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
 import type { ResolvedPiAiProviderProfile } from './config.ts';
 /** Constructor options for {@link PiAiAdapter}: the two resolution hooks the plugin owns. */
 export interface PiAiAdapterOptions {
@@ -44,8 +43,8 @@ export interface PiAiAdapterOptions {
      * `MISSING_CREDENTIAL` rather than falling back.
      */
     resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<string | undefined>;
-    /** Resolve every credential-backed header for one request generation. */
-    resolveCredentialHeaders?: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<Readonly<Record<string, string>>>;
+    /** Resolve reference-backed headers from the same captured profile as the API key. */
+    resolveCredentialHeaders?: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<Record<string, string>>;
     /**
      * How every collection this adapter builds resolves auth the request-level
      * `apiKey` override does not cover. Required rather than optional: a
@@ -57,8 +56,8 @@ export interface PiAiAdapterOptions {
     auth: PiAiAuthInjection;
     /** Resolve the optional durable attachment service at request time. */
     resolveAttachments?: () => AttachmentStore | undefined;
-    /** Resolve a normalized image path in the current model execution world. */
-    resolveImageAccess?: ImageAttachmentAccessResolver;
+    /** Bridge one attachment reference into the current model-tool execution world. */
+    resolveImageAccess?: (attachments: AttachmentStore, ref: ImageAttachmentRef) => ImageAttachmentAccess | undefined;
     /**
      * Observe one assistant history message degrading to provider-neutral
      * conversion because its stored replay state is unusable by this build.
@@ -98,10 +97,10 @@ export declare class PiAiAdapter extends LlmAdapter {
     private modelOf;
     providerInfo(provider: string): LlmProviderInfo;
     providerRetryPolicy(provider: string): ResolvedRetryPolicy | undefined;
-    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;
     listModels(provider: string): Promise<readonly LlmModelInfo[]>;
     resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;
-    verifyProvider(provider: string, model: string, signal: AbortSignal): Promise<'metadata-auth' | 'endpoint-catalog' | undefined>;
+    private credentialHeaders;
+    verifyProvider(provider: string, model: string, signal: AbortSignal): Promise<LlmProviderVerificationMode | undefined>;
     private modelInfo;
     prepareCall(provider: string, model: string, _signal?: AbortSignal): Promise<PreparedAdapterCall>;
     stream(options: GenerateOptions): AsyncIterable<StreamChunk>;

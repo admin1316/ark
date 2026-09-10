@@ -144,7 +144,8 @@ var FileSettingsProvider = class extends SettingsProvider {
 		return doc;
 	}
 	persist(ns, section) {
-		return this.enqueue(() => this.persistSection(ns, section));
+		const expected = this.text === void 0 ? void 0 : this.parse(this.text)[ns];
+		return this.enqueue(() => this.persistSection(ns, section, expected));
 	}
 	/** Queue one exclusive document operation behind every earlier one. */
 	enqueue(operation) {
@@ -159,13 +160,14 @@ var FileSettingsProvider = class extends SettingsProvider {
 			this.ctx.logger.error(error);
 		});
 	}
-	async persistSection(ns, section) {
+	async persistSection(ns, section, expected) {
 		await mkdir(dirname(this.spec.filename), {
 			recursive: true,
 			mode: 448
 		});
 		await withFileLock(this.spec.filename, async () => {
 			await this.reconcileFromDisk();
+			if (!deepEqualJson(expected, this.text === void 0 ? void 0 : this.parse(this.text)[ns])) throw new Error("settings namespace changed on disk; refresh before retrying");
 			const output = this.spec.format === "yaml" ? this.renderYaml(ns, section) : this.renderJson(ns, section);
 			await writeFileAtomic(this.spec.filename, output, {
 				mode: 384,

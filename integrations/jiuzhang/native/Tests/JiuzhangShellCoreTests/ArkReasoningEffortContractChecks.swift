@@ -85,6 +85,35 @@ func runArkReasoningEffortContractChecks() {
   )
 
   let model = ArkModelCatalogModel(id: "m", name: "M")
+  let unique = ArkModelCatalogModel(id: "unique", name: "Unique")
+  let primaryGroups = ArkProviderPresentation.primaryModelGroups([
+    ArkModelProviderGroup(id: "openai-codex", name: "Codex", models: [model, unique]),
+    ArkModelProviderGroup(id: "openai", name: "OpenAI", models: [model]),
+    ArkModelProviderGroup(id: "qwen-token-plan", name: "Plan", models: [model]),
+  ])
+  check(primaryGroups.map(\.id) == ["openai", "openai-codex"]
+    && primaryGroups.flatMap(\.models).map(\.id) == ["m", "unique"],
+    "single-brand menus remove duplicate models but retain unique model routes and hide plan-only entries")
+  check(ArkProviderPresentation.standardChoices(["qwen-token-plan", "qwen-token-plan-custom"], id: { $0 }) == ["qwen-token-plan-custom"],
+    "ordinary provider filtering does not hide a custom gateway based on a name prefix")
+  let variants = ["deepseek-official", "deepseek"].map {
+    ArkProviderView(id: $0, displayName: "DeepSeek", settingsNamespace: "fixture",
+      settingsPath: [$0], active: true)
+  }
+  let namespace = ArkSettingsNamespace(id: "fixture", schema: .object([:]), value: .object([
+    "deepseek-official": .object(["apiKeyEnv": .string("MISSING_REF")]),
+    "deepseek": .object(["apiKeyEnv": .string("CONFIGURED_REF")]),
+  ]), base: nil, user: nil, secrets: [], applies: "live", revision: 1)
+  let ready = ArkAppModel.configuredModelGroups(variants.map {
+    ArkModelProviderGroup(id: $0.id, name: $0.displayName, models: [model])
+  }, providers: variants, namespaces: [namespace], credentials: [
+    "CONFIGURED_REF": ArkCredentialView(configured: true, source: "keychain", writable: true),
+  ])
+  check(ready.map(\.id) == ["deepseek"] && ArkProviderPresentation.groups(ready, id: { $0.id }, name: { $0.name }).first?.entries.count == 1,
+    "a missing-key duplicate is omitted and the configured DeepSeek variant needs no extra route submenu")
+  check(ArkAppModel.configuredModelGroups([ArkModelProviderGroup(id: "session-local", name: "Local", models: [model])],
+    providers: variants, namespaces: [namespace], credentials: [:]).count == 1,
+    "session-local authentication is not constrained by an unrelated Host credential directory")
   let activeGroup = ArkModelProviderGroup(id: "active", name: "Active", models: [model])
   let inactiveGroup = ArkModelProviderGroup(id: "inactive", name: "Inactive", models: [model])
   let activeProvider = ArkProviderView(
@@ -146,26 +175,25 @@ func runArkReasoningEffortContractChecks() {
   let seed = sourceSlice(
     modelSource,
     from: "syncLanguagePreferenceFromSettings()",
-    through: "credentialStates = try await"
+    through: "var recoveryErrors"
   )
   check(
     seed?.contains("client.hostModels()") == true
-      && seed?.contains("modelCatalog == nil") == true
-      && seed?.contains("lastKnownModelGroups == nil") == true,
-    "native cold-start capability seed only fills the empty fallback and never overwrites the session catalog"
+      && seed?.contains("hostModelGroups = groups") == true
+      && seed?.contains("generation == settingsLoadGeneration") == true,
+    "native settings refresh replaces the Host directory under its current request generation"
   )
 
   let fallback = sourceSlice(
     modelSource,
     from: "public var composerModelCatalog",
-    through: "return ArkSessionModels(current:"
+    through: "/// Global configuration choices"
   )
   check(
-    fallback?.contains("lastKnownModelGroups") == true
-      && fallback?.contains("activeComposerGroups") == true
+    fallback?.contains("availableModelGroups") == true
       && fallback?.contains("group.id == selected.provider") == true
       && fallback?.contains("$0.id == selected.model") == true,
-    "native composer fallback resolves effort metadata from the last known catalog with canonical ids"
+    "native new-session choices resolve current Host metadata with canonical ids"
   )
 
   let menu = sourceSlice(
@@ -173,10 +201,17 @@ func runArkReasoningEffortContractChecks() {
     from: "if let catalog = model.composerModelCatalog",
     through: ".accessibilityIdentifier(\"ark.composer.model\")"
   )
+  let modelItems = sourceSlice(rootSource,
+    from: "private func providerModelItems(",
+    through: "private func selectedModelMenuCheckmark(")
   check(
-    menu?.contains("item.reasoning?.efforts") == true
-      && menu?.contains("ForEach(efforts)") == true
-      && menu?.contains("model.selectModel(ArkModelSelection(") == true,
+    menu?.contains("ArkProviderPresentation.primaryModelGroups(catalog.groups)") == true
+      && menu?.contains("Menu(group.id)") == false
+      && menu?.contains("providerModelItems(group)") == true
+      && modelItems?.contains("item.reasoning?.efforts") == true
+      && modelItems?.contains("ForEach(efforts)") == true
+      && modelItems?.contains("model.selectModel(ArkModelSelection(") == true
+      && modelItems?.contains("provider: group.id, model: item.id, reasoningEffort: effort.id") == true,
     "native effort submenu reads the resolved composer catalog, not a bare session catalog"
   )
   check(

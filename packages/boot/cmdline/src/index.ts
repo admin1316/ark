@@ -41,12 +41,24 @@ export interface AppExit {
   (code: number): void
 }
 
+/** Launcher-owned notification after boot and Host setup have committed. */
+export interface AppReady {
+  /**
+   * Subscribe to readiness, or invoke immediately if boot is already ready.
+   * @param listener - callback notified once for this launch.
+   * @returns a disposer withdrawing an unnotified callback.
+   */
+  onReady(listener: () => void): () => void
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The invocation's inner arguments; provided by a launcher before the tree mounts. */
     cmdlineArgs?: CmdlineArgs
     /** Bounded process-exit request; provided by a launcher before the tree mounts. */
     appExit?: AppExit
+    /** Readiness notification supplied by launchers with post-boot setup. */
+    appReady?: AppReady
   }
 }
 
@@ -56,6 +68,8 @@ export interface CmdlineHost {
   args: readonly string[]
   /** Bounded process-exit request. */
   exit: AppExit
+  /** Optional readiness notification owned by the launcher. */
+  ready?: AppReady
 }
 
 /**
@@ -69,6 +83,7 @@ export function provideCmdline(ctx: Context, host: CmdlineHost): void {
   const snapshot: readonly string[] = Object.freeze([...host.args])
   ctx.provide('cmdlineArgs', { get: () => snapshot })
   ctx.provide('appExit', host.exit)
+  if (host.ready !== undefined) ctx.provide('appReady', host.ready)
 }
 
 /**

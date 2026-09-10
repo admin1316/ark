@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime, { ToolCallId } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
@@ -102,7 +102,7 @@ export function callSubagent(
   const agent = 'agent' in over ? over.agent : setupAgents.get(ctx) ?? fakeAgent()
   return ctx.tools.execute({
     signal: testToolSignal,
-    callId: ToolCallId(`call-${++callCounter}`),
+    callId: CallId(`call-${++callCounter}`),
     name: 'subagent',
     arguments: args,
     ...agent ? { agent } : {},

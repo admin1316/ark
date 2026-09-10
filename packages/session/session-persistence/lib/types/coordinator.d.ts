@@ -7,7 +7,8 @@
 import { Context } from '@deepseek-ai/cordis';
 import { SessionPreparation } from '@deepseek-ai/dsh-session';
 import type { Session, SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session';
-import type { SessionInspection, SessionLocation } from './index.ts';
+import type { BorrowedSessionSource, SessionInspection, SessionLocation } from './index.ts';
+export { SessionPersistenceDeleteBlockedError } from './errors.ts';
 import type { SessionPersistenceRevision } from './revision.ts';
 /** Default number of detached session preparations retained by a coordinator. */
 export declare const DEFAULT_PREPARED_SESSION_CACHE_SIZE = 5;
@@ -23,23 +24,12 @@ export declare class SessionPersistenceCorruptionError extends Error {
      */
     constructor(message: string, options: ErrorOptions);
 }
-/** A permanent delete was refused because an in-memory owner still controls the id. */
-export declare class SessionPersistenceDeleteBlockedError extends Error {
-    readonly sessionId: SessionId;
-    readonly reason: 'live' | 'reserved';
-    /**
-     * @param sessionId - identity whose deletion was refused.
-     * @param reason - live publication or unpublished resume reservation.
-     */
-    constructor(sessionId: SessionId, reason: 'live' | 'reserved');
-}
 /**
  * The stored log is intact but this runtime cannot faithfully interpret it:
  * the header carries an unsupported format version, or an event's type is
- * unknown to this build and the event is not marked ignorable. Distinct from
- * {@link SessionPersistenceCorruptionError} — nothing is damaged; the raw log
- * remains readable at {@link location} when the backend keeps one artifact
- * per session.
+ * unknown to this build. Distinct from {@link SessionPersistenceCorruptionError}
+ * — nothing is damaged; the raw log remains readable at {@link location} when
+ * the backend keeps one artifact per session.
  */
 export declare class SessionFormatUnsupportedError extends Error {
     readonly location?: SessionLocation | undefined;
@@ -54,7 +44,7 @@ export declare class SessionFormatUnsupportedError extends Error {
  * Direction-aware refusal text for a stored session whose format version this
  * build does not read. Shared by the coordinator's load-time check and by
  * backends that must refuse BEFORE decoding version-dependent structure (a
- * future format may not satisfy today's structural checks at all, and the
+ * future format may not satisfy this build's structural checks at all, and the
  * user must see "upgrade the harness", never "corrupt").
  * @param id - the stored session id, for message context.
  * @param version - the stored format version.
@@ -106,6 +96,12 @@ export interface PersistenceBackend<TornMarker = unknown> {
     /** Human-readable backend name, used in the dispose-failure AggregateError. */
     readonly name: string;
     /**
+     * Durably remove a stored session, including a retryable partial deletion.
+     * @param id - exact stored identity.
+     * @returns whether materialized data or a pending deletion was removed.
+     */
+    deleteStored(id: SessionId): Promise<boolean>;
+    /**
      * Read a stored prefix by id, scanning every backend storage scope. Returns
      * `undefined` if no stored artifact exists. Returned metadata must identify
      * `id` before repair or state publication. Used by resume/load, live adoption,
@@ -149,6 +145,8 @@ export interface PersistenceBackend<TornMarker = unknown> {
      * @param signal - optional cancellation for backend read work.
      */
     loadStoredFrom?(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<StoredSuffix | undefined>;
+    /** Durably create an empty header-only session artifact. */
+    materializeHeader?(meta: SessionHeader): Promise<void>;
     /**
      * Durably append a CONTIGUOUS batch, lazily materializing the session first
      * when `!isMaterialized`. The materialize-write and the first event batch MUST
@@ -156,15 +154,6 @@ export interface PersistenceBackend<TornMarker = unknown> {
      * empty session). Returns once the batch is durable.
      */
     appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void>;
-    /** Optional header-only publication for lifecycle protocols such as ACP. */
-    materializeHeader?(meta: SessionHeader): Promise<void>;
-    /**
-     * Permanently remove one materialized session. The backend must make an
-     * absent identity an idempotent `false` and serialize deletion with every
-     * physical writer that can address the same id.
-     * @param id - persisted session identity.
-     */
-    deleteStored(id: SessionId): Promise<boolean>;
     /**
      * Make a crash repair durable: truncate the torn tail (iff
      * `tornMarker !== undefined`) and append `closers` (iff any). NOT required to
@@ -230,8 +219,8 @@ export declare class PersistenceCoordinator<TornMarker = unknown> {
      */
     create(meta: SessionHeader): Promise<void>;
     /**
-     * Materialize one live session without inventing a synthetic event.
-     * @param session - The session input.
+     * Materialize one exact live session without inventing a session event.
+     * @param session - live session already registered through the write path.
      */
     ensureMaterialized(session: Session): Promise<void>;
     private createCore;
@@ -244,12 +233,10 @@ export declare class PersistenceCoordinator<TornMarker = unknown> {
      */
     append(id: SessionId, events: readonly SessionEvent[]): Promise<void>;
     /**
-     * Permanently remove one cold, unreserved session. The operation waits for a
-     * disposed live owner's final drain, then shares the same per-id chain as
-     * append, load, and repair. The deletion event is emitted after that chain is
-     * released so derived stores can purge without deadlocking a same-id writer.
-     * @param id - session identity to delete.
-     * @returns whether the backend contained a materialized session.
+     * Delete after final retirement and release the write chain before derived-store cleanup.
+     * @param id - exact session identity to delete.
+     * @returns whether stored data was removed.
+     * @throws while the session or its preparation is still owned, or cleanup fails.
      */
     delete(id: SessionId): Promise<boolean>;
     private appendCore;
@@ -281,6 +268,13 @@ export declare class PersistenceCoordinator<TornMarker = unknown> {
      * @returns immutable prepared metadata and events; a live view may have an open turn.
      */
     inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection>;
+    /**
+     * Borrow one exact logical view while pinning its reusable prepared Session.
+     * @param id - persisted session to observe.
+     * @param signal - optional cancellation for preparation work.
+     * @returns a disposable observation retaining the prepared source.
+     */
+    borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource>;
     /**
      * Read the stored events from `fromSeq` onward, detached and non-mutating
      * (the read-from-seq primitive behind the service's `readFrom`). Runs on
@@ -322,14 +316,11 @@ export declare class PersistenceCoordinator<TornMarker = unknown> {
     private adopt;
     private assertVersion;
     /**
-     * Refuse a log containing an event type this build does not know, unless the
-     * writer marked the event ignorable: an unrecognized required event may
-     * change how the rest of the log must be interpreted, so silently skipping
-     * it would reconstruct a wrong session (the envelope contract on
-     * `SessionEvent.ignorable`). Runs on NORMALIZED events — after
-     * `snapshotStoredEvents`/`adoptStoredEvents` has upgraded the legacy shapes
-     * this build still reads and rejected the ones it does not, so those keep
-     * their specific diagnostics.
+     * Refuse a log containing an event type this build does not know: silently
+     * skipping an unknown event could reconstruct a wrong session. Runs on
+     * NORMALIZED events — after `snapshotStoredEvents`/`adoptStoredEvents` has
+     * upgraded the legacy shapes this build still reads and rejected the ones it
+     * does not, so those keep their specific diagnostics.
      */
     private assertEventsSupported;
     /** Build a format refusal that points at the raw artifact when the backend has one. */

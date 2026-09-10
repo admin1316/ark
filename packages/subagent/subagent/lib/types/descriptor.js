@@ -27,7 +27,7 @@ import { snapshotJsonValue } from '@deepseek-ai/dsh-session';
  * Supporting another composition input is a deliberate version change, never
  * an implicit extra field.
  */
-export const SUBAGENT_DESCRIPTOR_VERSION = 2;
+export const SUBAGENT_DESCRIPTOR_VERSION = 3;
 const DESCRIPTOR_BASE_KEYS = [
     'version',
     'mode',
@@ -39,6 +39,7 @@ const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
     ...DESCRIPTOR_BASE_KEYS,
     'agentProvider',
     'agentModel',
+    'agentReasoningEffort',
     'persona',
     'toolFilter',
 ]);
@@ -129,6 +130,7 @@ function parseSubagentDescriptor(value) {
     }
     const agentProvider = optionalString(value, 'agentProvider');
     const agentModel = optionalString(value, 'agentModel');
+    const agentReasoningEffort = optionalString(value, 'agentReasoningEffort');
     const persona = optionalString(value, 'persona');
     const toolFilter = Object.hasOwn(value, 'toolFilter')
         ? parseToolFilter(value['toolFilter'])
@@ -140,6 +142,7 @@ function parseSubagentDescriptor(value) {
         label,
         ...agentProvider !== undefined ? { agentProvider } : {},
         ...agentModel !== undefined ? { agentModel } : {},
+        ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
         ...persona !== undefined ? { persona } : {},
         ...toolFilter !== undefined ? { toolFilter } : {},
     };
@@ -159,6 +162,7 @@ export function snapshotSubagentDescriptor(input) {
             label: input.label,
             ...input.agentProvider !== undefined ? { agentProvider: input.agentProvider } : {},
             ...input.agentModel !== undefined ? { agentModel: input.agentModel } : {},
+            ...input.agentReasoningEffort !== undefined ? { agentReasoningEffort: input.agentReasoningEffort } : {},
             ...input.persona !== undefined ? { persona: input.persona } : {},
             ...input.toolFilter !== undefined ? { toolFilter: input.toolFilter } : {},
         };
@@ -169,9 +173,10 @@ export function snapshotSubagentDescriptor(input) {
     return snapshot;
 }
 /**
- * Fold one child's own persisted suffix to its supported descriptor. Exactly
- * one `subagent/descriptor` is valid: accepting first- or last-wins would let a
- * damaged log classify differently in listing and cold resume.
+ * Fold a persisted child log to its supported descriptor. The first
+ * `subagent/descriptor` event is authoritative — the establishing provider
+ * appends exactly one, so a later same-type event cannot rewrite the declared
+ * composition.
  * @param events - the loaded child session events.
  * @returns the descriptor, or `undefined` when the log has none or its
  *   version is not {@link SUBAGENT_DESCRIPTOR_VERSION} (the child cannot be
@@ -180,16 +185,9 @@ export function snapshotSubagentDescriptor(input) {
  *   declared schema.
  */
 export function foldSubagentDescriptor(events) {
-    const descriptors = events.filter((candidate) => candidate.type === 'subagent/descriptor');
-    if (descriptors.length === 0)
+    const event = events.find((candidate) => candidate.type === 'subagent/descriptor');
+    if (event === undefined)
         return undefined;
-    if (descriptors.length !== 1) {
-        throw new Error('persisted subagent child suffix must contain exactly one descriptor');
-    }
-    const descriptor = descriptors[0];
-    /* v8 ignore next -- the length checks above prove one descriptor exists. */
-    if (descriptor === undefined)
-        return undefined;
-    return parseSubagentDescriptor(descriptor.data);
+    return parseSubagentDescriptor(event.data);
 }
 //# sourceMappingURL=descriptor.js.map

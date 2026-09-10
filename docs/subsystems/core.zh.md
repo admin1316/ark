@@ -427,50 +427,14 @@ Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every cal
 async list(): Promise<AgentPreset[]>
 
 /**
- * List the current preset roster without exposing any Host path.
- * @returns the redacted preset catalog and authoring capabilities.
+ * The roster off the Host: {@link list} projected to path-free rows, with
+ * the default marked and this deployment's authoring capability beside it.
+ *
+ * Whether a client can open a preset's directory is the Host's own opener
+ * capability, not a roster property — a caller needing both joins them.
+ * @returns the rows and the authoring capability.
  */
-@Remote('list') async remoteList(): Promise<RemoteAgentPresetCatalog>
-
-/**
- * Recompose one blank agent under a different preset. The Agent lookup is
- * supplied by the gateway, so a caller never submits an arbitrary context.
- * @param agent - gateway-resolved Agent whose blank session is recomposed.
- * @param agentPreset - preset id to compose for the Agent.
- * @returns the selected preset id.
- */
-@Remote('select') async remoteSelect(agent: Agent, agentPreset: string): Promise<{ agentPreset: string }>
-
-/**
- * Privileged read of one composition; gateway policy must mark this route privileged.
- * @param agentPreset - preset id to read.
- * @returns the preset document without exposing its Host path.
- */
-@Remote('read') async remoteRead(agentPreset: string): Promise<RemoteAgentPresetDocument>
-
-/**
- * Create one user-owned preset from a named existing source.
- * @param from - source preset id to copy.
- * @param agentPreset - id for the new user-owned preset.
- * @param name - optional display name for the new preset.
- * @returns the new preset id.
- */
-@Remote('copy') async remoteCopy(from: string, agentPreset: string, name?: string): Promise<{ agentPreset: string }>
-
-/**
- * Authorize, but do not resolve or launch, a user-owned preset directory.
- * The Host re-resolves this id and owns the macOS LaunchServices handoff.
- * @param agentPreset - user-owned preset id to open.
- * @returns the authorized native document target.
- */
-@Remote('openDocument') async remoteOpenDocument(agentPreset: string): Promise<RemoteAgentPresetOpenTarget>
-
-/**
- * Delete one locally authored preset.
- * @param agentPreset - user-owned preset id to delete.
- * @returns an empty object after deletion.
- */
-@Remote('remove') async remoteRemove(agentPreset: string): Promise<Record<never, never>>
+@Remote('list') async remoteExportList(): Promise<AgentPresetRoster>
 
 /**
  * Resolve one preset by id.
@@ -547,6 +511,15 @@ composedPreset(agentCtx: Context): string | undefined
 async read(id: string): Promise<string>
 
 /**
+ * One preset's composition text with the roster row it belongs to.
+ * @param agentPreset - the preset id.
+ * @returns the composition beside its trust and published metadata.
+ * @throws {TypertRemoteFailure} `bad-request` for an empty id, or
+ * `agent-preset-not-found` when no configured root supplies it.
+ */
+@Remote('read') async readDocument(agentPreset: string): Promise<AgentPresetDocument>
+
+/**
  * Create a locally authored preset by copying an existing one whole.
  *
  * Copy is the only authoring write. Composition text never crosses this
@@ -564,11 +537,40 @@ async read(id: string): Promise<string>
 async copy(from: string, id: string, name?: string): Promise<void>
 
 /**
+ * Copy one preset through the Remote API.
+ * @param from - the source preset id.
+ * @param agentPreset - the new preset id.
+ * @param name - the copy's optional display name.
+ * @returns the id after the copy is stored.
+ * @throws {TypertRemoteFailure} with the corresponding stable preset code
+ * and details when the copy is refused.
+ */
+@Remote('copy') async remoteExportCopy(from: string, agentPreset: string, name?: string): Promise<AgentPresetSelection>
+
+/**
  * Delete a locally authored preset.
+ *
  * @param id - the preset id.
  * @throws when the preset is unknown or ships with the deployment.
  */
 async remove(id: string): Promise<void>
+
+/**
+ * Delete one preset through the Remote API.
+ * @param agentPreset - the preset id.
+ * @returns an empty acknowledgement after deletion.
+ * @throws {TypertRemoteFailure} with the corresponding stable preset code
+ * and details when deletion is refused.
+ */
+@Remote('remove') async remoteExportDelete(agentPreset: string): Promise<AgentPresetRemoved>
+
+/**
+ * Open only a user-authored preset resolved by the service's own roster.
+ * @param agentPreset - user preset id, never a caller-supplied path.
+ * @param signal - native command cancellation.
+ * @returns a handoff confirmation or the directory when this host has no opener.
+ */
+@Remote('openDocument') async remoteOpenDocument(agentPreset: string, signal: AbortSignal): Promise<AgentPresetDocumentOpen>
 
 /**
  * One agent's instance of a service its preset mounted.
@@ -602,13 +604,33 @@ serviceFor<K extends string & keyof Context>(agent: { ctx: Context }, name: K): 
  * state to restore. The re-link runs through the binding this roster kept
  * from the agent's mount — dsh-scope's only re-link authority. An agent
  * that never composed one has nothing to re-link: the switch is then the
- * agent's first bind, exactly a mount.
+ * agent's first bind, exactly a mount. A committed re-link emits
+ * `tools/change` because changing the parent scope changes the Agent's
+ * resolved tool set without adding or removing registry entries.
  * @param agentCtx - the agent's scope context.
  * @param id - the preset to compose the agent from instead.
  * @returns the preset now installed.
  * @throws when the preset is unknown or its composition is unusable.
  */
 async recompose(agentCtx: Context, id: string): Promise<AgentPreset>
+
+/**
+ * Compose a blank session's agent from a different preset and record it.
+ * @param agent - the session's live agent, resolved from the wire identity.
+ * @param agentPreset - the preset to compose the agent from instead.
+ * @returns the preset id that was recorded.
+ * @throws {TypertRemoteFailure} with `bad-request`, `agent-preset-locked`,
+ * `agent-preset-not-found`, or `agent-preset-invalid` when refused.
+ */
+async select(agent: Agent, agentPreset: string): Promise<string>
+
+/**
+ * Select through the existing serialized session-composition owner.
+ * @param agent - exact Agent resolved by the Gateway.
+ * @param agentPreset - requested preset id.
+ * @returns the preset committed to the session log.
+ */
+@Remote('select') async remoteSelect(agent: Agent, agentPreset: string): Promise<AgentPresetSelection>
 
 /**
  * The standing scope key of one preset, for a host reader with no agent.

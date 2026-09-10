@@ -526,7 +526,6 @@ var SqliteSessionQueryEngine = class extends SessionQueryEngine {
 		ctx.effect(() => {
 			return () => this._optionalPersistenceFiber.dispose();
 		}, "sessionQuerySqlite.optionalPersistence");
-		ctx.on("session-persistence/deleted", (sessionId) => this._purgeDeletedSession(sessionId));
 		ctx.effect(() => async () => this.close(), "sessionQuerySqlite.close");
 	}
 	/** Open eagerly only when activation owns the configured readiness boundary. */
@@ -702,38 +701,6 @@ var SqliteSessionQueryEngine = class extends SessionQueryEngine {
 		this._localGeneration = nextLocalGeneration;
 		this._lastPersistenceIdentity = observation.persistenceBinding.identity;
 		return observation.persistenceBinding;
-	}
-	/** Remove every derived row for one authoritative Session deletion. */
-	_purgeDeletedSession(sessionId) {
-		if (this.config.openAt === "never") return Promise.resolve();
-		return this._serialized(void 0, async () => {
-			await this._ensureReady(void 0);
-			const db = this._requireDb();
-			const persisted = db.prepare("SELECT 1 AS present FROM persisted_sessions WHERE id = ?").get(sessionId) !== void 0;
-			const live = db.prepare("SELECT 1 AS present FROM temp.live_sessions WHERE id = ?").get(sessionId) !== void 0;
-			if (!persisted && !live) return;
-			let began = false;
-			let nextMainGeneration = this._mainGeneration();
-			try {
-				db.exec("BEGIN IMMEDIATE");
-				began = true;
-				this._deleteSession("persisted", sessionId);
-				this._deleteSession("live", sessionId);
-				if (persisted) {
-					nextMainGeneration += 1;
-					db.prepare("UPDATE search_state SET global_generation = ? WHERE singleton = 1").run(nextMainGeneration);
-				}
-				db.exec("COMMIT");
-			} catch (error) {
-				if (began) try {
-					db.exec("ROLLBACK");
-				} catch {}
-				throw new SessionQueryError(`session-search deletion cleanup failed: ${errorMessage(error)}`, "SESSION_QUERY_INDEX_FAILED", { cause: error });
-			}
-			this._globalGeneration += 1;
-			if (persisted) this._persistenceEpoch += 1;
-			this._localGeneration = Math.max(this._localGeneration, nextMainGeneration);
-		});
 	}
 	async _observeStable(indexed, signal) {
 		for (let attempt = 0; attempt < STABLE_OBSERVATION_ATTEMPTS; attempt += 1) {

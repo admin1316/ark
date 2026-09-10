@@ -1,0 +1,1 @@
+{"version":3,"file":"typert.remote-client.d.ts","names":["history","interrupt","list","prompt"],"sources":["../src/index.ts"],"sourcesContent":[null],"mappings":";;;;;;;;;;;IA+gBQA,O;IAuDNC,S;IA9JMC,I;IAwIAC,M;;;IAjCAH,kB;IAuDNC,oB;IA9JMC,e;IAwIAC,iB;;;;;;IAAAA,uB","ignoreList":[]}

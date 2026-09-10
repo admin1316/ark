@@ -13,6 +13,7 @@ const nodeResult = await execFileAsync(process.execPath, [
   '--import',
   'tsx',
   '--test',
+  '--test-concurrency=2',
   'integrations/jiuzhang/tests/deepseek-extension-acceptance.test.ts',
   'integrations/jiuzhang/tests/profile.test.mjs',
   'integrations/jiuzhang/tests/runtime.test.mjs',

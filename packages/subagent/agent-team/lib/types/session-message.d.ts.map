@@ -1,0 +1,1 @@
+{"version":3,"file":"session-message.d.ts","sourceRoot":"","sources":["../../src/session-message.ts"],"names":[],"mappings":"AAAA,+EAA+E;AAC/E,OAAO,KAAK,EAAE,WAAW,EAAE,MAAM,sBAAsB,CAAA;AACvD,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,0BAA0B,CAAA;AAW5D;;;;;GAKG;AACH,wBAAgB,eAAe,CAAC,MAAM,EAAE,SAAS,YAAY,EAAE,EAAE,SAAS,EAAE,CAAC,OAAO,EAAE,WAAW,KAAK,OAAO,GAAG,OAAO,CAGtH"}

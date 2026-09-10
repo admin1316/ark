@@ -9,9 +9,7 @@ import type { GenericCallView, JsonValue, ToolResult, WebSearchResultView, WebSo
 import type { WebSearchResult } from '@deepseek-ai/dsh-web';
 /**
  * Default upper bound on returned sources (the `searchMaxResults` config).
- * Owned by the consumer (not the provider or model), mirroring `dsh-tool-fs`'s
- * `READ_LIMIT`. The model just asks a question; the product controls how much
- * context returns. The default `8` aligns with OpenCode's Exa default.
+ * The consumer owns the returned-context limit; providers and models do not.
  */
 export declare const WEB_SEARCH_MAX_RESULTS = 8;
 /** Default upper bound on concurrent searches in one tool call. */

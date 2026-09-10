@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Any composition that calls a model provider — an agent loop, a session-title generator, a compaction summarizer — streams its requests through this service. Mount it together with at least one provider adapter; the service itself has no configuration and no provider wire code.
+Any composition that calls a model provider — an agent loop, a session-title generator, a compaction summarizer — streams its requests through this service. Mount it together with at least one provider adapter. The service owns verification deadlines but no provider wire code.
 
 ### When to choose it
 
@@ -70,6 +70,18 @@ Every stream ends in exactly one terminal `finish` chunk: `{ kind: 'error', fail
 
 -----
 
+Native catalog reads use the `llm/providers` and `llm/models` response envelopes. The provider directory includes dormant configurable routes and active-only adapters; a provider catalog failure does not discard other providers' models. Native `llm/discoverModels` accepts one `request` containing `settingsNs` and draft fields, and returns `{ models }`. Cancellation remains distinct from provider failure, and neither one-shot keys nor raw provider diagnostics are returned.
+
+`llm/verifyProvider` checks one configured provider/model pair. `metadata-auth` proves that exact metadata requires authentication; `endpoint-catalog` returns `verified: false` with `reachability-only`, not authentication success. An adapter without a metadata probe uses a separate one-token generation handshake, classified as `minimal-generation`; no conversation history or generated text enters its response. `verificationTimeoutMs` defaults to 15,000 ms, and `verificationCancellationGraceMs` defaults to 2,000 ms. Work that ignores cancellation remains reserved until it actually settles, so a retry receives `provider-verification-still-running` instead of starting a duplicate. Disposal stops new admission and awaits the same tracked work. See the [verification decision](../../../.agents/notes/implemented/bug-fix/2026-09-09-provider-verification-and-header-ownership.md).
+
+Native `llm/mutateProvider` coordinates profile edits and write-only credentials through the existing Settings and Credentials owners. New writes require the current settings revision; an exact retry may carry a later revision without repeating the committed mutation. Shared journal, namespace and credential-reference reservations cover activation, while unrelated resources can progress independently. Generic Settings Remote writes cannot bypass a registered domain's reservation. An unreferenced staged key is not an active configuration change, and a stored profile whose owner rejects activation is reported as a failure, not live success.
+
+Credential staging, deferred deletion and terminal receipts use the Credentials owner's conditional writes. A concurrent replacement is preserved and reported as `credential-rejected`, with a `committed-not-live` receipt if settings already committed. When settings fail, a plan proving prior absence conditionally removes its staged value before recording rollback; a cleanup failure remains retryable instead of reporting completed rollback.
+
+`llm/providerTransaction` reads a retained transaction's phase without claiming or upgrading it. `llm/resumeProvider` uses the stored plan, not client-reconstructed edits, and accepts a missing credential only as a write-only value. Version-1 journals with complete validated plans are read into the same internal representation as receipt-bearing journals; explicit mutation or recovery writes the receipt-bearing form. An uncommitted plan without a verifiable original settings digest is recorded as rolled back without changing the stored profile. This is a safe refusal, not successful activation. Completed receipts do not repeat effects, and malformed or unsupported records are refused rather than treated as empty state. The [recovery decision](../../../.agents/notes/implemented/bug-fix/2026-09-09-provider-journal-recovery.md) defines the compatibility and restart limits.
+
+A whole-profile removal succeeds when the settled effective configuration and runtime both omit the route; removing a user override can instead retain an inherited route. A removed custom provider's exact retained transaction can finish cleanup or replay its receipt without re-registering the provider. That journal does not authorize new edits or sibling profiles. Mutation `live.accepted` confirms the intended configuration was applied, while transaction status `live` separately reports whether the route currently exists.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
@@ -87,6 +99,7 @@ The service is built on one separation: **the logical contract is provider-neutr
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | The `LlmRuntime` service: adapter registry, configurable-provider directory, model discovery, call preparation, and the streaming boundary |
+| [`src/provider-transaction.ts`](src/provider-transaction.ts) | Provider writes, shared resource reservations and secret-free credential-journal receipts |
 | [`src/types.ts`](src/types.ts) | The `StreamChunk` protocol, content-block map, finish reasons, and shared vocabulary |
 | [`src/message.ts`](src/message.ts) | Immutable message constructors shared by delivery, history, and requests |
 | [`src/assembler.ts`](src/assembler.ts) | `BlockAssembler`: incremental chunk-to-block assembly |
@@ -132,11 +145,19 @@ Read these pages when the package-level contract is not enough. They move from t
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the LLM service adds no content; adapters choose when to add the shared image descriptors and per-image placeholders exported by this package.
+### Configuration verification
+
+#### What the model sees
+
+The fallback handshake sends one user message containing `.` with `maxTokens: 1` and no conversation history. Metadata verification sends no model-generation request. Ordinary conversation requests retain their assembled content; adapters own image descriptors and placeholders.
+
+#### Token effect
+
+The fallback consumes the provider's input accounting and requests at most one output token. It discards generated content rather than appending it to a conversation.
 
 #### KV Cache effect
 
-Reasoning-effort materialization preserves the assembled request prefix. Image identity and request-preview text are deterministic, while an optional execution-world path is resolved for each request; a changed path or image-offload boundary can prevent reuse from that image.
+Verification does not alter a conversation's reusable prefix. Reasoning-effort materialization preserves the assembled request prefix. Image identity and request-preview text are deterministic, while an optional execution-world path is resolved for each request; a changed path or image-offload boundary can prevent reuse from that image.
 
 ## Known Limitations and Deferred Work
 
@@ -150,6 +171,7 @@ These limits define where this service stops and other packages or future work b
 - **Producer-gated variants stay out until produced** — `prefill`, per-tool `strict`, block `cache` hints, and the `agent` message-source variant have no producer ([Agent Note](../../../.agents/notes/archived/simplification/2026-07-04-prune-producerless-vocabulary-variants.md)).
 - **`BlockAssembler` handles core block kinds only** — a plugin-added block type whose stream is never closed by `block-end` makes `blocks()` throw.
 - **`GenerateOptions.sessionId` is a locally-declared brand** — importing dsh-session's `SessionId` would create a dependency cycle.
+- **Recovery cannot invent missing history or credentials** — an incomplete legacy record without a full plan is refused unchanged; an uncommitted plan without a verifiable before-image cannot be resumed as a write. Completed history retains the transaction identities still present at normalization, not records already discarded by an older writer. Resource reservations coordinate shared in-process owners, not arbitrary writers bypassing them; orphan file-lock recovery remains an operator action.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-06-provider-endpoint-generation-replay.md
-2026-09-06-provider-endpoint-generation-replay.md: 80d37f3653d081601967a6b31adf615926888bb7
-2026-09-06-provider-endpoint-generation-replay.zh.md: a34d5f576f67061204a487f7da349c708aebe92b
+2026-09-06-provider-endpoint-generation-replay.md: c93855469025ddbd8ae0ad9d08a8cff314339314
+2026-09-06-provider-endpoint-generation-replay.zh.md: 659e93a38f5cf35cf109a6e07bf346ffc04260f5
