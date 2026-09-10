@@ -1750,6 +1750,22 @@ python_executable="${JIUZHANG_PYTHON_EXECUTABLE:-$(command -v python3)}"
   exit 2
 }
 
+function ark_remove_tree() {
+  # Finder and Spotlight can drop .DS_Store into a browsed tree while it is being deleted, so a
+  # single rm -rf can fail with ENOTEMPTY — and that once aborted a fully signed candidate build.
+  # Retry briefly and only report a tree that really still exists.
+  local path="${1}" attempt
+  for attempt in 1 2 3 4 5; do
+    [[ -e "${path}" ]] || return 0
+    /bin/rm -rf -- "${path}" 2>/dev/null || true
+    [[ -e "${path}" ]] || return 0
+    sleep 0.3
+  done
+  [[ -e "${path}" ]] || return 0
+  print -u2 "could not remove the build staging tree: ${path}"
+  return 1
+}
+
 final_app_path="${destination}/Ark.app"
 scratch="$(mktemp -d /private/tmp/jiuzhang-native-build.XXXXXX)"
 build_stage_root=""
@@ -1762,9 +1778,9 @@ function ark_cleanup_build() {
   if [[ -n "${swiftmath_math_font_backup}" && -f "${swiftmath_math_font_backup}" ]]; then
     /bin/cp -p "${swiftmath_math_font_backup}" "${swiftmath_checkout}/Sources/SwiftMath/MathBundle/MathFont.swift"
   fi
-  /bin/rm -rf -- "${scratch}"
+  ark_remove_tree "${scratch}" || true
   if [[ -n "${build_stage_root}" && -d "${build_stage_root}" ]]; then
-    /bin/rm -rf -- "${build_stage_root}"
+    ark_remove_tree "${build_stage_root}" || true
   fi
 }
 trap ark_cleanup_build EXIT
@@ -2314,7 +2330,7 @@ output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 PYTHON
 
 if [[ -n "${staged_pack_root}" ]]; then
-  /bin/rm -rf -- "${staged_pack_root}"
+  ark_remove_tree "${staged_pack_root}"
   staged_pack_root=""
 fi
 ark_refuse_unsafe_output "${destination}" >/dev/null
