@@ -1111,8 +1111,8 @@ func runArkChatPresentationContractChecks() {
     )
     check(
       root.contains(".queueCount")
-        && root.contains("model.selectedSession?.origin != \"subagent\""),
-      "native chat exposes the collapsed queue count and hides subagent mutations"
+        && !root.contains("origin != \"subagent\""),
+      "native chat exposes the collapsed queue count and gives continuable subagent queues the same mutations"
     )
     check(
       root.contains("static let userBubbleMaxWidth: CGFloat = 525")

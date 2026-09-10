@@ -7465,10 +7465,7 @@ private struct NativeQueueDock: View {
                     .font(.system(size: 10))
                     .lineLimit(1)
                   Spacer()
-                  if model.selectedSession?.origin != "subagent",
-                     item.text != nil,
-                     !item.hasNonTextContent
-                  {
+                  if item.text != nil, !item.hasNonTextContent {
                     Button(ArkL10n.text(.queueEdit, model.languagePreference)) {
                       editingItemID = item.id
                       editDraft = item.text ?? ""
@@ -7477,9 +7474,7 @@ private struct NativeQueueDock: View {
                     .disabled(mutationRunning)
                     .accessibilityIdentifier("ark.queue.edit.\(item.id)")
                   }
-                  if model.selectedSession?.origin != "subagent",
-                     model.selectedSession?.running == true
-                  {
+                  if model.selectedSession?.running == true {
                     Button(ArkL10n.text(.queueSteer, model.languagePreference)) {
                       model.updateQueuedPrompt(item, mutation: .steer)
                     }
@@ -7487,17 +7482,15 @@ private struct NativeQueueDock: View {
                       .disabled(mutationRunning)
                       .accessibilityIdentifier("ark.queue.steer.\(item.id)")
                   }
-                  if model.selectedSession?.origin != "subagent" {
-                    Button {
-                      model.updateQueuedPrompt(item, mutation: .remove)
-                    } label: {
-                      Image(systemName: "xmark")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(mutationRunning)
-                    .accessibilityLabel(ArkL10n.text(.queueRemove, model.languagePreference))
-                    .accessibilityIdentifier("ark.queue.remove.\(item.id)")
+                  Button {
+                    model.updateQueuedPrompt(item, mutation: .remove)
+                  } label: {
+                    Image(systemName: "xmark")
                   }
+                  .buttonStyle(.plain)
+                  .disabled(mutationRunning)
+                  .accessibilityLabel(ArkL10n.text(.queueRemove, model.languagePreference))
+                  .accessibilityIdentifier("ark.queue.remove.\(item.id)")
                 }
                 .frame(minHeight: 36)
                 if editingItemID == item.id {
