@@ -3685,12 +3685,11 @@ public final class ArkAppModel: ObservableObject {
   }
 
   /// Empty-draft Command+Enter accelerates the complete FIFO queue into the
-  /// current turn. Mutations stay serialized in queue order and remain
-  /// unavailable for subagent-owned queues.
+  /// current turn. Mutations stay serialized in queue order; continuable
+  /// subagent queues take the same treatment as ordinary sessions.
   public func steerAllQueuedPrompts() {
     guard let sessionID = selectedSessionID,
-          selectedSession?.running == true,
-          selectedSession?.origin != "subagent"
+          selectedSession?.running == true
     else { return }
     let queued = queuedPrompts.filter { $0.placement == .queued }
     guard !queued.isEmpty else { return }
@@ -5805,6 +5804,15 @@ public final class ArkAppModel: ObservableObject {
       } else if channel == .host, navigationErrorMessage == previousError {
         navigationErrorMessage = nil
       }
+      // A transient downlink card is named after its channel: once the channel is healthy again it
+      // describes a state that no longer exists. Leaving it in the transcript is what made a
+      // sub-second self-heal look like a permanent conversation failure.
+      let prefix = "stream-error-\(channel.rawValue)"
+      let kept = chatStatuses.filter { !$0.id.hasPrefix(prefix) }
+      if kept.count != chatStatuses.count {
+        chatStatuses = kept
+        chatPresentationDidChange.send()
+      }
     }
   }
 
@@ -5862,7 +5870,23 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func appendTransientChatError(id: String, message: String) {
-    guard !chatStatuses.contains(where: { $0.id == id }) else { return }
+    if let index = chatStatuses.firstIndex(where: { $0.id == id }) {
+      // Same card, newest cause: the first report must not keep showing an older state after the
+      // client has already moved on to healing it.
+      if chatStatuses[index].detail != message {
+        let existing = chatStatuses[index]
+        chatStatuses[index] = ArkChatStatus(
+          id: existing.id,
+          sequence: existing.sequence,
+          kind: existing.kind,
+          phase: existing.phase,
+          title: existing.title,
+          detail: message
+        )
+        chatPresentationDidChange.send()
+      }
+      return
+    }
     let sequence = max(events.last?.id ?? -1, chatStatuses.map(\.sequence).max() ?? -1) + 1
     chatStatuses.append(ArkChatStatus(
       id: id,
