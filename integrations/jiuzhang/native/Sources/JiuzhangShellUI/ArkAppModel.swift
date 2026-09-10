@@ -3079,6 +3079,11 @@ public final class ArkAppModel: ObservableObject {
     historyBeforeSequence = nil
     pendingLiveEvents = []
     seenEventIDs = []
+    // Frames are only applied while a session is displayed, so its anchor is already stale the
+    // moment it is switched back to. Drop it: the read below reconciles against the Host's live
+    // head, and judging continuity against the old value invented a hole on every switch.
+    appliedThroughBySessionID.removeValue(forKey: sessionID)
+    resyncTargetBySessionID.removeValue(forKey: sessionID)
     messageProjection.reset(events: [])
     toolProjection.reset(events: [])
     producedFilesProjection.reset(events: [])
@@ -3698,15 +3703,24 @@ public final class ArkAppModel: ObservableObject {
     queueMutationIDs.formUnion(itemIDs)
     Task {
       defer { queueMutationIDs.subtract(itemIDs) }
+      var skipped = 0
       do {
         for item in queued {
-          try await interactions.updateQueue(
-            sessionID: sessionID,
-            itemID: item.id,
-            mutation: .steer
-          )
+          do {
+            try await interactions.updateQueue(
+              sessionID: sessionID,
+              itemID: item.id,
+              mutation: .steer
+            )
+          } catch let error as ArkAPIError where error.code == "steer-unavailable" {
+            // That entry already left the steerable window (it is being sent); the queue row shows
+            // it. Failing the whole gesture over one entry was the wrong signal.
+            skipped += 1
+          }
         }
-        composerErrorMessage = nil
+        composerErrorMessage = skipped == 0
+          ? nil
+          : "已跳过 \(skipped) 条正在发送的队列消息"
       } catch {
         composerErrorMessage = error.localizedDescription
       }
@@ -5644,7 +5658,16 @@ public final class ArkAppModel: ObservableObject {
         }
         return
       }
-      var cursor = ArkSessionEventCursor(applied: appliedThroughBySessionID[sessionID] ?? -1)
+      guard let anchor = appliedThroughBySessionID[sessionID] else {
+        // No anchor for this Session (just switched to, or never baselined): buffer the frame and
+        // let the history read reconcile. Comparing the stream against a number that was never a
+        // cursor is what produced the phantom gap on every session switch.
+        if seenEventIDs.insert(event.id).inserted {
+          pendingLiveEvents.append(event)
+        }
+        return
+      }
+      var cursor = ArkSessionEventCursor(applied: anchor)
       switch cursor.observe(event.id) {
       case .covered:
         // Already inside the applied range: history and the stream both deliver it.
