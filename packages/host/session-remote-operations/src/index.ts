@@ -1855,9 +1855,13 @@ export class SessionRemoteOperationsService extends Service
       ))
     }
     const agent = this.ctx.agents.get(request.sessionId)
-    if (agent !== undefined && hasApiRemoteSubagentOwner(this.ctx, agent.session, agent)) {
-      return settled(this.subagentFailure(request.sessionId))
-    }
+    // Upstream lets a continuable subagent's queue be edited, removed, and
+    // steered; the child's inbox is its only turn queue, so mutating it here
+    // is semantically correct. The shared ownership fence stays for every
+    // other generic route (prompt, cancel, cold resume), so only an identity
+    // with no live Agent at all — one that could not be a continuable child —
+    // keeps rejecting below. A cold child has no live inbox to mutate, so it
+    // rejects as queue-item-not-found rather than resuming under this route.
     if (agent === undefined) {
       return settled(failure(
         'queue-item-not-found',

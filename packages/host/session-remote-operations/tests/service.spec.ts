@@ -283,6 +283,113 @@ describe('SessionRemoteOperationsService', () => {
     expect(agent.cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: true })
   })
 
+  it('edits, removes, and steers a continuable subagent inbox through the Ark host queue route', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-session-remote-'))
+    temporary.push(cwd)
+    const state = await harness(cwd)
+    // A continuable child: durable header origin 'subagent' with a live Agent.
+    const session = Session.create(SessionId('queue-subagent'), undefined, {
+      ...header('queue-subagent', cwd), parentSession: SessionId('queue-parent'), origin: 'subagent',
+    })
+    const pending = createUserMessage({
+      content: [{ type: 'text', text: 'child before' }],
+      source: { kind: 'user' },
+    })
+    const agent = fakeAgent(session, { status: 'running', nextTurn: [pending] })
+    state.sessions.set(String(session.id), session)
+    state.agents.set(String(session.id), agent)
+    state.roots.push(agent)
+    const operations = state.ctx.sessionRemoteOperations as SessionRemoteOperationsService
+    const signal = new AbortController().signal
+
+    await expect(operations.updateQueue({
+      sessionId: session.id,
+      itemId: String(pending.id),
+      action: { kind: 'edit', content: [{ type: 'text', text: 'child after' }] },
+    }, signal)).resolves.toEqual({ ok: true, value: { accepted: true } })
+    expect(agent.inbox.nextTurn[0]?.content).toEqual([{ type: 'text', text: 'child after' }])
+
+    await expect(operations.updateQueue({
+      sessionId: session.id,
+      itemId: String(pending.id),
+      action: { kind: 'steer' },
+    }, signal)).resolves.toEqual({ ok: true, value: { accepted: true } })
+    expect(agent.steer).toHaveBeenCalledTimes(1)
+    expect(agent.inbox.nextTurn).toHaveLength(0)
+
+    // Not running — "sending" — keeps steering refused while the item stays queued.
+    const resend = createUserMessage({
+      content: [{ type: 'text', text: 'child resend' }],
+      source: { kind: 'user' },
+    })
+    agent.inbox.nextTurn.push(resend)
+    agent.status = 'idle'
+    await expect(operations.updateQueue({
+      sessionId: session.id,
+      itemId: String(resend.id),
+      action: { kind: 'steer' },
+    }, signal)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'steer-unavailable' },
+    })
+    expect(agent.steer).toHaveBeenCalledTimes(1)
+
+    agent.status = 'running'
+    await expect(operations.updateQueue({
+      sessionId: session.id,
+      itemId: String(resend.id),
+      action: { kind: 'remove' },
+    }, signal)).resolves.toEqual({ ok: true, value: { accepted: true } })
+    expect(agent.inbox.nextTurn).toHaveLength(0)
+
+    // Ownership via the live parent graph (isOwnedBy) is continuable too.
+    const owned = emptySession('queue-owned', cwd)
+    const ownedPending = createUserMessage({
+      content: [{ type: 'text', text: 'owned before' }],
+      source: { kind: 'user' },
+    })
+    const ownedAgent = fakeAgent(owned, { nextTurn: [ownedPending] })
+    state.sessions.set(String(owned.id), owned)
+    state.agents.set(String(owned.id), ownedAgent)
+    state.roots.push(ownedAgent)
+    state.ctx.inject(['agents'], (injectCtx) => {
+      injectCtx.agents.isOwnedBy = () => true
+    })
+    await expect(operations.updateQueue({
+      sessionId: owned.id,
+      itemId: String(ownedPending.id),
+      action: { kind: 'edit', content: [{ type: 'text', text: 'owned after' }] },
+    }, signal)).resolves.toEqual({ ok: true, value: { accepted: true } })
+    expect(ownedAgent.inbox.nextTurn[0]?.content).toEqual([{ type: 'text', text: 'owned after' }])
+    await expect(operations.updateQueue({
+      sessionId: owned.id,
+      itemId: String(ownedPending.id),
+      action: { kind: 'remove' },
+    }, signal)).resolves.toEqual({ ok: true, value: { accepted: true } })
+    expect(ownedAgent.inbox.nextTurn).toHaveLength(0)
+
+    // Text-only validation still guards a subagent edit.
+    const guarded = createUserMessage({
+      content: [{ type: 'text', text: 'guard' }],
+      source: { kind: 'user' },
+    })
+    agent.inbox.nextTurn.push(guarded)
+    await expect(operations.updateQueue({
+      sessionId: session.id,
+      itemId: String(guarded.id),
+      action: { kind: 'edit', content: [{ type: 'image', data: 'forbidden' }] },
+    }, signal)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'attachment-error', details: { reason: 'QUEUE_EDIT_NON_TEXT' } },
+    })
+    expect(agent.inbox.nextTurn[0]?.content).toEqual([{ type: 'text', text: 'guard' }])
+
+    // The child fence stays on cancel: Ark stops a subagent via subagent/interrupt.
+    await expect(operations.cancel({ sessionId: session.id }, signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'agent-busy' } })
+    expect(agent.cancel).not.toHaveBeenCalled()
+  })
+
   it('admits an unknown slash-command naming an installed skill as a skill prompt', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'dsh-session-remote-'))
     temporary.push(cwd)

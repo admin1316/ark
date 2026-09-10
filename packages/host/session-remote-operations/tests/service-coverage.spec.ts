@@ -2816,13 +2816,16 @@ describe('Session Remote prompt, attachment, queue, and cancellation', () => {
 
     const child = emptySession('queue-child', state.cwd, { origin: 'subagent' })
     const childAgent = attach(state, child)
+    // A continuable child's queue is its own inbox: a live Agent without the
+    // pending item rejects as queue-item-not-found, not with the ownership
+    // fence. Cold children keep the fence via the shared resolver elsewhere.
     await expect(state.service.updateQueue({
       sessionId: child.id,
       itemId: 'missing',
       action: { kind: 'remove' },
     }, new AbortController().signal)).resolves.toMatchObject({
       ok: false,
-      error: { code: 'agent-busy' },
+      error: { code: 'queue-item-not-found' },
     })
     await expect(state.service.cancel({ sessionId: child.id }, new AbortController().signal))
       .resolves.toMatchObject({ ok: false, error: { code: 'agent-busy' } })
