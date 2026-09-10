@@ -5655,8 +5655,19 @@ public final class ArkAppModel: ObservableObject {
         // the hole starts and page the missing range in: advancing the anchor would pretend the
         // range arrived, and re-pulling with a reset would throw away the tail the stream already
         // delivered — the loop that made one miss repeat forever.
+        if resyncTargetBySessionID[sessionID] != nil {
+          // A heal is already armed: this frame is the stream's contiguous tail above the hole.
+          // Buffer it instead of rejecting it — the heal installs the missing range first and the
+          // publish then appends this tail — and raise the target so one heal covers everything.
+          // Reporting per frame is what turned a single hole into a frozen banner wall.
+          resyncTargetBySessionID[sessionID] = max(resyncTargetBySessionID[sessionID] ?? -1, target)
+          if seenEventIDs.insert(event.id).inserted {
+            pendingLiveEvents.append(event)
+          }
+          return
+        }
         seenEventIDs.remove(event.id)
-        resyncTargetBySessionID[sessionID] = max(resyncTargetBySessionID[sessionID] ?? -1, target)
+        resyncTargetBySessionID[sessionID] = target
         ArkEventChannelDiagnostics.gap(session: sessionID, expected: cursor.next, actual: event.id)
         markEventChannelDegraded(
           .mux,
