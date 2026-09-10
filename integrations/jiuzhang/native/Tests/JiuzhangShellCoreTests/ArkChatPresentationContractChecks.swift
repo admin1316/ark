@@ -1360,11 +1360,11 @@ func runArkChatPresentationContractChecks() {
       draft: "next", pendingImageCount: 0, sessionRunning: true,
       sessionOrigin: nil, queuedCount: 3
     )
-      && !ArkChatSubmissionPolicy.shouldSteerWholeQueue(
+      && ArkChatSubmissionPolicy.shouldSteerWholeQueue(
         draft: "", pendingImageCount: 0, sessionRunning: true,
         sessionOrigin: "subagent", queuedCount: 3
       ),
-    "native chat queue acceleration refuses a real draft and subagent queues"
+    "native chat queue acceleration refuses a real draft and covers continuable subagent queues"
   )
 
   let navigationMessages = [

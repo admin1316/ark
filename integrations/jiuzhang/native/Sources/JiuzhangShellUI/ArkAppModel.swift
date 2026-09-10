@@ -761,6 +761,7 @@ public final class ArkAppModel: ObservableObject {
   /// anchor up to this target, so a hole is bridged instead of truncated away.
   private var resyncTargetBySessionID: [String: Int] = [:]
   private var eventResyncTask: Task<Void, Never>?
+  private var eventResyncAttempt = 0
   private var livePublishTask: Task<Void, Never>?
   private var historyProjectionGeneration: UInt64 = 0
   private var historyFoldOwner: ArkHistoryFoldOwner?
@@ -4521,6 +4522,10 @@ public final class ArkAppModel: ObservableObject {
         composerErrorMessage = error.localizedDescription
         if error is ArkEventSequenceValidationError {
           markEventChannelDegraded(.mux, message: error.localizedDescription)
+          // A failed heal must not be terminal: retry with backoff while a target is pending.
+          if resyncTargetBySessionID[requestedSessionID] != nil {
+            scheduleEventResync(sessionID: requestedSessionID)
+          }
         }
       }
     }
@@ -5665,6 +5670,7 @@ public final class ArkAppModel: ObservableObject {
         if seenEventIDs.insert(event.id).inserted {
           pendingLiveEvents.append(event)
         }
+        scheduleLivePublish()
         return
       }
       var cursor = ArkSessionEventCursor(applied: anchor)
@@ -5686,6 +5692,9 @@ public final class ArkAppModel: ObservableObject {
           if seenEventIDs.insert(event.id).inserted {
             pendingLiveEvents.append(event)
           }
+          // The publish pass refuses to append a discontinuous tail and re-arms the heal in the
+          // process, so a heal that failed once cannot leave the transcript frozen forever.
+          scheduleLivePublish()
           return
         }
         seenEventIDs.remove(event.id)
@@ -5705,6 +5714,13 @@ public final class ArkAppModel: ObservableObject {
       // `seenEventIDs`) must not be dropped before the cursor sees it. Dropping it there left the
       // anchor behind the transcript and turned the *next* frame into a hole that never existed.
       appliedThroughBySessionID[sessionID] = cursor.applied
+      if event.type == "turn/start" {
+        // A run-error card describes the turn that just ended; the next turn starts clean.
+        let prefix = "host-agent-error-"
+        if chatStatuses.contains(where: { $0.id.hasPrefix(prefix) }) {
+          chatStatuses.removeAll { $0.id.hasPrefix(prefix) }
+        }
+      }
       guard seenEventIDs.insert(event.id).inserted else { return }
       pendingLiveEvents.append(event)
       _ = messageProjection.append(event)
@@ -5809,7 +5825,8 @@ public final class ArkAppModel: ObservableObject {
       }
     case "stream/error":
       let message = frame.payload["error"]?["message"]?.stringValue ?? "事件连接发生错误"
-      markEventChannelDegraded(frame.channel, message: message, rpcID: frame.rpcID)
+      // One card per channel: a failure storm used to stack a fresh card for every rpcID.
+      markEventChannelDegraded(frame.channel, message: message)
     default:
       break
     }
@@ -5860,9 +5877,15 @@ public final class ArkAppModel: ObservableObject {
 
   private func scheduleEventResync(sessionID: String) {
     guard eventResyncTask == nil else { return }
+    // Backed off so a persistent failure retries without becoming a request storm.
+    let delayNanoseconds = min(
+      UInt64(100_000_000) << UInt64(min(eventResyncAttempt, 5)),
+      3_200_000_000
+    )
+    eventResyncAttempt += 1
     eventResyncTask = Task { [weak self] in
       defer { self?.eventResyncTask = nil }
-      try? await Task.sleep(nanoseconds: 100_000_000)
+      try? await Task.sleep(nanoseconds: delayNanoseconds)
       guard let self, !Task.isCancelled, self.selectedSessionID == sessionID else { return }
       // The walk keeps the installed tail as its anchor and stops at the reported target, so the
       // page it pulls is exactly the missing range. Resetting the page would discard the tail and
@@ -5888,6 +5911,7 @@ public final class ArkAppModel: ObservableObject {
     appliedThroughBySessionID[sessionID] = cursor.applied
     if let target = resyncTargetBySessionID[sessionID], cursor.applied >= target {
       resyncTargetBySessionID.removeValue(forKey: sessionID)
+      eventResyncAttempt = 0
       ArkEventChannelDiagnostics.reconciled(session: sessionID, head: cursor.applied, target: target)
     }
   }

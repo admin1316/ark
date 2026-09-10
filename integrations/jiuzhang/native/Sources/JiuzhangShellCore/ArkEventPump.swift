@@ -293,6 +293,10 @@ public actor ArkEventPump {
             guard await mailbox.send(frame) else {
               break
             }
+          } catch ArkEventPumpError.unexpectedMethod {
+            // An additive Host frame type must not tear the downlink down: skip the frame and
+            // keep the stream alive. Only real shape violations stay fatal.
+            continue
           } catch {
             reportedFailure = true
             ArkEventChannelDiagnostics.failure(channel: channel.rawValue, code: "EVENT_PROTOCOL_INVALID")
