@@ -26,6 +26,9 @@ Instructions from: ~/.dsh/AGENTS.md
 
 ...
 
+Instructions from: AGENTS.md
+```
+
 只有确认项目根标记不存在时，项目根发现才会继续上溯。权限或 I/O 失败会停止发现，并返回 Host 或文件系统提供方的错误，而不会选择祖先项目。
 
 ```yaml

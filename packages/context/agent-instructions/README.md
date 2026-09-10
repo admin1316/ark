@@ -25,6 +25,7 @@ Instructions from: ~/.dsh/AGENTS.md
 ...
 
 Instructions from: AGENTS.md
+```
 
 Root discovery climbs only when a marker probe confirms that the marker is absent. A permission or I/O failure stops discovery and surfaces the host or filesystem-provider error instead of selecting an ancestor project.
 

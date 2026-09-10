@@ -85,7 +85,7 @@ loopback 始终被绕过——`localhost`、整个 `127.0.0.0/8` 段、`::1`、`
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [网络代理指南](../../../docs/user/guide/network-proxy.zh.md)——需要导出什么，以及为什么浏览器走代理而终端不走。
+- [网络代理指南](../../../docs/user/guide/network-proxy.md)——需要导出什么，以及为什么浏览器走代理而终端不走。
 - [`dsh-web-fetch-http`](../../web/web-fetch-http/README.zh.md)——唯一一个安全规则会因代理而改变的消费方。
 
 -----
