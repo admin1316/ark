@@ -18,6 +18,7 @@
 
     - id: hmr
       name: '@deepseek-ai/cordis-plugin-hmr'
+      disabled: true
       config:
         root: ['.']
 
