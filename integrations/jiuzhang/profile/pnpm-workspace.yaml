@@ -1,0 +1,21 @@
+packages:
+  - .
+
+nodeLinker: hoisted
+packageImportMethod: copy
+autoInstallPeers: false
+
+patchedDependencies:
+  '@earendil-works/pi-ai@0.85.1': patches/@earendil-works+pi-ai@0.85.1.patch
+
+# Standalone Ark installs only the reviewed lifecycle scripts required by its
+# native/process boundary. Optional SDK helpers ship scripts but do not need to
+# run them in the packaged runtime.
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local@__ARK_SUBPROCESS_LOCAL_SPEC__': true
+  '@google/genai': false
+  koffi: true
+  node-pty: true
+  node-addon-require-builtin: false
+  protobufjs: false
+  tesseract.js: false

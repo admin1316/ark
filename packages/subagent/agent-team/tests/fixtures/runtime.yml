@@ -1,0 +1,26 @@
+- name: cordis:team-test-llm
+- name: cordis:team-test-sessions
+- name: cordis:team-test-prompt
+- name: cordis:team-test-tools
+- name: cordis:team-test-agents
+- name: cordis:team-test-persistence
+  config:
+    root: __PERSISTENCE_ROOT__
+    compression: none
+- name: cordis:team-test-query
+  config:
+    path: ':memory:'
+    openAt: never
+- name: cordis:team-test-loop
+  config:
+    agents: []
+- name: cordis:team-test-subagents
+- name: cordis:team-test-spawn
+  config:
+    providerName: spawn
+- name: cordis:team-test-fork
+  config:
+    providerName: fork
+- name: cordis:team-test-model
+- name: cordis:team-test-domain
+- name: cordis:team-test-model-tools

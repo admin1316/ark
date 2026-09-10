@@ -1,0 +1,135 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`projects native provider status, explicit recovery and restart from one real Loader composition 1`] = `
+{
+  "absent": {
+    "needsCredential": false,
+    "state": "absent",
+  },
+  "duplicateDidNotWrite": true,
+  "newCredentialConfigured": true,
+  "observed": [
+    {
+      "needsCredential": true,
+      "settingsNs": "transaction-fixture",
+      "state": "prepared",
+    },
+    {
+      "needsCredential": false,
+      "settingsNs": "transaction-fixture",
+      "state": "credential-staged",
+    },
+    {
+      "needsCredential": false,
+      "settingsNs": "transaction-fixture",
+      "state": "settings-applied",
+    },
+    {
+      "needsCredential": false,
+      "settingsNs": "transaction-fixture",
+      "state": "credential-applied",
+    },
+    {
+      "live": true,
+      "needsCredential": false,
+      "settingsNs": "transaction-fixture",
+      "state": "committed",
+    },
+  ],
+  "oldCredentialPreserved": true,
+  "recovered": {
+    "ns": "transaction-fixture",
+    "user": {
+      "alpha": {
+        "apiKeyEnv": "ARK_ALPHA_V_6E17C028B78F0C25BF52E548",
+        "model": "snapshot-model",
+      },
+    },
+    "value": {
+      "alpha": {
+        "apiKeyEnv": "ARK_ALPHA_V_6E17C028B78F0C25BF52E548",
+        "baseURL": "https://alpha.invalid/v1",
+        "credentialHeaders": {},
+        "model": "snapshot-model",
+        "models": [],
+      },
+      "beta": {
+        "apiKeyEnv": "ARK_SYNTHETIC_BETA",
+        "baseURL": "https://beta.invalid/v1",
+        "credentialHeaders": {},
+        "model": "initial",
+        "models": [],
+      },
+    },
+  },
+  "restarted": {
+    "live": true,
+    "needsCredential": false,
+    "settingsNs": "transaction-fixture",
+    "state": "committed",
+  },
+  "saved": {
+    "ns": "transaction-fixture",
+    "revision": 1,
+    "secrets": [
+      {
+        "path": [
+          "alpha",
+          "apiKey",
+        ],
+        "set": false,
+      },
+      {
+        "path": [
+          "beta",
+          "apiKey",
+        ],
+        "set": false,
+      },
+    ],
+    "user": {
+      "alpha": {
+        "apiKeyEnv": "ARK_ALPHA_V_6E17C028B78F0C25BF52E548",
+        "model": "snapshot-model",
+      },
+    },
+    "value": {
+      "alpha": {
+        "apiKeyEnv": "ARK_ALPHA_V_6E17C028B78F0C25BF52E548",
+        "baseURL": "https://alpha.invalid/v1",
+        "credentialHeaders": {},
+        "model": "snapshot-model",
+        "models": [],
+      },
+      "beta": {
+        "apiKeyEnv": "ARK_SYNTHETIC_BETA",
+        "baseURL": "https://beta.invalid/v1",
+        "credentialHeaders": {},
+        "model": "initial",
+        "models": [],
+      },
+    },
+  },
+  "staleCode": "settings-conflict",
+}
+`;
+
+exports[`reports a concurrent credential replacement without deleting it or acknowledging live success 1`] = `
+{
+  "activeReference": "",
+  "concurrentCredentialPreserved": true,
+  "failure": {
+    "code": "credential-rejected",
+    "details": {
+      "provider": "alpha",
+    },
+    "message": "provider credential changed before commit",
+  },
+  "state": {
+    "live": false,
+    "needsCredential": false,
+    "settingsNs": "transaction-fixture",
+    "state": "committed-not-live",
+  },
+}
+`;

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-16-subprocess-tree-exit-bound.md
+2026-08-16-subprocess-tree-exit-bound.md: c652ef6fe470777b1e2fe82ee694996ca78d1c9f
+2026-08-16-subprocess-tree-exit-bound.zh.md: 1ce74e4cf104bd0b0d87d4bbe9dde4a2da1656cc

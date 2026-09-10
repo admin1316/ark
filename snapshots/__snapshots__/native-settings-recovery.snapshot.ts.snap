@@ -1,0 +1,81 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`native Settings persists a redacted edit, activates it and rejects a stale editor through a real Loader 1`] = `
+{
+  "accepted": true,
+  "after": {
+    "revision": 1,
+    "secrets": [
+      {
+        "path": [
+          "token",
+        ],
+        "set": true,
+      },
+    ],
+    "user": {
+      "theme": "light",
+    },
+    "value": {
+      "theme": "light",
+    },
+  },
+  "applied": [
+    "light",
+  ],
+  "before": {
+    "revision": 0,
+    "secrets": [
+      {
+        "path": [
+          "token",
+        ],
+        "set": true,
+      },
+    ],
+    "user": {
+      "theme": "dark",
+    },
+    "value": {
+      "theme": "dark",
+    },
+  },
+  "stale": {
+    "code": "settings-conflict",
+    "details": {
+      "actual": 1,
+      "expected": 0,
+      "ns": "native-theme",
+    },
+    "message": "settings namespace "native-theme" changed since it was read (expected revision 0, now 1)",
+  },
+}
+`;
+
+exports[`native Settings refuses a malformed secret base behind a valid user layer 1`] = `
+{
+  "documentUnchanged": true,
+  "failure": {
+    "message": "settings cannot safely redact a malformed secret-bearing container",
+    "name": "TypeError",
+  },
+  "layer": "base",
+  "resolved": {
+    "tokens": {},
+  },
+}
+`;
+
+exports[`native Settings refuses a malformed secret default behind a valid user layer 1`] = `
+{
+  "documentUnchanged": true,
+  "failure": {
+    "message": "settings cannot safely redact a malformed secret-bearing container",
+    "name": "TypeError",
+  },
+  "layer": "default",
+  "resolved": {
+    "tokens": {},
+  },
+}
+`;

@@ -1,0 +1,13 @@
+interface:
+  display_name: "小说角色资产师"
+  short_description: "从小说提取角色证据，生成角色卡、音色提示词与三视图方案"
+  default_prompt: "使用 $novel-characters 分析这部小说，建立有原文依据的角色资产表与一致性方案。"
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

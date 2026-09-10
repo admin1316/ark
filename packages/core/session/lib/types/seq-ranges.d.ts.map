@@ -1,0 +1,1 @@
+{"version":3,"file":"seq-ranges.d.ts","sourceRoot":"","sources":["../../src/seq-ranges.ts"],"names":[],"mappings":"AAAA,kEAAkE;AAElE,+DAA+D;AAC/D,MAAM,MAAM,UAAU,GAAG,MAAM,GAAG,CAAC,MAAM,EAAE,MAAM,CAAC,CAAA;AAMlD;;;;GAIG;AACH,wBAAgB,eAAe,CAAC,MAAM,EAAE,SAAS,MAAM,EAAE,GAAG,UAAU,EAAE,CAWvE;AAED;;;;;GAKG;AACH,wBAAgB,eAAe,CAAC,KAAK,EAAE,OAAO,EAAE,UAAU,SAA0B,GAAG,MAAM,EAAE,CA8B9F"}

@@ -1,0 +1,14 @@
+interface:
+  display_name: "可视化分镜大师"
+  short_description: "把文字镜头转化为可编号、可复核、空间连续的分镜画格与分镜板"
+  default_prompt: "使用 $visual-storyboard-master 把这份剧本或镜头表制作成可见分镜画格，锁定角色、场景、轴线与连续性，并输出可验证的分镜板。"
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true
+

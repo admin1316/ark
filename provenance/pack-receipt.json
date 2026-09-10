@@ -1,0 +1,33 @@
+{
+  "closurePlanSha256": "8bc1df1a8605731b462742c93845cbffed681a1ce6ee9e6dcbfd56538299d959",
+  "deferredPlatforms": [
+    "win-x64"
+  ],
+  "identityPolicySha256": "bb4fc50273d06421e948ad3b35be9e668e9ef23620e94d89a9c5f369b0f9f987",
+  "install": {
+    "frozenLockfile": true,
+    "lockDerivation": "root-lock-exact-resolutions",
+    "offline": true,
+    "packageManager": "pnpm@11.7.0"
+  },
+  "installCommandSha256": "ec599f9274b459bf491e1faea7ff4b0afa29fac6f01cfee22d7a85b0a508cb1f",
+  "installedRuntimeIdentitySha256": "89397b19a58b5810f9ba95e85e55c0ae21a4ed8e33dffcad661c2474a13b89f4",
+  "installedRuntimeManifestSha256": "89397b19a58b5810f9ba95e85e55c0ae21a4ed8e33dffcad661c2474a13b89f4",
+  "lockfileSha256": "70f8be18115cb2f3a2536464f30a5d970f33848523e3b8d16d55d520cddd5ce7",
+  "packageIndexSha256": "5478f6a7acc314f42b0fb0988eb579d11fa8b9f12082bb698a29e660170f8ee3",
+  "packedPackageCount": 159,
+  "runtimePackageJsonSha256": "2ea53ca3f9d03d13698434985744d8781c44ef40164d3352d0c4cc376eec938b",
+  "runtimeRelativePath": "runtime-template",
+  "runtimeWorkspaceSha256": "b06169ee48fd84a291323e7290150e7cb58c81ed9ed603e112d9b16aef72ec94",
+  "sourceDigest": "f97b5622c431605d7211be0d85f081518346b0aee902ae790b292bbfeaf79f01",
+  "sourceIdentity": {
+    "commit": "84ae44c98c94bac19c29cd70516dc10a01af170b",
+    "dirty": true,
+    "dirtyDiffSha256": "d342000c75ff3b6240d7c85f786bdc7f99b89504af8bcf66bd30141388969405",
+    "dirtyStatusSha256": "97b3a977c2cc4f1f38bc54a821808c4dc97546837f0affc805a88ea92aa6d1bd",
+    "sourceSnapshotSha256": "f97b5622c431605d7211be0d85f081518346b0aee902ae790b292bbfeaf79f01"
+  },
+  "target": "macos-arm64",
+  "version": 3,
+  "workspacePackageCount": 159
+}

@@ -1,0 +1,75 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`records Team task transitions and the no-active-peer wait result 1`] = `
+[
+  {
+    "callId": "wait",
+    "content": [
+      {
+        "text": "{"timedOut":false,"noProgress":{"reason":"no-active-peer","message":"No other Team member is running or provisioning. wait_agent cannot make progress or wake inactive teammates. Re-list with list_agents and team_task_list, then use followup_task to wake each required inactive teammate before waiting again."}}",
+        "type": "text",
+      },
+    ],
+    "error": null,
+    "isError": false,
+  },
+  {
+    "callId": "create",
+    "content": [
+      {
+        "text": "{"id":"task-1","revision":1,"subject":"Review","description":"Check the change","status":"pending","blockedBy":[],"writeScopes":["src"],"ready":true,"writeScopeWarnings":[]}",
+        "type": "text",
+      },
+    ],
+    "error": null,
+    "isError": false,
+  },
+  {
+    "callId": "list",
+    "content": [
+      {
+        "text": "{"tasks":[{"id":"task-1","revision":1,"subject":"Review","description":"Check the change","status":"pending","blockedBy":[],"writeScopes":["src"],"ready":true,"writeScopeWarnings":[]}]}",
+        "type": "text",
+      },
+    ],
+    "error": null,
+    "isError": false,
+  },
+  {
+    "callId": "claim",
+    "content": [
+      {
+        "text": "{"id":"task-1","revision":2,"subject":"Review","description":"Check the change","status":"in_progress","blockedBy":[],"writeScopes":["src"],"ownerName":"lead","ready":false,"writeScopeWarnings":[]}",
+        "type": "text",
+      },
+    ],
+    "error": null,
+    "isError": false,
+  },
+  {
+    "callId": "stale",
+    "content": [
+      {
+        "text": "Error: stale team task "task-1" revision 1; current revision is 2",
+        "type": "text",
+      },
+    ],
+    "error": {
+      "code": "TEAM_TASK_STALE_REVISION",
+      "name": "TeamError",
+    },
+    "isError": true,
+  },
+  {
+    "callId": "complete",
+    "content": [
+      {
+        "text": "{"id":"task-1","revision":3,"subject":"Review","description":"Check the change","status":"completed","blockedBy":[],"writeScopes":["src"],"ownerName":"lead","ready":false,"writeScopeWarnings":[]}",
+        "type": "text",
+      },
+    ],
+    "error": null,
+    "isError": false,
+  },
+]
+`;

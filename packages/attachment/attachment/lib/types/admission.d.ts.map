@@ -1,0 +1,1 @@
+{"version":3,"file":"admission.d.ts","sourceRoot":"","sources":["../../src/admission.ts"],"names":[],"mappings":"AAAA,yGAAyG;AAIzG,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,YAAY,CAAA;AACjD,OAAO,KAAK,EAAE,sBAAsB,EAAE,kBAAkB,EAAuB,MAAM,YAAY,CAAA;AAoBjG;;;;;;;;;GASG;AACH,wBAAsB,kBAAkB,CACtC,WAAW,EAAE,eAAe,EAC5B,MAAM,EAAE,SAAS,sBAAsB,EAAE,GACxC,OAAO,CAAC,SAAS,kBAAkB,EAAE,CAAC,CAExC"}

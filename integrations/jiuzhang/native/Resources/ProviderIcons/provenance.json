@@ -1,0 +1,293 @@
+{
+  "upstream": "https://github.com/lobehub/lobe-icons",
+  "commit": "a94750e3f5f8fc33757b839d85030e742284e43a",
+  "license": "MIT",
+  "licenseFile": "LICENSE-LobeHub.txt",
+  "licenseSha256": "add9d7531d1b21646317a8958e38fc727506fa39d24bdecb44154d943c82753a",
+  "usage": "Provider identification only; marks do not imply affiliation or endorsement.",
+  "providers": {
+    "amazon-bedrock": "aws.png",
+    "ant-ling": "antgroup.png",
+    "anthropic": "anthropic.png",
+    "azure-openai-responses": "azure.png",
+    "bailian-cn": "qwen.png",
+    "bailian-intl": "qwen.png",
+    "baseten": "baseten.png",
+    "cerebras": "cerebras.png",
+    "cloudflare-ai-gateway": "cloudflare.png",
+    "cloudflare-workers-ai": "cloudflare.png",
+    "deepseek": "deepseek.png",
+    "deepseek-official": "deepseek.png",
+    "fireworks": "fireworks.png",
+    "github-copilot": "githubcopilot.png",
+    "google": "google.png",
+    "google-vertex": "vertexai.png",
+    "groq": "groq.png",
+    "huggingface": "huggingface.png",
+    "kimi-coding": "kimi.png",
+    "minimax": "minimax.png",
+    "minimax-cn": "minimax.png",
+    "mistral": "mistral.png",
+    "moonshotai": "moonshot.png",
+    "moonshotai-cn": "moonshot.png",
+    "nvidia": "nvidia.png",
+    "openai": "openai.png",
+    "openai-codex": "openai.png",
+    "opencode": "opencode.png",
+    "opencode-go": "opencode.png",
+    "openrouter": "openrouter.png",
+    "qwen-token-plan": "qwen.png",
+    "qwen-token-plan-cn": "qwen.png",
+    "qwen-token-plan-individual": "qwen.png",
+    "together": "together.png",
+    "vercel-ai-gateway": "vercel.png",
+    "xai": "xai.png",
+    "zai": "zai.png",
+    "zai-coding-cn": "zai.png"
+  },
+  "files": [
+    {
+      "file": "aws.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/aws.png",
+      "gitBlob": "a44e4bea26434635d73ded0f9a76df59d3f3e1af",
+      "sha256": "e6a1dac80d009ae3ac6d33b0beb65545c2b9034ae9c9882940b619de858a0404",
+      "bytes": 8421,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "antgroup.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/antgroup.png",
+      "gitBlob": "162fb10bf7028b8515b352aac3c106c60b141a40",
+      "sha256": "a86845dce2236f5d1bec90dc6274250d5361303f6feb93ff6abc6c768076952b",
+      "bytes": 7145,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "anthropic.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/anthropic.png",
+      "gitBlob": "ea30ab63a5638b57eb2f38353b0bf64db7dd61cc",
+      "sha256": "389105af72687ae02e5dfbbafe24ed99a84a77a6cf6ea339c13993615b64b37e",
+      "bytes": 3580,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "azure.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/azure.png",
+      "gitBlob": "cc6d6bc5b22b3f22797e442a43eb0118df6cbbb1",
+      "sha256": "e108004470d909f64c9e62e730ee3de2496cc6b0b8f01121a40adb09a91f59e9",
+      "bytes": 3971,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "baseten.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/baseten.png",
+      "gitBlob": "53aff030fa5f234c018a38ec3f569c4b5279a9ba",
+      "sha256": "4008f114339547a4ddc00ca962c2c410851c2d6a1b254c9ed6cc14ffeaadbba5",
+      "bytes": 1880,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "cerebras.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/cerebras.png",
+      "gitBlob": "ed04ff39e32bb5caab368884640c188a0d569d77",
+      "sha256": "542697161c2c7126f23f5897235a9948a8bf395f76706b1864cc84273f9a3273",
+      "bytes": 9745,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "cloudflare.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/cloudflare.png",
+      "gitBlob": "b9b54e09175b8440efbfeb99c6f04d489f4c962a",
+      "sha256": "f5353ba2ac4a5cbac30bf7ad618b7dca58fc559ad5a1bff2a4674d1c7eaab94e",
+      "bytes": 3147,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "deepseek.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/deepseek.png",
+      "gitBlob": "2ef307b55f2dcd7de6922830ec76e26f21d4d7c9",
+      "sha256": "8e0fd5830630f21d38bd57a277008149c3d73c77f3c41afe6cd102239b3ee2e7",
+      "bytes": 6723,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "fireworks.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/fireworks.png",
+      "gitBlob": "9b02a48988a2b89bd6c02f67a52e86ff7b4f4c95",
+      "sha256": "f3597086440b848824677659bcffefe0ff35265ba8e77e525fe79798495f2198",
+      "bytes": 3849,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "githubcopilot.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/githubcopilot.png",
+      "gitBlob": "b4a684a03e70da5ae0536c421fc6b0d9f855334c",
+      "sha256": "984fc3fb2708c83fcc870eabfb2a9a4cd4a2a059ac18f78200119dc37f95ce8c",
+      "bytes": 7260,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "google.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/google.png",
+      "gitBlob": "b6294cfdcefb937059e4db149ca66494903c48cd",
+      "sha256": "77006e9ef5e66e09287040a00e7b03bd28153c41f47b452de646755ff5c62e9f",
+      "bytes": 4850,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "vertexai.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/vertexai.png",
+      "gitBlob": "bd20394f3389dbe8a6bdbe9696db4f300db34595",
+      "sha256": "ca1c0bef87b7136508d521c7f5b02a5a32bdd55ad1146d7eee113a66bd4d8df8",
+      "bytes": 9512,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "groq.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/groq.png",
+      "gitBlob": "f05cf0a0dac793d35f97c8d800bb7b776ca53550",
+      "sha256": "bb018de642bd10aa7b7a64d90fb76b26da2b264627aa1278f9306c034f98c898",
+      "bytes": 4402,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "huggingface.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/huggingface.png",
+      "gitBlob": "be480f1365b69f038149637aad669b75d16dbb6c",
+      "sha256": "862b5c465133aca86118908b5115ead4ae4150de770f8ebeb575be34bc9e8922",
+      "bytes": 11781,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "kimi.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/kimi.png",
+      "gitBlob": "f67b83a19c830a28df83f7af11c1ab9c9b11f7b7",
+      "sha256": "ae68c5f479c6b92bc79f56172f2bb789c50e46c69def7a443209555086acddc3",
+      "bytes": 3513,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "minimax.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/minimax.png",
+      "gitBlob": "cbd720fcdb365ca9c74c11f95606926ccfea4d5a",
+      "sha256": "9b3a27e9154f062c93dee964c6c9b71965a9cb4e98e51431e6f8425e4ba3696e",
+      "bytes": 5478,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "mistral.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/mistral.png",
+      "gitBlob": "77467aec94c79d4defd02c2fa050b09883e42380",
+      "sha256": "b992448a9a56f287ba9eb188dcfc0bc94f595ca2bdf8455e576f03d873fcce63",
+      "bytes": 1760,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "moonshot.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/moonshot.png",
+      "gitBlob": "29e42e83c9633f9b8aea804a677bcf9d2cb2a040",
+      "sha256": "d578871fe5b2c3bba76ce75d9ebe7e6b614961e0ec893574dbcbd796c7c67287",
+      "bytes": 6002,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "nvidia.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/nvidia.png",
+      "gitBlob": "82a4e1d19e0a279de3e1d75531baaae247bd7fe3",
+      "sha256": "65da318b3f3dadd1e42fa4dccd5f76d3faf1ba8ad9211aaff26b7754c0a05060",
+      "bytes": 6719,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "openai.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/openai.png",
+      "gitBlob": "bd7a119a6b3c832fde1128d48b258f3d702a5aaa",
+      "sha256": "8a33312f6bb17c1edddf8f9d7fbac09ce1d1d697d6601f37227afa879e94c52e",
+      "bytes": 11297,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "opencode.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/opencode.png",
+      "gitBlob": "c3a146a7e178211c8017936e7591d1553a6a200e",
+      "sha256": "8dd736cfa2628863a6e008a134d2094da69727d7359caca5bd05fe322ab13905",
+      "bytes": 1773,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "openrouter.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/openrouter.png",
+      "gitBlob": "7a31b1569b8cc2198a259f36395aad8167051259",
+      "sha256": "8baea3b5b20c253dc52c7d2b98b3fb6616190d845d02a500d85304e3b87c3adc",
+      "bytes": 4130,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "qwen.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/qwen.png",
+      "gitBlob": "b7eea50ad39f291cc3cfb914548688799ab1f739",
+      "sha256": "d17fcaab096a850ebabd02622a3bfcba28e14cc82a207f82907bdf9a93ea3d96",
+      "bytes": 5336,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "together.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/together.png",
+      "gitBlob": "1cbc9d118ef176583b7e1b9a926f620bc6cd6f73",
+      "sha256": "7ee479297215ba1d7c7fd45f4d82cf4839caeb1b9f94b85d8cc8bc99b1d9cc6c",
+      "bytes": 6532,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "vercel.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/vercel.png",
+      "gitBlob": "cd95b861ca50ab027bfce0a156745fd44085e800",
+      "sha256": "a26e1ae39160377b7b64efdaa0182ef0c4d3f0ca9d67106eb7e0a9b1778cdcde",
+      "bytes": 2784,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "xai.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/xai.png",
+      "gitBlob": "6ac3bf2cf4f73b9c739c4e50e2ebf2b5d07eb267",
+      "sha256": "402a3e4a6f8fc8b07cd22a24c11d94631cfcdbd02399787f8f1916a06cab47e6",
+      "bytes": 4510,
+      "width": 640,
+      "height": 640
+    },
+    {
+      "file": "zai.png",
+      "source": "https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/zai.png",
+      "gitBlob": "8cfe5351cd0a7cdd60cd9fd7d955be2235d3fbab",
+      "sha256": "e53c9c5bfac0971024d08ab812ec13682f22f12247fcc4f134b6a0f2c988fee7",
+      "bytes": 2562,
+      "width": 640,
+      "height": 640
+    }
+  ]
+}

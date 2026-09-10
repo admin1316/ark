@@ -1,0 +1,23 @@
+diff --git a/dist/api/openai-responses-shared.js b/dist/api/openai-responses-shared.js
+--- a/dist/api/openai-responses-shared.js
++++ b/dist/api/openai-responses-shared.js
+@@ -436,6 +436,9 @@
+         if (response?.id) {
+             output.responseId = response.id;
+         }
++        if (typeof response?.model === "string" && response.model.length > 0) {
++            output.responseModel = response.model;
++        }
+         if (response?.usage) {
+             const inputDetails = response.usage.input_tokens_details;
+             const cachedTokens = inputDetails?.cached_tokens || 0;
+@@ -477,6 +480,9 @@
+     for await (const event of openaiStream) {
+         if (event.type === "response.created") {
+             output.responseId = event.response.id;
++            if (typeof event.response.model === "string" && event.response.model.length > 0) {
++                output.responseModel = event.response.model;
++            }
+         }
+         else if (event.type === "response.output_item.added") {
+             createSlot(event.output_index, event.item);

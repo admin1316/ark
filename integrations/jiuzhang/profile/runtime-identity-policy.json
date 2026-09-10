@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "target": "macos-arm64",
+  "allowedMultipleVersions": {
+    "@aws-sdk/token-providers": [
+      "3.1048.0",
+      "3.1066.0"
+    ],
+    "@opentelemetry/api": [
+      "1.9.0",
+      "1.9.1"
+    ],
+    "@opentelemetry/core": [
+      "2.10.0",
+      "2.9.0"
+    ],
+    "@opentelemetry/resources": [
+      "2.10.0",
+      "2.9.0"
+    ],
+    "@smithy/node-http-handler": [
+      "4.7.3",
+      "4.7.8"
+    ],
+    "chokidar": [
+      "4.0.3",
+      "5.0.0"
+    ],
+    "content-type": [
+      "1.0.5",
+      "2.0.0"
+    ],
+    "ipaddr.js": [
+      "1.9.1",
+      "2.5.0"
+    ],
+    "node-fetch": [
+      "2.7.0",
+      "3.3.2"
+    ],
+    "readdirp": [
+      "4.1.2",
+      "5.0.0"
+    ]
+  },
+  "allowDuplicatePhysicalIdentities": false,
+  "allowExternalHardlinks": false,
+  "symlinks": {
+    "mode": "receipt-exact",
+    "allowEscaping": false
+  }
+}

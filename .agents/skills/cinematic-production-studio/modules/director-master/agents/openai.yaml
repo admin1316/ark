@@ -1,0 +1,13 @@
+interface:
+  display_name: "山音超级导演大师"
+  short_description: "从剧本完成导演定调、节奏规划、剧本微调与九列分镜表"
+  default_prompt: "使用 $director-master 把这份剧本转化为导演定调、节奏规划和可执行的九列分镜方案。"
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

@@ -1,0 +1,4 @@
+# Source-checkout compatibility overlay for SDK launches. The generic dsh CLI
+# already composes the SDK profile through its profile runner; this file exists
+# so the SDK resolver can prove that the source launch is complete.
+[]

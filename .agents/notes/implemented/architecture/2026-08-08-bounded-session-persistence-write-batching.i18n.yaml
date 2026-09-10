@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-08-bounded-session-persistence-write-batching.md
+2026-08-08-bounded-session-persistence-write-batching.md: a4f8b6f5a30c9631bf96bd530fe6d57af276e9a0
+2026-08-08-bounded-session-persistence-write-batching.zh.md: 3218c8823bbb8f0aff0ce9a68ab22e674d50515a
