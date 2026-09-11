@@ -3460,6 +3460,86 @@ final class NativeProjectionMemo<Key: Equatable, Value>: ObservableObject {
   }
 }
 
+extension NativeChatProjectionKey {
+  /// Everything except `contentRevision`: the inputs that change what a row is
+  /// allowed to look like. `contentRevision` bumps on every streamed delta, so
+  /// it must not clear the per-row cache.
+  func sameInputs(as other: NativeChatProjectionKey) -> Bool {
+    sessionID == other.sessionID
+      && sessionRunning == other.sessionRunning
+      && language == other.language
+      && feedbackAvailable == other.feedbackAvailable
+      && feedbackByID == other.feedbackByID
+      && turnMetricsByTurn == other.turnMetricsByTurn
+      && turnUsageByTurn == other.turnUsageByTurn
+      && completedTurns == other.completedTurns
+      && forkSequenceByMessageID == other.forkSequenceByMessageID
+      && latestAssistantMessageID == other.latestAssistantMessageID
+      && compactProcess == other.compactProcess
+  }
+}
+
+/// Caches the projected display rows of one transcript entry.
+///
+/// `contentRevision` invalidates the whole body projection on every streamed
+/// delta, so rebuilding every entry's Markdown rows is O(transcript) per frame.
+/// An entry is immutable once its turn completes, so its rows are reused until
+/// the entry value or its final-answer flag changes. A cached frame that still
+/// contains a `.pending` source is rebuilt on every pass: that is how an
+/// asynchronous Markdown install — which does not change the entry value —
+/// reaches the view without a global invalidation.
+@MainActor
+final class NativeProjectedRowCache: ObservableObject {
+  private struct Frame {
+    let entry: NativeChatEntry
+    let isFinalAnswer: Bool
+    let rows: [NativeChatDisplayEntry]
+    let hasPendingSource: Bool
+  }
+
+  private var frames: [String: Frame] = [:]
+  private var order: [String] = []
+  private var lastKey: NativeChatProjectionKey?
+
+  /// Clears the cache when anything except the streaming text revision changes.
+  func beginPass(_ key: NativeChatProjectionKey) {
+    if let lastKey, lastKey.sameInputs(as: key) { return }
+    frames.removeAll()
+    order.removeAll()
+    lastKey = key
+  }
+
+  fileprivate func rows(
+    for entry: NativeChatEntry,
+    isFinalAnswer: Bool,
+    build: () -> [NativeChatDisplayEntry]
+  ) -> [NativeChatDisplayEntry] {
+    if let frame = frames[entry.id],
+       frame.isFinalAnswer == isFinalAnswer,
+       !frame.hasPendingSource,
+       frame.entry == entry {
+      return frame.rows
+    }
+    let rows = build()
+    if frames[entry.id] == nil { order.append(entry.id) }
+    frames[entry.id] = Frame(
+      entry: entry,
+      isFinalAnswer: isFinalAnswer,
+      rows: rows,
+      hasPendingSource: rows.contains { row in
+        guard case .assistantMarkdownRow(let body) = row else { return false }
+        if case .pending = body.row { return true }
+        return false
+      }
+    )
+    if order.count > 8000 {
+      for key in order.prefix(2000) { frames.removeValue(forKey: key) }
+      order.removeFirst(2000)
+    }
+    return rows
+  }
+}
+
 /// Associates an ordinary user prompt with one durable turn. User messages
 /// created immediately before `turn/start` may deliberately omit the repeated
 /// turn field, so the nearest prompt inside the previous/current boundaries is
@@ -3525,8 +3605,11 @@ private struct NativeChatView: View {
     NativeChatProjectionKey, NativeChatBodyProjection
   >()
 
+  /// Per-entry projection reuse; see ``NativeProjectedRowCache``.
+  @StateObject private var rowCache = NativeProjectedRowCache()
+
   private var bodyProjection: NativeChatBodyProjection {
-    projectionMemo.value(for: NativeChatProjectionKey(
+    let key = NativeChatProjectionKey(
       contentRevision: contentRevision,
       sessionID: context.sessionID,
       sessionRunning: context.sessionRunning,
@@ -3539,8 +3622,10 @@ private struct NativeChatView: View {
       forkSequenceByMessageID: context.forkSequenceByMessageID,
       latestAssistantMessageID: context.latestAssistantMessageID,
       compactProcess: compactProcess
-    )) {
-      computeBodyProjection()
+    )
+    return projectionMemo.value(for: key) {
+      rowCache.beginPass(key)
+      return computeBodyProjection()
     }
   }
 
@@ -3688,7 +3773,22 @@ private struct NativeChatView: View {
     )
   }
 
+  /// Reuses the projected rows of every entry whose value did not change. Only
+  /// the streaming entry (and any entry whose sources are still parsing) is
+  /// rebuilt per revision, instead of the whole transcript.
   private func projectedDisplayRows(
+    _ entry: NativeChatEntry,
+    finalAnswerByTurn: [Int: String]
+  ) -> [NativeChatDisplayEntry] {
+    rowCache.rows(
+      for: entry,
+      isFinalAnswer: entry.turn.map { finalAnswerByTurn[$0] == entry.id } ?? false
+    ) {
+      buildProjectedDisplayRows(entry, finalAnswerByTurn: finalAnswerByTurn)
+    }
+  }
+
+  private func buildProjectedDisplayRows(
     _ entry: NativeChatEntry,
     finalAnswerByTurn: [Int: String]
   ) -> [NativeChatDisplayEntry] {
