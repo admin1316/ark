@@ -118,6 +118,16 @@ final class NativeGFMDocumentModel: ObservableObject {
   /// and the newest text is always the one installed.
   private static let minimumParseInterval: Duration = .milliseconds(1000)
   private var lastParseStartedAt: ContinuousClock.Instant?
+  private var installTask: Task<Void, Never>?
+  /// A completed long answer is parsed from its full text, and installing that
+  /// whole block list in one transaction lays out the entire message at once:
+  /// a 2500-word report with code blocks and tables pegs one core for seconds
+  /// (measured, at the moment the answer stops streaming). Installing it in
+  /// slices spreads the same work across several frames. Incremental streaming
+  /// parses only grow a few blocks, so they still install atomically.
+  private static let progressiveInstallJump = 24
+  private static let progressiveInstallChunk = 24
+  private static let progressiveInstallDelay: Duration = .milliseconds(40)
 
   init(source: String) {
     self.source = source
@@ -126,6 +136,7 @@ final class NativeGFMDocumentModel: ObservableObject {
 
   deinit {
     parseTask?.cancel()
+    installTask?.cancel()
   }
 
   func update(source: String) {
@@ -139,6 +150,7 @@ final class NativeGFMDocumentModel: ObservableObject {
 
   private func schedule(_ source: String) {
     parseTask?.cancel()
+    installTask?.cancel()
     generation &+= 1
     let requestedGeneration = generation
     let elapsed = lastParseStartedAt.map { ContinuousClock.now - $0 } ?? Self.minimumParseInterval
@@ -152,12 +164,64 @@ final class NativeGFMDocumentModel: ObservableObject {
             self.generation == requestedGeneration,
             self.source == source
       else { return }
-      var transaction = Transaction(animation: nil)
-      transaction.disablesAnimations = true
-      withTransaction(transaction) {
-        self.blocks = parsed
-        self.renderedSource = source
-      }
+      self.install(parsed, source: source, generation: requestedGeneration, from: 0)
+    }
+  }
+
+  private func install(
+    _ parsed: [NativeGFMBlock],
+    source: String,
+    generation requestedGeneration: UInt64,
+    from index: Int
+  ) {
+    guard self.generation == requestedGeneration, self.source == source else { return }
+    if index == 0,
+       !self.blocks.isEmpty,
+       parsed.count > self.blocks.count + Self.progressiveInstallJump {
+      installSlice(
+        parsed,
+        source: source,
+        generation: requestedGeneration,
+        upTo: Self.progressiveInstallChunk
+      )
+      return
+    }
+    if index > 0 {
+      installSlice(
+        parsed,
+        source: source,
+        generation: requestedGeneration,
+        upTo: min(index + Self.progressiveInstallChunk, parsed.count)
+      )
+      return
+    }
+    publish(parsed, source: source)
+  }
+
+  private func installSlice(
+    _ parsed: [NativeGFMBlock],
+    source: String,
+    generation requestedGeneration: UInt64,
+    upTo end: Int
+  ) {
+    guard self.generation == requestedGeneration, self.source == source else { return }
+    publish(Array(parsed[0..<end]), source: source)
+    guard end < parsed.count else { return }
+    installTask?.cancel()
+    installTask = Task { [weak self] in
+      try? await Task.sleep(for: Self.progressiveInstallDelay)
+      guard !Task.isCancelled else { return }
+      await self?.install(parsed, source: source, generation: requestedGeneration, from: end)
+    }
+  }
+
+  /// One install is exactly one view-graph transaction.
+  private func publish(_ blocks: [NativeGFMBlock], source: String) {
+    var transaction = Transaction(animation: nil)
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      self.blocks = blocks
+      self.renderedSource = source
     }
   }
 }
