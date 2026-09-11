@@ -1012,8 +1012,17 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 			assertZstdHeaderFrame(headerFrame.value);
 			const scanner = new SessionLogScanner(headerFrame.value);
 			let remainingFrames = frames.length - 1;
+			let tailFrameStart;
+			let cleanBeforeTail = true;
+			let eventsBeforeTail = 0;
 			for (const plaintext of decodedFrames) {
 				signal?.throwIfAborted();
+				if (remainingFrames === 1) {
+					tailFrameStart = frames[frames.length - 1]?.start;
+					const beforeTail = scanner.checkpoint();
+					cleanBeforeTail = beforeTail.inputBytes === beforeTail.committedBytes;
+					eventsBeforeTail = beforeTail.eventCount;
+				}
 				scanner.write(plaintext);
 				remainingFrames -= 1;
 				if (remainingFrames > 0 && performance.now() >= yieldDeadline) {
@@ -1024,7 +1033,18 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 			}
 			signal?.throwIfAborted();
 			const complete = scanner.checkpoint();
-			if (complete.committedBytes !== complete.inputBytes) throw new Error("corrupt Zstandard session log: complete frame contains a torn JSONL record");
+			if (complete.committedBytes !== complete.inputBytes) {
+				if (tailFrameStart === void 0 || !cleanBeforeTail) throw new Error("corrupt Zstandard session log: complete frame contains a torn JSONL record");
+				const prefix = scanner.finish();
+				return {
+					meta: prefix.meta,
+					events: prefix.events.slice(0, eventsBeforeTail),
+					tornMarker: {
+						truncateTo: tailFrameStart,
+						recoveredEvents: []
+					}
+				};
+			}
 			if (tornStart === void 0) {
 				const prefix = scanner.finish();
 				return {
@@ -1184,6 +1204,7 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 			signal?.throwIfAborted();
 			for (const dir of await this.listSessionDirs(project, signal)) {
 				signal?.throwIfAborted();
+				try {
 				const opposite = join(dir, `session${logSuffix(this.oppositeCompression())}`);
 				const oppositeExists = await this.exists(opposite);
 				signal?.throwIfAborted();
@@ -1205,6 +1226,10 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 					header: meta,
 					path
 				});
+				} catch (error) {
+									signal?.throwIfAborted();
+									this.ctx.logger.warn(`${this.name}: skipping unreadable session log at "${dir}": ${error instanceof Error ? error.message : String(error)}`);
+								}
 			}
 		}
 		signal?.throwIfAborted();

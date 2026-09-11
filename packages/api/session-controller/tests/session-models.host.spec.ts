@@ -639,12 +639,11 @@ describe('Web session model selection', () => {
     expectValue(await remote.selectModel(request({
       sessionId, provider: 'text-only', model: 'plain',
     })))
-    expect(await remote.prompt(promptRequest({
+    // Ark 定制：text-only 路由不再拦截图片上传，能否识别由模型决定。
+    expectValue(await remote.prompt(promptRequest({
       sessionId, mode: 'queue', content: [image],
-    }))).toMatchObject({
-      ok: false,
-      error: { code: 'attachment-error', details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' } },
-    })
+    })))
+    followup.mockClear()
 
     expectValue(await remote.selectModel(request({
       sessionId, provider: 'image-capable', model: 'vision',

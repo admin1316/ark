@@ -619,16 +619,34 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     expect(scanLog(await decodeCompleteFrames(repaired)).events).toEqual(loaded.events)
   })
 
-  it('rejects a complete frame containing a torn JSONL record', async () => {
+  it('recovers the prefix when a complete final frame ends mid-record', async () => {
     const root = await freshRoot()
     const ctx = await mount(root)
     const header = meta('complete-bad-jsonl')
     await ctx.sessionPersistence.create(header)
     await ctx.sessionPersistence.append(header.id, oneTurnLog())
-    await appendFile(
-      logPath(root, header.cwd, header.id, 'zstd'),
-      await compressZstdFrame('{"type":"turn/start"'),
-    )
+    const path = logPath(root, header.cwd, header.id, 'zstd')
+    const committed = await readFile(path)
+    await appendFile(path, await compressZstdFrame('{"type":"turn/start"'))
+
+    const loaded = await ctx.sessionPersistence.load(header.id)
+    expect(loaded.events).toEqual(oneTurnLog())
+    const repaired = await readFile(path)
+    expect(repaired).toEqual(committed)
+    expect(scanZstdFrames(repaired).tornStart).toBeUndefined()
+    expect(scanLog(await decodeCompleteFrames(repaired)).events).toEqual(loaded.events)
+  })
+
+  it('rejects a torn complete frame that is not the final frame', async () => {
+    const root = await freshRoot()
+    const ctx = await mount(root)
+    const header = meta('mid-bad-jsonl')
+    await ctx.sessionPersistence.create(header)
+    await ctx.sessionPersistence.append(header.id, oneTurnLog())
+    const path = logPath(root, header.cwd, header.id, 'zstd')
+    await appendFile(path, await compressZstdFrame('{"type":"turn/start"'))
+    await appendFile(path, await compressZstdFrame(JSON.stringify({ type: 'turn/end', seq: 6, time: 7, data: { turn: 2, reason: { kind: 'completed' } } }) + '\n'))
+
     await expect(ctx.sessionPersistence.load(header.id)).rejects.toThrow(/complete frame contains a torn JSONL record/)
   })
 

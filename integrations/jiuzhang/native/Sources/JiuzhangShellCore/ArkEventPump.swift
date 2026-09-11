@@ -91,6 +91,25 @@ actor ArkEventMailbox<Element: Sendable> {
     }
   }
 
+  /// Wait for the next element, then drain whatever else is already buffered.
+  ///
+  /// A streaming turn delivers one frame per delta. Applying them one at a time
+  /// costs one MainActor turn — and therefore one full view-graph transaction —
+  /// per delta. Draining a burst in one turn preserves order and adds no
+  /// latency for slow producers while collapsing a burst into a single update.
+  func nextBatch(max: Int) async -> [Element] {
+    guard max > 0 else { return [] }
+    guard let first = await next() else { return [] }
+    var batch = [first]
+    while batch.count < max, bufferHead < buffer.count {
+      batch.append(buffer[bufferHead])
+      bufferHead += 1
+      refillFromWaitingProducer()
+      compactBufferIfNeeded()
+    }
+    return batch
+  }
+
   func finish() {
     guard !finished else { return }
     finished = true
@@ -158,6 +177,12 @@ public actor ArkEventPump {
   /// Await the next validated event, or nil after terminal shutdown.
   public func nextEvent() async -> ArkEventFrame? {
     await mailbox.next()
+  }
+
+  /// Await the next validated event batch (at least one, at most `max`).
+  /// An empty batch means terminal shutdown.
+  public func nextEvents(max: Int = 128) async -> [ArkEventFrame] {
+    await mailbox.nextBatch(max: max)
   }
 
   /// Convert the HTTP RPC base URL into one WebSocket downlink URL.

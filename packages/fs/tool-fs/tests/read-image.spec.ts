@@ -1,7 +1,7 @@
 /**
  * The `read_image` tool over the REAL local filesystem and attachment store:
  * extension routing, extension-less content sniffing (attachment object paths
- * included), the strict image-modality gate (every refusal arm), durable
+ * included), the relaxed image-modality policy (Ark：模型模态不再拦读图), durable
  * commit + image-block rendering, attachment admission failures, and the
  * regression that `read` keeps its text-only contract.
  */
@@ -417,7 +417,7 @@ describe('extension-less paths', () => {
   })
 })
 
-describe('strict image-modality gate', () => {
+describe('relaxed image-modality policy (Ark：模型模态不再拦截读图)', () => {
   it('accepts an exact visual route even when the advisory model catalog omits it', async () => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
     const ctx = await setup({
@@ -434,32 +434,25 @@ describe('strict image-modality gate', () => {
     ['a text-only model', 'text-model'],
     ['a model without declared modalities', 'legacy-model'],
     ['a model absent from the catalog', 'unknown-model'],
-  ])('refuses on %s', async (_label, model) => {
+  ])('reads on %s', async (_label, model) => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
     const ctx = await setup()
     const result = await readImage(ctx, { file_path: 'red.png' }, agentOn(model))
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('does not declare image input')
+    expect(result.isError).toBe(false)
   })
 
-  it('refuses when the route cannot be resolved (no agent, or no header and no options)', async () => {
+  it('reads without a calling agent, a routed model, or a mounted llm service', async () => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
     const ctx = await setup()
     const noAgent = await readImage(ctx, { file_path: 'red.png' })
-    expect(noAgent.isError).toBe(true)
-    expect(text(noAgent)).toContain('route could not be resolved')
+    expect(noAgent.isError).toBe(false)
 
     const noRoute = await readImage(ctx, { file_path: 'red.png' }, agentOn(undefined))
-    expect(noRoute.isError).toBe(true)
-    expect(text(noRoute)).toContain('route could not be resolved')
-  })
+    expect(noRoute.isError).toBe(false)
 
-  it('refuses when no llm service is mounted', async () => {
-    await writeFile(join(dir, 'red.png'), PNG_1X1)
-    const ctx = await setup({ llm: false })
-    const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('route could not be resolved')
+    const noLlm = await setup({ llm: false })
+    const result = await readImage(noLlm, { file_path: 'red.png' }, agentOn('vision-model'))
+    expect(result.isError).toBe(false)
   })
 })
 

@@ -104,9 +104,20 @@ actor NativeGFMParseWorker {
 @MainActor
 final class NativeGFMDocumentModel: ObservableObject {
   @Published private(set) var blocks: [NativeGFMBlock] = []
+  /// Source text that produced the currently published `blocks`. Streaming
+  /// keeps the previous frame visible until the next parse installs, so the
+  /// transcript never removes and re-inserts every block row per delta
+  /// (that churn is what the AttributeGraph hang stacks show).
+  private(set) var renderedSource: String = ""
   private(set) var source: String
   private var generation: UInt64 = 0
   private var parseTask: Task<Void, Never>?
+  /// Earliest start of the next parse. A streaming message changes on every
+  /// refresh; re-parsing and re-installing the whole block list at that rate
+  /// burns the main thread for no visible gain, so parses are trailing-throttled
+  /// and the newest text is always the one installed.
+  private static let minimumParseInterval: Duration = .milliseconds(1000)
+  private var lastParseStartedAt: ContinuousClock.Instant?
 
   init(source: String) {
     self.source = source
@@ -120,7 +131,9 @@ final class NativeGFMDocumentModel: ObservableObject {
   func update(source: String) {
     guard self.source != source else { return }
     self.source = source
-    blocks = []
+    // Deliberately keep `blocks` (the previous parsed frame) until the new
+    // parse installs below. Cleared here, every streamed delta removed and
+    // re-inserted the whole block list and re-measured CoreText twice.
     schedule(source)
   }
 
@@ -128,17 +141,22 @@ final class NativeGFMDocumentModel: ObservableObject {
     parseTask?.cancel()
     generation &+= 1
     let requestedGeneration = generation
+    let elapsed = lastParseStartedAt.map { ContinuousClock.now - $0 } ?? Self.minimumParseInterval
+    let delay = elapsed < Self.minimumParseInterval ? Self.minimumParseInterval - elapsed : Duration.zero
     parseTask = Task { [weak self] in
+      if delay > Duration.zero { try? await Task.sleep(for: delay) }
+      guard !Task.isCancelled, let self else { return }
+      self.lastParseStartedAt = ContinuousClock.now
       guard let parsed = await NativeGFMParseWorker.shared.blocks(for: source) else { return }
-      guard let self,
-            !Task.isCancelled,
-            generation == requestedGeneration,
+      guard !Task.isCancelled,
+            self.generation == requestedGeneration,
             self.source == source
       else { return }
       var transaction = Transaction(animation: nil)
       transaction.disablesAnimations = true
       withTransaction(transaction) {
         self.blocks = parsed
+        self.renderedSource = source
       }
     }
   }

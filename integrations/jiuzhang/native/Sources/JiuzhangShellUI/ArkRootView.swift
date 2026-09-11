@@ -3019,6 +3019,8 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   private var markdownProjectionState = NativeAssistantMarkdownProjectionState()
   private var markdownTasks: [NativeAssistantMarkdownSourceID: Task<Void, Never>] = [:]
   private var markdownPublishTask: Task<Void, Never>?
+  /// Coalesced feed refresh; see ``scheduleRefresh(model:)``.
+  private var refreshTask: Task<Void, Never>?
 
   init(model: ArkAppModel) {
     snapshot = NativeChatSnapshot(
@@ -3054,33 +3056,9 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       model.$messageFeedbackByID.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
     ]
     Publishers.MergeMany(triggers)
-    .throttle(for: .milliseconds(100), scheduler: RunLoop.main, latest: true)
     .sink { [weak self, weak model] _ in
       guard let self, let model else { return }
-      let entries = NativeChatEntry.merge(
-        messages: model.messages,
-        tools: model.toolActivities,
-        statuses: model.chatStatuses,
-        producedFiles: model.producedFiles
-      )
-      let reconciliation = reconcileMarkdownSources(model: model)
-      let retainedMarkdown = reconciliation.sessionChanged
-        ? [:]
-        : snapshot.markdownBlocksBySourceID.filter {
-          self.markdownProjectionState.installedSourceIDs.contains($0.key)
-        }
-      let projectionRemoved = retainedMarkdown.count != snapshot.markdownBlocksBySourceID.count
-      let revision = entries == snapshot.entries && !projectionRemoved
-        ? snapshot.contentRevision
-        : snapshot.contentRevision &+ 1
-      let next = NativeChatSnapshot(
-        model: model,
-        entries: entries,
-        contentRevision: revision,
-        markdownBlocksBySourceID: retainedMarkdown
-      )
-      if !snapshot.hasSamePresentation(as: next) { snapshot = next }
-      scheduleMissingMarkdownSources()
+      self.scheduleRefresh(model: model)
     }
     .store(in: &cancellables)
 
@@ -3089,8 +3067,61 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   }
 
   deinit {
+    refreshTask?.cancel()
     markdownPublishTask?.cancel()
     for task in markdownTasks.values { task.cancel() }
+  }
+  /// Coalesce feed refreshes into one in-flight transaction.
+  ///
+  /// A streaming turn invalidates the transcript continuously. The previous
+  /// fixed 100 ms throttle rebuilt the whole view list faster than a large
+  /// transcript can apply it, so the main thread never drained and the app
+  /// pegged one core for minutes (macOS `hang` / `cpu_resource` reports).
+  /// While the selected session is running we refresh at a cadence a large
+  /// transcript can actually complete; when idle we stay responsive.
+  private func scheduleRefresh(model: ArkAppModel) {
+    guard refreshTask == nil else { return }
+    let running = model.sessions.first { $0.id == model.selectedSessionID }?.running == true
+    // A streaming turn invalidates the transcript on every delta, and each
+    // rebuild is one full AttributeGraph/layout transaction (the measured
+    // cost, not the text). A large transcript gets a slower cadence so the
+    // main thread can actually drain; small sessions stay responsive.
+    let heavy = snapshot.entries.count > 600
+    let interval: UInt64 = running ? (heavy ? 800_000_000 : 400_000_000) : 150_000_000
+    refreshTask = Task { @MainActor [weak self, weak model] in
+      try? await Task.sleep(nanoseconds: interval)
+      guard let self else { return }
+      self.refreshTask = nil
+      guard let model else { return }
+      self.refresh(model: model)
+    }
+  }
+
+  private func refresh(model: ArkAppModel) {
+    let entries = NativeChatEntry.merge(
+      messages: model.messages,
+      tools: model.toolActivities,
+      statuses: model.chatStatuses,
+      producedFiles: model.producedFiles
+    )
+    let reconciliation = reconcileMarkdownSources(model: model)
+    let retainedMarkdown = reconciliation.sessionChanged
+      ? [:]
+      : snapshot.markdownBlocksBySourceID.filter {
+        markdownProjectionState.installedSourceIDs.contains($0.key)
+      }
+    let projectionRemoved = retainedMarkdown.count != snapshot.markdownBlocksBySourceID.count
+    let revision = entries == snapshot.entries && !projectionRemoved
+      ? snapshot.contentRevision
+      : snapshot.contentRevision &+ 1
+    let next = NativeChatSnapshot(
+      model: model,
+      entries: entries,
+      contentRevision: revision,
+      markdownBlocksBySourceID: retainedMarkdown
+    )
+    if !snapshot.hasSamePresentation(as: next) { snapshot = next }
+    scheduleMissingMarkdownSources()
   }
 
   private func reconcileMarkdownSources(
@@ -3456,6 +3487,13 @@ private struct NativeChatView: View {
   @AppStorage("ark.native.chat.content-width-adaptive") private var contentWidthAdaptive = true
   @AppStorage("ark.native.chat.compact-process") private var compactProcess = true
   @State private var expandedProcessGenerations = Set<String>()
+  /// Upper bound on transcript rows rendered at once. A long session otherwise
+  /// re-applies every row on each streaming refresh and saturates the main
+  /// thread; the header button pages earlier rows back in on demand.
+  @State private var renderWindowEntries = 400
+  /// A manual window widening (load older / turn jump) disables the streaming cap.
+  @State private var windowWidenedByUser = false
+  private static let streamingRenderWindowEntries = 160
 
   init(
     model: ArkAppModel,
@@ -3733,6 +3771,18 @@ private struct NativeChatView: View {
 
   var body: some View {
     let projection = bodyProjection
+    let allDisplayEntries = projection.displayEntries
+    // While a turn streams, every update re-runs the view-graph transaction
+    // for the whole window. A smaller streaming window keeps the tail live
+    // without paying for hundreds of historical rows per delta; any manual
+    // widening below restores the full window for the rest of the turn.
+    let effectiveWindow = context.sessionRunning && !windowWidenedByUser
+      ? min(renderWindowEntries, Self.streamingRenderWindowEntries)
+      : renderWindowEntries
+    let hiddenEntryCount = max(0, allDisplayEntries.count - effectiveWindow)
+    let visibleEntries = hiddenEntryCount > 0
+      ? Array(allDisplayEntries.suffix(effectiveWindow))
+      : allDisplayEntries
 
     GeometryReader { geometry in
       let transcriptWidth = ArkChatLayoutResolver.transcriptWidth(
@@ -3799,6 +3849,10 @@ private struct NativeChatView: View {
                       Task {
                         await model.loadOlderHistory()
                         DispatchQueue.main.async {
+                          // Windowed rendering would hide the prepended rows and
+                          // collapse the anchor delta; widen at least this page.
+                          renderWindowEntries += 400
+                          windowWidenedByUser = true
                           scrollController.contentDidChange()
                           if let anchor { scrollController.restoreAfterPrepend(anchor) }
                         }
@@ -3816,16 +3870,38 @@ private struct NativeChatView: View {
                     .buttonStyle(.borderless)
                     .disabled(context.loadingOlderHistory)
                   }
-                  ForEach(projection.displayEntries) { item in
+                  if hiddenEntryCount > 0 {
+                    Button {
+                      renderWindowEntries += 400
+                      windowWidenedByUser = true
+                    } label: {
+                      HStack(spacing: 7) {
+                        Image(systemName: "arrow.up")
+                        Text("\(ArkL10n.text(.chatLoadOlder, context.language)) (\(hiddenEntryCount))")
+                      }
+                      .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(ArkL10n.text(.chatLoadOlder, context.language))
+                  }
+                  ForEach(visibleEntries) { item in
                     transcriptRow(
                       item,
                       fontSize: fontSize,
-                      finalAnswerByTurn: projection.finalAnswerByTurn,
-                      scrollID: scrollID(
-                        for: item,
-                        turnAnchorByTurn: projection.turnAnchorByTurn
-                      )
+                      finalAnswerByTurn: projection.finalAnswerByTurn
                     )
+                    // A turn anchor rides a zero-size overlay so the row keeps its
+                    // ForEach identity: anchoring through `.id` re-identified the
+                    // row at every turn boundary and produced a remove+insert pair.
+                    .overlay(alignment: .center) {
+                      if let turn = item.turn,
+                        projection.turnAnchorByTurn[turn] == item.id
+                      {
+                        Color.clear
+                          .frame(width: 0, height: 0)
+                          .id("ark.chat.turn.\(turn)")
+                      }
+                    }
                   }
                   ForEach(context.steeringPrompts) { item in
                     HStack {
@@ -3847,6 +3923,10 @@ private struct NativeChatView: View {
                 .padding(.horizontal, 28)
                 .padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .center)
+                // Row insert/remove transitions in a very large lazy stack are
+                // pure overhead while streaming and showed up in the hang
+                // stacks as ViewListTransition; keep updates non-animated.
+                .transaction { transaction in transaction.animation = nil }
               }
               ArkChatScrollAttachment(controller: scrollController)
                 .frame(width: 0, height: 0)
@@ -3872,8 +3952,19 @@ private struct NativeChatView: View {
                 items: projection.navigationItems,
                 language: context.language,
                 navigate: { turn in
-                  withAnimation(.easeInOut(duration: 0.16)) {
-                    proxy.scrollTo("ark.chat.turn.\(turn)", anchor: .center)
+                  // The row may be outside the render window; widen first,
+                  // then scroll once SwiftUI has materialised the target.
+                  if let index = allDisplayEntries.firstIndex(where: { $0.turn == turn }) {
+                    let needed = allDisplayEntries.count - index
+                    if needed > renderWindowEntries {
+                      renderWindowEntries = needed
+                      windowWidenedByUser = true
+                    }
+                  }
+                  DispatchQueue.main.async {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                      proxy.scrollTo("ark.chat.turn.\(turn)", anchor: .center)
+                    }
                   }
                 }
               )
@@ -3888,11 +3979,21 @@ private struct NativeChatView: View {
           }
           .onChange(of: context.sessionID) { sessionID in
             expandedProcessGenerations.removeAll()
+            // The render window is view state, not session state; a session
+            // that inherits an expanded window would render far more rows
+            // than the fresh one needs.
+            renderWindowEntries = 400
+            windowWidenedByUser = false
             guard let sessionID else { return }
             scrollController.beginSessionTransition(to: sessionID)
             DispatchQueue.main.async {
               scrollController.completeSessionTransition()
             }
+          }
+          .onChange(of: context.sessionRunning) { running in
+            // The next turn starts from the small streaming window again; an
+            // idle transcript keeps whatever the operator widened it to.
+            if !running { windowWidenedByUser = false }
           }
           .onChange(of: contentRevision) { _ in
             DispatchQueue.main.async { scrollController.contentDidChange() }
@@ -3934,26 +4035,21 @@ private struct NativeChatView: View {
   private func transcriptRow(
     _ item: NativeChatDisplayEntry,
     fontSize: CGFloat,
-    finalAnswerByTurn: [Int: String],
-    scrollID: String
+    finalAnswerByTurn: [Int: String]
   ) -> some View {
     switch item {
     case .assistantPrefix(let row):
       assistantProjectedPrefix(row, fontSize: fontSize)
-        .id(scrollID)
     case .assistantMarkdownRow(let row):
       assistantProjectedBodyRow(row, fontSize: fontSize)
-        .id(scrollID)
     case .assistantSuffix(let row):
       assistantProjectedSuffix(row, fontSize: fontSize)
-        .id(scrollID)
     default:
       chatRow(
         item,
         fontSize: fontSize,
         finalAnswerByTurn: finalAnswerByTurn
       )
-      .id(scrollID)
     }
   }
 
@@ -4191,13 +4287,6 @@ private struct NativeChatView: View {
     return hasVisibleAnswer && entry.assistantReasoning != nil
   }
 
-  private func scrollID(
-    for item: NativeChatDisplayEntry,
-    turnAnchorByTurn: [Int: String]
-  ) -> String {
-    guard let turn = item.turn, turnAnchorByTurn[turn] == item.id else { return item.id }
-    return "ark.chat.turn.\(turn)"
-  }
 }
 
 /// Stages one continuous display control and emits only a changed normalized

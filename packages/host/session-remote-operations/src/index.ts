@@ -1752,21 +1752,7 @@ export class SessionRemoteOperationsService extends Service
     const admit = async (): Promise<SessionRemoteResult<SessionRemotePromptValue>> => {
       try {
         signal.throwIfAborted()
-        if (hasImage) {
-          const modelInfo = await this.ctx.llm.resolveModelInfo(
-            selection.provider,
-            selection.model,
-            signal,
-          )
-          if (modelInfo.inputModalities !== undefined
-            && !modelInfo.inputModalities.includes('image')) {
-            return failure(
-              'attachment-error',
-              `Model "${selection.model}" does not support image input.`,
-              { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
-            )
-          }
-        }
+        // Ark 定制：图片一律允许上传，能否识别由模型自行决定；不再按模型模态拦截。
         const content = await this.durablePromptContent(request.content)
         signal.throwIfAborted()
         const source: MessageSource = {

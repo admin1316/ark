@@ -2565,7 +2565,7 @@ describe('Session Remote prompt, attachment, queue, and cancellation', () => {
       .resolves.toMatchObject({ ok: false, error: { code: 'agent-busy' } })
   })
 
-  it('admits ordered images, enforces model modality, and translates attachment failures', async () => {
+  it('admits ordered images for every model modality and translates attachment failures', async () => {
     const state = await harness()
     const session = emptySession('prompt-image', state.cwd)
     const agent = attach(state, session)
@@ -2576,17 +2576,8 @@ describe('Session Remote prompt, attachment, queue, and cancellation', () => {
         { type: 'text', text: 'after' },
       ],
     })
+    // Ark 定制：text-only 路由同样放行上传，能否识别由模型决定。
     state.resolveModelInfo.mockResolvedValueOnce({ inputModalities: ['text'] })
-    await expect(state.service.prompt(imagePrompt, new AbortController().signal))
-      .resolves.toMatchObject({
-        ok: false,
-        error: {
-          code: 'attachment-error',
-          details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
-        },
-      })
-
-    state.resolveModelInfo.mockResolvedValueOnce({ inputModalities: undefined })
     await expect(state.service.prompt(imagePrompt, new AbortController().signal))
       .resolves.toEqual({ ok: true, value: { accepted: true } })
     const imageMessage: unknown = agent.followup.mock.calls[0]?.[0]

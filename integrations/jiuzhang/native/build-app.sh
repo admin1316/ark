@@ -772,7 +772,8 @@ def safe_dependency(value: str):
             r"/System/Library/Frameworks/[A-Za-z0-9_.+-]+\.framework/"
             r"Versions/[A-Za-z0-9_.+-]+/[A-Za-z0-9_.+-]+"
         ),
-        re.compile(r"/usr/lib/(?:libSystem\.B|libc\+\+\.1|libobjc\.A)\.dylib"),
+        # libcompression is an OS-shipped system library the SwiftTerm engine links.
+        re.compile(r"/usr/lib/(?:libSystem\.B|libc\+\+\.1|libobjc\.A|libcompression)\.dylib"),
         re.compile(r"/usr/lib/swift/libswift[A-Za-z0-9_]+\.dylib"),
     ))
 

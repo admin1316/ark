@@ -28,7 +28,10 @@ struct NativeGFMDocumentView: View {
 
   var body: some View {
     Group {
-      if model.source == text, !model.blocks.isEmpty {
+      // Append-only streaming: keep rendering the last parsed frame (stable
+      // row identity) until the next parse installs. A message that was
+      // replaced rather than appended falls back to the plain first frame.
+      if canReuseRenderedFrame {
         let blocks = model.blocks
         // The transcript already owns vertical virtualization. A second
         // vertical LazyVStack here creates nested lazy placement engines; after
@@ -57,6 +60,21 @@ struct NativeGFMDocumentView: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .onChange(of: text) { model.update(source: $0) }
+  }
+
+  /// Whether the retained parsed frame still belongs to this message.
+  ///
+  /// `text` is the presentation policy's bounded suffix window: below the
+  /// limit it grows by appending, above it the window slides, so an older
+  /// frame is no longer a literal prefix of the new text even though it is
+  /// still the previous frame of the same message. Row identity is fixed per
+  /// message, so a frame that did not shrink is safe to keep for one more
+  /// parse; only a shorter/replaced text falls back to the plain first frame.
+  private var canReuseRenderedFrame: Bool {
+    guard !model.blocks.isEmpty else { return false }
+    let rendered = model.renderedSource
+    guard !rendered.isEmpty else { return true }
+    return text.hasPrefix(rendered) || text.count >= rendered.count
   }
 
   private var firstFrameText: String {

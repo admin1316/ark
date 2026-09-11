@@ -350,6 +350,8 @@ public final class ArkChatScrollCoordinator {
   private var scrollWheelMonitor: Any?
   private var priorClipPostsBoundsChanges = false
   private var applyingCommand = false
+  /// Consumes the single reflow-driven resize a programmatic scroll can cause.
+  private var suppressResizeOnce = false
   private var transitioning = false
   private var pendingSessionID: String?
   private var invalidated = false
@@ -708,7 +710,13 @@ public final class ArkChatScrollCoordinator {
     else { return }
     let resized = geometryChanged(metrics)
     rememberGeometry(metrics)
+    let suppressed = suppressResizeOnce
+    suppressResizeOnce = false
     if resized {
+      if suppressed {
+        reportFollowingState()
+        return
+      }
       apply(stateMachine.viewportDidResize(sessionID: sessionID, metrics: metrics))
     } else {
       let isUserMove =
@@ -766,6 +774,9 @@ public final class ArkChatScrollCoordinator {
       ))
     scrollView.reflectScrolledClipView(scrollView.contentView)
     applyingCommand = false
+    // Materializing lazily placed rows can resize the document in a later
+    // layout pass; consume that one follow-up resize instead of scrolling twice.
+    suppressResizeOnce = true
 
     if let applied = currentMetrics() {
       stateMachine.viewportDidMove(

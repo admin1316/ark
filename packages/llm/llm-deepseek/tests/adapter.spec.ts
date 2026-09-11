@@ -1053,7 +1053,7 @@ describe('DeepSeekAdapter against a mock server', () => {
   })
 
   it.each(['deepseek-v4-flash', 'unlisted-pass-through'])(
-    'rejects image input for text-only model %s before credentials, attachments, or fetch',
+    'no longer rejects image input for model %s before credentials or attachments (Ark 定制)',
     async (model) => {
       const server = await mockServer([])
       const resolveApiKey = vi.fn(() => Promise.resolve('k'))
@@ -1066,17 +1066,18 @@ describe('DeepSeekAdapter against a mock server', () => {
         prepareExtensions: noExtensions,
       })
 
-      await expect(drain(adapter.stream({
+      // 模态预检已移除：请求会走到凭据与附件解析，剩余失败只来自附件准备或网络 I/O。
+      const failure = await drain(adapter.stream({
         provider: 'deepseek-official',
         model,
         messages: [createUserMessage({
           content: [{ type: 'image', attachment: imageRef }],
           source: { kind: 'plugin', plugin: 'test' },
         })],
-      }))).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
-      expect(resolveApiKey).not.toHaveBeenCalled()
-      expect(resolveAttachments).not.toHaveBeenCalled()
-      expect(server.requests).toHaveLength(0)
+      })).then(() => undefined, (error: unknown) => error)
+      expect(resolveAttachments).toHaveBeenCalled()
+      expect(resolveApiKey).toHaveBeenCalled()
+      expect(String((failure as Error | undefined)?.message ?? '')).not.toMatch(/does not accept image input/)
     },
   )
 
@@ -1709,14 +1710,14 @@ describe('plugin registration and config', () => {
         id: 'deepseek-v4-flash',
         name: 'DeepSeek-V4-Flash',
         description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
-        inputModalities: ['text'],
+        inputModalities: ['text', 'image'],
       },
       {
         provider: 'deepseek-official',
         id: 'deepseek-v4-pro',
         name: 'DeepSeek-V4-Pro',
         description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
-        inputModalities: ['text'],
+        inputModalities: ['text', 'image'],
       },
       { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'] },
     ])
@@ -1843,20 +1844,20 @@ describe('plugin registration and config', () => {
         id: 'deepseek-v4-flash',
         name: 'DeepSeek-V4-Flash',
         description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
-        inputModalities: ['text'],
+        inputModalities: ['text', 'image'],
       },
       {
         provider: 'deepseek-official',
         id: 'deepseek-v4-pro',
         name: 'DeepSeek-V4-Pro',
         description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
-        inputModalities: ['text'],
+        inputModalities: ['text', 'image'],
       },
       { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'] },
     ])
   })
 
-  it('defaults an adapter-supplied catalog entry to text input', async () => {
+  it('defaults an adapter-supplied catalog entry to text and image input', async () => {
     const connection = resolveAdapterOptions({ models: [] })
     const adapter = new DeepSeekAdapter({
       options: () => ({ ...connection, models: [{ id: 'adapter-model' }] }),
@@ -1868,7 +1869,7 @@ describe('plugin registration and config', () => {
       provider: 'deepseek-official',
       id: 'adapter-model',
       name: 'adapter-model',
-      inputModalities: ['text'],
+      inputModalities: ['text', 'image'],
     }])
   })
 
@@ -1889,7 +1890,7 @@ describe('plugin registration and config', () => {
       ],
     })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'private-fast', name: 'private-fast', inputModalities: ['text'] },
+      { provider: 'deepseek-official', id: 'private-fast', name: 'private-fast', inputModalities: ['text', 'image'] },
       { provider: 'deepseek-official', id: 'private-reasoner', name: 'Private Reasoner', description: 'Higher reasoning budget', inputModalities: ['text', 'image'] },
     ])
     await expect(ctx.llm.resolveModelInfo('deepseek-official', 'private-fast'))

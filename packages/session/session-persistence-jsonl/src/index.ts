@@ -384,8 +384,17 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       const scanner = new SessionLogScanner(headerFrame.value)
 
       let remainingFrames = frames.length - 1
+      let tailFrameStart: number | undefined
+      let cleanBeforeTail = true
+      let eventsBeforeTail = 0
       for (const plaintext of decodedFrames) {
         signal?.throwIfAborted()
+        if (remainingFrames === 1) {
+          tailFrameStart = frames[frames.length - 1]?.start
+          const beforeTail = scanner.checkpoint()
+          cleanBeforeTail = beforeTail.inputBytes === beforeTail.committedBytes
+          eventsBeforeTail = beforeTail.eventCount
+        }
         scanner.write(plaintext)
         remainingFrames -= 1
         if (remainingFrames > 0 && performance.now() >= yieldDeadline) {
@@ -397,7 +406,20 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       signal?.throwIfAborted()
       const complete = scanner.checkpoint()
       if (complete.committedBytes !== complete.inputBytes) {
-        throw new Error('corrupt Zstandard session log: complete frame contains a torn JSONL record')
+        // A crash (or a copy taken mid-append) can leave the final complete
+        // frame ending mid-record. Everything before that last append batch is
+        // still a valid prefix, so keep it, mark the artifact for repair, and
+        // let the next write truncate the torn tail. A tear anywhere earlier is
+        // real corruption and still refuses the session.
+        if (tailFrameStart === undefined || !cleanBeforeTail) {
+          throw new Error('corrupt Zstandard session log: complete frame contains a torn JSONL record')
+        }
+        const prefix = scanner.finish()
+        return {
+          meta: prefix.meta,
+          events: prefix.events.slice(0, eventsBeforeTail),
+          tornMarker: { truncateTo: tailFrameStart, recoveredEvents: [] },
+        }
       }
       if (tornStart === undefined) {
         const prefix = scanner.finish()
@@ -564,29 +586,41 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       signal?.throwIfAborted()
       for (const dir of await this.listSessionDirs(project, signal)) {
         signal?.throwIfAborted()
-        const opposite = join(dir, `session${logSuffix(this.oppositeCompression())}`)
-        const oppositeExists = await this.exists(opposite)
-        signal?.throwIfAborted()
-        if (oppositeExists) throw this.encodingMismatch(opposite)
-        const path = join(dir, `session${logSuffix(this.compression)}`)
-        const pathExists = await this.exists(path)
-        signal?.throwIfAborted()
-        if (!pathExists) continue
-        // Read only headers so listing scales with session count, not log size.
-        const first = this.compression === 'zstd'
-          ? await this.readFirstZstdLine(path, signal)
-          : await this.readFirstLine(path, signal)
-        signal?.throwIfAborted()
-        if (first === undefined) continue // empty/half-written file
-        const meta = parseHeaderMeta(first)
-        if (meta === undefined) continue // not a session header
-        await this.assertStoredIdentity(path, meta, undefined, signal)
-        signal?.throwIfAborted()
-        if (ids.has(meta.id)) {
-          throw new Error(`duplicate JSONL session id "${meta.id}" appears in multiple project directories`)
+        try {
+          const opposite = join(dir, `session${logSuffix(this.oppositeCompression())}`)
+          const oppositeExists = await this.exists(opposite)
+          signal?.throwIfAborted()
+          if (oppositeExists) throw this.encodingMismatch(opposite)
+          const path = join(dir, `session${logSuffix(this.compression)}`)
+          const pathExists = await this.exists(path)
+          signal?.throwIfAborted()
+          if (!pathExists) continue
+          // Read only headers so listing scales with session count, not log size.
+          const first = this.compression === 'zstd'
+            ? await this.readFirstZstdLine(path, signal)
+            : await this.readFirstLine(path, signal)
+          signal?.throwIfAborted()
+          if (first === undefined) continue // empty/half-written file
+          const meta = parseHeaderMeta(first)
+          if (meta === undefined) continue // not a session header
+          await this.assertStoredIdentity(path, meta, undefined, signal)
+          signal?.throwIfAborted()
+          if (ids.has(meta.id)) {
+            throw new Error(`duplicate JSONL session id "${meta.id}" appears in multiple project directories`)
+          }
+          ids.add(meta.id)
+          artifacts.push({ header: meta, path })
+        } catch (error: unknown) {
+          // One unreadable, structurally foreign, or corrupt log must not turn
+          // every session listing — and therefore native app startup, whose
+          // workspace plugin lists sessions during boot — into a hard failure.
+          // Skip the entry and leave `load()` as the path that reports
+          // per-session corruption to the operator.
+          signal?.throwIfAborted()
+          this.ctx.logger.warn(
+            `${this.name}: skipping unreadable session log at "${dir}": ${error instanceof Error ? error.message : String(error)}`
+          )
         }
-        ids.add(meta.id)
-        artifacts.push({ header: meta, path })
       }
     }
     signal?.throwIfAborted()

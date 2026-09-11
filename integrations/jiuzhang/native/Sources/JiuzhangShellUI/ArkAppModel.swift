@@ -2943,9 +2943,20 @@ public final class ArkAppModel: ObservableObject {
       guard !Task.isCancelled else { return }
       await eventPump.start()
       guard !Task.isCancelled else { return }
-      while !Task.isCancelled, let frame = await eventPump.nextEvent() {
+      // One MainActor turn per delta means one full SwiftUI view-graph
+      // transaction per delta. Apply a whole burst per turn instead: order is
+      // preserved, no latency is added for slow producers, and a fast stream
+      // collapses into a single update.
+      while !Task.isCancelled {
+        let batch = await eventPump.nextEvents()
+        if batch.isEmpty { break }
         guard let self else { break }
-        self.consume(frame)
+        for frame in batch { self.consume(frame) }
+        // A hot stream delivers bursts faster than one view-graph transaction
+        // can finish. Yielding briefly lets the next bursts coalesce into a
+        // single update; a lone interactive frame (approval, question) is far
+        // below the threshold and keeps its immediate delivery.
+        if batch.count >= 8 { try? await Task.sleep(for: .milliseconds(180)) }
       }
     }
     Task {
