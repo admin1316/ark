@@ -3177,7 +3177,11 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   private func scheduleMarkdownPublication() {
     guard markdownPublishTask == nil else { return }
     markdownPublishTask = Task { [weak self] in
-      try? await Task.sleep(nanoseconds: 16_000_000)
+      // 40 ms coalescing: every publication bumps contentRevision and therefore
+      // re-runs the whole body projection. 16 ms let a fast stream install
+      // blocks almost per chunk; 40 ms keeps the tail live while cutting the
+      // number of full projections per second.
+      try? await Task.sleep(nanoseconds: 40_000_000)
       guard !Task.isCancelled, let self else { return }
       markdownPublishTask = nil
       let ready = markdownProjectionState.takeReadyBlocks()
@@ -3493,7 +3497,12 @@ private struct NativeChatView: View {
   @State private var renderWindowEntries = 400
   /// A manual window widening (load older / turn jump) disables the streaming cap.
   @State private var windowWidenedByUser = false
-  private static let streamingRenderWindowEntries = 160
+  /// While a turn streams, keep the live tail small: each delta re-runs one
+  /// view-graph transaction over every visible row, so a large transcript gets
+  /// a smaller window (the "load older" control still restores 400-row pages).
+  private static func streamingRenderWindowEntries(forEntryCount count: Int) -> Int {
+    count >= 2000 ? 96 : 160
+  }
 
   init(
     model: ArkAppModel,
@@ -3777,7 +3786,7 @@ private struct NativeChatView: View {
     // without paying for hundreds of historical rows per delta; any manual
     // widening below restores the full window for the rest of the turn.
     let effectiveWindow = context.sessionRunning && !windowWidenedByUser
-      ? min(renderWindowEntries, Self.streamingRenderWindowEntries)
+      ? min(renderWindowEntries, Self.streamingRenderWindowEntries(forEntryCount: entries.count))
       : renderWindowEntries
     let hiddenEntryCount = max(0, allDisplayEntries.count - effectiveWindow)
     let visibleEntries = hiddenEntryCount > 0
