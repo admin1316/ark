@@ -607,7 +607,11 @@ describe('Python release workflows', () => {
     // too, so the runner's Node and pnpm toolchain is shared read-only at
     // identical paths and prepended to the container's PATH.
     expect(String(manylinuxSmoke.run)).toContain('PATH_EXTRA="$node_root/bin:$PNPM_HOME"')
-    expect(String(manylinuxSmoke.run)).toContain('-v "$PNPM_HOME:$PNPM_HOME:ro"')
+    // The pnpm shim resolves its JavaScript from the setup root, so that root —
+    // not just PNPM_HOME — is what gets mounted into the container.
+    const linuxPnpmSetupRoot = '${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}'
+    expect(String(manylinuxSmoke.run)).toContain(`pnpm_setup_root="${linuxPnpmSetupRoot}"`)
+    expect(String(manylinuxSmoke.run)).toContain('-v "$pnpm_setup_root:$pnpm_setup_root:ro"')
     expect(String(manylinuxSmoke.run)).toContain('pnpm --version')
     expect(JSON.stringify(manylinuxSmoke)).toContain('-e DSH_TELEMETRY_DISABLED')
   })

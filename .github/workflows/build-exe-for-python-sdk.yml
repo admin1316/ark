@@ -382,8 +382,9 @@ jobs:
           # toolchain read-only with the container at identical paths (the
           # official Node build targets this container's glibc).
           node_root="$(dirname "$(dirname "$(command -v node)")")"
+          pnpm_setup_root="${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"
           docker run --rm -e RUNTIME_WHEEL -e SDK_WHEEL -e DSH_TELEMETRY_DISABLED -e PNPM_HOME -e PATH_EXTRA="$node_root/bin:$PNPM_HOME" \
-            -v "$PWD:/work" -v "$node_root:$node_root:ro" -v "$PNPM_HOME:$PNPM_HOME:ro" \
+            -v "$PWD:/work" -v "$node_root:$node_root:ro" -v "$pnpm_setup_root:$pnpm_setup_root:ro" \
             -w /work "$image" bash -euxo pipefail -c '
             export PATH="$PATH_EXTRA:$PATH"
             node --version
