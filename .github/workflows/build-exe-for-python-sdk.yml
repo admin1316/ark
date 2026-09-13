@@ -286,16 +286,20 @@ jobs:
           cd "$RUNNER_TEMP"
           env -u PYTHONPATH -u DSH_RUNTIME_MODE "$RUNNER_TEMP/dsh-sdk-smoke/bin/python" "$GITHUB_WORKSPACE/scripts/smoke-python-runtime.py" --scenario all --installed-wheel
 
-      - name: Preflight installed-wheel real API test (POSIX)
-        if: runner.os != 'Windows' && inputs.ci && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]'
+      # Optional-secret gate: the live-API test runs only when the repository
+      # secret is configured, so an unconfigured secret can never turn the
+      # required runtime leg red. The keyless black-box above is unconditional
+      # and remains the release authority.
+      - name: Gate optional real-API secret
+        id: api-secret
+        if: inputs.ci && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]'
         shell: bash
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
-        run: |
-          test -n "$DEEPSEEK_API_KEY" || { echo '::error::DEEPSEEK_API_KEY_EXTERNAL is required for trusted CI'; exit 1; }
+        run: bash scripts/ci-secret-gate.sh DEEPSEEK_API_KEY
 
       - name: Run installed-wheel real API black-box test (POSIX)
-        if: runner.os != 'Windows' && inputs.ci && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]'
+        if: runner.os != 'Windows' && steps.api-secret.outputs.enabled == 'true'
         shell: bash
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
@@ -327,16 +331,8 @@ jobs:
           Set-Location $env:RUNNER_TEMP
           & "$env:RUNNER_TEMP/dsh-sdk-smoke/Scripts/python.exe" "$env:GITHUB_WORKSPACE/scripts/smoke-python-runtime.py" --scenario all --installed-wheel
 
-      - name: Preflight installed-wheel real API test (Windows)
-        if: runner.os == 'Windows' && inputs.ci && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]'
-        shell: pwsh
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) { throw 'DEEPSEEK_API_KEY_EXTERNAL is required for trusted CI' }
-
       - name: Run installed-wheel real API black-box test (Windows)
-        if: runner.os == 'Windows' && inputs.ci && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]'
+        if: runner.os == 'Windows' && steps.api-secret.outputs.enabled == 'true'
         shell: pwsh
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}

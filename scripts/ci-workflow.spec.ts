@@ -516,13 +516,12 @@ describe('Python release workflows', () => {
     const cleanVenvWindows = buildSteps.find(step => isRecord(step) && step.name === 'Install local SDK and runtime wheels into a clean venv (Windows)')
     const installedKeylessPosix = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel keyless black-box tests (POSIX)')
     const installedKeylessWindows = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel keyless black-box tests (Windows)')
-    const realApiPreflightPosix = buildSteps.find(step => isRecord(step) && step.name === 'Preflight installed-wheel real API test (POSIX)')
-    const realApiPreflightWindows = buildSteps.find(step => isRecord(step) && step.name === 'Preflight installed-wheel real API test (Windows)')
+    const apiSecretGate = buildSteps.find(step => isRecord(step) && step.name === 'Gate optional real-API secret')
     const installedRealApiPosix = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel real API black-box test (POSIX)')
     const installedRealApiWindows = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel real API black-box test (Windows)')
     if (!isRecord(cleanVenvPosix) || !isRecord(cleanVenvWindows)
       || !isRecord(installedKeylessPosix) || !isRecord(installedKeylessWindows)
-      || !isRecord(realApiPreflightPosix) || !isRecord(realApiPreflightWindows)
+      || !isRecord(apiSecretGate)
       || !isRecord(installedRealApiPosix) || !isRecord(installedRealApiWindows)) {
       throw new TypeError('Python wheel builder must define native POSIX and Windows installed-wheel steps')
     }
@@ -571,13 +570,19 @@ describe('Python release workflows', () => {
     expect(installedKeylessWindows).toMatchObject({ if: "runner.os == 'Windows'", shell: 'pwsh' })
     expect(cleanVenvWindows).toMatchObject({ if: "runner.os == 'Windows'", shell: 'pwsh' })
     expect(String(cleanVenvWindows.run)).toContain('Scripts/python.exe')
-    expect(realApiPreflightPosix).toMatchObject({
+    // The live-API test is gated on the optional secret: an unconfigured
+    // secret skips it instead of failing the required runtime leg, and the
+    // keyless black-box above stays unconditional.
+    expect(apiSecretGate).toMatchObject({
+      id: 'api-secret',
+      shell: 'bash',
       env: { DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}' },
     })
-    expect(String(realApiPreflightPosix.if)).toContain('inputs.ci')
-    expect(String(realApiPreflightPosix.if)).toContain('head.repo.fork')
-    expect(String(realApiPreflightPosix.if)).toContain('dependabot[bot]')
-    expect(realApiPreflightWindows).toMatchObject({ shell: 'pwsh' })
+    expect(String(apiSecretGate.run)).toBe('bash scripts/ci-secret-gate.sh DEEPSEEK_API_KEY')
+    expect(String(installedRealApiPosix.if)).toContain("steps.api-secret.outputs.enabled == 'true'")
+    expect(String(installedRealApiWindows.if)).toContain("steps.api-secret.outputs.enabled == 'true'")
+    expect(String(installedKeylessPosix.if)).toBe("runner.os != 'Windows'")
+    expect(String(installedKeylessWindows.if)).toBe("runner.os == 'Windows'")
     expect(installedRealApiPosix).toMatchObject({
       env: {
         DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}',
@@ -590,7 +595,7 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(installedRealApiWindows)).toContain('--scenario sdk-live --installed-wheel')
     expect(workflow.on).not.toHaveProperty('pull_request_target')
     expect(workflow.permissions).toEqual({ contents: 'read' })
-    for (const secretStep of [realApiPreflightPosix, realApiPreflightWindows, installedRealApiPosix, installedRealApiWindows]) {
+    for (const secretStep of [apiSecretGate]) {
       expect(String(secretStep.if)).toContain('inputs.ci')
       expect(String(secretStep.if)).toContain("github.event_name == 'pull_request'")
       expect(String(secretStep.if)).toContain('!github.event.pull_request.head.repo.fork')
@@ -848,7 +853,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function runSecretGate(
   script: string,
   environment: Record<string, string>,
-): { status: number | null, stdout: string, stderr: string, output: string } {
+): { status: number | null; stdout: string; stderr: string; output: string } {
   const directory = mkdtempSync(join(tmpdir(), 'ark-ci-gate-'))
   const outputPath = join(directory, 'github-output.txt')
   try {
