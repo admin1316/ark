@@ -157,6 +157,32 @@ class LocalSendOperation implements TerminalSendOperation {
   }
 }
 
+/**
+ * Diagnostic-only event trace for one PTY session.
+ *
+ * Enabled by DSH_TERMINAL_TRACE=1 while a handoff defect is being localised: the
+ * ring buffer keeps ordering evidence (relative milliseconds, booleans and
+ * counters only - never command, output, environment or secret values) and dumps
+ * it to stderr when the session settles through the suspected inferred_idle path.
+ * No control flow reads this trace.
+ */
+class TerminalTrace {
+  private readonly startedAt = Date.now()
+  private readonly events: string[] = []
+  private readonly enabled = process.env.DSH_TERMINAL_TRACE === '1'
+
+  record(event: string, meta: Readonly<Record<string, boolean | number | string>> = {}): void {
+    if (!this.enabled) return
+    const fields = Object.entries(meta).map(([key, value]) => `${key}=${String(value)}`).join(' ')
+    this.events.push(`+${String(Date.now() - this.startedAt)}ms ${event}${fields === '' ? '' : ` ${fields}`}`)
+    if (this.events.length > 200) this.events.shift()
+  }
+
+  dump(): void {
+    if (!this.enabled) return
+    process.stderr.write(`[terminal-trace] ${this.events.join(' | ')}\n`)
+  }
+}
 /** Backend session wrapping one provider-owned terminal process. */
 export class LocalPtySession implements TerminalBackendSession {
   motd = ''
@@ -182,6 +208,7 @@ export class LocalPtySession implements TerminalBackendSession {
   private activeWrite: Promise<boolean> | undefined
   private pollingReady: LocalSendOperation | undefined
   private polling = false
+  private readonly trace = new TerminalTrace()
   private promptSeen = false
   private promptTextSeen = false
   private promptTail = ''
@@ -398,6 +425,7 @@ export class LocalPtySession implements TerminalBackendSession {
 
   private readonly onTerminalData = (chunk: Buffer | Uint8Array | string): void => {
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk
+    this.trace.record('stdout_activity', { bytes: bytes.length })
     const data = this.decoder.decode(bytes, { stream: true })
     this.queueEmulatorData(data)
     this.onData(data)
@@ -502,6 +530,15 @@ export class LocalPtySession implements TerminalBackendSession {
         this.settleActive('stdin_read')
         return
       }
+      this.trace.record('readiness_probe', {
+        promptSeen: this.promptSeen,
+        promptTextSeen: this.promptTextSeen,
+        idleFor,
+        elapsed,
+        foreground: foreground === undefined ? -1 : foreground.processGroupId,
+        inputWaiting: foreground?.inputWaiting === true,
+        shellPgid: this.shellPgid ?? -1,
+      })
       // A prompt candidate can race bash's foreground handoff, but an interactive
       // child also inherits PROMPT_COMMAND. Silence therefore remains the bound
       // on waiting for shell ownership instead of letting a child marker suppress
@@ -620,6 +657,8 @@ export class LocalPtySession implements TerminalBackendSession {
   private settleActive(waitReason: TerminalWaitReason, retainOwnership = false): void {
     const operation = this.active
     if (operation === undefined) return
+    this.trace.record(`settle_${waitReason}`)
+    if (waitReason === 'inferred_idle') this.trace.dump()
     const scrollbackTruncated = this.scrollback.snapshot().truncated
     if (retainOwnership) {
       this.stopPolling()

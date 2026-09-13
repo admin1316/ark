@@ -83,6 +83,10 @@ jobs:
       # run-gates already applies through coverageTestTimeoutArgs(); the complete
       # native Windows lane sets the same 30 s.
       DSH_COVERAGE_TEST_TIMEOUT_MS: '30000'
+      # DIAGNOSTIC (temporary): emit the persistent-shell handoff event trace so the
+      # Linux-only 'inferred_idle instead of stdin_read' failure can be localised.
+      # The trace records relative milliseconds and counters only, never payloads.
+      DSH_TERMINAL_TRACE: '1'
     steps:
       - uses: actions/checkout@v6
         with:
