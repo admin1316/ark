@@ -345,6 +345,16 @@ describe('Python release workflows', () => {
     } finally { rmSync(fixture, { recursive: true, force: true }) }
   })
 
+  it('gives the single-exe build the repository host heap budget', () => {
+    const workflow = loadWorkflow('.github/workflows/build-exe-for-python-sdk.yml')
+    const build = workflowJob(workflow, 'build')
+    if (!Array.isArray(build.steps)) throw new TypeError('build job must have steps')
+    const step = build.steps.filter(isRecord).find(value => value.name === 'Build single-exe')
+    // Step-scoped on purpose: only this build inherits the 4096 MB budget the Wine
+    // lane already pins; install, smoke and release steps keep the default.
+    expect(step?.env).toEqual({ NODE_OPTIONS: '--max-old-space-size=4096' })
+  })
+
   it('executes the target planner for all published carriers and rejects unsupported targets', () => {
     const workflow = loadWorkflow('.github/workflows/build-exe-for-python-sdk.yml')
     const plan = workflowJob(workflow, 'plan')

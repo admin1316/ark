@@ -227,6 +227,13 @@ jobs:
           }
 
       - name: Build single-exe
+        env:
+          # Reuse the repository's existing Host TypeScript heap budget: stage 1 of
+          # build-host-bundles (tsc -b tsconfig.host.json) exceeds the default V8
+          # old-space on hosted macOS runners and aborts with SIGABRT after
+          # "Ineffective mark-compacts near heap limit". scripts/wine-windows-gates.sh
+          # pins the same 4096 MB limit for the identical compile.
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm exec tsx scripts/build-exe-for-python-sdk.ts --targets=${{ matrix.target }}
 
       - name: Resolve platform outputs
