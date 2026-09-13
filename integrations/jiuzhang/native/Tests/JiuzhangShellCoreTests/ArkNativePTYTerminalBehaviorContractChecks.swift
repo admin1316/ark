@@ -711,13 +711,29 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
   )
 
   // 3b2) 洪泛下交接缓冲必须有界，且尾部输出仍能到达 surface。
+  // DIAGNOSTIC (temporary): sample the hand-off buffer while the flood drains so a
+  // failure carries peak/final counters and elapsed time instead of one sample.
   await MainActor.run {
     hiddenSession.sendCommand("yes flood-line | head -c 20000000; echo __ARK_FLOOD_DONE__")
   }
-  let floodTailLanded = await waitForTerminal(timeout: 30) {
-    hiddenSurface.surfaceText().contains("__ARK_FLOOD_DONE__")
+  let floodStartedAt = Date()
+  var floodTailLanded = false
+  var floodSamples = 0
+  var peakHandoffBytes = 0
+  while Date().timeIntervalSince(floodStartedAt) < 30 {
+    if await waitForTerminal(timeout: 1) { hiddenSurface.surfaceText().contains("__ARK_FLOOD_DONE__") } {
+      floodTailLanded = true
+      break
+    }
+    let observed = await MainActor.run { hiddenSession.pendingRawHandoffBytes }
+    if observed > peakHandoffBytes { peakHandoffBytes = observed }
+    floodSamples += 1
   }
   let handoffBound = await MainActor.run { hiddenSession.pendingRawHandoffBytes }
+  if handoffBound > peakHandoffBytes { peakHandoffBytes = handoffBound }
+  let floodElapsedMs = Int(Date().timeIntervalSince(floodStartedAt) * 1_000)
+  let floodSurfaceChars = await MainActor.run { hiddenSurface.surfaceText().count }
+  print("[pty-flood-trace] bytes_requested=20000000 write_calls=1 samples=\(floodSamples) peak_handoff=\(peakHandoffBytes) final_handoff=\(handoffBound) tail_seen=\(floodTailLanded) surface_chars=\(floodSurfaceChars) elapsed_ms=\(floodElapsedMs)")
   check(
     floodTailLanded && handoffBound <= 8 * 1024 * 1024 + 65_536,
     "a 20 MB PTY flood stays bounded in the hand-off buffer (\(handoffBound) bytes) and still reaches the tail"
