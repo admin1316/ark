@@ -107,6 +107,16 @@ function completeStdout(toolName, stdout, rawOutputMaxBytes) {
 }
 let rgPathPromise;
 /**
+ * The ripgrep sidecar beside the running executable: the executable's stem plus
+ * `-rg`, keeping a Windows `.exe` extension (`runtime.exe` → `runtime-rg.exe`).
+ * The packaging script and the Python runtime launcher name the artifact the
+ * same way, so a packaged runtime must never append after the extension.
+ * @returns the absolute sidecar path for the current executable.
+ */
+function ripgrepSidecarPath() {
+    return process.execPath.replace(/(\.exe)?$/i, '-rg$1');
+}
+/**
  * The packaged ripgrep binary path, resolved lazily once per process.
  *
  * A single-file runtime uses the executable's `-rg` sidecar because a native
@@ -120,7 +130,7 @@ let rgPathPromise;
  */
 export function resolveRgPath() {
     rgPathPromise ??= Promise.resolve().then(async () => {
-        const executableSidecar = `${process.execPath}-rg`;
+        const executableSidecar = ripgrepSidecarPath();
         if ('pkg' in process && existsSync(executableSidecar))
             return executableSidecar;
         return (await import('@vscode/ripgrep')).rgPath;
