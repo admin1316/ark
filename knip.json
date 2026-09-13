@@ -659,9 +659,12 @@
       ]
     },
     "packages/host/workbench": {
-      "entry": [],
+      "entry": [
+        "tests/**/*.spec.ts"
+      ],
       "project": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "tests/**/*.ts"
       ]
     },
     "packages/experimental/inspector": {
