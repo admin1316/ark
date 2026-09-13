@@ -42,24 +42,17 @@ jobs:
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
-      # The tests self-skip locally when a credential is absent. A manually
-      # dispatched CI run must fail instead of reporting an all-skipped green.
-      - name: Preflight (require provider API keys)
+      # Optional-secret gate: the live provider suite runs only when both
+      # repository secrets are configured. The gate prints presence, never a value.
+      - name: Gate optional provider API keys
+        id: provider-secrets
         env:
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_EXTERNAL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_EXTERNAL }}
-        run: |
-          set -euo pipefail
-          missing=0
-          for name in AZURE_OPENAI_API_KEY ANTHROPIC_API_KEY; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::${name} is empty. Configure the corresponding *_EXTERNAL repository secret."
-              missing=1
-            fi
-          done
-          exit "$missing"
+        run: bash scripts/ci-secret-gate.sh AZURE_OPENAI_API_KEY ANTHROPIC_API_KEY
 
       - name: E2E tests (real Azure OpenAI and Anthropic APIs)
+        if: steps.provider-secrets.outputs.enabled == 'true'
         env:
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_EXTERNAL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_EXTERNAL }}
