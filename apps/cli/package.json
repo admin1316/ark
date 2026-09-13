@@ -36,6 +36,7 @@
     "@deepseek-ai/dsh-profile-runner": "workspace:^",
     "@deepseek-ai/dsh-schedule": "workspace:^",
     "@deepseek-ai/dsh-sdk-app": "workspace:^",
+    "@deepseek-ai/dsh-sdk-minimal": "workspace:^",
     "@deepseek-ai/dsh-skill-filesystem": "workspace:^",
     "@deepseek-ai/dsh-tool-ask-user": "workspace:^",
     "@deepseek-ai/dsh-tool-bash": "workspace:^",

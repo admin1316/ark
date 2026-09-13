@@ -1,15 +1,286 @@
-import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
+import { createRequire, registerHooks } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { parseEnv } from "node:util";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import * as yaml from "js-yaml";
-import { Context } from "@deepseek-ai/cordis";
-import Loader from "@deepseek-ai/cordis-plugin-loader";
-import Include, { applyEntryPatches, entryListSchema } from "@deepseek-ai/cordis-plugin-include";
+import { Context, Service } from "@deepseek-ai/cordis";
+import Loader, { EntryGroup, EntryTree, isJsExpr } from "@deepseek-ai/cordis-plugin-loader";
+import { access, constants, readFile, rename, writeFile } from "node:fs/promises";
+import { setTimeout as setTimeout$1 } from "node:timers/promises";
 import Group from "@deepseek-ai/cordis-plugin-group";
 import { dshHomePath, resolveDshHome } from "@deepseek-ai/dsh-home-paths";
 import { createLaunchEnvironmentSnapshot } from "@deepseek-ai/dsh-launch-environment";
+//#region ../../../vendor/include/src/index.ts
+const JsExpr = new yaml.Type("tag:yaml.org,2002:js", {
+	kind: "scalar",
+	resolve: (data) => typeof data === "string",
+	construct: (data) => ({ __jsExpr: data }),
+	predicate: isJsExpr,
+	represent: (data) => data["__jsExpr"]
+});
+/**
+* The entry-list YAML dialect: `!!js` scalars round-trip as expression nodes
+* the Loader evaluates at entry activation. Exported so config tooling
+* (`dsh --dump-config`) parses and prints exactly the dialect this include
+* mounts.
+*/
+const entryListSchema = yaml.JSON_SCHEMA.extend(JsExpr);
+const schema = entryListSchema;
+const writable = {
+	".json": "application/json",
+	".yaml": "application/yaml",
+	".yml": "application/yaml"
+};
+const supported = new Set(Object.keys(writable));
+const WRITE_RETRY_LIMIT = 10;
+const WRITE_RETRY_DELAY_MS = 50;
+function retryableWriteError(error) {
+	const code = error?.code;
+	return code === "EACCES" || code === "EBUSY" || code === "EPERM";
+}
+/**
+* Apply patch lists to an entry list — THE patch semantics of this include,
+* shared by mounting (`applyPatches`) and offline config tooling
+* (`dsh --dump-config`) so a dump can never drift from what boots. The input
+* is never mutated and the result is always detached from it (even with no
+* patches): patching or mounting shared entry objects would bake earlier
+* values into the cached parse, so repeated application (config hot-reloads)
+* could never revert a removed or changed patch. Inserted entries are indexed
+* as they are added, so a later patch in the same list can target a row an
+* earlier patch inserted. A patch that matches nothing warns and is skipped.
+* @param data - the parsed entry list (JSON-safe plain data).
+* @param patches - the patch list to apply, in order.
+* @param warn - sink for skipped-patch diagnostics (printf-style, `%C` = code).
+* @returns a detached entry list with every applicable patch applied.
+*/
+function applyEntryPatches(data, patches, warn) {
+	data = structuredClone(data);
+	if (!patches?.length) return data;
+	const entryMap = /* @__PURE__ */ new Map();
+	const buildMap = (entries) => {
+		for (const entry of entries) {
+			if (entry.id) entryMap.set(entry.id, entry);
+			if (entry.group && Array.isArray(entry.config)) buildMap(entry.config);
+		}
+	};
+	buildMap(data);
+	for (const patch of patches) {
+		const { id, insert, name, ...overrides } = patch;
+		if (insert) {
+			if (id) {
+				const target = entryMap.get(id);
+				if (!target) {
+					warn("patch insert: entry %C not found", id);
+					continue;
+				}
+				if (!target.group) {
+					warn("patch insert: entry %C is not a group", id);
+					continue;
+				}
+				if (!Array.isArray(target.config)) target.config = [];
+				target.config.push(...insert);
+			} else data.push(...insert);
+			buildMap(insert);
+			continue;
+		}
+		if (!id) {
+			warn("patch: id is required for non-insert patches");
+			continue;
+		}
+		const target = entryMap.get(id);
+		if (!target) {
+			warn("patch: entry %C not found", id);
+			continue;
+		}
+		if (name && name !== target.name) {
+			warn("patch: name mismatch for %C (expected %C, got %C), skipping", id, target.name, name);
+			continue;
+		}
+		for (const [key, value] of Object.entries(overrides)) {
+			if (key === "id") continue;
+			target[key] = value;
+		}
+	}
+	return data;
+}
+var ConfigFileError = class extends Error {
+	stage;
+	constructor(stage, path, cause) {
+		super(`failed to ${stage} config file ${path}`, { cause });
+		this.stage = stage;
+		this.name = "ConfigFileError";
+	}
+};
+/** Loader entry tree backed by a YAML or JSON file. */
+var Include = class extends EntryTree {
+	config;
+	static inject = ["loader"];
+	static [EntryGroup.key] = true;
+	filename;
+	type;
+	readonly;
+	content;
+	data;
+	writeTask;
+	pendingWrite;
+	writeQueue = Promise.resolve();
+	applyQueue = Promise.resolve();
+	constructor(ctx, config) {
+		super(ctx);
+		this.config = config;
+		this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false;
+		this.filename = fileURLToPath(new URL(this.config.path, this.ctx.baseUrl));
+		const ext = extname(this.filename);
+		if (!supported.has(ext)) throw new Error(`extension "${ext}" not supported`);
+		this.type = writable[ext];
+		this.readonly = !this.type;
+		this.ctx.baseUrl = new URL(".", pathToFileURL(this.filename)).href;
+		ctx.on("internal/update", async (config, _, next) => {
+			if (config.path !== this.config.path) return next();
+			await this.enqueue(async () => {
+				const data = this.applyPatches(this.data, config.patches);
+				await this.root.update(data);
+				this.config = config;
+			});
+		});
+	}
+	/**
+	* Serialize one child-tree mutation behind every earlier one. The group's
+	* transactional `update` is not reentrant: two concurrent applies (the init
+	* apply racing an HMR-triggered refresh from the watcher's initial scan)
+	* interleave create and rollback on the same entries and strand the include
+	* fiber without settling, so every apply path funnels through this queue.
+	* A predecessor's failure is its own caller's outcome and never gates the
+	* next task.
+	*/
+	enqueue(task) {
+		const run = this.applyQueue.then(task, task);
+		this.applyQueue = run.then(() => {}, () => {});
+		return run;
+	}
+	async checkAccess() {
+		if (!this.type) return;
+		try {
+			await access(this.filename, constants.W_OK);
+		} catch {
+			this.readonly = true;
+		}
+	}
+	async read(forced = false) {
+		let content;
+		try {
+			content = await readFile(this.filename, "utf8");
+		} catch (error) {
+			throw new ConfigFileError("read", this.filename, error);
+		}
+		if (!forced && this.content === content) return;
+		let data;
+		try {
+			if (this.type === "application/yaml") data = yaml.load(content, { schema });
+			else if (this.type === "application/json") data = JSON.parse(content);
+			else {
+				const module = await import(
+					/* @vite-ignore */
+					this.filename
+);
+				data = module.default || module;
+			}
+		} catch (error) {
+			throw new ConfigFileError("parse", this.filename, error);
+		}
+		if (!Array.isArray(data)) throw new ConfigFileError("validate", this.filename, /* @__PURE__ */ new TypeError("config file must be a top-level array"));
+		return {
+			content,
+			data
+		};
+	}
+	applyPatches(data, patches) {
+		return applyEntryPatches(data, patches, (message, ...args) => {
+			this.ctx.root.logger?.("loader").warn(message, ...args);
+		});
+	}
+	async *[Service.init]() {
+		let candidate;
+		try {
+			candidate = await this.read(true);
+		} catch (error) {
+			if (!(error instanceof ConfigFileError) || error.stage !== "read" || error.cause?.code !== "ENOENT") throw error;
+			if (this.config.initial) {
+				await this._writeFile(this.config.initial);
+				candidate = await this.read(true);
+			} else throw new Error(`config file not found: ${this.filename}`);
+		}
+		yield () => this.stop();
+		await this.apply(candidate);
+	}
+	async stop() {
+		await this.root.stop();
+		await this.flushWrite();
+	}
+	/**
+	* Re-read the file and transactionally refresh child entries when content changed.
+	* @returns a promise resolving after the new tree commits, or immediately when unchanged.
+	* @throws when reading, parsing, validation, application, or rollback fails; the last good tree remains active when rollback succeeds.
+	*/
+	async refresh() {
+		await this.enqueue(async () => {
+			const candidate = await this.read();
+			if (!candidate) return;
+			await this._apply(candidate);
+		});
+	}
+	apply(candidate) {
+		return this.enqueue(() => this._apply(candidate));
+	}
+	async _apply(candidate) {
+		const data = this.applyPatches(candidate.data, this.config.patches);
+		await this.root.update(data);
+		this.content = candidate.content;
+		this.data = candidate.data;
+		await this.checkAccess();
+	}
+	async _writeFile(config) {
+		if (this.readonly) throw new Error(`cannot overwrite readonly config`);
+		if (this.type === "application/yaml") this.content = yaml.dump(config, { schema });
+		else if (this.type === "application/json") this.content = JSON.stringify(config, null, 2);
+		await writeFile(this.filename + ".tmp", this.content);
+		for (let retry = 0;; retry++) try {
+			await rename(this.filename + ".tmp", this.filename);
+			return;
+		} catch (error) {
+			if (!retryableWriteError(error) || retry >= WRITE_RETRY_LIMIT) throw error;
+			await setTimeout$1((retry + 1) * WRITE_RETRY_DELAY_MS);
+		}
+	}
+	writeFile(config) {
+		clearTimeout(this.writeTask);
+		this.pendingWrite = config;
+		this.writeTask = setTimeout(() => {
+			this.flushWrite();
+		}, 0);
+	}
+	flushWrite() {
+		clearTimeout(this.writeTask);
+		this.writeTask = void 0;
+		const config = this.pendingWrite;
+		this.pendingWrite = void 0;
+		if (config === void 0) return this.writeQueue;
+		const run = this.writeQueue.then(() => this._writeFile(config), () => this._writeFile(config));
+		this.writeQueue = run;
+		run.catch((error) => {
+			this.ctx.root.logger?.("loader").warn("failed to write config file %C", this.filename);
+			this.ctx.root.logger?.("loader").warn(error);
+		});
+		return run;
+	}
+	/** Schedule a write of the current root entry data. */
+	write() {
+		this.context.emit("loader/config-update");
+		return this.writeFile(this.root.data);
+	}
+};
+//#endregion
 //#region lib/types/profile.js
 /**
 * Profile discovery, initialization, and patch-layer composition for the
@@ -48,11 +319,21 @@ function resolveProfileDir(name, home = resolveDshHome()) {
 	if (name === "" || name.includes("/") || name.includes("\\") || name === "." || name === ".." || name === "node_modules") throw new Error(`dsh: invalid profile name ${JSON.stringify(name)}`);
 	return join(home, PROFILES_DIR, name);
 }
-/** The shipped profile templates auto-initialized on first use, by name. */
+/**
+* The shipped profile templates auto-initialized on first use, by name.
+*
+* `sdk-minimal` is the standalone minimal SDK roster: its one bundle inserts
+* the complete Cordis tree over the empty profile root, so the profile pins
+* startup-only patch loading and never lists `@deepseek-ai/dsh-base`.
+*/
 const PROFILE_TEMPLATES = {
-	acp: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-acp-app"],
-	headless: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-headless"],
-	sdk: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-sdk-app"]
+	acp: { bundles: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-acp-app"] },
+	headless: { bundles: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-headless"] },
+	sdk: { bundles: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-sdk-app"] },
+	"sdk-minimal": {
+		bundles: ["@deepseek-ai/dsh-sdk-minimal"],
+		patchReload: "startup"
+	}
 };
 /** The bundle list a `dsh plugin` init uses for a name with no shipped template. */
 const DEFAULT_PROFILE_BUNDLES = ["@deepseek-ai/dsh-base"];
@@ -73,8 +354,10 @@ autoInstallPeers: false
 * so re-running is a no-op on an initialized profile.
 * @param dir - the profile directory from {@link resolveProfileDir}.
 * @param bundles - the initial `dsh.profile.bundles` layer list.
+* @param patchReload - the initial patch lifecycle a startup-only template
+* pins; omitted keeps the default live reload out of the manifest.
 */
-function initProfile(dir, bundles) {
+function initProfile(dir, bundles, patchReload) {
 	mkdirSync(dir, { recursive: true });
 	const manifestPath = join(dir, "package.json");
 	if (!existsSync(manifestPath)) {
@@ -82,7 +365,10 @@ function initProfile(dir, bundles) {
 			name: `dsh-profile-${basename(dir)}`,
 			private: true,
 			dependencies: {},
-			dsh: { profile: { bundles: [...bundles] } }
+			dsh: { profile: {
+				bundles: [...bundles],
+				...patchReload === void 0 ? {} : { patchReload }
+			} }
 		};
 		writeFileSync(manifestPath, JSON.stringify(manifest, void 0, 2) + "\n");
 	}
@@ -212,15 +498,71 @@ function writeProfileManifest(dir, manifest) {
 	writeFileSync(join(dir, "package.json"), JSON.stringify(manifest, void 0, 2) + "\n");
 }
 /**
+* Whether `directory` is served by pkg's read-only snapshot VFS rather than
+* the physical filesystem. The `--sea` route this repo packages with hooks the
+* JavaScript `realpathSync` inside the snapshot (directories only) while the
+* syscall-backed `realpathSync.native` cannot see the snapshot at all, so a
+* snapshot directory canonicalizes through the former and reports ENOENT
+* through the latter — a divergence no real filesystem produces for an
+* existing directory. Only the packaged process can see that VFS at all, and
+* only through the same marker the ripgrep sidecar selection uses. Callers
+* pass an anchor's containing directory because that is the entry kind every
+* resolution candidate is; a launcher whose installation lives inside the
+* snapshot also uses this to know that host-filesystem resolution cannot reach
+* that installation at all.
+* @param directory - the containing directory of a resolution anchor.
+* @returns whether the directory resolves through the embedded snapshot VFS.
+*/
+function isSnapshotServedDirectory(directory) {
+	if (!("pkg" in process)) return false;
+	try {
+		realpathSync.native(directory);
+		return false;
+	} catch (error) {
+		if (!["ENOENT", "ENOTDIR"].includes(error.code ?? "")) return false;
+	}
+	try {
+		realpathSync(directory);
+		return true;
+	} catch {
+		return false;
+	}
+}
+/**
+* Canonicalize one candidate that the syscall-backed canonicalizer reported
+* missing while resolving from a snapshot-served anchor. Only a candidate that
+* is really there — the directory and its manifest both exist — is accepted,
+* and only through the snapshot's own canonicalizer; its ENOENT/ENOTDIR still
+* means missing and every other error stays loud, so this can never turn a
+* genuinely missing package into a resolution.
+* @param candidate - the probed `node_modules/<package>` path.
+* @returns the canonical package directory, or `undefined` when it is missing.
+*/
+function snapshotPackageDir(candidate) {
+	if (!existsSync(candidate) || !existsSync(join(candidate, "package.json"))) return void 0;
+	try {
+		return realpathSync(candidate);
+	} catch (error) {
+		if (!["ENOENT", "ENOTDIR"].includes(error.code ?? "")) throw error;
+		return;
+	}
+}
+/**
 * Resolve a package's root directory from one anchor without depending on the
 * package exporting `./package.json` (`require.resolve` would need that):
 * probe the require resolution paths for a directory holding the named
 * manifest. This is Node's own node_modules lookup order, so the result
 * matches what the Loader would import from the same anchor. Capture a package
 * symlink's destination before probing its manifest: traversing a link while
-* another process atomically replaces it can fail with EINVAL on macOS.
+* another process atomically replaces it can fail with EINVAL on macOS. A
+* snapshot-served anchor additionally accepts a candidate the syscall-backed
+* canonicalizer cannot see, through {@link snapshotPackageDir}.
+* @param anchor - absolute path of a package.json to resolve from.
+* @param packageName - the package name to resolve.
+* @returns the canonical package directory, or `undefined` when it is absent.
 */
 function packageDirFromAnchor(anchor, packageName) {
+	const snapshotAnchor = isSnapshotServedDirectory(dirname(anchor));
 	/* v8 ignore next */
 	for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
 		const candidate = join(searchPath, packageName);
@@ -228,8 +570,10 @@ function packageDirFromAnchor(anchor, packageName) {
 		try {
 			directory = realpathSync.native(candidate);
 		} catch (error) {
-			if (["ENOENT", "ENOTDIR"].includes(error.code ?? "")) continue;
-			throw error;
+			if (!["ENOENT", "ENOTDIR"].includes(error.code ?? "")) throw error;
+			const canonical = snapshotAnchor ? snapshotPackageDir(candidate) : void 0;
+			if (canonical === void 0) continue;
+			directory = canonical;
 		}
 		if (existsSync(join(directory, "package.json"))) return directory;
 	}
@@ -272,7 +616,7 @@ function loadProfile(binName, name, installAnchor, home = resolveDshHome(), opti
 	if (!existsSync(join(dir, "package.json"))) {
 		const template = PROFILE_TEMPLATES[name];
 		if (template === void 0) throw new Error(`${binName}: profile ${JSON.stringify(name)} does not exist; create it with 'dsh plugin --profile ${name} add <package>'`);
-		initProfile(dir, template);
+		initProfile(dir, template.bundles, template.patchReload);
 	}
 	const manifest = readProfileManifest(binName, dir);
 	const patchReload = manifest.dsh?.profile?.patchReload ?? "live";
@@ -685,27 +1029,92 @@ function groupedDump(composed, provenance) {
 	flush();
 	return lines.join("\n") + "\n";
 }
+/** Whether a failed import means the specifier could not be resolved at all (as opposed to a module that threw while loading). */
+function isModuleNotFound(error) {
+	return error?.code === "ERR_MODULE_NOT_FOUND";
+}
+/** Whether a specifier is a bare package name (not relative, absolute, or a URL scheme). */
+function isBareSpecifier(specifier) {
+	return !/^\.{0,2}\//.test(specifier) && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(specifier);
+}
+/**
+* Installed-runtime base for the process-wide bare-specifier fallback; set by
+* the most recent {@link mountRootInclude} so a later mount without one cannot
+* inherit an earlier launch's installation.
+*/
+let installedModuleFallbackBase;
+let installedModuleFallbackRegistered = false;
+/**
+* Register the packaged runtime's bare-specifier fallback: an import the host
+* filesystem cannot resolve is retried with the specifier anchored inside the
+* installed runtime, where the snapshot's own resolution owns it. A
+* profile-local plugin's peer imports (Cordis and friends) reach the
+* installation this way — the packaged equivalent of the host-filesystem
+* fallback links, which cannot follow into the snapshot. The retry runs only
+* after ordinary resolution already failed, so a resolvable specifier always
+* keeps its normal identity, and a failed retry rethrows the original error so
+* the diagnostic still names the real importer.
+* @param base - the installed base URL, or `undefined` to leave the fallback inert.
+*/
+function configureInstalledModuleFallback(base) {
+	installedModuleFallbackBase = base;
+	if (installedModuleFallbackRegistered) return;
+	installedModuleFallbackRegistered = true;
+	registerHooks({ resolve(specifier, context, nextResolve) {
+		try {
+			return nextResolve(specifier, context);
+		} catch (error) {
+			if (installedModuleFallbackBase === void 0 || !isModuleNotFound(error) || !isBareSpecifier(specifier)) throw error;
+			try {
+				return nextResolve(specifier, {
+					...context,
+					parentURL: installedModuleFallbackBase
+				});
+			} catch {
+				throw error;
+			}
+		}
+	} });
+}
+/** Render a thrown value for a combined resolution diagnostic. */
+function messageOf(error) {
+	return error instanceof Error ? error.message : String(error);
+}
 /**
 * Mount and remember the exact root Include entry used by app boot and user patch-layer HMR.
 * @param ctx - context carrying an initialized Loader service.
 * @param absoluteConfigPath - absolute YAML or JSON configuration path.
 * @param patches - initial app and user patches, applied in order.
-* @param bareModuleBaseUrl - optional installed-host base for bare package
+* @param bareModuleBase - optional installed-runtime base for bare package
 * names; relative names continue to resolve beside the configuration file.
 * @returns the created root Include entry, or `undefined` when a surface
 * disposed the whole tree (taking the Loader service with it) while the
 * transactional create was still settling entry lifecycle.
 */
-async function mountRootInclude(ctx, absoluteConfigPath, patches = [], bareModuleBaseUrl) {
-	ctx.loader.builtins.include = bareModuleBaseUrl === void 0 ? Include : class HostResolvedRootInclude extends Include {
+async function mountRootInclude(ctx, absoluteConfigPath, patches = [], bareModuleBase) {
+	const bare = typeof bareModuleBase === "string" ? { url: bareModuleBase } : bareModuleBase;
+	configureInstalledModuleFallback(bare?.url);
+	ctx.loader.builtins.include = bare === void 0 ? Include : class HostResolvedRootInclude extends Include {
 		import(name, getOuterStack) {
 			const specifier = isAbsolute(name) ? pathToFileURL(name).href : name;
 			if (name.startsWith(".") || name.startsWith("cordis:")) return super.import(specifier, getOuterStack);
-			const internal = this.ctx.loader.internal;
-			/* v8 ignore next -- Node supplies the internal loader; this preserves the
-			original diagnostic for hypothetical embedders without it. */
-			if (internal === void 0) return super.import(specifier, getOuterStack);
-			return internal.import(specifier, bareModuleBaseUrl, {});
+			const installed = () => {
+				const internal = this.ctx.loader.internal;
+				/* v8 ignore next -- Node supplies the internal loader; this preserves the
+				original diagnostic for hypothetical embedders without it. */
+				if (internal === void 0) return super.import(specifier, getOuterStack);
+				return internal.import(specifier, bare.url, {});
+			};
+			if (bare.order !== "configuration-first") return installed();
+			return Promise.resolve(super.import(specifier, getOuterStack)).catch(async (error) => {
+				if (!isModuleNotFound(error)) throw error;
+				try {
+					return await installed();
+				} catch (installedError) {
+					if (!isModuleNotFound(installedError)) throw installedError;
+					throw new Error(`${specifier} is not resolvable from the configuration or the installed runtime: ${messageOf(error)}; ${messageOf(installedError)}`, { cause: error });
+				}
+			});
 		}
 	};
 	ctx.loader.builtins.group = Group;
@@ -872,7 +1281,8 @@ async function assertEntriesActivated(ctx, binName) {
 * Boot the Loader against `absoluteConfigPath` and return only after the whole
 * tree settles. Relative entry names resolve against the config directory;
 * bare package names resolve there by default or against an explicit
-* `bareModuleBaseUrl` for closed packaged runtimes. The bootstrap include
+* `bareModuleBase` for packaged runtimes (a closed plugin set, and the profile
+* launcher's configuration-first order). The bootstrap include
 * is statically imported and mounted as the `cordis:include` builtin, loading
 * through the ambient module pipeline (vite/tsx/plain ESM). The package build
 * embeds Include while leaving Loader external, so the built include tree and
@@ -889,16 +1299,16 @@ async function assertEntriesActivated(ctx, binName) {
 * @param patches - optional overlay patches applied over the included tree
 * (see {@link loadOptionalPatches}); an empty list mounts none.
 * @param prepare - optional host setup run after Loader installation and before any config-tree entry mounts.
-* @param bareModuleBaseUrl - optional installed-host base for bare package
-* names; use it when the host, rather than the configuration project, owns the
-* complete plugin set.
+* @param bareModuleBase - optional installed-runtime base for bare package
+* names; a bare string means the host owns the complete plugin set, while
+* {@link BareModuleBase} selects whether the configuration resolves first.
 * @returns the root context once every entry has started, or as soon as a
 * surface disposed the tree while startup was still in flight.
 * @throws a labelled error after disposing the partial context — `host
 * preparation failed` when `prepare` threw before any config-tree entry
 * mounted, `plugin tree failed to load` afterwards.
 */
-async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBaseUrl) {
+async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBase) {
 	const ctx = new Context();
 	let stage = "host preparation failed";
 	try {
@@ -907,7 +1317,7 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
 		await ctx.plugin(Loader);
 		await prepare?.(ctx);
 		stage = "plugin tree failed to load";
-		await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl);
+		await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBase);
 		await ctx.get("loader")?.await();
 		if (ctx.get("loader") === void 0) return ctx;
 		await assertEntriesActivated(ctx, binName);
@@ -947,4 +1357,4 @@ function addHarnessSourceSection(ctx, sourceRoot) {
 	});
 }
 //#endregion
-export { DEFAULT_PROFILE_BUNDLES, FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION, PROFILES_DIR, PROFILE_PATCH_FILENAME, PROFILE_TEMPLATES, addHarnessSourceSection, assertEntriesActivated, assertEntriesLoaded, boot, composeEntries, healProfilesModuleFallback, initProfile, installFailLoud, loadEnv, loadLayeredEnv, loadOptionalPatches, loadOverlayPatches, loadProfile, mountRootInclude, readProfileManifest, renderConfigDump, resolveBundleDir, resolveConfigPath, resolveProfileDir, watchUserPatches, writeProfileManifest };
+export { DEFAULT_PROFILE_BUNDLES, FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION, PROFILES_DIR, PROFILE_PATCH_FILENAME, PROFILE_TEMPLATES, addHarnessSourceSection, assertEntriesActivated, assertEntriesLoaded, boot, composeEntries, healProfilesModuleFallback, initProfile, installFailLoud, isSnapshotServedDirectory, loadEnv, loadLayeredEnv, loadOptionalPatches, loadOverlayPatches, loadProfile, mountRootInclude, readProfileManifest, renderConfigDump, resolveBundleDir, resolveConfigPath, resolveProfileDir, watchUserPatches, writeProfileManifest };

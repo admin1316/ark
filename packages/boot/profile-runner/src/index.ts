@@ -12,8 +12,8 @@
  */
 
 import { writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -22,11 +22,13 @@ import {
   composeEntries,
   healProfilesModuleFallback,
   installFailLoud,
+  isSnapshotServedDirectory,
   loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
   PROFILE_PATCH_FILENAME,
   watchUserPatches,
+  type BareModuleBase,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -283,6 +285,14 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       : []),
     ...composed.overlays,
   ])
+  // A packaged snapshot hides the installation from every host-filesystem
+  // resolution: the profile's maintained fallback links point into the
+  // snapshot, which the host cannot follow. Bare names then fall back to the
+  // installed runtime, configuration first so a profile-local plugin still
+  // wins, instead of failing every in-box entry.
+  const bareModuleBase: BareModuleBase | undefined = isSnapshotServedDirectory(dirname(options.installAnchor))
+    ? { url: pathToFileURL(options.installAnchor).href, order: 'configuration-first' }
+    : undefined
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
   const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
@@ -296,7 +306,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       args: options.args,
       exit: code => void shutdown.shutdown(code),
     })
-  })
+  }, bareModuleBase)
   app.current = ctx
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
@@ -305,10 +315,15 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // landed mid-setup. Generic CLI surfaces watch by default; an application
   // with immutable managed profile files (Ark) opts out so no dormant HMR or
   // timer service can wake or replace its API listener.
-  const watchedPatchPaths = [
-    ...((options.profilePatchMode ?? 'user') === 'user' ? [composed.profile.patchPath] : []),
-    ...((options.homePatchMode ?? 'user') === 'user' ? [homePatchPath()] : []),
-  ]
+  // A startup-only profile freezes its patch layers for this launch: the
+  // lifecycle pinned by the profile manifest owns that decision, so no live
+  // watcher and no reload rows are mounted for it.
+  const watchedPatchPaths = composed.profile.patchReload === 'startup'
+    ? []
+    : [
+      ...((options.profilePatchMode ?? 'user') === 'user' ? [composed.profile.patchPath] : []),
+      ...((options.homePatchMode ?? 'user') === 'user' ? [homePatchPath()] : []),
+    ]
   if (options.watchLiveConfig !== false
     && watchedPatchPaths.length > 0
     && !signalShutdown.signal.aborted

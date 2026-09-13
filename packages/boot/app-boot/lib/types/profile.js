@@ -45,11 +45,18 @@ export function resolveProfileDir(name, home = resolveDshHome()) {
     }
     return join(home, PROFILES_DIR, name);
 }
-/** The shipped profile templates auto-initialized on first use, by name. */
+/**
+ * The shipped profile templates auto-initialized on first use, by name.
+ *
+ * `sdk-minimal` is the standalone minimal SDK roster: its one bundle inserts
+ * the complete Cordis tree over the empty profile root, so the profile pins
+ * startup-only patch loading and never lists `@deepseek-ai/dsh-base`.
+ */
 export const PROFILE_TEMPLATES = {
-    acp: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'],
-    headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
-    sdk: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app'],
+    acp: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'] },
+    headless: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'] },
+    sdk: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app'] },
+    'sdk-minimal': { bundles: ['@deepseek-ai/dsh-sdk-minimal'], patchReload: 'startup' },
 };
 /** The bundle list a `dsh plugin` init uses for a name with no shipped template. */
 export const DEFAULT_PROFILE_BUNDLES = ['@deepseek-ai/dsh-base'];
@@ -75,8 +82,10 @@ autoInstallPeers: false
  * so re-running is a no-op on an initialized profile.
  * @param dir - the profile directory from {@link resolveProfileDir}.
  * @param bundles - the initial `dsh.profile.bundles` layer list.
+ * @param patchReload - the initial patch lifecycle a startup-only template
+ * pins; omitted keeps the default live reload out of the manifest.
  */
-export function initProfile(dir, bundles) {
+export function initProfile(dir, bundles, patchReload) {
     mkdirSync(dir, { recursive: true });
     const manifestPath = join(dir, 'package.json');
     if (!existsSync(manifestPath)) {
@@ -84,7 +93,7 @@ export function initProfile(dir, bundles) {
             name: `dsh-profile-${basename(dir)}`,
             private: true,
             dependencies: {},
-            dsh: { profile: { bundles: [...bundles] } },
+            dsh: { profile: { bundles: [...bundles], ...patchReload === undefined ? {} : { patchReload } } },
         };
         writeFileSync(manifestPath, JSON.stringify(manifest, undefined, 2) + '\n');
     }
@@ -246,15 +255,83 @@ export function writeProfileManifest(dir, manifest) {
     writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest, undefined, 2) + '\n');
 }
 /**
+ * Whether `directory` is served by pkg's read-only snapshot VFS rather than
+ * the physical filesystem. The `--sea` route this repo packages with hooks the
+ * JavaScript `realpathSync` inside the snapshot (directories only) while the
+ * syscall-backed `realpathSync.native` cannot see the snapshot at all, so a
+ * snapshot directory canonicalizes through the former and reports ENOENT
+ * through the latter — a divergence no real filesystem produces for an
+ * existing directory. Only the packaged process can see that VFS at all, and
+ * only through the same marker the ripgrep sidecar selection uses. Callers
+ * pass an anchor's containing directory because that is the entry kind every
+ * resolution candidate is; a launcher whose installation lives inside the
+ * snapshot also uses this to know that host-filesystem resolution cannot reach
+ * that installation at all.
+ * @param directory - the containing directory of a resolution anchor.
+ * @returns whether the directory resolves through the embedded snapshot VFS.
+ */
+export function isSnapshotServedDirectory(directory) {
+    if (!('pkg' in process))
+        return false;
+    try {
+        realpathSync.native(directory);
+        return false;
+    }
+    catch (error) {
+        // A directory the syscall cannot see at all is the snapshot case; a real
+        // I/O fault (ELOOP, EACCES, ...) is not, and the candidate probe below
+        // still fails loud on that.
+        if (!['ENOENT', 'ENOTDIR'].includes(error.code ?? ''))
+            return false;
+    }
+    try {
+        realpathSync(directory);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * Canonicalize one candidate that the syscall-backed canonicalizer reported
+ * missing while resolving from a snapshot-served anchor. Only a candidate that
+ * is really there — the directory and its manifest both exist — is accepted,
+ * and only through the snapshot's own canonicalizer; its ENOENT/ENOTDIR still
+ * means missing and every other error stays loud, so this can never turn a
+ * genuinely missing package into a resolution.
+ * @param candidate - the probed `node_modules/<package>` path.
+ * @returns the canonical package directory, or `undefined` when it is missing.
+ */
+function snapshotPackageDir(candidate) {
+    if (!existsSync(candidate) || !existsSync(join(candidate, 'package.json')))
+        return undefined;
+    try {
+        return realpathSync(candidate);
+    }
+    catch (error) {
+        if (!['ENOENT', 'ENOTDIR'].includes(error.code ?? ''))
+            throw error;
+        return undefined;
+    }
+}
+/**
  * Resolve a package's root directory from one anchor without depending on the
  * package exporting `./package.json` (`require.resolve` would need that):
  * probe the require resolution paths for a directory holding the named
  * manifest. This is Node's own node_modules lookup order, so the result
  * matches what the Loader would import from the same anchor. Capture a package
  * symlink's destination before probing its manifest: traversing a link while
- * another process atomically replaces it can fail with EINVAL on macOS.
+ * another process atomically replaces it can fail with EINVAL on macOS. A
+ * snapshot-served anchor additionally accepts a candidate the syscall-backed
+ * canonicalizer cannot see, through {@link snapshotPackageDir}.
+ * @param anchor - absolute path of a package.json to resolve from.
+ * @param packageName - the package name to resolve.
+ * @returns the canonical package directory, or `undefined` when it is absent.
  */
 function packageDirFromAnchor(anchor, packageName) {
+    // One probe per anchor, so ordinary Node processes answer from the packaged
+    // marker alone and never pay a filesystem call for it.
+    const snapshotAnchor = isSnapshotServedDirectory(dirname(anchor));
     // resolve.paths returns null only for builtins, which no bundle name is.
     /* v8 ignore next */
     for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
@@ -264,9 +341,14 @@ function packageDirFromAnchor(anchor, packageName) {
             directory = realpathSync.native(candidate);
         }
         catch (error) {
-            if (['ENOENT', 'ENOTDIR'].includes(error.code ?? ''))
+            if (!['ENOENT', 'ENOTDIR'].includes(error.code ?? ''))
+                throw error;
+            // The syscall reports a snapshot entry as missing; the snapshot's own
+            // canonicalizer is the only authority left for this candidate.
+            const canonical = snapshotAnchor ? snapshotPackageDir(candidate) : undefined;
+            if (canonical === undefined)
                 continue;
-            throw error;
+            directory = canonical;
         }
         if (existsSync(join(directory, 'package.json')))
             return directory;
@@ -315,7 +397,7 @@ export function loadProfile(binName, name, installAnchor, home = resolveDshHome(
         if (template === undefined) {
             throw new Error(`${binName}: profile ${JSON.stringify(name)} does not exist; create it with 'dsh plugin --profile ${name} add <package>'`);
         }
-        initProfile(dir, template);
+        initProfile(dir, template.bundles, template.patchReload);
     }
     const manifest = readProfileManifest(binName, dir);
     const patchReload = manifest.dsh?.profile?.patchReload ?? 'live';

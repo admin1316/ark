@@ -626,6 +626,167 @@ describe('boot', () => {
     }
   })
 
+  it('resolves bare plugins configuration-first and falls back to the installed base', async () => {
+    const dir = tmp()
+    const harness = tmp()
+    const shadow = '@deepseek-ai/dsh-system-prompt'
+    const configOnly = '@deepseek-ai/dsh-config-only-probe'
+    const installedOnly = '@deepseek-ai/dsh-installed-only-probe'
+    const stagePlugin = (root: string, name: string, service: string, peer = false): void => {
+      const packageDir = join(root, 'node_modules', name)
+      mkdirSync(packageDir, { recursive: true })
+      writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+        name,
+        type: 'module',
+        exports: './index.mjs',
+      }))
+      writeFileSync(join(packageDir, 'index.mjs'), [
+        ...peer ? ["import { origin } from 'peer-probe'"] : [],
+        'export function apply(ctx) {',
+        `  ctx.provide(${JSON.stringify(service)}, ${peer ? 'origin' : 'true'})`,
+        '}',
+        '',
+      ].join('\n'))
+    }
+    const stagePeer = (root: string, origin: string): void => {
+      const packageDir = join(root, 'node_modules', 'peer-probe')
+      mkdirSync(packageDir, { recursive: true })
+      writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+        name: 'peer-probe',
+        type: 'module',
+        exports: './index.mjs',
+      }))
+      writeFileSync(join(packageDir, 'index.mjs'), `export const origin = ${JSON.stringify(origin)}\n`)
+    }
+    // Two trees: the configuration project (profile dir) and the installation.
+    stagePlugin(dir, shadow, 'configShadowLoaded')
+    stagePlugin(dir, configOnly, 'configOnlyLoaded')
+    stagePlugin(harness, shadow, 'installedShadowLoaded')
+    stagePlugin(harness, installedOnly, 'installedOnlyLoaded', true)
+    // A peer copy in both trees: a plugin loaded from the installation must see
+    // its own installation's copy, never a second instance from the project.
+    stagePeer(dir, 'configuration')
+    stagePeer(harness, 'installation')
+    writeFileSync(join(dir, 'relative.mjs'), 'export function apply(ctx) { ctx.provide("relativePluginLoaded", true) }\n')
+    writeFileSync(join(dir, 'cordis.yml'), [
+      '- id: shadow',
+      `  name: ${JSON.stringify(shadow)}`,
+      '- id: installed-only',
+      `  name: ${JSON.stringify(installedOnly)}`,
+      '- id: relative',
+      "  name: './relative.mjs'",
+      '',
+    ].join('\n'))
+    const configOnlyPath = join(dir, 'config-only.cordis.yml')
+    writeFileSync(configOnlyPath, [
+      '- id: config-only',
+      `  name: ${JSON.stringify(configOnly)}`,
+      '',
+    ].join('\n'))
+    const missingPath = join(dir, 'missing.cordis.yml')
+    writeFileSync(missingPath, "- id: missing\n  name: '@deepseek-ai/dsh-absent-probe'\n")
+    const base = { url: pathToFileURL(join(harness, 'entry.mjs')).href, order: 'configuration-first' as const }
+
+    // An ordinary source run needs no installed base at all.
+    const sourceOnly = await boot(NAME, configOnlyPath)
+    try {
+      expect(sourceOnly.get('configOnlyLoaded')).toBe(true)
+    } finally {
+      await sourceOnly.fiber.dispose()
+    }
+
+    // A name neither tree holds stays a loud startup failure that names both
+    // anchors it was looked up in.
+    await expect(boot(NAME, missingPath, undefined, undefined, base)).rejects.toThrow(
+      /is not resolvable from the configuration or the installed runtime: .*Cannot find package '@deepseek-ai\/dsh-absent-probe'/,
+    )
+
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, base)
+    try {
+      // The configuration's own copy wins for a name both trees hold.
+      expect(ctx.get('configShadowLoaded')).toBe(true)
+      expect(ctx.get('installedShadowLoaded')).toBeUndefined()
+      // This tree carries no configuration-only row; that case is the next boot.
+      expect(ctx.get('configOnlyLoaded')).toBeUndefined()
+      // A package only the installation has resolves from the installed base,
+      // and its peer comes from that same installation.
+      expect(ctx.get('installedOnlyLoaded')).toBe('installation')
+      expect(ctx.get('relativePluginLoaded')).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+
+    const withConfigOnly = await boot(NAME, configOnlyPath, undefined, undefined, base)
+    try {
+      expect(withConfigOnly.get('configOnlyLoaded')).toBe(true)
+    } finally {
+      await withConfigOnly.fiber.dispose()
+    }
+
+    // The closed packaged contract is unchanged: a string base owns every bare name.
+    const closed = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, base.url)
+    try {
+      expect(closed.get('installedShadowLoaded')).toBe(true)
+      expect(closed.get('configShadowLoaded')).toBeUndefined()
+      expect(closed.get('installedOnlyLoaded')).toBe('installation')
+      expect(closed.get('relativePluginLoaded')).toBe(true)
+    } finally {
+      await closed.fiber.dispose()
+    }
+  })
+
+  it('resolves a bare import the configuration cannot see from the installed runtime', async () => {
+    const dir = tmp()
+    const harness = tmp()
+    const peer = '@deepseek-ai/dsh-peer-probe'
+    const stage = (root: string, name: string, body: string): void => {
+      const packageDir = join(root, 'node_modules', name)
+      mkdirSync(packageDir, { recursive: true })
+      writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+        name,
+        type: 'module',
+        exports: './index.mjs',
+      }))
+      writeFileSync(join(packageDir, 'index.mjs'), body)
+    }
+    // The peer exists only in the installation; the config-local plugin imports
+    // it by name, so the plugin loads only when the installed fallback resolves
+    // that peer — exactly a profile-local plugin importing Cordis.
+    stage(harness, peer, 'export const marker = "installed"\n')
+    stage(dir, '@deepseek-ai/dsh-config-plugin-probe', [
+      `import { marker } from ${JSON.stringify(peer)}`,
+      'export function apply(ctx) { ctx.provide("configPeerMarker", marker) }',
+      '',
+    ].join('\n'))
+    writeFileSync(join(dir, 'cordis.yml'), "- id: local\n  name: '@deepseek-ai/dsh-config-plugin-probe'\n")
+    const base = { url: pathToFileURL(join(harness, 'entry.mjs')).href, order: 'configuration-first' as const }
+    const withBase = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, base)
+    try {
+      expect(String(withBase.get('configPeerMarker'))).toBe('installed')
+    } finally {
+      await withBase.fiber.dispose()
+    }
+    // Without an installed base the same plugin fails loudly: the fallback is
+    // inert for an ordinary source run. A fresh copy keeps Node's module cache
+    // (the first boot already loaded dir's plugin) out of the control. The
+    // failure is captured as text so the assertion never renders Cordis internals.
+    const control = tmp()
+    stage(control, '@deepseek-ai/dsh-config-plugin-probe', [
+      `import { marker } from ${JSON.stringify(peer)}`,
+      'export function apply(ctx) { ctx.provide("configPeerMarker", marker) }',
+      '',
+    ].join('\n'))
+    writeFileSync(join(control, 'cordis.yml'), "- id: local\n  name: '@deepseek-ai/dsh-config-plugin-probe'\n")
+    const withoutBase = await boot(NAME, join(control, 'cordis.yml')).then(
+      async (context: Context) => {
+        await context.fiber.dispose()
+        return 'resolved'
+      },
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    )
+    expect(withoutBase).toContain("Cannot find package '@deepseek-ai/dsh-peer-probe'")
+  })
+
   it('runs host preparation before the Loader tree mounts', async () => {
     const dir = tmp()
     writeFileSync(join(dir, 'noop.mjs'), 'export const name = "noop"\nexport function apply() {}\n')

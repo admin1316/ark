@@ -9,11 +9,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   composeEntries,
   healProfilesModuleFallback,
   initProfile,
+  isSnapshotServedDirectory,
   loadProfile,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
@@ -22,6 +23,47 @@ import {
   resolveProfileDir,
   writeProfileManifest,
 } from '../src/index.ts'
+
+// pkg's read-only snapshot VFS (the `--sea` route this repo packages with)
+// hooks the JavaScript `realpathSync` for snapshot directories while the
+// syscall-backed `realpathSync.native` cannot see the snapshot at all, so a
+// snapshot entry is reachable through that divergence alone — a divergence no
+// real filesystem produces for an existing path. The resolver's packaged
+// fallback is gated on it, so the suite simulates the divergence for one
+// directory prefix at a time.
+const snapshotVfs = vi.hoisted(() => ({
+  /** Directory prefix served by the simulated snapshot VFS; undefined: off. */
+  root: undefined as string | undefined,
+  /** Error code the simulated syscall-backed canonicalizer raises there. */
+  nativeCode: 'ENOENT',
+  /** Exact path where the simulated snapshot canonicalizer itself fails, and how. */
+  snapshotFailure: undefined as { path: string; code: string } | undefined,
+}))
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  const { sep: separator } = await import('node:path')
+  const inSnapshot = (path: unknown): boolean => snapshotVfs.root !== undefined
+    && (String(path) === snapshotVfs.root || String(path).startsWith(`${snapshotVfs.root}${separator}`))
+  const failure = (code: string, path: unknown): NodeJS.ErrnoException => Object.assign(
+    new Error(`${code}: simulated pkg snapshot VFS entry ${JSON.stringify(String(path))}`),
+    { code, errno: code === 'ENOENT' ? -2 : -1, syscall: 'realpath', path: String(path) },
+  )
+  const realpathSync = Object.assign(
+    (path: string, options?: unknown): string => {
+      const failed = snapshotVfs.snapshotFailure
+      if (failed !== undefined && String(path) === failed.path) throw failure(failed.code, path)
+      return (actual.realpathSync as unknown as (target: string, callOptions?: unknown) => string)(path, options)
+    },
+    {
+      native: (path: string): string => {
+        if (inSnapshot(path)) throw failure(snapshotVfs.nativeCode, path)
+        return (actual.realpathSync.native as unknown as (target: string) => string)(path)
+      },
+    },
+  )
+  return { ...actual, realpathSync }
+})
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-profile-'))
 
@@ -143,6 +185,121 @@ describe('resolveBundleDir', () => {
   })
 })
 
+describe('resolveBundleDir in a packaged snapshot process', () => {
+  afterEach(() => {
+    snapshotVfs.root = undefined
+    snapshotVfs.nativeCode = 'ENOENT'
+    snapshotVfs.snapshotFailure = undefined
+    Reflect.deleteProperty(process, 'pkg')
+  })
+
+  /** Stage an installation under the simulated snapshot prefix and mark the process packaged. */
+  function stageSnapshotInstallation(
+    bundles: Record<string, { patch?: string; deps?: Record<string, string> }> = {},
+  ): { anchor: string; root: string } {
+    const anchor = stageInstallation(bundles)
+    snapshotVfs.root = dirname(anchor)
+    Reflect.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    return { anchor, root: dirname(anchor) }
+  }
+
+  it('accepts a snapshot-served candidate the syscall canonicalizer cannot see', () => {
+    const { anchor, root } = stageSnapshotInstallation({ 'in-box': { patch: '[]\n' } })
+    const profileDir = tmp()
+    const packageDir = join(root, 'node_modules', 'in-box')
+    // The syscall sees nothing there while the snapshot does; the fallback must
+    // return the snapshot's own canonical path for the package root.
+    expect(() => realpathSync.native(packageDir)).toThrow(/ENOENT/)
+    expect(resolveBundleDir('t', 'in-box', anchor, profileDir)).toBe(realpathSync(packageDir))
+  })
+
+  it('does not fall back outside a packaged process', () => {
+    const anchor = stageInstallation({ 'snapshot-only': { patch: '[]\n' } })
+    snapshotVfs.root = dirname(anchor)
+    // Same native ENOENT as the packaged case, but no packaged-process marker:
+    // the candidate must not be accepted.
+    expect(() => realpathSync.native(join(dirname(anchor), 'node_modules', 'snapshot-only'))).toThrow(/ENOENT/)
+    expect(() => resolveBundleDir('t', 'snapshot-only', anchor, tmp())).toThrow('cannot resolve profile bundle')
+  })
+
+  it('does not fall back when the anchor is an ordinary filesystem path', () => {
+    const anchor = stageInstallation({ 'in-box': { patch: '[]\n' } })
+    // Only the candidate's directory looks snapshot-served; the anchor is a
+    // real filesystem path, so the packaged fallback must stay off.
+    snapshotVfs.root = join(dirname(anchor), 'node_modules')
+    Reflect.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    expect(() => resolveBundleDir('t', 'in-box', anchor, tmp())).toThrow('cannot resolve profile bundle')
+  })
+
+  it('does not accept a snapshot candidate without its manifest', () => {
+    const { anchor, root } = stageSnapshotInstallation()
+    mkdirSync(join(root, 'node_modules', 'manifest-less'), { recursive: true })
+    expect(() => resolveBundleDir('t', 'manifest-less', anchor, tmp())).toThrow('cannot resolve profile bundle')
+  })
+
+  it('does not accept a missing snapshot candidate', () => {
+    const { anchor } = stageSnapshotInstallation({ 'in-box': { patch: '[]\n' } })
+    expect(() => resolveBundleDir('t', 'absent-in-snapshot', anchor, tmp())).toThrow('cannot resolve profile bundle')
+  })
+
+  it('treats a snapshot canonicalizer ENOENT as missing', () => {
+    const { anchor, root } = stageSnapshotInstallation({ 'in-box': { patch: '[]\n' } })
+    snapshotVfs.snapshotFailure = { path: join(root, 'node_modules', 'in-box'), code: 'ENOENT' }
+    expect(() => resolveBundleDir('t', 'in-box', anchor, tmp())).toThrow('cannot resolve profile bundle')
+  })
+
+  it('keeps a non-missing snapshot canonicalizer failure loud', () => {
+    const { anchor, root } = stageSnapshotInstallation({ 'in-box': { patch: '[]\n' } })
+    snapshotVfs.snapshotFailure = { path: join(root, 'node_modules', 'in-box'), code: 'EACCES' }
+    expect(() => resolveBundleDir('t', 'in-box', anchor, tmp())).toThrow(/EACCES/)
+  })
+
+  it('keeps a non-missing syscall failure loud instead of falling back', () => {
+    const { anchor, root } = stageSnapshotInstallation({ 'in-box': { patch: '[]\n' } })
+    snapshotVfs.nativeCode = 'ELOOP'
+    expect(() => realpathSync.native(join(root, 'node_modules', 'in-box'))).toThrow(/ELOOP/)
+    expect(() => resolveBundleDir('t', 'in-box', anchor, tmp())).toThrow(/ELOOP/)
+  })
+
+  it('does not treat an absent anchor as snapshot-served', () => {
+    const anchor = join(tmp(), 'absent', 'package.json')
+    snapshotVfs.root = dirname(anchor)
+    Reflect.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    expect(() => resolveBundleDir('t', 'in-box', anchor, tmp())).toThrow('cannot resolve profile bundle')
+  })
+})
+
+describe('isSnapshotServedDirectory', () => {
+  afterEach(() => {
+    snapshotVfs.root = undefined
+    snapshotVfs.nativeCode = 'ENOENT'
+    snapshotVfs.snapshotFailure = undefined
+    Reflect.deleteProperty(process, 'pkg')
+  })
+
+  it('recognizes a snapshot-served directory only in a packaged process', () => {
+    const directory = tmp()
+    snapshotVfs.root = directory
+    Reflect.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    expect(isSnapshotServedDirectory(directory)).toBe(true)
+    Reflect.deleteProperty(process, 'pkg')
+    expect(isSnapshotServedDirectory(directory)).toBe(false)
+  })
+
+  it('rejects an ordinary filesystem directory, a missing one, and a non-missing fault', () => {
+    const served = tmp()
+    snapshotVfs.root = served
+    Reflect.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    // The syscall canonicalizes a real directory, so it is not the snapshot arm.
+    expect(isSnapshotServedDirectory(tmp())).toBe(false)
+    // Both canonicalizers report a genuinely absent snapshot entry.
+    expect(isSnapshotServedDirectory(join(served, 'absent'))).toBe(false)
+    // A real I/O fault is not a snapshot entry either.
+    snapshotVfs.nativeCode = 'EACCES'
+    expect(isSnapshotServedDirectory(served)).toBe(false)
+  })
+})
+
 describe('loadProfile', () => {
   it('resolves the patch reload lifecycle and rejects unknown values', () => {
     const anchor = stageInstallation({})
@@ -188,25 +345,40 @@ describe('loadProfile', () => {
     // The headless template auto-initializes on first load. Bundle resolution
     // cannot be asserted to fail here: the source-plane test runner resolves
     // @deepseek-ai/* through tsconfig paths regardless of the staged anchor.
-    expect(PROFILE_TEMPLATES.headless).toContain('@deepseek-ai/dsh-base')
+    expect(PROFILE_TEMPLATES.headless?.bundles).toContain('@deepseek-ai/dsh-base')
     try {
       loadProfile('t', 'headless', anchor, home)
     } catch {
       // Resolution failure is the plain-Node outcome for this empty anchor.
     }
     expect(readProfileManifest('t', resolveProfileDir('headless', home)).dsh?.profile?.bundles)
-      .toEqual([...PROFILE_TEMPLATES.headless ?? []])
+      .toEqual([...PROFILE_TEMPLATES.headless?.bundles ?? []])
   })
 
   it('pins SDK and ACP to their shared base plus exactly one app bundle', () => {
-    expect(PROFILE_TEMPLATES.sdk).toEqual([
-      '@deepseek-ai/dsh-base',
-      '@deepseek-ai/dsh-sdk-app',
-    ])
-    expect(PROFILE_TEMPLATES.acp).toEqual([
-      '@deepseek-ai/dsh-base',
-      '@deepseek-ai/dsh-acp-app',
-    ])
+    expect(PROFILE_TEMPLATES.sdk).toEqual({
+      bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app'],
+    })
+    expect(PROFILE_TEMPLATES.acp).toEqual({
+      bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'],
+    })
+  })
+
+  it('ships the standalone minimal profile as one startup-only bundle with no base row', () => {
+    expect(PROFILE_TEMPLATES['sdk-minimal']).toEqual({
+      bundles: ['@deepseek-ai/dsh-sdk-minimal'],
+      patchReload: 'startup',
+    })
+    const anchor = stageInstallation({ '@deepseek-ai/dsh-sdk-minimal': { patch: '[]\n' } })
+    const home = tmp()
+    const loaded = loadProfile('t', 'sdk-minimal', anchor, home)
+    expect(loaded.patchReload).toBe('startup')
+    expect(loaded.layers.map(layer => layer.packageName)).toEqual(['@deepseek-ai/dsh-sdk-minimal'])
+    // The generated manifest pins the one-bundle roster and the frozen lifecycle.
+    expect(readProfileManifest('t', resolveProfileDir('sdk-minimal', home)).dsh?.profile).toEqual({
+      bundles: ['@deepseek-ai/dsh-sdk-minimal'],
+      patchReload: 'startup',
+    })
   })
 
   it('fails loud when a listed bundle declares no dsh.bundle', () => {
