@@ -711,16 +711,80 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
   )
 
   // 3b2) 洪泛下交接缓冲必须有界，且尾部输出仍能到达 surface。
+  //
+  // The contract has three parts: the hand-off buffer stays bounded, the PTY keeps
+  // making progress, and the tail eventually arrives. A fixed 30 s budget folded all
+  // three into runner throughput - the GitHub macOS runner needed 30.3 s where an idle
+  // machine needs ~20 s - so progress is measured directly here: only a PTY that stops
+  // making progress fails, and a large hard ceiling exists solely to bound the test
+  // process. Payload size and both assertions are unchanged.
+  enum FloodWatchdogVerdict: Equatable { case keepWaiting, stalled, hardCeiling }
+  func floodWatchdogVerdict(
+    now: Date,
+    startedAt: Date,
+    lastProgressAt: Date,
+    stallTimeout: TimeInterval,
+    hardTimeout: TimeInterval
+  ) -> FloodWatchdogVerdict {
+    if now.timeIntervalSince(lastProgressAt) >= stallTimeout { return .stalled }
+    if now.timeIntervalSince(startedAt) >= hardTimeout { return .hardCeiling }
+    return .keepWaiting
+  }
+  let floodWatchdogBase = Date()
+  check(
+    floodWatchdogVerdict(now: floodWatchdogBase.addingTimeInterval(45), startedAt: floodWatchdogBase,
+      lastProgressAt: floodWatchdogBase.addingTimeInterval(44), stallTimeout: 10, hardTimeout: 120) == .keepWaiting,
+    "the flood watchdog keeps waiting while the PTY is still progressing past the old 30 s budget"
+  )
+  check(
+    floodWatchdogVerdict(now: floodWatchdogBase.addingTimeInterval(30), startedAt: floodWatchdogBase,
+      lastProgressAt: floodWatchdogBase, stallTimeout: 10, hardTimeout: 120) == .stalled,
+    "the flood watchdog fails a PTY that stops making progress"
+  )
+  check(
+    floodWatchdogVerdict(now: floodWatchdogBase.addingTimeInterval(121), startedAt: floodWatchdogBase,
+      lastProgressAt: floodWatchdogBase.addingTimeInterval(120), stallTimeout: 10, hardTimeout: 120) == .hardCeiling,
+    "the flood watchdog ends a progressing run at the hard test-process ceiling, not as a performance verdict"
+  )
+  let floodProgressStallTimeout: TimeInterval = 10
+  let floodHardCompletionTimeout: TimeInterval = 120
   await MainActor.run {
     hiddenSession.sendCommand("yes flood-line | head -c 20000000; echo __ARK_FLOOD_DONE__")
   }
-  let floodTailLanded = await waitForTerminal(timeout: 30) {
-    hiddenSurface.surfaceText().contains("__ARK_FLOOD_DONE__")
+  let floodStartedAt = Date()
+  var floodLastProgressAt = floodStartedAt
+  var floodPreviousSurfaceChars = await MainActor.run { hiddenSurface.surfaceText().count }
+  var floodPreviousHandoffBytes = 0
+  var floodTailLanded = false
+  var floodSamples = 0
+  var peakHandoffBytes = 0
+  while true {
+    if await waitForTerminal(timeout: 1) { hiddenSurface.surfaceText().contains("__ARK_FLOOD_DONE__") } {
+      floodTailLanded = true
+      break
+    }
+    let observed = await MainActor.run { hiddenSession.pendingRawHandoffBytes }
+    let surfaceChars = await MainActor.run { hiddenSurface.surfaceText().count }
+    if observed > peakHandoffBytes { peakHandoffBytes = observed }
+    if surfaceChars > floodPreviousSurfaceChars || observed != floodPreviousHandoffBytes {
+      floodLastProgressAt = Date()
+    }
+    floodPreviousSurfaceChars = surfaceChars
+    floodPreviousHandoffBytes = observed
+    floodSamples += 1
+    let verdict = floodWatchdogVerdict(now: Date(), startedAt: floodStartedAt,
+      lastProgressAt: floodLastProgressAt, stallTimeout: floodProgressStallTimeout,
+      hardTimeout: floodHardCompletionTimeout)
+    if verdict != .keepWaiting { break }
   }
   let handoffBound = await MainActor.run { hiddenSession.pendingRawHandoffBytes }
+  if handoffBound > peakHandoffBytes { peakHandoffBytes = handoffBound }
+  let floodElapsedMs = Int(Date().timeIntervalSince(floodStartedAt) * 1_000)
+  print("[pty-flood-trace] bytes_requested=20000000 write_calls=1 samples=\(floodSamples) peak_handoff=\(peakHandoffBytes) final_handoff=\(handoffBound) tail_seen=\(floodTailLanded) surface_chars=\(floodPreviousSurfaceChars) elapsed_ms=\(floodElapsedMs)")
   check(
     floodTailLanded && handoffBound <= 8 * 1024 * 1024 + 65_536,
     "a 20 MB PTY flood stays bounded in the hand-off buffer (\(handoffBound) bytes) and still reaches the tail"
+      + " (tail_seen=\(floodTailLanded), peak=\(peakHandoffBytes), samples=\(floodSamples), elapsed=\(floodElapsedMs)ms)"
   )
   _ = await hiddenSession.shutdown()
   try? FileManager.default.removeItem(at: hiddenRoot)
