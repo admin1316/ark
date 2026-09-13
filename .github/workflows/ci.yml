@@ -147,8 +147,11 @@ jobs:
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
       DSH_OXLINT_THREADS: '8'
       DSH_PUBLINT_CONCURRENCY: '8'
-      # Failover halves snapshot concurrency for the shared 64-core VM.
-      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32' }}
+      # The shared 64-core failover VM halves snapshot concurrency to 12. The
+      # GitHub-hosted 4-vCPU runner keeps the config's capacity-aware default
+      # (min(5, availableParallelism())): 32 concurrent process boots there
+      # oversubscribe the runner and push the SDK handshake past its 10s budget.
+      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '' }}
     steps:
       - uses: actions/checkout@v6
         with:
