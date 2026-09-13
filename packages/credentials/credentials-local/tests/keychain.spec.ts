@@ -98,7 +98,11 @@ async function boot(): Promise<Context> {
   return ctx
 }
 
-describe('keychain credential mode', () => {
+// Keychain mode is a macOS-only product contract (`keychain mode requires macOS` in
+// src/index.ts), so the describe that boots that mode runs on darwin only. The
+// construction/failure describe below stays portable: it stubs the platform itself
+// to pin the off-macOS rejection.
+describe.skipIf(process.platform !== 'darwin')('keychain credential mode', () => {
   it('refuses conditional removal of a replacement and excludes writes during a checked record commit', async () => {
     const ctx = await boot()
     await ctx.credentials.set(KEY, 'first-synthetic')
