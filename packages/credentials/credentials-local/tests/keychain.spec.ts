@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -100,8 +100,9 @@ async function boot(): Promise<Context> {
 
 // Keychain mode is a macOS-only product contract (`keychain mode requires macOS` in
 // src/index.ts), so the describe that boots that mode runs on darwin only. The
-// construction/failure describe below stays portable: it stubs the platform itself
-// to pin the off-macOS rejection.
+// construction/failure describe below pins that contract on every host: it stubs the
+// platform to darwin while it drives the mocked /usr/bin/security backend, and the
+// rejection case re-stubs linux to pin the off-macOS guard.
 describe.skipIf(process.platform !== 'darwin')('keychain credential mode', () => {
   it('refuses conditional removal of a replacement and excludes writes during a checked record commit', async () => {
     const ctx = await boot()
@@ -159,6 +160,19 @@ describe.skipIf(process.platform !== 'darwin')('keychain credential mode', () =>
 })
 
 describe('keychain construction and failure surfaces', () => {
+  const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+
+  // These cases boot keychain mode with the mocked security backend, so they pin the
+  // platform whose contract they assert instead of inheriting the host's.
+  beforeEach(() => {
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' })
+  })
+
+  afterEach(() => {
+    if (hostPlatform === undefined) delete (process as { platform?: string }).platform
+    else Object.defineProperty(process, 'platform', hostPlatform)
+  })
+
   it('resolves the file-mode and keychain-service defaults for programmatic construction', () => {
     const provider = new LocalCredentialProvider(new Context(), { watch: false, path: '/unused/creds.yaml' })
     // Plugin loading normalizes config through the Schemastery schema, which
