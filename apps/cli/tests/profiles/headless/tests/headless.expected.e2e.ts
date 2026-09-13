@@ -39,6 +39,7 @@ const tsconfigPath = fileURLToPath(new URL('../../../../../../tsconfig.json', im
 const reasoningConfigPath = fileURLToPath(new URL('./fixtures/cli.cordis.yml', import.meta.url))
 const deepseekDefaultsConfigPath = fileURLToPath(new URL('./fixtures/deepseek-defaults.cordis.yml', import.meta.url))
 const piAiDefaultsConfigPath = fileURLToPath(new URL('./fixtures/pi-ai-defaults.cordis.yml', import.meta.url))
+const cliMockLlm = new URL('../../../../../../packages/test-support/loader-smoke/tests/fixtures/cli-mock-llm.ts', import.meta.url).href
 const headlessOverlayPath = fileURLToPath(new URL('./fixtures/headless-profile.cordis.yml', import.meta.url))
 const headlessSessionExpected = join(goldensDir, 'headless-profile', 'session.expected.jsonl')
 const headlessReasoningExpected = join(goldensDir, 'headless-profile', 'reasoning.stderr.expected.txt')
@@ -202,8 +203,15 @@ describe('headless stream-json snapshots', () => {
       tempDirPrefix: 'headless-snapshot-profile-',
       binScript: dshBinScript,
       configPath: headlessOverlayPath,
-      binArgs: ['--profile', 'headless', '--patch', headlessOverlayPath, task],
+      binArgs: ['--profile', 'headless', '--patch', './headless-profile.cordis.yml', task],
       tsconfigPath,
+      prepare: async (cwd) => {
+        const overlay = await readFile(headlessOverlayPath, 'utf8')
+        await writeFile(join(cwd, 'headless-profile.cordis.yml'), overlay.replace(
+          "'../../../../../../../packages/test-support/loader-smoke/tests/fixtures/cli-mock-llm.ts'",
+          JSON.stringify(cliMockLlm),
+        ))
+      },
       env: {
         DSH_PERMISSION_MODE: 'danger-full-access',
         DSH_TELEMETRY_DISABLED: '1',
@@ -234,9 +242,16 @@ describe('headless stream-json snapshots', () => {
       tempDirPrefix: 'headless-snapshot-profile-failure-',
       binScript: dshBinScript,
       configPath: headlessOverlayPath,
-      binArgs: ['--profile', 'headless', '--patch', headlessOverlayPath, 'Trigger the keyless model failure.'],
+      binArgs: ['--profile', 'headless', '--patch', './headless-profile.cordis.yml', 'Trigger the keyless model failure.'],
       tsconfigPath,
       expectedExitCode: 1,
+      prepare: async (cwd) => {
+        const overlay = await readFile(headlessOverlayPath, 'utf8')
+        await writeFile(join(cwd, 'headless-profile.cordis.yml'), overlay.replace(
+          "'../../../../../../../packages/test-support/loader-smoke/tests/fixtures/cli-mock-llm.ts'",
+          JSON.stringify(cliMockLlm),
+        ))
+      },
       env: {
         DSH_CLI_MOCK_FAILURE: '1',
         DSH_TELEMETRY_DISABLED: '1',

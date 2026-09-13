@@ -10,10 +10,10 @@ Trajectory 不展示会话图片。持久化的 `{ type: 'image', attachment: Im
 
 ## Decision
 
-- `ui-conversation` 拥有按会话的持久化图片 URL 缓存。`HistoricalImageCache` 从 `ui-chat` 移入 `packages/client/ui-conversation/src/client/conversation/historical-images.ts`，以 `ctx.uiConversation.imageUrl(sessionId, attachment)` 提供。Chat 与 Trajectory 通过同一实例解析，因此一个会话附件只产生一次 `session.attachment` 读取和一个浏览器 URL，并随 Session binding 释放而撤销。这部分取代了 [client Session/Conversation 所有权](../architecture/2026-08-20-client-session-conversation-ownership.zh.md)中记录的 `ui-chat` 缓存归属。
-- 画廊 owner 契约（`MessageImagesOwnerProps`、`RenderMessageImages`）移入 `ui-conversation` 客户端契约。`ui-chat` 的 `conversation.message.images` SlotMap 行沿用共享 owner 类型；`ui-trajectory` 以同一 owner 类型声明自己的子槽位 `conversation.trajectory.images`；`ui-attachment` 把同一个 `MessageImages` 画廊组件注册进两个键，因此加载、重试与灯箱行为在两个视图中完全一致。
-- `TrajectorySourceBlock` 以 `attachment?: ImageAttachmentRef` 取代 `imageSrc`/`imageAlt`。内联来源嗅探（`sourceImage`、`safeImageSource`）与 Trajectory 本地的 `PanelImage` 渲染器一并删除：没有生产方向会话日志写入内联图片字节或 URL，这些路径是死代码，且 issue 明确排除上传来源的临时路径。
-- 内容含图片但没有文本的记录，其记录表行以 locale 持有的 `layout.imageOnly` 计数标注；只含图片的工具结果的摘要也使用同一标签，而不是 JSON 转储。
+- [`ArkMessageImageStore`](../../../../integrations/jiuzhang/native/Sources/JiuzhangShellUI/ArkMessageImageStore.swift) 持有当前所选会话中已授权的历史图片字节。`ArkAppModel.messageImages` 为 Chat 和 Trajectory 提供同一个存储。对同一附件的并发请求共用一次加载，缓存字节在淘汰前复用。切换所选会话时取消待完成加载、清空字节并拒绝旧请求完成结果。缓存最多保留 24 张图片，以 64 MiB 为淘汰阈值，同时允许单张超大图片保留以供阅读。
+- [`ArkRootView.swift`](../../../../integrations/jiuzhang/native/Sources/JiuzhangShellUI/ArkRootView.swift) 中的 `NativeMessageImages` 同时渲染 Chat 附件和 [`NativeTrajectoryParityView.swift`](../../../../integrations/jiuzhang/native/Sources/JiuzhangShellUI/NativeTrajectoryParityView.swift) 中的附件。因此加载、取消、重试与原图预览共用一份呈现实现。
+- Trajectory 从已记录的图片块提取附件标识并交给共享画廊。读取通过 `ArkInteractionAPI.readImage` 调用按会话授权的 `session/attachment` 端点；画廊不会抓取事件文本中的任意 URL。
+- 含图片的记录即使没有文本，也保留附件标识。Trajectory 显示本地化的附件计数和共享画廊，不依赖纯文本摘要。
 - 存储与 BFF 均不改动：`session.attachment` 已按会话日志引用授权（缺失、损坏与未被引用的附件显式失败并进入画廊的重试态），sha256 内容寻址已保证每张图片只存一份。
 
 ## Alternatives considered
@@ -28,6 +28,6 @@ Trajectory 不展示会话图片。持久化的 `{ type: 'image', attachment: Im
 
 ## Consequences
 
-- 两个视图共用一个画廊实现，图片行为（尺寸、重试、灯箱、文案）不会在 Chat 与 Trajectory 之间漂移，且无论多少个视图展示，一个会话附件只读取一次。
-- `TrajectoryTable` 需要把必填的 `renderImages` prop 逐层传入详情组件；`ui-trajectory` 新增对 `dsh-attachment` 的仅类型依赖，`ui-attachment` 为新的 SlotMap 行新增对 `ui-trajectory` 的仅类型依赖。
-- keyless 组装快照 `apps/web/tests/trajectory-image-display.snapshot.ts` 直接钉住共享缓存这一事实：详情面板中的图片 URL 与 Chat 画廊对同一 fixture 附件的 URL 字符串相同。
+- Chat 与 Trajectory 共用画廊行为和缓存字节。被淘汰的图片可能需要再次授权读取；缓存不承诺长会话整个生命周期内只读取一次。
+- 切换会话会释放缓存字节并取消待完成工作。尝试令牌防止旧请求向新选中的会话发布结果。
+- [`ArkMessageImageStoreContractChecks.swift`](../../../../integrations/jiuzhang/native/Tests/JiuzhangShellCoreTests/ArkMessageImageStoreContractChecks.swift) 验证并发加载去重、字节缓存、重试、取消与拒绝旧请求完成结果。其中画廊接线断言检查源码；图片显示和预览控件仍需实际 Native 交互验证。

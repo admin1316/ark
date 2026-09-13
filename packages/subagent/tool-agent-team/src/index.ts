@@ -14,7 +14,9 @@ export const name = 'tool-agent-team'
 export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt']
 /** Continuable provider routes used for new teammates. */
 export interface Config {
+  /** Provider route for teammates starting with a fresh context. */
   readonly freshProvider?: string
+  /** Provider route for teammates inheriting the initiating session context. */
   readonly forkProvider?: string
 }
 /** Validated defaults for teammate creation. */

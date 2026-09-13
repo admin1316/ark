@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-08-29-retire-generic-web-ui.md
-2026-08-29-retire-generic-web-ui.md: 82fd75c4a45bf5f7dea6334e5f27fac8c812d27e
-2026-08-29-retire-generic-web-ui.zh.md: 4145a87366279d6c6bde3a8338bb29235b583298
+2026-08-29-retire-generic-web-ui.md: 3161cd73d1f2aaa40ec21a79ac1f62c739e34d88
+2026-08-29-retire-generic-web-ui.zh.md: 42d35277e07b55d2fe7f3874cd53229e0ee805b1

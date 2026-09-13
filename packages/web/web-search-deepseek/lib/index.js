@@ -144,25 +144,24 @@ var DeepSeekSearchProvider = class {
 			});
 		} catch (error) {
 			if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error);
-			throw new WebError(`DeepSeek search request failed: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
+			throw searchEndpointError(endpoint, `DeepSeek search request failed: ${String(error)}`, error);
 		}
 		if (!response.ok) {
 			let message = `DeepSeek API error (HTTP ${response.status})`;
 			try {
 				const parsed = await response.json();
 				const detail = typeof parsed.error === "string" ? parsed.error : parsed.error?.message ?? parsed.message;
-				if (detail !== void 0 && detail.length > 0) message = detail;
+				if (detail !== void 0 && detail.length > 0) message += `: ${detail}`;
 			} catch (error) {
 				if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error);
 			}
-			throw new WebError(message, "WEB_PROVIDER_ERROR");
+			throw searchEndpointError(endpoint, message);
 		}
 		try {
 			return mapAnthropicResponse(await response.json());
 		} catch (error) {
 			if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error);
-			if (error instanceof WebError) throw error;
-			throw new WebError(`DeepSeek returned an unprocessable response body: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
+			throw searchEndpointError(endpoint, error instanceof WebError ? error.message : `DeepSeek returned an unprocessable response body: ${String(error)}`, error);
 		}
 	}
 	/**
@@ -185,6 +184,10 @@ var DeepSeekSearchProvider = class {
 		throw new WebError(`DeepSeek search has no API key for "${options.apiKeyEnv ?? "DEEPSEEK_API_KEY"}"; store it through the credentials service (the web Models page writes it), export it in the launching environment, or set a literal "apiKey" in the web-search-deepseek config`, "WEB_PROVIDER_CREDENTIAL_MISSING");
 	}
 };
+/** Add endpoint recovery instructions to failures that occur after request dispatch begins. */
+function searchEndpointError(endpoint, message, cause) {
+	return new WebError(`${message}\n\nThe web search request used endpoint ${JSON.stringify(endpoint)}. Search endpoint configuration is separate from chat. If that endpoint is not intended, guide the user to Settings > Plugins > Plugin configuration > Web search, where they can change and save Endpoint. If that settings page is unavailable, the user can set DEEPSEEK_SEARCH_BASE_URL or configure web-search-deepseek.baseURL to a trusted Anthropic-compatible Messages API base. Only the user should choose or change the endpoint.`, "WEB_PROVIDER_ERROR", cause === void 0 ? void 0 : { cause });
+}
 /**
 * Race a same-process asynchronous preflight against caller cancellation. The
 * attached settlement handlers keep observing an uncooperative operation after

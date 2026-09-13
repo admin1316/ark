@@ -172,3 +172,60 @@ extension ArkAPIClient {
     }
   }
 }
+
+extension ArkAPIClient {
+  /// Keep the existing child lookup/mode admission and single Remote envelope.
+  /// The fourth named argument remains `beforeSeq`, now accepting typed options.
+  private func subagentTypedHistory(
+    parentSessionID: String, childSessionID: String, mode: String,
+    options: [String: JSONValue]
+  ) async throws -> JSONValue {
+    guard !parentSessionID.isEmpty, !childSessionID.isEmpty, !mode.isEmpty else {
+      throw ArkSemanticHistory.invalid("child identity")
+    }
+    return try await remoteCall(method: "subagent/history", args: [
+      "parentSessionId": .string(parentSessionID), "childSessionId": .string(childSessionID),
+      "mode": .string(mode), "beforeSeq": .object(options),
+    ])
+  }
+
+  public func subagentSemanticHistoryPage(
+    parentSessionID: String, childSessionID: String, mode: String,
+    cut: ArkHistoryCut? = nil, beforeRecordID: String? = nil, beforeOrderSequence: Int? = nil, maximumRecords: Int = 50
+  ) async throws -> ArkSemanticHistoryPage {
+    guard (1...200).contains(maximumRecords),
+          (beforeRecordID == nil) == (beforeOrderSequence == nil), beforeRecordID == nil || cut != nil else {
+      throw ArkSemanticHistory.invalid("child semantic request")
+    }
+    var options: [String: JSONValue] = ["view": .string("semantic"), "maxRecords": .number(Double(maximumRecords))]
+    if let cut { options["sourceRevision"] = .string(cut.sourceRevision) }
+    if let beforeRecordID { options["beforeRecordId"] = .string(beforeRecordID) }
+    let value = try await subagentTypedHistory(parentSessionID: parentSessionID, childSessionID: childSessionID, mode: mode, options: options)
+    try Task.checkCancellation()
+    return try ArkSemanticHistory.page(from: value, expectedCut: cut, beforeRecordID: beforeRecordID, beforeOrderSequence: beforeOrderSequence, maximumRecords: maximumRecords)
+  }
+
+  public func subagentBoundHistoryPage(
+    parentSessionID: String, childSessionID: String, mode: String,
+    cut: ArkHistoryCut? = nil, beforeSequence: Int? = nil, maximumEvents: Int = 2_048
+  ) async throws -> ArkBoundHistoryPage {
+    guard (1...2_048).contains(maximumEvents),
+          beforeSequence == nil || Self.safeJSONInteger(.number(Double(beforeSequence!))) == beforeSequence
+    else { throw ArkSemanticHistory.invalid("child bound raw request") }
+    var options: [String: JSONValue] = ["view": .string("raw"), "maxEvents": .number(Double(maximumEvents))]
+    if let cut { options["sourceRevision"] = .string(cut.sourceRevision) }
+    if let beforeSequence { options["beforeSeq"] = .number(Double(beforeSequence)) }
+    let value = try await subagentTypedHistory(parentSessionID: parentSessionID, childSessionID: childSessionID, mode: mode, options: options)
+    try Task.checkCancellation()
+    return try ArkSemanticHistory.rawPage(from: value, expectedCut: cut, beforeSequence: beforeSequence, maximumEvents: maximumEvents)
+  }
+
+  public func subagentSemanticHistoryContent(
+    parentSessionID: String, childSessionID: String, mode: String,
+    cut: ArkHistoryCut, recordID: String
+  ) async throws -> ArkSemanticHistoryContent {
+    try await ArkSemanticHistory.readContent(cut: cut, recordID: recordID) { options in
+      try await self.subagentTypedHistory(parentSessionID: parentSessionID, childSessionID: childSessionID, mode: mode, options: options)
+    }
+  }
+}

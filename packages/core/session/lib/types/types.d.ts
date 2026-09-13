@@ -1,6 +1,6 @@
 import type { Branded } from '@deepseek-ai/dsh-brand';
 import type { AssistantMessage, CallId, LlmCallConfig, LlmCallConfigAdapterDefaults, LlmFailure, StreamChunk, TokenUsage, ToolResultMessage, ToolSchema, UserMessage } from '@deepseek-ai/dsh-llm';
-import type { JsonValue } from './json.ts';
+import type { JsonValue } from '@deepseek-ai/dsh-util-values';
 export type { JsonValue } from './json.ts';
 export type * from './remote.ts';
 /** Identifies one session in the store (and its persistence artifacts). */

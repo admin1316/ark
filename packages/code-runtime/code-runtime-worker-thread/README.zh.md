@@ -1,9 +1,26 @@
+---
+description: "这是 @deepseek-ai/dsh-code-runtime seam 的 worker 线程实现：WorkerThreadCodeRuntime 会在每次运行中使用一个全新的 Node worker_threads.Worker，输入 TypeScript，由宿主侧剥离类型，通过消息端口桥接绑定，输出 { value, logs, error? }。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-code-runtime-worker-thread
 
 [English](README.md) | 中文
 
+## 概述
+
 这是 [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.zh.md) seam 的 worker 线程实现：`WorkerThreadCodeRuntime` 会在每次运行中使用一个全新的 Node `worker_threads.Worker`，输入 TypeScript，由宿主侧剥离类型，通过消息端口桥接绑定，输出 `{ value, logs, error? }`。**这是隔离措施，而非安全边界**：其信任立场有意与 bash 等价（参见 [Code Mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-code-mode.zh.md) 的 Trust posture 章节），但提供 bash 没有的隔离：独立 isolate、空环境、堆上限与强制终止。
 
+## 目录
+
+- [配置](#config)
+- [设计](#design)
+- [未构建与已构建的 worker 入口](#the-worker-entry-unbuilt-and-built)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="config"></a>
 ## 配置
 
 ```yaml
@@ -18,6 +35,7 @@
 
 每个字段都会验证并提供默认值；`maxOutputBytes` 必须是至少 4 字节的安全整数，其余字段必须是有限正数，`maxWallMs` 还必须不超过 `2147483647`（Node 的 `setTimeout` 最大延迟），此外没有其他可调项。
 
+<a id="design"></a>
 ## 设计
 
 - **每次运行使用一个全新 worker，不设池化**：程序所在的世界会随 worker 一同终止，不会留下需要记录的跨运行状态，也无法发生状态泄漏；仅凭会话日志即可重建运行。
@@ -30,12 +48,14 @@
 - **空环境**：worker 使用 `env: {}` 和 `execArgv: []`，既不会获得环境变量中的凭据（比 spawn 命令的清理环境规则更严格），也不会继承 loader 标志。
 - **dispose（资源释放）时等待完全停稳**：清理会使进行中的运行以 `abort` 失败，并会等待每个 worker 退出后再完成。
 
+<a id="the-worker-entry-unbuilt-and-built"></a>
 ## 未构建与已构建的 worker 入口
 
 源代码模式通过 Node 原生类型剥离加载只包含可擦除语法的 `src/worker.ts`。其传递运行时闭包只包含 Node 内置模块和相对源模块，因此全新 checkout 绝不需要兄弟工作区包尚未构建的 `lib/` 导出。worker 本地和会话自有的 JSON 边界都会在消息端口两侧展平并重建已验证值，使应用嵌套永远不会进入 structured clone。构建模式会把兄弟文件 `lib/worker.cjs` 作为文件系统路径传入，因为 pkg 的虚拟文件系统（VFS）Worker hook 要求 CommonJS；同一路径也可在普通 Node 下使用。对这个已发布入口路径进行测试的仓库级要求由[测试策略](../../../docs/testing.zh.md)规定。
 
 SDK 对外提供默认及具名导出的 `WorkerThreadCodeRuntime` 类，以及 `Config`。运行所用的 `./worker` 子路径仅作为打包后的 spawn 入口存在；wire 协议与启动辅助模块是源代码私有的实现细节。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 通过 [`dsh-tools`](../../core/tools/README.zh.md) 中的 Code Mode 间接提供；如果外层值能容纳则原样渲染，否则返回明确的 `invalid-output`／`output-limit` 失败。只有外层 `run_code` 结果进入模型上下文并使用普通落盘策略；绑定通信与中间值始终只存在于执行环境中。
@@ -44,6 +64,7 @@ SDK 对外提供默认及具名导出的 `WorkerThreadCodeRuntime` 类，以及 
 
 不会直接失效；由上述消费方负责请求前缀变更。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **程序派生的 OS 进程在程序终止后仍会存活**：`worker.terminate()` 只结束线程，比 bash-local 的进程组终止更弱；在容器后端出现前，孤儿进程清理属于部署职责。
@@ -52,3 +73,8 @@ SDK 对外提供默认及具名导出的 `WorkerThreadCodeRuntime` 类，以及 
 - **程序获得一个含 5 个方法的 `console` shim**（`log`／`info`／`warn`／`error`／`debug`）：有意不提供 Node 的完整 console 接口。
 - **中间绑定值没有字节上限**：程序可以用永远不会成为外层输出的值耗尽进程或 worker 内存。
 - **默认 64 MiB 是拒绝边界，不是可恢复存储**：外层落盘只能保存发生 `output-limit` 后返回的有界日志和诊断；在运行时上限之外被拒绝的字节永远不会到达落盘层。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

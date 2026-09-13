@@ -40,7 +40,7 @@ description: 小说角色资产师：从小说或短故事中提取有原文证�
 - 单次上限 24 块（约 33 万字符），超了会明确报 `truncated`，不静默截断
 - **可生图锚点纪律（角色卡供生图直接消费）**：锚点描述必须具体到不可误解（“米灰粗麻袍、织纹可见、下摆浸水变深”而非“素色旧袍”）；材质词写物理行为（weave visible/hem darkened）；避免“神秘/缥缈”类空词——角色卡就是生图提示词的素材库，卡上每个词都要能落在画面上
 - **输出中文优先**：`persona` 和 `voice` 的描述字段强制中文，校验器会拦英文。分析英文原著也照样出中文角色卡
-- 用户要求微表情/哭戏/真人表演层时，先完整读取 [真人微表情与连续表演合同](../_shared/micro-expression-performance-contract.md)，额外交付 performance-bible，禁止把通用词库模板复制到所有镜头
+- 用户要求微表情/哭戏/真人表演层时，先完整读取 [真人微表情与连续表演合同](../../../_shared/micro-expression-performance-contract.md)，额外交付 performance-bible，禁止把通用词库模板复制到所有镜头
 
 ## 自测
 

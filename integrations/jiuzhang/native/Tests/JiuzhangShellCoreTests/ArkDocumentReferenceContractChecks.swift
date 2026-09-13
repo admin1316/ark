@@ -3,6 +3,7 @@ import JiuzhangShellCore
 @testable import JiuzhangShellUI
 
 func runArkDocumentReferenceContractChecks() async {
+  await runArkComposerSessionIsolationContractChecks()
   let root = FileManager.default.temporaryDirectory
     .appendingPathComponent("ark-document-reference-\(UUID().uuidString)", isDirectory: true)
   do {
@@ -167,7 +168,8 @@ func runArkDocumentReferenceContractChecks() async {
       && composerSource.contains("ArkDocumentReferenceStore.longPasteThreshold")
       && composerSource.contains("onPasteDocument")
       && modelSource.contains("documentStore.contextualizedPrompt")
-      && modelSource.contains("await documentStore.remove(documents)"),
+      && modelSource.contains("removeUnreferencedComposerDocuments")
+      && modelSource.contains("await self.documentStore.remove(unused)"),
     "native composer owns long-paste cards, Word intake, bounded context, and cleanup"
   )
 }

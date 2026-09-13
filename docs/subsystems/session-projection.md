@@ -8,7 +8,7 @@ Source: [`packages/session/session-projection/src/index.ts`](../../packages/sess
 
 ## The unit
 
-`SessionProjectionStateMap` is the merge-extensible table of host fold states, while `SessionProjectionMap` retains the client-visible whole values. A domain contributes one `ProjectionDefinition` per state key; a `wire` block makes that key client-visible, and rendering belongs to the slot system, never this layer:
+`SessionProjectionStateMap` is the merge-extensible table of host fold states, while `SessionProjectionMap` retains the client-visible whole values. A domain contributes one `ProjectionDefinition` per state key; a `wire` block makes that key client-visible, and rendering belongs to the consuming UI, never this layer:
 
 ```ts type-equiv
 /**

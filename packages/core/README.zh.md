@@ -1,3 +1,8 @@
+---
+description: "构成 harness 默认控制主干的会话日志、系统提示词组装、工具注册表、agent（智能体）词汇、部署默认模型选择和具体循环。"
+kind: "package-group"
+---
+
 # core/ — 产品 API 主干
 
 [English](README.md) | 中文

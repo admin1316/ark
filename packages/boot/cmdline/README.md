@@ -1,8 +1,23 @@
+---
+description: "The command line a dsh launcher hands to the app it boots."
+kind: "package-library"
+---
+
 # `@deepseek-ai/dsh-cmdline`
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The command line a dsh launcher hands to the app it boots. The launcher parses only its own flags (`--profile`, `--patch`, the config dumps) and hands **everything after them** to the tree verbatim, so an app owns its flag family, its `--help` text, and its parse errors instead of the launcher knowing them.
+
+## Table of Contents
+
+- [The launcher values](#the-launcher-values)
+- [Ordinary providers and injected config](#ordinary-providers-and-injected-config)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## The launcher values
 
@@ -73,3 +88,7 @@ None; this package neither assembles nor sends a provider request.
 - **Launcher flags must precede app arguments.** The split is positional: the first token the launcher does not recognize starts the inner arguments, so `--patch` placed after an app flag belongs to the app. The launcher's parser consumes one `--`, so an app argument that must survive as a literal `--` needs `-- --`.
 - **An app-owned service has no statically declared provider.** Consumer rows name it through ordinary injection; a bundle that omits its provider fails at settlement with pending entries naming the service rather than at load.
 - **A user patch that replaces a row's whole `config` drops its expressions.** A flag beats the value written beside it, not a literal a user wrote in place of the expression; keeping the expression is what keeps the flag winning.
+
+### Dev Note
+
+None.

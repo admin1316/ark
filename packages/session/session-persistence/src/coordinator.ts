@@ -5,6 +5,7 @@
  * @module @deepseek-ai/dsh-session-persistence/coordinator
  */
 
+import { matchesOwnKeyPattern } from '@deepseek-ai/dsh-util-values'
 import { Context } from '@deepseek-ai/cordis'
 import {
   adoptSessionEvent,
@@ -479,9 +480,7 @@ function migrateLegacyMessageEvent(
   if (data === undefined) return event
   switch (event.type) {
     case 'user/message': {
-      if (Object.hasOwn(data, 'id') || Object.hasOwn(data, 'role')
-        || Object.hasOwn(data, 'message')
-        || !Object.hasOwn(data, 'content') || !Object.hasOwn(data, 'source')) return event
+      if (!matchesOwnKeyPattern(data, ['content', 'source'], ['id', 'role', 'message'])) return event
       return {
         ...event,
         data: {
@@ -492,8 +491,7 @@ function migrateLegacyMessageEvent(
       } as SessionEvent
     }
     case 'assistant/message': {
-      if (Object.hasOwn(data, 'message')
-        || !Object.hasOwn(data, 'content') || !Object.hasOwn(data, 'provenance')) return event
+      if (!matchesOwnKeyPattern(data, ['content', 'provenance'], ['message'])) return event
       const { content, provenance, ...eventData } = data
       return {
         ...event,
@@ -512,9 +510,7 @@ function migrateLegacyMessageEvent(
       } as SessionEvent
     }
     case 'tool/result': {
-      if (Object.hasOwn(data, 'message')
-        || !Object.hasOwn(data, 'callId') || !Object.hasOwn(data, 'content')
-        || !Object.hasOwn(data, 'isError')) return event
+      if (!matchesOwnKeyPattern(data, ['callId', 'content', 'isError'], ['message'])) return event
       const { callId, content, isError, ...eventData } = data
       const inheritedId = replacementStart(event)
       return {

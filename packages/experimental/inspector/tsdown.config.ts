@@ -1,5 +1,5 @@
 import type { UserConfig } from 'tsdown'
-import { clientBundle } from '../../client/tsdown.client.ts'
+import { defineConfig } from 'tsdown'
 
 const worker: UserConfig = {
   entry: { worker: 'lib/types/worker/entry.js' },
@@ -14,9 +14,17 @@ const worker: UserConfig = {
   deps: { neverBundle: specifier => specifier === 'ws' },
 }
 
-/** Build the Host plugin and Worker during the Host pass, and the dynamic Client plugin during the Client pass. */
-export default clientBundle(
-  '@deepseek-ai/dsh-experimental-inspector',
-  ['lib/types/index.js', 'lib/types/invariant.js'],
-  { hostPhase: true, companions: [worker] },
-)
+/** Bundle the Host plugin and its CDP worker. */
+export default defineConfig([
+  {
+    entry: ['lib/types/index.js', 'lib/types/invariant.js'],
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'node',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+  },
+  worker,
+])

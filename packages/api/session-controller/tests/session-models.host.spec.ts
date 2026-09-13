@@ -17,6 +17,7 @@ import type {
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
+import { installPromptPersistence, promptInbox } from './durable-prompt-fixture.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionPromptRequest, SessionRequestId } from '../src/types.ts'
 import { ApiSessionAgentController } from '../src/agent.ts'
@@ -164,6 +165,7 @@ function currentSelection(ctx: Context, sessionId: SessionId) {
 describe('Web session model selection', () => {
   it('validates an ordered image batch before persisting any member', async () => {
     const { ctx, agent, sessionId } = await harness()
+    await installPromptPersistence(ctx)
     const validateImage = vi.fn((_input: { data: Uint8Array }) => Promise.resolve())
     const saveImage = vi.fn((input: { data: Uint8Array; mediaType: 'image/png'; name?: string }) => Promise.resolve({
       attachmentId: `att-${String(input.data[0])}`,
@@ -186,7 +188,8 @@ describe('Web session model selection', () => {
       saveImage,
     }
     ctx.provide('attachments', Object.setPrototypeOf(attachments, AttachmentStore.prototype) as never)
-    const followup = vi.fn()
+    const inbox = promptInbox(agent.session)
+    const followup = vi.fn((message: UserMessage) => { inbox.append('next-turn', message) })
     Object.assign(agent, { followup })
     const remote = createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
@@ -203,6 +206,9 @@ describe('Web session model selection', () => {
       ],
     }))
     expect(result.ok).toBe(true)
+    const stored = await ctx.sessionPersistence.inspect(sessionId)
+    expect(stored?.events.filter(event => event.type === 'agent/inbox/spliced')
+      .flatMap(event => event.data.inserted)).toEqual([followup.mock.calls[0]?.[0]])
     expect(validateImage.mock.calls.map(([input]) => [...input.data])).toEqual([[1], [2]])
     expect(saveImage.mock.calls.map(([input]) => [...input.data])).toEqual([[1], [2]])
     expect((followup.mock.calls[0]?.[0] as UserMessage).content).toEqual([
@@ -448,9 +454,9 @@ describe('Web session model selection', () => {
     }))).toEqual({
       ok: false,
       error: {
-        code: 'fixture-rejected',
+        code: 'model-unavailable',
         message: 'fixture rejected the selection',
-        details: { provider: 'remote-rejected' },
+        details: { provider: 'remote-rejected', model: 'model' },
       },
     })
     expect(currentSelection(ctx, sessionId))
@@ -599,6 +605,7 @@ describe('Web session model selection', () => {
 
   it('maps image admission failures and accepts image-capable selections', async () => {
     const { ctx, agent, sessionId } = await harness()
+    await installPromptPersistence(ctx)
     registerTextOnly(ctx)
     ctx.llm.registerAdapter(['image-capable'], new class extends CatalogAdapter {
       override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
@@ -628,7 +635,8 @@ describe('Web session model selection', () => {
         return Promise.resolve([savedRef])
       },
     } as never)
-    const followup = vi.fn()
+    const inbox = promptInbox(agent.session)
+    const followup = vi.fn((message: UserMessage) => { inbox.append('next-turn', message) })
     Object.assign(agent, { followup })
     const remote = createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
@@ -639,12 +647,11 @@ describe('Web session model selection', () => {
     expectValue(await remote.selectModel(request({
       sessionId, provider: 'text-only', model: 'plain',
     })))
-    expect(await remote.prompt(promptRequest({
+    // Ark 定制：text-only 路由不再拦截图片上传，能否识别由模型决定。
+    expectValue(await remote.prompt(promptRequest({
       sessionId, mode: 'queue', content: [image],
-    }))).toMatchObject({
-      ok: false,
-      error: { code: 'attachment-error', details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' } },
-    })
+    })))
+    followup.mockClear()
 
     expectValue(await remote.selectModel(request({
       sessionId, provider: 'image-capable', model: 'vision',
@@ -663,7 +670,7 @@ describe('Web session model selection', () => {
     saveMode = 'remote'
     expect(await remote.prompt(promptRequest({
       sessionId, mode: 'queue', content: [image],
-    }))).toMatchObject({ ok: false, error: { code: 'fixture-rejected' } })
+    }))).toMatchObject({ ok: false, error: { code: 'agent-busy' } })
     saveMode = 'success'
     expectValue(await remote.prompt(promptRequest({ sessionId, mode: 'queue', content: [image] })))
     expect(followup).toHaveBeenCalledOnce()

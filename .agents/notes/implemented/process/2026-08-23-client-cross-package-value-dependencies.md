@@ -12,7 +12,7 @@ Removing every import mechanically would create different coupling: a general ut
 
 ## Decision
 
-Every Client cross-package reference is classified by what crosses the package boundary. A feature plugin does not import a runtime value from another feature plugin and does not declare `dsh.client.external`. The [Client shell layering decision](../architecture/2026-08-15-client-shells-and-dynamic-packages.md) continues to own bundle construction and module-table loading; this decision narrows how feature code uses those mechanisms.
+Every Client cross-package reference is classified by what crosses the package boundary. A feature plugin does not import a runtime value from another feature plugin and does not declare `dsh.client.external`. The [Client shell layering decision](../../archived/architecture/2026-08-15-client-shells-and-dynamic-packages.md) continues to own bundle construction and module-table loading; this decision narrows how feature code uses those mechanisms.
 
 | Case | Treatment | Reason |
 | --- | --- | --- |

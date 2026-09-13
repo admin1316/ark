@@ -80,8 +80,11 @@ const _deepseek_ai_dsh_session_session_create_result$schema = z.union([z.object(
 }).readonly(),
 })])
 const _deepseek_ai_dsh_session_session_fork_parameter_0$schema = z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
   'atSeq': z.number().readonly().optional(),
+  'sourceRevision': z.string().readonly().optional(),
+  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
+  'expectedSubagentMode': z.union([z.literal("one-shot"), z.literal("continuable")]).readonly().optional(),
 })
 const _deepseek_ai_dsh_session_session_fork_result$schema = z.union([z.object({
   'ok': z.literal(false).readonly(),
@@ -96,12 +99,35 @@ const _deepseek_ai_dsh_session_session_fork_result$schema = z.union([z.object({
   'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
 }).readonly(),
 })])
-const _deepseek_ai_dsh_session_session_history_parameter_0$schema = z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
-  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
+const _deepseek_ai_dsh_session_session_history_parameter_0$schema = z.union([z.object({
+  'view': z.literal("raw").readonly().optional(),
+  'sourceRevision': z.string().readonly().optional(),
   'beforeSeq': z.number().readonly().optional(),
   'maxMessages': z.number().readonly().optional(),
-})
+  'maxEvents': z.number().readonly().optional(),
+  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
+  'expectedSubagentMode': z.union([z.literal("one-shot"), z.literal("continuable")]).readonly().optional(),
+}), z.object({
+  'view': z.literal("semantic").readonly(),
+  'sourceRevision': z.string().readonly().optional(),
+  'beforeRecordId': z.string().readonly().optional(),
+  'maxRecords': z.number().readonly().optional(),
+  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
+  'expectedSubagentMode': z.union([z.literal("one-shot"), z.literal("continuable")]).readonly().optional(),
+}), z.object({
+  'view': z.literal("content").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'recordId': z.string().readonly(),
+  'contentReadId': z.string().readonly().optional(),
+  'close': z.boolean().readonly().optional(),
+  'offset': z.number().readonly().optional(),
+  'maxCodeUnits': z.number().readonly().optional(),
+  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
+  'expectedSubagentMode': z.union([z.literal("one-shot"), z.literal("continuable")]).readonly().optional(),
+})])
 const _deepseek_ai_dsh_session_session_history_result$schema = z.union([z.object({
   'ok': z.literal(false).readonly(),
   'error': z.object({
@@ -111,7 +137,10 @@ const _deepseek_ai_dsh_session_session_history_result$schema = z.union([z.object
 }).readonly(),
 }), z.object({
   'ok': z.literal(true).readonly(),
-  'value': z.object({
+  'value': z.union([z.object({
+  'view': z.literal("raw").readonly().optional(),
+  'sourceRevision': z.string().readonly().optional(),
+  'asOfThroughSeq': z.number().readonly().optional(),
   'events': z.array(z.object({
   'event': z.object({
   'type': z.string().readonly(),
@@ -129,7 +158,62 @@ const _deepseek_ai_dsh_session_session_history_result$schema = z.union([z.object
   'asOfSeq': z.number().readonly(),
   'values': z.record(z.string(), z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema4))])).readonly(),
 }).readonly().optional(),
+}), z.object({
+  'view': z.literal("semantic").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'asOfThroughSeq': z.number().readonly(),
+  'records': z.array(z.object({
+  'id': z.string().readonly(),
+  'kind': z.union([z.literal("user"), z.literal("assistant"), z.literal("tool")]).readonly(),
+  'orderSeq': z.number().readonly(),
+  'time': z.number().readonly(),
+  'turn': z.number().readonly().optional(),
+  'step': z.number().readonly().optional(),
+  'state': z.union([z.literal("active"), z.literal("complete"), z.literal("interrupted"), z.literal("failed-prefix"), z.literal("orphaned-prefix"), z.literal("unpaired")]).readonly(),
+  'preview': z.string().readonly(),
+  'contentState': z.literal("complete-at-cut").readonly(),
+  'canonicalEventSeq': z.number().readonly().optional(),
+  'callEventSeq': z.number().readonly().optional(),
+  'resultEventSeq': z.number().readonly().optional(),
+  'completedTurnEndSeq': z.number().readonly().optional(),
+})).readonly(),
+  'turns': z.array(z.object({
+  'turn': z.number().readonly(),
+  'startSeq': z.number().readonly().optional(),
+  'endSeq': z.number().readonly().optional(),
+  'usage': z.union([z.literal(null), z.object({
+  'uncachedInputTokens': z.number().readonly(),
+  'outputTokens': z.number().readonly(),
+  'totalTokens': z.number().readonly(),
+  'cacheReadTokens': z.number().readonly().optional(),
+  'cacheWriteTokens': z.number().readonly().optional(),
+  'reasoningTokens': z.number().readonly().optional(),
+  'routes': z.array(z.object({
+  'provider': z.string().readonly(),
+  'model': z.string().readonly(),
+})).readonly().optional(),
+})]).readonly(),
+})).readonly(),
+  'dependencyRecords': z.object({
+  'tool': z.string().readonly(),
+  'status': z.string().readonly(),
+  'turn': z.string().readonly(),
 }).readonly(),
+  'hasMore': z.boolean().readonly(),
+  'nextBeforeRecordId': z.string().readonly().optional(),
+  'pendingDomains': z.array(z.union([z.literal("status"), z.literal("usage-context"), z.literal("workflow")])).readonly(),
+}), z.object({
+  'view': z.literal("content").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'asOfThroughSeq': z.number().readonly(),
+  'recordId': z.string().readonly(),
+  'encoding': z.literal("json").readonly(),
+  'contentReadId': z.string().readonly(),
+  'offset': z.number().readonly(),
+  'text': z.string().readonly(),
+  'nextOffset': z.number().readonly(),
+  'done': z.boolean().readonly(),
+})]).readonly(),
 })])
 const _deepseek_ai_dsh_session_session_list_parameter_0$schema = z.object({
   'cursor': z.string().readonly().optional(),
@@ -350,7 +434,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_attachment_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":932,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":941,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/cancel',
@@ -377,7 +461,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_cancel_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":960,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":969,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/create',
@@ -404,7 +488,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_create_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":852,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":861,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/fork',
@@ -431,7 +515,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_fork_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":910,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":919,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/history',
@@ -458,7 +542,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_history_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":863,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":872,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/list',
@@ -485,7 +569,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_list_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":830,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":839,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/models',
@@ -512,7 +596,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_models_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":874,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":883,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/prompt',
@@ -539,7 +623,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_prompt_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":921,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":930,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/rename',
@@ -566,7 +650,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_rename_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":899,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":908,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/search',
@@ -593,7 +677,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_search_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":841,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":850,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/selectModel',
@@ -620,7 +704,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_selectModel_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":885,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":894,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/updateQueue',
@@ -647,7 +731,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_updateQueue_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":946,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":955,"column":3},
     },
   ],
 }

@@ -1,3 +1,8 @@
+---
+description: "Product plugins that add model-visible request context without defining a tool. agent-instructions is included by the default dsh-agent-spine-demo bundle and can be disabled through bundle config; time-context, tmux-context, session-reference, file-reference, and file-reference-local are opt-in."
+kind: "package-group"
+---
+
 # context/ — request-context extensions
 
 English | [中文](README.zh.md)

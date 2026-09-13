@@ -30,6 +30,8 @@ The `events` array contains complete canonical `SessionEvent` objects directly. 
 
 `@deepseek-ai/dsh-plugin-package-inventory-deepseek` owns the default-on `dsh_plugin_packages` field from the `llm` package family. It reads active non-group entries from the host Loader tree and, for a live requesting Agent, its standing preset tree. Node package resolution locates the owning manifest without requiring a `./package.json` export. Ordinary entries resolve from their owning tree, while a standing preset root mirrors its Loader's intentional harness-base override and nested includes retain their own bases. An anonymous nearest manifest marks a loose module; a named manifest must carry a version. Exact name/version pairs are deduplicated with deterministic ordering; simultaneously active versions remain separate.
 
+The harness anchor is the Loader root group's captured context, not the inventory contributor's inherited bundle context. Cordis associates service contexts with the caller, so reading `loader.ctx` through a nested contributor is not an equivalent root lookup. Test profile patches link declared packages from the authored patch first, then the actual agent installation; a source-only alias does not replace installed package provenance.
+
 Disabled, pending, failed, unloading, disposed, structural, loose non-package, ordinary dependency, programmatic child-fiber, and in-memory dynamic-plugin entries are outside this package inventory. This definition reports package-backed composition facts the runtime can prove instead of inventing provenance for arbitrary callbacks.
 
 ## Deferred inventory caching

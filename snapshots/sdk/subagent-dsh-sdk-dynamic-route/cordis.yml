@@ -19,6 +19,14 @@
     root: !!js dshHomePath('sessions')
     compression: none
 
+- id: subagent-model-selection-settings
+  name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+  config:
+    enabled: true
+    allowedModels:
+      - provider: mock
+        model: mock-routed
+
 - insert:
     - id: mock-llm
       name: '../../../packages/subagent/subagent-dsh-sdk/tests/fixtures/loader/mock-delegating-llm.ts'
@@ -34,14 +42,6 @@
         model: mock-routed
         env:
           DSH_TELEMETRY_DISABLED: '1'
-
-    - id: subagent-model-selection-settings
-      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
-      config:
-        enabled: true
-        allowedModels:
-          - provider: mock
-            model: mock-routed
 
     - id: tool-subagent-dsh-sdk
       name: '../../../packages/subagent/subagent-dsh-sdk/tests/fixtures/loader/scoped-tool-subagent.ts'

@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import KnowledgeWikiService from '../src/index.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 interface SummarySurface {
   snapshots: { dispose(): void }
@@ -76,12 +77,12 @@ beforeEach(() => {
     return undefined
   })
   vi.spyOn(ctx, 'get').mockImplementation(name => getSessionService(name))
-  service = new KnowledgeWikiService(ctx, {
+  service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot: join(mainRoot, 'wiki'),
     mainRoot,
     credential: 'VISION_API_KEY',
     llmProvider: 'p', llmModel: 'm',
-  }) as unknown as SummarySurface
+  })) as unknown as SummarySurface
 })
 
 afterEach(async () => {

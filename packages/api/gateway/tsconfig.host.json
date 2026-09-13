@@ -27,9 +27,6 @@
       "path": "../../runtime-diagnostics/invariants"
     },
     {
-      "path": "../../client/connection/tsconfig.host.json"
-    },
-    {
       "path": "../../host/webserver"
     },
     {
@@ -40,6 +37,9 @@
     },
     {
       "path": "../../util/timeout"
+    },
+    {
+      "path": "../../util/brand"
     }
   ]
 }

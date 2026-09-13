@@ -107,6 +107,102 @@ export default class Fix {
   })
 })
 
+describe('gen-config-catalog root utility wrappers', () => {
+  const wrappedService = (rootType: string, schema = 'knob: z.string()'): string => `
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import type { Config } from './config.ts'
+/** Fixture service. */
+export default class Fix {
+  static Config = z.object({ ${schema} })
+  constructor(ctx: Context, config: ${rootType}${rootType === 'Partial<Config>' ? ' = {}' : ''}) {}
+}
+`
+
+  it.each(['Partial', 'Required', 'Readonly', 'NonNullable'])(
+    'extracts the local declaration and checks schema paths under root %s', (wrapper) => {
+      const entries = collectConfigCatalog(make({
+        'src/index.ts': wrappedService(`${wrapper}<Config>`),
+        'src/config.ts': DOCUMENTED_CONFIG,
+      }))
+      expect(entries[0]).toMatchObject({ kind: 'config', configTypeName: 'Config', schemaKeys: ['knob'] })
+      expect(entries[0]?.pastes).toEqual([{
+        text: DOCUMENTED_CONFIG.trim(), source: 'packages/group/one/src/config.ts:2',
+      }])
+      expect(() => collectConfigCatalog(make({
+        'src/index.ts': wrappedService(`${wrapper}<Config>`, 'ghost: z.string()'),
+        'src/config.ts': DOCUMENTED_CONFIG,
+      }))).toThrow(/schema validates key 'ghost' but config type 'Config' declares no such member/)
+    },
+  )
+
+  it('keeps the transitive local closure and external references through nested root wrappers', () => {
+    const entries = collectConfigCatalog(make({
+      'src/index.ts': wrappedService('(Readonly<Partial<Config>>)', 'nested: z.object({ knob: z.string() })'),
+      'src/config.ts': `import type { Remote } from '@fix/dep'
+/** Fixture config. */
+export interface Config {
+  /** Nested settings. */
+  nested?: Nested
+  /** External metadata. */
+  remote?: Remote
+}
+/** Nested settings. */
+export interface Nested {
+  /** A knob. */
+  knob?: string
+}
+`,
+    }))
+    expect(entries[0]?.pastes?.map(paste => paste.text)).toEqual([
+      '/** Fixture config. */\nexport interface Config {\n  /** Nested settings. */\n  nested?: Nested\n  /** External metadata. */\n  remote?: Remote\n}',
+      '/** Nested settings. */\nexport interface Nested {\n  /** A knob. */\n  knob?: string\n}',
+    ])
+    expect(entries[0]?.refs).toEqual([{ alias: 'Remote', imported: 'Remote', specifier: '@fix/dep' }])
+    expect(entries[0]?.schemaKeys).toEqual(['nested', 'nested.knob'])
+  })
+
+  it('still rejects undocumented fields and unknown closure types below root wrappers', () => {
+    expect(() => collectConfigCatalog(make({
+      'src/index.ts': wrappedService('Partial<Config>'),
+      'src/config.ts': 'export interface Config { knob?: string }',
+    }))).toThrow(/config field 'Config\.knob' .* has no JSDoc prose/)
+    expect(() => collectConfigCatalog(make({
+      'src/index.ts': wrappedService('Partial<Config>'),
+      'src/config.ts': '/** Config. */\nexport interface Config {\n  /** A knob. */\n  knob?: Missing\n}',
+    }))).toThrow(/references 'Missing'.*neither declared/)
+  })
+
+  it('does not treat imported or locally declared utility names as global wrappers', () => {
+    expect(() => collectConfigCatalog(make({
+      'src/index.ts': `import type { Partial } from '@fix/dep'
+${DOCUMENTED_CONFIG}
+export function apply(ctx: unknown, config: Partial<Config>): void {}
+`,
+    }))).toThrow(/config type 'Partial' is imported from '@fix\/dep'/)
+    const entries = collectConfigCatalog(make({
+      'src/index.ts': `/** Local namesake. */
+export interface Partial {
+  /** A knob. */
+  knob?: string
+}
+export function apply(ctx: unknown, config: Partial): void {}
+`,
+    }))
+    expect(entries[0]?.configTypeName).toBe('Partial')
+    expect(entries[0]?.pastes?.[0]?.text).toContain('interface Partial')
+  })
+
+  it.each(['Partial', 'Partial<Config, Config>', 'Partial<{ knob?: string }>'])(
+    'rejects an unsupported root wrapper shape %s', (rootType) => {
+      expect(() => collectConfigCatalog(make({
+        'src/index.ts': wrappedService(rootType),
+        'src/config.ts': DOCUMENTED_CONFIG,
+      }))).toThrow(/declare a named config type/)
+    },
+  )
+})
+
 describe('gen-config-catalog config extraction guards', () => {
   it('hard-errors on a config field with no JSDoc prose', () => {
     expect(() => collectConfigCatalog(make({

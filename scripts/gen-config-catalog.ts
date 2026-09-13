@@ -306,6 +306,24 @@ function declForTypeName(world: World, ctx: FileCtx, name: string): { decl: Type
 /** Utility wrappers that pass a member lookup through to their type argument. */
 const PASSTHROUGH_WRAPPERS = new Set(['Partial', 'Required', 'Readonly', 'NonNullable'])
 
+/** Resolve a root's existing presence-preserving utilities to its named declaration. */
+function configDeclarationType(ctx: FileCtx, type: ts.TypeNode | undefined): ts.TypeReferenceNode | null {
+  let node = type
+  while (node !== undefined) {
+    if (ts.isParenthesizedTypeNode(node)) {
+      node = node.type
+      continue
+    }
+    if (!ts.isTypeReferenceNode(node) || !ts.isIdentifier(node.typeName)) return null
+    const name = node.typeName.text
+    // Imported or declared namesakes retain their ordinary type ownership.
+    if (!PASSTHROUGH_WRAPPERS.has(name) || ctx.imports.has(name) || findTypeDecl(ctx, name)) return node
+    if (node.typeArguments?.length !== 1) return null
+    node = node.typeArguments[0]
+  }
+  return null
+}
+
 /**
  * Walk a schema key path against a declared type. This is a PRESENCE check,
  * not a runtime value check: it answers "does the declared config type have a member
@@ -654,11 +672,12 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     if (kind !== 'config' || !configParam) continue
 
     // Resolve the config type and paste its package-local transitive closure.
-    if (!configParam.type || !ts.isTypeReferenceNode(configParam.type) || !ts.isIdentifier(configParam.type.typeName)) {
-      violations.push(`${pkg}: config parameter type (${pointer(entryRel, ctx.sf, configParam)}) is not a plain type-name reference; declare a named config type.`)
+    const configType = configDeclarationType(ctx, configParam.type)
+    if (!configType || !ts.isIdentifier(configType.typeName)) {
+      violations.push(`${pkg}: config parameter type (${pointer(entryRel, ctx.sf, configParam)}) is not a named type or supported single-argument utility wrapper; declare a named config type.`)
       continue
     }
-    const typeName = configParam.type.typeName.text
+    const typeName = configType.typeName.text
     entry.configTypeName = typeName
     const pastes: Paste[] = []
     const refs = new Map<string, TypeRef>()

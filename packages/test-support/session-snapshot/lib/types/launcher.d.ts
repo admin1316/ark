@@ -78,7 +78,8 @@ export declare function launchAcpTestAgent(options: AcpTestLaunchOptions): Launc
  * @param cwd - isolated process cwd whose profile fallback receives package links.
  * @param targetDir - existing directory that owns the materialized patch.
  * @param index - stable patch ordinal used in the output filename.
+ * @param binScript - optional real agent installation anchor for declared test dependencies.
  * @returns absolute materialized patch path.
  */
-export declare function materializeProfilePatch(source: string, cwd: string, targetDir: string, index: number): string;
+export declare function materializeProfilePatch(source: string, cwd: string, targetDir: string, index: number, binScript?: string): string;
 //# sourceMappingURL=launcher.d.ts.map

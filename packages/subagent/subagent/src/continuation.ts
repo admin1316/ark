@@ -163,6 +163,13 @@ export interface SubagentFollowupOptions {
   readonly source: MessageSource
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
+  /**
+   * How the child's inbox takes the message. `queue` (default) makes it the
+   * child's next FIFO turn; `steer` routes it to the nearest step boundary and
+   * starts a turn when the child is idle, so a running child is corrected in
+   * place instead of being made to finish its current plan first.
+   */
+  readonly delivery?: 'queue' | 'steer'
   /** Stable UUID carried by a subagent-prompt source; absent for other sources. */
   readonly invocationId?: string
 }
@@ -492,6 +499,7 @@ export class SubagentContinuationManager {
         createUserMessage({ content: request.prompt, source: { kind: 'user' } }),
         parent,
         spec.signal,
+        'queue',
       )
     })
     return { childId, messageId }
@@ -569,7 +577,7 @@ export class SubagentContinuationManager {
           await this.flushAccepted(activation)
           return duplicate
         }
-        const messageId = this.submitAdmitted(activation, message, parent, options.signal)
+        const messageId = this.submitAdmitted(activation, message, parent, options.signal, options.delivery ?? 'queue')
         await this.flushAccepted(activation)
         return { messageId, durable: true, duplicate: false } satisfies DurableSubagentMessageReceipt
       })
@@ -1060,7 +1068,7 @@ export class SubagentContinuationManager {
       if (error instanceof SubagentError) throw error
       throw new SubagentError(`subagent "${childId}" is unavailable`, 'NOT_RESUMABLE', { cause: error })
     }
-    const messageId = await this.submitMaterialized(activation, message, parent, options.signal)
+    const messageId = await this.submitMaterialized(activation, message, parent, options.signal, options.delivery ?? 'queue')
     // A failed flush does not retract an already accepted inbox message; a retry must find it.
     await this.flushAccepted(activation)
     return { messageId, durable: true, duplicate: false }
@@ -1079,9 +1087,10 @@ export class SubagentContinuationManager {
     message: UserMessage,
     parent: Agent,
     signal: AbortSignal,
+    delivery: 'queue' | 'steer',
   ): Promise<MessageId> {
     try {
-      return this.submitAdmitted(activation, message, parent, signal)
+      return this.submitAdmitted(activation, message, parent, signal, delivery)
     } catch (error: unknown) {
       /* v8 ignore next -- rollback disposal failures must not mask the
        * pre-acceptance signal, drain, or lifecycle failure. */
@@ -1256,20 +1265,24 @@ export class SubagentContinuationManager {
   }
 
   /**
-   * Submit one message as the child's next FIFO turn and return its accepted
-   * inbox id. Acceptance is the operation's success boundary; the manager owns
-   * the Activation independently afterwards.
+   * Submit one message to the child's inbox and return its accepted id.
+   * Acceptance is the operation's success boundary; the manager owns the
+   * Activation independently afterwards. `queue` makes the message the child's
+   * next FIFO turn; `steer` routes it to the nearest step boundary and starts a
+   * turn when the child is idle.
    */
   private submit(
     activation: Activation,
     message: UserMessage,
     parent: Agent,
+    delivery: 'queue' | 'steer',
   ): MessageId {
     // Parent-originated delivery keeps the parent live through ownership, so
     // establish it before the message can enter the child's inbox.
     this.acquireOwnership(parent, activation.childId)
     const accepted = this.admitWaking(activation, message.id, () => {
-      activation.handle.agent.followup(message)
+      if (delivery === 'steer') activation.handle.agent.steer(message)
+      else activation.handle.agent.followup(message)
     })
     // Past this point the caller has an id for this child, so its eventual
     // settlement is something the parent is owed an account of.
@@ -1314,6 +1327,7 @@ export class SubagentContinuationManager {
     message: UserMessage,
     parent: Agent,
     signal: AbortSignal,
+    delivery: 'queue' | 'steer',
   ): MessageId {
     signal.throwIfAborted()
     this.assertAdmitting(parent)
@@ -1330,7 +1344,7 @@ export class SubagentContinuationManager {
       activation.childId,
       activation.handle.agent.session.header.parentSession,
     )
-    return this.submit(activation, message, parent)
+    return this.submit(activation, message, parent, delivery)
   }
 
   private async flushAccepted(activation: Activation): Promise<void> {

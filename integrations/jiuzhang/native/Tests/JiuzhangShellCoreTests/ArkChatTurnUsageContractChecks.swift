@@ -132,4 +132,47 @@ func runArkChatTurnUsageContractChecks() {
     ArkChatTurnUsageProjection.projectAll(events: partial)[4] == nil,
     "native usage does not infer a complete attempt from a final message without step evidence"
   )
+
+  // Every split is a potential publish/cache boundary. The state keeps open
+  // attempts, failed retry settlement and strict invalidation across each one.
+  for (label, events) in [
+    ("complete", complete), ("retry", retry),
+    ("contradictory", contradictory), ("missing boundary", partial),
+  ] {
+    let expected = ArkChatTurnUsageProjection.projectAll(events: events)
+    for split in 0...events.count {
+      let first = ArkChatTurnUsageProjection.Accumulator(events: Array(events.prefix(split)))
+      var restored = first
+      restored.append(contentsOf: Array(events.dropFirst(split)))
+      check(
+        restored.completed == expected,
+        "usage checkpoint \(label) split \(split) preserves strict replay admission"
+      )
+    }
+  }
+
+  var finished = ArkChatTurnUsageProjection.Accumulator(events: complete)
+  let cachedFinished = finished
+  finished.append(usageEvent(7, "assistant/chunk", .object([
+    "turn": .number(4), "step": .number(1),
+    "chunk": .object(["type": .string("text-delta"), "text": .string("late")]),
+  ])))
+  check(
+    finished.completed[4] == nil && cachedFinished.completed[4] == usage,
+    "usage rejects events after the completed turn without mutating a cached value checkpoint"
+  )
+
+  let duplicateFinal = Array(complete.prefix(4)) + [complete[3]] + Array(complete.suffix(2))
+  let wrongStep = complete.map { event -> ArkHistoryEvent in
+    guard event.type == "assistant/chunk" else { return event }
+    var data = event.data.objectValue ?? [:]
+    data["step"] = .number(99)
+    return usageEvent(event.id, event.type, .object(data))
+  }
+  for (label, events) in [("duplicate final", duplicateFinal), ("wrong step", wrongStep)] {
+    var state = ArkChatTurnUsageProjection.Accumulator()
+    for event in events { state.append(event) }
+    check(state.completed.isEmpty, "incremental usage rejects \(label) instead of double counting")
+  }
+
 }

@@ -104,7 +104,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsDescription',
         schema: _deepseek_ai_dsh_settings_settings_describe_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":632,"column":3},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":613,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/mutate',
@@ -151,7 +151,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsNamespaceView',
         schema: _deepseek_ai_dsh_settings_settings_mutate_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":711,"column":3},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":692,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/openDocument',
@@ -168,7 +168,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsDocumentOpenResult',
         schema: _deepseek_ai_dsh_settings_settings_openDocument_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":646,"column":9},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":627,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/replace',
@@ -215,7 +215,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsNamespaceView',
         schema: _deepseek_ai_dsh_settings_settings_replace_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":699,"column":3},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":680,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-settings#settings/update',
@@ -262,7 +262,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-settings/types#RemoteSettingsNamespaceView',
         schema: _deepseek_ai_dsh_settings_settings_update_result$schema,
       },
-      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":687,"column":3},
+      sourceLocation: {"file":"packages/settings/settings/src/index.ts","line":668,"column":3},
     },
   ],
   model: {

@@ -161,7 +161,7 @@ child = spawn(process.execPath, childArgs, {
 
 child.once('error', error => {
   stopParentWatch()
-  console.error(`九章天幕启动失败：${error.message}`)
+  console.error(`Ark 启动失败：${error.message}`)
   process.exitCode = 1
 })
 

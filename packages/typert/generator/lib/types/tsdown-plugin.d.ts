@@ -20,8 +20,8 @@ interface TypertPlugin {
 }
 /** Generation scope selected by a tsdown build phase. */
 export interface TypertPluginOptions {
-    /** Package mode emits only the package being bundled; workspace mode emits every explicit contributor once. */
-    readonly mode?: 'package' | 'workspace';
+    /** Emission scope, or transform-only when a separate verified generation process owns artifacts. */
+    readonly mode?: 'package' | 'workspace' | 'transform-only';
     /** Independent TypeScript program faces included in this phase. */
     readonly faces?: readonly TypertFace[];
 }
@@ -31,6 +31,14 @@ export interface TypertPluginOptions {
  * @returns a rolldown-compatible plugin that lowers source decorators and emits local and Host-for-Client artifacts.
  */
 export declare function typertPlugin(pluginOptions?: TypertPluginOptions): TypertPlugin;
+/**
+ * Generate every opted-in contributor after this snapshot passes workspace tsc.
+ * Run in a separate process to release compiler state before runtime bundling.
+ * @param root - verified workspace root containing the face aggregates.
+ * @param faces - independent faces to generate; omission includes both faces.
+ * @returns nothing; writes all validated artifacts or throws on analysis/export failure.
+ */
+export declare function emitVerifiedWorkspaceArtifacts(root: string, faces?: readonly TypertFace[]): void;
 /**
  * Write generated reflection artifacts for one validated package output root.
  * @param packageDir - owning package directory.

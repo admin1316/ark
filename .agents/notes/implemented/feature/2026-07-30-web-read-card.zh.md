@@ -46,4 +46,4 @@ read 工具现在为每次顶层 read 计算 `presentationMeta`，这是对已�
 
 - [工具调用展示的带标签渲染意图 union](../architecture/2026-07-02-tool-render-intent-union.zh.md) —— 本 Note 以 `read` 结果分支扩展的 `card` 标签词汇。
 - [规范化工具输出约定](../architecture/2026-07-20-canonical-tool-output-contract.zh.md) —— 拥有本 Note 用来投影 read 窗口的 `presentationMeta` 持久化通道。
-- [Web 终端 card](2026-07-28-web-terminal-card.zh.md) —— 客户端消费结构化 card 的先例；read card 遵循相同的生产者模式，仅结果侧。
+- [Web 终端 card](../../archived/feature/2026-07-28-web-terminal-card.md) —— 客户端消费结构化 card 的先例；read card 遵循相同的生产者模式，仅结果侧。

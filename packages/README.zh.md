@@ -1,3 +1,8 @@
+---
+description: "npm scope 为 @deepseek-ai/dsh-；Cordis Service 子类和函数插件通过 ctx.effect()、ctx.on() 或 ctx.waterfall() 注册。"
+kind: "package-group"
+---
+
 # 包
 
 [English](README.md) | 中文

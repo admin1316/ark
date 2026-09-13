@@ -89,3 +89,18 @@ describe('package payload constraints', () => {
     ])
   })
 })
+
+describe('installed runtime payloads', () => {
+  it.each(['process-shutdown', 'session-selection', 'packaged-bin'])(
+    'ships the declared independent %s entry', (subpath) => {
+      expect(expectedDshPackageFiles({
+        exports: { [`./${subpath}`]: { default: `./lib/${subpath}.js` } },
+      })).toContain(`lib/${subpath}.js`)
+    },
+  )
+
+  it('retains native shared chunks and shipped profile configurations', () => {
+    expect(expectedDshPackageFiles({ name: '@deepseek-ai/dsh-native-api-runner' })).toContain('lib/types-*.js')
+    expect(expectedDshPackageFiles({ name: '@deepseek-ai/dsh-profile-runner' })).toContain('config')
+  })
+})

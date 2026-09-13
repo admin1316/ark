@@ -1,3 +1,8 @@
+---
+description: "行为 guard 插件监视 agent loop（智能体循环）中的无效模式，并强制执行单次调用预算。"
+kind: "package-group"
+---
+
 # guard/ — 循环卫生 guard 家族
 
 [English](README.md) | 中文

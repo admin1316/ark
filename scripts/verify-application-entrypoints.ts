@@ -19,24 +19,26 @@ interface RootManifest {
 }
 
 interface DemoPolicy {
-  readonly kind: 'dsh-direct' | 'dsh-wrapper'
+  readonly kind: 'dsh-direct' | 'dsh-wrapper' | 'automation-direct'
+  readonly command?: string
   readonly wrapper?: string
 }
 
-/** Public product launcher plus the private build-only WebWorker packer. */
+/** Product and supported automation launchers with exact bin targets. */
 const MANIFEST_BIN_ALLOWLIST = new Map<string, ManifestBin>([
   ['apps/cli/package.json', { dsh: 'lib/bin.js' }],
+  ['packages/examples/acp-demo/package.json', { 'dsh-acp-demo': 'lib/bin.js' }],
+  ['packages/examples/jsonrpc-demo/package.json', { 'dsh-jsonrpc-agent': 'lib/bin.js' }],
   ['packages/boot/native-api-runner/package.json', { 'dsh-native-api': 'lib/bin.js' }],
-  ['packages/experimental/webworker-packer/package.json', { 'dsh-pack-vfs-image': './bin.js' }],
 ])
 
 /** Every executable in a Node application workspace has one explicit role. */
 const EXECUTABLE_SOURCE_ALLOWLIST = new Map<string, string>([
   ['apps/cli/src/bin.ts', 'supported dsh application launcher'],
+  ['packages/examples/acp-demo/src/bin.ts', 'ACP automation launcher'],
+  ['packages/examples/jsonrpc-demo/src/bin.ts', 'SDK JSON-RPC launcher'],
+  ['packages/examples/jsonrpc-demo/src/packaged-bin.ts', 'packaged SDK JSON-RPC launcher'],
   ['packages/boot/native-api-runner/src/bin.ts', 'managed Ark API-only launcher'],
-  ['packages/context/time-context/tests/fixtures/driver.ts', 'test-only subprocess driver'],
-  ['packages/experimental/webworker-packer/bin.js', 'private build-only wrapper'],
-  ['packages/experimental/webworker-packer/src/bin.ts', 'private build-only implementation'],
   ['packages/sdk/client/tests/fake-runtime.ts', 'test-only SDK runtime peer'],
   ['packages/session/session-telemetry-otel/tests/fixtures/driver.ts', 'test-only subprocess driver'],
   ['packages/shell/tool-pwsh/tests/fixtures/loader/driver.ts', 'test-only subprocess driver'],
@@ -50,6 +52,7 @@ const EXECUTABLE_SOURCE_ALLOWLIST = new Map<string, string>([
 
 /** Root demos are application wrappers and therefore must visibly select dsh. */
 const ROOT_DEMO_POLICIES = new Map<string, DemoPolicy>([
+  ['demo:acp', { kind: 'automation-direct', command: 'node --import tsx packages/examples/acp-demo/src/bin.ts --config examples/acp-agent/cordis.yml' }],
   ['demo:ptc', { kind: 'dsh-wrapper', wrapper: 'scripts/demo-ptc.mjs' }],
   ['demo:inspector', { kind: 'dsh-direct' }],
 ])
@@ -143,6 +146,10 @@ function rootDemoViolations(root: string): string[] {
       failures.push(`package.json scripts.${name}: demo launcher has no explicit dsh or in-process classification`)
       continue
     }
+    if (policy.kind === 'automation-direct') {
+      if (command !== policy.command) failures.push(`package.json scripts.${name}: automation demo must use its classified command`)
+      continue
+    }
     if (policy.kind === 'dsh-direct') {
       if (!referencesDshCli(command)) failures.push(`package.json scripts.${name}: application demo must launch apps/cli/src/bin.ts`)
       if (referencesPackageEntry(command)) failures.push(`package.json scripts.${name}: application demo must not launch a package entry directly`)
@@ -172,10 +179,35 @@ function rootDemoViolations(root: string): string[] {
  */
 export function applicationEntrypointViolations(root: string): string[] {
   return [
+    ...retiredWebRuntimeViolations(root),
     ...manifestBinViolations(root),
     ...executableSourceViolations(root),
     ...rootDemoViolations(root),
   ]
+}
+
+/**
+ * Reject reintroduction of the browser application and its plugin build lane.
+ * @param root - repository or test-fixture root.
+ * @returns Diagnostics for retired entrypoints and browser plugin declarations.
+ */
+function retiredWebRuntimeViolations(root: string): string[] {
+  const paths = [
+    'apps/web/package.json', 'packages/bundle/web-app/package.json',
+    'packages/extensions/cordis-client-runner/package.json',
+    'tsconfig.client.json', 'tsconfig.base.client.json',
+  ]
+  const violations = paths.filter(path => existsSync(resolve(root, path)))
+    .map(path => `${path}: retired Web runtime must not be shipped`)
+  for (const path of globSync('packages/*/*/package.json', { cwd: root })) {
+    const manifest: unknown = JSON.parse(readFileSync(resolve(root, path), 'utf8'))
+    if (path.startsWith('packages/client/')) {
+      violations.push(`${path}: retired browser Client package must not be shipped`)
+    } else if (isRecord(manifest) && isRecord(manifest.dsh) && manifest.dsh.client !== undefined) {
+      violations.push(`${path}: retired dsh.client browser registration must not be shipped`)
+    }
+  }
+  return violations
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

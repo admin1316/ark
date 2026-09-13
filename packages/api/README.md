@@ -1,3 +1,8 @@
+---
+description: "Host-side policy shared by API transports."
+kind: "package-group"
+---
+
 # api/ — Host API policy
 
 English | [中文](README.zh.md)
@@ -15,3 +20,5 @@ The strict runtime path is `Typert registry + domain Remote services → gateway
 
 - The historical `remotes` name remains even though the browser Remote runtime is absent; renaming it is a separate package-identity change.
 - Native calls use strict slash Remote descriptors; event downlinks, answer correlation, and streamed downloads remain separate Host carrier capabilities.
+
+The [Typert reference](../../docs/subsystems/typert.md) defines Remote declarations, registries, and Context lookup contracts.

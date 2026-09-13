@@ -2,11 +2,11 @@
 
 [English](github-review.md) | 中文
 
-此可选 overlay 会为 `dsh web` 增加一个签名 GitHub 端点。当已配置仓库中的 pull request 从 draft 变为 ready for review 时，规则会在该仓库的 Web Workspace 下创建带标题的根 Session，并启动只读评审提示词。
+此可选 overlay 为已安装的自定义 CLI profile 增加签名 GitHub 端点。当已配置仓库中的 pull request 从 draft 变为 ready for review 时，规则会在该仓库的 Workspace 下创建带标题的根 Session，并启动只读评审提示词。
 
 ## 前置条件
 
-- 一个可由 DSH 注册为 Web Workspace 的本地 checkout。
+- 一个可由 DSH 注册为 Workspace 的本地 checkout。
 - 一个可通过 `DSH_GITHUB_WEBHOOK_SECRET` 凭据引用访问的高熵 GitHub webhook 密钥。
 - 一个可以把单个公共 URL 转发到 loopback 监听器的 TLS 反向代理或 tunnel。
 - GitHub webhook 订阅 Pull requests 事件，且 content type 为 `application/json`。
@@ -22,24 +22,24 @@ export DSH_GITHUB_WEBHOOK_SECRET="$(openssl rand -hex 32)"
 printf '%s\n' "$DSH_GITHUB_WEBHOOK_SECRET"
 ```
 
-在开发 checkout 中运行：
+以下命令要求已安装名为 `review` 的[自定义 profile](../../../apps/cli/README.zh.md#profiles)，它必须保持 Host 运行并提供 Workspace、Session 持久化、Agent、凭据、preset 和权限服务。其依赖必须包含 webhook 包和 `@deepseek-ai/dsh-host-webserver`；通用 CLI 不会为此 overlay 激活或安装这些包。在开发 checkout 中运行：
 
 ```sh
 export DSH_GITHUB_REVIEW_WORKSPACE=/path/to/deepseek-harness
-pnpm dsh web --patch apps/cli/config/examples/github-review/cordis.yml
+pnpm dsh --profile review --patch apps/cli/config/examples/github-review/cordis.yml
 ```
 
 安装版 DSH 通过绝对路径使用同一 overlay：
 
 ```sh
-dsh web --patch /absolute/path/to/github-review/cordis.yml
+dsh --profile review --patch /absolute/path/to/github-review/cordis.yml
 ```
 
-对于永久 profile，把 `github-ready-review-rule.mjs` 放在 `$DSH_HOME/profiles/web/cordis.patch.yml` 旁边，把 `cordis.yml` 中的行追加到该 patch，然后运行 `dsh web`。随附 CLI 已经包含两个 webhook 包；只需 overlay 即可激活它们。
+对于永久 profile，把 `github-ready-review-rule.mjs` 放在 `$DSH_HOME/profiles/review/cordis.patch.yml` 旁边，把 `cordis.yml` 中的行追加到该 patch，然后运行 `dsh --profile review`。
 
 ## 暴露专用端点
 
-主 Web UI 与 `/api` 继续位于端口 3080。overlay 会在隔离 realm 中挂载第二个 WebServer；其中只注册 `POST /github`，其他路径均返回 `404`。
+overlay 在隔离 realm 中挂载 WebServer；其中只注册 `POST /github`，其他路径均返回 `404`。此专用监听器不暴露 profile 的其他 API，也不暴露 Ark 的托管 Native sidecar。
 
 Caddy 配置可以只暴露该监听器：
 

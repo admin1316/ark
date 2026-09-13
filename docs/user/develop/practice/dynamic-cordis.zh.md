@@ -6,10 +6,6 @@
 
 ## 运行
 
-使用仓库内 overlay 启动浏览器界面：
+在已安装的[自定义 CLI profile](../../../../apps/cli/README.zh.md#profiles) 中配置 live Agent、模型凭据、`@deepseek-ai/dsh-cordis-host-runner` 与 `@deepseek-ai/dsh-tool-cordis`。将包声明为该 profile 的依赖，并在启动 profile 前通过其 `cordis.patch.yml` 挂载它们。浏览器专用示例 overlay 不是 Ark Native 启动命令。
 
-```sh
-pnpm dsh web --patch apps/cli/config/examples/cordis/cordis.yml
-```
-
-该命令需要模型凭据。[Cordis 工具参考](../../../../packages/extensions/tool-cordis/README.zh.md)定义了四类约定：工具参数、存续时间、清理行为和安全性。
+[Cordis 工具参考](../../../../packages/extensions/tool-cordis/README.zh.md)定义工具参数、存续时间、清理行为与安全性约定。profile 启动后，让 Agent 检查已加载的 Cordis 服务，核实工具结果后再请求临时插件。

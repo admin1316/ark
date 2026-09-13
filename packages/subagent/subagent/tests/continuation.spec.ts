@@ -2540,6 +2540,35 @@ describe('continuable errors', () => {
   })
 })
 
+describe('SubagentRuntime.followup steer delivery', () => {
+  it('routes an accepted steer to the nearest step while the child keeps running', async () => {
+    const releaseFirst = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('first'), gate: releaseFirst.promise },
+      { chunks: textResponse('second') },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const child = ctx.agents.get(started.childId)!
+
+    await ctx.subagents.followup(parent, started.childId, message('steer please'), {
+      source: { kind: 'user' },
+      signal: testSignal,
+      delivery: 'steer',
+    })
+
+    // Steering joins the running turn at its next step boundary instead of
+    // becoming a queued next turn; the default `queue` keeps the old routing.
+    expect(child.inbox.nextStep).toHaveLength(1)
+    expect(child.inbox.nextTurn).toHaveLength(0)
+
+    releaseFirst.resolve(undefined)
+    await child.whenIdle()
+    expect(adapter.requests).toHaveLength(2)
+  })
+})
+
 describe('SubagentRuntime.interrupt', () => {
   it('aborts the current turn durably, parks accepted follow-ups, and resumes them only on a waking send', async () => {
     const releaseFirst = Promise.withResolvers<undefined>()

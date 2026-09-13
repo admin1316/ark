@@ -18,6 +18,8 @@ The generic `dsh` CLI owns arbitrary profiles, plugin management, and the one-sh
 
 The native sidecar is API-only: [`dsh-host-webserver`](../../../../packages/host/webserver/README.md) listens on loopback, requires the launch-scoped bearer token, and exposes only registered `/api` HTTP and WebSocket routes. It serves no HTML, CSS, JavaScript, static files, Client bundle, or fallback application shell. Ark's visible interface remains native AppKit/SwiftUI.
 
+The Native composition declares the workspace packages its configuration actually mounts and resolves the `native-api-app/startup` subpath through the source alias during source checks. The `/goal` command has one global Host owner; presets select their model-facing goal tools. Plane-separation validation reads the actual Native presets under [`packages/boot/profile-runner/config/agent-presets`](../../../../packages/boot/profile-runner/config/agent-presets). Scanning the old `packages/preset/agent-presets/presets` directory misidentified the command owner and cannot justify disabling the Host registration. The real composition test checks that `standard`, `minimal`, and `code` each expose exactly one `goal` command.
+
 ## What remains
 
 - [`packages/web`](../../../../packages/web/README.md) remains the provider-neutral search/fetch capability and model-facing tool family. It contains no browser UI.
@@ -28,7 +30,7 @@ The native sidecar is API-only: [`dsh-host-webserver`](../../../../packages/host
 
 ## Supersession
 
-This decision fully supersedes the current-product claims in the [Web Client architecture](../architecture/2026-07-19-gui-web-client-architecture.md), [Web composition](../architecture/2026-07-24-web-config-tree-boot-and-transport-layering.md), [browser e2e lane](../testing/2026-07-24-web-gui-browser-e2e-lane.md), and [Web styling system](../process/2026-07-19-web-styling-system.md), plus Web-only feature notes whose implementations are absent. Those records remain unchanged so their rationale and incident history are recoverable; they do not authorize reintroducing a browser fallback.
+This decision fully supersedes the current-product claims in the [Web Client architecture](../../archived/architecture/2026-07-19-gui-web-client-architecture.md), [Web composition](../architecture/2026-07-24-web-config-tree-boot-and-transport-layering.md), [browser e2e lane](../testing/2026-07-24-web-gui-browser-e2e-lane.md), and [Web styling system](../process/2026-07-19-web-styling-system.md), plus Web-only feature notes whose implementations are absent. Those records remain unchanged so their rationale and incident history are recoverable; they do not authorize reintroducing a browser fallback.
 
 The Host protocol, durable Session facts, model tools, and other mechanisms that native, headless, ACP, or SDK consumers still use are only partially superseded. Their owning current documentation describes the surviving behavior without a browser assumption.
 
@@ -45,9 +47,11 @@ The Host protocol, durable Session facts, model tools, and other mechanisms that
 ## Verification
 
 - Source and runtime closure scans reject the retired application paths, browser package names, Web CLI alias/profile, Client compiler inputs, and static frontend artifacts.
-- Documentation links, generated catalogs, and package README checks pass without the retired pages; the corpus-wide bilingual pairing report still has separately tracked out-of-sync historical documents.
+- Current documentation and package indexes resolve to surviving owners; generated catalogs must be regenerated from the reconciled package graph. Historical notes retain their original evidence and can still cite retired source paths.
 - The managed sidecar boots from its packaged Native runner on port 0, requires the app-owned bearer token, serves representative Host API calls and event upgrades, and rejects non-API routes.
 - Native AppKit/SwiftUI interaction tests remain the user-interface acceptance authority; Host or headless tests do not substitute for them.
+
+Configuration and source-alias validation covers the declared composition. Packaged sidecar startup and Native interaction remain separate verification requirements; configuration checks alone do not establish real assembled runtime acceptance.
 
 ## Consequences
 

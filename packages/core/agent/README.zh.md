@@ -1,11 +1,26 @@
+---
+description: "Agent 接口、注册表、进程本地发起方作用域，以及 agent/ 事件词汇。"
+kind: "package-reference"
+---
+
 # dsh-agent
 
 [English](README.md) | 中文
+
+## 概述
 
 Agent 接口、注册表、进程本地发起方作用域，以及 `agent/*` 事件词汇。每个插件（UI、钩子、编排器）都面向此处定义的 `Agent` handle 编程；它不依赖循环，因此循环可以替换。
 
 可选配套包 `@deepseek-ai/dsh-agent/invariant` 会向 `ctx.invariants` 注册此包的 agent（智能体）状态转换检查。根 agent 服务不会隐式加载诊断。
 
+## 目录
+
+- [服务：AgentRegistry（ctx 键：agents）](#service-agentregistry-ctx-key-agents)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="service-agentregistry-ctx-key-agents"></a>
 ## 服务：`AgentRegistry`（ctx 键：`agents`）
 
 跟踪实时 agent，并在异步驱动器工作中携带发起调用的 Agent，而无需导入具体循环包。
@@ -84,6 +99,7 @@ inbox 的实时通知刻意采用逐消息的最小载荷：`agent/inbox/inserte
 - 事件监听器：全部 `agent/*` 事件都在此处声明，不需要依赖循环包。
 - subagent 委派不是 `Agent` 方法；提供方通过工厂 API 创建或驱动普通 handle，因此委派传输留在核心 agent 接口之外。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 用户、steering 与注入消息
@@ -114,6 +130,7 @@ inbox 的实时通知刻意采用逐消息的最小载荷：`agent/inbox/inserte
 
 只要 agent 的作用域注册不变，前缀就保持稳定。改变提示词段、工具定义或请求监听器的 setup 或 reload，可能从第一个受影响的请求 token 起使复用失效。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **发起方作用域只存在于进程内**：worker、子进程、HTTP、持久队列和重启必须显式传递所需身份。
@@ -123,3 +140,8 @@ inbox 的实时通知刻意采用逐消息的最小载荷：`agent/inbox/inserte
 - **`cancel()` 默认清空 inbox**：它会中止正在处理的轮次以及排队和 steering 工作；`cancel(cause, { keepInbox: true })` 只中止轮次并保留待处理项。仍不存在只中止步骤、同时让正在处理的轮次继续运行的操作（[停止 API Agent Note](../../../.agents/notes/implemented/simplification/2026-06-20-public-agent-stop-api.zh.md)）。
 - **每条附加 `UserMessage` 恰好携带一个 `MessageSource`**：多个插件合并到一次工具调用上的贡献会归入同一来源，因此该消息无法列出多个生产者。
 - **`SessionStartSource` 预留 `'clear'`/`'compact'`，但还没有发出方**：在驱动子系统落地前，只会出现 `'startup'`/`'resume'`（`TODO(compaction)`）。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

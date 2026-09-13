@@ -1,8 +1,24 @@
+---
+description: "Opt-in durable context with the current zoned time, the browser zone attached to the open request, and elapsed time sampled during model-request preparation."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-time-context
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Opt-in durable context with the current zoned time, the browser zone attached to the open request, and elapsed time sampled during model-request preparation. Default compositions leave it disabled; the Schedule Web overlay mounts it so the model can interpret otherwise-unqualified dates and times in the user's browser zone. Decision record: [the durable time-context Agent Note](../../../.agents/notes/implemented/feature/2026-07-16-durable-per-step-time-context.md).
+
+## Table of Contents
+
+- [Config](#config)
+- [Request-zone ownership](#request-zone-ownership)
+- [Timing semantics](#timing-semantics)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config
 
@@ -75,3 +91,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 - **Fallback is not user authority** — the configured or process zone formats the clock when browser provenance is missing or mixed, but the model-facing policy still says to clarify.
 - **Whole-second display** — timestamps and durations omit sub-second precision even though durable event times retain milliseconds.
 - **History cost between compactions** — omission or `0` retains one reading for every eligible attempt; a positive interval reduces but does not eliminate this cost and may leave a later request without fresh browser-zone guidance.
+
+### Dev Note
+
+None.

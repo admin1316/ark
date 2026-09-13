@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, CallId, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, Message, TokenUsage } from '@deepseek-ai/dsh-llm'
@@ -170,6 +170,31 @@ describe('TokenMeter pricing', () => {
     expect(() => {
       ;(result as { totalTokens: number }).totalTokens = 1
     }).toThrow(TypeError)
+  })
+
+  it('replays a large log once and reads only appended events on later measurements', () => {
+    const service = meter()
+    const session = Session.create(SessionId('incremental-replay'))
+    for (let turn = 1; turn <= 10_000; turn++) {
+      session.append('turn/start', { turn })
+      session.append('turn/end', { turn, reason: { kind: 'completed' } })
+    }
+    const snapshots = vi.spyOn(session, 'events', 'get')
+    const reads = vi.spyOn(session, 'eventAt')
+    expect(service.measure(session).logRevision).toBe(20_000)
+    expect(reads).toHaveBeenCalledTimes(20_000)
+    reads.mockClear()
+    for (let turn = 10_001; turn <= 10_100; turn++) {
+      session.append('turn/start', { turn })
+      session.append('turn/end', { turn, reason: { kind: 'completed' } })
+      expect(service.measure(session).logRevision).toBe(session.seq)
+    }
+    expect(reads).toHaveBeenCalledTimes(200)
+    service.measure(session)
+    expect(reads).toHaveBeenCalledTimes(200)
+    expect(snapshots).not.toHaveBeenCalled()
+    reads.mockRestore()
+    snapshots.mockRestore()
   })
 
   it('keeps an earlier unified snapshot detached from later replay', () => {

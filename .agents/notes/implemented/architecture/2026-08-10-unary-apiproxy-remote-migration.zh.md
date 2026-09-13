@@ -12,7 +12,7 @@ Host API Proxy 曾在业务 Service、API Proxy interface、Zod schema、路由�
 
 ## 决策
 
-简单一元操作归属其自然的业务 Remote owner。业务包持有 Remote 签名与 Host 适配；`@deepseek-ai/dsh-api-remotes/client` 选择其生成贡献；Client 包持有呈现联接。Connection 持有传输 envelope 与精确 Fetch 路由注册表，不再存在 API Proxy 服务。
+简单一元操作归属其自然的业务 Remote owner。业务包持有 Remote 签名与 Host 适配。API Remotes 为 Host 选择生成贡献；保留的 Client 源码持有呈现联接，不属于 Native 发行运行时。Connection 持有传输 envelope 与精确 Fetch 路由注册表，不再存在 API Proxy 服务。
 
 | 原 API Proxy 操作 | 目标 | Owner 与保留行为 |
 |---|---|---|
@@ -21,15 +21,15 @@ Host API Proxy 曾在业务 Service、API Proxy interface、Zod schema、路由�
 | `llm.providers` | `llm/listProviders`、`llm/listConfigurableProviders` | `LlmRuntime` 持有 provider 事实；Client 联接 live 与 configurable 行。 |
 | `llm.discoverModels` | `llm/discoverModels` | `LlmRuntime` 保留 provider 发现、取消与净化后的失败。 |
 | `llm.models` | `session/modelCatalog` | `SessionController` 持有 Host generation 的目录、默认选择与隔离后的 provider 失败。 |
-| `credentials.describe`、`credentials.set`、`credentials.unset` | `credentials/describe`、`credentials/set`、`credentials/unset` | `CredentialsController` 保留引用校验、字段投影、provider 诊断与拒绝映射。 |
-| `settings.describe`、`settings.update`、`settings.replace`、`settings.mutate` | 对应的 `settings/*` 方法 | `SettingsController` 保留脱敏、mutation 语义、revision 校验与 provider 失败。 |
-| `settings.openDocument` | `settings/openSettingsDocument` | `SettingsController` 准备 provider 持有的文档，并按文本编辑器意图打开。 |
+| `credentials.describe`、`credentials.set`、`credentials.unset` | `credentials/describe`、`credentials/set`、`credentials/unset` | `CredentialProvider` 持有唯一凭证 Remote 定义、整批引用校验、有界并发、脱敏元数据和拒绝映射。 |
+| `settings.describe`、`settings.update`、`settings.replace`、`settings.mutate` | 对应的 `settings/*` 方法 | `SettingsProvider` 持有唯一设置读写 Remote 定义、脱敏、受保护命名空间检查、mutation 语义、revision 校验与 provider 失败。 |
+| `settings.openDocument` | `settings/openSettingsDocument` | `SettingsController` 委托 `SettingsProvider.remoteOpenDocument`，保留 provider 持有的绝对路径校验、取消与文本编辑器打开意图。 |
 | `agentPreset.read`、`agentPreset.copy`、`agentPreset.remove` | 对应的 `agentPresets/*` 方法 | `AgentPresetService` 持有文档读取、复制与删除。 |
 | `agentPreset.openDocument` | `settings/openAgentPresetDirectory` | `SettingsController` 解析 preset 目录，并在原生打开不可用时返回其路径。 |
 | `subagent.interrupt` | `subagents/interruptByParent` | subagent 服务保留 parent 权限，且不激活任何一方的 Agent。 |
 | `workspace.list`、`workspace.insertSessionBefore`、`workspace.archiveSession` | 对应的 `workspace/*` 方法 | Workspace registry 持有脱离可变对象的 snapshot 与串行 mutation。 |
 | `skill.list` | `skills/list` | `SessionSkillCatalog` 观察 Session 及其记录的 preset，仅在 live Agent 已存在时使用它，列表查询绝不激活 Agent。 |
-| `fileReferences/list` | `fileReferences/list` | `SessionFileReferences` 向 provider 提供 Session Controller 的既有 Agent lookup；冷 lookup 行为保持不变。 |
+| `fileReferences/list` | `fileReferences/list` | `FileReferenceService` 持有唯一 Remote 定义，将已解析的 Agent、查询和调用方 signal 传给 provider；共享 Remote lookup 持有 Agent 准入。 |
 | `host.openPath` | `session/openWorkspacePath` | Session-aware Client 先基于已知 workspace 解析相对路径，再由 `SessionController` 交给原生打开器。 |
 | `host.describe` | `$events` ready frame 与 capability 查询 | API Remotes 随 generation readiness 发送 Host home；Settings 与 Session controller 在对应页面显示时报告各自的原生打开能力。不发送无人使用的进程元数据。 |
 | `session.export` | `GET`/`HEAD /api/session.export` | `session-log-export` 注册精确的 Connection Fetch 路由，并在没有 JSON Remote envelope 的情况下流式传输 ZIP。 |
@@ -44,7 +44,7 @@ Connection 在选择 Typert endpoint 或精确 Fetch 路由前认证完整的 `/
 
 ## 验证
 
-聚焦的 Host 与 Client 测试覆盖 Remote 调用、lookup 与不激活策略、原生打开、错误投影和 legacy 路由移除。仓库构建会先生成并消费所选 Remote contribution，再构建 Web 应用。
+聚焦的 Host 与 Client 测试覆盖 Remote 调用、lookup 与不激活策略、原生打开、错误投影和 legacy 路由移除。Native Host 构建生成并消费所选 Remote contribution；保留的 Client 行为通过其源码测试检查。
 
 ## 考虑过的替代方案
 
@@ -63,3 +63,5 @@ Connection 在选择 Typert endpoint 或精确 Fetch 路由前认证完整的 `/
 业务 owner 与 Client consumer 各自定义一元操作的一侧，而 Connection 持有认证、传输、响应 envelope、精确 Fetch 路由与 generation 状态。删除 legacy Client timeout 是已接受的可观察传输变化；业务结果、取消、生命周期策略、过滤与原生路径权限仍由既有领域持有。
 
 每当 Remote 签名或所选包发生变化，都必须更新生成的 Remote 产物和显式 API Remotes assembly。
+
+活动 Service 缺失时由共享 Gateway 拒绝，并给出不含请求参数的 provider 组合提示。保留的浏览器源码消费 provider 持有的凭证包装响应；Native Host 发行包不启用浏览器运行时。

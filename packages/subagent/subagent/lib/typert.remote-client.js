@@ -36,9 +36,31 @@ const JsonValueRemoteCodec$schema = z.union([z.literal(null), z.string(), z.numb
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_0$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_1$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_2$schema = z.union([z.literal("one-shot"), z.literal("continuable")])
-const _deepseek_ai_dsh_subagent_subagent_history_parameter_3$schema = z.union([z.undefined(), z.number()])
+const _deepseek_ai_dsh_subagent_subagent_history_parameter_3$schema = z.union([z.undefined(), z.number(), z.object({
+  'view': z.literal("raw").readonly().optional(),
+  'sourceRevision': z.string().readonly().optional(),
+  'beforeSeq': z.number().readonly().optional(),
+  'maxMessages': z.number().readonly().optional(),
+  'maxEvents': z.number().readonly().optional(),
+}), z.object({
+  'view': z.literal("semantic").readonly(),
+  'sourceRevision': z.string().readonly().optional(),
+  'beforeRecordId': z.string().readonly().optional(),
+  'maxRecords': z.number().readonly().optional(),
+}), z.object({
+  'view': z.literal("content").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'recordId': z.string().readonly(),
+  'contentReadId': z.string().readonly().optional(),
+  'close': z.boolean().readonly().optional(),
+  'offset': z.number().readonly().optional(),
+  'maxCodeUnits': z.number().readonly().optional(),
+})])
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_4$schema = z.union([z.undefined(), z.number()])
-const _deepseek_ai_dsh_subagent_subagent_history_result$schema = z.object({
+const _deepseek_ai_dsh_subagent_subagent_history_result$schema = z.union([z.object({
+  'view': z.literal("raw").readonly().optional(),
+  'sourceRevision': z.string().readonly().optional(),
+  'asOfThroughSeq': z.number().readonly().optional(),
   'events': z.array(z.object({
   'event': z.object({
   'type': z.string().readonly(),
@@ -56,7 +78,62 @@ const _deepseek_ai_dsh_subagent_subagent_history_result$schema = z.object({
   'asOfSeq': z.number().readonly(),
   'values': z.record(z.string(), z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))])).readonly(),
 }).readonly().optional(),
-})
+}), z.object({
+  'view': z.literal("semantic").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'asOfThroughSeq': z.number().readonly(),
+  'records': z.array(z.object({
+  'id': z.string().readonly(),
+  'kind': z.union([z.literal("user"), z.literal("assistant"), z.literal("tool")]).readonly(),
+  'orderSeq': z.number().readonly(),
+  'time': z.number().readonly(),
+  'turn': z.number().readonly().optional(),
+  'step': z.number().readonly().optional(),
+  'state': z.union([z.literal("active"), z.literal("complete"), z.literal("interrupted"), z.literal("failed-prefix"), z.literal("orphaned-prefix"), z.literal("unpaired")]).readonly(),
+  'preview': z.string().readonly(),
+  'contentState': z.literal("complete-at-cut").readonly(),
+  'canonicalEventSeq': z.number().readonly().optional(),
+  'callEventSeq': z.number().readonly().optional(),
+  'resultEventSeq': z.number().readonly().optional(),
+  'completedTurnEndSeq': z.number().readonly().optional(),
+})).readonly(),
+  'turns': z.array(z.object({
+  'turn': z.number().readonly(),
+  'startSeq': z.number().readonly().optional(),
+  'endSeq': z.number().readonly().optional(),
+  'usage': z.union([z.literal(null), z.object({
+  'uncachedInputTokens': z.number().readonly(),
+  'outputTokens': z.number().readonly(),
+  'totalTokens': z.number().readonly(),
+  'cacheReadTokens': z.number().readonly().optional(),
+  'cacheWriteTokens': z.number().readonly().optional(),
+  'reasoningTokens': z.number().readonly().optional(),
+  'routes': z.array(z.object({
+  'provider': z.string().readonly(),
+  'model': z.string().readonly(),
+})).readonly().optional(),
+})]).readonly(),
+})).readonly(),
+  'dependencyRecords': z.object({
+  'tool': z.string().readonly(),
+  'status': z.string().readonly(),
+  'turn': z.string().readonly(),
+}).readonly(),
+  'hasMore': z.boolean().readonly(),
+  'nextBeforeRecordId': z.string().readonly().optional(),
+  'pendingDomains': z.array(z.union([z.literal("status"), z.literal("usage-context"), z.literal("workflow")])).readonly(),
+}), z.object({
+  'view': z.literal("content").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'asOfThroughSeq': z.number().readonly(),
+  'recordId': z.string().readonly(),
+  'encoding': z.literal("json").readonly(),
+  'contentReadId': z.string().readonly(),
+  'offset': z.number().readonly(),
+  'text': z.string().readonly(),
+  'nextOffset': z.number().readonly(),
+  'done': z.boolean().readonly(),
+})])
 const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_0$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_1$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_interrupt_result$schema = z.object({
@@ -198,7 +275,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteHistoryValue',
         schema: _deepseek_ai_dsh_subagent_subagent_history_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":528,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":532,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/interrupt',
@@ -234,7 +311,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-subagent/client#SubagentInterruptReceipt',
         schema: _deepseek_ai_dsh_subagent_subagent_interrupt_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":583,"column":3},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":592,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/list',
@@ -261,7 +338,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-subagent/client#SubagentCatalog',
         schema: _deepseek_ai_dsh_subagent_subagent_list_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":425,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":427,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/prompt',
@@ -323,7 +400,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-subagent/client#RemoteSubagentPromptReceipt',
         schema: _deepseek_ai_dsh_subagent_subagent_prompt_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":561,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":570,"column":9},
     },
   ],
 }

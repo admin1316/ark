@@ -22,7 +22,7 @@
  * @module @deepseek-ai/dsh-app-boot/profile
  */
 import { createRequire } from 'node:module';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync, } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync, } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { applyEntryPatches } from '@deepseek-ai/cordis-plugin-include';
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths';
@@ -112,18 +112,43 @@ function ensureSymlink(link, target) {
         }
         if (readlinkSync(link) === target)
             return;
-        // unlink deletes the reparse point itself on Windows too; rmSync treats a
-        // junction as a directory and throws EISDIR unless recursive.
-        unlinkSync(link);
     }
+    // Replace by atomic rename. Every profile resolves bare plugin names through
+    // this fallback, and a restart heals it while another runtime may still be
+    // answering a preset roster or a mount: unlinking first leaves the entry
+    // missing for the whole gap between the two syscalls, and one missing entry
+    // marks every preset that names the package broken. The staged link sits
+    // beside its destination so the rename stays on one filesystem.
+    const staged = `${link}.staged-${String(process.pid)}`;
+    try {
+        unlinkSync(staged);
+    }
+    catch {
+        // Nothing of ours is staged under this name.
+    }
+    symlinkSync(target, staged, 'junction');
+    try {
+        renameSync(staged, link);
+        return;
+    }
+    catch (error) {
+        /* v8 ignore next 3 -- POSIX rename always replaces the link; only Windows can refuse. */
+        if (!['EEXIST', 'EPERM', 'ENOTEMPTY', 'EISDIR'].includes(error.code ?? '')) {
+            unlinkSync(staged);
+            throw error;
+        }
+    }
+    // Windows fallback: delete the reparse point itself (unlink, not rmSync — a
+    // junction is a directory to rmSync and throws EISDIR unless recursive).
+    unlinkSync(staged);
+    if (stat !== undefined)
+        unlinkSync(link);
     try {
         symlinkSync(target, link, 'junction');
     }
     catch (error) {
         // Concurrent launches heal the same fallback; losing the race to a
         // process writing the identical link is success, anything else is not.
-        // The window between the lstat miss above and this write cannot be
-        // staged deterministically from the public API.
         /* v8 ignore next 4 */
         if (error.code !== 'EEXIST'
             || !lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) {
@@ -225,16 +250,26 @@ export function writeProfileManifest(dir, manifest) {
  * package exporting `./package.json` (`require.resolve` would need that):
  * probe the require resolution paths for a directory holding the named
  * manifest. This is Node's own node_modules lookup order, so the result
- * matches what the Loader would import from the same anchor, and
- * `existsSync` follows the symlinks pnpm's isolated layout uses.
+ * matches what the Loader would import from the same anchor. Capture a package
+ * symlink's destination before probing its manifest: traversing a link while
+ * another process atomically replaces it can fail with EINVAL on macOS.
  */
 function packageDirFromAnchor(anchor, packageName) {
     // resolve.paths returns null only for builtins, which no bundle name is.
     /* v8 ignore next */
     for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
         const candidate = join(searchPath, packageName);
-        if (existsSync(join(candidate, 'package.json')))
-            return candidate;
+        let directory;
+        try {
+            directory = realpathSync.native(candidate);
+        }
+        catch (error) {
+            if (['ENOENT', 'ENOTDIR'].includes(error.code ?? ''))
+                continue;
+            throw error;
+        }
+        if (existsSync(join(directory, 'package.json')))
+            return directory;
     }
     return undefined;
 }

@@ -74,6 +74,7 @@ import SubagentActivationSetupRegistry from "./activation-setup-registry.js";
 import { listChildren as listSubagentChildren, listDescendants as listSubagentDescendants } from "./list-children.js";
 import { snapshotSubagentDescriptor } from "./descriptor.js";
 import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from "./projection.js";
+export { canonicalClientTimeZone } from "./control.js";
 export * from "./out-of-process.js";
 export { AssistantOutputFold, finalAssistantOutput } from "./assistant-output.js";
 export { SubagentRunId } from "./types.js";
@@ -381,23 +382,32 @@ let SubagentRuntime = (() => {
         }
         /**
          * Read the Session owner's bounded page after verifying the direct-child address.
+         * Closing an existing content reader uses its original owner-checked address,
+         * so removal from the current catalog cannot prevent resource release.
          * @param parentSessionId - durable parent authorizing the read.
          * @param childSessionId - direct child session id.
          * @param mode - expected child mode.
-         * @param beforeSeq - exclusive cursor for an older page.
+         * @param beforeSeq - legacy exclusive cursor, or typed history view options.
          * @param maxMessages - bounded message count, validated by the Session owner.
          * @param signal - read cancellation; neither Agent is resumed.
          * @returns the original Session page, including its presentation projections.
          */
         async remoteHistory(parentSessionId, childSessionId, mode, beforeSeq, maxMessages, signal) {
-            await this.requireRemoteChild(parentSessionId, childSessionId, mode, signal);
+            const options = typeof beforeSeq === 'object' ? beforeSeq : {
+                ...beforeSeq === undefined ? {} : { beforeSeq },
+                ...maxMessages === undefined ? {} : { maxMessages },
+            };
+            const closingContent = options.view === 'content' && options.close === true && options.contentReadId !== undefined;
+            if (closingContent)
+                validateControlRequest('subagent.history', { parentSessionId, childSessionId, mode });
+            else
+                await this.requireRemoteChild(parentSessionId, childSessionId, mode, signal);
             const sessions = this.ctx.get('sessions');
             if (sessions === undefined)
                 return rejectControl('service-unavailable', 'subagent history requires the Session service', {});
             const page = await sessions.remoteExportHistory({
-                sessionId: childSessionId, expectedParentSessionId: parentSessionId,
-                ...beforeSeq === undefined ? {} : { beforeSeq },
-                ...maxMessages === undefined ? {} : { maxMessages },
+                ...options,
+                sessionId: childSessionId, expectedParentSessionId: parentSessionId, expectedSubagentMode: mode,
             }, signal);
             if (signal.aborted)
                 return rejectControl('cancelled', 'subagent history read was cancelled', {});

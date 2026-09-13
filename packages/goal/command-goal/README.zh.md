@@ -1,9 +1,25 @@
+---
+description: "面向用户的 /goal 控制，基于 ctx.goals 实现。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-command-goal
 
 [English](README.md) | 中文
 
+## 概述
+
 面向用户的 `/goal` 控制，基于 [`ctx.goals`](../goal/README.zh.md) 实现。该插件通过 [`ctx.commands`](../../interaction/commands/README.zh.md) 注册一个全局命令，因此每个已组合的命令适配器都能发现并执行它，无需模型轮次。[用户 goal 命令 Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-human-goal-command.zh.md) 负责用户体验与组合决策。
 
+## 目录
+
+- [命令约定](#command-contract)
+- [组合](#composition)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="command-contract"></a>
 ## 命令约定
 
 | 输入 | 结果 |
@@ -21,6 +37,7 @@
 
 可预期的领域拒绝会变成稳定的直接命令错误，不公开带品牌类型的 id 或 revision。意外实现失败仍会 reject 分发，使适配器能将其报告为命令失败。通用命令文本和输出仍属于实时 UI 状态；`dsh-goal` 通过自有的持久 `goal/change` 事件记录每项已接受变更。
 
+<a id="composition"></a>
 ## 组合
 
 生产方注入 `commands` 和 `goals`。自定义应用会挂载它们的所有者与此插件；自动续行仍是独立选择：
@@ -36,6 +53,7 @@
 
 随附 `dsh` 基础配置启用持久 goal 栈和此命令；Web 客户端提供其交互适配器。ACP（Agent Client Protocol）自动化应用启用领域与模型工具，但不挂载命令适配器；`goals: false` 会移除该栈。无 UI 的 `agent-spine-demo` 必须显式配置 `goals: {}`，避免无头单次调用方在不知情时从一个物理轮次变为包含多个 Round 的操作。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 用户 `/goal` 控制
@@ -52,9 +70,15 @@
 
 命令发现、变更与直接输出不会影响缓存。后续继续执行提示词遵循驱动器的普通请求历史。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **仅纯文本交互**：通用命令注册表没有模态编辑表单或替换确认回调；内联 edit 与显式 clear 能在不同适配器中保持明确且一致的破坏性意图。
 - **没有逐命令 Round 上限参数**：`defaultMaxGoalRounds` 仍是部署配置；用户直接请求时，可以要求模型通过另行授权的 goal 工具编辑 `max_goal_rounds`。
 - **没有持续状态组件**：裸 `/goal` 是可移植的观察接口；适配器专用徽标和重连后可恢复的命令输出仍属于未来 UI 工作。
 - **随附应用中只有 Web 命令适配器使用此命令**：无头、ACP 自动化和 JSON-RPC 适配器不消费 `ctx.commands`。如果组合中包含面向模型的 goal 工具，普通提示词仍能授权它们。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

@@ -3,13 +3,12 @@
   // tsserver entry. `extends` carries the base paths for get-tsconfig
   // consumers — tsx running scripts/ (no nearer tsconfig)
   // resolves workspace imports through this file. `files: []` keeps it
-  // program-less, so the host/client cordis Context merges never meet.
+  // program-less; the Host project owns retained source inputs.
   // NEVER add include/files entries, and NEVER flatten this solution into a
-  // single ts.Program (scripts seed tsconfig.host.json or tsconfig.client.json).
+  // single ts.Program (scripts seed tsconfig.host.json).
   "extends": "./tsconfig.base.json",
   "files": [],
   "references": [
-    { "path": "./tsconfig.host.json" },
-    { "path": "./tsconfig.client.json" }
+    { "path": "./tsconfig.host.json" }
   ]
 }

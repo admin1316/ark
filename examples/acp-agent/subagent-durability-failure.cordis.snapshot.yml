@@ -42,4 +42,4 @@
                     - id: deepseek-v4-flash
                     - id: deepseek-v4-pro
           - id: subagent-durability-failure
-            name: './tests/fixtures/subagent-durability-failure.ts'
+            name: '../../packages/subagent/subagent/tests/fixtures/subagent-durability-failure.ts'

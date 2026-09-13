@@ -5,16 +5,9 @@ import { describe, expect, it } from 'vitest'
 import { type SessionEvent } from '@deepseek-ai/dsh-session'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 
-// Keep the Loader config under examples so both modes exercise the same deployable
-// topology: local fixture source plus bare plugins owned by the examples workspace.
-const driver = fileURLToPath(new URL(
-  '../../../../examples/headless-agent/tests/fixtures/time-context-driver.ts',
-  import.meta.url,
-))
-const configPath = fileURLToPath(new URL(
-  '../../../../examples/headless-agent/tests/fixtures/time-context.cordis.yml',
-  import.meta.url,
-))
+// Keep the two-turn driver and its real Loader composition with the time-context owner.
+const driver = fileURLToPath(new URL('./fixtures/driver.ts', import.meta.url))
+const configPath = fileURLToPath(new URL('./fixtures/cordis.yml', import.meta.url))
 const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
 
 async function jsonlFiles(dir: string): Promise<string[]> {
@@ -36,6 +29,7 @@ describe('time-context through a real headless cordis.yml', () => {
       binScript: driver,
       libBinScript: driver,
       configPath,
+      binArgs: [configPath],
       tsconfigPath: repoTsconfig,
       env: { TZ: 'Asia/Shanghai' },
       inspect: async (cwd) => {

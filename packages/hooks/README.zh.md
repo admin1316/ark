@@ -1,3 +1,8 @@
+---
+description: "hooks 子系统让用户像使用 Claude Code 和 Codex 一样，在生命周期节点扩展 agent（智能体）：把桥接插件指向现有 hooks.json（或设置），即可忠实运行这些外部 shell 钩子。"
+kind: "package-group"
+---
+
 # hooks/ — 钩子桥接与共享协议
 
 [English](README.md) | 中文

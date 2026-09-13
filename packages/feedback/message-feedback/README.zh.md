@@ -1,11 +1,29 @@
+---
+description: "本包提供由 Host 拥有、针对单条已完成 assistant 消息的可编辑反馈。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-message-feedback
 
 [English](README.md) | 中文
+
+## 概述
 
 本包提供由 Host 拥有、针对单条已完成 assistant 消息的可编辑反馈。它注册 `ctx.messageFeedback`，在 storage-domain 中为每个 Session 持久化一条绑定生命周期的伴随记录（sidecar），并发布 Host `messageFeedback.list`、`messageFeedback.put` 与 `messageFeedback.delete` 一元 Remote 契约。它与不可变的 Session 级 `feedback/record` 事件相互独立，不执行遥测交接。[消息反馈伴随记录 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-10-message-feedback-sidecar.zh.md)拥有其设计边界。
 
 公开的请求、值、版本与失败类型从包根入口及 `@deepseek-ai/dsh-message-feedback/types` 导出；其源码为 [`src/types.ts`](src/types.ts)。
 
+## 目录
+
+- [配置](#configuration)
+- [数据、生命周期与持久性](#data-lifecycle-and-durability)
+- [服务与 Host Remote 契约](#service-and-host-remote-contract)
+- [Compare-and-set 与幂等性](#compare-and-set-and-idempotency)
+- [模型体验](#model-experience)
+- [已知局限与延后工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="configuration"></a>
 ## 配置
 
 | 键 | 含义 |
@@ -23,6 +41,7 @@
 
 服务注入 `storageDomain`、`sessionPersistence` 与 `sessions`。其持久存储域为 `message_feedback`，其中 `sessions` 表按 `SessionId` 每个一行。
 
+<a id="data-lifecycle-and-durability"></a>
 ## 数据、生命周期与持久性
 
 `MessageFeedbackItem` 包含 `messageId`、`rating: 'positive' | 'negative'`、可选 `note`、只能做相等比较的 opaque `version`，以及由 Host 分配、以 Unix 毫秒表示的 `createdAt`/`updatedAt` 时间戳。实质更新保留 `createdAt`、替换 `version`，并保证 `updatedAt` 不倒退。`list` 按首次创建顺序返回新的不可变快照；更新条目时保留其位置，删除后再创建则追加为新条目。
@@ -35,6 +54,7 @@
 
 message feedback 不是 Session 日志内容或 Session 投影。它不发出 `feedback/record` 事件，不进入模型历史，也不触发 `FEEDBACK_ONLY` 遥测释放。
 
+<a id="service-and-host-remote-contract"></a>
 ## 服务与 Host Remote 契约
 
 `TypertRemoteService` 与 `@Remote` 将 `MessageFeedbackService` 的同三个方法发布出去；Host endpoint 名称为 `messageFeedback.list`、`messageFeedback.put` 与 `messageFeedback.delete`。每个方法都返回判别式业务 union：`{ ok: true, value }` 或 `{ ok: false, error }`。存储、损坏或缺少 durability listener 等操作故障会产生 reject，不会被误标为业务错误。
@@ -47,6 +67,7 @@ message feedback 不是 Session 日志内容或 Session 投影。它不发出 `f
 
 `MessageFeedbackVersionConflict` 返回权威 `current` 条目；条目不存在时为 `null`。调用方无需额外执行 `list`，即可协调当前 rating、note 与 version。`MessageFeedbackNoteTooLarge` 同时返回 `maxBytes` 与 `actualBytes`。客户端 Remote 聚合尚未挂载生成的客户端 contribution；Host 调用方无需该客户端组装即可使用 service/Remote 契约。
 
+<a id="compare-and-set-and-idempotency"></a>
 ## Compare-and-set 与幂等性
 
 `ifVersion: null` 表示仅当条目不存在时才创建；已有条目的每次请求都必须与其当前 version 完全一致，即使目标值已经相同、不会产生实质更新。检查按消息而非按 Session 进行，因此修改一个条目不会与另一个条目冲突。每次实质创建或更新都会分配新的 opaque UUID token，防止陈旧写入穿过 ABA 值循环。
@@ -57,6 +78,7 @@ message feedback 不是 Session 日志内容或 Session 投影。它不发出 `f
 
 Plugin disposal 会先关闭变更接纳，排空已进入各个 Session 队列的所有操作，然后才关闭 storage domain。disposal 开始后提交的变更会以生命周期故障拒绝，不会进入正在关闭的 domain。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 本地消息反馈状态
@@ -73,6 +95,7 @@ Plugin disposal 会先关闭变更接纳，排空已进入各个 Session 队列�
 
 相互独立。读取或变更消息反馈不会触碰模型请求前缀，也不会使本可复用的提供方缓存条目失效。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知局限与延后工作
 
 - **缺少客户端聚合与 UI**——Host Remote 契约已经发布，但客户端 Remote 聚合 contribution 与任何 UI 消费方由各自边界负责并保持延后。
@@ -82,3 +105,8 @@ Plugin disposal 会先关闭变更接纳，排空已进入各个 Session 队列�
 - **Header 身份不是内容指纹**——只有 `{createdAt, cwd}` 不同时才能识别复用；本契约无法区分保留相同 header 身份的克隆日志。
 - **调用方边界受信任**——`list`/`put`/`delete` 不携带已认证的 actor 或审计身份。在加入授权与归属信息前，部署方必须只通过受信任或另行认证的边界暴露 Host gateway。
 - **目录与行边界**——由于 persistence 没有按 id 读取元数据的操作，cold 请求会扫描完整的 Session snapshot 目录。`maxNoteBytes` 只限制单条备注，单个 Session 行的条目数和聚合保留字节尚无上限；按索引读取元数据和由部署决定的行边界，延后到具体消费方明确策略时处理。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

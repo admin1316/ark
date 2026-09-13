@@ -286,6 +286,12 @@ export class SessionCommandController {
             rpcId: request.requestId,
             ...(clientTimeZone === undefined ? {} : { clientTimeZone }),
         };
+        // A prompt must carry something: whitespace-only text with no attachment is refused
+        // before the turn starts, matching the release's rejection semantics.
+        const hasContent = request.content.some(part => part.type !== 'text' || part.text.trim().length > 0);
+        if (!hasContent) {
+            reject('bad-request', 'prompt content must include non-whitespace text or an attachment', {});
+        }
         const hasImage = request.content.some(part => part.type === 'image');
         const admit = async () => {
             try {
@@ -358,6 +364,12 @@ export class SessionCommandController {
         if (request.action.kind === 'edit'
             && request.action.content.some(block => block.type !== 'text')) {
             reject('attachment-error', 'queue edits accept text content only', { reason: 'QUEUE_EDIT_NON_TEXT' });
+        }
+        // A blank queue edit would erase the queued message without replacing it. Only
+        // text blocks reach here, so the narrowing is the same one the check above uses.
+        if (request.action.kind === 'edit'
+            && !request.action.content.some(block => block.type === 'text' && block.text.trim().length > 0)) {
+            reject('bad-request', 'queue edits must include non-whitespace text', {});
         }
         const agent = this.ctx.agents.get(request.sessionId);
         if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {

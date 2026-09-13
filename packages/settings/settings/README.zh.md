@@ -77,7 +77,7 @@ scope.update({ density: 'compact' })   // merges into the user section and persi
 
 ### 事件与失败
 
-原生 `settings/*` Remote 方法归此提供方所有。读取和写入回复均为脱敏后的独立副本，schema 元数据中的机密默认值也会移除。`openDocument` 接受取消信号，不接受调用方指定的路径，只打开提供方未发生变化的绝对文档路径。领域事务所有者可以保护 namespace，拒绝通用 Remote 写入，同时保留同进程写入能力。写入失败会保留修订冲突信息，但不会暴露可能含有机密的提供方诊断。
+浏览器与 Native 共用的 `settings/*` 配置 Remote 方法由此提供方唯一持有。读取和写入回复均为脱敏后的独立副本，schema 元数据中的机密默认值也会移除。`openDocument` 接受取消信号，不接受调用方指定的路径，只打开提供方未发生变化的绝对文档路径。领域事务所有者可以保护 namespace，拒绝通用 Remote 写入，同时保留同进程写入能力。写入失败会保留修订冲突信息，但不会暴露可能含有机密的提供方诊断。
 
 `settings/updated (ns, next, prev, source)` 在每次已提交变更后触发——进程内写入（`source: 'update'`）或外部观察到的编辑（`source: 'provider'`）——解析值深相等时绝不触发。`settings/document-updated (ns, revision)` 在原始用户分节发生变化时触发，即使解析值没有变——已打开的编辑器正需要它来得知字段从继承变为覆盖。schema 拒绝的存量分节在重载时保留该 namespace 的最后可用值并告警；注册时同样的失败会直接拒绝注册。
 

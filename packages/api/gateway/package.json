@@ -50,7 +50,6 @@
     "@deepseek-ai/dsh-typert-registry": "workspace:^"
   },
   "devDependencies": {
-    "zod": "^4.4.3",
     "@types/ws": "^8.18.1",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",

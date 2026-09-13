@@ -324,54 +324,14 @@ Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/sett
 
 ### `ctx.settingsController` — `SettingsController`
 
-Host service backing the generated `ctx.remote.settings` namespace. Every remote read uses `redactSecrets: true`, so a `role('secret')` field cannot ride a response. Writes expose the settings service's merge, replacement, and path-addressed operations, and classify every provider refusal as `settings-conflict` or `settings-rejected` with the service's message.
+Host desktop actions; settings reads and writes belong to SettingsProvider.
 
 ```ts cordis-catalog
-/**
- * Describe every registered namespace for a configuration page: redacted
- * layered values plus the serialized schema the page renders its form from.
- * @returns provider writability, local-document presence, and one view per namespace.
- * @throws TypertRemoteFailure when no settings provider is mounted.
- */
-@Remote describe(): SettingsDescribeValue
-
 /**
  * Report whether this deployment can open an authored Agent preset directory natively.
  * @returns true when the matching open operation is available.
  */
 @Remote canOpenAgentPresetDirectory(): boolean
-
-/**
- * Merge a patch into one namespace's stored user section.
- * @param ns - namespace key to write.
- * @param patch - fields to merge into the user section.
- * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
- * @returns the namespace's redacted view after the write.
- * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
- */
-@Remote update( ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
-
-/**
- * Replace one namespace's stored user section wholesale.
- * @param ns - namespace key to write.
- * @param section - complete replacement user section.
- * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
- * @returns the namespace's redacted view after the write.
- * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
- */
-@Remote replace( ns: string, section: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
-
-/**
- * Apply path-addressed edits to one namespace's user section, resolved against
- * the section as stored rather than against whatever the caller last read,
- * then answer with that namespace's new redacted view.
- * @param ns - namespace key to write.
- * @param ops - the edits to apply, in order.
- * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
- * @returns the namespace's redacted view after the write.
- * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
- */
-@Remote async mutate( ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
 
 /**
  * Materialize the provider-owned settings document and open it in a native text editor.

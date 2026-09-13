@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import KnowledgeWikiService from '../src/index.ts'
 import type { IngestQueueSnapshot, IngestQueueTask } from '../src/types.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 interface ProjectLifecycleService {
   createProject(request: { name: string; path: string }): Promise<{ path: string; error?: string }>
@@ -43,13 +44,13 @@ beforeEach(() => {
   writeFileSync(join(root, 'wiki', 'index.md'), '# Main Wiki\n')
   writeFileSync(join(external, 'keep.txt'), 'KEEP_LOCAL_FILE')
   ctx = new Context()
-  service = new KnowledgeWikiService(ctx, {
+  service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot: join(root, 'wiki'),
     mainRoot: root,
     credential: 'VISION_API_KEY',
     llmProvider: 'p',
     llmModel: 'm',
-  }) as unknown as ProjectLifecycleService
+  })) as unknown as ProjectLifecycleService
 })
 
 afterEach(async () => {

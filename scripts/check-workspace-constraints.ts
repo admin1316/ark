@@ -56,11 +56,7 @@ const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
 const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/dsh': ['lib/*.js'],
-  // Sourcemaps stay out by payload policy; the worker-preview surface
-  // (dist/preview.html and dist/preview/) backs private experimental
-  // packages and is not published.
-  '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map', '!dist/preview.html', '!dist/preview'],
+  '@deepseek-ai/dsh': ['lib/*.js', 'config'],
 }
 
 /** The subset of package.json fields this constraint check cares about. */
@@ -141,14 +137,10 @@ function workspaceManifests(): WorkspaceManifest[] {
 }
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
-  // Statically linked client libraries keep their stylesheets next to the emitted
-  // JavaScript, which imports them by relative path: the compile shell runs
-  // them through its own CSS pipeline, so the sheets are published artifacts.
-  // The glob covers whichever sheets a package emits; sourcemaps stay
-  // unpublished, as everywhere else in the repository.
-  '@deepseek-ai/dsh-client-ui-primitives': ['lib/**/*.css'],
-  '@deepseek-ai/dsh-client-web': ['lib/**/*.css'],
-  '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
+  // Native bootstrap entries share the bundler's runtime chunks.
+  '@deepseek-ai/dsh-native-api-runner': ['lib/types-*.js'],
+  // Profiles resolve shipped presets relative to the installed package.
+  '@deepseek-ai/dsh-profile-runner': ['config'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
   // The shipped preset compositions travel inside the roster package.
@@ -167,10 +159,6 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
     'resources/sql/**/*.sql',
   ],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
-  // tsdown shares the repository/pack code between the lib entry and the bin
-  // through a hashed chunk. The committed bin.js is the link target pnpm can
-  // resolve at install time, before the build produces lib/bin.js.
-  '@deepseek-ai/dsh-experimental-webworker-packer': ['bin.js', 'lib/repository-*.js'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
 }
 
@@ -208,6 +196,9 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     // A surface bundle's startup row is its own bundle: the Loader imports it
     // as a row module, so it cannot ride inside the package entry.
     ...exportDefault(manifest, './startup') === './lib/startup.js' ? ['lib/startup.js'] : [],
+    // Independently bundled runtime entrypoints consumed by installed packages.
+    ...['process-shutdown', 'session-selection', 'packaged-bin'].flatMap(subpath =>
+      exportDefault(manifest, `./${subpath}`) === `./lib/${subpath}.js` ? [`lib/${subpath}.js`] : []),
     ...extras,
     // Subpaths whose runtime default is the tsc-emitted tree (lib/types/*.js —
     // browser-safe source channels rehomed off src so plain Node can import

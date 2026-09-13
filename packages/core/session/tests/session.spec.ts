@@ -974,6 +974,26 @@ describe('Session', () => {
     expect(session.events).toBe(after)
   })
 
+  it('reads accepted events by sequence without exposing a mutable log or building a snapshot', () => {
+    const session = Session.create(SessionId('event-read'))
+    const snapshots = vi.spyOn(session, 'events', 'get')
+    expect(session.eventAt(0)).toBeUndefined()
+    const accepted = session.append('turn/start', { turn: 1 })
+    expect(session.eventAt(0)).toBe(accepted)
+    expect(session.eventAt(-1)).toBeUndefined()
+    expect(session.eventAt(0.5)).toBeUndefined()
+    expect(session.eventAt(1)).toBeUndefined()
+    expect(() => { accepted.data.turn = 99 }).toThrow(TypeError)
+    expect(snapshots).not.toHaveBeenCalled()
+    const before = session.events
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(session.eventAt(0)).toBe(accepted)
+    expect(session.eventAt(1)?.seq).toBe(1)
+    expect(before).toHaveLength(1)
+    expect(session.events).toHaveLength(2)
+    snapshots.mockRestore()
+  })
+
   it('detaches and freezes an explicitly supplied session header', () => {
     const input = {
       version: SESSION_FORMAT_VERSION,

@@ -52,10 +52,6 @@ describe('Oxlint executable contract', () => {
     const probes = [
       ['host package source', 'packages/fs/fs-observation-policy/src', 'packages/fs/fs-observation-policy/tsconfig.json'],
       ['host package test', 'packages/fs/fs-observation-policy/tests', 'tsconfig.host.json'],
-      ['client package source', 'packages/client/ui-primitives/src', 'packages/client/ui-primitives/tsconfig.json'],
-      // A test under packages/client states its face in the filename, so the
-      // probe carries the Client suffix to reach the Client aggregate.
-      ['client package test', 'packages/client/ui-trajectory/tests', 'tsconfig.client.json', '.client.ts'],
       ['CLI profile test', 'apps/cli/tests/profiles/headless/tests', 'tsconfig.host.json'],
       ['website', 'website', 'tsconfig.host.json'],
     ] as const
@@ -73,7 +69,6 @@ probePromise()
         await writeFile(path, source)
         paths.push([label, relative(repositoryRoot, path), tsconfig])
       }
-      const clientScript = 'scripts/client-bundle-purity.spec.ts'
 
       const result = runOxlint([
         '--config',
@@ -81,7 +76,6 @@ probePromise()
         '--format',
         'unix',
         ...paths.map(([, path]) => path),
-        clientScript,
       ], { OXC_LOG: 'debug' })
       const output = normalizedOutput(result)
 
@@ -94,9 +88,6 @@ probePromise()
         )
       }
       expect(output.match(/typescript\(no-floating-promises\)/g)).toHaveLength(probes.length)
-      expect(output, 'client aggregate script project').toContain(
-        `Got tsconfig for file ${join(repositoryRoot, clientScript).replaceAll('\\', '/')}: ${join(repositoryRoot, 'tsconfig.client.json').replaceAll('\\', '/')}`,
-      )
       expect(output).not.toContain('Unmatched file:')
     } finally {
       await Promise.all([

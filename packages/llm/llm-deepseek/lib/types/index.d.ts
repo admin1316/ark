@@ -31,6 +31,8 @@ export type { RequestDefaults } from './serialize.ts';
 export type * from './types.ts';
 export declare const name = "llm-deepseek";
 export declare const inject: string[];
+/** Model id a new session starts on, matching the release's default route. */
+export declare const DEFAULT_SESSION_MODEL_ID = "deepseek-flash";
 /**
  * Plugin config, validated by the same-named schemastery schema and doubling
  * as the `llm-deepseek` settings-section shape. Every field is optional in

@@ -140,9 +140,13 @@ public enum JiuzhangShellContract {
       .appendingPathComponent("Library/Application Support/Ark", isDirectory: true)
       .standardizedFileURL.resolvingSymlinksInPath().path
     let installedBundle = bundle.bundleURL.standardizedFileURL.resolvingSymlinksInPath().path
-    let canonicalInstalledBundle = "/Applications/Ark.app"
+    let canonicalInstalledBundle = fileManager.homeDirectoryForCurrentUser
+      .appendingPathComponent("ark/Ark.app", isDirectory: true)
+      .standardizedFileURL.resolvingSymlinksInPath().path
     var protected: [(String, String)] = [
       (canonicalInstalledBundle, "Ark 应用与内嵌 runtime"),
+      (URL(fileURLWithPath: "/Applications/Ark.app")
+        .standardizedFileURL.resolvingSymlinksInPath().path, "Ark 应用与内嵌 runtime"),
       (productData, "Ark 产品数据目录"),
     ]
     if bundle.bundleURL.pathExtension.lowercased() == "app",

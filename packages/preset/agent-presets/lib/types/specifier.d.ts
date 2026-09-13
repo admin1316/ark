@@ -13,7 +13,7 @@
  * @module @deepseek-ai/dsh-agent-presets/specifier
  */
 /** One composition row's module specifier, classified by where it resolves. */
-export type RowSpecifier =
+export type RowSpecifier = 
 /** A `cordis:` builtin the Loader supplies; nothing is resolved. */
 {
     readonly kind: 'builtin';

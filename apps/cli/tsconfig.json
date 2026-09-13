@@ -22,6 +22,9 @@
     },
     {
       "path": "../../packages/bundle/headless"
+    },
+    {
+      "path": "../../packages/util/http-proxy"
     }
   ]
 }

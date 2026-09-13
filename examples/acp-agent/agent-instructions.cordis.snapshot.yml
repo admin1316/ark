@@ -35,4 +35,4 @@
                   models:
                     - id: deepseek-v4-flash
           - id: workspace-context-compaction
-            name: './tests/fixtures/workspace-context-compaction.ts'
+            name: '../../packages/context/agent-instructions/tests/fixtures/workspace-context-compaction.ts'

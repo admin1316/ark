@@ -48,6 +48,7 @@ const NATIVE_TYPERT_REMOTE_ENDPOINTS = [
 	"llm/providerTransaction",
 	"llm/providers",
 	"llm/resumeProvider",
+	"llm/verifyProvider",
 	"messageFeedback/delete",
 	"messageFeedback/list",
 	"messageFeedback/put",
@@ -131,6 +132,7 @@ const NATIVE_TYPERT_REMOTE_OWNERS = {
 	"llm/providerTransaction": "llm",
 	"llm/providers": "llm",
 	"llm/resumeProvider": "llm",
+	"llm/verifyProvider": "llm",
 	"messageFeedback/delete": "messageFeedback",
 	"messageFeedback/list": "messageFeedback",
 	"messageFeedback/put": "messageFeedback",
@@ -272,7 +274,7 @@ async function invokeRemote(ctx, endpoint, payload, signal) {
 		const argsByWire = remoteArgs(payload, endpoint);
 		assertExactArguments(argsByWire, descriptor, endpoint);
 		const receiver = (await resolveReceiverContext(ctx, typert, descriptor, argsByWire, endpoint)).get(descriptor.service);
-		if (!isObject(receiver)) throw new TypertGatewayError("service-unavailable", endpoint, `active Service ${JSON.stringify(descriptor.service)} is unavailable`);
+		if (!isObject(receiver)) throw new TypertGatewayError("service-unavailable", endpoint, `active Service ${JSON.stringify(descriptor.service)} is unavailable; mount its provider in the Host composition and check that it loaded successfully`);
 		validateBinding(receiver, descriptor, endpoint);
 		const args = await Promise.all(descriptor.parameters.map((parameter) => resolveParameter(typert, parameter, argsByWire, endpoint)));
 		if (descriptor.cancellation !== void 0) args.push(signal);

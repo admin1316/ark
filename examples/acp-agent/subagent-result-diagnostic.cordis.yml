@@ -7,7 +7,7 @@
     patches:
       - insert:
           - id: subagent-result-diagnostic
-            name: './tests/fixtures/subagent-result-diagnostic.ts'
+            name: '../../packages/subagent/subagent/tests/fixtures/subagent-result-diagnostic.ts'
           - id: tool-subagent-codex
             name: '@deepseek-ai/dsh-tool-subagent'
             config:

@@ -1,6 +1,8 @@
 # Keyless assembled-request snapshot for native DeepSeek image offload. The
 # local provider endpoint is supplied by the snapshot test; the real attachment
 # store and ACP bridge carry two uploaded images into one model request.
+# This is a complete scenario patch over the shipped ACP profile; no approval
+# snapshot hooks or unrelated subagent configuration are needed.
 - id: llm-deepseek
   name: '@deepseek-ai/dsh-llm-deepseek'
   config:
@@ -42,3 +44,12 @@
 
 - id: attachment-local
   name: '@deepseek-ai/dsh-attachment-local'
+
+- id: sandbox-policy
+  config:
+    mode: danger-full-access
+    workspaceRoot: !!js process.cwd()
+
+- id: approval
+  config:
+    policy: never

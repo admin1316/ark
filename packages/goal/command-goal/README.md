@@ -1,8 +1,23 @@
+---
+description: "Human-facing /goal control over ctx.goals."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-command-goal
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Human-facing `/goal` control over [`ctx.goals`](../goal/README.md). The plugin registers one global command through [`ctx.commands`](../../interaction/commands/README.md), so every composed command adapter discovers and executes it without a model turn. The [human goal-command Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-human-goal-command.md) owns the UX and composition decisions.
+
+## Table of Contents
+
+- [Command contract](#command-contract)
+- [Composition](#composition)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Command contract
 
@@ -58,3 +73,7 @@ Command discovery, mutations, and direct output do not affect the cache. Later c
 - **No per-command round-cap argument** — `defaultMaxGoalRounds` remains deployment config, while a direct human request may ask the model to edit `max_goal_rounds` through the separately authorized goal tool.
 - **No continuous status widget** — bare `/goal` is the portable observation API; adapter-specific badges and reconnectable command output remain future UI work.
 - **Web command adapter only in the shipped apps** — headless, ACP automation, and JSON-RPC adapters do not consume `ctx.commands`. Ordinary prompts can still authorize model-facing goal tools when those are composed.
+
+### Dev Note
+
+None.

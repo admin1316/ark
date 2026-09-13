@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 `dsh-workspace` gives a host a persistent set of workspaces: named user directories, each with the sessions that ran in it, kept in a stable order across restarts. With it, a UI can show a sidebar of projects, attach sessions to the right project, hide a session from the grouping without losing it, and remove a project — removal never deletes the folder or the session histories, which become ungrouped. Use it in GUI or host compositions that need durable project grouping; headless and minimal runs can omit it entirely. The package is host-side only: the model, tools, and agent loop never see it, so it adds no tokens, prompts, or request context. It needs a session store and a persistence backend mounted alongside it; setup is a few composition rows.
 
+Workspace Registry is the single Remote owner for `workspace/list`, `create`, `rename`, `delete`, `insertBefore`, `insertSessionBefore`, `archiveSession`, `unarchiveSession`, and `deleteArchivedSession`. Generated Client calls return a carrier result containing a domain result; unwrap both. `workspace/follow` and directory picking remain in the optional API Workspace Controller. Cancellation is checked before dispatch and after awaited work; a cancellation response does not undo a durable mutation that already committed. Workspace registration deletion retains directories and logs, while permanent archived-session deletion still requires the existing lifecycle owner to retire any resident Session safely.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

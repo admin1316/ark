@@ -1,9 +1,26 @@
+---
+description: "万相织鉴宿主知识引擎 —— 概念图谱标签页背后的进程内引擎。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-knowledge-wiki
 
 [English](README.md) | 中文
 
+## 概述
+
 万相织鉴宿主知识引擎 —— 概念图谱标签页背后的进程内引擎。持有 wiki 页面树（图谱 + Louvain 社区）、混合检索（BM25 + 可选向量）、页面编辑、带持久化队列的两阶段 LLM 摄取管线、评审项与深度研究，全部在 harness 进程内完成，不依赖 LLM Wiki 桌面应用。
 
+## 目录
+
+- [配置](#configuration)
+- [持久状态（.llm-wiki/）](#durable-state-llm-wiki)
+- [行为](#behavior)
+- [模型体验](#model-experience)
+- [已知限制与后续工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="configuration"></a>
 ## 配置
 
 | 键 | 含义 |
@@ -25,6 +42,7 @@
     llmModel: 'deepseek-v4-flash'
 ```
 
+<a id="durable-state-llm-wiki"></a>
 ## 持久状态（.llm-wiki/）
 
 - `ingest-cache.json` —— 扁平 `{ identity: sha256 }` 映射，仅在摄取成功后写入，失败任务因此可重试。
@@ -32,6 +50,7 @@
 - `review.json` —— 追加式评审项数组（按确定性 id 去重）。
 - `workspaces.json` —— 已注册的次级工作区。
 
+<a id="behavior"></a>
 ## 行为
 
 - 每 60 秒扫描 `raw/sources/`，变更文件入队两阶段摄取。失败（LLM 错误、零页产出）进入 60 分钟冷却，绝不污染缓存。
@@ -39,6 +58,7 @@
 - 生成页面经 sanitize、日期戳、`sources` 字段规范化后与既有页面合并：仅本源独占的页面整体替换；共享页面保留正文并并集 `sources`。
 - 无论模型输出形态如何，确定性兜底照常执行：index 条目、log 条目、源摘要页、评审项。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 两阶段源摄取
@@ -83,6 +103,7 @@
 
 每张图像为独立请求。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与后续工作
 
 - **长文档截断** —— 超过 60000 字符的源在分析阶段被截断；ark-sessions 源远低于此。
@@ -91,3 +112,8 @@
 - **仅在线向量** —— 向量检索按查询调用 embedding API，无持久向量库。
 - **轮询监视** —— `raw/sources` 每 60 秒扫描，无文件系统 watcher。
 - **范围外** —— 不提供 Web Clipper、MCP server 与桌面 UI；UI 面由 knowledgeWiki Remote 契约与 tool-knowledge-wiki 消费者覆盖。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

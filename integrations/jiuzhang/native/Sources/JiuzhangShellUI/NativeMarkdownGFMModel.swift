@@ -54,6 +54,69 @@ indirect enum NativeGFMBlock: Equatable, Sendable {
   case rule
 }
 
+/// A bounded selection surface over adjacent paragraphs from one Markdown source.
+/// The first original block index remains its identity across append-only updates.
+enum NativeGFMParagraphSelection {
+  static let maximumUTF16 = 4_096
+  static let maximumInlineNodes = 256
+  static let maximumParagraphs = 8
+
+  struct Row: Identifiable {
+    let index: Int
+    let block: NativeGFMBlock
+    var id: Int { index }
+  }
+
+  static func rows(_ blocks: [NativeGFMBlock]) -> [Row] {
+    var rows: [Row] = []
+    var content: [NativeGFMInline] = []
+    var firstIndex = 0
+    var paragraphs = 0
+    var units = 0
+    var nodes = 0
+    func flush() {
+      guard paragraphs > 0 else { return }
+      rows.append(Row(index: firstIndex, block: .paragraph(content)))
+      content = []; paragraphs = 0; units = 0; nodes = 0
+    }
+    for (index, block) in blocks.enumerated() {
+      guard case .paragraph(let inline) = block,
+            let cost = cost(inline)
+      else { flush(); rows.append(Row(index: index, block: block)); continue }
+      if paragraphs == maximumParagraphs || units + cost.units + 2 > maximumUTF16
+          || nodes + cost.nodes + 2 > maximumInlineNodes { flush() }
+      if paragraphs == 0 { firstIndex = index }
+      else { content += [.lineBreak, .lineBreak]; units += 2; nodes += 2 }
+      content += inline; units += cost.units; nodes += cost.nodes; paragraphs += 1
+    }
+    flush()
+    return rows
+  }
+
+  private static func cost(_ values: [NativeGFMInline]) -> (units: Int, nodes: Int)? {
+    var units = 0
+    var nodes = 0
+    func visit(_ values: [NativeGFMInline]) -> Bool {
+      for value in values {
+        nodes += 1
+        guard nodes <= maximumInlineNodes else { return false }
+        switch value {
+        case .text(let s), .code(let s), .literal(let s), .math(let s):
+          units += s.utf16.prefix(maximumUTF16 - units + 1).count
+        case .image(_, let alt): units += alt.utf16.prefix(maximumUTF16 - units + 1).count
+        case .softBreak, .lineBreak: units += 1
+        case .footnoteReference: units += 24
+        case .emphasis(let children), .strong(let children), .strikethrough(let children), .link(_, _, let children):
+          guard visit(children) else { return false }
+        }
+        guard units <= maximumUTF16 else { return false }
+      }
+      return true
+    }
+    return visit(values) ? (units, nodes) : nil
+  }
+}
+
 final class NativeGFMCache: @unchecked Sendable {
   static let shared = NativeGFMCache()
 
@@ -104,9 +167,30 @@ actor NativeGFMParseWorker {
 @MainActor
 final class NativeGFMDocumentModel: ObservableObject {
   @Published private(set) var blocks: [NativeGFMBlock] = []
+  /// Source text that produced the currently published `blocks`. Streaming
+  /// keeps the previous frame visible until the next parse installs, so the
+  /// transcript never removes and re-inserts every block row per delta
+  /// (that churn is what the AttributeGraph hang stacks show).
+  private(set) var renderedSource: String = ""
   private(set) var source: String
   private var generation: UInt64 = 0
   private var parseTask: Task<Void, Never>?
+  /// Earliest start of the next parse. A streaming message changes on every
+  /// refresh; re-parsing and re-installing the whole block list at that rate
+  /// burns the main thread for no visible gain, so parses are trailing-throttled
+  /// and the newest text is always the one installed.
+  private static let minimumParseInterval: Duration = .milliseconds(1000)
+  private var lastParseStartedAt: ContinuousClock.Instant?
+  private var installTask: Task<Void, Never>?
+  /// A completed long answer is parsed from its full text, and installing that
+  /// whole block list in one transaction lays out the entire message at once:
+  /// a 2500-word report with code blocks and tables pegs one core for seconds
+  /// (measured, at the moment the answer stops streaming). Installing it in
+  /// slices spreads the same work across several frames. Incremental streaming
+  /// parses only grow a few blocks, so they still install atomically.
+  private static let progressiveInstallJump = 24
+  private static let progressiveInstallChunk = 24
+  private static let progressiveInstallDelay: Duration = .milliseconds(40)
 
   init(source: String) {
     self.source = source
@@ -115,31 +199,92 @@ final class NativeGFMDocumentModel: ObservableObject {
 
   deinit {
     parseTask?.cancel()
+    installTask?.cancel()
   }
 
   func update(source: String) {
     guard self.source != source else { return }
     self.source = source
-    blocks = []
+    // Deliberately keep `blocks` (the previous parsed frame) until the new
+    // parse installs below. Cleared here, every streamed delta removed and
+    // re-inserted the whole block list and re-measured CoreText twice.
     schedule(source)
   }
 
   private func schedule(_ source: String) {
     parseTask?.cancel()
+    installTask?.cancel()
     generation &+= 1
     let requestedGeneration = generation
+    let elapsed = lastParseStartedAt.map { ContinuousClock.now - $0 } ?? Self.minimumParseInterval
+    let delay = elapsed < Self.minimumParseInterval ? Self.minimumParseInterval - elapsed : Duration.zero
     parseTask = Task { [weak self] in
+      if delay > Duration.zero { try? await Task.sleep(for: delay) }
+      guard !Task.isCancelled, let self else { return }
+      self.lastParseStartedAt = ContinuousClock.now
       guard let parsed = await NativeGFMParseWorker.shared.blocks(for: source) else { return }
-      guard let self,
-            !Task.isCancelled,
-            generation == requestedGeneration,
+      guard !Task.isCancelled,
+            self.generation == requestedGeneration,
             self.source == source
       else { return }
-      var transaction = Transaction(animation: nil)
-      transaction.disablesAnimations = true
-      withTransaction(transaction) {
-        self.blocks = parsed
-      }
+      self.install(parsed, source: source, generation: requestedGeneration, from: 0)
+    }
+  }
+
+  private func install(
+    _ parsed: [NativeGFMBlock],
+    source: String,
+    generation requestedGeneration: UInt64,
+    from index: Int
+  ) {
+    guard self.generation == requestedGeneration, self.source == source else { return }
+    if index == 0,
+       !self.blocks.isEmpty,
+       parsed.count > self.blocks.count + Self.progressiveInstallJump {
+      installSlice(
+        parsed,
+        source: source,
+        generation: requestedGeneration,
+        upTo: Self.progressiveInstallChunk
+      )
+      return
+    }
+    if index > 0 {
+      installSlice(
+        parsed,
+        source: source,
+        generation: requestedGeneration,
+        upTo: min(index + Self.progressiveInstallChunk, parsed.count)
+      )
+      return
+    }
+    publish(parsed, source: source)
+  }
+
+  private func installSlice(
+    _ parsed: [NativeGFMBlock],
+    source: String,
+    generation requestedGeneration: UInt64,
+    upTo end: Int
+  ) {
+    guard self.generation == requestedGeneration, self.source == source else { return }
+    publish(Array(parsed[0..<end]), source: source)
+    guard end < parsed.count else { return }
+    installTask?.cancel()
+    installTask = Task { [weak self] in
+      try? await Task.sleep(for: Self.progressiveInstallDelay)
+      guard !Task.isCancelled else { return }
+      await self?.install(parsed, source: source, generation: requestedGeneration, from: end)
+    }
+  }
+
+  /// One install is exactly one view-graph transaction.
+  private func publish(_ blocks: [NativeGFMBlock], source: String) {
+    var transaction = Transaction(animation: nil)
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      self.blocks = blocks
+      self.renderedSource = source
     }
   }
 }

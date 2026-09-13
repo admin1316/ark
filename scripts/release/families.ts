@@ -9,12 +9,8 @@
  * `releaseFamilies()` entry; nothing else in the release scripts branches on it.
  */
 
-import { globSync, readFileSync } from 'node:fs'
+import { existsSync, globSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import {
-  officialClientBuildEnvironment,
-  readClientBuildRecord,
-} from '../client-build-environment.ts'
 import { validateTarballPayload } from '../publication-payload.ts'
 
 /**
@@ -314,9 +310,28 @@ class DshFamily extends ReleaseFamily {
   readonly patterns = ['packages/!(experimental)/*/package.json', 'apps/*/package.json'] as const
   readonly tagPrefix = 'dsh-v'
 
-  /** Require current artifacts from a complete official client build. */
+  /** Require every declared runtime and type entry before the tarball boundary. */
   override verifyBuildArtifacts(root: string): void {
-    readClientBuildRecord(root, officialClientBuildEnvironment(root))
+    const targets = (value: unknown): string[] => {
+      if (typeof value === 'string') return [value]
+      if (value === null || typeof value !== 'object') return []
+      return Object.values(value).flatMap(targets)
+    }
+    for (const member of this.members(root)) {
+      const entries = [
+        ...targets(member.manifest.main),
+        ...targets(member.manifest.types),
+        ...targets(member.manifest.bin),
+        ...targets(member.manifest.exports),
+      ]
+      for (const entry of new Set(entries)) {
+        if (entry.includes('*')) continue
+        if (!existsSync(resolve(root, member.directory, entry))) {
+          throw new Error(`${member.name}: missing release artifact ${entry}; run the Host build`)
+        }
+      }
+    }
+    throw new Error('dsh npm release is blocked: Host build artifact provenance is not yet recorded')
   }
 
   /**

@@ -60,14 +60,14 @@ Declare one background, one foreground, one accent before writing HTML.
 
 | Category          | Use for                                       | File                                                       |
 | ----------------- | --------------------------------------------- | ---------------------------------------------------------- |
-| Bold / Energetic  | Product launches, social media, announcements | [palettes/bold-energetic.md](palettes/bold-energetic.md)   |
-| Warm / Editorial  | Storytelling, documentaries, case studies     | [palettes/warm-editorial.md](palettes/warm-editorial.md)   |
-| Dark / Premium    | Tech, finance, luxury, cinematic              | [palettes/dark-premium.md](palettes/dark-premium.md)       |
-| Clean / Corporate | Explainers, tutorials, presentations          | [palettes/clean-corporate.md](palettes/clean-corporate.md) |
-| Nature / Earth    | Sustainability, outdoor, organic              | [palettes/nature-earth.md](palettes/nature-earth.md)       |
-| Neon / Electric   | Gaming, tech, nightlife                       | [palettes/neon-electric.md](palettes/neon-electric.md)     |
-| Pastel / Soft     | Fashion, beauty, lifestyle, wellness          | [palettes/pastel-soft.md](palettes/pastel-soft.md)         |
-| Jewel / Rich      | Luxury, events, sophisticated                 | [palettes/jewel-rich.md](palettes/jewel-rich.md)           |
-| Monochrome        | Dramatic, typography-focused                  | [palettes/monochrome.md](palettes/monochrome.md)           |
+| Bold / Energetic  | Product launches, social media, announcements | [palettes/bold-energetic.md](../palettes/bold-energetic.md)   |
+| Warm / Editorial  | Storytelling, documentaries, case studies     | [palettes/warm-editorial.md](../palettes/warm-editorial.md)   |
+| Dark / Premium    | Tech, finance, luxury, cinematic              | [palettes/dark-premium.md](../palettes/dark-premium.md)       |
+| Clean / Corporate | Explainers, tutorials, presentations          | [palettes/clean-corporate.md](../palettes/clean-corporate.md) |
+| Nature / Earth    | Sustainability, outdoor, organic              | [palettes/nature-earth.md](../palettes/nature-earth.md)       |
+| Neon / Electric   | Gaming, tech, nightlife                       | [palettes/neon-electric.md](../palettes/neon-electric.md)     |
+| Pastel / Soft     | Fashion, beauty, lifestyle, wellness          | [palettes/pastel-soft.md](../palettes/pastel-soft.md)         |
+| Jewel / Rich      | Luxury, events, sophisticated                 | [palettes/jewel-rich.md](../palettes/jewel-rich.md)           |
+| Monochrome        | Dramatic, typography-focused                  | [palettes/monochrome.md](../palettes/monochrome.md)           |
 
 Or derive from OKLCH — pick a hue, build bg/fg/accent at different lightnesses, tint everything toward that hue.

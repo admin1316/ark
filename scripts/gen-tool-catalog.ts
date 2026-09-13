@@ -7,7 +7,7 @@
  */
 
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
@@ -59,8 +59,9 @@ import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
+import type { TeamService } from '@deepseek-ai/dsh-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
+import * as ToolAgentTeam from '@deepseek-ai/dsh-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { registerListSubagentModels } from '../packages/subagent/tool-subagent/src/list-models.ts'
@@ -138,6 +139,36 @@ async function mountCatalogChildScope(
   catalogChildScopes.set(ctx, key)
 }
 
+/** Mount one real Team tool plugin for schema harvest with an exact scoped member. */
+async function mountCatalogTeam(ctx: Context, plugin: typeof ToolTeam): Promise<void> {
+  await ctx.plugin(AgentRegistry)
+  await ctx.plugin(SessionStore)
+  const session = ctx.sessions.create(SessionId('tool-catalog-team-lead'))
+  let agent!: Agent
+  const membership = {
+    get root() { return agent },
+    id: session.id,
+    role: 'lead' as const,
+    name: 'lead',
+  }
+  ctx.provide('agentTeams', {
+    tryMembership: (candidate: Agent) => candidate === agent ? membership : undefined,
+    membership: () => membership,
+  } as unknown as TeamService)
+  await ctx.plugin(Object.assign((inner: Context) => {
+    agent = {
+      id: session.id,
+      session,
+      options: {},
+      status: 'idle',
+    } as unknown as Agent
+    Object.assign(agent, { ctx: createScope(inner, agent).ctx })
+    inner.agents.register(agent)
+  }, { inject: ['tools', 'systemPrompt', 'agents', 'agentTeams'] }))
+  await ctx.plugin(plugin)
+  catalogChildScopes.set(ctx, agent)
+}
+
 /**
  * Tool package plus its hand-maintained boot recipe. The caller mounts the
  * prompt and registry; each recipe supplies only package-specific seams and
@@ -146,7 +177,7 @@ async function mountCatalogChildScope(
 export interface ToolPackage {
   /** The npm package name, used as the catalog section heading. */
   pkg: string
-  /** The `packages/<group>/<dir>` leaf name — matched by the completeness guard. */
+  /** The complete repository-relative package directory, including its group. */
   dir: string
   /**
    * Repo-relative implementation source linked per harvested tool. Packages
@@ -190,7 +221,7 @@ export interface ToolPackage {
 const TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: '@deepseek-ai/dsh-tool-ask-user',
-    dir: 'tool-ask-user',
+    dir: 'packages/interaction/tool-ask-user',
     source: 'packages/interaction/tool-ask-user/src/index.ts',
     requires: ['ctx.tools', 'ctx.userQuestions'],
     writes: ['tool/call', 'tool/result after a UI/provider answers the question'],
@@ -203,7 +234,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tools',
-    dir: 'tools',
+    dir: 'packages/core/tools',
     source: 'packages/core/tools/src/ptc.ts',
     requires: ['ctx.tools', 'ctx.codeRuntime (execution time)', 'ctx.systemPrompt'],
     writes: ['tool/call', 'one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call', 'tool/result'],
@@ -217,7 +248,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-plan-mode',
-    dir: 'plan-mode',
+    dir: 'packages/plan/plan-mode',
     source: 'packages/plan/plan-mode/src/index.ts',
     requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.userQuestions (execution time, opportunistic)'],
     writes: ['tool/call', 'plan/mode inactive on an approved review', 'tool/result'],
@@ -229,7 +260,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-bash',
-    dir: 'tool-bash',
+    dir: 'packages/shell/tool-bash',
     source: 'packages/shell/tool-bash/src/index.ts',
     requires: ['ctx.tools', 'ctx.shell', 'ctx.systemPrompt', 'ctx.shellEnv', 'ctx.jobs at call time for run_in_background'],
     writes: ['tool/call', 'tool/result'],
@@ -244,7 +275,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-pwsh',
-    dir: 'tool-pwsh',
+    dir: 'packages/shell/tool-pwsh',
     source: 'packages/shell/tool-pwsh/src/index.ts',
     requires: ['ctx.tools', 'ctx.shell', 'ctx.systemPrompt', 'ctx.shellEnv', 'ctx.jobs at call time for run_in_background'],
     writes: ['tool/call', 'tool/result'],
@@ -262,7 +293,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-cordis',
-    dir: 'tool-cordis',
+    dir: 'packages/extensions/tool-cordis',
     source: 'packages/extensions/tool-cordis/src/index.ts',
     requires: ['ctx.tools', 'ctx.dynamicCordisRunner'],
     writes: ['tool/call', 'tool/result', 'process-local dynamic package lifecycle'],
@@ -275,7 +306,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-bash-persistent',
-    dir: 'tool-bash-persistent',
+    dir: 'packages/shell/tool-bash-persistent',
     source: 'packages/shell/tool-bash-persistent/src/index.ts',
     requires: ['ctx.tools', 'ctx.terminals', 'an owning Agent at execution time'],
     writes: ['tool/call', 'PTY shell state', 'tool/result'],
@@ -288,7 +319,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-pwsh-persistent',
-    dir: 'tool-pwsh-persistent',
+    dir: 'packages/shell/tool-pwsh-persistent',
     source: 'packages/shell/tool-pwsh-persistent/src/index.ts',
     requires: ['ctx.tools', 'ctx.terminals', 'an owning Agent at execution time'],
     writes: ['tool/call', 'PTY shell state', 'tool/result'],
@@ -301,7 +332,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-str-replace-editor',
-    dir: 'tool-str-replace-editor',
+    dir: 'packages/fs/tool-str-replace-editor',
     source: 'packages/fs/tool-str-replace-editor/src/index.ts',
     requires: ['ctx.tools', 'ctx.fs'],
     writes: ['tool/call', 'fs/observed after view presence/absence, edit absence, or successful mutation', 'tool/result'],
@@ -314,7 +345,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-fs',
-    dir: 'tool-fs',
+    dir: 'packages/fs/tool-fs',
     source: 'packages/fs/tool-fs/src/index.ts',
     requires: ['ctx.tools', 'ctx.fs', 'ctx.systemPrompt', 'ctx.attachments (image-tool registration)', 'ctx.llm + an image-capable route (image-tool execution)'],
     writes: ['tool/call', 'fs/write-intent or fs/edit-intent for mutations', 'fs/observed after read presence/absence or successful file operation', 'durable attachment (read_image)', 'tool/result'],
@@ -331,7 +362,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-fs-search',
-    dir: 'tool-fs-search',
+    dir: 'packages/fs/tool-fs-search',
     source: 'packages/fs/tool-fs-search/src/index.ts',
     requires: ['ctx.tools', 'ctx.subprocess', 'ctx.systemPrompt'],
     writes: ['tool/call', 'tool/result'],
@@ -349,7 +380,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-terminal',
-    dir: 'tool-terminal',
+    dir: 'packages/terminal/tool-terminal',
     source: 'packages/terminal/tool-terminal/src/index.ts',
     requires: ['ctx.tools', 'ctx.terminals', 'ctx.systemPrompt', 'ctx.jobs at call time for run_in_background'],
     writes: ['tool/call', 'tool/result'],
@@ -362,7 +393,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-goal',
-    dir: 'tool-goal',
+    dir: 'packages/goal/tool-goal',
     source: 'packages/goal/tool-goal/src/index.ts',
     requires: ['ctx.tools', 'ctx.agents', 'ctx.goals', 'ctx.systemPrompt', 'a calling Agent in an authorized open turn'],
     writes: ['tool/call', 'goal/change for mutations', 'tool/result'],
@@ -376,7 +407,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-schedule',
-    dir: 'schedule',
+    dir: 'packages/schedule/schedule',
     source: 'packages/schedule/schedule/src/tools.ts',
     requires: ['ctx.tools', 'ctx.sessions', 'Session persistence', 'a future live root Agent'],
     writes: ['tool/call', 'schedule/change create or delete', 'tool/result'],
@@ -397,7 +428,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-lsp',
-    dir: 'tool-lsp',
+    dir: 'packages/lsp/tool-lsp',
     source: 'packages/lsp/tool-lsp/src/index.ts',
     requires: ['ctx.tools', 'ctx.lsp', 'ctx.systemPrompt'],
     writes: ['tool/call', 'tool/result'],
@@ -411,7 +442,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-ralph',
-    dir: 'tool-ralph',
+    dir: 'packages/workflow/tool-ralph',
     source: 'packages/workflow/tool-ralph/src/index.ts',
     requires: ['ctx.tools', 'ctx.workflowEngine', 'ctx.subagents', 'ctx.systemPrompt', 'a calling Agent (exec.agent parents every fresh round)'],
     writes: ['tool/call', 'tool/result', 'workflow and child session events during execution'],
@@ -426,7 +457,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-skill',
-    dir: 'tool-skill',
+    dir: 'packages/skill/tool-skill',
     source: 'packages/skill/tool-skill/src/index.ts',
     requires: ['ctx.tools', 'ctx.agents', 'ctx.skills'],
     writes: ['tool/call', 'tool/result', 'user/message replacement catalogs via agent.inject()'],
@@ -442,7 +473,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-session-query',
-    dir: 'tool-session-query',
+    dir: 'packages/session-query/tool-session-query',
     source: 'packages/session-query/tool-session-query/src/index.ts',
     requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.sessionQuery', 'a calling Agent for workspace authority'],
     writes: ['tool/call', 'tool/result'],
@@ -456,7 +487,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent',
-    dir: 'tool-subagent',
+    dir: 'packages/subagent/tool-subagent',
     source: {
       list_subagent_models: 'packages/subagent/tool-subagent/src/list-models.ts',
       subagent: 'packages/subagent/tool-subagent/src/index.ts',
@@ -476,7 +507,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent-control',
-    dir: 'tool-subagent-control',
+    dir: 'packages/subagent/tool-subagent-control',
     source: {
       interrupt_agent: 'packages/subagent/tool-subagent-control/src/index.ts',
       list_agents: 'packages/subagent/tool-subagent-control/src/list-agents.ts',
@@ -498,7 +529,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent-report',
-    dir: 'tool-subagent-report',
+    dir: 'packages/subagent/tool-subagent-report',
     source: 'packages/subagent/tool-subagent-report/src/index.ts',
     requires: ['ctx.subagents', 'ctx.systemPrompt', 'a live continuable in-process child Agent'],
     writes: ['tool/call', 'tool/result', 'a user-role message in the direct parent session'],
@@ -519,7 +550,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-jobs',
-    dir: 'tool-jobs',
+    dir: 'packages/jobs/tool-jobs',
     source: 'packages/jobs/tool-jobs/src/index.ts',
     requires: ['ctx.tools', 'ctx.jobs', 'ctx.systemPrompt'],
     writes: ['tool/call', 'tool/result', 'user/message via agent.inject() for background completion notices'],
@@ -531,46 +562,29 @@ const TOOL_PACKAGES: ToolPackage[] = [
       'The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers\' `ctx.jobs.start()`.',
   },
   {
-    pkg: '@deepseek-ai/dsh-experimental-tool-agent-team',
-    dir: 'tool-agent-team',
-    source: 'packages/experimental/tool-agent-team/src/index.ts',
-    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.agentTeams', 'an exact live Team member Agent'],
+    pkg: '@deepseek-ai/dsh-tool-agent-team',
+    dir: 'packages/subagent/tool-agent-team',
+    source: 'packages/subagent/tool-agent-team/src/index.ts',
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.agents', 'ctx.agentTeams', 'an exact live Team member Agent'],
     writes: ['tool/call', 'team/member', 'team/message/queued', 'team/message/delivered', 'team/task', 'tool/result'],
-    async mount(ctx) {
-      await ctx.plugin(AgentRegistry)
-      await ctx.plugin(SessionStore)
-      const session = ctx.sessions.create(SessionId('tool-catalog-team-lead'))
-      let agent!: Agent
-      const membership = {
-        get root() { return agent },
-        id: session.id,
-        role: 'lead' as const,
-        name: 'lead',
-      }
-      ctx.provide('agentTeams', {
-        tryMembership: (candidate: Agent) => candidate === agent ? membership : undefined,
-        membership: () => membership,
-      } as unknown as TeamService)
-      await ctx.plugin(Object.assign((inner: Context) => {
-        agent = {
-          id: session.id,
-          session,
-          options: {},
-          status: 'idle',
-        } as unknown as Agent
-        Object.assign(agent, { ctx: createScope(inner, agent).ctx })
-        inner.agents.register(agent)
-      }, { inject: ['tools', 'systemPrompt', 'agents', 'agentTeams'] }))
-      await ctx.plugin(ToolTeam)
-      catalogChildScopes.set(ctx, agent)
-    },
+    mount: ctx => mountCatalogTeam(ctx, ToolAgentTeam),
+    scope: ctx => catalogChildScopes.get(ctx) as Agent,
+    note: 'The supported Agent Teams tools are scoped to the owning composition and exact Team member. Shared-task updates require the current revision and an explicit action; task listing supports bounded pages. The experimental package re-exports this implementation.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-experimental-tool-agent-team',
+    dir: 'packages/experimental/tool-agent-team',
+    source: 'packages/experimental/tool-agent-team/src/index.ts',
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.agents', 'ctx.agentTeams', 'an exact live Team member Agent'],
+    writes: ['tool/call', 'team/member', 'team/message/queued', 'team/message/delivered', 'team/task', 'tool/result'],
+    mount: ctx => mountCatalogTeam(ctx, ToolTeam),
     scope: ctx => catalogChildScopes.get(ctx) as Agent,
     note:
-      'All ten tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.',
+      'This compatibility entry re-exports the supported Agent Teams tools. The Agent Teams profile mounts the supported tools and domain once, alongside its optional Remote adapter.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-todo',
-    dir: 'tool-todo',
+    dir: 'packages/todo/tool-todo',
     source: 'packages/todo/tool-todo/src/index.ts',
     requires: ['ctx.tools', 'owning Agent session'],
     writes: ['tool/call', 'todo/write', 'tool/result'],
@@ -582,7 +596,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-workflow',
-    dir: 'tool-workflow',
+    dir: 'packages/workflow/tool-workflow',
     source: 'packages/workflow/tool-workflow/src/index.ts',
     requires: ['ctx.tools', 'ctx.workflowEngine', 'ctx.systemPrompt', 'a calling Agent (exec.agent parents the script children)'],
     writes: ['tool/call', 'tool/result'],
@@ -598,7 +612,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   },
   {
     pkg: '@deepseek-ai/dsh-tool-web',
-    dir: 'tool-web',
+    dir: 'packages/web/tool-web',
     source: 'packages/web/tool-web/src/index.ts',
     requires: ['ctx.tools', 'ctx.web', 'ctx.systemPrompt'],
     writes: ['tool/call', 'tool/result'],
@@ -641,15 +655,29 @@ export type ToolCatalog = CatalogPackage[]
  * `scanRoot` defaults to the repo root; a test may point it at a fixture tree.
  */
 export function assertManifestComplete(packages: ToolPackage[] = TOOL_PACKAGES, scanRoot: string = root): void {
-  const onDisk = globSync('packages/*/tool-*', { cwd: scanRoot }).map(p => basename(p)).sort()
-  const listed = new Set(packages.map(p => p.dir))
+  const onDisk = globSync('packages/*/tool-*', { cwd: scanRoot }).map(path => path.replaceAll('\\', '/')).sort()
+  const listed = new Map<string, string>()
+  const names = new Map<string, string>()
+  const violations: string[] = []
+  for (const entry of packages) {
+    const dir = entry.dir.replaceAll('\\', '/')
+    if (listed.has(dir)) violations.push(`duplicate boot directory '${dir}'`)
+    if (names.has(entry.pkg)) violations.push(`duplicate boot package '${entry.pkg}' at '${names.get(entry.pkg)}' and '${dir}'`)
+    listed.set(dir, entry.pkg)
+    names.set(entry.pkg, dir)
+    if (!/^packages\/[^/]+\/[^/]+$/u.test(dir) || dir.split('/').includes('..')) {
+      violations.push(`invalid package directory '${dir}'; use its complete packages/<group>/<package> path`)
+      continue
+    }
+    const manifest = JSON.parse(readFileSync(resolve(scanRoot, dir, 'package.json'), 'utf8')) as { name?: unknown }
+    if (manifest.name !== entry.pkg) violations.push(`${dir}: boot package '${entry.pkg}' does not match package.json name '${String(manifest.name)}'`)
+  }
   const missing = onDisk.filter(dir => !listed.has(dir))
   if (missing.length > 0) {
-    throw new Error(
-      `gen-tool-catalog: ${missing.length} tool package(s) not in the boot manifest: ${missing.join(', ')}. `
-      + 'Add each to TOOL_PACKAGES in scripts/gen-tool-catalog.ts so its schema is catalogued.',
-    )
+    violations.push(`${missing.length} tool package(s) not in the boot manifest: ${missing.join(', ')}. `
+      + 'Add each to TOOL_PACKAGES in scripts/gen-tool-catalog.ts so its schema is catalogued.')
   }
+  if (violations.length > 0) throw new Error(`gen-tool-catalog: ${violations.join('\n')}`)
 }
 
 /**

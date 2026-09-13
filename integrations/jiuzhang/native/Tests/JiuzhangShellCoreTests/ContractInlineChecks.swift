@@ -227,20 +227,20 @@ if let data = try? Data(contentsOf: infoPlistURL),
 } else {
   check(false, "Info.plist parses")
 }
-check(FileManager.default.fileExists(atPath: iconSourceURL.path), "Ark seal PNG icon source exists")
+check(FileManager.default.fileExists(atPath: iconSourceURL.path), "Ark user-provided icon source exists")
 if let iconData = try? Data(contentsOf: iconSourceURL),
    let icon = NSBitmapImageRep(data: iconData)
 {
-  check(icon.pixelsWide == 1024, "Ark seal icon source is 1024 pixels wide")
-  check(icon.pixelsHigh == 1024, "Ark seal icon source is 1024 pixels high")
+  check(icon.pixelsWide >= 1024, "Ark icon source supports the largest macOS icon size")
+  check(icon.pixelsHigh == icon.pixelsWide, "Ark icon source is square")
 } else {
-  check(false, "Ark seal icon source is a readable bitmap")
+  check(false, "Ark icon source is a readable bitmap")
 }
 if let buildScript = try? String(contentsOf: buildScriptURL, encoding: .utf8) {
   check(buildScript.contains(#"app_path="${destination}/Ark.app""#), "build emits Ark.app")
   check(!buildScript.contains(#"app_path="${destination}/九章天幕行业大脑.app""#), "build omits the legacy visible app filename")
   check(!buildScript.contains(#"app_path="${destination}/ARK.app""#), "build omits the all-caps app filename")
-  check(buildScript.contains(#"Resources/AppIcon.png"#), "build consumes the Ark seal PNG source")
+  check(buildScript.contains(#"Resources/AppIcon.png"#), "build consumes the user-provided Ark icon source")
   check(buildScript.contains(#"WikiNeuralBackground.png"#), "build embeds the native Wiki neural background")
   check(!buildScript.contains(#"Resources/AppIcon.svg"#), "build no longer consumes the legacy vector icon")
   check(buildScript.contains(#"JIUZHANG_SELF_CONTAINED"#), "build supports the self-contained distribution mode")
@@ -268,12 +268,12 @@ if let resourceFiles = try? FileManager.default.contentsOfDirectory(
   includingPropertiesForKeys: nil
 ) {
   let bitmapResources = resourceFiles
-    .filter { ["png", "icns"].contains($0.pathExtension.lowercased()) }
+    .filter { ["png", "jpg", "icns"].contains($0.pathExtension.lowercased()) }
     .map(\.lastPathComponent)
     .sorted()
   check(
     bitmapResources == ["AppIcon.png", "WikiNeuralBackground.png"],
-    "source resources contain the Ark seal and the native Wiki neural texture only"
+    "source resources contain the Ark icon, theme-aware brand artwork and native Wiki texture"
   )
 } else {
   check(false, "source resources are readable")
@@ -315,13 +315,12 @@ if let appDelegate = try? String(contentsOf: appDelegateURL, encoding: .utf8),
 {
   check(!appDelegate.contains("WKWebView"), "native application delegate omits WKWebView")
   check(!appDelegate.contains("import WebKit"), "native application delegate omits WebKit")
-  check(!package.contains("linkedFramework(\"WebKit\")"), "native package does not link WebKit")
   check(!package.contains("Sparkle"), "native package omits the WebKit-linked updater")
   check(
     browser.contains("NSWorkspace.shared.open(url)")
-      && !browser.contains("import WebKit")
-      && !browser.contains("WKWebView"),
-    "native Browser opens validated URLs in the default browser"
+      && browser.contains("import WebKit") && browser.contains("NSViewRepresentable")
+      && !browser.contains("loadFileURL") && !browser.contains("addScriptMessageHandler"),
+    "only the dedicated website tab embeds WebKit without local files or a script bridge"
   )
   check(appDelegate.contains("NSHostingView<ArkRootView>"), "native application hosts the Ark SwiftUI root")
 } else {
@@ -712,7 +711,7 @@ check(
   "blank chats never open the Ark source checkout"
 )
 let protectedSource = FileManager.default.homeDirectoryForCurrentUser
-  .appendingPathComponent("ark", isDirectory: true).path
+  .appendingPathComponent("ark/repo", isDirectory: true).path
 check(
   JiuzhangShellContract.protectedWorkspaceReason(path: protectedSource) == nil,
   "Ark source remains available as an explicit maintenance Workspace"
@@ -727,6 +726,15 @@ check(
   JiuzhangShellContract.protectedWorkspaceReason(path: "/Applications/Ark.app") != nil,
   "Ark app/runtime cannot be registered as a Workspace"
 )
+let canonicalApp = FileManager.default.homeDirectoryForCurrentUser
+  .appendingPathComponent("ark/Ark.app", isDirectory: true)
+for path in [canonicalApp.path, canonicalApp.appendingPathComponent("Contents").path,
+             canonicalApp.deletingLastPathComponent().path] {
+  check(
+    JiuzhangShellContract.protectedWorkspaceReason(path: path) != nil,
+    "canonical Ark bundle, descendants and containing directory are protected"
+  )
+}
 check(
   JiuzhangShellContract.protectedWorkspaceReason(path: "/private/tmp/ark-user-project") == nil,
   "an unrelated user project remains eligible as a Workspace"

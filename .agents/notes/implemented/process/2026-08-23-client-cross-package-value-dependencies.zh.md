@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-每条 Client 跨包引用都按实际跨越包边界的内容分类。功能插件不从另一个功能插件导入运行时值，也不声明 `dsh.client.external`。[Client shell 分层决策](../architecture/2026-08-15-client-shells-and-dynamic-packages.zh.md)继续负责 bundle 构建与模块表加载；本决策进一步限定功能代码如何使用这些机制。
+每条 Client 跨包引用都按实际跨越包边界的内容分类。功能插件不从另一个功能插件导入运行时值，也不声明 `dsh.client.external`。[Client shell 分层决策](../../archived/architecture/2026-08-15-client-shells-and-dynamic-packages.md)继续负责 bundle 构建与模块表加载；本决策进一步限定功能代码如何使用这些机制。
 
 | 情形 | 处理方式 | 原因 |
 | --- | --- | --- |

@@ -224,7 +224,7 @@ const DENIAL_SIGNATURES = {
 * cleanup failure reported on a non-zero child exit) is never misclassified
 * as "the command did not run". Keep the Landlock tuple aligned with the
 * assembled snapshot fixture at
-* `packages/test-support/session-snapshot/tests/fixtures/partial-landlock-sandbox.ts`.
+* `packages/sandbox/sandbox-local/tests/fixtures/partial-landlock-sandbox.ts`.
 */
 const RUNNER_FAILURE_RULES = {
 	bwrap: [{ fatalSignatures: ["bwrap: "] }],

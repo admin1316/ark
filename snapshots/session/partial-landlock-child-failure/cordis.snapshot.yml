@@ -44,4 +44,4 @@
               - id: deepseek-v4-flash
               - id: deepseek-v4-pro
     - id: partial-landlock-sandbox
-      name: '../../../packages/test-support/session-snapshot/tests/fixtures/partial-landlock-sandbox.ts'
+      name: '../../../packages/sandbox/sandbox-local/tests/fixtures/partial-landlock-sandbox.ts'

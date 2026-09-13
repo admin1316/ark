@@ -46,13 +46,13 @@ export function typertPlugin(pluginOptions = {}) {
             // options.dir is the package's absolute outDir (<package>/lib); its
             // nearest package.json owns the bundle even when a custom config writes
             // a nested output such as <package>/lib/dev.
-            if (bundleOptions.dir === undefined)
+            if (pluginOptions.mode === 'transform-only' || bundleOptions.dir === undefined)
                 return;
             const root = workspaceRoot(bundleOptions.dir);
             if (emittedWorkspaces.has(root))
                 return;
             if (pluginOptions.mode === 'workspace') {
-                emitWorkspace(root, pluginOptions.faces);
+                emitVerifiedWorkspaceArtifacts(root, pluginOptions.faces);
                 emittedWorkspaces.add(root);
                 return;
             }
@@ -73,16 +73,23 @@ export function typertPlugin(pluginOptions = {}) {
             emitArtifacts(packageDir, artifacts.filter(candidate => candidate.package === manifest.name));
         },
     };
-    function emitWorkspace(root, faces) {
-        const generator = new WorkspaceTypertGenerator(root, TSC_VERIFIED_INPUT);
-        const packages = generator.discover(faces)
-            .filter(candidate => hasTypertExport(readManifest(join(root, candidate.root)).exports))
-            .map(candidate => candidate.package);
-        if (packages.length === 0)
-            return;
-        for (const artifact of generator.generate(packages, faces)) {
-            emitArtifacts(join(root, artifact.packageRoot), [artifact]);
-        }
+}
+/**
+ * Generate every opted-in contributor after this snapshot passes workspace tsc.
+ * Run in a separate process to release compiler state before runtime bundling.
+ * @param root - verified workspace root containing the face aggregates.
+ * @param faces - independent faces to generate; omission includes both faces.
+ * @returns nothing; writes all validated artifacts or throws on analysis/export failure.
+ */
+export function emitVerifiedWorkspaceArtifacts(root, faces) {
+    const generator = new WorkspaceTypertGenerator(root, TSC_VERIFIED_INPUT);
+    const packages = generator.discover(faces)
+        .filter(candidate => hasTypertExport(readManifest(join(root, candidate.root)).exports))
+        .map(candidate => candidate.package);
+    if (packages.length === 0)
+        return;
+    for (const artifact of generator.generate(packages, faces)) {
+        emitArtifacts(join(root, artifact.packageRoot), [artifact]);
     }
 }
 /**

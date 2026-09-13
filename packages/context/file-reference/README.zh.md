@@ -1,6 +1,13 @@
+---
+description: "文件引用发现 seam，以及供原生界面和其他宿主驱动界面共享的 @file 语法。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-file-reference`
 
 [English](README.md) | 中文
+
+## 概述
 
 文件引用发现 seam，以及供原生界面和其他宿主驱动界面共享的 `@file` 语法。`ctx.fileReferences.list(agent, query, signal)` 为指定 agent（智能体）返回仅含路径的文件或目录候选；具体提供方负责命名空间访问、排序、缓存和失效处理。同一契约以一元 `fileReferences/list` Remote 方法对外可调（`@Remote` 标注在 Service Definition 上，经保留的末位 signal 参数取消）；原生与自动化消费方通过 Host Gateway 访问这一严格方法。
 
@@ -8,6 +15,13 @@
 
 选择候选项不会读取或附加文件内容。导出的 `FILE_REFERENCE_PROMPT` 是稳定指引；当指定 agent 可以调用 `read` 时，提供方可以安装该指引。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="model-experience"></a>
 ## 模型体验
 
 间接影响模型体验：`@deepseek-ai/dsh-file-reference-local` 会按条件贡献本包的稳定文件引用指引。
@@ -16,7 +30,15 @@
 
 接口和语法本身不会增加请求 token；缓存行为取决于提供方拥有的提示词段。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **路径候选仅供参考**：该 seam 不保证后续面向模型的文件系统工具能够访问同一命名空间；部署时必须让提供方与实际生效的 `read` 实现对齐。
 - **没有文件内容引用对象**：所选文件仍是普通提示词文本，其内容必须经过模型显式调用工具后才对模型可见。
+
+`fileReferences/list` 由此 Service Definition 唯一声明。Session Controller 不再挂载重复的 adapter；具体文件发现 provider 保持原挂载。Agent lookup、query、末位取消信号和候选数组契约均不改变，提供方仍负责根目录访问边界与缓存。保留的浏览器组装源码直接选择本包的 generated Remote contribution，此调整不恢复浏览器交付。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

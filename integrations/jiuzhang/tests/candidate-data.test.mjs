@@ -16,7 +16,10 @@ const profile = path.join(repository, 'integrations/jiuzhang/profile/cordis.patc
 const home = path.join(root, 'home')
 fs.mkdirSync(home, { mode: 0o700 })
 console.log('CANDIDATE_ISOLATION_EVIDENCE=' + root)
-const environment = { JIUZHANG_CANDIDATE_BUILD: '1', JIUZHANG_CANDIDATE_DATA_HOME: home }
+const environment = {
+  JIUZHANG_CANDIDATE_BUILD: '1', JIUZHANG_CANDIDATE_DATA_HOME: home,
+  JIUZHANG_CANDIDATE_VERSION: '0.0.1', JIUZHANG_CANDIDATE_BUILD_NUMBER: '1',
+}
 const infoBytes = fs.readFileSync(path.join(native, 'Resources/Info.plist'))
 const hash = value => createHash('sha256').update(value).digest('hex')
 const commands = []
@@ -51,6 +54,17 @@ test('candidate metadata binds a private home and a separate preferences domain'
   assert.equal(actual.ArkCandidateBuild, true)
   assert.equal(actual.ArkCandidateDataHome, home)
   assert.equal(actual.CFBundleIdentifier, plan.bundleIdentifier)
+  assert.equal(actual.CFBundleShortVersionString, environment.JIUZHANG_CANDIDATE_VERSION)
+  assert.equal(actual.CFBundleVersion, environment.JIUZHANG_CANDIDATE_BUILD_NUMBER)
+})
+test('candidate version and build cannot be omitted or reuse production identity', () => {
+  const production = JSON.parse(execute('read-production-version', '/usr/bin/plutil', ['-convert', 'json', '-o', '-', path.join(native, 'Resources/Info.plist')]).stdout)
+  for (const version of [undefined, '', 'test', '3.1', production.CFBundleShortVersionString]) {
+    assert.throws(() => candidateDataPlan({ ...environment, JIUZHANG_CANDIDATE_VERSION: version }), /Candidate version/)
+  }
+  for (const build of [undefined, '', 'test', '1.2.3.4', production.CFBundleVersion]) {
+    assert.throws(() => candidateDataPlan({ ...environment, JIUZHANG_CANDIDATE_BUILD_NUMBER: build }), /Candidate build number/)
+  }
 })
 test('empty, invalid, shared, source and symlink homes fail closed', () => {
   for (const value of ['', 'relative', '/', repository]) assert.throws(() => candidateDataPlan({ ...environment, JIUZHANG_CANDIDATE_DATA_HOME: value }))

@@ -1,8 +1,25 @@
+---
+description: "Implicit-root Agent Teams domain. ctx.agentTeams owns a flat Lead/teammate roster, a durable peer mailbox, and a shared task DAG in the Lead Session log."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-agent-team
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Implicit-root Agent Teams domain. `ctx.agentTeams` owns a flat Lead/teammate roster, a durable peer mailbox, and a shared task DAG in the Lead Session log. The [Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-05-agent-teams.md) owns the coordination and isolation decisions; the [Team subsystem catalog](../../../docs/subsystems/agent-team.md) records the literal durable shapes and service API.
+
+## Table of Contents
+
+- [Config](#config)
+- [Team identity and roster](#team-identity-and-roster)
+- [Durable mailbox](#durable-mailbox)
+- [Shared task board](#shared-task-board)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config
 
@@ -74,3 +91,7 @@ Peer messages append after the target's reusable history prefix. Cold resume reu
 - **Flat immutable roster** — only the Lead creates direct teammates; there is no nested Team, rename, deletion, or name reuse.
 - **No automatic ownership release** — idle, interruption, process exit, and failed work do not release a task owner.
 - **Mailbox is not cross-process exactly-once** — concurrent harness processes over one Team are unsupported.
+
+### Dev Note
+
+None.

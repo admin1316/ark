@@ -11,8 +11,8 @@ import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime';
 import type { CodeDispatchLog, ToolDefinition, ToolRuntime } from './index.ts';
 /** The model-facing name of the Code Mode tool. */
 export declare const RUN_CODE_NAME = "run_code";
-/** The `tools:sdk` section order: inside the 100–199 tool-guidance band, after per-tool guidance sections. */
-export declare const SDK_SECTION_ORDER = 150;
+/** The generated SDK follows per-tool guidance in the shared prompt order. */
+export declare const SDK_SECTION_ORDER: 5000;
 /**
  * The languages Code Mode ships a presentation for. Both per-language tables —
  * {@link RUN_CODE_FLAVORS} here and `SDK_RENDERERS` in {@link ./index.ts} — are

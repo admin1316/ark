@@ -129,6 +129,13 @@ export interface SubagentFollowupOptions {
     readonly source: MessageSource;
     /** Caller cancellation, owning the operation only until inbox acceptance. */
     readonly signal: AbortSignal;
+    /**
+     * How the child's inbox takes the message. `queue` (default) makes it the
+     * child's next FIFO turn; `steer` routes it to the nearest step boundary and
+     * starts a turn when the child is idle, so a running child is corrected in
+     * place instead of being made to finish its current plan first.
+     */
+    readonly delivery?: 'queue' | 'steer';
     /** Stable UUID carried by a subagent-prompt source; absent for other sources. */
     readonly invocationId?: string;
 }
@@ -395,9 +402,11 @@ export declare class SubagentContinuationManager {
     /** Let a settlement watcher re-observe quiescence after ownership or inbox changes. */
     private wake;
     /**
-     * Submit one message as the child's next FIFO turn and return its accepted
-     * inbox id. Acceptance is the operation's success boundary; the manager owns
-     * the Activation independently afterwards.
+     * Submit one message to the child's inbox and return its accepted id.
+     * Acceptance is the operation's success boundary; the manager owns the
+     * Activation independently afterwards. `queue` makes the message the child's
+     * next FIFO turn; `steer` routes it to the nearest step boundary and starts a
+     * turn when the child is idle.
      */
     private submit;
     /**

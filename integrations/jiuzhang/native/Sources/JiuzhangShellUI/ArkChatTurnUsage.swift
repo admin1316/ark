@@ -52,7 +52,7 @@ public struct ArkChatTurnUsage: Equatable, Sendable {
 /// never treated as a complete request; missing boundaries, unsafe values, or
 /// contradictory totals make the whole turn unavailable.
 public enum ArkChatTurnUsageProjection {
-  private struct RawUsage {
+  private struct RawUsage: Sendable {
     let inputTokens: Int?
     let outputTokens: Int?
     let cacheReadTokens: Int?
@@ -61,7 +61,7 @@ public enum ArkChatTurnUsageProjection {
     let totalTokens: Int?
   }
 
-  private struct NormalizedAttempt {
+  private struct NormalizedAttempt: Sendable {
     let inputTokens: Int
     let outputTokens: Int
     let totalTokens: Int
@@ -71,12 +71,12 @@ public enum ArkChatTurnUsageProjection {
     let route: ArkChatTurnUsageRoute?
   }
 
-  private enum RetrySettlement {
+  private enum RetrySettlement: Sendable {
     case message
     case retry
   }
 
-  private enum AttemptState {
+  private enum AttemptState: Sendable {
     case idle
     case open(turn: Int, step: Int, sample: RawUsage?)
     case finishClosed(turn: Int, step: Int)
@@ -91,89 +91,102 @@ public enum ArkChatTurnUsageProjection {
     return value.flatMap { $0 >= 0 ? $0 : nil }
   }
 
-  /// Fold every complete turn that is represented in the supplied history.
-  public static func projectAll(events: [ArkHistoryEvent]) -> [Int: ArkChatTurnUsage] {
-    var eventsByTurn: [Int: [ArkHistoryEvent]] = [:]
-    for event in events {
-      guard let turn = self.turn(in: event) else { continue }
-      eventsByTurn[turn, default: []].append(event)
+  /// A value checkpoint of the same strict turn/attempt fold used for replay.
+  /// Raw text deltas are validated and discarded; only the open attempt and
+  /// normalized usage samples survive raw history eviction or a session cache.
+  public struct Accumulator: Sendable {
+    private var turns: [Int: TurnState] = [:]
+    public private(set) var completed: [Int: ArkChatTurnUsage] = [:]
+
+    public init(events: [ArkHistoryEvent] = []) {
+      append(contentsOf: events.sorted { $0.id < $1.id })
     }
 
-    var result: [Int: ArkChatTurnUsage] = [:]
-    for turn in eventsByTurn.keys.sorted() {
-      guard let usage = project(events: eventsByTurn[turn] ?? [], turn: turn) else { continue }
-      result[turn] = usage
+    public mutating func append(_ event: ArkHistoryEvent) {
+      guard let turn = ArkChatTurnUsageProjection.turn(in: event) else { return }
+      turns[turn, default: TurnState(turn: turn)].append(event)
+      completed[turn] = turns[turn]?.result
     }
-    return result
+
+    public mutating func append(contentsOf events: [ArkHistoryEvent]) {
+      for event in events { append(event) }
+    }
   }
 
-  /// Fold one turn from raw native history.
+  /// Fold every complete turn that is represented in the supplied history.
+  public static func projectAll(events: [ArkHistoryEvent]) -> [Int: ArkChatTurnUsage] {
+    Accumulator(events: events).completed
+  }
+
+  /// Fold one turn from raw native history using the incremental admission rules.
   public static func project(events: [ArkHistoryEvent], turn: Int) -> ArkChatTurnUsage? {
     guard turn >= 0 else { return nil }
-    let localEvents = events
-      .filter { integer($0.data["turn"]) == turn }
-      .sorted { $0.id < $1.id }
-    guard !localEvents.isEmpty else { return nil }
+    return Accumulator(events: events.filter { self.turn(in: $0) == turn }).completed[turn]
+  }
 
+  private struct TurnState: Sendable {
+    let turn: Int
     var state: AttemptState = .idle
     var attempts: [NormalizedAttempt] = []
     var sawTurnStart = false
     var sawTurnEnd = false
     var invalid = false
 
+    init(turn: Int) { self.turn = turn }
+
     func closeOpen(
       _ candidate: AttemptState,
       route: ArkChatTurnUsageRoute?
     ) -> NormalizedAttempt? {
       guard case .open(_, _, let sample?) = candidate else { return nil }
-      return normalize(sample, route: route)
+      return ArkChatTurnUsageProjection.normalize(sample, route: route)
     }
 
-    for event in localEvents {
-      if invalid { break }
+    mutating func append(_ event: ArkHistoryEvent) {
+      guard !invalid else { return }
 
       if event.type == "turn/start" {
         guard !sawTurnStart, !sawTurnEnd, case .idle = state else {
           invalid = true
-          continue
+          return
         }
         sawTurnStart = true
-        continue
+        return
       }
 
       guard sawTurnStart, !sawTurnEnd else {
         invalid = true
-        continue
+        return
       }
 
       if event.type == "turn/end" {
-        guard integer(event.data["turn"]) == turn, case .idle = state else {
+        guard ArkChatTurnUsageProjection.integer(event.data["turn"]) == turn, case .idle = state else {
           invalid = true
-          continue
+          return
         }
         sawTurnEnd = true
-        continue
+        return
       }
 
       switch event.type {
       case "step/start":
-        guard integer(event.data["turn"]) == turn,
-              let step = integer(event.data["step"]),
+        guard ArkChatTurnUsageProjection.integer(event.data["turn"]) == turn,
+              let step = ArkChatTurnUsageProjection.integer(event.data["step"]),
               case .idle = state
         else {
           invalid = true
-          continue
+          return
         }
         state = .open(turn: turn, step: step, sample: nil)
 
       case "assistant/chunk":
         guard case .open(let stateTurn, let stateStep, let previousSample) = state,
               stateTurn == turn,
-              integer(event.data["turn"]) == turn,
-              integer(event.data["step"]) == stateStep
+              ArkChatTurnUsageProjection.integer(event.data["turn"]) == turn,
+              ArkChatTurnUsageProjection.integer(event.data["step"]) == stateStep
         else {
           invalid = true
-          continue
+          return
         }
         let chunk = event.data["chunk"]
         switch chunk?["type"]?.stringValue {
@@ -181,17 +194,17 @@ public enum ArkChatTurnUsageProjection {
           state = .open(
             turn: turn,
             step: stateStep,
-            sample: rawUsage(from: chunk?["usage"] ?? .null)
+            sample: ArkChatTurnUsageProjection.rawUsage(from: chunk?["usage"] ?? .null)
           )
         case "finish":
           let reason = chunk?["reason"]?["kind"]?.stringValue
-          guard reason == "error" || reason == "aborted" else { continue }
+          guard reason == "error" || reason == "aborted" else { return }
           guard let normalized = closeOpen(
             .open(turn: turn, step: stateStep, sample: previousSample),
             route: nil
           ) else {
             invalid = true
-            continue
+            return
           }
           attempts.append(normalized)
           state = .finishClosed(turn: turn, step: stateStep)
@@ -202,35 +215,35 @@ public enum ArkChatTurnUsageProjection {
       case "assistant/message":
         guard case .open(let stateTurn, let stateStep, let previousSample) = state,
               stateTurn == turn,
-              integer(event.data["turn"]) == turn,
-              integer(event.data["step"]) == stateStep
+              ArkChatTurnUsageProjection.integer(event.data["turn"]) == turn,
+              ArkChatTurnUsageProjection.integer(event.data["step"]) == stateStep
         else {
           invalid = true
-          continue
+          return
         }
         let candidate: AttemptState
         if event.data["usage"] != nil {
           candidate = .open(
             turn: turn,
             step: stateStep,
-            sample: rawUsage(from: event.data["usage"] ?? .null)
+            sample: ArkChatTurnUsageProjection.rawUsage(from: event.data["usage"] ?? .null)
           )
         } else {
           candidate = .open(turn: turn, step: stateStep, sample: previousSample)
         }
-        guard let normalized = closeOpen(candidate, route: messageRoute(from: event.data)) else {
+        guard let normalized = closeOpen(candidate, route: ArkChatTurnUsageProjection.messageRoute(from: event.data)) else {
           invalid = true
-          continue
+          return
         }
         attempts.append(normalized)
         state = .settled(turn: turn, step: stateStep, by: .message)
 
       case "llm/retry":
-        guard integer(event.data["turn"]) == turn,
-              let step = integer(event.data["step"])
+        guard ArkChatTurnUsageProjection.integer(event.data["turn"]) == turn,
+              let step = ArkChatTurnUsageProjection.integer(event.data["step"])
         else {
           invalid = true
-          continue
+          return
         }
         switch state {
         case .open(let stateTurn, let stateStep, let sample):
@@ -241,14 +254,14 @@ public enum ArkChatTurnUsageProjection {
                 )
           else {
             invalid = true
-            continue
+            return
           }
           attempts.append(normalized)
           state = .settled(turn: turn, step: step, by: .retry)
         case .finishClosed(let stateTurn, let stateStep):
           guard stateTurn == turn, stateStep == step else {
             invalid = true
-            continue
+            return
           }
           state = .settled(turn: turn, step: step, by: .retry)
         case .settled, .idle:
@@ -256,23 +269,23 @@ public enum ArkChatTurnUsageProjection {
         }
 
       case "llm/retry-started":
-        guard integer(event.data["turn"]) == turn,
-              let step = integer(event.data["step"]),
+        guard ArkChatTurnUsageProjection.integer(event.data["turn"]) == turn,
+              let step = ArkChatTurnUsageProjection.integer(event.data["step"]),
               case .settled(let stateTurn, let stateStep, by: .retry) = state,
               stateTurn == turn,
               stateStep == step
         else {
           invalid = true
-          continue
+          return
         }
         state = .open(turn: turn, step: step, sample: nil)
 
       case "step/end":
-        guard integer(event.data["turn"]) == turn,
-              let step = integer(event.data["step"])
+        guard ArkChatTurnUsageProjection.integer(event.data["turn"]) == turn,
+              let step = ArkChatTurnUsageProjection.integer(event.data["step"])
         else {
           invalid = true
-          continue
+          return
         }
         switch state {
         case .open(let stateTurn, let stateStep, let sample):
@@ -283,7 +296,7 @@ public enum ArkChatTurnUsageProjection {
                 )
           else {
             invalid = true
-            continue
+            return
           }
           attempts.append(normalized)
           state = .idle
@@ -291,7 +304,7 @@ public enum ArkChatTurnUsageProjection {
              .settled(let stateTurn, let stateStep, _):
           guard stateTurn == turn, stateStep == step else {
             invalid = true
-            continue
+            return
           }
           state = .idle
         case .idle:
@@ -303,8 +316,10 @@ public enum ArkChatTurnUsageProjection {
       }
     }
 
-    guard !invalid, sawTurnStart, sawTurnEnd, case .idle = state else { return nil }
-    return aggregate(attempts)
+    var result: ArkChatTurnUsage? {
+      guard !invalid, sawTurnStart, sawTurnEnd, case .idle = state else { return nil }
+      return ArkChatTurnUsageProjection.aggregate(attempts)
+    }
   }
 
   private static func rawUsage(from value: JSONValue) -> RawUsage {

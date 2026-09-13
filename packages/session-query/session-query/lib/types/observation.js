@@ -99,7 +99,9 @@ export class SessionObservationReader {
         }
     }
     live(session, projectionMode) {
-        const events = Object.freeze([...session.events]);
+        // Session already caches an immutable prefix; retaining it preserves this
+        // cut after append without copying the complete log for each observation.
+        const events = session.events;
         const projections = projectionMode === 'none'
             ? undefined
             : this.ctx.get('sessionProjections')?.snapshot(session);

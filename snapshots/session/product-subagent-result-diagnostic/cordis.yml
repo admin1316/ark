@@ -2,7 +2,7 @@
 # the same one-shot tool schema as the public Codex example.
 - insert:
     - id: subagent-result-diagnostic
-      name: '../../../packages/test-support/session-snapshot/tests/fixtures/subagent-result-diagnostic.ts'
+      name: '../../../packages/subagent/subagent/tests/fixtures/subagent-result-diagnostic.ts'
     - id: tool-subagent-codex
       name: '@deepseek-ai/dsh-tool-subagent'
       config:

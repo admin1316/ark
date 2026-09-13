@@ -14,6 +14,7 @@ import { closeSync, mkdtempSync, openSync, unlinkSync, writeSync } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleepMs } from 'node:timers/promises'
+import { proxyEnvironmentForChild } from '@deepseek-ai/dsh-http-proxy'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
@@ -35,7 +36,7 @@ import { linuxProcessGroupHasLiveMembers } from './process-inspector.ts'
  * @returns the environment to hand to `spawn` for the child process.
  */
 export function childEnv(extra?: Readonly<NodeJS.ProcessEnv>): NodeJS.ProcessEnv {
-  const env = scrubbedParentEnv()
+  const env = withChildProxyEnv(scrubbedParentEnv())
   if (process.platform !== 'win32') return { ...env, ...extra }
   let entries: [string, string | undefined][] = Object.entries(env)
   for (const [key, value] of Object.entries(extra ?? {})) {
@@ -44,6 +45,23 @@ export function childEnv(extra?: Readonly<NodeJS.ProcessEnv>): NodeJS.ProcessEnv
     entries.push([key, value])
   }
   return Object.fromEntries(entries)
+}
+
+/**
+ * Restore the launch environment's proxy policy for a child process. A child Node
+ * ignores inherited proxy names until `NODE_USE_ENV_PROXY` asks it to read them, so
+ * an MCP stdio server or subagent CLI would otherwise connect directly; an
+ * `undefined` in the overlay means the user never set that name.
+ * @param env - scrubbed parent environment to overlay.
+ * @returns the same entries plus this process's resolved proxy policy.
+ */
+function withChildProxyEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const overlay = proxyEnvironmentForChild()
+  for (const [name, value] of Object.entries(overlay)) {
+    if (value === undefined) Reflect.deleteProperty(env, name)
+    else env[name] = value
+  }
+  return env
 }
 
 /** Injectable knobs so tests can exercise spill and platform behavior deterministically. */

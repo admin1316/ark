@@ -4,9 +4,11 @@
  * empty-root composition, and the installation module-fallback healing.
  */
 
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
+import { once } from 'node:events'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   composeEntries,
@@ -102,6 +104,23 @@ describe('resolveBundleDir', () => {
     expect(() => resolveBundleDir('t', 'absent', anchor, profileDir)).toThrow('cannot resolve profile bundle')
   })
 
+  it('captures absolute and relative package links before callers read their manifests', () => {
+    const anchor = stageInstallation({})
+    const profileDir = tmp()
+    const target = tmp()
+    writeFileSync(join(target, 'package.json'), JSON.stringify({ name: 'linked-bundle' }))
+    const modules = join(profileDir, 'node_modules')
+    mkdirSync(modules)
+    for (const [name, linkTarget] of [['absolute', target], ['relative', relative(process.platform === 'win32' ? process.cwd() : modules, target)]] as const) {
+      symlinkSync(linkTarget, join(modules, name), 'junction')
+      expect(resolveBundleDir('t', name, anchor, profileDir)).toBe(realpathSync.native(target))
+    }
+    symlinkSync(join(target, 'missing'), join(modules, 'dangling'), 'junction')
+    expect(() => resolveBundleDir('t', 'dangling', anchor, profileDir)).toThrow('cannot resolve profile bundle')
+    symlinkSync(join(modules, 'cycle'), join(modules, 'cycle'), 'junction')
+    expect(() => resolveBundleDir('t', 'cycle', anchor, profileDir)).toThrow(/ELOOP/)
+  })
+
   it('resolves a package whose exports map omits ./package.json', () => {
     // Common on npm: an exports map without "./package.json" makes
     // require.resolve('<pkg>/package.json') throw ERR_PACKAGE_PATH_NOT_EXPORTED;
@@ -120,7 +139,7 @@ describe('resolveBundleDir', () => {
     }))
     writeFileSync(join(dir, 'index.js'), '')
     writeFileSync(join(dir, 'cordis.patch.yml'), '[]\n')
-    expect(resolveBundleDir('t', 'sealed-bundle', anchor, profileDir)).toBe(dir)
+    expect(resolveBundleDir('t', 'sealed-bundle', anchor, profileDir)).toBe(realpathSync.native(dir))
   })
 })
 
@@ -276,4 +295,87 @@ describe('healProfilesModuleFallback', () => {
     const fallback = join(home, 'profiles', 'node_modules')
     expect(lstatSync(join(fallback, 'dsh-app')).isSymbolicLink()).toBe(true)
   })
+
+  it('never lets a concurrent resolver observe a missing entry while re-pointing links', async () => {
+    const names = Array.from({ length: 160 }, (_, index) => `pkg-${String(index)}`)
+    const first = stageInstallation(Object.fromEntries(names.map(name => [name, {}])))
+    const second = stageInstallation(Object.fromEntries(names.map(name => [name, {}])))
+    const home = tmp()
+    const fallback = join(home, 'profiles', 'node_modules')
+    healProfilesModuleFallback(first, home)
+    const reader = join(home, 'reader.mjs')
+    const profileSource = fileURLToPath(new URL('../src/profile.ts', import.meta.url))
+    writeFileSync(reader, [
+      "import { lstatSync, readFileSync } from 'node:fs'",
+      "import { join, dirname } from 'node:path'",
+      `import { resolveBundleDir } from ${JSON.stringify(profileSource)}`,
+      'const [fallback, ...names] = process.argv.slice(2)',
+      "const profile = join(dirname(fallback), 'active')",
+      "const absentInstallation = join(profile, 'uninstalled', 'package.json')",
+      'const failures = []',
+      'let passes = 0',
+      "process.on('message', () => { process.send({ passes, failures }); process.exit() })",
+      'async function probe(name) {',
+      // Probe the directory entry itself and the real bundle resolver. A raw
+      // existsSync(link/package.json) also reports macOS rename-time EINVAL
+      // as false, which is neither a missing entry nor our resolved read path.
+      "  if (!lstatSync(join(fallback, name)).isSymbolicLink()) throw new Error('link replaced by a non-link')",
+      "  const directory = resolveBundleDir('test', name, absentInstallation, profile)",
+      "  const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))",
+      "  if (manifest.name !== name) throw new Error('resolved another package')",
+      '}',
+      'async function scan() {',
+      '  for (const name of names) {',
+      '    try {',
+      '      await probe(name)',
+      '    } catch (error) {',
+      // macOS reports EINVAL transiently while the parent re-points a link; that
+      // window is neither a missing entry nor a wrong resolution. Re-probe once
+      // after yielding, and still fail on any persistent error (ENOENT, non-link,
+      // wrong package, malformed manifest).
+      "      if (error.code === 'EINVAL') {",
+      '        await new Promise(resolve => setImmediate(resolve))',
+      '        try { await probe(name); continue } catch (retry) {',
+      '          failures.push({ name, message: String(retry), code: retry.code })',
+      '          continue',
+      '        }',
+      '      }',
+      '      failures.push({ name, message: String(error), code: error.code })',
+      '    }',
+      '  }',
+      '  passes += 1',
+      '  setImmediate(scan)',
+      '}',
+      "process.send('ready')",
+      'scan()',
+    ].join('\n'))
+    const { spawn } = await import('node:child_process')
+    const child = spawn(process.execPath, ['--import', 'tsx', reader, fallback, ...names], {
+      stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
+    })
+    const exited = once(child, 'exit') as Promise<[number | null, NodeJS.Signals | null]>
+    try {
+      await Promise.race([
+        once(child, 'message'),
+        exited.then(() => { throw new Error('resolver exited before readiness') }),
+      ])
+      for (let index = 0; index < 40; index += 1) {
+        healProfilesModuleFallback(index % 2 === 0 ? second : first, home)
+      }
+      const result = once(child, 'message')
+      child.send('stop')
+      const [report] = await result as [{ passes: number; failures: unknown[] }]
+      const [code, signal] = await exited
+      expect({ code, signal }).toEqual({ code: 0, signal: null })
+      expect(report.passes).toBeGreaterThan(0)
+      expect(report.failures).toEqual([])
+      expect(readlinkSync(join(fallback, 'pkg-0'))).toBe(realpathSync.native(join(dirname(first), 'node_modules', 'pkg-0')))
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill()
+      await exited
+      for (const directory of [home, dirname(dirname(first)), dirname(dirname(second))]) {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+  }, 20_000)
 })

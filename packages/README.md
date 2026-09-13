@@ -1,3 +1,8 @@
+---
+description: "npm scope: @deepseek-ai/dsh-; Cordis Service subclasses and function plugins contribute through ctx.effect(), ctx.on(), or ctx.waterfall()."
+kind: "package-group"
+---
+
 # Packages
 
 English | [中文](README.zh.md)

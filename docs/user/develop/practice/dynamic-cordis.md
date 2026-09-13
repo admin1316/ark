@@ -6,10 +6,6 @@ This practice guide enables [`@deepseek-ai/dsh-tool-cordis`](../../../../package
 
 ## Run it
 
-Start the browser interface with the checked-in overlay:
+Configure an installed [custom CLI profile](../../../../apps/cli/README.md#profiles) with a live Agent, model credentials, `@deepseek-ai/dsh-cordis-host-runner`, and `@deepseek-ai/dsh-tool-cordis`. Declare the packages in that profile's dependencies and mount them in its `cordis.patch.yml` before starting the profile. The browser-specific example overlay is not an Ark Native startup command.
 
-```sh
-pnpm dsh web --patch apps/cli/config/examples/cordis/cordis.yml
-```
-
-The command requires a model credential. The [Cordis tool reference](../../../../packages/extensions/tool-cordis/README.md) defines the tool arguments, lifetime, cleanup, and safety contracts.
+The [Cordis tool reference](../../../../packages/extensions/tool-cordis/README.md) defines tool arguments, lifetime, cleanup, and safety contracts. After the profile starts, ask the Agent to inspect its loaded Cordis services and verify the tool result before requesting a temporary plugin.

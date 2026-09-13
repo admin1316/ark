@@ -1,8 +1,10 @@
 import CryptoKit
+import Darwin
 import Foundation
 @testable import JiuzhangShellUI
 
 func runArkNativeFileOperationsContractChecks() {
+  runArkProducedFilePathContractChecks()
   let fileManager = FileManager.default
   let home = fileManager.temporaryDirectory
     .appendingPathComponent("ark-file-ops-\(UUID().uuidString)", isDirectory: true)
@@ -400,4 +402,47 @@ func runArkNativeFileOperationsContractChecks() {
   } catch {
     check(false, "native directory copy recovery completes: \(error)")
   }
+}
+
+func runArkProducedFilePathContractChecks() {
+  let fm = FileManager.default
+  let home = fm.temporaryDirectory.appendingPathComponent("ark-produced-open-\(UUID().uuidString)")
+  let root = home.appendingPathComponent("session cwd")
+  do {
+    try fm.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: home) }
+    let access = try NativeWorkspaceAccess(rootURL: root)
+    let binary = root.appendingPathComponent("quote ' $(literal) 中文.png")
+    try Data([0x89, 0x50, 0, 0xff]).write(to: binary)
+    let relativeURL = try access.resolveFileURL(binary.lastPathComponent)
+    check(relativeURL == binary,
+      "produced file relative paths resolve against the supplied session root with literal names")
+    let externalURL = try access.validatedExternalFileURL(relativeURL)
+    check(externalURL == binary,
+      "produced file external open admits binary regular files without text decoding")
+    let large = root.appendingPathComponent("large.pdf")
+    _ = fm.createFile(atPath: large.path, contents: nil)
+    let handle = try FileHandle(forWritingTo: large)
+    try handle.truncate(atOffset: UInt64(NativeWorkspaceAccess.maximumTextFileSize + 1))
+    try handle.close()
+    check((try? access.validatedRegularFileURL(large)) == nil
+      && (try? access.validatedExternalFileURL(large)) == large,
+      "external produced file routing permits large outputs while preserving the editor size limit")
+    let outside = home.appendingPathComponent("outside.pdf")
+    try Data([1]).write(to: outside)
+    let link = root.appendingPathComponent("link.pdf")
+    try fm.createSymbolicLink(at: link, withDestinationURL: outside)
+    check((try? access.validatedExternalFileURL(outside)) == nil
+      && (try? access.validatedExternalFileURL(link)) == nil
+      && (try? access.validatedExternalFileURL(access.resolveFileURL("../outside.pdf"))) == nil,
+      "external produced file routing rejects outside paths traversal and symlinks")
+    check((try? access.validatedExternalFileURL(root)) == nil
+      && (try? access.validatedExternalFileURL(root.appendingPathComponent("missing"))) == nil
+      && (try? access.resolveFileURL("bad\0path")) == nil,
+      "external produced file routing rejects directories missing files and NUL paths")
+    let fifo = root.appendingPathComponent("special")
+    guard mkfifo(fifo.path, 0o600) == 0 else { throw NSError(domain: "fixture-fifo", code: 1) }
+    check((try? access.validatedExternalFileURL(fifo)) == nil,
+      "external produced file routing rejects FIFO without blocking the UI")
+  } catch { check(false, "produced file path contract failed: \(error)") }
 }

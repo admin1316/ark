@@ -109,7 +109,7 @@ function waitWithSignal(promise, signal) {
             onAbort();
             return;
         }
-        promise.then((value) => { cleanup(); resolve(value); },
+        promise.then((value) => { cleanup(); resolve(value); }, 
         /* v8 ignore next -- every current caller passes a never-rejecting promise
            (commandState always resolves; the rest are .catch-wrapped) */
         (error) => {

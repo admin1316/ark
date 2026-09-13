@@ -111,7 +111,7 @@ async function invokeRemote(ctx, endpoint, payload, signal) {
         const receiverContext = await resolveReceiverContext(ctx, typert, descriptor, argsByWire, endpoint);
         const receiver = receiverContext.get(descriptor.service);
         if (!isObject(receiver)) {
-            throw new TypertGatewayError('service-unavailable', endpoint, `active Service ${JSON.stringify(descriptor.service)} is unavailable`);
+            throw new TypertGatewayError('service-unavailable', endpoint, `active Service ${JSON.stringify(descriptor.service)} is unavailable; mount its provider in the Host composition and check that it loaded successfully`);
         }
         validateBinding(receiver, descriptor, endpoint);
         const args = await Promise.all(descriptor.parameters.map(parameter => resolveParameter(typert, parameter, argsByWire, endpoint)));

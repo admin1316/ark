@@ -687,8 +687,9 @@ var TokenMeter = class extends Service {
 			};
 			this.states.set(session, state);
 		}
-		while (state.consumedEvents < session.events.length) {
-			const event = session.events[state.consumedEvents];
+		const endSeqExclusive = session.seq;
+		while (state.consumedEvents < endSeqExclusive) {
+			const event = session.eventAt(state.consumedEvents);
 			this._foldEvent(session, state, event);
 			state.consumedEvents += 1;
 		}
@@ -757,7 +758,7 @@ var TokenMeter = class extends Service {
 			if (seq >= event.seq) throw new Error(`token meter: assistant/message at seq ${event.seq} source seq ${seq} is not earlier`);
 			if (seen.has(seq)) throw new Error(`token meter: assistant/message at seq ${event.seq} repeats source seq ${seq}`);
 			seen.add(seq);
-			const sourceEvent = session.events[seq];
+			const sourceEvent = session.eventAt(seq);
 			if (sourceEvent.type !== "assistant/chunk") throw new Error(`token meter: assistant/message at seq ${event.seq} source seq ${seq} is not assistant/chunk`);
 			if (sourceEvent.data.turn !== event.data.turn || sourceEvent.data.step !== event.data.step) throw new Error(`token meter: assistant/message at seq ${event.seq} source seq ${seq} belongs to another step`);
 			assembler.push(sourceEvent.data.chunk);

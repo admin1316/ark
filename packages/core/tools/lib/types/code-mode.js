@@ -7,12 +7,13 @@
  */
 import { CallId, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm';
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session';
+import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt';
 import { defineTool, parameterSchemaSpecToJsonSchema } from "./schema.js";
 import { TOOL_RUNTIME_SCHEDULER } from "./index.js";
 /** The model-facing name of the Code Mode tool. */
 export const RUN_CODE_NAME = 'run_code';
-/** The `tools:sdk` section order: inside the 100–199 tool-guidance band, after per-tool guidance sections. */
-export const SDK_SECTION_ORDER = 150;
+/** The generated SDK follows per-tool guidance in the shared prompt order. */
+export const SDK_SECTION_ORDER = FIRST_PARTY_SECTION_ORDER.TOOLS_SDK;
 /**
  * The TypeScript flavor: the fallback for a schema read with no runtime
  * mounted ({@link resolveFlavor} owns which readers reach that). A real

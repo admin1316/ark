@@ -1,3 +1,8 @@
+---
+description: "Durable objective state for an agent session, owned independently of the model-facing tools and continuation policy that consume it."
+kind: "package-group"
+---
+
 # goal/ — persisted same-session goals
 
 English | [中文](README.zh.md)

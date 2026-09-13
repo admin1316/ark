@@ -1,9 +1,26 @@
+---
+description: "ctx.goals 的面向模型控制 API：get_goal、create_goal 和 update_goal。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-goal
 
 [English](README.md) | 中文
 
+## 概述
+
 [`ctx.goals`](../goal/README.zh.md) 的面向模型控制 API：`get_goal`、`create_goal` 和 `update_goal`。[goal 工具 Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-model-facing-goal-tools.zh.md) 负责权限拆分与 Codex 风格用户体验。
 
+## 目录
+
+- [工具](#tools)
+- [权限](#authority)
+- [配置](#config)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="tools"></a>
 ## 工具
 
 - `get_goal()` 返回当前 goal 或 `null`，包括比较并设置 id／revision、持久 phase、Goal Round 的已准入数／上限、任何 blocker reason，以及当前进程本地续行启用状态。
@@ -16,6 +33,7 @@
 
 自主 Goal Round 成功报告 `complete` 或 `blocked` 时，会用 `concludeTurn()` 标记该次工具执行，使物理轮次在该步骤后停止。人类直接变更绝不会导致这种停止：assistant 可以确认变更，循环仍可接收并发的人类 steering（中途引导）。
 
+<a id="authority"></a>
 ## 权限
 
 执行要求完全相同的活跃 `exec.agent`、其继承的 `AgentRegistry` initiator、running 状态与开放轮次。create、edit、pause 和 resume 还要求运行时根 agent（智能体）的当前轮次中存在已接受的 `{ kind: 'user' }` 消息或 steering 事件。持久 fork 谱系不会降低已恢复根 agent 的等级；活跃 subagent 所有权会降低。
@@ -24,6 +42,7 @@
 
 complete 与 blocked 还接受完全一致的当前 Goal Round：来源为 goal 的 `user/message`，其 id、revision 和 Round 编号与折叠后的当前 goal 相等。在达到 `blockedAfterConsecutiveRounds` 前，Goal Round 的 blocked 调用会被机械拒绝；模型判断同一条件是否确实持续，并必须在 `blocked_reason` 中说明。人类直接授权可以立即停止 goal。
 
+<a id="config"></a>
 ## 配置
 
 ```yaml
@@ -35,6 +54,7 @@ complete 与 blocked 还接受完全一致的当前 Goal Round：来源为 goal 
 
 该值必须是正的安全整数。它既提供模型自行报告阻塞的硬下限，也决定模型指引中指明的数值。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 系统提示词
@@ -71,6 +91,7 @@ Use goal tools for one long-running completion objective in the current session.
 
 schema 的定义与可见性不变时，前缀保持稳定。调用和结果会追加到可复用请求前缀之后，不会使更早条目失效。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **语义意图仍由模型判断**：执行只能证明当前轮次包含一条人类直接发送的消息，无法证明请求是否足够重大而值得创建 goal。
@@ -78,3 +99,8 @@ schema 的定义与可见性不变时，前缀保持稳定。调用和结果会�
 - **不负责调度或直接面向人类呈现**：这些工具只变更状态；同会话驱动器与 [`dsh-command-goal`](../command-goal/README.zh.md) 是同一领域的独立消费方。
 - **Goal Round 权限需要驱动器**：除非续行驱动器准入 goal 来源的用户轮次，否则自主 `complete`／`blocked` 路径不会启用；只挂载这个包不会创建这些轮次。
 - **提示词注册与过滤相互独立**：某个范围可能隐藏工具，却保留指引，除非部署将两项注册限定在同一范围。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

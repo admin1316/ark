@@ -1,8 +1,22 @@
+---
+description: "Tool registry and execution pipeline."
+kind: "package-reference"
+---
+
 # dsh-tools
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Tool registry and execution pipeline. Tool plugins register their schemas and executors; the agent loop executes each call through `tools/pre-execute` (the extensible allow/deny gate) → monotonic registered guards → `tools/execute` (an around-dispatch wrapper for timeout/retry/metrics plugins) → `tools/post-execute` (inspect/replace the result, attach context) → the definition-owned `finalizeContent` boundary → the observe-only `tools/result` notification. The registry also owns HOW its tools are presented to the model — its `mode` config selects native function calling, [Code Mode](#code-mode), or both, and one agent shadows that default for itself with `presentAs`.
+
+## Table of Contents
+
+- [Service: ToolRuntime (ctx key: tools)](#service-toolruntime-ctx-key-tools)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Service: `ToolRuntime` (ctx key: `tools`)
 
@@ -196,3 +210,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 - **Code Mode's SDK language follows the one loaded runtime, and a presentation is per agent rather than per tool** — `mode: code`/`both` rejects prompt assembly unless `ctx.codeRuntime.language` has a registered SDK renderer (TypeScript or Python); scoped restrictions/shadows and `presentAs` choose each agent's visible bindings and their form, but within one agent no tool can be native-only while another is code-only.
 - **Code Mode intermediate values are execution-local and unbounded by bytes** — the canonical typed values cannot be reconstructed from session replay and may exhaust process or worker memory; only the outer `run_code` output has the worker's configurable hard cap. The durable log copy of each sub-call IS bounded: the `tools/code-dispatch-log` waterfall lets the spill policy replace an oversized `tool/code-dispatch` content with a preview + locator ([rationale](../../../.agents/notes/implemented/feature/2026-07-26-code-dispatch-log-spill.md)).
 - **`run_code` state is fresh per run** — a persistent REPL-style kernel is rejected for the MVP (cross-call state would be invisible to the log); see [the Code Mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-code-mode.md).
+
+### Dev Note
+
+None.

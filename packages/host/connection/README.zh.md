@@ -1,6 +1,13 @@
+---
+description: "原生 API 客户端的 Host 传输 owner。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-host-connection
 
 [English](README.md) | 中文
+
+## 概述
 
 原生 API 客户端的 Host 传输 owner。该插件注册唯一的 `/api` 前缀、`/api/events/mux` 与 `/api/events/host` WebSocket upgrade，以及严格 RPC 拦截、`/api/respond`、精确下载和事件 producer 的作用域注册表。`@deepseek-ai/dsh-api-gateway` 动态拦截严格斜杠 Remote 调用；各领域 owner 注册自己的下载或事件 handler。Connection 包只持有物理传输、请求 authority、关联 envelope 与 socket 生命周期，不再存在点号 RPC fallback。
 
@@ -8,6 +15,13 @@
 
 `./protocol` 子路径是路由常量、loopback hostname 分类与共享 RPC 接口的唯一 owner。原生客户端镜像这份协议格式，无需导入任何 Host 实现代码。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### Native API 传输
@@ -24,7 +38,13 @@
 
 本包不修改模型请求，因此不独立影响模型内容缓存。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **请求体会整体缓冲在内存中**：`maxRequestBodyBytes` 默认 300 MiB，使默认 200 MiB 图片总量在 base64 膨胀后仍可容纳；要降低驻留成本，需要流式请求体载体。
 - **受信 Host 是可达性策略，不是认证**：非 loopback 部署在暴露特权能力前仍需要认证层。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

@@ -1,6 +1,13 @@
+---
+description: "Credential Service Definition (ctx.credentials)."
+kind: "package-reference"
+---
+
 # dsh-credentials
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Credential Service Definition (`ctx.credentials`). One doctrine, three consequences:
 
@@ -9,6 +16,16 @@ Credential Service Definition (`ctx.credentials`). One doctrine, three consequen
 **Consumers resolve per operation.** `resolve(ref)` is called at the start of each operation (the LLM adapters resolve once per model request) and never cached across operations — that read is what makes a changed credential reach the very next request without restarting any plugin.
 
 **An empty stored value is absent.** Everywhere: `resolve` skips it, `describe` reports it unconfigured. A blank can never masquerade as a configured secret.
+
+## Table of Contents
+
+- [Two key spaces, two questions](#two-key-spaces-two-questions)
+- [Surface](#surface)
+- [Providers](#providers)
+- [Shared Remote](#shared-remote)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Two key spaces, two questions
 
@@ -56,6 +73,10 @@ The shadowing rule on `set`/`unset` is deliberate fail-loud: when a read-only so
 
 [`dsh-credentials-local`](../credentials-local/README.md) layers the inherited process environment over its managed `$DSH_HOME/.credentials.yaml` document, with the launcher's project and user `.env` layers as fallbacks. The seam shape leaves room for keyring-, helper-command-, and KMS-backed providers; a remote settings provider never needs to carry secrets.
 
+## Shared Remote
+
+This provider is the sole owner of `credentials.describe/set/unset`, with one response contract for browser and Native consumers. `describe(refs)` returns `{ credentials: { [ref]: { configured, source?, writable } } }` for at most 64 references, validating every name before starting provider reads. Oversized batches or invalid names return `input-invalid`. `set` rejects empty values before contacting the provider; empty values and provider refusals return sanitized `credential-rejected` failures. Successful writes and removals return `{}` and never return secret values. The legacy API settings controller no longer declares these endpoints.
+
 ## Model Experience
 
 Indirectly, through the consuming LLM adapters: a resolved value authorizes their provider requests, and the adapter owns every model-visible surface.
@@ -70,3 +91,7 @@ No direct invalidation; credentials never enter a request prefix.
 - **References are environment-variable-shaped** — one flat POSIX-identifier namespace, because a reference doubles as the environment name it resolves through. Records carry the richer `<owner>/<id>` addressing.
 - **Process-environment changes are invisible** — no event can fire for them; a UI only re-reads `describe()` on its own navigation.
 - **A record's owner is its scope, and nothing verifies the scope is mounted** — the seam stores what it is given and reports what it stores. Recognizing an orphan is the caller's join between `listRecords()` and whatever registry owns that scope; the seam has no registry of its own to check against.
+
+### Dev Note
+
+None.

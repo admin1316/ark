@@ -1,7 +1,79 @@
 import { Service } from "@deepseek-ai/cordis";
 import z from "@deepseek-ai/schemastery";
 import { ReasoningEffortId } from "@deepseek-ai/dsh-llm";
+import { z as z$1 } from "zod";
+import "@deepseek-ai/dsh-agent";
 import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
+//#region lib/types/session-selection.js
+/** Durable model-selection intent and request-use projection. */
+const modelSelectionSchema = z$1.object({
+	provider: z$1.string().min(1),
+	model: z$1.string().min(1),
+	reasoningEffort: z$1.string().min(1).optional()
+}).transform(({ provider, model, reasoningEffort }) => ({
+	provider,
+	model,
+	...reasoningEffort === void 0 ? {} : { reasoningEffort }
+}));
+const modelSelectionProjectionStateSchema = z$1.object({
+	lastUsed: modelSelectionSchema.nullable(),
+	pending: modelSelectionSchema.nullable()
+});
+const modelSelectionProjectionSchema = z$1.object({
+	lastUsed: modelSelectionSchema.nullable(),
+	next: modelSelectionSchema.nullable()
+});
+/**
+* Advance durable model-selection state by one Session event.
+* @param state - selection state before the event.
+* @param event - next committed Session event.
+* @returns the original or advanced selection state.
+*/
+function applyModelSelectionProjection(state, event) {
+	if (event.type === "model/selection") return sameSelection(state.pending, event.data) ? state : {
+		lastUsed: state.lastUsed,
+		pending: event.data
+	};
+	if (event.type !== "request/header") return state;
+	const lastUsed = {
+		provider: event.data.header.config.provider,
+		model: event.data.header.config.model,
+		...event.data.header.config.reasoningEffort === void 0 ? {} : { reasoningEffort: String(event.data.header.config.reasoningEffort) }
+	};
+	const pending = sameSelection(state.pending, lastUsed) ? null : state.pending;
+	return sameSelection(state.lastUsed, lastUsed) && pending === state.pending ? state : {
+		lastUsed,
+		pending
+	};
+}
+const modelSelectionProjection = {
+	key: "modelSelection",
+	stateSchema: modelSelectionProjectionStateSchema,
+	init: () => ({
+		lastUsed: null,
+		pending: null
+	}),
+	apply: applyModelSelectionProjection,
+	wire: {
+		viewSchema: modelSelectionProjectionSchema,
+		view: (state) => ({
+			lastUsed: state.lastUsed,
+			next: state.pending ?? state.lastUsed
+		})
+	},
+	stateVersion: 2
+};
+function sameSelection(left, right) {
+	return left === right || left !== null && right !== null && left.provider === right.provider && left.model === right.model && left.reasoningEffort === right.reasoningEffort;
+}
+/**
+* Register the durable model-selection projection when the registry is present.
+* @param ctx - neutral model owner with a mounted projection registry.
+*/
+function installModelSelectionProjection(ctx) {
+	ctx.sessionProjections.register(modelSelectionProjection);
+}
+//#endregion
 //#region lib/types/index.js
 /**
 * Default model selection for an Agent without a session-specific selection.
@@ -37,6 +109,7 @@ var AgentDefaultModelConfig = class extends Service {
 	source;
 	constructor(ctx, config) {
 		super(ctx, "agentDefaultModel");
+		ctx.inject(["sessionProjections"], installModelSelectionProjection);
 		const entry = {
 			provider: config.provider,
 			model: config.model

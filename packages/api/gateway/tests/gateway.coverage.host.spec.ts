@@ -112,7 +112,13 @@ describe('Typert Gateway strict error coverage', () => {
       result: stringCodec,
     })
     const unavailable = harness({ descriptor: good })
-    expect(errorCode(await unavailable.invoke({ args: { value: 'x' } }))).toBe('service-unavailable')
+    const unavailableResult = await unavailable.invoke({ args: { value: 'private-input-must-not-appear' } })
+    expect(errorCode(unavailableResult)).toBe('service-unavailable')
+    expect(unavailableResult).toMatchObject({ ok: false, error: {
+      message: expect.stringContaining('mount its provider in the Host composition'),
+    } })
+    expect(JSON.stringify(unavailableResult)).toContain('fixture')
+    expect(JSON.stringify(unavailableResult)).not.toContain('private-input-must-not-appear')
 
     const unbound = harness({ descriptor: good, service: { run: () => 'x' } })
     expect(errorCode(await unbound.invoke({ args: { value: 'x' } }))).toBe('binding-invalid')

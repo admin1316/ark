@@ -1,3 +1,8 @@
+---
+description: "一个压缩（compaction）能力家族（参见能力 seam）：Service Definition、摘要提供方、无模型工具结果修剪配套工具，以及用户命令 Consumer。"
+kind: "package-group"
+---
+
 # compaction/ — 压缩能力家族
 
 [English](README.md) | 中文

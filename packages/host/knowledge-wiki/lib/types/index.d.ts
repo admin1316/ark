@@ -39,6 +39,12 @@ export interface Config {
     readonly llmProvider: string;
     /** LLM model id for ingest/research. */
     readonly llmModel: string;
+    /** Chat-completions base URL the owned stage isolate calls (default https://api.deepseek.com). */
+    readonly llmBaseUrl: string;
+    /** Credential reference holding the model key; empty falls back to the deployment's declared apiKeyEnv. */
+    readonly llmCredential: string;
+    /** Publish the fork's owned-worker stage executor when nothing else provides one. */
+    readonly ownedStageExecutor: boolean;
 }
 /**
  * The knowledgeWiki Remote service: graph, search, pages, ingest queue,
@@ -55,9 +61,13 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     private readonly credential;
     private readonly llmProvider;
     private readonly llmModel;
+    private readonly llmBaseUrl;
+    private readonly llmCredential;
+    private readonly ownedStageExecutor;
     private readonly queue;
     private readonly restoredQueueRoots;
     private readonly snapshots;
+    private embeddingWarningLogged;
     private queueDrain;
     private activeIngest;
     private readonly backgroundStages;
@@ -70,6 +80,13 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     constructor(ctx: Context, config: Config);
     /** Resolve on every operation so Keychain updates apply without a restart. */
     private resolveApiKey;
+    /**
+     * Resolve the model connection facts one ingest stage needs. Credentials are
+     * re-resolved per stage so a changed key applies without a restart, and the
+     * deployment's declared `apiKeyEnv` wins over the environment default.
+     * @returns base URL and bearer credential handed to the owned isolate.
+     */
+    private resolveStageConnection;
     /** Optional trusted verifier/build owner; project files can never supply it. */
     private get verifierAuthority();
     /** Parent-owned hard-deadline stage executor; absence disables non-cooperative ingest. */

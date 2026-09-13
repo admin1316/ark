@@ -328,13 +328,20 @@ export abstract class CredentialProvider extends TypertRemoteService {
    */
   @Remote('describe')
   async remoteDescribe(refs: readonly string[]): Promise<RemoteCredentialsDescription> {
-    const entries = await Promise.all(refs.map(async (name) => {
-      let ref: CredentialRef
+    if (refs.length > 64) throw new TypertLookupFailure({
+      code: 'input-invalid', message: 'credentials describe accepts at most 64 references',
+      details: { maxRefs: 64 },
+    })
+    // Validate the whole batch before any provider work starts.
+    const branded = refs.map(name => {
       try {
-        ref = credentialRef(name)
+        return credentialRef(name)
       } catch (error: unknown) {
         remoteCredentialInputFailure(error as Error, { ref: name })
       }
+    })
+    const entries = await Promise.all(branded.map(async (ref) => {
+      const name = String(ref)
       try {
         const info = await this.describe(ref)
         const view: RemoteCredentialView = {
@@ -351,7 +358,7 @@ export abstract class CredentialProvider extends TypertRemoteService {
   }
 
   /**
-   * Store one write-only credential value through the Native Remote plane.
+   * Store one write-only credential value through the shared Remote plane.
    * @param refName - credential reference name to update.
    * @param value - write-only credential value.
    * @returns an empty object after the value is stored.
@@ -364,6 +371,7 @@ export abstract class CredentialProvider extends TypertRemoteService {
     } catch (error: unknown) {
       remoteCredentialInputFailure(error as Error, { ref: refName })
     }
+    if (value.length === 0) remoteCredentialRejected({ ref: refName })
     try {
       await this.set(ref, value)
     } catch {
@@ -373,7 +381,7 @@ export abstract class CredentialProvider extends TypertRemoteService {
   }
 
   /**
-   * Remove one provider-managed credential through the Native Remote plane.
+   * Remove one provider-managed credential through the shared Remote plane.
    * @param refName - credential reference name to remove.
    * @returns an empty object after the reference is removed.
    */

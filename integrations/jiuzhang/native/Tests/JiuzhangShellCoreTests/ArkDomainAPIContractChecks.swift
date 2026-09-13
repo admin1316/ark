@@ -2,6 +2,21 @@ import Foundation
 import JiuzhangShellCore
 
 func runArkDomainAPIContractChecks() {
+  let workspaceRow: JSONValue = .object([
+    "workspaceId": .string("existing-workspace"),
+    "path": .string("/tmp/ark-workspace-contract"),
+    "title": .string("Workspace"),
+    "sessionIds": .array([]),
+  ])
+  for created in [false, true] {
+    let registration = try? ArkDomainAPIContract.createdWorkspace(from: .object([
+      "workspace": workspaceRow, "created": .bool(created),
+    ]))
+    check(registration?.workspace.id == "existing-workspace" && registration?.created == created,
+          "workspace registration preserves atomic creation ownership for safe rollback")
+  }
+  check((try? ArkDomainAPIContract.createdWorkspace(from: .object(["workspace": workspaceRow]))) == nil,
+        "workspace registration rejects missing creation ownership rather than assuming a new workspace")
   let businessConflict: JSONValue = .object([
     "path": .string("concepts/example.md"),
     "ok": .bool(false),

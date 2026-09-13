@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import { Service } from "@deepseek-ai/cordis";
-import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
+import { Remote, TypertRemoteFailure, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import { SessionPersistenceDeleteBlockedError } from "@deepseek-ai/dsh-session-persistence";
 import { z } from "zod";
 import { SessionId } from "@deepseek-ai/dsh-session";
@@ -712,6 +712,7 @@ let WorkspaceRegistry = (() => {
 			} catch (error) {
 				const cancellation = workspaceCancelledAfterAwait(signal);
 				if (cancellation !== void 0) return cancellation;
+				if (error instanceof TypertRemoteFailure) throw error;
 				return workspaceRemoteError("workspace-invalid-path", error, { path: request.path });
 			}
 		}
@@ -751,13 +752,25 @@ let WorkspaceRegistry = (() => {
 		* @param signal - cancellation.
 		* @returns updated account.
 		*/
-		remoteExportInsertSessionBefore(request, signal) {
-			return this.remoteOperation(signal, async () => {
+		async remoteExportInsertSessionBefore(request, signal) {
+			const result = await this.remoteOperation(signal, async () => {
 				const workspace = this.get(request.workspaceId);
 				if (workspace === void 0) throw new WorkspaceOrderInvalidError(request.workspaceId);
 				await workspace.insertSessionBefore(request.sessionId, request.beforeSessionId);
 				return { workspace: workspaceRemoteView(workspace) };
 			});
+			if (!result.ok && result.error.code === "workspace-move-invalid") return {
+				ok: false,
+				error: {
+					...result.error,
+					details: {
+						workspaceId: request.workspaceId,
+						sessionId: request.sessionId,
+						...request.beforeSessionId === void 0 ? {} : { beforeSessionId: request.beforeSessionId }
+					}
+				}
+			};
+			return result;
 		}
 		/**
 		* Archive a session through the native API while retaining its log.

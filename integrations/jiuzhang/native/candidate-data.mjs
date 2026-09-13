@@ -19,7 +19,7 @@ const overlaps = (a, b) => a === b || a.startsWith(b + path.sep) || b.startsWith
 /**
  * Resolve an explicitly opted-in test build's private home and bundle identity.
  * @param {NodeJS.ProcessEnv} environment Build environment.
- * @returns {{candidate: boolean, home?: string, bundleIdentifier?: string}} Candidate metadata or unchanged production mode.
+ * @returns {{candidate: boolean, home?: string, bundleIdentifier?: string, version?: string, build?: string}} Candidate metadata or unchanged production mode.
  */
 export function candidateDataPlan(environment = process.env) {
   const enabled = environment.JIUZHANG_CANDIDATE_BUILD || '0'
@@ -38,9 +38,17 @@ export function candidateDataPlan(environment = process.env) {
   if (home === path.parse(home).root || protectedRoots.some(root => overlaps(home, root))) {
     throw new Error('Candidate data home overlaps source or production data')
   }
-  const productionID = execFileSync('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', path.join(nativeRoot, 'Resources/Info.plist')], { encoding: 'utf8' }).trim()
+  const production = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', path.join(nativeRoot, 'Resources/Info.plist')], { encoding: 'utf8' }))
+  const version = environment.JIUZHANG_CANDIDATE_VERSION
+  const build = environment.JIUZHANG_CANDIDATE_BUILD_NUMBER
+  if (!version || !/^\d+\.\d+\.\d+$/u.test(version) || version === production.CFBundleShortVersionString) {
+    throw new Error('Candidate version must be an explicit numeric major.minor.patch different from production')
+  }
+  if (!build || !/^\d+(?:\.\d+){0,2}$/u.test(build) || build === production.CFBundleVersion) {
+    throw new Error('Candidate build number must be explicit, numeric and different from production')
+  }
   const suffix = createHash('sha256').update(home).digest('hex').slice(0, 16)
-  return { candidate: true, home, bundleIdentifier: `${productionID}.candidate.${suffix}` }
+  return { candidate: true, home, bundleIdentifier: `${production.CFBundleIdentifier}.candidate.${suffix}`, version, build }
 }
 
 /**
@@ -55,12 +63,14 @@ export function applyCandidateDataPlan(infoPath, plan) {
   const info = fs.lstatSync(infoPath)
   if (!info.isFile() || info.isSymbolicLink()) throw new Error('Candidate Info.plist must be an ordinary file')
   const app = canonical(path.resolve(infoPath, '../..'))
-  if (!app.endsWith('.app') || app === '/Applications/Ark.app' || app.startsWith('/Applications/') || overlaps(plan.home, app) || overlaps(app, canonical(repositoryRoot))) {
+  if (!app.endsWith('.app') || app === '/Applications/Ark.app' || app.startsWith('/Applications/') || overlaps(app, canonical(path.join(homedir(), 'ark/Ark.app'))) || overlaps(plan.home, app) || overlaps(app, canonical(repositoryRoot))) {
     throw new Error('Candidate bundle overlaps a protected or data path')
   }
   for (const [operation, key, type, value] of [
     ['-replace', 'CFBundleIdentifier', '-string', plan.bundleIdentifier],
     ['-replace', 'CFBundleDisplayName', '-string', 'Ark 测试候选'],
+    ['-replace', 'CFBundleShortVersionString', '-string', plan.version],
+    ['-replace', 'CFBundleVersion', '-string', plan.build],
     ['-insert', 'ArkCandidateBuild', '-bool', 'YES'],
     ['-insert', 'ArkCandidateDataHome', '-string', plan.home],
   ]) execFileSync('/usr/bin/plutil', [operation, key, type, value, infoPath])

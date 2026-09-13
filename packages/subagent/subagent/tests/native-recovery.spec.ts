@@ -1,9 +1,10 @@
 import { expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { createTeamRuntime } from '../../agent-team/tests/runtime.ts'
+import { SessionRemoteOperationsService } from '../../../host/session-remote-operations/src/index.ts'
 
 async function runtime() {
   const run = await createTeamRuntime(Array.from({ length: 12 }, () => textResponse('done')))
@@ -100,5 +101,57 @@ it('finishes durability after caller cancellation loses the acceptance race', as
     const saved = await run.ctx.sessionPersistence.inspect(run.childId)
     expect(saved.events.some(event => event.type === 'agent/inbox/spliced'
       && event.data.inserted.some(message => message.id === receipt.messageId))).toBe(true)
+  } finally { await run.dispose() }
+})
+
+
+it('forwards fixed raw, semantic and full content through real child mode admission without resuming either Agent', async () => {
+  const run = await runtime()
+  try {
+    new SessionRemoteOperationsService(run.ctx)
+    const signal = new AbortController().signal
+    const semantic = await run.ctx.subagents.remoteHistory(run.lead.id, run.childId,
+      'continuable', { view: 'semantic' }, undefined, signal)
+    if (semantic.view !== 'semantic') throw new Error('expected child semantic view')
+    const raw = await run.ctx.subagents.remoteHistory(run.lead.id, run.childId,
+      'continuable', { view: 'raw', sourceRevision: semantic.sourceRevision, maxEvents: 1 }, undefined, signal)
+    expect(raw).toMatchObject({ view: 'raw', sourceRevision: semantic.sourceRevision, asOfThroughSeq: semantic.asOfThroughSeq })
+    if (raw.view !== 'raw') throw new Error('expected bound raw child page')
+    expect(raw.events).toHaveLength(1)
+    expect(raw.events[0]?.event.seq).toBe(semantic.asOfThroughSeq)
+    const record = semantic.records.find(record => record.kind === 'assistant')
+    if (record === undefined) throw new Error('expected assistant record')
+    const options = { view: 'content' as const, sourceRevision: semantic.sourceRevision, recordId: record.id, maxCodeUnits: 32 }
+    const first = await run.ctx.subagents.remoteHistory(run.lead.id, run.childId, 'continuable', options, undefined, signal)
+    if (first.view !== 'content') throw new Error('expected child body')
+    await expect(run.ctx.subagents.remoteHistory(run.lead.id, run.childId, 'one-shot',
+      { ...options, contentReadId: first.contentReadId, offset: first.nextOffset }, undefined, signal))
+      .rejects.toMatchObject({ failure: { code: 'subagent-not-found' } })
+    const closed = await run.ctx.subagents.remoteHistory(run.lead.id, run.childId, 'continuable',
+      { ...options, contentReadId: first.contentReadId, close: true }, undefined, signal)
+    expect(closed).toMatchObject({ view: 'content', done: true, text: '' })
+    expect(run.ctx.agents.get(run.childId)).toBeUndefined()
+    await expect(run.ctx.subagents.remoteHistory(run.lead.id, run.childId, 'continuable',
+      { view: 'semantic' }, undefined, AbortSignal.abort())).rejects.toMatchObject({ failure: { code: 'cancelled' } })
+  } finally { await run.dispose() }
+})
+
+it('does not authorize a same-parent replacement with another mode after the catalog read', async () => {
+  const run = await runtime()
+  try {
+    new SessionRemoteOperationsService(run.ctx)
+    const saved = await run.ctx.sessionPersistence.inspect(run.childId)
+    const replacement = Session.create(run.childId, undefined, saved.meta)
+    replacement.append('subagent/descriptor', { version: 3, mode: 'one-shot', provider: 'fixture' })
+    const originalList = run.ctx.subagents.listChildren.bind(run.ctx.subagents)
+    vi.spyOn(run.ctx.subagents, 'listChildren').mockImplementationOnce(async (parent, signal) => {
+      const authorized = await originalList(parent, signal)
+      const originalGet = run.ctx.sessions.get.bind(run.ctx.sessions)
+      vi.spyOn(run.ctx.sessions, 'get').mockImplementation(id => id === run.childId ? replacement : originalGet(id))
+      return authorized
+    })
+    await expect(run.ctx.subagents.remoteHistory(run.lead.id, run.childId, 'continuable',
+      { view: 'semantic' }, undefined, new AbortController().signal))
+      .rejects.toMatchObject({ failure: { code: 'subagent-not-found' } })
   } finally { await run.dispose() }
 })

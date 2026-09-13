@@ -383,7 +383,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#WikiWriteResult',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_createPage_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":770,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":825,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/createProject',
@@ -408,7 +408,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/createProject:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_createProject_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1343,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1398,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/deepResearch',
@@ -434,7 +434,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/deepResearch:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_deepResearch_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1108,"column":9},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1163,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/exportProject',
@@ -449,7 +449,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/exportProject:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_exportProject_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1500,"column":9},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1555,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/fullGraph',
@@ -464,7 +464,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#WikiGraphResult',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_fullGraph_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":617,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":666,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/graph',
@@ -479,7 +479,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#WikiGraphResult',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_graph_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":608,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":657,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/graphInsights',
@@ -494,7 +494,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/graphInsights:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_graphInsights_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1426,"column":9},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1481,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/importProject',
@@ -519,7 +519,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/importProject:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_importProject_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1521,"column":9},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1576,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/ingestQueueAdd',
@@ -544,7 +544,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#IngestQueueSnapshot',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_ingestQueueAdd_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":907,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":962,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/ingestQueueCancel',
@@ -559,7 +559,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#IngestQueueSnapshot',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_ingestQueueCancel_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":933,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":988,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/ingestQueueStatus',
@@ -574,7 +574,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#IngestQueueSnapshot',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_ingestQueueStatus_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":924,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":979,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/ingestSource',
@@ -599,7 +599,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#IngestOutcome',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_ingestSource_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":794,"column":9},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":849,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/ingestUrl',
@@ -624,7 +624,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#IngestOutcome',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_ingestUrl_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":875,"column":9},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":930,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/knowledgeUtility',
@@ -639,7 +639,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/knowledgeUtility:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_knowledgeUtility_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":652,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":707,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/lint',
@@ -654,7 +654,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/lint:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_lint_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1473,"column":9},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1528,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/list',
@@ -669,7 +669,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/list:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_list_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":626,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":675,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/listProjects',
@@ -684,7 +684,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/listProjects:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_listProjects_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1303,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1358,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/pageContent',
@@ -709,7 +709,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#WikiPageContent',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_pageContent_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":706,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":761,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/recordKnowledgeOutcome',
@@ -734,7 +734,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/recordKnowledgeOutcome:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_recordKnowledgeOutcome_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":663,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":718,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/removeProject',
@@ -759,7 +759,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/removeProject:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_removeProject_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1385,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1440,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/resolveReview',
@@ -784,7 +784,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/resolveReview:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_resolveReview_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1214,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1269,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/resolveReviews',
@@ -809,7 +809,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/resolveReviews:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_resolveReviews_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1242,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1297,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/reviews',
@@ -834,7 +834,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/reviews:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_reviews_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1156,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1211,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/search',
@@ -859,7 +859,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/search:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_search_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":638,"column":9},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":687,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/setProject',
@@ -884,7 +884,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/setProject:result',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_setProject_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1316,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1371,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/verifyCandidate',
@@ -910,7 +910,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#CandidateVerificationResult',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_verifyCandidate_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1175,"column":9},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":1230,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-knowledge-wiki#knowledgeWiki/writePage',
@@ -935,7 +935,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-knowledge-wiki/types#WikiWriteResult',
         schema: _deepseek_ai_dsh_knowledge_wiki_knowledgeWiki_writePage_result$schema,
       },
-      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":729,"column":3},
+      sourceLocation: {"file":"packages/host/knowledge-wiki/src/index.ts","line":784,"column":3},
     },
   ],
   model: {

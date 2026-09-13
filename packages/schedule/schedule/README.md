@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-schedule` gives your session durable reminders: ask the model to remind you later, and the reminder comes back as an ordinary follow-up message in the same conversation. You can schedule a one-time reminder after a delay or at an absolute time, or a repeating reminder on a fixed interval, and you can list what is still pending or cancel a reminder. Reminders survive restarts: an already-live idle agent can deliver due work immediately, while a closed or cold session keeps it overdue until a future live root agent resumes the session. Delivery stays inside the session, with no email, SMS, or push notification. It is an opt-in Web capability; load the Schedule overlay to enable the reminder tools.
+`dsh-schedule` gives your session durable reminders: ask the model to remind you later, and the reminder comes back as an ordinary follow-up message in the same conversation. You can schedule a one-time reminder after a delay or at an absolute time, or a repeating reminder on a fixed interval, and you can list what is still pending or cancel a reminder. Reminders survive restarts: an already-live idle agent can deliver due work immediately, while a closed or cold session keeps it overdue until a future live root agent resumes the session. Delivery stays inside the session, with no email, SMS, or push notification. It is an opt-in Host capability; load the Schedule overlay in a configured profile to enable the reminder tools.
 
 ## Table of Contents
 
@@ -33,10 +33,10 @@ Choose Schedule when you want reminders delivered as messages in the same live c
 
 ### Enable Schedule
 
-Add the Schedule overlay to a `dsh web` session; the reminder tools then appear in the conversation and the model can use them right away:
+Use a configured long-lived profile with Session persistence and root Agents, and declare the Schedule and time-context packages as dependencies. In this example, `my-agent` names that installed profile; the [setup guide](../../../docs/user/guide/schedule.md) defines the prerequisites:
 
 ```sh
-dsh web --patch apps/cli/config/examples/schedule/cordis.yml
+dsh --profile my-agent --patch apps/cli/config/examples/schedule/cordis.yml
 ```
 
 Success looks like this: ask the model "remind me in 10 minutes to review the PR", and it replies with the reminder's id, its target time, and a `scheduled` state. If storage cannot be confirmed at that moment, the tool reports `persistence_uncertain` and suggests re-listing instead of claiming success.
@@ -45,7 +45,7 @@ Enable the overlay before starting the session you want reminders in: a session 
 
 ### Schedule a reminder
 
-One-time reminders come in two forms: after a delay — for example "in 30 minutes" — or at an absolute time, given either as an instant with an explicit offset such as `2026-09-01T15:00:00+08:00` or as a local date and time with a named zone such as `Europe/Berlin` (the browser's zone applies only when the time-context overlay is present). Repeating reminders run on a fixed interval of at least 5 minutes and stay aligned to the time you first set them. Every reminder needs content to show when it fires.
+One-time reminders come in two forms: after a delay — for example "in 30 minutes" — or at an absolute time, given either as an instant with an explicit offset such as `2026-09-01T15:00:00+08:00` or as a local date and time with a named zone such as `Europe/Berlin` (a request-local zone applies to natural-language interpretation only when time-context is mounted). Repeating reminders run on a fixed interval of at least 5 minutes and stay aligned to the time you first set them. Every reminder needs content to show when it fires.
 
 A successful create returns the reminder with its id, target time, state, and delivery mode; `schedule_list` shows all pending reminders in the order you created them; canceling by id removes a pending reminder, and an unknown or already-finished id reports `schedule_not_found` without changing anything.
 
@@ -69,7 +69,7 @@ This section explains the design decisions behind the plugin and points at the c
 
 The plugin declares `inject = ['agents', 'sessions', 'tools', 'sessionPersistence']`, so a missing persistence service is a composition error. It observes only `agent/created` events published after it loads, installs on those root Agents, and registers all three tools through the exact `agent.ctx`; Agents already live at load time and runtime children never receive Schedule.
 
-Time-context is not a Schedule dependency. The official Web overlay mounts `@deepseek-ai/dsh-time-context` so the model can interpret natural language in the browser's request-local zone, but the model must still pass an explicit offset or `time_zone` to `schedule_create`; Schedule never imports or infers from model context.
+Time-context is not a Schedule dependency. The example overlay mounts `@deepseek-ai/dsh-time-context` so the model can interpret natural language in a caller-provided request-local zone, but the model must still pass an explicit offset or `time_zone` to `schedule_create`; Schedule never imports or infers from model context.
 
 ### Design philosophy
 

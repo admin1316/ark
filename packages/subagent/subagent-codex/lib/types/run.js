@@ -107,7 +107,7 @@ export async function disposeCodexChild(wire, child) {
     wire.close();
     if (child.pid > 0) {
         let outcome;
-        void child.done.then((value) => { outcome = value; },
+        void child.done.then((value) => { outcome = value; }, 
         /* v8 ignore next -- a positive pid excludes spawn-level done rejection. */
         () => { });
         try {

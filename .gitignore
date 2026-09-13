@@ -6,3 +6,8 @@ node_modules/
 .DS_Store
 /tsconfig.host.tsbuildinfo
 /*.tsbuildinfo
+*.tsbuildinfo
+*.orig
+.sessions/
+.llm-wiki/
+wiki/

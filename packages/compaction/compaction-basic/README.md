@@ -1,10 +1,26 @@
+---
+description: "The basic compaction backend: a BasicCompactionEngine implementing the @deepseek-ai/dsh-compaction Service Definition with reusable ctx.tokenMeter pressure, token-budget retention, and summarization as a direct one-shot ctx.llm.stream() call that replays the conversation prefix to reuse the provider's KV cache (interceptable at llm/stream)."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-compaction-basic
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The **basic compaction backend**: a `BasicCompactionEngine` implementing the `@deepseek-ai/dsh-compaction` Service Definition with reusable `ctx.tokenMeter` pressure, token-budget retention, and summarization as a direct one-shot `ctx.llm.stream()` call that replays the conversation prefix to reuse the provider's KV cache (interceptable at `llm/stream`).
 
 This package owns the Service Provider role of the compaction capability — see the [Service Definition package](../compaction/README.md) for its contract and the [capability-seam Agent Note](../../../.agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.md) for the design.
+
+## Table of Contents
+
+- [What it owns](#what-it-owns)
+- [Config (BasicCompactionConfig)](#config-basiccompactionconfig)
+- [Usage](#usage)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## What it owns
 
@@ -162,3 +178,7 @@ The replayed system prompt, tools, and shadowed-region messages match the conver
 - **Some indivisible-unit and envelope-only overflow remains outside surface compaction** — recovery cannot shrink system/tools/prefix, split an indivisible non-tool node, or repair a tool unit whose non-prunable remainder still exceeds the window. The optional pruner can shrink text-bearing tool-result bulk inside an otherwise indivisible pair.
 - **`compactRegion` requires an open turn** — a manual call on a fully-closed session throws ("no open turn") rather than compacting.
 - **Summarization failure preserves the latest durable surface** — before any replacement, the auto path logs a warning and proceeds with full over-budget history. If pruning already landed, a later summarization failure proceeds from that durable pruned surface. Summarization truncation at `maxTokens`, which hidden reasoning tokens can consume, follows the same rule.
+
+### Dev Note
+
+None.

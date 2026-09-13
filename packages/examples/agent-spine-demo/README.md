@@ -1,10 +1,27 @@
+---
+description: "The default executor-less, UI-less agent spine as ONE Cordis bundle plugin."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-agent-spine-demo
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The **default executor-less, UI-less agent spine** as ONE Cordis bundle plugin. It loads the fixed set of services every harness agent needs, including the local skill provider, and forwards the loop's `agents` list as its own config — so an app package composes a working agent by adding only an entry point and the swappable backends.
 
 Read this package for the whole plugin tree and its composition order.
+
+## Table of Contents
+
+- [The tree it loads](#the-tree-it-loads)
+- [What it deliberately leaves OUTSIDE the bundle](#what-it-deliberately-leaves-outside-the-bundle)
+- [Config](#config)
+- [Why a code bundle, not a shared YAML include](#why-a-code-bundle-not-a-shared-yaml-include)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## The tree it loads
 
@@ -81,3 +98,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 - **Most of the spine set is fixed in code** — `apply()` always mounts the core services; config can omit bundled goals, skills, bash, and task-control tools, but swapping the loop or dropping another spine member means composing a different bundle.
 - **The invariant service and companions remain fixed members** — `invariants.enabled: false` or package filters suppress checks but do not remove the service or companion registrations; Session's always-on validation and freezing are separate.
+
+### Dev Note
+
+None.

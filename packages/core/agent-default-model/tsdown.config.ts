@@ -3,7 +3,7 @@ import { defineConfig } from 'tsdown'
 /** Build the package root and invariant companion as independent bundles. */
 export default defineConfig([
   {
-    entry: ['lib/types/index.js'],
+    entry: ['lib/types/index.js', 'lib/types/session-selection.js'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

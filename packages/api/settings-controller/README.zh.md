@@ -1,5 +1,5 @@
 ---
-description: "settings 与凭据配置界面的 Host Remote owner，涵盖脱敏读取、写入、凭据引用与原生文档打开。"
+description: "补充 provider 所有 settings 与凭据 Remote 方法的 Host 桌面操作。"
 kind: "package-reference"
 ---
 # Settings Controller
@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-api-settings-controller` 为浏览器配置界面提供生成的 `ctx.remote.settings` 与 `ctx.remote.credentials` namespace。它返回脱敏的 settings 与凭据元数据，支持 settings 与凭据写入而不返回密钥值，并在 Host 桌面打开由 provider 持有的 settings 或 Agent preset 位置。provider 缺失时，namespace 仍会注册，并返回可操作的配置错误。
+`@deepseek-ai/dsh-api-settings-controller` 只提供 settings namespace 的 Host 桌面操作：打开 settings 文档、查询 Agent preset 目录打开能力及打开该目录。通用 settings 与 credentials Remote 由各自 core provider 唯一持有，浏览器与 Native 复用同一份协议。
 
 ## 目录
 
@@ -23,11 +23,9 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-请把本包作为 Loader entry 挂载到提供浏览器配置的 profile 中。本 entry 不依赖 provider 是否存在而注册两个 namespace，因此缺少 provider 会在调用时产生具名配置错误。它生成的 descriptor 进入严格 Typert registry，而 settings 与凭据 Definition 仍是普通 Cordis Service，自身不承担任何 wire 义务。
+请把本包作为 Loader entry 挂载到需要 Host 桌面操作的 profile 中。它只注册 `canOpenAgentPresetDirectory`、`openSettingsDocument` 与 `openAgentPresetDirectory`；不会再挂载凭据控制器或声明重复的读取、写入端点。`openSettingsDocument` 委托 core provider 的 `remoteOpenDocument`，复用绝对路径归属、取消信号及错误脱敏检查。
 
-`describe(refs)` 以请求的名字为键返回一份 map，因此设置页描述其各行携带的全部引用时，这些行会一起落定。单次调用最多接受 64 个名字，无效名字或空写入值报告为 `bad-request`，并逐字段复制每个答案——provider 返回超出 `CredentialInfo` 声明的内容也无法扩大跨越 wire 的字段。有效的 `set(ref, value)` 与 `unset(ref)` 调用把 provider 拒绝报告为 `credential-rejected`，携带 provider 的消息，details 中只有该引用。密钥值只在这个方向跨越 wire：这里没有任何方法会返回它。
-
-`settings.describe()` 返回部署信息，以及在 `redactSecrets: true` 下读取的所有 namespace。`settings.update`、`settings.replace` 与 `settings.mutate` 暴露 settings service 的三种写入操作，并返回该 namespace 的新脱敏视图；过期写入使用 `settings-conflict`，其他 provider 拒绝使用 `settings-rejected`。
+`settings.describe/update/replace/mutate` 归 `@deepseek-ai/dsh-settings` 所有，受领域事务保护的 namespace 不能通过通用 Remote 写入。`credentials.describe/set/unset` 归 `@deepseek-ai/dsh-credentials` 所有；describe 返回 `{ credentials: { [ref]: metadata } }`，最多 64 项，整批名字验证通过后才访问 provider。无效名字与超限批次返回 `input-invalid`，空值及 provider 拒绝返回 `credential-rejected`；错误不会反射 provider 的敏感诊断。缺少 core Service 的诊断由 Gateway 提供；本包独有操作仍保留可操作的缺 provider 错误。
 
 `settings.openSettingsDocument()` 准备 provider 持有的文档，并用原生文本编辑器意图将其打开。`settings.canOpenAgentPresetDirectory()` 在 preset 页面显示时报告原生打开能力。`settings.openAgentPresetDirectory(id)` 只解析用户创作的 preset，并在原生打开不可用时返回目录路径；两个打开方法都不接受浏览器提供的文件系统目标。
 
@@ -57,7 +55,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 批量上限固定为 64 个引用，不是可按部署配置的字段。
+- 凭据批量策略归 core credential provider 所有，不由此桌面操作包配置。
 
 <a id="dev-note"></a>
 ### 开发备注

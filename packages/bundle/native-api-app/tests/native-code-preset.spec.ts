@@ -87,6 +87,8 @@ describe('Native Code preset composition', () => {
         setup: agentCtx => context.agentPresets.mount(agentCtx, preset).then(() => undefined),
       })
       try {
+        const goalCommands = context.commands.list(handle.agent).filter(command => command.name === 'goal')
+        expect(goalCommands).toHaveLength(1)
         return (await context.systemPrompt.assemble({ scope: handle.agent })).tools.map(tool => tool.name)
       } finally {
         await handle.dispose()
