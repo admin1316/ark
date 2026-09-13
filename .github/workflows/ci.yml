@@ -77,6 +77,12 @@ jobs:
       DSH_COVERAGE_MAX_WORKERS: '2'
       DSH_COVERAGE_PARTITIONS: '4'
       DSH_GATE_CONCURRENCY: '2'
+      # Instrumented and heavy subprocess fixtures can exceed Vitest's default 5 s
+      # under gate contention (scripts/oxlint-contract.spec.ts timed out at 5000 ms
+      # on this runner as well as locally). This reuses the extended-budget owner
+      # run-gates already applies through coverageTestTimeoutArgs(); the complete
+      # native Windows lane sets the same 30 s.
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000'
     steps:
       - uses: actions/checkout@v6
         with:

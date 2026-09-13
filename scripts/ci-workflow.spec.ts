@@ -11,6 +11,21 @@ const runnerPrivatePnpmDestination =
 const nativeWindowsPnpmDestination = '${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}'
 
 describe('CI workflow', () => {
+  it('gives the Linux coverage lane the extended gate timeout budget', () => {
+    // The Linux coverage lane runs instrumented plus heavy subprocess fixtures.
+    // Vitest's default 5 s per-test budget is not enough for scripts/oxlint-contract.spec.ts
+    // under gate contention (it timed out at 5000 ms on this runner and locally),
+    // so the job must keep supplying the budget run-gates already knows how to apply.
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const coverage = workflowJob(workflow, 'node-24-coverage')
+    expect(coverage.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: '2',
+      DSH_COVERAGE_PARTITIONS: '4',
+      DSH_GATE_CONCURRENCY: '2',
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+    })
+  })
+
   it('isolates every pnpm action setup destination per runner', () => {
     const files = ['.github/workflows/ci.yml', '.github/workflows/ci-master.yml']
     const setups: Array<{ jobName: string; step: unknown }> = []
