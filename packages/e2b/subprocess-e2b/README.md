@@ -1,8 +1,23 @@
+---
+description: "E2B implementation of the @deepseek-ai/dsh-subprocess seam."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-subprocess-e2b
 
 English | [中文](README.zh.md)
 
+## Summary
+
 E2B implementation of the [`@deepseek-ai/dsh-subprocess`](../../subprocess/subprocess/README.md) seam. Load [`@deepseek-ai/dsh-e2b`](../e2b/README.md) first, then this service in place of `dsh-subprocess-local`. Existing Bash, PTY, and LSP consumers then execute in the shared remote sandbox without E2B-specific capability packages.
+
+## Table of Contents
+
+- [Configuration](#configuration)
+- [Behavior](#behavior)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Configuration
 
@@ -41,3 +56,7 @@ No direct invalidation; the named consumers own any request-prefix changes.
 - **E2B exposes no signal fact** — an adapter-requested `SIGTERM` or `SIGKILL` is reported only when no wrapper-published direct exit code wins; every unrequested SDK exit remains an exit code, including values equal to `128 + signal`.
 - **Exact terminal stdin-wait inspection is unavailable** — E2B exposes the foreground process group but not the syscall evidence needed to prove it is waiting on fd 0, so the generic PTY backend falls back to controlled prompt markers and bounded silence.
 - **Linux utility and E2B transport semantics are assumed** — there is no Windows, escaped-session recovery, or network-partition fidelity layer.
+
+### Dev Note
+
+None.

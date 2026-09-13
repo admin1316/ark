@@ -1,3 +1,8 @@
+---
+description: "agent 会话的持久目标状态，独立于消费它的面向模型工具与续行策略。"
+kind: "package-group"
+---
+
 # goal/：持久化的同会话目标
 
 [English](README.md) | 中文

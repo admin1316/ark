@@ -860,12 +860,7 @@ let LlmRuntime = (() => {
                 const { settingsNs, ...draft } = request;
                 const models = await this.discoverModels(settingsNs, draft, signal);
                 checkCancellation();
-                return { models: models.map(model => ({
-                        id: model.id,
-                        ...model.name === undefined ? {} : { name: model.name },
-                        ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
-                        ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
-                    })) };
+                return { models };
             }
             catch {
                 // One-shot credentials and provider response details must not escape the request.

@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-将受支持的已发布 V2 Session 恢复为 V3，同时保留历史请求含义。本页是这条相邻迁移边的单一规范真源：先说明转换、保留与拒绝的内容，再单独说明原生 V3 准入。本库将系统提示词提升为消息，重映射本地事件引用，转换 PTC 与预设名称，并规范化信封。持久化通过静态目录使用本库；本库不读取或发布文件。
+将受支持的已发布 V2 Session 恢复为 V3，同时保留历史请求含义。本页是这条相邻迁移边的单一规范真源：先说明转换、保留与拒绝的内容，再单独说明原生 V3 准入。本库将系统提示词提升为消息，重映射本地事件引用，转换 PTC 与预设名称，并规范化信封。离线目录装配该迁移边；Ark 已安装的 v0 持久化不会使用它。本库不读取或发布文件。
 
 ## 目录
 
@@ -36,7 +36,7 @@ kind: "package-library"
 
 ### 使用场景
 
-使用[目录](../session-format-catalog/README.zh.md)恢复 Session。直接导入用于目录组装和测试；本库没有 Cordis 挂载配置。[公共导出](src/index.ts)提供迁移声明、已发布 V2 源编解码器、V3 目标编解码器、目标头校验器和目标恢复器。
+使用[目录](../session-format-catalog/README.zh.md)进行已发布格式的离线转换。直接导入用于目录组装和测试；本库没有 Cordis 挂载配置。[公共导出](src/index.ts)提供迁移声明、已发布 V2 源编解码器、V3 目标编解码器、目标头校验器和目标恢复器。
 
 ### 入口
 
@@ -46,7 +46,7 @@ kind: "package-library"
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-完整恢复将解码后的事件送入新的阶段，并校验目标产物。调用方不得将阶段的部分输出视为成功恢复：错误可能出现在后续事件或 `finish()`。[格式协议](../session-format/README.zh.md)负责阶段调度与目录错误处理；[JSONL 持久化](../session-persistence-jsonl/README.zh.md)负责读取准备和不可变后继代的发布。
+完整恢复将解码后的事件送入新的阶段，并校验目标产物。调用方不得将阶段的部分输出视为成功恢复：错误可能出现在后续事件或 `finish()`。[格式协议](../session-format/README.zh.md)负责阶段调度与目录错误处理。调用方负责文件访问；本迁移边没有持久化发布路径。
 
 -----
 
@@ -129,7 +129,7 @@ V2 `session-log-deepseek/delivery-accepted` 若携带 `data.sessionFormatVersion
 | PTC 前代输出 | `tool/code-dispatch.data.content` |
 | 内嵌 assistant 流 | `assistant/message.data.stream[]` 和 `assistant/attempt.data.stream[]` 中的原始 `type: 'chunk'` 记录：`block-end` 的 `chunk.block` 和 `block-start` 的 `chunk.blockType`，包括尚无完整块的起始记录 |
 
-所有位置共用同一历史种类集合；未完成的起始记录不能引入未知种类。未知种类和归本格式所有的畸形块都会拒绝整次迁移；目录恢复报告 `SessionFormatUnsupportedMigrationError`。诊断标明源事件类型、源序号、包含索引的完整载荷路径和违反的规则。未知种类错误标明违规种类；已知块的畸形错误标明种类和字段错误。畸形内容容器或缺失块报告其位置，而不虚构种类。拒绝时，持久化保留源字节且不发布后继代。
+所有位置共用同一历史种类集合；未完成的起始记录不能引入未知种类。未知种类和归本格式所有的畸形块都会拒绝整次迁移；目录恢复报告 `SessionFormatUnsupportedMigrationError`。诊断标明源事件类型、源序号、包含索引的完整载荷路径和违反的规则。未知种类错误标明违规种类；已知块的畸形错误标明种类和字段错误。畸形内容容器或缺失块报告其位置，而不虚构种类。拒绝时不产生已恢复产物；本库绝不修改源字节或发布文件。
 
 准入不改写内容。特别是，内嵌流虽然接受归本格式所有的块字段检查，其字节仍保持不变。工具参数、`replayState.response` 和 `replayState.blocks` 保持不透明；任意 JSON 内的同名字段不会触发此审计。文件附件元数据接受校验，但标识或字节计数不会被解释为 Session 引用。这不是通用 schema 审计或递归坐标推断，原生 V3 扩展准入与此分开。
 
@@ -140,7 +140,7 @@ V2 `session-log-deepseek/delivery-accepted` 若携带 `data.sessionFormatVersion
 <a id="native-v3-admission"></a>
 ## 原生 V3 准入
 
-已标记为 V3 的输入不运行 V2 到 V3 迁移。使用 `validation: 'transformed'` 的原生目录读取仅执行编解码器检查，跳过产物恢复；完整关系、开放步骤归属、受保护头节点操作与词汇检查需要 `restoreReleasedV3Artifact` 或目录的 `validation: 'current'`。以下规则区分这些恢复检查与编解码器准入；它们不是额外的历史转换：
+已标记为 V3 的输入不运行 V2 到 V3 迁移。使用 `validation: 'transformed'` 的原生目录读取仅执行编解码器检查，跳过产物恢复；完整关系、开放步骤归属、受保护头节点操作与词汇检查需要 `restoreReleasedV3Artifact`。目录的 `validation: 'current'` 额外执行已安装准入，在 Ark core 为 v0 时拒绝 v3。以下规则区分这些恢复检查与编解码器准入；它们不是额外的历史转换：
 
 - 原生 V3 接纳历史内系统消息追加、非头系统节点替换和非头系统节点压缩。系统消息要求有效载荷及匹配的开放步骤归属。首个 surface 系统头节点只能被恰好覆盖该头节点的系统消息替换；普通替换和压缩不能消耗它。迁移本身只产生初始头节点与头节点替换，不产生依赖路由的历史内更新。
 - 原生 V3 拒绝任何 `request/header.data.header.system`，包括空值或格式错误值，并拒绝非规范替换拼写及两个空请求头可选字段。它保留空白内容、空停止列表和已接纳的嵌套 header/source/data 扩展。此扩展准入不会扩大 V2 源审计或精确的逻辑 Session 头字段范围。
@@ -157,7 +157,7 @@ V2 `session-log-deepseek/delivery-accepted` 若携带 `data.sessionFormatVersion
 
 [阶段](src/migration.ts)拥有每份产物独立的同步序列映射、消息身份集合和提示词/生命周期状态。紧凑事件段增量展开。[编解码器](src/codec.ts)复用冻结的 V2 分帧；[恢复器](src/validation.ts)先校验 V3 结构，再向冻结的普通关系校验提供私有 system/PTC/修复标识与端点视图。该视图为投递检查保留实际目标代次，且绝不对外返回：恢复返回原始 V3 产物与身份。冻结的 V0 到 V1 和 V1 到 V2 语义保持不变。本库不拥有可独立观察的注册或状态副本，因此不发布运行时不变量伴随入口。
 
-[组合目录测试](tests/combined-migration.spec.ts)验证转换组合与原生重新打开；[迁移测试](tests/migration.spec.ts)和[规范测试](tests/canonical-envelopes.spec.ts)固定保留与拒绝规则。[持久化集成](../session-persistence-jsonl/tests/v2-ptc-migration.spec.ts)负责发布证据。[已发布格式决策](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md)负责将相邻组合测试与原生准入测试分开的依据。
+[组合目录测试](tests/combined-migration.spec.ts)验证转换组合与原生重新打开；[迁移测试](tests/migration.spec.ts)和[规范测试](tests/canonical-envelopes.spec.ts)固定保留与拒绝规则。这些离线检查不代表 Ark 活动持久化或发布兼容性已经成立。[已发布格式决策](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.zh.md)负责将相邻组合测试与原生准入测试分开的依据。
 
 </details>
 
@@ -167,8 +167,8 @@ V2 `session-log-deepseek/delivery-accepted` 若携带 `data.sessionFormatVersion
 ## 深入探索
 
 - [已发布 V1 到 V2](../session-format-v1-to-v2/README.zh.md) — 冻结的前代转换与源编解码器。
-- [系统提示词 surface 决策](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md) — 提示词归属与头节点保护依据。
-- [规范 V3 信封决策](../../../.agents/notes/implemented/architecture/2026-09-06-v3-canonical-session-envelopes.md) — 严格准入与校验归属。
+- [系统头转换](#system-head) — 提示词归属与头节点保护行为。
+- [规范信封](#canonical-envelopes) — 精确的结构准入。
 
 -----
 
@@ -194,7 +194,7 @@ V2 `session-log-deepseek/delivery-accepted` 若携带 `data.sessionFormatVersion
 <a id="known-limitations-and-deferred-work"></a>
 
 - **历史预设歧义** — 已发布 `code` 引用无法区分与旧内置标识同名的自定义预设；[精确重命名](#header-and-presets)不依赖宿主。
-- **不迁移文件或设置** — 本包绝不修改已提交代或 `settings.yaml`。持久化负责发布最终后继代；已有 V3 代不重新运行其入边。格式发布状态见[状态记录](../../../docs/session-format-status.md)，兼容性义务见[已发布格式策略](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md)。
+- **不迁移文件或设置** — 本包绝不修改已提交代或 `settings.yaml`。离线 V3 输入不重新运行其入边。[目录](../session-format-catalog/README.zh.md)负责区分离线目标校验与已安装运行时准入。
 
 <a id="dev-note"></a>
 ### 开发备注

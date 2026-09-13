@@ -6,7 +6,7 @@ const root = resolve(import.meta.dirname, '..')
 const script = resolve(root, 'scripts/build-exe-for-python-sdk.ts')
 
 describe('Python runtime executable assets', () => {
-  it('packages the dynamically resolved web frontend distribution', () => {
+  it('packages runtime resources without the retired web frontend distribution', () => {
     const result = spawnSync(process.execPath, [
       '--import',
       'tsx/esm',
@@ -21,7 +21,7 @@ describe('Python runtime executable assets', () => {
     })
 
     expect(result.status).toBe(0)
-    expect(result.stdout).toContain('node_modules/@deepseek-ai/dsh-web-frontend/dist/**/*')
+    expect(result.stdout).not.toContain('node_modules/@deepseek-ai/dsh-web-frontend/dist/**/*')
     expect(result.stdout).toContain('node_modules/@deepseek-ai/dsh-skill-badge/assets/**/*')
   })
 })

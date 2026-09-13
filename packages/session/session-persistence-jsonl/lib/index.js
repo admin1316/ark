@@ -1204,7 +1204,6 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 			signal?.throwIfAborted();
 			for (const dir of await this.listSessionDirs(project, signal)) {
 				signal?.throwIfAborted();
-				try {
 				const opposite = join(dir, `session${logSuffix(this.oppositeCompression())}`);
 				const oppositeExists = await this.exists(opposite);
 				signal?.throwIfAborted();
@@ -1213,7 +1212,16 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 				const pathExists = await this.exists(path);
 				signal?.throwIfAborted();
 				if (!pathExists) continue;
-				const first = this.compression === "zstd" ? await this.readFirstZstdLine(path, signal) : await this.readFirstLine(path, signal);
+				let first;
+				try {
+					first = this.compression === "zstd" ? await this.readFirstZstdLine(path, signal) : await this.readFirstLine(path, signal);
+				} catch (error) {
+					signal?.throwIfAborted();
+					if (isENOENT(error)) continue;
+					if (!(error instanceof Error) || !error.message.startsWith("corrupt Zstandard session log:")) throw error;
+					this.ctx.logger.warn(`${this.name}: skipping corrupt session header at "${dir}": ${error.message}`);
+					continue;
+				}
 				signal?.throwIfAborted();
 				if (first === void 0) continue;
 				const meta = parseHeaderMeta(first);
@@ -1226,10 +1234,6 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 					header: meta,
 					path
 				});
-				} catch (error) {
-									signal?.throwIfAborted();
-									this.ctx.logger.warn(`${this.name}: skipping unreadable session log at "${dir}": ${error instanceof Error ? error.message : String(error)}`);
-								}
 			}
 		}
 		signal?.throwIfAborted();

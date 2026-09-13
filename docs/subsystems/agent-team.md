@@ -84,6 +84,41 @@ interface TeamTaskSnapshot {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxagentteamremote--teamremoteadapter"></a>
+
+### `ctx.agentTeamRemote` — `TeamRemoteAdapter`
+
+Keeps the experimental Remote wire namespace without owning Team state or lifetime.
+
+```ts cordis-catalog
+/**
+ * Read the current roster and non-deleted task board through the generated Remote API.
+ * @param agent - exact live Team member used as the authority credential.
+ * @returns detached current roster and task views.
+ */
+@Remote('view') remoteView(agent: Agent): TeamView
+
+/**
+ * Create one shared task through the generated Remote API.
+ * @param agent - exact live Team member creating the task.
+ * @param request - task text, blockers, and advisory write scopes.
+ * @returns the revision-one task or a typed Team rejection.
+ */
+@Remote('createTask') remoteCreateTask(agent: Agent, request: CreateTeamTaskRequest): Promise<TeamTaskMutationResult>
+
+/**
+ * Apply one task mutation and preserve Team rejections as business results.
+ * @param agent - exact live Team member authorizing the mutation.
+ * @param request - task identity, expected revision, action, and action fields.
+ * @returns the committed task or a typed Team rejection.
+ */
+@Remote('updateTask') remoteUpdateTask(agent: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskMutationResult>
+```
+
+Types: [Agent](core.md)
+
+Source: [`packages/experimental/agent-team/src/index.ts`](../../packages/experimental/agent-team/src/index.ts)
+
 <a id="ctxagentteams--teamservice"></a>
 
 ### `ctx.agentTeams` — `TeamService`

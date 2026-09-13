@@ -1,5 +1,5 @@
 ---
-description: "供持久化读取方使用的构建期静态第一方 Session 格式编解码器与相邻迁移装配。"
+description: "供离线转换使用的静态第一方 Session 编解码器与相邻迁移装配。"
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-session-format-catalog` 为持久化提供一个确定性的 Session 格式读取器，且无需查询已挂载插件。它装配从最早受支持格式到[当前写入格式](../../../docs/session-format-status.md)的编解码器与相邻迁移边，在模块初始化时校验完整且无缺口的迁移链，并通过 `sessionFormatCatalog` 暴露物理分派、仅 header 分类、单遍行还原和当前格式逐记录编码。
+`dsh-session-format-catalog` 装配已发布的 v0–v3 编解码器与相邻迁移边，无需查询已挂载插件。目录目标格式是 v3；Ark 安装的 `dsh-session` 写入器与持久化读取器使用 v0，尚未接入本目录。转换后的 v3 artifact 是离线迁移结果，不代表 Ark 可以安装或恢复该会话。
 
 ## 目录
 
@@ -27,12 +27,11 @@ kind: "package-library"
 
 ### 何时使用
 
-当持久化与测试支持读取方需要在任何功能插件挂载前取得完整第一方已发布格式清单时，导入本库。功能组合不会注册或重排其条目。它不发布运行时不变式伴生入口，因为构造过程会拒绝无效静态清单，每次完成的还原也会校验结果；可变行 decoder 状态只属于一次由调用方持有的流式还原。
+本库用于隔离的已发布格式转换与校验。功能组合不能注册或重排条目。Ark 的 JSONL 持久化未调用这些迁移，并会拒绝其他会话版本。可变行 decoder 状态只属于调用方持有的一次还原。
 
 ### 入口
 
 ```text
-const descriptor = sessionFormatCatalog.readHeader(physicalHeader)
 const restore = sessionFormatCatalog.createRestore(physicalHeader, { recovery: 'recoverable', validation: 'transformed' })
 for (const row of physicalRows) restore.decodeRow(row)
 const current = restore.finish()
@@ -40,11 +39,11 @@ const headerRecord = sessionFormatCatalog.encodeCurrentHeader(current.header, cu
 const eventRecords = current.events.map(sessionFormatCatalog.encodeCurrentEvent)
 ```
 
-从包根导入 `sessionFormatCatalog`。JSONL 与 fixture 读取方创建一次 restore，把每个已解析物理行传给 `decodeRow()`，再调用一次 `finish()`。Writer 通过 `encodeCurrentHeader()` 与 `encodeCurrentEvent()` 序列化返回的当前 artifact。列表读取调用 `readHeader()`，绝不打开事件正文。
+从包根导入 `sessionFormatCatalog`。离线读取方创建一次 restore，把已解析物理行传给 `decodeRow()`，再调用一次 `finish()`。编码方法生成目录目标 v3 记录，不能用于写入 Ark 活动中的 v0 历史。`readHeader()` 按离线可读性分类：有效 v0–v2 标头需要迁移，有效 v3 标头属于本目录的当前格式，未来版本不受支持，畸形标头被拒绝。
 
-Production 历史读取使用 `{ recovery: 'recoverable', validation: 'transformed' }`。Worker 与 fixture 校验使用 `{ recovery: 'strict', validation: 'current' }`。Transformed validation 会在迁移后执行已发布 current 规则，但对已经是 current 的输入有意跳过已安装语义校验。
+`validation: 'transformed'` 在迁移后执行完整的已发布 v3 校验。已经是 v3 的输入只接受编解码器检查；完整的离线关系校验需要把结果传给 `restoreReleasedV3Artifact`。`validation: 'current'` 还要求已安装 Session 接受结果，因此 v3 结果会被 Ark 的 v0 core 拒绝。恢复模式独立控制未完成尾部处理，不能授权其他格式。
 
-该目录直接包含所有受支持的历史读取器。Profile 无法通过挂载功能插件来添加、移除或重新排列迁移边。它通过对 `dsh-session` 的 peer 依赖获得已安装的当前事件词表与当前还原规则，而历史迁移边校验器保持冻结。
+目录直接持有已发布读取器，通过 `dsh-session` peer 获取已安装事件名称与还原规则；历史迁移边校验器保持冻结。已安装准入保留 core 的三个参数还原契约，对目录种子、非零继承切点、非法切点和版本不匹配明确拒绝，不丢弃元数据。
 
 -----
 
@@ -54,7 +53,7 @@ Production 历史读取使用 `{ recovery: 'recoverable', validation: 'transform
 <details>
 <summary>实现细节——点击展开</summary>
 
-[`src/generated.ts`](src/generated.ts) 是编解码器与迁移边顺序的静态所有者。[`src/current.ts`](src/current.ts) 把最终标头、事件信封、消息、表面、种子和当前请求标头校验委托给已安装的 Session 语义。底层构造函数会在开始读取任何 Session 之前拒绝重复编解码器、重复迁移边、缺口，以及超过当前版本的条目。
+[`src/catalog.ts`](src/catalog.ts) 直接持有编解码器与迁移边顺序。[`src/current.ts`](src/current.ts) 先检查已安装版本、种子和继承切点准入，再把事件与请求校验委托给已安装 Session。底层构造函数会在开始读取之前拒绝重复编解码器、重复迁移边、缺口，以及超过目录目标版本的条目。
 
 </details>
 
@@ -78,7 +77,7 @@ Production 历史读取使用 `{ recovery: 'recoverable', validation: 'transform
 
 #### 模型看到什么
 
-没有直接内容。该目录只还原由请求重建逻辑消费的 `SessionEvent` 历史。
+没有直接可见内容。Ark 请求重建未使用离线目录 `sessionFormatCatalog`。
 
 #### Token 影响
 
@@ -92,8 +91,9 @@ Production 历史读取使用 `{ recovery: 'recoverable', validation: 'transform
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **运行时准入独立**——Ark 的 v0 写入器不支持目录 v3；接入活动历史之前，必须实现 core 与持久化迁移。
 - **仅包含第一方构建清单**——尚不支持外部迁移所有权与分发。
-- **生成顺序封闭**——运行时插件注册无法补充缺失的历史迁移边。
+- **静态顺序封闭**——运行时插件注册无法补充缺失的历史迁移边。
 
 <a id="dev-note"></a>
 ### 开发备注

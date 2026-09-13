@@ -1,6 +1,13 @@
+---
+description: "Ark 原生事件流与交互响应的权威 Host 投影。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-host-native-events
 
 [English](README.md) | 中文
+
+## 概述
 
 Ark 原生事件流与交互响应的权威 Host 投影。该插件读取既有 Session、Agent、Workspace、任务、投影、授权与用户提问 owner，并不替代它们。它通过 `ctx.connection.events` 注册唯一的 `mux` 与 `host` producer，并通过 `ctx.connection.responses` 将待处理授权／提问帧与精确且仅限 loopback 的 `/api/respond` 载体配对。
 
@@ -8,6 +15,13 @@ mux 流发布会话订阅与事件、类型化工具视图、队列与任务快�
 
 `@deepseek-ai/dsh-host-connection` 继续只负责传输：鉴权请求、持有 socket 生命周期并承载 envelope。本包持有 Native 投影与回答关联，因此不存在旧 API fallback 或第二套事件总线。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### Native 事件投影
@@ -24,7 +38,13 @@ mux 流发布会话订阅与事件、类型化工具视图、队列与任务快�
 
 不独立影响；本包不会改变提供方请求字节。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **待回答关联只存在于当前进程**：同一 Host 进程内重连会重放待处理授权和提问；Host 重启则依赖各领域自己的持久恢复约定，而不是序列化这张传输关联表。
 - **大规模实时事件突发仍使用内存**：每条已连接下行流拥有一个生命周期有界的内存队列；额外的磁盘传输缓冲有意暂缓。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

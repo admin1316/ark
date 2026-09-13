@@ -9,7 +9,16 @@ struct ArkOpenToolFileActionKey: EnvironmentKey {
   static let defaultValue: (String) -> Void = { _ in }
 }
 
+struct ArkOpenProducedFileExternallyActionKey: EnvironmentKey {
+  static let defaultValue: (String) -> Void = { _ in }
+}
+
 extension EnvironmentValues {
+  var arkOpenProducedFileExternally: (String) -> Void {
+    get { self[ArkOpenProducedFileExternallyActionKey.self] }
+    set { self[ArkOpenProducedFileExternallyActionKey.self] = newValue }
+  }
+
   var arkOpenToolFile: (String) -> Void {
     get { self[ArkOpenToolFileActionKey.self] }
     set { self[ArkOpenToolFileActionKey.self] = newValue }
@@ -231,6 +240,7 @@ public struct ArkRootView: View {
       ) {
         NativeMainArea(model: model)
           .environment(\.arkOpenToolFile, openToolFile)
+          .environment(\.arkOpenProducedFileExternally, openProducedFileExternally)
           .clipped()
           .alert(
             ArkL10n.text(.workbenchOpenFile, model.languagePreference),
@@ -300,6 +310,8 @@ public struct ArkRootView: View {
     .overlay(alignment: .topTrailing) {
       if !showSettings {
         HStack(spacing: 6) {
+          NativeConnectionStatusPill(model: model)
+          NativeOpenInAppMenu(model: model)
           if hasActiveConversation {
             NativeSessionActionsMenu(model: model)
           }
@@ -562,6 +574,21 @@ public struct ArkRootView: View {
     return workbenchRoot
   }
 
+  private func openProducedFileExternally(_ rawPath: String) {
+    guard let selection = toolFileWorkbenchRoot else {
+      toolFileNavigationError = ArkL10n.text(.producedFilesOpenFailed, model.languagePreference)
+      return
+    }
+    do {
+      let access = try NativeWorkspaceAccess(rootURL: selection.url)
+      let candidate = try access.resolveFileURL(rawPath)
+      let fileURL = try access.validatedExternalFileURL(candidate)
+      try ArkWorkspaceOpener.openProducedFile(fileURL)
+    } catch {
+      toolFileNavigationError = ArkL10n.text(.producedFilesOpenFailed, model.languagePreference)
+    }
+  }
+
   private func openToolFile(_ rawPath: String) {
     guard let selection = toolFileWorkbenchRoot else {
       toolFileNavigationError = "当前会话没有可用的工作区"
@@ -569,11 +596,7 @@ public struct ArkRootView: View {
     }
     do {
       let access = try NativeWorkspaceAccess(rootURL: selection.url)
-      let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !trimmed.isEmpty else { throw NativeWorkbenchError.notRegularFile }
-      let candidate = trimmed.hasPrefix("/")
-        ? URL(fileURLWithPath: trimmed)
-        : access.rootURL.appendingPathComponent(trimmed)
+      let candidate = try access.resolveFileURL(rawPath)
       let fileURL = try access.validatedRegularFileURL(candidate)
       let activeRoot = workbenchActiveRoot?
         .standardizedFileURL.resolvingSymlinksInPath()
@@ -887,17 +910,10 @@ private struct NativeSidebar: View {
       } else {
         HStack(spacing: 9) {
           Button(action: model.beginNewConversation) {
-            HStack(spacing: 9) {
-              Text(ArkL10n.text(.brandTitle, model.languagePreference))
-                .font(.system(size: 15, weight: .bold))
-                .tracking(1.2)
-              Text("ARK")
-                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                .tracking(1)
-                .padding(.top, 2)
-            }
-            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+            ArkBrandView(layout: .wordmark, size: 38)
+            .frame(height: 38, alignment: .leading)
             .contentShape(Rectangle())
+            .accessibilityLabel(ArkL10n.text(.brandTitle, model.languagePreference))
           }
           .buttonStyle(.plain)
           .help(ArkL10n.text(.newSession, model.languagePreference))
@@ -910,10 +926,10 @@ private struct NativeSidebar: View {
           .foregroundStyle(ArkPalette.secondary)
           .help(ArkL10n.text(.collapseSidebar, model.languagePreference))
         }
-        .frame(height: 60)
+        .frame(height: 52)
         .padding(.leading, 16)
         .padding(.trailing, 12)
-        .padding(.bottom, 8)
+        .padding(.bottom, 4)
 
         Button(action: model.beginNewConversation) {
           Label(ArkL10n.text(.newConversation, model.languagePreference), systemImage: "plus.message")
@@ -1237,11 +1253,7 @@ private struct NativeSidebar: View {
   private var collapsedControls: some View {
     VStack(spacing: 0) {
       Button(action: toggleCollapse) {
-        Image(nsImage: NSApp.applicationIconImage)
-          .resizable()
-          .scaledToFit()
-          .frame(width: 24, height: 24)
-          .clipShape(RoundedRectangle(cornerRadius: 5))
+        ArkBrandView(layout: .symbol, size: 32)
           .frame(width: 36, height: 36)
       }
       .buttonStyle(.plain)
@@ -2589,16 +2601,16 @@ private struct NativeHero: View {
       ZStack(alignment: .topTrailing) {
         VStack(spacing: 12) {
           Spacer()
-          VStack(spacing: 22) {
-            Image(nsImage: NSApp.applicationIconImage)
-              .resizable()
-              .scaledToFit()
-              .frame(width: 80, height: 80)
+          VStack(spacing: 8) {
+            ArkBrandView(layout: .wordmark, size: 96)
             Text(ArkL10n.text(.newConversationHeroTitle, model.languagePreference))
-              .font(.system(size: 44, weight: .semibold))
-              .tracking(4)
+              .font(.system(size: 16, weight: .regular))
+              .foregroundStyle(ArkPalette.secondary)
+              .tracking(1)
+              .multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
           }
-          Spacer()
+          .padding(.bottom, 28)
           HStack(spacing: 8) {
             Button(action: chooseWorkspaceDirectory) {
               Label(
@@ -2649,6 +2661,7 @@ private struct NativeHero: View {
 
           NativeComposer(model: model, hero: true)
             .frame(width: contentWidth)
+          Spacer()
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -2680,12 +2693,20 @@ private func presentWorkspaceDirectoryPicker(for model: ArkAppModel) {
 /// 聊天列底部固定布局常量：统计栏插槽的真实高度与 Toast 偏移共用同一组数值，
 /// 不存在两套数字，字号/padding 改动不会让 Toast 压住统计行。
 enum ArkChatLayoutResolver {
+  static let navigationRailWidth: CGFloat = 30
+  static let navigationRailInset: CGFloat = 8
+
+  static func transcriptInset(hasNavigationRail: Bool) -> CGFloat {
+    hasNavigationRail ? navigationRailInset + navigationRailWidth + 8 : 28
+  }
+
   static func transcriptWidth(
     availableWidth: CGFloat,
     preferredWidth: Double,
-    adaptive: Bool
+    adaptive: Bool,
+    hasNavigationRail: Bool = false
   ) -> CGFloat {
-    let fitted = max(0, availableWidth - 56)
+    let fitted = max(0, availableWidth - transcriptInset(hasNavigationRail: hasNavigationRail) * 2)
     let maximum = min(1_200, fitted)
     guard !adaptive else { return maximum }
     return min(maximum, max(520, CGFloat(preferredWidth)))
@@ -2713,6 +2734,9 @@ private struct NativeChatContext: Equatable {
   let sessionID: String?
   let sessionBlank: Bool
   let sessionRunning: Bool
+  let historyCut: ArkHistoryCut?
+  let previewMessageIDs: Set<Int>
+  let hasNewerHistory: Bool
   let hasOlderHistory: Bool
   let loadingOlderHistory: Bool
   let historyLoadState: ArkHistoryLoadState
@@ -2724,14 +2748,21 @@ private struct NativeChatContext: Equatable {
   let turnMetricsByTurn: [Int: ArkChatTurnMetrics]
   let turnUsageByTurn: [Int: ArkChatTurnUsage]
   let completedTurns: Set<Int>
+  let turnTerminalStates: [Int: ArkChatTurnState]
+  let latestStartedTurn: Int?
   let forkSequenceByMessageID: [Int: Int]
   let latestAssistantMessageID: Int?
 
   init(model: ArkAppModel) {
+    let history = model.historyReadingSnapshot
+    let shownMessages = history?.messages ?? model.messages
+    historyCut = history?.cut
+    previewMessageIDs = model.displayedPreviewMessageIDs
+    hasNewerHistory = history?.hasNewerHistory ?? false
     sessionID = model.selectedSessionID
     sessionBlank = model.selectedSession?.blank == true
-    sessionRunning = model.selectedSession?.running == true
-    hasOlderHistory = model.hasOlderHistory
+    sessionRunning = history == nil && model.selectedSession?.running == true
+    hasOlderHistory = history?.hasOlderHistory ?? model.hasOlderHistory
     loadingOlderHistory = model.loadingOlderHistory
     historyLoadState = model.historyLoadState
     steeringPrompts = model.queuedPrompts.filter { $0.placement == .steering }
@@ -2739,24 +2770,29 @@ private struct NativeChatContext: Equatable {
     operationMessage = model.operationMessage
     feedbackAvailable = model.messageFeedbackAvailable
     feedbackByID = model.messageFeedbackByID
-    turnMetricsByTurn = model.turnMetricsByTurn
-    turnUsageByTurn = model.turnUsageByTurn
-    completedTurns = model.completedTurnIDs
+    turnMetricsByTurn = history?.turnMetricsByTurn ?? model.turnMetricsByTurn
+    turnUsageByTurn = history?.turnUsageByTurn ?? model.turnUsageByTurn
+    completedTurns = history?.completedTurnIDs ?? model.completedTurnIDs
+    turnTerminalStates = history?.turnTerminalStates ?? model.turnTerminalStates
+    latestStartedTurn = history?.latestStartedTurn ?? model.latestStartedTurn
     latestAssistantMessageID = ArkStreamingPresentationPolicy.liveAssistantMessageID(
-      messages: model.messages,
+      messages: shownMessages,
       currentTurn: model.latestStartedTurn,
       turnStartSequence: model.latestStartedTurnSequence,
       sessionRunning: sessionRunning
     )
 
     var latestAssistantByTurn: [Int: Int] = [:]
-    for message in model.messages where message.role == .assistant {
+    for message in shownMessages where message.role == .assistant {
       guard let turn = message.turn else { continue }
       latestAssistantByTurn[turn] = max(latestAssistantByTurn[turn] ?? Int.min, message.id)
     }
     var forkSequences: [Int: Int] = [:]
     for (turn, messageID) in latestAssistantByTurn {
-      if let sequence = model.completedTurnSequence(turn) {
+      // A historical page can end before the turn's final assistant message.
+      // Only the same-cut seed can prove that this row is the fork boundary.
+      if let history, !history.forkableMessageIDs.contains(messageID) { continue }
+      if let sequence = history?.completedSequenceByTurn[turn] ?? (history == nil ? model.completedTurnSequence(turn) : nil) {
         forkSequences[messageID] = sequence
       }
     }
@@ -2772,7 +2808,8 @@ private struct NativeChatContext: Equatable {
       feedback: message.messageID.flatMap { feedbackByID[$0] },
       metrics: message.turn.flatMap { turnMetricsByTurn[$0] },
       forkSequence: forkSequenceByMessageID[message.id],
-      isLatestAssistant: message.id == latestAssistantMessageID
+      isLatestAssistant: message.id == latestAssistantMessageID,
+      isPreview: previewMessageIDs.contains(message.id)
     )
   }
 }
@@ -2786,6 +2823,7 @@ private struct NativeMessagePresentation: Equatable {
   let metrics: ArkChatTurnMetrics?
   let forkSequence: Int?
   let isLatestAssistant: Bool
+  let isPreview: Bool
 }
 
 struct NativeAssistantMarkdownSourceID: Hashable, Sendable {
@@ -2810,7 +2848,7 @@ private enum NativeAssistantMarkdownProjectionPolicy {
     message: ArkMessage,
     presentation: NativeMessagePresentation
   ) -> [NativeAssistantMarkdownSource] {
-    guard message.role == .assistant,
+    guard message.role == .assistant, !presentation.isPreview,
           !ArkStreamingPresentationPolicy.usesStreamingAssistantPresentation(
             role: message.role,
             isLatestAssistant: presentation.isLatestAssistant,
@@ -2974,31 +3012,6 @@ private struct NativeChatSnapshot {
     self.markdownBlocksBySourceID = markdownBlocksBySourceID
   }
 
-  private init(
-    entries: [NativeChatEntry],
-    context: NativeChatContext,
-    contentRevision: UInt64,
-    markdownBlocksBySourceID: [NativeAssistantMarkdownSourceID: [NativeGFMBlock]]
-  ) {
-    self.entries = entries
-    self.context = context
-    self.contentRevision = contentRevision
-    self.markdownBlocksBySourceID = markdownBlocksBySourceID
-  }
-
-  func installing(
-    _ blocks: [NativeAssistantMarkdownSourceID: [NativeGFMBlock]]
-  ) -> NativeChatSnapshot {
-    var projected = markdownBlocksBySourceID
-    projected.merge(blocks) { _, new in new }
-    return NativeChatSnapshot(
-      entries: entries,
-      context: context,
-      contentRevision: contentRevision &+ 1,
-      markdownBlocksBySourceID: projected
-    )
-  }
-
   func hasSamePresentation(as other: NativeChatSnapshot) -> Bool {
     entries == other.entries
       && context == other.context
@@ -3018,18 +3031,22 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   private var cancellables = Set<AnyCancellable>()
   private var markdownProjectionState = NativeAssistantMarkdownProjectionState()
   private var markdownTasks: [NativeAssistantMarkdownSourceID: Task<Void, Never>] = [:]
-  private var markdownPublishTask: Task<Void, Never>?
   /// Coalesced feed refresh; see ``scheduleRefresh(model:)``.
   private var refreshTask: Task<Void, Never>?
+  /// Adaptive part of the refresh cadence; grows with the main thread's backlog after a heavy
+  /// layout transaction and decays when it drains. See `scheduleRefresh`.
+  private var refreshBackoff: TimeInterval = 0
+  private weak var model: ArkAppModel?
 
   init(model: ArkAppModel) {
+    self.model = model
     snapshot = NativeChatSnapshot(
       model: model,
       entries: NativeChatEntry.merge(
-        messages: model.messages,
-        tools: model.toolActivities,
-        statuses: model.chatStatuses,
-        producedFiles: model.producedFiles
+        messages: model.historyReadingSnapshot?.messages ?? model.messages,
+        tools: model.historyReadingSnapshot?.toolActivities ?? model.toolActivities,
+        statuses: model.historyReadingSnapshot?.chatStatuses ?? model.chatStatuses,
+        producedFiles: model.historyReadingSnapshot?.producedFiles ?? model.producedFiles
       ),
       contentRevision: 0
     )
@@ -3068,50 +3085,72 @@ private final class NativeChatTranscriptFeed: ObservableObject {
 
   deinit {
     refreshTask?.cancel()
-    markdownPublishTask?.cancel()
     for task in markdownTasks.values { task.cancel() }
   }
-  /// Coalesce feed refreshes into one in-flight transaction.
+  /// Coalesce feed refreshes into one in-flight transaction, and back off when the main thread
+  /// cannot keep up.
   ///
-  /// A streaming turn invalidates the transcript continuously. The previous
-  /// fixed 100 ms throttle rebuilt the whole view list faster than a large
-  /// transcript can apply it, so the main thread never drained and the app
-  /// pegged one core for minutes (macOS `hang` / `cpu_resource` reports).
-  /// While the selected session is running we refresh at a cadence a large
-  /// transcript can actually complete; when idle we stay responsive.
+  /// A streaming turn invalidates the transcript continuously. The previous fixed 100 ms throttle
+  /// rebuilt the whole view list faster than a large transcript could apply it, so the main thread
+  /// never drained and the app pegged one core for minutes (macOS `hang` reports). A fixed cadence
+  /// still loses on a heavy transcript: measured 2026-09-12 with a 20k-event session, three real
+  /// streamed answers spent 9 s above 80% CPU because one layout transaction is longer than the
+  /// 800 ms base interval. The cadence below therefore measures how late the main thread actually
+  /// resumed (its backlog) and grows the interval by that overshoot, capped, decaying when the
+  /// thread is idle again. Nobody sees "slower text" for more than a frame: the tail is still the
+  /// thing being refreshed.
   private func scheduleRefresh(model: ArkAppModel) {
     guard refreshTask == nil else { return }
     let running = model.sessions.first { $0.id == model.selectedSessionID }?.running == true
-    // A streaming turn invalidates the transcript on every delta, and each
-    // rebuild is one full AttributeGraph/layout transaction (the measured
-    // cost, not the text). A large transcript gets a slower cadence so the
-    // main thread can actually drain; small sessions stay responsive.
     let heavy = snapshot.entries.count > 600
-    let interval: UInt64 = running ? (heavy ? 800_000_000 : 400_000_000) : 150_000_000
+    // base must sit above the cost of one transaction (~1 s measured): a base below it means the
+    // next refresh is already due when the previous transaction finishes, so the queue never drains.
+    let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15
+    let interval = base + refreshBackoff
+    let deadline = Date().addingTimeInterval(interval)
     refreshTask = Task { @MainActor [weak self, weak model] in
-      try? await Task.sleep(nanoseconds: interval)
+      try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
       guard let self else { return }
       self.refreshTask = nil
+      // How long past the deadline the main actor came back to us: that is the backlog a heavy
+      // layout transaction left behind. Grow the next interval by it (×2, capped), or decay.
+      let overshoot = max(0, Date().timeIntervalSince(deadline))
+      if overshoot > 0.05 {
+        self.refreshBackoff = min(Self.maxRefreshBackoff, self.refreshBackoff * 0.5 + overshoot)
+        // …but the cadence may never be shorter than the backlog it just measured, or a single
+        // transaction longer than the cap would still queue the next refresh behind itself.
+        self.refreshBackoff = max(self.refreshBackoff, overshoot)
+      } else {
+        self.refreshBackoff = max(0, self.refreshBackoff - base * 0.5)
+      }
       guard let model else { return }
       self.refresh(model: model)
     }
   }
 
+  /// Ceiling for the adaptive part of the refresh cadence (base + this). Long enough to let a
+  /// 2–3 s layout transaction finish, short enough that the streamed tail still moves visibly.
+  static let maxRefreshBackoff: TimeInterval = 3.0
+
   private func refresh(model: ArkAppModel) {
     let entries = NativeChatEntry.merge(
-      messages: model.messages,
-      tools: model.toolActivities,
-      statuses: model.chatStatuses,
-      producedFiles: model.producedFiles
+      messages: model.historyReadingSnapshot?.messages ?? model.messages,
+      tools: model.historyReadingSnapshot?.toolActivities ?? model.toolActivities,
+      statuses: model.historyReadingSnapshot?.chatStatuses ?? model.chatStatuses,
+      producedFiles: model.historyReadingSnapshot?.producedFiles ?? model.producedFiles
     )
     let reconciliation = reconcileMarkdownSources(model: model)
-    let retainedMarkdown = reconciliation.sessionChanged
+    var retainedMarkdown = reconciliation.sessionChanged
       ? [:]
       : snapshot.markdownBlocksBySourceID.filter {
         markdownProjectionState.installedSourceIDs.contains($0.key)
       }
+    // Reconcile the latest source before draining completions. There is no suspension or
+    // second queue between validating a request and installing its blocks into this snapshot.
+    let ready = markdownProjectionState.takeReadyBlocks()
+    retainedMarkdown.merge(ready) { _, new in new }
     let projectionRemoved = retainedMarkdown.count != snapshot.markdownBlocksBySourceID.count
-    let revision = entries == snapshot.entries && !projectionRemoved
+    let revision = entries == snapshot.entries && !projectionRemoved && ready.isEmpty
       ? snapshot.contentRevision
       : snapshot.contentRevision &+ 1
     let next = NativeChatSnapshot(
@@ -3120,7 +3159,14 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       contentRevision: revision,
       markdownBlocksBySourceID: retainedMarkdown
     )
-    if !snapshot.hasSamePresentation(as: next) { snapshot = next }
+    if !snapshot.hasSamePresentation(as: next) {
+      // Publishing a whole snapshot with implicit animation would animate every row of a long
+      // transcript, and the removed markdown path suppressed exactly that. Keep the suppression
+      // on the one remaining publish site (audit round-2, BLOCKER-1 regression).
+      var transaction = Transaction(animation: nil)
+      transaction.disablesAnimations = true
+      withTransaction(transaction) { snapshot = next }
+    }
     scheduleMissingMarkdownSources()
   }
 
@@ -3128,19 +3174,19 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     model: ArkAppModel
   ) -> NativeAssistantMarkdownProjectionReconcile {
     let context = NativeChatContext(model: model)
-    let nextSources = model.messages.flatMap { message in
+    let nextSources = (model.historyReadingSnapshot?.messages ?? model.messages).flatMap { message in
       NativeAssistantMarkdownProjectionPolicy.sources(
         message: message,
         presentation: context.presentation(for: message)
       )
     }
     let reconciliation = markdownProjectionState.reconcile(
-      sessionID: model.selectedSessionID,
+      sessionID: model.selectedSessionID.map { id in
+        context.historyCut.map { id + "#history:" + $0.sourceRevision } ?? id
+      },
       requestedSources: nextSources
     )
     if reconciliation.sessionChanged {
-      markdownPublishTask?.cancel()
-      markdownPublishTask = nil
       for task in markdownTasks.values { task.cancel() }
       markdownTasks.removeAll()
     } else {
@@ -3169,27 +3215,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
         }
         markdownProjectionState.stage(blocks, for: request)
         markdownTasks.removeValue(forKey: source.id)
-        scheduleMarkdownPublication()
-      }
-    }
-  }
-
-  private func scheduleMarkdownPublication() {
-    guard markdownPublishTask == nil else { return }
-    markdownPublishTask = Task { [weak self] in
-      // 40 ms coalescing: every publication bumps contentRevision and therefore
-      // re-runs the whole body projection. 16 ms let a fast stream install
-      // blocks almost per chunk; 40 ms keeps the tail live while cutting the
-      // number of full projections per second.
-      try? await Task.sleep(nanoseconds: 40_000_000)
-      guard !Task.isCancelled, let self else { return }
-      markdownPublishTask = nil
-      let ready = markdownProjectionState.takeReadyBlocks()
-      guard !ready.isEmpty else { return }
-      var transaction = Transaction(animation: nil)
-      transaction.disablesAnimations = true
-      withTransaction(transaction) {
-        self.snapshot = self.snapshot.installing(ready)
+        if let model { scheduleRefresh(model: model) }
       }
     }
   }
@@ -3261,11 +3287,11 @@ enum NativeAssistantMarkdownRowProjection {
         rows.append(.pending(source.id))
         return
       }
-      rows.append(contentsOf: blocks.indices.map { blockIndex in
+      rows.append(contentsOf: NativeGFMParagraphSelection.rows(blocks).map { row in
         .markdown(NativeAssistantMarkdownBlockRow(
           sourceID: source.id,
-          blockIndex: blockIndex,
-          block: blocks[blockIndex]
+          blockIndex: row.index,
+          block: row.block
         ))
       })
     }
@@ -3303,8 +3329,18 @@ private struct NativeAssistantMarkdownPrefixRow: Identifiable, Equatable {
   let message: ArkMessage
   let presentation: NativeMessagePresentation
   let hideReasoning: Bool
+  /// Identity is built once, at construction. The transcript's `ForEach` reads `id` on every
+  /// layout pass, and rebuilding an interpolated String there dominated the 2026-09-12 main-thread
+  /// CPU stacks (`Identifiable.id` → `_BinaryIntegerToASCII` → AttributeGraph update).
+  let id: String
 
-  var id: String { "assistant-prefix-\(message.id)" }
+  init(message: ArkMessage, presentation: NativeMessagePresentation, hideReasoning: Bool) {
+    self.message = message
+    self.presentation = presentation
+    self.hideReasoning = hideReasoning
+    self.id = "assistant-prefix-\(message.id)"
+  }
+
   var turn: Int? { message.turn }
 }
 
@@ -3318,8 +3354,16 @@ private struct NativeAssistantMarkdownBodyContext: Equatable {
 private struct NativeAssistantMarkdownBodyDisplayRow: Identifiable, Equatable {
   let context: NativeAssistantMarkdownBodyContext
   let row: NativeAssistantProjectedBodyRow
+  /// See `NativeAssistantMarkdownPrefixRow.id`: this is the hot row type of a long answer (one row
+  /// per markdown block), and `renderKey` is itself an interpolated String.
+  let id: String
 
-  var id: String { "assistant-\(row.renderKey)" }
+  init(context: NativeAssistantMarkdownBodyContext, row: NativeAssistantProjectedBodyRow) {
+    self.context = context
+    self.row = row
+    self.id = "assistant-\(row.renderKey)"
+  }
+
   var turn: Int? { context.turn }
 }
 
@@ -3327,8 +3371,20 @@ private struct NativeAssistantMarkdownSuffixRow: Identifiable, Equatable {
   let message: ArkMessage
   let producedFiles: [ArkProducedFile]
   let presentation: NativeMessagePresentation
+  /// See `NativeAssistantMarkdownPrefixRow.id`.
+  let id: String
 
-  var id: String { "assistant-suffix-\(message.id)" }
+  init(
+    message: ArkMessage,
+    producedFiles: [ArkProducedFile],
+    presentation: NativeMessagePresentation
+  ) {
+    self.message = message
+    self.producedFiles = producedFiles
+    self.presentation = presentation
+    self.id = "assistant-suffix-\(message.id)"
+  }
+
   var turn: Int? { message.turn }
 }
 
@@ -3367,27 +3423,37 @@ enum NativeAssistantMarkdownFlatProjection {
   }
 }
 
-private enum NativeChatDisplayEntry: Identifiable, Equatable {
-  case process(NativeChatProcess)
-  case entry(NativeChatEntry)
-  case assistantPrefix(NativeAssistantMarkdownPrefixRow)
-  case assistantMarkdownRow(NativeAssistantMarkdownBodyDisplayRow)
-  case assistantSuffix(NativeAssistantMarkdownSuffixRow)
-  case usage(turn: Int, usage: ArkChatTurnUsage)
+private struct NativeChatDisplayEntry: Identifiable, Equatable {
+  enum Kind: Equatable {
+    case process(NativeChatProcess)
+    case entry(NativeChatEntry)
+    case assistantPrefix(NativeAssistantMarkdownPrefixRow)
+    case assistantMarkdownRow(NativeAssistantMarkdownBodyDisplayRow)
+    case assistantSuffix(NativeAssistantMarkdownSuffixRow)
+    case usage(turn: Int, usage: ArkChatTurnUsage)
+  }
 
-  var id: String {
-    switch self {
-    case .process(let process): return process.id
-    case .entry(let entry): return entry.id
-    case .assistantPrefix(let row): return row.id
-    case .assistantMarkdownRow(let row): return row.id
-    case .assistantSuffix(let row): return row.id
-    case .usage(let turn, _): return "turn-usage-\(turn)"
+  /// Row identity, computed exactly once when the projection builds the row. The transcript
+  /// `ForEach` reads `id` on every layout pass, and rebuilding interpolated identity Strings there
+  /// was the top main-thread cost in the 2026-09-12 `cpu_resource` stacks
+  /// (`Identifiable.id` → `_BinaryIntegerToASCII` → AttributeGraph update).
+  let id: String
+  let kind: Kind
+
+  init(kind: Kind) {
+    self.kind = kind
+    switch kind {
+    case .process(let process): id = process.id
+    case .entry(let entry): id = entry.id
+    case .assistantPrefix(let row): id = row.id
+    case .assistantMarkdownRow(let row): id = row.id
+    case .assistantSuffix(let row): id = row.id
+    case .usage(let turn, _): id = "turn-usage-\(turn)"
     }
   }
 
   var turn: Int? {
-    switch self {
+    switch kind {
     case .process(let process): return process.turn
     case .entry(let entry): return entry.turn
     case .assistantPrefix(let row): return row.turn
@@ -3416,8 +3482,7 @@ private struct NativeChatTurnNavigationItem: Identifiable, Equatable {
   let turn: Int
   let title: String
   let detail: String
-  let completed: Bool
-  let interrupted: Bool
+  let state: ArkChatTurnState
 
   var id: Int { turn }
 }
@@ -3430,6 +3495,8 @@ private struct NativeChatBodyProjection {
 }
 
 struct NativeChatProjectionKey: Equatable {
+  var historyCut: ArkHistoryCut? = nil
+  var previewMessageIDs: Set<Int> = []
   let contentRevision: UInt64
   let sessionID: String?
   let sessionRunning: Bool
@@ -3439,6 +3506,8 @@ struct NativeChatProjectionKey: Equatable {
   let turnMetricsByTurn: [Int: ArkChatTurnMetrics]
   let turnUsageByTurn: [Int: ArkChatTurnUsage]
   let completedTurns: Set<Int>
+  var turnTerminalStates: [Int: ArkChatTurnState] = [:]
+  var latestStartedTurn: Int? = nil
   let forkSequenceByMessageID: [Int: Int]
   let latestAssistantMessageID: Int?
   let compactProcess: Bool
@@ -3465,7 +3534,9 @@ extension NativeChatProjectionKey {
   /// allowed to look like. `contentRevision` bumps on every streamed delta, so
   /// it must not clear the per-row cache.
   func sameInputs(as other: NativeChatProjectionKey) -> Bool {
-    sessionID == other.sessionID
+    historyCut == other.historyCut
+      && previewMessageIDs == other.previewMessageIDs
+      && sessionID == other.sessionID
       && sessionRunning == other.sessionRunning
       && language == other.language
       && feedbackAvailable == other.feedbackAvailable
@@ -3473,6 +3544,8 @@ extension NativeChatProjectionKey {
       && turnMetricsByTurn == other.turnMetricsByTurn
       && turnUsageByTurn == other.turnUsageByTurn
       && completedTurns == other.completedTurns
+      && turnTerminalStates == other.turnTerminalStates
+      && latestStartedTurn == other.latestStartedTurn
       && forkSequenceByMessageID == other.forkSequenceByMessageID
       && latestAssistantMessageID == other.latestAssistantMessageID
       && compactProcess == other.compactProcess
@@ -3527,7 +3600,7 @@ final class NativeProjectedRowCache: ObservableObject {
       isFinalAnswer: isFinalAnswer,
       rows: rows,
       hasPendingSource: rows.contains { row in
-        guard case .assistantMarkdownRow(let body) = row else { return false }
+        guard case .assistantMarkdownRow(let body) = row.kind else { return false }
         if case .pending = body.row { return true }
         return false
       }
@@ -3571,15 +3644,10 @@ private struct NativeChatView: View {
   @AppStorage("ark.native.chat.content-width-adaptive") private var contentWidthAdaptive = true
   @AppStorage("ark.native.chat.compact-process") private var compactProcess = true
   @State private var expandedProcessGenerations = Set<String>()
-  /// Upper bound on transcript rows rendered at once. A long session otherwise
-  /// re-applies every row on each streaming refresh and saturates the main
-  /// thread; the header button pages earlier rows back in on demand.
-  @State private var renderWindowEntries = 400
-  /// A manual window widening (load older / turn jump) disables the streaming cap.
-  @State private var windowWidenedByUser = false
-  /// While a turn streams, keep the live tail small: each delta re-runs one
-  /// view-graph transaction over every visible row, so a large transcript gets
-  /// a smaller window (the "load older" control still restores 400-row pages).
+  @State private var renderWindow = ArkChatRenderWindow()
+  @State private var requestedHistoryAnchorID: String?
+  static let largeTranscriptEntryThreshold = 600
+
   private static func streamingRenderWindowEntries(forEntryCount count: Int) -> Int {
     count >= 2000 ? 96 : 160
   }
@@ -3610,6 +3678,8 @@ private struct NativeChatView: View {
 
   private var bodyProjection: NativeChatBodyProjection {
     let key = NativeChatProjectionKey(
+      historyCut: context.historyCut,
+      previewMessageIDs: context.previewMessageIDs,
       contentRevision: contentRevision,
       sessionID: context.sessionID,
       sessionRunning: context.sessionRunning,
@@ -3619,6 +3689,8 @@ private struct NativeChatView: View {
       turnMetricsByTurn: context.turnMetricsByTurn,
       turnUsageByTurn: context.turnUsageByTurn,
       completedTurns: context.completedTurns,
+      turnTerminalStates: context.turnTerminalStates,
+      latestStartedTurn: context.latestStartedTurn,
       forkSequenceByMessageID: context.forkSequenceByMessageID,
       latestAssistantMessageID: context.latestAssistantMessageID,
       compactProcess: compactProcess
@@ -3645,8 +3717,11 @@ private struct NativeChatView: View {
         entriesByTurn[turn, default: []].append(entry)
         firstSequenceByTurn[turn] = min(firstSequenceByTurn[turn] ?? entry.sequence, entry.sequence)
         lastSequenceByTurn[turn] = max(lastSequenceByTurn[turn] ?? entry.sequence, entry.sequence)
-        if entry.isFinalAssistantAnswer, context.completedTurns.contains(turn) {
-          finalAnswerByTurn[turn] = entry.id
+        if entry.isFinalAssistantAnswer, context.completedTurns.contains(turn),
+           case .message(let message, _) = entry {
+          if context.historyCut == nil || context.forkSequenceByMessageID[message.id] != nil {
+            finalAnswerByTurn[turn] = entry.id
+          }
         }
       }
 
@@ -3712,7 +3787,7 @@ private struct NativeChatView: View {
     for entry in entries {
       if let turn = entry.turn, let process = processByTurn[turn] {
         if entry.id == process.anchorEntryID {
-          appendDisplayEntry(.process(process))
+          appendDisplayEntry(NativeChatDisplayEntry(kind: .process(process)))
         }
         if process.hiddenEntryIDs.contains(entry.id) {
           continue
@@ -3728,7 +3803,7 @@ private struct NativeChatView: View {
          finalAnswerByTurn[turn] == entry.id,
          let usage = context.turnUsageByTurn[turn]
       {
-        appendDisplayEntry(.usage(turn: turn, usage: usage))
+        appendDisplayEntry(NativeChatDisplayEntry(kind: .usage(turn: turn, usage: usage)))
       }
     }
 
@@ -3751,16 +3826,19 @@ private struct NativeChatView: View {
       let answer = answerByTurn[turn]
       let turnLabel = ArkL10n.format(.trajectoryTurn, context.language, arguments: [String(turn)])
       let title = navigationTitle(prompt?.text, fallback: turnLabel)
+      let state = ArkChatTurnState.navigation(
+        terminal: context.turnTerminalStates[turn], historical: context.historyCut != nil,
+        sessionRunning: context.sessionRunning, isLatestTurn: turn == context.latestStartedTurn
+      )
       let detail = navigationDetail(
         answer?.text,
-        fallback: ArkL10n.text(.trajectoryPending, context.language)
+        fallback: state.label(context.language)
       )
       navigationItems.append(NativeChatTurnNavigationItem(
         turn: turn,
         title: title,
         detail: detail,
-        completed: context.completedTurns.contains(turn),
-        interrupted: answer?.interrupted == true
+        state: state
       ))
       previousTurnSequence = lastSequenceByTurn[turn] ?? previousTurnSequence
     }
@@ -3794,13 +3872,13 @@ private struct NativeChatView: View {
   ) -> [NativeChatDisplayEntry] {
     guard case .message(let message, let producedFiles) = entry,
           message.role == .assistant
-    else { return [.entry(entry)] }
+    else { return [NativeChatDisplayEntry(kind: .entry(entry))] }
     let presentation = context.presentation(for: message)
     let sources = NativeAssistantMarkdownProjectionPolicy.sources(
       message: message,
       presentation: presentation
     )
-    guard !sources.isEmpty else { return [.entry(entry)] }
+    guard !sources.isEmpty else { return [NativeChatDisplayEntry(kind: .entry(entry))] }
 
     let rows = NativeAssistantMarkdownRowProjection.rows(
       message: message,
@@ -3831,22 +3909,22 @@ private struct NativeChatView: View {
     ).map { row in
       switch row {
       case .prefix:
-        return .assistantPrefix(NativeAssistantMarkdownPrefixRow(
+        return NativeChatDisplayEntry(kind: .assistantPrefix(NativeAssistantMarkdownPrefixRow(
           message: message,
           presentation: presentation,
           hideReasoning: hideReasoning
-        ))
+        )))
       case .body(let bodyRow):
-        return .assistantMarkdownRow(NativeAssistantMarkdownBodyDisplayRow(
+        return NativeChatDisplayEntry(kind: .assistantMarkdownRow(NativeAssistantMarkdownBodyDisplayRow(
           context: bodyContext,
           row: bodyRow
-        ))
+        )))
       case .suffix:
-        return .assistantSuffix(NativeAssistantMarkdownSuffixRow(
+        return NativeChatDisplayEntry(kind: .assistantSuffix(NativeAssistantMarkdownSuffixRow(
           message: message,
           producedFiles: producedFiles,
           presentation: presentation
-        ))
+        )))
       }
     }
   }
@@ -3881,23 +3959,22 @@ private struct NativeChatView: View {
   var body: some View {
     let projection = bodyProjection
     let allDisplayEntries = projection.displayEntries
-    // While a turn streams, every update re-runs the view-graph transaction
-    // for the whole window. A smaller streaming window keeps the tail live
-    // without paying for hundreds of historical rows per delta; any manual
-    // widening below restores the full window for the rest of the turn.
-    let effectiveWindow = context.sessionRunning && !windowWidenedByUser
-      ? min(renderWindowEntries, Self.streamingRenderWindowEntries(forEntryCount: entries.count))
-      : renderWindowEntries
-    let hiddenEntryCount = max(0, allDisplayEntries.count - effectiveWindow)
-    let visibleEntries = hiddenEntryCount > 0
-      ? Array(allDisplayEntries.suffix(effectiveWindow))
-      : allDisplayEntries
+    let heavyTranscript = entries.count > Self.largeTranscriptEntryThreshold
+    let effectiveWindow = (context.sessionRunning || heavyTranscript)
+      ? Self.streamingRenderWindowEntries(forEntryCount: entries.count) : 400
+    let displayIDs = allDisplayEntries.map(\.id)
+    let visibleRange = renderWindow.range(in: displayIDs, limit: effectiveWindow)
+    let hiddenEntryCount = visibleRange.lowerBound
+    let newerEntryCount = allDisplayEntries.count - visibleRange.upperBound
+    let visibleEntries = Array(allDisplayEntries[visibleRange])
 
     GeometryReader { geometry in
+      let hasNavigationRail = projection.navigationItems.count > 1
       let transcriptWidth = ArkChatLayoutResolver.transcriptWidth(
         availableWidth: geometry.size.width,
         preferredWidth: contentWidth,
-        adaptive: contentWidthAdaptive
+        adaptive: contentWidthAdaptive,
+        hasNavigationRail: hasNavigationRail
       )
 
       VStack(spacing: 0) {
@@ -3907,10 +3984,7 @@ private struct NativeChatView: View {
               if entries.isEmpty {
                 VStack(spacing: 10) {
                   if context.sessionBlank, !context.sessionRunning {
-                    Image(nsImage: NSApp.applicationIconImage)
-                      .resizable()
-                      .scaledToFit()
-                      .frame(width: 28, height: 28)
+                    ArkBrandView(layout: .symbol, size: 32)
                     Text(ArkL10n.text(.newConversation, context.language))
                       .font(.system(size: 14, weight: .medium))
                   } else if context.sessionRunning {
@@ -3951,21 +4025,13 @@ private struct NativeChatView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 80)
               } else {
-                LazyVStack(alignment: .leading, spacing: ChatLayoutMetrics.entrySpacing) {
-                  if context.hasOlderHistory {
+                // renderWindow already bounds mounted entries. An eager stack keeps
+                // measured row heights stable across width and turn changes.
+                VStack(alignment: .leading, spacing: ChatLayoutMetrics.entrySpacing) {
+                  if context.hasOlderHistory && hiddenEntryCount == 0 {
                     Button {
-                      let anchor = scrollController.capturePrependAnchor()
-                      Task {
-                        await model.loadOlderHistory()
-                        DispatchQueue.main.async {
-                          // Windowed rendering would hide the prepended rows and
-                          // collapse the anchor delta; widen at least this page.
-                          renderWindowEntries += 400
-                          windowWidenedByUser = true
-                          scrollController.contentDidChange()
-                          if let anchor { scrollController.restoreAfterPrepend(anchor) }
-                        }
-                      }
+                      requestedHistoryAnchorID = displayIDs.first
+                      Task { await model.loadOlderHistory() }
                     } label: {
                       HStack(spacing: 7) {
                         if context.loadingOlderHistory { ProgressView().controlSize(.small) }
@@ -3981,8 +4047,11 @@ private struct NativeChatView: View {
                   }
                   if hiddenEntryCount > 0 {
                     Button {
-                      renderWindowEntries += 400
-                      windowWidenedByUser = true
+                      renderWindow.earlier(in: displayIDs, limit: effectiveWindow)
+                      let range = renderWindow.range(in: displayIDs, limit: effectiveWindow)
+                      if let id = displayIDs[range].first {
+                        DispatchQueue.main.async { proxy.scrollTo(id, anchor: .top) }
+                      }
                     } label: {
                       HStack(spacing: 7) {
                         Image(systemName: "arrow.up")
@@ -4012,6 +4081,31 @@ private struct NativeChatView: View {
                       }
                     }
                   }
+                  if newerEntryCount > 0 {
+                    Button {
+                      renderWindow.later(in: displayIDs, limit: effectiveWindow)
+                      let range = renderWindow.range(in: displayIDs, limit: effectiveWindow)
+                      if let id = displayIDs[range].first {
+                        DispatchQueue.main.async { proxy.scrollTo(id, anchor: .top) }
+                      }
+                    } label: {
+                      Label("\(ArkL10n.text(.chatLoadNewer, context.language)) (\(newerEntryCount))", systemImage: "arrow.down")
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityIdentifier("ark.chat.history.newer-rendered")
+                  }
+                  if newerEntryCount == 0 && context.hasNewerHistory {
+                    Button(ArkL10n.text(.chatLoadNewer, context.language)) {
+                      Task {
+                        await model.loadNewerHistory()
+                        renderWindow.returnToLatest()
+                      }
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(context.loadingOlderHistory)
+                    .accessibilityIdentifier("ark.chat.history.newer-page")
+                  }
                   ForEach(context.steeringPrompts) { item in
                     HStack {
                       Spacer(minLength: 100)
@@ -4029,21 +4123,24 @@ private struct NativeChatView: View {
                     .id("chat-bottom")
                 }
                 .frame(maxWidth: transcriptWidth)
-                .padding(.horizontal, 28)
+                .padding(.horizontal, ArkChatLayoutResolver.transcriptInset(hasNavigationRail: hasNavigationRail))
                 .padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .center)
-                // Row insert/remove transitions in a very large lazy stack are
-                // pure overhead while streaming and showed up in the hang
-                // stacks as ViewListTransition; keep updates non-animated.
+                // Keep streaming inserts non-animated so row transitions do
+                // not compete with transcript measurement and scroll following.
                 .transaction { transaction in transaction.animation = nil }
               }
               ArkChatScrollAttachment(controller: scrollController)
                 .frame(width: 0, height: 0)
             }
             .overlay(alignment: .bottomTrailing) {
-              if !scrollController.isAtBottom && !entries.isEmpty {
+              if (context.historyCut != nil || !renderWindow.followsLatest || !scrollController.isAtBottom) && !entries.isEmpty {
                 Button {
-                  scrollController.scrollBottom()
+                  Task {
+                    await model.returnToLatestHistory()
+                    renderWindow.returnToLatest()
+                    DispatchQueue.main.async { scrollController.scrollBottom() }
+                  }
                 } label: {
                   Image(systemName: "arrow.down")
                     .frame(width: 30, height: 30)
@@ -4056,19 +4153,13 @@ private struct NativeChatView: View {
               }
             }
 
-            if projection.navigationItems.count > 1 {
+            if hasNavigationRail {
               NativeChatTurnNavigationRail(
                 items: projection.navigationItems,
                 language: context.language,
                 navigate: { turn in
-                  // The row may be outside the render window; widen first,
-                  // then scroll once SwiftUI has materialised the target.
-                  if let index = allDisplayEntries.firstIndex(where: { $0.turn == turn }) {
-                    let needed = allDisplayEntries.count - index
-                    if needed > renderWindowEntries {
-                      renderWindowEntries = needed
-                      windowWidenedByUser = true
-                    }
+                  if let row = allDisplayEntries.first(where: { $0.turn == turn }) {
+                    renderWindow.reveal(row.id, in: displayIDs, limit: effectiveWindow)
                   }
                   DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.16)) {
@@ -4077,7 +4168,7 @@ private struct NativeChatView: View {
                   }
                 }
               )
-              .padding(.leading, 8)
+              .padding(.leading, ArkChatLayoutResolver.navigationRailInset)
               .padding(.vertical, 12)
             }
           }
@@ -4091,21 +4182,32 @@ private struct NativeChatView: View {
             // The render window is view state, not session state; a session
             // that inherits an expanded window would render far more rows
             // than the fresh one needs.
-            renderWindowEntries = 400
-            windowWidenedByUser = false
+            renderWindow.returnToLatest()
+            requestedHistoryAnchorID = nil
             guard let sessionID else { return }
             scrollController.beginSessionTransition(to: sessionID)
             DispatchQueue.main.async {
               scrollController.completeSessionTransition()
             }
           }
-          .onChange(of: context.sessionRunning) { running in
-            // The next turn starts from the small streaming window again; an
-            // idle transcript keeps whatever the operator widened it to.
-            if !running { windowWidenedByUser = false }
-          }
           .onChange(of: contentRevision) { _ in
+            let ids = bodyProjection.displayEntries.map(\.id)
+            if let anchor = requestedHistoryAnchorID,
+               let index = ids.firstIndex(of: anchor), index > 0 {
+              renderWindow.reveal(anchor, in: ids, limit: effectiveWindow)
+              requestedHistoryAnchorID = nil
+              DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .center) }
+            }
             DispatchQueue.main.async { scrollController.contentDidChange() }
+          }
+          .onChange(of: context.loadingOlderHistory) { loading in
+            guard !loading, let anchor = requestedHistoryAnchorID else { return }
+            // Failed loads and page eviction leave no prepend anchor to restore.
+            // Successful overlapping pages are positioned by contentRevision.
+            let ids = bodyProjection.displayEntries.map(\.id)
+            if ids.firstIndex(of: anchor).map({ $0 > 0 }) != true {
+              requestedHistoryAnchorID = nil
+            }
           }
         }
         NativeComposer(model: model)
@@ -4146,7 +4248,7 @@ private struct NativeChatView: View {
     fontSize: CGFloat,
     finalAnswerByTurn: [Int: String]
   ) -> some View {
-    switch item {
+    switch item.kind {
     case .assistantPrefix(let row):
       assistantProjectedPrefix(row, fontSize: fontSize)
     case .assistantMarkdownRow(let row):
@@ -4168,7 +4270,7 @@ private struct NativeChatView: View {
     fontSize: CGFloat,
     finalAnswerByTurn: [Int: String]
   ) -> some View {
-    switch item {
+    switch item.kind {
     case .process(let process):
       NativeTurnProcessRow(
         process: process,
@@ -4327,7 +4429,9 @@ private struct NativeChatView: View {
   ) -> some View {
     switch entry {
     case .message(let message, let producedFiles):
-      if message.role == .user,
+      if context.previewMessageIDs.contains(message.id) {
+        NativeHistoryMessagePreview(model: model, message: message, language: context.language, fontSize: fontSize)
+      } else if message.role == .user,
          let sourceKind = message.sourceKind,
          sourceKind != "user" {
         NativeContextMessageRow(
@@ -4646,7 +4750,7 @@ private struct NativeChatTurnNavigationRail: View {
             Capsule()
               .fill(hoveredTurn == item.turn ? ArkPalette.accent : markerColor(item))
               .frame(width: hoveredTurn == item.turn ? 22 : 12, height: 2)
-              .frame(width: 30, height: 18, alignment: .leading)
+              .frame(width: ArkChatLayoutResolver.navigationRailWidth, height: 18, alignment: .leading)
               .contentShape(Rectangle())
           }
           .buttonStyle(.plain)
@@ -4664,7 +4768,7 @@ private struct NativeChatTurnNavigationRail: View {
       }
       .padding(.vertical, 6)
     }
-    .frame(width: 30)
+    .frame(width: ArkChatLayoutResolver.navigationRailWidth)
     .frame(maxHeight: 320)
     .overlay(alignment: .leading) {
       if let hoveredItem {
@@ -4691,15 +4795,15 @@ private struct NativeChatTurnNavigationRail: View {
   }
 
   private func stateLabel(_ item: NativeChatTurnNavigationItem) -> String {
-    if item.interrupted { return ArkL10n.text(.executionCancelled, language) }
-    if item.completed { return ArkL10n.text(.executionCompleted, language) }
-    return ArkL10n.text(.executionRunning, language)
+    item.state.label(language)
   }
 
   private func markerColor(_ item: NativeChatTurnNavigationItem) -> Color {
-    if item.interrupted { return Color.orange.opacity(0.78) }
-    if !item.completed { return ArkPalette.accent.opacity(0.72) }
-    return ArkPalette.secondary.opacity(0.62)
+    switch item.state {
+    case .running: return ArkPalette.accent.opacity(0.72)
+    case .aborted, .interrupted, .failed, .blocked, .outputLimited: return Color.orange.opacity(0.78)
+    case .completed, .ended, .historical, .unknown: return ArkPalette.secondary.opacity(0.62)
+    }
   }
 }
 
@@ -4992,6 +5096,50 @@ private struct NativeSystemPromptRow: View {
 /// Presentation-only transcript row. Message projection, ordering and actions
 /// remain owned by ArkAppModel; this view only establishes the native visual
 /// hierarchy used by the compact Ark transcript.
+private struct NativeHistoryMessagePreview: View {
+  let model: ArkAppModel
+  let message: ArkMessage
+  let language: ArkLanguagePreference
+  let fontSize: CGFloat
+  @State private var requestID: UUID?
+  @State private var errorMessage: String?
+  private var loading: Bool { requestID != nil }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(message.text)
+        .font(.system(size: fontSize))
+        .foregroundStyle(ArkPalette.secondary)
+      Button {
+        requestID = UUID()
+        errorMessage = nil
+      } label: {
+        HStack(spacing: 6) {
+          if loading { ProgressView().controlSize(.small) }
+          Text(ArkL10n.text(.chatLoadCompleteMessage, language))
+        }
+      }
+      .buttonStyle(.borderless)
+      .disabled(loading)
+      .task(id: requestID) {
+        guard let requestID else { return }
+        defer { if self.requestID == requestID { self.requestID = nil } }
+        do { _ = try await model.loadHistoryMessageContent(messageID: message.id) }
+        catch is CancellationError {
+          // Leaving the row cancels its content request without displaying a failure.
+        }
+        catch { if self.requestID == requestID { errorMessage = error.localizedDescription } }
+      }
+      if let errorMessage {
+        Text(errorMessage).font(.caption).foregroundStyle(.red)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityIdentifier("ark.chat.history.preview.\(message.id)")
+    .onChange(of: message.id) { _ in requestID = nil; errorMessage = nil }
+  }
+}
+
 private struct NativeMessageRow: View, Equatable {
   let model: ArkAppModel
   let message: ArkMessage
@@ -5225,6 +5373,7 @@ private struct NativeReasoningBlock: View {
   var body: some View {
     DisclosureGroup(summary) {
       Text(displayText)
+        .textSelection(.enabled)
         .font(.system(size: max(10, fontSize - 2)))
         .foregroundStyle(ArkPalette.secondary)
         .lineLimit(streaming ? ArkStreamingPresentationPolicy.reasoningLineLimit : nil)
@@ -5318,6 +5467,7 @@ private struct NativeContextMessageRow: View {
 }
 
 private struct NativeProducedFilesRow: View {
+  @Environment(\.arkOpenProducedFileExternally) private var openExternally
   @Environment(\.arkOpenToolFile) private var openToolFile
   let files: [ArkProducedFile]
   let language: ArkLanguagePreference
@@ -5356,6 +5506,11 @@ private struct NativeProducedFilesRow: View {
           arguments: [file.path]
         ))
         .accessibilityIdentifier("ark.chat.produced-file.\(file.id)")
+        .contextMenu {
+          Button(ArkL10n.text(.producedFilesOpenDefault, language)) {
+            openExternally(file.path)
+          }
+        }
       }
 
       if files.count > visibleFiles.count {

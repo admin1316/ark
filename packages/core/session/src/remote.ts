@@ -11,7 +11,7 @@
  * @module @deepseek-ai/dsh-session/remote
  */
 
-import type { JsonValue } from './json.ts'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SessionId, SessionPromptInvocationId } from './types.ts'
 
 /** A stable failure emitted by the Session Remote port. */
@@ -195,22 +195,143 @@ export interface SessionRemoteCreateValue {
   readonly agentPreset?: string
 }
 
-/** Inputs and outputs for `session/history`. */
-export interface SessionRemoteHistoryRequest {
+/** Identity checked independently for every history page and content fragment. */
+export interface SessionRemoteHistoryIdentity {
   readonly sessionId: SessionId
-  /** Refuse a child page whose actual source header names another parent. */
   readonly expectedParentSessionId?: SessionId
+  /** Required with the direct parent for descriptor-backed child history. */
+  readonly expectedSubagentMode?: 'one-shot' | 'continuable'
+}
+
+/** Existing raw event page; sequence cursors keep their original meaning. */
+export interface SessionRemoteRawHistoryRequest extends SessionRemoteHistoryIdentity {
+  readonly view?: 'raw'
+  /** Reuse a semantic or explicit raw cut; view: raw establishes one when omitted. */
+  readonly sourceRevision?: string
   readonly beforeSeq?: number
   readonly maxMessages?: number
+  /** Hard raw-event budget from 1 through 2,048; defaults to 2,048 independently of the message boundary. */
+  readonly maxEvents?: number
 }
-/**
- * Describes the session remote history value value used by this package.
- */
-export interface SessionRemoteHistoryValue {
+
+/** Complete semantic records at one fixed source cut. */
+export interface SessionRemoteSemanticHistoryRequest extends SessionRemoteHistoryIdentity {
+  readonly view: 'semantic'
+  readonly sourceRevision?: string
+  readonly beforeRecordId?: string
+  readonly maxRecords?: number
+}
+
+/** Exact JSON content of one record, transferred without a giant page payload. */
+export interface SessionRemoteHistoryContentRequest extends SessionRemoteHistoryIdentity {
+  readonly view: 'content'
+  readonly sourceRevision: string
+  readonly recordId: string
+  /** Continuation handle returned by the initial offset-zero content read. */
+  readonly contentReadId?: string
+  /** Release an unfinished materialization without fetching another fragment. */
+  readonly close?: boolean
+  /** UTF-16 offset; returned boundaries never split a surrogate pair. */
+  readonly offset?: number
+  readonly maxCodeUnits?: number
+}
+
+/** History query selecting raw events, a fixed-cut semantic page, or one retained content fragment. */
+export type SessionRemoteHistoryRequest = SessionRemoteRawHistoryRequest
+  | SessionRemoteSemanticHistoryRequest | SessionRemoteHistoryContentRequest
+
+/** Existing raw event history response. */
+export interface SessionRemoteRawHistoryValue {
+  readonly view?: 'raw'
+  /** Always present for explicit raw or revision-bound requests; absent on legacy pages. */
+  readonly sourceRevision?: string
+  readonly asOfThroughSeq?: number
   readonly events: readonly SessionRemoteHistoryEntry[]
   readonly hasMore: boolean
   readonly projections?: SessionRemoteProjections
 }
+
+/** A bounded descriptor; complete typed content is available through `view: content`. */
+export interface SessionRemoteSemanticRecord {
+  readonly id: string
+  readonly kind: 'user' | 'assistant' | 'tool'
+  readonly orderSeq: number
+  readonly time: number
+  readonly turn?: number
+  readonly step?: number
+  readonly state: 'complete' | 'interrupted' | 'active' | 'failed-prefix' | 'orphaned-prefix' | 'unpaired'
+  readonly preview: string
+  readonly contentState: 'complete-at-cut'
+  readonly canonicalEventSeq?: number
+  readonly callEventSeq?: number
+  readonly resultEventSeq?: number
+  /** Only a completed turn ending is eligible for the existing fork admission. */
+  readonly completedTurnEndSeq?: number
+}
+
+/** Exact provider accounting, admitted by token-meter's existing strict turn fold. */
+export interface SessionRemoteHistoryTurnUsage {
+  readonly uncachedInputTokens: number
+  readonly outputTokens: number
+  readonly totalTokens: number
+  readonly cacheReadTokens?: number
+  readonly cacheWriteTokens?: number
+  readonly reasoningTokens?: number
+  readonly routes?: readonly { readonly provider: string; readonly model: string }[]
+}
+
+/** Compact facts at the same cut; null usage explicitly means unproven. */
+export interface SessionRemoteHistoryTurnContext {
+  readonly turn: number
+  readonly startSeq?: number
+  readonly endSeq?: number
+  readonly usage: SessionRemoteHistoryTurnUsage | null
+}
+
+/** Independently seeded domain evidence, never a contiguous live event stream. */
+export interface SessionRemoteHistoryDependencyBundle {
+  readonly kind: 'dependency'
+  readonly domain: 'tool' | 'status' | 'turn'
+  readonly sourceRevision: string
+  readonly asOfThroughSeq: number
+  readonly completeness: 'complete' | 'unknown'
+  readonly chunkCoverage: 'none' | 'timing-boundaries'
+  readonly missing: readonly ('parent-call' | 'dispatch-start' | 'workflow-start' | 'workflow-member' | 'command-start' | 'compaction-start' | 'turn-start')[]
+  readonly entries: readonly SessionRemoteHistoryEntry[]
+  readonly turns: readonly SessionRemoteHistoryTurnContext[]
+}
+
+/** Independent semantic page; never a contiguous raw event log. */
+export interface SessionRemoteSemanticHistoryValue {
+  readonly view: 'semantic'
+  readonly sourceRevision: string
+  readonly asOfThroughSeq: number
+  readonly records: readonly SessionRemoteSemanticRecord[]
+  readonly turns: readonly SessionRemoteHistoryTurnContext[]
+  readonly dependencyRecords: { readonly tool: string; readonly status: string; readonly turn: string }
+  readonly hasMore: boolean
+  readonly nextBeforeRecordId?: string
+  /** These domains still use their existing owners until typed dependency closure lands. */
+  readonly pendingDomains: readonly ('status' | 'usage-context' | 'workflow')[]
+}
+
+/** Concatenate fragments before JSON decoding; offsets refer to the exact same source cut. */
+export interface SessionRemoteHistoryContentValue {
+  readonly view: 'content'
+  readonly sourceRevision: string
+  readonly asOfThroughSeq: number
+  readonly recordId: string
+  readonly encoding: 'json'
+  readonly contentReadId: string
+  readonly offset: number
+  readonly text: string
+  readonly nextOffset: number
+  readonly done: boolean
+}
+
+/** History response for the requested view; revision-bound pages and fragments identify their exact source cut. */
+export type SessionRemoteHistoryValue = SessionRemoteRawHistoryValue
+  | SessionRemoteSemanticHistoryValue | SessionRemoteHistoryContentValue
 
 /** Inputs and outputs for model discovery and selection. */
 export interface SessionRemoteModelsRequest { readonly sessionId: SessionId }
@@ -242,9 +363,10 @@ export interface SessionRemoteRenameValue {
 /**
  * Describes the session remote fork request value used by this package.
  */
-export interface SessionRemoteForkRequest {
-  readonly sessionId: SessionId
+export interface SessionRemoteForkRequest extends SessionRemoteHistoryIdentity {
   readonly atSeq?: number
+  /** Bind the fork seed to a previously read raw/semantic source and inclusive cut. */
+  readonly sourceRevision?: string
 }
 /**
  * Describes the session remote fork value value used by this package.

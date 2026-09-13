@@ -18,6 +18,8 @@ DeepSeek Harness 不交付通用浏览器 UI。`dsh web` alias 与 Web profile�
 
 原生 sidecar 是 API-only 的：[`dsh-host-webserver`](../../../../packages/host/webserver/README.zh.md)监听 loopback，要求本次启动专属的 bearer token，并且只公开已注册的 `/api` HTTP 与 WebSocket route。它不提供 HTML、CSS、JavaScript、静态文件、Client bundle 或 fallback 应用 shell。Ark 的可见界面保持为原生 AppKit/SwiftUI。
 
+Native 组合声明其配置实际挂载的工作区包，并在源码检查时通过 source alias 解析 `native-api-app/startup` 子路径。`/goal` 命令只有一个全局 Host 所有者；preset 选择各自的模型可见 goal 工具。分层校验读取 [`packages/boot/profile-runner/config/agent-presets`](../../../../packages/boot/profile-runner/config/agent-presets) 下实际供 Native 使用的 preset。扫描旧目录 `packages/preset/agent-presets/presets` 会错误识别命令所有者，不能据此禁用 Host 注册。真实组合测试检查 `standard`、`minimal` 与 `code` 各自恰好公开一个 `goal` 命令。
+
 ## 保留内容
 
 - [`packages/web`](../../../../packages/web/README.zh.md)继续作为提供方无关的搜索/抓取能力与面向模型的工具家族。它不包含浏览器 UI。
@@ -28,7 +30,7 @@ DeepSeek Harness 不交付通用浏览器 UI。`dsh web` alias 与 Web profile�
 
 ## 取代关系
 
-本决策完全取代 [Web Client 架构](../architecture/2026-07-19-gui-web-client-architecture.zh.md)、[Web 组装](../architecture/2026-07-24-web-config-tree-boot-and-transport-layering.zh.md)、[浏览器 e2e 车道](../testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)、[Web 样式系统](../process/2026-07-19-web-styling-system.zh.md)，以及实现已不存在的纯 Web 功能 Note 中关于当前产品的结论。这些记录保持不变，以便恢复其依据与事故历史；它们不授权重新引入浏览器 fallback。
+本决策完全取代 [Web Client 架构](../../archived/architecture/2026-07-19-gui-web-client-architecture.md)、[Web 组装](../architecture/2026-07-24-web-config-tree-boot-and-transport-layering.zh.md)、[浏览器 e2e 车道](../testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)、[Web 样式系统](../process/2026-07-19-web-styling-system.zh.md)，以及实现已不存在的纯 Web 功能 Note 中关于当前产品的结论。这些记录保持不变，以便恢复其依据与事故历史；它们不授权重新引入浏览器 fallback。
 
 原生、headless、ACP 或 SDK 消费方仍在使用的 Host 协议、持久 Session 事实、模型工具与其他机制只被部分取代。其现行 owner 文档会在不假定浏览器存在的前提下描述保留行为。
 
@@ -45,9 +47,11 @@ DeepSeek Harness 不交付通用浏览器 UI。`dsh web` alias 与 Web profile�
 ## 验证
 
 - 源码与运行时闭包扫描会拒绝已退役的应用路径、浏览器包名、Web CLI alias/profile、Client 编译输入与静态前端产物。
-- 文档链接、生成目录与包 README 检查在不包含已退役页面的前提下通过；全库双语配对报告仍有单独跟踪的历史文档 out-of-sync。
+- 当前文档与包索引指向保留的所有者；生成目录必须从收敛后的包图重新生成。历史说明保留原始证据，仍可能引用已退役的源码路径。
 - 受管理 sidecar 通过打包后的 Native runner 在端口 0 引导，要求 app 自有 bearer token，服务代表性 Host API 调用与事件 upgrade，并拒绝非 API route。
 - 原生 AppKit/SwiftUI 交互测试仍是用户界面验收权威；Host 或 headless 测试不能替代它。
+
+配置与 source alias 校验覆盖声明的组合。打包 sidecar 启动和 Native 交互仍是独立验证要求；仅通过配置检查不能证明真实组装运行时已通过验收。
 
 ## 后果
 

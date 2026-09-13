@@ -36,6 +36,18 @@ var Inbox = class {
 	get nextStep() {
 		return this.state["next-step"];
 	}
+	/**
+	* Read one pending list, optionally projecting a just-committed splice.
+	* Synchronous session/event observers run before the live inbox mutates;
+	* pass that event's splice here only during that notification.
+	* @param target - pending list to project.
+	* @param splice - committed event not yet applied to the live inbox.
+	* @returns borrowed current messages or a new projected list; never mutates state.
+	*/
+	project(target, splice) {
+		const messages = this.state[target];
+		return splice?.target === target ? messages.toSpliced(splice.start, splice.removedCount ?? 0, ...splice.inserted) : messages;
+	}
 	/** Whether either pending-message list contains work. */
 	get hasPending() {
 		return this.nextTurn.length > 0 || this.nextStep.length > 0;

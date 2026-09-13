@@ -1,5 +1,5 @@
 ---
-description: "Build-static first-party Session format codec and adjacent migration assembly for persistence readers."
+description: "Static first-party Session codecs and adjacent migrations for offline conversion."
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-session-format-catalog` gives persistence one deterministic Session format reader without consulting mounted plugins. It assembles codecs and adjacent edges from the earliest supported format through the [current writer format](../../../docs/session-format-status.md), checks the complete gap-free chain at module initialization, and exposes physical dispatch, header-only classification, single-pass row restoration, and current record encoding through `sessionFormatCatalog`.
+`dsh-session-format-catalog` assembles the released v0–v3 codecs and adjacent migration edges without consulting mounted plugins. Its target format is v3; Ark’s installed `dsh-session` writer and persistence readers use v0 and do not consume this catalog. A transformed v3 artifact is an offline migration result, not an installable Ark session.
 
 ## Table of Contents
 
@@ -27,12 +27,11 @@ English | [中文](README.zh.md)
 
 ### When to use it
 
-Import this library from persistence and test-support readers that need the complete first-party released-format inventory before any feature plugin mounts. Feature compositions do not register or reorder its entries. No runtime invariant companion is published because construction rejects an invalid static inventory and each completed restore validates its result; mutable row-decoder state belongs to one caller-owned streaming restore.
+Use this library for isolated released-format conversion and validation. Feature compositions cannot register or reorder entries. Ark’s JSONL persistence does not invoke these migrations and rejects foreign session versions. Mutable row-decoder state belongs to one caller-owned restore.
 
 ### Entry point
 
 ```text
-const descriptor = sessionFormatCatalog.readHeader(physicalHeader)
 const restore = sessionFormatCatalog.createRestore(physicalHeader, { recovery: 'recoverable', validation: 'transformed' })
 for (const row of physicalRows) restore.decodeRow(row)
 const current = restore.finish()
@@ -40,11 +39,11 @@ const headerRecord = sessionFormatCatalog.encodeCurrentHeader(current.header, cu
 const eventRecords = current.events.map(sessionFormatCatalog.encodeCurrentEvent)
 ```
 
-Import `sessionFormatCatalog` from the package root. JSONL and fixture readers create one restore, push each parsed physical row through `decodeRow()`, and call `finish()` once. Writers serialize the returned current artifact through `encodeCurrentHeader()` and `encodeCurrentEvent()`. Listing calls `readHeader()` and never opens event bodies.
+Import `sessionFormatCatalog` from the package root. An offline reader creates one restore, sends parsed physical rows to `decodeRow()`, and calls `finish()` once. The encoding methods produce catalog-target v3 records; they must not write Ark’s active v0 history. `readHeader()` classifies offline readability: valid v0–v2 headers require migration, valid v3 headers are current for this catalog, future versions are unsupported, and malformed headers are rejected.
 
-Production historical reads select `{ recovery: 'recoverable', validation: 'transformed' }`. Worker and fixture verification select `{ recovery: 'strict', validation: 'current' }`. Transformed validation runs the released-current rules after migration but deliberately skips installed semantic validation for input that is already current.
+`validation: 'transformed'` applies complete released-v3 validation after migration. Already-v3 input receives codec checks only; pass the result to `restoreReleasedV3Artifact` for full offline relationship validation. `validation: 'current'` additionally requires acceptance by the installed Session package, so v3 results fail against Ark’s v0 core. Recovery mode controls incomplete-tail handling independently; it cannot authorize a foreign format.
 
-The catalog contains all supported historical readers directly. A profile cannot add, remove, or reorder an edge by mounting a feature plugin. Its peer dependency on `dsh-session` supplies the installed current event vocabulary and current restoration rules, while historical edge validators remain frozen.
+The catalog directly owns the released readers. Its `dsh-session` peer supplies installed event names and restoration rules; historical edge validators remain frozen. Installed admission preserves the core’s three-argument restore contract and rejects catalog seeds, nonzero inherited cuts, invalid cuts, and version skew instead of discarding metadata.
 
 -----
 
@@ -54,7 +53,7 @@ The catalog contains all supported historical readers directly. A profile cannot
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-[`src/generated.ts`](src/generated.ts) is the static owner of codec and edge ordering. [`src/current.ts`](src/current.ts) delegates final header, envelope, message, surface, seed, and current request-header validation to the installed Session semantics. The low-level constructor rejects duplicate codecs, duplicate edges, gaps, and entries beyond the current version before any Session read can begin.
+[`src/catalog.ts`](src/catalog.ts) directly owns codec and edge ordering. [`src/current.ts`](src/current.ts) checks installed-version, seed, and inherited-cut admission before delegating event and request validation to the installed Session. The low-level constructor rejects duplicate codecs, duplicate edges, gaps, and entries beyond the catalog target version before a read can begin.
 
 </details>
 
@@ -78,7 +77,7 @@ The catalog contains all supported historical readers directly. A profile cannot
 
 #### What the model sees
 
-Nothing directly. The catalog only restores the `SessionEvent` history consumed by request reconstruction.
+Nothing directly. Ark request reconstruction does not consume the offline `sessionFormatCatalog`.
 
 #### Token effect
 
@@ -92,8 +91,9 @@ No direct effect; restored history determines cache identity in its consumer.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **Runtime admission is separate** — catalog v3 is not supported by Ark’s v0 writer. Core and persistence migration must be implemented before enabling this catalog for active history.
 - **First-party build inventory only** — external migration ownership and distribution are not supported.
-- **Generated ordering is closed** — runtime plugin registration cannot supply a missing historical edge.
+- **Static ordering is closed** — runtime plugin registration cannot supply a missing historical edge.
 
 <a id="dev-note"></a>
 ### Dev Note

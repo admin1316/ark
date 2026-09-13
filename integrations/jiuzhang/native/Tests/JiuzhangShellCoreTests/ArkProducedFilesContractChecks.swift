@@ -99,6 +99,14 @@ func runArkProducedFilesContractChecks() {
     "Native chat publishes durable produced-file chips through the existing Workbench file opener"
   )
   check(
+    root.contains(".environment(\\.arkOpenProducedFileExternally, openProducedFileExternally)")
+      && root.contains("openExternally(file.path)")
+      && root.contains("access.validatedExternalFileURL(candidate)")
+      && root.contains("ArkWorkspaceOpener.openProducedFile(fileURL)")
+      && root.contains(".producedFilesOpenFailed"),
+    "produced file default application action reuses root validation and exposes launch failure"
+  )
+  check(
     tool.contains("case .generic(let card) where card.kind == \"edit\"")
       && tool.contains("case .diff(let card)")
       && tool.contains("guard !resultFailed(event)")

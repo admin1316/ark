@@ -36,9 +36,31 @@ const JsonValueRemoteCodec$schema = z.union([z.literal(null), z.string(), z.numb
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_0$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_1$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_2$schema = z.union([z.literal("one-shot"), z.literal("continuable")])
-const _deepseek_ai_dsh_subagent_subagent_history_parameter_3$schema = z.union([z.undefined(), z.number()])
+const _deepseek_ai_dsh_subagent_subagent_history_parameter_3$schema = z.union([z.undefined(), z.number(), z.object({
+  'view': z.literal("raw").readonly().optional(),
+  'sourceRevision': z.string().readonly().optional(),
+  'beforeSeq': z.number().readonly().optional(),
+  'maxMessages': z.number().readonly().optional(),
+  'maxEvents': z.number().readonly().optional(),
+}), z.object({
+  'view': z.literal("semantic").readonly(),
+  'sourceRevision': z.string().readonly().optional(),
+  'beforeRecordId': z.string().readonly().optional(),
+  'maxRecords': z.number().readonly().optional(),
+}), z.object({
+  'view': z.literal("content").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'recordId': z.string().readonly(),
+  'contentReadId': z.string().readonly().optional(),
+  'close': z.boolean().readonly().optional(),
+  'offset': z.number().readonly().optional(),
+  'maxCodeUnits': z.number().readonly().optional(),
+})])
 const _deepseek_ai_dsh_subagent_subagent_history_parameter_4$schema = z.union([z.undefined(), z.number()])
-const _deepseek_ai_dsh_subagent_subagent_history_result$schema = z.object({
+const _deepseek_ai_dsh_subagent_subagent_history_result$schema = z.union([z.object({
+  'view': z.literal("raw").readonly().optional(),
+  'sourceRevision': z.string().readonly().optional(),
+  'asOfThroughSeq': z.number().readonly().optional(),
   'events': z.array(z.object({
   'event': z.object({
   'type': z.string().readonly(),
@@ -56,7 +78,62 @@ const _deepseek_ai_dsh_subagent_subagent_history_result$schema = z.object({
   'asOfSeq': z.number().readonly(),
   'values': z.record(z.string(), z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema))])).readonly(),
 }).readonly().optional(),
-})
+}), z.object({
+  'view': z.literal("semantic").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'asOfThroughSeq': z.number().readonly(),
+  'records': z.array(z.object({
+  'id': z.string().readonly(),
+  'kind': z.union([z.literal("user"), z.literal("assistant"), z.literal("tool")]).readonly(),
+  'orderSeq': z.number().readonly(),
+  'time': z.number().readonly(),
+  'turn': z.number().readonly().optional(),
+  'step': z.number().readonly().optional(),
+  'state': z.union([z.literal("active"), z.literal("complete"), z.literal("interrupted"), z.literal("failed-prefix"), z.literal("orphaned-prefix"), z.literal("unpaired")]).readonly(),
+  'preview': z.string().readonly(),
+  'contentState': z.literal("complete-at-cut").readonly(),
+  'canonicalEventSeq': z.number().readonly().optional(),
+  'callEventSeq': z.number().readonly().optional(),
+  'resultEventSeq': z.number().readonly().optional(),
+  'completedTurnEndSeq': z.number().readonly().optional(),
+})).readonly(),
+  'turns': z.array(z.object({
+  'turn': z.number().readonly(),
+  'startSeq': z.number().readonly().optional(),
+  'endSeq': z.number().readonly().optional(),
+  'usage': z.union([z.literal(null), z.object({
+  'uncachedInputTokens': z.number().readonly(),
+  'outputTokens': z.number().readonly(),
+  'totalTokens': z.number().readonly(),
+  'cacheReadTokens': z.number().readonly().optional(),
+  'cacheWriteTokens': z.number().readonly().optional(),
+  'reasoningTokens': z.number().readonly().optional(),
+  'routes': z.array(z.object({
+  'provider': z.string().readonly(),
+  'model': z.string().readonly(),
+})).readonly().optional(),
+})]).readonly(),
+})).readonly(),
+  'dependencyRecords': z.object({
+  'tool': z.string().readonly(),
+  'status': z.string().readonly(),
+  'turn': z.string().readonly(),
+}).readonly(),
+  'hasMore': z.boolean().readonly(),
+  'nextBeforeRecordId': z.string().readonly().optional(),
+  'pendingDomains': z.array(z.union([z.literal("status"), z.literal("usage-context"), z.literal("workflow")])).readonly(),
+}), z.object({
+  'view': z.literal("content").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'asOfThroughSeq': z.number().readonly(),
+  'recordId': z.string().readonly(),
+  'encoding': z.literal("json").readonly(),
+  'contentReadId': z.string().readonly(),
+  'offset': z.number().readonly(),
+  'text': z.string().readonly(),
+  'nextOffset': z.number().readonly(),
+  'done': z.boolean().readonly(),
+})])
 const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_0$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_interrupt_parameter_1$schema = z.intersection(z.string(), z.unknown())
 const _deepseek_ai_dsh_subagent_subagent_interrupt_result$schema = z.object({
@@ -201,7 +278,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteHistoryValue',
         schema: _deepseek_ai_dsh_subagent_subagent_history_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":528,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":532,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/interrupt',
@@ -237,7 +314,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-subagent/client#SubagentInterruptReceipt',
         schema: _deepseek_ai_dsh_subagent_subagent_interrupt_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":583,"column":3},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":592,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/list',
@@ -264,7 +341,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-subagent/client#SubagentCatalog',
         schema: _deepseek_ai_dsh_subagent_subagent_list_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":425,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":427,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-subagent#subagent/prompt',
@@ -326,7 +403,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-subagent/client#RemoteSubagentPromptReceipt',
         schema: _deepseek_ai_dsh_subagent_subagent_prompt_result$schema,
       },
-      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":561,"column":9},
+      sourceLocation: {"file":"packages/subagent/subagent/src/index.ts","line":570,"column":9},
     },
   ],
   model: {
@@ -433,9 +510,9 @@ export const TYPERT = {
           {
             "kind": "method",
             "name": "remoteHistory",
-            "signature": "@Remote('history') async remoteHistory( parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal: AbortSignal, ): Promise<SessionRemoteHistoryValue>",
+            "signature": "@Remote('history') async remoteHistory( parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | SubagentHistoryOptions | undefined, maxMessages: number | undefined, signal: AbortSignal, ): Promise<SessionRemoteHistoryValue>",
             "summary": "Read the Session owner's bounded page after verifying the direct-child address.",
-            "jsDoc": "/**\n * Read the Session owner's bounded page after verifying the direct-child address.\n * @param parentSessionId - durable parent authorizing the read.\n * @param childSessionId - direct child session id.\n * @param mode - expected child mode.\n * @param beforeSeq - exclusive cursor for an older page.\n * @param maxMessages - bounded message count, validated by the Session owner.\n * @param signal - read cancellation; neither Agent is resumed.\n * @returns the original Session page, including its presentation projections.\n */"
+            "jsDoc": "/**\n * Read the Session owner's bounded page after verifying the direct-child address.\n * Closing an existing content reader uses its original owner-checked address,\n * so removal from the current catalog cannot prevent resource release.\n * @param parentSessionId - durable parent authorizing the read.\n * @param childSessionId - direct child session id.\n * @param mode - expected child mode.\n * @param beforeSeq - legacy exclusive cursor, or typed history view options.\n * @param maxMessages - bounded message count, validated by the Session owner.\n * @param signal - read cancellation; neither Agent is resumed.\n * @returns the original Session page, including its presentation projections.\n */"
           },
           {
             "kind": "method",
@@ -675,7 +752,7 @@ export const TYPERT = {
           },
           {
             "name": "Inbox",
-            "declaration": "export class Inbox {\n    get nextTurn(): readonly UserMessage[];\n    get nextStep(): readonly UserMessage[];\n    get hasPending(): boolean;\n    clear(): void;\n    claim(target: InboxTarget, turn: number): UserMessage[];\n    append(target: InboxTarget, message: UserMessage): void;\n    prepend(target: InboxTarget, message: UserMessage): void;\n    replace(messageId: MessageId, newMessage: UserMessage): boolean;\n    remove(messageId: MessageId): boolean;\n    splice(target: InboxTarget, start: number, deleteCount: number, inserted: UserMessage[]): UserMessage[];\n}"
+            "declaration": "export class Inbox {\n    get nextTurn(): readonly UserMessage[];\n    get nextStep(): readonly UserMessage[];\n    project(target: InboxTarget, splice?: SessionEventMap['agent/inbox/spliced']): readonly UserMessage[];\n    get hasPending(): boolean;\n    clear(): void;\n    claim(target: InboxTarget, turn: number): UserMessage[];\n    append(target: InboxTarget, message: UserMessage): void;\n    prepend(target: InboxTarget, message: UserMessage): void;\n    replace(messageId: MessageId, newMessage: UserMessage): boolean;\n    remove(messageId: MessageId): boolean;\n    splice(target: InboxTarget, start: number, deleteCount: number, inserted: UserMessage[]): UserMessage[];\n}"
           },
           {
             "name": "InboxTarget",
@@ -775,7 +852,7 @@ export const TYPERT = {
           },
           {
             "name": "Session",
-            "declaration": "export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    get id(): SessionId;\n    readonly firstLiveSeq: number;\n    get events(): readonly SessionEvent[];\n    get seq(): number;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}"
+            "declaration": "export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    get id(): SessionId;\n    readonly firstLiveSeq: number;\n    get events(): readonly SessionEvent[];\n    eventAt(seq: number): SessionEvent | undefined;\n    get seq(): number;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}"
           },
           {
             "name": "SessionEvent",
@@ -806,16 +883,56 @@ export const TYPERT = {
             "declaration": "export interface SessionRemoteEvent {\n    readonly type: string;\n    readonly seq: number;\n    readonly time: number;\n    readonly data: JsonValue;\n    readonly sourceEventSeqs?: readonly number[];\n    readonly surfaceOp?: JsonValue;\n    readonly ignorable?: true;\n}"
           },
           {
+            "name": "SessionRemoteHistoryContentRequest",
+            "declaration": "export interface SessionRemoteHistoryContentRequest extends SessionRemoteHistoryIdentity {\n    readonly view: 'content';\n    readonly sourceRevision: string;\n    readonly recordId: string;\n    readonly contentReadId?: string;\n    readonly close?: boolean;\n    readonly offset?: number;\n    readonly maxCodeUnits?: number;\n}"
+          },
+          {
+            "name": "SessionRemoteHistoryContentValue",
+            "declaration": "export interface SessionRemoteHistoryContentValue {\n    readonly view: 'content';\n    readonly sourceRevision: string;\n    readonly asOfThroughSeq: number;\n    readonly recordId: string;\n    readonly encoding: 'json';\n    readonly contentReadId: string;\n    readonly offset: number;\n    readonly text: string;\n    readonly nextOffset: number;\n    readonly done: boolean;\n}"
+          },
+          {
             "name": "SessionRemoteHistoryEntry",
             "declaration": "export interface SessionRemoteHistoryEntry {\n    readonly event: SessionRemoteEvent;\n    readonly view?: JsonValue;\n}"
           },
           {
+            "name": "SessionRemoteHistoryIdentity",
+            "declaration": "export interface SessionRemoteHistoryIdentity {\n    readonly sessionId: SessionId;\n    readonly expectedParentSessionId?: SessionId;\n    readonly expectedSubagentMode?: 'one-shot' | 'continuable';\n}"
+          },
+          {
+            "name": "SessionRemoteHistoryTurnContext",
+            "declaration": "export interface SessionRemoteHistoryTurnContext {\n    readonly turn: number;\n    readonly startSeq?: number;\n    readonly endSeq?: number;\n    readonly usage: SessionRemoteHistoryTurnUsage | null;\n}"
+          },
+          {
+            "name": "SessionRemoteHistoryTurnUsage",
+            "declaration": "export interface SessionRemoteHistoryTurnUsage {\n    readonly uncachedInputTokens: number;\n    readonly outputTokens: number;\n    readonly totalTokens: number;\n    readonly cacheReadTokens?: number;\n    readonly cacheWriteTokens?: number;\n    readonly reasoningTokens?: number;\n    readonly routes?: readonly { readonly provider: string; readonly model: string; }[];\n}"
+          },
+          {
             "name": "SessionRemoteHistoryValue",
-            "declaration": "export interface SessionRemoteHistoryValue {\n    readonly events: readonly SessionRemoteHistoryEntry[];\n    readonly hasMore: boolean;\n    readonly projections?: SessionRemoteProjections;\n}"
+            "declaration": "export type SessionRemoteHistoryValue = SessionRemoteRawHistoryValue | SessionRemoteSemanticHistoryValue | SessionRemoteHistoryContentValue;"
           },
           {
             "name": "SessionRemoteProjections",
             "declaration": "export interface SessionRemoteProjections {\n    readonly asOfSeq: number;\n    readonly values: Record<string, JsonValue>;\n}"
+          },
+          {
+            "name": "SessionRemoteRawHistoryRequest",
+            "declaration": "export interface SessionRemoteRawHistoryRequest extends SessionRemoteHistoryIdentity {\n    readonly view?: 'raw';\n    readonly sourceRevision?: string;\n    readonly beforeSeq?: number;\n    readonly maxMessages?: number;\n    readonly maxEvents?: number;\n}"
+          },
+          {
+            "name": "SessionRemoteRawHistoryValue",
+            "declaration": "export interface SessionRemoteRawHistoryValue {\n    readonly view?: 'raw';\n    readonly sourceRevision?: string;\n    readonly asOfThroughSeq?: number;\n    readonly events: readonly SessionRemoteHistoryEntry[];\n    readonly hasMore: boolean;\n    readonly projections?: SessionRemoteProjections;\n}"
+          },
+          {
+            "name": "SessionRemoteSemanticHistoryRequest",
+            "declaration": "export interface SessionRemoteSemanticHistoryRequest extends SessionRemoteHistoryIdentity {\n    readonly view: 'semantic';\n    readonly sourceRevision?: string;\n    readonly beforeRecordId?: string;\n    readonly maxRecords?: number;\n}"
+          },
+          {
+            "name": "SessionRemoteSemanticHistoryValue",
+            "declaration": "export interface SessionRemoteSemanticHistoryValue {\n    readonly view: 'semantic';\n    readonly sourceRevision: string;\n    readonly asOfThroughSeq: number;\n    readonly records: readonly SessionRemoteSemanticRecord[];\n    readonly turns: readonly SessionRemoteHistoryTurnContext[];\n    readonly dependencyRecords: { readonly tool: string; readonly status: string; readonly turn: string; };\n    readonly hasMore: boolean;\n    readonly nextBeforeRecordId?: string;\n    readonly pendingDomains: readonly ('status' | 'usage-context' | 'workflow')[];\n}"
+          },
+          {
+            "name": "SessionRemoteSemanticRecord",
+            "declaration": "export interface SessionRemoteSemanticRecord {\n    readonly id: string;\n    readonly kind: 'user' | 'assistant' | 'tool';\n    readonly orderSeq: number;\n    readonly time: number;\n    readonly turn?: number;\n    readonly step?: number;\n    readonly state: 'complete' | 'interrupted' | 'active' | 'failed-prefix' | 'orphaned-prefix' | 'unpaired';\n    readonly preview: string;\n    readonly contentState: 'complete-at-cut';\n    readonly canonicalEventSeq?: number;\n    readonly callEventSeq?: number;\n    readonly resultEventSeq?: number;\n    readonly completedTurnEndSeq?: number;\n}"
           },
           {
             "name": "SessionSurface",
@@ -868,6 +985,10 @@ export const TYPERT = {
           {
             "name": "SubagentFollowupOptions",
             "declaration": "export interface SubagentFollowupOptions {\n    readonly source: MessageSource;\n    readonly signal: AbortSignal;\n    readonly delivery?: 'queue' | 'steer';\n    readonly invocationId?: string;\n}"
+          },
+          {
+            "name": "SubagentHistoryOptions",
+            "declaration": "export type SubagentHistoryOptions = Omit<SessionRemoteRawHistoryRequest, 'sessionId' | 'expectedParentSessionId' | 'expectedSubagentMode'> | Omit<SessionRemoteSemanticHistoryRequest, 'sessionId' | 'expectedParentSessionId' | 'expectedSubagentMode'> | Omit<SessionRemoteHistoryContentRequest, 'sessionId' | 'expectedParentSessionId' | 'expectedSubagentMode'>;"
           },
           {
             "name": "SubagentInterruptAuthority",

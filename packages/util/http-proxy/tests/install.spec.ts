@@ -10,6 +10,7 @@ import {
   proxyRouteFor,
 } from '../src/index.ts'
 import { PROXY_ENV_NAMES } from '../src/policy.ts'
+import { env, refuseFixtureLookup, withCleanProxyEnv } from './proxy-env.ts'
 
 /** Absolute-form request targets the fake proxy received; a populated entry proves a request was tunnelled. */
 let proxied: string[] = []
@@ -62,11 +63,6 @@ afterEach(() => {
 /** A second proxy URL, never dialed: it only has to differ from {@link proxyUrl} in an assertion. */
 const nestedUrl = 'http://127.0.0.1:9'
 
-/** A launch environment built from the names a user would export, in the casings they wrote. */
-function env(values: Record<string, string>): { get(name: string): { value: string } | undefined } {
-  return { get: name => (name in values ? { value: values[name] as string } : undefined) }
-}
-
 /** The environment of a user who exported one proxy for both schemes. */
 function proxyAll(noProxy?: string): { get(name: string): { value: string } | undefined } {
   return env({ HTTP_PROXY: proxyUrl, HTTPS_PROXY: proxyUrl, ...noProxy === undefined ? {} : { NO_PROXY: noProxy } })
@@ -79,20 +75,6 @@ async function install(
   const reported: string[] = []
   const dispose = await installProxyFromEnvironment(lookup, (message) => { reported.push(message) })
   return { dispose, reported }
-}
-
-/** Run one case from a known-empty proxy environment, then restore what the machine had. */
-async function withCleanProxyEnv(run: () => Promise<void>): Promise<void> {
-  const saved = Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, process.env[name]]))
-  for (const name of PROXY_ENV_NAMES) Reflect.deleteProperty(process.env, name)
-  try {
-    await run()
-  } finally {
-    for (const [name, value] of Object.entries(saved)) {
-      if (value === undefined) Reflect.deleteProperty(process.env, name)
-      else process.env[name] = value
-    }
-  }
 }
 
 describe('installProxyFromEnvironment', () => {
@@ -108,10 +90,13 @@ describe('installProxyFromEnvironment', () => {
 
   it('connects directly when the bypass list covers the target', async () => {
     const { dispose } = await install(env({ HTTP_PROXY: proxyUrl, NO_PROXY: 'origin.test' }))
+    const lookup = refuseFixtureLookup('origin.test')
     try {
       await expect(fetch(proxyTarget, { signal: AbortSignal.timeout(1500) })).rejects.toThrow()
+      expect(lookup).toHaveBeenCalledOnce()
       expect(proxied).toEqual([])
     } finally {
+      lookup.mockRestore()
       await dispose()
     }
   })
@@ -191,16 +176,19 @@ describe('installProxyFromEnvironment', () => {
     // direct. undici's own EnvHttpProxyAgent cannot express this — with no HTTPS proxy present it
     // reuses the HTTP one, tunnelling the scheme the diagnostic told the user stayed direct.
     const { dispose } = await install(env({ HTTP_PROXY: proxyUrl, HTTPS_PROXY: 'socks5://127.0.0.1:1080' }))
+    const lookup = refuseFixtureLookup('refused-scheme.invalid')
     try {
       // The direct path here fails on a DNS miss whose latency is the machine's resolver to decide;
       // the deadline bounds it. Either rejection proves the same thing — no CONNECT reached the
       // proxy — and a proxied hop would have answered in milliseconds instead.
       await expect(fetch('https://refused-scheme.invalid/', { signal: AbortSignal.timeout(1500) })).rejects.toThrow()
+      expect(lookup).toHaveBeenCalledOnce()
       expect(proxied).toEqual([])
       // The same policy still tunnels http, so the empty expectation above is not vacuous.
       await expect((await fetch(proxyTarget)).text()).resolves.toBe('VIA-PROXY')
       expect(proxied).toEqual([`GET ${proxyTarget}`])
     } finally {
+      lookup.mockRestore()
       await dispose()
     }
   })

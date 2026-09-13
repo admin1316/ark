@@ -3,6 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SettingsProvider, SettingsConflictError, deepEqualJson, installSettingsSection, settingsNamespace, type SettingsNamespace, type SettingsScope, type SettingsUpdateSource } from '../src/index.ts'
 import { MemorySettings } from './memory.ts'
+import { deepEqualJson as compareValues } from '@deepseek-ai/dsh-util-values'
 
 /** A provider implementing only the three primitives: the Service Definition owns initialization. */
 class BareProvider extends SettingsProvider {
@@ -306,6 +307,19 @@ describe('update', () => {
 })
 
 describe('deepEqualJson', () => {
+  it.each([
+    { owner: 'Settings public API', compare: deepEqualJson },
+    { owner: 'shared value owner', compare: compareValues },
+  ])('rejects inherited matching keys through $owner', ({ compare }) => {
+    const inherited = { y: 2 }
+    Object.setPrototypeOf(inherited, { x: 1 })
+    expect(compare({ x: 1 }, inherited)).toBe(false)
+    expect(compare({ nested: { x: 1 } }, { nested: inherited })).toBe(false)
+    const own = { x: 1 }
+    Object.setPrototypeOf(own, null)
+    expect(compare({ x: 1 }, own)).toBe(true)
+  })
+
   it.each([
     [{ a: [1, 2] }, { a: [1, 2] }, true],
     [{ a: [1, 2] }, { a: [1] }, false],

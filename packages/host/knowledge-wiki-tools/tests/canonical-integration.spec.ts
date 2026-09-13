@@ -10,6 +10,7 @@ import KnowledgeWikiService from '../../knowledge-wiki/src/index.ts'
 import * as tools from '../src/index.ts'
 import { verifierAuthority } from '../../knowledge-wiki/tests/verifier-authority-fixture.ts'
 import { stageExecutorFor } from '../../knowledge-wiki/tests/stage-executor-fixture.ts'
+import { wikiTestConfig } from '../../knowledge-wiki/tests/config-fixture.ts'
 
 interface CanonicalServiceSurface {
   drainQueue(): Promise<void>
@@ -74,22 +75,22 @@ describe('canonical Knowledge Wiki and model tools', () => {
     await ctx.plugin(ToolRuntime)
     class CanonicalWiki extends KnowledgeWikiService {
       constructor(owner: Context) {
-        super(owner, {
+        super(owner, wikiTestConfig({
           wikiRoot,
           mainRoot: root,
           credential: 'VISION_API_KEY',
           llmProvider: 'p',
           llmModel: 'm',
-        })
+        }))
       }
     }
-    await ctx.plugin(CanonicalWiki, {
+    await ctx.plugin(CanonicalWiki, wikiTestConfig({
       wikiRoot,
       mainRoot: root,
       credential: 'VISION_API_KEY',
       llmProvider: 'p',
       llmModel: 'm',
-    })
+    }))
     const service = ctx.get('knowledgeWiki') as unknown as CanonicalServiceSurface
     await ctx.plugin(tools)
 

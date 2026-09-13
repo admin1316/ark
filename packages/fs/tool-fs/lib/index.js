@@ -863,10 +863,8 @@ function applyEditTool(ctx, sandbox) {
 * attachment service's full decode stays authoritative. The mounted `ctx.fs`
 * backend owns path resolution and read access; names only declare media type.
 *
-* The route gate is deliberately stricter than the host upload preflight. An
-* image-reading tool is useful only when the exact calling route can inspect
-* its result, so unknown capability refuses instead of relying on an adapter
-* failure after filesystem and attachment work.
+* Ark 定制：读图不再按模型模态预检。图片一律允许读入，能否识别由模型/上游
+* 在请求期决定，避免在文件系统与附件写入之后才发现能力不符。
 * @module @deepseek-ai/dsh-tool-fs/src/read-image
 */
 /** Extensions `read_image` accepts; magic-byte validation at the attachment service stays authoritative. */
@@ -968,23 +966,6 @@ const IMAGE_VALUE_SCHEMA = {
 function imageMediaTypeForPath(filePath) {
 	return IMAGE_EXTENSIONS[extname(filePath).toLowerCase()];
 }
-/**
-* Enforce the strict image-capability gate for the calling route. Resolves the
-* session's latest routed provider/model (request header config, then agent
-* options) and requires the exact resolved route to declare `image` input explicitly.
-* @param ctx - the plugin context used to resolve the optional `llm` service.
-* @param exec - the tool-execution context supplying the calling agent.
-* @param requestedPath - the raw, not-yet-resolved path rendered in refusal messages.
-*/
-async function assertImageCapableRoute(ctx, exec, requestedPath) {
-	const routed = exec.agent?.session.requestHeader()?.config;
-	const provider = routed?.provider ?? exec.agent?.options.provider;
-	const model = routed?.model ?? exec.agent?.options.model;
-	const llm = ctx.get("llm");
-	if (provider === void 0 || model === void 0 || llm === void 0) throw new Error(`cannot read "${requestedPath}" as an image: the current model route could not be resolved`);
-	const active = await llm.resolveModelInfo(provider, model, exec.signal);
-	if (active.inputModalities === void 0 || !active.inputModalities.includes("image")) throw new Error(`cannot read "${requestedPath}" as an image: model "${model}" does not declare image input; switch to an image-capable model to read images`);
-}
 /** Refuse a media type outside the deployment's accepted set, naming the offending path. */
 function assertDeploymentAccepts(attachments, mediaType, displayPath) {
 	if (!attachments.imageLimits.mediaTypes.includes(mediaType)) throw new Error(`cannot read "${displayPath}": ${mediaType} images are not accepted by this deployment`);
@@ -1047,14 +1028,14 @@ function imageReadContent(value) {
 * owns the attachments gate: `src/index.ts` calls this inside
 * `ctx.inject(['attachments'], …)` so the tool exists only while a durable
 * store is mounted. Execution still re-checks `ctx.get('attachments')` for
-* direct callers and gates on the calling route's declared image input.
+* direct callers; the calling model's own modality no longer blocks the read.
 * @param ctx - the registration scope; execution uses its `fs` service plus
-*   the optional `attachments`/`llm` services.
+*   the optional `attachments` service.
 */
 function applyReadImageTool(ctx) {
 	ctx.tools.register(defineTool({
 		name: "read_image",
-		description: "Read a PNG/JPEG/WebP/GIF file and return the image itself. A path without a file extension is accepted; the format is detected from the file content, so normalized attachment paths can be passed directly without copying or renaming. Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. Independent files may be read concurrently in small batches. Requires the current model to accept image input.",
+		description: "Read a PNG/JPEG/WebP/GIF file and return the image itself. A path without a file extension is accepted; the format is detected from the file content, so normalized attachment paths can be passed directly without copying or renaming. Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. Independent files may be read concurrently in small batches.",
 		parameters: { file_path: {
 			type: "string",
 			required: true,
@@ -1083,7 +1064,6 @@ function applyReadImageTool(ctx) {
 			const attachments = ctx.get("attachments");
 			if (attachments === void 0) throw new Error(`cannot read "${args.file_path}" as an image: no attachment service is mounted`);
 			if (declared !== void 0) assertDeploymentAccepts(attachments, declared, args.file_path);
-			await assertImageCapableRoute(ctx, exec, args.file_path);
 			const { target, info } = await resolveRegularReadTarget(ctx, exec, args.file_path);
 			const byteCap = Math.min(attachments.imageLimits.maxImageBytes, attachments.imageLimits.maxMessageImageBytes);
 			const data = await ctx.fs.readBytes(target, exec.signal, byteCap);

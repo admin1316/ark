@@ -130,9 +130,9 @@ public struct ArkChatStatusProjection: Sendable {
   /// switch that goes through a host command cannot change the chat's content
   /// height or trigger scroll repositioning.
   private var suppressedCommandIDs: Set<String> = []
-  /// The locale the projection bakes into status copy. The model rebuilds
-  /// the projection on language switches so existing rows relocalize.
-  private let language: ArkLanguagePreference
+  /// Localized copy is replaced from complete, source-bound status evidence.
+  /// Raw event retention is independent of this projection's lifecycle state.
+  public let language: ArkLanguagePreference
 
   public init(
     events: [ArkHistoryEvent] = [],

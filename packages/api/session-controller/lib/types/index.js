@@ -1,4 +1,4 @@
-/** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
+/** Session legacy desktop actions, journal streams, and live control state. */
 var __runInitializers = (this && this.__runInitializers) || function (thisArg, initializers, value) {
     var useValue = arguments.length > 2;
     for (var i = 0; i < initializers.length; i++) {
@@ -90,69 +90,35 @@ import { errorChain } from '@deepseek-ai/dsh-llm';
 import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command';
 import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import { ApiSessionAgentController, inspectApiSession, } from "./agent.js";
-import { SessionCommandController } from "./commands.js";
 import { SessionControlController } from "./control.js";
 import { SessionHistoryController } from "./history.js";
-import { SessionFileReferences } from "./file-references.js";
-import { ApiSessionList, DEFAULT_COLD_BLANK_PROBE_MAX_BYTES } from "./list.js";
+import { sessionSummaryFor } from "./list.js";
 import { buildModelCatalog } from "./catalog.js";
-import { installModelSelectionProjection } from "./model-selection-projection.js";
 import { SessionSkillCatalog } from "./skill-catalog.js";
 export { ApiSessionNotFound } from "./agent.js";
-export { SessionFileReferences } from "./file-references.js";
 export { SessionSkillCatalog } from "./skill-catalog.js";
-/** Host service backing the generated `ctx.remote.session` namespace. */
+/** Desktop and streaming additions to the canonical Session Remote namespace. */
 let SessionController = (() => {
     let _classSuper = TypertRemoteService;
     let _instanceExtraInitializers = [];
-    let _list_decorators;
-    let _search_decorators;
-    let _create_decorators;
-    let _selectModel_decorators;
     let _modelCatalog_decorators;
     let _canOpenWorkspacePath_decorators;
     let _openWorkspacePath_decorators;
-    let _rename_decorators;
-    let _fork_decorators;
-    let _prompt_decorators;
-    let _attachment_decorators;
-    let _updateQueue_decorators;
-    let _cancel_decorators;
     let _page_decorators;
     let _follow_decorators;
     let _control_decorators;
     return class SessionController extends _classSuper {
         static {
             const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
-            _list_decorators = [Remote('list')];
-            _search_decorators = [Remote('search')];
-            _create_decorators = [Remote('create')];
-            _selectModel_decorators = [Remote('selectModel')];
             _modelCatalog_decorators = [Remote('modelCatalog')];
             _canOpenWorkspacePath_decorators = [Remote];
             _openWorkspacePath_decorators = [Remote('openWorkspacePath')];
-            _rename_decorators = [Remote('rename')];
-            _fork_decorators = [Remote('fork')];
-            _prompt_decorators = [Remote('prompt')];
-            _attachment_decorators = [Remote('attachment')];
-            _updateQueue_decorators = [Remote('updateQueue')];
-            _cancel_decorators = [Remote('cancel')];
             _page_decorators = [Remote('page')];
             _follow_decorators = [Remote({ mode: 'stream' })];
             _control_decorators = [Remote({ mode: 'stream' })];
-            __esDecorate(this, null, _list_decorators, { kind: "method", name: "list", static: false, private: false, access: { has: obj => "list" in obj, get: obj => obj.list }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _search_decorators, { kind: "method", name: "search", static: false, private: false, access: { has: obj => "search" in obj, get: obj => obj.search }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _create_decorators, { kind: "method", name: "create", static: false, private: false, access: { has: obj => "create" in obj, get: obj => obj.create }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _selectModel_decorators, { kind: "method", name: "selectModel", static: false, private: false, access: { has: obj => "selectModel" in obj, get: obj => obj.selectModel }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _modelCatalog_decorators, { kind: "method", name: "modelCatalog", static: false, private: false, access: { has: obj => "modelCatalog" in obj, get: obj => obj.modelCatalog }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _canOpenWorkspacePath_decorators, { kind: "method", name: "canOpenWorkspacePath", static: false, private: false, access: { has: obj => "canOpenWorkspacePath" in obj, get: obj => obj.canOpenWorkspacePath }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _openWorkspacePath_decorators, { kind: "method", name: "openWorkspacePath", static: false, private: false, access: { has: obj => "openWorkspacePath" in obj, get: obj => obj.openWorkspacePath }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _rename_decorators, { kind: "method", name: "rename", static: false, private: false, access: { has: obj => "rename" in obj, get: obj => obj.rename }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _fork_decorators, { kind: "method", name: "fork", static: false, private: false, access: { has: obj => "fork" in obj, get: obj => obj.fork }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _prompt_decorators, { kind: "method", name: "prompt", static: false, private: false, access: { has: obj => "prompt" in obj, get: obj => obj.prompt }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _attachment_decorators, { kind: "method", name: "attachment", static: false, private: false, access: { has: obj => "attachment" in obj, get: obj => obj.attachment }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _updateQueue_decorators, { kind: "method", name: "updateQueue", static: false, private: false, access: { has: obj => "updateQueue" in obj, get: obj => obj.updateQueue }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _cancel_decorators, { kind: "method", name: "cancel", static: false, private: false, access: { has: obj => "cancel" in obj, get: obj => obj.cancel }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _page_decorators, { kind: "method", name: "page", static: false, private: false, access: { has: obj => "page" in obj, get: obj => obj.page }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _follow_decorators, { kind: "method", name: "follow", static: false, private: false, access: { has: obj => "follow" in obj, get: obj => obj.follow }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _control_decorators, { kind: "method", name: "control", static: false, private: false, access: { has: obj => "control" in obj, get: obj => obj.control }, metadata: _metadata }, null, _instanceExtraInitializers);
@@ -170,26 +136,21 @@ let SessionController = (() => {
             'workspaceRegistry',
         ];
         static Config = z.object({
-            coldBlankProbeMaxBytes: z.natural().default(DEFAULT_COLD_BLANK_PROBE_MAX_BYTES),
             nativeOpen: z.boolean(),
         });
         agents = __runInitializers(this, _instanceExtraInitializers);
-        commands;
         controlState;
         history;
-        listState;
         openPath;
         canOpenPath;
         promotions = new Set();
         /**
          * @param ctx - Host context containing the Session capability assembly.
-         * @param config - cold-list observation policy.
+         * @param config - native desktop handoff policy.
          */
         constructor(ctx, config, internals = {}) {
             super(ctx, 'sessionController', { namespace: 'session' });
-            installModelSelectionProjection(ctx);
             this.agents = new ApiSessionAgentController(ctx);
-            this.commands = new SessionCommandController(ctx, this.agents, process.cwd());
             this.controlState = new SessionControlController(ctx);
             // Registered before history so reverse-order teardown closes every
             // follower before waiting for already-admitted promotions.
@@ -197,14 +158,12 @@ let SessionController = (() => {
                 await Promise.allSettled([...this.promotions]);
             }, 'session-controller.promotions');
             this.history = new SessionHistoryController(ctx, (observation) => { this.promote(observation); });
-            this.listState = new ApiSessionList(ctx, config.coldBlankProbeMaxBytes ?? DEFAULT_COLD_BLANK_PROBE_MAX_BYTES);
             this.openPath = internals.openPath ?? openNativePath;
             this.canOpenPath = internals.canOpenPath
                 ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()));
-            ctx.plugin(SessionFileReferences);
             ctx.plugin(SessionSkillCatalog);
             ctx.on('session/created', (session) => {
-                ctx.emit('api-session/added', this.listState.summaryFor(session));
+                ctx.emit('api-session/added', sessionSummaryFor(ctx, session));
             });
             ctx.on('session/disposed', (session) => {
                 ctx.emit('api-session/removed', session.id);
@@ -216,11 +175,6 @@ let SessionController = (() => {
                 ctx.emit('api-session/error', agent.id, errorChain(error));
             });
             ctx.on('session/event', (session, event) => {
-                if (event.type === 'request/header') {
-                    const agent = ctx.agents.get(session.id);
-                    if (agent?.session === session)
-                        this.agents.consumeSelection(agent, event.data.header.config.provider, event.data.header.config.model, event.data.header.config.reasoningEffort);
-                }
                 if (event.type !== 'user/message' || event.data.source.kind !== 'user')
                     return;
                 ctx.emit('api-session/activity', session.id, event.time);
@@ -271,40 +225,6 @@ let SessionController = (() => {
             return inspectApiSession(this.ctx, sessionId, signal);
         }
         /**
-         * Read all visible Session rows without resuming an Agent.
-         * @param _request - reserved empty list request.
-         * @param signal - cancellation for persistence reads.
-         * @returns visible Session summaries ordered by activity.
-         */
-        async list(_request, signal) {
-            return { items: await this.listState.list(signal) };
-        }
-        /**
-         * Search visible Session content without resuming an Agent.
-         * @param request - literal message-content query.
-         * @param signal - cancellation for list and search reads.
-         * @returns authorized bounded Session search results.
-         */
-        search(request, signal) {
-            return this.listState.search(request.query, signal);
-        }
-        /**
-         * Create or idempotently adopt one ordinary Session.
-         * @param request - requested identity, location, and Agent preset.
-         * @returns the Session identity and resolved preset when configured.
-         */
-        create(request) {
-            return this.commands.create(request);
-        }
-        /**
-         * Select one Session-local model after explicitly resuming the Session.
-         * @param request - Session identity and requested model selection.
-         * @returns the normalized selection installed for the Session.
-         */
-        selectModel(request) {
-            return this.commands.selectModel(request);
-        }
-        /**
          * Describe every currently routable model for Host-generation selectors.
          * @returns provider-grouped models, the deployment default, and isolated provider failures.
          */
@@ -350,56 +270,6 @@ let SessionController = (() => {
                     details: {},
                 });
             }
-        }
-        /**
-         * Rename one Session after explicitly resuming it.
-         * @param request - Session identity and proposed title.
-         * @returns the accepted title and durable event sequence.
-         */
-        rename(request) {
-            return this.commands.rename(request);
-        }
-        /**
-         * Fork one cold-readable completed-turn prefix into a new Session.
-         * @param request - source Session and optional event anchor.
-         * @returns the new Session identity.
-         */
-        fork(request) {
-            return this.commands.fork(request);
-        }
-        /**
-         * Admit one prompt after explicitly resuming its Session.
-         * @param request - Session identity, prompt content, source metadata, and delivery mode.
-         * @param signal - caller cancellation before prompt admission begins.
-         * @returns acknowledgement that the Agent accepted the prompt.
-         */
-        prompt(request, signal) {
-            signal.throwIfAborted();
-            return this.commands.prompt(request);
-        }
-        /**
-         * Read one image proven reachable from the addressed Session log.
-         * @param request - Session and attachment identities used for authorization.
-         * @returns the durable attachment reference and base64-encoded bytes.
-         */
-        attachment(request) {
-            return this.commands.attachment(request);
-        }
-        /**
-         * Mutate one still-pending queue occurrence on a live Agent.
-         * @param request - Session, queue item, and requested mutation.
-         * @returns acknowledgement that the queue mutation was applied.
-         */
-        updateQueue(request) {
-            return this.commands.updateQueue(request);
-        }
-        /**
-         * Cancel one active Agent turn without dropping its pending inbox.
-         * @param request - Session whose active Agent turn is cancelled.
-         * @returns acknowledgement that cancellation was requested.
-         */
-        cancel(request) {
-            return this.commands.cancel(request);
         }
         /**
          * Read one cold-safe, message-aligned Session history page.

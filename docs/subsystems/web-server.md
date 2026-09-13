@@ -2,7 +2,7 @@
 
 English | [中文](web-server.zh.md)
 
-[dsh-host-webserver](../../packages/host/webserver) is the browser HTTP carrier for the GUI host: a single `node:http` plugin providing `ctx.webServer`, a named-route registry, index.html transform callbacks, and one fallback handler that a plugin may claim. It is not part of the agent loop and not a capability seam; it knows no harness concepts, and another plugin registers every feature route, including the `/api` bridge, plugin bundles, and the HMR event stream ([layering note](../../.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md)). It serves browsers only: Electron loads the built files over `file://` and sends fetch requests through an IPC bridge instead of this server.
+[dsh-host-webserver](../../packages/host/webserver) provides `ctx.webServer`, a `node:http` listener with named HTTP and upgrade routes. It knows no agent-loop concepts and serves no files itself. Ark composes it as an authenticated loopback API-only sidecar through [dsh-native-api-app](../../packages/bundle/native-api-app/README.md); the [API Gateway reference](../api-gateway.md) defines dispatch and trust boundaries. The Native SwiftUI/AppKit shell consumes this API. Its separate Workbench browser renders external HTTP(S) pages in WebKit without access to Ark credentials, tools, or local files.
 
 Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
 
@@ -24,7 +24,7 @@ interface WebRoute {
 }
 ```
 
-Match order is fixed: exact table first, then longest matching prefix, then the registered fallback. Registration order carries no request-facing semantics — named routes are composed to be disjoint, and the fallback seat answers anything no named route claims; one owner only, a second registration throws. Ark's Native composition leaves the fallback seat empty, so non-API paths return 404 and no static frontend is served.
+Match order is fixed: exact table first, then longest matching prefix, then the registered fallback. Registration order carries no request-facing semantics — named routes are composed to be disjoint, and the fallback seat answers anything no named route claims; one owner only, a second registration throws. Ark's Native composition leaves the fallback seat empty, and uses API-only mode: `/` returns a status document, other non-API paths return 404, and no static frontend is served.
 
 ## Config
 
@@ -63,13 +63,13 @@ interface Config {
 }
 ```
 
-`host` accepts only `127.0.0.1` (default posture) and `0.0.0.0` (deliberate network exposure); there is no TLS, auth, or origin policy, so a non-loopback bind exposes the server to that network. Ark binds loopback and applies authentication in its Host connection layer.
+`host` accepts only `127.0.0.1` and `0.0.0.0`. The server validates loopback Host headers and authenticates `/api` requests with a launch-scoped token; binding all interfaces requires an explicitly configured token. It supplies no TLS. Ark binds loopback, enables API-only mode, and applies the additional Host connection trust policy described in the [API Gateway reference](../api-gateway.md).
 
 ## The service
 
 `WebServer` (`ctx.webServer`) listens immediately on activation; a listen failure (EADDRINUSE…) rejects initialization, and the boot process reports the failed fiber. `register(route)` adds one named route and returns its disposer; a duplicate `(kind, path)` throws because route patterns are a composition-level contract and a collision is a misconfiguration. `port` reads the listening port, including the port assigned by the OS when `config.port` is 0.
 
-A request whose handling throws (a malformed %-escape hitting `decodeURIComponent`, a client dropping mid-body) is logged as a warning and answered 400 — or the socket destroyed when headers are already out — never a process exit. Disposal pairs `close()` with `closeAllConnections()` because a handler may hold its response open (SSE) and such connections never end on their own; without the force-close, teardown would hang. The package never prints: the URL line belongs to the shell. Per-package operational detail, including the dev-mode bundle watch pipeline, stays in the [README](../../packages/host/webserver/README.md).
+A request whose handling throws (a malformed %-escape hitting `decodeURIComponent`, a client dropping mid-body) is logged as a warning and answered 400 — or the socket destroyed when headers are already out — never a process exit. Disposal pairs `close()` with `closeAllConnections()` because a handler may hold its response open (SSE) and such connections never end on their own; without the force-close, teardown would hang. The package never prints: the URL line belongs to the shell. Per-package operational detail, stays in the [README](../../packages/host/webserver/README.md).
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

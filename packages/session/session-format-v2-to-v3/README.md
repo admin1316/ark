@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Restore supported released V2 Sessions as V3 without changing historical request meaning. This page is the single specification for this adjacent edge: what it transforms, preserves, and refuses, followed separately by native V3 admission. The library promotes system prompts into messages, remaps local event references, translates PTC and preset names, and canonicalizes envelopes. Persistence consumes it through the static catalog; the library does not read or publish files.
+Restore supported released V2 Sessions as V3 without changing historical request meaning. This page is the single specification for this adjacent edge: what it transforms, preserves, and refuses, followed separately by native V3 admission. The library promotes system prompts into messages, remaps local event references, translates PTC and preset names, and canonicalizes envelopes. The offline catalog assembles this edge; Ark’s installed v0 persistence does not consume it. The library does not read or publish files.
 
 ## Table of Contents
 
@@ -36,7 +36,7 @@ Restore supported released V2 Sessions as V3 without changing historical request
 
 ### When to use it
 
-Use the [catalog](../session-format-catalog/README.md) to restore a Session. Direct imports serve catalog assembly and tests; this library has no Cordis mount configuration. The [public exports](src/index.ts) provide the migration declaration, released V2 source codec, V3 target codec, target header validator, and target restorer.
+Use the [catalog](../session-format-catalog/README.md) for offline released-format conversion. Direct imports serve catalog assembly and tests; this library has no Cordis mount configuration. The [public exports](src/index.ts) provide the migration declaration, released V2 source codec, V3 target codec, target header validator, and target restorer.
 
 ### Entry point
 
@@ -46,7 +46,7 @@ The header-only operation does not convert or validate an event body:
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-Full restoration feeds decoded events through a fresh stage and validates the target artifact. Callers must not treat partial stage emissions as a successful restore: an error can occur at a later event or at `finish()`. The [format protocol](../session-format/README.md) owns stage scheduling and catalog error handling; [JSONL persistence](../session-persistence-jsonl/README.md) owns read preparation and immutable successor publication.
+Full restoration feeds decoded events through a fresh stage and validates the target artifact. Callers must not treat partial stage emissions as a successful restore: an error can occur at a later event or at `finish()`. The [format protocol](../session-format/README.md) owns stage scheduling and catalog error handling. The caller owns file access; this edge has no persistence publication path.
 
 -----
 
@@ -129,7 +129,7 @@ The content audit admits exactly `text`, `reasoning`, `image`, `file`, `tool-cal
 | PTC predecessor output | `tool/code-dispatch.data.content` |
 | Embedded assistant streams | In `assistant/message.data.stream[]` and `assistant/attempt.data.stream[]`, raw `type: 'chunk'` records: `chunk.block` for `block-end` and `chunk.blockType` for `block-start`, including starts with no completed block |
 
-All positions use the same historical kind set; a partial start cannot introduce an unknown kind. Unknown kinds and malformed owned blocks refuse the whole migration; catalog restoration reports `SessionFormatUnsupportedMigrationError`. The diagnostic identifies the source event type, source sequence, full indexed payload path, and violated rule. Unknown-kind errors name the offending kind; malformed known-block errors name the kind and field error. A malformed content container or missing block reports its location without inventing a kind. Persistence leaves source bytes unchanged and publishes no successor on refusal.
+All positions use the same historical kind set; a partial start cannot introduce an unknown kind. Unknown kinds and malformed owned blocks refuse the whole migration; catalog restoration reports `SessionFormatUnsupportedMigrationError`. The diagnostic identifies the source event type, source sequence, full indexed payload path, and violated rule. Unknown-kind errors name the offending kind; malformed known-block errors name the kind and field error. A malformed content container or missing block reports its location without inventing a kind. Refusal produces no restored artifact; the library never changes source bytes or publishes files.
 
 Admission does not rewrite content. In particular, embedded stream bytes are preserved although their owned block fields are inspected. Tool arguments, `replayState.response`, and `replayState.blocks` remain opaque; matching field names inside arbitrary JSON do not trigger this audit. File attachment metadata is validated without interpreting ids or byte counts as Session references. This is not a general schema audit or recursive coordinate inference, and native V3 extension acceptance is separate.
 
@@ -140,7 +140,7 @@ A surface event before the first step, a changed prompt outside an open step, or
 <a id="native-v3-admission"></a>
 ## Native V3 admission
 
-Input already marked V3 does not run V2-to-V3. Native catalog reads with `validation: 'transformed'` apply codec checks only and skip artifact restoration; full relationships, open-step ownership, protected-head operations, and vocabulary checks require `restoreReleasedV3Artifact` or catalog `validation: 'current'`. The following rules distinguish those restoration checks from codec admission; they are not additional historical transformations:
+Input already marked V3 does not run V2-to-V3. Native catalog reads with `validation: 'transformed'` apply codec checks only and skip artifact restoration; full relationships, open-step ownership, protected-head operations, and vocabulary checks require `restoreReleasedV3Artifact`. Catalog `validation: 'current'` adds installed admission and rejects v3 while Ark’s core is v0. The following rules distinguish those restoration checks from codec admission; they are not additional historical transformations:
 
 - Native V3 admits in-history system appends, non-head system replacements, and compaction of non-head system nodes. System messages require valid payloads and matching open-step ownership. The first surface system head can be replaced only by a system message covering exactly that head; ordinary replacements and compaction cannot consume it. Migration itself produces only the initial head and head replacements, not route-dependent in-history updates.
 - Native V3 rejects every `request/header.data.header.system`, even empty or malformed, and rejects noncanonical replacement spellings and the two empty header optionals. It preserves whitespace content, empty stop lists, and admitted nested header/source/data extensions. That extension admission does not widen the V2 source audit or the exact logical Session header fields.
@@ -157,7 +157,7 @@ Input already marked V3 does not run V2-to-V3. Native catalog reads with `valida
 
 The [stage](src/migration.ts) owns synchronous per-artifact sequence maps, message identity sets, and prompt/lifecycle state. Compact runs expand incrementally. The [codec](src/codec.ts) reuses frozen V2 framing; the [restorer](src/validation.ts) validates V3 structure before giving frozen ordinary relationship validation a private system/PTC/repair-id and endpoint view. That view retains the actual target generation for delivery checks and never escapes: restoration returns the original V3 artifact and identities. Frozen V0-to-V1 and V1-to-V2 semantics remain unchanged. No runtime invariant companion is published because this library owns no independently observable registrations or state replicas.
 
-[Combined catalog tests](tests/combined-migration.spec.ts) exercise transformation composition and native reopen; [migration tests](tests/migration.spec.ts) and [canonical tests](tests/canonical-envelopes.spec.ts) pin preservation and refusal. [Persistence integration](../session-persistence-jsonl/tests/v2-ptc-migration.spec.ts) owns publication evidence. The [released-format decision](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) owns the rationale for testing adjacent composition separately from native admission.
+[Combined catalog tests](tests/combined-migration.spec.ts) exercise transformation composition and native reopen; [migration tests](tests/migration.spec.ts) and [canonical tests](tests/canonical-envelopes.spec.ts) pin preservation and refusal. These offline checks do not establish active Ark persistence or publication compatibility. The [released-format decision](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md) owns the rationale for testing adjacent composition separately from native admission.
 
 </details>
 
@@ -167,8 +167,8 @@ The [stage](src/migration.ts) owns synchronous per-artifact sequence maps, messa
 ## Further Exploration
 
 - [Released V1 to V2](../session-format-v1-to-v2/README.md) — frozen preceding conversion and source codec.
-- [System-prompt surface decision](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md) — prompt ownership and protected-head rationale.
-- [Canonical V3 envelope decision](../../../.agents/notes/implemented/architecture/2026-09-06-v3-canonical-session-envelopes.md) — strict acceptance and validation ownership.
+- [System head conversion](#system-head) — prompt ownership and protected-head behavior.
+- [Canonical envelopes](#canonical-envelopes) — exact structural admission.
 
 -----
 
@@ -194,7 +194,7 @@ The edge preserves historical request meaning and model configuration; it does n
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Historical preset ambiguity** — released `code` references cannot distinguish a custom preset with the legacy built-in id; the [exact rename](#header-and-presets) is host-independent.
-- **No file or settings migration** — this package never changes committed generations or `settings.yaml`. Persistence owns publishing the final successor; an existing V3 generation does not rerun its incoming edge. See [format release status](../../../docs/session-format-status.md) and the compatibility obligations in the [released-format policy](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md).
+- **No file or settings migration** — this package never changes committed generations or `settings.yaml`. An offline V3 input does not rerun its incoming edge. The [catalog](../session-format-catalog/README.md) owns the distinction between offline target validation and installed runtime admission.
 
 <a id="dev-note"></a>
 ### Dev Note

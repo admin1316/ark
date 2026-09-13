@@ -167,6 +167,7 @@ public actor ArkEventPump {
   private var pumps: [ArkEventChannel: Task<Void, Never>] = [:]
   private var sockets: [ArkEventChannel: URLSessionWebSocketTask] = [:]
   private var stopTask: Task<Void, Never>?
+  private var reconnectTask: Task<Bool, Never>?
 
   public init(baseURL: URL, apiToken: String, session: URLSession = .shared) {
     self.baseURL = baseURL
@@ -249,6 +250,30 @@ public actor ArkEventPump {
     }
   }
 
+  /// Replace both downlinks without finishing the mailbox or replacing its consumer.
+  /// Cancellation of one caller does not strand shared reconnection halfway through.
+  public func reconnect() async -> Bool {
+    guard !Task.isCancelled, lifecycle == .running else { return false }
+    if let reconnectTask { return await reconnectTask.value }
+    let activePumps = Array(pumps.values)
+    for socket in sockets.values { socket.cancel(with: .goingAway, reason: nil) }
+    sockets.removeAll()
+    pumps.removeAll()
+    for pump in activePumps { pump.cancel() }
+    let reconnectTask = Task { [self] in
+      for pump in activePumps { await pump.value }
+      guard lifecycle == .running else { return false }
+      for channel in ArkEventChannel.allCases {
+        pumps[channel] = Task { [weak self] in await self?.run(channel: channel) }
+      }
+      return true
+    }
+    self.reconnectTask = reconnectTask
+    let restarted = await reconnectTask.value
+    self.reconnectTask = nil
+    return restarted
+  }
+
   /// Permanently stop both sockets and finish the event stream after their receive loops exit.
   /// Concurrent callers await the same quiescence operation.
   public func stop() async {
@@ -265,9 +290,11 @@ public actor ArkEventPump {
     let activePumps = Array(pumps.values)
     pumps.removeAll()
     for pump in activePumps { pump.cancel() }
+    let reconnecting = reconnectTask
     let stopTask = Task {
       await mailbox.finish()
       for pump in activePumps { await pump.value }
+      if let reconnecting { _ = await reconnecting.value }
     }
     self.stopTask = stopTask
     await stopTask.value

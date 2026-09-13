@@ -1,3 +1,8 @@
+---
+description: "供 API 传输共用的 Host 侧策略。"
+kind: "package-group"
+---
+
 # api/：Host API 策略
 
 [English](README.md) | 中文
@@ -15,3 +20,5 @@
 
 - 历史名称 `remotes` 仍然保留，尽管浏览器 Remote 运行时已经不存在；改名属于另一项包身份变更。
 - 原生调用使用严格斜杠 Remote descriptor；事件下行、回答关联与流式下载继续作为独立 Host 载体能力。
+
+[Typert 参考](../../docs/subsystems/typert.zh.md)定义 Remote 声明、注册表与 Context 查询约定。

@@ -1,8 +1,26 @@
+---
+description: "The Host half of model-mounted dynamic packages: the definition registry, the node:vm sandbox and fiber lifecycle for Host halves, and the invoke handler table."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-cordis-host-runner
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The Host half of model-mounted dynamic packages: the definition registry, the `node:vm` sandbox and fiber lifecycle for Host halves, and the invoke handler table. Provided as `ctx.dynamicCordisRunner`. The model-facing tools live in [`@deepseek-ai/dsh-tool-cordis`](../tool-cordis/README.md); Ark ships this Host-only path and no browser runner.
+
+## Table of Contents
+
+- [What it does](#what-it-does)
+- [Storage stance](#storage-stance)
+- [Trust stance](#trust-stance)
+- [Config](#config)
+- [Export shape](#export-shape)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## What it does
 
@@ -69,3 +87,7 @@ A host half that registers tools changes the next request's tool view, which inv
 - `runHostHalf` carries no request id, so "which request evaluated this host half" is attributed host-side to the most recently armed request for that definition; several concurrent run requests for one definition would need that rule revisited.
 - A success answer naming a superseded revision is refused (`accepted: false`) and leaves the request suspended, so the model's call ends only through a valid answer or its own cancellation. Native Ark does not expose a browser answerer; a future external UI must own that orchestration explicitly.
 - **`zod` is a runtime dependency of the generated TypeRT faces, not of `src`.** `./typert` and `./remote` resolve to `lib/typert.*.js`, which `tsc` emits unbundled with a bare `import { z } from 'zod'`, so the package must declare it (the `@deepseek-ai/dsh-goal` precedent) and `knip.json` must ignore it for this workspace — knip reads source, and these faces are build products. Nothing in `src` imports zod.
+
+### Dev Note
+
+None.

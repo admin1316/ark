@@ -353,7 +353,9 @@ export interface DirectoryRegistrationHandle {
 
 /** Configuration-time verification deadlines, resolved before the LLM service starts. */
 export interface LlmRuntimeConfig {
+  /** Maximum milliseconds allowed for a provider verification attempt. */
   verificationTimeoutMs: number
+  /** Milliseconds allowed for canceled verification work to settle before reporting cancellation timeout. */
   verificationCancellationGraceMs: number
 }
 
@@ -909,12 +911,7 @@ export class LlmRuntime extends TypertRemoteService {
       const { settingsNs, ...draft } = request
       const models = await this.discoverModels(settingsNs, draft, signal)
       checkCancellation()
-      return { models: models.map(model => ({
-        id: model.id,
-        ...model.name === undefined ? {} : { name: model.name },
-        ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
-        ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
-      })) }
+      return { models }
     } catch {
       // One-shot credentials and provider response details must not escape the request.
       checkCancellation()

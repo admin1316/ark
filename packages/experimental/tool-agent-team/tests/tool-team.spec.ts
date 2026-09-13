@@ -18,7 +18,7 @@ import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import * as ToolSubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
-import TeamService from '../../agent-team/src/index.ts'
+import TeamService from '@deepseek-ai/dsh-agent-team'
 import * as toolTeam from '../src/index.ts'
 
 const SIGNAL = new AbortController().signal
@@ -70,7 +70,7 @@ async function setup(script: ConstructorParameters<typeof MockAdapter>[0], legac
   const adapter = new MockAdapter(script)
   ctx.llm.registerAdapter(['mock'], adapter)
   const lead = ctx.agentLoop.create(SessionId('tool-team-lead'), { provider: 'mock', model: 'mock' })
-  return { ctx, lead, fiber }
+  return { ctx, lead, fiber, adapter }
 }
 
 function execute(
@@ -408,39 +408,30 @@ describe('dsh-tool-team', () => {
   })
 
   it('reinstalls Team scope before a cold-resumed teammate request', async () => {
-    const { ctx, lead } = await setup([textResponse('first'), 'hang'])
+    // The first child settlement wakes the idle Lead. Keep that request and
+    // the cold child continuation separate in the adapter's global script.
+    const { ctx, lead, adapter } = await setup([textResponse('first'), 'hang', 'hang'])
     const spawned = await execute(ctx, lead, 'spawn_teammate', {
       name: 'cold-worker', description: 'cold worker', prompt: 'finish once',
     })
     const childId = spawnedChildId(spawned)
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
-
-    // The mailbox contains a failed delivery as a warning and leaves the message
-    // queued, so the test must surface that warning to explain the timeout.
-    const warnings: string[] = []
-    const originalWarn = ctx.logger.warn
-    ctx.logger.warn = ((...args: unknown[]) => {
-      warnings.push(args.map(value => String(value)).join(' '))
-      return (originalWarn as (...inner: unknown[]) => unknown)(...args)
-    }) as typeof ctx.logger.warn
+    expect(adapter.requests.map(request => request.sessionId)).toEqual([childId, lead.id])
     await ctx.agentTeams.sendMessage(lead, {
       target: 'cold-worker',
       content: [{ type: 'text', text: 'resume with Team scope' }],
       delivery: 'wakeup',
       signal: SIGNAL,
     })
-    let resumed: Awaited<ReturnType<typeof waitRunning>>
-    try {
-      resumed = await waitRunning(ctx, childId)
-    } catch (error: unknown) {
-      throw new Error(`cold resume did not start; mailbox warnings: ${JSON.stringify(warnings)}`
-        + `; live agents: ${JSON.stringify([...ctx.agents.list()].map(agent => agent.id))} (${String(error)})`)
-    }
+    const resumed = await waitRunning(ctx, childId)
+    expect(adapter.requests.map(request => request.sessionId)).toEqual([childId, lead.id, childId])
     expect((await assembly(ctx, resumed)).tools.map(schema => schema.name)
       .filter(name => TOOL_NAMES.includes(name)).sort()).toEqual(TOOL_NAMES)
     expect(renderPrompt(await assembly(ctx, resumed))).toContain('Your Team role is teammate; your Team name is cold-worker')
     await execute(ctx, lead, 'interrupt_agent', { target: 'cold-worker' })
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
+    lead.cancel({ kind: 'user' })
+    await vi.waitFor(() => { expect(lead.status).toBe('idle') })
   })
 
   it('fails safely without a calling Agent and has the function-plugin export shape', async () => {

@@ -54,6 +54,69 @@ indirect enum NativeGFMBlock: Equatable, Sendable {
   case rule
 }
 
+/// A bounded selection surface over adjacent paragraphs from one Markdown source.
+/// The first original block index remains its identity across append-only updates.
+enum NativeGFMParagraphSelection {
+  static let maximumUTF16 = 4_096
+  static let maximumInlineNodes = 256
+  static let maximumParagraphs = 8
+
+  struct Row: Identifiable {
+    let index: Int
+    let block: NativeGFMBlock
+    var id: Int { index }
+  }
+
+  static func rows(_ blocks: [NativeGFMBlock]) -> [Row] {
+    var rows: [Row] = []
+    var content: [NativeGFMInline] = []
+    var firstIndex = 0
+    var paragraphs = 0
+    var units = 0
+    var nodes = 0
+    func flush() {
+      guard paragraphs > 0 else { return }
+      rows.append(Row(index: firstIndex, block: .paragraph(content)))
+      content = []; paragraphs = 0; units = 0; nodes = 0
+    }
+    for (index, block) in blocks.enumerated() {
+      guard case .paragraph(let inline) = block,
+            let cost = cost(inline)
+      else { flush(); rows.append(Row(index: index, block: block)); continue }
+      if paragraphs == maximumParagraphs || units + cost.units + 2 > maximumUTF16
+          || nodes + cost.nodes + 2 > maximumInlineNodes { flush() }
+      if paragraphs == 0 { firstIndex = index }
+      else { content += [.lineBreak, .lineBreak]; units += 2; nodes += 2 }
+      content += inline; units += cost.units; nodes += cost.nodes; paragraphs += 1
+    }
+    flush()
+    return rows
+  }
+
+  private static func cost(_ values: [NativeGFMInline]) -> (units: Int, nodes: Int)? {
+    var units = 0
+    var nodes = 0
+    func visit(_ values: [NativeGFMInline]) -> Bool {
+      for value in values {
+        nodes += 1
+        guard nodes <= maximumInlineNodes else { return false }
+        switch value {
+        case .text(let s), .code(let s), .literal(let s), .math(let s):
+          units += s.utf16.prefix(maximumUTF16 - units + 1).count
+        case .image(_, let alt): units += alt.utf16.prefix(maximumUTF16 - units + 1).count
+        case .softBreak, .lineBreak: units += 1
+        case .footnoteReference: units += 24
+        case .emphasis(let children), .strong(let children), .strikethrough(let children), .link(_, _, let children):
+          guard visit(children) else { return false }
+        }
+        guard units <= maximumUTF16 else { return false }
+      }
+      return true
+    }
+    return visit(values) ? (units, nodes) : nil
+  }
+}
+
 final class NativeGFMCache: @unchecked Sendable {
   static let shared = NativeGFMCache()
 

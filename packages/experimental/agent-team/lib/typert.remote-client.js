@@ -33,7 +33,7 @@ const _deepseek_ai_dsh_experimental_agent_team_agentTeams_updateTask_parameter_0
 const _deepseek_ai_dsh_experimental_agent_team_agentTeams_updateTask_parameter_1$schema = z.object({
   'taskId': z.intersection(z.string(), z.unknown()).readonly(),
   'expectedRevision': z.number().readonly(),
-  'action': z.union([z.literal("complete"), z.literal("edit"), z.literal("claim"), z.literal("release"), z.literal("set_dependencies"), z.literal("reopen"), z.literal("reassign"), z.literal("delete")]).readonly(),
+  'action': z.union([z.literal("complete"), z.literal("claim"), z.literal("release"), z.literal("edit"), z.literal("set_dependencies"), z.literal("reopen"), z.literal("reassign"), z.literal("delete")]).readonly(),
   'subject': z.string().readonly().optional(),
   'description': z.string().readonly().optional(),
   'blockedBy': z.array(z.intersection(z.string(), z.unknown())).readonly().optional(),
@@ -93,7 +93,7 @@ export const TYPERT_REMOTE = {
   descriptors: [
     {
       id: '@deepseek-ai/dsh-experimental-agent-team#agentTeams/createTask',
-      service: 'agentTeams',
+      service: 'agentTeamRemote',
       namespace: 'agentTeams',
       method: 'createTask',
       implementation: 'remoteCreateTask',
@@ -120,7 +120,7 @@ export const TYPERT_REMOTE = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-experimental-agent-team/client#CreateTeamTaskRequest',
+            typeSymbol: '@deepseek-ai/dsh-agent-team/types#CreateTeamTaskRequest',
             schema: _deepseek_ai_dsh_experimental_agent_team_agentTeams_createTask_parameter_1$schema,
           },
         },
@@ -130,11 +130,11 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-experimental-agent-team/client#TeamTaskMutationResult',
         schema: _deepseek_ai_dsh_experimental_agent_team_agentTeams_createTask_result$schema,
       },
-      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":248,"column":3},
+      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":47,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-experimental-agent-team#agentTeams/updateTask',
-      service: 'agentTeams',
+      service: 'agentTeamRemote',
       namespace: 'agentTeams',
       method: 'updateTask',
       implementation: 'remoteUpdateTask',
@@ -161,7 +161,7 @@ export const TYPERT_REMOTE = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-experimental-agent-team/client#UpdateTeamTaskRequest',
+            typeSymbol: '@deepseek-ai/dsh-agent-team/types#UpdateTeamTaskRequest',
             schema: _deepseek_ai_dsh_experimental_agent_team_agentTeams_updateTask_parameter_1$schema,
           },
         },
@@ -171,11 +171,11 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-experimental-agent-team/client#TeamTaskMutationResult',
         schema: _deepseek_ai_dsh_experimental_agent_team_agentTeams_updateTask_result$schema,
       },
-      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":259,"column":3},
+      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":58,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-experimental-agent-team#agentTeams/view',
-      service: 'agentTeams',
+      service: 'agentTeamRemote',
       namespace: 'agentTeams',
       method: 'view',
       implementation: 'remoteView',
@@ -202,7 +202,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-experimental-agent-team/client#TeamView',
         schema: _deepseek_ai_dsh_experimental_agent_team_agentTeams_view_result$schema,
       },
-      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":234,"column":3},
+      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":33,"column":3},
     },
   ],
 }

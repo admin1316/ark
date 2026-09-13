@@ -10,6 +10,8 @@ import {
   SessionPromptInvocationId,
   type SessionHeader,
 } from '@deepseek-ai/dsh-session'
+import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import { installModelSelectionProjection } from '@deepseek-ai/dsh-agent-default-model/session-selection'
 import { WorkspaceSessionDeletionBlockedError } from '@deepseek-ai/dsh-workspace'
 import SessionRemoteOperationsService, { SESSION_EXPORT_PATH } from '../src/index.ts'
 
@@ -46,8 +48,14 @@ function fakeAgent(session: Session, options: {
   const nextTurn = options.nextTurn ?? []
   const nextStep = options.nextStep ?? []
   const cancel = vi.fn()
-  const steer = vi.fn()
-  const followup = vi.fn()
+  const steer = vi.fn((message: UserMessage) => {
+    session.append('agent/inbox/spliced', { target: 'next-step', start: nextStep.length, inserted: [message] })
+    nextStep.push(message)
+  })
+  const followup = vi.fn((message: UserMessage) => {
+    session.append('agent/inbox/spliced', { target: 'next-turn', start: nextTurn.length, inserted: [message] })
+    nextTurn.push(message)
+  })
   return {
     id: session.id,
     session,
@@ -130,9 +138,15 @@ async function harness(cwd: string): Promise<MutableHarness> {
   ctx.provide('sessions', {
     get: (id: SessionId) => sessions.get(String(id)),
     list: () => [...sessions.values()],
-    flush: () => Promise.resolve(false),
+    flush: () => Promise.resolve(true),
   } as never)
+  ctx.provide('sessionPersistence', {
+    list: () => Promise.resolve([]), ensureMaterialized: () => Promise.resolve(),
+  } as never)
+  await ctx.plugin(SessionProjectionRegistry)
+  installModelSelectionProjection(ctx)
   ctx.provide('sessionQuery', {
+    listSessions: () => Promise.resolve([...sessions.values()].map(session => ({ header: session.header }))),
     searchSessions: () => {
       const session = [...sessions.values()][0]
       return Promise.resolve({
@@ -202,7 +216,7 @@ describe('SessionRemoteOperationsService', () => {
     await expect(operations.history({ sessionId: session.id, expectedParentSessionId: SessionId('stale-parent') },
       new AbortController().signal)).resolves.toMatchObject({ ok: false, error: { code: 'subagent-unauthorized' } })
     await expect(operations.history({ sessionId: session.id, expectedParentSessionId: SessionId('actual-parent') },
-      new AbortController().signal)).resolves.toMatchObject({ ok: true, value: { events: [], hasMore: false } })
+      new AbortController().signal)).resolves.toMatchObject({ ok: false, error: { code: 'subagent-unauthorized' } })
   })
   it('provides both Host ports, reads live state directly, and short-circuits pre-cancelled calls', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'dsh-session-remote-'))
@@ -222,7 +236,13 @@ describe('SessionRemoteOperationsService', () => {
         value: { items: [{ sessionId: session.id, blank: true, running: false, cwd }] },
       })
     await expect(operations?.history({ sessionId: session.id }, new AbortController().signal))
-      .resolves.toEqual({ ok: true, value: { events: [], hasMore: false } })
+      .resolves.toEqual({
+        ok: true,
+        value: {
+          events: [], hasMore: false,
+          projections: state.ctx.sessionProjections.snapshot(session),
+        },
+      })
     await expect(operations?.history({
       sessionId: session.id,
       maxMessages: 0,

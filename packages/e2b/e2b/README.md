@@ -1,8 +1,23 @@
+---
+description: "Shared lifecycle owner for one E2B sandbox."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-e2b
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Shared lifecycle owner for one E2B sandbox. The filesystem and subprocess adapters inject `ctx.e2b`, await its single SDK handle, and therefore inhabit the same remote Linux working tree and process world. The package pins `e2b@2.29.1`; the [family map](../README.md) lists the opt-in composition.
+
+## Table of Contents
+
+- [Configuration](#configuration)
+- [Lifecycle and ownership](#lifecycle-and-ownership)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Configuration
 
@@ -42,3 +57,7 @@ No direct invalidation; this package does not contribute request tokens.
 - **Sandbox state is ephemeral** — disposal and timeout delete the sandbox; reconnect, pause/leave retention, templates, volumes, and snapshots are outside this POC.
 - **No deployment platform is configured** — network policy, host-workspace synchronization, and sandbox discovery are outside this POC.
 - **`cwd` is a resolution convention, not containment** — adapters and commands can address other sandbox paths; E2B network access retains the base image's policy.
+
+### Dev Note
+
+None.

@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { installProxyFromEnvironment } from '../src/index.ts'
 import { proxyForUrl, resolveProxyPolicy } from '../src/policy.ts'
+import { refuseFixtureLookup } from './proxy-env.ts'
 
 /**
  * `proxyForUrl` answers where a URL goes; these cases check that answer against where a real `fetch`
@@ -60,15 +61,23 @@ describe('bypass matcher parity', () => {
     const env = proxyEnv(noProxy)
     const { policy } = resolveProxyPolicy(env)
     const dispose = await installProxyFromEnvironment(env, () => undefined)
+    const lookup = refuseFixtureLookup(url.hostname)
     try {
-      // A bypassed target has no route here, so the fetch fails; a proxied one reaches the recorder
-      // in milliseconds. The deadline bounds the failing path, whose DNS miss is otherwise as slow
-      // as the machine's resolver decides — and only that path, so it cannot mask a proxied hop.
-      await fetch(url, { signal: AbortSignal.timeout(1500) }).then(response => response.text()).catch(() => undefined)
+      // Keep the real fetch/dispatcher path, but make a direct reserved-host DNS miss deterministic.
+      // Aborting fetch alone does not settle DNS work that graceful dispatcher disposal awaits.
+      const response = fetch(url, { signal: AbortSignal.timeout(1500) })
+      if (bypassed) {
+        await expect(response).rejects.toMatchObject({ cause: { code: 'ENOTFOUND' } })
+        expect(lookup).toHaveBeenCalledOnce()
+      } else {
+        await expect((await response).text()).resolves.toBe('VIA-PROXY')
+        expect(lookup).not.toHaveBeenCalled()
+      }
       const agentProxied = seen.length > 0
       expect({ ours: proxyForUrl(policy, url) !== undefined, agent: agentProxied })
         .toEqual({ ours: !bypassed, agent: !bypassed })
     } finally {
+      lookup.mockRestore()
       await dispose()
     }
   })

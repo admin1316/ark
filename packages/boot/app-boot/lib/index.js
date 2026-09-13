@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import * as yaml from "js-yaml";
@@ -216,14 +216,22 @@ function writeProfileManifest(dir, manifest) {
 * package exporting `./package.json` (`require.resolve` would need that):
 * probe the require resolution paths for a directory holding the named
 * manifest. This is Node's own node_modules lookup order, so the result
-* matches what the Loader would import from the same anchor, and
-* `existsSync` follows the symlinks pnpm's isolated layout uses.
+* matches what the Loader would import from the same anchor. Capture a package
+* symlink's destination before probing its manifest: traversing a link while
+* another process atomically replaces it can fail with EINVAL on macOS.
 */
 function packageDirFromAnchor(anchor, packageName) {
 	/* v8 ignore next */
 	for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
 		const candidate = join(searchPath, packageName);
-		if (existsSync(join(candidate, "package.json"))) return candidate;
+		let directory;
+		try {
+			directory = realpathSync.native(candidate);
+		} catch (error) {
+			if (["ENOENT", "ENOTDIR"].includes(error.code ?? "")) continue;
+			throw error;
+		}
+		if (existsSync(join(directory, "package.json"))) return directory;
 	}
 }
 /**

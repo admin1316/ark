@@ -151,7 +151,9 @@ async function collectActivePluginPackages(ctx, resolver, hostBaseUrl, sessionId
 export function apply(ctx, config) {
     if (config.enabled === false)
         return;
-    const hostBaseUrl = ctx.baseUrl ?? import.meta.url;
+    // Match the Loader root used by preset imports, not this contribution's
+    // nested bundle base. Tree-local resolution still takes precedence elsewhere.
+    const hostBaseUrl = ctx.loader.root.ctx.baseUrl ?? ctx.baseUrl ?? import.meta.url;
     const resolver = new PackageIdentityResolver(hostBaseUrl);
     ctx.deepseekLlmApiExtensions.register('dsh_plugin_packages', {
         prepare: async (request) => {

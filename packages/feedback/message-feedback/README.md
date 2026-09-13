@@ -1,10 +1,27 @@
+---
+description: "Host-owned editable feedback for one finalized assistant message."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-message-feedback
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Host-owned editable feedback for one finalized assistant message. The package registers `ctx.messageFeedback`, persists one lifecycle-bound sidecar row per Session in storage-domain, and publishes the Host `messageFeedback.list`, `messageFeedback.put`, and `messageFeedback.delete` unary Remote contract. It is separate from the immutable Session-level `feedback/record` event and performs no telemetry handoff. The [message-feedback sidecar Agent Note](../../../.agents/notes/implemented/architecture/2026-08-10-message-feedback-sidecar.md) owns the design boundary.
 
 Public request, value, version, and failure types are exported from the package root and `@deepseek-ai/dsh-message-feedback/types`; [`src/types.ts`](src/types.ts) is their source.
+
+## Table of Contents
+
+- [Configuration](#configuration)
+- [Data, lifecycle, and durability](#data-lifecycle-and-durability)
+- [Service and Host Remote contract](#service-and-host-remote-contract)
+- [Compare-and-set and idempotency](#compare-and-set-and-idempotency)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Configuration
 
@@ -82,3 +99,7 @@ Independent. Listing or mutating message feedback does not touch a model request
 - **Header identity is not a content fingerprint** — `{createdAt, cwd}` detects reuse only when those fields differ; a cloned log retaining the same header identity is indistinguishable.
 - **Trusted caller boundary** — `list`/`put`/`delete` carry no authenticated actor or audit identity. A deployment must expose the Host gateway only through its trusted or separately authenticated boundary until authorization and attribution are added.
 - **Catalog and row bounds** — a cold request scans the complete Session snapshot catalog because persistence has no lookup-by-id metadata operation. `maxNoteBytes` bounds one note, but the item count and aggregate retained bytes of one Session row are not capped; an indexed metadata read and deployment-owned row bound remain deferred until a concrete consumer defines their policy.
+
+### Dev Note
+
+None.

@@ -39,7 +39,9 @@ const snapshot = snapshotJsonValue(input) as JsonValue
 
 ### 发布或比较值
 
-`deepFreeze(value)` 原地冻结对象图并返回同一个值。它遍历可枚举字符串键的子项，并刻意让活跃 `AbortSignal` 对象保持可变。`deepEqualJson(a, b)` 按结构比较 JSON 兼容数组与记录；调用方必须先校验敌意或无约束输入，再进行比较。
+`deepFreeze(value)` 原地冻结对象图并返回同一个值。它遍历可枚举字符串键的子项，并刻意让活跃 `AbortSignal` 对象保持可变。`deepEqualJson(a, b)` 按结构比较 JSON 兼容数组与记录，要求记录自身的键匹配，不能由继承属性替代；调用方必须先校验敌意或无约束输入，再进行比较。
+
+`matchesOwnKeyPattern(value, required, forbidden)` 检查自有键是否存在，不读取属性值。它允许无关键，将自有的 `undefined` 值视为存在，并忽略继承键。调用方仍负责属性值校验。
 
 ### 封闭可辨识联合类型
 

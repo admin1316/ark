@@ -40,8 +40,7 @@ export default defineConfig({
   test: {
     execArgv: vitestExecArgv,
     setupFiles: ['./scripts/test-invariants.ts'],
-    // apps/cli only, not apps/*: apps/web/tests/*.e2e.ts needs the built
-    // frontend dist and runs under vitest.web.config.ts (the test:web job).
+    // apps/cli only: the retired browser application owned no surviving e2e lane.
     include: ['packages/*/*/tests/**/*.e2e.ts', 'apps/cli/tests/**/*.e2e.ts'],
     exclude: [
       '**/*.expected.e2e.ts',

@@ -193,7 +193,7 @@ async function invokeRemote(
       throw new TypertGatewayError(
         'service-unavailable',
         endpoint,
-        `active Service ${JSON.stringify(descriptor.service)} is unavailable`,
+        `active Service ${JSON.stringify(descriptor.service)} is unavailable; mount its provider in the Host composition and check that it loaded successfully`,
       )
     }
     validateBinding(receiver, descriptor, endpoint)

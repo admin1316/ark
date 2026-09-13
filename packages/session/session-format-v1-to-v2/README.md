@@ -27,7 +27,7 @@ English | [中文](README.zh.md)
 
 ### When to use it
 
-Persistence obtains this edge through `dsh-session-format-catalog`; feature compositions do not mount it. Import it directly only when assembling or testing the static released-format catalog or inspecting the exact v1-to-v2 transformation. No runtime invariant companion is published because the package has no independently observable runtime registrations whose state can diverge; decoder and transformer state belongs to one restore.
+The offline `dsh-session-format-catalog` assembles this edge; Ark’s installed v0 persistence does not invoke it. Feature compositions do not mount it. Import it directly only when assembling or testing the static released-format catalog or inspecting the exact v1-to-v2 transformation. No runtime invariant companion is published because the package has no independently observable runtime registrations whose state can diverge; decoder and transformer state belongs to one restore.
 
 ### Entry point
 
@@ -41,7 +41,7 @@ const headerRecord = releasedV2SessionFormatCodec.encodeHeader(currentHeader, ta
 const eventRecord = releasedV2SessionFormatCodec.encodeEvent(currentEvent)
 ```
 
-`releasedV1SessionFormatCodec` reads the frozen v1 physical language one row at a time. `sessionFormatV1ToV2` creates the cardinality-changing Stage that the static catalog connects to that decoder without retaining a v1 event array. The catalog remaps declared references and validates the released-v2 envelope, inherited cut, event admission, and relationships. Persistence applies full installed-current validation in its Worker before publication. `releasedV2SessionFormatCodec` creates a released-v2 row decoder and encodes v2 headers and events one record at a time.
+`releasedV1SessionFormatCodec` reads the frozen v1 physical language one row at a time. `sessionFormatV1ToV2` creates the cardinality-changing Stage that the static catalog connects to that decoder without retaining a v1 event array. The catalog remaps declared references and validates the released-v2 envelope, inherited cut, event admission, and relationships. Catalog target validation is separate from installed Session admission; a valid v2 artifact cannot be loaded by Ark’s v0 core. `releasedV2SessionFormatCodec` creates a released-v2 row decoder and encodes v2 headers and events one record at a time.
 
 A successful v1 `assistant/message` must cite its complete ordered attempt. The migration removes the cited top-level chunks and obsolete message provenance, compacts the chunks without joining token boundaries, and stores the stream on that message. An unclaimed attempt becomes one log-only `assistant/attempt` at its final chunk position. Unrelated interleaved events keep their relative order.
 
@@ -49,7 +49,7 @@ The edge also closes the bounded legacy restart pattern in which a non-empty `ne
 
 The migration refuses a reference to a consumed chunk instead of redirecting it to a different semantic event. It remaps declared event provenance, surface replacements, command source events, compaction ranges and lists, and title message lists. The already model-visible `session/title-llm-request.messages` text remains byte-identical after source validation, so target validation does not reinterpret the old sequence numbers embedded in that prompt. A seeded source also refuses an inherited cut that splits an Assistant attempt; the target marks the exact cut with `session/end-seed { inherited: true }`.
 
-The v2 physical header requires `isSeeded` and does not store a numeric cut. The codec derives the cut from the last inherited end-seed marker, writes one event per row, range-encodes only `sourceEventSeqs`, and remains neutral to ordinary event vocabulary and payload growth. Released-current restoration admits event types known to the installed Session package plus unknown events carrying `ignorable: true`, and validates event members and relationships. Ordinary Session restoration checks runtime-required settlement fields without replaying embedded streams; persistence publication and the frozen writer-image fixture validator retain full stream verification.
+The v2 physical header requires `isSeeded` and does not store a numeric cut. The codec derives the cut from the last inherited end-seed marker, writes one event per row, range-encodes only `sourceEventSeqs`, and remains neutral to ordinary event vocabulary and payload growth. Released-current restoration admits event types known to the installed Session package plus unknown events carrying `ignorable: true`, and validates event members and relationships. The released restorer checks runtime-required settlement fields without replaying embedded streams; the frozen writer-image fixture validator retains full stream verification.
 
 -----
 
@@ -78,7 +78,7 @@ The incremental edge retains one unsettled Assistant attempt, events whose outpu
 - [Released v0 to v1 edge](../session-format-v0-to-v1/README.md) — the source codec and frozen historical vocabulary reused here.
 - [Static catalog](../session-format-catalog/README.md) — build-owned codec and migration ordering.
 - [Session persistence subsystem](../../../docs/subsystems/persistence.md) — immutable generation selection and publication.
-- [Embedded Assistant stream decision](../../../.agents/notes/implemented/architecture/2026-09-01-v2-embedded-assistant-streams.md) — rationale, alternatives, and consequences.
+- [Migration implementation](src/migration.ts) — embedded Assistant stream ownership and event remapping.
 
 -----
 
@@ -105,7 +105,7 @@ The restored model-message sequence stays unchanged, so the migration alone does
 
 - **Closed first-party source inventory** — an unknown v1 event refuses migration, including an event marked `ignorable: true`.
 - **Linear remap state** — streaming retains no complete v1 event array, but the final v2 event array and old-to-new sequence map remain O(event count).
-- **No publication or compatibility fallback** — persistence owns exclusive successor publication, and retained v1 generations are not automatic downgrade or restore inputs.
+- **No publication or compatibility fallback** — conversion returns an offline artifact; it neither publishes a successor nor enables v1/v2 restoration in Ark’s v0 runtime.
 
 <a id="dev-note"></a>
 ### Dev Note

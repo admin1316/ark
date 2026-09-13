@@ -1,9 +1,28 @@
+---
+description: "为每个会话加载与 AGENTS.md 兼容的工作区指令文件。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-agent-instructions
 
 [English](README.md) | 中文
 
+## 概述
+
 为每个会话加载与 `AGENTS.md` 兼容的工作区指令文件。该插件会将初始的用户全局指令与项目指令链注入持久历史，随后发现嵌套文件，并在成功的文件系统工具调用后报告后续变更或移除。
 
+## 目录
+
+- [生命周期](#lifecycle)
+- [提示词结构](#prompt-shape)
+- [状态与刷新](#state-and-refresh)
+- [配置](#configuration)
+- [预算与有界读取](#budgeting-and-bounded-reads)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="lifecycle"></a>
 ## 生命周期
 
 每个实时会话第一次符合条件的 `agent/pre-step` 会组合基线。当下游决策让非空的第一步批次进入时，插件会将基线折入最终批次、紧随已领取的直接提示词之后，使直接提示词与持久基线一同进入步骤 1，并共同抵达第一次请求。被拒绝或为空的第一步决策会将基线留在 agent（智能体）的 `next-step` inbox，等待后续唤醒。loader 先读取 `$DSH_HOME/AGENTS.md`，随后针对项目根目录到 `agent.session.header.cwd` 的每个目录，先读取每个现有基础候选文件，再读取每个现有本地 overlay 候选文件。同一目录中，如果候选文件在去除首尾空白后字节完全一致，就会按已配置顺序折叠到最早候选文件，因此 `CLAUDE.md` 若只是复制同级 `AGENTS.md`，只会渲染一次。若之前排队的 workspace 上下文仍在等待，插件会删除并替换该确切 inbox 条目，而不会不断累积副本。恢复后的会话会保留一条兼容的可见基线，并只追加当前文件的转换；如果发现、优先级、项目根目录或预算标识发生变化，则会将一条明确取代旧基线的完整基线折入进入步骤的批次。
@@ -53,6 +72,7 @@ These instructions apply to work under `packages/app`. Use them as guidance when
 
 该插件控制完整的 `<system-reminder>` 框架，每个注入的 `user/message` 都不经核心包装便原样传给模型。
 
+<a id="state-and-refresh"></a>
 ## 状态与刷新
 
 模型可见文本不含隐藏状态标记。每个基线或动态上下文事件改为携带带类型的 `agent-instructions` 来源，其中包含 `{ action, scope, path, digest? }` 变更列表；完整基线还会携带 `baseline: true`，以及从规范化的发现、优先级、项目根目录和预算配置派生的 `baselineIdentity`。匹配的持久 `user/message` 会确认已排队基线及其候选版本。进入步骤的 pre-step 会等待所有已排队投影完成，再把新组合的上下文折入最终批次，位置紧随已领取的消息，并移除 inbox 中仍待处理的副本；若被拒绝，当前上下文则继续排队。若监听器改写掉已领取的 workspace 消息，又没有让替代消息进入，后续边界会重新组合当前上下文。即使后续复合结果被拦截，成功的嵌套文件 touch 也会聚合到父级执行 token 下；顶层结果会将这些 touch 交给当前打开的会话步骤，或直接交给逐 agent 投影队列。`step/end` 只会在自身边界进入持久历史后释放其暂存的 touch；串行投影会根据可见会话事件和当前 inbox 协调状态，再替换唯一一条待处理工作区上下文。
@@ -61,6 +81,7 @@ These instructions apply to work under `packages/app`. Use them as guidance when
 
 初始基线事件自身不会被改写。其带类型的变更仅在该事件仍位于可见会话表层时才是权威状态。当压缩遮蔽该事件时，下一次进入步骤的 pre-step 会组合当前基线，并在同一请求中记录它；也可以改由一次成功的文件系统 touch 重新添加未变的基线 scope，或追加其替换或移除。内存中的 scope 标记和提供方版本 cache 只负责选择探测对象并加速探测。恢复或插件热重挂后的第一次 pre-step 会保留兼容的可见基线，并将它与当前完整渲染所保留的文件进行比较。未变化和被预算省略的文件不追加任何内容；agent 离线期间新增、编辑、移除或不再属于预算保留集的文件会追加 `set`、`replace` 或 `remove` 转换。不兼容的可见基线会被一条完整的当前基线取代；如果没有候选文件，这条当前基线会是显式空基线。没有文件 watcher，因此磁盘变更会在下一次成功 `read`、`write` 或 `edit` touch 时可见，也会在恢复后的会话对账其基线时，或进入步骤的 pre-step 恢复被遮蔽的基线时可见。
 
+<a id="configuration"></a>
 ## 配置
 
 ```ts
@@ -78,12 +99,14 @@ export interface Config {
 
 用户全局文件始终是 `$DSH_HOME/AGENTS.md`，没有本地 overlay；两个候选列表只控制项目 scope。`$DSH_HOME` 默认为 `~/.dsh`，已配置的 `~`、`~/...` 与 Windows 风格 `~\...` 前缀会基于操作系统 home 目录展开。非正数或非有限渲染预算会同时禁用基线与动态加载；已配置 `maxSourceBytes` 必须是正整数。
 
+<a id="budgeting-and-bounded-reads"></a>
 ## 预算与有界读取
 
 渲染会优先保留最具体的指令文件。它会先丢弃完整的较宽泛文件，再截断最具体文件，并发出可见 `Workspace instruction budget ...` 通知，其中指名已省略与已截断路径。渲染后字节数绝不超过 `maxBytes`。
 
 即使提供方元数据省略大小，或文件在元数据探测后增长，指令内容仍会通过 `streamText()` 在 `maxSourceBytes` 下读取。超大文件会被忽略；在动态对账期间，它会暂时不可用，而不是被移除。该插件不保留进程级 cache，绝不缓存指令文本。其会话本地 scope cache 只将提供方版本用作快速失效信号；失效后，对有界读取计算的 SHA-1 仍是存储在结构化消息来源中的跨提供方内容标识。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 基线上下文
@@ -166,6 +189,7 @@ The previously loaded instructions from this file no longer apply.
 
 仅追加；新可见内容位于可复用请求前缀之后，不会使现有 KV-cache 条目失效。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **发现跟随结构化 fs 工具，而非 shell 导航**：更改目录的 `bash` 命令不会触发嵌套指令发现，因为 shell 语法与每次调用 shell 状态不是可靠的文件系统 seam。
@@ -174,3 +198,8 @@ The previously loaded instructions from this file no longer apply.
 - **每目录去重基于内容**：只有在去除首尾空白后字节完全一致时，才折叠同级候选文件。`CLAUDE.md` 若 symlink 到同级 `AGENTS.md`，会解析为相同内容，并像任何重复项一样折叠；从 `AGENTS.md` 漂移的独立实体副本则会与它一起完整加载。
 - **Symlink 指令文件会跨越信任边界跟随**：最终组件是 symlink 的候选文件会被解析并加载其目标，因此克隆仓库可以将树外文件内容呈现为较低优先级的工作区指引（它绝不会覆盖 system、developer 或用户直接下达的指令）。加载不受信任仓库时，请用文件系统策略门禁或 OS 沙箱限制 `ctx.fs`。
 - **指令内容受限但不会被摘要**：超出预算的宽泛文件会被省略，最具体文件可能被截断；该插件绝不请求模型压缩指令文本。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

@@ -27,7 +27,7 @@ This package restores released v0 Session JSONL by decoding each physical row an
 
 ### When to use it
 
-Persistence obtains this edge through `dsh-session-format-catalog`; feature compositions do not mount it. Import it directly only when assembling or testing the static released-format catalog. No runtime invariant companion is published because the package has no independently observable runtime registrations whose state can diverge; decoder and migration-stage state belongs to one restore.
+The offline `dsh-session-format-catalog` assembles this edge; Ark’s installed v0 persistence does not invoke it. Feature compositions do not mount it. Import it directly only when assembling or testing the static released-format catalog. No runtime invariant companion is published because the package has no independently observable runtime registrations whose state can diverge; decoder and migration-stage state belongs to one restore.
 
 ### Entry point
 

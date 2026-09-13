@@ -1,11 +1,12 @@
-/** Host-driven integration over an isolated Client fixture. */
+/** Real Host V8 and Worker bridge integration; external peer results are explicit protocol fixtures. */
 
 import { createServer, type Server } from 'node:http'
 import { createContext, runInContext } from 'node:vm'
 import WebSocket, { type RawData } from 'ws'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startInspector, type InspectorHandle } from '../src/host/bridge/controller.ts'
-import { InspectorClientFixture } from './fixtures/client-source.host.ts'
+import { inspectorId } from '../src/shared/bridge/ids.ts'
+import { InspectorProtocolFixture } from './fixtures/protocol-source.host.ts'
 
 interface CdpMessage {
   readonly id?: number
@@ -65,7 +66,7 @@ describe('experimental Inspector real Worker', () => {
   let inspector: InspectorHandle | undefined
   let cdp: TestCdpClient | undefined
   let secondCdp: TestCdpClient | undefined
-  let client: InspectorClientFixture | undefined
+  let client: InspectorProtocolFixture | undefined
   let server: Server | undefined
 
   afterEach(async () => {
@@ -81,134 +82,44 @@ describe('experimental Inspector real Worker', () => {
     server = undefined
   })
 
-  it('switches between Host and Client contexts and routes Client RemoteObjects', async () => {
-    inspector = await startInspector({ port: 0, captureFetch: false, clientReconnectBaseMs: 10, clientReconnectMaxMs: 20 })
+  it('routes explicit protocol objects beside real Host V8 and rejects cross-realm arguments', async () => {
+    inspector = await startInspector({ port: 0, captureFetch: false })
+    client = await InspectorProtocolFixture.start(inspector.endpoint.client)
+    client.runtimeResult = frame => frame.command.op === 'evaluate'
+      ? { op: 'evaluate', completion: { result: { descriptor: { type: 'object', className: 'Object' },
+        object: { handle: inspectorId<'ClientRemoteObjectHandle'>('fixture-object', 'handle') } } } }
+      : undefined
     cdp = await TestCdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
-    inspector.source.publish('host/probe', { value: 1 })
-    client = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Test Client' })
-    await client.publish('client/probe', { value: 2 })
-
-    await vi.waitFor(async () => {
-      const response = await cdp!.call('DSHInspector.getSources')
-      const sources = response.result?.sources as Array<{ kind: string; topics: Record<string, number> }>
-      expect(sources.find(source => source.kind === 'host')?.topics).toEqual({ 'host/probe': 1 })
-      expect(sources.find(source => source.kind === 'client')?.topics).toMatchObject({ 'client/probe': 1 })
-    })
-
-    ;(globalThis as Record<string, unknown>).__inspectorHostProbe = 73
-    expect((await cdp.call('Runtime.enable')).error).toBeUndefined()
-    let clientContextId: number | undefined
-    let clientUniqueContextId: string | undefined
-    await vi.waitFor(() => {
-      expect(runtimeContexts(cdp!).some(context => context.name === 'Host')).toBe(true)
-      const clientContext = cdp!.events
-        .filter(event => event.method === 'Runtime.executionContextCreated')
-        .map(event => event.params?.context as Record<string, unknown> | undefined)
-        .find(context => String(context?.name).startsWith('Client —'))
-      expect(clientContext).toBeDefined()
-      clientContextId = clientContext?.id as number
-      clientUniqueContextId = clientContext?.uniqueId as string
-    })
-    if (clientContextId === undefined || clientUniqueContextId === undefined) {
-      throw new Error('Client execution context was not announced')
+    await cdp.call('Runtime.enable')
+    const contextId = await clientContext(cdp)
+    const host = await cdp.call('Runtime.evaluate', { expression: '({ realm: "host" })' })
+    const remote = await cdp.call('Runtime.evaluate', { expression: 'fixture-object', contextId })
+    expect(asRecord(remote.result?.result)).toMatchObject({ type: 'object', className: 'Object' })
+    const hostId = asRecord(host.result?.result).objectId
+    const remoteId = asRecord(remote.result?.result).objectId
+    for (const [receiver, argument] of [[hostId, remoteId], [remoteId, hostId]]) {
+      expect((await cdp.call('Runtime.callFunctionOn', {
+        objectId: receiver, functionDeclaration: 'function (value) { return value }',
+        arguments: [{ objectId: argument }],
+      })).error?.message).toContain('between realms')
     }
-    const hostEvaluated = await cdp.call('Runtime.evaluate', {
-      expression: 'globalThis.__inspectorHostProbe',
-      returnByValue: true,
-    })
-    expect(hostEvaluated.result?.result).toMatchObject({ type: 'number', value: 73 })
-
-    await client.setGlobal('__inspectorClientProbe', { value: 17, nested: { ready: true } })
-    const clientEvaluated = await cdp.call('Runtime.evaluate', {
-      expression: 'globalThis.__inspectorClientProbe',
-      contextId: clientContextId,
-      objectGroup: 'console',
-      generatePreview: true,
-    })
-    const clientObject = clientEvaluated.result?.result as Record<string, unknown>
-    expect(clientObject).toMatchObject({ type: 'object', className: 'Object' })
-    expect(String(clientObject.objectId)).toMatch(/^runtime:/u)
-
-    const properties = await cdp.call('Runtime.getProperties', {
-      objectId: clientObject.objectId,
-      ownProperties: true,
-    })
-    const propertyRows = recordArray(properties.result?.result)
-    const valueProperty = propertyRows.find(property => property.name === 'value')
-    const nestedProperty = propertyRows.find(property => property.name === 'nested')
-    expect(asRecord(valueProperty?.value)).toMatchObject({ type: 'number', value: 17 })
-    expect(asRecord(nestedProperty?.value).type).toBe('object')
-
-    const called = await cdp.call('Runtime.callFunctionOn', {
-      objectId: clientObject.objectId,
-      functionDeclaration: 'function (increment) { return this.value + increment }',
-      arguments: [{ value: 5 }],
-      returnByValue: true,
-    })
-    expect(called.result?.result).toMatchObject({ type: 'number', value: 22 })
-
-    const hostObject = await cdp.call('Runtime.evaluate', { expression: '({ realm: "host" })' })
-    const hostObjectId = asRecord(hostObject.result?.result).objectId
-    expect((await cdp.call('Runtime.callFunctionOn', {
-      executionContextId: clientContextId,
-      functionDeclaration: 'function (value) { return value }',
-      arguments: [{ objectId: hostObjectId }],
-    })).error?.message).toContain('between realms')
-    expect((await cdp.call('Runtime.callFunctionOn', {
-      objectId: hostObjectId,
-      functionDeclaration: 'function (value) { return value }',
-      arguments: [{ objectId: clientObject.objectId }],
-    })).error?.message).toContain('between realms')
-    expect((await cdp.call('Runtime.queryObjects', {
-      prototypeObjectId: clientObject.objectId,
-    })).error?.message).toContain('Client realm has no native CDP transport')
-
-    const awaited = await cdp.call('Runtime.evaluate', {
-      expression: 'Promise.resolve({ realm: "client" })',
-      contextId: clientContextId,
-      awaitPromise: true,
-      returnByValue: true,
-    })
-    expect(awaited.result?.result).toMatchObject({ type: 'object', value: { realm: 'client' } })
-
-    const uniquelyRouted = await cdp.call('Runtime.evaluate', {
-      expression: '6 * 7',
-      uniqueContextId: clientUniqueContextId,
-      returnByValue: true,
-    })
-    expect(uniquelyRouted.result?.result).toMatchObject({ type: 'number', value: 42 })
-
-    expect((await cdp.call('Runtime.releaseObject', { objectId: clientObject.objectId })).error).toBeUndefined()
-    expect((await cdp.call('Runtime.getProperties', { objectId: clientObject.objectId })).error).toBeDefined()
-
-    const thrown = await cdp.call('Runtime.evaluate', {
-      expression: 'throw new Error("client failure")',
-      contextId: clientContextId,
-    })
-    expect(asRecord(thrown.result?.exceptionDetails)).toMatchObject({
-      text: 'Uncaught',
-      executionContextId: clientContextId,
-    })
-
-    const pendingEvaluation = cdp.call('Runtime.evaluate', {
-      expression: 'new Promise(() => {})',
-      contextId: clientContextId,
-      awaitPromise: true,
-    })
-    await new Promise<void>((resolve) => { setTimeout(resolve, 10) })
+    expect((await cdp.call('Runtime.queryObjects', { prototypeObjectId: remoteId })).error?.message)
+      .toContain('Client realm has no native CDP transport')
+    client.runtimeResult = undefined
+    const pending = cdp.call('Runtime.evaluate', { expression: 'deliberately unanswered', contextId })
+    await vi.waitFor(() => { expect(client!.frames.some(frame => frame.t === 'client-runtime/request'
+      && frame.command.op === 'evaluate' && frame.command.expression === 'deliberately unanswered')).toBe(true) })
     await client.close()
     client = undefined
-    expect((await pendingEvaluation).error).toBeDefined()
-    await vi.waitFor(() => {
-      expect(cdp!.events.some(event =>
-        event.method === 'Runtime.executionContextDestroyed'
-        && event.params?.executionContextId === clientContextId)).toBe(true)
-    })
+    expect((await pending).error).toBeDefined()
+    await vi.waitFor(() => { expect(cdp!.events.some(event => event.method === 'Runtime.executionContextDestroyed'
+      && event.params?.executionContextId === contextId)).toBe(true) })
   })
 
-  it('isolates Client object ids and object groups by DevTools connection', async () => {
+  it('isolates protocol-peer object ids and object groups by DevTools connection', async () => {
     inspector = await startInspector({ port: 0, captureFetch: false })
-    client = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Shared Client' })
+    client = await InspectorProtocolFixture.start(inspector.endpoint.client, { label: 'Shared protocol source' })
+    client.runtimeResult = fixtureRuntimeResult
     cdp = await TestCdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
     secondCdp = await TestCdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
     await Promise.all([cdp.call('Runtime.enable'), secondCdp.call('Runtime.enable')])
@@ -237,7 +148,7 @@ describe('experimental Inspector real Worker', () => {
       ownProperties: true,
     })
     const owner = recordArray(secondProperties.result?.result).find(property => property.name === 'owner')
-    expect(asRecord(owner?.value).value).toBe('second')
+    expect(asRecord(owner?.value).value).toBe('fixture')
     expect((await secondCdp.call('Runtime.releaseObjectGroup', { objectGroup: 'console' })).error).toBeUndefined()
     expect((await secondCdp.call('Runtime.getProperties', { objectId: secondObjectId })).error).toBeDefined()
 
@@ -251,9 +162,9 @@ describe('experimental Inspector real Worker', () => {
     expect((await secondCdp.call('Runtime.getProperties', { objectId: disabledObjectId })).error).toBeDefined()
   })
 
-  it('cancels Client Runtime work when the Worker deadline expires', async () => {
+  it('sends cancellation for protocol-peer Runtime work when the Worker deadline expires', async () => {
     inspector = await startInspector({ port: 0, captureFetch: false, clientRuntimeTimeoutMs: 20 })
-    client = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Timeout Client' })
+    client = await InspectorProtocolFixture.start(inspector.endpoint.client, { label: 'Timeout Client' })
     cdp = await TestCdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
     await cdp.call('Runtime.enable')
     const contextId = await clientContext(cdp)
@@ -264,6 +175,9 @@ describe('experimental Inspector real Worker', () => {
       awaitPromise: true,
     })
     expect(timedOut.error?.message).toContain('timed out after 20ms')
+    expect(client.frames.some(frame => frame.t === 'client-runtime/cancel')).toBe(true)
+    client.runtimeResult = frame => frame.command.op === 'evaluate'
+      ? { op: 'evaluate', completion: { result: { descriptor: { type: 'number', value: 42 } } } } : undefined
     expect((await cdp.call('Runtime.evaluate', {
       expression: '42',
       contextId,
@@ -307,14 +221,12 @@ describe('experimental Inspector real Worker', () => {
       .toContain('vmLexicalMarker')
   })
 
-  it('uses the same Runtime value model for Host and Client realms', async () => {
+  it('preserves native Host V8 values, properties, exceptions, and release', async () => {
     inspector = await startInspector({ port: 0, captureFetch: false })
-    client = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Compatibility Client' })
     cdp = await TestCdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
     await cdp.call('Runtime.enable')
-    const clientContextId = await clientContext(cdp)
 
-    for (const [name, contextId] of [['Host', undefined], ['Client', clientContextId]] as const) {
+    for (const [name, contextId] of [['Host', undefined]] as const) {
       const select = contextId === undefined ? {} : { contextId }
       const nan = await cdp.call('Runtime.evaluate', { expression: 'NaN', ...select })
       expect(nan.result?.result, name).toMatchObject({ type: 'number', unserializableValue: 'NaN' })
@@ -349,30 +261,27 @@ describe('experimental Inspector real Worker', () => {
       expression: '1 + 1',
       throwOnSideEffect: true,
     })).result?.result).toMatchObject({ type: 'number', value: 2 })
-    expect((await cdp.call('Runtime.evaluate', {
-      expression: '1 + 1',
-      contextId: clientContextId,
-      throwOnSideEffect: true,
-    })).error?.message).toContain('does not support throwOnSideEffect')
-    expect((await cdp.call('Runtime.compileScript', {
-      expression: '1 + 1',
-      sourceURL: 'client-eval.js',
-      persistScript: true,
-      executionContextId: clientContextId,
-    })).error?.message).toContain('Client realm has no native CDP transport')
   })
 
-  it('forwards Client Console objects through isolated realm sessions', async () => {
+  it('forwards typed protocol Console objects through isolated realm sessions', async () => {
     inspector = await startInspector({ port: 0, captureFetch: false })
-    client = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Console Client' })
+    client = await InspectorProtocolFixture.start(inspector.endpoint.client, { label: 'Console protocol source' })
+    client.runtimeResult = fixtureRuntimeResult
     cdp = await TestCdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
     secondCdp = await TestCdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
     await Promise.all([cdp.call('Runtime.enable'), secondCdp.call('Runtime.enable')])
     const firstContext = await clientContext(cdp)
     const secondContext = await clientContext(secondCdp)
-    const value = { owner: 'client-console' }
     const marker = 'client-console-event'
-    await client.log(value, marker)
+    await vi.waitFor(() => { expect(client!.frames.filter(frame => frame.t === 'client-console/enable')).toHaveLength(2) })
+    for (const frame of client.frames) {
+      if (frame.t !== 'client-console/enable') continue
+      client.send({ v: 0, t: 'client-console/event', ...client.identity, sessionId: frame.sessionId,
+        event: { type: 'console-api', event: { type: 'log', timestamp: 1, arguments: [
+          { descriptor: { type: 'object', className: 'Object' }, object: { handle: inspectorId<'ClientRemoteObjectHandle'>('fixture-object', 'handle') } },
+          { descriptor: { type: 'string', value: marker } },
+        ] } } })
+    }
     let firstEvent: CdpMessage | undefined
     let secondEvent: CdpMessage | undefined
     await vi.waitFor(() => {
@@ -393,20 +302,20 @@ describe('experimental Inspector real Worker', () => {
       ownProperties: true,
     })
     const owner = recordArray(secondProperties.result?.result).find(property => property.name === 'owner')
-    expect(asRecord(owner?.value).value).toBe('client-console')
+    expect(asRecord(owner?.value).value).toBe('fixture')
 
     expect((await cdp.call('Runtime.discardConsoleEntries')).error).toBeUndefined()
     expect((await cdp.call('Runtime.getProperties', { objectId: firstObjectId })).error).toBeDefined()
     expect((await secondCdp.call('Runtime.getProperties', { objectId: secondObjectId })).error).toBeUndefined()
   })
 
-  it('projects a chunked Client bundle as read-only Debugger source', async () => {
+  it('projects chunked protocol source content as read-only Debugger source', async () => {
     const sourceText = `const clientSourceMarker = 42\n/*${'x'.repeat(150_000)}*/\n`
     const sourceMap = JSON.stringify({ version: 3, sources: ['client/index.ts'], mappings: 'AAAA' })
     const sourceUrl = 'http://client.test/plugins/inspector/client.js?rev=test'
     const sourceMapUrl = 'http://client.test/plugins/inspector/client.js.map?rev=test'
     inspector = await startInspector({ port: 0, captureFetch: false, maxClientSourceBytes: 1_000_000 })
-    client = await InspectorClientFixture.start(inspector.endpoint.client, {
+    client = await InspectorProtocolFixture.start(inspector.endpoint.client, {
       label: 'Source Client',
       sourceCatalog: { sourceText, sourceMap, sourceUrl, sourceMapUrl },
     })
@@ -660,4 +569,17 @@ function rawText(data: RawData): string {
   if (Array.isArray(data)) return Buffer.concat(data).toString('utf8')
   if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8')
   return Buffer.from(data).toString('utf8')
+}
+
+/** Deliberately fixed peer results; the Worker owns routing and object lifetime under test. */
+function fixtureRuntimeResult(frame: import('../src/shared/bridge/messages/runtime/index.ts').ClientRuntimeRequestFrame): import('../src/shared/bridge/messages/runtime/index.ts').ClientRuntimeResult | undefined {
+  switch (frame.command.op) {
+    case 'evaluate': return { op: 'evaluate', completion: { result: { descriptor: { type: 'object', className: 'Object' },
+      object: { handle: inspectorId<'ClientRemoteObjectHandle'>('fixture-object', 'handle') } } } }
+    case 'get-properties': return { op: 'get-properties', properties: [{ name: 'owner', configurable: true, enumerable: true,
+      value: { descriptor: { type: 'string', value: 'fixture' } } }] }
+    case 'release-object': return { op: 'release-object' }
+    case 'release-object-group': return { op: 'release-object-group' }
+    default: return undefined
+  }
 }

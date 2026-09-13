@@ -5,6 +5,7 @@ import z from "@deepseek-ai/schemastery";
 import { MAX_TIMER_DELAY_MS, deadline, timeoutOf } from "@deepseek-ai/dsh-timeout";
 import { Remote, TypertRemoteFailure, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import { randomUUID } from "@deepseek-ai/dsh-util-crypto";
+import { assertNever as assertNever$1, deepFreeze, deepFreeze as deepFreeze$1, snapshotJsonValue } from "@deepseek-ai/dsh-util-values";
 import { SettingsConflictError, deepEqualJson, remoteNamespaceView, settingsNamespace, snapshotSettingsJson } from "@deepseek-ai/dsh-settings";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isObject, symbols } from "@deepseek-ai/cordis";
@@ -93,51 +94,6 @@ function markAgentLoopRequest(request) {
 */
 function isAgentLoopRequest(request) {
 	return AGENT_LOOP_REQUESTS.has(request);
-}
-/**
-* Deep-freeze a value in place with an iterative traversal, guarding cycles,
-* so later mutation throws without imposing a JavaScript call-stack depth cap.
-* {@link AbortSignal} objects are deliberately skipped because they are the
-* request's live cancellation channel and freezing them breaks abort.
-* @param value - the value to freeze in place.
-* @returns the same value, frozen.
-*/
-function deepFreeze(value) {
-	const seen = /* @__PURE__ */ new WeakSet();
-	const pending = [{
-		kind: "visit",
-		node: value
-	}];
-	while (pending.length > 0) {
-		const task = pending.pop();
-		/* v8 ignore next -- the loop condition guarantees one pending task. */
-		if (task === void 0) continue;
-		if (task.kind === "property") {
-			pending.push({
-				kind: "visit",
-				node: task.source[task.key]
-			});
-			continue;
-		}
-		const node = task.node;
-		if (node === null || typeof node !== "object") continue;
-		if (node instanceof AbortSignal) continue;
-		if (seen.has(node)) continue;
-		seen.add(node);
-		Object.freeze(node);
-		const keys = Object.keys(node);
-		for (let index = keys.length - 1; index >= 0; index--) {
-			const key = keys[index];
-			/* v8 ignore next -- the loop is bounded by the captured key count. */
-			if (key === void 0) continue;
-			pending.push({
-				kind: "property",
-				source: node,
-				key
-			});
-		}
-	}
-	return value;
 }
 //#endregion
 //#region lib/types/message.js
@@ -1831,209 +1787,6 @@ function attributionHeaders(identity = APP_IDENTITY) {
 	return { "user-agent": userAgent(identity) };
 }
 //#endregion
-//#region ../../util/values/src/index.ts
-/**
-* Mark an unreachable closed-union branch.
-* @param value - impossible value; an unhandled typed variant fails at the call site.
-* @param context - optional switch-site label included in the failure message.
-* @returns never; a runtime value that escaped its type always throws.
-*/
-function assertNever$1(value, context) {
-	const rendered = JSON.stringify(value) ?? String(value);
-	throw new Error(`unreachable variant${context ? ` in ${context}` : ""}: ${rendered}`);
-}
-/** Whether a realm-owned intrinsic prototype is backed by its native constructor. */
-function hasIntrinsicConstructor(prototype, name) {
-	const constructor = Object.getOwnPropertyDescriptor(prototype, "constructor")?.value;
-	if (typeof constructor !== "function") return false;
-	try {
-		return constructor.name === name && constructor.prototype === prototype && Function.prototype.toString.call(constructor) === `function ${name}() { [native code] }`;
-	} catch {
-		return false;
-	}
-}
-/** Whether a candidate is one realm's intrinsic `Object.prototype`. */
-function isIntrinsicObjectPrototype(value) {
-	return Object.getPrototypeOf(value) === null && hasIntrinsicConstructor(value, "Object");
-}
-/** Whether an array uses one realm's intrinsic `Array.prototype`, not a subclass or forged prototype. */
-function hasPlainArrayPrototype(value) {
-	const prototype = Object.getPrototypeOf(value);
-	if (!Array.isArray(prototype) || !hasIntrinsicConstructor(prototype, "Array")) return false;
-	const objectPrototype = Object.getPrototypeOf(prototype);
-	return typeof objectPrototype === "object" && objectPrototype !== null && isIntrinsicObjectPrototype(objectPrototype);
-}
-/** Whether an object is a plain or null-prototype record from any JavaScript realm. */
-function hasPlainObjectPrototype(value) {
-	const prototype = Object.getPrototypeOf(value);
-	return prototype === null || typeof prototype === "object" && isIntrinsicObjectPrototype(prototype);
-}
-/** Return every JSON-visible object key, or reject own data JSON would discard. */
-function enumerableStringKeys(value) {
-	const keys = Reflect.ownKeys(value);
-	if (keys.some((key) => typeof key !== "string" || !Object.prototype.propertyIsEnumerable.call(value, key))) return void 0;
-	return keys;
-}
-/** Validate lossless JSON iteratively, optionally materializing a detached snapshot. */
-function walkJsonValue(value, detach) {
-	const ancestors = /* @__PURE__ */ new Set();
-	let root;
-	const assign = (destination, item) => {
-		if (destination === void 0) return;
-		if (destination.kind === "root") root = item;
-		else if (destination.kind === "array") destination.target[destination.index] = item;
-		else Object.defineProperty(destination.target, destination.key, {
-			value: item,
-			enumerable: true,
-			configurable: true,
-			writable: true
-		});
-	};
-	const tasks = [{
-		kind: "visit",
-		value,
-		...detach ? { destination: { kind: "root" } } : {}
-	}];
-	for (let task = tasks.pop(); task !== void 0; task = tasks.pop()) {
-		if (task.kind === "leave") {
-			ancestors.delete(task.source);
-			continue;
-		}
-		if (task.kind === "array-item") {
-			if (!Object.prototype.hasOwnProperty.call(task.source, task.index)) return void 0;
-			tasks.push({
-				kind: "visit",
-				value: task.source[task.index],
-				...task.target === void 0 ? {} : { destination: {
-					kind: "array",
-					target: task.target,
-					index: task.index
-				} }
-			});
-			continue;
-		}
-		if (task.kind === "object-property") {
-			tasks.push({
-				kind: "visit",
-				value: task.source[task.key],
-				...task.target === void 0 ? {} : { destination: {
-					kind: "object",
-					target: task.target,
-					key: task.key
-				} }
-			});
-			continue;
-		}
-		const current = task.value;
-		if (current === null) {
-			assign(task.destination, null);
-			continue;
-		}
-		if (typeof current === "boolean" || typeof current === "string") {
-			assign(task.destination, current);
-			continue;
-		}
-		if (typeof current === "number") {
-			if (!Number.isFinite(current) || Object.is(current, -0)) return void 0;
-			assign(task.destination, current);
-			continue;
-		}
-		if (typeof current !== "object") return void 0;
-		if (ancestors.has(current)) return void 0;
-		if (Array.isArray(current)) {
-			if (!hasPlainArrayPrototype(current)) return void 0;
-			const length = current.length;
-			if (Reflect.ownKeys(current).length !== length + 1) return void 0;
-			const target = detach ? [] : void 0;
-			if (target !== void 0) assign(task.destination, target);
-			ancestors.add(current);
-			tasks.push({
-				kind: "leave",
-				source: current
-			});
-			for (let index = length - 1; index >= 0; index--) tasks.push({
-				kind: "array-item",
-				source: current,
-				index,
-				...target === void 0 ? {} : { target }
-			});
-			continue;
-		}
-		if (!hasPlainObjectPrototype(current)) return void 0;
-		const keys = enumerableStringKeys(current);
-		if (keys === void 0) return void 0;
-		const target = detach ? {} : void 0;
-		if (target !== void 0) assign(task.destination, target);
-		ancestors.add(current);
-		tasks.push({
-			kind: "leave",
-			source: current
-		});
-		for (let index = keys.length - 1; index >= 0; index--) {
-			const key = keys[index];
-			/* v8 ignore next -- the loop is bounded by the captured key count. */
-			if (key === void 0) return void 0;
-			tasks.push({
-				kind: "object-property",
-				source: current,
-				key,
-				...target === void 0 ? {} : { target }
-			});
-		}
-	}
-	return detach ? root : true;
-}
-/**
-* Validate and detach lossless JSON in one read per property.
-* @param value - candidate value to validate and detach.
-* @returns the detached snapshot, or `undefined` when the value is not losslessly JSON-serializable.
-*/
-function snapshotJsonValue(value) {
-	return walkJsonValue(value, true);
-}
-/**
-* Deep-freeze an object graph in place while leaving live AbortSignal objects mutable.
-* @param value - value to freeze.
-* @returns the same value after every reachable enumerable child is frozen.
-*/
-function deepFreeze$1(value) {
-	const seen = /* @__PURE__ */ new WeakSet();
-	const pending = [{
-		kind: "visit",
-		node: value
-	}];
-	while (pending.length > 0) {
-		const task = pending.pop();
-		/* v8 ignore next -- the loop condition guarantees one pending task. */
-		if (task === void 0) continue;
-		if (task.kind === "property") {
-			pending.push({
-				kind: "visit",
-				node: task.source[task.key]
-			});
-			continue;
-		}
-		const node = task.node;
-		if (node === null || typeof node !== "object") continue;
-		if (node instanceof AbortSignal) continue;
-		if (seen.has(node)) continue;
-		seen.add(node);
-		Object.freeze(node);
-		const keys = Object.keys(node);
-		for (let index = keys.length - 1; index >= 0; index--) {
-			const key = keys[index];
-			/* v8 ignore next -- the loop is bounded by the captured key count. */
-			if (key === void 0) continue;
-			pending.push({
-				kind: "property",
-				source: node,
-				key
-			});
-		}
-	}
-	return value;
-}
-//#endregion
 //#region lib/types/assembler.js
 /**
 * Incremental chunk-to-message assembler. This is the single canonical assembly
@@ -3609,12 +3362,7 @@ let LlmRuntime = (() => {
 				const { settingsNs, ...draft } = request;
 				const models = await this.discoverModels(settingsNs, draft, signal);
 				checkCancellation();
-				return { models: models.map((model) => ({
-					id: model.id,
-					...model.name === void 0 ? {} : { name: model.name },
-					...model.contextWindow === void 0 ? {} : { contextWindow: model.contextWindow },
-					...model.maxTokens === void 0 ? {} : { maxTokens: model.maxTokens }
-				})) };
+				return { models };
 			} catch {
 				checkCancellation();
 				throw new TypertRemoteFailure({

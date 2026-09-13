@@ -18,7 +18,7 @@ import {
   ApiSessionSubagentOwnership,
   inspectApiSession,
 } from '../src/agent.ts'
-import { installModelSelectionProjection } from '../src/model-selection-projection.ts'
+import { installModelSelectionProjection } from '@deepseek-ai/dsh-agent-default-model/session-selection'
 import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 const roots: Context[] = []
@@ -267,7 +267,7 @@ describe('ApiSession model selection', () => {
 
     const pending = agent(ctx, header('pending-model'))
     const selection = agents.selectionFor(pending)
-    agents.selectForNextRequest(pending, {
+    pending.session.append('model/selection', {
       provider: 'selected-provider',
       model: 'selected-model',
       reasoningEffort: 'high' as never,
@@ -275,14 +275,23 @@ describe('ApiSession model selection', () => {
     expect(selection.current).toMatchObject({
       provider: 'selected-provider', model: 'selected-model', reasoningEffort: 'high',
     })
-    expect(agents.consumeSelection(pending, 'other-provider', 'selected-model', 'high')).toBe(false)
-    expect(agents.consumeSelection(pending, 'selected-provider', 'other-model', 'high')).toBe(false)
-    expect(agents.consumeSelection(pending, 'selected-provider', 'selected-model', 'low')).toBe(false)
-    expect(agents.consumeSelection(pending, 'selected-provider', 'selected-model', 'high')).toBe(true)
-    expect(selection.current).toEqual({ provider: 'fixture', model: 'fixture-model' })
+    for (const [provider, model, reasoningEffort] of [
+      ['other-provider', 'selected-model', 'high'],
+      ['selected-provider', 'other-model', 'high'],
+      ['selected-provider', 'selected-model', 'low'],
+    ] as const) {
+      pending.session.append('request/header', {
+        header: { config: { provider, model, reasoningEffort: reasoningEffort as never } }, reason: 'initial',
+      })
+      expect(selection.current).toMatchObject({ provider: 'selected-provider', model: 'selected-model', reasoningEffort: 'high' })
+    }
+    pending.session.append('request/header', {
+      header: { config: { provider: 'selected-provider', model: 'selected-model', reasoningEffort: 'high' as never },
+        adapterDefaults: { reasoningEffort: true } }, reason: 'initial',
+    })
+    expect(ctx.sessionProjections.stateOf(pending.session, 'modelSelection')?.pending).toBeNull()
+    expect(selection.current).toEqual({ provider: 'selected-provider', model: 'selected-model' })
 
-    const untouched = agent(ctx, header('uninstalled-model'))
-    expect(agents.consumeSelection(untouched, 'fixture', 'fixture-model', undefined)).toBe(false)
   })
 })
 

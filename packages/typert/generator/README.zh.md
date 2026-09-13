@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-typert-generator` 在构建时把源代码 TypeScript 转换为与编译器无关的数据与可运行产物：它分析工作区各包的类型树，生成 `FaceModel` 与类型图，并输出包含受支持 Zod schema 与 `TYPERT` 反射贡献的可执行 JavaScript，以及配套声明文件。它是构建时库而非插件——绝不会在实时 agent 会话中运行。仓库的 Host tsdown 会自动运行它；业务包通过导出 `./typert` 与 `./client/typert` 入口选择加入，生成器会校验这些导出与发布文件清单。静态消费方也可以直接调用分析器进行类型检查或目录生成，无需发布任何内容。
+`dsh-typert-generator` 在构建时把源代码 TypeScript 转换为与编译器无关的数据与可运行产物：它分析工作区各包的类型树，生成 `FaceModel` 与类型图，并输出包含受支持 Zod schema 与 `TYPERT` 反射贡献的可执行 JavaScript，以及配套声明文件。它是构建时库而非插件——绝不会在实时 agent 会话中运行。仓库的 Host 构建在编译后、打包前运行它；业务包通过导出 `./typert` 与 `./client/typert` 入口选择加入，生成器会校验这些导出与发布文件清单。静态消费方也可以直接调用分析器进行类型检查或目录生成，无需发布任何内容。
 
 ## 目录
 
@@ -45,11 +45,11 @@ files:
 
 ### 静态分析工作区
 
-静态消费方直接以工作区的 `tsconfig.host.json` 与 `tsconfig.client.json` aggregate 调用 `WorkspaceAnalyzer`，选择 face 与包子集，并在不生成或加载运行时产物的前提下读取生成的 `FaceModel` 与类型图。`analyzeInBatches()` 通过有界的编译器程序处理大批量包选择，模型形态保持一致；`discoverPackages()` 无需构建类型检查程序即可找出参与贡献的包。
+静态消费方直接以工作区的 `tsconfig.host.json` aggregate 调用 `WorkspaceAnalyzer`，选择 face 与包子集，并在不生成或加载运行时产物的前提下读取生成的 `FaceModel` 与类型图。`analyzeInBatches()` 通过有界的编译器程序处理大批量包选择，模型形态保持一致；`discoverPackages()` 无需构建类型检查程序即可找出参与贡献的包。
 
 ### 在 tsdown 构建中运行生成
 
-包的 `./tsdown` 子路径为根 tsdown 配置提供 `typertPlugin()`：它在打包前降低 TypeScript 依赖中的标准装饰器，并在包输出根目录生成模型驱动的 face 产物。`package` 模式只生成当前打包的包；`workspace` 模式对每个显式贡献方各生成一次。
+包的 `./tsdown` 子路径为根 tsdown 配置提供 `typertPlugin()`：它在打包前降低 TypeScript 依赖中的标准装饰器，并在包输出根目录生成模型驱动的 face 产物。`package` 模式只生成当前打包的包；`workspace` 模式对每个显式贡献方各生成一次。根 Host 构建在工作区 tsc 成功后，改由独立进程调用 `emitVerifiedWorkspaceArtifacts()`，随后为 tsdown 使用 `transform-only` 模式。这使反射编译器在并发打包开始前释放；全部 Host 和 Remote 产物仍使用同一生成器及校验规则。直接调用 tsdown 只执行打包阶段，不能替代有序的 Host 构建。
 
 -----
 
@@ -79,11 +79,11 @@ files:
 
 ### 分析与 face
 
-Host 与 Client 是两个独立的 TypeScript 程序。直接项目引用确定编译器 face 的成员归属，`dsh.client` 包子路径则确定运行时 face 的贡献；`package.json#exports` 划定所有跨包公开边界，跨 face 的边只能来自导入或重新导出。`check` 模式遇到语法或语义诊断、缺失的公开类型标注、跨包私有引用，以及模型无法无损保留的可达声明合并时都会失败；`write` 模式插入类型检查器推导出的标注，并返回无诊断的 check 模式模型。NPM 依赖拥有的类型继续以 `external` 引用表示，不会被展开。
+仓库构建 Host 程序。分析器也支持为工具 fixture 单独提供 client-face 程序；这项能力不提供浏览器产品或仓库 Client aggregate。直接项目引用确定编译器 face 的成员归属，`dsh.client` 包子路径则确定运行时 face 的贡献；`package.json#exports` 划定所有跨包公开边界，跨 face 的边只能来自导入或重新导出。`check` 模式遇到语法或语义诊断、缺失的公开类型标注、跨包私有引用，以及模型无法无损保留的可达声明合并时都会失败；`write` 模式插入类型检查器推导出的标注，并返回无诊断的 check 模式模型。NPM 依赖拥有的类型继续以 `external` 引用表示，不会被展开。
 
 ### 生成与发布约定
 
-`FaceModelEmitter` 输出包含受支持 Zod schema 与 `TYPERT` 贡献的可执行 JavaScript，以及把 schema 通过包的公开导出标注为 `z.ZodType<SourceType>` 的声明文件；不支持的 Zod 投影会失败。含 Remote 方法的 Host face 还会额外为 Client 生成 Host Remote 约定的 `typert.remote-client.*` 投影。`WorkspaceTypertGenerator` 校验每个贡献方的 `package.json`：`./typert` 与 `./client/typert`（存在 Remote 方法时还有 `./remote`）必须指向精确的生成文件，且 `files` 清单必须包含它们。
+`FaceModelEmitter` 输出包含受支持 Zod schema 与 `TYPERT` 贡献的可执行 JavaScript，以及把 schema 通过包的公开导出标注为 `z.ZodType<SourceType>` 的声明文件；不支持的 Zod 投影会失败。含 Remote 方法的 Host face 还会额外为 Client 生成 Host Remote 约定的 `typert.remote-client.*` 投影。`WorkspaceTypertGenerator` 校验每个贡献方的 `package.json`：所选 face 的导出（Host 的 `./typert`、client 的 `./client/typert`，以及存在 Remote 方法时的 `./remote`）必须指向精确的生成文件，且 `files` 清单必须包含它们。
 
 ### 目录投影
 

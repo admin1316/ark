@@ -1,6 +1,13 @@
+---
+description: "Shared boot glue for the app bins (dsh and dsh-acp-demo): each bin is a thin self-executing composition over these helpers, parameterized by its diagnostic prefix, so loader-failure behavior has one owner instead of drifting between published artifacts."
+kind: "package-library"
+---
+
 # `@deepseek-ai/dsh-app-boot`
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Shared boot glue for the app bins ([`dsh`](../../../apps/cli/README.md) and [`dsh-acp-demo`](../../examples/acp-demo/README.md)): each bin is a thin self-executing composition over these helpers, parameterized by its diagnostic prefix, so loader-failure behavior has one owner instead of drifting between published artifacts.
 
@@ -33,9 +40,18 @@ Bare plugin specifiers in a config (`@deepseek-ai/dsh-*`, npm packages) resolve 
 
 This package carries no loader hooks and no dev-mode surface. The [`dsh` app](../../../apps/cli/README.md) owns its Node source-launch hook and consumes these helpers for the boot sequence; built consumers continue to use plain Node package resolution.
 
+## Table of Contents
+
+- [Profiles](#profiles)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
 ## Profiles
 
 A profile is a directory under `$DSH_HOME/profiles/<name>` (the Harness home resolves through [`resolveDshHome`](../../util/home-paths/README.md): `$DSH_HOME`, else `~/.dsh`) holding a `package.json` — out-of-tree plugin `dependencies` plus the profile manifest `dsh.profile` with its ordered `bundles` layer list — and the user's own `cordis.patch.yml`. A bundle is an npm package whose manifest declares `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`; `loadProfile` resolves each `dsh.profile.bundles` name two-anchored (the dsh installation first, then the profile directory) and fails loud on a listed package without a bundle declaration. `composeEntries` applies patch layers over an empty entry list through the include's own `applyEntryPatches`, so composition, flag derivation, and config dumps cannot drift from what boots. `healProfilesModuleFallback` maintains the flat `$DSH_HOME/profiles/node_modules` directory — one symlink per installed package in the app's dependency, optional-dependency, and peer closure — so bare plugin names in any profile resolve through Node's ordinary parent-walk without pnpm managing in-box packages; an omitted optional bundle contributes no links. `PROFILE_TEMPLATES` (`web`, `headless`) auto-initialize on first use; other names fail loud until `initProfile` creates them (the `dsh plugin` path). `loadProfile` normalizes an exact installation-owned bundle tuple to its shipped template while preserving every other manifest field; any extra, missing, or reordered entry makes the list user-owned and leaves it unchanged.
+
+Bundle lookup captures a canonical package directory before reading its manifest, so concurrent fallback-link replacement does not redirect later reads; missing candidates continue the search and other resolution errors propagate.
 
 User-level machine-local preferences also live in the Harness home:
 
@@ -58,3 +74,7 @@ No direct invalidation from `boot()`; a consumer that calls `addHarnessSourceSec
 - **Snapshot replay swapping is basename-specific** — only a config ending in `cordis.yml` or `cordis.yaml` maps to the sibling `cordis.snapshot.yml`; custom config names require caller-managed selection.
 - **Environment discovery is launch-scoped** — `loadLayeredEnv` reads only the invocation directory and Harness home once; it does not search parents or follow a workspace selected later. `loadEnv` remains the one-directory helper for non-product bins.
 - **A user patch replaces the whole matched config** — an id-targeted patch does not deep-merge, so a profile override restates the bundle fields it keeps.
+
+### Dev Note
+
+None.

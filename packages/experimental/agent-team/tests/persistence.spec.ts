@@ -14,8 +14,8 @@ import SqliteSessionPersistence from '@deepseek-ai/dsh-session-persistence-sqlit
 import SubagentService, { seedDescriptorTurn, snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
-import TeamService, { foldTeam, TeamId, TeamMessageId } from '../src/index.ts'
-import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
+import TeamService, { foldTeam, TeamId, TeamMessageId } from '@deepseek-ai/dsh-agent-team'
+import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '@deepseek-ai/dsh-agent-team'
 import { TestSessionQuery } from './test-session-query.ts'
 
 const SIGNAL = new AbortController().signal

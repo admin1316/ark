@@ -85,17 +85,53 @@ async function setup(
 }
 
 describe('tool-str-replace-editor', () => {
+  it.each([
+    { command: 'view', file_text: null, old_str: null, new_str: null, insert_line: null, view_range: null },
+    { command: 'create', file_text: 'created', old_str: null, new_str: null, insert_line: null, view_range: null },
+    { command: 'str_replace', file_text: null, old_str: 'alpha', new_str: 'changed', insert_line: null, view_range: null },
+    { command: 'insert', file_text: null, old_str: null, new_str: 'inserted', insert_line: 1, view_range: null },
+  ])('accepts null placeholders unused by $command', async (args) => {
+    const { ctx, root, owner } = await setup()
+    const path = join(root, args.command === 'create' ? 'new.txt' : 'existing.txt')
+    if (args.command !== 'create') await writeFile(path, 'alpha\nbeta\n')
+    const result = await call(ctx, owner, { ...args, path })
+    expect(result.isError, text(result)).not.toBe(true)
+    const content = await readFile(path, 'utf8')
+    expect(content).toBe(args.command === 'create' ? 'created'
+      : args.command === 'str_replace' ? 'changed\nbeta\n'
+        : args.command === 'insert' ? 'alpha\ninserted\nbeta\n' : 'alpha\nbeta\n')
+  })
+
+  it.each([
+    { command: 'create', file_text: null },
+    { command: 'str_replace', old_str: null, new_str: 'changed' },
+    { command: 'str_replace', old_str: 'alpha', new_str: null },
+    { command: 'insert', insert_line: null, new_str: 'inserted' },
+    { command: 'insert', insert_line: 1, new_str: null },
+  ])('rejects null command input without mutation: %j', async (args) => {
+    const { ctx, root, owner } = await setup()
+    const path = join(root, args.command === 'create' ? 'new.txt' : 'existing.txt')
+    if (args.command !== 'create') await writeFile(path, 'alpha\nbeta\n')
+    const result = await call(ctx, owner, { ...args, path })
+    expect(result.isError).toBe(true)
+    if (args.command === 'create') {
+      await expect(readFile(path, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    } else {
+      expect(await readFile(path, 'utf8')).toBe('alpha\nbeta\n')
+    }
+  })
+
   it('registers the standalone schema and configurable description', async () => {
     const { ctx, fiber } = await setup({ description: 'custom editor description' })
     const schema = ctx.tools.schemas()[0]
     expect(ctx.tools.schemas().map(item => item.name)).toEqual(['str_replace_editor'])
     expect(schema?.description).toBe('custom editor description')
     const properties = (schema?.parameters as {
-      properties: Record<string, { type?: string; items?: { type?: string } }>
+      properties: Record<string, { oneOf?: { type: string; items?: { type: string } }[] }>
     }).properties
     expect(properties).not.toHaveProperty('replace_all')
-    expect(properties.insert_line?.type).toBe('integer')
-    expect(properties.view_range?.items?.type).toBe('integer')
+    expect(properties.insert_line?.oneOf).toEqual([{ type: 'integer' }, { type: 'null' }])
+    expect(properties.view_range?.oneOf).toEqual([{ type: 'array', items: { type: 'integer' } }, { type: 'null' }])
     expect(ctx.tools.get('str_replace_editor')?.presentCall?.({
       command: 'view',
       path: '/workspace/a.txt',

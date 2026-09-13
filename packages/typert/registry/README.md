@@ -25,11 +25,11 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the registry in any Host or Client composition that stores or consumes generated Typert artifacts; it provides `ctx.typert`. There is no configuration.
+Mount the registry in a Host composition that stores or consumes generated Typert artifacts; it provides `ctx.typert`. There is no configuration.
 
 ### Minimal setup
 
-Load the registry plugin; the Client face is installed the same way by the Client runtime's own metadata, and both faces run the same implementation:
+Load the registry plugin through its package root. Its environment-independent implementation and client-context adapter types remain available to protocol consumers; the package exports no browser plugin entry:
 
 ```yaml
 - name: '@deepseek-ai/dsh-typert-registry'
@@ -80,7 +80,6 @@ Keys are stable: `<package>#<face>` for reflection, `<package>#<name>` for schem
 |---|---|
 | [`src/service.ts`](src/service.ts) | `TypertRegistry` service, stores, validation, effect wiring |
 | [`src/types.ts`](src/types.ts) | Contribution, record, and filter types |
-| [`src/client/index.ts`](src/client/index.ts) | Client face installing the same registry |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion |
 
 </details>

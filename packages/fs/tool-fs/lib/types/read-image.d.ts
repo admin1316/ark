@@ -4,15 +4,12 @@
  * attachment service's full decode stays authoritative. The mounted `ctx.fs`
  * backend owns path resolution and read access; names only declare media type.
  *
- * The route gate is deliberately stricter than the host upload preflight. An
- * image-reading tool is useful only when the exact calling route can inspect
- * its result, so unknown capability refuses instead of relying on an adapter
- * failure after filesystem and attachment work.
+ * Ark 定制：读图不再按模型模态预检。图片一律允许读入，能否识别由模型/上游
+ * 在请求期决定，避免在文件系统与附件写入之后才发现能力不符。
  * @module @deepseek-ai/dsh-tool-fs/src/read-image
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment';
-import type { ToolExecution } from '@deepseek-ai/dsh-tools';
 /**
  * Identify the media type declared by a supported image file signature.
  * @param data - file bytes read through the current filesystem backend.
@@ -43,15 +40,6 @@ export interface ImageReadValue {
  */
 export declare function imageMediaTypeForPath(filePath: string): ImageMediaType | undefined;
 /**
- * Enforce the strict image-capability gate for the calling route. Resolves the
- * session's latest routed provider/model (request header config, then agent
- * options) and requires the exact resolved route to declare `image` input explicitly.
- * @param ctx - the plugin context used to resolve the optional `llm` service.
- * @param exec - the tool-execution context supplying the calling agent.
- * @param requestedPath - the raw, not-yet-resolved path rendered in refusal messages.
- */
-export declare function assertImageCapableRoute(ctx: Context, exec: ToolExecution, requestedPath: string): Promise<void>;
-/**
  * Re-brand a structured image outcome into the durable attachment reference an
  * `ImageBlock` carries.
  * @param image - the image metadata from the output schema.
@@ -72,9 +60,9 @@ export declare function formatImageReadOutput(displayPath: string, image: ImageR
  * owns the attachments gate: `src/index.ts` calls this inside
  * `ctx.inject(['attachments'], …)` so the tool exists only while a durable
  * store is mounted. Execution still re-checks `ctx.get('attachments')` for
- * direct callers and gates on the calling route's declared image input.
+ * direct callers; the calling model's own modality no longer blocks the read.
  * @param ctx - the registration scope; execution uses its `fs` service plus
- *   the optional `attachments`/`llm` services.
+ *   the optional `attachments` service.
  */
 export declare function applyReadImageTool(ctx: Context): void;
 //# sourceMappingURL=read-image.d.ts.map

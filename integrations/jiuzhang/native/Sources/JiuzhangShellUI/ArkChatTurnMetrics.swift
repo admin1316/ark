@@ -1,6 +1,49 @@
 import Foundation
 import JiuzhangShellCore
 
+/// Turn lifecycle facts are independent of message interruption and fork eligibility.
+public enum ArkChatTurnState: Equatable, Sendable {
+  case completed, aborted, interrupted, failed, blocked, outputLimited, ended
+  case running, historical, unknown
+
+  init(endReason: String?) {
+    switch endReason {
+    case "completed": self = .completed
+    case "aborted": self = .aborted
+    case "interrupted": self = .interrupted
+    case "error": self = .failed
+    case "blocked": self = .blocked
+    case "max-tokens": self = .outputLimited
+    default: self = .ended // Plugins may extend the durable reason union.
+    }
+  }
+
+  static func navigation(
+    terminal: Self?, historical: Bool, sessionRunning: Bool, isLatestTurn: Bool
+  ) -> Self {
+    if let terminal { return terminal }
+    if historical { return .historical }
+    return sessionRunning && isLatestTurn ? .running : .unknown
+  }
+
+  func label(_ language: ArkLanguagePreference) -> String {
+    let key: ArkL10n.Key
+    switch self {
+    case .completed: key = .executionCompleted
+    case .aborted: key = .statusReplyStopped
+    case .interrupted: key = .statusInterrupted
+    case .failed: key = .executionFailed
+    case .blocked: key = .statusBlocked
+    case .outputLimited: key = .statusMaxTokensTitle
+    case .ended: key = .chatTurnEnded
+    case .running: key = .executionRunning
+    case .historical: key = .trajectoryHistoryPrefix
+    case .unknown: key = .chatTurnUnknown
+    }
+    return ArkL10n.text(key, language)
+  }
+}
+
 public struct ArkChatTurnMetrics: Equatable, Sendable {
   public let runSeconds: Double?
   public let firstTokenSeconds: Double?
@@ -51,6 +94,7 @@ struct ArkChatTurnProjection: Equatable, Sendable {
   private var accumulators: [Int: Accumulator] = [:]
   private(set) var metricsByTurn: [Int: ArkChatTurnMetrics] = [:]
   private(set) var completedSequenceByTurn: [Int: Int] = [:]
+  private(set) var terminalStateByTurn: [Int: ArkChatTurnState] = [:]
   private(set) var latestStartedTurn: Int?
   private(set) var latestStartedSequence: Int?
 
@@ -85,6 +129,7 @@ struct ArkChatTurnProjection: Equatable, Sendable {
       }
     case "turn/end":
       value.end = event.time
+      terminalStateByTurn[turn] = ArkChatTurnState(endReason: event.data["reason"]?["kind"]?.stringValue)
       if event.data["reason"]?["kind"]?.stringValue == "completed" {
         completedSequenceByTurn[turn] = event.id
       } else {

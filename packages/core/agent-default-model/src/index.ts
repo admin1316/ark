@@ -8,6 +8,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { installModelSelectionProjection } from './session-selection.ts'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 
 declare module '@deepseek-ai/cordis' {
@@ -71,6 +72,7 @@ export class AgentDefaultModelConfig extends Service {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'agentDefaultModel')
+    ctx.inject(['sessionProjections'], installModelSelectionProjection)
     const entry: AgentDefaultModelSettings = { provider: config.provider, model: config.model }
     this.source = () => entry
     installSettingsSection(ctx, AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA, entry, {

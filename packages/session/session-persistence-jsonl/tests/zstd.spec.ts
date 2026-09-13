@@ -682,7 +682,7 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     expect((await ctx.sessionPersistence.load(header.id)).events).toEqual([...oneTurnLog(), ...secondTurn])
   })
 
-  it('skips empty, incomplete, and non-header compressed artifacts while rejecting malformed header frames', async () => {
+  it('lists healthy logs beside incomplete or corrupt headers while targeted reads reject corruption', async () => {
     const root = await freshRoot()
     for (const [id, content] of [
       ['empty', Buffer.alloc(0)],
@@ -703,7 +703,10 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
       JSON.stringify({ type: 'turn/start' }),
       '',
     ].join('\n')))
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/first frame is not exactly one header line/)
+    const healthy = meta('healthy-beside-malformed')
+    await ctx.sessionPersistence.create(healthy)
+    await ctx.sessionPersistence.append(healthy.id, oneTurnLog())
+    expect(await ctx.sessionPersistence.list()).toEqual([{ ...healthy, delegationDepth: 0 }])
     await expect(ctx.sessionPersistence.load(SessionId('two-lines')))
       .rejects.toThrow(/first frame is not exactly one header line/)
   })
@@ -724,7 +727,12 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
       .rejects.toThrow(/empty or header-less Zstandard session log/)
     await expect(ctx.sessionPersistence.load(SessionId('empty-header')))
       .rejects.toThrow(/first frame is not exactly one header line/)
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/header frame failed validation/)
+    await expect(ctx.sessionPersistence.load(SessionId('bad-checksum')))
+      .rejects.toThrow(/frame at byte 0 failed validation/)
+    const healthy = meta('healthy-beside-checksum')
+    await ctx.sessionPersistence.create(healthy)
+    await ctx.sessionPersistence.append(healthy.id, oneTurnLog())
+    expect(await ctx.sessionPersistence.list()).toEqual([{ ...healthy, delegationDepth: 0 }])
   })
 })
 

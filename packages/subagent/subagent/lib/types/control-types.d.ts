@@ -8,8 +8,10 @@
 import type { Branded } from '@deepseek-ai/dsh-brand';
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand';
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types';
-import type { SessionId } from '@deepseek-ai/dsh-session/types';
+import type { SessionId, SessionRemoteRawHistoryRequest, SessionRemoteSemanticHistoryRequest, SessionRemoteHistoryContentRequest } from '@deepseek-ai/dsh-session/types';
 import type { z as zCore } from 'zod';
+/** History view options; the subagent route supplies the authoritative child address. */
+export type SubagentHistoryOptions = Omit<SessionRemoteRawHistoryRequest, 'sessionId' | 'expectedParentSessionId' | 'expectedSubagentMode'> | Omit<SessionRemoteSemanticHistoryRequest, 'sessionId' | 'expectedParentSessionId' | 'expectedSubagentMode'> | Omit<SessionRemoteHistoryContentRequest, 'sessionId' | 'expectedParentSessionId' | 'expectedSubagentMode'>;
 /**
  * Client-minted identity of one browser prompt, persisted on the exact accepted
  * message. It carries the Session Controller's `session-request-id` brand so a

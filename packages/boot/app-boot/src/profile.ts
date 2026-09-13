@@ -24,7 +24,7 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -317,15 +317,23 @@ export function writeProfileManifest(dir: string, manifest: ProfileManifest): vo
  * package exporting `./package.json` (`require.resolve` would need that):
  * probe the require resolution paths for a directory holding the named
  * manifest. This is Node's own node_modules lookup order, so the result
- * matches what the Loader would import from the same anchor, and
- * `existsSync` follows the symlinks pnpm's isolated layout uses.
+ * matches what the Loader would import from the same anchor. Capture a package
+ * symlink's destination before probing its manifest: traversing a link while
+ * another process atomically replaces it can fail with EINVAL on macOS.
  */
 function packageDirFromAnchor(anchor: string, packageName: string): string | undefined {
   // resolve.paths returns null only for builtins, which no bundle name is.
   /* v8 ignore next */
   for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
     const candidate = join(searchPath, packageName)
-    if (existsSync(join(candidate, 'package.json'))) return candidate
+    let directory: string
+    try {
+      directory = realpathSync.native(candidate)
+    } catch (error) {
+      if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) continue
+      throw error
+    }
+    if (existsSync(join(directory, 'package.json'))) return directory
   }
   return undefined
 }

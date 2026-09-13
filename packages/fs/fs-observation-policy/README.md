@@ -1,6 +1,13 @@
+---
+description: "The fs-observation-policy plugin: it records observed presence or absence and adds read-before-edit plus guarded write/edit on top of the ctx.fs provider contract (@deepseek-ai/dsh-fs) — through the fs/ event gate, NOT through a method service."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-fs-observation-policy
 
 English | [中文](README.zh.md)
+
+## Summary
 
 The **fs-observation-policy plugin**: it records observed presence or absence and adds read-before-edit plus guarded write/edit on top of the `ctx.fs` provider contract ([`@deepseek-ai/dsh-fs`](../fs)) — through the `fs/*` event gate, **NOT** through a method service. This plugin registers **no** `ctx.fsPolicy` service and has no public `read`/`write`/`edit`/`resolve` methods. It is the policy third of the filesystem stack: not a swappable seam, but the policy that does not belong on the `FileSystem` provider base class.
 
@@ -17,6 +24,17 @@ declare const ctx: Context
 // listener should be the first decider registered for the fs/*-intent slots.
 await ctx.plugin(FsPolicy)
 ```
+
+## Table of Contents
+
+- [The four-layer split](#the-four-layer-split)
+- [How the gate participates](#how-the-gate-participates)
+- [Observed state is the prior-observation record; freshness is provider CAS](#observed-state-is-the-prior-observation-record-freshness-is-provider-cas)
+- [Single-slot, first-wins](#single-slot-first-wins)
+- [No method coupling](#no-method-coupling)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## The four-layer split
 
@@ -71,3 +89,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 - **Actors without an agent session can never satisfy the policy** — their edits throw `FS_NOT_OBSERVED` and their writes always resolve `createIfAbsent`, so a non-agent caller cannot overwrite an existing file through the gate.
 - **Direct `ctx.fs` reads emit no `fs/observed`** — a file read outside the `read` tool stays unobserved, and a later guarded edit rejects with `FS_NOT_OBSERVED` until the tool reads it.
 - **Authorization is version freshness, not view completeness** — any windowed read authorizes a full-file overwrite of an unchanged file, deliberately weaker than a full-view rule ([seam-split Agent Note](../../../.agents/notes/implemented/simplification/2026-06-26-fsspec-style-fs-seam.md)).
+
+### Dev Note
+
+None.

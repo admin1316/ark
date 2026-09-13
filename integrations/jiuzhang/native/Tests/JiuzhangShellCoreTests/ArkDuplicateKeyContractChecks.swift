@@ -151,6 +151,18 @@ func runArkDuplicateKeyContractChecks() {
     "Wiki graph lookup retains the first page for a duplicate node id"
   )
 
+  var historyProjection = ArkMessageProjection()
+  let historicalRow = ArkMessage(id: 10, role: .assistant, text: "kept", time: Date(timeIntervalSince1970: 1))
+  do {
+    try historyProjection.installHistoricalRows([historicalRow], canonicalIDs: [10])
+    try historyProjection.installHistoricalRows([historicalRow, historicalRow], canonicalIDs: [10])
+    check(false, "historical row installation rejects duplicate identities")
+  } catch {
+    check((error as? ArkAPIError)?.code == "invalid-history-response"
+      && historyProjection.messages == [historicalRow],
+      "historical row installation rejects duplicate identities without changing the previous projection")
+  }
+
   let sourceRoot = contractNativeRoot.appendingPathComponent("Sources", isDirectory: true)
   let unsafeFiles = swiftSources(containing: "Dictionary(uniqueKeysWithValues:", under: sourceRoot)
   check(

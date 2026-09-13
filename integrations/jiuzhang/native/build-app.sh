@@ -23,7 +23,10 @@ function ark_refuse_unsafe_output() {
 
   local canonical="${requested:A}"
   local padded="/${canonical#/}/"
-  if [[ "${canonical}" == "/" || "${canonical}" == "/Applications" || "${canonical}" == /Applications/* ]]; then
+  local production_app="${HOME}/ark/Ark.app"
+  production_app="${production_app:A}"
+  if [[ "${canonical}" == "/" || "${canonical}" == "/Applications" || "${canonical}" == /Applications/* \
+    || "${canonical}" == "${production_app}" || "${canonical}" == ${production_app}/* ]]; then
     print -u2 "refusing Ark candidate output in the production application hierarchy: ${canonical}"
     return 2
   fi
@@ -49,7 +52,10 @@ function ark_refuse_unsafe_candidate() {
     return 2
   }
   local canonical="${requested:A}"
-  [[ "${canonical}" != "/Applications/Ark.app" && "${canonical}" != /Applications/* ]] || {
+  local production_app="${HOME}/ark/Ark.app"
+  production_app="${production_app:A}"
+  [[ "${canonical}" != "${production_app}" && "${canonical}" != ${production_app}/* \
+    && "${canonical}" != "/Applications/Ark.app" && "${canonical}" != /Applications/* ]] || {
     print -u2 "refusing the production Ark.app as a candidate: ${canonical}"
     return 2
   }
@@ -1848,11 +1854,11 @@ export SWIFTPM_MODULECACHE_OVERRIDE="${scratch}/swift-cache"
 icon_master="${scratch}/AppIcon-1024.png"
 icon_width="$(/usr/bin/sips -g pixelWidth "${icon_source}" | awk '/pixelWidth/ { print $2 }')"
 icon_height="$(/usr/bin/sips -g pixelHeight "${icon_source}" | awk '/pixelHeight/ { print $2 }')"
-[[ "${icon_width}" == 1024 && "${icon_height}" == 1024 ]] || {
-  print -u2 "Ark seal icon source must be exactly 1024x1024 pixels."
+(( icon_width >= 1024 && icon_width == icon_height )) || {
+  print -u2 "Ark icon source must be square and at least 1024x1024 pixels."
   exit 2
 }
-install -m 0644 "${icon_source}" "${icon_master}"
+/usr/bin/sips -s format png -z 1024 1024 "${icon_source}" --out "${icon_master}" >/dev/null
 
 icon_preview="${scratch}/AppIcon-128.png"
 /usr/bin/sips -z 128 128 "${icon_master}" --out "${icon_preview}" >/dev/null

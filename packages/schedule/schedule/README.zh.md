@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-schedule` 为你的会话提供持久的提醒：让模型稍后提醒你，提醒会作为同一会话中的普通 follow-up 消息返回。你可以安排延时后的一次性提醒、绝对时间的一次性提醒，或固定间隔的重复提醒，也可以列出仍待处理的提醒或取消提醒。提醒在重启后依然存在：已经 live 且空闲的 agent 可以立即交付到期工作，而已关闭或 cold 的会话会让提醒保持逾期，直到未来的 live 根 agent 恢复会话。交付只发生在会话内部，没有电子邮件、短信或推送通知。它是可选的 Web 能力；加载 Schedule overlay 即可启用提醒工具。
+`dsh-schedule` 为你的会话提供持久的提醒：让模型稍后提醒你，提醒会作为同一会话中的普通 follow-up 消息返回。你可以安排延时后的一次性提醒、绝对时间的一次性提醒，或固定间隔的重复提醒，也可以列出仍待处理的提醒或取消提醒。提醒在重启后依然存在：已经 live 且空闲的 agent 可以立即交付到期工作，而已关闭或 cold 的会话会让提醒保持逾期，直到未来的 live 根 agent 恢复会话。交付只发生在会话内部，没有电子邮件、短信或推送通知。它是可选的 Host 能力；在已配置的 profile 中加载 Schedule overlay 可启用提醒工具。
 
 ## 目录
 
@@ -33,10 +33,10 @@ kind: "package-reference"
 
 ### 启用 Schedule
 
-把 Schedule overlay 添加到 `dsh web` 会话；提醒工具随即出现在会话中，模型可以立即使用它们：
+使用已配置的长期运行 profile，提供 Session 持久化与根 Agent，并将 Schedule 和 time-context 包声明为依赖。此示例中的 `my-agent` 指已安装的 profile；[配置指南](../../../docs/user/guide/schedule.zh.md)定义前置条件：
 
 ```sh
-dsh web --patch apps/cli/config/examples/schedule/cordis.yml
+dsh --profile my-agent --patch apps/cli/config/examples/schedule/cordis.yml
 ```
 
 成功的样子如下：让模型「10 分钟后提醒我审阅 PR」，它会回复提醒的 id、目标时间与 `scheduled` 状态。如果那一刻存储无法确认，工具会报告 `persistence_uncertain` 并建议重新列出，而不是声称成功。
@@ -45,7 +45,7 @@ dsh web --patch apps/cli/config/examples/schedule/cordis.yml
 
 ### 安排提醒
 
-一次性提醒有两种形式：延时后——例如「30 分钟后」——或绝对时间，可以给出带显式偏移量的时刻，如 `2026-09-01T15:00:00+08:00`，也可以给出带命名时区（如 `Europe/Berlin`）的本地日期与时间（只有加载 time-context overlay 时才应用浏览器时区）。重复提醒按至少 5 分钟的固定间隔运行，并与你首次设置的时间保持对齐。每条提醒都需要在触发时展示的内容。
+一次性提醒有两种形式：延时后——例如「30 分钟后」——或绝对时间，可以给出带显式偏移量的时刻，如 `2026-09-01T15:00:00+08:00`，也可以给出带命名时区（如 `Europe/Berlin`）的本地日期与时间（只有挂载 time-context 时才将请求本地时区用于自然语言解释）。重复提醒按至少 5 分钟的固定间隔运行，并与你首次设置的时间保持对齐。每条提醒都需要在触发时展示的内容。
 
 创建成功会返回带 id、目标时间、状态与交付模式的提醒；`schedule_list` 按创建顺序显示所有待处理提醒；按 id 取消会移除待处理提醒，未知或已结束的 id 会报告 `schedule_not_found` 且不改变任何内容。
 
@@ -69,7 +69,7 @@ dsh web --patch apps/cli/config/examples/schedule/cordis.yml
 
 插件声明 `inject = ['agents', 'sessions', 'tools', 'sessionPersistence']`，因此缺少持久化服务会直接构成组合错误。它只观察加载后发布的 `agent/created` 事件，在这些根 agent 上安装，并通过完全相同的 `agent.ctx` 注册全部三个工具；加载时已经 live 的 agent 与运行时子 agent 永远不会获得 Schedule。
 
-Time-context 不是 Schedule 的依赖。官方 Web overlay 挂载 `@deepseek-ai/dsh-time-context`，让模型能够按浏览器请求本地时区解释自然语言；但模型仍必须向 `schedule_create` 传入显式偏移量或 `time_zone`；Schedule 绝不会从模型上下文导入或推断该值。
+Time-context 不是 Schedule 的依赖。示例 overlay 挂载 `@deepseek-ai/dsh-time-context`，让模型能够按调用方提供的请求本地时区解释自然语言；但模型仍必须向 `schedule_create` 传入显式偏移量或 `time_zone`；Schedule 绝不会从模型上下文导入或推断该值。
 
 ### 设计理念
 

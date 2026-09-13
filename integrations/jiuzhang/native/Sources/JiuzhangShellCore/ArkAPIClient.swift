@@ -270,14 +270,96 @@ public struct ArkMessageProjection: Sendable {
 
   public var messages: [ArkMessage] { rows }
 
+  /// Install immutable rows from already-closed history beside a real live
+  /// checkpoint. Canonical IDs alone may mark old steps finalized. Prefix rows
+  /// never supply partial block indexes or replace an active assembler row.
+  public mutating func installHistoricalRows(_ values: [ArkMessage], canonicalIDs: Set<Int>) throws {
+    // Reject conflicting identities before changing rows or the active assembler.
+    var byID: [Int: ArkMessage] = [:]
+    for row in rows {
+      guard byID.updateValue(row, forKey: row.id) == nil else {
+        throw ArkAPIError(message: "消息投影含重复标识", code: "invalid-history-response")
+      }
+    }
+    var incomingIDs = Set<Int>()
+    guard values.allSatisfy({ incomingIDs.insert($0.id).inserted }) else {
+      throw ArkAPIError(message: "历史消息含重复标识", code: "invalid-history-response")
+    }
+    let activeIDs = Set(partialIndex.values.compactMap { rows.indices.contains($0) ? rows[$0].id : nil })
+    for value in values where !activeIDs.contains(value.id) {
+      byID[value.id] = value
+      if value.role == .assistant, canonicalIDs.contains(value.id) {
+        finalized.insert("\(value.turn ?? -1):\(value.step ?? -1)")
+      }
+    }
+    let activeKeys = partialIndex.mapValues { rows[$0].id }
+    rows = byID.values.sorted { $0.id < $1.id }
+    var positions: [Int: Int] = [:]
+    for (index, row) in rows.enumerated() { positions[row.id] = index }
+    partialIndex = activeKeys.compactMapValues { positions[$0] }
+  }
+
   public mutating func reset(events: [ArkHistoryEvent]) {
     rows = []
     partialIndex = [:]
     partialBlocks = [:]
     finalized = []
-    for event in events.sorted(by: { $0.id < $1.id }) {
-      _ = append(event)
+    append(contentsOf: events.sorted { $0.id < $1.id })
+  }
+
+  /// Coalesce adjacent deltas before updating their row. Keep lifecycle and
+  /// content-block boundaries in order, and let the single-event reducer own
+  /// retry, partial identity and canonical-message replacement semantics.
+  @discardableResult
+  public mutating func append(contentsOf events: [ArkHistoryEvent]) -> Bool {
+    var firstDelta: ArkHistoryEvent?
+    var fragments: [String] = []
+    var changed = false
+    for event in events {
+      let chunk = event.data["chunk"]
+      let kind = chunk?["type"]?.stringValue
+      let isDelta = event.type == "assistant/chunk"
+        && (kind == "text-delta" || kind == "reasoning-delta")
+        && chunk?["text"]?.stringValue?.isEmpty == false
+      if let first = firstDelta,
+         !isDelta || first.data["turn"] != event.data["turn"]
+          || first.data["step"] != event.data["step"]
+          || first.data["chunk"]?["type"] != chunk?["type"]
+          || first.data["chunk"]?["index"] != chunk?["index"] {
+        changed = appendDeltaBatch(first, fragments: fragments) || changed
+        firstDelta = nil
+        fragments.removeAll(keepingCapacity: true)
+      }
+      if isDelta, let text = chunk?["text"]?.stringValue {
+        firstDelta = firstDelta ?? event
+        fragments.append(text)
+      } else {
+        changed = append(event) || changed
+      }
     }
+    if let first = firstDelta {
+      changed = appendDeltaBatch(first, fragments: fragments) || changed
+    }
+    return changed
+  }
+
+  private mutating func appendDeltaBatch(
+    _ first: ArkHistoryEvent,
+    fragments: [String]
+  ) -> Bool {
+    guard fragments.count > 1,
+          var data = first.data.objectValue,
+          var chunk = data["chunk"]?.objectValue
+    else { return append(first) }
+    chunk["text"] = .string(fragments.joined())
+    data["chunk"] = .object(chunk)
+    return append(ArkHistoryEvent(
+      id: first.id,
+      type: first.type,
+      time: first.time,
+      data: .object(data),
+      view: first.view
+    ))
   }
 
   @discardableResult
@@ -367,58 +449,9 @@ public struct ArkMessageProjection: Sendable {
       return true
     }
 
-    guard event.type.contains("message") else { return false }
-    // A compaction checkpoint is model-facing replacement material, not a
-    // human/context message. Chat renders its lifecycle marker separately.
-    if event.type == "user/message" {
-      let value = event.data["message"] ?? event.data
-      let source = value["source"]
-      if source?["kind"]?.stringValue == "plugin",
-         source?["plugin"]?.stringValue == "compact",
-         source?["compactionId"]?.stringValue != nil
-      {
-        return false
-      }
-    }
-    let rawText = ArkAPIClient.textContent(in: event.data) ?? ""
-    let reasoning = ArkAPIClient.reasoningContent(in: event.data)
-    let attachmentIDs = ArkAPIClient.imageAttachmentIDs(in: event.data)
-    let messageValue = event.data["message"] ?? event.data
-    var blocks = ArkAPIClient.messageBlocks(in: messageValue)
+    guard let message = ArkAPIClient.message(fromHistoryEvent: event) else { return false }
 
-    let role: ArkMessage.Role
-    if event.type.hasPrefix("user/") { role = .user }
-    else if event.type.hasPrefix("assistant/") { role = .assistant }
-    else { role = .system }
-    let documentEnvelope = role == .user ? ArkDocumentMessageEnvelope.parse(rawText) : nil
-    let text = documentEnvelope?.displayText ?? rawText
-    if documentEnvelope != nil {
-      blocks = text.isEmpty ? [] : [.text(text)]
-    }
-    let documentReferences = documentEnvelope?.documents ?? []
-    guard !text.isEmpty || reasoning?.isEmpty == false || !attachmentIDs.isEmpty
-      || !documentReferences.isEmpty
-    else { return false }
-    let message = ArkMessage(
-      id: event.id,
-      role: role,
-      text: text,
-      reasoning: reasoning,
-      attachmentIDs: attachmentIDs,
-      documentReferences: documentReferences,
-      messageID: messageValue["id"]?.stringValue,
-      source: messageValue["source"],
-      sourceKind: messageValue["source"]?["kind"]?.stringValue,
-      sourceForm: messageValue["source"]?["form"]?.stringValue,
-      sourceSummary: messageValue["source"]?["summary"]?.stringValue,
-      turn: event.data["turn"]?.numberValue.map(Int.init),
-      step: event.data["step"]?.numberValue.map(Int.init),
-      interrupted: event.data["interrupted"]?.boolValue == true,
-      blocks: blocks,
-      time: event.time
-    )
-
-    if role == .assistant {
+    if message.role == .assistant {
       let key = Self.stepKey(event.data)
       finalized.insert(key)
       partialBlocks.removeValue(forKey: key)
@@ -652,15 +685,17 @@ public actor ArkAPIClient {
     return try Self.validatedHistoryPage(from: value, context: "会话历史")
   }
 
-  public func createSession(workspaceID: String?, agentPreset: String? = nil) async throws -> String {
+  public func createSession(workspaceID: String?, agentPreset: String? = nil, sessionID: String? = nil) async throws -> String {
     var payload: [String: JSONValue] = [:]
+    if let sessionID { payload["sessionId"] = .string(sessionID) }
     if let workspaceID { payload["workspaceId"] = .string(workspaceID) }
     if let agentPreset { payload["agentPreset"] = .string(agentPreset) }
     let value = try await remoteDomainRequest(method: "session/create", request: payload)
-    guard let sessionID = value["sessionId"]?.stringValue else {
+    guard let returnedSessionID = value["sessionId"]?.stringValue,
+          sessionID == nil || returnedSessionID == sessionID else {
       throw ArkAPIError(message: "本机服务没有返回会话标识")
     }
-    return sessionID
+    return returnedSessionID
   }
 
   public func modelLabel(sessionID: String) async throws -> String {
@@ -708,7 +743,7 @@ public actor ArkAPIClient {
       payload: .object(["args": .object(args)])
     )
     let value = try Self.remoteValue(from: result)
-    if method == "subagent/history" {
+    if method == "subagent/history", args["beforeSeq"]?.objectValue == nil {
       _ = try Self.validatedHistoryPage(from: value, context: "子代理历史")
     }
     return value
@@ -767,6 +802,9 @@ public actor ArkAPIClient {
     from value: JSONValue,
     context: String
   ) throws -> ArkHistoryPage {
+    guard value["view"] == nil || value["view"] == .string("raw") else {
+      throw ArkAPIError(message: "\(context)返回了非原始事件分页")
+    }
     guard let rows = value["events"]?.arrayValue,
           let hasMore = value["hasMore"]?.boolValue
     else { throw ArkAPIError(message: "\(context)响应缺少分页字段") }
@@ -858,7 +896,7 @@ public actor ArkAPIClient {
     )
   }
 
-  private static func safeJSONInteger(_ value: JSONValue?, minimum: Int = 0) -> Int? {
+  static func safeJSONInteger(_ value: JSONValue?, minimum: Int = 0) -> Int? {
     guard let number = value?.numberValue,
           number.isFinite,
           number.rounded(.towardZero) == number,
@@ -870,7 +908,63 @@ public actor ArkAPIClient {
     return Int(number)
   }
 
-  fileprivate static func textContent(in value: JSONValue) -> String? {
+  /// Pure canonical row conversion, shared by live projection and immutable history.
+  public static func message(fromHistoryEvent event: ArkHistoryEvent) -> ArkMessage? {
+    guard event.type.contains("message") else { return nil }
+    // A compaction checkpoint is model-facing replacement material, not a
+    // human/context message. Chat renders its lifecycle marker separately.
+    if event.type == "user/message" {
+      let value = event.data["message"] ?? event.data
+      let source = value["source"]
+      if source?["kind"]?.stringValue == "plugin",
+         source?["plugin"]?.stringValue == "compact",
+         source?["compactionId"]?.stringValue != nil
+      {
+        return nil
+      }
+    }
+    let rawText = ArkAPIClient.textContent(in: event.data) ?? ""
+    let reasoning = ArkAPIClient.reasoningContent(in: event.data)
+    let attachmentIDs = ArkAPIClient.imageAttachmentIDs(in: event.data)
+    let messageValue = event.data["message"] ?? event.data
+    var blocks = ArkAPIClient.messageBlocks(in: messageValue)
+
+    let role: ArkMessage.Role
+    if event.type.hasPrefix("user/") { role = .user }
+    else if event.type.hasPrefix("assistant/") { role = .assistant }
+    else { role = .system }
+    let documentEnvelope = role == .user ? ArkDocumentMessageEnvelope.parse(rawText) : nil
+    let text = documentEnvelope?.displayText ?? rawText
+    if documentEnvelope != nil {
+      blocks = text.isEmpty ? [] : [.text(text)]
+    }
+    let documentReferences = documentEnvelope?.documents ?? []
+    guard !text.isEmpty || reasoning?.isEmpty == false || !attachmentIDs.isEmpty
+      || !documentReferences.isEmpty
+    else { return nil }
+    let message = ArkMessage(
+      id: event.id,
+      role: role,
+      text: text,
+      reasoning: reasoning,
+      attachmentIDs: attachmentIDs,
+      documentReferences: documentReferences,
+      messageID: messageValue["id"]?.stringValue,
+      source: messageValue["source"],
+      sourceKind: messageValue["source"]?["kind"]?.stringValue,
+      sourceForm: messageValue["source"]?["form"]?.stringValue,
+      sourceSummary: messageValue["source"]?["summary"]?.stringValue,
+      turn: event.data["turn"]?.numberValue.map(Int.init),
+      step: event.data["step"]?.numberValue.map(Int.init),
+      interrupted: event.data["interrupted"]?.boolValue == true,
+      blocks: blocks,
+      time: event.time
+    )
+
+    return message
+  }
+
+  static func textContent(in value: JSONValue) -> String? {
     if let text = value["text"]?.stringValue { return text }
     if let content = value["content"]?.arrayValue {
       let text = content.compactMap { block -> String? in
@@ -883,7 +977,7 @@ public actor ArkAPIClient {
     return nil
   }
 
-  fileprivate static func reasoningContent(in value: JSONValue) -> String? {
+  static func reasoningContent(in value: JSONValue) -> String? {
     if let content = value["content"]?.arrayValue {
       let text = content.compactMap { block -> String? in
         guard block["type"]?.stringValue == "reasoning" else { return nil }
@@ -895,7 +989,7 @@ public actor ArkAPIClient {
     return nil
   }
 
-  fileprivate static func imageAttachmentIDs(in value: JSONValue) -> [String] {
+  static func imageAttachmentIDs(in value: JSONValue) -> [String] {
     if let content = value["content"]?.arrayValue {
       var ids: [String] = []
       for block in content {
@@ -912,7 +1006,7 @@ public actor ArkAPIClient {
     return []
   }
 
-  fileprivate static func messageBlocks(in value: JSONValue) -> [ArkMessageBlock] {
+  static func messageBlocks(in value: JSONValue) -> [ArkMessageBlock] {
     guard let content = value["content"]?.arrayValue else {
       if let message = value["message"] { return messageBlocks(in: message) }
       return []

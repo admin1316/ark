@@ -124,7 +124,7 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
     libBin: agent.libBinScript,
     configArgs: agent.profile === undefined
       ? ['--config', selectedConfig]
-      : profileArgs(agent.profile, agent.configPath, selectedConfig, options.env?.DSH_SNAPSHOT, cwd),
+      : profileArgs(agent.profile, agent.configPath, selectedConfig, options.env?.DSH_SNAPSHOT, cwd, agent.binScript),
     tsconfigPath: agent.tsconfigPath,
     ...agent.profile === undefined ? {} : { sourceImport: 'tsx/esm' },
     env: {
@@ -347,6 +347,7 @@ function profileArgs(
   selectedPatch: string,
   snapshotMode: string | undefined,
   cwd: string,
+  binScript: string,
 ): string[] {
   const base = resolve(cwd, basePatch)
   const selected = resolve(cwd, selectedPatch)
@@ -358,7 +359,7 @@ function profileArgs(
   const materializedRoot = join(cwd, '.dsh-profile-patches')
   mkdirSync(materializedRoot, { recursive: true })
   const materializedDir = mkdtempSync(join(materializedRoot, 'launch-'))
-  const materialized = patches.map((file, index) => materializeProfilePatch(file, cwd, materializedDir, index))
+  const materialized = patches.map((file, index) => materializeProfilePatch(file, cwd, materializedDir, index, binScript))
   return ['--profile', profile, ...materialized.flatMap(file => ['--patch', file])]
 }
 
@@ -389,8 +390,9 @@ function packageDirFromPatch(source: string, packageName: string): string | unde
  * profile fallback. This mirrors `dsh plugin` while retaining the bare entry
  * name and package provenance used by request metadata.
  */
-function linkProfilePackage(source: string, cwd: string, packageName: string): void {
+function linkProfilePackage(source: string, cwd: string, packageName: string, binScript?: string): void {
   const packageDir = packageDirFromPatch(source, packageName)
+    ?? (binScript === undefined ? undefined : packageDirFromPatch(binScript, packageName))
   // The package may instead belong to the dsh installation; profile boot heals those links.
   if (packageDir === undefined) return
   const link = join(cwd, '.dsh', 'profiles', 'node_modules', packageName)
@@ -411,16 +413,17 @@ function linkProfilePackage(source: string, cwd: string, packageName: string): v
  * @param cwd - isolated process cwd whose profile fallback receives package links.
  * @param targetDir - existing directory that owns the materialized patch.
  * @param index - stable patch ordinal used in the output filename.
+ * @param binScript - optional real agent installation anchor for declared test dependencies.
  * @returns absolute materialized patch path.
  */
-export function materializeProfilePatch(source: string, cwd: string, targetDir: string, index: number): string {
+export function materializeProfilePatch(source: string, cwd: string, targetDir: string, index: number, binScript?: string): string {
   const parsed = yaml.load(readFileSync(source, 'utf8'), { schema: entryListSchema })
   if (!Array.isArray(parsed)) throw new Error(`snapshot profile patch must be a top-level array: ${source}`)
   const patches = parsed as PatchOptions[]
   const baseDir = dirname(source)
   const resolveName = (value: string): string => {
     const packageName = barePackageName(value)
-    if (packageName !== undefined) linkProfilePackage(source, cwd, packageName)
+    if (packageName !== undefined) linkProfilePackage(source, cwd, packageName, binScript)
     return value.startsWith('./') || value.startsWith('../')
       ? pathToFileURL(resolve(baseDir, value)).href
       : value

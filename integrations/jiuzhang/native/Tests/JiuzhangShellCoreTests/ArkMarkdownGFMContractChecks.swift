@@ -126,6 +126,21 @@ private func runSwiftMathPackagingAdapterChecks() {
 
 @MainActor
 func runArkMarkdownGFMContractChecks() {
+  let compactWidths = zip(
+    ["算法", "场景", "时间复杂度", "空间复杂度", "稳定性"],
+    [["冒泡排序（带提前停止）", "快速排序（原地分区、递归实现）"],
+     ["最好", "平均", "最坏"], ["O(n log n)", "O(n²)"], ["O(log n)", "O(n)"], ["稳定", "不稳定"]]
+  ).map { ArkGFMTableColumnSizing.width(header: $0.0, values: $0.1, fontSize: 14) }
+  check(
+    compactWidths.reduce(0, +) < 748 && compactWidths[0] > compactWidths[1],
+    "five-column sorting table fits the normal transcript and gives long algorithm names more room"
+  )
+  check(
+    ArkGFMTableColumnSizing.width(header: "内容", values: [String(repeating: "长", count: 10_000)], fontSize: 14) == 300
+      && ArkGFMTableColumnSizing.width(header: "标题", values: [], fontSize: 24)
+        > ArkGFMTableColumnSizing.width(header: "标题", values: [], fontSize: 12),
+    "table columns cap long content for wrapping while respecting larger text settings"
+  )
   runMathRenderCacheChecks()
   runSwiftMathPackagingAdapterChecks()
   let fixture = #"""
@@ -335,7 +350,7 @@ func runArkMarkdownGFMContractChecks() {
   }
   check(
     mixedOrder == [
-      "markdown-0-0", "markdown-0-1", "companion-1-image",
+      "markdown-0-0", "companion-1-image",
       "companion-2-reasoning", "markdown-3-0", "companion-4-unknown",
     ]
       && Set(mixedRows.map(\.id)).count == mixedRows.count,
@@ -383,15 +398,25 @@ func runArkMarkdownGFMContractChecks() {
     hasPrefix: true,
     bodyRows: hugeRows
   )
+  let retainedInline = hugeRows.flatMap { row -> [NativeGFMInline] in
+    guard case .markdown(let value) = row, case .paragraph(let inline) = value.block else { return [] }
+    return inline.filter { if case .lineBreak = $0 { return false }; return true }
+  }
+  let originalInline = largeFinalBlocks.flatMap { block -> [NativeGFMInline] in
+    if case .paragraph(let inline) = block { return inline }; return []
+  }
   check(
-    hugeRows.count == 2_048
-      && Set(hugeRows.map(\.id)).count == 2_048
+    hugeRows.count == 256
+      && Set(hugeRows.map(\.id)).count == hugeRows.count
       && hugeRows.first?.id == changedRows.first?.id
-      && flatRows.count == 2_050
+      && flatRows.count == hugeRows.count + 2
+      && retainedInline == originalInline
       && Set(flatRows.map(\.id)).count == flatRows.count,
-    "R20: 2048 blocks keep source-free IDs plus one prefix and suffix"
+    "R20: 2048 paragraphs retain bounded selection runs, source-free IDs, one prefix and suffix"
   )
+  runParagraphSelectionProjectionChecks()
   runLargeFinalMarkdownHostingProbeProcess()
+  runLargeFinalMarkdownHostingProbeProcess(transition: true)
 
   let protectedInline = NativeGFMParser.parse(
     #"标记 ARKNATIVEINLINEMATH；代码 `\(literal\)`；转义 \\(literal\\)；公式 \(\alpha + 1\)。"#
@@ -487,7 +512,9 @@ func runArkMarkdownGFMContractChecks() {
       && model.contains("actor NativeGFMParseWorker")
       && model.contains("NativeGFMParseWorker.shared.blocks(for: source)")
       && model.contains("guard !Task.isCancelled else { return nil }")
-      && model.contains("deinit {\n    parseTask?.cancel()\n  }")
+      && model.contains("deinit {")
+      && model.contains("parseTask?.cancel()")
+      && model.contains("installTask?.cancel()")
       && model.contains("Task.detached(priority: .userInitiated)") == false
       && model.contains("NativeGFMCache.shared.blocks(for: source)"),
     "native Markdown owns typed GFM semantics and serializes cancellable cache-miss parsing away from the AppKit main thread"
@@ -500,7 +527,7 @@ func runArkMarkdownGFMContractChecks() {
       && documentView?.contains("let blocks = model.blocks") == true
       && markdownContainsStackInvocation(documentView, named: "VStack")
       && !markdownContainsStackInvocation(documentView, named: "LazyVStack")
-      && documentView?.contains("ForEach(blocks.indices, id: \\.self)") == true
+      && documentView?.contains("ForEach(NativeGFMParagraphSelection.rows(blocks))") == true
       && documentView?.contains("Array(model.blocks.enumerated())") == false
       && documentView?.contains(".onChange(of: text) { model.update(source: $0) }") == true
       && !view.contains("private var blocks: [NativeGFMBlock]")
@@ -509,6 +536,10 @@ func runArkMarkdownGFMContractChecks() {
       && view.contains("guard coordinator.claimRender(inputs) else { return }")
       && view.contains("renderIfNeeded(view, coordinator: context.coordinator)")
       && view.contains("NativeCodeSyntax.spans(")
+      // M3: the highlight result is cached, so a streaming transcript no longer re-typesets every
+      // visible code block on every body evaluation (sample attach-m2-1554).
+      && view.contains("NativeGFMCodeHighlightCache.shared.value(")
+      && view.contains("private func buildHighlighted() -> AttributedString")
       && view.contains("case .unifiedDiff") == false
       && !view.contains("WKWebView")
       && !view.contains("HTMLString")
@@ -529,9 +560,12 @@ func runArkMarkdownGFMContractChecks() {
       && model.contains("withTransaction(transaction)")
       && markdownContainsStackInvocation(documentView, named: "VStack")
       && !markdownContainsStackInvocation(documentView, named: "LazyVStack")
-      && root.contains("LazyVStack(alignment: .leading, spacing: ChatLayoutMetrics.entrySpacing)")
+      && root.contains("VStack(alignment: .leading, spacing: ChatLayoutMetrics.entrySpacing)")
+      && !root.contains("LazyVStack(alignment: .leading, spacing: ChatLayoutMetrics.entrySpacing)")
+      && root.contains("ForEach(visibleEntries)")
+      && root.contains("renderWindow.range(in: displayIDs, limit: effectiveWindow)")
       && documentView?.contains("Array(model.blocks.enumerated())") == false,
-    "native Markdown keeps one transcript lazy owner and installs complete parsed message blocks without nested lazy placement"
+    "native Markdown keeps a bounded non-lazy transcript and installs complete parsed message blocks without nested lazy placement"
   )
   check(
     wrapper.contains("baseFontSize: CGFloat = 14")
@@ -540,8 +574,8 @@ func runArkMarkdownGFMContractChecks() {
       && tableView?.contains("NativeGFMInlineRenderer.text(\n      value,\n      fontSize: fontSize") == true
       && tableView?.contains("VStack(alignment: .leading, spacing: 0)") == true
       && tableView?.contains("HStack(alignment: .top, spacing: 0)") == true
-      && tableView?.contains("min(300, max(120, fontSize * 12))") == true
-      && tableView?.contains(".frame(width: cellWidth") == true
+      && tableView?.contains("ArkGFMTableColumnSizing.width(") == true
+      && tableView?.contains(".frame(width: width") == true
       && tableView?.contains("Grid(") == false
       && tableView?.contains("GridRow") == false
       && tableView?.contains(".accessibilityElement(children: .combine)") == true
@@ -551,12 +585,12 @@ func runArkMarkdownGFMContractChecks() {
       && tableView?.contains("ark.markdown.table.\\(tableID)") == true
       && view.contains("attributed.link = url")
       && root.contains("baseFontSize: fontSize"),
-    "native Markdown keeps readable text and uses font-scaled fixed table columns without cross-row Grid alignment feedback"
+    "native Markdown shares content-sized column widths without cross-row Grid alignment feedback"
   )
   check(
     wrapper.contains("@State private var accessibilityDocumentID = UUID().uuidString")
       && wrapper.contains("documentID: accessibilityDocumentID")
-      && documentView?.contains("path: \"doc.\\(documentID).root.\\(index)\"") == true
+      && documentView?.contains("path: \"doc.\\(documentID).root.\\(row.index)\"") == true
       && !wrapper.contains("NativeMarkdownParser")
       && !wrapper.contains("case math(String)"),
     "all native Markdown calls route through the one GFM renderer with no legacy subset parser"
@@ -869,7 +903,10 @@ private func terminateMarkdownProbeApplication(
   )
 }
 
-private func runLargeFinalMarkdownHostingProbeProcess() {
+private func runLargeFinalMarkdownHostingProbeProcess(transition: Bool = false) {
+  let expectedMarker = transition
+    ? "PASS root-transition messages=6"
+    : "R20 Markdown history probe: messages=10 blocks=2048 rows=2060 ax=deferred-live"
   let fileManager = FileManager.default
   let bundleIdentifier = "cn.jiuzhangtianmu.ark.markdown-render-probe"
   let app = fileManager.temporaryDirectory
@@ -939,7 +976,7 @@ private func runLargeFinalMarkdownHostingProbeProcess() {
       "-W", "-n", "-g",
       "--stdout", standardOutput.path,
       "--stderr", standardError.path,
-      "--env", "ARK_MARKDOWN_RENDER_PROBE_CHILD=1",
+      "--env", "ARK_MARKDOWN_RENDER_PROBE_CHILD=\(transition ? "transition" : "1")",
       "--env", "ARK_MARKDOWN_PROBE_BLOCKS=2048",
       "--env", "ARK_MARKDOWN_PROBE_RESULT=\(resultURL.path)",
       app.path,
@@ -976,10 +1013,10 @@ private func runLargeFinalMarkdownHostingProbeProcess() {
         && launcher.terminationReason == .exit
         && launcher.terminationStatus == 0
         && childPassed
-        && rendered.contains(
-          "R20 Markdown history probe: messages=10 blocks=2048 rows=2060 ax=deferred-live"
-        ),
-      "native Markdown 2048-block rendering and bottom-scroll probe passes in a real AppKit application loop"
+        && rendered.contains(expectedMarker),
+      transition
+        ? "native table history width change and long draft clear followed by a new turn remain responsive in the real AppKit loop"
+        : "native Markdown 2048-block rendering and bottom-scroll probe passes in a real AppKit application loop"
     )
     if let metrics = rendered.split(separator: "\n").first(where: {
       $0.hasPrefix("R20 Markdown history probe:")
@@ -1020,6 +1057,7 @@ private final class ArkMarkdownHostingProbeDelegate: NSObject, NSApplicationDele
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     DispatchQueue.main.async { [self] in
+      runParagraphSelectionHostingProbe()
       runLargeFinalMarkdownHostingProbe()
       status = failureCount == initialFailureCount ? 0 : 1
       if let resultPath = ProcessInfo.processInfo.environment["ARK_MARKDOWN_PROBE_RESULT"] {
@@ -1031,6 +1069,85 @@ private final class ArkMarkdownHostingProbeDelegate: NSObject, NSApplicationDele
       application.terminate(nil)
     }
   }
+}
+
+
+private func runParagraphSelectionProjectionChecks() {
+  let first: NativeGFMBlock = .paragraph([.text("first"), .strong([.text(" bold")])])
+  let second: NativeGFMBlock = .paragraph([.link(destination: "https://example.com", title: nil, children: [.text("second")])])
+  let together = NativeGFMParagraphSelection.rows([first, second])
+  check(together.count == 1 && together.first?.index == 0
+    && together.first?.block == .paragraph([.text("first"), .strong([.text(" bold")]), .lineBreak, .lineBreak,
+      .link(destination: "https://example.com", title: nil, children: [.text("second")])]),
+    "paragraph selection shares one native Text while preserving inline styles, links, and paragraph separators")
+  let barriers: [NativeGFMBlock] = [.code(language: nil, source: "code"),
+    .table(alignments: [.left], headers: [[.text("header")]], rows: [[[.text("cell")]]]),
+    .heading(level: 2, content: [.text("heading")]), .rule]
+  for barrier in barriers {
+    check(NativeGFMParagraphSelection.rows([first, barrier, second]).map(\.index) == [0, 1, 2],
+      "paragraph selection preserves independent non-paragraph block boundaries")
+  }
+  let units = NativeGFMParagraphSelection.rows([
+    .paragraph([.text(String(repeating: "a", count: 4_000))]),
+    .paragraph([.text(String(repeating: "b", count: 100))]), second,
+  ])
+  check(units.map(\.index) == [0, 1], "paragraph selection starts a new run before exceeding the UTF16 budget")
+  let nodes = NativeGFMParagraphSelection.rows([.paragraph(Array(repeating: .text("x"), count: 256)), second])
+  check(nodes.count == 2, "paragraph selection caps inline nodes independently of text length")
+  let many = NativeGFMParagraphSelection.rows(Array(repeating: first, count: 17))
+  check(many.map(\.index) == [0, 8, 16], "paragraph selection caps paragraph count and preserves original start identities")
+  check(NativeGFMParagraphSelection.rows([first, second, .paragraph([.text("third")])]).first?.index == together.first?.index,
+    "appending a paragraph keeps the native selection surface identity stable")
+}
+
+@MainActor
+private func runParagraphSelectionHostingProbe() {
+  let source = "First paragraph has selectable text.\n\nSecond paragraph continues the same reply."
+  let identity = NativeAssistantMarkdownSourceID(messageID: 1, sourceSlot: 0)
+  let message = ArkMessage(id: 1, role: .assistant, text: source, time: Date())
+  let rows = NativeAssistantMarkdownRowProjection.rows(message: message,
+    sources: [NativeAssistantMarkdownSource(id: identity, source: source)],
+    blocksBySourceID: [identity: NativeGFMParser.parse(source)])
+  let hosting = NSHostingView(rootView: VStack(alignment: .leading, spacing: 10) {
+    ForEach(rows) { row in
+      if case .markdown(let value) = row {
+        NativeGFMBlockView(block: value.block, baseFontSize: 20, path: value.renderPath)
+      }
+    }
+  }.padding(20).frame(width: 640, height: 260, alignment: .topLeading))
+  hosting.frame = NSRect(x: 0, y: 0, width: 640, height: 260)
+  let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 640, height: 260),
+    styleMask: [.borderless], backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
+  defer { window.contentView = nil; window.close() }
+  window.contentView = hosting; window.orderBack(nil); window.makeKey()
+  hosting.layoutSubtreeIfNeeded()
+  let settled = Date(timeIntervalSinceNow: 0.2)
+  _ = markdownWaitUntil(timeout: 0.3) { Date() >= settled }
+  let now = ProcessInfo.processInfo.systemUptime
+  for (index, type) in [NSEvent.EventType.leftMouseDown, .leftMouseDragged, .leftMouseUp].enumerated() {
+    if let event = NSEvent.mouseEvent(with: type, location: NSPoint(x: index == 0 ? 22 : 460, y: index == 0 ? 227 : 155),
+      modifierFlags: [], timestamp: now + Double(index) * 0.02, windowNumber: window.windowNumber,
+      context: nil, eventNumber: index, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) {
+      NSApp.postEvent(event, atStart: false)
+    }
+  }
+  let selectedBoth = markdownWaitUntil(timeout: 1.5) {
+    // This helper runs synchronously inside the AppKit delegate. Running the
+    // CFRunLoop alone does not dispatch NSApplication's posted mouse events.
+    while let event = NSApp.nextEvent(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp],
+      until: Date(), inMode: .default, dequeue: true) {
+      NSApp.sendEvent(event)
+    }
+    guard let text = window.firstResponder as? NSTextView else { return false }
+    let range = text.selectedRange()
+    guard range.location != NSNotFound, NSMaxRange(range) <= (text.string as NSString).length else { return false }
+    let selected = (text.string as NSString).substring(with: range)
+    return selected.contains("First paragraph") && selected.contains("Second paragraph")
+  }
+  print("Paragraph selection probe: rows=\(rows.count) range=\(String(describing: (window.firstResponder as? NSTextView)?.selectedRange())) selectedBoth=\(selectedBoth)")
+  check(rows.count == 1 && selectedBoth,
+    "native production paragraph rows support a real mouse drag across paragraph boundaries without a global selection owner")
 }
 
 @MainActor

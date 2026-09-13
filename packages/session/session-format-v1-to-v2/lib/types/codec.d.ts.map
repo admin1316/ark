@@ -1,0 +1,1 @@
+{"version":3,"file":"codec.d.ts","sourceRoot":"","sources":["../../src/codec.ts"],"names":[],"mappings":"AAMA,OAAO,KAAK,EACV,4BAA4B,EAG5B,kBAAkB,EAClB,mBAAmB,EACnB,uBAAuB,EAEvB,qBAAqB,EACtB,MAAM,iCAAiC,CAAA;AAQxC,kDAAkD;AAClD,eAAO,MAAM,4BAA4B;;wBAEnB,OAAO;+BAGA,OAAO,YAAY,qBAAqB;yBAG9C,mBAAmB,uBAAuB,MAAM;uBAGlD,kBAAkB;EAGsB,CAAA"}

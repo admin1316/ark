@@ -25,6 +25,12 @@
     },
     {
       "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../session"
+    },
+    {
+      "path": "../../session/session-projection"
     }
   ]
 }

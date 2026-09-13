@@ -1,3 +1,8 @@
+---
+description: "代码执行能力 seam（参见能力 seam）：运行时 Service Definition，用于对宿主提供的异步绑定执行模型编写的程序，并捕获它打印和返回的内容；可替换的提供方；以及工具注册表的 Code Mode Consumer（tools: { mode: code }，即 run_code 工具和按所加载运行时 language 生成的 SDK）。"
+kind: "package-group"
+---
+
 # code-runtime/ — 代码执行能力家族
 
 [English](README.md) | 中文

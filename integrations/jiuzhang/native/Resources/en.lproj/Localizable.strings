@@ -209,7 +209,6 @@
 "上次运行意外中断" = "The previous run ended unexpectedly";
 
 /* Sidebar, chat, and interaction surfaces. */
-"九章天幕" = "Ark";
 "会话按工作区顺序显示" = "Chats are shown in workspace order";
 "添加现有本地工作区" = "Add an existing local workspace";
 "搜索会话内容" = "Search chat content";

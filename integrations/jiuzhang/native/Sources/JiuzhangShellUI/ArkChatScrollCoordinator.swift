@@ -109,6 +109,9 @@ public struct ArkChatScrollPrependAnchor: Equatable, Sendable {
 /// the returned commands and report the resulting viewport as programmatic.
 public struct ArkChatScrollStateMachine: Sendable {
   private struct SessionState: Sendable {
+    /// Surface anchor this session was activated with. A `.top` reader never re-pins
+    /// to the document bottom while lazily placed rows materialize.
+    var anchor: ArkScrollAnchor = .bottom
     var followsBottom = true
     var offset = 0.0
     var contentHeight = 0.0
@@ -124,33 +127,41 @@ public struct ArkChatScrollStateMachine: Sendable {
     self.followThreshold = max(followThreshold.isFinite ? followThreshold : 0, 0)
   }
 
-  /// Activate a session after its document has been laid out. New sessions
-  /// start at the bottom; known sessions restore their own retained position.
+  /// Activate a session after its document has been laid out. New sessions start at the
+  /// surface's declared anchor: `.bottom` transcripts follow the tail, `.top` readers keep
+  /// offset zero. Known sessions restore their own retained position.
   public mutating func activate(
     sessionID: String,
-    metrics: ArkChatScrollMetrics
+    metrics: ArkChatScrollMetrics,
+    anchor: ArkScrollAnchor = .bottom
   ) -> ArkChatScrollCommand {
     activeSessionID = sessionID
     guard var state = sessions[sessionID] else {
       sessions[sessionID] = SessionState(
-        followsBottom: true,
-        offset: metrics.maximumOffset,
+        anchor: anchor,
+        followsBottom: anchor == .bottom,
+        offset: anchor == .top ? 0 : metrics.maximumOffset,
         contentHeight: metrics.contentHeight
       )
-      return .scrollToBottom
+      return anchor == .bottom ? .scrollToBottom : .scrollTo(offset: 0)
     }
+    state.anchor = anchor
     state.contentHeight = metrics.contentHeight
-    if state.followsBottom {
-      state.offset = metrics.maximumOffset
-      sessions[sessionID] = state
-      return .scrollToBottom
+    if anchor == .bottom {
+      if state.followsBottom {
+        state.offset = metrics.maximumOffset
+        sessions[sessionID] = state
+        return .scrollToBottom
+      }
+      if metrics.maximumOffset == 0 {
+        state.followsBottom = true
+        sessions[sessionID] = state
+        return .scrollToBottom
+      }
+    } else {
+      state.followsBottom = false
     }
     state.offset = min(max(state.offset, 0), metrics.maximumOffset)
-    if metrics.maximumOffset == 0 {
-      state.followsBottom = true
-      sessions[sessionID] = state
-      return .scrollToBottom
-    }
     sessions[sessionID] = state
     return .scrollTo(offset: state.offset)
   }
@@ -167,7 +178,8 @@ public struct ArkChatScrollStateMachine: Sendable {
     state.contentHeight = metrics.contentHeight
     if source == .user {
       state.userRevision &+= 1
-      state.followsBottom = metrics.distanceFromBottom <= followThreshold
+      state.followsBottom = state.anchor == .bottom
+        && metrics.distanceFromBottom <= followThreshold
     }
     sessions[sessionID] = state
   }
@@ -184,7 +196,7 @@ public struct ArkChatScrollStateMachine: Sendable {
     var state = sessions[sessionID] ?? SessionState()
     state.contentHeight = metrics.contentHeight
 
-    if state.followsBottom || metrics.maximumOffset == 0 {
+    if state.anchor == .bottom, state.followsBottom || metrics.maximumOffset == 0 {
       state.followsBottom = true
       state.offset = metrics.maximumOffset
       sessions[sessionID] = state
@@ -207,14 +219,15 @@ public struct ArkChatScrollStateMachine: Sendable {
   }
 
   /// Observe content resizing, including a stable message id becoming taller.
-  /// Following sessions request the new bottom; anchored sessions do not move.
+  /// Following (bottom-anchored) sessions request the new bottom; top-anchored
+  /// readers and suspended chat sessions keep their retained offset.
   public mutating func contentDidResize(
     sessionID: String,
     metrics: ArkChatScrollMetrics
   ) -> ArkChatScrollCommand {
     var state = sessions[sessionID] ?? SessionState()
     state.contentHeight = metrics.contentHeight
-    if state.followsBottom {
+    if state.anchor == .bottom, state.followsBottom {
       state.offset = metrics.clampedOffset
       sessions[sessionID] = state
       // Compare the physical origin, not its clamped projection. After a large
@@ -230,7 +243,7 @@ public struct ArkChatScrollStateMachine: Sendable {
         : .none
     }
     state.offset = metrics.clampedOffset
-    if metrics.distanceFromBottom <= followThreshold {
+    if state.anchor == .bottom, metrics.distanceFromBottom <= followThreshold {
       state.followsBottom = true
       state.offset = metrics.maximumOffset
       sessions[sessionID] = state
@@ -246,7 +259,9 @@ public struct ArkChatScrollStateMachine: Sendable {
     metrics: ArkChatScrollMetrics
   ) -> ArkChatScrollCommand {
     var state = sessions[sessionID] ?? SessionState()
-    state.followsBottom = true
+    // An explicit jump to the newest row is a one-shot move for a top-anchored
+    // reader: it must not silently re-enable tail following afterwards.
+    state.followsBottom = state.anchor == .bottom
     state.offset = metrics.maximumOffset
     state.contentHeight = metrics.contentHeight
     sessions[sessionID] = state
@@ -311,7 +326,8 @@ public struct ArkChatScrollStateMachine: Sendable {
       metrics.maximumOffset
     )
     state.offset = target
-    state.followsBottom = metrics.maximumOffset - target <= followThreshold
+    state.followsBottom = state.anchor == .bottom
+      && metrics.maximumOffset - target <= followThreshold
     sessions[anchor.sessionID] = state
     return activeSessionID == anchor.sessionID ? .scrollTo(offset: target) : .none
   }
@@ -340,6 +356,8 @@ public struct ArkChatScrollStateMachine: Sendable {
 @MainActor
 public final class ArkChatScrollCoordinator {
   public private(set) var stateMachine: ArkChatScrollStateMachine
+  /// Vertical anchor declared by this coordinator's owning surface.
+  public let anchor: ArkScrollAnchor
   public var onFollowingBottomChange: (@MainActor (Bool) -> Void)? {
     didSet { reportFollowingState() }
   }
@@ -368,19 +386,26 @@ public final class ArkChatScrollCoordinator {
   /// overwrite that retained position before its first restoration.
   private var hasActivatedCurrentDocument = false
 
-  public convenience init(scrollView: NSScrollView, followThreshold: Double = 24) {
+  public convenience init(
+    scrollView: NSScrollView,
+    followThreshold: Double = 24,
+    anchor: ArkScrollAnchor = .bottom
+  ) {
     self.init(
       scrollView: scrollView,
-      stateMachine: ArkChatScrollStateMachine(followThreshold: followThreshold)
+      stateMachine: ArkChatScrollStateMachine(followThreshold: followThreshold),
+      anchor: anchor
     )
   }
 
   public init(
     scrollView: NSScrollView,
-    stateMachine: ArkChatScrollStateMachine
+    stateMachine: ArkChatScrollStateMachine,
+    anchor: ArkScrollAnchor = .bottom
   ) {
     self.scrollView = scrollView
     self.stateMachine = stateMachine
+    self.anchor = anchor
     installClipObserver(scrollView.contentView)
     installScrollWheelMonitor()
   }
@@ -432,7 +457,11 @@ public final class ArkChatScrollCoordinator {
         viewportHeight: 0,
         offset: 0
       )
-    let command = stateMachine.activate(sessionID: sessionID, metrics: metrics)
+    let command = stateMachine.activate(
+      sessionID: sessionID,
+      metrics: metrics,
+      anchor: anchor
+    )
     rememberGeometry(metrics)
     apply(command)
     hasActivatedCurrentDocument = true
@@ -708,12 +737,19 @@ public final class ArkChatScrollCoordinator {
       let sessionID = stateMachine.activeSessionID,
       let metrics = currentMetrics()
     else { return }
+    let previousViewportHeight = lastHandledViewportHeight
     let resized = geometryChanged(metrics)
     rememberGeometry(metrics)
     let suppressed = suppressResizeOnce
     suppressResizeOnce = false
     if resized {
-      if suppressed {
+      // The one-shot suppression exists to eat the reflow a programmatic scroll causes: SwiftUI
+      // re-lays out the document, so only the content height moves. A real viewport change
+      // (window or split-pane resize) must never be swallowed — without this check a pinned
+      // transcript stayed at its old offset when the viewport shrank 200 -> 150, which is the
+      // failing AppKit harness contract.
+      let viewportChanged = previousViewportHeight.map { abs($0 - metrics.viewportHeight) > 0.5 } ?? true
+      if suppressed && !viewportChanged {
         reportFollowingState()
         return
       }
@@ -776,7 +812,9 @@ public final class ArkChatScrollCoordinator {
     applyingCommand = false
     // Materializing lazily placed rows can resize the document in a later
     // layout pass; consume that one follow-up resize instead of scrolling twice.
-    suppressResizeOnce = true
+    // A top-anchored reader never re-pins, so its first materialization resize
+    // must be observed (recorded) rather than swallowed.
+    suppressResizeOnce = anchor == .bottom
 
     if let applied = currentMetrics() {
       stateMachine.viewportDidMove(

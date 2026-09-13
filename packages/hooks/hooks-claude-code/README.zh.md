@@ -1,11 +1,28 @@
+---
+description: "一个 Cordis 插件，在 harness 的规范拦截点上运行用户现有 Claude Code hook 配置（hooks.json 或 settings 文件的 hooks key）中受支持的 command hook 子集。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-hooks-claude-code
 
 [English](README.md) | 中文
+
+## 概述
 
 一个 Cordis 插件，在 harness 的规范拦截点上运行用户现有 **Claude Code** hook 配置（`hooks.json` 或 settings 文件的 `hooks` key）中受支持的 command hook 子集。它是 hooks 子系统的 **CC 方言**部分，负责桥接中 CC 格式的逐事件 stdin payload、CC 的 env 和 `${CLAUDE_PLUGIN_ROOT}`／`${CLAUDE_PROJECT_DIR}` 替换，以及将 hook 的中性结果映射为 harness 的类型化 Decision。方言无关原语（matcher、退出码／stdout codec、`ctx.shell` 执行、最严格合并、`hook/*` 事件）来自 [`@deepseek-ai/dsh-hook-protocol`](../hook-protocol/README.zh.md)。
 
 原生 Cordis 插件可以完成此桥接的所有工作，功能更强，且具有类型化返回，没有序列化边界。**该桥接只是已映射 CC command hook 子集的兼容路径**；所有定制行为都应当使用相同扩展点上的原生插件（见 [拦截扩展点 Agent Note](../../../.agents/notes/implemented/feature/2026-06-30-interception-extension-points.zh.md)）。
 
+## 目录
+
+- [配置](#config)
+- [Hook 点 → 类型化 Decision](#hook-points--typed-decisions)
+- [上下文源](#context-source)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="config"></a>
 ## 配置
 
 ```ts
@@ -32,6 +49,7 @@ const config: Config = {
 
 hook **本身**会在 agent 的会话工作区中运行：对 agent scope 点，桥接会将会话 `cwd`（`session/new.cwd`）作为 hook 进程工作目录，因此 hook 的 `pwd`／相对路径／marker 作用于用户项目树，而非服务器启动目录。
 
+<a id="hook-points--typed-decisions"></a>
 ## Hook 点 → 类型化 Decision
 
 | CC hook | Harness 点 | 映射 |
@@ -50,10 +68,12 @@ matcher subject 是工具名称（`PreToolUse`／`PostToolUse`）、会话源（
 
 每个 agent scope stdin payload 都携带 `session_id` 与字符串形式的 `transcript_path`。可用时，桥接通过 `ctx.sessionPersistence.locate(session.header)` 解析后者，否则发送 `''`。查找不会创建或 flush 产物，因此第一个轮次结束检查点之前路径可能不存在，也可能省略当前开启轮次。
 
+<a id="context-source"></a>
 ## 上下文源
 
 注入上下文携带显式 `{ kind: 'plugin', plugin: 'hooks-claude-code' }` 来源，因此持久消息绝不会被误认为用户提示词。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### Hook 提供的上下文
@@ -84,6 +104,7 @@ hook 不返回上下文时没有成本。Hook 文本取决于数据，会被记�
 
 已阻塞提示词不发送请求，不会导致失效。拒绝、反馈与强制 continuation 上下文会追加在可复用前缀之后，不改写前缀。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **不支持的 hook 事件（Claude Code 当前 30 项中的 23 项）：** `Setup`、`InstructionsLoaded`、`UserPromptExpansion`、`MessageDisplay`、`PermissionRequest`、`PostToolUseFailure`、`PostToolBatch`、`PermissionDenied`、`Notification`、`TaskCreated`、`TaskCompleted`、`StopFailure`、`TeammateIdle`、`ConfigChange`、`CwdChanged`、`FileChanged`、`WorktreeCreate`、`WorktreeRemove`、`PreCompact`、`PostCompact`、`SessionEnd`、`Elicitation` 和 `ElicitationResult`。这些事件的配置会在配置组解析前被忽略，因此不支持的事件既不会使配置失效，也不会注册 hook。比较基线是 Claude Code [官方 hook 事件参考](https://code.claude.com/docs/en/hooks#hook-events)。
@@ -95,3 +116,8 @@ hook 不返回上下文时没有成本。Hook 文本取决于数据，会被记�
 - **`Stop` 只支持部分功能：** 阻塞会强制另一个模型轮次，但 `stop_hook_active` 始终为 `false`，会省略 `last_assistant_message`、`background_tasks` 和 `session_crons`，且未实现连续阻塞上限（`TODO(stop-loop-guard)`）。因此，无条件阻塞 hook 会在每个步骤中强制 continuation，除非它自我限制。
 - **通用 payload 与输出字段只支持部分功能：** 已映射事件会省略 Claude Code 原本会提供的 `prompt_id`、`transcript_path`、`permission_mode` 和 `effort`。`systemMessage` 会被记录 + 警告但不呈现；`{"continue": false}` 会被记录但不会停止运行；不会应用 `suppressOutput`、`stopReason` 和 `terminalSequence`（`TODO(hook-continue-false)`）。
 - **Handler 与配置只支持部分功能：** 只运行 shell 形式 command handler。会跳过 `http`、`mcp_tool`、`prompt` 和 `agent` handler；不遵循 `args`、`async`、`asyncRewake`、`shell`、`if`、`once` 和 `statusMessage` 等 command handler 选项。匹配 handler 串行运行且不去重，而 Claude Code 会并行运行并对相同 handler 去重。一个进程级 `configPath` 会在加载时解析一次；尚未实现 Claude Code 的分层项目、用户、插件与策略发现和实时重新加载（`TODO(per-session-hook-config)`）。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

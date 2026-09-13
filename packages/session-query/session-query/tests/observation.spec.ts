@@ -26,6 +26,27 @@ function preparedSource(
 }
 
 describe('SessionObservationReader', () => {
+  it('reuses the frozen live snapshot and retains its exact cut after append', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const session = ctx.sessions.create(SessionId('live-snapshot'), { meta: { cwd: '/workspace' } })
+    session.append('turn/start', { turn: 0 })
+    const snapshot = session.events
+    const observed = await new SessionObservationReader(ctx).read(session.id, { projectionMode: 'none' })
+    const retained = observed.retain()
+
+    expect(observed.events).toBe(snapshot)
+    expect(Object.isFrozen(observed.events)).toBe(true)
+    session.append('turn/end', { turn: 0, reason: { kind: 'completed' } })
+    observed[Symbol.dispose]()
+    expect(retained.events).toBe(snapshot)
+    expect(retained.cursor).toBe(0)
+    expect(retained.events).toHaveLength(1)
+    expect(session.events).toHaveLength(2)
+    retained[Symbol.dispose]()
+    await ctx.fiber.dispose()
+  })
+
   it('prefers a live Session that attaches while a prepared source is borrowed', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

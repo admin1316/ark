@@ -191,48 +191,6 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 
 ```ts cordis-catalog
 /**
- * Create or idempotently resolve one Workspace over an existing directory.
- * @param request - directory path to register.
- * @returns the Workspace and whether this call created it.
- */
-@Remote('create') create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>
-
-/**
- * Rename one Workspace to a unique non-blank title.
- * @param request - Workspace identity and proposed title.
- * @returns the updated Workspace projection.
- */
-@Remote('rename') rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue>
-
-/**
- * Remove one Workspace registration while retaining files and Sessions.
- * @param request - Workspace identity to remove.
- * @returns deletion confirmation.
- */
-@Remote('delete') delete(request: WorkspaceDeleteRequest): Promise<WorkspaceDeleteValue>
-
-/**
- * Move one Workspace within the registry display order.
- * @param request - moved Workspace and optional anchor.
- * @returns the complete resulting Workspace order.
- */
-@Remote('insertBefore') insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue>
-
-/**
- * Move one accounted Session within a Workspace.
- * @param request - Workspace, Session, and optional anchor identities.
- * @returns the updated Workspace projection.
- */
-@Remote('insertSessionBefore') insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>
-
-/**
- * Hide one known Session from Workspace grouping surfaces.
- * @param request - Session identity to archive.
- * @returns the complete resulting archive set.
- */
-@Remote('archiveSession') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>
-
-/**
  * Stream a complete Workspace baseline followed by ordered increments.
  * @param signal - generation cancellation.
  * @returns baseline followed by ordered Workspace increments.
@@ -298,7 +256,7 @@ list(): Workspace[]
  * @param signal - cancellation.
  * @returns row and atomic creation flag.
  */
-@Remote('create') async remoteExportCreate(request: WorkspaceRemoteCreateRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteCreateValue>>
+@Remote('create') async remoteExportCreate( request: WorkspaceRemoteCreateRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteCreateValue>>
 
 /**
  * Rename a registered workspace through the native API.
@@ -306,7 +264,7 @@ list(): Workspace[]
  * @param signal - cancellation.
  * @returns renamed row.
  */
-@Remote('rename') remoteExportRename(request: WorkspaceRemoteRenameRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>
+@Remote('rename') remoteExportRename( request: WorkspaceRemoteRenameRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>
 
 /**
  * Remove a workspace registration without deleting files or session logs.
@@ -314,7 +272,7 @@ list(): Workspace[]
  * @param signal - cancellation.
  * @returns confirmation; files and logs remain.
  */
-@Remote('delete') remoteExportDelete(request: WorkspaceRemoteDeleteRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeletedValue>>
+@Remote('delete') remoteExportDelete( request: WorkspaceRemoteDeleteRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeletedValue>>
 
 /**
  * Reorder a workspace through the native API.
@@ -322,7 +280,7 @@ list(): Workspace[]
  * @param signal - cancellation.
  * @returns durable order.
  */
-@Remote('insertBefore') remoteExportInsertBefore(request: WorkspaceRemoteInsertBeforeRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteOrderValue>>
+@Remote('insertBefore') remoteExportInsertBefore( request: WorkspaceRemoteInsertBeforeRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteOrderValue>>
 
 /**
  * Reorder a session within its workspace account.
@@ -330,7 +288,7 @@ list(): Workspace[]
  * @param signal - cancellation.
  * @returns updated account.
  */
-@Remote('insertSessionBefore') remoteExportInsertSessionBefore(request: WorkspaceRemoteInsertSessionBeforeRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>
+@Remote('insertSessionBefore') async remoteExportInsertSessionBefore( request: WorkspaceRemoteInsertSessionBeforeRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>
 
 /**
  * Archive a session through the native API while retaining its log.
@@ -338,7 +296,7 @@ list(): Workspace[]
  * @param signal - cancellation.
  * @returns committed archive overlay.
  */
-@Remote('archiveSession') remoteExportArchiveSession(request: WorkspaceRemoteArchiveRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>
+@Remote('archiveSession') remoteExportArchiveSession( request: WorkspaceRemoteArchiveRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>
 
 /**
  * Restore an archived session to the visible workspace projection.
@@ -346,7 +304,7 @@ list(): Workspace[]
  * @param signal - cancellation.
  * @returns committed archive overlay.
  */
-@Remote('unarchiveSession') remoteExportUnarchiveSession(request: WorkspaceRemoteArchiveRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>
+@Remote('unarchiveSession') remoteExportUnarchiveSession( request: WorkspaceRemoteArchiveRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteArchivedValue>>
 
 /**
  * Permanently delete an archived root through its existing lifecycle owners.
@@ -354,7 +312,7 @@ list(): Workspace[]
  * @param signal - cancellation.
  * @returns deletion and archive state.
  */
-@Remote('deleteArchivedSession') remoteExportDeleteArchivedSession(request: WorkspaceRemoteDeleteArchivedRequest, signal: AbortSignal): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeleteArchivedValue>>
+@Remote('deleteArchivedSession') remoteExportDeleteArchivedSession( request: WorkspaceRemoteDeleteArchivedRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteDeleteArchivedValue>>
 
 /**
  * Persist a non-empty, unique workspace title before publishing it.

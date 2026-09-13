@@ -950,11 +950,55 @@ describe('registry-global session archive', () => {
 })
 
 describe('native Workspace restoration', () => {
+  it('does not dispatch cancelled writes and reports late cancellation after the durable commit', async () => {
+    const run = await harness()
+    const dir = await makeDir('cancel-workspace')
+    const created = await run.registry.create(dir)
+    const cancelled = new AbortController()
+    cancelled.abort()
+    const signal = cancelled.signal
+    const before = [...run.changes]
+    const results = await Promise.all([
+      run.registry.remoteExportCreate({ path: dir }, signal),
+      run.registry.remoteExportRename({ workspaceId: created.id, title: 'blocked' }, signal),
+      run.registry.remoteExportDelete({ workspaceId: created.id }, signal),
+      run.registry.remoteExportInsertBefore({ workspaceId: created.id }, signal),
+      run.registry.remoteExportInsertSessionBefore({ workspaceId: created.id, sessionId: SessionId('unknown') }, signal),
+      run.registry.remoteExportArchiveSession({ sessionId: SessionId('unknown') }, signal),
+    ])
+    for (const result of results) expect(result).toMatchObject({ ok: false, error: { code: 'cancelled' } })
+    expect(run.changes).toEqual(before)
+    expect(run.registry.get(created.id)).toBe(created)
+
+    const late = new AbortController()
+    const setTitle = created.setTitle.bind(created)
+    vi.spyOn(created, 'setTitle').mockImplementationOnce(async title => {
+      await setTitle(title)
+      late.abort()
+    })
+    await expect(run.registry.remoteExportRename({ workspaceId: created.id, title: 'committed' }, late.signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'cancelled' } })
+    expect(created.title).toBe('committed')
+  })
+
+  it('keeps archived resident sessions intact without a safe lifecycle retirement owner', async () => {
+    const run = await harness({ sessionStore: true })
+    const session = run.ctx.sessions.create(SessionId('resident'))
+    await run.registry.archiveSession(session.id)
+    await expect(run.registry.remoteExportDeleteArchivedSession({ sessionId: session.id }, new AbortController().signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'session-delete-blocked', details: { reason: 'resident' } } })
+    expect(run.ctx.sessions.get(session.id)).toBe(session)
+    expect(run.registry.archivedSessionIds).toEqual([session.id])
+    expect(run.deleteSession).not.toHaveBeenCalled()
+  })
+
   it('reports canonical creation atomically and restores rename/cancellation responses', async () => {
     const dir = await makeDir('native-create')
     const run = await harness()
     const [first, second] = await Promise.all([run.registry.createOrResolve(dir), run.registry.createOrResolve(dir)])
-    expect([first.created, second.created]).toEqual([true, false])
+    // Exactly one of two concurrent resolves creates the record; which one wins depends on
+    // filesystem-normalization timing before the serialized section, so assert atomicity, not order.
+    expect([first.created, second.created].filter(Boolean)).toHaveLength(1)
     expect(first.workspace).toBe(second.workspace)
     const signal = new AbortController().signal
     await expect(run.registry.remoteExportRename({ workspaceId: first.workspace.id, title: ' Renamed ' }, signal))

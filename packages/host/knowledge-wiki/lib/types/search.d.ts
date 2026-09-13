@@ -48,6 +48,7 @@ export declare function cosine(a: number[], b: number[]): number;
  * @param query - The query input.
  * @param apiKey - The api key input.
  * @param topK - The top k input.
+ * @param unavailable - optional notification when embedding throws before falling back to keyword results.
  * @returns The value produced by hybrid search.
  */
 export declare function hybridSearch(wikiRoot: string, query: string, apiKey: string, topK: number, unavailable?: (diagnostic: EmbeddingUnavailable) => void): Promise<Array<{

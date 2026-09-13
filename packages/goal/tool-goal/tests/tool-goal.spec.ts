@@ -347,8 +347,10 @@ describe('goal tool state transitions', () => {
       goal_id: goal['id'], revision: goal['revision'], action: 'resume',
     }, root.agent)
     expect(refused.error?.info?.code).toBe('GOAL_TOOL_RESUME_PAUSED')
-    goal = ctx.goals.resume(root.agent, { id: goal['id'], revision: 3 })
-    expect(goal).toMatchObject({ phase: 'active', revision: 4 })
+    const pausedGoalId = goal['id']
+    if (typeof pausedGoalId !== 'string') throw new Error('expected paused goal id')
+    const resumed = ctx.goals.resume(root.agent, { id: GoalId(pausedGoalId), revision: 3 })
+    expect(resumed).toMatchObject({ phase: 'active', revision: 4 })
   })
 
   it('injects one wrap-up instruction for an autonomous completion but leaves a human pause interactive', async () => {

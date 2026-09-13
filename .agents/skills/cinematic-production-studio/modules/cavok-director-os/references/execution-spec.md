@@ -2,7 +2,7 @@
 
 ### 严格短镜头执行稿（2-5 秒视频模型）逐镜 10 必填字段
 
-> **行业标准词**：执行稿的焦段/机位/光色描述统一用 [ShotDeck 级行业词库](../../_shared/shotdeck-standard-language.md)（景别 ECU~XWS、机位 Eye Level~POV、镜头 Wide~Tele/Anamorphic、灯光 High Key~Rembrandt~Volumetric、色彩 Monochrome~Complementary），禁止自造词；与 ShotDeck 参考图对照时五维词组合（如 Low Angle + Wide + Low Key）
+> **行业标准词**：执行稿的焦段/机位/光色描述统一用 [ShotDeck 级行业词库](../../../../_shared/shotdeck-standard-language.md)（景别 ECU~XWS、机位 Eye Level~POV、镜头 Wide~Tele/Anamorphic、灯光 High Key~Rembrandt~Volumetric、色彩 Monochrome~Complementary），禁止自造词；与 ShotDeck 参考图对照时五维词组合（如 Low Angle + Wide + Low Key）
 1 精确起止时码(三位毫秒)+帧数 · 2 焦段/机位高度/轴线侧/承载与移动 · 3 前中后景+主体占比 · 4 人物位置/朝向/距离/接地点/路径 · 5 道具数量/位置/方向/状态 · 6 按时间窗的动作/重心/呼吸/视线/微表情生命周期 · 7 湿发/衣料/水花/烟雨地面的物理反馈与延迟 · 8 焦点/景深/主光方向/负补光/唯一暖色/黑位 · 9 同期声/对白/呼吸/Foley/VFX声/混响 · 10 结束姿势(下一段首帧继承)
 
 ### 渲染规格与衔接扩展（执行稿 10 字段之上的进阶规格，AI 视频或 CG 管线通用，必填）

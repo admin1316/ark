@@ -30,6 +30,8 @@ Status: implemented
 
 `@deepseek-ai/dsh-plugin-package-inventory-deepseek` 从 `llm` 包家族中拥有默认开启的 `dsh_plugin_packages` 字段。它会读取宿主 Loader 树的存活非 group 配置项，并为存活请求 Agent 读取其 standing preset 树。Node 包解析会定位所属 manifest，无需导出 `./package.json`。普通配置项从其所属树解析；standing preset 根会复现 Loader 对宿主基址的显式覆写，嵌套 include 则保留自身基址。最近的匿名 manifest 会标记松散模块；具名 manifest 必须带有版本。系统以确定性顺序按确切名称／版本对去重，同时存活的不同版本仍会分开保留。
 
+宿主解析锚点来自 Loader 根分组捕获的上下文，而不是清单贡献者继承的 bundle 上下文。Cordis 会把服务上下文关联到调用者，因此通过嵌套贡献者读取 `loader.ctx` 不等同于查询真实根。测试 profile patch 先从编写该 patch 的位置、再从实际 agent 安装位置链接已声明的包；仅源码别名不能替代安装包来源。
+
 禁用、pending、failed、unloading、disposed、结构性、松散非包、普通依赖、编程式子 fiber 与内存动态插件配置项都不属于该包清单。这个定义会报告运行时可以证明的包支撑组合事实，而不会为任意回调发明来源。
 
 ## 暂缓的清单 cache

@@ -3155,23 +3155,34 @@ let SubagentRuntime = (() => {
 		}
 		/**
 		* Read the Session owner's bounded page after verifying the direct-child address.
+		* Closing an existing content reader uses its original owner-checked address,
+		* so removal from the current catalog cannot prevent resource release.
 		* @param parentSessionId - durable parent authorizing the read.
 		* @param childSessionId - direct child session id.
 		* @param mode - expected child mode.
-		* @param beforeSeq - exclusive cursor for an older page.
+		* @param beforeSeq - legacy exclusive cursor, or typed history view options.
 		* @param maxMessages - bounded message count, validated by the Session owner.
 		* @param signal - read cancellation; neither Agent is resumed.
 		* @returns the original Session page, including its presentation projections.
 		*/
 		async remoteHistory(parentSessionId, childSessionId, mode, beforeSeq, maxMessages, signal) {
-			await this.requireRemoteChild(parentSessionId, childSessionId, mode, signal);
+			const options = typeof beforeSeq === "object" ? beforeSeq : {
+				...beforeSeq === void 0 ? {} : { beforeSeq },
+				...maxMessages === void 0 ? {} : { maxMessages }
+			};
+			if (options.view === "content" && options.close === true && options.contentReadId !== void 0) validateControlRequest("subagent.history", {
+				parentSessionId,
+				childSessionId,
+				mode
+			});
+			else await this.requireRemoteChild(parentSessionId, childSessionId, mode, signal);
 			const sessions = this.ctx.get("sessions");
 			if (sessions === void 0) return rejectControl("service-unavailable", "subagent history requires the Session service", {});
 			const page = await sessions.remoteExportHistory({
+				...options,
 				sessionId: childSessionId,
 				expectedParentSessionId: parentSessionId,
-				...beforeSeq === void 0 ? {} : { beforeSeq },
-				...maxMessages === void 0 ? {} : { maxMessages }
+				expectedSubagentMode: mode
 			}, signal);
 			if (signal.aborted) return rejectControl("cancelled", "subagent history read was cancelled", {});
 			if (!page.ok) {
@@ -3362,4 +3373,4 @@ let SubagentRuntime = (() => {
 	};
 })();
 //#endregion
-export { AssistantOutputFold, NO_START_CAPABILITIES, SUBAGENT_DESCRIPTOR_VERSION, SubagentDepthError, SubagentError, SubagentRunId, SubagentRuntime, SubagentRuntime as default, appendDelegatedPolicyOverrides, applyChildComposition, assertPositiveFinite, assertSubagentMaxDepth, assertUsableCwd, captureDelegatedPolicyOverrides, childSessionMeta, delegationDepthOf, finalAssistantOutput, foldSubagentDescriptor, parentAgentOptionsForDelegation, resolveChildAgentOptions, resolveChildCwd, resolveChildDepth, seedDescriptorTurn, settleRun, settleRunResult, snapshotSubagentDescriptor, subprocessRunHandle, validateConfiguredCwd };
+export { AssistantOutputFold, NO_START_CAPABILITIES, SUBAGENT_DESCRIPTOR_VERSION, SubagentDepthError, SubagentError, SubagentRunId, SubagentRuntime, SubagentRuntime as default, appendDelegatedPolicyOverrides, applyChildComposition, assertPositiveFinite, assertSubagentMaxDepth, assertUsableCwd, canonicalClientTimeZone, captureDelegatedPolicyOverrides, childSessionMeta, delegationDepthOf, finalAssistantOutput, foldSubagentDescriptor, parentAgentOptionsForDelegation, resolveChildAgentOptions, resolveChildCwd, resolveChildDepth, seedDescriptorTurn, settleRun, settleRunResult, snapshotSubagentDescriptor, subprocessRunHandle, validateConfiguredCwd };

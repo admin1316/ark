@@ -2,9 +2,9 @@
 
 ### 物理相机与材质物理层（单帧关键帧/海报/概念图的渲染规格，与视频侧共用同一套纪律）
 
-- **ShotDeck 检索词输出（提示词交付时附带）**：每张关键帧/海报提示词末尾附一行检索串（来自 [情绪→行业词映射速查](../../_shared/emotion-shot-matrix.md)），如 `ShotDeck: Rembrandt + MCU + 85mm + Warm + Window Light`——用户可直接去参考库找同款参考图对照出图效果
+- **ShotDeck 检索词输出（提示词交付时附带）**：每张关键帧/海报提示词末尾附一行检索串（来自 [情绪→行业词映射速查](../../../../_shared/emotion-shot-matrix.md)），如 `ShotDeck: Rembrandt + MCU + 85mm + Warm + Window Light`——用户可直接去参考库找同款参考图对照出图效果
 
-- **行业灯光语言（来自 [ShotDeck 级行业词库](../../_shared/shotdeck-standard-language.md)，写提示词光段直接用行业术语）**：风格（High Key/Low Key/Chiaroscuro/Rembrandt 伦勃朗光/Butterfly 蝴蝶光）· 方向（Front/Side/Side-top 45°/Top/Underlighting/Backlit/Rim）· 光源（Practical 实用光源/Window 窗光/Slit Light 门缝光/Neon/Candlelight/Screen Light）· 特殊（Silhouette/Semi-Silhouette/Volumetric 丁达尔）——例：'Rembrandt lighting, practical window light, warm' 比 '柔和侧光' 精确一个行业层级；与 ShotDeck 参考图对照时用 'Lighting: Low Key + Backlit' 式组合
+- **行业灯光语言（来自 [ShotDeck 级行业词库](../../../../_shared/shotdeck-standard-language.md)，写提示词光段直接用行业术语）**：风格（High Key/Low Key/Chiaroscuro/Rembrandt 伦勃朗光/Butterfly 蝴蝶光）· 方向（Front/Side/Side-top 45°/Top/Underlighting/Backlit/Rim）· 光源（Practical 实用光源/Window 窗光/Slit Light 门缝光/Neon/Candlelight/Screen Light）· 特殊（Silhouette/Semi-Silhouette/Volumetric 丁达尔）——例：'Rembrandt lighting, practical window light, warm' 比 '柔和侧光' 精确一个行业层级；与 ShotDeck 参考图对照时用 'Lighting: Low Key + Backlit' 式组合
 
 - **物理相机参数化（提示词里写死，不写'或'）**：焦距（35mm 中性/50mm 肖像/85mm 特写压缩/24mm 大场面/100mm 细节微距）+ T 光圈（浅景深 T1.4-2 特写/T2.8 双人/T4 环境）+ 快门/ISO 感光度取向（低 ISO 干净/高 ISO 颗粒为情绪服务）+ 白平衡/色温（暖金 3200K 或冷青 6500K，单一主基调）+ 曝光补偿方向（-0.3EV 保暗部/+0.3EV 高调）——五个变量每个只选一个，全部进提示词
 - **主光保底（人脸生死线）**：人脸永远给足主光——侧顶光 45° 暖金主光清晰照亮左脸（五官可辨）+ 发丝边缘一线金边轮廓光；禁止强逆光人脸（关键帧生成对逆光人脸极不稳定，糊成剪影或五官崩坏）；微表情/神态描写给最小集（眉头/嘴角/眼神方向），不写抽搐级表情

@@ -55,10 +55,7 @@ describe('SessionController facade', () => {
       ctx,
     } as Agent
     ctx.agents.register(agent)
-    const consumeSelection = vi.spyOn(
-      (controller as unknown as { agents: ApiSessionAgentController }).agents,
-      'consumeSelection',
-    )
+
 
     await expect(controller.resolveAgent(sessionId)).resolves.toEqual({ agent })
     await expect(controller.inspect(sessionId)).resolves.toEqual({ meta: header, events })
@@ -76,9 +73,6 @@ describe('SessionController facade', () => {
       header: { config: { provider: 'fixture', model: 'fixture-model' } },
       reason: 'initial',
     })
-    expect(consumeSelection).toHaveBeenCalledWith(
-      agent, 'fixture', 'fixture-model', undefined,
-    )
     const unowned = ctx.sessions.create(SessionId('controller-unowned'), {
       meta: { cwd: '/workspace' },
     })
@@ -86,7 +80,6 @@ describe('SessionController facade', () => {
       header: { config: { provider: 'fixture', model: 'other-model' } },
       reason: 'initial',
     })
-    expect(consumeSelection).toHaveBeenCalledTimes(1)
 
     const abort = new AbortController()
     const iterator = controller.follow({

@@ -55,7 +55,7 @@ function assertComposite(events: readonly SessionFormatEvent[]): void {
 describe('combined structural, canonical-envelope and PTC catalog migration', () => {
   it('inserts and clears system prompts while remapping replacement and nested PTC history without rewriting identities', () => {
     const before = JSON.stringify(source)
-    const reader = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'current' })
+    const reader = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'transformed' })
     for (const row of source) reader.decodeRow(row)
     const target = reader.finish()
     expect(target.header.version).toBe(3)
@@ -63,16 +63,16 @@ describe('combined structural, canonical-envelope and PTC catalog migration', ()
     assertComposite(target.events)
     expect(restoreReleasedV3Artifact(target, new Set())).toBe(target)
     expect(JSON.stringify(source)).toBe(before)
-    const native = sessionFormatCatalog.createRestore({ ...header, version: 3 }, { recovery: 'strict', validation: 'current' })
+    const native = sessionFormatCatalog.createRestore({ ...header, version: 3 }, { recovery: 'strict', validation: 'transformed' })
     for (const row of target.events) native.decodeRow(releasedV3SessionFormatCodec.encodeEvent(row))
-    expect(native.finish()).toEqual(target)
+    expect(restoreReleasedV3Artifact(native.finish(), new Set())).toEqual(target)
     const mismatched = target.events.map(row => row.type === 'tool/ptc-dispatch' && (row.data as SessionFormatJsonObject)['subCallId'] === inner.subCallId
       ? { ...row, data: { ...inner, parentCallId: 'missing', isError: false, content: [] } } : row)
     expect(() => restoreReleasedV3Artifact({ ...target, events: mismatched }, new Set())).toThrow(/parentCallId/)
   })
 
   it('composes header and scalar preset renames with every structural and canonical transformation', () => {
-    const reader = sessionFormatCatalog.createRestore({ ...header, agentPreset: 'code' }, { recovery: 'strict', validation: 'current' })
+    const reader = sessionFormatCatalog.createRestore({ ...header, agentPreset: 'code' }, { recovery: 'strict', validation: 'transformed' })
     const selection = event('agent-preset/selected', source.length, { agentPreset: 'code' })
     for (const row of [...source, selection]) reader.decodeRow(row)
     const target = reader.finish()
@@ -84,13 +84,13 @@ describe('combined structural, canonical-envelope and PTC catalog migration', ()
 
   it('refuses unaudited V2 preset extensions but preserves native nested preset data', () => {
     const selection = event('agent-preset/selected', source.length, { agentPreset: 'code', extension: { agentPreset: 'code' } })
-    const reader = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'current' })
+    const reader = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'transformed' })
     for (const row of source) reader.decodeRow(row)
     expect(() => { reader.decodeRow(selection) }).toThrow(/unexpected field extension/)
-    const native = sessionFormatCatalog.createRestore({ ...header, version: 3 }, { recovery: 'strict', validation: 'current' })
+    const native = sessionFormatCatalog.createRestore({ ...header, version: 3 }, { recovery: 'strict', validation: 'transformed' })
     const row = { ...selection, seq: 0 }
     native.decodeRow(row)
-    expect(native.finish().events).toEqual([row])
+    expect(restoreReleasedV3Artifact(native.finish(), new Set()).events).toEqual([row])
   })
 
   it.each([
@@ -138,7 +138,7 @@ describe('combined structural, canonical-envelope and PTC catalog migration', ()
   })
 
   it.each([undefined, 0, 1, 2, 4])('preserves historical delivery generation %s while remapping its envelope and inherited cut', (version) => {
-    const reader = sessionFormatCatalog.createRestore({ ...header, isSeeded: true, parentSession: 'parent' }, { recovery: 'strict', validation: 'current' })
+    const reader = sessionFormatCatalog.createRestore({ ...header, isSeeded: true, parentSession: 'parent' }, { recovery: 'strict', validation: 'transformed' })
     const marker = event('session-log-deepseek/delivery-accepted', source.length, {
       sessionId: 'parent', throughSeq: source.length - 1, ...(version === undefined ? {} : { sessionFormatVersion: version }),
     })
@@ -150,13 +150,13 @@ describe('combined structural, canonical-envelope and PTC catalog migration', ()
     expect(target.inheritedEventCount).toBe(source.length + 4)
     expect(target.events.at(-1)).toEqual({ ...cut, seq: target.inheritedEventCount })
     assertComposite(target.events)
-    const reopened = sessionFormatCatalog.createRestore(releasedV3SessionFormatCodec.encodeHeader(target.header, target.inheritedEventCount), { recovery: 'strict', validation: 'current' })
+    const reopened = sessionFormatCatalog.createRestore(releasedV3SessionFormatCodec.encodeHeader(target.header, target.inheritedEventCount), { recovery: 'strict', validation: 'transformed' })
     for (const row of target.events) reopened.decodeRow(releasedV3SessionFormatCodec.encodeEvent(row))
-    expect(reopened.finish()).toEqual(target)
+    expect(restoreReleasedV3Artifact(reopened.finish(), new Set())).toEqual(target)
   })
 
   it('refuses target V3 delivery activation after replacement and PTC migration', () => {
-    const reader = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'current' })
+    const reader = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'transformed' })
     for (const row of source) reader.decodeRow(row)
     expect(() => {
       reader.decodeRow(event('session-log-deepseek/delivery-accepted', source.length, {

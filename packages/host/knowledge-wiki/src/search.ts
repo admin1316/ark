@@ -179,6 +179,7 @@ export function cosine(a: number[], b: number[]): number {
  * @param query - The query input.
  * @param apiKey - The api key input.
  * @param topK - The top k input.
+ * @param unavailable - optional notification when embedding throws before falling back to keyword results.
  * @returns The value produced by hybrid search.
  */
 export async function hybridSearch(

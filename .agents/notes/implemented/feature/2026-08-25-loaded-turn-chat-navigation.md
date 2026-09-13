@@ -30,7 +30,7 @@ Every Turn remains an accessible button even when dense marks visually overlap. 
 
 **Always spread marks across the available height.** Rejected: a small loaded set produces visually unrelated marks separated by large empty regions. A fixed natural interval preserves a compact index while percentage compression still admits dense histories.
 
-**Derive the rail in the renderer from the Chat snapshot.** Rejected: renderers do not scan the loaded Chat Nodes ([client discipline](../../../../packages/client/AGENTS.md)). A render-time projection also re-copied every Turn's prompt and reply text on each structural publication, and could not see the in-place node updates a streaming reply produces, so previews froze at the first chunk.
+**Derive the rail in the renderer from the Chat snapshot.** Rejected: renderers do not scan the loaded Chat Nodes (client discipline (historical path: `packages/client/AGENTS.md`)). A render-time projection also re-copied every Turn's prompt and reply text on each structural publication, and could not see the in-place node updates a streaming reply produces, so previews froze at the first chunk.
 
 **Key marks by loaded-array position.** Rejected: prepending a page would reuse each DOM element for a different Turn, lose focus and preview identity, and prevent the existing marks from animating to their new positions.
 

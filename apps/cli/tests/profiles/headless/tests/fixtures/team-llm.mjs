@@ -1,6 +1,6 @@
 /** Deterministic keyless Agent Teams adapter shared by profile snapshot and CLI e2e. */
 
-import { ToolCallId, LlmAdapter } from '@deepseek-ai/dsh-llm'
+import { CallId, LlmAdapter } from '@deepseek-ai/dsh-llm'
 
 let nextCall = 0
 
@@ -38,7 +38,7 @@ function latestToolText(messages) {
 function toolChunks(specs) {
   const chunks = []
   for (const [index, spec] of specs.entries()) {
-    const id = ToolCallId(`team-fixture-${++nextCall}`)
+    const id = CallId(`team-fixture-${++nextCall}`)
     const args = JSON.stringify(spec.args)
     chunks.push(
       { type: 'block-start', index, blockType: 'tool-call' },

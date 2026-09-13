@@ -1,6 +1,13 @@
+---
+description: "凭据 Service Definition（ctx.credentials）。"
+kind: "package-reference"
+---
+
 # dsh-credentials
 
 [English](README.md) | 中文
+
+## 概述
 
 凭据 Service Definition（`ctx.credentials`）。一条准则，三个推论：
 
@@ -11,6 +18,16 @@
 **空的存储值等于不存在。** 处处如此：`resolve` 跳过它，`describe` 报告未配置。空白永远不会伪装成已配置的机密。
 
 <a id="two-key-spaces-two-questions"></a>
+
+## 目录
+
+- [两个键空间，两个问题](#two-key-spaces-two-questions)
+- [接口](#surface)
+- [提供方](#providers)
+- [共享 Remote](#shared-remote)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 ## 两个键空间，两个问题
 
@@ -56,10 +73,17 @@ await ctx.credentials.deleteRecord(key)                  // no-op when absent
 
 `set`/`unset` 的遮蔽规则有意采用明确报错的方式：当只读来源（本地提供方中即当前进程环境）正在提供该引用时，写入会表面成功而解析仍返回遮蔽值——seam 选择直接拒绝，并通过 `describe().writable` 让界面提前把该引用渲染为只读。
 
+<a id="providers"></a>
 ## 提供方
 
 [`dsh-credentials-local`](../credentials-local/README.zh.md) 把继承的进程环境叠加在其受管 `$DSH_HOME/.credentials.yaml` 文档之上，并以启动器的项目和用户 `.env` 层作为后备。该 seam 的接口为 keyring、辅助命令和 KMS 后端提供方预留了扩展空间；远端设置提供方永远不必携带机密。
 
+<a id="shared-remote"></a>
+## 共享 Remote
+
+此 provider 唯一持有 `credentials.describe/set/unset`，浏览器与 Native 使用相同响应。`describe(refs)` 返回 `{ credentials: { [ref]: { configured, source?, writable } } }`，单次最多 64 个引用；所有名字验证通过后才开始 provider 读取。超限或无效名字返回 `input-invalid`。`set` 在访问 provider 前拒绝空值；空值及 provider 拒绝返回脱敏的 `credential-rejected`。成功写入或删除返回 `{}`，不会返回密钥值。旧 API settings controller 不再声明这些端点。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 经由消费它的 LLM 适配器间接生效：解析出的值为适配器的提供方请求授权，所有模型可见接口都由适配器负责。
@@ -68,9 +92,15 @@ await ctx.credentials.deleteRecord(key)                  // no-op when absent
 
 无直接失效；凭据绝不进入请求前缀。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **引用不提供枚举**——seam 只回答被问到的引用；配置界面从 settings schema 得知引用集合，对这一半做 `list()` 没有当前消费方。记录出于上文的理由则可枚举。
 - **引用限定为环境变量形状**——单一扁平的 POSIX 标识符命名空间，因为引用同时就是它借以解析的环境变量名。记录使用更丰富的 `<owner>/<id>` 寻址。
 - **进程环境变化不可见**——不可能为其发事件；界面只能在自身导航时重新读取 `describe()`。
 - **记录的拥有者就是它的 scope，而没有任何环节核验该 scope 是否已挂载**——seam 存下被交予的内容，并报告它存了什么。识别孤儿是调用方在 `listRecords()` 与拥有该 scope 的注册表之间做的连接；seam 自身没有可供核对的注册表。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

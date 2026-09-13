@@ -12,6 +12,7 @@ import {
 } from '@deepseek-ai/dsh-credentials'
 import { afterEach, describe, expect, it } from 'vitest'
 import KnowledgeWikiService from '../src/index.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 class MemoryCredentials extends CredentialProvider {
   private readonly values = new Map<CredentialRef, string>()
@@ -76,13 +77,13 @@ describe('Knowledge Wiki credential resolution', () => {
     const ctx = new Context()
     contexts.push(ctx)
     await ctx.plugin(MemoryCredentials, { VISION_API_KEY: first })
-    const service = new KnowledgeWikiService(ctx, {
+    const service = new KnowledgeWikiService(ctx, wikiTestConfig({
       wikiRoot: '/tmp/wiki',
       mainRoot: '/tmp',
       credential: 'VISION_API_KEY',
       llmProvider: 'test',
       llmModel: 'test',
-    }) as unknown as { resolveApiKey(): Promise<string> }
+    })) as unknown as { resolveApiKey(): Promise<string> }
 
     await expect(service.resolveApiKey()).resolves.toBe(first)
     await ctx.credentials.set(credentialRef('VISION_API_KEY'), second)

@@ -1,3 +1,4 @@
+import { matchesOwnKeyPattern } from '@deepseek-ai/dsh-util-values'
 import {
   SessionFormatError,
   SessionFormatUnsupportedMigrationError,
@@ -350,9 +351,7 @@ function normalizeLegacyMessage(
   const data = releasedV0Record(event.data, `${event.type} ${event.seq} data`)
   switch (event.type) {
     case 'user/message':
-      if (Object.hasOwn(data, 'id') || Object.hasOwn(data, 'role')
-        || Object.hasOwn(data, 'message') || !Object.hasOwn(data, 'content')
-        || !Object.hasOwn(data, 'source')) return event
+      if (!matchesOwnKeyPattern(data, ['content', 'source'], ['id', 'role', 'message'])) return event
       return {
         ...event,
         data: {
@@ -362,8 +361,7 @@ function normalizeLegacyMessage(
         },
       }
     case 'assistant/message': {
-      if (Object.hasOwn(data, 'message')
-        || !Object.hasOwn(data, 'content') || !Object.hasOwn(data, 'provenance')) return event
+      if (!matchesOwnKeyPattern(data, ['content', 'provenance'], ['message'])) return event
       const { content, provenance, ...eventData } = data as typeof data & {
         content: SessionFormatJsonValue
         provenance: SessionFormatJsonValue
@@ -383,9 +381,7 @@ function normalizeLegacyMessage(
       }
     }
     case 'tool/result': {
-      if (Object.hasOwn(data, 'message')
-        || !Object.hasOwn(data, 'callId') || !Object.hasOwn(data, 'content')
-        || !Object.hasOwn(data, 'isError')) return event
+      if (!matchesOwnKeyPattern(data, ['callId', 'content', 'isError'], ['message'])) return event
       const { callId, content, isError, ...eventData } = data
       if (typeof callId !== 'string' || typeof isError !== 'boolean' || content === undefined) return event
       const inheritedId = replacementStart(event)

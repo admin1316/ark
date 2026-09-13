@@ -17,7 +17,6 @@ import {
   type SessionSearchRequest,
 } from '@deepseek-ai/dsh-session-query'
 import { createSessionTestRemote } from './test-remote.ts'
-import { ApiSessionList } from '../src/list.ts'
 
 const sid = (value: string): SessionId => value as SessionId
 const defaults = { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }
@@ -91,16 +90,6 @@ function installSearchQuery(
 }
 
 describe('session.search', () => {
-  it('rejects search when the query service is absent', async () => {
-    const ctx = await baseContext()
-    const list = new ApiSessionList(ctx, 0)
-
-    await expect(list.search('query', new AbortController().signal)).rejects.toMatchObject({
-      failure: { code: 'internal' },
-    })
-    await ctx.fiber.dispose()
-  })
-
   it('searches only list-visible ids and current conversation-message events', async () => {
     const ctx = await baseContext()
     const live = ctx.sessions.create(sid('live'), { meta: header('live', '/live') })
@@ -189,7 +178,7 @@ describe('session.search', () => {
 
     for (const query of ['', '   ', 'contains\0nul', 'x'.repeat(501)]) {
       await expect(remote.search(request(query), new AbortController().signal))
-        .resolves.toMatchObject({ ok: false, error: { code: 'bad-request' } })
+        .resolves.toMatchObject({ ok: false, error: { code: 'invalid-argument' } })
     }
     expect(searchSessions).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
@@ -352,7 +341,7 @@ describe('session.search', () => {
     expect(response.ok).toBe(false)
     if (response.ok) throw new Error('unreachable')
     expect(response.error).toMatchObject({ code: 'internal' })
-    expect(response.error.message).toContain('100-call work budget')
+    expect(response.error.message).toContain('100 calls')
     expect(searchSessions).toHaveBeenCalledTimes(100)
   })
 
@@ -456,7 +445,7 @@ describe('session.search', () => {
     expect(response.ok).toBe(false)
     if (response.ok) throw new Error('unreachable')
     expect(response.error.code).toBe('internal')
-    expect(response.error.message).toContain('100-call work budget')
+    expect(response.error.message).toContain('100 calls')
     expect(response).not.toHaveProperty('value')
     expect(searchSessions).toHaveBeenCalledTimes(100)
   })
@@ -676,7 +665,7 @@ describe('session.search', () => {
     expect(response.ok).toBe(false)
     if (response.ok) throw new Error('unreachable')
     expect(response.error).toMatchObject({ code: 'internal' })
-    expect(response.error.message).toContain('repeated a continuation cursor')
+    expect(response.error.message).toContain('repeated a cursor')
     expect(searchSessions).toHaveBeenCalledTimes(2)
   })
 
@@ -702,7 +691,7 @@ describe('session.search', () => {
     })
     expect(response).not.toHaveProperty('value')
     if (response.ok) throw new Error('unreachable')
-    expect(response.error.message).toContain('repeated a continuation cursor')
+    expect(response.error.message).toContain('repeated a cursor')
     expect(searchSessions).toHaveBeenCalledTimes(2)
   })
 

@@ -4,9 +4,9 @@ import { addAbortListener } from "node:events";
 import { createHash } from "node:crypto";
 import { Service, isObject, symbols } from "@deepseek-ai/cordis";
 import { AsyncLocalStorage } from "node:async_hooks";
-import "node:path";
-import "node:child_process";
-import "node:os";
+import { extname, isAbsolute } from "node:path";
+import { execFile } from "node:child_process";
+import { release } from "node:os";
 //#region ../../util/timeout/src/index.ts
 /**
 * Shared timeout arithmetic, signal fusion, and classification. The library
@@ -94,6 +94,30 @@ const TYPERT_REMOTE_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/;
 function isTypertRemoteSegment(value) {
 	return value !== "." && value !== ".." && TYPERT_REMOTE_SEGMENT_PATTERN.test(value);
 }
+/**
+* A lookup policy rejection whose typed payload belongs to the active boundary adapter.
+* Gateway adapters preserve this payload instead of collapsing it into an infrastructure failure.
+*/
+var TypertLookupFailure = class extends Error {
+	/** Adapter-owned failure returned to the caller. */
+	failure;
+	/** Public code mirrored for direct Remote callers. */
+	code;
+	/** Public structured context mirrored for direct Remote callers. */
+	details;
+	/**
+	* Wrap one adapter failure without exposing the rejected identity.
+	* @param failure - typed failure owned by the active boundary adapter.
+	*/
+	constructor(failure) {
+		super("Typert lookup policy rejected the requested identity");
+		this.name = "TypertLookupFailure";
+		this.failure = failure;
+		const record = typeof failure === "object" && failure !== null ? failure : void 0;
+		this.code = record !== void 0 && "code" in record && typeof record.code === "string" ? record.code : void 0;
+		this.details = record !== void 0 && "details" in record ? record.details : void 0;
+	}
+};
 /** A business Remote rejection preserved by unary and stream carriers. */
 var TypertRemoteFailure = class extends Error {
 	/** Stable caller-facing failure payload. */
@@ -218,27 +242,31 @@ function MessageId(id) {
 	return id;
 }
 //#endregion
-//#region ../../llm/llm/src/call-config.ts
+//#region ../../util/values/src/index.ts
 /**
-* Field-wise equality over {@link LlmCallConfig} — the comparison a caller
-* runs to decide whether a proposed configuration is a real change (worth a
-* logged header snapshot) or the held one restated.
-* @param a - one configuration.
-* @param b - the other.
-* @returns whether every field (including the `stop` list, element-wise) matches.
+* Compare JSON-compatible values structurally using own enumerable record keys.
+* An inherited value cannot substitute for a missing own key.
+* @param a - one JSON-compatible value.
+* @param b - the other JSON-compatible value.
+* @returns whether both values contain the same JSON data.
 */
-function callConfigEquals(a, b) {
-	if (a.provider !== b.provider || a.model !== b.model || a.reasoningEffort !== b.reasoningEffort || a.temperature !== b.temperature || a.maxTokens !== b.maxTokens) return false;
-	if (a.stop === void 0 || b.stop === void 0) return a.stop === b.stop;
-	return a.stop.length === b.stop.length && a.stop.every((s, i) => s === b.stop?.[i]);
+function deepEqualJson(a, b) {
+	if (a === b) return true;
+	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+	if (Array.isArray(a) || Array.isArray(b)) {
+		if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+		return a.every((entry, index) => deepEqualJson(entry, b[index]));
+	}
+	const left = a;
+	const right = b;
+	const keys = Object.keys(left);
+	if (keys.length !== Object.keys(right).length) return false;
+	return keys.every((key) => Object.hasOwn(right, key) && deepEqualJson(left[key], right[key]));
 }
 /**
-* Deep-freeze a value in place with an iterative traversal, guarding cycles,
-* so later mutation throws without imposing a JavaScript call-stack depth cap.
-* {@link AbortSignal} objects are deliberately skipped because they are the
-* request's live cancellation channel and freezing them breaks abort.
-* @param value - the value to freeze in place.
-* @returns the same value, frozen.
+* Deep-freeze an object graph in place while leaving live AbortSignal objects mutable.
+* @param value - value to freeze.
+* @returns the same value after every reachable enumerable child is frozen.
 */
 function deepFreeze$1(value) {
 	const seen = /* @__PURE__ */ new WeakSet();
@@ -276,6 +304,21 @@ function deepFreeze$1(value) {
 		}
 	}
 	return value;
+}
+//#endregion
+//#region ../../llm/llm/src/call-config.ts
+/**
+* Field-wise equality over {@link LlmCallConfig} — the comparison a caller
+* runs to decide whether a proposed configuration is a real change (worth a
+* logged header snapshot) or the held one restated.
+* @param a - one configuration.
+* @param b - the other.
+* @returns whether every field (including the `stop` list, element-wise) matches.
+*/
+function callConfigEquals(a, b) {
+	if (a.provider !== b.provider || a.model !== b.model || a.reasoningEffort !== b.reasoningEffort || a.temperature !== b.temperature || a.maxTokens !== b.maxTokens) return false;
+	if (a.stop === void 0 || b.stop === void 0) return a.stop === b.stop;
+	return a.stop.length === b.stop.length && a.stop.every((s, i) => s === b.stop?.[i]);
 }
 //#endregion
 //#region ../../llm/llm/src/message.ts
@@ -342,6 +385,15 @@ var HarnessError = class extends Error {
 * to repeat.
 */
 const EMPTY_RESPONSE_CODE = "EMPTY_RESPONSE";
+/**
+* Canonical provider-neutral code for a streamed tool call the provider never
+* identified: its `id` or `name` was absent or empty by the end of the stream.
+* Such a call cannot be dispatched, and its result cannot be paired back to the
+* provider on the next request, so adapters classify it as this failure instead
+* of emitting a tool call the loop would reject as unknown. Nothing durable is
+* written for the attempt, so retry policy treats it as safe to repeat.
+*/
+const MALFORMED_TOOL_CALL_CODE = "MALFORMED_TOOL_CALL";
 new RegExp(String.raw`(?:^|[^a-z0-9])context[\s_-](?:length|window)[\s_-]` + String.raw`(?:exceed(?:ed|s)?|overflow(?:ed)?|limit[\s_-]exceeded)(?:$|[^a-z0-9])`, "i");
 new RegExp(String.raw`\b(?:request|prompt|input|messages?)\s+(?:is\s+|are\s+)?` + String.raw`too\s+(?:large|long)\s+for\s+(?:(?:this|the)\s+)?` + String.raw`(?:model(?:'s)?\s+)?context(?:\s+window)?\b`, "i");
 new RegExp(String.raw`\b(?:input|prompt|request|messages?)\b.{0,40}` + String.raw`\b(?:exceed(?:s|ed)?|overflows?|is\s+larger\s+than)\b.{0,40}` + String.raw`\b(?:the\s+)?(?:model(?:'s)?\s+)?context(?:\s+(?:length|window))?\b`, "i");
@@ -361,6 +413,7 @@ const DEFAULT_MAX_DELAY_MS = 1e4;
 const DEFAULT_JITTER_RATIO = .1;
 const DEFAULT_RETRYABLE_CODES = Object.freeze([
 	EMPTY_RESPONSE_CODE,
+	MALFORMED_TOOL_CALL_CODE,
 	"RATE_LIMIT",
 	"SERVER",
 	"TIMEOUT",
@@ -621,12 +674,164 @@ function projectImagesForTextModel(messages) {
 		};
 	});
 }
-new Set([
+//#endregion
+//#region ../../util/native-command/src/runner.ts
+/**
+* Shared no-shell `execFile` runner for host-native OS integrations.
+* @module @deepseek-ai/dsh-native-command/runner
+*/
+/**
+* Run a host command with utf8 stdio, abort propagation, and Windows hide.
+* @param command - executable path or PATH name.
+* @param args - argv (never a shell string).
+* @param signal - caller/connection lifetime; abort terminates the child.
+* @returns captured stdout/stderr on exit 0.
+*/
+const runNativeCommand = (command, args, signal) => new Promise((resolve, reject) => {
+	execFile(command, [...args], {
+		encoding: "utf8",
+		signal,
+		windowsHide: true
+	}, (error, stdout, stderr) => {
+		if (error !== null) {
+			reject(Object.assign(new Error(error.message, { cause: error }), {
+				code: error.code,
+				stdout,
+				stderr
+			}));
+			return;
+		}
+		resolve({
+			stdout,
+			stderr
+		});
+	});
+});
+//#endregion
+//#region ../../util/native-command/src/path-opener.ts
+/**
+* Cross-platform native path and text-document openers for Host UI
+* integrations.
+*
+* The default intent prefers the default browser for documents it renders when
+* the platform can name one, then falls back to the default application. WSL
+* translates every path for the Windows desktop instead of assuming a Linux
+* GUI. The text-editor intent never consults the browser.
+* @module @deepseek-ai/dsh-native-command/path-opener
+*/
+/** Documents a browser renders, as opposed to ones an editor merely edits. */
+const BROWSER_DOCUMENTS = new Set([
 	".html",
 	".htm",
 	".xhtml",
 	".svg"
 ]);
+/**
+* The macOS bundle registered for `https` — the default browser, as
+* LaunchServices records it. The nested version dict is stripped first
+* because it carries its own `LSHandlerRoleAll`.
+*/
+function macBundleForHttps(plist) {
+	const stripped = plist.replace(/LSHandlerPreferredVersions\s*=\s*\{[^}]*\};/g, "");
+	const block = /\{[^{}]*LSHandlerURLScheme\s*=\s*"?https"?;[^{}]*\}/.exec(stripped)?.[0];
+	if (block === void 0) return void 0;
+	return /LSHandlerRoleAll\s*=\s*"?([\w.-]+)"?;/.exec(block)?.[1];
+}
+/**
+* Open one browser-renderable document with the default browser.
+* @returns true when a browser took it; false when this platform cannot name
+* one, or naming it failed — the caller then uses the default application.
+*/
+async function openInBrowser(path, signal, platform, run, env) {
+	if (platform === "darwin") {
+		let bundle;
+		try {
+			const { stdout } = await run("defaults", ["read", "com.apple.LaunchServices/com.apple.launchservices.secure"], signal);
+			bundle = macBundleForHttps(stdout);
+		} catch {
+			return false;
+		}
+		if (bundle === void 0) return false;
+		await run("open", [
+			"-b",
+			bundle,
+			path
+		], signal);
+		return true;
+	}
+	if (platform === "linux") {
+		const browser = env.BROWSER;
+		if (browser === void 0 || browser === "") return false;
+		await run(browser, [path], signal);
+		return true;
+	}
+	return false;
+}
+/** PowerShell single-quoted literal (doubles embedded quotes). */
+function powershellLiteral(path) {
+	return `'${path.replace(/'/g, "''")}'`;
+}
+/** Whether one environment marker is set to a non-empty value. */
+function present(value) {
+	return value !== void 0 && value !== "";
+}
+/** Distinguish WSL from desktop Linux using its process and kernel markers. */
+function isWsl(internals) {
+	const env = internals.env ?? process.env;
+	if (present(env.WSL_DISTRO_NAME) || present(env.WSL_INTEROP)) return true;
+	return (internals.osRelease ?? release()).toLowerCase().includes("microsoft");
+}
+/** Open one Windows-resolvable path through its registered desktop application. */
+async function openWindowsPath(path, signal, run) {
+	await run("powershell.exe", [
+		"-NoProfile",
+		"-Command",
+		`Invoke-Item -LiteralPath ${powershellLiteral(path)}`
+	], signal);
+}
+/** Translate a WSL path before handing it to the Windows desktop. */
+async function openWslPath(path, signal, run) {
+	const translated = await run("wslpath", ["-w", path], signal);
+	signal.throwIfAborted();
+	const windowsPath = translated.stdout.replace(/[\r\n]+$/, "");
+	if (windowsPath === "") throw new Error("wslpath returned no Windows path");
+	await openWindowsPath(windowsPath, signal, run);
+}
+/** Dispatch one shell-free platform command for the requested open intent. */
+async function openNativePathWithIntent(path, signal, intent, internals = {}) {
+	const platform = internals.platform ?? process.platform;
+	const run = internals.run ?? runNativeCommand;
+	const env = internals.env ?? process.env;
+	const wsl = platform === "linux" && isWsl(internals);
+	if (!wsl && intent === "default" && BROWSER_DOCUMENTS.has(extname(path).toLowerCase()) && await openInBrowser(path, signal, platform, run, env)) return;
+	if (platform === "darwin") {
+		await run("open", intent === "text-editor" ? ["-t", path] : [path], signal);
+		return;
+	}
+	if (platform === "win32") {
+		await openWindowsPath(path, signal, run);
+		return;
+	}
+	if (platform === "linux") {
+		if (wsl) {
+			await openWslPath(path, signal, run);
+			return;
+		}
+		await run("xdg-open", [path], signal);
+		return;
+	}
+	throw new Error(`native path opener is unsupported on ${platform}`);
+}
+/**
+* Open a text document for editing; macOS bypasses the file-type association
+* so a YAML association with a browser cannot consume the gesture.
+* @param path - absolute or host-resolvable text-document path.
+* @param signal - caller/connection lifetime; abort terminates the native command.
+* @param internals - Platform and runner hooks for deterministic tests.
+*/
+function openNativeTextFile(path, signal, internals = {}) {
+	return openNativePathWithIntent(path, signal, "text-editor", internals);
+}
 //#endregion
 //#region ../../settings/settings/src/redact.ts
 /** Whether a value is a plain data object the walker may recurse into. */
@@ -705,6 +910,66 @@ function walk(node, value, path, secrets) {
 			return value;
 	}
 }
+/**
+* Remove every `role('secret')` field a schema declares from a value. The
+* walker follows object, dict, array, tuple, union, and intersection relations.
+* Unsupported or malformed secret-bearing containers reject instead of returning
+* their values, including schema defaults and overridden layers. Secret array
+* positions become null so indexes remain stable.
+* @param schema - live schemastery schema describing the value.
+* @param value - the value to strip; `undefined` yields an empty record with
+*   object-property secret slots still enumerated.
+* @returns the stripped detached value and the ordered secret positions.
+*/
+function redactSecrets(schema, value) {
+	const secrets = [];
+	const stripped = walk(schema, value, [], secrets);
+	const unique = /* @__PURE__ */ new Map();
+	for (const secret of secrets) {
+		const key = JSON.stringify(secret.path);
+		const previous = unique.get(key);
+		unique.set(key, {
+			path: secret.path,
+			set: secret.set || previous?.set === true
+		});
+	}
+	return {
+		value: stripped,
+		secrets: [...unique.values()]
+	};
+}
+/**
+* Serialize form metadata with secret values removed from every default layer.
+* @param schema - live namespace schema, including shared schema nodes.
+* @returns its detached schemastery envelope, safe from schema-declared default secrets.
+*/
+function redactSettingsSchema(schema) {
+	const nodes = /* @__PURE__ */ new Map();
+	const visited = /* @__PURE__ */ new Set();
+	const visit = (node) => {
+		if (visited.has(node)) return;
+		visited.add(node);
+		assertPublicKeys(node);
+		nodes.set(node.uid, node);
+		for (const child of children(node)) visit(child);
+	};
+	visit(schema);
+	const envelope = schema.toJSON();
+	if (!isRecord(envelope) || !isRecord(envelope["refs"])) throw new TypeError("settings schema has no serialized references");
+	for (const [id, serialized] of Object.entries(envelope["refs"])) {
+		const node = nodes.get(Number(id));
+		if (node === void 0 || !isRecord(serialized)) throw new TypeError("settings schema has an unrecognized reference");
+		if (!containsSecret(node)) continue;
+		if (node.meta?.role === "secret" && node.type === "const") throw new TypeError("settings cannot expose a secret literal schema");
+		const meta = serialized["meta"];
+		if (isRecord(meta) && Object.hasOwn(meta, "default")) {
+			const stripped = walk(node, meta["default"], [], []);
+			if (stripped === void 0) delete meta["default"];
+			else setProperty(meta, "default", stripped);
+		}
+	}
+	return envelope;
+}
 //#endregion
 //#region ../../settings/settings/src/index.ts
 /**
@@ -714,6 +979,44 @@ function walk(node, value, path, secrets) {
 * `base`, and the user document section, in that order.
 * @module @deepseek-ai/dsh-settings
 */
+var __runInitializers$2 = function(thisArg, initializers, value) {
+	var useValue = arguments.length > 2;
+	for (var i = 0; i < initializers.length; i++) value = useValue ? initializers[i].call(thisArg, value) : initializers[i].call(thisArg);
+	return useValue ? value : void 0;
+};
+var __esDecorate$2 = function(ctor, descriptorIn, decorators, contextIn, initializers, extraInitializers) {
+	function accept(f) {
+		if (f !== void 0 && typeof f !== "function") throw new TypeError("Function expected");
+		return f;
+	}
+	var kind = contextIn.kind, key = kind === "getter" ? "get" : kind === "setter" ? "set" : "value";
+	var target = !descriptorIn && ctor ? contextIn["static"] ? ctor : ctor.prototype : null;
+	var descriptor = descriptorIn || (target ? Object.getOwnPropertyDescriptor(target, contextIn.name) : {});
+	var _, done = false;
+	for (var i = decorators.length - 1; i >= 0; i--) {
+		var context = {};
+		for (var p in contextIn) context[p] = p === "access" ? {} : contextIn[p];
+		for (var p in contextIn.access) context.access[p] = contextIn.access[p];
+		context.addInitializer = function(f) {
+			if (done) throw new TypeError("Cannot add initializers after decoration has completed");
+			extraInitializers.push(accept(f || null));
+		};
+		var result = (0, decorators[i])(kind === "accessor" ? {
+			get: descriptor.get,
+			set: descriptor.set
+		} : descriptor[key], context);
+		if (kind === "accessor") {
+			if (result === void 0) continue;
+			if (result === null || typeof result !== "object") throw new TypeError("Object expected");
+			if (_ = accept(result.get)) descriptor.get = _;
+			if (_ = accept(result.set)) descriptor.set = _;
+			if (_ = accept(result.init)) initializers.unshift(_);
+		} else if (_ = accept(result)) if (kind === "field") initializers.unshift(_);
+		else descriptor[key] = _;
+	}
+	if (target) Object.defineProperty(target, contextIn.name, descriptor);
+	done = true;
+};
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9-]*$/;
 /**
 * Brand a raw string as a {@link SettingsNamespace}.
@@ -723,27 +1026,6 @@ const NAMESPACE_PATTERN = /^[a-z][a-z0-9-]*$/;
 function settingsNamespace(value) {
 	if (!NAMESPACE_PATTERN.test(value)) throw new TypeError(`settings namespace "${value}" must match ${String(NAMESPACE_PATTERN)}`);
 	return value;
-}
-/**
-* Deep equality over JSON-compatible data (objects, arrays, primitives) — the
-* Service Definition's single change-detection predicate, exported so the invariant
-* companion checks exactly the implementation's relation.
-* @param a - one JSON-compatible value.
-* @param b - the other JSON-compatible value.
-* @returns whether the two values are structurally equal.
-*/
-function deepEqualJson(a, b) {
-	if (a === b) return true;
-	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
-	if (Array.isArray(a) || Array.isArray(b)) {
-		if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-		return a.every((entry, index) => deepEqualJson(entry, b[index]));
-	}
-	const left = a;
-	const right = b;
-	const keys = Object.keys(left);
-	if (keys.length !== Object.keys(right).length) return false;
-	return keys.every((key) => Object.hasOwn(right, key) && deepEqualJson(left[key], right[key]));
 }
 /**
 * A write refused because the namespace moved since the caller read it. The
@@ -767,6 +1049,23 @@ var SettingsConflictError = class extends Error {
 		this.name = "SettingsConflictError";
 		this.expected = expected;
 		this.actual = actual;
+	}
+};
+/** A namespace cannot be replaced until its previous owner's work stops. */
+var SettingsRegistrationQuiescenceError = class extends Error {
+	ns;
+	timeoutMs;
+	/** Replacement remains blocked while the previous registration is stopping. */
+	code = "SETTINGS_REGISTRATION_QUIESCENCE_TIMEOUT";
+	/**
+	* @param ns - namespace whose owner is still stopping.
+	* @param timeoutMs - elapsed replacement deadline.
+	*/
+	constructor(ns, timeoutMs) {
+		super(`settings namespace "${ns}" did not quiesce within ${String(timeoutMs)}ms; replacement remains blocked`);
+		this.ns = ns;
+		this.timeoutMs = timeoutMs;
+		this.name = "SettingsRegistrationQuiescenceError";
 	}
 };
 /** Whether a value is a plain data object (not an array, null, or class instance). */
@@ -809,6 +1108,14 @@ function applyPathOp(section, op) {
 			path: rest
 		})
 	};
+}
+function validateSettingsPathOps(ns, ops) {
+	if (!Array.isArray(ops)) throw new TypeError(`settings mutate for "${ns}" must be an array of path ops`);
+	for (const op of ops) {
+		if (!isPlainObject(op) || op["op"] !== "set" && op["op"] !== "unset") throw new TypeError(`settings mutate for "${ns}" ops must be {op:'set'|'unset', path}`);
+		if (!Array.isArray(op["path"]) || op["path"].some((part) => typeof part !== "string")) throw new TypeError(`settings mutate for "${ns}" op paths must be arrays of strings`);
+		if (op["op"] === "set" && !Object.hasOwn(op, "value")) throw new TypeError(`settings mutate for "${ns}" set ops must include a JSON value`);
+	}
 }
 /** Human label for a value that lossless JSON cannot represent (numbers reject inline). */
 function describeRejected(value) {
@@ -894,8 +1201,672 @@ function deepFreeze(value) {
 	for (const entry of Object.values(value)) deepFreeze(entry);
 	return Object.freeze(value);
 }
-new AsyncLocalStorage();
-Service.init;
+const watcherExecution = new AsyncLocalStorage();
+function isRegistrationActive(registration) {
+	return registration.active;
+}
+async function settlesBefore(operation, timeoutMs) {
+	const timeout = Promise.withResolvers();
+	const timer = setTimeout(timeout.resolve, timeoutMs, false);
+	timer.unref();
+	try {
+		return await Promise.race([operation.then(() => true), timeout.promise]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+(() => {
+	let _classSuper = TypertRemoteService;
+	let _instanceExtraInitializers = [];
+	let _remoteDescribe_decorators;
+	let _remoteOpenDocument_decorators;
+	let _remoteUpdate_decorators;
+	let _remoteReplace_decorators;
+	let _remoteMutate_decorators;
+	return class SettingsProvider extends _classSuper {
+		static {
+			const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
+			_remoteDescribe_decorators = [Remote("describe")];
+			_remoteOpenDocument_decorators = [Remote("openDocument")];
+			_remoteUpdate_decorators = [Remote("update")];
+			_remoteReplace_decorators = [Remote("replace")];
+			_remoteMutate_decorators = [Remote("mutate")];
+			__esDecorate$2(this, null, _remoteDescribe_decorators, {
+				kind: "method",
+				name: "remoteDescribe",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "remoteDescribe" in obj,
+					get: (obj) => obj.remoteDescribe
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate$2(this, null, _remoteOpenDocument_decorators, {
+				kind: "method",
+				name: "remoteOpenDocument",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "remoteOpenDocument" in obj,
+					get: (obj) => obj.remoteOpenDocument
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate$2(this, null, _remoteUpdate_decorators, {
+				kind: "method",
+				name: "remoteUpdate",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "remoteUpdate" in obj,
+					get: (obj) => obj.remoteUpdate
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate$2(this, null, _remoteReplace_decorators, {
+				kind: "method",
+				name: "remoteReplace",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "remoteReplace" in obj,
+					get: (obj) => obj.remoteReplace
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate$2(this, null, _remoteMutate_decorators, {
+				kind: "method",
+				name: "remoteMutate",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "remoteMutate" in obj,
+					get: (obj) => obj.remoteMutate
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			if (_metadata) Object.defineProperty(this, Symbol.metadata, {
+				enumerable: true,
+				configurable: true,
+				writable: true,
+				value: _metadata
+			});
+		}
+		registrations = (__runInitializers$2(this, _instanceExtraInitializers), /* @__PURE__ */ new Map());
+		/** Latest published raw document; empty until the provider's first publish. */
+		document = {};
+		/** Per-namespace write chains; settled tails, so a failure never poisons the queue. */
+		writeQueues = /* @__PURE__ */ new Map();
+		/** In-flight watcher invocation segments, drained by the dispose teardown. */
+		pendingTails = /* @__PURE__ */ new Set();
+		remoteProtectedNamespaces = /* @__PURE__ */ new Map();
+		/** Set at service dispose: refuse new writes while queued ones drain. */
+		stopped = false;
+		/** Deadline for an old namespace owner to release writes and callbacks. */
+		get registrationQuiescenceTimeoutMs() {
+			return 5e3;
+		}
+		/** Opaque read of {@link stopped}: control flow cannot narrow it across awaits. */
+		isStopped() {
+			return this.stopped;
+		}
+		constructor(ctx) {
+			super(ctx, "settings");
+		}
+		/**
+		* Load the provider's document once and publish it before the service
+		* becomes injectable, and register the write-drain teardown. Providers with
+		* their own init (watchers, connections) delegate here first via
+		* `yield* super[Service.init]()`; their disposers then run before the drain.
+		*/
+		async *[Service.init]() {
+			yield async () => {
+				this.stopped = true;
+				await Promise.allSettled([...this.writeQueues.values(), ...this.pendingTails]);
+			};
+			this.publish(await this.load());
+		}
+		/**
+		* Absolute path of the provider's user-editable document, when its storage
+		* is one local file. Configuration surfaces use this only as availability
+		* metadata; the guarded open operation resolves the path again Host-side.
+		* Non-file providers leave it undefined and expose no open-document affordance.
+		* @returns the absolute local document path, or undefined for non-file storage.
+		*/
+		get documentPath() {}
+		/**
+		* Prepare the provider's user-editable document for a native editor. File
+		* providers may materialize an absent document before returning its path;
+		* non-file providers return undefined.
+		* @returns the absolute local document path, or undefined for non-file storage.
+		*/
+		prepareDocument() {
+			return Promise.resolve(this.documentPath);
+		}
+		/**
+		* Register a namespace schema and receive its owner scope. The registration
+		* is an effect on the calling plugin's fiber: disposing that fiber removes
+		* the namespace and its observers. An invalid stored section fails the
+		* registration itself — the earliest point where the schema can judge it.
+		* @param ns - unique namespace; duplicate registration fails loud.
+		* @param schema - schemastery schema resolving this namespace's value.
+		* @param options - composition `base` layer and effect timing.
+		* @returns the owner scope for reads, observation, and updates.
+		*/
+		register(ns, schema, options) {
+			if (this.isStopped()) throw new Error(`settings service is disposed: "${ns}" cannot be registered`);
+			const existing = this.registrations.get(ns);
+			if (existing !== void 0) {
+				if (existing.quiescenceTimedOut) throw new SettingsRegistrationQuiescenceError(ns, this.registrationQuiescenceTimeoutMs);
+				throw new Error(`settings namespace "${ns}" is already registered`);
+			}
+			const registration = {
+				ns,
+				schema,
+				base: options?.base,
+				applies: options?.applies ?? "live",
+				...options?.validate === void 0 ? {} : { validate: options.validate },
+				...options?.validateWrite === void 0 ? {} : { validateWrite: options.validateWrite },
+				...options?.redact === void 0 ? {} : { redact: options.redact },
+				resolved: deepFreeze(this.resolve(schema, options?.base, this.section(ns), options?.validate)),
+				revision: 0,
+				watchers: /* @__PURE__ */ new Set(),
+				active: true,
+				settlement: Promise.resolve(true),
+				quiescenceTimedOut: false
+			};
+			this.ctx.effect(() => {
+				this.registrations.set(ns, registration);
+				return async () => {
+					registration.active = false;
+					for (const watcher of registration.watchers) watcher.active = false;
+					const write = this.writeQueues.get(ns);
+					const current = watcherExecution.getStore();
+					const tails = [...registration.watchers].filter((watcher) => current?.registration !== registration || current.watcher !== watcher).map((watcher) => watcher.tail);
+					const quiescence = Promise.allSettled([...write === void 0 ? [] : [write], ...tails]).then(() => void 0);
+					if (!await settlesBefore(quiescence, this.registrationQuiescenceTimeoutMs)) {
+						registration.quiescenceTimedOut = true;
+						quiescence.then(() => this.registrations.delete(ns));
+						throw new SettingsRegistrationQuiescenceError(ns, this.registrationQuiescenceTimeoutMs);
+					}
+					this.registrations.delete(ns);
+				};
+			}, `settings.register(${JSON.stringify(String(ns))})`);
+			const requireOwner = () => {
+				if (!registration.active || this.registrations.get(ns) !== registration || this.isStopped()) throw new Error(`settings namespace "${ns}" registration is disposed`);
+			};
+			return {
+				get: () => registration.resolved,
+				watch: (callback) => {
+					requireOwner();
+					const watcher = {
+						callback,
+						tail: Promise.resolve(),
+						active: true
+					};
+					registration.watchers.add(watcher);
+					return () => {
+						watcher.active = false;
+						watcher.tail.then(() => registration.watchers.delete(watcher));
+					};
+				},
+				update: async (patch) => {
+					requireOwner();
+					await this.update(ns, patch);
+				},
+				replace: async (section) => {
+					requireOwner();
+					await this.replace(ns, section);
+				}
+			};
+		}
+		/**
+		* Describe every registered namespace for configuration surfaces, including
+		* the composition `base` and raw user layers so a form can mark which fields
+		* the user overrode (presence in `user`) and what a reset returns to.
+		* @param options - redaction switch; wire surfaces must redact.
+		* @returns one descriptor per registered namespace, in registration order.
+		*/
+		describe(options) {
+			return [...this.registrations.values()].map((registration) => {
+				let user;
+				try {
+					user = this.section(registration.ns);
+				} catch {
+					user = void 0;
+				}
+				const base = registration.base === void 0 ? void 0 : structuredClone(registration.base);
+				const detachedUser = user === void 0 ? void 0 : structuredClone(user);
+				const descriptor = {
+					ns: registration.ns,
+					schema: registration.schema.toJSON(),
+					value: registration.resolved,
+					revision: registration.revision,
+					...base === void 0 ? {} : { base },
+					...detachedUser === void 0 ? {} : { user: detachedUser },
+					applies: registration.applies
+				};
+				if (options?.redactSecrets !== true) return descriptor;
+				const schema = registration.schema;
+				const redact = registration.redact ?? ((value) => redactSecrets(schema, value));
+				const redacted = redact(registration.resolved);
+				return {
+					...descriptor,
+					schema: redactSettingsSchema(schema),
+					value: redacted.value,
+					...base === void 0 ? {} : { base: redact(base).value },
+					...detachedUser === void 0 ? {} : { user: redact(detachedUser).value },
+					secrets: redacted.secrets
+				};
+			});
+		}
+		/**
+		* Read redacted settings and deployment facts without revealing a local path.
+		* @returns every registered namespace in registration order.
+		*/
+		remoteDescribe() {
+			return {
+				writable: this.writable,
+				hasDocument: this.ownedDocumentPath() !== void 0,
+				namespaces: this.describe({ redactSecrets: true }).map(remoteNamespaceView)
+			};
+		}
+		/**
+		* Prepare and open only the document owned by this provider.
+		* @param signal - transport cancellation, including the native command.
+		* @returns confirmation of the editor handoff; cancellation rejects.
+		*/
+		async remoteOpenDocument(signal) {
+			const checkCancellation = () => {
+				if (signal.aborted) throw new TypertLookupFailure({
+					code: "cancelled",
+					message: "settings document open was aborted",
+					details: {}
+				});
+			};
+			const fail = (message) => new TypertLookupFailure({
+				code: "internal",
+				message,
+				details: {}
+			});
+			checkCancellation();
+			const documentPath = this.ownedDocumentPath();
+			if (documentPath === void 0) throw fail("settings provider has no local document to open");
+			let preparedPath;
+			try {
+				preparedPath = await this.prepareDocument();
+			} catch {
+				checkCancellation();
+				throw fail("settings document preparation failed");
+			}
+			checkCancellation();
+			if (preparedPath !== documentPath || this.ownedDocumentPath() !== documentPath) throw fail("settings provider did not prepare its owned local document");
+			try {
+				await this.openDocumentInNativeEditor(documentPath, signal);
+			} catch {
+				checkCancellation();
+				throw fail("settings document open failed");
+			}
+			checkCancellation();
+			return { opened: true };
+		}
+		/**
+		* Merge fields without reconstructing a redacted section.
+		* @param ns - namespace to update.
+		* @param patch - JSON fields to merge.
+		* @param expectedRevision - revision read by the caller.
+		* @returns the updated redacted namespace.
+		*/
+		remoteUpdate(ns, patch, expectedRevision) {
+			return this.remoteWrite(ns, (namespace) => this.update(namespace, patch, expectedRevision));
+		}
+		/**
+		* Replace the whole user layer, removing omitted overrides.
+		* @param ns - namespace to replace.
+		* @param section - complete new user layer, not a redacted readback.
+		* @param expectedRevision - revision read by the caller.
+		* @returns the updated redacted namespace.
+		*/
+		remoteReplace(ns, section, expectedRevision) {
+			return this.remoteWrite(ns, (namespace) => this.replace(namespace, section, expectedRevision));
+		}
+		/**
+		* Apply ordered edits while preserving untouched hidden fields.
+		* @param ns - namespace to mutate.
+		* @param ops - path-addressed JSON edits.
+		* @param expectedRevision - revision read by the caller.
+		* @returns the updated redacted namespace.
+		*/
+		remoteMutate(ns, ops, expectedRevision) {
+			return this.remoteWrite(ns, (namespace) => this.mutate(namespace, ops, expectedRevision));
+		}
+		async remoteWrite(ns, write) {
+			let namespace;
+			try {
+				namespace = settingsNamespace(ns);
+				if ([...this.remoteProtectedNamespaces.values()].some((namespaces) => namespaces.has(namespace))) throw new Error("namespace writes belong to its domain transaction");
+				await write(namespace);
+			} catch (error) {
+				if (error instanceof SettingsConflictError) throw new TypertLookupFailure({
+					code: "settings-conflict",
+					message: error.message,
+					details: {
+						ns,
+						expected: error.expected,
+						actual: error.actual
+					}
+				});
+				throw new TypertLookupFailure({
+					code: "settings-rejected",
+					message: `settings write for "${ns}" was rejected`,
+					details: { ns }
+				});
+			}
+			const descriptor = this.describe({ redactSecrets: true }).find((candidate) => candidate.ns === namespace);
+			if (descriptor === void 0) throw new TypertLookupFailure({
+				code: "internal",
+				message: "settings write did not complete",
+				details: {}
+			});
+			return remoteNamespaceView(descriptor);
+		}
+		ownedDocumentPath() {
+			const path = this.documentPath;
+			return path !== void 0 && isAbsolute(path) ? path : void 0;
+		}
+		/**
+		* Hand the provider-owned file to a native text editor, without a shell.
+		* @param path - absolute provider document path.
+		* @param signal - caller lifetime.
+		* @returns completion of the native handoff command.
+		*/
+		openDocumentInNativeEditor(path, signal) {
+			return openNativeTextFile(path, signal);
+		}
+		/**
+		* Reserve generic Remote writes for namespaces with a domain transaction owner.
+		* @param namespaces - this calling fiber's complete protected set; other owners retain their reservations.
+		*/
+		setRemoteProtectedNamespaces(namespaces) {
+			const owner = this.ctx.fiber;
+			if (!this.remoteProtectedNamespaces.has(owner)) this.ctx.effect(() => () => {
+				this.remoteProtectedNamespaces.delete(owner);
+			}, "settings.remote-domain-protection");
+			this.remoteProtectedNamespaces.set(owner, new Set(namespaces));
+		}
+		/**
+		* Wait for the owner's callbacks for an exact persisted revision.
+		* @param ns - registered namespace.
+		* @param revision - exact revision to observe; superseded revisions reject.
+		* @returns whether every owner callback accepted the revision, not merely whether it persisted.
+		*/
+		async settle(ns, revision) {
+			const registration = this.registrations.get(ns);
+			if (registration === void 0 || !registration.active) throw new Error(`settings namespace "${ns}" is not registered`);
+			if (registration.revision !== revision) throw new SettingsConflictError(ns, revision, registration.revision);
+			const accepted = await registration.settlement;
+			if (this.registrations.get(ns) !== registration || !isRegistrationActive(registration)) throw new Error(`settings namespace "${ns}" was disposed while revision ${String(revision)} settled`);
+			if (registration.revision !== revision) throw new SettingsConflictError(ns, revision, registration.revision);
+			return accepted;
+		}
+		/**
+		* Read one registered namespace's resolved value.
+		* @param ns - the namespace to read.
+		* @returns the resolved value, or `undefined` while unregistered.
+		*/
+		get(ns) {
+			return this.registrations.get(ns)?.resolved;
+		}
+		/**
+		* Merge a patch into one registered namespace's user layer, validate the
+		* resolved candidate, persist through the provider, then commit and emit.
+		* A validation failure rejects before anything is persisted. Writes to one
+		* namespace are serialized: concurrent updates apply in call order, each
+		* merging over the previous write's committed section.
+		* @param ns - the registered namespace to update.
+		* @param patch - plain-object patch over the user section.
+		* @param expectedRevision - the descriptor `revision` the caller read; a
+		*   namespace that moved past it rejects with {@link SettingsConflictError}.
+		*/
+		async update(ns, patch, expectedRevision) {
+			return this.write(ns, patch, "merge", expectedRevision);
+		}
+		/**
+		* Replace one registered namespace's user section wholesale, validate,
+		* persist, then commit and emit. Keys absent from `section` fall back to the
+		* composition `base` and schema defaults — this is the removal/reset path a
+		* merge-only patch cannot express (`replace({})` re-inherits everything).
+		* @param ns - the registered namespace to replace.
+		* @param section - the complete next user section.
+		* @param expectedRevision - the descriptor `revision` the caller read; a
+		*   namespace that moved past it rejects with {@link SettingsConflictError}.
+		*/
+		async replace(ns, section, expectedRevision) {
+			return this.write(ns, section, "replace", expectedRevision);
+		}
+		/**
+		* Apply path-addressed edits to one registered namespace's user section,
+		* validate, persist, then commit and emit. The ops are applied to the
+		* section as it stands when the write reaches the front of the queue, so a
+		* caller never has to restate fields it did not touch — and, crucially,
+		* cannot delete fields it never saw. This is the write path for any caller
+		* holding a redacted view; `replace` remains the wholesale reset.
+		* @param ns - the registered namespace to edit.
+		* @param ops - ordered path edits; later ops observe earlier ones.
+		* @param expectedRevision - the descriptor `revision` the caller read; a
+		*   namespace that moved past it rejects with {@link SettingsConflictError}.
+		*/
+		async mutate(ns, ops, expectedRevision) {
+			return this.write(ns, ops, "mutate", expectedRevision);
+		}
+		/**
+		* Validate a mutation and locate its secrets before a domain owner journals it.
+		* @param ns - registered namespace.
+		* @param ops - proposed ordered edits; nothing is persisted.
+		* @returns secret positions in the resolved candidate.
+		*/
+		previewMutation(ns, ops) {
+			const registration = this.registrations.get(ns);
+			if (registration === void 0 || !registration.active) throw new Error(`settings namespace "${ns}" is not registered`);
+			const edits = cloneJsonShaped({ ops }, (label, path) => /* @__PURE__ */ new TypeError(`settings mutate for "${ns}" must contain only JSON-compatible data (found ${label} at ${path})`))["ops"];
+			validateSettingsPathOps(ns, edits);
+			const section = edits.reduce(applyPathOp, this.section(ns) ?? {});
+			const next = this.resolve(registration.schema, registration.base, section, registration.validate);
+			registration.validateWrite?.(next);
+			return { secrets: (registration.redact ?? ((value) => redactSecrets(registration.schema, value)))(next).secrets };
+		}
+		/** Validate a write, then queue it on the namespace's serialized write chain. */
+		write(ns, input, mode, expectedRevision) {
+			const verb = mode === "merge" ? "update" : mode === "replace" ? "replace" : "mutate";
+			const registration = this.registrations.get(ns);
+			if (registration === void 0 || !registration.active) throw new Error(`settings namespace "${ns}" is not registered`);
+			if (this.isStopped()) throw new Error(`settings service is disposed: "${ns}" cannot be written`);
+			if (!this.writable) throw new Error(`settings provider is read-only: "${ns}" cannot be updated in-process`);
+			if (expectedRevision !== void 0 && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) throw new TypeError("settings expectedRevision must be a non-negative safe integer");
+			let payload;
+			if (mode === "mutate") payload = { ops: input };
+			else {
+				if (!isPlainObject(input)) throw new TypeError(`settings ${verb} for "${ns}" must be a plain object`);
+				payload = input;
+			}
+			const snapshot = cloneJsonShaped(payload, (label, path) => /* @__PURE__ */ new TypeError(`settings ${verb} for "${ns}" must contain only JSON-compatible data (found ${label} at ${path})`));
+			let edits = [];
+			if (mode === "mutate") {
+				const ops = snapshot["ops"];
+				validateSettingsPathOps(ns, ops);
+				edits = ops;
+			}
+			const run = (this.writeQueues.get(ns) ?? Promise.resolve()).catch(() => void 0).then(async () => {
+				if (this.isStopped()) throw new Error(`settings service was disposed before the queued "${ns}" ${verb} ran`);
+				if (!registration.active || this.registrations.get(ns) !== registration) throw new Error(`settings namespace "${ns}" registration was disposed before the queued ${verb} ran`);
+				const current = this.section(ns) ?? {};
+				if (expectedRevision !== void 0 && expectedRevision !== registration.revision) throw new SettingsConflictError(ns, expectedRevision, registration.revision);
+				const section = mode === "merge" ? mergeLayers(current, snapshot) : mode === "replace" ? snapshot : edits.reduce(applyPathOp, current);
+				const next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate));
+				registration.validateWrite?.(next);
+				if (registration.revision === Number.MAX_SAFE_INTEGER && !deepEqualJson(current, section)) throw new RangeError(`settings namespace "${ns}" revision space is exhausted`);
+				await this.persist(ns, section);
+				this.document[ns] = section;
+				if (isRegistrationActive(registration) && this.registrations.get(ns) === registration && !this.isStopped()) {
+					const documentChanged = this.bumpRevision(registration, current, section);
+					this.commit(registration, next, "update", documentChanged);
+				}
+			});
+			this.writeQueues.set(ns, run);
+			return run;
+		}
+		/**
+		* Provider hook: commit a complete raw document observed in storage. Each
+		* registered namespace re-resolves; an invalid section keeps that
+		* namespace's last good value and warns, other namespaces still commit.
+		* @param doc - the detached raw document (unregistered sections preserved).
+		* @param source - change origin; defaults to `provider`.
+		*/
+		publish(doc, source = "provider") {
+			const before = /* @__PURE__ */ new Map();
+			for (const registration of this.registrations.values()) try {
+				before.set(registration.ns, this.section(registration.ns));
+			} catch {
+				before.set(registration.ns, void 0);
+			}
+			this.document = doc;
+			for (const registration of this.registrations.values()) {
+				if (!registration.active || this.isStopped()) continue;
+				let next;
+				try {
+					next = deepFreeze(this.resolve(registration.schema, registration.base, this.section(registration.ns), registration.validate));
+				} catch (error) {
+					this.ctx.logger.warn("settings: keeping last good \"%s\" after invalid stored section", registration.ns);
+					this.ctx.logger.warn(error);
+					continue;
+				}
+				const documentChanged = this.bumpRevision(registration, before.get(registration.ns), this.section(registration.ns));
+				this.commit(registration, next, source, documentChanged);
+			}
+		}
+		/** Read one namespace's raw user section, rejecting non-object sections. */
+		section(ns) {
+			const section = this.document[ns];
+			if (section === void 0) return void 0;
+			if (!isPlainObject(section)) throw new TypeError(`settings section "${ns}" must be an object of keys`);
+			return section;
+		}
+		/** Resolve one namespace value: schema defaults, then `base`, then the user layer. */
+		resolve(schema, base, section, validate) {
+			const value = schema(mergeLayers(base, section));
+			validate?.(value);
+			return value;
+		}
+		/**
+		* Bind settlement before any commit notification can re-enter settle().
+		* Raw changes advance the revision even when the resolved value is unchanged.
+		*/
+		bumpRevision(registration, before, after) {
+			if (deepEqualJson(before, after)) return false;
+			if (registration.revision === Number.MAX_SAFE_INTEGER) throw new RangeError(`settings namespace "${registration.ns}" revision space is exhausted`);
+			registration.revision += 1;
+			const settlement = Promise.withResolvers();
+			registration.settlement = settlement.promise;
+			registration.settlementResolver = settlement.resolve;
+			return true;
+		}
+		/** Contained fan-out of `settings/document-updated`, mirroring {@link commit}'s. */
+		emitDocumentUpdated(ns, revision) {
+			const registration = this.registrations.get(ns);
+			let invariantFailure;
+			const args = [
+				"settings/document-updated",
+				ns,
+				revision
+			];
+			for (const listener of this.ctx.events.dispatch("emit", args)) {
+				if (this.registrations.get(ns) !== registration || registration?.revision !== revision || !registration.active) break;
+				try {
+					const returned = listener(ns, revision);
+					if (returned != null && typeof returned.then === "function") Promise.resolve(returned).then(void 0, (error) => {
+						this.warnListenerFailure(ns, error);
+					});
+				} catch (error) {
+					if (error?.code === "INVARIANT") {
+						invariantFailure ??= error;
+						continue;
+					}
+					this.warnListenerFailure(ns, error);
+				}
+			}
+			if (invariantFailure !== void 0) throw invariantFailure;
+		}
+		/** Commit a resolved value when changed: swap, notify watchers, emit the event. */
+		commit(registration, next, source, documentChanged) {
+			const revision = registration.revision;
+			const resolveSettlement = registration.settlementResolver;
+			delete registration.settlementResolver;
+			const prev = registration.resolved;
+			if (deepEqualJson(next, prev)) {
+				resolveSettlement?.(true);
+				if (documentChanged) this.emitDocumentUpdated(registration.ns, revision);
+				return;
+			}
+			registration.resolved = next;
+			const outcomes = [];
+			for (const watcher of [...registration.watchers]) {
+				if (!watcher.active) continue;
+				const outcome = watcher.tail.then(() => {
+					if (!watcher.active || !registration.active || this.isStopped()) return;
+					return watcherExecution.run({
+						registration,
+						watcher
+					}, () => watcher.callback(next, prev));
+				}).then(() => true, (error) => {
+					this.warnWatcherFailure(registration.ns, error);
+					return false;
+				});
+				outcomes.push(outcome);
+				const segment = outcome.then(() => void 0);
+				watcher.tail = segment;
+				this.pendingTails.add(segment);
+				segment.then(() => this.pendingTails.delete(segment));
+			}
+			Promise.all(outcomes).then((results) => resolveSettlement?.(results.every(Boolean)));
+			if (documentChanged) this.emitDocumentUpdated(registration.ns, revision);
+			let invariantFailure;
+			const args = [
+				"settings/updated",
+				registration.ns,
+				next,
+				prev,
+				source
+			];
+			for (const listener of this.ctx.events.dispatch("emit", args)) {
+				if (this.registrations.get(registration.ns) !== registration || !registration.active || registration.resolved !== next || registration.revision !== revision) break;
+				try {
+					const returned = listener(registration.ns, next, prev, source);
+					if (returned != null && typeof returned.then === "function") Promise.resolve(returned).then(void 0, (error) => {
+						this.warnListenerFailure(registration.ns, error);
+					});
+				} catch (error) {
+					if (error?.code === "INVARIANT") {
+						invariantFailure ??= error;
+						continue;
+					}
+					this.warnListenerFailure(registration.ns, error);
+				}
+			}
+			if (invariantFailure !== void 0) throw invariantFailure;
+		}
+		/** Contained-watcher diagnostic shared by the sync and async failure paths. */
+		warnWatcherFailure(ns, error) {
+			this.ctx.logger.warn("settings: watcher for \"%s\" failed", ns);
+			this.ctx.logger.warn(error);
+		}
+		/** Contained-listener diagnostic shared by the sync and async failure paths. */
+		warnListenerFailure(ns, error) {
+			this.ctx.logger.warn("settings: a settings/updated listener for \"%s\" failed", ns);
+			this.ctx.logger.warn(error);
+		}
+	};
+})();
 /**
 * Project an already-redacted descriptor as detached, lossless Remote data.
 * @param descriptor - descriptor obtained with secret redaction enabled.
@@ -938,6 +1909,44 @@ function snapshotSettingsJson(value) {
 * ever seeing its value.
 * @module @deepseek-ai/dsh-credentials
 */
+var __runInitializers$1 = function(thisArg, initializers, value) {
+	var useValue = arguments.length > 2;
+	for (var i = 0; i < initializers.length; i++) value = useValue ? initializers[i].call(thisArg, value) : initializers[i].call(thisArg);
+	return useValue ? value : void 0;
+};
+var __esDecorate$1 = function(ctor, descriptorIn, decorators, contextIn, initializers, extraInitializers) {
+	function accept(f) {
+		if (f !== void 0 && typeof f !== "function") throw new TypeError("Function expected");
+		return f;
+	}
+	var kind = contextIn.kind, key = kind === "getter" ? "get" : kind === "setter" ? "set" : "value";
+	var target = !descriptorIn && ctor ? contextIn["static"] ? ctor : ctor.prototype : null;
+	var descriptor = descriptorIn || (target ? Object.getOwnPropertyDescriptor(target, contextIn.name) : {});
+	var _, done = false;
+	for (var i = decorators.length - 1; i >= 0; i--) {
+		var context = {};
+		for (var p in contextIn) context[p] = p === "access" ? {} : contextIn[p];
+		for (var p in contextIn.access) context.access[p] = contextIn.access[p];
+		context.addInitializer = function(f) {
+			if (done) throw new TypeError("Cannot add initializers after decoration has completed");
+			extraInitializers.push(accept(f || null));
+		};
+		var result = (0, decorators[i])(kind === "accessor" ? {
+			get: descriptor.get,
+			set: descriptor.set
+		} : descriptor[key], context);
+		if (kind === "accessor") {
+			if (result === void 0) continue;
+			if (result === null || typeof result !== "object") throw new TypeError("Object expected");
+			if (_ = accept(result.get)) descriptor.get = _;
+			if (_ = accept(result.set)) descriptor.set = _;
+			if (_ = accept(result.init)) initializers.unshift(_);
+		} else if (_ = accept(result)) if (kind === "field") initializers.unshift(_);
+		else descriptor[key] = _;
+	}
+	if (target) Object.defineProperty(target, contextIn.name, descriptor);
+	done = true;
+};
 const REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** Both halves of a {@link CredentialKey}; the `/` between them is what keeps it out of {@link REF_PATTERN}. */
 const KEY_SEGMENT_PATTERN = /^[a-z][a-z0-9-]*$/;
@@ -993,6 +2002,200 @@ function credentialCondition(current) {
 		valueDigest: createHash("sha256").update(current.value).digest("hex"),
 		source: current.source
 	};
+}
+(() => {
+	let _classSuper = TypertRemoteService;
+	let _instanceExtraInitializers = [];
+	let _remoteDescribe_decorators;
+	let _remoteSet_decorators;
+	let _remoteUnset_decorators;
+	return class CredentialProvider extends _classSuper {
+		static {
+			const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
+			_remoteDescribe_decorators = [Remote("describe")];
+			_remoteSet_decorators = [Remote("set")];
+			_remoteUnset_decorators = [Remote("unset")];
+			__esDecorate$1(this, null, _remoteDescribe_decorators, {
+				kind: "method",
+				name: "remoteDescribe",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "remoteDescribe" in obj,
+					get: (obj) => obj.remoteDescribe
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate$1(this, null, _remoteSet_decorators, {
+				kind: "method",
+				name: "remoteSet",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "remoteSet" in obj,
+					get: (obj) => obj.remoteSet
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate$1(this, null, _remoteUnset_decorators, {
+				kind: "method",
+				name: "remoteUnset",
+				static: false,
+				private: false,
+				access: {
+					has: (obj) => "remoteUnset" in obj,
+					get: (obj) => obj.remoteUnset
+				},
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			if (_metadata) Object.defineProperty(this, Symbol.metadata, {
+				enumerable: true,
+				configurable: true,
+				writable: true,
+				value: _metadata
+			});
+		}
+		constructor(ctx) {
+			super(ctx, "credentials");
+			__runInitializers$1(this, _instanceExtraInitializers);
+		}
+		/**
+		* Describe named references without returning any credential value.
+		* There is intentionally no Remote enumeration endpoint: settings schemas
+		* remain the authority that tells a configuration surface which refs exist.
+		* @param refs - credential reference names to describe.
+		* @returns redacted metadata for each requested reference.
+		*/
+		async remoteDescribe(refs) {
+			if (refs.length > 64) throw new TypertLookupFailure({
+				code: "input-invalid",
+				message: "credentials describe accepts at most 64 references",
+				details: { maxRefs: 64 }
+			});
+			const branded = refs.map((name) => {
+				try {
+					return credentialRef(name);
+				} catch (error) {
+					remoteCredentialInputFailure(error, { ref: name });
+				}
+			});
+			const entries = await Promise.all(branded.map(async (ref) => {
+				const name = String(ref);
+				try {
+					const info = await this.describe(ref);
+					return [name, {
+						configured: info.configured,
+						...info.source === void 0 ? {} : { source: info.source },
+						writable: info.writable
+					}];
+				} catch {
+					remoteCredentialRejected({ ref: name });
+				}
+			}));
+			return { credentials: Object.fromEntries(entries) };
+		}
+		/**
+		* Store one write-only credential value through the shared Remote plane.
+		* @param refName - credential reference name to update.
+		* @param value - write-only credential value.
+		* @returns an empty object after the value is stored.
+		*/
+		async remoteSet(refName, value) {
+			let ref;
+			try {
+				ref = credentialRef(refName);
+			} catch (error) {
+				remoteCredentialInputFailure(error, { ref: refName });
+			}
+			if (value.length === 0) remoteCredentialRejected({ ref: refName });
+			try {
+				await this.set(ref, value);
+			} catch {
+				remoteCredentialRejected({ ref: refName });
+			}
+			return {};
+		}
+		/**
+		* Remove one provider-managed credential through the shared Remote plane.
+		* @param refName - credential reference name to remove.
+		* @returns an empty object after the reference is removed.
+		*/
+		async remoteUnset(refName) {
+			let ref;
+			try {
+				ref = credentialRef(refName);
+			} catch (error) {
+				remoteCredentialInputFailure(error, { ref: refName });
+			}
+			try {
+				await this.unset(ref);
+			} catch {
+				remoteCredentialRejected({ ref: refName });
+			}
+			return {};
+		}
+		/**
+		* Fan `credentials/reference-updated` out with contained listener failures: every
+		* listener runs, and a sync throw or async rejection is logged without
+		* changing the committed operation's outcome — except `INVARIANT`-coded
+		* failures, which rethrow after every listener ran (the rethrow reaches the
+		* caller only from synchronous listeners, so invariant checks on this event
+		* must not be async functions). Providers call this only after the write or
+		* reload actually committed, so a broken observer can never make a durable
+		* change look failed.
+		* @param ref - the reference whose stored value changed.
+		*/
+		notifyUpdated(ref) {
+			this.fanOut("credentials/reference-updated", ref);
+		}
+		/**
+		* Fan `credentials/record-updated` out on exactly the terms
+		* {@link notifyUpdated} documents, for the record half of the seam.
+		* @param key - the record whose stored value changed.
+		*/
+		notifyRecordUpdated(key) {
+			this.fanOut("credentials/record-updated", key);
+		}
+		/** The contained dispatch both notifications run through; see {@link notifyUpdated}. */
+		fanOut(event, subject) {
+			let invariantFailure;
+			const args = [event, subject];
+			for (const listener of this.ctx.events.dispatch("emit", args)) try {
+				const returned = listener(subject);
+				if (returned != null && typeof returned.then === "function") Promise.resolve(returned).then(void 0, (error) => {
+					this.warnListenerFailure(event, subject, error);
+				});
+			} catch (error) {
+				if (error?.code === "INVARIANT") {
+					invariantFailure ??= error;
+					continue;
+				}
+				this.warnListenerFailure(event, subject, error);
+			}
+			if (invariantFailure !== void 0) throw invariantFailure;
+		}
+		/** Contained-listener diagnostic shared by the sync and async failure paths. */
+		warnListenerFailure(event, subject, error) {
+			this.ctx.logger.warn("credentials: a %s listener for \"%s\" failed", event, subject);
+			this.ctx.logger.warn(error);
+		}
+	};
+})();
+/** Throw a transport-safe invalid-input failure from credentialRef's guaranteed TypeError. */
+function remoteCredentialInputFailure(error, details) {
+	throw new TypertLookupFailure({
+		code: "input-invalid",
+		message: error.message,
+		details
+	});
+}
+/** Throw a transport-safe provider failure without reflecting a secret-bearing cause. */
+function remoteCredentialRejected(details) {
+	throw new TypertLookupFailure({
+		code: "credential-rejected",
+		message: `credential "${details.ref}" was rejected`,
+		details
+	});
 }
 //#endregion
 //#region ../../llm/llm/src/provider-transaction.ts
@@ -2799,12 +4002,7 @@ function modelDiscoveryEndpointFingerprint(baseURL, api) {
 				const { settingsNs, ...draft } = request;
 				const models = await this.discoverModels(settingsNs, draft, signal);
 				checkCancellation();
-				return { models: models.map((model) => ({
-					id: model.id,
-					...model.name === void 0 ? {} : { name: model.name },
-					...model.contextWindow === void 0 ? {} : { contextWindow: model.contextWindow },
-					...model.maxTokens === void 0 ? {} : { maxTokens: model.maxTokens }
-				})) };
+				return { models };
 			} catch {
 				checkCancellation();
 				throw new TypertRemoteFailure({

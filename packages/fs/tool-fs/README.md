@@ -1,6 +1,13 @@
+---
+description: "The model-facing filesystem tools — read, read_image, write, edit — and their executor."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-fs
 
 English | [中文](README.zh.md)
+
+## Summary
 
 The **model-facing filesystem tools** — `read`, `read_image`, `write`, `edit` — and their **executor**. This is the consumer layer of the filesystem stack: it owns tool names, JSON schemas, argument validation, prompt sections, **read windowing**, and result formatting. It reads/writes/edits through the `ctx.fs` provider contract ([`@deepseek-ai/dsh-fs`](../fs)) **directly**. The freshness/observation policy is contributed by a separate plugin ([`@deepseek-ai/dsh-fs-observation-policy`](../fs-observation-policy)) through the `fs/*` event gate; the tool is not method-coupled to it. Under a confining provider, the shared sandbox-policy service is required for per-session execution and the tool exposes escalation for filesystem mutations.
 
@@ -15,6 +22,16 @@ await ctx.plugin(ToolFs)                                  // this package — re
 `@deepseek-ai/dsh-fs-observation-policy` is **optional**: omit it and the tools run against the bare provider (unconditional write/overwrite/edit, no observed-state). A deployment that loads these tools is expected to also load it, so the behavior is read-before-write/edit.
 
 `read_image` registers only while a durable `ctx.attachments` service is mounted. Execution additionally requires the exact routed model to declare `image` input, resolved through `ctx.llm.resolveModelInfo` from the session's latest request header and then from agent options.
+
+## Table of Contents
+
+- [Config](#config)
+- [Tools (schemas per the filesystem tool schemas Agent Note)](#tools-schemas-per-the-filesystem-tool-schemas-agent-note)
+- [The tool is the executor; policy is an event gate](#the-tool-is-the-executor-policy-is-an-event-gate)
+- [fs/observed is fire-and-forget](#fsobserved-is-fire-and-forget)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config
 
@@ -173,3 +190,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 - **No inline image preview on the tool-result card** — UI surfaces render the image result generically (the durable reference, not pixels); inline rendering is deferred to the UI packages.
 - **No attachment-region tool** — an agent may crop an image through other available tools when it has a filesystem path. A pasted or dragged image without a path cannot be re-read at a higher resolution.
 - **No timeout surface** — `read`/`write`/`edit` take no timeout argument and declare no `timeout-policy` budget; cancellation rides `exec.signal` only ([provider rationale](../README.md#no-timeouts-on-file-io)).
+
+### Dev Note
+
+None.

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
+import { restoreReleasedV3Artifact } from '@deepseek-ai/dsh-session-format-v2-to-v3'
 import type { SessionFormatEvent } from '@deepseek-ai/dsh-session-format'
 import { sessionFormatCatalog } from '../src/index.ts'
 
@@ -37,7 +39,7 @@ describe('first-party Session format catalog', () => {
 
     const v1Header = { ...header, version: 1 }
     const restore = sessionFormatCatalog.createRestore(v1Header, {
-      recovery: 'strict', validation: 'current',
+      recovery: 'strict', validation: 'transformed',
     })
     restore.decodeRow({ type: 'turn/start', seq: 0, time: 2, data: { turn: 1 } })
     expect(restore.finish()).toMatchObject({
@@ -45,16 +47,16 @@ describe('first-party Session format catalog', () => {
     })
   })
 
-  it('restores the installed current vocabulary without freezing ordinary payload additions', () => {
+  it('validates offline target vocabulary without freezing ordinary payload additions', () => {
     const header = {
       type: 'session', version: 3, id: 'current-growth', createdAt: 1, isSeeded: false, delegationDepth: 0,
     }
     const restore = (rows: readonly unknown[]) => {
       const current = sessionFormatCatalog.createRestore(header, {
-        recovery: 'strict', validation: 'current',
+        recovery: 'strict', validation: 'transformed',
       })
       for (const row of rows) current.decodeRow(row)
-      return current.finish()
+      return restoreReleasedV3Artifact(current.finish(), KNOWN_SESSION_EVENT_TYPES)
     }
     const extended = restore([{
       type: 'turn/start', seq: 0, time: 1, data: { turn: 1, postReleaseMember: true },
@@ -81,7 +83,7 @@ describe('first-party Session format catalog', () => {
         type: 'session', version, id: 'seed-chain', createdAt: 1,
         parentSession: 'parent', seedLength, delegationDepth: 0,
       }
-      const restore = sessionFormatCatalog.createRestore(sourceHeader, { recovery: 'strict', validation: 'current' })
+      const restore = sessionFormatCatalog.createRestore(sourceHeader, { recovery: 'strict', validation: 'transformed' })
       if (seedLength > 0) {
         restore.decodeRow({ type: 'feedback/record', seq: 0, time: 1, data: { text: 'inherited' } })
       }
@@ -104,7 +106,7 @@ describe('first-party Session format catalog', () => {
       ...(isSeeded ? [{ type: 'session/end-seed', seq: 3, time: 4, data: { inherited: true } }] : []),
     ]
     const before = JSON.stringify({ header, rows })
-    const restore = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'current' })
+    const restore = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'transformed' })
     for (const row of rows) restore.decodeRow(row)
     expect(restore.finish()).toEqual({
       header: { version: 3, id: 'v2-identity', createdAt: 1, isSeeded, delegationDepth: 0 },
@@ -168,7 +170,7 @@ describe('first-party Session format catalog', () => {
       { type: 'turn/end', seq: 9, time: 17, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
     const before = JSON.stringify({ sourceHeader, rows })
-    const restore = sessionFormatCatalog.createRestore(sourceHeader, { recovery: 'strict', validation: 'current' })
+    const restore = sessionFormatCatalog.createRestore(sourceHeader, { recovery: 'strict', validation: 'transformed' })
     for (const row of rows) restore.decodeRow(row)
     const artifact = restore.finish()
     const renamedMessage = (id: string) => ({ ...message(id), source: { kind: 'plugin', plugin: 'tools-ptc' } })
@@ -190,9 +192,9 @@ describe('first-party Session format catalog', () => {
     const currentHeader = deepFreeze(sessionFormatCatalog.encodeCurrentHeader(artifact.header, artifact.inheritedEventCount))
     const currentRows = deepFreeze(artifact.events.map(event => sessionFormatCatalog.encodeCurrentEvent(event)))
     const encodedBefore = JSON.stringify({ currentHeader, currentRows })
-    const reopened = sessionFormatCatalog.createRestore(currentHeader, { recovery: 'strict', validation: 'current' })
+    const reopened = sessionFormatCatalog.createRestore(currentHeader, { recovery: 'strict', validation: 'transformed' })
     for (const row of currentRows) reopened.decodeRow(row)
-    expect(reopened.finish()).toEqual(artifact)
+    expect(restoreReleasedV3Artifact(reopened.finish(), KNOWN_SESSION_EVENT_TYPES)).toEqual(artifact)
     expect(JSON.stringify({ sourceHeader, rows })).toBe(before)
     expect(JSON.stringify({ currentHeader, currentRows })).toBe(encodedBefore)
   })
@@ -206,7 +208,11 @@ describe('first-party Session format catalog', () => {
       const ignorable = deepFreeze({ ...required, ignorable: true, data: { text: 'tools-code-mode', source: { kind: 'plugin', plugin: 'tools-code-mode' } } })
       const accepted = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation })
       accepted.decodeRow(ignorable)
-      expect(accepted.finish().events).toEqual([ignorable])
+      if (validation === 'current') {
+        expect(() => accepted.finish()).toThrow(/installed Session format is v0, got v3/)
+      } else {
+        expect(restoreReleasedV3Artifact(accepted.finish(), KNOWN_SESSION_EVENT_TYPES).events).toEqual([ignorable])
+      }
     }
   })
 
@@ -231,6 +237,10 @@ describe('first-party Session format catalog', () => {
     ])
     const restore = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation })
     for (const row of rows) restore.decodeRow(row)
+    if (validation === 'current') {
+      expect(() => restore.finish()).toThrow(/installed Session format is v0, got v3/)
+      return
+    }
     expect(restore.finish().events).toEqual([
       rows[0], { ...rows[1], type: 'tool/ptc-dispatch-start' }, { ...rows[2], type: 'tool/ptc-dispatch' },
     ])
@@ -250,7 +260,7 @@ describe('first-party Session format catalog', () => {
   it('validates complete relationships after streaming migration', () => {
     const stream = sessionFormatCatalog.createRestore({
       type: 'session', version: 1, id: 'invalid-stream', createdAt: 1, delegationDepth: 0,
-    }, { recovery: 'strict', validation: 'current' })
+    }, { recovery: 'strict', validation: 'transformed' })
     stream.decodeRow({ type: 'step/start', seq: 0, time: 2, data: { turn: 1, step: 1 } })
 
     expect(() => stream.finish()).toThrow(/open turn/)

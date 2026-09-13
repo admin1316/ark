@@ -1536,7 +1536,7 @@ function modelInfo(provider, model) {
 		id: model.id,
 		name: model.name ?? model.id,
 		...model.description === void 0 ? {} : { description: model.description },
-		inputModalities: model.inputModalities ?? ["text"]
+		inputModalities: model.inputModalities ?? ["text", "image"]
 	};
 }
 function providerRetryAfterMs(value) {
@@ -1618,7 +1618,7 @@ var DeepSeekAdapter = class extends LlmAdapter {
 				provider,
 				id: model,
 				name: model,
-				inputModalities: ["text"]
+				inputModalities: ["text", "image"]
 			} : modelInfo(provider, configured),
 			context: { contextWindow },
 			defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
@@ -1651,7 +1651,6 @@ var DeepSeekAdapter = class extends LlmAdapter {
 			const hasImages = options.messages.some((message) => contentHasImage(message.content));
 			let attachments;
 			if (hasImages) {
-				if (connection.models.find((entry) => entry.id === options.model)?.inputModalities?.includes("image") !== true) throw new LlmError(`DeepSeek model "${options.model}" does not accept image input.`, "UNSUPPORTED_CONTENT");
 				attachments = this.config.resolveAttachments?.();
 				if (attachments === void 0) throw new LlmError("DeepSeek image conversion requires the durable attachment service.", "UNSUPPORTED_CONTENT");
 			}
@@ -1912,7 +1911,7 @@ const catalogModel = z.object({
 	description: z.string(),
 	contextWindow: z.number().step(1).min(1),
 	maxTokens: z.number().step(1).min(1),
-	inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(["text"]),
+	inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(["text", "image"]),
 	imagePixelBudget: z.union([z.number().step(1).min(1), "low"]),
 	imageMaxBytes: z.number().step(1).min(1)
 });
@@ -1955,7 +1954,7 @@ function resolveModels(models) {
 		if (model.name !== void 0 && model.name.length === 0) throw new Error(`llm-deepseek: catalog model "${model.id}" has an empty name`);
 		if (model.contextWindow !== void 0 && (!Number.isInteger(model.contextWindow) || model.contextWindow <= 0)) throw new Error(`llm-deepseek: catalog model "${model.id}" contextWindow must be a positive integer`);
 		if (model.maxTokens !== void 0 && (!Number.isInteger(model.maxTokens) || model.maxTokens <= 0)) throw new Error(`llm-deepseek: catalog model "${model.id}" maxTokens must be a positive integer`);
-		const inputModalities = model.inputModalities ?? ["text"];
+		const inputModalities = model.inputModalities ?? ["text", "image"];
 		if (inputModalities.length === 0) throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not be empty`);
 		if (inputModalities.some((modality) => !MODEL_MODALITIES.includes(modality))) throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must contain only "text" and "image"`);
 		if (new Set(inputModalities).size !== inputModalities.length) throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not contain duplicates`);

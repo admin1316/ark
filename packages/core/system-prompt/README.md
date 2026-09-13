@@ -1,8 +1,23 @@
+---
+description: "System prompt assembly registry."
+kind: "package-reference"
+---
+
 # dsh-system-prompt
 
 English | [中文](README.zh.md)
 
+## Summary
+
 System prompt assembly registry. Plugins contribute ordered sections, tool schemas, and named variables. The loop assembles once per step and renders the result as the complete model prompt. This plugin owns the static harness identity and global deployment persona; an agent-scoped persona shadows the global default.
+
+## Table of Contents
+
+- [Config](#config)
+- [Service: SystemPrompt (ctx key: systemPrompt)](#service-systemprompt-ctx-key-systemprompt)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config
 
@@ -88,3 +103,7 @@ Prefix-stable while the visible schema set, rendering, and order are unchanged. 
 - **No escape syntax for literal `{{…}}` braces** — every complete group is interpolated against registered variables; an escape is deferred until a real prompt needs one.
 - **`toolOrder` misconfiguration surfaces at prompt assembly (the first turn), not at boot** — only shape violations throw at config load.
 - **Sections sharing an `order` value tie-break by registration order** — a plugin-load artifact; determinism relies on the distinct-order band convention, unlike the canonicalized tool order.
+
+### Dev Note
+
+None.

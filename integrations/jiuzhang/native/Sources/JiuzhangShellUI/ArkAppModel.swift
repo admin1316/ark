@@ -466,78 +466,128 @@ private struct ArkHistoryFoldOwner: Equatable {
 /// Pure history fold built away from the main actor. Session switching only
 /// installs the completed snapshot, so sorting and four projection rebuilds
 /// never block AppKit input or the first visible frame.
-private struct ArkHistoryFold: Sendable {
+struct ArkHistoryFold: Sendable {
   private(set) var events: [ArkHistoryEvent]
   private(set) var turnProjection: ArkChatTurnProjection
-  private(set) var turnUsageByTurn: [Int: ArkChatTurnUsage]
+  private(set) var turnUsageProjection: ArkChatTurnUsageProjection.Accumulator
+  var turnUsageByTurn: [Int: ArkChatTurnUsage] { turnUsageProjection.completed }
   private(set) var messages: ArkMessageProjection
   private(set) var tools: ArkToolProjection
   private(set) var producedFiles: ArkProducedFilesProjection
   private(set) var statuses: ArkChatStatusProjection
-  private let language: ArkLanguagePreference
+
+  init(events: [ArkHistoryEvent], messages: ArkMessageProjection, tools: ArkToolProjection,
+       producedFiles: ArkProducedFilesProjection, statuses: ArkChatStatusProjection,
+       turns: ArkChatTurnProjection, usage: ArkChatTurnUsageProjection.Accumulator) {
+    self.events = events
+    self.messages = messages
+    self.tools = tools
+    self.producedFiles = producedFiles
+    self.statuses = statuses
+    turnProjection = turns
+    turnUsageProjection = usage
+  }
+
+  mutating func installColdSeed(_ seed: ArkHistoryReadingSeed, snapshot: ArkHistoryReadingSnapshot, replayedTurns: Set<Int>) throws {
+    tools = seed.tools
+    producedFiles = seed.producedFiles
+    statuses = seed.statuses
+    turnProjection = seed.turns
+    let historyRows = snapshot.messages.filter { $0.turn.map { !replayedTurns.contains($0) } ?? true }
+    let canonicalIDs = Set(snapshot.records.compactMap(\.canonicalEventSequence))
+    try messages.installHistoricalRows(historyRows, canonicalIDs: canonicalIDs)
+  }
 
   init(events source: [ArkHistoryEvent], language: ArkLanguagePreference) {
     var known = Set<Int>()
     let ordered = source
       .filter { known.insert($0.id).inserted }
       .sorted { $0.id < $1.id }
-    let completeTurnProjection = ArkChatTurnProjection(events: ordered)
+    // Raw retention and semantic state have different lifetimes. A single active
+    // answer can span more than the raw ring; fold every verified input before
+    // discarding raw events so its text and turn boundaries remain intact.
     events = Array(ordered.suffix(50_000))
-    turnProjection = ArkChatTurnProjection(events: events)
-    turnProjection.preserveLatestStartedBoundary(
-      turn: completeTurnProjection.latestStartedTurn,
-      sequence: completeTurnProjection.latestStartedSequence
-    )
-    turnUsageByTurn = ArkChatTurnUsageProjection.projectAll(events: events)
-    messages = ArkMessageProjection(events: events)
-    tools = ArkToolProjection(events: events)
-    producedFiles = ArkProducedFilesProjection(events: events)
-    statuses = ArkChatStatusProjection(events: events, language: language)
-    self.language = language
-  }
-
-  mutating func preserveLatestStartedBoundary(turn: Int?, sequence: Int?) {
-    turnProjection.preserveLatestStartedBoundary(turn: turn, sequence: sequence)
+    turnProjection = ArkChatTurnProjection(events: ordered)
+    turnUsageProjection = ArkChatTurnUsageProjection.Accumulator(events: ordered)
+    messages = ArkMessageProjection(events: ordered)
+    tools = ArkToolProjection(events: ordered)
+    producedFiles = ArkProducedFilesProjection(events: ordered)
+    statuses = ArkChatStatusProjection(events: ordered, language: language)
   }
 
   mutating func appendLive(_ values: [ArkHistoryEvent]) {
-    var known = Set(events.map(\.id))
-    var completedTurns = Set<Int>()
-    for event in values.sorted(by: { $0.id < $1.id }) where known.insert(event.id).inserted {
+    let originalCount = events.count
+    for event in values.sorted(by: { $0.id < $1.id }) {
+      let through = events.last?.id ?? -1
+      guard event.id > through else { continue }
+      // A frame beyond a hole stays pending for the existing resync owner. The
+      // raw ring's last sequence remains the semantic fold's verified head.
+      guard event.id == through + 1 else { break }
       events.append(event)
       turnProjection.append(event)
-      if event.type == "turn/end",
-         let turn = ArkChatTurnUsageProjection.turn(in: event) {
-        completedTurns.insert(turn)
-      }
-      _ = messages.append(event)
+      turnUsageProjection.append(event)
       tools.append(event)
       producedFiles.append(event)
       statuses.append(event)
     }
+    messages.append(contentsOf: Array(events.dropFirst(originalCount)))
     if events.count > 50_000 {
-      let preservedTurn = turnProjection.latestStartedTurn
-      let preservedSequence = turnProjection.latestStartedSequence
-      self = ArkHistoryFold(events: Array(events.suffix(50_000)), language: language)
-      preserveLatestStartedBoundary(turn: preservedTurn, sequence: preservedSequence)
-    } else {
-      for turn in completedTurns {
-        let usage = ArkChatTurnUsageProjection.project(events: events, turn: turn)
-        if let usage { turnUsageByTurn[turn] = usage }
-        else { turnUsageByTurn.removeValue(forKey: turn) }
-      }
+      events.removeFirst(events.count - 50_000)
     }
   }
 }
 
-private actor ArkHistoryFoldWorker {
+actor ArkHistoryFoldWorker {
   static let shared = ArkHistoryFoldWorker()
 
-  func fold(events: [ArkHistoryEvent], language: ArkLanguagePreference) -> ArkHistoryFold? {
-    guard !Task.isCancelled else { return nil }
-    let fold = ArkHistoryFold(events: events, language: language)
-    guard !Task.isCancelled else { return nil }
-    return fold
+  /// Replay forward through a fixed source cut while retaining just one raw
+  /// page. A byte-clipped backward response shrinks the proposed forward span;
+  /// it never advances over the missing beginning of an active message.
+  func recover(client: ArkAPIClient, address: ArkHistoryAddress, cut: ArkHistoryCut,
+               checkpoint: ArkHistoryFold?, seed: ArkHistoryReadingSeed?,
+               snapshot: ArkHistoryReadingSnapshot?, language: ArkLanguagePreference) async throws -> (fold: ArkHistoryFold, touchedTurns: Set<Int>) {
+    guard checkpoint != nil || (seed != nil && snapshot != nil) else {
+      throw ArkAPIError(message: "冷历史恢复缺少同源种子", code: "invalid-history-response")
+    }
+    let activeContexts = seed?.turnContexts.filter { $0.endSequence == nil } ?? []
+    let activeRecords = snapshot?.records.filter { $0.state == .active } ?? []
+    let activeTurns = Set(activeContexts.map(\.turn) + activeRecords.compactMap(\.turn))
+    let coldStart = activeContexts.map { $0.startSequence ?? 0 }.min()
+      ?? (activeRecords.isEmpty ? cut.throughSequence + 1 : 0)
+    var fold = checkpoint
+    var next = checkpoint.map { ($0.events.last?.id ?? -1) + 1 } ?? coldStart
+    var span = 2_048
+    var touchedTurns = Set<Int>()
+    while next <= cut.throughSequence {
+      try Task.checkCancellation()
+      let end = min(cut.throughSequence, next + span - 1)
+      let response = try await address.raw(client: client, cut: cut, before: end + 1, maximum: 2_048)
+      guard let first = response.page.events.first?.id else { throw ArkAPIError(message: "固定历史缺少恢复事件", code: "invalid-history-response") }
+      if first > next {
+        guard span > 1 else { throw ArkAPIError(message: "单条历史事件无法完整读取", code: "invalid-history-response") }
+        span = max(1, span / 2)
+        continue
+      }
+      let incoming = response.page.events.filter { $0.id >= next }
+      guard incoming.first?.id == next, incoming.last?.id == end else {
+        throw ArkAPIError(message: "固定历史恢复范围不连续", code: "invalid-history-response")
+      }
+      touchedTurns.formUnion(incoming.compactMap { ArkChatTurnUsageProjection.turn(in: $0) })
+      if fold == nil { fold = ArkHistoryFold(events: incoming, language: language) }
+      else { fold!.appendLive(incoming) }
+      guard fold?.events.last?.id == end else { throw ArkAPIError(message: "历史投影未到达已验证水位", code: "invalid-history-response") }
+      next = end + 1
+      span = min(2_048, span * 2)
+    }
+    if fold == nil {
+      let tail = try await address.raw(client: client, cut: cut, maximum: 1)
+      fold = ArkHistoryFold(events: tail.page.events, language: language)
+    }
+    if checkpoint == nil { try fold!.installColdSeed(seed!, snapshot: snapshot!, replayedTurns: activeTurns) }
+    // Prove the source is still the same incarnation after the full replay.
+    _ = try await address.raw(client: client, cut: cut, maximum: 1)
+    try Task.checkCancellation()
+    return (fold!, touchedTurns)
   }
 }
 
@@ -557,7 +607,12 @@ private struct ArkConversationSurfaceSnapshot {
   let producedFiles: [ArkProducedFile]
   let chatStatuses: [ArkChatStatus]
   let turnProjection: ArkChatTurnProjection
-  let turnUsageByTurn: [Int: ArkChatTurnUsage]
+  let turnUsageProjection: ArkChatTurnUsageProjection.Accumulator
+  let liveHistoryCut: ArkHistoryCut?
+  let historicalUsageFacts: [Int: ArkChatTurnUsage]
+  let liveHistoryRecords: [Int: ArkSemanticHistoryRecord]
+  let liveHistoryRecordsCut: ArkHistoryCut?
+  let liveHistoryPreviewIDs: Set<Int>
   let feedback: [String: ArkMessageFeedback]
   let feedbackAvailable: Bool
   let sessionProjections: [String: JSONValue]
@@ -622,12 +677,27 @@ public final class ArkAppModel: ObservableObject {
   @Published public private(set) var hasOlderHistory = false
   @Published public private(set) var loadingOlderHistory = false
   @Published public private(set) var historyLoadState: ArkHistoryLoadState = .idle
+  public private(set) var historyReadingSnapshot: ArkHistoryReadingSnapshot?
+  @Published public private(set) var hasNewerHistory = false
+  private var historyReader: ArkHistoryReadingWindow?
+  private var liveHistoryCut: ArkHistoryCut?
+  private var historicalUsageFacts: [Int: ArkChatTurnUsage] = [:]
+  private var liveHistoryRecords: [Int: ArkSemanticHistoryRecord] = [:]
+  private var liveHistoryRecordsCut: ArkHistoryCut?
+  private var liveHistoryPreviewIDs = Set<Int>()
+  public var displayedPreviewMessageIDs: Set<Int> {
+    historyReadingSnapshot?.previewMessageIDs ?? liveHistoryPreviewIDs
+  }
   private var turnProjection = ArkChatTurnProjection()
   public var turnMetricsByTurn: [Int: ArkChatTurnMetrics] { turnProjection.metricsByTurn }
   public var completedTurnIDs: Set<Int> { Set(turnProjection.completedSequenceByTurn.keys) }
+  public var turnTerminalStates: [Int: ArkChatTurnState] { turnProjection.terminalStateByTurn }
   var latestStartedTurn: Int? { turnProjection.latestStartedTurn }
   var latestStartedTurnSequence: Int? { turnProjection.latestStartedSequence }
-  public private(set) var turnUsageByTurn: [Int: ArkChatTurnUsage] = [:]
+  private var turnUsageProjection = ArkChatTurnUsageProjection.Accumulator()
+  public var turnUsageByTurn: [Int: ArkChatTurnUsage] {
+    historicalUsageFacts.merging(turnUsageProjection.completed) { _, live in live }
+  }
   /// 轨迹语义记录的模型层缓存：历史更新时 fold 一次，
   /// Tab 切换/视图重建只读缓存，避免每次切换对全量 events 重折。
   @Published public private(set) var trajectoryRecords: [ArkTrajectorySemanticRecord] = []
@@ -682,8 +752,10 @@ public final class ArkAppModel: ObservableObject {
       persist(selectedSessionID, key: Keys.session)
       guard oldValue != selectedSessionID else { return }
       goalMutationError = nil
+      composerErrorMessage = nil
       resetTrajectoryProjectionState()
       persistComposerDraft(for: oldValue)
+      switchComposerAttachments(from: oldValue, to: selectedSessionID)
       installComposerDraft(Self.loadComposerDraft(defaults: defaults, sessionID: selectedSessionID))
       invalidateComposerSuggestions()
       prewarmComposerCatalog(for: selectedSessionID)
@@ -735,6 +807,31 @@ public final class ArkAppModel: ObservableObject {
     .host: .connecting,
   ]
   @Published public private(set) var eventConnectionErrors: [ArkEventChannel: String] = [:]
+  @Published public private(set) var isReconnectingEvents = false
+  public var primaryEventConnectionState: ArkEventConnectionState {
+    ArkConnectionHealth.primary(eventConnectionStates)
+  }
+  private var eventReconnectTask: Task<Void, Never>?
+
+  /// Reconnect the real downlinks. Only their subsequent baseline can mark them healthy.
+  public func reconnectEventsNow() {
+    guard eventLifecycle == .running, !isReconnectingEvents else { return }
+    isReconnectingEvents = true
+    for channel in ArkEventChannel.allCases { setEventConnectionState(channel, state: .connecting) }
+    eventReconnectTask = Task { [weak self, eventPump] in
+      let restarted = await eventPump.reconnect()
+      guard let self else { return }
+      isReconnectingEvents = false
+      eventReconnectTask = nil
+      guard eventLifecycle == .running, !Task.isCancelled else { return }
+      if !restarted {
+        for channel in ArkEventChannel.allCases {
+          markEventChannelDegraded(channel, message: ArkL10n.text(.connectionRecoveryFailed, languagePreference))
+        }
+      }
+    }
+  }
+
 
   private let client: ArkAPIClient
   private let interactions: ArkInteractionAPI
@@ -768,7 +865,6 @@ public final class ArkAppModel: ObservableObject {
   private var historyProjectionGeneration: UInt64 = 0
   private var historyFoldOwner: ArkHistoryFoldOwner?
   private var historyRefreshOwner: ArkHistoryFoldOwner?
-  private var olderHistoryLoadOwner: ArkHistoryFoldOwner?
   private var historyFoldInFlight: Bool { historyFoldOwner != nil }
   private var modelMetadataHydrationSessionID: String?
   private var conversationSurfaceSnapshots: [String: ArkConversationSurfaceSnapshot] = [:]
@@ -777,6 +873,19 @@ public final class ArkAppModel: ObservableObject {
   private var sessionSearchTask: Task<Void, Never>?
   private var sessionSearchGeneration: UInt64 = 0
   private var composerDraftDocument = ArkComposerDraftDocument()
+  // Only inactive, nonempty attachment drafts live here; the selected draft uses
+  // the existing published arrays. Image bytes never enter UserDefaults.
+  private var composerAttachmentsBySession: [String: (images: [ArkPromptImage], documents: [ArkPendingDocument])] = [:]
+  private var composerSubmittedDocuments: [ArkPendingDocument] = []
+  struct ComposerOperationOwner {
+    let key: String
+    let token: UUID
+  }
+  private var composerOperations: [String: (token: UUID, count: Int)] = [:]
+  private var composerDocumentCleanup: [String: ArkPendingDocument] = [:]
+  private var composerDocumentCleanupTask: Task<Void, Never>?
+  private var sessionCreationNavigationID: UUID?
+  var sessionCreationInFlight: Bool { sessionCreationNavigationID != nil }
   private var composerSuggestionTask: Task<Void, Never>?
   private var composerCatalogPrewarmTask: Task<Void, Never>?
   private var modelDiscoveryTask: Task<Void, Never>?
@@ -1614,6 +1723,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   deinit {
+    eventReconnectTask?.cancel()
     historyTask?.cancel()
     eventTask?.cancel()
     eventResyncTask?.cancel()
@@ -1821,7 +1931,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public var selectedToolActivity: ArkToolActivity? {
-    toolActivities.first { $0.id == selectedToolActivityID }
+    (historyReadingSnapshot?.toolActivities ?? toolActivities).first { $0.id == selectedToolActivityID }
   }
 
   public func sessionIsArchived(_ sessionID: String) -> Bool {
@@ -2823,19 +2933,60 @@ public final class ArkAppModel: ObservableObject {
     Task { [weak self] in await self?.loadWiki(refreshIngestQueue: false) }
   }
 
-  /// 语言切换时按新语言重建状态行投影，保留本地瞬态错误行。
+  private var statusRelocalizationTask: Task<Void, Never>?
+
+  /// Keep the current rows until complete evidence can replace localized copy.
+  /// The source read is sparse; it never replays assistant token history.
   private func relocalizeStatusRows() {
-    var known = Set<Int>()
-    let merged = (events + pendingLiveEvents)
-      .filter { known.insert($0.id).inserted }
-      .sorted { $0.id < $1.id }
-    let transient = chatStatuses.filter {
-      $0.id.hasPrefix("host-agent-error-") || $0.id.hasPrefix("stream-error-")
-    }
-    statusProjection = ArkChatStatusProjection(events: merged, language: languagePreference)
-    chatStatuses = statusProjection.statuses + transient
-    chatStatuses.sort {
-      $0.sequence == $1.sequence ? $0.id < $1.id : $0.sequence < $1.sequence
+    statusRelocalizationTask?.cancel()
+    guard let sessionID = selectedSessionID else { return }
+    let language = languagePreference
+    let generation = historyProjectionGeneration
+    statusRelocalizationTask = Task { [weak self] in
+      guard let self else { return }
+      do {
+        if let reader = historyReader {
+          let wasReading = historyReadingSnapshot != nil
+          let reading = try await reader.relocalize(to: language)
+          guard selectedSessionID == sessionID, languagePreference == language,
+                historyProjectionGeneration == generation, !Task.isCancelled else { return }
+          if wasReading, historyReader === reader, let reading { installReadingSnapshot(reading) }
+        }
+        let address = try await historyAddress(for: sessionID)
+        while !Task.isCancelled {
+          guard let checkpointCut = liveHistoryCut else { return }
+          let through = events.last?.id ?? -1
+          let page = try await address.page(client: client, maximum: 1)
+          guard let id = page.dependencyRecords[.status],
+                case .dependency(let bundle) = try await address.content(client: client, cut: page.cut, recordID: id)
+          else { throw ArkAPIError(message: "状态本地化响应无效", code: "invalid-history-response") }
+          let worker = Task.detached(priority: .userInitiated) {
+            try ArkHistoryStatusRelocalization.projection(bundle: bundle, through: through, language: language)
+          }
+          let localized = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+          try await address.validateCheckpoint(client: client, cut: checkpointCut)
+          try Task.checkCancellation()
+          guard selectedSessionID == sessionID, languagePreference == language,
+                historyProjectionGeneration == generation else { return }
+          do {
+            let next = try ArkHistoryStatusRelocalization.catchingUp(localized, from: through, publishedEvents: events)
+            let transient = chatStatuses.filter { $0.id.hasPrefix("host-agent-error-") || $0.id.hasPrefix("stream-error-") }
+            let rows = (next.statuses + transient).sorted { $0.sequence == $1.sequence ? $0.id < $1.id : $0.sequence < $1.sequence }
+            statusProjection = next
+            if chatStatuses != rows { chatStatuses = rows; chatPresentationDidChange.send() }
+            return
+          } catch let error as ArkAPIError where error.code == "history-localization-gap" {
+            // A burst evicted the catch-up prefix. Capture a fresh boundary;
+            // the existing status checkpoint stays installed until proof succeeds.
+            continue
+          }
+        }
+      } catch {
+        guard selectedSessionID == sessionID, languagePreference == language,
+              historyProjectionGeneration == generation, !isTaskCancellation(error) else { return }
+        composerErrorMessage = error.localizedDescription
+        if (error as? ArkAPIError)?.code == "history-stale-source" { scheduleEventResync(sessionID: sessionID) }
+      }
     }
   }
 
@@ -2939,6 +3090,15 @@ public final class ArkAppModel: ObservableObject {
   public func start() {
     guard eventLifecycle == .idle else { return }
     eventLifecycle = .running
+    // Opt-in real-usage stall recorder (default off; see ArkMainThreadStallMonitor). The context
+    // provider is only called when a stall is actually recorded.
+    ArkMainThreadStallMonitor.shared.contextProvider = { [weak self] in
+      guard let self else { return "model released" }
+      let running = self.sessions.first { $0.id == self.selectedSessionID }?.running == true
+      return "session=\(self.selectedSessionID ?? "-") running=\(running)"
+        + " messages=\(self.messages.count) tools=\(self.toolActivities.count)"
+    }
+    ArkMainThreadStallMonitor.shared.startIfEnabled()
     eventTask = Task { [weak self, eventPump] in
       guard !Task.isCancelled else { return }
       await eventPump.start()
@@ -2976,6 +3136,7 @@ public final class ArkAppModel: ObservableObject {
         }
       } else {
         selectedSessionID = nil
+        resetHistoryReading()
         if !userHasNavigated {
           selectedTab = .chat
         }
@@ -2987,6 +3148,9 @@ public final class ArkAppModel: ObservableObject {
 
   /// Stop event delivery and await both WebSocket pumps before the owner releases this model.
   public func shutdown() async {
+    eventReconnectTask?.cancel()
+    statusRelocalizationTask?.cancel()
+    historyReader?.cancel()
     let discovery = modelDiscoveryTask
     clearDiscoveredModels()
     if let discovery { await discovery.value }
@@ -3069,6 +3233,7 @@ public final class ArkAppModel: ObservableObject {
       wikiTask = Task { [weak self] in await self?.loadWiki() }
     }
     selectedSessionID = sessionID
+    resetHistoryReading()
     messageImages.configure(sessionID: sessionID)
     prepareSelectedSubagentLineage()
     if navigateToChat {
@@ -3110,10 +3275,9 @@ public final class ArkAppModel: ObservableObject {
     historyProjectionGeneration &+= 1
     historyFoldOwner = nil
     historyRefreshOwner = nil
-    olderHistoryLoadOwner = nil
     modelCatalog = nil
     modelLabel = "未配置模型"
-    turnUsageByTurn = [:]
+    turnUsageProjection = ArkChatTurnUsageProjection.Accumulator()
     restoreConversationSurface(for: sessionID)
     chatPresentationDidChange.send()
     historyTask = Task { [weak self] in
@@ -3147,7 +3311,12 @@ public final class ArkAppModel: ObservableObject {
       producedFiles: producedFiles,
       chatStatuses: chatStatuses,
       turnProjection: turnProjection,
-      turnUsageByTurn: turnUsageByTurn,
+      turnUsageProjection: turnUsageProjection,
+      liveHistoryCut: liveHistoryCut,
+      historicalUsageFacts: historicalUsageFacts,
+      liveHistoryRecords: liveHistoryRecords,
+      liveHistoryRecordsCut: liveHistoryRecordsCut,
+      liveHistoryPreviewIDs: liveHistoryPreviewIDs,
       feedback: messageFeedbackByID,
       feedbackAvailable: messageFeedbackAvailable,
       sessionProjections: sessionProjections,
@@ -3177,7 +3346,12 @@ public final class ArkAppModel: ObservableObject {
     producedFiles = snapshot.producedFiles
     chatStatuses = snapshot.chatStatuses
     turnProjection = snapshot.turnProjection
-    turnUsageByTurn = snapshot.turnUsageByTurn
+    turnUsageProjection = snapshot.turnUsageProjection
+    liveHistoryCut = snapshot.liveHistoryCut
+    historicalUsageFacts = snapshot.historicalUsageFacts
+    liveHistoryRecords = snapshot.liveHistoryRecords
+    liveHistoryRecordsCut = snapshot.liveHistoryRecordsCut
+    liveHistoryPreviewIDs = snapshot.liveHistoryPreviewIDs
     messageFeedbackByID = snapshot.feedback
     messageFeedbackAvailable = snapshot.feedbackAvailable
     sessionProjections = snapshot.sessionProjections
@@ -3206,8 +3380,8 @@ public final class ArkAppModel: ObservableObject {
   /// Enter the resident new-conversation hero without creating a durable
   /// blank Session.  The first real submit owns session creation.
   public func beginNewConversation() {
-    let abandonedDocuments = pendingDocuments
     clearConversationSurface()
+    let abandonedDocuments = pendingDocuments
     selectedWorkspaceID = nil
     selectedTab = .chat
     composerDraftDocument.clear()
@@ -3215,7 +3389,7 @@ public final class ArkAppModel: ObservableObject {
     persistComposerDraft(for: nil)
     pendingImages = []
     pendingDocuments = []
-    Task { await documentStore.remove(abandonedDocuments) }
+    removeUnreferencedComposerDocuments(abandonedDocuments)
     draftModelSelection = nil
     draftPermissionPreset = nil
     requestComposerFocus(caret: 0)
@@ -3223,10 +3397,12 @@ public final class ArkAppModel: ObservableObject {
 
   private func clearConversationSurface() {
     cacheCurrentConversationSurface()
+    composerErrorMessage = nil
     selectedSessionID = nil
+    resetHistoryReading()
     events = []
     turnProjection = ArkChatTurnProjection()
-    turnUsageByTurn = [:]
+    turnUsageProjection = ArkChatTurnUsageProjection.Accumulator()
     messages = []
     toolActivities = []
     producedFiles = []
@@ -3255,7 +3431,6 @@ public final class ArkAppModel: ObservableObject {
     historyProjectionGeneration &+= 1
     historyFoldOwner = nil
     historyRefreshOwner = nil
-    olderHistoryLoadOwner = nil
     modelCatalog = nil
     modelLabel = "未配置模型"
     chatPresentationDidChange.send()
@@ -3274,32 +3449,39 @@ public final class ArkAppModel: ObservableObject {
       agentPresetError = "创造模式当前不可用"
       return
     }
-    Task {
-      do {
-        let id = try await client.createSession(
-          workspaceID: selectedWorkspaceID,
-          agentPreset: "cordis"
-        )
-        await refreshNavigation(refreshWiki: false)
-        selectSession(id)
-        agentPresetError = nil
-      } catch {
-        agentPresetError = error.localizedDescription
-      }
-    }
+    createNavigableSession(in: selectedWorkspaceID, agentPreset: "cordis", creator: true)
   }
 
   public func createSession(in workspaceID: String?) {
+    createNavigableSession(in: workspaceID, agentPreset: nextAgentPresetID, creator: false)
+  }
+
+  private func createNavigableSession(in workspaceID: String?, agentPreset: String?, creator: Bool) {
+    // Every explicit click owns a fresh creation ID; only that latest click may navigate.
+    let requestID = UUID()
+    sessionCreationNavigationID = requestID
+    let sourceSessionID = selectedSessionID
+    let sourceTab = selectedTab
+    let sourceNavigationGeneration = historyProjectionGeneration
     Task {
+      defer {
+        if sessionCreationNavigationID == requestID { sessionCreationNavigationID = nil }
+      }
+      let navigationIsCurrent = {
+        self.sessionCreationNavigationID == requestID && self.selectedSessionID == sourceSessionID
+          && self.selectedTab == sourceTab && self.historyProjectionGeneration == sourceNavigationGeneration
+      }
       do {
-        let id = try await client.createSession(
-          workspaceID: workspaceID,
-          agentPreset: nextAgentPresetID
-        )
+        let id = try await client.createSession(workspaceID: workspaceID, agentPreset: agentPreset,
+          sessionID: requestID.uuidString.lowercased())
         await refreshNavigation(refreshWiki: false)
+        guard navigationIsCurrent() else { return }
         selectSession(id)
+        if creator { agentPresetError = nil }
       } catch {
-        navigationErrorMessage = error.localizedDescription
+        guard navigationIsCurrent() else { return }
+        if creator { agentPresetError = error.localizedDescription }
+        else { navigationErrorMessage = error.localizedDescription }
       }
     }
   }
@@ -3377,9 +3559,10 @@ public final class ArkAppModel: ObservableObject {
         archivedSessionIDs = Set(try await client.archiveSession(sessionID: sessionID))
         if selectedSessionID == sessionID {
           selectedSessionID = nil
+          resetHistoryReading()
           events = []
           turnProjection = ArkChatTurnProjection()
-          turnUsageByTurn = [:]
+          turnUsageProjection = ArkChatTurnUsageProjection.Accumulator()
           messages = []
           messageImages.configure(sessionID: nil)
           chatPresentationDidChange.send()
@@ -3418,9 +3601,10 @@ public final class ArkAppModel: ObservableObject {
         archivedSessionIDs = Set(try await client.deleteArchivedSession(sessionID: sessionID))
         if selectedSessionID == sessionID {
           selectedSessionID = nil
+          resetHistoryReading()
           events = []
           turnProjection = ArkChatTurnProjection()
-          turnUsageByTurn = [:]
+          turnUsageProjection = ArkChatTurnUsageProjection.Accumulator()
           messages = []
           toolActivities = []
           producedFiles = []
@@ -3438,9 +3622,14 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func forkSession(_ sessionID: String, atSequence: Int? = nil) {
+    let cut = sessionID == selectedSessionID ? historyReadingSnapshot?.cut : nil
     Task {
       do {
-        let childID = try await client.forkSession(sessionID: sessionID, atSequence: atSequence)
+        let address = try await historyAddress(for: sessionID)
+        var parent: String?, mode: String?
+        if case .child(let parentID, _, let childMode) = address { parent = parentID; mode = childMode }
+        let childID = try await client.forkSession(sessionID: sessionID, atSequence: atSequence,
+          sourceRevision: cut?.sourceRevision, expectedParentSessionID: parent, expectedSubagentMode: mode)
         await refreshNavigation(refreshWiki: false)
         selectSession(childID)
         postResultMessage(ArkL10n.text(.toastSessionForked, languagePreference))
@@ -3452,16 +3641,15 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func forkSequence(for message: ArkMessage) -> Int? {
-    guard message.role == .assistant, let turn = message.turn else { return nil }
+    guard message.role == .assistant, let turn = message.turn, !displayedPreviewMessageIDs.contains(message.id) else { return nil }
+    if let snapshot = historyReadingSnapshot {
+      guard snapshot.forkableMessageIDs.contains(message.id) else { return nil }
+      return snapshot.recordByMessageID[message.id]?.completedTurnEndSequence
+    }
     guard !messages.contains(where: {
       $0.role == .assistant && $0.turn == turn && $0.id > message.id
     }) else { return nil }
-    return events.first { event in
-      event.id >= message.id
-        && event.type == "turn/end"
-        && Int(event.data["turn"]?.numberValue ?? -1) == turn
-        && event.data["reason"]?["kind"]?.stringValue == "completed"
-    }?.id
+    return turnProjection.completedSequenceByTurn[turn]
   }
 
   public func forkAtMessage(_ message: ArkMessage) {
@@ -3549,14 +3737,17 @@ public final class ArkAppModel: ObservableObject {
     }
     Task {
       do {
-        let workspace = try await client.createWorkspace(path: path)
+        let registration = try await client.createWorkspace(path: path)
+        let workspace = registration.workspace
         do {
           try await registerKnowledgeProject(
             name: workspace.title,
             path: workspace.path
           )
         } catch {
-          _ = try? await client.deleteWorkspace(workspaceID: workspace.id)
+          if registration.created {
+            _ = try? await client.deleteWorkspace(workspaceID: workspace.id)
+          }
           throw error
         }
         await refreshNavigation()
@@ -3747,6 +3938,8 @@ public final class ArkAppModel: ObservableObject {
       composerErrorMessage = ArkL10n.text(.composerChooseAvailableModel, languagePreference)
       return
     }
+    _ = composerDraftDocument.ensureSubmissionID()
+    persistComposerDraft(for: selectedSessionID)
     let capturedDocument = composerDraftDocument
     let text: String
     do {
@@ -3760,6 +3953,11 @@ public final class ArkAppModel: ObservableObject {
     let images = pendingImages
     let documents = pendingDocuments
     let sourceSessionID = selectedSessionID
+    let sourceWorkspaceID = selectedWorkspaceID
+    let sourceNavigationGeneration = historyProjectionGeneration
+    let sourceAgentPresetID = nextAgentPresetID
+    let pendingModel = draftModelSelection
+    let pendingPermission = draftPermissionPreset
     let sourceSessionWasRunning = selectedSession?.running == true
     let sourceIsSubagent = selectedSession?.origin == "subagent" || selectedSubagentEntry != nil
     // A subagent prompt is not accepted until its caller-stable invocation has
@@ -3776,35 +3974,52 @@ public final class ArkAppModel: ObservableObject {
     }
     invalidateComposerSuggestions()
     composerSubmissionInFlight = true
+    composerSubmittedDocuments = documents
+    let submissionOwner = beginComposerOperation(for: sourceSessionID ?? capturedDocument.submissionID)
     Task {
       var targetSessionID = sourceSessionID
-      defer { composerSubmissionInFlight = false }
+      var mayReleaseDocuments = !sourceIsSubagent
+      defer {
+        composerSubmittedDocuments = []
+        composerSubmissionInFlight = false
+        finishComposerOperation(submissionOwner)
+        removeUnreferencedComposerDocuments(documents)
+      }
       do {
+        await composerDocumentCleanupTask?.value
+        guard composerOperationIsCurrent(submissionOwner) else { return }
         let promptText = try await documentStore.contextualizedPrompt(
           baseText: text,
           documents: documents
         )
+        guard composerOperationIsCurrent(submissionOwner) else { return }
         let sessionID: String
         if let sourceSessionID { sessionID = sourceSessionID }
         else {
-          let pendingModel = draftModelSelection
-          let pendingPermission = draftPermissionPreset
           sessionID = try await client.createSession(
-            workspaceID: selectedWorkspaceID,
-            agentPreset: nextAgentPresetID
+            workspaceID: sourceWorkspaceID,
+            agentPreset: sourceAgentPresetID,
+            sessionID: capturedDocument.submissionID
           )
           targetSessionID = sessionID
+          guard composerOperationIsCurrent(submissionOwner) else { return }
           await refreshNavigation(refreshWiki: false)
-          selectSession(sessionID)
+          if composerOperationIsCurrent(submissionOwner), selectedSessionID == sourceSessionID,
+             historyProjectionGeneration == sourceNavigationGeneration {
+            selectSession(sessionID)
+          }
           if let pendingModel {
             _ = try await client.selectModel(sessionID: sessionID, selection: pendingModel)
           }
           if let pendingPermission {
             _ = try await client.setPermissionPreset(sessionID: sessionID, preset: pendingPermission)
           }
-          draftModelSelection = nil
-          draftPermissionPreset = nil
+          if selectedSessionID == sessionID {
+            draftModelSelection = nil
+            draftPermissionPreset = nil
+          }
         }
+        guard composerOperationIsCurrent(submissionOwner) else { return }
         if sourceIsSubagent {
           guard let address = try await subagentAddress(for: sessionID) else {
             throw ArkAPIError(message: "子代理地址尚未同步，请稍后重试")
@@ -3821,15 +4036,18 @@ public final class ArkAppModel: ObservableObject {
             content: promptText,
             draftRevision: capturedDocument.revision
           )
+          guard composerOperationIsCurrent(submissionOwner) else { return }
           _ = try await client.promptSubagent(
             parentSessionID: address.parentID,
             childSessionID: sessionID,
             text: promptText,
             invocationID: invocationID
           )
-          _ = commitSubagentComposerSubmission(
+          guard composerOperationIsCurrent(submissionOwner) else { return }
+          mayReleaseDocuments = commitSubagentComposerSubmission(
             capturedDocument,
-            sourceSessionID: sourceSessionID
+            sourceSessionID: sourceSessionID,
+            documents: documents
           )
         } else {
           let deliveryMode: ArkPromptDeliveryMode = sourceSessionWasRunning
@@ -3846,13 +4064,15 @@ public final class ArkAppModel: ObservableObject {
           } else {
             route = .prompt
           }
+          guard composerOperationIsCurrent(submissionOwner) else { return }
           switch route {
           case .prompt:
             try await interactions.sendPrompt(
               sessionID: sessionID,
               text: promptText,
               images: images,
-              mode: deliveryMode
+              mode: deliveryMode,
+              submissionID: capturedDocument.submissionID
             )
           case .command(let command):
             guard documents.isEmpty else {
@@ -3870,24 +4090,31 @@ public final class ArkAppModel: ObservableObject {
             }
           }
         }
-        await refreshHistory()
+        guard composerOperationIsCurrent(submissionOwner) else { return }
+        if selectedSessionID == sessionID { await refreshHistory() }
         await refreshNavigation(refreshWiki: false)
-        await documentStore.remove(documents)
-        composerErrorMessage = nil
+        composerSubmittedDocuments = []
+        if mayReleaseDocuments { removeUnreferencedComposerDocuments(documents) }
       } catch {
+        guard composerOperationIsCurrent(submissionOwner) else {
+          removeUnreferencedComposerDocuments(documents)
+          return
+        }
         if !sourceIsSubagent {
           restoreComposerSubmission(
             capturedDocument,
             sourceSessionID: sourceSessionID,
-            targetSessionID: targetSessionID
+            targetSessionID: targetSessionID,
+            images: images,
+            documents: documents
           )
-          if pendingImages.isEmpty { pendingImages = images }
-          else { pendingImages.insert(contentsOf: images, at: 0) }
-          if pendingDocuments.isEmpty { pendingDocuments = documents }
-          else { pendingDocuments.insert(contentsOf: documents, at: 0) }
         }
+        guard selectedSessionID == targetSessionID else { return }
         composerErrorMessage = error.localizedDescription
-        if !imageModelFallbackInFlight,
+        if !sourceIsSubagent,
+           composerDraftDocument == capturedDocument,
+           pendingImages == images, pendingDocuments == documents,
+           !imageModelFallbackInFlight,
            Self.isImageCapabilityRejection(error),
            let fallback = defaultModelSelection,
            fallback.provider != draftModelSelection?.provider
@@ -3896,15 +4123,28 @@ public final class ArkAppModel: ObservableObject {
           // in the composer, so switch to the configured default model once and resend the same
           // content instead of leaving the user with a red banner and nothing to do.
           imageModelFallbackInFlight = true
-          let fallbackSessionID = selectedSessionID
+          let fallbackSessionID = targetSessionID
+          let fallbackOwner = beginComposerOperation(for: fallbackSessionID)
           Task { [weak self] in
-            guard let self, let fallbackSessionID else { return }
+            guard let self else { return }
+            defer {
+              self.imageModelFallbackInFlight = false
+              self.finishComposerOperation(fallbackOwner)
+            }
+            guard let fallbackSessionID,
+                  self.composerOperationIsCurrent(fallbackOwner),
+                  self.selectedSessionID == fallbackSessionID,
+                  self.composerDraftDocument == capturedDocument,
+                  self.pendingImages == images, self.pendingDocuments == documents else { return }
             do {
               let selected = try await self.client.selectModel(
                 sessionID: fallbackSessionID,
                 selection: fallback
               )
-              guard self.selectedSessionID == fallbackSessionID else { return }
+              guard self.composerOperationIsCurrent(fallbackOwner),
+                    self.selectedSessionID == fallbackSessionID,
+                    self.composerDraftDocument == capturedDocument,
+                    self.pendingImages == images, self.pendingDocuments == documents else { return }
               self.modelLabel = Self.modelDisplayLabel(
                 provider: selected.provider,
                 model: selected.model,
@@ -3912,12 +4152,19 @@ public final class ArkAppModel: ObservableObject {
               )
               self.draftModelSelection = fallback
               await self.refreshModelCatalog(for: fallbackSessionID)
+              guard self.composerOperationIsCurrent(fallbackOwner),
+                    self.selectedSessionID == fallbackSessionID,
+                    self.composerDraftDocument == capturedDocument,
+                    self.pendingImages == images, self.pendingDocuments == documents else { return }
               self.composerErrorMessage = "当前模型不支持图片，已改用 \(fallback.model) 重新发送"
-              await self.sendComposer(modeOverride: nil)
+              self.sendComposer(modeOverride: nil)
             } catch {
-              self.composerErrorMessage = error.localizedDescription
+              if self.composerOperationIsCurrent(fallbackOwner),
+                 self.selectedSessionID == fallbackSessionID,
+                 self.composerDraftDocument == capturedDocument {
+                self.composerErrorMessage = error.localizedDescription
+              }
             }
-            self.imageModelFallbackInFlight = false
           }
           return
         }
@@ -3938,7 +4185,8 @@ public final class ArkAppModel: ObservableObject {
   /// never overwritten by the late acknowledgement.
   private func commitSubagentComposerSubmission(
     _ captured: ArkComposerDraftDocument,
-    sourceSessionID: String?
+    sourceSessionID: String?,
+    documents: [ArkPendingDocument]
   ) -> Bool {
     guard let sourceSessionID else { return false }
     var empty = captured
@@ -3953,8 +4201,16 @@ public final class ArkAppModel: ObservableObject {
       }
       persistComposerDraft(empty, for: sourceSessionID)
     }
-    pendingImages = []
-    pendingDocuments = []
+    let submittedIDs = Set(documents.map(\.id))
+    if selectedSessionID == sourceSessionID {
+      pendingDocuments.removeAll { submittedIDs.contains($0.id) }
+    } else {
+      let key = Keys.draft(sourceSessionID)
+      if var attachments = composerAttachmentsBySession[key] {
+        attachments.documents.removeAll { submittedIDs.contains($0.id) }
+        storeComposerAttachments(attachments.images, documents: attachments.documents, for: sourceSessionID)
+      }
+    }
     return true
   }
 
@@ -3979,16 +4235,97 @@ public final class ArkAppModel: ObservableObject {
   private func restoreComposerSubmission(
     _ captured: ArkComposerDraftDocument,
     sourceSessionID: String?,
-    targetSessionID: String?
+    targetSessionID: String?,
+    images: [ArkPromptImage],
+    documents: [ArkPendingDocument]
   ) {
     let destination = targetSessionID ?? sourceSessionID
     if selectedSessionID == destination {
       let restored = composerDraftDocument.prepending(captured)
       installComposerDraft(restored)
       persistComposerDraft(for: destination)
+      pendingImages.insert(contentsOf: images, at: 0)
+      let retainedIDs = Set(pendingDocuments.map(\.id))
+      pendingDocuments.insert(contentsOf: documents.filter { !retainedIDs.contains($0.id) }, at: 0)
       return
     }
-    persistComposerDraft(captured, for: destination)
+    let latest = Self.loadComposerDraft(defaults: defaults, sessionID: destination)
+    persistComposerDraft(latest.prepending(captured), for: destination)
+    let attachments = composerAttachmentsBySession[Keys.draft(destination)]
+    let retainedDocuments = attachments?.documents ?? []
+    let retainedIDs = Set(retainedDocuments.map(\.id))
+    storeComposerAttachments(images + (attachments?.images ?? []),
+      documents: documents.filter { !retainedIDs.contains($0.id) } + retainedDocuments, for: destination)
+  }
+
+  private func storeComposerAttachments(_ images: [ArkPromptImage], documents: [ArkPendingDocument], for sessionID: String?) {
+    let key = Keys.draft(sessionID)
+    if images.isEmpty && documents.isEmpty { composerAttachmentsBySession.removeValue(forKey: key) }
+    else { composerAttachmentsBySession[key] = (images, documents) }
+  }
+
+  private func switchComposerAttachments(from oldSessionID: String?, to sessionID: String?) {
+    storeComposerAttachments(pendingImages, documents: pendingDocuments, for: oldSessionID)
+    let restored = composerAttachmentsBySession.removeValue(forKey: Keys.draft(sessionID))
+    pendingImages = restored?.images ?? []
+    pendingDocuments = restored?.documents ?? []
+  }
+
+  private func beginComposerOperation(for sessionID: String?) -> ComposerOperationOwner {
+    let key = Keys.draft(sessionID)
+    var value = composerOperations[key] ?? (token: UUID(), count: 0)
+    value.count += 1
+    composerOperations[key] = value
+    return ComposerOperationOwner(key: key, token: value.token)
+  }
+
+  private func composerOperationIsCurrent(_ owner: ComposerOperationOwner) -> Bool {
+    composerOperations[owner.key]?.token == owner.token
+  }
+
+  private func finishComposerOperation(_ owner: ComposerOperationOwner) {
+    if var value = composerOperations[owner.key], value.token == owner.token {
+      value.count -= 1
+      if value.count == 0 { composerOperations.removeValue(forKey: owner.key) }
+      else { composerOperations[owner.key] = value }
+    }
+    flushComposerDocumentCleanup()
+  }
+
+  private func removeUnreferencedComposerDocuments(_ documents: [ArkPendingDocument]) {
+    for document in documents { composerDocumentCleanup[document.id] = document }
+    flushComposerDocumentCleanup()
+  }
+
+  private func flushComposerDocumentCleanup() {
+    guard composerOperations.isEmpty, composerDocumentCleanupTask == nil,
+          !composerDocumentCleanup.isEmpty else { return }
+    composerDocumentCleanupTask = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        self.composerDocumentCleanupTask = nil
+        self.flushComposerDocumentCleanup()
+      }
+      guard self.composerOperations.isEmpty else { return }
+      let candidates = Array(self.composerDocumentCleanup.values)
+      self.composerDocumentCleanup.removeAll()
+      let retained = Set((self.pendingDocuments + self.composerSubmittedDocuments
+        + self.composerAttachmentsBySession.values.flatMap(\.documents)).map(\.id))
+      let unused = candidates.filter { !retained.contains($0.id) }
+      if !unused.isEmpty { await self.documentStore.remove(unused) }
+    }
+  }
+
+  /// Called by the authoritative host/session-deleted event; no permanent tombstones.
+  func discardComposerAttachments(for sessionID: String) {
+    composerOperations.removeValue(forKey: Keys.draft(sessionID))
+    var discarded = composerAttachmentsBySession.removeValue(forKey: Keys.draft(sessionID))?.documents ?? []
+    if selectedSessionID == sessionID {
+      discarded += pendingDocuments
+      pendingImages = []
+      pendingDocuments = []
+    }
+    removeUnreferencedComposerDocuments(discarded)
   }
 
   public func addPastedImage(data: Data, mediaType: ArkImageMediaType) {
@@ -4021,9 +4358,12 @@ public final class ArkAppModel: ObservableObject {
       composerErrorMessage = "每条消息最多可添加 \(maxCount) 张图片"
       return
     }
-    let retainedBytes = pendingImages.reduce(0) { $0 + $1.data.count }
+    let sourceSessionID = selectedSessionID
+    let owner = beginComposerOperation(for: sourceSessionID)
     Task {
-      do {
+      defer { finishComposerOperation(owner) }
+      _ = await importComposerAttachments(for: sourceSessionID, owner: owner,
+        imageLimits: (maxCount, maxEach, maxTotal)) {
         let images = try await Task.detached(priority: .userInitiated) {
           try urls.map { url -> ArkPromptImage in
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
@@ -4041,20 +4381,11 @@ public final class ArkAppModel: ObservableObject {
             case "gif": mediaType = .gif
             default: throw ArkAPIError(message: "仅支持 PNG、JPEG、WebP 或 GIF 图片")
             }
-            return ArkPromptImage(
-              mediaType: mediaType,
-              data: try Data(contentsOf: url, options: [.mappedIfSafe]),
-              name: url.lastPathComponent
-            )
+            return ArkPromptImage(mediaType: mediaType,
+              data: try Data(contentsOf: url, options: [.mappedIfSafe]), name: url.lastPathComponent)
           }
         }.value
-        guard retainedBytes + images.reduce(0, { $0 + $1.data.count }) <= maxTotal else {
-          throw ArkAPIError(message: "图片总大小超过当前 \(maxTotal) 字节限制")
-        }
-        pendingImages.append(contentsOf: images)
-        composerErrorMessage = nil
-      } catch {
-        composerErrorMessage = error.localizedDescription
+        return (images, [])
       }
     }
   }
@@ -4071,15 +4402,14 @@ public final class ArkAppModel: ObservableObject {
       return
     }
     let name = ArkL10n.text(.composerPastedText, languagePreference)
+    let sourceSessionID = selectedSessionID
+    let store = documentStore
+    let owner = beginComposerOperation(for: sourceSessionID)
     Task {
-      do {
-        let document = try await documentStore.importPastedText(text, name: name)
-        if !pendingDocuments.contains(where: { $0.id == document.id }) {
-          pendingDocuments.append(document)
-        }
-        composerErrorMessage = nil
-      } catch {
-        composerErrorMessage = error.localizedDescription
+      defer { finishComposerOperation(owner) }
+      _ = await importComposerAttachments(for: sourceSessionID, owner: owner) {
+        let document = try await store.importPastedText(text, name: name)
+        return ([], [document])
       }
     }
   }
@@ -4097,25 +4427,82 @@ public final class ArkAppModel: ObservableObject {
       composerErrorMessage = "每条消息最多可引用 8 份文档"
       return
     }
+    let sourceSessionID = selectedSessionID
+    let store = documentStore
+    let owner = beginComposerOperation(for: sourceSessionID)
     Task {
-      do {
-        for url in urls {
-          let document = try await documentStore.importFile(url)
-          if !pendingDocuments.contains(where: { $0.id == document.id }) {
-            pendingDocuments.append(document)
-          }
+      defer { finishComposerOperation(owner) }
+      // Keep file selection order and already imported files on partial failure.
+      for url in urls {
+        let imported = await importComposerAttachments(for: sourceSessionID, owner: owner) {
+          let document = try await store.importFile(url)
+          return ([], [document])
         }
+        if !imported { return }
+      }
+    }
+  }
+
+  /// One asynchronous completion boundary for local attachment imports. The
+  /// captured session owns both the data and any visible completion message.
+  func importComposerAttachments(
+    for sessionID: String?,
+    owner suppliedOwner: ComposerOperationOwner? = nil,
+    imageLimits: (count: Int, each: Int, total: Int)? = nil,
+    load: @Sendable () async throws -> (images: [ArkPromptImage], documents: [ArkPendingDocument])
+  ) async -> Bool {
+    let owner = suppliedOwner ?? beginComposerOperation(for: sessionID)
+    defer { if suppliedOwner == nil { finishComposerOperation(owner) } }
+    var importedDocuments: [ArkPendingDocument] = []
+    do {
+      await composerDocumentCleanupTask?.value
+      guard composerOperationIsCurrent(owner) else { return false }
+      let loaded = try await load()
+      importedDocuments = loaded.documents
+      guard composerOperationIsCurrent(owner) else {
+        removeUnreferencedComposerDocuments(importedDocuments)
+        return false
+      }
+      let retained = selectedSessionID == sessionID
+        ? (images: pendingImages, documents: pendingDocuments)
+        : (composerAttachmentsBySession[Keys.draft(sessionID)] ?? (images: [], documents: []))
+      if !loaded.images.isEmpty {
+        guard let limits = imageLimits else { throw ArkAPIError(message: "图片导入缺少会话大小限制") }
+        guard retained.images.count + loaded.images.count <= limits.count else {
+          throw ArkAPIError(message: "每条消息最多可添加 \(limits.count) 张图片")
+        }
+        guard loaded.images.allSatisfy({ !$0.data.isEmpty && $0.data.count <= limits.each }),
+          (retained.images + loaded.images).reduce(0, { $0 + $1.data.count }) <= limits.total else {
+          throw ArkAPIError(message: "图片大小超过当前限制")
+        }
+      }
+      var documentIDs = Set(retained.documents.map(\.id))
+      let addedDocuments = loaded.documents.filter { documentIDs.insert($0.id).inserted }
+      guard retained.documents.count + addedDocuments.count <= 8 else {
+        throw ArkAPIError(message: "每条消息最多可引用 8 份文档")
+      }
+      if selectedSessionID == sessionID {
+        pendingImages = retained.images + loaded.images
+        pendingDocuments = retained.documents + addedDocuments
         composerErrorMessage = nil
-      } catch {
+      } else {
+        storeComposerAttachments(retained.images + loaded.images,
+          documents: retained.documents + addedDocuments, for: sessionID)
+      }
+      return true
+    } catch {
+      removeUnreferencedComposerDocuments(importedDocuments)
+      if composerOperationIsCurrent(owner), selectedSessionID == sessionID {
         composerErrorMessage = error.localizedDescription
       }
+      return false
     }
   }
 
   public func removePendingDocument(at index: Int) {
     guard pendingDocuments.indices.contains(index) else { return }
     let document = pendingDocuments.remove(at: index)
-    Task { await documentStore.remove([document]) }
+    removeUnreferencedComposerDocuments([document])
   }
 
   public func answerApproval(_ request: ArkApprovalRequest, decision: ArkApprovalDecision) {
@@ -4343,395 +4730,283 @@ public final class ArkAppModel: ObservableObject {
   /// Read enough bounded pages to prove that the selected Session's retained
   /// contiguous tail reaches the exact mux baseline. Traversed pages are
   /// newest-first, while only the bounded presentation suffix is retained.
-  private func synchronizedHistorySource(
-    sessionID: String,
-    retained: [ArkHistoryEvent],
-    expectedThrough: Int?
-  ) async throws -> (events: [ArkHistoryEvent], newestPage: ArkHistoryPage) {
-    let initialBefore: Int?
-    if let expectedThrough {
-      if expectedThrough < 0 { initialBefore = 0 }
-      else if expectedThrough < 9_007_199_254_740_991 {
-        initialBefore = expectedThrough + 1
-      } else {
-        initialBefore = nil
-      }
-    } else {
-      initialBefore = nil
-    }
-    let newestPage = try await historyPage(
-      sessionID: sessionID,
-      beforeSequence: initialBefore,
-      maxMessages: 2_048
-    )
-    try ArkEventSequenceValidator.validatePage(newestPage)
-    if let expectedThrough {
-      if expectedThrough < 0 {
-        guard newestPage.events.isEmpty else {
-          throw ArkEventSequenceValidationError.incomplete(
-            expected: expectedThrough,
-            actual: newestPage.events.last?.id
-          )
-        }
-      } else {
-        guard newestPage.events.last?.id == expectedThrough else {
-          throw ArkEventSequenceValidationError.incomplete(
-            expected: expectedThrough,
-            actual: newestPage.events.last?.id
-          )
-        }
-      }
-    }
-    guard let target = expectedThrough ?? newestPage.events.last?.id else {
-      guard retained.isEmpty else {
-        throw ArkEventSequenceValidationError.incomplete(
-          expected: retained.last?.id ?? 0,
-          actual: nil
-        )
-      }
-      return ([], newestPage)
-    }
-    guard let anchor = retained.last?.id else {
-      try ArkEventSequenceValidator.validateReconciled(
-        newestPage.events,
-        expectedThrough: target
-      )
-      return (newestPage.events, newestPage)
-    }
-    guard target >= anchor else {
-      throw ArkEventSequenceValidationError.incomplete(
-        expected: anchor,
-        actual: target
-      )
-    }
-    guard target > anchor else {
-      let merged = Array(
-        ArkEventSequenceValidator.uniqueSorted(retained + newestPage.events)
-          .suffix(ArkHistoryCatchUpAccumulator.maximumPresentationEvents)
-      )
-      try ArkEventSequenceValidator.validateReconciled(merged, expectedThrough: target)
-      return (merged, newestPage)
-    }
-
-    var catchUp = try ArkHistoryCatchUpAccumulator(
-      retained: retained,
-      targetSequence: target
-    )
-    var page = newestPage
-    while !catchUp.complete {
-      try catchUp.consume(page)
-      guard !catchUp.complete else { break }
-      guard let before = catchUp.nextBeforeSequence else {
-        throw ArkEventSequenceValidationError.incomplete(
-          expected: catchUp.expectedPageEnd,
-          actual: nil
-        )
-      }
-      try Task.checkCancellation()
-      page = try await historyPage(
-        sessionID: sessionID,
-        beforeSequence: before,
-        maxMessages: 2_048
-      )
-    }
-    return (try catchUp.mergedPresentation(), newestPage)
-  }
-
   public func refreshHistory(resetPaging: Bool = false) async {
-    guard let requestedSessionID = selectedSessionID else { return }
+    guard let sessionID = selectedSessionID else { return }
     historyProjectionGeneration &+= 1
-    let generation = historyProjectionGeneration
-    let requestOwner = ArkHistoryFoldOwner(
-      sessionID: requestedSessionID,
-      generation: generation
-    )
-    historyFoldOwner = nil
-    historyRefreshOwner = requestOwner
-    olderHistoryLoadOwner = nil
-    loadingOlderHistory = false
-    if !pendingLiveEvents.isEmpty { scheduleLivePublish() }
+    let owner = ArkHistoryFoldOwner(sessionID: sessionID, generation: historyProjectionGeneration)
+    historyRefreshOwner = owner
+    historyFoldOwner = owner
+    livePublishTask?.cancel()
+    livePublishTask = nil
     historyLoadState = .loading
+    var recoveryReader: ArkHistoryReadingWindow?
     defer {
-      if historyRefreshOwner == requestOwner {
-        historyRefreshOwner = nil
-        if historyProjectionGeneration == generation,
-           historyLoadState == .loading {
-          historyLoadState = .afterCancellation(hasHistory: !events.isEmpty)
-        }
+      recoveryReader?.cancel()
+      if historyRefreshOwner == owner { historyRefreshOwner = nil }
+      if historyFoldOwner == owner {
+        historyFoldOwner = nil
+        if !pendingLiveEvents.isEmpty { scheduleLivePublish() }
+      }
+      if selectedSessionID == sessionID, historyProjectionGeneration == owner.generation, historyLoadState == .loading {
+        historyLoadState = .afterCancellation(hasHistory: !events.isEmpty)
       }
     }
     do {
-      let retained = resetPaging ? [] : events
-      let synchronized = try await synchronizedHistorySource(
-        sessionID: requestedSessionID,
-        retained: retained,
-        expectedThrough: reconciledTarget(for: requestedSessionID)
-      )
-      let page = synchronized.newestPage
-      guard selectedSessionID == requestedSessionID,
-            historyProjectionGeneration == generation,
-            historyRefreshOwner == requestOwner,
-            !Task.isCancelled
-      else { return }
-      livePublishTask?.cancel()
-      livePublishTask = nil
-      let source = ArkEventSequenceValidator.uniqueSorted(
-        synchronized.events + pendingLiveEvents
-      )
-      try ArkEventSequenceValidator.validateReconciled(
-        source,
-        expectedThrough: reconciledTarget(for: requestedSessionID)
-      )
-      let foldOwner = ArkHistoryFoldOwner(
-        sessionID: requestedSessionID,
-        generation: generation
-      )
-      historyFoldOwner = foldOwner
-      defer {
-        if historyFoldOwner == foldOwner {
-          historyFoldOwner = nil
-          if !pendingLiveEvents.isEmpty { scheduleLivePublish() }
+      let address = try await historyAddress(for: sessionID)
+      var checkpoint: ArkHistoryFold?
+      var checkpointCut: ArkHistoryCut?
+      var sourceChanged = false
+      if !resetPaging, let oldCut = liveHistoryCut {
+        do {
+          _ = try await address.raw(client: client, cut: oldCut, maximum: 1)
+          checkpointCut = oldCut
+          checkpoint = ArkHistoryFold(events: events, messages: messageProjection, tools: toolProjection,
+            producedFiles: producedFilesProjection, statuses: statusProjection, turns: turnProjection, usage: turnUsageProjection)
+        } catch let error as ArkAPIError where error.code == "history-stale-source" {
+          sourceChanged = true
         }
       }
-      let language = languagePreference
-      let preservedTurn = turnProjection.latestStartedTurn
-      let preservedTurnSequence = turnProjection.latestStartedSequence
-      guard var fold = await ArkHistoryFoldWorker.shared.fold(
-        events: source,
-        language: language
-      ) else { return }
-      guard selectedSessionID == requestedSessionID,
-            historyProjectionGeneration == generation,
-            historyRefreshOwner == requestOwner,
-            historyFoldOwner == foldOwner,
-            !Task.isCancelled
-      else { return }
-      fold.appendLive(pendingLiveEvents)
-      fold.preserveLatestStartedBoundary(
-        turn: preservedTurn,
-        sequence: preservedTurnSequence
+      let head = try await address.raw(client: client, maximum: 1)
+      if let checkpointHead = checkpoint?.events.last?.id, checkpointHead > head.cut.throughSequence {
+        checkpoint = nil
+        sourceChanged = true
+      }
+      try Task.checkCancellation()
+      guard selectedSessionID == sessionID, historyProjectionGeneration == owner.generation else { return }
+      var seed: ArkHistoryReadingSeed?
+      var reading: ArkHistoryReadingSnapshot?
+      if checkpoint == nil {
+        historyReader?.cancel()
+        historyReader = nil
+        let reader = ArkHistoryReadingWindow(client: client, address: address, language: languagePreference)
+        recoveryReader = reader
+        let page = try await address.page(client: client, cut: head.cut)
+        reading = try await reader.open(firstPage: page, hydrateActive: false)
+        seed = reader.seed
+      }
+      let recovered = try await ArkHistoryFoldWorker.shared.recover(
+        client: client, address: address, cut: head.cut, checkpoint: checkpoint,
+        seed: seed, snapshot: reading, language: languagePreference
       )
-      let installedEventIDs = Set(fold.events.map(\.id))
-      pendingLiveEvents.removeAll { installedEventIDs.contains($0.id) }
+      // Composer projections are explicitly current, independent of the fixed
+      // history cut. Do not feed this legacy one-event response into any fold.
+      let projectionBaseline = try await historyPage(sessionID: sessionID, maxMessages: 1)
+      // A replacement between the old-cut admission and the fresh head read
+      // must not combine the former checkpoint with the latter incarnation.
+      if checkpoint != nil, let checkpointCut {
+        try await address.validateCheckpoint(client: client, cut: checkpointCut)
+      }
+      try Task.checkCancellation()
+      guard selectedSessionID == sessionID, historyProjectionGeneration == owner.generation,
+            historyRefreshOwner == owner, historyFoldOwner == owner else { return }
+      let fold = recovered.fold
+      guard (fold.events.last?.id ?? -1) == head.cut.throughSequence else {
+        throw ArkAPIError(message: "恢复后的实时水位与固定来源不一致", code: "invalid-history-response")
+      }
+      if sourceChanged {
+        // Buffered frames from a replaced incarnation cannot be admitted by
+        // coincident sequence numbers. The next bound refresh observes its new tail.
+        pendingLiveEvents = []
+        appliedThroughBySessionID.removeValue(forKey: sessionID)
+        resyncTargetBySessionID.removeValue(forKey: sessionID)
+      } else {
+        pendingLiveEvents.removeAll { $0.id <= head.cut.throughSequence }
+      }
+      let previousMessages = messages
+      let previousTools = toolActivities
+      let previousFiles = producedFiles
+      let previousStatuses = chatStatuses
+      let previousMetrics = turnMetricsByTurn
+      let previousTerminalStates = turnTerminalStates
+      let previousUsage = turnUsageByTurn
+      let previousPreviewIDs = displayedPreviewMessageIDs
+      let previousReadingCut = historyReadingSnapshot?.cut
+      let previousHead = events.last?.id
       events = fold.events
-      installReconciledHead(sessionID: requestedSessionID)
-      var chatPresentationChanged = false
-      if turnProjection != fold.turnProjection {
-        turnProjection = fold.turnProjection
-        chatPresentationChanged = true
-      }
-      if turnUsageByTurn != fold.turnUsageByTurn {
-        turnUsageByTurn = fold.turnUsageByTurn
-        chatPresentationChanged = true
-      }
-      markTrajectoryProjectionDirty()
-      synchronizeModelLabelFromEvents()
+      installReconciledHead(sessionID: sessionID, through: head.cut.throughSequence)
       seenEventIDs = Set(events.map(\.id))
+      seenEventIDs.formUnion(pendingLiveEvents.map(\.id))
       messageProjection = fold.messages
-      let nextMessages = messageProjection.messages
-      if messages != nextMessages {
-        messages = nextMessages
-        chatPresentationChanged = true
-      }
+      if messages != messageProjection.messages { messages = messageProjection.messages }
       toolProjection = fold.tools
-      let nextTools = toolProjection.activities
-      if toolActivities != nextTools {
-        toolActivities = nextTools
-        chatPresentationChanged = true
-      }
+      if toolActivities != toolProjection.activities { toolActivities = toolProjection.activities }
       producedFilesProjection = fold.producedFiles
-      let nextProducedFiles = producedFilesProjection.files
-      if producedFiles != nextProducedFiles {
-        producedFiles = nextProducedFiles
-        chatPresentationChanged = true
-      }
+      if producedFiles != producedFilesProjection.files { producedFiles = producedFilesProjection.files }
       statusProjection = fold.statuses
-      let nextStatuses = statusProjection.statuses
-      if chatStatuses != nextStatuses {
-        chatStatuses = nextStatuses
-        chatPresentationChanged = true
+      if chatStatuses != statusProjection.statuses { chatStatuses = statusProjection.statuses }
+      turnProjection = fold.turnProjection
+      turnUsageProjection = fold.turnUsageProjection
+      liveHistoryCut = head.cut
+      if let seed, let reading, let reader = recoveryReader {
+        historicalUsageFacts = seed.usage
+        liveHistoryRecords = reading.recordByMessageID
+        liveHistoryRecordsCut = reading.cut
+        liveHistoryPreviewIDs = reading.previewMessageIDs.filter { reading.recordByMessageID[$0]?.state != .active }
+        historyReader = reader
+        recoveryReader = nil
+        historyReadingSnapshot = nil
+        hasNewerHistory = false
+        hasOlderHistory = reading.hasOlderHistory
+      } else {
+        for turn in recovered.touchedTurns { historicalUsageFacts.removeValue(forKey: turn) }
       }
-      if resetPaging || retained.isEmpty || historyBeforeSequence == nil {
-        historyBeforeSequence = page.beforeSequence
-        hasOlderHistory = page.hasMore
-      }
-      if !page.projections.isEmpty { sessionProjections = page.projections }
+      historyBeforeSequence = events.first?.id
+      sessionProjections = projectionBaseline.projections
       historyLoadState = .loaded
-      if chatPresentationChanged { chatPresentationDidChange.send() }
       composerErrorMessage = nil
-      if eventConnectionErrors[.mux]?.hasPrefix("会话") == true {
-        setEventConnectionState(.mux, state: .connected)
+      if previousHead != events.last?.id || previousReadingCut != historyReadingSnapshot?.cut {
+        markTrajectoryProjectionDirty()
+      }
+      synchronizeModelLabelFromEvents()
+      if previousMessages != messages || previousTools != toolActivities || previousFiles != producedFiles
+          || previousStatuses != chatStatuses || previousMetrics != turnMetricsByTurn || previousUsage != turnUsageByTurn
+          || previousTerminalStates != turnTerminalStates
+          || previousPreviewIDs != displayedPreviewMessageIDs || previousReadingCut != historyReadingSnapshot?.cut {
+        chatPresentationDidChange.send()
+      }
+      if statusProjection.language != languagePreference { relocalizeStatusRows() }
+      if eventConnectionErrors[.mux]?.hasPrefix("会话") == true { setEventConnectionState(.mux, state: .connected) }
+      if sourceChanged {
+        // One fresh transaction catches events committed while the replaced
+        // source was being recovered, without trusting old pending identities.
+        Task { [weak self] in
+          guard let self, self.selectedSessionID == sessionID else { return }
+          await self.refreshHistory()
+        }
       }
     } catch {
-      // 会话/页面切换取消的生命周期任务不是用户错误。
-      if isTaskCancellation(error) {
-        if selectedSessionID == requestedSessionID,
-           historyProjectionGeneration == generation {
-          historyLoadState = .afterCancellation(hasHistory: !events.isEmpty)
-        }
-        return
-      }
-      if selectedSessionID == requestedSessionID,
-         historyProjectionGeneration == generation {
-        historyLoadState = .failed(error.localizedDescription)
-        if error is ArkEventSequenceValidationError {
-          // A page walk that caught a range mid-flight throws here; the retry below repairs it in a
-          // few hundred milliseconds. Reporting every attempt as a red card is what put a
-          // permanent "会话连接错误" over a healthy transcript, so this stays internal until it
-          // persists: only a retry that keeps failing past the backoff ladder surfaces.
-          ArkEventChannelDiagnostics.retry(
-            session: requestedSessionID,
-            attempt: eventResyncAttempt,
-            detail: error.localizedDescription
-          )
-          composerErrorMessage = nil
-          if resyncTargetBySessionID[requestedSessionID] != nil {
-            scheduleEventResync(sessionID: requestedSessionID)
-          }
-          if eventResyncAttempt > 4 {
-            markEventChannelDegraded(.mux, message: error.localizedDescription)
-          }
-        } else {
-          composerErrorMessage = error.localizedDescription
-        }
+      guard selectedSessionID == sessionID, historyProjectionGeneration == owner.generation else { return }
+      if isTaskCancellation(error) { return }
+      historyLoadState = .failed(error.localizedDescription)
+      composerErrorMessage = error.localizedDescription
+      if (error as? ArkAPIError)?.code == "history-stale-source" {
+        liveHistoryCut = nil
+        historyReader?.cancel()
+        historyReader = nil
+        historyReadingSnapshot = nil
+        pendingLiveEvents = []
+        appliedThroughBySessionID.removeValue(forKey: sessionID)
+        resyncTargetBySessionID.removeValue(forKey: sessionID)
+        scheduleEventResync(sessionID: sessionID)
+      } else if resyncTargetBySessionID[sessionID] != nil {
+        scheduleEventResync(sessionID: sessionID)
       }
     }
   }
 
   public func loadOlderHistory() async {
-    guard let sessionID = selectedSessionID,
-          hasOlderHistory,
-          !loadingOlderHistory,
-          let before = historyBeforeSequence
-    else { return }
-    historyProjectionGeneration &+= 1
-    let generation = historyProjectionGeneration
-    historyFoldOwner = nil
-    if historyRefreshOwner != nil {
-      historyRefreshOwner = nil
-      if historyLoadState == .loading {
-        historyLoadState = .afterCancellation(hasHistory: !events.isEmpty)
-      }
-    }
-    if !pendingLiveEvents.isEmpty { scheduleLivePublish() }
-    let loadOwner = ArkHistoryFoldOwner(sessionID: sessionID, generation: generation)
-    olderHistoryLoadOwner = loadOwner
+    await moveHistoryReading(older: true)
+  }
+
+  public func loadNewerHistory() async {
+    await moveHistoryReading(older: false)
+  }
+
+  private func moveHistoryReading(older: Bool) async {
+    guard let sessionID = selectedSessionID, !loadingOlderHistory, !historyFoldInFlight else { return }
     loadingOlderHistory = true
-    defer {
-      if olderHistoryLoadOwner == loadOwner {
-        olderHistoryLoadOwner = nil
-        loadingOlderHistory = false
-      }
-    }
+    defer { if selectedSessionID == sessionID { loadingOlderHistory = false } }
     do {
-      let page = try await historyPage(
-        sessionID: sessionID,
-        beforeSequence: before
-      )
-      guard selectedSessionID == sessionID,
-            historyProjectionGeneration == generation,
-            olderHistoryLoadOwner == loadOwner,
-            !Task.isCancelled
-      else { return }
-      _ = try ArkEventSequenceValidator.olderCursor(
-        for: page,
-        requestedBefore: before
-      )
-      livePublishTask?.cancel()
-      livePublishTask = nil
-      let foldOwner = ArkHistoryFoldOwner(
-        sessionID: sessionID,
-        generation: generation
-      )
-      historyFoldOwner = foldOwner
-      defer {
-        if historyFoldOwner == foldOwner {
-          historyFoldOwner = nil
-          if !pendingLiveEvents.isEmpty { scheduleLivePublish() }
-        }
-      }
-      let pageTouchesPresentation = page.events.isEmpty
-        || events.isEmpty
-        || (page.events.last?.id).map { last in
-          guard let first = events.first?.id else { return true }
-          return last == first - 1 || last >= first
-        } == true
-      let merged = ArkEventSequenceValidator.uniqueSorted(
-        (pageTouchesPresentation ? page.events : []) + events + pendingLiveEvents
-      )
-      try ArkEventSequenceValidator.validateReconciled(
-        merged,
-        expectedThrough: reconciledTarget(for: sessionID)
-      )
-      let language = languagePreference
-      let preservedTurn = turnProjection.latestStartedTurn
-      let preservedTurnSequence = turnProjection.latestStartedSequence
-      guard var fold = await ArkHistoryFoldWorker.shared.fold(
-        events: merged,
-        language: language
-      ) else { return }
-      guard selectedSessionID == sessionID,
-            historyProjectionGeneration == generation,
-            historyFoldOwner == foldOwner,
-            olderHistoryLoadOwner == loadOwner,
-            !Task.isCancelled
-      else { return }
-      fold.appendLive(pendingLiveEvents)
-      fold.preserveLatestStartedBoundary(
-        turn: preservedTurn,
-        sequence: preservedTurnSequence
-      )
-      let installedEventIDs = Set(fold.events.map(\.id))
-      pendingLiveEvents.removeAll { installedEventIDs.contains($0.id) }
-      events = fold.events
-      installReconciledHead(sessionID: sessionID)
-      turnProjection = fold.turnProjection
-      turnUsageByTurn = fold.turnUsageByTurn
-      markTrajectoryProjectionDirty()
-      synchronizeModelLabelFromEvents()
-      seenEventIDs = Set(events.map(\.id))
-      messageProjection = fold.messages
-      messages = messageProjection.messages
-      toolProjection = fold.tools
-      toolActivities = toolProjection.activities
-      producedFilesProjection = fold.producedFiles
-      producedFiles = producedFilesProjection.files
-      statusProjection = fold.statuses
-      chatStatuses = statusProjection.statuses
-      historyBeforeSequence = page.beforeSequence
-      hasOlderHistory = page.hasMore
-      historyLoadState = .loaded
-      chatPresentationDidChange.send()
-      composerErrorMessage = nil
+      let reader = try await prepareHistoryReader(sessionID: sessionID)
+      let snapshot = try await (older ? reader.older() : reader.newer())
+      try Task.checkCancellation()
+      guard selectedSessionID == sessionID, historyReader === reader else { return }
+      installReadingSnapshot(snapshot)
     } catch {
-      if isTaskCancellation(error) {
-        if selectedSessionID == sessionID,
-           historyProjectionGeneration == generation {
-          historyLoadState = .afterCancellation(hasHistory: !events.isEmpty)
-        }
-        return
-      }
-      if selectedSessionID == sessionID,
-         historyProjectionGeneration == generation {
-        historyLoadState = .afterCancellation(hasHistory: !events.isEmpty)
-        if error is ArkEventSequenceValidationError {
-          ArkEventChannelDiagnostics.retry(
-            session: sessionID,
-            attempt: eventResyncAttempt,
-            detail: error.localizedDescription
-          )
-          composerErrorMessage = nil
-          if resyncTargetBySessionID[sessionID] != nil {
-            scheduleEventResync(sessionID: sessionID)
-          }
-          if eventResyncAttempt > 4 {
-            markEventChannelDegraded(.mux, message: error.localizedDescription)
-          }
-        } else {
-          composerErrorMessage = error.localizedDescription
-        }
-      }
+      guard selectedSessionID == sessionID, !isTaskCancellation(error) else { return }
+      composerErrorMessage = error.localizedDescription
     }
+  }
+
+  public func returnToLatestHistory() async {
+    historyReader?.cancel()
+    historyReader = nil
+    historyReadingSnapshot = nil
+    resetTrajectoryProjectionState()
+    markTrajectoryProjectionDirty()
+    hasNewerHistory = false
+    hasOlderHistory = (liveHistoryRecords.values.map(\.orderSequence).min() ?? events.first?.id ?? 0) > 0
+    chatPresentationDidChange.send()
+    await refreshHistory()
+  }
+
+  public func loadHistoryMessageContent(messageID: Int) async throws -> ArkMessage {
+    guard let sessionID = selectedSessionID else { throw CancellationError() }
+    let historical = historyReadingSnapshot != nil
+    let requestedRecord = historyReadingSnapshot?.recordByMessageID[messageID] ?? liveHistoryRecords[messageID]
+    guard let requestedRecord else { throw ArkAPIError(message: "消息没有可用的历史定位", code: "history-stale-record") }
+    guard let recordCut = historyReadingSnapshot?.cut ?? liveHistoryRecordsCut else { throw ArkAPIError(message: "消息缺少来源版本", code: "history-stale-record") }
+    let reader = try await prepareHistoryReader(sessionID: sessionID, requiredCut: recordCut)
+    let message = try await reader.message(record: requestedRecord)
+    try Task.checkCancellation()
+    guard selectedSessionID == sessionID, historyReader === reader else { throw CancellationError() }
+    if historical, let snapshot = reader.snapshot {
+      installReadingSnapshot(snapshot)
+    } else {
+      var rows: [ArkMessage] = []
+      var previews = Set<Int>()
+      for (id, record) in liveHistoryRecords where record.state != .active {
+        if let cached = reader.cachedMessage(recordID: record.id) { rows.append(cached) }
+        else {
+          previews.insert(id)
+          rows.append(ArkMessage(id: id, role: record.kind == .user ? .user : .assistant,
+            text: record.preview, turn: record.turn, step: record.step,
+            interrupted: record.state != .complete, time: record.time))
+        }
+      }
+      try messageProjection.installHistoricalRows(rows, canonicalIDs: Set(liveHistoryRecords.values.compactMap(\.canonicalEventSequence)))
+      messages = messageProjection.messages
+      liveHistoryPreviewIDs = previews
+      chatPresentationDidChange.send()
+    }
+    return message
+  }
+
+  private func installReadingSnapshot(_ snapshot: ArkHistoryReadingSnapshot) {
+    historyReadingSnapshot = snapshot
+    resetTrajectoryProjectionState()
+    if selectedTab == .trajectory { scheduleTrajectoryProjectionIfNeeded() }
+    hasOlderHistory = snapshot.hasOlderHistory
+    hasNewerHistory = snapshot.hasNewerHistory
+    historyLoadState = .loaded
+    composerErrorMessage = nil
+    chatPresentationDidChange.send()
+  }
+
+  private func prepareHistoryReader(sessionID: String, requiredCut: ArkHistoryCut? = nil) async throws -> ArkHistoryReadingWindow {
+    if let historyReader, requiredCut == nil || historyReader.seed?.cut == requiredCut {
+      guard historyReader.snapshot != nil else { throw ArkAPIError(message: "历史正在读取", code: "history-read-busy") }
+      return historyReader
+    }
+    historyReader?.cancel()
+    let address = try await historyAddress(for: sessionID)
+    let reader = ArkHistoryReadingWindow(client: client, address: address, language: languagePreference)
+    historyReader = reader
+    do {
+      let firstPage = try await address.page(client: client, cut: requiredCut)
+      _ = try await reader.open(firstPage: firstPage)
+      try Task.checkCancellation()
+      guard selectedSessionID == sessionID, historyReader === reader else { throw CancellationError() }
+      return reader
+    } catch {
+      reader.cancel()
+      if historyReader === reader { historyReader = nil }
+      throw error
+    }
+  }
+
+  private func resetHistoryReading() {
+    statusRelocalizationTask?.cancel()
+    statusRelocalizationTask = nil
+    historyReader?.cancel()
+    historyReader = nil
+    historyReadingSnapshot = nil
+    hasNewerHistory = false
+    liveHistoryCut = nil
+    historicalUsageFacts = [:]
+    liveHistoryRecords = [:]
+    liveHistoryRecordsCut = nil
+    liveHistoryPreviewIDs = []
   }
 
   private func loadMessageFeedback(for sessionID: String) async {
@@ -4957,6 +5232,12 @@ public final class ArkAppModel: ObservableObject {
       throw ArkAPIError(message: "子代理会话当前不可读取")
     }
     return (parentID, entry)
+  }
+
+  private func historyAddress(for sessionID: String) async throws -> ArkHistoryAddress {
+    guard let address = try await subagentAddress(for: sessionID) else { return .session(sessionID) }
+    guard let mode = address.entry.mode else { throw ArkAPIError(message: "子代理会话缺少传输模式") }
+    return .child(parent: address.parentID, session: sessionID, mode: mode)
   }
 
   private func historyPage(
@@ -5712,6 +5993,12 @@ public final class ArkAppModel: ObservableObject {
         // what pinned the local tail below the stream and made every later frame look like a gap.
         // Only frames above the Host's own log length stop existing, and they must leave the dedupe
         // set too — the log re-uses those sequence numbers.
+        if lastSequence < (events.last?.id ?? -1) {
+          liveHistoryCut = nil
+          historyReader?.cancel()
+          historyReader = nil
+          historyReadingSnapshot = nil
+        }
         events.removeAll { $0.id > lastSequence }
         pendingLiveEvents.removeAll { $0.id > lastSequence }
         seenEventIDs = Set(events.map(\.id)).union(pendingLiveEvents.map(\.id))
@@ -5802,10 +6089,6 @@ public final class ArkAppModel: ObservableObject {
       }
       guard seenEventIDs.insert(event.id).inserted else { return }
       pendingLiveEvents.append(event)
-      _ = messageProjection.append(event)
-      toolProjection.append(event)
-      producedFilesProjection.append(event)
-      statusProjection.append(event)
       scheduleLivePublish()
     case "session/projection":
       guard frame.payload["sessionId"]?.stringValue == selectedSessionID else { return }
@@ -5876,13 +6159,15 @@ public final class ArkAppModel: ObservableObject {
         appliedThroughBySessionID.removeValue(forKey: deletedID)
         resyncTargetBySessionID.removeValue(forKey: deletedID)
         removeConversationSurfaceSnapshot(for: deletedID)
+        discardComposerAttachments(for: deletedID)
       }
       if let deletedID = frame.payload["sessionId"]?.stringValue,
          selectedSessionID == deletedID {
         selectedSessionID = nil
+        resetHistoryReading()
         events = []
         turnProjection = ArkChatTurnProjection()
-        turnUsageByTurn = [:]
+        turnUsageProjection = ArkChatTurnUsageProjection.Accumulator()
         messages = []
         toolActivities = []
         producedFiles = []
@@ -5973,20 +6258,10 @@ public final class ArkAppModel: ObservableObject {
     }
   }
 
-  /// The newest sequence a history read may stop at, or nil before any baseline is known.
-  private func reconciledTarget(for sessionID: String) -> Int? {
-    switch (appliedThroughBySessionID[sessionID], resyncTargetBySessionID[sessionID]) {
-    case (nil, nil): return nil
-    case (let applied?, nil): return applied
-    case (nil, let target?): return target
-    case (let applied?, let target?): return max(applied, target)
-    }
-  }
-
   /// Reconciliation is the only gate that may move the anchor, and it may only move it forward.
-  private func installReconciledHead(sessionID: String) {
+  private func installReconciledHead(sessionID: String, through: Int) {
     var cursor = ArkSessionEventCursor(applied: appliedThroughBySessionID[sessionID] ?? -1)
-    cursor.adoptReconciledHead(events.last?.id ?? -1)
+    cursor.adoptReconciledHead(through)
     appliedThroughBySessionID[sessionID] = cursor.applied
     if let target = resyncTargetBySessionID[sessionID], cursor.applied >= target {
       resyncTargetBySessionID.removeValue(forKey: sessionID)
@@ -6028,24 +6303,42 @@ public final class ArkAppModel: ObservableObject {
     chatPresentationDidChange.send()
   }
 
-  private func scheduleLivePublish() {
-    guard livePublishTask == nil, !historyFoldInFlight else { return }
+  private func scheduleLivePublish(continuation: Bool = false) {
+    guard livePublishTask == nil, !historyFoldInFlight,
+          let publishingSessionID = selectedSessionID
+    else { return }
     let intervalNanoseconds = ArkStreamingPresentationPolicy.intervalNanoseconds(
       eventCount: events.count + pendingLiveEvents.count
     )
     livePublishTask = Task { [weak self] in
-      try? await Task.sleep(nanoseconds: intervalNanoseconds)
+      if continuation {
+        await Task.yield()
+      } else {
+        try? await Task.sleep(nanoseconds: intervalNanoseconds)
+      }
       guard let self, !Task.isCancelled else { return }
+      guard selectedSessionID == publishingSessionID else {
+        livePublishTask = nil
+        return
+      }
       let publishStarted = DispatchTime.now().uptimeNanoseconds
-      let incoming = pendingLiveEvents
-      if let first = incoming.first, first.id != (events.last?.id ?? -1) + 1 {
-        // A cancelled or truncated read can leave the array head behind the anchor. Appending here
-        // would bury the missing range inside the transcript, so the range is paged in first and
-        // these frames stay pending for that install.
+      // Bound events processed synchronously after a large backlog. Continuations
+      // yield the main actor between batches rather than sleeping through it.
+      let incoming = Array(pendingLiveEvents.prefix(4_096))
+      var publishCursor = ArkSessionEventCursor(applied: events.last?.id ?? -1)
+      let contiguous = incoming.allSatisfy { event in
+        if case .accepted = publishCursor.observe(event.id) { return true }
+        return false
+      }
+      if !contiguous {
+        // A later frame can be buffered after an earlier contiguous frame and
+        // an intervening hole. Validate the entire batch before any reducer is
+        // advanced; the existing resync owner installs the missing range first.
+        livePublishTask = nil
         if let sessionID = selectedSessionID {
           let candidate = incoming.last?.id
             ?? appliedThroughBySessionID[sessionID]
-            ?? first.id
+            ?? publishCursor.applied
           resyncTargetBySessionID[sessionID] = max(
             resyncTargetBySessionID[sessionID] ?? -1,
             candidate
@@ -6054,54 +6347,44 @@ public final class ArkAppModel: ObservableObject {
         }
         return
       }
-      pendingLiveEvents.removeAll(keepingCapacity: true)
+      pendingLiveEvents.removeFirst(incoming.count)
       events.append(contentsOf: incoming)
       var chatPresentationChanged = false
-      var rebuiltTurnProjection = false
+      // All semantic reducers advance at the same published boundary. Frames
+      // buffered during a history fold or a gap must not mutate just some of
+      // these owners before their contiguous batch is installed.
+      messageProjection.append(contentsOf: incoming)
+      for event in incoming {
+        toolProjection.append(event)
+        producedFilesProjection.append(event)
+        statusProjection.append(event)
+      }
+      let touchedTurns = Set(incoming.compactMap { ArkChatTurnUsageProjection.turn(in: $0) })
+      let previousMetrics = turnProjection.metricsByTurn
+      let previousCompleted = turnProjection.completedSequenceByTurn
+      let previousTerminalStates = turnProjection.terminalStateByTurn
+      turnProjection.append(contentsOf: incoming)
+      if touchedTurns.contains(where: {
+        previousMetrics[$0] != self.turnProjection.metricsByTurn[$0]
+          || previousCompleted[$0] != self.turnProjection.completedSequenceByTurn[$0]
+          || previousTerminalStates[$0] != self.turnProjection.terminalStateByTurn[$0]
+      }) {
+        chatPresentationChanged = true
+      }
+      let previousUsage = turnUsageByTurn
+      for turn in touchedTurns { historicalUsageFacts.removeValue(forKey: turn) }
+      turnUsageProjection.append(contentsOf: incoming)
+      if touchedTurns.contains(where: { previousUsage[$0] != self.turnUsageByTurn[$0] }) {
+        chatPresentationChanged = true
+      }
       if events.count > ArkStreamingPresentationPolicy.presentedEventLimit {
-        let previousMetrics = turnProjection.metricsByTurn
-        let previousCompleted = turnProjection.completedSequenceByTurn
-        let previousStartedTurn = turnProjection.latestStartedTurn
-        let previousStartedSequence = turnProjection.latestStartedSequence
-        let previousUsage = turnUsageByTurn
         let watermark = ArkStreamingPresentationPolicy.presentedEventLimit
           - ArkStreamingPresentationPolicy.presentationTrimBatch
         let removed = Array(events.prefix(events.count - watermark))
         events.removeFirst(events.count - watermark)
         for event in removed { seenEventIDs.remove(event.id) }
         historyBeforeSequence = events.first?.id
-        hasOlderHistory = true
-        turnProjection = ArkChatTurnProjection(events: events)
-        turnProjection.preserveLatestStartedBoundary(
-          turn: previousStartedTurn,
-          sequence: previousStartedSequence
-        )
-        turnUsageByTurn = ArkChatTurnUsageProjection.projectAll(events: events)
-        chatPresentationChanged = previousMetrics != turnProjection.metricsByTurn
-          || previousCompleted != turnProjection.completedSequenceByTurn
-          || previousUsage != turnUsageByTurn
-        rebuiltTurnProjection = true
-      }
-      if !rebuiltTurnProjection {
-        let touchedTurns = Set(incoming.compactMap { ArkChatTurnUsageProjection.turn(in: $0) })
-        let previousMetrics = turnProjection.metricsByTurn
-        let previousCompleted = turnProjection.completedSequenceByTurn
-        turnProjection.append(contentsOf: incoming)
-        if touchedTurns.contains(where: {
-          previousMetrics[$0] != self.turnProjection.metricsByTurn[$0]
-            || previousCompleted[$0] != self.turnProjection.completedSequenceByTurn[$0]
-        }) {
-          chatPresentationChanged = true
-        }
-        let completedTurns = Set(incoming.compactMap { event in
-          event.type == "turn/end" ? ArkChatTurnUsageProjection.turn(in: event) : nil
-        })
-        for turn in completedTurns {
-          let usage = ArkChatTurnUsageProjection.project(events: events, turn: turn)
-          if turnUsageByTurn[turn] != usage { chatPresentationChanged = true }
-          if let usage { turnUsageByTurn[turn] = usage }
-          else { turnUsageByTurn.removeValue(forKey: turn) }
-        }
+        if historyReadingSnapshot == nil { hasOlderHistory = true }
       }
       markTrajectoryProjectionDirty()
       synchronizeModelLabelFromEvents()
@@ -6137,7 +6420,7 @@ public final class ArkAppModel: ObservableObject {
         )
       }
       livePublishTask = nil
-      if !pendingLiveEvents.isEmpty { scheduleLivePublish() }
+      if !pendingLiveEvents.isEmpty { scheduleLivePublish(continuation: true) }
     }
   }
 
@@ -6160,6 +6443,8 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func markTrajectoryProjectionDirty() {
+    // Live tokens cannot invalidate an immutable historical cut.
+    guard historyReadingSnapshot == nil else { return }
     trajectoryProjectionDirty = true
     if selectedTab == .trajectory { scheduleTrajectoryProjectionIfNeeded() }
   }
@@ -6178,9 +6463,11 @@ public final class ArkAppModel: ObservableObject {
     let generation = trajectoryProjectionGeneration
     let sessionID = selectedSessionID
     let snapshot = events
+    let readingSnapshot = historyReadingSnapshot
     trajectoryProjectionTask = Task { [weak self] in
       let records = await Task.detached(priority: .userInitiated) {
-        ArkTrajectoryProjection.records(from: snapshot)
+        if let readingSnapshot { return ArkTrajectoryProjection.records(from: readingSnapshot) }
+        return ArkTrajectoryProjection.records(from: snapshot)
       }.value
       guard let self,
             !Task.isCancelled,
@@ -6201,6 +6488,7 @@ public final class ArkAppModel: ObservableObject {
   /// with the last semantic request instead of showing a false
   /// "未配置模型" state.
   private func synchronizeModelLabelFromEvents() {
+    guard historyReadingSnapshot == nil else { return }
     guard let route = trajectoryRecords.reversed().first(where: {
       $0.provider?.isEmpty == false && $0.model?.isEmpty == false
     }),

@@ -1,53 +1,12 @@
-/** Cold-safe Session list and search projection. */
+/** Cached lifecycle summary only; canonical Host owns list/search and projection registration. */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session';
-import type { SessionListMetadata, SessionSearchValue, SessionSummary } from './types.ts';
-/** Default maximum artifact size eligible for one cold projection observation. */
-export declare const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024;
+import type { Session } from '@deepseek-ai/dsh-session';
+import type { SessionSummary } from './types.ts';
 /**
- * Advance the Session-list metadata projection by one committed event.
- * @param state - metadata before the event.
- * @param event - next committed Session event.
- * @returns the original or advanced metadata value.
+ * Build a created-session lifecycle hint without reading or replaying its log.
+ * @param ctx - Host context providing the live Agent registry and optional cached projections.
+ * @param session - exact Session whose header, cursor, and cached metadata describe the hint.
+ * @returns lifecycle summary; unavailable cached projections are logged and omitted.
  */
-export declare function applySessionListMetadata(state: SessionListMetadata, event: SessionEvent): SessionListMetadata;
-/**
- * Return the longest prefix containing at most `maximum` Unicode code points.
- * @param value - source text.
- * @param maximum - maximum number of Unicode code points.
- * @returns the source text or its longest allowed prefix.
- */
-export declare function truncateUnicodeCodePoints(value: string, maximum: number): string;
-/** Owns list projection registration, bounded cold summaries, and authorized search. */
-export declare class ApiSessionList {
-    private readonly ctx;
-    private readonly coldBlankProbeMaxBytes;
-    /**
-     * @param ctx - Host context carrying Session, query, persistence, and projection services.
-     * @param coldBlankProbeMaxBytes - maximum physical artifact size eligible for a full observation.
-     */
-    constructor(ctx: Context, coldBlankProbeMaxBytes: number);
-    /**
-     * Build one current attached-Session summary.
-     * @param session - attached Session to summarize.
-     * @returns current list metadata and available projections.
-     */
-    summaryFor(session: Session): SessionSummary;
-    /**
-     * Read every visible attached and persisted Session without activating an Agent.
-     * @param signal - optional cancellation for persistence reads.
-     * @returns visible Session summaries ordered by activity.
-     */
-    list(signal?: AbortSignal): Promise<SessionSummary[]>;
-    private summarizeCold;
-    private probeSmallCold;
-    /**
-     * Search current visible message content without activating any matching Session.
-     * @param query - literal message-content query.
-     * @param signal - cancellation for list and search reads.
-     * @returns authorized bounded Session search results.
-     */
-    search(query: string, signal: AbortSignal): Promise<SessionSearchValue>;
-    private projectionsFor;
-}
+export declare function sessionSummaryFor(ctx: Context, session: Session): SessionSummary;
 //# sourceMappingURL=list.d.ts.map

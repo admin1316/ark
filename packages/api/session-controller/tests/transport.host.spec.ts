@@ -294,7 +294,9 @@ describe('SessionHistoryController', () => {
     const gap = event('fixture/gap', 2)
     live.ctx.emit('session/event', {
       id: session.id,
+      header: session.header, seq: 3,
       events: [event('fixture/start', 0), skipped, gap],
+      eventAt: (seq: number) => [event('fixture/start', 0), skipped, gap][seq],
     } as unknown as Session, gap)
     await expect(followed.next()).rejects.toMatchObject({ failure: { code: 'internal' } })
   })

@@ -12,7 +12,7 @@ Agent-bound calls require particular care. Shared lookup policy reuses live Agen
 
 ## Decision
 
-Simple unary operations live on their natural business Remote owner. The business package owns the Remote signature and Host adaptation; `@deepseek-ai/dsh-api-remotes/client` selects its generated contribution; the Client package owns presentation joins. Connection owns the transport envelope and exact Fetch route registry, and no API Proxy service remains.
+Simple unary operations live on their natural business Remote owner. The business package owns the Remote signature and Host adaptation. API Remotes selects generated contributions for the Host; retained Client source owns its presentation joins and is not part of the Native release runtime. Connection owns the transport envelope and exact Fetch route registry, and no API Proxy service remains.
 
 | Former API Proxy operation | Destination | Owner and preserved behavior |
 |---|---|---|
@@ -21,15 +21,15 @@ Simple unary operations live on their natural business Remote owner. The busines
 | `llm.providers` | `llm/listProviders`, `llm/listConfigurableProviders` | `LlmRuntime` owns provider facts; Clients join live and configurable rows. |
 | `llm.discoverModels` | `llm/discoverModels` | `LlmRuntime` preserves provider discovery, cancellation, and sanitized failures. |
 | `llm.models` | `session/modelCatalog` | `SessionController` owns the Host-generation catalog, default selection, and isolated provider failures. |
-| `credentials.describe`, `credentials.set`, `credentials.unset` | `credentials/describe`, `credentials/set`, `credentials/unset` | `CredentialsController` preserves reference validation, field projection, provider diagnostics, and refusal mapping. |
-| `settings.describe`, `settings.update`, `settings.replace`, `settings.mutate` | Equivalent `settings/*` methods | `SettingsController` preserves redaction, mutation semantics, revision checks, and provider failures. |
-| `settings.openDocument` | `settings/openSettingsDocument` | `SettingsController` prepares the provider-owned document and opens it with text-editor intent. |
+| `credentials.describe`, `credentials.set`, `credentials.unset` | `credentials/describe`, `credentials/set`, `credentials/unset` | `CredentialProvider` owns the sole credential Remote definition, whole-batch reference validation, bounded fan-out, redacted metadata, and refusal mapping. |
+| `settings.describe`, `settings.update`, `settings.replace`, `settings.mutate` | Equivalent `settings/*` methods | `SettingsProvider` owns the sole settings read/write Remote definitions, redaction, protected-namespace checks, mutation semantics, revisions, and provider failures. |
+| `settings.openDocument` | `settings/openSettingsDocument` | `SettingsController` delegates to `SettingsProvider.remoteOpenDocument`, retaining provider-owned absolute-path admission, cancellation, and text-editor intent. |
 | `agentPreset.read`, `agentPreset.copy`, `agentPreset.remove` | Equivalent `agentPresets/*` methods | `AgentPresetService` owns document reads, copies, and removals. |
 | `agentPreset.openDocument` | `settings/openAgentPresetDirectory` | `SettingsController` resolves the preset directory and returns its path when native opening is unavailable. |
 | `subagent.interrupt` | `subagents/interruptByParent` | The subagent service preserves parent authority without activating either Agent. |
 | `workspace.list`, `workspace.insertSessionBefore`, `workspace.archiveSession` | Equivalent `workspace/*` methods | The Workspace registry owns detached snapshots and serialized mutations. |
 | `skill.list` | `skills/list` | `SessionSkillCatalog` observes the Session and its recorded preset, uses a live Agent only when one already exists, and never activates an Agent for listing. |
-| `fileReferences/list` | `fileReferences/list` | `SessionFileReferences` supplies the Session Controller's established Agent lookup to the provider; cold lookup behavior remains unchanged. |
+| `fileReferences/list` | `fileReferences/list` | `FileReferenceService` owns the sole Remote definition and forwards the resolved Agent, query, and caller signal to its provider; the shared Remote lookup owns Agent admission. |
 | `host.openPath` | `session/openWorkspacePath` | The Session-aware Client resolves relative paths against the known workspace before `SessionController` hands them to the native opener. |
 | `host.describe` | `$events` ready frame plus capability queries | API Remotes sends the Host home with generation readiness; Settings and Session controllers report their native-open capabilities when the corresponding page appears. Unused process metadata is not sent. |
 | `session.export` | `GET`/`HEAD /api/session.export` | `session-log-export` registers an exact Connection Fetch route and streams the ZIP without a JSON Remote envelope. |
@@ -44,7 +44,7 @@ Connection authenticates the complete `/api` request before choosing a Typert en
 
 ## Verification
 
-Focused Host and Client tests cover Remote calls, lookup and no-activation policy, native opening, error projection, and removal of legacy routes. The repository build generates and consumes the selected Remote contributions before building the Web application.
+Focused Host and Client tests cover Remote calls, lookup and no-activation policy, native opening, error projection, and removal of legacy routes. The Native Host build generates and consumes the selected Remote contributions; retained Client behavior is checked through its source tests.
 
 ## Alternatives considered
 
@@ -62,4 +62,4 @@ Focused Host and Client tests cover Remote calls, lookup and no-activation polic
 
 Business owners and Client consumers each define one side of a unary operation, while Connection owns authentication, transport, response envelopes, exact Fetch routes, and generation state. Removing the legacy client timeout is the accepted observable transport change; business results, cancellation, lifecycle policy, filtering, and native-path authority remain owned by their existing domains.
 
-Generated Remote artifacts and the explicit API Remotes assembly become required whenever a Remote signature or selected package changes.
+Generated Remote artifacts and the explicit API Remotes assembly become required whenever a Remote signature or selected package changes. Missing active Services fail at the shared Gateway with a provider-composition hint that excludes request arguments. Retained browser source consumes the provider-owned credential wrapper; the Native Host release does not enable a browser runtime.

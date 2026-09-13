@@ -12,7 +12,9 @@ Status: implemented
 
 [运行时验证器](../../../../integrations/jiuzhang/src/runtime-closure.mjs) 在独立 Node 进程中，每批编译最多 256 个可达入口。Node VM 根据文件扩展名和最近的 package manifest 选择模块或 CommonJS 语法；不会链接或执行包代码。仅移除位于字节零的 shebang；不能因为移除了前置 BOM，就接受 Node 原本拒绝的语法。包哈希、依赖可达性、禁用包、符号链接规则和收据验证仍是前置条件。
 
-[原生对话数据源](../../../../integrations/jiuzhang/native/Sources/JiuzhangShellUI/ArkRootView.swift) 在已有投影状态中暂存完成的 Markdown 解析结果，并在 16 毫秒的合并间隔后发布一次快照。发布时重新验证会话、源文本和请求身份。取消、源文本替换和会话切换会丢弃过期的暂存结果。
+[原生对话数据源](../../../../integrations/jiuzhang/native/Sources/JiuzhangShellUI/ArkRootView.swift) 在已有投影状态中暂存完成的 Markdown 解析结果。解析完成后调度已有的数据源刷新；刷新先核对当前会话、源文本和请求身份，再同步取出就绪结果，装入同一份快照。验证与发布之间不设第二个完成队列或延迟安装步骤。取消、源文本替换和会话切换会丢弃过期的暂存结果。
+
+对话渲染窗口按稳定行身份移动，不为显示全部旧内容而持续扩大。较早和较新内容入口保持各行可达，并保留一个有界的渲染持有者。历史预览行载入同一来源的完整正文后才启用整条消息操作。表格各列共用由文本固有尺寸确定的宽度，并为长内容设置换行上限；测量不依赖视口几何，避免短列造成不必要的横向滚动。
 
 ## 考虑过的替代方案
 
@@ -25,3 +27,5 @@ Status: implemented
 ## 后果
 
 语法解析器对象的数量受批次大小限制，并位于启动器堆之外。所选 Node 必须支持 VM 模块和包清单发现。[运行时闭包测试](../../../../integrations/jiuzhang/tests/runtime-closure.test.mjs) 覆盖混合语法、跨批次边界的无效入口与不执行代码。[原生滚动测试](../../../../integrations/jiuzhang/native/Tests/JiuzhangShellCoreTests/ArkChatScrollContractChecks.swift) 覆盖 128 个来源的批次、重复提取、源文本替换、取消和过期会话结果。这些检查不证明生产晋级或无限长度会话的性能。
+
+有界容器细节正在由[原生对话布局提案](../../proposed/bug-fix/2026-09-13-bounded-native-transcript-layout.zh.md)修订；解析与发布决策保持不变。

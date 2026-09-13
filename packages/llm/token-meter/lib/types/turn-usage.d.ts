@@ -29,5 +29,5 @@ export interface TurnTokenUsage {
  * @param events - Turn-local durable events from `turn/start` through `turn/end`.
  * @returns exact aggregate usage, or undefined when it cannot be proven.
  */
-export declare function deriveTurnTokenUsage(events: readonly SessionEvent[]): TurnTokenUsage | undefined;
+export declare function deriveTurnTokenUsage(events: Iterable<SessionEvent>): TurnTokenUsage | undefined;
 //# sourceMappingURL=turn-usage.d.ts.map

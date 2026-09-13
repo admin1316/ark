@@ -2,6 +2,16 @@ import AppKit
 import Combine
 import SwiftUI
 
+/// Vertical anchor semantics for one scroll surface.
+///
+/// `.bottom` is the chat transcript's tail-following behavior. `.top` is for reader
+/// surfaces (the trajectory ledger) that keep their top-normalized position instead of
+/// re-pinning to the estimated document bottom while lazily placed rows materialize.
+public enum ArkScrollAnchor: Sendable {
+  case bottom
+  case top
+}
+
 /// Stable SwiftUI-facing owner for chat scroll state. Keep this controller
 /// above a tab/session-specific chat subtree so detaching and reattaching an
 /// `NSScrollView` does not discard per-session positions.
@@ -9,12 +19,16 @@ import SwiftUI
 public final class ArkChatScrollController: ObservableObject {
   @Published public private(set) var isAtBottom = true
 
+  /// Vertical anchor this surface keeps across content and viewport geometry changes.
+  public let anchor: ArkScrollAnchor
+
   private weak var attachedScrollView: NSScrollView?
   private var coordinator: ArkChatScrollCoordinator?
   private var retainedStateMachine: ArkChatScrollStateMachine
   private var requestedSessionID: String?
 
-  public init(followThreshold: Double = 24) {
+  public init(followThreshold: Double = 24, anchor: ArkScrollAnchor = .bottom) {
+    self.anchor = anchor
     retainedStateMachine = ArkChatScrollStateMachine(followThreshold: followThreshold)
   }
 
@@ -26,7 +40,8 @@ public final class ArkChatScrollController: ObservableObject {
     attachedScrollView = scrollView
     let coordinator = ArkChatScrollCoordinator(
       scrollView: scrollView,
-      stateMachine: retainedStateMachine
+      stateMachine: retainedStateMachine,
+      anchor: anchor
     )
     coordinator.onFollowingBottomChange = { [weak self] followsBottom in
       self?.setAtBottom(followsBottom)

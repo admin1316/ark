@@ -24,6 +24,7 @@ vi.mock('node:https', async importOriginal => ({
 }))
 
 import KnowledgeWikiService, { isBlockedNetworkAddress, readResponseBounded, requestPinned } from '../src/index.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 interface NetworkSurface {
   snapshots: { dispose(): void }
@@ -84,10 +85,10 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'wiki-service-network-'))
   mkdirSync(join(root, 'wiki'), { recursive: true })
   ctx = new Context()
-  service = new KnowledgeWikiService(ctx, {
+  service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot: join(root, 'wiki'), mainRoot: root,
     credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-  }) as unknown as NetworkSurface
+  })) as unknown as NetworkSurface
 })
 
 afterEach(async () => {

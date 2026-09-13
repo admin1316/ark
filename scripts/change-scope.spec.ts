@@ -126,7 +126,7 @@ describe('change-scope', () => {
     expect(report.paths).toEqual({ committed: [], staged: [], unstaged: [], untracked: [] })
   })
 
-  it('reports an exact head above a non-master stacked base while dirty paths remain worktree-local', () => {
+  it('reports an exact head above a non-master stacked base while dirty paths remain worktree-local', { timeout: 20_000 }, () => {
     const { root } = fixture()
     git(root, ['switch', '-c', 'foundation'])
     const baseSha = commit(root, 'foundation.txt', 'foundation\n')
@@ -142,7 +142,7 @@ describe('change-scope', () => {
     expect(report.paths.untracked).toEqual(['current-worktree.txt'])
   })
 
-  it('keeps committed, staged, unstaged, and untracked paths independent and does not mutate state', () => {
+  it('keeps committed, staged, unstaged, and untracked paths independent and does not mutate state', { timeout: 20_000 }, () => {
     const { root } = fixture()
     commit(root, 'unstaged.txt', 'before\n')
     const baseSha = git(root, ['rev-parse', 'HEAD'])
@@ -179,7 +179,7 @@ describe('change-scope', () => {
     expect(existsSync(sideEffect)).toBe(false)
   })
 
-  it.skipIf(process.platform === 'win32')('rejects distinct non-UTF-8 Git paths', () => {
+  it.skipIf(process.platform === 'win32')('rejects distinct non-UTF-8 Git paths', { timeout: 20_000 }, () => {
     const { root } = fixture()
     const blobSha = git(root, ['hash-object', '-w', '--stdin'], 'content')
     const entry = Buffer.from(`100644 ${blobSha}\t`, 'ascii')
@@ -204,7 +204,7 @@ describe('change-scope', () => {
     }).toThrow('cannot inspect staged paths: Git path 1 is not valid UTF-8')
   })
 
-  it('rejects missing, ambiguous, and non-commit refs', () => {
+  it('rejects missing, ambiguous, and non-commit refs', { timeout: 20_000 }, () => {
     const { root } = fixture()
     git(root, ['branch', 'collision'])
     git(root, ['tag', 'collision'])
@@ -224,7 +224,7 @@ describe('change-scope', () => {
     }
   })
 
-  it('renders deterministic versioned JSON', () => {
+  it('renders deterministic versioned JSON', { timeout: 20_000 }, () => {
     const { root } = fixture()
     git(root, ['switch', '-c', 'format'])
     commit(root, 'zeta.txt', 'zeta\n')

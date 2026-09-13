@@ -1,11 +1,29 @@
+---
+description: "通过 JSON-RPC stdio 提供的仅面向自动化的 ACP（Agent Client Protocol） 服务器。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-acp
 
 [English](README.md) | 中文
+
+## 概述
 
 通过 JSON-RPC stdio 提供的仅面向自动化的 [ACP（Agent Client Protocol）](https://agentclientprotocol.com) 服务器。程序化客户端可以创建新 harness agent（智能体）、发送文本／图片提示词、收集已提交的 assistant 文本／图片、按策略响应一次性权限请求并取消工作。仓库中的主要客户端是 [`dsh-subagent-acp`](../../subagent/subagent-acp/README.zh.md)。
 
 此包是传输适配器，而非 UI 集成或能力 seam。它不公开编辑器导航、transcript（文本记录）回放、命令、模式、配置选择器、信息征集、推理（reasoning）、计划、标题或工具展示。交互式渲染与向用户提问属于 Web 宿主和客户端模块。
 
+## 目录
+
+- [插件](#plugin)
+- [协议约定](#protocol-contract)
+- [生命周期](#lifecycle)
+- [运行](#running)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="plugin"></a>
 ## 插件
 
 `apply(ctx, config)` 在 stdin/stdout 上打开 `AgentSideConnection` 并驱动 `ctx.agents`。Stdout 专用于协议帧。
@@ -35,16 +53,19 @@
 
 已提交消息输出有意牺牲逐 token 输出的低延迟，以换取干净的自动化结果。未提交的提供方分片和重试尝试无法泄漏部分文本或图片；推理与工具活动仍保留在会话日志中，以便其他界面观测。由于附件读取是异步的，每个会话会串行交付内容；已提交图片缺失或损坏时，提示词响应会失败，而不会发出占位符。
 
+<a id="lifecycle"></a>
 ## 生命周期
 
 客户端断开与 Cordis 释放共用同一个记忆化清理流程。桥接层先拒绝新会话和提示词，取消并等待提示词准入、agent 活动和有序输出交付全部停稳，然后只 drain 此连接确切拥有的 Agent 之下的可继续后代，再并行释放这些 handle，并等待全部结果结算后才报告失败。其他共享该上下文的前端会保留其可继续森林和准入。因此，仅 ACP 的插件重载不会遗留 agent。
 
 ACP 要求每个提示词响应都携带 `stopReason`，但桥接层不声称它表示提示词专属的轮次结果。操作区间从提示词进入 Agent inbox 开始，在准入、整个 Agent 空闲和有序输出交付全部停稳后结束；inbox 接收前无关 Agent 工作的失败不会归因给该提示词。已提交的 assistant 消息会在自有区间内流式输出，Agent 进入空闲状态前发生的 steering（中途引导）或注入工作也可能参与其中。结算优先级依次为显式取消、输出交付失败、区间内 Agent 失败、关联轮次结束。因 token 上限而结束时以 `end_turn` 结算；关联模型错误也只会在同一个完全停稳边界拒绝提示词。
 
+<a id="running"></a>
 ## 运行
 
 `pnpm --dir /path/to/deepseek-harness run demo:acp` 启动仓库的自动化服务器组合。父 harness 可以通过 [`@deepseek-ai/dsh-subagent-acp`](../../subagent/subagent-acp/README.zh.md) spawn 它；其他 ACP 客户端只需上述核心方法。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 提示词文本与图片
@@ -75,9 +96,15 @@ ACP 要求每个提示词响应都携带 `stopReason`，但桥接层不声称它
 
 仅通过所属工具的结果追加。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **仅新会话**：不支持加载、列出、恢复、删除和 fork。
 - **仅光栅图片和一个 workspace**：图片提示词要求持久存储以及明确声明支持图片输入的确切路由；只接受 PNG、JPEG、WebP 和 GIF。音频、嵌入资源、非空附加目录和 MCP 服务器都会被拒绝；资源链接只会展平为文本引用，不会获取其内容。
 - **仅已提交答案**：实时进度、推理、工具活动、计划、标题和用量不会通过协议传输。
 - **由连接管理的生命周期**：一个连接会释放其所有会话；尚未实现单个会话关闭功能。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

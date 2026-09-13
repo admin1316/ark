@@ -14,7 +14,7 @@ import { jsonByteLength } from '../src/shared/json.ts'
 import type { InspectorSourceDescriptor } from '../src/shared/bridge/messages/observation.ts'
 import { CordisTreeStore } from '../src/worker/inspection/cordis-store.ts'
 import { CordisDomBackend, type CordisDomChange } from '../src/worker/cdp/domains/dom/model.ts'
-import { InspectorClientFixture } from './fixtures/client-source.host.ts'
+import { InspectorProtocolFixture } from './fixtures/protocol-source.host.ts'
 
 interface CdpMessage {
   readonly id?: number
@@ -80,7 +80,7 @@ describe('Cordis tree inspection', () => {
   let inspector: InspectorHandle | undefined
   let cdp: CdpClient | undefined
   let secondCdp: CdpClient | undefined
-  let clientSource: InspectorClientFixture | undefined
+  let clientSource: InspectorProtocolFixture | undefined
   const observers: Array<() => void> = []
   const fibers: Array<{ dispose(): Promise<void> }> = []
 
@@ -345,7 +345,7 @@ describe('Cordis tree inspection', () => {
     backend.close()
   })
 
-  it('projects Host and Client trees and resolves both node kinds to RemoteObjects', async () => {
+  it('projects the Host tree and resolves Context and Fiber nodes through real V8', async () => {
     inspector = await startInspector({ port: 0, captureFetch: false, maxCordisNodes: 100 })
     const host = new Context()
     const hostFiber = host.plugin({ name: 'host-child', apply() {} })
@@ -354,7 +354,6 @@ describe('Cordis tree inspection', () => {
     Reflect.set(globalThis, '__cordisHostProbe', host)
     observers.push(publishHostCordisTree(host, inspector.source, { maxNodes: 100, maxBytes: 64 * 1_024 }))
 
-    clientSource = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Tree Client' })
     cdp = await CdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
     await cdp.call('Runtime.enable')
 
@@ -364,7 +363,7 @@ describe('Cordis tree inspection', () => {
       expect(response.error).toBeUndefined()
       document = response.result?.root as CdpNode
       expect(hostContainer(document)).toBeDefined()
-      expect(clientContainers(document)).toHaveLength(1)
+      expect(clientContainers(document)).toHaveLength(0)
     })
     if (document === undefined) throw new Error('DOM.getDocument returned no root')
     expect(document.children?.map(node => node.localName)).toEqual(['host', 'clients'])
@@ -376,14 +375,12 @@ describe('Cordis tree inspection', () => {
       clients: Array<{ root: Record<string, unknown> }>
     }
     expect(model.host?.root).toMatchObject({ kind: 'context' })
-    expect(model.clients).toHaveLength(1)
-    expect(model.clients[0]?.root).toMatchObject({ kind: 'context' })
+    expect(model.clients).toHaveLength(0)
     expect(model.host?.root).not.toHaveProperty('nodeId')
     expect(model.host?.root).not.toHaveProperty('backendNodeId')
 
     const realms = [
       ['host', hostContainer(document)],
-      ['client', clientContainers(document)[0]],
     ] as const
     for (const [realmKind, realm] of realms) {
       expect(realm?.attributes ?? []).toEqual([])
@@ -431,99 +428,16 @@ describe('Cordis tree inspection', () => {
     await expect(cdp.call('DOM.requestNode', { objectId: hostExceptionObject.objectId }))
       .resolves.toMatchObject({ result: { nodeId: hostNode.nodeId } })
 
-    let clientContextId: number | undefined
-    await vi.waitFor(() => {
-      const event = cdp!.events.find(item => item.method === 'Runtime.executionContextCreated'
-        && String((item.params?.context as { name?: string } | undefined)?.name).startsWith('Client'))
-      clientContextId = (event?.params?.context as { id?: number } | undefined)?.id
-      expect(clientContextId).toBeTypeOf('number')
-    })
-    const clientNode = walk(clientContainers(document)[0]!).find(item => item.localName === 'context')!
-    const clientEvaluated = await cdp.call('Runtime.evaluate', {
-      expression: 'globalThis.__cordisClientProbe',
-      contextId: clientContextId,
-    })
-    expect(clientEvaluated.result?.result).toMatchObject({ type: 'object', subtype: 'node', className: 'Context' })
-    await expect(cdp.call('DOM.requestNode', {
-      objectId: (clientEvaluated.result?.result as Record<string, unknown>).objectId,
-    })).resolves.toMatchObject({ result: { nodeId: clientNode.nodeId } })
-    const clientThrown = await cdp.call('Runtime.evaluate', {
-      expression: 'throw globalThis.__cordisClientProbe',
-      contextId: clientContextId,
-    })
-    const clientException = clientThrown.result?.exceptionDetails as Record<string, unknown>
-    const clientExceptionObject = clientException.exception as Record<string, unknown>
-    expect(clientExceptionObject).toMatchObject({ subtype: 'node', className: 'Context' })
-    await expect(cdp.call('DOM.requestNode', { objectId: clientExceptionObject.objectId }))
-      .resolves.toMatchObject({ result: { nodeId: clientNode.nodeId } })
-
-    const consoleOffset = cdp.events.length
-    await clientSource.logCordis('cordis-client-console')
-    let consoleObject: Record<string, unknown> | undefined
-    let consoleFiber: Record<string, unknown> | undefined
-    await vi.waitFor(() => {
-      const event = cdp!.events.slice(consoleOffset).find((candidate) => {
-        const params = candidate.params
-        if (params === undefined
-          || candidate.method !== 'Runtime.consoleAPICalled'
-          || params.executionContextId !== clientContextId
-          || !Array.isArray(params.args)) return false
-        return params.args.some(argument => (argument as { value?: unknown }).value === 'cordis-client-console')
-      })
-      const args = event?.params?.args
-      consoleObject = Array.isArray(args) ? args[0] as Record<string, unknown> | undefined : undefined
-      consoleFiber = Array.isArray(args) ? args[1] as Record<string, unknown> | undefined : undefined
-      expect(consoleObject).toMatchObject({ type: 'object', subtype: 'node', className: 'Context' })
-      expect(consoleFiber).toMatchObject({ type: 'object', subtype: 'node', className: 'Fiber' })
-    })
-    await expect(cdp.call('DOM.requestNode', { objectId: consoleObject!.objectId }))
-      .resolves.toMatchObject({ result: { nodeId: clientNode.nodeId } })
-    const requestedFiber = await cdp.call('DOM.requestNode', { objectId: consoleFiber!.objectId })
-    const requestedFiberId = (requestedFiber.result as { nodeId?: number } | undefined)?.nodeId
-    const clientFiberNode = walk(clientContainers(document)[0]!).find(node => node.nodeId === requestedFiberId)
-    expect(clientFiberNode).toMatchObject({
-      localName: 'fiber',
-      attributes: ['uid', String(clientSource.fiberUid)],
-    })
-
-    const firstResolved = await cdp.call('DOM.resolveNode', { backendNodeId: clientNode.backendNodeId })
-    const firstObjectId = (firstResolved.result?.object as Record<string, unknown>).objectId
     secondCdp = await CdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
-    const secondDocument = (await secondCdp.call('DOM.getDocument', { depth: -1 })).result?.root as CdpNode
-    const secondNode = walk(secondDocument).find(node => node.backendNodeId === clientNode.backendNodeId)
-    expect(secondNode).toBeDefined()
-    const secondResolved = await secondCdp.call('DOM.resolveNode', { backendNodeId: clientNode.backendNodeId })
-    const secondObjectId = (secondResolved.result?.object as Record<string, unknown>).objectId
-    expect(secondObjectId).not.toBe(firstObjectId)
-    expect((await secondCdp.call('DOM.requestNode', { objectId: firstObjectId })).error).toBeDefined()
-
-    const eventOffset = cdp.events.length
-    await clientSource.close()
-    clientSource = undefined
-    await vi.waitFor(() => {
-      const events = cdp!.events.slice(eventOffset)
-      expect(events.some(event => event.method === 'Runtime.executionContextDestroyed'
-        && event.params?.executionContextId === clientContextId)).toBe(true)
-      expect(events.some(event => event.method === 'DOM.documentUpdated')).toBe(false)
-    })
-
-    const disconnectedDocument = (await cdp.call('DOM.getDocument', { depth: -1 })).result?.root as CdpNode
-    const disconnectedClient = clientContainers(disconnectedDocument)[0]
-    expect(disconnectedClient).toBeDefined()
-    expect(walk(disconnectedClient!).find(node => node.backendNodeId === clientNode.backendNodeId)?.nodeId)
-      .toBe(clientNode.nodeId)
-    expect((await cdp.call('DOM.resolveNode', { nodeId: clientNode.nodeId })).error?.message)
-      .toContain('Cordis realm is disconnected')
-    expect((await cdp.call('DOM.requestNode', {
-      objectId: (clientEvaluated.result?.result as Record<string, unknown>).objectId,
+    await secondCdp.call('DOM.getDocument', { depth: -1 })
+    const secondResolved = await secondCdp.call('DOM.resolveNode', { backendNodeId: hostNode.backendNodeId })
+    expect(secondResolved.error).toBeUndefined()
+    expect((await secondCdp.call('DOM.requestNode', {
+      objectId: (hostEvaluated.result?.result as Record<string, unknown>).objectId,
     })).error).toBeDefined()
-    const disconnectedTree = (await cdp.call('DSHInspector.getCordisTree')).result?.tree as {
-      clients: Array<{ connection: { state: string } }>
-    }
-    expect(disconnectedTree.clients[0]?.connection.state).toBe('disconnected')
   })
 
-  it('emits only node-level DOM changes for Client snapshots', async () => {
+  it('emits only node-level DOM changes for protocol-source snapshots', async () => {
     inspector = await startInspector({ port: 0, captureFetch: false, maxCordisNodes: 100 })
     cdp = await CdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
     const initialDocument = (await cdp.call('DOM.getDocument')).result?.root as CdpNode
@@ -531,7 +445,7 @@ describe('Cordis tree inspection', () => {
     if (clientsNode === undefined) throw new Error('DOM document has no clients container')
 
     let offset = cdp.events.length
-    clientSource = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Incremental Client' })
+    clientSource = await InspectorProtocolFixture.start(inspector.endpoint.client, { label: 'Incremental Client' })
     let insertedClient: CdpNode | undefined
     await vi.waitFor(() => {
       const events = cdp!.events.slice(offset)
@@ -663,7 +577,7 @@ describe('Cordis tree inspection', () => {
     expect(secondCdp.events.slice(offset).some(event => event.method === 'DOM.setChildNodes')).toBe(false)
   })
 
-  it('restores a disconnected Client tree from a new transport generation', async () => {
+  it('restores a disconnected protocol-source tree from a new transport generation', async () => {
     inspector = await startInspector({
       port: 0,
       captureFetch: false,
@@ -671,7 +585,7 @@ describe('Cordis tree inspection', () => {
       clientReconnectBaseMs: 10,
       clientReconnectMaxMs: 20,
     })
-    clientSource = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Reconnect Client' })
+    clientSource = await InspectorProtocolFixture.start(inspector.endpoint.client, { label: 'Reconnect Client' })
     cdp = await CdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
     await cdp.call('Runtime.enable')
 

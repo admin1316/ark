@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -26,10 +26,13 @@ import {
   type SessionEvent,
   type SessionHeader,
 } from '@deepseek-ai/dsh-session'
-import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
+import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
+import { SessionPersistenceNotFoundError, SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
+import { SessionObservationReader } from '../../../session-query/session-query/src/observation.ts'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { WorkspaceId, type Workspace } from '@deepseek-ai/dsh-workspace'
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
+import { installModelSelectionProjection } from '@deepseek-ai/dsh-agent-default-model/session-selection'
 import SessionRemoteOperationsService from '../src/index.ts'
 
 const contexts: Context[] = []
@@ -113,8 +116,14 @@ function fakeAgent(session: Session, options: {
       },
     },
     cancel: vi.fn(),
-    steer: vi.fn(),
-    followup: vi.fn(),
+    steer: vi.fn((message: UserMessage) => {
+      session.append('agent/inbox/spliced', { target: 'next-step', start: nextStep.length, inserted: [message] })
+      nextStep.push(message)
+    }),
+    followup: vi.fn((message: UserMessage) => {
+      session.append('agent/inbox/spliced', { target: 'next-turn', start: nextTurn.length, inserted: [message] })
+      nextTurn.push(message)
+    }),
     send: vi.fn(),
     runMaintenance: operation => operation(new AbortController().signal),
     whenIdle: () => Promise.resolve(),
@@ -125,7 +134,7 @@ function fakeAgent(session: Session, options: {
 
 interface ProjectionRegistration {
   readonly key: string
-  init(): unknown
+  init(header?: SessionHeader): unknown
   apply(state: unknown, event: SessionEvent): unknown
   readonly wire: { view(state: unknown): unknown }
 }
@@ -186,7 +195,7 @@ interface CoverageHarness {
 
 interface HarnessOptions {
   readonly omit?: readonly string[]
-  readonly config?: { cwd?: string; sessionExportCompressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
+  readonly config?: { cwd?: string; coldBlankProbeMaxBytes?: number; sessionExportCompressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
 }
 
 async function harness(options: HarnessOptions = {}): Promise<CoverageHarness> {
@@ -223,7 +232,7 @@ async function harness(options: HarnessOptions = {}): Promise<CoverageHarness> {
   })
   const flush = vi.fn<() => Promise<boolean>>(async () => {
     if (state.flushError !== undefined) throw state.flushError
-    return false
+    return true
   })
 
   const publish = async (
@@ -390,12 +399,29 @@ async function harness(options: HarnessOptions = {}): Promise<CoverageHarness> {
   if (!omitted.has('sessionPersistence')) {
     ctx.provide('sessionPersistence', {
       supportsRawArtifacts: true,
+      ensureMaterialized: async () => {},
       list: persistenceList,
       inspect: persistenceInspect,
+      locate: (header: SessionHeader) => ({ path: join(cwd, `${header.id}.jsonl`) }),
       readRaw: async () => undefined,
     } as never)
   }
-  if (!omitted.has('sessionQuery')) ctx.provide('sessionQuery', { searchSessions, traceSession } as never)
+  if (!omitted.has('sessionQuery')) {
+    const observations = new SessionObservationReader(ctx)
+    // A sibling provider matches Loader topology; root.provide would make
+    // undeclared direct reads succeed through the ancestor fiber store.
+    await ctx.plugin((queryCtx: Context) => {
+      queryCtx.provide('sessionQuery', {
+        searchSessions, traceSession, observeSession: observations.read.bind(observations),
+        listSessions: async (signal?: AbortSignal) => {
+          signal?.throwIfAborted()
+          const persisted = await persistenceList()
+          return [...new Map([...persisted, ...[...sessions.values()].map(session => session.header)]
+            .map(header => [header.id, { header }])).values()]
+        },
+      } as never)
+    })
+  }
   if (!omitted.has('sessionTitle')) ctx.provide('sessionTitle', { rename: titleRename } as never)
   if (!omitted.has('commands')) ctx.provide('commands', { execute: commandExecute } as never)
   if (!omitted.has('agentPresets')) {
@@ -406,14 +432,24 @@ async function harness(options: HarnessOptions = {}): Promise<CoverageHarness> {
     } as never)
   }
   if (!omitted.has('sessionProjections')) {
-    ctx.provide('sessionProjections', {
-      register(registration: ProjectionRegistration) {
-        projectionRegistrations.set(registration.key, registration)
-        return () => { projectionRegistrations.delete(registration.key) }
-      },
-      snapshot: projectionSnapshot,
-      restore: projectionRestore,
-    } as never)
+    await ctx.plugin((projectionCtx: Context) => {
+      projectionCtx.provide('sessionProjections', {
+        register(registration: ProjectionRegistration) {
+          projectionRegistrations.set(registration.key, registration)
+          return () => { projectionRegistrations.delete(registration.key) }
+        },
+        snapshot: projectionSnapshot,
+        cachedSnapshot: projectionSnapshot,
+        stateOf: (session: Session, key: string) => {
+          const definition = projectionRegistrations.get(key)
+          if (definition === undefined) return undefined
+          let value = definition.init(session.header)
+          for (const event of session.events) value = definition.apply(value, event)
+          return value
+        },
+        restore: projectionRestore,
+      } as never)
+    })
   }
   if (!omitted.has('sessionProjectionCache')) {
     ctx.provide('sessionProjectionCache', { cachedSnapshot: projectionCache } as never)
@@ -437,9 +473,18 @@ async function harness(options: HarnessOptions = {}): Promise<CoverageHarness> {
     } as never)
   }
 
-  const fiber = ctx.plugin(SessionRemoteOperationsService, options.config ?? {})
-  await fiber.await()
-  const service = ctx.sessionRemoteOperations as SessionRemoteOperationsService
+  if (!omitted.has('sessionProjections')) {
+    await ctx.plugin(Object.assign((projectionCtx: Context) => {
+      installModelSelectionProjection(projectionCtx)
+    }, { inject: ['sessionProjections'] }))
+  }
+  await ctx.plugin(SessionRemoteOperationsService, options.config ?? {})
+  const consumer: { service?: SessionRemoteOperationsService } = {}
+  await ctx.plugin(Object.assign((consumerCtx: Context) => {
+    consumer.service = consumerCtx.sessionRemoteOperations as SessionRemoteOperationsService
+  }, { inject: ['sessionRemoteOperations'] }))
+  const { service } = consumer
+  if (service === undefined) throw new Error('session Remote consumer did not activate')
   return Object.assign(state, {
     ctx,
     service,
@@ -588,7 +633,35 @@ describe('Session Remote construction and projection ownership', () => {
 })
 
 describe('Session Remote listing and search', () => {
-  it('merges attached, cold, failed-inspection, and raced Session rows', async () => {
+  it('keeps unrelated operations mounted and fails explicitly when the optional query provider is absent', async () => {
+    const state = await harness({ omit: ['sessionQuery'] })
+    const session = emptySession('visible-without-query', state.cwd)
+    attach(state, session)
+    await expect(state.service.list({}, new AbortController().signal)).resolves.toEqual({
+      ok: false, error: {
+        code: 'internal',
+        message: 'session listing is unavailable: this deployment does not mount @deepseek-ai/dsh-session-query',
+        details: {},
+      },
+    })
+    const renamed = await state.service.rename({ sessionId: session.id, title: 'still available' }, new AbortController().signal)
+    expect(renamed).toMatchObject({ ok: true })
+  })
+
+  it('reports a missing model projection explicitly through the injected consumer', async () => {
+    const state = await harness({ omit: ['sessionProjections'] })
+    const session = emptySession('missing-model-projection', state.cwd)
+    attach(state, session)
+    await expect(state.service.prompt({
+      sessionId: session.id, invocationId: SessionPromptInvocationId('missing-projection'),
+      mode: 'queue', content: [{ type: 'text', text: 'hello' }],
+    }, new AbortController().signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'prompt-unavailable',
+        details: { reason: 'Error: ordinary prompt receipt projection is unavailable' },
+      } })
+  })
+
+  it('merges attached and cold cached rows without inspecting large or unknown logs', async () => {
     const state = await harness()
     const live = emptySession('live', state.cwd, {
       parentSession: SessionId('parent'),
@@ -614,23 +687,15 @@ describe('Session Remote listing and search', () => {
       failed,
       raced,
     )
-    const coldSession = emptySession('cold', state.cwd)
-    coldSession.append('turn/start', { turn: 1 })
-    state.persistenceEvents.set('cold', [...coldSession.events])
-    state.persistenceInspect
-      .mockResolvedValueOnce({ meta: cold, events: state.persistenceEvents.get('cold') ?? [] })
-      .mockRejectedValueOnce(new Error('cold read failed'))
-      .mockImplementationOnce(() => {
-        const session = emptySession('raced', state.cwd)
-        attach(state, session)
-        return Promise.resolve({ meta: raced, events: [] })
-      })
-    state.projectionSnapshot.mockReturnValue({ asOfSeq: 2, values: { attached: true } })
-    state.projectionRestore.mockReturnValue({ snapshot: { asOfSeq: 1, values: { cold: true } } })
-    state.projectionCache.mockReturnValue({ asOfSeq: 0, values: { cached: true } })
+    state.projectionSnapshot.mockReturnValue({ asOfSeq: 2, values: {
+      attached: true, agentPreset: 'standard', sessionListMetadata: { blank: false, lastPromptAt: 99 },
+    } })
+    state.projectionCache.mockImplementation(input => ({ asOfSeq: 0, values: {
+      cached: true, ...(input === cold ? { sessionListMetadata: { blank: false, lastPromptAt: 80 } } : {}),
+    } }))
 
     const result = await state.service.list({}, new AbortController().signal)
-    if (!result.ok) throw new Error('listing failed')
+    if (!result.ok) throw new Error(result.error.message)
     expect(result.value.items).toEqual(expect.arrayContaining([
       expect.objectContaining({
         sessionId: live.id,
@@ -640,12 +705,13 @@ describe('Session Remote listing and search', () => {
         origin: 'subagent',
         cwd: state.cwd,
         agentPreset: 'standard',
-        projections: { asOfSeq: 2, values: { attached: true } },
+        projections: { asOfSeq: 2, values: { attached: true, agentPreset: 'standard', sessionListMetadata: { blank: false, lastPromptAt: 99 } } },
       }),
       expect.objectContaining({
         sessionId: cold.id,
         blank: false,
-        projections: { asOfSeq: 1, values: { cold: true } },
+        updatedAt: 80,
+        projections: { asOfSeq: 0, values: { cached: true, sessionListMetadata: { blank: false, lastPromptAt: 80 } } },
       }),
       expect.objectContaining({
         sessionId: failed.id,
@@ -654,6 +720,8 @@ describe('Session Remote listing and search', () => {
       }),
       expect.objectContaining({ sessionId: raced.id }),
     ]))
+    expect(state.persistenceInspect).not.toHaveBeenCalled()
+    expect(state.resume).not.toHaveBeenCalled()
     expect(result.value.items.map(item => item.updatedAt))
       .toEqual([...result.value.items.map(item => item.updatedAt)].sort((a, b) => b - a))
 
@@ -666,6 +734,65 @@ describe('Session Remote listing and search', () => {
       ok: false,
       error: { code: 'internal' },
     })
+  })
+
+  it('probes only physically small unknown cold files and releases each observation', async () => {
+    const state = await harness({ config: { coldBlankProbeMaxBytes: 8 } })
+    const rows = ['small', 'large', 'known', 'missing', 'failed'].map(id => header(id, state.cwd))
+    state.persistenceHeaders.push(...rows)
+    for (const row of rows.filter(row => row.id !== 'missing')) {
+      await writeFile(join(state.cwd, `${row.id}.jsonl`), row.id === 'large' ? 'x'.repeat(9) : 'x'.repeat(8))
+    }
+    state.projectionCache.mockImplementation(input => input === rows[2]
+      ? { asOfSeq: 10, values: { sessionListMetadata: { blank: false, lastPromptAt: 123 }, agentPreset: 'changed' } }
+      : undefined)
+    const released = vi.fn()
+    const observe = vi.spyOn(state.ctx.sessionQuery, 'observeSession').mockImplementation(async (id) => {
+      if (id === 'failed') throw new Error('bad artifact')
+      const row = rows.find(row => row.id === id)
+      if (row === undefined) throw new Error('unexpected probe')
+      const observation: SessionObservation = {
+        source: 'prepared', header: row, events: [], cursor: -1,
+        projections: { asOfSeq: -1, values: { sessionListMetadata: { blank: true, lastPromptAt: null } } },
+        retain: () => observation, [Symbol.dispose]: released,
+      }
+      return observation
+    })
+    const result = await state.service.list({}, new AbortController().signal)
+    if (!result.ok) throw new Error(result.error.message)
+    expect(result.value.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sessionId: 'small', blank: true }),
+      expect.objectContaining({ sessionId: 'large', blank: false }),
+      expect.objectContaining({ sessionId: 'missing', blank: false }),
+      expect.objectContaining({ sessionId: 'failed', blank: false }),
+      expect.objectContaining({ sessionId: 'known', blank: false, updatedAt: 123, agentPreset: 'changed' }),
+    ]))
+    expect(observe.mock.calls.map(call => call[0]).sort()).toEqual(['failed', 'small'])
+    expect(released).toHaveBeenCalledOnce()
+    expect(state.persistenceInspect).not.toHaveBeenCalled()
+    expect(state.resume).not.toHaveBeenCalled()
+    observe.mockClear()
+    await state.service.search({ query: 'anything' }, new AbortController().signal)
+    expect(observe).not.toHaveBeenCalled()
+  })
+
+  it('can disable cold probing and rejects blank queue edits without changing the pending message', async () => {
+    const state = await harness({ config: { coldBlankProbeMaxBytes: 0 } })
+    const row = header('disabled-probe', state.cwd)
+    state.persistenceHeaders.push(row)
+    await writeFile(join(state.cwd, `${row.id}.jsonl`), '')
+    const observe = vi.spyOn(state.ctx.sessionQuery, 'observeSession')
+    await expect(state.service.list({}, new AbortController().signal)).resolves.toMatchObject({ ok: true })
+    expect(observe).not.toHaveBeenCalled()
+    const session = emptySession('blank-edit', state.cwd)
+    const queued = createUserMessage({ content: [{ type: 'text', text: 'keep me' }], source: { kind: 'user' } })
+    const agent = attach(state, session, { nextTurn: [queued] })
+    for (const content of [[], [{ type: 'text', text: ' \n\t' }]]) {
+      await expect(state.service.updateQueue({ sessionId: session.id, itemId: String(queued.id),
+        action: { kind: 'edit', content } }, new AbortController().signal))
+        .resolves.toMatchObject({ ok: false, error: { code: 'invalid-argument' } })
+      expect(agent.inbox.nextTurn).toEqual([queued])
+    }
   })
 
   it('validates queries, retries provider limits, restarts stale cursors, and filters malformed hits', async () => {
@@ -758,7 +885,7 @@ describe('Session Remote listing and search', () => {
       .resolves.toMatchObject({ ok: false, error: { code: 'cancelled' } })
   })
 
-  it('handles missing optional summary projections and inspection cancellation', async () => {
+  it('handles missing optional summary projections and corpus cancellation', async () => {
     const plain = await harness({ omit: ['sessionProjections', 'sessionProjectionCache'] })
     const noCwd = Session.create(SessionId('summary-no-cwd'), undefined, {
       version: 0,
@@ -770,13 +897,6 @@ describe('Session Remote listing and search', () => {
     const raced = header('summary-raced', plain.cwd)
     plain.persistenceHeaders.push(cold, raced)
     plain.persistenceEvents.set('summary-cold', [])
-    plain.persistenceInspect
-      .mockResolvedValueOnce({ meta: cold, events: [] })
-      .mockImplementationOnce(() => {
-        const session = emptySession('summary-raced', plain.cwd)
-        attach(plain, session)
-        return Promise.resolve({ meta: raced, events: [] })
-      })
     const plainList = await plain.service.list({}, new AbortController().signal)
     if (!plainList.ok) throw new Error('plain listing failed')
     expect(new Set(plainList.value.items.map(item => item.sessionId)))
@@ -786,8 +906,8 @@ describe('Session Remote listing and search', () => {
     const interruptedHeader = header('inspection-aborted', interrupted.cwd)
     interrupted.persistenceHeaders.push(interruptedHeader)
     const controller = new AbortController()
-    interrupted.persistenceInspect.mockImplementationOnce(async () => {
-      controller.abort(new Error('inspection cancelled'))
+    interrupted.persistenceList.mockImplementationOnce(async () => {
+      controller.abort(new Error('corpus cancelled'))
       throw new Error('cold inspection failed')
     })
     await expect(interrupted.service.list({}, controller.signal)).resolves.toMatchObject({
@@ -1345,6 +1465,50 @@ describe('Session Remote history and projections', () => {
     expect(older).toMatchObject({ ok: true, value: { hasMore: false } })
     if (!older.ok) throw new Error('older history failed')
     expect(older.value).not.toHaveProperty('projections')
+  })
+
+  it('pages an attached immutable snapshot without iterating or copying the complete log', async () => {
+    const state = await harness()
+    const session = emptySession('shared-history-snapshot', state.cwd)
+    for (let index = 0; index < 3_000; index++) session.append('turn/start', { turn: index + 1 })
+    attach(state, session)
+    const snapshot = session.events
+    const observed = new Proxy(snapshot, {
+      get(target, key, receiver): unknown {
+        if (key === Symbol.iterator) throw new Error('history must not copy the complete log')
+        return Reflect.get(target, key, receiver)
+      },
+    })
+    vi.spyOn(session, 'events', 'get').mockReturnValue(observed)
+    const newest = await state.service.history({ sessionId: session.id }, new AbortController().signal)
+    if (!newest.ok) throw new Error(newest.error.message)
+    const cursor = newest.value.events[0]?.event.seq
+    if (cursor === undefined) throw new Error('expected an older-page cursor')
+    expect(cursor).toBeGreaterThan(0)
+    const older = await state.service.history({ sessionId: session.id, beforeSeq: cursor }, new AbortController().signal)
+    if (!older.ok) throw new Error(older.error.message)
+    expect(older.value.events.at(-1)?.event.seq).toBe(cursor - 1)
+    expect(snapshot).toHaveLength(3_000)
+    expect(Object.isFrozen(snapshot)).toBe(true)
+  })
+
+  it('captures events and projections together after asynchronous presentation scope resolution', async () => {
+    const state = await harness()
+    const session = emptySession('history-observation-cut', state.cwd)
+    session.append('turn/start', { turn: 1 })
+    state.sessions.set(String(session.id), session)
+    const before = session.events
+    state.standingKeyFor.mockImplementation(async () => {
+      session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      return undefined
+    })
+    state.projectionSnapshot.mockImplementation(() => ({ asOfSeq: session.seq - 1, values: {} }))
+    const result = await state.service.history({ sessionId: session.id }, new AbortController().signal)
+    if (!result.ok) throw new Error(result.error.message)
+    expect(state.standingKeyFor).toHaveBeenCalledOnce()
+    expect(before).toHaveLength(1)
+    expect(result.value.events.map(entry => entry.event.seq)).toEqual([0, 1])
+    expect(result.value.projections?.asOfSeq).toBe(result.value.events.at(-1)?.event.seq)
   })
 
   it('bounds history by event count and encoded bytes while its implicit cursor always advances', async () => {
@@ -2099,13 +2263,13 @@ describe('Session Remote model catalog, selection, and titles', () => {
     const session = emptySession('image-chain', state.cwd)
     const agent = attach(state, session)
     const internals = state.service as unknown as {
-      serializeImageAdmission<Value>(agent: Agent, operation: () => Promise<Value>): Promise<Value>
+      serializeAdmission<Value>(agent: Agent, operation: () => Promise<Value>): Promise<Value>
     }
-    await expect(internals.serializeImageAdmission(
+    await expect(internals.serializeAdmission(
       agent as unknown as Agent,
       () => Promise.reject(new Error('first failed')),
     )).rejects.toThrow('first failed')
-    await expect(internals.serializeImageAdmission(
+    await expect(internals.serializeAdmission(
       agent as unknown as Agent,
       () => Promise.resolve('second'),
     )).resolves.toBe('second')
@@ -2123,6 +2287,110 @@ describe('Session Remote fork ownership', () => {
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     return session
   }
+
+  async function historyRevision(state: CoverageHarness, source: Session): Promise<string> {
+    const page = await state.service.history({ sessionId: source.id, view: 'raw' }, new AbortController().signal)
+    if (!page.ok || page.value.sourceRevision === undefined) throw new Error('missing bound history')
+    return page.value.sourceRevision
+  }
+
+  it.each(['replace', 'truncate', 'delete'] as const)('rejects a bound fork after source %s without creating a child', async (change) => {
+    const state = await harness()
+    const source = completedSession('bound-fork-source', state.cwd)
+    attach(state, source)
+    const sourceRevision = await historyRevision(state, source)
+    if (change === 'delete') {
+      state.sessions.delete(String(source.id))
+      Reflect.set(state.ctx.sessionPersistence, 'borrowSession', async () => { throw new SessionPersistenceNotFoundError(source.id) })
+    } else state.sessions.set(String(source.id), Session.create(source.id,
+      change === 'truncate' ? source.events.slice(0, 1) : source.events, source.header))
+    const result = await state.service.fork({ sessionId: source.id, sourceRevision, atSeq: 1 }, new AbortController().signal)
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-stale-source' } })
+    expect(state.create).not.toHaveBeenCalled()
+    expect(state.flush).not.toHaveBeenCalled()
+  })
+
+  it('keeps a bound fork seed and preset at the displayed cut across later appends', async () => {
+    const state = await harness()
+    const source = completedSession('bound-fork-append', state.cwd, { agentPreset: 'standard' })
+    attach(state, source)
+    const expectedSeed = source.events
+    const sourceRevision = await historyRevision(state, source)
+    source.append('agent-preset/selected', { agentPreset: 'future-preset' })
+    state.presetMount.mockImplementationOnce(async () => {
+      source.append('turn/start', { turn: 2 })
+      await Promise.resolve()
+    })
+    const result = await state.service.fork({ sessionId: source.id, sourceRevision, atSeq: 1 }, new AbortController().signal)
+    expect(result.ok).toBe(true)
+    expect(state.create.mock.calls[0]?.[0].seed).toEqual(expectedSeed)
+    expect(state.create.mock.calls[0]?.[0].meta?.agentPreset).toBe('standard')
+    await expect(state.service.fork({ sessionId: source.id, sourceRevision, atSeq: 3 }, new AbortController().signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'invalid-argument' } })
+  })
+
+  it.each(['setup-await', 'publication-commit'] as const)('rejects replacement at %s before publishing or flushing the fork', async (stage) => {
+    const state = await harness()
+    const source = completedSession('bound-fork-race', state.cwd, { agentPreset: 'standard' })
+    attach(state, source)
+    const sourceRevision = await historyRevision(state, source)
+    const replace = () => { state.sessions.set(String(source.id), Session.create(source.id, source.events, source.header)) }
+    if (stage === 'setup-await') state.presetMount.mockImplementationOnce(async () => { await Promise.resolve(); replace() })
+    else {
+      let calls = 0
+      state.assertAdmission.mockImplementation(() => { if (++calls === 2) replace() })
+    }
+    const result = await state.service.fork({ sessionId: source.id, sourceRevision }, new AbortController().signal)
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-stale-source' } })
+    expect(state.sessions.size).toBe(1)
+    expect(state.flush).not.toHaveBeenCalled()
+  })
+
+  it('does not use a later turn end to make an unfinished bound cut forkable', async () => {
+    const state = await harness()
+    const source = emptySession('bound-fork-open', state.cwd)
+    source.append('turn/start', { turn: 1 })
+    attach(state, source)
+    const sourceRevision = await historyRevision(state, source)
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await expect(state.service.fork({ sessionId: source.id, sourceRevision, atSeq: 0 }, new AbortController().signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'fork-unavailable' } })
+    expect(state.create).not.toHaveBeenCalled()
+  })
+
+  it.each(['unchanged', 'durable-replaced', 'live-at-commit'] as const)('retains a cold fork lease and rechecks its source (%s)', async (change) => {
+    const state = await harness()
+    const source = completedSession('bound-fork-cold', state.cwd, { agentPreset: 'standard' })
+    let revision = 'cold-fork-v1'
+    let pins = 0
+    Reflect.set(state.ctx.sessionPersistence, 'borrowSession', async () => {
+      pins++
+      return { source: 'prepared', inspection: { meta: source.header, events: source.events },
+        revision: SessionPersistenceRevision(revision), preparedSession: source,
+        [Symbol.dispose]: () => { pins-- } }
+    })
+    const sourceRevision = await historyRevision(state, source)
+    expect(pins).toBe(0)
+    state.presetMount.mockImplementationOnce(async () => {
+      expect(pins).toBe(1)
+      await Promise.resolve()
+      if (change === 'durable-replaced') revision = 'cold-fork-v2'
+    })
+    if (change === 'live-at-commit') {
+      let calls = 0
+      state.assertAdmission.mockImplementation(() => { if (++calls === 2) state.sessions.set(String(source.id), source) })
+    }
+    const result = await state.service.fork({ sessionId: source.id, sourceRevision }, new AbortController().signal)
+    expect(pins).toBe(0)
+    if (change !== 'unchanged') {
+      expect(result).toMatchObject({ ok: false, error: { code: 'history-stale-source' } })
+      expect(state.sessions.size).toBe(change === 'live-at-commit' ? 1 : 0)
+      expect(state.flush).not.toHaveBeenCalled()
+    } else {
+      expect(result.ok).toBe(true)
+      expect(state.create.mock.calls[0]?.[0].seed).toEqual(source.events)
+    }
+  })
 
   it('forks the last completed prefix and attaches the inherited workspace', async () => {
     const state = await harness()
@@ -2552,16 +2820,16 @@ describe('Session Remote prompt, attachment, queue, and cancellation', () => {
     })
 
     state.providers = []
-    await expect(state.service.prompt(prompt(session.id), new AbortController().signal))
+    await expect(state.service.prompt(prompt(session.id, { invocationId: SessionPromptInvocationId('fresh-invocation') }), new AbortController().signal))
       .resolves.toMatchObject({ ok: false, error: { code: 'model-unavailable' } })
     state.providers = [{ id: 'provider', name: 'Provider' }]
 
     state.admissionError = new Error('lifecycle changed')
-    await expect(state.service.prompt(prompt(session.id), new AbortController().signal))
+    await expect(state.service.prompt(prompt(session.id, { invocationId: SessionPromptInvocationId('fresh-invocation') }), new AbortController().signal))
       .resolves.toMatchObject({ ok: false, error: { code: 'agent-busy' } })
     state.admissionError = undefined
     agent.followup.mockImplementationOnce(() => { throw 'followup rejected' })
-    await expect(state.service.prompt(prompt(session.id), new AbortController().signal))
+    await expect(state.service.prompt(prompt(session.id, { invocationId: SessionPromptInvocationId('fresh-invocation') }), new AbortController().signal))
       .resolves.toMatchObject({ ok: false, error: { code: 'agent-busy' } })
   })
 
@@ -2591,14 +2859,34 @@ describe('Session Remote prompt, attachment, queue, and cancellation', () => {
 
     state.resolveModelInfo.mockResolvedValue({ inputModalities: ['text', 'image'] })
     state.attachmentError = new AttachmentError('bad image', 'INVALID_IMAGE_BASE64')
-    await expect(state.service.prompt(imagePrompt, new AbortController().signal))
+    await expect(state.service.prompt({ ...imagePrompt, invocationId: SessionPromptInvocationId('fresh-image') }, new AbortController().signal))
       .resolves.toMatchObject({
         ok: false,
         error: { code: 'attachment-error', details: { reason: 'INVALID_IMAGE_BASE64' } },
       })
     state.attachmentError = 'storage string failure'
-    await expect(state.service.prompt(imagePrompt, new AbortController().signal))
+    await expect(state.service.prompt({ ...imagePrompt, invocationId: SessionPromptInvocationId('fresh-image') }, new AbortController().signal))
       .resolves.toMatchObject({ ok: false, error: { code: 'agent-busy' } })
+  })
+
+  it('deduplicates image-only retries before decoding but admits a new invocation with the same image', async () => {
+    const state = await harness()
+    const session = emptySession('image-only-retry', state.cwd)
+    const agent = attach(state, session)
+    const request = prompt(session.id, { content: [{ type: 'image', data: 'AQID', mediaType: 'image/png' }] })
+    expect(await Promise.all([
+      state.service.prompt(request, new AbortController().signal),
+      state.service.prompt(request, new AbortController().signal),
+    ])).toEqual([{ ok: true, value: { accepted: true } }, { ok: true, value: { accepted: true } }])
+    expect(state.saveImages).toHaveBeenCalledOnce()
+    expect(agent.followup).toHaveBeenCalledOnce()
+    expect(await state.service.prompt({ ...request, invocationId: SessionPromptInvocationId('new-image-send') },
+      new AbortController().signal)).toMatchObject({ ok: true })
+    expect(state.saveImages).toHaveBeenCalledTimes(2)
+    expect(agent.followup).toHaveBeenCalledTimes(2)
+    expect(await state.service.prompt({ ...request, content: [{ type: 'image', data: 'BAUG', mediaType: 'image/png' }] },
+      new AbortController().signal)).toMatchObject({ ok: false, error: { code: 'invocation-conflict' } })
+    expect(state.saveImages).toHaveBeenCalledTimes(2)
   })
 
   it('authorizes every durable image carrier and rejects missing or failed reads', async () => {
@@ -2880,6 +3168,7 @@ describe('Session Remote prompt, attachment, queue, and cancellation', () => {
     })
 
     state.assertAdmission
+      .mockImplementationOnce(() => {})
       .mockImplementationOnce(() => {})
       .mockImplementationOnce(() => { state.agents.delete(String(session.id)) })
     await expect(state.service.prompt(prompt(session.id), new AbortController().signal))

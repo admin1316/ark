@@ -21,32 +21,6 @@ const _deepseek_ai_dsh_api_workspace_controller_directoryPicker_list_result$sche
   'truncated': z.boolean(),
 })
 const _deepseek_ai_dsh_api_workspace_controller_directoryPicker_pick_result$schema = z.union([z.literal(null), z.string()])
-const _deepseek_ai_dsh_api_workspace_controller_workspace_archiveSession_parameter_0$schema = z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
-})
-const _deepseek_ai_dsh_api_workspace_controller_workspace_archiveSession_result$schema = z.object({
-  'archivedSessionIds': z.array(z.intersection(z.string(), z.unknown())).readonly(),
-})
-const _deepseek_ai_dsh_api_workspace_controller_workspace_create_parameter_0$schema = z.object({
-  'path': z.string().readonly(),
-})
-const _deepseek_ai_dsh_api_workspace_controller_workspace_create_result$schema = z.object({
-  'workspace': z.object({
-  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
-  'path': z.string().readonly(),
-  'title': z.string().readonly(),
-  'sessionIds': z.array(z.intersection(z.string(), z.unknown())).readonly(),
-  'createdAt': z.string().readonly(),
-  'updatedAt': z.string().readonly(),
-}).readonly(),
-  'created': z.boolean().readonly(),
-})
-const _deepseek_ai_dsh_api_workspace_controller_workspace_delete_parameter_0$schema = z.object({
-  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
-})
-const _deepseek_ai_dsh_api_workspace_controller_workspace_delete_result$schema = z.object({
-  'deleted': z.literal(true).readonly(),
-})
 const _deepseek_ai_dsh_api_workspace_controller_workspace_follow_result$schema = z.union([z.object({
   'type': z.literal("baseline").readonly(),
   'value': z.object({
@@ -80,42 +54,6 @@ const _deepseek_ai_dsh_api_workspace_controller_workspace_follow_result$schema =
   'type': z.literal("archived").readonly(),
   'archivedSessionIds': z.array(z.intersection(z.string(), z.unknown())).readonly(),
 })])
-const _deepseek_ai_dsh_api_workspace_controller_workspace_insertBefore_parameter_0$schema = z.object({
-  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
-  'beforeWorkspaceId': z.intersection(z.string(), z.unknown()).readonly().optional(),
-})
-const _deepseek_ai_dsh_api_workspace_controller_workspace_insertBefore_result$schema = z.object({
-  'workspaceIds': z.array(z.intersection(z.string(), z.unknown())).readonly(),
-})
-const _deepseek_ai_dsh_api_workspace_controller_workspace_insertSessionBefore_parameter_0$schema = z.object({
-  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
-  'beforeSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
-})
-const _deepseek_ai_dsh_api_workspace_controller_workspace_insertSessionBefore_result$schema = z.object({
-  'workspace': z.object({
-  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
-  'path': z.string().readonly(),
-  'title': z.string().readonly(),
-  'sessionIds': z.array(z.intersection(z.string(), z.unknown())).readonly(),
-  'createdAt': z.string().readonly(),
-  'updatedAt': z.string().readonly(),
-}).readonly(),
-})
-const _deepseek_ai_dsh_api_workspace_controller_workspace_rename_parameter_0$schema = z.object({
-  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
-  'title': z.string().readonly(),
-})
-const _deepseek_ai_dsh_api_workspace_controller_workspace_rename_result$schema = z.object({
-  'workspace': z.object({
-  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
-  'path': z.string().readonly(),
-  'title': z.string().readonly(),
-  'sessionIds': z.array(z.intersection(z.string(), z.unknown())).readonly(),
-  'createdAt': z.string().readonly(),
-  'updatedAt': z.string().readonly(),
-}).readonly(),
-})
 
 export const TYPERT_REMOTE = {
   package: '@deepseek-ai/dsh-api-workspace-controller',
@@ -199,81 +137,6 @@ export const TYPERT_REMOTE = {
       sourceLocation: {"file":"packages/api/workspace-controller/src/directory-picker.ts","line":53,"column":9},
     },
     {
-      id: '@deepseek-ai/dsh-api-workspace-controller#workspace/archiveSession',
-      service: 'workspaceController',
-      namespace: 'workspace',
-      method: 'archiveSession',
-      invocation: { kind: 'direct' },
-      parameters: [
-        {
-          name: 'request',
-          wire: 'request',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceArchiveSessionRequest',
-            schema: _deepseek_ai_dsh_api_workspace_controller_workspace_archiveSession_parameter_0$schema,
-          },
-        },
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceArchiveValue',
-        schema: _deepseek_ai_dsh_api_workspace_controller_workspace_archiveSession_result$schema,
-      },
-      sourceLocation: {"file":"packages/api/workspace-controller/src/index.ts","line":108,"column":3},
-    },
-    {
-      id: '@deepseek-ai/dsh-api-workspace-controller#workspace/create',
-      service: 'workspaceController',
-      namespace: 'workspace',
-      method: 'create',
-      invocation: { kind: 'direct' },
-      parameters: [
-        {
-          name: 'request',
-          wire: 'request',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceCreateRequest',
-            schema: _deepseek_ai_dsh_api_workspace_controller_workspace_create_parameter_0$schema,
-          },
-        },
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceCreateValue',
-        schema: _deepseek_ai_dsh_api_workspace_controller_workspace_create_result$schema,
-      },
-      sourceLocation: {"file":"packages/api/workspace-controller/src/index.ts","line":58,"column":3},
-    },
-    {
-      id: '@deepseek-ai/dsh-api-workspace-controller#workspace/delete',
-      service: 'workspaceController',
-      namespace: 'workspace',
-      method: 'delete',
-      invocation: { kind: 'direct' },
-      parameters: [
-        {
-          name: 'request',
-          wire: 'request',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceDeleteRequest',
-            schema: _deepseek_ai_dsh_api_workspace_controller_workspace_delete_parameter_0$schema,
-          },
-        },
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceDeleteValue',
-        schema: _deepseek_ai_dsh_api_workspace_controller_workspace_delete_result$schema,
-      },
-      sourceLocation: {"file":"packages/api/workspace-controller/src/index.ts","line":78,"column":3},
-    },
-    {
       id: '@deepseek-ai/dsh-api-workspace-controller#workspace/follow',
       service: 'workspaceController',
       namespace: 'workspace',
@@ -288,82 +151,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceFollowFrame',
         schema: _deepseek_ai_dsh_api_workspace_controller_workspace_follow_result$schema,
       },
-      sourceLocation: {"file":"packages/api/workspace-controller/src/index.ts","line":118,"column":3},
-    },
-    {
-      id: '@deepseek-ai/dsh-api-workspace-controller#workspace/insertBefore',
-      service: 'workspaceController',
-      namespace: 'workspace',
-      method: 'insertBefore',
-      invocation: { kind: 'direct' },
-      parameters: [
-        {
-          name: 'request',
-          wire: 'request',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceInsertBeforeRequest',
-            schema: _deepseek_ai_dsh_api_workspace_controller_workspace_insertBefore_parameter_0$schema,
-          },
-        },
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceOrderValue',
-        schema: _deepseek_ai_dsh_api_workspace_controller_workspace_insertBefore_result$schema,
-      },
-      sourceLocation: {"file":"packages/api/workspace-controller/src/index.ts","line":88,"column":3},
-    },
-    {
-      id: '@deepseek-ai/dsh-api-workspace-controller#workspace/insertSessionBefore',
-      service: 'workspaceController',
-      namespace: 'workspace',
-      method: 'insertSessionBefore',
-      invocation: { kind: 'direct' },
-      parameters: [
-        {
-          name: 'request',
-          wire: 'request',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceInsertSessionBeforeRequest',
-            schema: _deepseek_ai_dsh_api_workspace_controller_workspace_insertSessionBefore_parameter_0$schema,
-          },
-        },
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceValue',
-        schema: _deepseek_ai_dsh_api_workspace_controller_workspace_insertSessionBefore_result$schema,
-      },
-      sourceLocation: {"file":"packages/api/workspace-controller/src/index.ts","line":98,"column":3},
-    },
-    {
-      id: '@deepseek-ai/dsh-api-workspace-controller#workspace/rename',
-      service: 'workspaceController',
-      namespace: 'workspace',
-      method: 'rename',
-      invocation: { kind: 'direct' },
-      parameters: [
-        {
-          name: 'request',
-          wire: 'request',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceRenameRequest',
-            schema: _deepseek_ai_dsh_api_workspace_controller_workspace_rename_parameter_0$schema,
-          },
-        },
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@deepseek-ai/dsh-api-workspace-controller/types#WorkspaceValue',
-        schema: _deepseek_ai_dsh_api_workspace_controller_workspace_rename_result$schema,
-      },
-      sourceLocation: {"file":"packages/api/workspace-controller/src/index.ts","line":68,"column":3},
+      sourceLocation: {"file":"packages/api/workspace-controller/src/index.ts","line":42,"column":3},
     },
   ],
 }

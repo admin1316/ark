@@ -28,7 +28,7 @@ Making the list a scroll container also makes its `padding-left` a correctness c
 
 **Keep the head/tail collapse and add scroll only to the expanded region.** Rejected: two overlapping mechanisms for one concern. Once the whole list is always rendered, the collapse arithmetic, the expand/collapse state, and the button are dead weight; scroll alone bounds the height.
 
-**Make the scroll height a plugin config field.** Rejected: the height bounds the card's on-screen geometry, not a deployment policy, so it belongs in `WebBlock.module.css` alongside the radius, surface, and margin that [the web result card frontend note](2026-07-30-web-result-card-frontend.md) already fixes there as this card's geometry.
+**Make the scroll height a plugin config field.** Rejected: the height bounds the card's on-screen geometry, not a deployment policy, so it belongs in `WebBlock.module.css` alongside the radius, surface, and margin that [the web result card frontend note](../../archived/feature/2026-07-30-web-result-card-frontend.md) already fixes there as this card's geometry.
 
 ## Consequences
 
@@ -43,4 +43,4 @@ jsdom resolves no CSS Modules layout, so it reports `scrollHeight === clientHeig
 ## Related
 
 - [Web result card](2026-07-30-web-result-card.md) — the `card: 'web'` render-intent arm and `presentationMeta` route this card consumes; the source of the final capped list.
-- [Web result card frontend](2026-07-30-web-result-card-frontend.md) — owns `WebBlock`, the single `web-card-model` derivation, and the render sites that draw the card; this note replaces the source-list collapse it specified, and its other decisions (one component for both kinds, the http(s) link allowlist, the single derivation, the resident posture) stand.
+- [Web result card frontend](../../archived/feature/2026-07-30-web-result-card-frontend.md) — owns `WebBlock`, the single `web-card-model` derivation, and the render sites that draw the card; this note replaces the source-list collapse it specified, and its other decisions (one component for both kinds, the http(s) link allowlist, the single derivation, the resident posture) stand.

@@ -151,11 +151,11 @@ Source: [`packages/interaction/user-approval/src/index.ts`](../../packages/inter
 
 #### `approval/request` — waterfall
 
-Ask scoped answerers; call next to delegate an unclaimed request.
+Scope-filtered dispatch targets the requesting Agent; call next to delegate an unclaimed request.
 
 ```ts cordis-catalog
 /**
- * Ask scoped answerers; call next to delegate an unclaimed request.
+ * Scope-filtered dispatch targets the requesting Agent; call next to delegate an unclaimed request.
  * @param req - borrowed live Agent request and cancellation signal.
  * @mode waterfall
  */

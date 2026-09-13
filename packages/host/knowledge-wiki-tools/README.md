@@ -1,8 +1,21 @@
+---
+description: "Model-facing knowledge-base tools over the composed knowledgeWiki service."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-tool-knowledge-wiki`
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Model-facing knowledge-base tools over the composed `knowledgeWiki` service. The plugin registers `wiki_search`, `wiki_files`, `wiki_read`, `wiki_graph`, `wiki_reviews`, and `wiki_ingest` through the shared tool registry, and resolves the service lazily so the plugin can load before the knowledge-base provider is present. It adds no MCP bridge or desktop UI.
+
+## Table of Contents
+
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Model Experience
 
@@ -30,3 +43,7 @@ The package retains no model-content cache. Each tool call can append data-depen
 
 - Calls fail with `knowledgeWiki service unavailable` when the composed `knowledgeWiki` service is absent; the plugin does not create a fallback store.
 - `wiki_ingest` accepts a project-relative source path or an `http(s)` URL and is registered in the tool surface, but the installed prompt guidance currently names the other five tools only.
+
+### Dev Note
+
+None.

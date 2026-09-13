@@ -33,7 +33,7 @@ const _deepseek_ai_dsh_experimental_agent_team_agentTeams_updateTask_parameter_0
 const _deepseek_ai_dsh_experimental_agent_team_agentTeams_updateTask_parameter_1$schema = z.object({
   'taskId': z.intersection(z.string(), z.unknown()).readonly(),
   'expectedRevision': z.number().readonly(),
-  'action': z.union([z.literal("complete"), z.literal("edit"), z.literal("claim"), z.literal("release"), z.literal("set_dependencies"), z.literal("reopen"), z.literal("reassign"), z.literal("delete")]).readonly(),
+  'action': z.union([z.literal("complete"), z.literal("claim"), z.literal("release"), z.literal("edit"), z.literal("set_dependencies"), z.literal("reopen"), z.literal("reassign"), z.literal("delete")]).readonly(),
   'subject': z.string().readonly().optional(),
   'description': z.string().readonly().optional(),
   'blockedBy': z.array(z.intersection(z.string(), z.unknown())).readonly().optional(),
@@ -96,7 +96,7 @@ export const TYPERT = {
   invocations: [
     {
       id: '@deepseek-ai/dsh-experimental-agent-team#agentTeams/createTask',
-      service: 'agentTeams',
+      service: 'agentTeamRemote',
       namespace: 'agentTeams',
       method: 'createTask',
       implementation: 'remoteCreateTask',
@@ -123,7 +123,7 @@ export const TYPERT = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-experimental-agent-team/client#CreateTeamTaskRequest',
+            typeSymbol: '@deepseek-ai/dsh-agent-team/types#CreateTeamTaskRequest',
             schema: _deepseek_ai_dsh_experimental_agent_team_agentTeams_createTask_parameter_1$schema,
           },
         },
@@ -133,11 +133,11 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-experimental-agent-team/client#TeamTaskMutationResult',
         schema: _deepseek_ai_dsh_experimental_agent_team_agentTeams_createTask_result$schema,
       },
-      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":248,"column":3},
+      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":47,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-experimental-agent-team#agentTeams/updateTask',
-      service: 'agentTeams',
+      service: 'agentTeamRemote',
       namespace: 'agentTeams',
       method: 'updateTask',
       implementation: 'remoteUpdateTask',
@@ -164,7 +164,7 @@ export const TYPERT = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-experimental-agent-team/client#UpdateTeamTaskRequest',
+            typeSymbol: '@deepseek-ai/dsh-agent-team/types#UpdateTeamTaskRequest',
             schema: _deepseek_ai_dsh_experimental_agent_team_agentTeams_updateTask_parameter_1$schema,
           },
         },
@@ -174,11 +174,11 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-experimental-agent-team/client#TeamTaskMutationResult',
         schema: _deepseek_ai_dsh_experimental_agent_team_agentTeams_updateTask_result$schema,
       },
-      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":259,"column":3},
+      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":58,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-experimental-agent-team#agentTeams/view',
-      service: 'agentTeams',
+      service: 'agentTeamRemote',
       namespace: 'agentTeams',
       method: 'view',
       implementation: 'remoteView',
@@ -205,96 +205,19 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-experimental-agent-team/client#TeamView',
         schema: _deepseek_ai_dsh_experimental_agent_team_agentTeams_view_result$schema,
       },
-      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":234,"column":3},
+      sourceLocation: {"file":"packages/experimental/agent-team/src/index.ts","line":33,"column":3},
     },
   ],
   model: {
     "services": [
       {
-        "description": "Agent Teams service backed by the exact live Lead Session log.",
-        "summary": "Agent Teams service backed by the exact live Lead Session log.",
+        "description": "Keeps the experimental Remote wire namespace without owning Team state or lifetime.",
+        "summary": "Keeps the experimental Remote wire namespace without owning Team state or lifetime.",
         "tags": [],
-        "jsDoc": "/** Agent Teams service backed by the exact live Lead Session log. */",
-        "key": "agentTeams",
-        "exportName": "TeamService",
+        "jsDoc": "/** Keeps the experimental Remote wire namespace without owning Team state or lifetime. */",
+        "key": "agentTeamRemote",
+        "exportName": "TeamRemoteAdapter",
         "members": [
-          {
-            "kind": "method",
-            "name": "membership",
-            "signature": "membership(agent: Agent): TeamMembership",
-            "summary": "Resolve one exact live Agent's Team role.",
-            "jsDoc": "/**\n * Resolve one exact live Agent's Team role.\n * @param agent - exact live Agent used as the authority credential.\n * @returns its root, Team identity, role, and model-facing name.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "listMembers",
-            "signature": "listMembers(agent: Agent): TeamMemberView[]",
-            "summary": "List the runtime-enriched roster visible to one Team member.",
-            "jsDoc": "/**\n * List the runtime-enriched roster visible to one Team member.\n * @param agent - exact live Team member.\n * @returns Lead and teammate rows in creation order.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "spawnTeammate",
-            "signature": "async spawnTeammate(caller: Agent, request: SpawnTeammateRequest): Promise<SpawnTeammateResult>",
-            "summary": "Create one named, continuable direct child of the Team Lead.",
-            "jsDoc": "/**\n * Create one named, continuable direct child of the Team Lead.\n * @param caller - exact live Lead Agent.\n * @param request - immutable name, description, prompt, context mode, provider, and cancellation.\n * @returns the active roster row.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "sendMessage",
-            "signature": "async sendMessage(caller: Agent, request: SendTeamMessageRequest): Promise<SendTeamMessageResult>",
-            "summary": "Queue one durable peer message, then attempt immediate delivery.",
-            "jsDoc": "/**\n * Queue one durable peer message, then attempt immediate delivery.\n * @param caller - exact live sending Team member.\n * @param request - target name, content, scheduling mode, and pre-queue cancellation.\n * @returns durable message identity and immediate-delivery observation.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "createTask",
-            "signature": "async createTask(caller: Agent, request: CreateTeamTaskRequest): Promise<TeamTaskView>",
-            "summary": "Create one unowned pending task in the Team Lead log.",
-            "jsDoc": "/**\n * Create one unowned pending task in the Team Lead log.\n * @param caller - exact live Team member creating the task.\n * @param request - task text, blockers, and advisory write scopes.\n * @returns the revision-one task view.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "getTask",
-            "signature": "getTask(caller: Agent, id: TeamTaskId): TeamTaskView",
-            "summary": "Return one task, including a deleted tombstone.",
-            "jsDoc": "/**\n * Return one task, including a deleted tombstone.\n * @param caller - exact live Team member reading the task.\n * @param id - Team-local task identity.\n * @returns the latest task value and derived readiness diagnostics.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "listTasks",
-            "signature": "listTasks(caller: Agent): TeamTaskView[]",
-            "summary": "List current non-deleted tasks in numeric creation order.",
-            "jsDoc": "/**\n * List current non-deleted tasks in numeric creation order.\n * @param caller - exact live Team member reading the board.\n * @returns detached current task views.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "updateTask",
-            "signature": "async updateTask(caller: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskView>",
-            "summary": "Compare-and-set one authorized task transition.",
-            "jsDoc": "/**\n * Compare-and-set one authorized task transition.\n * @param caller - exact live Team member authorizing the mutation.\n * @param request - task identity, expected revision, action, and action fields.\n * @returns the committed next task revision.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "waitForChange",
-            "signature": "async waitForChange(caller: Agent, timeoutMs: number, signal: AbortSignal): Promise<TeamWaitResult>",
-            "summary": "Wait for the next Team-domain or member-status change.",
-            "jsDoc": "/**\n * Wait for the next Team-domain or member-status change.\n * @param caller - exact live Team member waiting for activity.\n * @param timeoutMs - bounded wait duration from ten seconds through one hour.\n * @param signal - caller cancellation for the wait only.\n * @returns one observed change or a timeout result.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "interrupt",
-            "signature": "interrupt(caller: Agent, targetName: string): { previousStatus: 'running' | 'idle' | 'inactive' }",
-            "summary": "Interrupt one live teammate turn without clearing its pending inbox.",
-            "jsDoc": "/**\n * Interrupt one live teammate turn without clearing its pending inbox.\n * @param caller - exact live Lead Agent.\n * @param targetName - durable teammate name.\n * @returns the target status sampled before cancellation.\n */"
-          },
-          {
-            "kind": "method",
-            "name": "tryMembership",
-            "signature": "tryMembership(agent: Agent): TeamMembership | undefined",
-            "summary": "Resolve a caller without throwing, used by scoped-tool installation and observers.",
-            "jsDoc": "/**\n * Resolve a caller without throwing, used by scoped-tool installation and observers.\n * @param agent - candidate exact live Agent.\n * @returns Team membership, or undefined for non-Team subagents and stale identities.\n */"
-          },
           {
             "kind": "method",
             "name": "remoteView",
@@ -492,7 +415,7 @@ export const TYPERT = {
           },
           {
             "name": "Inbox",
-            "declaration": "export class Inbox {\n    get nextTurn(): readonly UserMessage[];\n    get nextStep(): readonly UserMessage[];\n    get hasPending(): boolean;\n    clear(): void;\n    claim(target: InboxTarget, turn: number): UserMessage[];\n    append(target: InboxTarget, message: UserMessage): void;\n    prepend(target: InboxTarget, message: UserMessage): void;\n    replace(messageId: MessageId, newMessage: UserMessage): boolean;\n    remove(messageId: MessageId): boolean;\n    splice(target: InboxTarget, start: number, deleteCount: number, inserted: UserMessage[]): UserMessage[];\n}"
+            "declaration": "export class Inbox {\n    get nextTurn(): readonly UserMessage[];\n    get nextStep(): readonly UserMessage[];\n    project(target: InboxTarget, splice?: SessionEventMap['agent/inbox/spliced']): readonly UserMessage[];\n    get hasPending(): boolean;\n    clear(): void;\n    claim(target: InboxTarget, turn: number): UserMessage[];\n    append(target: InboxTarget, message: UserMessage): void;\n    prepend(target: InboxTarget, message: UserMessage): void;\n    replace(messageId: MessageId, newMessage: UserMessage): boolean;\n    remove(messageId: MessageId): boolean;\n    splice(target: InboxTarget, start: number, deleteCount: number, inserted: UserMessage[]): UserMessage[];\n}"
           },
           {
             "name": "InboxTarget",
@@ -571,16 +494,8 @@ export const TYPERT = {
             "declaration": "export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';"
           },
           {
-            "name": "SendTeamMessageRequest",
-            "declaration": "export interface SendTeamMessageRequest {\n    readonly target: string;\n    readonly content: ContentBlock[];\n    readonly delivery: 'quiet' | 'wakeup';\n    readonly signal: AbortSignal;\n}"
-          },
-          {
-            "name": "SendTeamMessageResult",
-            "declaration": "export interface SendTeamMessageResult {\n    readonly messageId: TeamMessageId;\n    readonly status: 'accepted' | 'queued';\n}"
-          },
-          {
             "name": "Session",
-            "declaration": "export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    get id(): SessionId;\n    readonly firstLiveSeq: number;\n    get events(): readonly SessionEvent[];\n    get seq(): number;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}"
+            "declaration": "export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    get id(): SessionId;\n    readonly firstLiveSeq: number;\n    get events(): readonly SessionEvent[];\n    eventAt(seq: number): SessionEvent | undefined;\n    get seq(): number;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}"
           },
           {
             "name": "SessionEvent",
@@ -635,14 +550,6 @@ export const TYPERT = {
             "declaration": "export interface SkillInvocationSource {\n    readonly kind: 'skill-invocation';\n    readonly name: string;\n    readonly form: 'instructions';\n}"
           },
           {
-            "name": "SpawnTeammateRequest",
-            "declaration": "export interface SpawnTeammateRequest {\n    readonly name: string;\n    readonly description: string;\n    readonly prompt: ContentBlock[];\n    readonly context: 'fresh' | 'fork';\n    readonly provider: string;\n    readonly signal: AbortSignal;\n}"
-          },
-          {
-            "name": "SpawnTeammateResult",
-            "declaration": "export interface SpawnTeammateResult {\n    readonly member: TeamMemberView;\n}"
-          },
-          {
             "name": "StreamChunk",
             "declaration": "export type StreamChunk = { type: 'block-start'; index: number; blockType: ContentBlockType; } | { type: 'text-delta'; index: number; text: string; } | { type: 'reasoning-delta'; index: number; text: string; } | { type: 'tool-call-delta'; index: number; id: CallId; name?: string; argumentsDelta: string; } | { type: 'block-end'; index: number; block: ContentBlock; } | { type: 'usage'; usage: TokenUsage; } | { type: 'finish'; reason: FinishReason; replayState?: ReplayEnvelope; };"
           },
@@ -685,10 +592,6 @@ export const TYPERT = {
           {
             "name": "TeamMemberPhase",
             "declaration": "export type TeamMemberPhase = 'provisioning' | 'active' | 'failed';"
-          },
-          {
-            "name": "TeamMembership",
-            "declaration": "export interface TeamMembership {\n    readonly root: Agent;\n    readonly id: TeamId;\n    readonly role: 'lead' | 'teammate';\n    readonly name: string;\n}"
           },
           {
             "name": "TeamMemberSnapshot",
@@ -737,10 +640,6 @@ export const TYPERT = {
           {
             "name": "TeamView",
             "declaration": "export interface TeamView {\n    readonly members: TeamMemberView[];\n    readonly tasks: TeamTaskView[];\n}"
-          },
-          {
-            "name": "TeamWaitResult",
-            "declaration": "export interface TeamWaitResult {\n    readonly timedOut: boolean;\n}"
           },
           {
             "name": "TextBlock",

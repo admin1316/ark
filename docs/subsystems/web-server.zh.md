@@ -2,7 +2,7 @@
 
 [English](web-server.md) | 中文
 
-[dsh-host-webserver](../../packages/host/webserver) 是 GUI 宿主的浏览器 HTTP 载体：它是一个提供 `ctx.webServer` 的 `node:http` 插件，包含具名路由注册表、index.html 转换回调，以及一个可由插件认领的回退处理器。它不属于 agent loop（智能体循环），也不是能力 seam；它不了解任何 harness 概念。其他插件负责注册所有功能路由，包括 `/api` 桥接、插件 bundle 和 HMR（热模块替换）事件流（[分层说明](../../.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.zh.md)）。该服务器只服务浏览器：Electron 通过 `file://` 加载已构建文件，并经 IPC 桥接发送 fetch 请求，不使用本服务器。
+[dsh-host-webserver](../../packages/host/webserver) 提供 `ctx.webServer`，即带具名 HTTP 路由和升级路由的 `node:http` 监听器。它不了解 agent loop（智能体循环）概念，也不自行提供文件。Ark 通过 [dsh-native-api-app](../../packages/bundle/native-api-app/README.zh.md) 将它组合为经过认证、绑定 loopback 且只提供 API 的 sidecar；[API Gateway 参考](../api-gateway.zh.md) 定义分派与信任边界。原生 SwiftUI/AppKit 界面消费此 API。独立的 Workbench 浏览器使用 WebKit 渲染外部 HTTP(S) 页面，不能访问 Ark 凭据、工具或本地文件。
 
 源码：[`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
 
@@ -24,7 +24,7 @@ interface WebRoute {
 }
 ```
 
-匹配顺序固定：先查 exact 表，再取最长匹配前缀，最后落到已注册的回退。注册顺序不携带任何面向请求的语义：具名路由在组合上互不相交，任何未被具名路由认领的请求都由回退席位应答；席位只有一个所有者，第二次注册会抛出异常。Ark 的 Native 组合不占用回退席位，因此非 API 路径返回 404，不提供静态前端。
+匹配顺序固定：先查 exact 表，再取最长匹配前缀，最后落到已注册的回退。注册顺序不携带任何面向请求的语义：具名路由在组合上互不相交，任何未被具名路由认领的请求都由回退席位应答；席位只有一个所有者，第二次注册会抛出异常。Ark 的 Native 组合不占用回退席位，并使用 API-only 模式：`/` 返回状态文档，其他非 API 路径返回 404，不提供静态前端。
 
 ## 配置
 
@@ -63,13 +63,13 @@ interface Config {
 }
 ```
 
-`host` 只接受 `127.0.0.1`（默认姿态）和 `0.0.0.0`（刻意的网络暴露）；没有 TLS、认证或 origin 策略，因此绑定到非回环地址会把服务器暴露给该网络。Ark 在 loopback 上监听，并由 Host connection 层执行认证。
+`host` 仅接受 `127.0.0.1` 和 `0.0.0.0`。服务器校验 loopback Host 请求头，并使用启动级 token 认证 `/api` 请求；绑定所有接口必须显式配置 token。它不提供 TLS。Ark 绑定 loopback、启用 API-only 模式，并应用 [API Gateway 参考](../api-gateway.zh.md) 中定义的额外 Host 连接信任策略。
 
 ## 服务
 
 `WebServer`（`ctx.webServer`）在激活时立即监听；监听失败（EADDRINUSE 等）会使初始化被拒绝，启动进程会报告失败的 fiber。`register(route)` 添加一条具名路由并返回其 disposer；重复的 `(kind, path)` 抛出异常，因为路由模式是组合层约定，冲突即配置错误。`port` 读取监听端口，包括 `config.port` 为 0 时操作系统分配的端口。
 
-处理过程中抛出异常的请求（畸形的 % 转义撞上 `decodeURIComponent`、客户端在请求体中途断开）会记录为警告并应答 400（响应头已发出时则销毁 socket），绝不导致进程退出。dispose（资源释放）把 `close()` 与 `closeAllConnections()` 配对使用，因为处理器可能像 SSE（Server-Sent Events）那样保持响应打开，而这类连接永远不会自行结束；没有强制关闭，拆卸就会挂起。该包从不打印输出：URL 行归 shell 所有。逐包运维细节（含开发模式的 bundle 监视流水线）留在 [README](../../packages/host/webserver/README.zh.md) 中。
+处理过程中抛出异常的请求（畸形的 % 转义撞上 `decodeURIComponent`、客户端在请求体中途断开）会记录为警告并应答 400（响应头已发出时则销毁 socket），绝不导致进程退出。dispose（资源释放）把 `close()` 与 `closeAllConnections()` 配对使用，因为处理器可能像 SSE（Server-Sent Events）那样保持响应打开，而这类连接永远不会自行结束；没有强制关闭，拆卸就会挂起。该包从不打印输出：URL 行归 shell 所有。逐包运维细节留在 [README](../../packages/host/webserver/README.zh.md) 中。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

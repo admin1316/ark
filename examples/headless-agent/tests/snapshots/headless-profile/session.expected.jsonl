@@ -17,7 +17,7 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"cli-smoke-call","name":"bash","arguments":"{\"command\":\"printf CLI_TOOL_ROUND_TRIP\",\"description\":\"Prove the CLI tool round trip.\"}"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":11,"outputTokens":3,"cacheReadTokens":2}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"cli-smoke-call","name":"bash","arguments":"{\"command\":\"printf CLI_TOOL_ROUND_TRIP\",\"description\":\"Prove the CLI tool round trip.\"}"}],"source":{"kind":"model","provider":"cli-mock","model":"cli-mock"},"id":"{{sessionId}}"},"usage":{"inputTokens":11,"outputTokens":3,"cacheReadTokens":2}},"sourceEventSeqs":[[13,17]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"cli-smoke-call","name":"bash","arguments":"{\"command\":\"printf CLI_TOOL_ROUND_TRIP\",\"description\":\"Prove the CLI tool round trip.\"}"}],"source":{"kind":"model","provider":"cli-mock","model":"cli-mock"},"id":"{{sessionId}}"},"usage":{"inputTokens":11,"outputTokens":3,"cacheReadTokens":2}},"sourceEventSeqs":[13,14,15,16,17],"surfaceOp":"append"}
 {"type":"tool/call","data":{"turn":1,"step":1,"callId":"cli-smoke-call","name":"bash","arguments":"{\"command\":\"printf CLI_TOOL_ROUND_TRIP\",\"description\":\"Prove the CLI tool round trip.\"}"}}
 {"type":"tool/result","data":{"turn":1,"step":1,"message":{"source":{"kind":"tool","callId":"cli-smoke-call"},"content":[{"type":"tool-result","toolCallId":"cli-smoke-call","content":[{"type":"text","text":"CLI_TOOL_ROUND_TRIP"}],"isError":false}],"role":"user","id":"{{sessionId}}"}},"sourceEventSeqs":[19],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":1}}
@@ -28,6 +28,6 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"CLI tool round trip complete: CLI_TOOL_ROUND_TRIP"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"usage","usage":{"inputTokens":7,"outputTokens":5,"reasoningTokens":1}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"text","text":"CLI tool round trip complete: CLI_TOOL_ROUND_TRIP"}],"source":{"kind":"model","provider":"cli-mock","model":"cli-mock"},"id":"{{sessionId}}"},"usage":{"inputTokens":7,"outputTokens":5,"reasoningTokens":1}},"sourceEventSeqs":[[24,28]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"text","text":"CLI tool round trip complete: CLI_TOOL_ROUND_TRIP"}],"source":{"kind":"model","provider":"cli-mock","model":"cli-mock"},"id":"{{sessionId}}"},"usage":{"inputTokens":7,"outputTokens":5,"reasoningTokens":1}},"sourceEventSeqs":[24,25,26,27,28],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":2}}
 {"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}

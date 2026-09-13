@@ -1,9 +1,28 @@
+---
+description: "由模型挂载的动态包在 Host 侧的部分：定义注册表、Host 半所用的 node:vm 沙箱与 fiber 生命周期，以及 invoke handler 表。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-cordis-host-runner
 
 [English](README.md) | 中文
 
+## 概述
+
 由模型挂载的动态包在 Host 侧的部分：定义注册表、Host 半所用的 `node:vm` 沙箱与 fiber 生命周期，以及 invoke handler 表。以 `ctx.dynamicCordisRunner` 提供。面向模型的工具在 [`@deepseek-ai/dsh-tool-cordis`](../tool-cordis/README.zh.md) 中；Ark 交付 Host-only 路径，不再发布浏览器 runner。
 
+## 目录
+
+- [功能](#what-it-does)
+- [存储立场](#storage-stance)
+- [信任立场](#trust-stance)
+- [配置](#config)
+- [导出形状](#export-shape)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="what-it-does"></a>
 ## 功能
 
 分两个阶段：`define` 只做登记，一切带副作用的动作都挂在一次 run 上。
@@ -23,10 +42,12 @@
 
 本功能的生命周期事件由 Host 持有（`cordis/request-run`、`cordis/request-run-resolved`、`dynamicCordisRunner/package` 与 `dynamicCordisRunner/retract`）。它们只携带元数据，不携带源码，也不要求浏览器消费方。
 
+<a id="storage-stance"></a>
 ## 存储立场
 
 注册表就是进程内存，也是唯一真源。会话日志只承载一次 define 调用的元数据，绝不承载它的代码：因此进程重启后确实没有任何定义，这是合理的；而 id 已无法解析的卡片会如实说明这一点，不会假装自己还能运行。本包不向磁盘写任何东西，也不会自动恢复任何定义；刷新过的页面手上什么都没有，直到有人再次运行某个包——正是这一步让它绑定存活的 host 半并重新取回浏览器半。
 
+<a id="trust-stance"></a>
 ## 信任立场
 
 vm 沙箱隔离全局变量，但不是安全边界：Node 全局变量不存在，或重定向到 Cordis 服务（`ctx.fs`、`ctx.web`、`ctx.bash` 以及定时器 helper），host 半收到的是不含框架内部机制的 façade，但它声明的服务仍会触达存活运行时。应当像对待 bash 访问一样对待动态包，参见[自引用工具集 Agent Note](../../../.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.zh.md)。
@@ -41,10 +62,12 @@ vm 沙箱隔离全局变量，但不是安全边界：Node 全局变量不存在
 
 就这一个字段：一次 run 请求等的是人，所以这趟往返本身没有任何截止期限。
 
+<a id="export-shape"></a>
 ## 导出形状
 
 服务包：默认导出 `DynamicCordisRunnerService`（服务键 `dynamicCordisRunner`），`./types` 则承载 `dynamicCordisRunner` remote namespace 与其消费方共享的载荷形状。`define`／`undefine` 的形状留在包内部，因为它们从不跨 wire。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 经 cordis 工具转达的拒绝与教学式错误
@@ -73,3 +96,8 @@ vm 沙箱隔离全局变量，但不是安全边界：Node 全局变量不存在
 - `runHostHalf` 不携带 request id，因此「这个 host 半是哪次请求求值的」由 host 侧归因到该定义最近一次挂起的请求；若同一个定义出现多个并发 run 请求，这条规则需要重新审议。
 - 命名了已被取代版本的成功结论会被拒绝（`accepted: false`）并让该请求继续挂起，因此模型这次调用只能靠一次有效作答或自身被取消才结束。Ark Native 不公开浏览器作答方；未来外部 UI 必须明确持有这套编排。
 - **`zod` 是生成的 TypeRT 契约面的运行时依赖，不是 `src` 的依赖。** `./typert` 与 `./remote` 解析到 `lib/typert.*.js`，`tsc` 以不打包的形式产出它们，其中带有裸的 `import { z } from 'zod'`，所以本包必须声明它（沿用 `@deepseek-ai/dsh-goal` 的先例），而 `knip.json` 必须在这个 workspace 里忽略它：knip 读的是源码，而这些契约面是构建产物。`src` 里没有任何代码 import zod。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

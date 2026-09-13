@@ -1,6 +1,10 @@
 /** Duplicate-install-safe JSON and immutable-value helpers. @module @deepseek-ai/dsh-util-values */
 
-/** A value that round-trips through JSON without loss. */
+/**
+ * Lossless JSON scalars, dense ordinary arrays, and plain or null-prototype records.
+ * Runtime validation rejects non-finite numbers, negative zero, and own properties
+ * that JSON would discard; TypeScript's `number` cannot express these restrictions.
+ */
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 
 /**
@@ -12,6 +16,23 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
 export function assertNever(value: never, context?: string): never {
   const rendered = (JSON.stringify(value) as string | undefined) ?? String(value)
   throw new Error(`unreachable variant${context ? ` in ${context}` : ''}: ${rendered}`)
+}
+
+/**
+ * Match own-property presence without reading values or rejecting unrelated keys.
+ * Forbidden keys are checked first; both lists short-circuit in their given order.
+ * @param value - object whose own keys are inspected; proxy trap errors propagate.
+ * @param required - keys that must be own properties, including values of `undefined`.
+ * @param forbidden - keys that must not be own properties; inherited keys do not count.
+ * @returns whether every required key is present and every forbidden key is absent.
+ */
+export function matchesOwnKeyPattern(
+  value: object,
+  required: readonly PropertyKey[],
+  forbidden: readonly PropertyKey[],
+): boolean {
+  return forbidden.every(key => !Object.hasOwn(value, key))
+    && required.every(key => Object.hasOwn(value, key))
 }
 
 /** Whether a realm-owned intrinsic prototype is backed by its native constructor. */
@@ -165,25 +186,35 @@ function walkJsonValue(value: unknown, detach: boolean): JsonValue | true | unde
 }
 
 /**
- * Validate and detach lossless JSON in one read per property.
- * @param value - candidate value to validate and detach.
- * @returns the detached snapshot, or `undefined` when the value is not losslessly JSON-serializable.
+ * Validate and detach lossless JSON in one read per property, so a stateful
+ * getter cannot change between validation and copying. Traversal is iterative,
+ * so valid nesting is bounded by available memory rather than the JavaScript
+ * call stack. Accepts ordinary arrays, plain or null-prototype objects, and JSON
+ * scalars; rejects sparse, cyclic, exotic, negative-zero, and non-finite values.
+ * Getter throws propagate.
+ *
+ * @param value - the candidate value to validate and detach.
+ * @returns the detached snapshot, or `undefined` when the value is not
+ *   losslessly JSON-serializable.
  */
 export function snapshotJsonValue<T>(value: T): T | undefined {
   return walkJsonValue(value, true) as T | undefined
 }
 
 /**
- * Test the same lossless JSON rules as {@link snapshotJsonValue} without detaching the value.
- * @param value - candidate value to test.
- * @returns whether the value survives a JSON round trip without loss.
+ * Test the same lossless JSON boundary as {@link snapshotJsonValue} without
+ * detaching it. Only own enumerable string properties participate; `toJSON`
+ * is ignored and getters run, so persistence boundaries use the snapshotter.
+ * @param value - the candidate event data to test.
+ * @returns whether `value` survives JSON round-trip losslessly.
  */
 export function isJsonValue(value: unknown): boolean {
   return walkJsonValue(value, false) === true
 }
 
 /**
- * Compare JSON-compatible values structurally.
+ * Compare JSON-compatible values structurally using own enumerable record keys.
+ * An inherited value cannot substitute for a missing own key.
  * @param a - one JSON-compatible value.
  * @param b - the other JSON-compatible value.
  * @returns whether both values contain the same JSON data.
@@ -199,7 +230,7 @@ export function deepEqualJson(a: unknown, b: unknown): boolean {
   const right = b as Record<string, unknown>
   const keys = Object.keys(left)
   if (keys.length !== Object.keys(right).length) return false
-  return keys.every(key => key in right && deepEqualJson(left[key], right[key]))
+  return keys.every(key => Object.hasOwn(right, key) && deepEqualJson(left[key], right[key]))
 }
 
 /**

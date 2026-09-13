@@ -1,3 +1,8 @@
+---
+description: "A compaction capability family (see capability seams): a Service Definition, a summarizing provider, a model-free tool-result pruning companion, and a human command Consumer."
+kind: "package-group"
+---
+
 # compaction/ — compaction capability family
 
 English | [中文](README.zh.md)

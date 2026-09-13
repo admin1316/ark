@@ -4,6 +4,7 @@
  * persistence seam directly.
  * @module @deepseek-ai/dsh-session-persistence/coordinator
  */
+import { matchesOwnKeyPattern } from '@deepseek-ai/dsh-util-values';
 import { adoptSessionEvent, interruptedTurnClosers, KNOWN_SESSION_EVENT_TYPES, SESSION_FORMAT_VERSION, SessionPreparation, snapshotJsonValue, snapshotSessionEvent, } from '@deepseek-ai/dsh-session';
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout';
 import { SessionPersistenceDeleteBlockedError, SessionPersistenceNotFoundError } from "./errors.js";
@@ -273,9 +274,7 @@ function migrateLegacyMessageEvent(event, id, messageIds) {
         return event;
     switch (event.type) {
         case 'user/message': {
-            if (Object.hasOwn(data, 'id') || Object.hasOwn(data, 'role')
-                || Object.hasOwn(data, 'message')
-                || !Object.hasOwn(data, 'content') || !Object.hasOwn(data, 'source'))
+            if (!matchesOwnKeyPattern(data, ['content', 'source'], ['id', 'role', 'message']))
                 return event;
             return {
                 ...event,
@@ -287,8 +286,7 @@ function migrateLegacyMessageEvent(event, id, messageIds) {
             };
         }
         case 'assistant/message': {
-            if (Object.hasOwn(data, 'message')
-                || !Object.hasOwn(data, 'content') || !Object.hasOwn(data, 'provenance'))
+            if (!matchesOwnKeyPattern(data, ['content', 'provenance'], ['message']))
                 return event;
             const { content, provenance, ...eventData } = data;
             return {
@@ -308,9 +306,7 @@ function migrateLegacyMessageEvent(event, id, messageIds) {
             };
         }
         case 'tool/result': {
-            if (Object.hasOwn(data, 'message')
-                || !Object.hasOwn(data, 'callId') || !Object.hasOwn(data, 'content')
-                || !Object.hasOwn(data, 'isError'))
+            if (!matchesOwnKeyPattern(data, ['callId', 'content', 'isError'], ['message']))
                 return event;
             const { callId, content, isError, ...eventData } = data;
             const inheritedId = replacementStart(event);

@@ -1,3 +1,8 @@
+---
+description: "The ACP group exposes harness agents to programmatic clients over the Agent Client Protocol."
+kind: "package-group"
+---
+
 # acp/ — Agent Client Protocol automation
 
 English | [中文](README.zh.md)

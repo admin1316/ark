@@ -11,7 +11,7 @@
               - id: deepseek-v4-flash
               - id: deepseek-v4-pro
     - id: subagent-result-diagnostic
-      name: '../../../packages/test-support/session-snapshot/tests/fixtures/subagent-result-diagnostic.ts'
+      name: '../../../packages/subagent/subagent/tests/fixtures/subagent-result-diagnostic.ts'
     - id: tool-subagent-codex
       name: '@deepseek-ai/dsh-tool-subagent'
       config:

@@ -53,6 +53,7 @@ import {
 } from '@deepseek-ai/dsh-sdk-client'
 
 const corpusRoot = fileURLToPath(new URL('../', import.meta.url))
+const dshBin = fileURLToPath(new URL('../../apps/cli/src/bin.ts', import.meta.url))
 
 const MINIMAL_SYSTEM_PROMPT = 'You are the environment-selected minimal software engineer.'
 const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
@@ -494,19 +495,25 @@ async function runScenario(scenario: CorpusScenario): Promise<{
   const patchRoot = join(cwd, '.snapshot-patches')
   await mkdir(patchRoot, { recursive: true })
   const patches = authoredPatches(scenario, !recording)
-    .map((patch, index) => materializeProfilePatch(patch, cwd, patchRoot, index))
+    .map((patch, index) => materializeProfilePatch(patch, cwd, patchRoot, index, dshBin))
   const assertions = SDK_ASSERTIONS[scenario.name] ?? {}
   let childSessionsRoot: string | undefined
   let childEnvironment: Record<string, string> = {}
   if (assertions.dshSdkChild !== undefined) {
     const childHome = join(cwd, '.child-dsh')
-    const childPatch = materializeProfilePatch(assertions.dshSdkChild.config, cwd, patchRoot, patches.length)
+    const childPatch = materializeProfilePatch(assertions.dshSdkChild.config, cwd, patchRoot, patches.length, dshBin)
     await mkdir(childHome, { recursive: true })
     childSessionsRoot = join(childHome, 'sessions')
     childEnvironment = {
       DSH_TEST_CHILD_PATCHES: JSON.stringify([childPatch]),
       DSH_TEST_CHILD_HOME: childHome,
     }
+  }
+  const diagnosticPatch = assertions.environment?.DSH_TEST_CHILD_PATCH
+  if (diagnosticPatch !== undefined) {
+    childEnvironment.DSH_TEST_CHILD_PATCH = materializeProfilePatch(
+      diagnosticPatch, cwd, patchRoot, patches.length + 1, dshBin,
+    )
   }
   const workspaceDir = join(scenario.dir, 'workspace')
   if (existsSync(workspaceDir)) {

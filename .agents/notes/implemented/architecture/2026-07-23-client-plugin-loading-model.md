@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-07-23-client-plugin-loading-model.zh.md)
 
-> Scope: the browser-side plugin loading machinery — how code arrives, how Cordis governs it, and how hot reload rides on that model. This note owns the loading chain; the [client shell layering note](2026-08-15-client-shells-and-dynamic-packages.md) owns package categories, build faces, shared-module requests, and npm dependency declarations, while the [web client architecture note](2026-07-19-gui-web-client-architecture.md) owns slots and the data object layer.
+> Scope: the browser-side plugin loading machinery — how code arrives, how Cordis governs it, and how hot reload rides on that model. This note owns the loading chain; the [client shell layering note](../../archived/architecture/2026-08-15-client-shells-and-dynamic-packages.md) owns package categories, build faces, shared-module requests, and npm dependency declarations, while the [web client architecture note](../../archived/architecture/2026-07-19-gui-web-client-architecture.md) owns slots and the data object layer.
 
 ## Problem
 
@@ -26,7 +26,7 @@ The first-generation client loader (`createClientLoader`) hand-wrote both layers
 
 ### Package membership and module requests
 
-The [client shell layering note](2026-08-15-client-shells-and-dynamic-packages.md) defines the current static and dynamic package sets and the import rules between them. The loading machinery treats every `dsh.client` package as a host-graph row with one ordinary `lib/client.js` factory bundle. Its declaration carries Cordis `inject` edges, synchronous module-table `external` requests, and the optional `immediately` prefetch mark; the composing app owns only the mounted roster.
+The [client shell layering note](../../archived/architecture/2026-08-15-client-shells-and-dynamic-packages.md) defines the current static and dynamic package sets and the import rules between them. The loading machinery treats every `dsh.client` package as a host-graph row with one ordinary `lib/client.js` factory bundle. Its declaration carries Cordis `inject` edges, synchronous module-table `external` requests, and the optional `immediately` prefetch mark; the composing app owns only the mounted roster.
 
 The web kernel remains framework-free and imports no dynamic package value. Modules is itself a dynamic row, but the host parser delivers its ordinary factory before the Vite main module. The HTML-installed `__ModuleLoader__` facade uses that factory to construct the module system when the kernel calls `create()`. Runtime arrives through the same pending queue; static React, Cordis, and UI library identities come from the shell seed.
 
@@ -90,7 +90,7 @@ The support boundary, stated honestly. Reload is coarse by design: fresh fiber, 
 
 ## Package ownership
 
-The current package inventory and build forms live in the [client shell layering note](2026-08-15-client-shells-and-dynamic-packages.md). This note retains only the loading properties that apply to every dynamic row: lazy factory registration, Cordis entry governance, external-script arrival, source maps, and HMR.
+The current package inventory and build forms live in the [client shell layering note](../../archived/architecture/2026-08-15-client-shells-and-dynamic-packages.md). This note retains only the loading properties that apply to every dynamic row: lazy factory registration, Cordis entry governance, external-script arrival, source maps, and HMR.
 
 ## Consequences
 

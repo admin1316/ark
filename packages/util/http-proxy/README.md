@@ -27,6 +27,8 @@ Use this package to apply one outbound HTTP proxy policy to Harness requests tha
 
 Nothing to mount, and nothing to configure. The `dsh` launcher resolves and installs the policy for every profile before the first plugin loads, so a user who exports `HTTPS_PROXY` is proxied everywhere. This is a library rather than a plugin because transport policy has one answer per process: there is no second implementation to swap and no scope narrower than the process to give one.
 
+The optional `./invariant` companion checks the actual `proxyEnvironmentForChild()` result once when the companion activates. When `NODE_USE_ENV_PROXY` is enabled, every supplied HTTP(S) proxy variable must use a supported proxy URL; rejected diagnostics name the variable but omit its value. Uninstalled and direct-policy states are valid. This startup checkpoint neither installs a proxy nor polls later changes; the launcher and installation/disposal tests retain ownership of the policy lifecycle.
+
 ### Writing a new outbound call
 
 Plain `fetch()` is proxied, and so is any SDK that reaches `globalThis.fetch` — the MCP HTTP transport and the pi-ai provider stack both do. An SDK that builds its own transport does **not**, and two of the ones this repository ships turned out to: the OTLP exporter posts through `node:http`, and the E2B SDK constructs its own undici dispatcher. Assume nothing about an SDK; check it.
@@ -85,7 +87,7 @@ An entry names a host and matches it together with every subdomain under it: `NO
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Network proxy guide](../../../docs/user/guide/network-proxy.md) — what to export, and why a browser is proxied when a terminal is not.
+- [CLI source execution](../../../apps/cli/reference/README.md#source-execution) — the launch environment and Node environment-proxy support.
 - [`dsh-web-fetch-http`](../../web/web-fetch-http/README.md) — the one consumer whose safety rules change under a proxy.
 
 -----

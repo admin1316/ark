@@ -27,6 +27,8 @@ kind: "package-reference"
 
 无需挂载，也无需配置。`dsh` 启动器会在第一个插件加载之前，为每个 profile 解析并安装策略，因此导出了 `HTTPS_PROXY` 的用户在所有位置都会走代理。本包是库而非插件，因为传输策略每个进程只有一个答案：没有第二个实现可替换，也没有比进程更窄的作用域可赋予。
 
+可选的 `./invariant` companion 在激活时检查一次 `proxyEnvironmentForChild()` 的实际返回值。启用 `NODE_USE_ENV_PROXY` 时，每个已提供的 HTTP(S) 代理变量都必须使用受支持的代理 URL；拒绝诊断只给出变量名，不包含变量值。未安装策略和直连策略均为有效状态。此启动检查既不安装代理，也不轮询后续变化；启动器及安装、释放测试继续负责策略生命周期。
+
 ### 编写新的出站调用
 
 普通 `fetch()` 已经走代理，任何最终落到 `globalThis.fetch` 的 SDK 也一样——MCP HTTP 传输与 pi-ai 提供方栈都是如此。不要对任何 SDK 想当然，去查。
@@ -85,7 +87,7 @@ loopback 始终被绕过——`localhost`、整个 `127.0.0.0/8` 段、`::1`、`
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [网络代理指南](../../../docs/user/guide/network-proxy.md)——需要导出什么，以及为什么浏览器走代理而终端不走。
+- [CLI 源码执行](../../../apps/cli/reference/README.zh.md#source-execution) — 启动环境与 Node 环境代理支持。
 - [`dsh-web-fetch-http`](../../web/web-fetch-http/README.zh.md)——唯一一个安全规则会因代理而改变的消费方。
 
 -----

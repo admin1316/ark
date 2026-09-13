@@ -1,3 +1,8 @@
+---
+description: "The feedback family exposes two deliberately separate contracts: an immutable remark in the canonical Session log, and editable feedback attached to one assistant message in a local sidecar."
+kind: "package-group"
+---
+
 # feedback/ — recorded human feedback
 
 English | [中文](README.zh.md)
@@ -12,3 +17,5 @@ The feedback family exposes two deliberately separate contracts: an immutable re
 A command feedback remark is log-only: it never enters model context or derived history. When mounted, [`dsh-session-telemetry-otel`](../session/session-telemetry-otel) observes `feedback/record` to release a pending telemetry prefix or warn that disabled telemetry leaves the feedback local; capture itself remains independent of that policy.
 
 Message feedback is not a Session event or projection. It remains in the storage-domain sidecar and causes no telemetry handoff. The Host Remote contract ships with the service; the client Remote aggregate mount and UI consumer are separately owned and deferred.
+
+The [feedback reference](../../docs/subsystems/feedback.md) defines message feedback identity, persistence, and Host operations.

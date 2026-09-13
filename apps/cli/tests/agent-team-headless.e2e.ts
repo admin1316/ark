@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -24,6 +24,11 @@ describe('dsh run with Agent Teams enabled', () => {
       const sessions = join(home, 'sessions')
       const profileDir = join(home, 'profiles', 'headless')
       await mkdir(profileDir, { recursive: true })
+      // This optional bundle is profile-installed, not part of the CLI's in-box dependencies.
+      const bundleScope = join(profileDir, 'node_modules', '@deepseek-ai')
+      await mkdir(bundleScope, { recursive: true })
+      await symlink(fileURLToPath(new URL('../../../packages/experimental/agent-team-profile', import.meta.url)),
+        join(bundleScope, 'dsh-experimental-agent-team-profile'), 'junction')
       await writeFile(join(profileDir, 'package.json'), JSON.stringify({
         name: 'dsh-profile-headless',
         private: true,

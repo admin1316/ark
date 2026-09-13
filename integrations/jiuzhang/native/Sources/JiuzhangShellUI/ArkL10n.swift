@@ -11,6 +11,8 @@ import Foundation
 public enum ArkL10n {
   public enum Key: String, CaseIterable, Sendable {
     // 设置页：导航与窗口
+    case openInClose, openInAppTitle, openInFinder, openInTerminal, openInFailed, openInUnavailable
+    case connectionConnected, connectionConnecting, connectionDegraded, connectionReconnectNow, connectionRecoveryFailed
     case settingsTitle
     case settingsGeneral
     case settingsModels
@@ -106,6 +108,10 @@ public enum ArkL10n {
     case trajectoryCompleted
     case trajectoryError
     case trajectoryPending
+    case chatTurnEnded
+    case chatTurnUnknown
+    case trajectoryHistoryPreview
+    case trajectoryHistoryPrefix
     case copyJSON
     case copiedJSON
     case closeDetail
@@ -512,6 +518,8 @@ public enum ArkL10n {
     case chatHistoryFailed
     case chatHistoryRetry
     case chatLoadOlder
+    case chatLoadNewer
+    case chatLoadCompleteMessage
     case chatLoadingOlder
     case chatSystemPrompt
     case chatSystemPromptExpand
@@ -591,6 +599,7 @@ public enum ArkL10n {
     case toastSubagentModelSelectionSaved
     case producedFilesLabel
     case producedFilesOpen
+    case producedFilesOpenDefault, producedFilesOpenFailed
     case producedFilesMore
     case contextUsedPercent
     case contextApproximate
@@ -673,11 +682,11 @@ public enum ArkL10n {
     case workbenchBrowserOpenExternal
     case workbenchBrowserDetail
     case workbenchBrowserLoading
-    case workbenchBrowserUnavailable
-    case workbenchBrowserTruncated
     case workbenchBrowserHTTPFailure
     case workbenchBrowserInvalid
     case workbenchBrowserOpenFailed
+    case workbenchBrowserBack, workbenchBrowserForward, workbenchBrowserReload, workbenchBrowserStop
+    case workbenchBrowserBlockedFrame, workbenchBrowserUnsupported, workbenchBrowserLoadFailed, workbenchBrowserProcessStopped, workbenchBrowserConfirm
     case newSession
     case workspaceSection
     case ungroupedSection
@@ -767,6 +776,14 @@ public enum ArkL10n {
     case filesGitRefreshFailed
     case filesTerminalSignalTerminated
     case filesTerminalEnded
+    case filesTerminalRestart
+    case filesTerminalSessionRepaired
+    case filesTerminalMissingDirectory
+    case filesTerminalShellExited
+    case filesTerminalRestarting
+    case filesTerminalStopped
+    case filesTerminalTypeHint
+    case filesTerminalDrainTimeout
     case filesTerminalOutputTitle
 
     // 通用
@@ -868,6 +885,17 @@ public enum ArkL10n {
 
   private static let table: [Key: Entry] = [
     // 设置页：导航与窗口
+    .openInClose: Entry(zh: "关闭", en: "Close"),
+    .openInAppTitle: Entry(zh: "在应用程序中打开", en: "Open in Application"),
+    .openInFinder: Entry(zh: "在访达中打开", en: "Open in Finder"),
+    .openInTerminal: Entry(zh: "在终端中打开", en: "Open in Terminal"),
+    .openInFailed: Entry(zh: "无法打开工作区，请检查应用程序与访问权限后重试。", en: "Could not open the workspace. Check the application and access permissions, then retry."),
+    .openInUnavailable: Entry(zh: "工作区目录不存在或无法访问。", en: "The workspace directory does not exist or is unavailable."),
+    .connectionConnected: Entry(zh: "已连接", en: "Connected"),
+    .connectionConnecting: Entry(zh: "正在连接", en: "Connecting"),
+    .connectionDegraded: Entry(zh: "连接异常", en: "Connection interrupted"),
+    .connectionReconnectNow: Entry(zh: "立即重连", en: "Reconnect"),
+    .connectionRecoveryFailed: Entry(zh: "暂时无法恢复连接，请稍后重试。", en: "Unable to reconnect. Please retry."),
     .settingsTitle: Entry(zh: "设置", en: "Settings"),
     .settingsGeneral: Entry(zh: "通用", en: "General"),
     .settingsModels: Entry(zh: "模型", en: "Models"),
@@ -982,6 +1010,10 @@ public enum ArkL10n {
     .trajectoryCompleted: Entry(zh: "已完成", en: "Completed"),
     .trajectoryError: Entry(zh: "错误", en: "Error"),
     .trajectoryPending: Entry(zh: "等待中", en: "Pending"),
+    .chatTurnEnded: Entry(zh: "已结束", en: "Ended"),
+    .chatTurnUnknown: Entry(zh: "状态未知", en: "Unknown state"),
+    .trajectoryHistoryPreview: Entry(zh: "历史预览", en: "History preview"),
+    .trajectoryHistoryPrefix: Entry(zh: "历史前缀", en: "Historical prefix"),
     .copyJSON: Entry(zh: "复制 JSON", en: "Copy JSON"),
     .copiedJSON: Entry(zh: "已复制", en: "Copied"),
     .closeDetail: Entry(zh: "关闭详情", en: "Close Details"),
@@ -1034,7 +1066,7 @@ public enum ArkL10n {
 
     // 主导航 / 侧边栏 / 会话日志
     .navChat: Entry(zh: "对话", en: "Chat"),
-    .brandTitle: Entry(zh: "九章天幕", en: "Ark"),
+    .brandTitle: Entry(zh: "Ark", en: "Ark"),
     .flatSessions: Entry(zh: "平铺对话", en: "Flat Sessions"),
     .recentFirst: Entry(zh: "最近更新优先", en: "Recent First"),
     .sessionSort: Entry(zh: "会话排序", en: "Sort Sessions"),
@@ -1464,6 +1496,8 @@ public enum ArkL10n {
     .chatHistoryFailed: Entry(zh: "会话历史载入失败", en: "Chat history failed to load"),
     .chatHistoryRetry: Entry(zh: "重新载入", en: "Reload"),
     .chatLoadOlder: Entry(zh: "载入更早内容", en: "Load Earlier Content"),
+    .chatLoadNewer: Entry(zh: "载入较新内容", en: "Load Newer Content"),
+    .chatLoadCompleteMessage: Entry(zh: "载入完整内容", en: "Load Complete Content"),
     .chatLoadingOlder: Entry(zh: "正在载入…", en: "Loading…"),
     .chatSystemPrompt: Entry(zh: "系统提示词", en: "System Prompt"),
     .chatSystemPromptExpand: Entry(zh: "展开系统提示词", en: "Expand system prompt"),
@@ -1551,6 +1585,8 @@ public enum ArkL10n {
     .toastSubagentModelSelectionSaved: Entry(zh: "子代理模型授权范围已保存", en: "Subagent model authorization saved"),
     .producedFilesLabel: Entry(zh: "产出文件", en: "Produced files"),
     .producedFilesOpen: Entry(zh: "打开 {0}", en: "Open {0}"),
+    .producedFilesOpenDefault: Entry(zh: "用默认应用打开", en: "Open in Default Application"),
+    .producedFilesOpenFailed: Entry(zh: "无法打开产出文件，请检查文件、工作区与默认应用后重试。", en: "Could not open the produced file. Check the file, workspace, and default application, then retry."),
     .producedFilesMore: Entry(zh: "另有 {0} 个", en: "{0} more"),
     .contextUsedPercent: Entry(zh: "上下文已用 {0}%", en: "{0}% of context used"),
     .contextApproximate: Entry(zh: "约 {0} / {1}", en: "~{0} / {1}"),
@@ -1640,17 +1676,22 @@ public enum ArkL10n {
       zh: "当前文件中有未保存修改。要从“{0}”切换到“{1}”，请先取消并保存，或明确放弃修改后切换。",
       en: "Files contains unsaved changes. To switch from “{0}” to “{1}”, cancel and save first, or explicitly discard the changes and switch."),
     .workbenchDiscardAndSwitch: Entry(zh: "放弃修改并切换", en: "Discard Changes and Switch"),
+    .workbenchBrowserBack: Entry(zh: "后退", en: "Back"),
+    .workbenchBrowserForward: Entry(zh: "前进", en: "Forward"),
+    .workbenchBrowserReload: Entry(zh: "重新加载", en: "Reload"),
+    .workbenchBrowserStop: Entry(zh: "停止加载", en: "Stop Loading"),
+    .workbenchBrowserBlockedFrame: Entry(zh: "已阻止网页内不受支持的框架导航；主网页仍保持打开。", en: "An unsupported frame navigation was blocked; the main page remains open."),
+    .workbenchBrowserUnsupported: Entry(zh: "此导航或内容类型无法在网页标签中打开。", en: "This navigation or content type cannot be opened in a web tab."),
+    .workbenchBrowserLoadFailed: Entry(zh: "网页加载失败。", en: "The page could not be loaded."),
+    .workbenchBrowserProcessStopped: Entry(zh: "网页进程已停止，请重新加载。", en: "The web content process stopped. Reload the page to continue."),
+    .workbenchBrowserConfirm: Entry(zh: "确定", en: "OK"),
     .workbenchBrowserPlaceholder: Entry(zh: "输入网页地址", en: "Enter a web address"),
     .workbenchBrowserOpen: Entry(zh: "内部打开", en: "Open Here"),
     .workbenchBrowserOpenExternal: Entry(zh: "用系统浏览器打开", en: "Open in System Browser"),
     .workbenchBrowserDetail: Entry(
-      zh: "通过安全 WebFetch 获取网页，并以原生 Markdown 在 Ark 内阅读；复杂交互可转到系统浏览器。",
-      en: "Fetch pages through safe WebFetch and read them as native Markdown in Ark; use the system browser for interactive sites."),
-    .workbenchBrowserLoading: Entry(zh: "正在获取并整理网页…", en: "Fetching and preparing the page…"),
-    .workbenchBrowserUnavailable: Entry(
-      zh: "本机服务尚未提供原生网页阅读能力。",
-      en: "The local service does not provide native web reading."),
-    .workbenchBrowserTruncated: Entry(zh: "内容已截断", en: "Content truncated"),
+      zh: "在 Ark 内打开完整网页，保留网站布局、图片和交互。",
+      en: "Open complete web pages inside Ark, including their layout, images, and interactions."),
+    .workbenchBrowserLoading: Entry(zh: "正在加载网页…", en: "Loading the page…"),
     .workbenchBrowserHTTPFailure: Entry(
       zh: "网页返回 HTTP {0}；以下内容可能是错误说明。",
       en: "The page returned HTTP {0}; the content below may be an error response."),
@@ -1763,6 +1804,14 @@ public enum ArkL10n {
     .filesGitRefreshFailed: Entry(zh: "Git 状态读取失败（退出码", en: "Git status failed (exit code"),
     .filesTerminalSignalTerminated: Entry(zh: "终端会话被信号终止", en: "Terminal session terminated by signal"),
     .filesTerminalEnded: Entry(zh: "终端会话已结束", en: "Terminal session ended"),
+    .filesTerminalRestart: Entry(zh: "重新启动会话", en: "Restart Session"),
+    .filesTerminalSessionRepaired: Entry(zh: "会话已修复", en: "Session repaired"),
+    .filesTerminalMissingDirectory: Entry(zh: "工作目录不存在，已回退到", en: "Working directory missing; fell back to"),
+    .filesTerminalShellExited: Entry(zh: "shell 已退出（退出码", en: "Shell exited (code"),
+    .filesTerminalRestarting: Entry(zh: "正在重新启动终端会话", en: "Restarting terminal session"),
+    .filesTerminalStopped: Entry(zh: "会话已停止，按 ⌘R 重新启动", en: "Session stopped; press ⌘R to restart"),
+    .filesTerminalTypeHint: Entry(zh: "点击终端后直接输入命令", en: "Click the terminal and type commands directly"),
+    .filesTerminalDrainTimeout: Entry(zh: "终端会话未能在时限内完全退出", en: "Terminal session did not exit within the time limit"),
     .filesTerminalOutputTitle: Entry(zh: "输出", en: "Output"),
 
     // 通用

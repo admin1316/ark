@@ -72,11 +72,11 @@ const malformed = [
   { block: { type: 'tool-result', toolCallId: 'call', content: null }, kind: 'tool-result' },
 ] satisfies { block: SessionFormatJsonObject; kind: string }[]
 
-function catalog(rows: readonly SessionFormatEvent[], version: 0 | 1 | 3, validation: 'current' | 'transformed' = 'current') {
+function catalog(rows: readonly SessionFormatEvent[], version: 0 | 1 | 3, validation: 'current' | 'transformed' = 'transformed') {
   const physical = version === 3 ? { type: 'session', ...header, version } : { type: 'session', version, id: header.id, createdAt: 1, delegationDepth: 0 }
   const reader = sessionFormatCatalog.createRestore(physical, { recovery: 'strict', validation })
   for (const [seq, row] of rows.entries()) reader.decodeRow({ ...row, seq })
-  return reader.finish()
+  return restoreReleasedV3Artifact(reader.finish(), new Set())
 }
 
 describe('V2 content admission', () => {
@@ -127,6 +127,11 @@ describe('V2 content admission', () => {
       assistant('assistant/message', [{ type: 'chunk', time: 987, chunk: { type: 'block-end', index: 987, block: future } }]),
       assistant('assistant/attempt', [{ type: 'chunk', time: 987, chunk: { type: 'block-start', index: 987, blockType: 'future-content' } }]),
     ]
+    if (validation === 'current') {
+      expect(() => catalog([...body, ...extensionRows, ...closing], 3, validation))
+        .toThrow(/installed Session format is v0, got v3/)
+      return
+    }
     const output = catalog([...body, ...extensionRows, ...closing], 3, validation)
     expect(output.events.slice(body.length, -2).map(row => row.data)).toEqual(extensionRows.map(row => row.data))
   })

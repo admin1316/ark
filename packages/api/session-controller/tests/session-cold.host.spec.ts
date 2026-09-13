@@ -10,12 +10,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
+import { installPromptPersistence, promptInbox } from './durable-prompt-fixture.ts'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import { subagentIdentityProjectionDefinition } from '@deepseek-ai/dsh-subagent/src/projection.ts'
 import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import { createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, MessageId, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
@@ -26,7 +27,6 @@ import {
   type PersistenceBackend,
   type StoredPrefix,
 } from '@deepseek-ai/dsh-session-persistence'
-import { ApiSessionList } from '../src/list.ts'
 import {
   createSessionTestRemote,
   installSessionReadTestServices,
@@ -294,11 +294,11 @@ describe('sessions.list cold merge', () => {
       source: 'prepared', header: meta, events: [], cursor: -1,
       retain: vi.fn(), [Symbol.dispose]: vi.fn(),
     })
-    const list = new ApiSessionList(ctx, 1024)
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    await expect(list.list()).resolves.toEqual([
+    await expect(remote.list({})).resolves.toMatchObject({ ok: true, value: { items: [
       expect.objectContaining({ sessionId: meta.id, blank: false }),
-    ])
+    ] } })
     await ctx.fiber.dispose()
   })
 })
@@ -651,6 +651,7 @@ describe('subagent ownership fence', () => {
       ctx,
       cancel,
       updateInbox,
+      inbox: { nextTurn: [], nextStep: [] },
     } as unknown as Agent
     ctx.agents.register(originChild)
 
@@ -672,7 +673,7 @@ describe('subagent ownership fence', () => {
       action: { kind: 'remove' },
     }))
     expect(queued.ok).toBe(false)
-    if (!queued.ok) expect(queued.error.code).toBe('agent-busy')
+    if (!queued.ok) expect(queued.error.code).toBe('queue-item-not-found')
     expect(updateInbox).not.toHaveBeenCalled()
 
     const selection = await remote.selectModel(request({
@@ -693,6 +694,7 @@ describe('subagent ownership fence', () => {
   it('does not classify an ordinary fork from an inherited ancestor descriptor', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
+    await installPromptPersistence(ctx)
     await ctx.plugin(AgentRegistry)
     const session = ctx.sessions.create(sid('session-ordinary-fork'), {
       seed: [{
@@ -703,7 +705,8 @@ describe('subagent ownership fence', () => {
       }],
       meta: { cwd: '/proj', parentSession: sid('session-source'), seedLength: 1 },
     })
-    const followup = vi.fn()
+    const inbox = promptInbox(session)
+    const followup = vi.fn((message: UserMessage) => { inbox.append('next-turn', message) })
     const agent = { id: session.id, session, status: 'idle', ctx, followup } as unknown as Agent
     ctx.agents.register(agent)
     const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
@@ -715,14 +718,19 @@ describe('subagent ownership fence', () => {
     }))
     expect(response.ok).toBe(true)
     expect(followup).toHaveBeenCalledOnce()
+    const stored = await ctx.sessionPersistence.inspect(session.id)
+    expect(stored?.events.filter(event => event.type === 'agent/inbox/spliced')
+      .flatMap(event => event.data.inserted)).toEqual([followup.mock.calls[0]?.[0]])
   })
 
   it('canonicalizes a supplied browser zone on the exact prompt and rejects invalid names', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
+    await installPromptPersistence(ctx)
     await ctx.plugin(AgentRegistry)
     const session = ctx.sessions.create(sid('session-browser-zone'), { meta: { cwd: '/proj' } })
-    const followup = vi.fn()
+    const inbox = promptInbox(session)
+    const followup = vi.fn((message: UserMessage) => { inbox.append('next-turn', message) })
     const agent = { id: session.id, session, status: 'idle', ctx, followup } as unknown as Agent
     ctx.agents.register(agent)
     const remote = createSessionTestRemote(ctx, {
@@ -740,9 +748,9 @@ describe('subagent ownership fence', () => {
       clientTimeZone: alias,
     })
     await expect(remote.prompt(zonedRequest)).resolves.toMatchObject({ ok: true })
-    expect(followup).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      source: { kind: 'user', rpcId: zonedRequest.requestId, clientTimeZone: canonical },
-    }))
+    expect(followup.mock.calls[0]?.[0].source).toMatchObject({
+      kind: 'user', invocationId: zonedRequest.requestId, clientTimeZone: canonical,
+    })
 
     const utcRequest = promptRequest({
       sessionId: agent.id,
@@ -751,9 +759,9 @@ describe('subagent ownership fence', () => {
       clientTimeZone: 'UTC',
     })
     await expect(remote.prompt(utcRequest)).resolves.toMatchObject({ ok: true })
-    expect(followup).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      source: { kind: 'user', rpcId: utcRequest.requestId, clientTimeZone: 'UTC' },
-    }))
+    expect(followup.mock.calls[1]?.[0].source).toMatchObject({
+      kind: 'user', invocationId: utcRequest.requestId, clientTimeZone: 'UTC',
+    })
 
     const unzonedRequest = promptRequest({
       sessionId: agent.id,
@@ -761,9 +769,10 @@ describe('subagent ownership fence', () => {
       content: [{ type: 'text' as const, text: 'headless work' }],
     })
     await expect(remote.prompt(unzonedRequest)).resolves.toMatchObject({ ok: true })
-    expect(followup).toHaveBeenNthCalledWith(3, expect.objectContaining({
-      source: { kind: 'user', rpcId: unzonedRequest.requestId },
-    }))
+    expect(followup.mock.calls[2]?.[0].source).toMatchObject({
+      kind: 'user', invocationId: unzonedRequest.requestId,
+    })
+    expect(followup.mock.calls[2]?.[0].source).not.toHaveProperty('clientTimeZone')
 
     for (const clientTimeZone of ['', ' UTC', 'CST', 'Not/A_Real_Zone']) {
       const invalid = await remote.prompt(promptRequest({
@@ -832,6 +841,7 @@ describe('sessions.prompt synchronous rejection', () => {
   it('maps a synchronous send throw (disposed/invalid input) to agent-busy with the reason attached', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
+    await installPromptPersistence(ctx)
     await ctx.plugin(AgentRegistry)
     const session = ctx.sessions.create(sid('session-throwing'))
     // A live structural stub whose delivery verbs throw synchronously, the

@@ -1,9 +1,25 @@
+---
+description: "ctx.agentTeams 的 scoped 模型适配器。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-agent-team
 
 [English](README.md) | 中文
 
+## 概述
+
 [`ctx.agentTeams`](../agent-team/README.zh.md) 的 scoped 模型适配器。它会在每个隐式 Lead 与持久 teammate scope 中安装 Agent Teams 策略和协作工具。scoped Team 定义会覆盖同名的旧全局 continuable-subagent control，因此同时挂载两者的组合必须禁用旧定义。
 
+## 目录
+
+- [配置](#config)
+- [工具与权限](#tools-and-authority)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="config"></a>
 ## 配置
 
 ```yaml
@@ -16,6 +32,7 @@
 
 `freshProvider` 与 `forkProvider` 选择已注册的 continuable-subagent provider。固定模型策略仅在用户明确要求 Agent Teams 或 teammate 时创建 teammate。
 
+<a id="tools-and-authority"></a>
 ## 工具与权限
 
 生成的[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-agent-team)负责精确 schema。该适配器提供 teammate 创建；quiet 与 waking peer 投递；roster 列表、等待和仅限 Lead 的 interrupt；以及任务 create／list／get／CAS update 操作。
@@ -26,6 +43,7 @@
 
 插件监听 Agent publication，并通过每个匹配 Agent 的 scope 安装注册。在 scoped 组合中，它只认领 scope parent chain 包含该组合的 Agent，因此 sibling preset 不会向彼此的 Agent 重复注册。blank Agent recompose 会先移除离开组合的注册，再由进入组合安装注册。fresh 创建与 cold resume 因而会在第一次模型请求前获得所选 preset 的工具／提示词集合。Agent dispose 与插件 HMR 会移除全部自有注册；重新加载插件会为仍 live 且匹配的成员恢复注册，而不改变 continuation Activation。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### Team 策略与工具
@@ -42,8 +60,14 @@
 
 Team 插件 generation、配置、member role／name 与 schema 不变时，前缀保持稳定。每个成员的身份行不同。工具结果与 peer 消息追加在可复用请求前缀之后。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **提示词策略只负责协调，不负责 confinement**：它无法阻止 Bash 或外部进程写入重叠文件。
 - **不会自主创建 Team**：除非用户明确要求 delegation，普通任务不会触发组队。
 - **没有 Web 控制功能**：浏览器 roster 与任务板呈现不属于该 runtime 包。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

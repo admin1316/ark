@@ -1,3 +1,8 @@
+---
+description: "供原生桌面与 API 集成使用的 Host 服务：类型化业务网关、鉴权 HTTP/WebSocket 载体、loopback 监听器，以及 Host 自有的桌面能力。"
+kind: "package-group"
+---
+
 # host/ — 原生/API Host 层
 
 [English](README.md) | 中文

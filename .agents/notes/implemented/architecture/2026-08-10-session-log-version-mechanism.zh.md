@@ -22,6 +22,8 @@ Session log 在发布后必须能升级格式，而最先发布的运行时决�
 
 v0（0812 发布）交付的内容：分方向的拒绝并带原始日志路径；基于生成的已知词汇清单（`KNOWN_SESSION_EVENT_TYPES`，由 `gen-persistence-catalog` 从所有 `SessionEventMap` 声明合并生成，`verify-persistence-catalog` 保证新鲜）的未知事件守卫；`ignorable` 信封字段被种子校验、两个后端（SQLite 专用列，`SCHEMA_VERSION` 升到 15）和 BFF 线上 schema 接受。升级器链本身推迟到第一个真实的 v0→v1 变更出现、有真实对象可测时再建；写入侧目前不写 `ignorable`（还没有生产者需要它），`Session.append` 的这一表面随第一个使用者一起落地。在注册表面出现之前，仓库外插件的事件在第一方读取器下无法恢复会话，预发布立场接受这一点，而且拒绝是显式的而非静默的。未知类型守卫只在读取侧生效：`appendCore` 继续拒绝已淘汰的 legacy 形状，但不对新类型做词汇检查，因为写入时拒绝会让活跃会话的持久化中途停摆，代价大于下次加载时的显式拒绝。JSONL 后端还会在校验当前 header 形状、解码任何事件行之前，直接从原始 header 行拒绝外来版本，因此结构完全不同的未来格式仍会报告升级方向而不是"损坏"；SQLite 则先由自己的 `SCHEMA_VERSION` pragma 把关整个文件的结构。
 
+[离线格式目录](../../../../packages/session/session-format-catalog/README.zh.md)拥有独立的 v3 目标与静态编解码器顺序。其标头分类描述离线可读性，`validation: 'current'` 仍会在已安装 v0 Session 下拒绝该目标。历史转换测试使用已发布格式校验器；对于已经是 v3 的编解码器读取，需要验证关系正确性时显式执行完整 artifact 校验。这样保留迁移代码，但不会把转换成功当作运行时准入，也不扩展已安装的三个参数还原契约。
+
 ## 曾考虑的替代方案
 
 - **大小两级版本号**：能否转换这一位信息属于每一步的升级器，把它预先固化进编号形状会做出错误承诺。

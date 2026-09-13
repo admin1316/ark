@@ -1,6 +1,13 @@
+---
+description: "面向模型的文件系统工具（read、read_image、write、edit）及其执行器。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-fs
 
 [English](README.md) | 中文
+
+## 概述
 
 **面向模型的文件系统工具**（`read`、`read_image`、`write`、`edit`）及其**执行器**。这是文件系统栈的消费方层：拥有工具名称、JSON Schema、参数校验、提示词段、**读取窗口逻辑**和结果格式化。它**直接**通过 `ctx.fs` 提供方约定（[`@deepseek-ai/dsh-fs`](../fs)）读取、写入和编辑。新鲜度与观察策略由独立插件（[`@deepseek-ai/dsh-fs-observation-policy`](../fs-observation-policy)）通过 `fs/*` 事件门禁贡献；工具不与其方法耦合。使用施加沙箱限制的提供方时，逐会话执行需要共享沙箱策略服务，工具还会为文件系统变更提供升权路径。
 
@@ -16,6 +23,17 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 `read_image` 只在持久 `ctx.attachments` 服务已挂载时注册。执行时还要求确切路由的模型声明 `image` 输入，通过 `ctx.llm.resolveModelInfo` 依次从会话最新请求 header 和 agent 选项解析。
 
+## 目录
+
+- [配置](#config)
+- [工具（schema 见文件系统工具 schema Agent Note）](#tools-schemas-per-the-filesystem-tool-schemas-agent-note)
+- [工具就是执行器；策略是事件门禁](#the-tool-is-the-executor-policy-is-an-event-gate)
+- [fs/observed 发后即忘](#fsobserved-is-fire-and-forget)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="config"></a>
 ## 配置
 
 所有键均为可选；默认值是随产品交付的读取上限。
@@ -27,6 +45,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 | `readMaxBytes` | `51200` | 一次 `read` 调用所选行的字节上限；溢出时以「已达上限」footer 结束窗口。 |
 | `readStreamMinSize` | `10485760` | 大于等于该大小或大小未知的文件采用流式读取，而不是整体加载到内存。 |
 
+<a id="tools-schemas-per-the-filesystem-tool-schemas-agent-note"></a>
 ## 工具（schema 见[文件系统工具 schema Agent Note](../../../.agents/notes/implemented/feature/2026-06-17-filesystem-tool-schemas.zh.md)）
 
 | 工具 | 参数 | 行为 |
@@ -40,6 +59,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 结构化成功值分别为：`read` → `{ path, offset, lines: [{ number, text }], totalLines }`，`read_image` → `{ path, image: { attachmentId, mediaType, bytes, width, height, name?, originalDimensions?: { width, height } } }`，`write` → `{ path, operation: 'create' | 'update', before: string | null, after }`，`edit` → `{ path, before, after }`。`originalDimensions` 只在规范化过程缩小提交光栅时出现，并记录应用方向后的输入尺寸。原生渲染器会保留下方带行号的读取结果和变更确认。`write` 和 `edit` 从这些值派生可回放的 diff 卡片元数据，`read` 派生可回放的读取卡片窗口 `{ path, offset, lines, totalLines, lang? }`；仅用于执行的结构化值不会添加到 `tool/result`，图片渲染器则会发出由结果记录的持久图片块。
 
+<a id="the-tool-is-the-executor-policy-is-an-event-gate"></a>
 ## 工具就是执行器；策略是事件门禁
 
 工具**不**注入策略服务，也不检查任何缓存。每个工具通过 `ctx.fs.resolve(path, { cwd, signal })` 解析路径；它会传入调用 agent（智能体）的会话 cwd（`exec.agent.session.header.cwd`），使相对路径以会话工作区为基准解析并与 `dsh-tool-bash` 一致，同时把工具取消转发到解析过程（见[每会话 cwd Agent Note](../../../.agents/notes/implemented/architecture/2026-07-02-fs-per-session-cwd.zh.md)）。随后执行：
@@ -53,6 +73,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 当 `ctx.fs.sandboxMode` 表明提供方施加沙箱限制时，write/edit 会公开 `sandbox_permissions` 与 `justification`，并通过 `ctx.approval` 处理获批后的重试。策略归属方会贡献与具体能力无关的常驻策略；工具结果仍保留针对具体操作的拒绝与重试引导。
 
+<a id="fsobserved-is-fire-and-forget"></a>
 ## `fs/observed` 发后即忘
 
 `fs/observed` 在 read/read_image/write/edit 已经成功之后，通过普通 `ctx.emit` 发出。监听器的约定是同步且只有副作用的记录器（`@deepseek-ai/dsh-fs-observation-policy` 使用 `WeakMap.set`）；工具不保护这次发出，因此监听器抛出会作为工具的 `isError` 结果出现。异步或可能失败的观察不属于该事件。
@@ -61,6 +82,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 包根目录只导出 Cordis 插件约定（`name`、`inject`、`Config` 和 `apply`）。读取渲染（行窗口与输出格式化）位于 `src/read-render.ts`（不依赖 Cordis，单独进行单元测试）；`src/read.ts`/`read-image.ts`/`write.ts`/`edit.ts` 是工具执行器，`src/index.ts` 负责组合。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 系统提示词
@@ -165,6 +187,7 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 
 仅追加；新增可见内容位于可复用请求前缀之后，不会使现有 KV Cache 条目失效。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **未交付面向模型的目录列表工具**：`ctx.fs.listDir` 服务于 skill（技能）发现等提供方代码，同级 [`dsh-tool-fs-search`](../tool-fs-search/) 包则提供基于 ripgrep 的 `glob` 与 `grep`，而不是扩展文件系统 seam。
@@ -173,3 +196,8 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 - **工具结果卡片没有内嵌图像预览**：UI 表面以通用形式渲染图像结果（持久引用而非像素）；内嵌渲染延后到 UI 包处理。
 - **没有附件局部读取工具**：图片具有文件路径时，agent 可以用其他可用工具裁剪。粘贴或拖入但没有路径的图片无法按更高分辨率重新读取。
 - **没有超时接口**：`read`/`write`/`edit` 不接受超时参数，也不声明 `timeout-policy` 预算；取消只通过 `exec.signal` 传递（见[提供方理由](../README.zh.md#no-timeouts-on-file-io)）。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

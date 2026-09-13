@@ -2,11 +2,11 @@
 
 English | [中文](github-review.zh.md)
 
-This opt-in overlay adds a signed GitHub endpoint to `dsh web`. When a pull request in the configured repository changes from draft to ready for review, the rule creates a titled root Session under the repository's Web Workspace and starts a read-only review prompt.
+This opt-in overlay adds a signed GitHub endpoint to an installed custom CLI profile. When a pull request in the configured repository changes from draft to ready for review, the rule creates a titled root Session under the repository Workspace and starts a read-only review prompt.
 
 ## Prerequisites
 
-- A local checkout that DSH may register as a Web Workspace.
+- A local checkout that DSH may register as a Workspace.
 - A high-entropy GitHub webhook secret available through the `DSH_GITHUB_WEBHOOK_SECRET` credential reference.
 - A TLS reverse proxy or tunnel that can forward one public URL to the loopback listener.
 - GitHub webhook subscription to the Pull requests event with content type `application/json`.
@@ -22,24 +22,24 @@ export DSH_GITHUB_WEBHOOK_SECRET="$(openssl rand -hex 32)"
 printf '%s\n' "$DSH_GITHUB_WEBHOOK_SECRET"
 ```
 
-From a development checkout:
+The commands below assume an installed [custom profile](../../../apps/cli/README.md#profiles) named `review` that keeps the Host alive and provides Workspace, Session persistence, Agent, credential, preset, and permission services. Its dependencies must include the webhook packages and `@deepseek-ai/dsh-host-webserver`; the generic CLI does not activate or install them for this overlay. From a development checkout:
 
 ```sh
 export DSH_GITHUB_REVIEW_WORKSPACE=/path/to/deepseek-harness
-pnpm dsh web --patch apps/cli/config/examples/github-review/cordis.yml
+pnpm dsh --profile review --patch apps/cli/config/examples/github-review/cordis.yml
 ```
 
 An installed DSH uses the same overlay through an absolute path:
 
 ```sh
-dsh web --patch /absolute/path/to/github-review/cordis.yml
+dsh --profile review --patch /absolute/path/to/github-review/cordis.yml
 ```
 
-For a permanent profile, place `github-ready-review-rule.mjs` beside `$DSH_HOME/profiles/web/cordis.patch.yml`, append the rows from `cordis.yml` to that patch, and start with `dsh web`. The shipped CLI already contains both webhook packages; the overlay alone activates them.
+For a permanent profile, place `github-ready-review-rule.mjs` beside `$DSH_HOME/profiles/review/cordis.patch.yml`, append the rows from `cordis.yml` to that patch, and start with `dsh --profile review`.
 
 ## Expose the dedicated endpoint
 
-The main Web UI and `/api` remain on port 3080. The overlay mounts a second WebServer in an isolated realm; only `POST /github` is registered there, and every other path returns `404`.
+The overlay mounts a WebServer in an isolated realm; only `POST /github` is registered there, and every other path returns `404`. Its dedicated listener does not expose the profile's other APIs or Ark's managed Native sidecar.
 
 A Caddy configuration can expose only that listener:
 
@@ -67,7 +67,7 @@ Active:       yes
 
 The rule accepts only source `primary-github`, repository `deepseek-harness/deepseek-harness`, event `pull_request`, and action `ready_for_review`. It passes the exact head SHA plus selected PR fields to the review prompt, labeling the JSON as untrusted metadata and forbidding file, branch, PR, or GitHub mutation.
 
-The Session request selects the `standard` agent preset and `read-only` permission preset. `workspacePath` is canonicalized through `WorkspaceRegistry.create()`, so the first matching delivery creates the Web Workspace when absent and later deliveries reuse it.
+The Session request selects the `standard` agent preset and `read-only` permission preset. `workspacePath` is canonicalized through `WorkspaceRegistry.create()`, so the first matching delivery creates the Workspace when absent and later deliveries reuse it.
 
 The HTTP response is intentionally weaker than the Agent outcome: `202` means the signature and JSON were accepted and rule calls were scheduled in memory. It does not mean this rule matched or that a Session was created.
 

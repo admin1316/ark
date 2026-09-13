@@ -13,9 +13,10 @@ import SubagentService from '@deepseek-ai/dsh-subagent'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
-import TeamService, { foldTeam, TeamError, TeamId, TeamMessageId, TeamTaskId } from '../src/index.ts'
-import { TeamRuntimeLifecycle } from '../src/lifecycle.ts'
-import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
+import TeamService, { foldTeam, TeamError, TeamId, TeamMessageId, TeamTaskId } from '@deepseek-ai/dsh-agent-team'
+import { TeamRuntimeLifecycle } from '../../../subagent/agent-team/src/lifecycle.ts'
+import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '@deepseek-ai/dsh-agent-team'
+import TeamRemoteAdapter from '../src/index.ts'
 import { TestSessionQuery } from './test-session-query.ts'
 
 const SIGNAL = new AbortController().signal
@@ -55,10 +56,11 @@ async function setup(
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   await ctx.plugin(SubagentFork, { providerName: 'fork' })
   const teamFiber = await ctx.plugin(TeamService, config)
+  const remoteFiber = await ctx.plugin(TeamRemoteAdapter)
   const adapter = new MockAdapter(script)
   ctx.llm.registerAdapter(['mock'], adapter)
   const lead = ctx.agentLoop.create(SessionId('lead'), { provider: 'mock', model: 'mock' })
-  return { ctx, lead, adapter, storageRoot, teamFiber }
+  return { ctx, lead, adapter, storageRoot, teamFiber, remoteFiber }
 }
 
 function content(text: string) {
@@ -838,15 +840,29 @@ describe('Team shared task DAG', () => {
 })
 
 describe('Team Remote API', () => {
+  it('disposes the stateless adapter without replacing or stopping the domain', async () => {
+    const { ctx, lead, remoteFiber } = await setup([])
+    const domain = ctx.agentTeams
+    const created = await ctx.agentTeamRemote.remoteCreateTask(lead, { subject: 'shared', description: 'one domain' })
+    expect(created.ok).toBe(true)
+    expect(lead.session.events.filter(event => event.type === 'team/task')).toHaveLength(1)
+    await remoteFiber.dispose()
+    expect(ctx.get('agentTeamRemote')).toBeUndefined()
+    expect(ctx.agentTeams.listTasks(lead)).toHaveLength(1)
+    await ctx.agentTeams.createTask(lead, { subject: 'after adapter', description: 'domain remains available' })
+    expect(ctx.agentTeams.listTasks(lead)).toHaveLength(2)
+    expect(domain.listTasks(lead)).toEqual(ctx.agentTeams.listTasks(lead))
+  })
+
   it('exports Team views and task mutations from the owning service', async () => {
     const { ctx, lead } = await setup([])
-    expect(ctx.agentTeams.typertRemote).toMatchObject({ serviceKey: 'agentTeams', namespace: 'agentTeams' })
-    expect(ctx.agentTeams.remoteView(lead)).toEqual({
+    expect(ctx.agentTeamRemote.typertRemote).toMatchObject({ serviceKey: 'agentTeamRemote', namespace: 'agentTeams' })
+    expect(ctx.agentTeamRemote.remoteView(lead)).toEqual({
       members: [expect.objectContaining({ name: 'lead', role: 'lead', status: 'idle' })],
       tasks: [],
     })
 
-    const createdResult = await ctx.agentTeams.remoteCreateTask(lead, {
+    const createdResult = await ctx.agentTeamRemote.remoteCreateTask(lead, {
       subject: 'Remote task',
       description: 'Created through the generated API',
       blockedBy: [],
@@ -855,7 +871,7 @@ describe('Team Remote API', () => {
     expect(createdResult).toMatchObject({ ok: true, value: { revision: 1 } })
     if (!createdResult.ok) throw new Error('Remote task creation did not succeed')
     const created = createdResult.value
-    await expect(ctx.agentTeams.remoteUpdateTask(lead, {
+    await expect(ctx.agentTeamRemote.remoteUpdateTask(lead, {
       taskId: created.id,
       expectedRevision: created.revision,
       action: 'claim',
@@ -863,7 +879,7 @@ describe('Team Remote API', () => {
       ok: true,
       value: { id: created.id, revision: 2, ownerName: 'lead' },
     })
-    expect(ctx.agentTeams.remoteView(lead).tasks).toHaveLength(1)
+    expect(ctx.agentTeamRemote.remoteView(lead).tasks).toHaveLength(1)
   })
 
   it('preserves Team task rejections and propagates unexpected failures', async () => {
@@ -880,21 +896,21 @@ describe('Team Remote API', () => {
       .mockRejectedValueOnce(new TeamError('denied', 'TEAM_TASK_FORBIDDEN'))
       .mockRejectedValueOnce(new Error('unexpected mutation failure'))
 
-    await expect(ctx.agentTeams.remoteCreateTask(lead, createRequest)).resolves.toEqual({
+    await expect(ctx.agentTeamRemote.remoteCreateTask(lead, createRequest)).resolves.toEqual({
       ok: false,
       error: { code: 'team-rejected', message: 'invalid task' },
     })
-    await expect(ctx.agentTeams.remoteCreateTask(lead, createRequest))
+    await expect(ctx.agentTeamRemote.remoteCreateTask(lead, createRequest))
       .rejects.toThrow('unexpected creation failure')
-    await expect(ctx.agentTeams.remoteUpdateTask(lead, request)).resolves.toEqual({
+    await expect(ctx.agentTeamRemote.remoteUpdateTask(lead, request)).resolves.toEqual({
       ok: false,
       error: { code: 'team-task-conflict', message: 'stale' },
     })
-    await expect(ctx.agentTeams.remoteUpdateTask(lead, request)).resolves.toEqual({
+    await expect(ctx.agentTeamRemote.remoteUpdateTask(lead, request)).resolves.toEqual({
       ok: false,
       error: { code: 'team-rejected', message: 'denied' },
     })
-    await expect(ctx.agentTeams.remoteUpdateTask(lead, request)).rejects.toThrow('unexpected mutation failure')
+    await expect(ctx.agentTeamRemote.remoteUpdateTask(lead, request)).rejects.toThrow('unexpected mutation failure')
   })
 })
 
@@ -1696,10 +1712,15 @@ describe('Team mailbox and waiting', () => {
     }
     internal.scheduleRecovery(lead)
     await entered.promise
-    await teamFiber.dispose()
+    let disposed = false
+    const disposing = teamFiber.dispose().then(() => { disposed = true })
+    await vi.waitFor(() => {
+      expect((internal as unknown as { lifecycle: { disposed: boolean } }).lifecycle.disposed).toBe(true)
+    })
+    expect(disposed).toBe(false)
     release.resolve(undefined)
-    await Promise.resolve()
-    await Promise.resolve()
+    await disposing
+    expect(warnings.some(warning => warning.includes('failure after disposal'))).toBe(false)
     internal.scheduleRecovery(lead)
     await Promise.resolve()
   })

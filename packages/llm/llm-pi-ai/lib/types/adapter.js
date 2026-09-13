@@ -323,9 +323,7 @@ export class PiAiAdapter extends LlmAdapter {
             const watchdog = __addDisposableResource(env_1, idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT'), false);
             try {
                 const containsImage = options.messages.some(message => contentHasImage(message.content));
-                if (containsImage && !model.input.includes('image')) {
-                    throw new LlmError(`pi-ai model "${model.id}" does not support image input`, 'UNSUPPORTED_CONTENT');
-                }
+                // Ark 定制：不再按模态拒绝图片；能发就发，由模型/上游决定。
                 const attachments = containsImage ? this.config.resolveAttachments?.() : undefined;
                 if (containsImage && attachments === undefined) {
                     throw new LlmError('pi-ai image input requires the durable attachment service', 'UNSUPPORTED_CONTENT');

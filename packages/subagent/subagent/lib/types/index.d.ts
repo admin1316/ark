@@ -35,11 +35,12 @@ import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { SessionId } from '@deepseek-ai/dsh-session';
 import type { SessionRemoteHistoryValue } from '@deepseek-ai/dsh-session/types';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import type { SubagentCatalog, SubagentInterruptReceipt, SubagentPromptReceipt, SubagentPromptRequest, RemoteSubagentPromptReceipt } from './control-types.ts';
+import type { SubagentCatalog, SubagentHistoryOptions, SubagentInterruptReceipt, SubagentPromptReceipt, SubagentPromptRequest, RemoteSubagentPromptReceipt } from './control-types.ts';
 import type { SubagentProvider, SubagentRun, SubagentRunEndInfo, SubagentRunInfo, SubagentStartRequest } from './types.ts';
 import type { ContinuableStart, ContinuableStartSpec, SubagentFollowupOptions, SubagentInterruptAuthority, SubagentReportOptions, DurableSubagentMessageReceipt } from './continuation.ts';
 import type { ContinuableSetupContribution } from './activation-setup-registry.ts';
 import type { SubagentDescendantListEntry, SubagentListEntry } from './list-children.ts';
+export { canonicalClientTimeZone } from './control.ts';
 export * from './out-of-process.ts';
 export { AssistantOutputFold, finalAssistantOutput } from './assistant-output.ts';
 export { SubagentRunId } from './types.ts';
@@ -284,15 +285,17 @@ export declare class SubagentRuntime extends TypertRemoteService {
     interruptByParent(childSessionId: SessionId, parentSessionId: SessionId, mode: 'continuable'): SubagentInterruptReceipt;
     /**
      * Read the Session owner's bounded page after verifying the direct-child address.
+     * Closing an existing content reader uses its original owner-checked address,
+     * so removal from the current catalog cannot prevent resource release.
      * @param parentSessionId - durable parent authorizing the read.
      * @param childSessionId - direct child session id.
      * @param mode - expected child mode.
-     * @param beforeSeq - exclusive cursor for an older page.
+     * @param beforeSeq - legacy exclusive cursor, or typed history view options.
      * @param maxMessages - bounded message count, validated by the Session owner.
      * @param signal - read cancellation; neither Agent is resumed.
      * @returns the original Session page, including its presentation projections.
      */
-    remoteHistory(parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal: AbortSignal): Promise<SessionRemoteHistoryValue>;
+    remoteHistory(parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | SubagentHistoryOptions | undefined, maxMessages: number | undefined, signal: AbortSignal): Promise<SessionRemoteHistoryValue>;
     /**
      * Submit a Native draft under its stable retry identity through the live parent.
      * @param agent - exact parent Agent supplied by the Gateway lookup.

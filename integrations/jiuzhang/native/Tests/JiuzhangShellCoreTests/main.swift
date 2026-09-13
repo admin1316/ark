@@ -7,6 +7,9 @@ import JiuzhangShellUI
 if let helperStatus = NativePTYTerminalChild.exitStatusIfRequested() {
   Darwin._exit(helperStatus)
 }
+if ProcessInfo.processInfo.environment["ARK_MARKDOWN_RENDER_PROBE_CHILD"] == "transition" {
+  Darwin._exit(runArkHistoryTransitionProbeChild())
+}
 if ProcessInfo.processInfo.environment["ARK_MARKDOWN_RENDER_PROBE_CHILD"] == "1" {
   Darwin._exit(runArkMarkdownHostingProbeChild())
 }
@@ -24,6 +27,9 @@ let expectedContractGroups = [
   "reasoning-summary",
   "event-channel-recovery",
   "chat-turn-usage",
+  "message-batch",
+  "semantic-history",
+  "history-window",
   "native-extension-registry",
   "subagent-lineage",
   "markdown-gfm",
@@ -42,6 +48,8 @@ let expectedContractGroups = [
   "event-routing",
   "workbench-shell",
   "native-pty-terminal",
+  "pty-resize",
+  "native-terminal-session-repair",
   "document-reference",
   "native-code-editor",
   "native-theme",
@@ -86,6 +94,9 @@ runContractGroup("chat-presentation", runArkChatPresentationContractChecks)
 runContractGroup("reasoning-summary", runArkReasoningSummaryContractChecks)
 runContractGroup("event-channel-recovery", runArkEventChannelRecoveryContractChecks)
 runContractGroup("chat-turn-usage", runArkChatTurnUsageContractChecks)
+runContractGroup("message-batch", runArkMessageBatchContractChecks)
+await runAsyncContractGroup("semantic-history", runArkSemanticHistoryContractChecks)
+await runAsyncContractGroup("history-window", runArkHistoryWindowContractChecks)
 runContractGroup("native-extension-registry", runArkNativeExtensionRegistryContractChecks)
 runContractGroup("subagent-lineage", runArkSubagentLineageContractChecks)
 runContractGroup("markdown-gfm", runArkMarkdownGFMContractChecks)
@@ -104,12 +115,18 @@ runContractGroup("root-nav-hit-target", runArkRootNavHitTargetContractChecks)
 runContractGroup("event-routing", runArkEventRoutingContractChecks)
 await runAsyncContractGroup("workbench-shell", runArkWorkbenchShellContractChecks)
 await runAsyncContractGroup("native-pty-terminal", runArkNativePTYTerminalBehaviorContractChecks)
+runContractGroup("pty-resize", runArkPTYResizeContractChecks)
+runContractGroup("native-terminal-session-repair", runArkTerminalSessionRepairContractChecks)
 await runAsyncContractGroup("document-reference", runArkDocumentReferenceContractChecks)
 runContractGroup("native-code-editor", runArkNativeCodeEditorContractChecks)
 runContractGroup("native-theme", runArkNativeThemeContractChecks)
 runContractGroup("reasoning-effort", runArkReasoningEffortContractChecks)
 runContractGroup("shell-parity", runArkShellParityContractChecks)
-runContractGroup("trajectory", runArkTrajectoryContractChecks)
+runContractGroup("trajectory") {
+  runArkTrajectoryContractChecks()
+  runArkTrajectoryScrollContractChecks()
+  runArkTrajectoryScrollScenarioChecks()
+}
 runContractGroup("settings", runArkSettingsContractChecks)
 await runAsyncContractGroup("provider-recovery-wire", runArkProviderRecoveryContractChecks)
 runContractGroup("files-tabs", runArkFilesTabsContractChecks)

@@ -465,6 +465,9 @@
       "path": "./packages/util/crypto"
     },
     {
+      "path": "./packages/util/values"
+    },
+    {
       "path": "./packages/web/web"
     },
     {

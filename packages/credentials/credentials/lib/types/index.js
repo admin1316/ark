@@ -210,14 +210,22 @@ let CredentialProvider = (() => {
          * @returns redacted metadata for each requested reference.
          */
         async remoteDescribe(refs) {
-            const entries = await Promise.all(refs.map(async (name) => {
-                let ref;
+            if (refs.length > 64)
+                throw new TypertLookupFailure({
+                    code: 'input-invalid', message: 'credentials describe accepts at most 64 references',
+                    details: { maxRefs: 64 },
+                });
+            // Validate the whole batch before any provider work starts.
+            const branded = refs.map(name => {
                 try {
-                    ref = credentialRef(name);
+                    return credentialRef(name);
                 }
                 catch (error) {
                     remoteCredentialInputFailure(error, { ref: name });
                 }
+            });
+            const entries = await Promise.all(branded.map(async (ref) => {
+                const name = String(ref);
                 try {
                     const info = await this.describe(ref);
                     const view = {
@@ -234,7 +242,7 @@ let CredentialProvider = (() => {
             return { credentials: Object.fromEntries(entries) };
         }
         /**
-         * Store one write-only credential value through the Native Remote plane.
+         * Store one write-only credential value through the shared Remote plane.
          * @param refName - credential reference name to update.
          * @param value - write-only credential value.
          * @returns an empty object after the value is stored.
@@ -247,6 +255,8 @@ let CredentialProvider = (() => {
             catch (error) {
                 remoteCredentialInputFailure(error, { ref: refName });
             }
+            if (value.length === 0)
+                remoteCredentialRejected({ ref: refName });
             try {
                 await this.set(ref, value);
             }
@@ -256,7 +266,7 @@ let CredentialProvider = (() => {
             return {};
         }
         /**
-         * Remove one provider-managed credential through the Native Remote plane.
+         * Remove one provider-managed credential through the shared Remote plane.
          * @param refName - credential reference name to remove.
          * @returns an empty object after the reference is removed.
          */

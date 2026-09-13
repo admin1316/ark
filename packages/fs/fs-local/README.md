@@ -1,6 +1,13 @@
+---
+description: "The local-filesystem implementation of the ctx.fs provider contract (@deepseek-ai/dsh-fs)."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-fs-local
 
 English | [中文](README.zh.md)
+
+## Summary
 
 The **local-filesystem implementation** of the `ctx.fs` provider contract ([`@deepseek-ai/dsh-fs`](../fs)). Backs the twelve `FileSystem` primitives with the host filesystem; loading it as a plugin populates `ctx.fs`.
 
@@ -11,6 +18,13 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 // ctx.fs uses the local backend; load @deepseek-ai/dsh-fs-observation-policy for the
 // freshness policy gate and @deepseek-ai/dsh-tool-fs to expose read/write/edit.
 ```
+
+## Table of Contents
+
+- [Behavior](#behavior)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Behavior
 
@@ -43,3 +57,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 - **The per-target mutation lock is in-process only** — guarded create still uses an atomic no-replace publication across processes, but replacement writers in another process are caught only when the optional version guard observes their metadata change; they are never serialized.
 - **Guarded creation requires hard-link support** — filesystems or mounts that reject hard-link publication cannot serve `createIfAbsent`; the provider preserves the missing target and reports `FS_IO_ERROR`.
 - **Post-commit cleanup is best effort** — a successful publication remains successful if removal of its owner-only staging directory fails, leaving private residue for later operator cleanup.
+
+### Dev Note
+
+None.

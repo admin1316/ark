@@ -19,6 +19,9 @@
     },
     {
       "path": "../session-format-v1-to-v2"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

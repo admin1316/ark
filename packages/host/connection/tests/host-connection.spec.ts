@@ -96,11 +96,7 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
 }
 
 /**
- * Read the Connection service mounted by the fixture's `apply`. The host
- * aggregate also compiles `packages/client/connection`'s Context augmentation
- * (its `.host.spec.ts` files import that src), whose structurally different
- * `ctx.connection` surface wins the ambient declaration merge; pin the runtime
- * identity `apply` provides instead of casting through the shadowed type.
+ * Read and verify the Connection service mounted by the fixture's `apply`.
  * @param ctx - context whose `apply` mounted the host service.
  * @returns the mounted host Connection service.
  */

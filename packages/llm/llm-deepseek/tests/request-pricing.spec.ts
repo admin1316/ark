@@ -35,7 +35,7 @@ describe('DeepSeek request-image pricing', () => {
 
   it('prices a catalogued text-only model as its text-only substitution', () => {
     const image = ref('photo', 1920, 1080)
-    const options = resolveAdapterOptions({ models: [{ id: 'text-only' }] })
+    const options = resolveAdapterOptions({ models: [{ id: 'text-only', inputModalities: ['text'] }] })
     const prices = deepSeekImageRequestPricing(options, 'text-only').priceImages([image])
     expect(prices).toEqual([{ visualTokens: 0, text: textOnlyImageText(image) }])
   })

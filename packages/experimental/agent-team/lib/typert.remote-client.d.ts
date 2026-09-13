@@ -3,7 +3,8 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateTeamTaskRequest, TeamTaskMutationResult, TeamView, UpdateTeamTaskRequest } from '@deepseek-ai/dsh-experimental-agent-team/client'
+import type { CreateTeamTaskRequest, UpdateTeamTaskRequest } from '@deepseek-ai/dsh-agent-team/types'
+import type { TeamTaskMutationResult, TeamView } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {

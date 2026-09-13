@@ -8,4 +8,4 @@
     patches:
       - insert:
           - id: parent-sandbox-override
-            name: './tests/fixtures/parent-sandbox-override.ts'
+            name: '../../packages/test-support/session-snapshot/tests/fixtures/parent-sandbox-override.ts'
