@@ -512,6 +512,7 @@ describe('Python release workflows', () => {
     const manylinuxAddon = buildSteps.find(step => isRecord(step) && step.name === 'Rebuild Linux node-pty against manylinux 2.28')
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
+    if (!isRecord(manylinuxSmoke)) throw new TypeError('Python wheel builder must define the manylinux container smoke')
     const cleanVenvPosix = buildSteps.find(step => isRecord(step) && step.name === 'Install local SDK and runtime wheels into a clean venv (POSIX)')
     const cleanVenvWindows = buildSteps.find(step => isRecord(step) && step.name === 'Install local SDK and runtime wheels into a clean venv (Windows)')
     const installedKeylessPosix = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel keyless black-box tests (POSIX)')
@@ -602,6 +603,12 @@ describe('Python release workflows', () => {
       expect(String(secretStep.if)).toContain("github.event.pull_request.user.login != 'dependabot[bot]'")
     }
     expect(manylinuxSmoke).toMatchObject({ if: "runner.os == 'Linux'" })
+    // The pnpm-backed out-of-tree-plugin scenario runs inside the container
+    // too, so the runner's Node and pnpm toolchain is shared read-only at
+    // identical paths and prepended to the container's PATH.
+    expect(String(manylinuxSmoke.run)).toContain('PATH_EXTRA="$node_root/bin:$PNPM_HOME"')
+    expect(String(manylinuxSmoke.run)).toContain('-v "$PNPM_HOME:$PNPM_HOME:ro"')
+    expect(String(manylinuxSmoke.run)).toContain('pnpm --version')
     expect(JSON.stringify(manylinuxSmoke)).toContain('-e DSH_TELEMETRY_DISABLED')
   })
 
