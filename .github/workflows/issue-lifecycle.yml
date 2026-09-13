@@ -54,12 +54,28 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      # The presence check is inline because this job checks out the TRUSTED default
+      # branch: a helper added on a pull-request branch does not exist in that tree
+      # yet, and depending on it failed the job with exit 127 before the gate could
+      # report anything. The step still prints variable names only, never values.
       - name: Gate optional Project automation
         id: app-config
         env:
           DSH_ISSUE_APP_CLIENT_ID: ${{ vars.DSH_ISSUE_APP_CLIENT_ID }}
           DSH_ISSUE_APP_PRIVATE_KEY: ${{ secrets.DSH_ISSUE_APP_PRIVATE_KEY }}
-        run: bash scripts/ci-secret-gate.sh DSH_ISSUE_APP_CLIENT_ID DSH_ISSUE_APP_PRIVATE_KEY
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in DSH_ISSUE_APP_CLIENT_ID DSH_ISSUE_APP_PRIVATE_KEY; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -eq 0 ]; then
+            enabled=true
+          else
+            enabled=false
+            echo "::notice::Skipping Project automation: not configured for this repository (${missing[*]})"
+          fi
+          { echo "enabled=$enabled"; echo "missing=${missing[*]:-}"; } >> "$GITHUB_OUTPUT"
       - name: Create project token
         id: app-token
         if: ${{ steps.app-config.outputs.enabled == 'true' && (github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') }}
