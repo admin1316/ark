@@ -68,7 +68,7 @@ tsdown --env.DSH_BUILD_FACE host
 
 The Host tsdown pass uses the complete workspace match and consumes only JavaScript emitted to `lib/types` by the preceding tsc phase. Native API assembly is a separate package closure over the Host artifacts.
 
-Typert runs during Host tsdown, seeded by `tsconfig.host.json`, and generates the Host reflection artifacts consumed by the API layer. Consequently, `pnpm run typecheck` and `pnpm run build` both use the Host lib phase; the [API Remotes generated-contract build note](../.agents/notes/implemented/process/2026-08-08-api-remotes-generated-contract-build.md) records this ordering decision.
+Typert runs during Host tsdown, seeded by `tsconfig.host.json`, and generates the Host reflection artifacts consumed by the API layer. Consequently, `pnpm run typecheck` and `pnpm run build` both use the Host lib phase; the [API Remotes generated-contract build note](../.agents/notes/archived/process/2026-08-08-api-remotes-generated-contract-build.md) records this ordering decision.
 
 `pnpm run build` produces Host artifacts without a public client bundle. `pnpm run build:official` is the cross-platform local equivalent of the CI and release artifact build.
 

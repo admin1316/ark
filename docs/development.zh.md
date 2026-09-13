@@ -72,7 +72,7 @@ tsdown --env.DSH_BUILD_FACE host
 
 Host tsdown 使用完整 workspace 匹配，只消费前置 tsc 发射到 `lib/types` 的 JavaScript。Native API assembly 是覆盖 Host 产物的独立 package closure。
 
-Typert 在 Host tsdown 中以 `tsconfig.host.json` 为种子运行，生成 API 层消费的 Host 反射产物。因此 `pnpm run typecheck` 和 `pnpm run build` 都使用 Host lib 阶段；顺序决策见 [API Remotes 生成约定构建 Note](../.agents/notes/implemented/process/2026-08-08-api-remotes-generated-contract-build.zh.md)。
+Typert 在 Host tsdown 中以 `tsconfig.host.json` 为种子运行，生成 API 层消费的 Host 反射产物。因此 `pnpm run typecheck` 和 `pnpm run build` 都使用 Host lib 阶段；顺序决策见 [API Remotes 生成约定构建 Note](../.agents/notes/archived/process/2026-08-08-api-remotes-generated-contract-build.zh.md)。
 
 `pnpm run build` 生成不含公开 client bundle 的 Host 产物。`pnpm run build:official` 是与 CI 和 release 产物构建等价的跨平台本地命令。
 
