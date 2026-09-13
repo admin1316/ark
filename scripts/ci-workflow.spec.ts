@@ -244,21 +244,28 @@ describe('DeepSeek e2e workflow', () => {
 })
 
 describe('E2B e2e workflow', () => {
-  it('is manual-only and fails loud before running the focused live suite', () => {
+  it('is manual-only and gates the focused live suite on the optional secret', () => {
     const workflow = loadWorkflow('.github/workflows/e2b-e2e.yml')
     expect(workflow.on).toEqual({ workflow_dispatch: null })
-    if (!isRecord(workflow.jobs) || !isRecord(workflow.jobs.e2b) || !Array.isArray(workflow.jobs.e2b.steps)) {
-      throw new TypeError('E2B e2e workflow must define the e2b job steps')
-    }
+    const job = workflowJob(workflow, 'e2b')
+    if (!Array.isArray(job.steps)) throw new TypeError('E2B e2e workflow must define the e2b job steps')
 
-    const steps = workflow.jobs.e2b.steps.filter(isRecord)
-    const preflight = steps.find(step => step.name === 'Preflight (require E2B API key)')
+    const steps = job.steps.filter(isRecord)
+    const gate = steps.find(step => step.name === 'Gate optional E2B_API_KEY')
+    const build = steps.find(step => step.name === 'Build (lib for the E2B Loader smoke)')
     const e2b = steps.find(step => step.name === 'E2B tests (live sandbox)')
 
-    expect(preflight).toMatchObject({
+    // The optional secret is what makes this live suite opt-in: one gate reports
+    // presence, and both the build and the live suite run only when it reported
+    // the secret. A missing secret therefore produces a neutral skip, never a red
+    // run, and never an unconditional skip either.
+    expect(gate).toMatchObject({
+      id: 'e2b-secret',
       env: { E2B_API_KEY: '${{ secrets.E2B_API_KEY_EXTERNAL }}' },
     })
-    expect(preflight?.run).toContain('E2B_API_KEY_EXTERNAL repository secret')
+    expect(gate?.run).toBe('bash scripts/ci-secret-gate.sh E2B_API_KEY')
+    expect(build?.if).toBe("steps.e2b-secret.outputs.enabled == 'true'")
+    expect(e2b?.if).toBe("steps.e2b-secret.outputs.enabled == 'true'")
     expect(e2b).toMatchObject({
       env: {
         E2B_API_KEY: '${{ secrets.E2B_API_KEY_EXTERNAL }}',
@@ -267,6 +274,28 @@ describe('E2B e2e workflow', () => {
       },
     })
     expect(e2b?.run).toContain('packages/e2b/e2b/tests/composition.e2e.ts')
+
+    // A genuine build or live-suite failure must still fail the job: no step opts
+    // out of failure and none swallows one.
+    for (const step of steps) {
+      expect(step['continue-on-error']).toBeUndefined()
+      expect(String(step.run ?? '')).not.toContain('|| true')
+    }
+
+    // Gate behaviour, executed for real. GitHub passes an unconfigured secret as an
+    // empty environment value, which is the shape pinned here.
+    const absent = runSecretGate('bash scripts/ci-secret-gate.sh E2B_API_KEY', { E2B_API_KEY: '' })
+    expect(absent.status).toBe(0)
+    expect(absent.output).toContain('enabled=false')
+    expect(absent.stdout).toContain('E2B_API_KEY')
+    expect(absent.stdout).not.toContain('value')
+
+    const sentinel = 'e2b-secret-sentinel'
+    const present = runSecretGate('bash scripts/ci-secret-gate.sh E2B_API_KEY', { E2B_API_KEY: sentinel })
+    expect(present.status).toBe(0)
+    expect(present.output).toContain('enabled=true')
+    expect(present.stdout).not.toContain(sentinel)
+    expect(present.stderr).not.toContain(sentinel)
   })
 })
 
@@ -584,7 +613,7 @@ describe('Python release workflows', () => {
 })
 
 describe('Issue lifecycle workflow', () => {
-  it('runs the lifecycle job on every PR/review event but gates token and board steps', () => {
+  it('keeps the trusted-policy boundary and a bootstrap-safe optional gate', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
@@ -605,12 +634,73 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
-    const gated = "${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}"
+
     const steps = lifecycleJob.steps.filter(isRecord)
+    const checkoutIndex = steps.findIndex(step => String(step.uses ?? '').startsWith('actions/checkout@'))
+    const gateIndex = steps.findIndex(step => step.name === 'Gate optional Project automation')
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')
-    expect(tokenStep).toMatchObject({ if: gated })
-    expect(handleStep).toMatchObject({ if: gated })
+
+    // The policy that judges a run comes from the TRUSTED default branch, never from
+    // the pull request being judged, and the gate runs after that checkout.
+    expect(checkoutIndex).toBeGreaterThanOrEqual(0)
+    expect(steps[checkoutIndex]).toMatchObject({
+      with: { ref: '${{ github.event.repository.default_branch }}' },
+    })
+    expect(gateIndex).toBeGreaterThan(checkoutIndex)
+
+    // Bootstrap safety: the gate body is inline because a helper introduced on a
+    // pull-request branch is absent from the trusted tree this job just checked out,
+    // and depending on it failed every event with exit 127.
+    const gateRun = String(steps[gateIndex]?.run ?? '')
+    expect(gateRun).not.toContain('scripts/ci-secret-gate.sh')
+    expect(gateRun).toContain('enabled=false')
+    expect(gateRun).toContain('GITHUB_OUTPUT')
+
+    // Unconfigured optional automation: the write-capable steps skip, and the job
+    // does not fail merely because the App is not installed on this repository.
+    const enabled = "steps.app-config.outputs.enabled == 'true'"
+    const reviewOnly = "github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested'"
+    const expectedIf = '${{ ' + enabled + ' && (' + reviewOnly + ') }}'
+    expect(tokenStep).toMatchObject({ if: expectedIf })
+    expect(handleStep).toMatchObject({ if: expectedIf })
+
+    // A configured App still targets THIS repository and never the upstream one.
+    expect(tokenStep).toMatchObject({
+      with: {
+        'client-id': '${{ vars.DSH_ISSUE_APP_CLIENT_ID }}',
+        'private-key': '${{ secrets.DSH_ISSUE_APP_PRIVATE_KEY }}',
+        owner: '${{ github.repository_owner }}',
+        repositories: '${{ github.event.repository.name }}',
+      },
+    })
+    expect(JSON.stringify(lifecycle)).not.toContain('deepseek-harness')
+
+    // A real board mutation failure must still fail the job.
+    for (const step of steps) {
+      expect(step['continue-on-error']).toBeUndefined()
+      expect(String(step.run ?? '')).not.toContain('|| true')
+    }
+
+    // Gate behaviour, executed for real: an empty environment value is what GitHub
+    // passes for an unconfigured variable or secret.
+    const absent = runSecretGate(gateRun, {
+      DSH_ISSUE_APP_CLIENT_ID: '',
+      DSH_ISSUE_APP_PRIVATE_KEY: '',
+    })
+    expect(absent.status).toBe(0)
+    expect(absent.output).toContain('enabled=false')
+    expect(absent.output).toContain('DSH_ISSUE_APP_CLIENT_ID')
+
+    const sentinel = 'app-key-sentinel'
+    const present = runSecretGate(gateRun, {
+      DSH_ISSUE_APP_CLIENT_ID: 'client-id-sentinel',
+      DSH_ISSUE_APP_PRIVATE_KEY: sentinel,
+    })
+    expect(present.status).toBe(0)
+    expect(present.output).toContain('enabled=true')
+    expect(present.stdout).not.toContain(sentinel)
+    expect(present.stderr).not.toContain(sentinel)
 
     // issue-policy owns PR validation; it is read-only and a real gate.
     const policyPullRequest = workflowEvent(policy, 'pull_request')
@@ -721,4 +811,35 @@ function workflowJob(workflow: Record<string, unknown>, job: string): Record<str
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Run one workflow gate body with the environment GitHub would provide and report
+ * its stdout, stderr and the `GITHUB_OUTPUT` file it wrote.
+ * @param script - Gate body exactly as the workflow runs it.
+ * @param environment - Variables passed to the gate (empty string models an unconfigured secret).
+ * @returns Exit status, captured streams and the parsed output file.
+ */
+function runSecretGate(
+  script: string,
+  environment: Record<string, string>,
+): { status: number | null, stdout: string, stderr: string, output: string } {
+  const directory = mkdtempSync(join(tmpdir(), 'ark-ci-gate-'))
+  const outputPath = join(directory, 'github-output.txt')
+  try {
+    const result = spawnSync('bash', ['-c', script], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, ...environment, GITHUB_OUTPUT: outputPath },
+    })
+    let output = ''
+    try {
+      output = readFileSync(outputPath, 'utf8')
+    } catch {
+      output = ''
+    }
+    return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '', output }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 }
