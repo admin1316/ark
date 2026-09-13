@@ -115,7 +115,14 @@ describe('Native Code preset composition', () => {
       'web_search',
       'web_fetch',
     ]))
-    expect(minimal).toEqual(expect.arrayContaining(['bash', 'str_replace_editor']))
+    // The minimal preset carries the platform's persistent shell: the preset source
+    // states the contract directly ("the persistent shell (`bash` on POSIX, `pwsh` on
+    // win32)", presets/minimal/agent.cordis.yml), and the pwsh rows are gated off
+    // POSIX there. Asserting the literal 'bash' pinned the POSIX half on every runner.
+    expect(minimal).toEqual(expect.arrayContaining([
+      process.platform === 'win32' ? 'pwsh' : 'bash',
+      'str_replace_editor',
+    ]))
     for (const unavailable of [
       'get_goal',
       'create_goal',
