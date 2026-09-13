@@ -27,9 +27,11 @@ import {
   tokenizeSessionFixtureCwd,
   type HarvestedLog,
   type NormalizeContext,
-} from '@deepseek-ai/dsh-acp-snapshot'
+} from '@deepseek-ai/dsh-session-snapshot'
 import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
-import { DeepSeekHarness, type HarnessNotification, type RunResult } from '@deepseek-ai/dsh-sdk-client'
+import { type HarnessNotification, type RunResult } from '@deepseek-ai/dsh-sdk-client'
+import { createProcessDeepSeekHarness } from '../../../packages/sdk/client/src/api.ts'
+import { DEFAULT_INITIALIZE_TIMEOUT_MS } from '../../../packages/sdk/client/src/launch.ts'
 
 const testsDir = dirOf(import.meta.url)
 const snapshotsDir = join(testsDir, 'snapshots')
@@ -294,14 +296,15 @@ async function runScenario(scenario: SdkScenario): Promise<{
     ...scenario.environment,
   }
 
-  const harness = new DeepSeekHarness({
-    launch: {
-      command: launch.command,
-      args: launch.args,
-      cwd,
-      env,
-      requestTimeoutMs: 110_000,
-    },
+  const harness = createProcessDeepSeekHarness({
+    command: launch.command,
+    args: launch.args,
+    cwd,
+    environment: () => env,
+    description: 'jsonrpc-agent SDK snapshot runtime',
+    initializeTimeoutMs: DEFAULT_INITIALIZE_TIMEOUT_MS,
+    requestTimeoutMs: 110_000,
+  }, {
     cwd,
     provider: 'deepseek-official',
     model: 'deepseek-v4-flash',
