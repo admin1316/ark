@@ -57,8 +57,10 @@ jobs:
           RELEASE_PUBLISH: 'true'
         run: pnpm run release:verify --family dsh
 
+      # One build owner, shared with release.yml and release-vendor.yml:
+      # scripts/build-host-bundles.ts produces the lib/ output the tarballs carry.
       - name: Build
-        run: pnpm run build:official
+        run: pnpm run build:lib:host
 
       - name: Pack release tarballs
         run: pnpm run release:pack --family dsh --out dist/npm
