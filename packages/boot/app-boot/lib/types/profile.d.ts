@@ -132,7 +132,11 @@ export declare function initProfile(dir: string, bundles: readonly string[], pat
  * symlink-following), so each package needs only its one flat link.
  * Idempotent: correct links are kept and moved installations are
  * re-pointed; a stale link to a vanished package stays until its name is
- * reused (dangling links are invisible to resolution).
+ * reused (dangling links are invisible to resolution). A packaged installation
+ * is skipped outright: its packages live inside the executable's snapshot,
+ * which no host-filesystem resolver or tool can follow, so links there could
+ * only dangle — the packaged runtime resolves bare names through the installed
+ * base instead (see {@link isSnapshotServedDirectory}).
  * @param installAnchor - absolute path of the dsh app's package.json.
  * @param home - the Harness home; defaults to {@link resolveDshHome}.
  */

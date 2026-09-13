@@ -4,7 +4,7 @@
  * empty-root composition, and the installation module-fallback healing.
  */
 
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { once } from 'node:events'
@@ -435,6 +435,22 @@ describe('healProfilesModuleFallback', () => {
     healProfilesModuleFallback(anchor, home)
     const before = readlinkSync(join(fallback, 'dep-of-a'))
     expect(before).toContain('dep-of-a')
+  })
+
+  it('leaves the Harness home untouched when the installation is snapshot-served', () => {
+    const anchor = stageInstallation({ 'in-box': { patch: '[]\n' } })
+    const home = tmp()
+    snapshotVfs.root = dirname(anchor)
+    Reflect.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    try {
+      // A packaged installation cannot be followed by any host resolver or
+      // tool; the links would only dangle in the Harness home.
+      healProfilesModuleFallback(anchor, home)
+      expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(false)
+    } finally {
+      snapshotVfs.root = undefined
+      Reflect.deleteProperty(process, 'pkg')
+    }
   })
 
   it('throws when a fallback entry is a real directory', () => {
