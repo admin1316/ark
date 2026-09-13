@@ -122,6 +122,13 @@ jobs:
           if (( install_status != 0 )); then exit "$install_status"; fi
           exit "$sandbox_status"
 
+      # The native-api-app coverage specs boot the sandbox-local plugin tree, which
+      # imports the built Landlock entry. Without that build they fail with
+      # "Cannot find module .../node-addon-landlock-run/lib/index.js"; the release and
+      # sandbox lanes already build this same owner before their pack runs.
+      - name: Build the native Landlock entry (coverage prerequisite)
+        run: pnpm --dir native/landlock-run run build:ts
+
       - name: Run exhaustive coverage
         run: pnpm run check:ci:coverage
 
