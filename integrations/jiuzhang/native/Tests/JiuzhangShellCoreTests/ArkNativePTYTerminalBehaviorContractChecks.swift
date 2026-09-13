@@ -748,8 +748,21 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
   )
   let floodProgressStallTimeout: TimeInterval = 10
   let floodHardCompletionTimeout: TimeInterval = 120
+  // The completion marker must come from the flood's own output: the PTY echoes the
+  // command text, so a literal marker inside the command satisfied the tail detector
+  // before the 20 MB drained (observed as samples=0 in ~28 ms). The shell now composes
+  // the marker at run time, and this check proves the command cannot match by echo.
+  let floodCompletionMarker = "__ARK_FLOOD_DONE__"
+  let floodMarkerPlaceholder = "__ARK_FLOOD_%s__"
+  let floodCommandTemplate = "yes flood-line | head -c 20000000; printf '__ARK_FLOOD_%s__\\n' DONE"
+  check(
+    !floodCommandTemplate.contains(floodCompletionMarker)
+      && floodCommandTemplate.contains(floodMarkerPlaceholder)
+      && floodMarkerPlaceholder.replacingOccurrences(of: "%s", with: "DONE") == floodCompletionMarker,
+    "the flood command text cannot satisfy the tail detector by command echo"
+  )
   await MainActor.run {
-    hiddenSession.sendCommand("yes flood-line | head -c 20000000; echo __ARK_FLOOD_DONE__")
+    hiddenSession.sendCommand(floodCommandTemplate)
   }
   let floodStartedAt = Date()
   var floodLastProgressAt = floodStartedAt
@@ -759,7 +772,7 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
   var floodSamples = 0
   var peakHandoffBytes = 0
   while true {
-    if await waitForTerminal(timeout: 1) { hiddenSurface.surfaceText().contains("__ARK_FLOOD_DONE__") } {
+    if await waitForTerminal(timeout: 1) { hiddenSurface.surfaceText().contains(floodCompletionMarker) } {
       floodTailLanded = true
       break
     }
