@@ -186,11 +186,12 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     this.credential = credentialRef(config.credential)
     this.llmProvider = config.llmProvider
     this.llmModel = config.llmModel
-    // Direct construction in tests bypasses the schema defaults, so every new
-    // option is read defensively.
-    this.llmBaseUrl = (config.llmBaseUrl ?? 'https://api.deepseek.com').replace(/\/+$/u, '')
-    this.llmCredential = config.llmCredential ?? ''
-    this.ownedStageExecutor = config.ownedStageExecutor === true
+    // The loader schema (KnowledgeWikiService.Config) fills every optional
+    // deployment field, so a resolved Config is already complete: tests build one
+    // through the wikiTestConfig test fixture instead of hand-writing a partial object.
+    this.llmBaseUrl = config.llmBaseUrl.replace(/\/+$/u, '')
+    this.llmCredential = config.llmCredential
+    this.ownedStageExecutor = config.ownedStageExecutor
       ? createOwnedStageExecutor({ resolveConnection: () => this.resolveStageConnection() })
       : undefined
   }
@@ -211,7 +212,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     if (this.llmCredential !== '') candidates.push(this.llmCredential)
     try {
       const settings = this.ctx.get('settings') as { remoteDescribe?: () => { namespaces?: Array<{ ns?: string; value?: unknown }> } } | undefined
-      const declared = settings?.remoteDescribe?.().namespaces?.find(entry => entry?.ns === 'llm-deepseek')?.value as { apiKeyEnv?: unknown } | undefined
+      const declared = settings?.remoteDescribe?.().namespaces?.find(entry => entry.ns === 'llm-deepseek')?.value as { apiKeyEnv?: unknown } | undefined
       if (typeof declared?.apiKeyEnv === 'string' && declared.apiKeyEnv !== '') candidates.push(declared.apiKeyEnv)
     } catch {
       // A settings surface that cannot describe itself must not fail ingest.

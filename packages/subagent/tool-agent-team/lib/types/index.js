@@ -384,7 +384,7 @@ export function apply(ctx, config = {}) {
     };
     for (const agent of ctx.agents.list())
         maybeInstall(agent);
-    ctx.on('agent/created', ({ agent }) => maybeInstall(agent));
+    ctx.on('agent/created', ({ agent }) => { maybeInstall(agent); });
     ctx.on('agent-preset/selected', (sessionId) => {
         const agent = ctx.agents.get(sessionId);
         if (agent === undefined)
@@ -393,9 +393,9 @@ export function apply(ctx, config = {}) {
             uninstall(agent);
             return;
         }
-        queueMicrotask(() => maybeInstall(agent));
+        queueMicrotask(() => { maybeInstall(agent); });
     });
-    ctx.on('agent/disposed', ({ agent }) => uninstall(agent));
+    ctx.on('agent/disposed', ({ agent }) => { uninstall(agent); });
     ctx.effect(() => () => {
         for (const dispose of installed.values())
             dispose();

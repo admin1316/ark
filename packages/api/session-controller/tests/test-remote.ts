@@ -238,16 +238,19 @@ export function createSessionTestRemote(
   return {
     canOpenWorkspacePath: () => remoteResult(() => direct.canOpenWorkspacePath()),
     list: (request: SessionListRequest, signal = new AbortController().signal) => Promise.resolve().then(() => core.list(request, signal)),
-    search: (request: SessionSearchRequest, signal = new AbortController().signal) => Promise.resolve().then(() => core.search(request, signal)),
+    search: (request: SessionSearchRequest, signal = new AbortController().signal) =>
+      Promise.resolve().then(() => core.search(request, signal)),
     create: (request: SessionCreateRequest) => Promise.resolve().then(() => core.create(request, new AbortController().signal)),
-    selectModel: (request: SessionSelectModelRequest) => Promise.resolve().then(() => core.selectModel(request, new AbortController().signal)),
+    selectModel: (request: SessionSelectModelRequest) =>
+      Promise.resolve().then(() => core.selectModel(request, new AbortController().signal)),
     modelCatalog: () => remoteResult(() => direct.modelCatalog()),
     rename: (request: SessionRenameRequest) => Promise.resolve().then(() => core.rename(request, new AbortController().signal)),
     fork: (request: SessionForkRequest) => Promise.resolve().then(() => core.fork(request, new AbortController().signal)),
     prompt: ({ requestId, ...request }: SessionPromptRequest, signal = new AbortController().signal) =>
       Promise.resolve().then(() => core.prompt({ ...request, invocationId: SessionPromptInvocationId(requestId) }, signal)),
     attachment: (request: SessionAttachmentRequest) => Promise.resolve().then(() => core.attachment(request, new AbortController().signal)),
-    updateQueue: (request: SessionUpdateQueueRequest) => Promise.resolve().then(() => core.updateQueue(queueWireRequest(request), new AbortController().signal)),
+    updateQueue: (request: SessionUpdateQueueRequest) =>
+      Promise.resolve().then(() => core.updateQueue(queueWireRequest(request), new AbortController().signal)),
     cancel: (request: SessionCancelRequest) => Promise.resolve().then(() => core.cancel(request, new AbortController().signal)),
     openWorkspacePath: (request: SessionOpenWorkspacePathRequest, signal = new AbortController().signal) => remoteResult(
       () => direct.openWorkspacePath(request, signal),

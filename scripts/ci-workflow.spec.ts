@@ -294,7 +294,7 @@ describe('E2B e2e workflow', () => {
     // out of failure and none swallows one.
     for (const step of steps) {
       expect(step['continue-on-error']).toBeUndefined()
-      expect(String(step.run ?? '')).not.toContain('|| true')
+      expect(stepText(step.run)).not.toContain('|| true')
     }
 
     // Gate behaviour, executed for real. GitHub passes an unconfigured secret as an
@@ -677,7 +677,7 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecycleReview.types).toEqual(['submitted'])
 
     const steps = lifecycleJob.steps.filter(isRecord)
-    const checkoutIndex = steps.findIndex(step => String(step.uses ?? '').startsWith('actions/checkout@'))
+    const checkoutIndex = steps.findIndex(step => stepText(step.uses).startsWith('actions/checkout@'))
     const gateIndex = steps.findIndex(step => step.name === 'Gate optional Project automation')
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')
@@ -693,7 +693,7 @@ describe('Issue lifecycle workflow', () => {
     // Bootstrap safety: the gate body is inline because a helper introduced on a
     // pull-request branch is absent from the trusted tree this job just checked out,
     // and depending on it failed every event with exit 127.
-    const gateRun = String(steps[gateIndex]?.run ?? '')
+    const gateRun = stepText(steps[gateIndex]?.run)
     expect(gateRun).not.toContain('scripts/ci-secret-gate.sh')
     expect(gateRun).toContain('enabled=false')
     expect(gateRun).toContain('GITHUB_OUTPUT')
@@ -720,7 +720,7 @@ describe('Issue lifecycle workflow', () => {
     // A real board mutation failure must still fail the job.
     for (const step of steps) {
       expect(step['continue-on-error']).toBeUndefined()
-      expect(String(step.run ?? '')).not.toContain('|| true')
+      expect(stepText(step.run)).not.toContain('|| true')
     }
 
     // Gate behaviour, executed for real: an empty environment value is what GitHub
@@ -852,6 +852,14 @@ function workflowJob(workflow: Record<string, unknown>, job: string): Record<str
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Read one parsed workflow step field: `run` and `uses` are YAML scalars, so only
+ * a string carries command text and anything else reads as absent.
+ */
+function stepText(value: unknown): string {
+  return typeof value === 'string' ? value : ''
 }
 
 /**

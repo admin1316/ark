@@ -52,7 +52,7 @@ vi.mock('node:fs', async (importOriginal) => {
   const realpathSync = Object.assign(
     (path: string, options?: unknown): string => {
       const failed = snapshotVfs.snapshotFailure
-      if (failed !== undefined && String(path) === failed.path) throw failure(failed.code, path)
+      if (failed !== undefined && path === failed.path) throw failure(failed.code, path)
       return (actual.realpathSync as unknown as (target: string, callOptions?: unknown) => string)(path, options)
     },
     {

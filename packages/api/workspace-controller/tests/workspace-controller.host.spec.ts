@@ -169,7 +169,7 @@ describe('canonical Workspace commands with retained follow controller', () => {
     const gate = deferred<undefined>()
     const entered = deferred<undefined>()
     const setTitle = workspace.setTitle.bind(workspace)
-    vi.spyOn(workspace, 'setTitle').mockImplementationOnce(async title => {
+    vi.spyOn(workspace, 'setTitle').mockImplementationOnce(async (title) => {
       entered.resolve(undefined)
       await gate.promise
       await setTitle(title)

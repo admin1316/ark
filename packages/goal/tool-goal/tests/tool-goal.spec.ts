@@ -373,7 +373,7 @@ describe('goal tool state transitions', () => {
     closeTurn(root, humanTurn)
 
     openTurn(root, {
-      kind: 'goal', goalId: created.id, revision: resumed['revision'] as number, round: 1,
+      kind: 'goal', goalId: created.id, revision: resumed['revision'], round: 1,
     })
     const complete = await execute(ctx, 'update_goal', {
       goal_id: created.id, revision: resumed['revision'], action: 'complete',

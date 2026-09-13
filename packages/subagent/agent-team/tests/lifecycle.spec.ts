@@ -47,9 +47,11 @@ it('bounds shutdown and distinguishes cancellation from unexpected failures', as
   lifecycle.close()
   const failures: unknown[] = []
   const unexpected = new Error('unexpected')
+  const reason = lifecycle.reason
+  if (!(reason instanceof Error)) throw new Error('Agent Teams disposal reason must be an Error')
   await lifecycle.settle([
-    Promise.reject(lifecycle.reason),
-    Promise.reject(new Error('wrapped', { cause: lifecycle.reason })),
+    Promise.reject(reason),
+    Promise.reject(new Error('wrapped', { cause: reason })),
     Promise.reject(new TeamError('disposed', 'TEAM_DISPOSED')),
     Promise.reject(unexpected),
   ], failures)

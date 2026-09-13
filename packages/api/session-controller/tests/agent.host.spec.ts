@@ -270,7 +270,7 @@ describe('ApiSession model selection', () => {
     pending.session.append('model/selection', {
       provider: 'selected-provider',
       model: 'selected-model',
-      reasoningEffort: 'high' as never,
+      reasoningEffort: 'high',
     })
     expect(selection.current).toMatchObject({
       provider: 'selected-provider', model: 'selected-model', reasoningEffort: 'high',

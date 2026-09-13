@@ -76,7 +76,7 @@ it('queues quiet mail for an inactive teammate and delivers it once on wakeup', 
       name: 'worker', description: 'A worker', prompt: [{ type: 'text', text: 'initial task' }],
       provider: 'spawn', context: 'fresh', signal: new AbortController().signal,
     })
-    await vi.waitFor(() => expect(run.ctx.agents.get(spawned.member.id)).toBeUndefined())
+    await vi.waitFor(() => { expect(run.ctx.agents.get(spawned.member.id)).toBeUndefined() })
     const quiet = await run.ctx.agentTeams.sendMessage(run.lead, {
       target: 'worker', content: [{ type: 'text', text: 'quiet context' }], delivery: 'quiet', signal: new AbortController().signal,
     })
@@ -86,7 +86,7 @@ it('queues quiet mail for an inactive teammate and delivers it once on wakeup', 
       target: 'worker', content: [{ type: 'text', text: 'next task' }], delivery: 'wakeup', signal: new AbortController().signal,
     })
     expect(wakeup.status).toBe('accepted')
-    await vi.waitFor(() => expect(run.ctx.agents.get(spawned.member.id)).toBeUndefined())
+    await vi.waitFor(() => { expect(run.ctx.agents.get(spawned.member.id)).toBeUndefined() })
     const stored = await run.ctx.sessionPersistence.inspect(spawned.member.id)
     const delivered = stored.events.filter(event => event.type === 'user/message' && event.data.source.kind === 'team-message')
     expect(delivered).toHaveLength(2)

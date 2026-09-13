@@ -11,6 +11,11 @@ import { SessionObservationReader } from '../../../session-query/session-query/s
 import { expect, it, vi } from 'vitest'
 import { SemanticHistoryReader } from '../src/semantic-history.ts'
 
+/** Complete user-message body; the content endpoint echoes the presented Session event data. */
+const userMessageBodySchema = z.object({
+  entry: z.object({ event: z.object({ data: z.object({ content: z.array(z.object({ type: z.string(), text: z.string() })) }) }) }),
+})
+
 it('continues cold content without reloading JSONL after real coordinator and numeric cache eviction', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ark-semantic-reader-test-'))
   const ctx = new Context()
@@ -56,7 +61,7 @@ it('continues cold content without reloading JSONL after real coordinator and nu
       if (part.done) break
       offset = part.nextOffset
     }
-    expect(JSON.parse(text).entry.event.data.content[0].text).toBe(originalText)
+    expect(userMessageBodySchema.parse(JSON.parse(text)).entry.event.data.content[0]!.text).toBe(originalText)
     expect(observe).not.toHaveBeenCalled()
     expect(borrow).not.toHaveBeenCalled()
     expect(load).not.toHaveBeenCalled()

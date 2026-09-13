@@ -216,7 +216,7 @@ let CredentialProvider = (() => {
                     details: { maxRefs: 64 },
                 });
             // Validate the whole batch before any provider work starts.
-            const branded = refs.map(name => {
+            const branded = refs.map((name) => {
                 try {
                     return credentialRef(name);
                 }
