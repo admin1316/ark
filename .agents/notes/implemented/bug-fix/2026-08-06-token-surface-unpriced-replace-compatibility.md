@@ -22,7 +22,7 @@ Both projections share the one fold, so neither gains state fields nor bumps its
 
 **Keep throwing.** Preserves the strict producer contract, but every pre-protocol session stays permanently unreplayable, and the projections exist to serve replay.
 
-**Persist the full priced surface in the projection state.** Could price any replaced range exactly, but grows the checkpoint by one node per model-visible message without bound — defeating the O(1) constraint the shadow-price protocol exists to preserve (see [the context-meter note](2026-08-05-context-meter-blind-to-compaction.md)).
+**Persist the full priced surface in the projection state.** Could price any replaced range exactly, but grows the checkpoint by one node per model-visible message without bound — defeating the O(1) constraint the shadow-price protocol exists to preserve (see [the context-meter note](../../archived/bug-fix/2026-08-05-context-meter-blind-to-compaction.md)).
 
 ## Consequences
 

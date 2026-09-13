@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-web-streaming-fence-highlight.md
+2026-08-20-web-streaming-fence-highlight.md: 5c179a7fcae2dcbc033091a6bd737a396e6a4067
+2026-08-20-web-streaming-fence-highlight.zh.md: 938498d814b49fcd4f2ae950907d3737336fadf2

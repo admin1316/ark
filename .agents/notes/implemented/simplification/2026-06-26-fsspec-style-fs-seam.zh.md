@@ -113,7 +113,7 @@ type FsWriteIntent =
 
 ## 后续扩展
 
-后来，[为文件系统 seam 添加直接目录列表](../../archived/architecture/2026-07-03-filesystem-directory-listing-seam.md)进一步扩展了该 seam。该后续工作单独记录，使本文继续描述最初落地的 fsspec 风格改造。
+后来，[为文件系统 seam 添加直接目录列表](../../archived/architecture/2026-07-03-filesystem-directory-listing-seam.zh.md)进一步扩展了该 seam。该后续工作单独记录，使本文继续描述最初落地的 fsspec 风格改造。
 
 ## 曾考虑的替代方案
 

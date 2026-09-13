@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-06-22-subagent-snapshot-replay.md
 2026-06-22-subagent-snapshot-replay.md: bdd4e93ea185c5483c2ff81eba617baaf8cc40b2
-2026-06-22-subagent-snapshot-replay.zh.md: 48691fe4db94febba8d041cf750b69aa9849dd52
+2026-06-22-subagent-snapshot-replay.zh.md: 3dff0f5cb8dd0bffaf6c1368c5d6a114b9041fd9

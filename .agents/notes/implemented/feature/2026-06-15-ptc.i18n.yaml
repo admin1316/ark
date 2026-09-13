@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-06-15-ptc.md
 2026-06-15-ptc.md: 5b3971c33df4be46c8a466e564ac86ba6454663a
-2026-06-15-ptc.zh.md: fe44d8a0e97913998fc001c92f632f493888c720
+2026-06-15-ptc.zh.md: 81fabc6cc614f15dd06a97125b73d6eccc7f7195
