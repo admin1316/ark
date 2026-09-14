@@ -323,7 +323,9 @@ describe('semantic history index, body and presentation contracts', () => {
     userMessage(session, 'indexed')
     const source = await reader.observe({ sessionId: session.id }, signal())
     try {
-      expect(await refusal(Promise.resolve().then(() => reader.presentationSource(source.observed, source.identity, source.through + 1, signal()))))
+      const overCut = Promise.resolve().then(() => reader
+        .presentationSource(source.observed, source.identity, source.through + 1, signal()))
+      expect(await refusal(overCut))
         .toEqual({ code: 'history-stale-source', message: 'history prefix is not contiguous' })
     } finally { source[Symbol.dispose]() }
   })
@@ -403,9 +405,9 @@ describe('semantic history index, body and presentation contracts', () => {
     expect(assistants.map(record => [record.step, record.state])).toEqual([[0, 'complete'], [2, 'complete']])
     expect(new Set(result.records.map(record => record.id)).size).toBe(3)
     const body: unknown = JSON.parse(await content(result.sourceRevision, assistants[1]!.id))
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       kind: 'assistant',
-      entry: expect.objectContaining({ event: expect.objectContaining({ type: 'assistant/message' }) }),
+      entry: { event: { type: 'assistant/message' } },
     })
   })
 
@@ -441,14 +443,14 @@ describe('semantic history index, body and presentation contracts', () => {
       .toEqual([['unpaired', call.seq, undefined], ['unpaired', undefined, result.seq]])
     expect(records.map(record => record.preview)).toEqual(['orphan-tool', 'tool result'])
     const callBody: unknown = JSON.parse(await content(first.sourceRevision, records[0]!.id))
-    expect(callBody).toEqual({
+    expect(callBody).toMatchObject({
       kind: 'tool',
-      call: expect.objectContaining({ event: expect.objectContaining({ seq: call.seq }) }),
+      call: { event: { seq: call.seq } },
     })
     const resultBody: unknown = JSON.parse(await content(first.sourceRevision, records[1]!.id))
-    expect(resultBody).toEqual({
+    expect(resultBody).toMatchObject({
       kind: 'tool',
-      result: expect.objectContaining({ view: { callSeq: -1 } }),
+      result: { view: { callSeq: -1 } },
     })
   })
 

@@ -667,7 +667,7 @@ describe('WebSocket downlinks', () => {
     running.push(host.close)
     const socket = new WebSocket(`${host.origin}${MUX_EVENTS_PATH}`)
     const accepted = await new Promise<WebSocket>((resolve) => {
-      socket.once('open', () => { resolve(acceptedSocket(downlinks) as never) })
+      socket.once('open', () => { resolve(acceptedSocket(downlinks)) })
     })
     const failures: ConnectionServerEvent[] = []
     socket.on('message', (data: RawData) => { failures.push(JSON.parse(rawText(data)) as ConnectionServerEvent) })

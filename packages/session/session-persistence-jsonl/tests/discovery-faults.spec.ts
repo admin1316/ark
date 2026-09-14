@@ -49,7 +49,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         }
       }
       return actual.open(...args)
-    }) as typeof actual.open,
+    }),
   }
 })
 
