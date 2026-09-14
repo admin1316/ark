@@ -319,8 +319,13 @@ function writePromotionStage(path: string, content: string): void {
     closeSync(descriptor)
   }
   const directory = openSync(dirname(path), constants.O_RDONLY)
-  // Windows cannot fsync directory handles (EPERM); NTFS journals its own metadata.
-  if (process.platform !== 'win32') { try { fsyncSync(directory) } finally { closeSync(directory) } } else { closeSync(directory) }
+  try {
+    fsyncSync(directory)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+  } finally {
+    closeSync(directory)
+  }
 }
 
 function applyPromotionOperation(
