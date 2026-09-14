@@ -1,5 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { z } from 'zod'
 import SessionStore, { Session, SessionId, snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionRemoteSemanticHistoryValue } from '@deepseek-ai/dsh-session'
 import { SessionObservationReader } from '../../../session-query/session-query/src/observation.ts'
@@ -31,10 +32,13 @@ async function fixture(limits: SemanticHistoryLimits = {}, extraSessions = 0): P
   }
   const observations = new SessionObservationReader(ctx)
   ctx.provide('sessionQuery', { observeSession: observations.read.bind(observations) } as never)
-  const present = vi.fn(async (event: SessionEvent, dependencies: readonly SessionEvent[]) => ({
-    event: { type: event.type, seq: event.seq, time: event.time, data: snapshotJsonValue(event.data) },
-    ...(event.type === 'tool/result' ? { view: { callSeq: dependencies[0]?.seq ?? -1 } } : {}),
-  }))
+  const present = vi.fn(async (event: SessionEvent, dependencies: readonly SessionEvent[]) => {
+    const data = z.json().parse(snapshotJsonValue(event.data))
+    return {
+      event: { type: event.type, seq: event.seq, time: event.time, data },
+      ...(event.type === 'tool/result' ? { view: { callSeq: dependencies[0]?.seq ?? -1 } } : {}),
+    }
+  })
   const reader = new SemanticHistoryReader(ctx, () => present, limits)
   const page = async (extra: Record<string, unknown> = {}, forSession: Session = session): Promise<SessionRemoteSemanticHistoryValue> => {
     const result = await reader.read({ sessionId: forSession.id, view: 'semantic', ...extra }, signal())
