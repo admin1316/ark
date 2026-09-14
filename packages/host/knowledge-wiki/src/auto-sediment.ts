@@ -261,7 +261,10 @@ export function buildPage(title: string, pair: TurnPair, today: string, workspac
  * @returns The value produced by page rel path.
  */
 export function pageRelPath(kind: 'concept' | 'problem-solving', slug: string): string {
-  return join('_candidates', 'turns', kind === 'problem-solving' ? '问题解决' : '会话沉淀', `${slug}.md`)
+  // Wiki page rel paths are serialized identifiers: always canonical forward
+  // slashes regardless of the platform separator (governance-policy parsing,
+  // frontmatter, and manifests all key on the '/' form).
+  return ['_candidates', 'turns', kind === 'problem-solving' ? '问题解决' : '会话沉淀', `${slug}.md`].join('/')
 }
 
 /**
@@ -427,7 +430,7 @@ export function extractConversationText(events: unknown[]): string {
  * @returns The value produced by session summary rel path.
  */
 export function sessionSummaryRelPath(slug: string): string {
-  return join('_candidates', 'sessions', `${slug}.md`)
+  return ['_candidates', 'sessions', `${slug}.md`].join('/')
 }
 
 /**

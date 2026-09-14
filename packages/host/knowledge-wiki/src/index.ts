@@ -1553,9 +1553,21 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       mkdirSync(outDir, { recursive: true })
       const outPath = join(outDir, `wanxiang-${new Date().toISOString().slice(0, 10)}.zip`)
       const { execFileSync } = await import('node:child_process')
-      execFileSync('/usr/bin/zip', ['-r', '-q', outPath, 'wiki', 'raw', 'purpose.md', 'schema.md'], {
-        cwd: this.currentRoot,
-      })
+      const inputs = ['wiki', 'raw', 'purpose.md', 'schema.md']
+      if (process.platform === 'win32') {
+        // Windows has no zip(1); Compress-Archive is the platform-native archive
+        // tool. Inputs and output travel through the environment so user-controlled
+        // paths can never break out of the PowerShell command string.
+        execFileSync('powershell.exe', ['-NoProfile', '-Command',
+          'Compress-Archive -Path $env:ARK_WIKI_ZIP_INPUTS.Split(\',\') -DestinationPath $env:ARK_WIKI_ZIP_OUT -Force'], {
+          cwd: this.currentRoot,
+          env: { ...process.env, ARK_WIKI_ZIP_INPUTS: inputs.join(','), ARK_WIKI_ZIP_OUT: outPath },
+        })
+      } else {
+        execFileSync('zip', ['-r', '-q', outPath, ...inputs], {
+          cwd: this.currentRoot,
+        })
+      }
       return { path: outPath }
     } catch (error) {
       return { path: '', error: error instanceof Error ? error.message : String(error) }
@@ -1571,8 +1583,19 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   async importProject(request: { path: string }): Promise<{ ok: boolean; error?: string; entries?: string[] }> {
     try {
       const { execFileSync } = await import('node:child_process')
-      const listing = execFileSync('/usr/bin/unzip', ['-l', '--', request.path], { encoding: 'utf8' })
-      const entries = listing.split('\n').slice(3, -2).map(line => line.trim().replace(/^.*\s/u, '')).filter(Boolean)
+      let entries: string[]
+      if (process.platform === 'win32') {
+        // .NET ZipFile listing via the environment (injection-safe path passing).
+        const listing = execFileSync('powershell.exe', ['-NoProfile', '-Command',
+          'Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::OpenRead($env:ARK_WIKI_ARCHIVE).Entries.FullName'], {
+          encoding: 'utf8',
+          env: { ...process.env, ARK_WIKI_ARCHIVE: request.path },
+        })
+        entries = listing.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+      } else {
+        const listing = execFileSync('unzip', ['-l', '--', request.path], { encoding: 'utf8' })
+        entries = listing.split('\n').slice(3, -2).map(line => line.trim().replace(/^.*\s/u, '')).filter(Boolean)
+      }
       return { ok: true, entries: entries.slice(0, 200) }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }

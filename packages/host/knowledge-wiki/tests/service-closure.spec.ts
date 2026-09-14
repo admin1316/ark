@@ -494,8 +494,12 @@ describe('raw source tree safety', () => {
 
   it('refuses non-regular, hard-linked, and oversized raw sources', async () => {
     const sources = resetRawSources(root)
-    execFileSync('/usr/bin/mkfifo', [join(sources, 'pipe.md')])
-    await expect(service.scanSources()).rejects.toThrow('non-regular raw source is not allowed')
+    if (process.platform !== 'win32') {
+      // mkfifo is POSIX-only; the non-regular refusal contract on win32 is
+      // covered by the symlink/hard-link cases in this same test.
+      execFileSync('/usr/bin/mkfifo', [join(sources, 'pipe.md')])
+      await expect(service.scanSources()).rejects.toThrow('non-regular raw source is not allowed')
+    }
 
     resetRawSources(root)
     writeFileSync(join(root, 'origin.md'), 'shared bytes', 'utf8')

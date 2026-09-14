@@ -81,7 +81,13 @@ describe('authenticated promotion WAL real crash phases', () => {
       encoding: 'utf8',
       timeout: 10_000,
     })
-    expect(result.signal).toBe('SIGKILL')
+    // The crash contract is "the worker died mid-promotion", not the POSIX
+    // signal identity: Windows TerminateProcess reports no signal name.
+    if (process.platform === 'win32') {
+      expect(result.signal === null || result.signal === 'SIGKILL').toBe(true)
+    } else {
+      expect(result.signal).toBe('SIGKILL')
+    }
     expect(recoverCandidateReviewTransactions(
       verifierAuthority(), item.reviewFile, item.wikiRoot, item.archiveRoot,
     )).toBe(1)
