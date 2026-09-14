@@ -1,9 +1,27 @@
+---
+description: "隐式 Root Agent Teams 领域。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-agent-team
 
 [English](README.md) | 中文
 
+## 概述
+
 隐式 Root Agent Teams 领域。`ctx.agentTeams` 在 Lead Session 日志中维护扁平的 Lead／teammate roster、持久 peer mailbox 与共享任务 DAG。[Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-05-agent-teams.zh.md)负责协作和隔离决策；[Team 子系统目录](../../../docs/subsystems/agent-team.zh.md)记录持久数据的字面形态与服务 API。
 
+## 目录
+
+- [配置](#config)
+- [Team 身份与 roster](#team-identity-and-roster)
+- [持久 mailbox](#durable-mailbox)
+- [共享任务板](#shared-task-board)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="config"></a>
 ## 配置
 
 ```yaml
@@ -21,6 +39,7 @@
 
 该服务要求 Agent、Session、Session persistence 与 continuable-subagent 服务。没有持久 Session 存储的组合不会激活它。
 
+<a id="team-identity-and-roster"></a>
 ## Team 身份与 roster
 
 每个普通运行时 Root 都是一个隐式 Team 的 Lead，其 `TeamId` 等于 `SessionId`；因此，在写入第一条成员、消息或任务记录前，创建 Team 不需要额外状态。teammate 是记录在 Root Session 中的具名 continuable 直接 child。名字采用小写 kebab-case，最长 64 个字符，在 Team 生命周期内不可变。Session id 始终是持久化与授权身份。
@@ -31,6 +50,7 @@ fresh child 不带 parent 历史 seed。fork child 只捕获一次 Lead 的已�
 
 roster 同时报告持久 provisioning／failed phase 与实时 `running`／`idle` 状态。active 但不驻留的 teammate 显示为 `inactive`；后续 wakeup 投递会经 continuation owner 冷恢复它。
 
+<a id="durable-mailbox"></a>
 ## 持久 mailbox
 
 `sendMessage()` 校验 peer 成员关系，追加 `team/message/queued` 并 flush，之后才尝试投递。结果始终标识该持久消息；`queued` 表示即时投递被推迟，并不表示需要重发。target 为 live 时，quiet 投递会立即注入、flush 并确认上下文，但绝不会激活 inactive target；inactive target 的 quiet 消息会保持 queued。wakeup 投递成为 target 的下一个 FIFO turn，并在需要时冷恢复它。
@@ -39,6 +59,7 @@ roster 同时报告持久 provisioning／failed phase 与实时 `running`／`idl
 
 该保证是进程内重试加 target Session 去重，而不是跨进程 exactly-once。本版本没有跨进程共享 mailbox 事务，也没有 mailbox 时间线 UI。
 
+<a id="shared-task-board"></a>
 ## 共享任务板
 
 任务是完整的版本化快照。每次变更都携带 `expectedRevision`；陈旧调用方会收到 `TEAM_TASK_STALE_REVISION`，不会覆盖更新值。任意成员都可以创建、读取或 claim ready 且无 owner 的任务。Owner 或 Lead 可以编辑、释放、完成、重开或删除任务；只有 Lead 可以分配给其他成员。数字 `task-<n>` id 的后缀必须是安全整数；最后一个安全 id 已被占用时，创建会报告 `TEAM_TASK_LIMIT`，而不会复用该 id。
@@ -51,6 +72,7 @@ roster 同时报告持久 provisioning／failed phase 与实时 `running`／`idl
 
 独立的 `./invariant` 配套模块会把每条候选 Team event 对照已提交 Session 前缀回放。回放会先验证每个当前版本 Team payload，再将其纳入折叠状态；随后会在 append 前拒绝非法 member 转换、名字复用、超出范围的数字 task id、不连续任务 revision、非法任务依赖、重复 queue／ack，以及 target 不匹配的 acknowledgement。顺序与时间由 Session event 的 `seq` 和 `time` 负责，不在 snapshot 中重复保存。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### Peer 消息
@@ -67,6 +89,7 @@ roster 同时报告持久 provisioning／failed phase 与实时 `running`／`idl
 
 Peer 消息追加在 target 可复用历史前缀之后。冷恢复会先复用持久对话，再追加尚未投递的消息。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **单进程、共享 checkout**：所有成员共享 cwd，修改立即可见；本包不提供 worktree、远端成员、自动 merge 或文件锁。
@@ -74,3 +97,8 @@ Peer 消息追加在 target 可复用历史前缀之后。冷恢复会先复用�
 - **扁平且不可变的 roster**：只有 Lead 可以创建直接 teammate；不支持嵌套 Team、重命名、删除或名字复用。
 - **不会自动释放 owner**：idle、interrupt、进程退出与工作失败都不会释放任务 owner。
 - **mailbox 不保证跨进程 exactly-once**：不支持多个 harness 进程并发操作同一 Team。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

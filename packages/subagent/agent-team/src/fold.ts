@@ -40,7 +40,7 @@ const imageAttachmentSchema = z.object({
   height: positiveSafeInteger,
   name: z.string().optional(),
 }).strict()
-const contentBlockSchema: z.ZodType<unknown> = z.lazy(() => z.union([
+const contentBlockSchema: z.ZodType = z.lazy(() => z.union([
   z.object({ type: z.literal('text'), text: z.string() }).strict(),
   z.object({ type: z.literal('reasoning'), text: z.string() }).strict(),
   z.object({ type: z.literal('image'), attachment: imageAttachmentSchema }).strict(),

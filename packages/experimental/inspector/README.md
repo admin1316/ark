@@ -1,5 +1,5 @@
 ---
-description: "Experimental Chrome DevTools inspection for Host and browser Client Cordis runtimes, including Console evaluation, Sources, Network capture, Elements trees, and a CDP-independent query API."
+description: "Experimental Chrome DevTools inspection for a Host Cordis runtime, with Worker-owned Console, Sources, Network capture, Elements trees, and a query API."
 kind: "package-reference"
 ---
 
@@ -9,9 +9,9 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this experimental inspector to inspect one running dsh Host and its browser Clients in Chrome DevTools. It exposes Host and Client Console contexts, Host Sources and debugging, captured Host fetches, and a shared Cordis tree while keeping all CDP state in a Worker.
+Use this experimental inspector to inspect one running dsh Host in Chrome DevTools. It exposes Host Console evaluation, Sources and debugging, captured Host fetches, and the Cordis tree while keeping CDP state in a Worker. The package supplies no browser Client plugin; its retained Worker ingest protocol requires a separately implemented adapter.
 
-The package is private and excluded from releases. The Worker never accesses live Cordis objects: the shared Host/Client collector projects them into validated snapshots before transport. Cordis also owns plugin composition, `ctx.inspector` registration, bootstrap injection, and disposal.
+The package is private and excluded from releases. The Worker never accesses live Cordis objects: the shared Cordis collector projects them into validated snapshots before transport. Cordis also owns plugin composition, `ctx.inspector` registration, bootstrap injection, and disposal.
 
 ## Table of Contents
 
@@ -30,15 +30,15 @@ The package is private and excluded from releases. The Worker never accesses liv
 <a id="runtime-layout"></a>
 ## Runtime layout
 
-The Host plugin starts the Worker and connects a dedicated `MessagePort`. The Client plugin reads the injected `globalThis.__DSH_INSPECTOR__` bootstrap and opens a separate authenticated WebSocket directly to the Worker. Chrome DevTools connects to the Worker's CDP WebSocket. A private `node:inspector.Session` per DevTools connection attaches from the Worker to the Host main thread, so Host Console evaluation, Sources, breakpoints, and resume remain available while Host JavaScript is paused.
+The Host plugin starts the Worker and connects a dedicated `MessagePort`. Chrome DevTools connects to the Worker's CDP WebSocket. A private `node:inspector.Session` per DevTools connection attaches from the Worker to the Host main thread, so Host Console evaluation, Sources, breakpoints, and resume remain available while Host JavaScript is paused.
 
-The source tree follows those execution environments: `client/` and `host/` provide mirrored adapter entry paths, `worker/` contains only Worker-thread orchestration and Chrome protocol state, and `shared/` contains environment-independent Cordis and network models, normalized realm backend interfaces, and the internal bridge protocol. Worker-side Client and Host adapters are mirrored under `worker/realms/`; a Client adapter in that directory still executes in the Worker.
+The source tree contains `host/` adapter and library entries, `worker/` orchestration and Chrome protocol state, and `shared/` environment-independent models and bridge protocols. `worker/realms/` retains Host and external-source protocol adapters; both run in the Worker. There is no `src/client` plugin entry or shipped `lib/client.js` bundle.
 
-Host and Client producers send internal observation records rather than CDP messages. Records contain a source generation, sequence, source-clock timestamp, topic, and JSON payload. The Worker validates every process or network frame, owns source state and retention, and translates recognized topics to standard CDP domains.
+The Host and any admitted external producer send internal observation records rather than CDP messages. Records contain a source generation, sequence, source-clock timestamp, topic, and JSON payload. The Worker validates every process or network frame, owns source state and retention, and translates recognized topics to standard CDP domains.
 
-Client sources declare typed Runtime, Console, and read-only Sources capabilities. `Runtime.enable` publishes the real Host execution context and one synthetic context for every connected Client source. Selecting a Client context routes evaluation, property access, function calls, promise awaiting, and object release to that browser realm. Client Console arguments use the same session-local object table, while `Debugger.enable` publishes the built `lib/client.js` catalog and `Debugger.getScriptSource` reads bounded content chunks. Client-script breakpoints, step, and call frames remain unsupported; target-wide pause and resume control the Host debugger only.
+The retained external-source protocol can declare Runtime, Console, and read-only Sources capabilities. The Worker routes requests to the registered source and validates its replies; this package does not supply the browser implementation. Target-wide pause and resume control the Host debugger only.
 
-Both plugin faces run the same browser-safe Cordis collector. It converts reachable Context and Fiber objects into a versioned `CordisTreeSnapshot`; the Worker stores that CDP-independent representation and projects each Host or Client source into the Elements panel.
+The Host uses the shared Cordis collector to convert reachable Context and Fiber objects into a versioned `CordisTreeSnapshot`. The Worker retains that CDP-independent representation and projects admitted source snapshots into Elements.
 
 <a id="configuration"></a>
 ## Configuration
@@ -79,7 +79,7 @@ The Host logs a `devtools://` URL after the Worker listens. The same Worker serv
 <a id="observation-api"></a>
 ## Observation API
 
-Both plugin faces provide the same service:
+The Host plugin provides this service:
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -100,13 +100,13 @@ Publishing validates lossless JSON and schedules delivery without waiting for th
 
 The Elements document has fixed `<host>` and `<clients>` containers. `<host>` contains the Host root Context; `<clients>` contains one `<client>` per Client source, and each `<client>` contains that realm's root Context. The Cordis root Fiber is omitted. Every other Fiber is a child of `fiber.parent`, owns exactly one Context child for `fiber.ctx`, and carries only `uid="<Cordis Fiber.uid>"`; Context elements have no attributes. Context-only `extend()`, `isolate()`, and `intercept()` layers remain direct Context descendants.
 
-Host and Client publish the same nested `CordisTreeSnapshot` type. Context and Fiber nodes carry opaque object handles for realm-local object lookup; Fiber nodes additionally carry Cordis `uid`. The Worker composes those realm snapshots into one `{ host, clients }` inspection tree. It assigns `BackendNodeId` values per source generation; each DevTools connection assigns its own `NodeId` values; `DOM.resolveNode` asks the owning Host or Client Runtime for a connection-local `RemoteObjectId`. `DOM.requestNode` maps that object id back to the same Elements node. `ctx.inspector.cordis.getTree()` and `DSHInspector.getCordisTree` read the detached consumer-neutral tree without routing handles or CDP ids.
+The Host and admitted external sources publish the same nested `CordisTreeSnapshot` type. Context and Fiber nodes carry opaque object handles for realm-local object lookup; Fiber nodes additionally carry Cordis `uid`. The Worker composes those realm snapshots into one `{ host, clients }` inspection tree. It assigns `BackendNodeId` values per source generation; each DevTools connection assigns its own `NodeId` values; `DOM.resolveNode` asks the owning Host or Client Runtime for a connection-local `RemoteObjectId`. `DOM.requestNode` maps that object id back to the same Elements node. `ctx.inspector.cordis.getTree()` and `DSHInspector.getCordisTree` read the detached consumer-neutral tree without routing handles or CDP ids.
 
 Node delivery is depth-limited per DevTools connection: `DOM.getDocument` serves three document levels when the caller omits `depth`, withheld levels advertise `childNodeCount`, and expansion fetches them through `DOM.requestChildNodes` (`depth: -1` for a whole subtree). NodeIds leaving through `DOM.performSearch`, `DOM.requestNode`, or `DOM.pushNodesByBackendIdsToFrontend` first push the not-yet-sent ancestor levels as `DOM.setChildNodes` events.
 
 Sources publish complete snapshots, while the Worker compares stable backend node identities before notifying DevTools. Unchanged snapshots emit no DOM event; additions, removals, and attribute changes use node-level CDP events, inserted-node payloads withhold their subtree, and sibling reordering replaces only that parent's children. Existing `NodeId` values and unaffected Elements expansion remain stable.
 
-When a Client disconnects, its Console execution context and live object ids are destroyed immediately. With disconnected-tree retention enabled, Elements keeps the last tree unchanged while connection state remains in the inspection model rather than becoming an unreviewed DOM attribute. Reconnection keeps the logical source id, creates a new synthetic CDP context id for the new transport generation, and replaces the stale tree after its complete snapshot arrives. The Client retains its logical id in `sessionStorage` and claims it through Web Locks for the page lifetime, so refresh reuses the id while a duplicated live tab receives a new one. The Worker retains at most `maxDisconnectedCordisTrees` such snapshots; zero removes them immediately.
+When a Client disconnects, its Console execution context and live object ids are destroyed immediately. With disconnected-tree retention enabled, Elements keeps the last tree unchanged while connection state remains in the inspection model rather than becoming an unreviewed DOM attribute. Reconnection keeps the logical source id, creates a new synthetic CDP context id for the new transport generation, and replaces the stale tree after its complete snapshot arrives. Source identity and reconnection must be supplied by the external adapter. The Worker retains at most `maxDisconnectedCordisTrees` such snapshots; zero removes them immediately.
 
 <a id="host-fetch-capture"></a>
 ## Host fetch capture
@@ -135,10 +135,7 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Client active debugging is unsupported** — Console events, Runtime evaluation, RemoteObject access, and read-only `lib/client.js` Sources work. Client-script debugger requests return explicit unsupported errors; target-wide pause and resume control the Host only.
-- **Client Sources expose the Inspector bundle only** — other page scripts are not cataloged by this package.
-- **Client evaluation uses page JavaScript** — page Content Security Policy can block dynamic evaluation, and the synthetic context does not provide DevTools command-line helpers or native REPL declaration semantics.
-- **Client identity arbitration requires Web Locks** — browsers without that API retain reconnect and refresh identity through `sessionStorage`, but cannot distinguish two simultaneously live tabs copied from the same storage state.
+- **No browser Client adapter is included** — the retained Worker source protocol is not a browser product or an Ark fallback.
 - **Fetch interception covers `globalThis.fetch`** — direct Undici APIs and fetch references retained before activation are not observed.
 - **Body cloning has cost** — full capture tees request and response streams up to the configured limits and can increase memory and I/O pressure. The retained-body limit does not include buffering inside the stream tee, including an oversized source chunk or data queued for a slower application reader.
 - **No automatic Worker restart** — an unexpected Worker exit fails the current Inspector instance; lifecycle recovery belongs to a later change.

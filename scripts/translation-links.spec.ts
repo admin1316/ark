@@ -48,6 +48,11 @@ function linkContext(
   }
 }
 
+/** The semantic target token a normalized link carries. */
+function normalizedTarget(text: string): string {
+  return /dsh-translation-target:[^\s)]*/.exec(text)?.[0] ?? ''
+}
+
 function expectUnchangedLinkInput(root: string, input: string): void {
   const context = linkContext(root, 'docs/guide.md')
   expect(translationLinkLocaleViolations(input, context)).toEqual([])
@@ -56,6 +61,26 @@ function expectUnchangedLinkInput(root: string, input: string): void {
 }
 
 describe('translation link locale validation', () => {
+  it('normalizes an archived Agent Note triplet link to one target on both sides', () => {
+    const root = fixture()
+    const archived = '.agents/notes/archived/feature/2026-01-02-closed-feature'
+    mkdirSync(join(root, '.agents/notes/archived/feature'), { recursive: true })
+    writeFileSync(join(root, archived + '.md'), '# Closed\n')
+    writeFileSync(join(root, archived + '.zh.md'), '# 已关闭\n')
+    const english = normalizeTranslationMarkdownLinks(
+      `[closed](../${archived}.md)\n`,
+      linkContext(root, 'docs/guide.md'),
+    )
+    const chinese = normalizeTranslationMarkdownLinks(
+      `[已关闭](../${archived}.zh.md)\n`,
+      linkContext(root, 'docs/guide.zh.md'),
+    )
+    // The frozen pair is never checked, but a citation of it must resolve to the
+    // same semantic target from either language side.
+    expect(normalizedTarget(english)).toBe(normalizedTarget(chinese))
+    expect(normalizedTarget(english)).toContain(archived)
+  })
+
   it('rejects a Chinese link to the English sibling with an exact diagnostic', () => {
     const root = fixture()
     expect(translationLinkLocaleViolations(

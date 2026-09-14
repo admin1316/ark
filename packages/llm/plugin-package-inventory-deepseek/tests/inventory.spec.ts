@@ -200,14 +200,18 @@ describe('DeepSeek plugin package inventory', () => {
     ])
   })
 
-  it('mirrors the standing preset bare-package override instead of its local node_modules', async () => {
-    const { ctx, root } = await harness()
+  it('mirrors the Loader root for a standing preset even when inventory mounts inside a nested bundle', async () => {
+    const { ctx, root, disposeInventory } = await harness()
     await packagePlugin(root, 'node_modules/preset-only', { name: 'preset-only', version: '4.0.0' })
     const presetDir = join(root, 'preset')
     await mkdir(presetDir, { recursive: true })
     await packagePlugin(presetDir, 'node_modules/preset-only', { name: 'preset-only', version: '9.0.0' })
     const composition = join(presetDir, 'agent.cordis.yml')
     await writeFile(composition, '- id: preset-only\n  name: preset-only/plugin.mjs\n')
+    // The inventory contribution may live inside a bundle with its own base;
+    // that must not replace the root used by the actual preset importer.
+    await disposeInventory()
+    await ctx.extend({ baseUrl: pathToFileURL(composition).href }).plugin(PluginInventory)
 
     const standingKey = {}
     const standing = createScope(ctx, standingKey)

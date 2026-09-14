@@ -611,6 +611,24 @@ describe('SessionPersistenceSqlite schema ownership', () => {
     changedApplication.close()
   })
 
+  it('rolls back a delete whose transaction observes a schema changed by another writer', async () => {
+    const path = await freshDbPath('dsh-sqlite-delete-drift-')
+    const store = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
+    const header = meta('delete-drift')
+    await store.appendBatch(header, [chunk(0)], false)
+
+    const migrator = new DatabaseSync(path)
+    migrator.exec(testSql('set-user-version-17'))
+    migrator.close()
+
+    await expect(store.deleteStored(header.id)).rejects.toThrow(/schema changed before mutation/)
+    // The refused delete rolled back instead of half-applying: the session row
+    // and its events are still readable through the same open store.
+    expect((await store.list()).map(entry => entry.id)).toEqual([header.id])
+    expect((await store.loadStored(header.id))?.events).toEqual([chunk(0)])
+    await store.close()
+  })
+
   it('validates creation time and restores every optional header field', () => {
     const base: SessionRow = {
       id: 'stored-header',

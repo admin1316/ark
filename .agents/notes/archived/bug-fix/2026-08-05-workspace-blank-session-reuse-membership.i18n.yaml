@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-05-workspace-blank-session-reuse-membership.md
+2026-08-05-workspace-blank-session-reuse-membership.md: 6414f2504a51e5152c16c388f758f0d307558341
+2026-08-05-workspace-blank-session-reuse-membership.zh.md: 3aee57d4583fa15242dc76fb0d42fe5548450941

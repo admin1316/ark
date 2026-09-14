@@ -361,9 +361,8 @@ class FrameQueue {
 
   private take(): ConnectionEventFrame | undefined {
     if (this.failure !== undefined) throw this.failure
-    if (this.size === 0) return undefined
     const queued = this.buffer[this.head]
-    if (queued === undefined) throw new Error('native event queue ring invariant failed')
+    if (queued === undefined || this.size === 0) return undefined
     this.buffer[this.head] = undefined
     this.head = (this.head + 1) % this.maximumFrames
     this.size -= 1
@@ -491,15 +490,9 @@ function queueItems(
   agent: Agent,
   splice?: SessionEventMap['agent/inbox/spliced'],
 ): NativeQueuedInboxItem[] {
-  const project = (target: 'next-turn' | 'next-step'): readonly UserMessage[] => {
-    const messages = target === 'next-turn' ? agent.inbox.nextTurn : agent.inbox.nextStep
-    return splice?.target === target
-      ? messages.toSpliced(splice.start, splice.removedCount ?? 0, ...splice.inserted)
-      : messages
-  }
   return [
-    ...project('next-turn').map(message => ({ id: message.id, placement: 'queued' as const, message })),
-    ...project('next-step').map(message => ({
+    ...agent.inbox.project('next-turn', splice).map(message => ({ id: message.id, placement: 'queued' as const, message })),
+    ...agent.inbox.project('next-step', splice).map(message => ({
       id: message.id,
       placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
       message,

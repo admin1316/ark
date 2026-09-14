@@ -9,6 +9,7 @@ vi.mock('node:child_process', () => ({
 }))
 
 import KnowledgeWikiService from '../src/index.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 describe('archive primitive failures', () => {
   const roots: string[] = []
@@ -25,10 +26,10 @@ describe('archive primitive failures', () => {
     mkdirSync(join(root, 'wiki'), { recursive: true })
     const ctx = new Context()
     contexts.push(ctx)
-    const service = new KnowledgeWikiService(ctx, {
+    const service = new KnowledgeWikiService(ctx, wikiTestConfig({
       wikiRoot: join(root, 'wiki'), mainRoot: root,
       credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-    }) as unknown as {
+    })) as unknown as {
       snapshots: { dispose(): void }
       exportProject(): Promise<{ path: string; error?: string }>
       importProject(request: { path: string }): Promise<{ ok: boolean; error?: string }>

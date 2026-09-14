@@ -343,10 +343,14 @@ describe('goal tool state transitions', () => {
       goal_id: goal['id'], revision: goal['revision'], action: 'pause',
     }, root.agent))
     expect(goal).toMatchObject({ phase: 'paused', revision: 3 })
-    goal = resultGoal(await execute(ctx, 'update_goal', {
+    const refused = await execute(ctx, 'update_goal', {
       goal_id: goal['id'], revision: goal['revision'], action: 'resume',
-    }, root.agent))
-    expect(goal).toMatchObject({ phase: 'active', revision: 4 })
+    }, root.agent)
+    expect(refused.error?.info?.code).toBe('GOAL_TOOL_RESUME_PAUSED')
+    const pausedGoalId = goal['id']
+    if (typeof pausedGoalId !== 'string') throw new Error('expected paused goal id')
+    const resumed = ctx.goals.resume(root.agent, { id: GoalId(pausedGoalId), revision: 3 })
+    expect(resumed).toMatchObject({ phase: 'active', revision: 4 })
   })
 
   it('injects one wrap-up instruction for an autonomous completion but leaves a human pause interactive', async () => {
@@ -359,13 +363,17 @@ describe('goal tool state transitions', () => {
     expect(resultGoal(paused)).toMatchObject({ phase: 'paused' })
     expect(paused.concludesTurn).toBeUndefined()
     expect(paused.additionalContexts).toBeUndefined()
-    const resumed = resultGoal(await execute(ctx, 'update_goal', {
-      goal_id: created.id, revision: 2, action: 'resume',
-    }, root.agent))
+    // The model cannot lift a durable pause; the user path resumes it.
+    const pausedRevision = resultGoal(paused)['revision'] as number
+    const refusedResume = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: pausedRevision, action: 'resume',
+    }, root.agent)
+    expect(refusedResume.error?.info?.code).toBe('GOAL_TOOL_RESUME_PAUSED')
+    const resumed = ctx.goals.resume(root.agent, { id: created.id, revision: pausedRevision })
     closeTurn(root, humanTurn)
 
     openTurn(root, {
-      kind: 'goal', goalId: created.id, revision: resumed['revision'] as number, round: 1,
+      kind: 'goal', goalId: created.id, revision: resumed['revision'], round: 1,
     })
     const complete = await execute(ctx, 'update_goal', {
       goal_id: created.id, revision: resumed['revision'], action: 'complete',
@@ -499,7 +507,7 @@ describe('goal tool state transitions', () => {
     expect(resultGoal(paused)).toMatchObject({ phase: 'paused', objective: 'edited' })
     goal = ctx.goals.get(root.agent)!
 
-    const resumed = await execute(ctx, 'update_goal', {
+    const refusedResume = await execute(ctx, 'update_goal', {
       goal_id: goal.id,
       revision: goal.revision,
       action: 'resume',
@@ -507,7 +515,9 @@ describe('goal tool state transitions', () => {
       max_goal_rounds: 0,
       blocked_reason: '',
     }, root.agent)
-    expect(resultGoal(resumed)).toMatchObject({ phase: 'active', objective: 'edited' })
+    expect(refusedResume.error?.info?.code).toBe('GOAL_TOOL_RESUME_PAUSED')
+    const resumed = ctx.goals.resume(root.agent, { id: goal.id, revision: goal.revision })
+    expect(resumed).toMatchObject({ phase: 'active', objective: 'edited' })
     goal = ctx.goals.get(root.agent)!
 
     const blocked = await execute(ctx, 'update_goal', {

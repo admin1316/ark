@@ -1,6 +1,13 @@
+---
+description: "ctx.fs 提供方约定（@deepseek-ai/dsh-fs）的本地文件系统实现。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-fs-local
 
 [English](README.md) | 中文
+
+## 概述
 
 `ctx.fs` 提供方约定（[`@deepseek-ai/dsh-fs`](../fs)）的**本地文件系统实现**。它使用宿主文件系统支持十二个 `FileSystem` 原语；将其作为插件加载会填充 `ctx.fs`。
 
@@ -12,6 +19,14 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 // freshness policy gate and @deepseek-ai/dsh-tool-fs to expose read/write/edit.
 ```
 
+## 目录
+
+- [行为](#behavior)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="behavior"></a>
 ## 行为
 
 - **`resolve(path, opts?)`**：相对 `path` 在调用方提供 `opts.cwd` 时以该值为基准解析（面向模型的工具会传入调用 agent（智能体）的会话 cwd；见[每会话 cwd Agent Note](../../../.agents/notes/implemented/architecture/2026-07-02-fs-per-session-cwd.zh.md)），否则以 `config.cwd` 为基准（默认 `process.cwd()`）；绝对 `path` 会忽略两者。`opts.signal` 会在本地解析前后检查，远程同级后端则可以用它中止往返。`targetKey` 是文件的 `realpath`，因此经符号链接到达同一文件的两个输入路径会共享一个身份，写入/编辑落在链接目标上，同时保留链接。尚不存在的路径在父目录存在时使用 realpath 后的父目录加 basename；只有父目录无法解析时才回退到绝对路径。`displayPath` 是绝对但未经解析的路径。
@@ -25,6 +40,7 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 
 包根 SDK 接口包含默认/具名 `LocalFileSystem` 类和 `Config`。原始 I/O 位于 `src/fsio.ts`（不依赖 Cordis，单独进行单元测试）；`src/index.ts` 是轻量服务接线。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 通过 [`dsh-tool-fs`](../tool-fs/README.zh.md) 间接产生影响；该消费方把本提供方带行窗口的 UTF-8 内容、变更确认和提供方消息原文渲染为有保留上限的结果，而版本、原子写入机制和目录元数据仍属内部细节。
@@ -33,6 +49,7 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 
 不会直接使缓存失效；具名消费方负责请求前缀的任何变化。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与延期工作
 
 - **`config.cwd` 不是沙箱**：它是解析默认值，而非约束；绝对路径和 `..` 可以逃逸。请使用更严格的 `ctx.fs` 后端或 `tools/execute` waterfall（瀑布式事件）上的权限插件实施约束（见[能力 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-17-filesystem-capability-seam.zh.md#consequences)）。
@@ -43,3 +60,8 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 - **每目标变更锁仅限进程内**：即使跨进程，带防护的创建仍采用原子且不替换的发布方式；但只有当可选版本防护观察到元数据变化时，系统才能发现其他进程中的替换写入方，且绝不会将其串行化。
 - **带防护的创建要求支持硬链接**：拒绝硬链接发布的文件系统或挂载点无法支持 `createIfAbsent`；提供方会使目标保持缺失状态并报告 `FS_IO_ERROR`。
 - **提交后清理采用尽力而为语义**：如果移除仅所有者可访问的暂存目录失败，成功发布仍视为成功，并留下私有残留供运维人员后续清理。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

@@ -42,7 +42,7 @@ Transform a simple idea into a frame that feels observed inside an ongoing story
 - For a recommendation request, read [references/directors/recommendation-matrix.md](references/directors/recommendation-matrix.md), select two or three candidates, and load only their matching director references.
 - For a single named director, read director-routing.md, the index, and exactly one matching director reference. For a requested comparison or recommendation, read only the two or three candidate references needed. For an explicit mix, read no more than the primary and secondary director references.
 - Do not load the Director Four-Axis Library when no director reference is requested. Use one director by default; use one primary and one secondary director only when the user explicitly asks to mix them.
-- Use [assets/basic-prompt-template.md](assets/basic-prompt-template.md) as the output scaffold; replace every placeholder and remove unused lines.
+- Use the [Output Contract](#output-contract) below as the output scaffold; replace every placeholder and remove unused lines.
 
 ## Director and Anti-AI Checks
 

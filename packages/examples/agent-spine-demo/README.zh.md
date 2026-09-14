@@ -1,11 +1,29 @@
+---
+description: "将默认的不含执行器、不含 UI 的 agent（智能体）主干作为一个 Cordis 组合包插件。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-agent-spine-demo
 
 [English](README.md) | 中文
+
+## 概述
 
 将**默认的不含执行器、不含 UI 的 agent（智能体）主干**作为一个 Cordis 组合包插件。它加载每个 harness agent 所需的固定服务集合，包括本地 skill（技能）提供方，并将循环的 `agents` 列表作为自身配置转发。因此，应用包只需添加入口和可替换后端，就能组合出可工作的 agent。
 
 阅读此包可了解完整插件树及其组合顺序。
 
+## 目录
+
+- [它加载的插件树](#the-tree-it-loads)
+- [有意留在组合包外的组件](#what-it-deliberately-leaves-outside-the-bundle)
+- [配置](#config)
+- [为何使用代码组合包，而非共享 YAML include](#why-a-code-bundle-not-a-shared-yaml-include)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="the-tree-it-loads"></a>
 ## 它加载的插件树
 
 `apply(ctx, config)` 将以下每个插件挂载为组合包 fiber 的子节点：
@@ -39,6 +57,7 @@
                                   (dsh-system-prompt gets the forwarded `persona`)
 ```
 
+<a id="what-it-deliberately-leaves-outside-the-bundle"></a>
 ## 有意留在组合包外的组件
 
 主干包含每个入口都共有的全部组件。可替换组件和与入口耦合的组件留在外部，由加载组合包的一方选择：
@@ -51,6 +70,7 @@
 
 这里在组合层应用 [Service Definition／Service Provider／Consumer 的职责分离](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)：组合包拥有共享主干，叶节点拥有后端，应用包拥有入口。
 
+<a id="config"></a>
 ## 配置
 
 ```ts
@@ -63,12 +83,14 @@ import type { Config } from '@deepseek-ai/dsh-agent-spine-demo'
 
 例如，`{ invariants: { enabled: true, package_allowlist: ['^@deepseek-ai/dsh-'], package_blocklist: ['agent-loop$'] } }` 会让包拥有的配套插件保持挂载，但抑制被阻止的拥有者。Blocklist 匹配优先于 allowlist 匹配；正则表达式与生命周期规则见 [`dsh-invariants`](../../runtime-diagnostics/invariants/README.zh.md)。
 
+<a id="why-a-code-bundle-not-a-shared-yaml-include"></a>
 ## 为何使用代码组合包，而非共享 YAML include
 
 YAML include 可以去重配置，却无法拥有 bin 或提供入口默认值。ACP 应用包默认接出协议纯净的 stdout，但叶节点仍可添加不安全的 logger。组合包子节点把服务注册到根 isolate-keyed store，因此叶节点的同级插件无需依赖加载顺序即可通过注入看到它们。
 
 重试策略可能在新的编号步骤中重复失败的请求。重试状态、提供方错误和失败的部分分片不进入模型历史；每次提供方尝试仍可能产生计费；always 模式没有尝试次数上限；入口从所有已记录步骤推导用量；重建的请求保留先前前缀，以便复用提供方缓存。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 模型通过 `dsh-system-prompt`、`dsh-tool-skill`、`dsh-tool-bash`、`dsh-tools` 和 `dsh-llm-retry` 间接获得体验；还会通过 `dsh-tool-goal` 与 Goal Round 提示词获得体验，前提是启用 `goals`。组合包自身不添加面向模型的包装内容。
@@ -77,7 +99,13 @@ YAML include 可以去重配置，却无法拥有 bin 或提供入口默认值�
 
 不会直接失效；上述消费方负责请求前缀的任何变更。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **大部分主干集合固定在代码中**：`apply()` 始终挂载核心服务；配置可以省略组合包内的目标、skill、bash 与任务控制工具，但要替换循环或删除其他主干成员，就必须组合另一个组合包。
 - **不变式服务与配套插件仍是固定成员**：`invariants.enabled: false` 或包筛选器会抑制检查，但不会移除服务或配套插件注册；Session 始终启用的校验与冻结是另一套机制。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

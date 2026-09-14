@@ -6,6 +6,7 @@
  * @module @deepseek-ai/dsh-app-boot
  */
 import { pathToFileURL } from 'node:url';
+import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { basename, dirname, isAbsolute, resolve } from 'node:path';
@@ -16,7 +17,7 @@ import Include, { applyEntryPatches, entryListSchema } from '@deepseek-ai/cordis
 import Group from '@deepseek-ai/cordis-plugin-group';
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths';
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment';
-export { composeEntries, DEFAULT_PROFILE_BUNDLES, healProfilesModuleFallback, initProfile, loadProfile, PROFILE_PATCH_FILENAME, PROFILE_TEMPLATES, PROFILES_DIR, readProfileManifest, resolveBundleDir, resolveProfileDir, writeProfileManifest, } from "./profile.js";
+export { composeEntries, DEFAULT_PROFILE_BUNDLES, healProfilesModuleFallback, initProfile, isSnapshotServedDirectory, loadProfile, PROFILE_PATCH_FILENAME, PROFILE_TEMPLATES, PROFILES_DIR, readProfileManifest, resolveBundleDir, resolveProfileDir, writeProfileManifest, } from "./profile.js";
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
  * `cordis.snapshot.yml` in the same directory; every other mode keeps the path.
@@ -398,31 +399,116 @@ function groupedDump(composed, provenance) {
     flush();
     return lines.join('\n') + '\n';
 }
+/** Whether a failed import means the specifier could not be resolved at all (as opposed to a module that threw while loading). */
+function isModuleNotFound(error) {
+    return error?.code === 'ERR_MODULE_NOT_FOUND';
+}
+/** Whether a specifier is a bare package name (not relative, absolute, or a URL scheme). */
+function isBareSpecifier(specifier) {
+    return !/^\.{0,2}\//.test(specifier) && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(specifier);
+}
+/**
+ * Installed-runtime base for the process-wide bare-specifier fallback; set by
+ * the most recent {@link mountRootInclude} so a later mount without one cannot
+ * inherit an earlier launch's installation.
+ */
+let installedModuleFallbackBase;
+let installedModuleFallbackRegistered = false;
+/**
+ * Register the packaged runtime's bare-specifier fallback: an import the host
+ * filesystem cannot resolve is retried with the specifier anchored inside the
+ * installed runtime, where the snapshot's own resolution owns it. A
+ * profile-local plugin's peer imports (Cordis and friends) reach the
+ * installation this way — the packaged equivalent of the host-filesystem
+ * fallback links, which cannot follow into the snapshot. The retry runs only
+ * after ordinary resolution already failed, so a resolvable specifier always
+ * keeps its normal identity, and a failed retry rethrows the original error so
+ * the diagnostic still names the real importer.
+ * @param base - the installed base URL, or `undefined` to leave the fallback inert.
+ */
+function configureInstalledModuleFallback(base) {
+    installedModuleFallbackBase = base;
+    if (installedModuleFallbackRegistered)
+        return;
+    installedModuleFallbackRegistered = true;
+    registerHooks({
+        resolve(specifier, context, nextResolve) {
+            try {
+                return nextResolve(specifier, context);
+            }
+            catch (error) {
+                if (installedModuleFallbackBase === undefined || !isModuleNotFound(error) || !isBareSpecifier(specifier))
+                    throw error;
+                try {
+                    return nextResolve(specifier, { ...context, parentURL: installedModuleFallbackBase });
+                }
+                catch {
+                    throw error;
+                }
+            }
+        },
+    });
+}
+/** Render a thrown value for a combined resolution diagnostic. */
+function messageOf(error) {
+    return error instanceof Error ? error.message : String(error);
+}
 /**
  * Mount and remember the exact root Include entry used by app boot and user patch-layer HMR.
  * @param ctx - context carrying an initialized Loader service.
  * @param absoluteConfigPath - absolute YAML or JSON configuration path.
  * @param patches - initial app and user patches, applied in order.
- * @param bareModuleBaseUrl - optional installed-host base for bare package
+ * @param bareModuleBase - optional installed-runtime base for bare package
  * names; relative names continue to resolve beside the configuration file.
  * @returns the created root Include entry, or `undefined` when a surface
  * disposed the whole tree (taking the Loader service with it) while the
  * transactional create was still settling entry lifecycle.
  */
-export async function mountRootInclude(ctx, absoluteConfigPath, patches = [], bareModuleBaseUrl) {
-    ctx.loader.builtins.include = bareModuleBaseUrl === undefined
+export async function mountRootInclude(ctx, absoluteConfigPath, patches = [], bareModuleBase) {
+    const bare = typeof bareModuleBase === 'string' ? { url: bareModuleBase } : bareModuleBase;
+    // Peer and transitive imports of a plugin loaded from outside the
+    // installation cannot use the include builtin; they take the same installed
+    // base through the process-wide resolver.
+    configureInstalledModuleFallback(bare?.url);
+    ctx.loader.builtins.include = bare === undefined
         ? Include
         : class HostResolvedRootInclude extends Include {
             import(name, getOuterStack) {
                 const specifier = isAbsolute(name) ? pathToFileURL(name).href : name;
                 if (name.startsWith('.') || name.startsWith('cordis:'))
                     return super.import(specifier, getOuterStack);
-                const internal = this.ctx.loader.internal;
-                /* v8 ignore next -- Node supplies the internal loader; this preserves the
-                   original diagnostic for hypothetical embedders without it. */
-                if (internal === undefined)
-                    return super.import(specifier, getOuterStack);
-                return internal.import(specifier, bareModuleBaseUrl, {});
+                const installed = () => {
+                    const internal = this.ctx.loader.internal;
+                    /* v8 ignore next -- Node supplies the internal loader; this preserves the
+                       original diagnostic for hypothetical embedders without it. */
+                    if (internal === undefined)
+                        return super.import(specifier, getOuterStack);
+                    return internal.import(specifier, bare.url, {});
+                };
+                if (bare.order !== 'configuration-first')
+                    return installed();
+                // The configuration owns its own `node_modules` and the maintained
+                // installation fallback; the installed base serves only a package that
+                // resolution cannot see at all — inside a packaged snapshot the host
+                // fallback links cannot follow into the VFS. Every other failure,
+                // including the installed attempt's own, stays loud.
+                return Promise.resolve(super.import(specifier, getOuterStack)).catch(async (error) => {
+                    if (!isModuleNotFound(error))
+                        throw error;
+                    try {
+                        return await installed();
+                    }
+                    catch (installedError) {
+                        // Both anchors missed: report the configuration's own failure first
+                        // (that is where a profile-local plugin is expected to live) and
+                        // carry the installed attempt's failure as its cause. A package the
+                        // installation found but could not evaluate keeps its own error.
+                        if (!isModuleNotFound(installedError))
+                            throw installedError;
+                        throw new Error(`${specifier} is not resolvable from the configuration or the installed runtime: `
+                            + `${messageOf(error)}; ${messageOf(installedError)}`, { cause: error });
+                    }
+                });
             }
         };
     // `cordis:group` alongside it: a group row is how a composition gives one
@@ -631,7 +717,8 @@ export async function assertEntriesActivated(ctx, binName) {
  * Boot the Loader against `absoluteConfigPath` and return only after the whole
  * tree settles. Relative entry names resolve against the config directory;
  * bare package names resolve there by default or against an explicit
- * `bareModuleBaseUrl` for closed packaged runtimes. The bootstrap include
+ * `bareModuleBase` for packaged runtimes (a closed plugin set, and the profile
+ * launcher's configuration-first order). The bootstrap include
  * is statically imported and mounted as the `cordis:include` builtin, loading
  * through the ambient module pipeline (vite/tsx/plain ESM). The package build
  * embeds Include while leaving Loader external, so the built include tree and
@@ -648,16 +735,16 @@ export async function assertEntriesActivated(ctx, binName) {
  * @param patches - optional overlay patches applied over the included tree
  * (see {@link loadOptionalPatches}); an empty list mounts none.
  * @param prepare - optional host setup run after Loader installation and before any config-tree entry mounts.
- * @param bareModuleBaseUrl - optional installed-host base for bare package
- * names; use it when the host, rather than the configuration project, owns the
- * complete plugin set.
+ * @param bareModuleBase - optional installed-runtime base for bare package
+ * names; a bare string means the host owns the complete plugin set, while
+ * {@link BareModuleBase} selects whether the configuration resolves first.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
  * preparation failed` when `prepare` threw before any config-tree entry
  * mounted, `plugin tree failed to load` afterwards.
  */
-export async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBaseUrl) {
+export async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBase) {
     const ctx = new Context();
     // Two failure labels: `prepare` runs before any config-tree entry mounts,
     // so its failure is host setup, not the plugin tree.
@@ -668,7 +755,7 @@ export async function boot(binName, absoluteConfigPath, patches, prepare, bareMo
         await ctx.plugin(Loader);
         await prepare?.(ctx);
         stage = 'plugin tree failed to load';
-        await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl);
+        await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBase);
         // A surface can finish and dispose the whole tree while startup is still
         // in flight, before the last entry settles. The Loader service goes with
         // it, and the activation audit describes a live tree — reading `ctx.loader`

@@ -164,12 +164,15 @@ function assertJavaScriptPathsSyntax(entries, nodeExecutable) {
   }
 }
 
+/** Finder/Spotlight may drop .DS_Store or AppleDouble files into any browsed tree; they are never runtime content. */
+const isFinderJunk = (name) => name === '.DS_Store' || name.startsWith('._')
+
 async function packagePayload(packageRoot) {
   const files = []
   const links = []
   const visit = async (directory, prefix = '') => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (entry.name === 'node_modules') continue
+      if (entry.name === 'node_modules' || isFinderJunk(entry.name)) continue
       const path = join(directory, entry.name)
       const child = prefix === '' ? entry.name : `${prefix}/${entry.name}`
       if (entry.isSymbolicLink()) {
@@ -205,7 +208,7 @@ async function collectJavaScriptFiles(packageRoot) {
   const files = []
   const visit = async (directory, prefix = '') => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (entry.name === 'node_modules' || entry.isSymbolicLink()) continue
+      if (entry.name === 'node_modules' || entry.isSymbolicLink() || isFinderJunk(entry.name)) continue
       const path = join(directory, entry.name)
       const child = prefix === '' ? entry.name : `${prefix}/${entry.name}`
       if (entry.isDirectory()) await visit(path, child)
@@ -1180,6 +1183,27 @@ export async function verifyArkPackReceipt(runtimePath, policyPath, receiptPath,
     target: receipt.target,
   })
   if (jsonSha256(actual) !== jsonSha256(recorded)) {
+    if (process.env.ARK_CLOSURE_DEBUG_DIFF === '1') {
+      const seen = []
+      const walk = (a, b, path) => {
+        if (seen.length >= 8) return
+        if (JSON.stringify(a) === JSON.stringify(b)) return
+        if (a !== null && b !== null && typeof a === 'object' && typeof b === 'object'
+          && Array.isArray(a) === Array.isArray(b)) {
+          if (Array.isArray(a)) {
+            for (let i = 0; i < Math.max(a.length, b.length) && seen.length < 8; i++) walk(a[i], b[i], path + '[' + i + ']')
+            return
+          }
+          for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+            if (seen.length < 8) walk(a[key], b[key], path + '.' + key)
+          }
+          return
+        }
+        seen.push(path + ' recorded=' + String(JSON.stringify(a)).slice(0, 120) + ' actual=' + String(JSON.stringify(b)).slice(0, 120))
+      }
+      walk(recorded, actual, '$')
+      process.stderr.write('ARK_CLOSURE_DEBUG_DIFF:\n' + seen.join('\n') + '\n')
+    }
     throw new Error('Ark installed runtime differs from its bound recursive manifest')
   }
   const verifierBuiltPackages = builtPackageNames(parseYaml(await readFile(join(runtimeRoot, 'pnpm-workspace.yaml'), 'utf8')))

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { WorkspaceAnalyzer } from '../src/analyzer.ts'
 import type { InvocationModel } from '../src/model.ts'
 import { WorkspaceTypertGenerator } from '../src/workspace.ts'
+import { emitVerifiedWorkspaceArtifacts } from '../src/tsdown-plugin.ts'
 
 const fixtureRoot = resolve(import.meta.dirname, 'fixtures/remote-model')
 const temporaryRoots: string[] = []
@@ -48,6 +49,26 @@ afterEach(() => {
 })
 
 describe('Remote model generation', { timeout: 60_000 }, () => {
+  it('writes the same Host and Remote artifacts in the isolated verified generation phase', () => {
+    const root = copyFixture()
+    const [expected] = new WorkspaceTypertGenerator(root).generate(undefined, ['host'])
+    if (expected?.remote === undefined) throw new Error('fixture requires a Host Remote contribution')
+
+    emitVerifiedWorkspaceArtifacts(root, ['host'])
+
+    const output = join(root, expected.packageRoot, 'lib')
+    for (const [file, content] of [
+      ['typert.host.js', expected.js],
+      ['typert.host.d.ts', expected.dts],
+      ['typert.remote-client.js', expected.remote.js],
+      ['typert.remote-client.d.ts', expected.remote.dts],
+      ['typert.remote-client.d.ts.map', expected.remote.dtsMap],
+    ]) {
+      if (file === undefined || content === undefined) throw new Error('incomplete expected artifact')
+      expect(readFileSync(join(output, file), 'utf8')).toBe(content)
+    }
+  })
+
   it('discovers a Remote-only package and emits strict direct and Context descriptors', async () => {
     const generator = new WorkspaceTypertGenerator(fixtureRoot)
 

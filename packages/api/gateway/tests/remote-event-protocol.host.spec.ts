@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isRemoteEventAgentId,
   isRemoteJsonValue,
   parseRemoteEventResult,
   parseRemoteStreamClientMessage,
@@ -275,6 +276,17 @@ describe('Remote Event JSON values', () => {
     Object.defineProperty(hidden, 'value', { value: true })
     expect(isRemoteJsonValue(hidden)).toBe(false)
     expect(isRemoteJsonValue({ nested: undefined })).toBe(false)
+  })
+})
+
+describe('Remote Event agent identity', () => {
+  it('recognizes a direct Agent identity only as a non-empty string', () => {
+    expect(isRemoteEventAgentId('agent-1')).toBe(true)
+    expect(isRemoteEventAgentId('')).toBe(false)
+    expect(isRemoteEventAgentId(undefined)).toBe(false)
+    expect(isRemoteEventAgentId(null)).toBe(false)
+    expect(isRemoteEventAgentId(7)).toBe(false)
+    expect(isRemoteEventAgentId({ id: 'agent-1' })).toBe(false)
   })
 })
 

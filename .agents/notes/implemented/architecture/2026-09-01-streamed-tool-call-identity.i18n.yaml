@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-01-streamed-tool-call-identity.md
+2026-09-01-streamed-tool-call-identity.md: a59337bc8f4d0126584822cc2e01155d377b5603
+2026-09-01-streamed-tool-call-identity.zh.md: 5185377adf9e8fb366dab3934c10f87e22be7830

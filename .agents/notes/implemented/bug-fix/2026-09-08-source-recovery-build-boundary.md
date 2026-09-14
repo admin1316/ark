@@ -8,9 +8,13 @@ English | [中文](2026-09-08-source-recovery-build-boundary.zh.md)
 
 A preserved runtime can remain usable while restored source has missing exports or incompatible declarations. Skipping compilation because a bundle exists, or copying an installed bundle into build output, conceals these gaps and cannot establish reproducibility.
 
+Running whole-workspace reflection inside a concurrent bundler callback also makes the compiler graph and active bundler graphs share one heap. The observed Host build exhausted its 4 GiB JavaScript heap after successful tsc; the failure alone does not identify each component's allocation share.
+
 ## Decision
 
 The Host build compiles its source project graph before bundling and propagates the first failed stage. TypeScript's `noEmitOnError` is a compiler configuration option; build mode uses `--stopBuildOnErrors` to stop downstream projects. Existing artifacts are recovery inputs, not successful build evidence. Source-test aliases resolve Remote lookup and event modules to source rather than retained JavaScript.
+
+Compilation, full Host reflection generation, and bundling run in three sequential child processes. The reflection stage imports the generator emitted by the successful tsc stage and reuses its existing discovery, analysis, export validation, and artifact writer. It completes before tsdown starts; the root tsdown plugin only lowers decorators. A reflection error blocks bundling and its exit status is preserved. Package and workspace plugin modes remain available to other callers.
 
 The Host aggregate explicitly includes every workspace reachable from Ark's native runner and configured profile bundles. A manifest-graph test checks these roots so an omitted native package cannot evade compilation. Native consumers reference the Host face of split Remote packages rather than a mixed Host/Client source program.
 
@@ -23,6 +27,8 @@ Recovered call-correlation references use the existing `CallId` export without c
 **Use installed bundles as build fallbacks.** This preserves a runnable copy but hides incomplete source and couples releases to one machine. Preserve that copy separately instead.
 
 **Identify an Agent Context by its ID alone.** A retained Context can outlive its registry entry. Comparing the exact current Agent makes retirement effective in both directions.
+
+**Raise the heap limit or partition semantic validation first.** Neither is needed to remove the proven overlap. Partitioning can also lose cross-package Remote collision checks; the complete Host program remains authoritative. The serial build still needs full-workspace memory measurement.
 
 ## Consequences
 

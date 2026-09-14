@@ -162,16 +162,8 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
     ansiBatch.text == "\u{001B}[31m红\u{001B}[0m",
     "native Terminal publishes only complete split ANSI sequences"
   )
-  let ansiParser = NativeANSIText.Parser()
-  let pendingANSI = ansiParser.attributed("\u{001B}[32")
-  let coloredANSI = ansiParser.attributed("m中")
-  check(
-    pendingANSI.length == 0
-      && coloredANSI.string == "中"
-      && coloredANSI.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-        == NSColor.systemGreen,
-    "native Terminal ANSI parser preserves style state across arbitrary presentation chunks"
-  )
+  // SwiftTerm owns escape-sequence interpretation now; the session transcript remains a raw
+  // byte tap, so parser-level assertions moved upstream to the engine's own suite.
 
   let overflowInbox = NativeTerminalOutputInbox(byteLimit: 18)
   _ = overflowInbox.enqueue(Data("\u{001B}[31m你好🙂世界\u{001B}[0m".utf8))
@@ -386,5 +378,486 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
     )
   } else {
     check(false, "native Workbench source is readable for Terminal close ownership")
+  }
+
+  // MARK: - Session recovery / repair (cwd reuse, automatic rebuild; no content is ever replayed)
+
+  let recoveryRoot = FileManager.default.temporaryDirectory
+    .appendingPathComponent("ark-terminal-recovery-\(UUID().uuidString)", isDirectory: true)
+  let recoveryStoreDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("ark-terminal-store-\(UUID().uuidString)", isDirectory: true)
+  try? FileManager.default.createDirectory(at: recoveryRoot, withIntermediateDirectories: true)
+  try? FileManager.default.createDirectory(at: recoveryStoreDirectory, withIntermediateDirectories: true)
+  defer {
+    try? FileManager.default.removeItem(at: recoveryRoot)
+    try? FileManager.default.removeItem(at: recoveryStoreDirectory)
+  }
+
+  // 1) cwd 复用 + 绝不回放内容：旧记录（含 transcript 字段）只恢复工作目录，surface 装好后必须是空的。
+  let restoredWorkingDirectory = recoveryRoot
+    .appendingPathComponent("restored-cwd", isDirectory: true)
+  try? FileManager.default.createDirectory(at: restoredWorkingDirectory, withIntermediateDirectories: true)
+  let restoreKey = "restore|\(UUID().uuidString)"
+  let restoreStore = NativeTerminalSessionStore(storageDirectoryURL: recoveryStoreDirectory)
+  // A record written by an older build: it still carries a transcript tail that must never reach a terminal.
+  try? Data(
+    """
+    {"cwd":"\(restoredWorkingDirectory.path)","transcript":"__ARK_RESTORED_TRANSCRIPT__","updatedAt":1700000000,"repairCount":2}
+    """.utf8
+  ).write(to: restoreStore.recordURL(forKey: restoreKey))
+  let restoredSession = await MainActor.run {
+    NativePTYTerminalSession(
+      rootURL: recoveryRoot,
+      sessionKey: restoreKey,
+      store: restoreStore,
+      baseEnvironment: terminalEnvironment(home: recoveryRoot)
+    )
+  }
+  let restoredSurfaceText = await MainActor.run {
+    restoredSession.terminalSurface().surfaceText()
+  }
+  check(
+    restoredSurfaceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+    "a restored session starts on a blank screen: no persisted output is ever replayed into the emulator"
+  )
+  await MainActor.run {
+    restoredSession.startIfNeeded()
+    restoredSession.sendCommand("printf '__ARK_RESTORED_PWD__%s\\n' \"$PWD\"")
+  }
+  let restoredWorkingDirectoryReused = await waitForTerminal(timeout: 8) {
+    capturedAbsolutePath(after: "__ARK_RESTORED_PWD__", in: restoredSession.output)
+      .map { sameFileSystemItem($0, restoredWorkingDirectory.path) } == true
+  }
+  check(
+    restoredWorkingDirectoryReused,
+    "restored session starts its shell in the persisted working directory"
+  )
+  _ = await restoredSession.shutdown()
+
+  // 2) 非主动退出 → NativeTerminalRepairPolicy 自动重建，并提示退出码与重启。
+  let repairKey = "repair|\(UUID().uuidString)"
+  let repairStore = NativeTerminalSessionStore(storageDirectoryURL: recoveryStoreDirectory)
+  let repairSession = await MainActor.run {
+    NativePTYTerminalSession(
+      rootURL: recoveryRoot,
+      sessionKey: repairKey,
+      store: repairStore,
+      baseEnvironment: terminalEnvironment(home: recoveryRoot)
+    )
+  }
+  await MainActor.run { repairSession.startIfNeeded() }
+  let originalShellPID = await MainActor.run { repairSession.processIdentifier }
+  await MainActor.run { repairSession.sendCommand("exit 5") }
+  let rebuilt = await waitForTerminal(timeout: 15) {
+    repairSession.isRunning
+      && repairSession.processIdentifier != nil
+      && repairSession.processIdentifier != originalShellPID
+  }
+  let repairNotices = await MainActor.run {
+    repairSession.output.contains(ArkL10n.text(.filesTerminalShellExited, .zh))
+      && repairSession.output.contains(ArkL10n.text(.filesTerminalRestarting, .zh))
+  }
+  let persistedRepair = repairStore.load(forKey: repairKey) != nil
+  check(
+    rebuilt && repairNotices && persistedRepair,
+    "an unexpected shell exit is rebuilt automatically with exit-code and restart notices"
+  )
+  _ = await repairSession.shutdown()
+
+  // 3) 重建预算耗尽 → 停止并提示 ⌘R，不再自动重建。
+  let exhaustionKey = "exhaust|\(UUID().uuidString)"
+  let exhaustionStore = NativeTerminalSessionStore(storageDirectoryURL: recoveryStoreDirectory)
+  let exhaustionSession = await MainActor.run {
+    NativePTYTerminalSession(
+      rootURL: recoveryRoot,
+      sessionKey: exhaustionKey,
+      store: exhaustionStore,
+      baseEnvironment: terminalEnvironment(home: recoveryRoot)
+    )
+  }
+  await MainActor.run { exhaustionSession.startIfNeeded() }
+  var requestedExits = 0
+  let exhaustionDeadline = Date().addingTimeInterval(40)
+  while requestedExits < 4, Date() < exhaustionDeadline {
+    guard await waitForTerminal(timeout: 10, { exhaustionSession.isRunning }) else { break }
+    await MainActor.run { exhaustionSession.sendCommand("exit 4") }
+    requestedExits += 1
+    _ = await waitForTerminal(timeout: 10) { !exhaustionSession.isRunning }
+  }
+  let stoppedNotice = await waitForTerminal(timeout: 10) {
+    exhaustionSession.output.contains(ArkL10n.text(.filesTerminalStopped, .zh))
+  }
+  let staysStopped = await MainActor.run { !exhaustionSession.isRunning }
+  check(
+    stoppedNotice && staysStopped,
+    "an exhausted repair budget stops the session with the restart notice instead of rebuilding"
+  )
+  _ = await exhaustionSession.shutdown()
+
+  // MARK: - A 组审计修复：Task 生命周期 / 重建硬上限 / surface 回放 / 本地化退出行
+
+  // 1) 关标签/退出：2s cwd 采样与待重建 Task 必须取消。
+  let tasksRoot = FileManager.default.temporaryDirectory
+    .appendingPathComponent("ark-terminal-tasks-\(UUID().uuidString)", isDirectory: true)
+  try? FileManager.default.createDirectory(at: tasksRoot, withIntermediateDirectories: true)
+  let tasksSession = await MainActor.run {
+    NativePTYTerminalSession(rootURL: tasksRoot, baseEnvironment: terminalEnvironment(home: tasksRoot))
+  }
+  await MainActor.run { tasksSession.startIfNeeded() }
+  let samplingWhileRunning = await MainActor.run { tasksSession.isSamplingWorkingDirectory }
+  let localizedExitText = await MainActor.run { tasksSession.exitStatusText(7) }
+  check(
+    localizedExitText.contains(ArkL10n.text(.filesTerminalShellExited, .zh))
+      && localizedExitText.contains("7"),
+    "the thin exit-status row reuses the localized shell-exited copy"
+  )
+  await MainActor.run { tasksSession.sendCommand("exit 9") }
+  let tasksSessionStopped = await waitForTerminal(timeout: 10) { !tasksSession.isRunning }
+  let tasksCancelled = await MainActor.run {
+    !tasksSession.isSamplingWorkingDirectory && !tasksSession.hasPendingAutomaticRepair
+  }
+  check(
+    samplingWhileRunning && tasksSessionStopped && tasksCancelled,
+    "terminal teardown cancels the 2s cwd sampler and leaves no pending repair task"
+  )
+  _ = await tasksSession.shutdown()
+  try? FileManager.default.removeItem(at: tasksRoot)
+
+  // 2) 生命周期硬上限：limit=1 时第二次自然退出必须停止；只有手动重启才重置。
+  let ceilingRoot = FileManager.default.temporaryDirectory
+    .appendingPathComponent("ark-terminal-ceiling-\(UUID().uuidString)", isDirectory: true)
+  let ceilingStoreDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("ark-terminal-ceiling-store-\(UUID().uuidString)", isDirectory: true)
+  try? FileManager.default.createDirectory(at: ceilingRoot, withIntermediateDirectories: true)
+  try? FileManager.default.createDirectory(at: ceilingStoreDirectory, withIntermediateDirectories: true)
+  let ceilingStore = NativeTerminalSessionStore(storageDirectoryURL: ceilingStoreDirectory)
+  let ceilingSession = await MainActor.run {
+    NativePTYTerminalSession(
+      rootURL: ceilingRoot,
+      sessionKey: "ceiling|\(UUID().uuidString)",
+      store: ceilingStore,
+      baseEnvironment: terminalEnvironment(home: ceilingRoot)
+    )
+  }
+  await MainActor.run {
+    ceilingSession.lifetimeAutomaticRepairLimit = 1
+    ceilingSession.startIfNeeded()
+  }
+  await MainActor.run { ceilingSession.sendCommand("exit 6") }
+  let firstCeilingRebuild = await waitForTerminal(timeout: 12) {
+    ceilingSession.isRunning && ceilingSession.lifetimeAutomaticRepairCountSnapshot == 1
+  }
+  await MainActor.run { ceilingSession.sendCommand("exit 6") }
+  let stoppedAtCeiling = await waitForTerminal(timeout: 12) {
+    !ceilingSession.isRunning
+      && ceilingSession.output.contains(ArkL10n.text(.filesTerminalStopped, .zh))
+  }
+  let ceilingAttempts = await MainActor.run { ceilingSession.lifetimeAutomaticRepairCountSnapshot }
+  check(
+    firstCeilingRebuild && stoppedAtCeiling && ceilingAttempts == 1,
+    "automatic repair stops at the per-session lifetime ceiling and keeps the stopped notice"
+  )
+  await MainActor.run { ceilingSession.restartSession() }
+  let manualCeilingReset = await waitForTerminal(timeout: 12) {
+    ceilingSession.isRunning && ceilingSession.lifetimeAutomaticRepairCountSnapshot == 0
+  }
+  check(manualCeilingReset, "a manual restart clears the automatic-repair lifetime ceiling")
+  _ = await ceilingSession.shutdown()
+  try? FileManager.default.removeItem(at: ceilingRoot)
+  try? FileManager.default.removeItem(at: ceilingStoreDirectory)
+
+  // 3) 标签切换（终端 → 文件 → 终端）只能重挂载同一个 SwiftTerm 实例，不得用文字转写重建：
+  //    2026-09-12 用户报告「打开了一下文件，再点回来终端花屏」。用同一份字节流对照一个全程在线的
+  //    控制组，证明切回后的缓冲区逐字节一致，且不再出现「会话已恢复」通知。
+  let retentionRoot = FileManager.default.temporaryDirectory
+    .appendingPathComponent("ark-terminal-surface-retention-\(UUID().uuidString)", isDirectory: true)
+  try? FileManager.default.createDirectory(at: retentionRoot, withIntermediateDirectories: true)
+  let retentionSession = await MainActor.run {
+    NativePTYTerminalSession(
+      rootURL: retentionRoot,
+      baseEnvironment: terminalEnvironment(home: retentionRoot)
+    )
+  }
+  let controlSession = await MainActor.run {
+    NativePTYTerminalSession(
+      rootURL: retentionRoot,
+      baseEnvironment: terminalEnvironment(home: retentionRoot)
+    )
+  }
+  // 全屏程序自己的重绘：备用屏、光标定位、回车重画、颜色 —— 正是文字转写复原不了的部分。
+  let firstChunk = Array(
+    ("\u{001B}[?1049h\u{001B}[2J\u{001B}[H\u{001B}[1mARK_PANEL_ONE\u{001B}[0m\r\n"
+      + "\u{001B}[3;10Hspinner |\r\u{001B}[3;10Hspinner /\r\u{001B}[3;10Hspinner -").utf8
+  )
+  // Stay on the alternate screen: a full-screen program owns it, and leaving it would swap the
+  // buffer the assertions read.
+  let secondChunk = Array(
+    ("\u{001B}[3;10Hspinner \\u{001B}[0m\r\n"
+      + "\u{001B}[5;1Hwhile-away-line").utf8
+  )
+  let retentionSurface = await MainActor.run { retentionSession.terminalSurface() }
+  let controlSurface = await MainActor.run { controlSession.terminalSurface() }
+  let retentionContainerA = await MainActor.run {
+    NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 420))
+  }
+  await MainActor.run {
+    retentionSurface.install(in: retentionContainerA)
+    controlSurface.install(in: NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 420)))
+    retentionSession.onOutput?(firstChunk)
+    controlSession.onOutput?(firstChunk)
+  }
+  let beforeSwitchLanded = await waitForTerminal(timeout: 5) {
+    retentionSurface.surfaceText().contains("ARK_PANEL_ONE")
+      && controlSurface.surfaceText().contains("ARK_PANEL_ONE")
+  }
+  // 切到文件标签：surface 从视图树摘掉，但模拟器必须继续吃 PTY 输出。
+  await MainActor.run {
+    retentionSurface.uninstall(from: retentionContainerA)
+    retentionSession.onOutput?(secondChunk)
+    controlSession.onOutput?(secondChunk)
+  }
+  let whileAwayLanded = await waitForTerminal(timeout: 5) {
+    retentionSurface.surfaceText().contains("while-away-line")
+      && controlSurface.surfaceText().contains("while-away-line")
+  }
+  // 点回终端标签：重挂载同一个实例，缓冲区与控制组逐字节一致。
+  let (sameSurface, retentionText, controlText) = await MainActor.run {
+    retentionSurface.install(in: NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 420)))
+    return (
+      retentionSession.terminalSurface() === retentionSurface,
+      retentionSurface.surfaceText(),
+      controlSurface.surfaceText()
+    )
+  }
+  check(beforeSwitchLanded, "the session surface shows output before the tab switch")
+  check(
+    whileAwayLanded,
+    "the hidden session surface keeps consuming output while another tab is in front"
+  )
+  check(sameSurface, "the tab round trip reuses the one session-owned terminal surface")
+  if retentionText != controlText {
+    print("RETENTION host=[\(retentionText)]")
+    print("RETENTION control=[\(controlText)]")
+  }
+  check(
+    retentionText == controlText,
+    "a re-installed surface matches a never-detached control byte for byte"
+  )
+
+  // 3c) 队列必须有界：主线程被一次事务占住时，PTY 仍在生产；旧实现无上限（审计 P1-6）。
+  //     这里在无 run loop 的测试里直接灌入远超上限的字节，drain 不会消费，正好验证裁剪。
+  let floodSurface = controlSurface
+  let floodChunk = [UInt8](repeating: 0x41, count: 1024 * 1024)
+  for _ in 0..<12 { floodSurface.enqueue(floodChunk) }
+  check(
+    floodSurface.queuedByteCount <= floodSurface.pendingByteLimit + 64,
+    "the terminal feed queue stays bounded under a flood (\(floodSurface.queuedByteCount) bytes)"
+  )
+  // 3c2) PTY→主线程交接必须成批且有界：旧实现每个 read chunk 一个 MainActor Task（各持 raw），
+  //      洪泛 + 主线程繁忙 = 无界队列（审计 P1-6 残留路径）。
+  let handoffSourceURL = contractNativeRoot.appendingPathComponent(
+    "Sources/JiuzhangShellUI/NativePTYTerminalView.swift"
+  )
+  if let handoffSource = try? String(contentsOf: handoffSourceURL, encoding: .utf8) {
+    check(
+      handoffSource.contains("self?.rawHandoff.append(Array(data))")
+        && handoffSource.contains("NativeTerminalRawHandoff(limit: 8 * 1024 * 1024)")
+        && handoffSource.contains("NativeTerminalFlushGate()")
+        && !handoffSource.contains("self.onOutput?(raw)"),
+      "the PTY read handler hands bytes off in one bounded burst instead of one Task per chunk"
+    )
+  } else {
+    check(false, "terminal source is readable for the hand-off contract")
+  }
+
+  // 3b) 隐藏期间的真实 PTY 输出同样必须落进同一个 surface（切回来既不是空白也不是旧画面）。
+  let hiddenRoot = FileManager.default.temporaryDirectory
+    .appendingPathComponent("ark-terminal-hidden-\(UUID().uuidString)", isDirectory: true)
+  try? FileManager.default.createDirectory(at: hiddenRoot, withIntermediateDirectories: true)
+  let hiddenSession = await MainActor.run {
+    NativePTYTerminalSession(
+      rootURL: hiddenRoot,
+      baseEnvironment: terminalEnvironment(home: hiddenRoot)
+    )
+  }
+  let hiddenSurface = await MainActor.run { hiddenSession.terminalSurface() }
+  let hiddenContainer = await MainActor.run {
+    NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 420))
+  }
+  await MainActor.run {
+    hiddenSurface.install(in: hiddenContainer)
+    hiddenSession.startIfNeeded()
+    hiddenSession.sendCommand("printf '__ARK_HIDDEN_BEFORE__\\n'")
+  }
+  let hiddenBefore = await waitForTerminal(timeout: 8) {
+    hiddenSurface.surfaceText().contains("__ARK_HIDDEN_BEFORE__")
+  }
+  await MainActor.run {
+    hiddenSurface.uninstall(from: hiddenContainer)
+    hiddenSession.sendCommand("printf '__ARK_HIDDEN_AFTER__\\n'")
+  }
+  let hiddenAfter = await waitForTerminal(timeout: 8) {
+    hiddenSurface.surfaceText().contains("__ARK_HIDDEN_AFTER__")
+  }
+  let hiddenText = await MainActor.run {
+    hiddenSurface.install(in: NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 420)))
+    return hiddenSurface.surfaceText()
+  }
+  check(
+    hiddenBefore && hiddenAfter
+      && hiddenText.contains("__ARK_HIDDEN_BEFORE__")
+      && hiddenText.contains("__ARK_HIDDEN_AFTER__"),
+    "live PTY output keeps landing in the hidden surface and survives the return"
+  )
+
+  // 3b2) 洪泛下交接缓冲必须有界，且尾部输出仍能到达 surface。
+  //
+  // The contract has three parts: the hand-off buffer stays bounded, the PTY keeps
+  // making progress, and the tail eventually arrives. A fixed 30 s budget folded all
+  // three into runner throughput - the GitHub macOS runner needed 30.3 s where an idle
+  // machine needs ~20 s - so progress is measured directly here: only a PTY that stops
+  // making progress fails, and a large hard ceiling exists solely to bound the test
+  // process. Payload size and both assertions are unchanged.
+  enum FloodWatchdogVerdict: Equatable { case keepWaiting, stalled, hardCeiling }
+  func floodWatchdogVerdict(
+    now: Date,
+    startedAt: Date,
+    lastProgressAt: Date,
+    stallTimeout: TimeInterval,
+    hardTimeout: TimeInterval
+  ) -> FloodWatchdogVerdict {
+    if now.timeIntervalSince(lastProgressAt) >= stallTimeout { return .stalled }
+    if now.timeIntervalSince(startedAt) >= hardTimeout { return .hardCeiling }
+    return .keepWaiting
+  }
+  let floodWatchdogBase = Date()
+  check(
+    floodWatchdogVerdict(now: floodWatchdogBase.addingTimeInterval(45), startedAt: floodWatchdogBase,
+      lastProgressAt: floodWatchdogBase.addingTimeInterval(44), stallTimeout: 10, hardTimeout: 120) == .keepWaiting,
+    "the flood watchdog keeps waiting while the PTY is still progressing past the old 30 s budget"
+  )
+  check(
+    floodWatchdogVerdict(now: floodWatchdogBase.addingTimeInterval(30), startedAt: floodWatchdogBase,
+      lastProgressAt: floodWatchdogBase, stallTimeout: 10, hardTimeout: 120) == .stalled,
+    "the flood watchdog fails a PTY that stops making progress"
+  )
+  check(
+    floodWatchdogVerdict(now: floodWatchdogBase.addingTimeInterval(121), startedAt: floodWatchdogBase,
+      lastProgressAt: floodWatchdogBase.addingTimeInterval(120), stallTimeout: 10, hardTimeout: 120) == .hardCeiling,
+    "the flood watchdog ends a progressing run at the hard test-process ceiling, not as a performance verdict"
+  )
+  let floodProgressStallTimeout: TimeInterval = 10
+  let floodHardCompletionTimeout: TimeInterval = 120
+  // The completion marker must come from the flood's own output: the PTY echoes the
+  // command text, so a literal marker inside the command satisfied the tail detector
+  // before the 20 MB drained (observed as samples=0 in ~28 ms). The shell now composes
+  // the marker at run time, and this check proves the command cannot match by echo.
+  let floodCompletionMarker = "__ARK_FLOOD_DONE__"
+  let floodMarkerPlaceholder = "__ARK_FLOOD_%s__"
+  let floodCommandTemplate = "yes flood-line | head -c 20000000; printf '__ARK_FLOOD_%s__\\n' DONE"
+  check(
+    !floodCommandTemplate.contains(floodCompletionMarker)
+      && floodCommandTemplate.contains(floodMarkerPlaceholder)
+      && floodMarkerPlaceholder.replacingOccurrences(of: "%s", with: "DONE") == floodCompletionMarker,
+    "the flood command text cannot satisfy the tail detector by command echo"
+  )
+  await MainActor.run {
+    hiddenSession.sendCommand(floodCommandTemplate)
+  }
+  let floodStartedAt = Date()
+  var floodLastProgressAt = floodStartedAt
+  var floodPreviousSurfaceChars = await MainActor.run { hiddenSurface.surfaceText().count }
+  var floodPreviousHandoffBytes = 0
+  var floodTailLanded = false
+  var floodSamples = 0
+  var peakHandoffBytes = 0
+  while true {
+    if await waitForTerminal(timeout: 1) { hiddenSurface.surfaceText().contains(floodCompletionMarker) } {
+      floodTailLanded = true
+      break
+    }
+    let observed = await MainActor.run { hiddenSession.pendingRawHandoffBytes }
+    let surfaceChars = await MainActor.run { hiddenSurface.surfaceText().count }
+    if observed > peakHandoffBytes { peakHandoffBytes = observed }
+    if surfaceChars > floodPreviousSurfaceChars || observed != floodPreviousHandoffBytes {
+      floodLastProgressAt = Date()
+    }
+    floodPreviousSurfaceChars = surfaceChars
+    floodPreviousHandoffBytes = observed
+    floodSamples += 1
+    let verdict = floodWatchdogVerdict(now: Date(), startedAt: floodStartedAt,
+      lastProgressAt: floodLastProgressAt, stallTimeout: floodProgressStallTimeout,
+      hardTimeout: floodHardCompletionTimeout)
+    if verdict != .keepWaiting { break }
+  }
+  let handoffBound = await MainActor.run { hiddenSession.pendingRawHandoffBytes }
+  if handoffBound > peakHandoffBytes { peakHandoffBytes = handoffBound }
+  let floodElapsedMs = Int(Date().timeIntervalSince(floodStartedAt) * 1_000)
+  print("[pty-flood-trace] bytes_requested=20000000 write_calls=1 samples=\(floodSamples) peak_handoff=\(peakHandoffBytes) final_handoff=\(handoffBound) tail_seen=\(floodTailLanded) surface_chars=\(floodPreviousSurfaceChars) elapsed_ms=\(floodElapsedMs)")
+  check(
+    floodTailLanded && handoffBound <= 8 * 1024 * 1024 + 65_536,
+    "a 20 MB PTY flood stays bounded in the hand-off buffer (\(handoffBound) bytes) and still reaches the tail"
+      + " (tail_seen=\(floodTailLanded), peak=\(peakHandoffBytes), samples=\(floodSamples), elapsed=\(floodElapsedMs)ms)"
+  )
+  _ = await hiddenSession.shutdown()
+  try? FileManager.default.removeItem(at: hiddenRoot)
+  _ = await retentionSession.shutdown()
+  _ = await controlSession.shutdown()
+  try? FileManager.default.removeItem(at: retentionRoot)
+
+  // 4) A7：⌘R 只在终端拥有键盘焦点时生效（窗口级隐藏 Button shortcut 会在聊天框误触发）。
+  let terminalSourceURL = contractNativeRoot.appendingPathComponent(
+    "Sources/JiuzhangShellUI/NativePTYTerminalView.swift"
+  )
+  if let terminalSource = try? String(contentsOf: terminalSourceURL, encoding: .utf8) {
+    check(
+      !terminalSource.contains(".keyboardShortcut(\"r\"")
+        && terminalSource.contains("NSEvent.addLocalMonitorForEvents(matching: .keyDown)")
+        && terminalSource.contains("NSEvent.removeMonitor")
+        && terminalSource.contains("isTerminalFocused")
+        && terminalSource.contains("!event.isARepeat")
+        && terminalSource.contains("charactersIgnoringModifiers?.lowercased() == \"r\""),
+      "Command-R is a view-scoped local event monitor with teardown, not a window-level shortcut"
+    )
+    check(
+      terminalSource.contains("ArkL10n.text(.filesTerminalDrainTimeout, language)")
+        && !terminalSource.contains("Terminal session 未能在时限内完全退出"),
+      "the drain-timeout error row is localized through ArkL10n with no hardcoded copy"
+    )
+    check(
+      terminalSource.contains("private func focusIfNothingIsEditing()")
+        && terminalSource.contains("textView.isEditable")
+        && terminalSource.contains("window.firstResponder is NSTextField")
+        && terminalSource.contains("DispatchQueue.main.async { [weak self] in self?.focusIfNothingIsEditing() }"),
+      "a re-installed terminal takes the keyboard only when no text editor owns it"
+    )
+    check(
+      // C2: a rejected second Command-R must report itself instead of silently doing nothing.
+      !terminalSource.contains("guard !restartInFlight else { return }")
+        && terminalSource.contains("guard !restartInFlight else {")
+        && terminalSource.contains("emitTranscriptLine(ArkL10n.text(.filesTerminalRestarting, language))"),
+      "Command-R during an in-flight restart tells the operator instead of silently ignoring the key"
+    )
+  } else {
+    check(false, "terminal source is readable for the Command-R scope contract")
+  }
+
+  // 6) 终端内容只能来自 PTY：旧的"转写净化 + 回放"链路必须整体消失，否则任何一次恢复都会把历史
+  //    文本伪造成屏幕内容（用户 2026-09-12 看到的碎片 + "已恢复上次会话输出"就是这样来的）。
+  if let terminalSource = try? String(contentsOf: terminalSourceURL, encoding: .utf8) {
+    check(
+      !terminalSource.contains("NativeTerminalTranscriptSanitizer")
+        && !terminalSource.contains("playbackBytes")
+        && !terminalSource.contains("transcript:")
+        && !terminalSource.contains("filesTerminalSessionRestored"),
+      "no transcript sanitizer or playback path survives: the PTY is the only author of terminal content"
+    )
+    check(
+      terminalSource.contains("private(set) var output = \"\"")
+        && !terminalSource.contains("@Published private(set) var output"),
+      "the diagnostic transcript is not published, so heavy output does not invalidate the view"
+    )
+  } else {
+    check(false, "terminal source is readable for the single-writer contract")
   }
 }

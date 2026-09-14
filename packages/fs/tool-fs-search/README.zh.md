@@ -1,6 +1,13 @@
+---
+description: "面向模型的文件系统发现工具（glob、grep）由打包的 ripgrep 二进制支持，而不是由 ctx.fs 提供方方法或系统 rg 安装支持。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-fs-search
 
 [English](README.md) | 中文
+
+## 概述
 
 **面向模型的文件系统发现工具**（`glob`、`grep`）由打包的 ripgrep 二进制支持，而不是由 `ctx.fs` 提供方方法或系统 `rg` 安装支持。普通 Node 部署从 `@vscode/ripgrep` 解析平台二进制；pkg 单文件运行时解析与可执行程序共置的 `-rg` 伴随文件，伴随文件缺失时回退到依赖中的二进制。两种载体均打包 ripgrep，因此注册是无条件的，没有加载期可用性探针。每次调用都通过 `ctx.subprocess` seam 以固定 argv 向量 spawn 解析出的二进制（前缀 `--no-config`，使宿主的 `RIPGREP_CONFIG_PATH` 无法向不受约束的 spawn 注入 `--pre` 预处理器；模型控制的值是普通 argv 元素——不存在 shell 层，因此不涉及 shell 引号处理），解析原始 `rg` 输出，并返回相对于工作目录的规范值。本包注入 `tools`、`systemPrompt` 和 `subprocess`，有意**不**注入 `fs`；格式化结果 spill 为可选功能，因此机会性读取 `ctx.spillStore`，调用方式为 `ctx.get()`。
 
@@ -14,10 +21,23 @@ await ctx.plugin(LocalSpillStore)                           // @deepseek-ai/dsh-
 
 采用 spawn 支持的原因：本地工作区发现天然是由进程支持的 `rg` 工作流；如果把搜索放到 `ctx.fs` 上，就会迫使每个文件系统后端扩展搜索 API。subprocess seam 负责 spawn 执行、进程树终止、环境清理和有界输出捕获；本包负责 schema、参数校验、argv 构造、解析、保留、格式化结果 spill 和超时声明。工具绝不暴露后台任务——只有在 `rg` 退出、被协作式超时终止、被中止或失败后，调用才会返回。
 
+## 目录
+
+- [部署要求：无需宿主 rg，但工作目录与文件系统需共置](#deployment-requirement-no-host-rg-co-located-workdirfilesystem)
+- [配置](#config)
+- [工具](#tools)
+- [两类预算、两类产物](#two-budgets-two-artifacts)
+- [错误](#errors)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="deployment-requirement-no-host-rg-co-located-workdirfilesystem"></a>
 ## 部署要求：无需宿主 rg，但工作目录与文件系统需共置
 
 Node 部署在受支持的 macOS、Linux 与 Windows x64/arm64 目标上获得 `@vscode/ripgrep` 平台包。Python SDK 的 Linux 与 macOS wheel 将目标原生二进制复制到单文件运行时旁，命名为 `<runtime>-rg`；`deepseek_harness_runtime.bundled_runtime_path()` 会在启动前拒绝不完整的 wheel。两种载体均不要求宿主安装 `rg`。返回路径会相对于解析后的工作目录显示（调用方 agent（智能体）有会话 cwd 时使用该 cwd，否则使用 `process.cwd()`）；只有该工作目录与文件系统根目录是同一工作区时，才能用 `read` 继续读取。这项共置要求不附带运行时跨服务校验；远程或虚拟文件系统搜索需等待共享工作区约定或特定提供方的搜索后端。
 
+<a id="config"></a>
 ## 配置
 
 `sampleOverCapGlobResults` 是必填项且没有回退值；部署必须显式选择超过上限时的排序约定。其余配置键是可选的搜索上限，默认值如下。
@@ -33,6 +53,7 @@ Node 部署在受支持的 macOS、Linux 与 Windows x64/arm64 目标上获得 `
 | `graceMs` | `3000` | subprocess seam 在 `timeoutMs` 之外授予的终止升级宽限期须为正值；超过后搜索以 `SEARCH_ABORTED` 失败；该宽限期不得大于 [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.zh.md)。 |
 | `stderrMaxBytes` | `65536` | `rg` stderr 的诊断尾部预算，经 subprocess seam 的 collect 形态捕获；lossy 读取只保留尾部（标记 `[stderr truncated]`）。 |
 
+<a id="tools"></a>
 ## 工具
 
 | 工具 | 参数 | 行为 |
@@ -42,14 +63,17 @@ Node 部署在受支持的 macOS、Linux 与 Windows x64/arm64 目标上获得 `
 
 常规预算不进入面向模型的 schema（没有 `head_limit`/`offset`/`case_insensitive`/输出模式）：模型需要周边上下文时，用 `read` 读取匹配文件；需要后续结果时，遵循返回的 spill locator 检索提示。
 
+<a id="two-budgets-two-artifacts"></a>
 ## 两类预算、两类产物
 
 原始 `rg` stdout 与 stderr 是内部传输细节。每次搜索从 subprocess seam 请求 collect 模式预算——`rawOutputMaxBytes` 内的完整 stdout 与 `stderrMaxBytes` 的诊断尾部——两条流都不产生 spill 文件（工具从不读取原始 spill 路径）。如果 seam 仍报告 lossy stdout 读取，搜索会以 `SEARCH_RAW_OUTPUT_OVERFLOW` 失败，并要求模型缩小查询；lossy stderr 读取只把诊断摘录标记为 `[stderr truncated]`。成功的 `glob` 在 `{ root, paths }` 中保留所显示的搜索根及所有已取得路径；启用采样时，借助 `root`，Native 渲染器能以显式的相对或绝对搜索路径为根，按该根下的条目分组，而不是按其工作目录前缀分组。`grep` 保留所有已取得的 `{ path, lineNumber, line }`，并将其存入 `{ matches }`。内联条目和每行预览上限只应用于 Native 渲染器。直接接口调用的逻辑结果超过内联上限时，后置策略会尽力通过 `ctx.spillStore.saveText()` 保存完整格式化预览，并只把呈现替换为配置指定的页面与 locator。嵌套 Code 分派会跳过 spill，因为其完整规范值不会进入模型上下文。spill 缺失/失败时保留内联页面，并报告完整结果无法保存，绝不会成为 `isError`。
 
+<a id="errors"></a>
 ## 错误
 
 搜索失败会携带由本包定义的 `SearchError`（`HarnessError` 子类），并以 `{ name, code }` 的形式呈现在 `isError` 结果上：`SEARCH_INVALID_PATTERN`（ripgrep 拒绝正则/glob）、`SEARCH_FAILED`（`rg` 启动失败、目标不可访问、信号终止、`--json` 输出格式错误）、`SEARCH_RAW_OUTPUT_OVERFLOW`（原始输出超过 `rawOutputMaxBytes`，或在请求 stdout 捕获预算后仍 lossy）和 `SEARCH_ABORTED`（协作式工具超时或调用方取消）。ripgrep 的退出语义由工具负责处理：退出 0 表示成功且有结果，退出 1 表示成功的空搜索（`No files found` / `No matches found`），只有其他退出值表示失败。模型参数错误（空白 pattern、列表值 `include`）仍是普通工具参数错误。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 系统提示词
@@ -126,9 +150,15 @@ glob 描述声明了配置的超过上限排序方式。生成的 [`glob` 和 `g
 
 仅追加；新可见内容跟在可复用请求前缀之后，不会使既有 KV Cache 条目失效。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **搜索与文件访问没有共享工作区证明**——只有当工作目录与文件系统根目录指向同一工作区时，返回路径才可继续读取；本包不执行运行时跨服务校验。
 - **打包二进制固定在依赖版本上**——Node 部署使用 `@vscode/ripgrep` 选择的版本；Python 单文件运行时将对应目标的原生版本复制为必需的 `-rg` 伴随文件。不支持的平台或损坏的安装会以 `SEARCH_FAILED` 使调用失败，Python 运行时包则会在启动前拒绝缺少伴随文件的安装。远程或虚拟文件系统需要共置的工作区或另一个搜索消费方。
 - **schema 只暴露一个有界页面**——偏移分页、大小写开关、替代输出模式与提供方支撑的发现仍不在本包范围内；达到上限的完整输出需要 spill 后端。
 - **启用采样时仅按搜索根正下方的第一段路径分组**——超过上限的 `glob` 页面在这些顶层条目之间平衡，因此集中在更深处的结果（一棵均匀树里某个繁忙目录）在该层级之下仍会呈现不均；递归平衡被延期。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

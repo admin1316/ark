@@ -6,8 +6,8 @@ import {
   emptyTeamFoldState,
   foldTeam,
   isTeamEvent,
-} from '../src/fold.ts'
-import type { TeamFoldState } from '../src/fold.ts'
+} from '../../../subagent/agent-team/src/fold.ts'
+import type { TeamFoldState } from '../../../subagent/agent-team/src/fold.ts'
 import { TeamId, TeamMessageId, TeamTaskId } from '../src/types.ts'
 import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/types.ts'
 

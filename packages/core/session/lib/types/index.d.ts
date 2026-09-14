@@ -167,6 +167,12 @@ export declare class Session {
      * cast nor ordinary JavaScript can rewrite durable history.
      */
     get events(): readonly SessionEvent[];
+    /**
+     * Read one deeply frozen accepted event without materializing a log snapshot.
+     * @param seq - event sequence number.
+     * @returns the accepted event, or undefined when the sequence is absent.
+     */
+    eventAt(seq: number): SessionEvent | undefined;
     /** The next event's sequence number — always the log length (the `seq = log.length` contiguity contract). */
     get seq(): number;
     /**

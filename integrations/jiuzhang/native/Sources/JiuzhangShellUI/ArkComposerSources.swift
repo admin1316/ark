@@ -696,6 +696,7 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
   public private(set) var text: String
   public private(set) var references: [ArkComposerReferenceOccurrence]
   public private(set) var revision: UInt64
+  public private(set) var submissionID: String?
 
   public init(
     text: String = "",
@@ -705,6 +706,15 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     self.text = text
     self.references = references.sorted { $0.offset < $1.offset }
     self.revision = revision
+    self.submissionID = nil
+  }
+
+  @discardableResult
+  public mutating func ensureSubmissionID() -> String {
+    if let submissionID { return submissionID }
+    let identity = UUID().uuidString.lowercased()
+    submissionID = identity
+    return identity
   }
 
   public mutating func replaceText(_ next: String) {
@@ -771,6 +781,7 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
   }
 
   public mutating func clear() {
+    submissionID = nil
     guard !text.isEmpty || !references.isEmpty else { return }
     text = ""
     references = []
@@ -778,6 +789,7 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
   }
 
   public func prepending(_ prefix: ArkComposerDraftDocument) -> ArkComposerDraftDocument {
+    if text.isEmpty && references.isEmpty { return prefix }
     guard !prefix.text.isEmpty else { return self }
     guard !text.isEmpty else { return prefix }
     let separator = "\n"

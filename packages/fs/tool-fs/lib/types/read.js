@@ -74,12 +74,15 @@ export function applyReadTool(ctx, caps) {
                         },
                     },
                     totalLines: { type: 'integer', required: true },
+                    truncatedByBytes: { type: 'boolean' },
+                    nextOffset: { type: 'integer' },
                 },
             },
             render: (args, value) => {
                 const input = parseReadArgs(args, caps.limit);
                 const endLine = value.lines.at(-1)?.number ?? Math.max(0, value.offset - 1);
-                const truncatedByBytes = value.lines.length < input.limit && endLine < value.totalLines;
+                // Prefer the scan's own flag; fall back to the derived cap for replayed legacy output.
+                const truncatedByBytes = value.truncatedByBytes ?? (value.lines.length < input.limit && endLine < value.totalLines);
                 return [{
                         type: 'text',
                         text: formatReadOutput(value.path, {
@@ -117,11 +120,17 @@ export function applyReadTool(ctx, caps) {
                 ? await ctx.fs.streamText(target, exec.signal)
                 : [await ctx.fs.readText(target, exec.signal)];
             const window = await buildWindow(chunks, { offset: input.offset, limit: input.limit, maxLineLength: caps.maxLineLength, maxBytes: caps.maxBytes }, target.displayPath);
+            // Continuation is explicit: a programmatic caller must never have to infer a
+            // byte cap from rendered prose (the footer) or from a line-count heuristic.
+            const lastLine = window.lines.at(-1)?.number ?? Math.max(0, input.offset - 1);
+            const hasMore = window.truncatedByBytes || lastLine < window.totalLines;
             const outcome = {
                 path: target.displayPath,
                 offset: input.offset,
                 lines: window.lines,
                 totalLines: window.totalLines,
+                ...window.truncatedByBytes ? { truncatedByBytes: true } : {},
+                ...hasMore ? { nextOffset: lastLine + 1 } : {},
             };
             // Record the present observation (a no-op when no policy plugin listens). The
             // read already succeeded; an fs/observed listener is contractually a

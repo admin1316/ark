@@ -2,4 +2,4 @@
 # succeeds; the provider-owned final confirmation fails deterministically.
 - insert:
     - id: subagent-durability-failure
-      name: '../../../packages/test-support/session-snapshot/tests/fixtures/subagent-durability-failure.ts'
+      name: '../../../packages/subagent/subagent/tests/fixtures/subagent-durability-failure.ts'

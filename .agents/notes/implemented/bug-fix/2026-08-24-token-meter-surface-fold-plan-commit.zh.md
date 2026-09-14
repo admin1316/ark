@@ -26,4 +26,4 @@
 
 ## 后果
 
-该 fold 不再为长会话 append 成本贡献二次项；meter 剩余的每事件成本是 `_sync` 中的 `Session.events` 快照读取（由索引化日志读取工作独立解决，PR #1724/#2907）与固有的 O(内容) 估价。旧的分离结果类型 `SurfaceTokenFold` 已移除；`surface-fold.ts` 为包内部模块，无外部消费者需要变更。[composer 上下文仪表笔记](../feature/2026-08-05-composer-context-meter-breakdown.zh.md)记录了该 fold 周边的投影设计。
+`_sync` 一次捕获 `endSeqExclusive`，通过 `Session.eventAt(seq)` 读取已接纳的不可变事件。Session 投影推进到固定水位，包括延迟创建与水合，无需复制完整日志前缀。Host 历史与查询观察复用缓存的冻结 `Session.events` 快照；后续追加无法修改已捕获切点。Session 在变更后仍可能分配一次快照，`measure()` 仍会复制并冻结结果，O(内容) 估价成本也仍存在。旧的分离结果类型 `SurfaceTokenFold` 已移除；`surface-fold.ts` 为包内部模块，无外部消费者需要变更。[composer 上下文仪表笔记](../feature/2026-08-05-composer-context-meter-breakdown.zh.md)记录了该 fold 周边的投影设计。

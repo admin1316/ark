@@ -2,8 +2,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
-import { settingsNamespace } from '../src/index.ts'
+import { remoteNamespaceView, settingsNamespace, snapshotSettingsJson, type SettingsDescriptor } from '../src/index.ts'
 import { MemorySettings } from './memory.ts'
+
+// The child process that hands the document to a desktop editor is the only
+// boundary replaced here: document preparation, ownership checks, cancellation
+// and error containment all run as shipped. Every other export stays real, so
+// a provider that overrides the seam itself is unaffected.
+const native = vi.hoisted(() => ({
+  opened: [] as { path: string; signal: AbortSignal }[],
+  failure: undefined as Error | undefined,
+}))
+
+vi.mock('@deepseek-ai/dsh-native-command', async importOriginal => ({
+  ...await importOriginal<typeof import('@deepseek-ai/dsh-native-command')>(),
+  openNativeTextFile: (path: string, signal: AbortSignal) => {
+    native.opened.push({ path, signal })
+    return native.failure === undefined ? Promise.resolve() : Promise.reject(native.failure)
+  },
+}))
 
 const namespace = settingsNamespace('native-settings')
 const schema = z.object({ label: z.string().default('initial'), apiKey: z.string().role('secret') })
@@ -19,6 +36,8 @@ async function boot() {
 
 afterEach(async () => {
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+  native.opened.length = 0
+  native.failure = undefined
 })
 
 describe('native settings Remote', () => {
@@ -187,5 +206,81 @@ describe('native settings document handoff', () => {
     settings.prepare.mockImplementation(async () => settings.path)
     settings.open.mockRejectedValue(new Error('private command diagnostic'))
     await expect(settings.remoteOpenDocument(signal)).rejects.toMatchObject({ failure: { message: 'settings document open failed' } })
+  })
+})
+
+/**
+ * Provider with the shipping document metadata and no seam override, so the
+ * base implementation's own delegation to the native text-file opener runs.
+ */
+class BaseHandoffSettings extends MemorySettings {
+  override get documentPath() { return '/isolated/settings.yaml' }
+  override prepareDocument() { return Promise.resolve(this.documentPath) }
+}
+
+async function baseHandoffProvider() {
+  const ctx = new Context()
+  contexts.push(ctx)
+  return new BaseHandoffSettings(ctx)
+}
+
+describe('native settings document handoff boundary', () => {
+  it('opens the provider-owned path with the caller signal through the native opener', async () => {
+    const settings = await baseHandoffProvider()
+    const signal = new AbortController().signal
+    await expect(settings.remoteOpenDocument(signal)).resolves.toEqual({ opened: true })
+    // The handoff names exactly the path this provider prepared and carries the
+    // caller's own signal, so a transport cancellation reaches the child process.
+    expect(native.opened).toEqual([{ path: '/isolated/settings.yaml', signal }])
+  })
+
+  it('contains native opener diagnostics and still refuses an aborted handoff', async () => {
+    const settings = await baseHandoffProvider()
+    native.failure = new Error('private native diagnostic')
+    await expect(settings.remoteOpenDocument(new AbortController().signal)).rejects.toMatchObject({
+      failure: { code: 'internal', message: 'settings document open failed' },
+    })
+    const abort = new AbortController()
+    abort.abort()
+    native.failure = undefined
+    await expect(settings.remoteOpenDocument(abort.signal)).rejects.toMatchObject({ failure: { code: 'cancelled' } })
+    expect(native.opened).toHaveLength(1)
+  })
+})
+
+describe('settings descriptor projection', () => {
+  const descriptor: SettingsDescriptor = {
+    ns: settingsNamespace('native-settings'),
+    schema: { uid: 1, refs: { 1: { type: 'object' } } },
+    value: { label: 'initial' },
+    revision: 2,
+    base: { label: 'initial' },
+    user: { label: 'initial' },
+    applies: 'live',
+  }
+
+  it('projects a descriptor as detached lossless JSON', () => {
+    const view = remoteNamespaceView(descriptor)
+    expect(view).toEqual({
+      ns: 'native-settings',
+      schema: { uid: 1, refs: { 1: { type: 'object' } } },
+      value: { label: 'initial' },
+      base: { label: 'initial' },
+      user: { label: 'initial' },
+      applies: 'live',
+      secrets: [],
+      revision: 2,
+    })
+    // Detached, not aliased: the view owns every layer it hands out.
+    expect(view.value).not.toBe(descriptor.value)
+    expect(view.user).not.toBe(descriptor.user)
+  })
+
+  it('refuses a descriptor layer that has no JSON value instead of dropping it', () => {
+    // A missing layer is an absent key; `undefined` is not a JSON value, so the
+    // projection fails loud rather than turning a present layer into an absent one.
+    expect(() => snapshotSettingsJson(undefined)).toThrow('settings descriptor contains non-JSON data')
+    expect(() => remoteNamespaceView({ ...descriptor, value: undefined }))
+      .toThrow('settings descriptor contains non-JSON data')
   })
 })

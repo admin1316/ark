@@ -8,7 +8,7 @@ import {
 } from '@deepseek-ai/dsh-agent-presets'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsDescriptor, SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { TypertRemoteFailure, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import { TypertLookupFailure, TypertRemoteFailure, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import SettingsController from '../src/index.ts'
 import { MemorySettings } from '../../../settings/settings/tests/memory.ts'
 
@@ -21,6 +21,12 @@ const Profile = z.object({
 
 /** A provider that reports a local document, for the `hasDocument` fact. */
 class DocumentSettings extends MemorySettings {
+  readonly openEditor = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
+
+  protected override openDocumentInNativeEditor(path: string, signal: AbortSignal): Promise<void> {
+    return this.openEditor(path, signal)
+  }
+
   override get documentPath(): string | undefined {
     return '/deployment/settings.yaml'
   }
@@ -81,11 +87,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
     expect(controller.typertRemote.serviceKey).toBe('settingsController')
     expect(controller.typertRemote.namespace).toBe('settings')
     expect(remoteMethods(controller)).toEqual([
-      { method: 'describe', invocation: { kind: 'direct' } },
       { method: 'canOpenAgentPresetDirectory', invocation: { kind: 'direct' } },
-      { method: 'update', invocation: { kind: 'direct' } },
-      { method: 'replace', invocation: { kind: 'direct' } },
-      { method: 'mutate', invocation: { kind: 'direct' } },
       { method: 'openSettingsDocument', invocation: { kind: 'direct' } },
       { method: 'openAgentPresetDirectory', invocation: { kind: 'direct' } },
     ])
@@ -95,10 +97,6 @@ describe('the settings Remote namespace a configuration page calls', () => {
     const ctx = new Context()
     await ctx.plugin(SettingsController)
     const calls: Array<() => unknown> = [
-      () => ctx.settingsController.describe(),
-      () => ctx.settingsController.update('ui-test', {}, undefined),
-      () => ctx.settingsController.replace('ui-test', {}, undefined),
-      () => ctx.settingsController.mutate('ui-test', [], undefined),
       () => ctx.settingsController.openSettingsDocument(new AbortController().signal),
     ]
     for (const call of calls) {
@@ -112,21 +110,23 @@ describe('the settings Remote namespace a configuration page calls', () => {
     }
   })
 
-  it('mounts the credentials namespace beside its own', async () => {
+  it('disposes desktop actions without disposing the canonical settings owner', async () => {
     const ctx = new Context()
     await ctx.plugin(MemorySettings)
     ctx.settings.register(NS, Profile)
     const fiber = ctx.plugin(SettingsController)
     await fiber.await()
-    expect(ctx.get('credentialsController')).toBeDefined()
+    const settings = ctx.settings
+    expect(remoteMethods(settings).map(method => method.exportName)).toContain('describe')
     await fiber.dispose()
     expect(ctx.get('settingsController')).toBeUndefined()
-    expect(ctx.get('credentialsController')).toBeUndefined()
+    expect(ctx.settings.typertRemote.serviceKey).toBe(settings.typertRemote.serviceKey)
+    expect(ctx.settings.remoteDescribe().namespaces).toHaveLength(1)
   })
 
   it('describes every namespace redacted, with the deployment facts around them', async () => {
-    const { controller } = await boot(DocumentSettings, { doc: { 'ui-test': { apiKey: 'sk-stored' } } })
-    const value = controller.describe()
+    const { ctx } = await boot(DocumentSettings, { doc: { 'ui-test': { apiKey: 'sk-stored' } } })
+    const value = ctx.settings.remoteDescribe()
     expect(value).toMatchObject({ writable: true, hasDocument: true })
     const [view] = value.namespaces
     expect(view?.ns).toBe('ui-test')
@@ -139,12 +139,12 @@ describe('the settings Remote namespace a configuration page calls', () => {
   })
 
   it('reports a read-only provider and omits the layers it has none of', async () => {
-    const { controller } = await boot(class extends MemorySettings {
+    const { ctx } = await boot(class extends MemorySettings {
       override get writable(): boolean {
         return false
       }
     })
-    const value = controller.describe()
+    const value = ctx.settings.remoteDescribe()
     expect(value).toMatchObject({ writable: false, hasDocument: false })
     const [view] = value.namespaces
     // No composition base was declared and no user section is stored, so
@@ -154,132 +154,143 @@ describe('the settings Remote namespace a configuration page calls', () => {
   })
 
   it('declares an empty slot list when the provider names no secrets', async () => {
-    const { controller } = await boot(SlotlessSettings)
-    const [view] = controller.describe().namespaces
+    const { ctx } = await boot(SlotlessSettings)
+    const [view] = ctx.settings.remoteDescribe().namespaces
     expect(view?.secrets).toEqual([])
   })
 
   it('carries the composition base layer when the registrant declared one', async () => {
-    const { controller } = await boot(MemorySettings, { base: { preference: 'dark' } })
-    const [view] = controller.describe().namespaces
+    const { ctx } = await boot(MemorySettings, { base: { preference: 'dark' } })
+    const [view] = ctx.settings.remoteDescribe().namespaces
     expect(view?.base).toEqual({ preference: 'dark' })
   })
 
   it('applies path-addressed edits and answers with the namespace it just wrote', async () => {
-    const { controller } = await boot()
-    const view = await controller.mutate('ui-test', [{ op: 'set', path: ['preference'], value: 'dark' }], undefined)
+    const { ctx } = await boot()
+    const view = await ctx.settings.remoteMutate('ui-test', [{ op: 'set', path: ['preference'], value: 'dark' }], undefined)
     expect(view).toMatchObject({ ns: 'ui-test', user: { preference: 'dark' } })
     expect(view.revision).toBeGreaterThan(0)
   })
 
   it('supports merge updates and wholesale replacement on the Remote namespace', async () => {
-    const { controller } = await boot(MemorySettings, {
+    const { ctx } = await boot(MemorySettings, {
       doc: { 'ui-test': { preference: 'dark', apiKey: 'sk-stored' } },
     })
-    const updated = await controller.update('ui-test', { preference: 'light' }, undefined)
+    const updated = await ctx.settings.remoteUpdate('ui-test', { preference: 'light' }, undefined)
     expect(updated.user).toEqual({ preference: 'light' })
     expect(updated.secrets).toEqual([{ path: ['apiKey'], set: true }])
 
-    const replaced = await controller.replace('ui-test', {}, updated.revision)
+    const replaced = await ctx.settings.remoteReplace('ui-test', {}, updated.revision)
     expect(replaced.value).toEqual({ preference: 'light' })
     expect(replaced.user).toEqual({})
     expect(replaced.secrets).toEqual([{ path: ['apiKey'], set: false }])
   })
 
   it('refuses a stale write as settings-conflict carrying both revisions', async () => {
-    const { controller } = await boot()
-    const held = controller.describe().namespaces[0]!.revision
-    await controller.mutate('ui-test', [{ op: 'set', path: ['preference'], value: 'dark' }], held)
-    const failure = await controller
-      .mutate('ui-test', [{ op: 'set', path: ['preference'], value: 'light' }], held)
+    const { ctx } = await boot()
+    const held = ctx.settings.remoteDescribe().namespaces[0]!.revision
+    await ctx.settings.remoteMutate('ui-test', [{ op: 'set', path: ['preference'], value: 'dark' }], held)
+    const failure = await ctx.settings
+      .remoteMutate('ui-test', [{ op: 'set', path: ['preference'], value: 'light' }], held)
       .catch((error: unknown) => error)
-    expect(failure).toBeInstanceOf(TypertRemoteFailure)
-    const { code, details } = (failure as TypertRemoteFailure).failure
+    expect(failure).toBeInstanceOf(TypertLookupFailure)
+    const { code, details } = (failure as TypertLookupFailure)
     expect(code).toBe('settings-conflict')
     expect(details).toMatchObject({ ns: 'ui-test', expected: held })
   })
 
   it('answers a malformed namespace exactly as an unregistered one', async () => {
-    const { controller } = await boot()
+    const { ctx } = await boot()
     for (const ns of ['Not A Namespace', 'unregistered']) {
-      const failure = await controller.mutate(ns, [{ op: 'unset', path: ['preference'] }], undefined)
+      const failure = await ctx.settings.remoteMutate(ns, [{ op: 'unset', path: ['preference'] }], undefined)
         .catch((error: unknown) => error)
-      expect((failure as TypertRemoteFailure).failure).toMatchObject({
+      expect((failure as TypertLookupFailure)).toMatchObject({
         code: 'settings-rejected',
         details: { ns },
       })
     }
   })
 
-  it('reports an empty namespace as bad-request', async () => {
-    const { controller } = await boot()
+  it('reports an empty namespace as settings-rejected', async () => {
+    const { ctx } = await boot()
     for (const call of [
-      () => controller.update('', {}, undefined),
-      () => controller.replace('', {}, undefined),
-      () => controller.mutate('', [], undefined),
+      () => ctx.settings.remoteUpdate('', {}, undefined),
+      () => ctx.settings.remoteReplace('', {}, undefined),
+      () => ctx.settings.remoteMutate('', [], undefined),
     ]) {
       const failure = await call().catch((error: unknown) => error)
-      expect(failure).toBeInstanceOf(TypertRemoteFailure)
-      expect((failure as TypertRemoteFailure).failure).toMatchObject({ code: 'bad-request' })
+      expect(failure).toBeInstanceOf(TypertLookupFailure)
+      expect((failure as TypertLookupFailure)).toMatchObject({ code: 'settings-rejected' })
     }
   })
 
-  it('reports a refused write as settings-rejected carrying the seam message', async () => {
-    const { controller } = await boot(RefusingSettings)
-    const failure = await controller.mutate('ui-test', [{ op: 'unset', path: ['preference'] }], undefined)
+  it('reports a refused write as settings-rejected without exposing the seam message', async () => {
+    const { ctx } = await boot(RefusingSettings)
+    const failure = await ctx.settings.remoteMutate('ui-test', [{ op: 'unset', path: ['preference'] }], undefined)
       .catch((error: unknown) => error)
-    const { code, message } = (failure as TypertRemoteFailure).failure
-    expect(code).toBe('settings-rejected')
-    expect(message).toContain('read-only in this deployment')
+    expect(failure).toMatchObject({ failure: {
+      code: 'settings-rejected', message: 'settings write for "ui-test" was rejected',
+    } })
   })
 
-  it('stringifies a refusal that is not an Error', async () => {
-    const { controller } = await boot(LiteralRefusingSettings)
-    const failure = await controller.mutate('ui-test', [{ op: 'unset', path: ['preference'] }], undefined)
+  it('sanitizes a refusal that is not an Error', async () => {
+    const { ctx } = await boot(LiteralRefusingSettings)
+    const failure = await ctx.settings.remoteMutate('ui-test', [{ op: 'unset', path: ['preference'] }], undefined)
       .catch((error: unknown) => error)
-    expect((failure as TypertRemoteFailure).failure.message).toBe('the document is locked')
+    expect(failure).toMatchObject({ failure: { message: 'settings write for "ui-test" was rejected' } })
   })
 
   it('reports a namespace disposed between the write and its read-back', async () => {
-    const { controller } = await boot(VanishingSettings)
-    const failure = await controller.mutate('ui-test', [{ op: 'set', path: ['preference'], value: 'dark' }], undefined)
+    const { ctx } = await boot(VanishingSettings)
+    const failure = await ctx.settings.remoteMutate('ui-test', [{ op: 'set', path: ['preference'], value: 'dark' }], undefined)
       .catch((error: unknown) => error)
-    const { code, message } = (failure as TypertRemoteFailure).failure
-    expect(code).toBe('internal')
-    expect(message).toContain('was disposed after the mutate')
+    expect(failure).toMatchObject({ failure: { code: 'internal', message: 'settings write did not complete' } })
   })
 
   it('prepares and opens the provider-owned settings document', async () => {
     const ctx = new Context()
     await ctx.plugin(DocumentSettings)
-    const prepare = vi.spyOn(ctx.settings, 'prepareDocument').mockResolvedValue('/tmp/settings.yaml')
-    const openTextFile = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
-    const controller = new SettingsController(ctx, {}, { openTextFile })
+    const prepare = vi.spyOn(ctx.settings, 'prepareDocument').mockResolvedValue('/deployment/settings.yaml')
+    const openTextFile = (ctx.settings as DocumentSettings).openEditor
+    const controller = new SettingsController(ctx)
     const signal = new AbortController().signal
 
     await expect(controller.openSettingsDocument(signal)).resolves.toEqual({ opened: true })
     expect(prepare).toHaveBeenCalledOnce()
-    expect(openTextFile).toHaveBeenCalledWith('/tmp/settings.yaml', signal)
+    expect(openTextFile).toHaveBeenCalledWith('/deployment/settings.yaml', signal)
+  })
+
+  it('rejects a prepared path outside the provider-owned document', async () => {
+    const ctx = new Context()
+    await ctx.plugin(DocumentSettings)
+    vi.spyOn(ctx.settings, 'prepareDocument').mockResolvedValue('/unowned/other.yaml')
+    const openEditor = (ctx.settings as DocumentSettings).openEditor
+    const controller = new SettingsController(ctx)
+    await expect(controller.openSettingsDocument(new AbortController().signal))
+      .rejects.toMatchObject({ failure: {
+        code: 'internal', message: 'settings provider did not prepare its owned local document',
+      } })
+    expect(openEditor).not.toHaveBeenCalled()
   })
 
   it('preserves settings-document absence, failure, and cancellation', async () => {
     const absent = await boot()
     const missingDocument = absent.controller.openSettingsDocument(new AbortController().signal)
-    await expect(missingDocument).rejects.toMatchObject({ failure: { code: 'internal' } })
-    await expect(missingDocument).rejects.toThrow('no local document')
+    await expect(missingDocument).rejects.toMatchObject({ code: 'internal' })
+    await expect(missingDocument).rejects.toMatchObject({ failure: { message: 'settings provider has no local document to open' } })
 
     const failed = await boot(DocumentSettings)
     vi.spyOn(failed.ctx.settings, 'prepareDocument').mockRejectedValue(new Error('read failed'))
     const failedRead = failed.controller.openSettingsDocument(new AbortController().signal)
-    await expect(failedRead).rejects.toMatchObject({ failure: { code: 'internal' } })
-    await expect(failedRead).rejects.toThrow('read failed')
+    await expect(failedRead).rejects.toMatchObject({ code: 'internal' })
+    await expect(failedRead).rejects.toMatchObject({ failure: { message: 'settings document preparation failed' } })
 
     const cancelled = new AbortController()
     cancelled.abort(new Error('cancelled'))
     const prepare = vi.spyOn(failed.ctx.settings, 'prepareDocument')
     prepare.mockClear()
     await expect(failed.controller.openSettingsDocument(cancelled.signal))
-      .rejects.toMatchObject({ failure: { code: 'cancelled' } })
+      .rejects.toMatchObject({ code: 'cancelled' })
     expect(prepare).not.toHaveBeenCalled()
   })
 
@@ -288,29 +299,28 @@ describe('the settings Remote namespace a configuration page calls', () => {
     await ctx.plugin(DocumentSettings)
     const prepared = Promise.withResolvers<string | undefined>()
     vi.spyOn(ctx.settings, 'prepareDocument').mockReturnValue(prepared.promise)
-    const openTextFile = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
-    const controller = new SettingsController(ctx, {}, { openTextFile })
+    const openTextFile = (ctx.settings as DocumentSettings).openEditor
+    const controller = new SettingsController(ctx)
     const abort = new AbortController()
 
     const opening = controller.openSettingsDocument(abort.signal)
     abort.abort(new Error('cancelled'))
-    prepared.resolve('/tmp/settings.yaml')
+    prepared.resolve('/deployment/settings.yaml')
 
-    await expect(opening).rejects.toMatchObject({ failure: { code: 'cancelled' } })
+    await expect(opening).rejects.toMatchObject({ code: 'cancelled' })
     expect(openTextFile).not.toHaveBeenCalled()
   })
 
   it('maps native settings-document opener failures', async () => {
     const ctx = new Context()
     await ctx.plugin(DocumentSettings)
-    vi.spyOn(ctx.settings, 'prepareDocument').mockResolvedValue('/tmp/settings.yaml')
-    const controller = new SettingsController(ctx, {}, {
-      openTextFile: () => Promise.reject(new Error('no default editor')),
-    })
+    vi.spyOn(ctx.settings, 'prepareDocument').mockResolvedValue('/deployment/settings.yaml')
+    ;(ctx.settings as DocumentSettings).openEditor.mockRejectedValue(new Error('no default editor'))
+    const controller = new SettingsController(ctx)
 
     await expect(controller.openSettingsDocument(new AbortController().signal))
       .rejects.toMatchObject({
-        failure: { code: 'internal', message: 'path open failed: no default editor' },
+        failure: { code: 'internal', message: 'settings document open failed' },
       })
   })
 
@@ -324,20 +334,19 @@ describe('the settings Remote namespace a configuration page calls', () => {
     })
     const preparingController = new SettingsController(preparing)
     await expect(preparingController.openSettingsDocument(prepareAbort.signal))
-      .rejects.toMatchObject({ failure: { code: 'cancelled' } })
+      .rejects.toMatchObject({ code: 'cancelled' })
 
     const opening = new Context()
     await opening.plugin(DocumentSettings)
-    vi.spyOn(opening.settings, 'prepareDocument').mockResolvedValue('/tmp/settings.yaml')
+    vi.spyOn(opening.settings, 'prepareDocument').mockResolvedValue('/deployment/settings.yaml')
     const openAbort = new AbortController()
-    const openingController = new SettingsController(opening, {}, {
-      openTextFile: async () => {
-        openAbort.abort(new Error('cancelled'))
-        throw new Error('opening stopped')
-      },
+    ;(opening.settings as DocumentSettings).openEditor.mockImplementation(async () => {
+      openAbort.abort(new Error('cancelled'))
+      throw new Error('opening stopped')
     })
+    const openingController = new SettingsController(opening)
     await expect(openingController.openSettingsDocument(openAbort.signal))
-      .rejects.toMatchObject({ failure: { code: 'cancelled' } })
+      .rejects.toMatchObject({ code: 'cancelled' })
   })
 
   it('opens a user Agent preset directory or returns its path without a native opener', async () => {

@@ -48,6 +48,7 @@ import { hybridSearch } from "./search.js";
 import { WikiSnapshotStore } from "./snapshot-store.js";
 import { createProjectExecutionContext } from "./project-context.js";
 import { ingestSource as runIngest } from "./ingest.js";
+import { createOwnedStageExecutor } from "./owned-stage-executor.js";
 import { pageExists, sedimentTarget, extractConversationText, buildSessionSummaryPage, } from "./auto-sediment.js";
 import { deepResearch as runResearch } from "./research.js";
 import { appendCandidateReviews, applyCandidateReview, recoverCandidateReviewTransactions, recordCandidateVerification as recordTrustedCandidateVerification, resolveAdvisoryReviewBatch, } from "./reviews.js";
@@ -192,6 +193,11 @@ let KnowledgeWikiService = (() => {
             wikiRoot: s.string().required(),
             mainRoot: s.string().default(''),
             credential: s.string().default('VISION_API_KEY'),
+            llmBaseUrl: s.string().default('https://api.deepseek.com'),
+            llmCredential: s.string().default(''),
+            // Absence of an executor keeps non-cooperative ingest disabled, so the
+            // deployment that wants ingest turns this on explicitly.
+            ownedStageExecutor: s.boolean().default(false),
             llmProvider: s.string().default('deepseek-official'),
             llmModel: s.string().default('deepseek-reasoner'), // = deepseek-v4-flash + 推理模式（别名解析，实测检查能力≈v4-pro）
         });
@@ -201,9 +207,13 @@ let KnowledgeWikiService = (() => {
         credential;
         llmProvider;
         llmModel;
+        llmBaseUrl;
+        llmCredential;
+        ownedStageExecutor;
         queue = [];
         restoredQueueRoots = new Set();
         snapshots = new WikiSnapshotStore();
+        embeddingWarningLogged = false;
         queueDrain;
         activeIngest;
         backgroundStages = new Set();
@@ -222,10 +232,45 @@ let KnowledgeWikiService = (() => {
             this.credential = credentialRef(config.credential);
             this.llmProvider = config.llmProvider;
             this.llmModel = config.llmModel;
+            // The loader schema (KnowledgeWikiService.Config) fills every optional
+            // deployment field, so a resolved Config is already complete: tests build one
+            // through the wikiTestConfig test fixture instead of hand-writing a partial object.
+            this.llmBaseUrl = config.llmBaseUrl.replace(/\/+$/u, '');
+            this.llmCredential = config.llmCredential;
+            this.ownedStageExecutor = config.ownedStageExecutor
+                ? createOwnedStageExecutor({ resolveConnection: () => this.resolveStageConnection() })
+                : undefined;
         }
         /** Resolve on every operation so Keychain updates apply without a restart. */
         async resolveApiKey() {
             return (await this.ctx.credentials.resolve(this.credential))?.value ?? '';
+        }
+        /**
+         * Resolve the model connection facts one ingest stage needs. Credentials are
+         * re-resolved per stage so a changed key applies without a restart, and the
+         * deployment's declared `apiKeyEnv` wins over the environment default.
+         * @returns base URL and bearer credential handed to the owned isolate.
+         */
+        async resolveStageConnection() {
+            const candidates = [];
+            if (this.llmCredential !== '')
+                candidates.push(this.llmCredential);
+            try {
+                const settings = this.ctx.get('settings');
+                const declared = settings?.remoteDescribe?.().namespaces?.find(entry => entry.ns === 'llm-deepseek')?.value;
+                if (typeof declared?.apiKeyEnv === 'string' && declared.apiKeyEnv !== '')
+                    candidates.push(declared.apiKeyEnv);
+            }
+            catch {
+                // A settings surface that cannot describe itself must not fail ingest.
+            }
+            candidates.push('DEEPSEEK_API_KEY');
+            for (const candidate of candidates) {
+                const resolved = (await this.ctx.credentials.resolve(credentialRef(candidate)))?.value ?? '';
+                if (resolved !== '')
+                    return { baseUrl: this.llmBaseUrl, apiKey: resolved };
+            }
+            return { baseUrl: this.llmBaseUrl, apiKey: process.env[candidates[candidates.length - 1] ?? ''] ?? '' };
         }
         /** Optional trusted verifier/build owner; project files can never supply it. */
         get verifierAuthority() {
@@ -243,7 +288,9 @@ let KnowledgeWikiService = (() => {
         /** Parent-owned hard-deadline stage executor; absence disables non-cooperative ingest. */
         get stageExecutor() {
             const value = this.ctx.get('knowledgeWikiStageExecutor');
-            return isKnowledgeWikiStageExecutor(value) ? value : undefined;
+            // An externally provided executor stays authoritative; the owned-worker
+            // executor below is the fallback that makes non-cooperative ingest possible.
+            return isKnowledgeWikiStageExecutor(value) ? value : this.ownedStageExecutor;
         }
         /** Knowledge-base directory of the active workspace: the main wikiRoot, or `<root>/wiki` for a registered workspace. */
         get activeWikiRoot() {
@@ -650,7 +697,14 @@ let KnowledgeWikiService = (() => {
         async search(request) {
             const context = this.captureProjectContext();
             const topK = request.topK ?? 8;
-            const hits = await this.snapshots.get(context.wikiRoot, `search:${topK}:${request.query}`, async () => hybridSearch(context.wikiRoot, request.query, await this.resolveApiKey(), topK));
+            const hits = await this.snapshots.get(context.wikiRoot, `search:${topK}:${request.query}`, async () => hybridSearch(context.wikiRoot, request.query, await this.resolveApiKey(), topK, (diagnostic) => {
+                // Semantic search is optional. Report the degradation once, then keep serving
+                // keyword results instead of failing every query with the same upstream error.
+                if (this.embeddingWarningLogged)
+                    return;
+                this.embeddingWarningLogged = true;
+                this.ctx.logger.warn(`[knowledge-wiki] semantic search unavailable, using keyword results: ${diagnostic.reason}`);
+            }));
             this.recordKnowledgeRetrieval(hits.map(hit => hit.path), context.projectRoot);
             return hits.map(hit => ({ path: hit.path, score: hit.score }));
         }

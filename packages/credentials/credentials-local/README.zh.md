@@ -1,6 +1,13 @@
+---
+description: "本地凭据提供方：四层来源、一套明确优先级，可选择文件或 macOS 登录钥匙串作为可写引用存储。"
+kind: "package-reference"
+---
+
 # dsh-credentials-local
 
 [English](README.md) | 中文
+
+## 概述
 
 本地[凭据](../credentials/README.zh.md)提供方：四层来源、一套明确优先级，可选择文件或 macOS 登录钥匙串作为可写引用存储。
 
@@ -17,6 +24,18 @@
 
 在产品 CLI（命令行界面）下，解析读取的是启动器冻结的[环境快照](../../util/launch-environment/README.zh.md)而不是 `process.env`：只有快照才说得清某个值来自启动 shell 还是来自某个文件。并非由产品 CLI 启动的组合只有继承环境这一层，这让嵌入方保持它们原有的语义。
 
+## 目录
+
+- [配置](#config)
+- [文档本身](#the-document)
+- [权限](#permissions)
+- [热重载](#hot-reload)
+- [安全边界](#security-boundary)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="config"></a>
 ## 配置
 
 | 字段 | 默认值 | 含义 |
@@ -28,6 +47,7 @@
 | `mode` | `file` | 可写引用后端：`file`，或 macOS 上的 `keychain`。 |
 | `keychainService` | `dsh.credentials` | `keychain` 模式使用的通用密码 service。 |
 
+<a id="the-document"></a>
 ## 文档本身
 
 一个带版本的 YAML 文档，每个键空间一个分节，除此之外别无他物。`keychain` 模式把 `refs` 放入登录钥匙串，但结构化 `records` 仍保存在该文档中：
@@ -65,10 +85,12 @@ records:
 
 任何字符串值都能往返，包括多行值，因此不会再有条目因为缺少可用引号样式而不可写。空的存储值等于不存在（seam 规则）——这也正是文档中的空字符串被直接拒绝的原因：`unset` 删除键，而不是把它置空。
 
+<a id="permissions"></a>
 ## 权限
 
 提供方以 `0700` 创建目录，以 `0600` 创建或原子替换文档。它对*读取*同样守住这条界线：在 POSIX 上，只要文档带有任何 group 或 other 权限位，就会在解析其内容之前失败——启动时与每次 reload 都检查——并在错误里给出 `chmod 600` 的修复命令。Windows 没有可检查的 mode，因此在那里跳过该检查而不是伪造它。
 
+<a id="hot-reload"></a>
 ## 热重载
 
 外部编辑在快照**整体替换**后按变更引用逐个发布 `credentials/reference-updated`——磁盘上删掉的条目绝不在内存滞留。在 Chokidar 打开目标之前，提供方会对层级最深的现有祖先路径执行 realpath 解析，再拼回缺失的后缀；文件访问和诊断仍使用配置路径，从而避免 Windows 混用 8.3 别名与 libuv 的长格式事件路径。提供方自己的写入按内容识别，只发布属于该次提交的一个事件。运行期文档不可读或无效时保留最后可用快照并告警；文件不存在即空存储；启动时不可读或无效则明确报错。
@@ -81,6 +103,7 @@ records:
 
 在 `keychain` 模式中，引用值不会进入 YAML 文档、子进程 argv、捕获的终端输出或向上传播的诊断。提供方通过私有伪终端把两次确认输入 `/usr/bin/security`；结构化记录仍由文件承载，因此不得包含秘密材料。钥匙串访问遵循登录钥匙串 ACL，并不宣称能隔离所有以同一用户身份运行的进程。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 经由消费它的 LLM（大语言模型）适配器间接生效：存储的值为适配器向提供方发出的请求授权，所有模型可见内容均由适配器负责。
@@ -89,6 +112,7 @@ records:
 
 无直接失效；凭据绝不进入请求前缀。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **每次写入都会保留写前的 `.bak` 同级文件** — `dsh-atomic-write` 的 `backupFile` 会在替换提交前复制文档，因此任何写入前的状态都可以通过恢复 `<document>.bak` 找回；源缺失时不产生备份。
@@ -96,3 +120,8 @@ records:
 - **同 UID 进程可以读取 `file` 模式的文档**——见[安全边界](#security-boundary)：文件效果沙箱模式不会拒绝读取。`keychain` 模式把引用值移出该文档，但结构化记录仍保存在其中。
 - **环境变化不可见**：快照在启动时冻结，因此启动之后 export 的变量既不会进入解析，也不会进入 `describe`；要更换来自环境的凭据需要重启。
 - **原子但不具备崩溃持久性**——继承自 `dsh-atomic-write`；存储在启动时重新读取。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

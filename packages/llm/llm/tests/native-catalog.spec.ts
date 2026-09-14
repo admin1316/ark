@@ -65,7 +65,7 @@ it('uses the Native discovery envelope, preserves cancellation and never echoes 
       calls++
       if (request.provider === 'cancel') cancel.abort()
       if (request.provider === 'failure') throw new Error(request.apiKey)
-      return Promise.resolve([{ id: 'native', name: 'Native model' }])
+      return Promise.resolve([{ id: 'native', name: 'Native model', apiKey: request.apiKey, providerInternal: 'private' }])
     })
     await expect(ctx.llm.remoteDiscoverModels({ settingsNs: 'profiles', provider: 'okay', baseURL: 'https://fixture.invalid', apiKey: 'fixture-key' },
       new AbortController().signal)).resolves.toEqual({ models: [{ id: 'native', name: 'Native model' }] })

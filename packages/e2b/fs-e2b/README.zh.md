@@ -1,9 +1,24 @@
+---
+description: "@deepseek-ai/dsh-fs 提供方约定的 E2B 实现。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-fs-e2b
 
 [English](README.md) | 中文
 
+## 概述
+
 [`@deepseek-ai/dsh-fs`](../../fs/fs/README.zh.md) 提供方约定的 E2B 实现。它没有配置：先加载 [`@deepseek-ai/dsh-e2b`](../e2b/README.zh.md)，再用本服务取代 `dsh-fs-local`。该提供方使用所有者的远程 cwd 和 SDK 句柄，因此文件工具观察到的环境与 E2B 后端 Bash 进程相同。
 
+## 目录
+
+- [行为](#behavior)
+- [模型体验](#model-experience)
+- [已知限制与延后工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="behavior"></a>
 ## 行为
 
 - **远程身份与元数据**：相对路径以调用方 cwd 或 `ctx.e2b.cwd` 为基准，按照 POSIX 路径解析；GNU `realpath -mz` 提供规范化目标身份，且不要求最终文件存在；ASCII/base64 加严格 NUL 分帧会在已解码的 SDK 传输中保留含换行符和多字节字符的路径。`stat`、不跟随链接的 `lstat` 和稳定的单层目录列表会把 E2B 元数据投影到文件系统 seam；目录列表会复用已返回的元数据，并依次解析符号链接条目。版本是 E2B 元数据与每次写入设置的扩展属性所组成的不透明哈希。
@@ -15,6 +30,7 @@
 
 该提供方不会复制、挂载或协调宿主工作区。把宿主路径用作 `cwd`，只会在远程创建一个拼写相同的目录。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 通过 [`dsh-tool-fs`](../../fs/tool-fs/README.zh.md) 间接影响模型；该工具会渲染远程 UTF-8 内容、目录结果、变更确认和提供方错误，而 E2B 身份及传输保持内部实现。
@@ -23,6 +39,7 @@
 
 不会直接失效；请求前缀变更由具名消费方负责。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与延后工作
 
 - **不提供宿主同步**：空的 E2B cwd 会一直为空，直到工具、命令或外部进程填充它；本地文件既不会上传，也不会同步回本地。
@@ -30,3 +47,8 @@
 - **读取会按路径重新打开规范化目标**：在解析与打开流之间若并发替换远程路径，该操作没有稳定文件句柄提供围栏；在该 POC 中，没有已观察到的产品缺陷能够证明提供方专用的有界读取协议值得引入。
 - **仍需承担完整文件变更成本**：覆盖差异和字面量编辑会把完整文件读入宿主内存，每项操作也都会产生 E2B 控制器延迟。
 - **该 POC 面向 E2B 默认 Linux 镜像**：它依赖 GNU `realpath`／`base64`／`chmod`、同一文件系统内的 rename、流式读取和元数据扩展属性；自定义模板不在该 POC 范围内。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

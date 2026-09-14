@@ -1,9 +1,26 @@
+---
+description: "可选的持久上下文，包含当前带时区时间、附加到当前开放请求的浏览器时区，以及在模型请求准备期间采样的经过时长。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-time-context
 
 [English](README.md) | 中文
 
+## 概述
+
 可选的持久上下文，包含当前带时区时间、附加到当前开放请求的浏览器时区，以及在模型请求准备期间采样的经过时长。默认组合不启用它；Schedule Web overlay 会挂载它，使模型可以按用户的浏览器时区解释未明确限定时区的日期和时间。决策记录：[持久 time-context Agent Note](../../../.agents/notes/implemented/feature/2026-07-16-durable-per-step-time-context.zh.md)。
 
+## 目录
+
+- [配置](#config)
+- [请求时区归属](#request-zone-ownership)
+- [时序语义](#timing-semantics)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="config"></a>
 ## 配置
 
 ```yaml
@@ -18,12 +35,14 @@
 
 `refreshIntervalMs` 必须是非负安全整数。省略或设为 `0` 时，会为每个信号尚未中止且将进入步骤的合格 pre-step 添加上下文。正数值只会在会话没有更早的 time-context 注入、挂钟时间倒退，或自最新注入起已经过至少相应毫秒数时添加上下文。
 
+<a id="request-zone-ownership"></a>
 ## 请求时区归属
 
 浏览器会为每条提示词采样 `Intl.DateTimeFormat().resolvedOptions().timeZone`。Host 校验并规范化该值，再将其绑定到确切的持久 `user-rpc` 消息来源。Time-context 只检查当前开放轮次中的这些来源：唯一一个时区可解析请求，多个时区记为 `mixed`，没有时区则记为 `unavailable`。它不会读取或修改会话标头、连接状态或 Schedule 记录。
 
 解析后的指令告诉模型，把未明确限定时区的日期和时间解释为该浏览器时区。来源信息为 mixed 或 unavailable 时，模型会收到要求用户澄清的指令。这是自然语言上下文，并非另一个包边界上的输入默认值：接受本地日历字段的工具仍自行负责其显式时区要求。
 
+<a id="timing-semantics"></a>
 ## 时序语义
 
 该插件会前置一个 `agent/pre-step` 监听器，并先行委托下游。需要注入且下游决策进入步骤时，它会向返回批次追加一条带来源的 `UserMessage`。AgentLoop 在 `step/start` 之后、请求派生之前记录最终批次。决策被拒绝、监听器失败或信号已经中止时，不会记录任何内容。
@@ -36,6 +55,7 @@
 
 读数记录的是已进入的步骤，不是已完成或已传输的请求。后续准备失败时，该读数可能留在历史中。消息会保留在派生会话历史中，直到压缩将其遮蔽；`request/header` 不含 time-context 状态，请求重建会使用每个 `step/start` 之后的完整持久表层前缀。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 准备期时间上下文
@@ -68,6 +88,7 @@ Elapsed since the preceding step context: <duration-or-unavailable>.
 
 仅追加；新可见内容位于可复用请求前缀之后，不会使现有 KV Cache 条目失效。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **仅限提示词来源信息**：浏览器时区上下文用于指导自然语言解释，但不会悄然填入另一工具所要求的时区字段。
@@ -75,3 +96,8 @@ Elapsed since the preceding step context: <duration-or-unavailable>.
 - **回退值不代表用户权威**：浏览器来源信息缺失或混杂时，配置或进程时区用于格式化时钟，但面向模型的策略仍要求澄清。
 - **整秒显示**：时间戳与持续时间省略亚秒精度，尽管持久事件时间保留毫秒。
 - **压缩之间的历史成本**：省略或设为 `0` 时，每次合格尝试都会保留一条读数；正数间隔可以降低但无法消除该成本，也可能使后续请求缺少新鲜的浏览器时区指导。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

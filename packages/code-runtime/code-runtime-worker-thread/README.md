@@ -1,8 +1,24 @@
+---
+description: "Worker-thread implementation of the @deepseek-ai/dsh-code-runtime seam: WorkerThreadCodeRuntime runs each program in ONE fresh Node worker_threads.Worker — TypeScript in, type-stripped host-side, bindings bridged over the message port, { value, logs, error? } out."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-code-runtime-worker-thread
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Worker-thread implementation of the [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam: `WorkerThreadCodeRuntime` runs each program in ONE fresh Node `worker_threads.Worker` — TypeScript in, type-stripped host-side, bindings bridged over the message port, `{ value, logs, error? }` out. **Containment, not a security boundary**: trust posture is bash-equivalent by design (the [Code Mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-code-mode.md) § Trust posture), with containment bash does not have — separate isolate, empty environment, heap cap, hard termination.
+
+## Table of Contents
+
+- [Config](#config)
+- [Design](#design)
+- [The worker entry, unbuilt and built](#the-worker-entry-unbuilt-and-built)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config
 
@@ -52,3 +68,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 - **Programs get a five-method `console` shim** (`log`/`info`/`warn`/`error`/`debug`) — deliberately not Node's full console API.
 - **Intermediate binding values have no byte cap** — a program can exhaust process or worker memory with a value that never becomes outer output.
 - **The 64 MiB default is a rejection boundary, not recoverable storage** — outer spill can save only the bounded logs and diagnostic returned after `output-limit`; bytes rejected beyond the runtime cap never reach the spill layer.
+
+### Dev Note
+
+None.

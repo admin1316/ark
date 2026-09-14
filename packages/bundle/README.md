@@ -1,3 +1,8 @@
+---
+description: "Profile bundles: npm packages whose manifest declares \"dsh\": { \"bundle\": { \"patch\": \"./cordis.patch.yml\" } }, making them installable patch layers for dsh --profile compositions (profile contract)."
+kind: "package-group"
+---
+
 # bundle/ — profile plugin bundles
 
 English | [中文](README.zh.md)

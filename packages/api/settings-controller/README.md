@@ -1,5 +1,5 @@
 ---
-description: "Host Remote owner for settings and credential configuration surfaces, including redacted reads, writes, credential references, and native document opening."
+description: "Host desktop actions supplementing provider-owned settings and credential Remote methods."
 kind: "package-reference"
 ---
 # Settings Controller
@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`@deepseek-ai/dsh-api-settings-controller` exposes generated `ctx.remote.settings` and `ctx.remote.credentials` namespaces for browser configuration surfaces. It returns redacted settings and credential metadata, supports settings and credential writes without returning secret values, and opens provider-owned settings or Agent preset locations on the Host desktop. When a provider is absent, the namespace remains registered and returns an actionable configuration error.
+`@deepseek-ai/dsh-api-settings-controller` supplies only Host desktop actions in the settings namespace: opening settings documents, checking Agent preset directory-opening availability, and opening those directories. The core settings and credentials providers are the sole owners of their configuration Remote methods, shared by browser and Native consumers.
 
 ## Table of Contents
 
@@ -23,11 +23,9 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this package as a Loader entry in a profile that serves browser configuration. The entry registers both namespaces independently of their providers so a missing provider produces a named configuration error at invocation. Its generated descriptors enter the strict Typert registry, while the settings and credential Definitions remain plain Cordis Services with no wire obligations of their own.
+Mount this package as a Loader entry where Host desktop actions are needed. It registers only `canOpenAgentPresetDirectory`, `openSettingsDocument`, and `openAgentPresetDirectory`; it neither mounts a credential controller nor declares duplicate read/write endpoints. `openSettingsDocument` delegates to the core provider's `remoteOpenDocument`, preserving absolute path ownership, cancellation, and sanitized failures.
 
-`describe(refs)` answers one map keyed by the requested names, so a settings page describing every reference its rows carry settles those rows together. It accepts at most 64 names per call, reports an invalid name or empty write value as `bad-request`, and copies each answer field by field — a provider returning more than `CredentialInfo` declares cannot widen what crosses. Valid `set(ref, value)` and `unset(ref)` calls report a provider refusal as `credential-rejected`, carrying the provider's message with only the reference in its details. Secret values cross in this direction only: no method here returns one.
-
-`settings.describe()` returns deployment facts and every namespace under `redactSecrets: true`. `settings.update`, `settings.replace`, and `settings.mutate` expose the settings service's three write operations and return the namespace's new redacted view; stale writes use `settings-conflict` and other provider refusals use `settings-rejected`.
+`settings.describe/update/replace/mutate` belong to `@deepseek-ai/dsh-settings`; generic Remote writes cannot bypass namespaces reserved by domain transactions. `credentials.describe/set/unset` belong to `@deepseek-ai/dsh-credentials`. Describe returns `{ credentials: { [ref]: metadata } }` and validates the entire batch of at most 64 names before contacting the provider. Invalid names and oversized batches return `input-invalid`; empty values and provider refusals return `credential-rejected` without reflecting sensitive provider diagnostics. The Gateway diagnoses absent core Services; this package's unique actions retain actionable missing-provider errors.
 
 `settings.openSettingsDocument()` prepares the provider-owned document and opens it with the native text-editor intent. `settings.canOpenAgentPresetDirectory()` reports native-opening availability when the preset page becomes visible. `settings.openAgentPresetDirectory(id)` resolves only a user-authored preset and either opens its directory or returns the path when native opening is unavailable; neither open method accepts a browser-supplied filesystem target.
 
@@ -57,7 +55,7 @@ No direct effect; reading or writing these configuration values does not alter m
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- The batch bound is fixed at 64 references and is not a deployment-configurable field.
+- Credential batch policy belongs to the core credential provider, not this desktop-action package.
 
 <a id="dev-note"></a>
 ### Dev Note

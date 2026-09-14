@@ -227,7 +227,7 @@ abstract deleteRecord(key: CredentialKey): Promise<void>
 @Remote('describe') async remoteDescribe(refs: readonly string[]): Promise<RemoteCredentialsDescription>
 
 /**
- * Store one write-only credential value through the Native Remote plane.
+ * Store one write-only credential value through the shared Remote plane.
  * @param refName - credential reference name to update.
  * @param value - write-only credential value.
  * @returns an empty object after the value is stored.
@@ -235,7 +235,7 @@ abstract deleteRecord(key: CredentialKey): Promise<void>
 @Remote('set') async remoteSet(refName: string, value: string): Promise<Record<never, never>>
 
 /**
- * Remove one provider-managed credential through the Native Remote plane.
+ * Remove one provider-managed credential through the shared Remote plane.
  * @param refName - credential reference name to remove.
  * @returns an empty object after the reference is removed.
  */
@@ -243,42 +243,6 @@ abstract deleteRecord(key: CredentialKey): Promise<void>
 ```
 
 Source: [`packages/credentials/credentials/src/index.ts`](../../packages/credentials/credentials/src/index.ts)
-
-<a id="ctxcredentialscontroller--credentialscontroller"></a>
-
-### `ctx.credentialsController` — `CredentialsController`
-
-Host service backing the generated `ctx.remote.credentials` namespace. It carries every wire obligation the credential seam itself does not: the batch fan-out bound, the field-by-field view projection, the reference-grammar guard, and the refusal mapping. Secret values cross in one direction only — no method here returns one.
-
-```ts cordis-catalog
-/**
- * Describe several references for one configuration surface. Batched because
- * a settings page describes every reference its rows name at once, and one
- * round trip keeps those rows from settling separately.
- * @param refs - reference names, at most {@link MAX_DESCRIBE_REFS}; a name outside the grammar rejects the whole call as `bad-request`.
- * @returns one view per requested name, keyed by that name.
- * @throws TypertRemoteFailure when the request is invalid or no credential provider is mounted.
- */
-@Remote async describe(refs: string[]): Promise<Record<string, CredentialInfo>>
-
-/**
- * Store one value from a configuration surface. The value crosses the wire in
- * this direction only: no read path returns it.
- * @param ref - reference name to store under.
- * @param value - the non-empty secret value.
- * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
- */
-@Remote async set(ref: string, value: string): Promise<void>
-
-/**
- * Remove one reference from a configuration surface.
- * @param ref - reference name to remove.
- * @throws TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.
- */
-@Remote async unset(ref: string): Promise<void>
-```
-
-Source: [`packages/api/settings-controller/src/credentials.ts`](../../packages/api/settings-controller/src/credentials.ts)
 
 <a id="authorization-events"></a>
 

@@ -107,7 +107,8 @@ function anchorPathSpec(argument, cwd) {
 export function runPlugin(profile, args) {
     const dir = resolveProfileDir(profile);
     if (!existsSync(join(dir, 'package.json'))) {
-        initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES);
+        const template = PROFILE_TEMPLATES[profile];
+        initProfile(dir, template?.bundles ?? DEFAULT_PROFILE_BUNDLES, template?.patchReload);
         process.stderr.write(`${NAME}: initialized profile ${profile} at ${dir}\n`);
     }
     const before = readProfileManifest(NAME, dir);

@@ -1,5 +1,5 @@
 /**
- * Compile the Host project graph before bundling its emitted JavaScript.
+ * Compile, generate reflection, and bundle in separate sequential processes.
  * Existing bundles never substitute for missing or invalid TypeScript source.
  */
 import { spawnSync } from 'node:child_process'
@@ -8,6 +8,9 @@ import { join, resolve } from 'node:path'
 const root = resolve(import.meta.dirname, '..')
 const stages = [
   [join(root, 'node_modules/typescript/bin/tsc'), '-b', 'tsconfig.host.json', '--stopBuildOnErrors'],
+  ['--input-type=module', '--eval',
+    "import { emitVerifiedWorkspaceArtifacts } from './packages/typert/generator/lib/types/tsdown-plugin.js';"
+    + " emitVerifiedWorkspaceArtifacts(process.cwd(), ['host']);"],
   [join(root, 'node_modules/tsdown/dist/run.mjs'), '--config', 'tsdown.config.ts', '--env.DSH_BUILD_FACE=host'],
 ]
 for (const [index, args] of stages.entries()) {

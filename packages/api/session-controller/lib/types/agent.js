@@ -52,10 +52,10 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
 import { mkdir } from 'node:fs/promises';
-import { installModelSelection } from '@deepseek-ai/dsh-agent';
-import { ReasoningEffortId } from '@deepseek-ai/dsh-llm';
+import { sessionModelSelection } from '@deepseek-ai/dsh-agent-default-model/session-selection';
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query';
 import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol';
+import { hasApiRemoteSubagentOwner as hasApiSessionSubagentOwner, apiRemoteSubagentOwnershipError as apiSessionSubagentOwnershipError, } from '@deepseek-ai/dsh-api-remotes/agent-lookup';
 /** Cold Session identity absent from persistence. */
 export class ApiSessionNotFound extends Error {
 }
@@ -96,34 +96,8 @@ export class ApiSessionPresetConflict extends Error {
         this.existingPreset = existingPreset;
     }
 }
-/**
- * Test whether generic Session routing must leave an identity to subagent routing.
- * @param ctx - Host context carrying the Agent ownership registry.
- * @param session - attached or live Session whose ownership is tested.
- * @param agent - live Agent when one exists for the Session.
- * @returns whether subagent routing owns the Session identity.
- */
-export function hasApiSessionSubagentOwner(ctx, session, agent) {
-    if (session.header.origin === 'subagent')
-        return true;
-    const parentId = session.header.parentSession;
-    if (parentId === undefined || agent === undefined)
-        return false;
-    const parent = ctx.agents.get(parentId);
-    return parent !== undefined && ctx.agents.isOwnedBy(agent.id, parent);
-}
-/**
- * Build the stable caller-facing subagent ownership rejection.
- * @param sessionId - Session identity owned by subagent routing.
- * @returns a stable Session-domain failure.
- */
-export function apiSessionSubagentOwnershipError(sessionId) {
-    return {
-        code: 'agent-busy',
-        message: `session "${sessionId}" is owned by subagent routing`,
-        details: { reason: 'use subagent delivery for this child session' },
-    };
-}
+// Shared ownership fence for both ordinary Session entry points.
+export { hasApiRemoteSubagentOwner as hasApiSessionSubagentOwner, apiRemoteSubagentOwnershipError as apiSessionSubagentOwnershipError, } from '@deepseek-ai/dsh-api-remotes/agent-lookup';
 /**
  * Inspect one cold Session without repairing, resuming, or publishing it.
  * @param ctx - Host context carrying Session persistence.
@@ -165,7 +139,6 @@ export class ApiSessionAgentController {
     ctx;
     resumes = new Map();
     creations = new Map();
-    selections = new WeakMap();
     imageAdmissionChains = new WeakMap();
     /** @param ctx - Host context carrying Agent, model, persistence, and Typert services. */
     constructor(ctx) {
@@ -297,72 +270,7 @@ export class ApiSessionAgentController {
      * @returns the installed mutable selection reference.
      */
     selectionFor(agent) {
-        const installed = this.selections.get(agent);
-        if (installed !== undefined)
-            return installed;
-        const projectionState = this.ctx.sessionProjections.stateOf(agent.session, 'modelSelection');
-        if (projectionState === undefined) {
-            throw new Error('api-session: required modelSelection projection is not registered');
-        }
-        let picked = projectionState.pending === null
-            ? undefined
-            : agentModelSelection(projectionState.pending);
-        const defaultModel = this.ctx.agentDefaultModel;
-        const selection = {
-            get current() {
-                if (picked !== undefined)
-                    return picked;
-                const loggedHeader = agent.session.requestHeader();
-                if (loggedHeader === undefined)
-                    return defaultModel.currentSelection();
-                const logged = loggedHeader.config;
-                return {
-                    provider: logged.provider,
-                    model: logged.model,
-                    // An effort the adapter defaulted is not a conversation choice: restoring
-                    // it as one would make an unchanged default read as a request change.
-                    ...(logged.reasoningEffort === undefined
-                        || loggedHeader.adapterDefaults?.reasoningEffort === true
-                        ? {}
-                        : { reasoningEffort: logged.reasoningEffort }),
-                };
-            },
-            set current(next) {
-                picked = next;
-            },
-            consume(provider, model, reasoningEffort) {
-                if (picked?.provider !== provider
-                    || picked.model !== model
-                    || picked.reasoningEffort !== reasoningEffort)
-                    return false;
-                picked = undefined;
-                return true;
-            },
-            assembled: undefined,
-        };
-        installModelSelection(agent.ctx, selection);
-        this.selections.set(agent, selection);
-        return selection;
-    }
-    /**
-     * Commit and cache one validated selection for the next prompt assembly.
-     * @param agent - live Agent that owns the selection.
-     * @param selection - validated selection to record and apply.
-     */
-    selectForNextRequest(agent, selection) {
-        agent.session.append('model/selection', selection);
-        this.selectionFor(agent).current = selection;
-    }
-    /**
-     * Let a matching durable request header retire the execution cache.
-     * @param agent - live Agent whose request was recorded.
-     * @param provider - provider route used by the request.
-     * @param model - provider-owned model used by the request.
-     * @param reasoningEffort - adapter-owned effort used by the request.
-     * @returns whether the pending selection was consumed.
-     */
-    consumeSelection(agent, provider, model, reasoningEffort) {
-        return this.selections.get(agent)?.consume(provider, model, reasoningEffort) ?? false;
+        return sessionModelSelection(this.ctx, agent);
     }
     /**
      * Read the current Agent preset from the Session projection.
@@ -538,14 +446,5 @@ export class ApiSessionAgentController {
             return;
         throw new ApiSessionPresetConflict(sessionId, requested, existing);
     }
-}
-function agentModelSelection(selection) {
-    return {
-        provider: selection.provider,
-        model: selection.model,
-        ...(selection.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: ReasoningEffortId(selection.reasoningEffort) }),
-    };
 }
 //# sourceMappingURL=agent.js.map

@@ -149,7 +149,7 @@ export class DeepSeekSearchProvider {
         catch (error) {
             if (signal?.aborted === true || isAbortError(error))
                 throw searchAborted(signal, error);
-            throw new WebError(`DeepSeek search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error });
+            throw searchEndpointError(endpoint, `DeepSeek search request failed: ${String(error)}`, error);
         }
         if (!response.ok) {
             const status = response.status;
@@ -158,7 +158,7 @@ export class DeepSeekSearchProvider {
                 const parsed = await response.json();
                 const detail = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message ?? parsed.message;
                 if (detail !== undefined && detail.length > 0)
-                    message = detail;
+                    message += `: ${detail}`;
             }
             catch (error) {
                 // An abort fired mid-body must surface as WEB_ABORTED, not be swallowed
@@ -170,7 +170,7 @@ export class DeepSeekSearchProvider {
                 // malformed/non-JSON error body (normal for gateway 5xx/429s) can only
                 // cost a richer provider message, never the real error.
             }
-            throw new WebError(message, 'WEB_PROVIDER_ERROR');
+            throw searchEndpointError(endpoint, message);
         }
         try {
             const payload = await response.json();
@@ -179,9 +179,10 @@ export class DeepSeekSearchProvider {
         catch (error) {
             if (signal?.aborted === true || isAbortError(error))
                 throw searchAborted(signal, error);
-            if (error instanceof WebError)
-                throw error;
-            throw new WebError(`DeepSeek returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error });
+            const message = error instanceof WebError
+                ? error.message
+                : `DeepSeek returned an unprocessable response body: ${String(error)}`;
+            throw searchEndpointError(endpoint, message, error);
         }
     }
     /**
@@ -210,6 +211,15 @@ export class DeepSeekSearchProvider {
             + ' (the web Models page writes it), export it in the launching environment, or set a literal'
             + ' "apiKey" in the web-search-deepseek config', 'WEB_PROVIDER_CREDENTIAL_MISSING');
     }
+}
+/** Add endpoint recovery instructions to failures that occur after request dispatch begins. */
+function searchEndpointError(endpoint, message, cause) {
+    return new WebError(`${message}\n\nThe web search request used endpoint ${JSON.stringify(endpoint)}. `
+        + 'Search endpoint configuration is separate from chat. If that endpoint is not intended, '
+        + 'guide the user to Settings > Plugins > Plugin configuration > Web search, where they can '
+        + 'change and save Endpoint. If that settings page is unavailable, the user can set '
+        + 'DEEPSEEK_SEARCH_BASE_URL or configure web-search-deepseek.baseURL to a trusted '
+        + 'Anthropic-compatible Messages API base. Only the user should choose or change the endpoint.', 'WEB_PROVIDER_ERROR', cause === undefined ? undefined : { cause });
 }
 /**
  * Race a same-process asynchronous preflight against caller cancellation. The

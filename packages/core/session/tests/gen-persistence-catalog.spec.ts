@@ -3,7 +3,7 @@
  * (`scripts/gen-persistence-catalog.ts`).
  */
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -189,6 +189,20 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = { type
       declaration: '/** One persisted event. */\nexport type SessionEvent<T extends SessionEventType = SessionEventType> = { type: T }',
       source: 'packages/core/fix/src/types.ts:8',
     })
+  })
+
+  it('preserves the current owner unknown-event marker and explains its optional role', () => {
+    const source = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8')
+    const entries = collectEventEnvelopeTypes(make({
+      'packages/core/fix/package.json': OWNER_MANIFEST,
+      'packages/core/fix/src/types.ts': source,
+    }))
+    const output = render([], entries)
+    const envelope = entries.find(entry => entry.name === 'SessionEvent')
+    expect(envelope?.declaration).toContain('ignorable?: true')
+    expect(envelope?.declaration).toContain('without this marker MUST refuse to reconstruct the session')
+    expect(output).toContain('optional `ignorable` unknown-type skip marker')
+    expect(output).toContain('ignorable?: true')
   })
 
   it('hard-errors when an envelope declaration is missing', () => {

@@ -2,7 +2,7 @@
 
 ### 构图大师技法库（系统性构图法则，画格构图必查清单）
 
-- **行业标准词（来自 [ShotDeck 级行业词库](../../_shared/shotdeck-standard-language.md)）**：画格描述统一用行业景别（ECU/CU/MCU/MS/MWS/WS/EWS/XWS + Single/Two-Shot/OTS/Group/Insert）、机位（Eye Level/High Angle/Low Angle/Bottom Up/Top Down/Dutch/OTS/POV/Profile/Straight-on）、镜头（Wide/Standard/Medium Tele/Tele + Spherical/Anamorphic）、灯光（High Key/Low Key/Chiaroscuro/Rembrandt/Side/Backlit/Silhouette/Practical/Window/Slit Light/Volumetric）、色彩（Monochrome/Complementary/Warm/Cool）——禁止自造词，与 ShotDeck 参考图直接对照
+- **行业标准词（来自 [ShotDeck 级行业词库](../../../../_shared/shotdeck-standard-language.md)）**：画格描述统一用行业景别（ECU/CU/MCU/MS/MWS/WS/EWS/XWS + Single/Two-Shot/OTS/Group/Insert）、机位（Eye Level/High Angle/Low Angle/Bottom Up/Top Down/Dutch/OTS/POV/Profile/Straight-on）、镜头（Wide/Standard/Medium Tele/Tele + Spherical/Anamorphic）、灯光（High Key/Low Key/Chiaroscuro/Rembrandt/Side/Backlit/Silhouette/Practical/Window/Slit Light/Volumetric）、色彩（Monochrome/Complementary/Warm/Cool）——禁止自造词，与 ShotDeck 参考图直接对照
 
 - **八大构图法则（每格至少用一条，构图前先选）**：三分法（主体放交点/沿线，视线留白侧引导）· 对角线（动作/视线沿对角线=动感与紧张）· 框架式（门框/窗/栏杆/前景物框住主体=窥视/囚禁/聚焦）· 负空间（大留白压向主体=孤独/窒息/权威）· 引导线（路面/铁轨/目光/排列物把视线引向焦点）· 对称与破对称（对称=庄严/僵化，破对称=不安/活）· 黄金比例/斐波那契（自然感的焦点落点）· 三角形（三人构图稳定，顶点=权力）
 - **景别与构图的关系**：全景先定'地平线位置'（上 1/3=天空辽阔/下 1/3=地面压迫/中分=平衡呆板）；中景用'高度差'写权力（俯拍弱化/仰拍强化）；特写用'裁切边界'制造张力（眼睛在画框边缘=不安，居中=对峙）

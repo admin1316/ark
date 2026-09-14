@@ -79,6 +79,8 @@ private func runNativeProjectionMemoChecks() {
     turnMetricsByTurn: [Int: ArkChatTurnMetrics] = [:],
     turnUsageByTurn: [Int: ArkChatTurnUsage] = [:],
     completedTurns: Set<Int> = [],
+    turnTerminalStates: [Int: ArkChatTurnState] = [:],
+    latestStartedTurn: Int? = nil,
     forkSequenceByMessageID: [Int: Int] = [:],
     latestAssistantMessageID: Int? = nil,
     compactProcess: Bool = true
@@ -93,6 +95,8 @@ private func runNativeProjectionMemoChecks() {
       turnMetricsByTurn: turnMetricsByTurn,
       turnUsageByTurn: turnUsageByTurn,
       completedTurns: completedTurns,
+      turnTerminalStates: turnTerminalStates,
+      latestStartedTurn: latestStartedTurn,
       forkSequenceByMessageID: forkSequenceByMessageID,
       latestAssistantMessageID: latestAssistantMessageID,
       compactProcess: compactProcess
@@ -121,6 +125,8 @@ private func runNativeProjectionMemoChecks() {
       totalTokens: 5
     )]),
     key(completedTurns: [1]),
+    key(turnTerminalStates: [1: .interrupted]),
+    key(latestStartedTurn: 2),
     key(forkSequenceByMessageID: [7: 99]),
     key(latestAssistantMessageID: 7),
     key(compactProcess: false),
@@ -151,6 +157,7 @@ private func runNativeProjectionMemoChecks() {
 }
 
 func runArkChatPresentationContractChecks() {
+  runTurnNavigationLifecycleChecks()
   MainActor.assumeIsolated {
     runNativeProjectionMemoChecks()
   }
@@ -537,6 +544,17 @@ func runArkChatPresentationContractChecks() {
     "transcript and composer widths preserve the reference baseline while fitting narrow and wide windows"
   )
   check(
+    ArkChatLayoutResolver.transcriptInset(hasNavigationRail: true)
+      > ArkChatLayoutResolver.navigationRailInset + ArkChatLayoutResolver.navigationRailWidth
+      && ArkChatLayoutResolver.transcriptWidth(
+        availableWidth: 500, preferredWidth: 900, adaptive: true, hasNavigationRail: true
+      ) == 408
+      && ArkChatLayoutResolver.transcriptWidth(
+        availableWidth: 80, preferredWidth: 900, adaptive: true, hasNavigationRail: true
+      ) == 0,
+    "navigation hit targets stay outside the transcript, including narrow windows"
+  )
+  check(
     ArkStreamingPresentationPolicy.intervalNanoseconds(eventCount: 1_999) == 100_000_000
       && ArkStreamingPresentationPolicy.intervalNanoseconds(eventCount: 2_000) == 250_000_000
       && ArkStreamingPresentationPolicy.intervalNanoseconds(eventCount: 9_999) == 250_000_000
@@ -676,16 +694,14 @@ func runArkChatPresentationContractChecks() {
         && appModel.contains("ArkStreamingPresentationPolicy.intervalNanoseconds(")
         && appModel.contains("eventCount: events.count + pendingLiveEvents.count")
         && appModel.contains("Task.sleep(nanoseconds: intervalNanoseconds)")
-        && appModel.contains("previousStartedTurn = turnProjection.latestStartedTurn")
-        && appModel.contains("turnProjection.preserveLatestStartedBoundary(")
-        && appModel.contains("fold.preserveLatestStartedBoundary(")
+        && appModel.contains("let previousMetrics = turnProjection.metricsByTurn")
+        && appModel.contains("turnUsageProjection.append(contentsOf: incoming)")
         && appModel.contains("public private(set) var events: [ArkHistoryEvent] = []")
         && appModel.contains("public var turnMetricsByTurn:")
         && appModel.contains("if messages != nextMessages")
         && appModel.contains("if toolActivities != nextToolActivities")
         && appModel.contains("if producedFiles != nextProducedFiles")
         && appModel.contains("if chatStatuses != nextChatStatuses")
-        && appModel.contains("event.type == \"turn/end\"")
         && appModel.contains("if chatPresentationChanged { chatPresentationDidChange.send() }")
         && appModel.contains("historyLoadState = .loading")
         && appModel.contains("historyLoadState = .loaded")
@@ -696,10 +712,8 @@ func runArkChatPresentationContractChecks() {
         && appModel.contains("async let modelLabel: Void = self.refreshModelLabel(for: sessionID)")
         && appModel.contains("async let modelCatalog: Void = self.refreshModelCatalog(for: sessionID)")
         && appModel.contains("_ = await (history, feedback, modelLabel, modelCatalog)")
-        && appModel.contains("private struct ArkHistoryFold: Sendable")
+        && appModel.contains("struct ArkHistoryFold: Sendable")
         && appModel.contains("Task.detached(priority: .userInitiated)")
-        && appModel.contains("historyProjectionGeneration == generation")
-        && appModel.contains("fold.appendLive(pendingLiveEvents)")
         && appModel.contains("guard livePublishTask == nil, !historyFoldInFlight")
         && appModel.contains("private struct ArkConversationSurfaceSnapshot")
         && appModel.contains("let events: [ArkHistoryEvent]")
@@ -714,7 +728,7 @@ func runArkChatPresentationContractChecks() {
         && !appModel.contains("@Published public private(set) var events")
         && !appModel.contains("@Published public private(set) var turnMetricsByTurn")
         && !appModel.contains("ArkChatTurnMetrics.project(events: events, turn: turn)"),
-      "native live projection adaptively coalesces long ledgers, settles usage at turn end, and wakes SwiftUI only for changed projections"
+      "native live projection coalesces long ledgers, preserves incremental metrics and usage, and wakes SwiftUI only for changed projections"
     )
     check(
       sessionEvents?.contains("reconcileSessionRunning") == false
@@ -732,69 +746,24 @@ func runArkChatPresentationContractChecks() {
       from: "public func loadOlderHistory() async",
       through: "private func loadMessageFeedback(for sessionID: String) async"
     )
-    let refreshGenerationRange = refreshHistory?.range(of: "historyProjectionGeneration &+= 1")
-    let refreshPageRange = refreshHistory?.range(
-      of: "let synchronized = try await synchronizedHistorySource("
-    )
-    let olderGenerationRange = loadOlderHistory?.range(of: "historyProjectionGeneration &+= 1")
-    let olderPageRange = loadOlderHistory?.range(of: "let page = try await historyPage(")
-    let olderPauseRange = loadOlderHistory?.range(of: "livePublishTask?.cancel()")
     check(
-      refreshHistory?.contains("var chatPresentationChanged = false") == true
-        && refreshHistory?.contains("if messages != nextMessages") == true
-        && refreshHistory?.contains("if toolActivities != nextTools") == true
-        && refreshHistory?.contains("if chatPresentationChanged { chatPresentationDidChange.send() }") == true
-        && refreshHistory?.contains("ArkHistoryFoldWorker.shared.fold(") == true
-        && refreshHistory?.contains("Task.detached(priority: .userInitiated)") == false
-        && refreshHistory?.contains("!Task.isCancelled") == true
-        && refreshHistory?.contains("let installedEventIDs = Set(fold.events.map(\\.id))") == true
-        && refreshHistory?.contains("pendingLiveEvents.removeAll { installedEventIDs.contains($0.id) }") == true
-        && refreshHistory?.contains("pendingLiveEvents.removeAll(keepingCapacity: true)") == false,
+      refreshHistory?.contains("if previousMessages != messages || previousTools != toolActivities || previousFiles != producedFiles") == true
+        && refreshHistory?.contains("previousStatuses != chatStatuses || previousMetrics != turnMetricsByTurn || previousUsage != turnUsageByTurn") == true
+        && refreshHistory?.contains("previousPreviewIDs != displayedPreviewMessageIDs || previousReadingCut != historyReadingSnapshot?.cut") == true
+        && refreshHistory?.components(separatedBy: "chatPresentationDidChange.send()").count == 2
+        && refreshHistory?.contains("ArkHistoryFoldWorker.shared.recover(") == true
+        && refreshHistory?.contains("Task.checkCancellation()") == true
+        && refreshHistory?.contains("pendingLiveEvents.removeAll { $0.id <= head.cut.throughSequence }") == true,
       "authoritative history refresh does not republish an unchanged transcript"
     )
     check(
-      appModel.contains("let completeTurnProjection = ArkChatTurnProjection(events: ordered)")
-        && appModel.contains("turn: completeTurnProjection.latestStartedTurn")
-        && appModel.contains("sequence: completeTurnProjection.latestStartedSequence")
-        && appModel.contains("private struct ArkHistoryFoldOwner: Equatable")
-        && appModel.contains("private actor ArkHistoryFoldWorker")
-        && appModel.contains("ArkHistoryFoldWorker.shared.fold(")
-        && appModel.contains("private var historyFoldOwner: ArkHistoryFoldOwner?")
-        && appModel.contains("private var historyRefreshOwner: ArkHistoryFoldOwner?")
-        && appModel.contains("private var olderHistoryLoadOwner: ArkHistoryFoldOwner?")
-        && appModel.contains("private var historyFoldInFlight: Bool { historyFoldOwner != nil }")
-        && appModel.contains("historyFoldOwner == foldOwner")
-        && appModel.contains("if historyFoldOwner == foldOwner")
-        && appModel.contains("historyFoldInFlight = true") == false
-        && refreshGenerationRange != nil
-        && refreshPageRange != nil
-        && refreshGenerationRange!.lowerBound < refreshPageRange!.lowerBound
-        && refreshHistory?.contains("let requestOwner = ArkHistoryFoldOwner(") == true
-        && refreshHistory?.contains("historyRefreshOwner == requestOwner") == true
-        && refreshHistory?.contains("historyLoadState == .loading") == true
+      appModel.contains("ArkHistoryFoldWorker.shared.recover(")
+        && refreshHistory?.contains("historyRefreshOwner == owner, historyFoldOwner == owner") == true
         && refreshHistory?.contains("historyLoadState = .afterCancellation") == true
-        && refreshHistory?.contains("historyFoldOwner = nil") == true
-        && loadOlderHistory?.contains("livePublishTask?.cancel()") == true
-        && olderGenerationRange != nil
-        && olderPageRange != nil
-        && olderPauseRange != nil
-        && olderGenerationRange!.lowerBound < olderPageRange!.lowerBound
-        && olderPageRange!.lowerBound < olderPauseRange!.lowerBound
-        && loadOlderHistory?.contains("historyProjectionGeneration &+= 1") == true
-        && loadOlderHistory?.contains("let foldOwner = ArkHistoryFoldOwner(") == true
-        && loadOlderHistory?.contains("historyFoldOwner == foldOwner") == true
-        && loadOlderHistory?.contains("let loadOwner = ArkHistoryFoldOwner(") == true
-        && loadOlderHistory?.contains("olderHistoryLoadOwner == loadOwner") == true
-        && loadOlderHistory?.contains("historyRefreshOwner = nil") == true
-        && loadOlderHistory?.contains("loadingOlderHistory = false") == true
-        && loadOlderHistory?.contains("ArkHistoryFoldWorker.shared.fold(") == true
-        && loadOlderHistory?.contains("Task.detached(priority: .userInitiated)") == false
-        && loadOlderHistory?.contains("fold.preserveLatestStartedBoundary(") == true
-        && loadOlderHistory?.contains("let installedEventIDs = Set(fold.events.map(\\.id))") == true
-        && loadOlderHistory?.contains("pendingLiveEvents.removeAll { installedEventIDs.contains($0.id) }") == true
-        && loadOlderHistory?.contains("historyLoadState = .loaded") == true
-        && loadOlderHistory?.contains("turnProjection = ArkChatTurnProjection(events: events)") == false,
-      "cold restore and older-page folding preserve the full-history run boundary before bounded event retention"
+        && loadOlderHistory?.contains("historyReader === reader") == true
+        && loadOlderHistory?.contains("installReadingSnapshot(snapshot)") == true
+        && loadOlderHistory?.contains("pendingLiveEvents.removeAll") == false,
+      "history navigation installs a same-reader snapshot without replacing live event ownership"
     )
     let refreshNavigation = chatSourceSlice(
       appModel,
@@ -825,12 +794,9 @@ func runArkChatPresentationContractChecks() {
         && appModel.contains("scheduleNavigationRefresh()")
         && appModel.contains("case \"stream/error\":")
         && appModel.contains("markEventChannelDegraded(frame.channel")
-        && appModel.contains("private func synchronizedHistorySource(")
-        && appModel.contains("var catchUp = try ArkHistoryCatchUpAccumulator(")
-        && appModel.contains("while !catchUp.complete")
-        && refreshHistory?.contains("ArkEventSequenceValidator.validateReconciled(") == true
-        && loadOlderHistory?.contains("ArkEventSequenceValidator.olderCursor(") == true
-        && loadOlderHistory?.contains("ArkEventSequenceValidator.validateReconciled(") == true,
+        && refreshHistory?.contains("ArkHistoryFoldWorker.shared.recover(") == true
+        && refreshHistory?.contains("history-stale-source") == true
+        && refreshHistory?.contains("installReconciledHead(sessionID: sessionID, through: head.cut.throughSequence)") == true,
       "native baseline completion reconciles zero-session navigation and exposes protocol or sequence failures"
     )
     let modelHydration = chatSourceSlice(
@@ -931,7 +897,19 @@ func runArkChatPresentationContractChecks() {
     )
     check(
       transcriptFeed?.contains("Publishers.MergeMany(triggers)") == true
-        && transcriptFeed?.contains(".throttle(for: .milliseconds(100)") == true
+        // One in-flight refresh with an adaptive cadence (heavy session 800 ms, light 400 ms,
+        // idle 150 ms) replaced the fixed 100 ms throttle that pegged a core on large transcripts.
+        && transcriptFeed?.contains("guard refreshTask == nil else { return }") == true
+        && transcriptFeed?.contains("let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15") == true
+        && transcriptFeed?.contains("let interval = base + refreshBackoff") == true
+        && transcriptFeed?.contains("self.refreshBackoff = min(Self.maxRefreshBackoff, self.refreshBackoff * 0.5 + overshoot)") == true
+        && transcriptFeed?.contains("self.refreshBackoff = max(self.refreshBackoff, overshoot)") == true
+        && transcriptFeed?.contains("static let maxRefreshBackoff: TimeInterval = 3.0") == true
+        // Parsed blocks retain request identity until the latest refresh reconciles their source.
+        && transcriptFeed?.contains("pendingMarkdownInstall") == false
+        && transcriptFeed?.contains("self.snapshot = self.snapshot.installing(ready)") == false
+        && transcriptFeed?.components(separatedBy: "markdownProjectionState.takeReadyBlocks()").count == 2
+        && transcriptFeed?.contains("self.scheduleRefresh(model: model)") == true
         && transcriptFeed?.contains("NativeChatEntry.merge(") == true
         && chatView?.contains("transcriptFeed.snapshot.entries") == true
         && chatView?.contains("model.messages.map(NativeChatEntry.message)") == false
@@ -940,7 +918,15 @@ func runArkChatPresentationContractChecks() {
         && chatEntry?.contains("ArkChatOrderedMerge.merge(sources)") == true
         && orderedMerge?.contains("result.reserveCapacity(") == true
         && orderedMerge?.contains("while true {") == true,
-      "native chat coalesces live projections at a responsive 10Hz and linearly merges ordered entries instead of sorting every body update"
+      "native chat coalesces projections in one paced refresh and linearly merges ordered entries"
+    )
+    check(
+      chatView?.contains("@State private var renderWindow = ArkChatRenderWindow()") == true
+        && chatView?.contains("renderWindow.range(in: displayIDs, limit: effectiveWindow)") == true
+        && chatView?.contains("renderWindow.earlier(in: displayIDs, limit: effectiveWindow)") == true
+        && chatView?.contains("renderWindow.later(in: displayIDs, limit: effectiveWindow)") == true
+        && chatView?.contains("allDisplayEntries.suffix(effectiveWindow)") == false,
+      "manual navigation moves a bounded range instead of growing an unreachable suffix"
     )
     check(
       chatView?.contains("let projection = bodyProjection") == true
@@ -961,8 +947,13 @@ func runArkChatPresentationContractChecks() {
         && chatView?.contains("for (turn, answerID) in finalAnswerByTurn") == true
         && chatView?.contains("(entriesByTurn[turn] ?? []).filter") == true
         && chatView?.contains("for turn in navigationTurns.sorted()") == true
-        && chatView?.contains("ForEach(projection.displayEntries)") == true
-        && chatView?.contains("turnAnchorByTurn: projection.turnAnchorByTurn") == true
+        // The transcript renders the tail window of that one projection, not every entry:
+        // a full-window rebuild is one AttributeGraph transaction (measured 2026-09-12).
+        && chatView?.contains("ForEach(visibleEntries)") == true
+        && chatView?.contains("let effectiveWindow = (context.sessionRunning || heavyTranscript)") == true
+        && chatView?.contains("entries.count > Self.largeTranscriptEntryThreshold") == true
+        && chatView?.contains("Self.streamingRenderWindowEntries(forEntryCount: entries.count)") == true
+        && chatView?.contains("projection.turnAnchorByTurn[turn] == item.id") == true
         && chatView?.contains("ForEach(displayEntries)") == false
         && chatView?.contains("entries.first(where:") == false
         && chatView?.contains("let turnEntries = entries.filter") == false,
@@ -988,8 +979,9 @@ func runArkChatPresentationContractChecks() {
         && chatView?.contains("transcriptTextSelectionEnabled") == false
         && chatView?.contains(".textSelection(.enabled)") == false
         && messageRow?.contains(".textSelection(.enabled)") == false
-        && statusRow?.contains(".textSelection(.enabled)") == false,
-      "native transcript never installs SelectionOverlay on the long LazyVStack or its message/status rows"
+        && statusRow?.contains(".textSelection(.enabled)") == false
+        && reasoningBlock?.contains(".textSelection(.enabled)") == true,
+      "native transcript keeps selection on text leaves, including reasoning, without a transcript-wide selection owner"
     )
     check(
       messageRow?.contains("ArkStreamingPresentationPolicy.usesStreamingAssistantPresentation(") == true
@@ -1111,8 +1103,8 @@ func runArkChatPresentationContractChecks() {
     )
     check(
       root.contains(".queueCount")
-        && root.contains("model.selectedSession?.origin != \"subagent\""),
-      "native chat exposes the collapsed queue count and hides subagent mutations"
+        && !root.contains("origin != \"subagent\""),
+      "native chat exposes the collapsed queue count and gives continuable subagent queues the same mutations"
     )
     check(
       root.contains("static let userBubbleMaxWidth: CGFloat = 525")
@@ -1214,10 +1206,10 @@ func runArkChatPresentationContractChecks() {
       through: "private struct NativeGFMTableView"
     )
     check(
-      codeBlock?.contains(".textSelection(.enabled)") == false
+      codeBlock?.contains(".textSelection(.enabled)") == true
         && codeBlock?.contains("NSPasteboard.general.setString(source, forType: .string)") == true
         && codeBlock?.contains("copied = true") == true,
-      "chat Markdown code blocks avoid SelectionOverlay while retaining the explicit copy action"
+      "chat Markdown code supports native range selection and retains its complete-source copy action"
     )
   } else {
     check(false, "native Markdown source is readable for chat selection contract")
@@ -1360,11 +1352,26 @@ func runArkChatPresentationContractChecks() {
       draft: "next", pendingImageCount: 0, sessionRunning: true,
       sessionOrigin: nil, queuedCount: 3
     )
-      && !ArkChatSubmissionPolicy.shouldSteerWholeQueue(
+      && ArkChatSubmissionPolicy.shouldSteerWholeQueue(
         draft: "", pendingImageCount: 0, sessionRunning: true,
         sessionOrigin: "subagent", queuedCount: 3
       ),
-    "native chat queue acceleration refuses a real draft and subagent queues"
+    "native chat queue acceleration refuses a real draft and covers continuable subagent queues"
+  )
+  check(
+    ArkAppModel.isImageCapabilityRejection(ArkAPIError(
+      message: "Model \"x\" does not support image input.",
+      code: "attachment-error",
+      details: .object(["reason": .string("MODEL_DOES_NOT_SUPPORT_IMAGES")])
+    )),
+    "an image-capability rejection is recognized by its reason code"
+  )
+  check(
+    ArkAppModel.isImageCapabilityRejection(
+      ArkAPIError(message: "Model \"x\" does not support image input.")
+    )
+      && !ArkAppModel.isImageCapabilityRejection(ArkAPIError(message: "network down")),
+    "the image-capability rejection also matches the legacy wording and ignores unrelated errors"
   )
 
   let navigationMessages = [
@@ -1798,6 +1805,42 @@ func runArkChatPresentationContractChecks() {
         == "terminal · SERVER",
     "native chat keeps retryId chains distinct and never suppresses the terminal turn error"
   )
+}
+
+private func runTurnNavigationLifecycleChecks() {
+  let cases: [(String, ArkChatTurnState)] = [
+    ("completed", .completed), ("aborted", .aborted), ("interrupted", .interrupted),
+    ("error", .failed), ("blocked", .blocked), ("max-tokens", .outputLimited),
+    ("plugin-terminal-reason", .ended),
+  ]
+  for (offset, value) in cases.enumerated() {
+    let (reason, expected) = value
+    let turn = offset + 1
+    let events = [
+      chatEvent(offset * 2, "turn/start", .object(["turn": .number(Double(turn))])),
+      chatEvent(offset * 2 + 1, "turn/end", .object([
+        "turn": .number(Double(turn)), "reason": .object(["kind": .string(reason)]),
+      ])),
+    ]
+    var incremental = ArkChatTurnProjection()
+    incremental.append(events[0]); incremental.append(events[1])
+    let restored = ArkChatTurnProjection(events: events)
+    check(incremental == restored && restored.terminalStateByTurn[turn] == expected,
+      "turn lifecycle preserves \(reason) without requiring an assistant message")
+    check((restored.completedSequenceByTurn[turn] != nil) == (reason == "completed"),
+      "turn lifecycle never promotes \(reason) to a successful fork boundary")
+    let historical = ArkChatTurnState.navigation(
+      terminal: restored.terminalStateByTurn[turn], historical: true, sessionRunning: true, isLatestTurn: true
+    )
+    check(historical == expected && historical.label(.zh) != ArkL10n.text(.executionRunning, .zh)
+      && historical.label(.zh) != ArkL10n.text(.trajectoryPending, .zh),
+      "historical \(reason) takes precedence over live state and supplies a terminal no-answer detail")
+  }
+  check(ArkChatTurnState.navigation(terminal: nil, historical: false, sessionRunning: true, isLatestTurn: true) == .running
+    && ArkChatTurnState.navigation(terminal: nil, historical: false, sessionRunning: true, isLatestTurn: false) == .unknown
+    && ArkChatTurnState.navigation(terminal: nil, historical: false, sessionRunning: false, isLatestTurn: true) == .unknown
+    && ArkChatTurnState.navigation(terminal: nil, historical: true, sessionRunning: true, isLatestTurn: true) == .historical,
+    "only the current live turn may be running; missing historical end evidence remains a fixed-cut prefix")
 }
 
 private func runNativeComposerIMEBehaviorChecks() {

@@ -1,10 +1,26 @@
+---
+description: "The shared core of the Claude Code / Codex hook wire protocol."
+kind: "package-library"
+---
+
 # @deepseek-ai/dsh-hook-protocol
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The **shared core** of the Claude Code / Codex hook wire protocol. NOT a cordis plugin — it registers nothing and injects nothing. It is a **library** of dialect-neutral primitives the two bridge plugins (`@deepseek-ai/dsh-hooks-claude-code`, `@deepseek-ai/dsh-hooks-codex`) import so neither re-implements the identical halves of the protocol.
 
 Codex deliberately reimplements a *subset* of the Claude Code hook protocol — the same `hooks.json` matcher-group shape, the same exit-code/stdout output contract, the same command-hook execution model. The genuinely-shared parts live here; each bridge owns only what differs.
+
+## Table of Contents
+
+- [What's shared (here) vs. per-dialect (the bridges)](#whats-shared-here-vs-per-dialect-the-bridges)
+- [Primitives](#primitives)
+- [hook/* session events](#hook-session-events)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## What's shared (here) vs. per-dialect (the bridges)
 
@@ -42,3 +58,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 ## Known Limitations and Deferred Work
 
 - **`HookOutput.updatedInput` is parsed but not honored** — input rewrite is a deferred consistency-design problem ([the pre-tool-input-rewrite Agent Note](../../../.agents/notes/proposed/feature/2026-06-30-pre-tool-input-rewrite.md)); a bridge logs + warns when a hook sets it. See `src/types.ts` for the full contracts.
+
+### Dev Note
+
+None.

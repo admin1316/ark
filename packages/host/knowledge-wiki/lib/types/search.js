@@ -162,15 +162,25 @@ export function cosine(a, b) {
  * @param query - The query input.
  * @param apiKey - The api key input.
  * @param topK - The top k input.
+ * @param unavailable - optional notification when embedding throws before falling back to keyword results.
  * @returns The value produced by hybrid search.
  */
-export async function hybridSearch(wikiRoot, query, apiKey, topK) {
+export async function hybridSearch(wikiRoot, query, apiKey, topK, unavailable) {
     const pages = collectPages(wikiRoot);
     const scoredPages = scorePages(pages, query);
     const keyword = scoredPages.map(({ page, score }) => ({ path: page.path, score }));
     const topScoredPages = scoredPages.slice(0, 40);
     const topKeyword = keyword.slice(0, 40);
-    const vector = await embed([query, ...topScoredPages.slice(0, 15).map(({ page }) => `${page.title}\n${page.text.slice(0, 600)}`)], apiKey);
+    let vector;
+    try {
+        vector = await embed([query, ...topScoredPages.slice(0, 15).map(({ page }) => `${page.title}\n${page.text.slice(0, 600)}`)], apiKey);
+    }
+    catch (error) {
+        // Semantic search is optional: embed() still reports the failure (its own contract),
+        // and the query degrades to keyword results instead of failing outright.
+        unavailable?.({ reason: error instanceof Error ? error.message : String(error) });
+        vector = null;
+    }
     if (!vector || vector.length < 2) {
         return keyword.slice(0, topK);
     }

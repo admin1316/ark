@@ -270,7 +270,7 @@ export declare class SessionProjectionRegistry extends Service {
     hydrate(session: Session, checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number): ProjectionSnapshot;
     /** Materialize every registered unit cell at the Session's current cursor. */
     private materializeCells;
-    /** Fold one unit from init over `events`, producing a cell watermarked at the last folded event. */
+    /** Fold one unit from init through a fixed inclusive Session watermark. */
     private buildCell;
     /** Read (or lazily build, folding the full in-memory log) one unit's cell. */
     private cellFor;

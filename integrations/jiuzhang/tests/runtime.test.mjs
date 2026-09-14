@@ -554,11 +554,25 @@ test('the same launcher pair serves a standalone runtime rooted beside its asset
         JSON.stringify({ name: '@deepseek-ai/fallback-test' }),
       )
       await symlink(packageStore, runtimeLink)
+      // Older launchers created these fallback ancestors with the process's
+      // ordinary 0755 mode. Their contents must survive the permission upgrade.
+      const legacyDirectories = [
+        join(home, 'profiles'),
+        join(home, 'profiles', 'node_modules'),
+        join(home, 'profiles', 'node_modules', '@deepseek-ai'),
+      ]
+      await mkdir(legacyDirectories[2], { recursive: true })
+      for (const directory of legacyDirectories) await chmod(directory, 0o755)
+      const retainedFile = join(home, 'profiles', 'node_modules', 'retained.txt')
+      await writeFile(retainedFile, 'keep legacy bytes', { mode: 0o644 })
       assert.deepEqual(
         await standalone.ensureProfileModuleFallback(home),
         { created: 1, replaced: 0, kept: 0, pruned: 0 },
       )
       const profileScope = join(home, 'profiles', 'node_modules', '@deepseek-ai')
+      for (const directory of legacyDirectories) assert.equal((await lstat(directory)).mode & 0o777, 0o700)
+      assert.equal(await readFile(retainedFile, 'utf8'), 'keep legacy bytes')
+      assert.equal((await lstat(retainedFile)).mode & 0o777, 0o644)
       assert.equal(
         await readlink(join(profileScope, 'fallback-test')),
         join(await realpath(runtimeRoot), 'node_modules', '@deepseek-ai', 'fallback-test'),
@@ -582,6 +596,16 @@ test('the same launcher pair serves a standalone runtime rooted beside its asset
           /not an ordinary directory/,
         )
         assert.deepEqual(await readdir(outside), [])
+        await unlink(join(unsafeHome, 'profiles', 'node_modules'))
+        await mkdir(join(unsafeHome, 'profiles', 'node_modules'), { mode: 0o700 })
+        await symlink(outside, join(unsafeHome, 'profiles', 'node_modules', '@deepseek-ai'))
+        await assert.rejects(standalone.ensureProfileModuleFallback(unsafeHome), /not an ordinary directory/)
+        assert.deepEqual(await readdir(outside), [])
+        await unlink(join(unsafeHome, 'profiles', 'node_modules', '@deepseek-ai'))
+        await chmod(join(unsafeHome, 'profiles', 'node_modules'), 0o777)
+        await assert.rejects(standalone.ensureProfileModuleFallback(unsafeHome), /writable by group or others/)
+        assert.equal((await lstat(join(unsafeHome, 'profiles', 'node_modules'))).mode & 0o777, 0o777)
+        assert.deepEqual(await readdir(join(unsafeHome, 'profiles', 'node_modules')), [])
       } finally {
         await rm(unsafeHome, { recursive: true, force: true })
         await rm(outside, { recursive: true, force: true })

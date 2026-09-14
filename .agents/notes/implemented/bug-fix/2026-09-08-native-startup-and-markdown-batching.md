@@ -12,7 +12,9 @@ The standalone launcher invokes Node separately for every reachable JavaScript f
 
 The [runtime verifier](../../../../integrations/jiuzhang/src/runtime-closure.mjs) compiles reachable entries in bounded batches of 256 in a separate Node process. Node VM compilation uses module or CommonJS syntax according to the file extension and nearest package manifest; it never links or evaluates package code. A shebang is stripped only at byte zero; a preceding BOM must not turn Node-invalid input into accepted syntax. Package hashes, dependency reachability, forbidden packages, symlink rules, and receipt verification remain prerequisites.
 
-The [native transcript feed](../../../../integrations/jiuzhang/native/Sources/JiuzhangShellUI/ArkRootView.swift) stages completed Markdown parses in the existing projection state and publishes one snapshot after a 16 ms coalescing interval. Publication revalidates session, source bytes, and request identity. Cancellation, source replacement, and session switching discard stale staged results.
+The [native transcript feed](../../../../integrations/jiuzhang/native/Sources/JiuzhangShellUI/ArkRootView.swift) stages completed Markdown parses in the existing projection state. Parse completion schedules the existing feed refresh; that refresh reconciles the current session, source bytes, and request identity before synchronously draining ready blocks into one snapshot. No second completion queue or delayed installation separates validation from publication. Cancellation, source replacement, and session switching discard stale staged results.
+
+The transcript render window moves by stable row identity instead of expanding to include the entire past. Earlier and newer controls keep every row reachable while preserving one bounded rendering owner. Historical preview rows load complete same-source content before enabling whole-message actions. Table columns use shared intrinsic text widths with a wrapping cap, independent of viewport geometry, so short columns do not force unnecessary horizontal scrolling.
 
 ## Alternatives considered
 
@@ -25,3 +27,5 @@ The [native transcript feed](../../../../integrations/jiuzhang/native/Sources/Ji
 ## Consequences
 
 Syntax parser objects remain bounded by the batch size and live outside the launcher heap. The selected Node must support VM modules and package-manifest discovery. The [runtime closure tests](../../../../integrations/jiuzhang/tests/runtime-closure.test.mjs) cover mixed syntax, invalid entries across batch boundaries, and absence of execution. The [native scroll tests](../../../../integrations/jiuzhang/native/Tests/JiuzhangShellCoreTests/ArkChatScrollContractChecks.swift) cover a 128-source batch, duplicate drain, source replacement, cancellation, and stale session completions. These checks do not establish production promotion or unbounded-session performance.
+
+The bounded-container detail is being revised by the [native transcript layout proposal](../../proposed/bug-fix/2026-09-13-bounded-native-transcript-layout.md); parsing and publication decisions remain unchanged.

@@ -20,7 +20,7 @@ Node 24 消费方任务采用单个包含 10 道门禁的模式，而非由 shel
 
 [scripts/publint-all.ts](../../../../scripts/publint-all.ts) 从 `packages/<group>/<pkg>` 发现包，并以根据 `availableParallelism()` 确定大小的 worker 池运行 `publint`。`DSH_PUBLINT_CONCURRENCY` 可以针对资源配置不同的本地机器和 CI runner 限制或提高 worker 数量。结果按包缓冲，并按确定性的包顺序打印，因此并行执行不会打乱各包的日志块。
 
-各门禁的包脚本仍是临时本地运行所用的命令入口。`hygiene` 调用包含相同十三道检查且限制为本地四个 worker 的调度器模式，而 `doc-sync` 的成员列表由调度器管理（[通过门禁调度器运行 doc-sync](../../archived/process/2026-07-21-doc-sync-through-gate-scheduler.md)）。
+各门禁的包脚本仍是临时本地运行所用的命令入口。`hygiene` 调用包含相同十三道检查且限制为本地四个 worker 的调度器模式，而 `doc-sync` 的成员列表由调度器管理（[通过门禁调度器运行 doc-sync](../../archived/process/2026-07-21-doc-sync-through-gate-scheduler.zh.md)）。
 
 ## 验证
 

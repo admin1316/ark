@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import KnowledgeWikiService from '../src/index.ts'
 import type { WikiGraphResult, WikiReviewItem } from '../src/types.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 interface Surface {
   snapshots: { invalidate(root: string): void; dispose(): void }
@@ -56,13 +57,13 @@ beforeEach(() => {
     configurable: true,
     value: { stream: vi.fn() },
   })
-  service = new KnowledgeWikiService(ctx, {
+  service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot,
     mainRoot: root,
     credential: 'VISION_API_KEY',
     llmProvider: 'p',
     llmModel: 'm',
-  }) as unknown as Surface
+  })) as unknown as Surface
 })
 
 afterEach(async () => {
@@ -123,12 +124,12 @@ alpha reusable method and validation
       configurable: true,
       value: { resolve: vi.fn().mockRejectedValue(new Error('credentials unavailable')) },
     })
-    const isolated = new KnowledgeWikiService(isolatedContext, {
+    const isolated = new KnowledgeWikiService(isolatedContext, wikiTestConfig({
       wikiRoot: missingWiki,
       mainRoot: root,
       credential: 'VISION_API_KEY',
       llmProvider: 'p', llmModel: 'm',
-    }) as unknown as Surface
+    })) as unknown as Surface
     expect(await isolated.graph()).toEqual({ nodes: [], edges: [], communities: [] })
     expect(await isolated.list()).toEqual([])
     await expect(isolated.search({ query: 'none' })).rejects.toThrow('credentials unavailable')
@@ -174,10 +175,10 @@ describe('page read/write CAS surface', () => {
     const blockedRoot = join(root, 'blocked-wiki')
     writeFileSync(blockedRoot, 'file', 'utf8')
     const blockedContext = new Context()
-    const blocked = new KnowledgeWikiService(blockedContext, {
+    const blocked = new KnowledgeWikiService(blockedContext, wikiTestConfig({
       wikiRoot: blockedRoot, mainRoot: root,
       credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-    }) as unknown as Surface
+    })) as unknown as Surface
     expect(await blocked.createPage({ title: 'Fails' })).toMatchObject({ path: '', ok: false })
     blocked.snapshots.dispose()
     await blockedContext.fiber.dispose()

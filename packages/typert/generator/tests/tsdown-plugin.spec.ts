@@ -55,7 +55,7 @@ vi.mock('../src/workspace.ts', () => ({
   },
 }))
 
-const { typertPlugin } = await import('../src/tsdown-plugin.ts')
+const { typertPlugin, emitVerifiedWorkspaceArtifacts } = await import('../src/tsdown-plugin.ts')
 const roots: string[] = []
 
 afterEach(() => {
@@ -70,6 +70,29 @@ describe('typertPlugin', () => {
     expect(plugin.transform('export const value = 1\n', '/workspace/src/plain.ts')).toBeUndefined()
     expect(plugin.transform('@sealed\nexport class Example {}\n', '/workspace/src/example.ts')?.code)
       .not.toContain('@sealed')
+  })
+
+  it('lowers decorators without generating or inspecting outputs in transform-only mode', () => {
+    const plugin = typertPlugin({ mode: 'transform-only' })
+    expect(plugin.transform('@sealed\nexport class Example {}\n', '/workspace/src/example.ts')?.code)
+      .not.toContain('@sealed')
+    plugin.writeBundle({ dir: '/absent-workspace/lib' })
+    expect(discovered).not.toHaveBeenCalled()
+    expect(generated).not.toHaveBeenCalled()
+  })
+
+  it('propagates workspace analysis failures before writing reflection artifacts', async () => {
+    const root = await workspace()
+    await packageOutput(root, 'core/tools', {
+      name: '@deepseek-ai/dsh-tools',
+      exports: { './typert': './lib/typert.host.js' },
+    })
+    discovered.mockReturnValueOnce([
+      { package: '@deepseek-ai/dsh-tools', root: 'packages/core/tools', faces: ['host'] },
+    ])
+    generated.mockImplementationOnce(() => { throw new Error('Remote endpoint conflict') })
+    expect(() => { emitVerifiedWorkspaceArtifacts(root, ['host']) }).toThrow('Remote endpoint conflict')
+    expect(existsSync(join(root, 'packages/core/tools/lib/typert.host.js'))).toBe(false)
   })
 
   it('skips outputs that do not identify a Typert contributor', async () => {

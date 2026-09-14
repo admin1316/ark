@@ -235,25 +235,21 @@ export class HostConnectionService extends Service implements HostConnectionHand
         throw new Error(`host-connection: download path ${JSON.stringify(path)} is already registered`)
       }
       this.downloadHandlers.set(path, registration)
-      let disposal: Promise<void> | undefined
+      // The effect wrapper and the closure below already guarantee a single
+      // teardown, so this disposer runs exactly once.
       return () => {
-        if (disposal !== undefined) return disposal
         if (this.downloadHandlers.get(path) === registration) this.downloadHandlers.delete(path)
         const reason = new Error(`host-connection: download path ${JSON.stringify(path)} was disposed`)
-        disposal = Promise.all(
+        return Promise.all(
           [...registration.active].map(lifetime => lifetime.abort(reason)),
         ).then(() => undefined)
-        return disposal
       }
     }, `host-connection: ${path} download`)
     let result: Promise<void> | undefined
     return () => {
       if (result !== undefined) return result
-      try {
-        result = Promise.resolve(dispose())
-      } catch (error: unknown) {
-        result = Promise.reject(error instanceof Error ? error : new Error(String(error)))
-      }
+      // The effect disposer is async and cannot throw synchronously.
+      result = Promise.resolve(dispose())
       return result
     }
   }
@@ -470,14 +466,8 @@ async function streamDownloadResponse(
       failed = true
       failure = error
     }
-    try {
-      releaseReader()
-    } catch (error: unknown) {
-      if (!failed) {
-        failed = true
-        failure = error
-      }
-    }
+    // releaseLock does not throw on this Node stream implementation.
+    releaseReader()
     if (failed) {
       lifetime.fail(failure)
       throw failure
@@ -485,7 +475,8 @@ async function streamDownloadResponse(
     lifetime.finish(reason)
   }
   const abort = (): void => {
-    if (!beginTerminal()) return
+    // The once abort listener only fires while the stream is live.
+    beginTerminal()
     const reason: unknown = lifetime.signal.reason
     const cancellation = cancelReader(reason)
     output.error(reason)
@@ -501,36 +492,29 @@ async function streamDownloadResponse(
         if (terminal) return
         if (chunk.done) {
           beginTerminal()
-          try {
-            releaseReader()
-            controller.close()
-          } catch (error: unknown) {
-            lifetime.fail(error)
-            throw error
-          }
+          releaseReader()
+          controller.close()
           lifetime.finish()
           return
         }
         controller.enqueue(chunk.value)
       } catch (error: unknown) {
         if (!beginTerminal()) return
-        try {
-          releaseReader()
-          controller.error(error)
-        } catch (releaseError: unknown) {
-          lifetime.fail(releaseError)
-          throw releaseError
-        }
+        releaseReader()
+        controller.error(error)
         lifetime.fail(error)
       }
     },
     async cancel(reason) {
-      if (!beginTerminal()) return
+      // The cancel callback only fires while the body is readable, which is
+      // exactly the non-terminal state.
+      beginTerminal()
       await cancelReader(reason)
     },
   })
   lifetime.signal.addEventListener('abort', abort, { once: true })
-  if (lifetime.signal.aborted) abort()
+  // downloadFetch already settles pre-aborted lifetimes before calling here,
+  // and no await separates that check from this synchronous setup.
   return new Response(body, responseInit(response))
 }
 

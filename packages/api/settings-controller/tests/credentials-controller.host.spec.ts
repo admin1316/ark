@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { CredentialInfo } from '@deepseek-ai/dsh-credentials/types'
-import { TypertRemoteFailure, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
-import CredentialsController from '../src/credentials.ts'
+import { TypertLookupFailure, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { MemoryCredentials } from '../../../credentials/credentials/tests/memory.ts'
 
 /** A store whose `describe` carries more than the view declares, as a foreign provider might. */
@@ -31,47 +31,24 @@ class RejectingCredentials extends MemoryCredentials {
 async function boot(
   seed: Record<string, string> = {},
   provider: typeof MemoryCredentials = MemoryCredentials,
-): Promise<CredentialsController> {
+): Promise<CredentialProvider> {
   const ctx = new Context()
   await ctx.plugin(provider, seed)
-  await ctx.plugin(CredentialsController)
-  return ctx.credentialsController
+  return ctx.credentials
 }
 
 describe('the credentials Remote namespace a configuration surface calls', () => {
   it('publishes the credentials namespace from its own service key', async () => {
     const controller = await boot()
     const binding = controller.typertRemote
-    expect(binding.serviceKey).toBe('credentialsController')
+    expect(binding.serviceKey).toBe('credentials')
     expect(binding.namespace).toBe('credentials')
-    expect(remoteMethods(controller)).toEqual([
-      { method: 'describe', invocation: { kind: 'direct' } },
-      { method: 'set', invocation: { kind: 'direct' } },
-      { method: 'unset', invocation: { kind: 'direct' } },
-    ])
-  })
-
-  it('reports the actionable configuration error while no credential provider is mounted', async () => {
-    const ctx = new Context()
-    await ctx.plugin(CredentialsController)
-    for (const call of [
-      () => ctx.credentialsController.describe(['DEEPSEEK_API_KEY']),
-      () => ctx.credentialsController.set('DEEPSEEK_API_KEY', 'sk-live'),
-      () => ctx.credentialsController.unset('DEEPSEEK_API_KEY'),
-    ]) {
-      const failure = await call().catch((error: unknown) => error)
-      expect(failure).toBeInstanceOf(TypertRemoteFailure)
-      expect((failure as TypertRemoteFailure).failure).toEqual({
-        code: 'internal',
-        message: 'credentials service is absent: this deployment does not mount a credential provider (e.g. @deepseek-ai/dsh-credentials-local) in its composition',
-        details: {},
-      })
-    }
+    expect(remoteMethods(controller).map(method => method.exportName)).toEqual(['describe', 'set', 'unset'])
   })
 
   it('describes a batch of references as one map, values excluded', async () => {
     const controller = await boot({ DEEPSEEK_API_KEY: 'sk-seeded' })
-    const described = await controller.describe(['DEEPSEEK_API_KEY', 'OPENAI_API_KEY'])
+    const { credentials: described } = await controller.remoteDescribe(['DEEPSEEK_API_KEY', 'OPENAI_API_KEY'])
     expect(described).toEqual({
       DEEPSEEK_API_KEY: { configured: true, source: 'memory', writable: true },
       OPENAI_API_KEY: { configured: false, writable: true },
@@ -79,63 +56,69 @@ describe('the credentials Remote namespace a configuration surface calls', () =>
     expect(JSON.stringify(described)).not.toContain('sk-seeded')
   })
 
-  it('reports an invalid reference as bad-request', async () => {
+  it('reports an invalid reference as input-invalid', async () => {
     const controller = await boot()
+    const read = vi.spyOn(controller, 'describe')
     for (const call of [
-      () => controller.describe(['DEEPSEEK_API_KEY', 'not a var']),
-      () => controller.set('not a var', 'sk-live'),
-      () => controller.unset('not a var'),
+      () => controller.remoteDescribe(['DEEPSEEK_API_KEY', 'not a var']),
+      () => controller.remoteSet('not a var', 'sk-live'),
+      () => controller.remoteUnset('not a var'),
     ]) {
       const failure = await call().catch((error: unknown) => error)
-      expect(failure).toBeInstanceOf(TypertRemoteFailure)
-      expect((failure as TypertRemoteFailure).failure).toMatchObject({ code: 'bad-request' })
+      expect(failure).toBeInstanceOf(TypertLookupFailure)
+      expect((failure as TypertLookupFailure)).toMatchObject({ code: 'input-invalid' })
     }
+    expect(read).not.toHaveBeenCalled()
   })
 
-  it('answers the largest batch it accepts and reports one reference more as bad-request', async () => {
+  it('answers the largest batch it accepts and reports one reference more as input-invalid', async () => {
     const controller = await boot()
     const accepted = Array.from({ length: 64 }, (_unused, index) => `REF_${String(index)}`)
-    expect(Object.keys(await controller.describe(accepted))).toHaveLength(64)
-    const failure = await controller.describe([...accepted, 'REF_64']).catch((error: unknown) => error)
-    expect((failure as TypertRemoteFailure).failure).toMatchObject({ code: 'bad-request' })
+    expect(Object.keys((await controller.remoteDescribe(accepted)).credentials)).toHaveLength(64)
+    const read = vi.spyOn(controller, 'describe')
+    const failure = await controller.remoteDescribe([...accepted, 'REF_64']).catch((error: unknown) => error)
+    expect((failure as TypertLookupFailure)).toMatchObject({ code: 'input-invalid' })
+    expect(read).not.toHaveBeenCalled()
   })
 
   it('answers only the fields the view declares, whatever a provider returns', async () => {
     const controller = await boot({}, LeakyCredentials)
-    const described = await controller.describe(['DEEPSEEK_API_KEY'])
+    const { credentials: described } = await controller.remoteDescribe(['DEEPSEEK_API_KEY'])
     expect(described.DEEPSEEK_API_KEY).toEqual({ configured: true, source: 'memory', writable: true })
     expect(JSON.stringify(described)).not.toContain('sk-leaked')
   })
 
   it('stores and removes through the same references the batch describes', async () => {
     const controller = await boot()
-    await controller.set('DEEPSEEK_API_KEY', 'sk-live')
-    expect(await controller.describe(['DEEPSEEK_API_KEY']))
+    await controller.remoteSet('DEEPSEEK_API_KEY', 'sk-live')
+    expect((await controller.remoteDescribe(['DEEPSEEK_API_KEY'])).credentials)
       .toEqual({ DEEPSEEK_API_KEY: { configured: true, source: 'memory', writable: true } })
-    await controller.unset('DEEPSEEK_API_KEY')
-    expect(await controller.describe(['DEEPSEEK_API_KEY']))
+    await controller.remoteUnset('DEEPSEEK_API_KEY')
+    expect((await controller.remoteDescribe(['DEEPSEEK_API_KEY'])).credentials)
       .toEqual({ DEEPSEEK_API_KEY: { configured: false, writable: true } })
   })
 
   it('reports a refused write as credential-rejected naming only the reference', async () => {
     const controller = await boot({}, RejectingCredentials)
-    const failure = await controller.set('DEEPSEEK_API_KEY', 'sk-live').catch((error: unknown) => error)
-    expect(failure).toBeInstanceOf(TypertRemoteFailure)
-    const { code, message, details } = (failure as TypertRemoteFailure).failure
-    expect(code).toBe('credential-rejected')
-    expect(message).toContain('read-only source')
-    expect(details).toEqual({ ref: 'DEEPSEEK_API_KEY' })
+    const failure = await controller.remoteSet('DEEPSEEK_API_KEY', 'sk-live').catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(TypertLookupFailure)
+    expect(failure).toMatchObject({ failure: {
+      code: 'credential-rejected', message: 'credential "DEEPSEEK_API_KEY" was rejected',
+      details: { ref: 'DEEPSEEK_API_KEY' },
+    } })
   })
 
-  it('reports an empty value as bad-request', async () => {
+  it('rejects an empty value before calling the provider', async () => {
     const controller = await boot()
-    const failure = await controller.set('DEEPSEEK_API_KEY', '').catch((error: unknown) => error)
-    expect((failure as TypertRemoteFailure).failure).toMatchObject({ code: 'bad-request' })
+    const write = vi.spyOn(controller, 'set')
+    const failure = await controller.remoteSet('DEEPSEEK_API_KEY', '').catch((error: unknown) => error)
+    expect((failure as TypertLookupFailure)).toMatchObject({ code: 'credential-rejected' })
+    expect(write).not.toHaveBeenCalled()
   })
 
-  it('stringifies a refusal that is not an Error', async () => {
+  it('sanitizes a refusal that is not an Error', async () => {
     const controller = await boot({}, LiteralRejectingCredentials)
-    const failure = await controller.set('DEEPSEEK_API_KEY', 'sk-live').catch((error: unknown) => error)
-    expect((failure as TypertRemoteFailure).failure.message).toBe('the store refused')
+    const failure = await controller.remoteSet('DEEPSEEK_API_KEY', 'sk-live').catch((error: unknown) => error)
+    expect(failure).toMatchObject({ failure: { message: 'credential "DEEPSEEK_API_KEY" was rejected' } })
   })
 })

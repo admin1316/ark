@@ -9,10 +9,12 @@ public enum ArkChatSubmissionPolicy {
     sessionOrigin: String?,
     queuedCount: Int
   ) -> Bool {
-    draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    // sessionOrigin is kept for call-site clarity: continuable subagent queues take the same
+    // treatment as ordinary ones now that the Host route accepts their queue mutations.
+    _ = sessionOrigin
+    return draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && pendingImageCount == 0
       && sessionRunning
-      && sessionOrigin != "subagent"
       && queuedCount > 0
   }
 }

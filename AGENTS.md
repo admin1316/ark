@@ -57,10 +57,10 @@ website/     VitePress projection of selected bilingual docs/ sources
 
 ## Ark.app native product invariant
 
-- `/Applications/Ark.app` is Ark's only visible product, built with AppKit/SwiftUI. Never expose WKWebView, HTML, CSS, JavaScript, PWA, or browser routes; loopback is an authenticated API-only sidecar.
+- `~/ark/Ark.app` is Ark's only visible product, built with AppKit/SwiftUI. The user-requested Workbench browser renders external HTTP(S) pages in WebKit; it has no bridge to Ark credentials, tools, or local files. Product UI stays native, and loopback is an authenticated API-only sidecar, never a browser-delivered application shell.
 - Preserve Ark's visual, functional, and interaction baseline. Until parity is verified, retain native equivalents for Settings, sidebar, Chat, scroll following, Trajectory, archive management, Workbench, and knowledge views.
 - UI acceptance requires an isolated candidate, native interaction tests, and same-state screenshots against the legacy source; builds and unit tests alone do not qualify.
-- Never mutate the active runtime or user profile in place. Validate a candidate, retain rollback outside `/Applications`, then atomically replace `/Applications/Ark.app` only after it passes.
+- Never mutate the active runtime or user profile in place. Reuse the single `~/ark-test/candidate/Ark.app` slot with a separate version and data home. Validate it, retain one temporary code rollback, then atomically replace `~/ark/Ark.app` only after it passes. Remove the candidate and duplicate installed apps after final acceptance.
 - Release and Git publication are separate: prepare a dry-run change and push plan, then wait for explicit user confirmation before pushing or rewriting remote history.
 
 Package groups: [packages/README.md](packages/README.md).
@@ -84,7 +84,6 @@ pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (nee
 pnpm run doc-sync       # all documentation gates; leaf list in scripts/run-gates.ts
 pnpm run website:build  # VitePress build (doubles as dead-link check)
 pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
-pnpm run demo:cordis    # the agent modifies its own runtime (needs key)
 pnpm run demo:acp       # ACP automation server (needs DEEPSEEK_API_KEY)
 ```
 

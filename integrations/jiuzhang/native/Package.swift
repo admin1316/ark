@@ -13,6 +13,7 @@ let package = Package(
   dependencies: [
     .package(url: "https://github.com/swiftlang/swift-markdown.git", exact: "0.7.3"),
     .package(url: "https://github.com/mgriebling/SwiftMath.git", exact: "1.7.3"),
+    .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.0"),
   ],
   targets: [
     .target(name: "JiuzhangShellCore"),
@@ -22,6 +23,7 @@ let package = Package(
         "JiuzhangShellCore",
         .product(name: "Markdown", package: "swift-markdown"),
         .product(name: "SwiftMath", package: "SwiftMath"),
+        .product(name: "SwiftTerm", package: "SwiftTerm"),
       ],
       linkerSettings: [
         .linkedFramework("AppKit"),

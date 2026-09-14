@@ -1,3 +1,5 @@
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -14,6 +16,7 @@ const testDoubles = vi.hoisted(() => ({
   boot: vi.fn<typeof import('@deepseek-ai/dsh-app-boot').boot>(),
   watchUserPatches: vi.fn<typeof import('@deepseek-ai/dsh-app-boot').watchUserPatches>(),
   installFailLoud: vi.fn<typeof import('@deepseek-ai/dsh-app-boot').installFailLoud>(),
+  isSnapshotServedDirectory: vi.fn<typeof import('@deepseek-ai/dsh-app-boot').isSnapshotServedDirectory>(),
   provideCmdline: vi.fn<typeof import('@deepseek-ai/dsh-cmdline').provideCmdline>(),
   createProcessShutdown: vi.fn<typeof import('../src/process-shutdown.ts').createProcessShutdown>(),
   onSignal: vi.fn<(signal: 'SIGTERM' | 'SIGINT', handler: () => void) => void>(),
@@ -37,6 +40,7 @@ vi.mock('@deepseek-ai/dsh-app-boot', async importOriginal => ({
   boot: testDoubles.boot,
   watchUserPatches: testDoubles.watchUserPatches,
   installFailLoud: testDoubles.installFailLoud,
+  isSnapshotServedDirectory: testDoubles.isSnapshotServedDirectory,
 }))
 vi.mock('@deepseek-ai/dsh-cmdline', async importOriginal => ({
   ...await importOriginal<typeof import('@deepseek-ai/dsh-cmdline')>(),
@@ -163,6 +167,58 @@ describe('profile runner lifecycle', () => {
       '/profiles/sdk/cordis.yml',
       expect.stringContaining('dsh profile root'),
     )
+  })
+
+  it('hands the installed bare-module base to boot only for a snapshot-served installation', async () => {
+    const currentProfile = profile({ layers: [] })
+    installProfileDefaults(currentProfile)
+    const fixture = lifecycleFixture({ hmr: {}, timer: {} })
+    installRunStubs(fixture)
+
+    const ordinaryAnchor = join('app', 'package.json')
+    testDoubles.isSnapshotServedDirectory.mockReturnValue(false)
+    await runProfile({
+      installAnchor: ordinaryAnchor,
+      environment: {} as Environment,
+      profile: 'sdk',
+      patchFiles: [],
+      args: [],
+    })
+    expect(testDoubles.isSnapshotServedDirectory).toHaveBeenLastCalledWith(dirname(ordinaryAnchor))
+    expect(testDoubles.boot.mock.calls.at(-1)?.[4]).toBeUndefined()
+
+    const packagedAnchor = join('snapshot', 'project', 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
+    testDoubles.isSnapshotServedDirectory.mockReturnValue(true)
+    await runProfile({
+      installAnchor: packagedAnchor,
+      environment: {} as Environment,
+      profile: 'sdk',
+      patchFiles: [],
+      args: [],
+    })
+    expect(testDoubles.isSnapshotServedDirectory).toHaveBeenLastCalledWith(dirname(packagedAnchor))
+    expect(testDoubles.boot.mock.calls.at(-1)?.[4]).toEqual({
+      url: pathToFileURL(packagedAnchor).href,
+      order: 'configuration-first',
+    })
+  })
+
+  it('freezes a startup-only profile: no live watcher and no reload rows', async () => {
+    const currentProfile = profile({ layers: [], patchReload: 'startup' })
+    installProfileDefaults(currentProfile)
+    const fixture = lifecycleFixture()
+    const stubs = installRunStubs(fixture)
+
+    await runProfile({
+      installAnchor: '/app/package.json',
+      environment: {} as Environment,
+      profile: 'sdk-minimal',
+      patchFiles: [],
+      args: [],
+    })
+
+    expect(stubs.watchUserPatches).not.toHaveBeenCalled()
+    expect(fixture.loaderCreate).not.toHaveBeenCalled()
   })
 
   it('composes ordered layers, watches both user patch files, and routes all launch facts through the booted tree', async () => {

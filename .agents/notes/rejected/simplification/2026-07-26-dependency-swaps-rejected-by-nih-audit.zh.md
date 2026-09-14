@@ -16,9 +16,9 @@ Status: rejected — 下列每一项替换在证据上都未达到净简化门�
 
 - **以 `vscode-jsonrpc` 承担 LSP 基础协议的分帧/关联**（`lsp-stdio`）：可替换的核心只占 src 约 1,800 行中的约 255 行；该包无法表达已配置的 `maxMessageBytes` 入站大小上限（要恢复它就得重建被删掉的分帧代码），反转了取消宽限期的拆除语义（`raceAbort` 立即 reject 再拆除；vscode-jsonrpc 让 promise 保持挂起），会在真实服务器输出的 header 前 stdout 横幅上报错，而且在这个全面采用 ESM 的仓库里它是 CJS。[LSP seam 决策](../../implemented/architecture/2026-07-15-lsp-capability-seam.zh.md)把 JSON-RPC 的所有权划给 `dsh-lsp-stdio`；本次审计正是对该决策当时缺失的这项依赖权衡的明文记录。
 - **以 `vscode-languageserver-types` 承担 lsp-stdio 的协议类型子集**：约 80 行类型加约 45 行守卫，但上游守卫在两个方向上都与本仓库不一致（接受本仓库必须拒绝的 `uri: undefined`；强制要求本仓库容忍缺失的 `targetRange`），而且 initialize 结果的形状住在 `vscode-languageserver-protocol` 里，会把 `vscode-jsonrpc` 拖成运行时依赖——为 80 行严格贴合规范的代码付出约 1 MB。
-- **以 `json-rpc-2.0` 替换 `dsh-sdk-jsonrpc-server`**：可删除的关联/分发代码确实存在（约 100–130 行），但 NDJSON 协议格式（wire format）必须与手写的 Python SDK 客户端逐位一致，该包只有单一维护者，且 [GUI RPC 决策](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.zh.md)已把这个包当作冻结的窄接口面对待。`vscode-jsonrpc` 更不合适（Content-Length 分帧、该协议并不具备的取消词汇）。
+- **以 `json-rpc-2.0` 替换 `dsh-sdk-jsonrpc-server`**：可删除的关联/分发代码确实存在（约 100–130 行），但 NDJSON 协议格式（wire format）必须与手写的 Python SDK 客户端逐位一致，该包只有单一维护者，且 [GUI RPC 决策](../../archived/architecture/2026-07-19-gui-layering-and-rpc-protocol.zh.md)已把这个包当作冻结的窄接口面对待。`vscode-jsonrpc` 更不合适（Content-Length 分帧、该协议并不具备的取消词汇）。
 - **以 `jsonrpcclient` 承担 Python SDK 客户端**：v4 只做消息的构造/解析——约 20 行——而真正要紧的 500 行（子进程生命周期、线程化读取器、id 关联、双向的服务端角色应答）全都保留；该库处于低维护模式。
-- **以 `eventsource-parser` 替换 apiproxy 的 `readSse`**：可删除的分帧只有约 15 行，线路两端都在仓库内，规范符合性无关紧要，而且这会给一个浏览器安全的包添加依赖。（对比[已归档的 llm-deepseek 依赖决策](../../archived/simplification/2026-07-26-eventsource-parser-for-deepseek-sse.md)：那里线路对面是真实的提供方。）
+- **以 `eventsource-parser` 替换 apiproxy 的 `readSse`**：可删除的分帧只有约 15 行，线路两端都在仓库内，规范符合性无关紧要，而且这会给一个浏览器安全的包添加依赖。（对比[已归档的 llm-deepseek 依赖决策](../../archived/simplification/2026-07-26-eventsource-parser-for-deepseek-sse.zh.md)：那里线路对面是真实的提供方。）
 
 **重试、定时器与异步：**
 
@@ -41,14 +41,14 @@ Status: rejected — 下列每一项替换在证据上都未达到净简化门�
 
 - **以 `write-file-atomic` 承担 fs-local/storage-json 的原子写**：这些包缺少私有 0700 暂存目录、Win32 DACL 复制/`ReplaceFileW`、AbortSignal 支持和父目录 fsync——每一项都正是手写实现的意义所在。koffi Win32 绑定本身由 [Windows 持久发布决策](../../implemented/architecture/2026-07-05-windows-jsonl-durable-publish.zh.md)提供依据。
 - **以 `fzstd`/原生 zstd 包承担 JSONL 帧扫描**：`node:zlib` 内置的 zstd 已经负责压缩（[zstd 决策](../../implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.zh.md)，其中明确否决了外部原生依赖）；剩下的 `scanZstdFrames` 为撕裂尾部修复*不做解压*地定位 RFC 8878 帧边界，没有任何包公开这项能力。
-- **以 `picomatch`/`tinyglobby`/`ignore` 承担 fs 搜索**：根本不存在 glob 引擎——依照 [bash 承载的发现工具决策](../../archived/feature/2026-07-09-bash-backed-grep-glob-discovery.md)，两个发现类工具都通过 shell 调用 ripgrep。
+- **以 `picomatch`/`tinyglobby`/`ignore` 承担 fs 搜索**：根本不存在 glob 引擎——依照 [bash 承载的发现工具决策](../../archived/feature/2026-07-09-bash-backed-grep-glob-discovery.zh.md)，两个发现类工具都通过 shell 调用 ripgrep。
 - **以 `istextorbinary`/`chardet` 承担文本检测**：手写实现是约 15 行的 NUL 采样加 fatal 模式的 `TextDecoder`；启发式包体量更大，还会改变模型能读到哪些文件（模型可见的 `FS_NOT_TEXT` 漂移）。
 - **以 `shell-quote` 承担 POSIX 单引号包裹**：两个各 1 行、测试详尽的引号辅助函数，对上一个处于维护模式、有 CVE 历史、转义输出还不一样的包——安全边界不是省一行代码的地方。
 - **以 `strip-ansi` 承担 pty 净化**：pty 净化器是一台流式状态机，带跨分片的断裂序列续接和 OSC `133;D` 提示符标记提取（shell 就绪信号）；无状态的剥离器只能替掉约 20 行内层代码，全部状态机构件原样保留。`stripVTControlCharacters` 还被实证会泄漏未终止的 OSC 载荷，会话标题归一化器必须剥除它们（反欺骗）。
 - **以 `pidtree`/`ps-tree` 承担 pty 进程巡检器**：它们只给裸 PID 树；这段代码需要对抗 PID 复用的启动时间身份校验，加上 `/proc` stdin 等待检测，没有包做这些。
-- **以 `execa` 承担 subagent-subprocess 的 dispose（资源释放）阶梯**：`forceKillAfterDelay` 覆盖 SIGTERM→SIGKILL，但覆盖不了先发 stdin EOF 的协作层级，也覆盖不了「无退出沿即 reject」约定；在这里采用它意味着重写各 spawn 调用点、同时阶梯照旧保留。（测试基础设施的 spawn 管线是另一回事——见[已归档的 execa 测试基础设施决策](../../archived/testing/2026-07-26-execa-for-test-subprocess-plumbing.md)。）
+- **以 `execa` 承担 subagent-subprocess 的 dispose（资源释放）阶梯**：`forceKillAfterDelay` 覆盖 SIGTERM→SIGKILL，但覆盖不了先发 stdin EOF 的协作层级，也覆盖不了「无退出沿即 reject」约定；在这里采用它意味着重写各 spawn 调用点、同时阶梯照旧保留。（测试基础设施的 spawn 管线是另一回事——见[已归档的 execa 测试基础设施决策](../../archived/testing/2026-07-26-execa-for-test-subprocess-plumbing.zh.md)。）
 - **以 `tree-kill` 承担 acp-snapshot 拆除与 lsp 进程终止**：那些代码行做的是排空顺序与错误传播，不是进程树遍历；lsp/bash 已经使用分离的进程组加 taskkill。
-- **在 TUI 测试驱动器上到处使用 node-pty**：已归档的 [Windows TUI 决策](../../archived/feature/2026-07-20-windows-tui-support.md)明确否决了在每个宿主上都使用 node-pty；它当时已经是 Windows 那一条腿。
+- **在 TUI 测试驱动器上到处使用 node-pty**：已归档的 [Windows TUI 决策](../../archived/feature/2026-07-20-windows-tui-support.zh.md)明确否决了在每个宿主上都使用 node-pty；它当时已经是 Windows 那一条腿。
 
 **服务器与 HTTP：**
 

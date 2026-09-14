@@ -9,7 +9,9 @@ kind: "package-bundle"
 
 ## 概述
 
-`dsh-experimental-agent-team-profile` 是在 `@deepseek-ai/dsh-base` 之上启用 [Agent Teams](../agent-team/README.zh.md) 的私有 profile 层。它的 patch 会插入 Team domain 与 Team-scoped 工具、禁用名称重叠的全局 continuable-child control，并保留普通的一次性 fresh 与 fork delegation 工具。必须将本包显式添加到已初始化的源码 checkout profile；正式发布会排除本包。
+`dsh-experimental-agent-team-profile` 是在 `@deepseek-ai/dsh-base` 之上启用 [Agent Teams](../../subagent/agent-team/README.zh.md) 的私有 profile 层。它的 patch 会插入 Team domain 与 Team-scoped 工具、禁用名称重叠的全局 continuable-child control，并保留普通的一次性 fresh 与 fork delegation 工具。必须将本包显式添加到已初始化的源码 checkout profile；正式发布会排除本包。
+
+领域服务与模型工具均来自正式包，配置层另挂载一个不拥有领域状态的实验性 Remote 适配器。
 
 ## 目录
 
@@ -64,8 +66,8 @@ profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Su
 ## 进一步探索
 
 - [实验性包](../README.zh.md)——孵化状态与发布排除规则。
-- [Agent Teams service](../agent-team/README.zh.md)——持久 roster、消息与任务板行为。
-- [Agent Teams 工具](../tool-agent-team/README.zh.md)——Team-scoped 模型工具表层。
+- [Agent Teams service](../../subagent/agent-team/README.zh.md)——持久 roster、消息与任务板行为。
+- [Agent Teams 工具](../../subagent/tool-agent-team/README.zh.md)——Team-scoped 模型工具表层。
 - [Base bundle](../../bundle/base/README.zh.md)——本 patch 扩展的 profile 层。
 
 -----
@@ -77,7 +79,7 @@ profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Su
 
 #### 模型会看到什么
 
-Team 策略与 schema 由 [`@deepseek-ai/dsh-experimental-tool-agent-team`](../tool-agent-team/README.zh.md) 所有。本 bundle 只改变 composition：Team-scoped `list_agents`、`send_message` 与 `interrupt_agent` 会替代已禁用的全局 continuable-child control。`subagent` 与 `subagent_fork` 仍作为一次性 delegation 工具可用，其子 agent 不会获得 continuable-child `report` 工具。
+Team 策略与 schema 由 [`@deepseek-ai/dsh-tool-agent-team`](../../subagent/tool-agent-team/README.zh.md) 所有。本 bundle 只改变 composition：Team-scoped `list_agents`、`send_message` 与 `interrupt_agent` 会替代已禁用的全局 continuable-child control。`subagent` 与 `subagent_fork` 仍作为一次性 delegation 工具可用，其子 agent 不会获得 continuable-child `report` 工具。
 
 #### Token 影响
 

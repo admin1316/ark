@@ -44,6 +44,7 @@ import {
 } from './control.ts'
 import type {
   SubagentCatalog,
+  SubagentHistoryOptions,
   SubagentInterruptReceipt,
   SubagentPromptReceipt,
   SubagentPromptRequest,
@@ -81,6 +82,7 @@ import type { SubagentDescendantListEntry, SubagentListEntry } from './list-chil
 import { snapshotSubagentDescriptor } from './descriptor.ts'
 import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
 
+export { canonicalClientTimeZone } from './control.ts'
 export * from './out-of-process.ts'
 export { AssistantOutputFold, finalAssistantOutput } from './assistant-output.ts'
 export { SubagentRunId } from './types.ts'
@@ -213,7 +215,9 @@ export class SubagentRuntime extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'subagents', { namespace: 'subagent' })
     this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
-    ctx.inject(['agents'], (childCtx: Context) => {
+    // The continuation manager's own teardown persists child sessions, so its
+    // scoped binding needs the session store, not only the agent registry.
+    ctx.inject(['agents', 'sessions'], (childCtx: Context) => {
       const manager = new SubagentContinuationManager(childCtx, {
         prepareContinuable: (name, request) => this.prepareContinuable(name, request),
         observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
@@ -516,10 +520,12 @@ export class SubagentRuntime extends TypertRemoteService {
 
   /**
    * Read the Session owner's bounded page after verifying the direct-child address.
+   * Closing an existing content reader uses its original owner-checked address,
+   * so removal from the current catalog cannot prevent resource release.
    * @param parentSessionId - durable parent authorizing the read.
    * @param childSessionId - direct child session id.
    * @param mode - expected child mode.
-   * @param beforeSeq - exclusive cursor for an older page.
+   * @param beforeSeq - legacy exclusive cursor, or typed history view options.
    * @param maxMessages - bounded message count, validated by the Session owner.
    * @param signal - read cancellation; neither Agent is resumed.
    * @returns the original Session page, including its presentation projections.
@@ -527,15 +533,20 @@ export class SubagentRuntime extends TypertRemoteService {
   @Remote('history')
   async remoteHistory(
     parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable',
-    beforeSeq: number | undefined, maxMessages: number | undefined, signal: AbortSignal,
+    beforeSeq: number | SubagentHistoryOptions | undefined, maxMessages: number | undefined, signal: AbortSignal,
   ): Promise<SessionRemoteHistoryValue> {
-    await this.requireRemoteChild(parentSessionId, childSessionId, mode, signal)
+    const options: SubagentHistoryOptions = typeof beforeSeq === 'object' ? beforeSeq : {
+      ...beforeSeq === undefined ? {} : { beforeSeq },
+      ...maxMessages === undefined ? {} : { maxMessages },
+    }
+    const closingContent = options.view === 'content' && options.close === true && options.contentReadId !== undefined
+    if (closingContent) validateControlRequest('subagent.history', { parentSessionId, childSessionId, mode })
+    else await this.requireRemoteChild(parentSessionId, childSessionId, mode, signal)
     const sessions = this.ctx.get('sessions')
     if (sessions === undefined) return rejectControl('service-unavailable', 'subagent history requires the Session service', {})
     const page = await sessions.remoteExportHistory({
-      sessionId: childSessionId, expectedParentSessionId: parentSessionId,
-      ...beforeSeq === undefined ? {} : { beforeSeq },
-      ...maxMessages === undefined ? {} : { maxMessages },
+      ...options,
+      sessionId: childSessionId, expectedParentSessionId: parentSessionId, expectedSubagentMode: mode,
     }, signal)
     if (signal.aborted) return rejectControl('cancelled', 'subagent history read was cancelled', {})
     if (!page.ok) {

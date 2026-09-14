@@ -1,8 +1,24 @@
+---
+description: "Bin-only app that boots an external cordis.yml; its jsonrpc entry serves SDK clients over newline-delimited stdio."
+kind: "package-library"
+---
+
 # @deepseek-ai/dsh-sdk-jsonrpc-demo
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Bin-only app that boots an external `cordis.yml`; its [`jsonrpc`](../../sdk/server/README.md) entry serves SDK clients over newline-delimited stdio. The config composes the spine, backends, and serving plugin. The published `dsh-jsonrpc-agent` bin resolves bare plugins from the configuration project. The Python SDK's `dsh-jsonrpc-agent-pkg` [single-executable runtime](../../../.agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md) uses `lib/packaged-bin.js` instead: packaged bare plugins resolve from its closed runtime tree, while relative plugins remain configuration-relative.
+
+## Table of Contents
+
+- [Config discovery](#config-discovery)
+- [Exit lifecycle](#exit-lifecycle)
+- [stdout is the protocol](#stdout-is-the-protocol)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config discovery
 
@@ -31,3 +47,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 - **The bin cannot prove that the config serves JSON-RPC** — a valid config with no `dsh-sdk-jsonrpc-server` entry boots successfully and serves nothing.
 - **No built-in or default config exists** — every launch must provide `DSH_CORDIS_CONFIG` or a positional path, and deployment owns the complete plugin tree and stdout discipline.
 - **stdin EOF cuts off in-flight work** — client disappearance disposes the root immediately; callers that need orderly completion use the protocol-level `shutdown` request.
+
+### Dev Note
+
+None.

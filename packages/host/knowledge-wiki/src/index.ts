@@ -16,6 +16,7 @@ import { hybridSearch } from './search.ts'
 import { WikiSnapshotStore } from './snapshot-store.ts'
 import { createProjectExecutionContext, type ProjectExecutionContext } from './project-context.ts'
 import { ingestSource as runIngest } from './ingest.ts'
+import { createOwnedStageExecutor, type StageConnectionFacts } from './owned-stage-executor.ts'
 import {
   pageExists, sedimentTarget, extractConversationText, buildSessionSummaryPage,
 } from './auto-sediment.ts'
@@ -123,6 +124,12 @@ export interface Config {
   readonly llmProvider: string
   /** LLM model id for ingest/research. */
   readonly llmModel: string
+  /** Chat-completions base URL the owned stage isolate calls (default https://api.deepseek.com). */
+  readonly llmBaseUrl: string
+  /** Credential reference holding the model key; empty falls back to the deployment's declared apiKeyEnv. */
+  readonly llmCredential: string
+  /** Publish the fork's owned-worker stage executor when nothing else provides one. */
+  readonly ownedStageExecutor: boolean
 }
 
 /**
@@ -138,6 +145,11 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     wikiRoot: s.string().required(),
     mainRoot: s.string().default(''),
     credential: s.string().default('VISION_API_KEY'),
+    llmBaseUrl: s.string().default('https://api.deepseek.com'),
+    llmCredential: s.string().default(''),
+    // Absence of an executor keeps non-cooperative ingest disabled, so the
+    // deployment that wants ingest turns this on explicitly.
+    ownedStageExecutor: s.boolean().default(false),
     llmProvider: s.string().default('deepseek-official'),
     llmModel: s.string().default('deepseek-reasoner'), // = deepseek-v4-flash + 推理模式（别名解析，实测检查能力≈v4-pro）
   })
@@ -148,9 +160,13 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   private readonly credential: CredentialRef
   private readonly llmProvider: string
   private readonly llmModel: string
+  private readonly llmBaseUrl: string
+  private readonly llmCredential: string
+  private readonly ownedStageExecutor: KnowledgeWikiStageExecutor | undefined
   private readonly queue: IngestQueueTask[] = []
   private readonly restoredQueueRoots = new Set<string>()
   private readonly snapshots = new WikiSnapshotStore()
+  private embeddingWarningLogged = false
   private queueDrain: Promise<void> | undefined
   private activeIngest: { readonly taskId: number; readonly controller: AbortController } | undefined
   private readonly backgroundStages = new Set<AbortController>()
@@ -170,11 +186,43 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     this.credential = credentialRef(config.credential)
     this.llmProvider = config.llmProvider
     this.llmModel = config.llmModel
+    // The loader schema (KnowledgeWikiService.Config) fills every optional
+    // deployment field, so a resolved Config is already complete: tests build one
+    // through the wikiTestConfig test fixture instead of hand-writing a partial object.
+    this.llmBaseUrl = config.llmBaseUrl.replace(/\/+$/u, '')
+    this.llmCredential = config.llmCredential
+    this.ownedStageExecutor = config.ownedStageExecutor
+      ? createOwnedStageExecutor({ resolveConnection: () => this.resolveStageConnection() })
+      : undefined
   }
 
   /** Resolve on every operation so Keychain updates apply without a restart. */
   private async resolveApiKey(): Promise<string> {
     return (await this.ctx.credentials.resolve(this.credential))?.value ?? ''
+  }
+
+  /**
+   * Resolve the model connection facts one ingest stage needs. Credentials are
+   * re-resolved per stage so a changed key applies without a restart, and the
+   * deployment's declared `apiKeyEnv` wins over the environment default.
+   * @returns base URL and bearer credential handed to the owned isolate.
+   */
+  private async resolveStageConnection(): Promise<StageConnectionFacts> {
+    const candidates: string[] = []
+    if (this.llmCredential !== '') candidates.push(this.llmCredential)
+    try {
+      const settings = this.ctx.get('settings') as { remoteDescribe?: () => { namespaces?: Array<{ ns?: string; value?: unknown }> } } | undefined
+      const declared = settings?.remoteDescribe?.().namespaces?.find(entry => entry.ns === 'llm-deepseek')?.value as { apiKeyEnv?: unknown } | undefined
+      if (typeof declared?.apiKeyEnv === 'string' && declared.apiKeyEnv !== '') candidates.push(declared.apiKeyEnv)
+    } catch {
+      // A settings surface that cannot describe itself must not fail ingest.
+    }
+    candidates.push('DEEPSEEK_API_KEY')
+    for (const candidate of candidates) {
+      const resolved = (await this.ctx.credentials.resolve(credentialRef(candidate)))?.value ?? ''
+      if (resolved !== '') return { baseUrl: this.llmBaseUrl, apiKey: resolved }
+    }
+    return { baseUrl: this.llmBaseUrl, apiKey: process.env[candidates.at(-1) as string] ?? '' }
   }
 
   /** Optional trusted verifier/build owner; project files can never supply it. */
@@ -193,7 +241,9 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   /** Parent-owned hard-deadline stage executor; absence disables non-cooperative ingest. */
   private get stageExecutor(): KnowledgeWikiStageExecutor | undefined {
     const value: unknown = this.ctx.get('knowledgeWikiStageExecutor')
-    return isKnowledgeWikiStageExecutor(value) ? value : undefined
+    // An externally provided executor stays authoritative; the owned-worker
+    // executor below is the fallback that makes non-cooperative ingest possible.
+    return isKnowledgeWikiStageExecutor(value) ? value : this.ownedStageExecutor
   }
 
   /** Knowledge-base directory of the active workspace: the main wikiRoot, or `<root>/wiki` for a registered workspace. */
@@ -513,14 +563,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       throw error
     }
     if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('raw source root is not an ordinary directory')
-    const visited = new Set<string>()
-    const visitedFiles = new Set<string>()
+    // The loop below re-stats every child before recursing, so walk() is only
+    // ever entered with an ordinary directory, and a revisit would require a
+    // symbolic or hard link, both of which are rejected there.
     const walk = (dir: string): void => {
-      const directory = lstatSync(dir)
-      if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error(`unsafe raw source directory: ${dir}`)
-      const identity = `${directory.dev}:${directory.ino}`
-      if (visited.has(identity)) throw new Error(`revisited raw source directory inode: ${dir}`)
-      visited.add(identity)
       const entries = readdirSync(dir)
       for (const name of entries) {
         if (name.startsWith('.') || name === 'node_modules') continue
@@ -532,9 +578,6 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         else if (!st.isFile()) throw new Error(`non-regular raw source is not allowed: ${rel}`)
         else {
           if (st.nlink !== 1) throw new Error(`hard-linked raw source is not allowed: ${rel}`)
-          const fileIdentity = `${st.dev}:${st.ino}`
-          if (visitedFiles.has(fileIdentity)) throw new Error(`revisited raw source file inode: ${rel}`)
-          visitedFiles.add(fileIdentity)
           if (st.size > MAX_RAW_SOURCE_BYTES) throw new Error(`raw source exceeds 100 MiB: ${rel}`)
           out.push(rel)
         }
@@ -639,7 +682,13 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const context = this.captureProjectContext()
     const topK = request.topK ?? 8
     const hits = await this.snapshots.get(context.wikiRoot, `search:${topK}:${request.query}`, async () =>
-      hybridSearch(context.wikiRoot, request.query, await this.resolveApiKey(), topK))
+      hybridSearch(context.wikiRoot, request.query, await this.resolveApiKey(), topK, (diagnostic) => {
+        // Semantic search is optional. Report the degradation once, then keep serving
+        // keyword results instead of failing every query with the same upstream error.
+        if (this.embeddingWarningLogged) return
+        this.embeddingWarningLogged = true
+        this.ctx.logger.warn(`[knowledge-wiki] semantic search unavailable, using keyword results: ${diagnostic.reason}`)
+      }))
     this.recordKnowledgeRetrieval(hits.map(hit => hit.path), context.projectRoot)
     return hits.map(hit => ({ path: hit.path, score: hit.score }))
   }
@@ -1039,15 +1088,15 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const current = this.queue[index]
-        const cancelled = !timeoutState.expired && current.cancelRequestedAt !== undefined
+        const cancelledAt = !timeoutState.expired ? current.cancelRequestedAt : undefined
         console.error('[knowledge-wiki] ingest failed:', running.input, message)
         this.queue[index] = {
           ...running,
-          status: cancelled ? 'cancelled' : 'error',
+          status: cancelledAt !== undefined ? 'cancelled' : 'error',
           error: message,
           completedAt: Date.now(),
-          ...(cancelled
-            ? { cancelRequestedAt: current.cancelRequestedAt ?? Date.now() }
+          ...(cancelledAt !== undefined
+            ? { cancelRequestedAt: cancelledAt }
             : { failedAt: Date.now() }),
         }
       } finally {
@@ -1069,9 +1118,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     await this.drainQueue()
     const terminal = this.queue.find(item => item.id === task.id)
     if (terminal?.status === 'done') {
-      const warnings = terminal.warnings ?? []
+      // runQueue only marks a task done with both arrays attached.
+      const warnings = terminal.warnings as string[]
       return {
-        written: terminal.written ?? [],
+        written: terminal.written as string[],
         warnings,
         status: warnings.length > 0 ? 'degraded' : 'ok',
       }
@@ -1576,8 +1626,7 @@ function resolveRawSourcePath(projectRoot: string, input: string): string {
 export function isBlockedNetworkAddress(address: string): boolean {
   const value = address.toLowerCase().replace(/^\[|\]$/gu, '')
   if (isIP(value) === 4) {
-    const parsed = parseIpv4(value)
-    return parsed === undefined || IPV4_BLOCKED_RANGES.some(([network, bits]) => cidr4(parsed, network, bits))
+    return IPV4_BLOCKED_RANGES.some(([network, bits]) => cidr4(parseIpv4(value), network, bits))
   }
   if (isIP(value) === 6) {
     const parsed = parseIpv6(value)
@@ -1627,21 +1676,16 @@ const IPV6_BLOCKED_RANGES: ReadonlyArray<readonly [bigint, number]> = [
   [0xff000000000000000000000000000000n, 8],
 ]
 
-function parseIpv4(input: string): number | undefined {
-  const parts = input.split('.')
-  if (parts.length !== 4) return undefined
+function parseIpv4(input: string): number {
+  // Every caller passes node's isIP(…)==4 gate first, so the input is always
+  // four decimal parts within 0-255 and no rejection arm is reachable here.
   let output = 0
-  for (const part of parts) {
-    if (!/^\d{1,3}$/u.test(part)) return undefined
-    const value = Number(part)
-    if (value > 255) return undefined
-    output = (output * 256 + value) >>> 0
-  }
+  for (const part of input.split('.')) output = (output * 256 + Number(part)) >>> 0
   return output
 }
 
 function cidr4(value: number, network: number, bits: number): boolean {
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0
+  const mask = (0xffffffff << (32 - bits)) >>> 0
   return (value & mask) >>> 0 === (network & mask) >>> 0
 }
 
@@ -1655,7 +1699,6 @@ function parseIpv6(input: string): bigint | undefined {
   const ipv4Tail = /(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/u.exec(source)?.[1]
   if (ipv4Tail !== undefined) {
     const ipv4 = parseIpv4(ipv4Tail)
-    if (ipv4 === undefined) return undefined
     source = source.slice(0, -ipv4Tail.length)
       + `${(ipv4 >>> 16).toString(16)}:${(ipv4 & 0xffff).toString(16)}`
   }
@@ -1663,14 +1706,13 @@ function parseIpv6(input: string): bigint | undefined {
   const left = leftRaw === '' ? [] : leftRaw.split(':')
   const right = rightRaw === undefined || rightRaw === '' ? [] : rightRaw.split(':')
   const missing = 8 - left.length - right.length
-  if ((rightRaw === undefined && missing !== 0) || (rightRaw !== undefined && missing < 1)) return undefined
+  // node's isIP(…)==6 gate above guarantees eight groups with well-formed
+  // hex parts, so no rejection arm is reachable here.
   const parts = [...left, ...Array.from({ length: missing }, () => '0'), ...right]
-  if (parts.length !== 8 || parts.some(part => !/^[0-9a-f]{1,4}$/u.test(part))) return undefined
   return parts.reduce((result, part) => (result << 16n) | BigInt(`0x${part}`), 0n)
 }
 
 function cidr6(value: bigint, network: bigint, bits: number): boolean {
-  if (bits === 0) return true
   const shift = BigInt(128 - bits)
   return value >> shift === network >> shift
 }

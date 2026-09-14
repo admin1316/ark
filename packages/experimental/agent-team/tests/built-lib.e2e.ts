@@ -25,9 +25,11 @@ describe.skipIf(!requiredArtifacts)('Agent Teams built LIB service', () => {
     const script = `
       const host = await import(${JSON.stringify(urls.host)})
       const remote = await import(${JSON.stringify(urls.remote)})
+      await import('@deepseek-ai/dsh-agent-team/types')
       console.log(JSON.stringify({
         className: host.default.name,
         methods: remote.default.descriptors.map(descriptor => descriptor.id),
+        bindings: remote.default.descriptors.map(({ service, namespace }) => ({ service, namespace })),
       }))
     `
 
@@ -36,9 +38,11 @@ describe.skipIf(!requiredArtifacts)('Agent Teams built LIB service', () => {
     const output = JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
       className: string
       methods: string[]
+      bindings: Array<{ service: string; namespace: string }>
     }
     expect(output).toEqual({
-      className: 'TeamService',
+      className: 'TeamRemoteAdapter',
+      bindings: Array.from({ length: 3 }, () => ({ service: 'agentTeamRemote', namespace: 'agentTeams' })),
       methods: [
         '@deepseek-ai/dsh-experimental-agent-team#agentTeams/createTask',
         '@deepseek-ai/dsh-experimental-agent-team#agentTeams/updateTask',

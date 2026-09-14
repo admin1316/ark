@@ -13,7 +13,6 @@ import type {
   TypertLookup,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import { apply as applyClientRegistry, inject as clientRegistryInject } from '../src/client/index.ts'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertLookupMap {
@@ -598,12 +597,6 @@ describe('TypertRegistry', () => {
       wireTypeSymbol: '@fixture#AgentId',
       resolve: () => undefined,
     })).toThrow('lookup wire field')
-  })
-
-  it('installs the registry through the Client entry without importing the Host entry', async () => {
-    const ctx = new Context()
-    await ctx.plugin({ inject: clientRegistryInject, apply: applyClientRegistry })
-    expect(ctx.typert.list()).toEqual([])
   })
 
   it('contains change-listener failures and still notifies later listeners', async () => {

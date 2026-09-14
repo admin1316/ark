@@ -58,4 +58,4 @@ A UI without a search card renders the raw `tool/result` content, so no consumer
 
 - [Tagged render-intent union for tool-call presentation](../architecture/2026-07-02-tool-render-intent-union.md) — the `card`-tagged vocabulary this extends with the `search` result tag.
 - [Canonical tool output contract](../architecture/2026-07-20-canonical-tool-output-contract.md) — the value/render/`presentationMeta` split this projection rides; the structured value stays execution-local, the card rides `meta`.
-- [Web terminal card](2026-07-28-web-terminal-card.md) — the precedent this mirrors on the backend: a tool projects its result into `presentationMeta` and a `presentResult` view; the search card's web consumer is the analogous follow-up.
+- [Web terminal card](../../archived/feature/2026-07-28-web-terminal-card.md) — the precedent this mirrors on the backend: a tool projects its result into `presentationMeta` and a `presentResult` view; the search card's web consumer is the analogous follow-up.

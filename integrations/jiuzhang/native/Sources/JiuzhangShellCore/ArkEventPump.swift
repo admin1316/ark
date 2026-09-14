@@ -91,6 +91,25 @@ actor ArkEventMailbox<Element: Sendable> {
     }
   }
 
+  /// Wait for the next element, then drain whatever else is already buffered.
+  ///
+  /// A streaming turn delivers one frame per delta. Applying them one at a time
+  /// costs one MainActor turn — and therefore one full view-graph transaction —
+  /// per delta. Draining a burst in one turn preserves order and adds no
+  /// latency for slow producers while collapsing a burst into a single update.
+  func nextBatch(max: Int) async -> [Element] {
+    guard max > 0 else { return [] }
+    guard let first = await next() else { return [] }
+    var batch = [first]
+    while batch.count < max, bufferHead < buffer.count {
+      batch.append(buffer[bufferHead])
+      bufferHead += 1
+      refillFromWaitingProducer()
+      compactBufferIfNeeded()
+    }
+    return batch
+  }
+
   func finish() {
     guard !finished else { return }
     finished = true
@@ -139,11 +158,16 @@ public actor ArkEventPump {
   private let baseURL: URL
   private let apiToken: String
   private let session: URLSession
-  private let mailbox = ArkEventMailbox<ArkEventFrame>(capacity: 4_096)
+  /// Frames the receive loop may hold while the main actor is busy. Producers suspend at
+  /// capacity, which stops the socket from draining; the Host then overflows its own bounded
+  /// queue and closes that stream generation instead of resuming it. A deeper mailbox is what
+  /// keeps a momentarily busy UI from making the downlink lose a range at all.
+  private let mailbox = ArkEventMailbox<ArkEventFrame>(capacity: 16_384)
   private var lifecycle = Lifecycle.idle
   private var pumps: [ArkEventChannel: Task<Void, Never>] = [:]
   private var sockets: [ArkEventChannel: URLSessionWebSocketTask] = [:]
   private var stopTask: Task<Void, Never>?
+  private var reconnectTask: Task<Bool, Never>?
 
   public init(baseURL: URL, apiToken: String, session: URLSession = .shared) {
     self.baseURL = baseURL
@@ -154,6 +178,12 @@ public actor ArkEventPump {
   /// Await the next validated event, or nil after terminal shutdown.
   public func nextEvent() async -> ArkEventFrame? {
     await mailbox.next()
+  }
+
+  /// Await the next validated event batch (at least one, at most `max`).
+  /// An empty batch means terminal shutdown.
+  public func nextEvents(max: Int = 128) async -> [ArkEventFrame] {
+    await mailbox.nextBatch(max: max)
   }
 
   /// Convert the HTTP RPC base URL into one WebSocket downlink URL.
@@ -220,6 +250,30 @@ public actor ArkEventPump {
     }
   }
 
+  /// Replace both downlinks without finishing the mailbox or replacing its consumer.
+  /// Cancellation of one caller does not strand shared reconnection halfway through.
+  public func reconnect() async -> Bool {
+    guard !Task.isCancelled, lifecycle == .running else { return false }
+    if let reconnectTask { return await reconnectTask.value }
+    let activePumps = Array(pumps.values)
+    for socket in sockets.values { socket.cancel(with: .goingAway, reason: nil) }
+    sockets.removeAll()
+    pumps.removeAll()
+    for pump in activePumps { pump.cancel() }
+    let reconnectTask = Task { [self] in
+      for pump in activePumps { await pump.value }
+      guard lifecycle == .running else { return false }
+      for channel in ArkEventChannel.allCases {
+        pumps[channel] = Task { [weak self] in await self?.run(channel: channel) }
+      }
+      return true
+    }
+    self.reconnectTask = reconnectTask
+    let restarted = await reconnectTask.value
+    self.reconnectTask = nil
+    return restarted
+  }
+
   /// Permanently stop both sockets and finish the event stream after their receive loops exit.
   /// Concurrent callers await the same quiescence operation.
   public func stop() async {
@@ -236,9 +290,11 @@ public actor ArkEventPump {
     let activePumps = Array(pumps.values)
     pumps.removeAll()
     for pump in activePumps { pump.cancel() }
+    let reconnecting = reconnectTask
     let stopTask = Task {
       await mailbox.finish()
       for pump in activePumps { await pump.value }
+      if let reconnecting { _ = await reconnecting.value }
     }
     self.stopTask = stopTask
     await stopTask.value
@@ -263,21 +319,39 @@ public actor ArkEventPump {
           apiToken: apiToken,
           channel: channel
         )
+        ArkEventChannelDiagnostics.connection(channel: channel.rawValue, state: "connecting")
         let socket = session.webSocketTask(with: request)
         sockets[channel] = socket
         socket.resume()
+        var receivedFrames = 0
         while lifecycle == .running, !Task.isCancelled {
           let message = try await socket.receive()
+          receivedFrames += 1
           guard lifecycle == .running, !Task.isCancelled else { break }
           do {
             let frame = try Self.decodeFrame(message, channel: channel)
             if connectedAt == nil { connectedAt = DispatchTime.now().uptimeNanoseconds }
             if frame.method == "stream/error" { reportedFailure = true }
+            if receivedFrames % 256 == 0 {
+              let counts = await mailbox.counts()
+              if counts.buffered >= 2_048 || counts.waitingProducers > 0 {
+                ArkEventChannelDiagnostics.backpressure(
+                  channel: channel.rawValue,
+                  buffered: counts.buffered,
+                  suspended: counts.waitingProducers
+                )
+              }
+            }
             guard await mailbox.send(frame) else {
               break
             }
+          } catch ArkEventPumpError.unexpectedMethod {
+            // An additive Host frame type must not tear the downlink down: skip the frame and
+            // keep the stream alive. Only real shape violations stay fatal.
+            continue
           } catch {
             reportedFailure = true
+            ArkEventChannelDiagnostics.failure(channel: channel.rawValue, code: "EVENT_PROTOCOL_INVALID")
             _ = await publishConnectionFailure(
               channel: channel,
               code: "EVENT_PROTOCOL_INVALID",
@@ -300,6 +374,7 @@ public actor ArkEventPump {
       sockets[channel] = nil
       guard lifecycle == .running, !Task.isCancelled else { break }
       if !reportedFailure {
+        ArkEventChannelDiagnostics.failure(channel: channel.rawValue, code: "EVENT_STREAM_CLOSED")
         _ = await publishConnectionFailure(
           channel: channel,
           code: "EVENT_STREAM_CLOSED",

@@ -43,15 +43,11 @@ export const DEFAULT_CONTEXT_WINDOW = 262_144;
 export const DEFAULT_MAX_TOKENS = 32_768;
 /**
  * Modalities assumed for a model neither configuration nor the catalog
- * declares. Text is the floor every supported protocol certainly carries, so
- * this is the absence of a declaration rather than a guess at the endpoint:
- * nothing can interrogate a gateway for its modalities, and the two wrong
- * answers do not cost the same. Under-claiming refuses the image before it is
- * attached, naming the model. Over-claiming admits one the provider then
- * rejects mid-turn, after the message is durable, leaving the session
- * repeating a request that cannot succeed.
+ * declares. Ark 定制：默认为 text + image —— 已附加的图片一律允许进入请求，
+ * 能否真正识别由模型/上游在请求期决定；这里选择 over-claim，避免在客户端
+ * 直接拒绝用户的图片。
  */
-export const DEFAULT_INPUT = ['text'];
+export const DEFAULT_INPUT = ['text', 'image'];
 const thinkingBudgets = z.object({
     minimal: z.number(),
     low: z.number(),

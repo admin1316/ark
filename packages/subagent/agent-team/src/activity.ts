@@ -41,9 +41,9 @@ export class TeamActivity {
           reject(reason instanceof Error ? reason : new TeamError(`wait_agent aborted: ${errorMessage(reason)}`, 'TEAM_WAIT_ABORTED'))
         })
       }
-      const waiter: Waiter = { resolve: () => finish(() => resolve(true)) }
+      const waiter: Waiter = { resolve: () => { finish(() => { resolve(true) }) } }
       waiters.add(waiter)
-      const timer = setTimeout(() => finish(() => resolve(false)), timeoutMs)
+      const timer = setTimeout(() => { finish(() => { resolve(false) }) }, timeoutMs)
       signal.addEventListener('abort', onAbort, { once: true })
       if (signal.aborted) onAbort()
     })

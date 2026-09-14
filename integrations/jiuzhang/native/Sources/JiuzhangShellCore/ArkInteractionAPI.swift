@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Delivery policy for one native prompt submission.
 public enum ArkPromptDeliveryMode: String, Equatable, Sendable {
@@ -609,16 +610,32 @@ public actor ArkInteractionAPI {
     sessionID: String,
     text: String,
     images: [ArkPromptImage] = [],
-    mode: ArkPromptDeliveryMode = .queue
+    mode: ArkPromptDeliveryMode = .queue,
+    submissionID: String? = nil
   ) async throws {
-    let invocationID = UUID().uuidString.lowercased()
+    let timeZone = Self.launchTimeZoneIdentifier()
+    var digest = SHA256()
+    func append(_ data: Data) {
+      var length = UInt64(data.count).bigEndian
+      withUnsafeBytes(of: &length) { digest.update(bufferPointer: $0) }
+      digest.update(data: data)
+    }
+    for value in [submissionID ?? UUID().uuidString.lowercased(), sessionID, mode.rawValue, timeZone, text] {
+      append(Data(value.utf8))
+    }
+    for image in images {
+      append(Data(image.mediaType.rawValue.utf8))
+      append(Data((image.name ?? "").utf8))
+      append(image.data)
+    }
+    let invocationID = "ark-native:" + digest.finalize().map { String(format: "%02x", $0) }.joined()
     let payload = try ArkInteractionAPIContract.promptPayload(
       sessionID: sessionID,
       invocationID: invocationID,
       text: text,
       images: images,
       mode: mode,
-      timeZone: Self.launchTimeZoneIdentifier()
+      timeZone: timeZone
     )
     guard let request = payload.objectValue else { throw ArkAPIError(message: "消息请求无效") }
 

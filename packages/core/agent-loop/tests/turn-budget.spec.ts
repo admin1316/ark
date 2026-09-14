@@ -383,6 +383,35 @@ describe('bounded cancellation and teardown outcomes', () => {
     expect(turnReason(agent)).toEqual({ kind: 'aborted', reason: { kind: 'user' } })
   })
 
+  it('stays silent when the grace deadline fires after every operation drained', async () => {
+    // Real timers: the aborted wind-down performs real session IO with no
+    // monitored operation left, so the armed deadline can fire on an empty
+    // operation set and must stay silent instead of reporting a false alarm.
+    const released = Promise.withResolvers<undefined>()
+    const started = Promise.withResolvers<undefined>()
+    const adapter = new UncooperativeAdapter(released.promise, () => { started.resolve(undefined) })
+    context = await harness(adapter, { cancellationGraceMs: 1 })
+    const residuals: unknown[] = []
+    context.on('agent/quiescence-timeout', ({ residual }) => { residuals.push(residual) })
+    const agent = context.agentLoop.create(SessionId('residual-drained'), { provider: 'mock', model: 'mock' })
+    send(agent)
+    await started.promise
+    const bounded = agent.whenIdle().then(() => undefined, (error: unknown) => error)
+    agent.cancel({ kind: 'user' })
+    released.resolve(undefined)
+    try {
+      await waitUntil(() => agent.status === 'idle')
+      // The silent deadline skip means the aborted turn finishes normally.
+      expect(await bounded).toBeUndefined()
+    } finally {
+      released.resolve(undefined)
+      await waitUntil(() => agent.status === 'idle')
+      await agent.whenIdle()
+    }
+    expect(residuals).toEqual([])
+    expect(turnReason(agent)).toEqual({ kind: 'aborted', reason: { kind: 'user' } })
+  })
+
   it('lets a cooperative provider cancel and reach true idle within the grace', async () => {
     vi.useFakeTimers()
     const adapter = new MockAdapter(['hang'])

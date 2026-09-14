@@ -1,3 +1,8 @@
+---
+description: "The session log, system-prompt assembly, tool registry, agent vocabulary, deployment-default model selection, and concrete loop that form the harness's default control spine."
+kind: "package-group"
+---
+
 # core/ — product API spine
 
 English | [中文](README.zh.md)

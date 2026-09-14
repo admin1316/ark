@@ -343,6 +343,8 @@ function apply(ctx, config) {
 			if (args.action === "pause" || args.action === "resume") {
 				requireDirectHuman(ctx, execution);
 				if (hasText(args.objective) || hasRoundCap(args.max_goal_rounds) || hasText(args.blocked_reason)) throw new HarnessError("objective and max_goal_rounds are valid only with action edit; blocked_reason is valid only with action blocked", "GOAL_TOOL_INVALID_UPDATE");
+				const current = ctx.goals.get(execution.agent);
+				if (args.action === "resume" && current?.id === ref.id && current.revision === ref.revision && current.phase === "paused") throw new HarnessError("the model cannot resume a paused goal; the user must resume it", "GOAL_TOOL_RESUME_PAUSED");
 				const goal = args.action === "pause" ? ctx.goals.pause(execution.agent, ref) : ctx.goals.resume(execution.agent, ref);
 				return Promise.resolve(goalValue(goal));
 			}

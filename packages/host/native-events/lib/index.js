@@ -289,15 +289,11 @@ function toolEventView(ctx, event, argsFor, agent) {
 	}
 }
 function queueItems(agent, splice) {
-	const project = (target) => {
-		const messages = target === "next-turn" ? agent.inbox.nextTurn : agent.inbox.nextStep;
-		return splice?.target === target ? messages.toSpliced(splice.start, splice.removedCount ?? 0, ...splice.inserted) : messages;
-	};
-	return [...project("next-turn").map((message) => ({
+	return [...agent.inbox.project("next-turn", splice).map((message) => ({
 		id: message.id,
 		placement: "queued",
 		message
-	})), ...project("next-step").map((message) => ({
+	})), ...agent.inbox.project("next-step", splice).map((message) => ({
 		id: message.id,
 		placement: message.source.kind === "user" ? "steering" : "context",
 		message

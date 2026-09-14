@@ -1,4 +1,4 @@
-# Agent Note: Bounded, escalating signal shutdown for Web and headless
+# Agent Note: Bounded, escalating profile shutdown
 
 Status: implemented
 
@@ -18,16 +18,16 @@ SessionTelemetryBackend's own timeouts cannot prove that the whole plugin tree s
 
 The fix has two ownership layers. The OTel backend adds `shutdownTimeoutMillis` (default and shipped value: three seconds) around the SDK provider's complete shutdown Promise. Crossing it rejects into the telemetry coordinator's existing contained-failure path, allowing the Cordis tree to finish disposal; pending records may be lost because OTel exposes no cancellation for the transport Promise.
 
-Web and headless share `createProcessShutdown`, one process-level controller around root disposal:
+The shared `dsh-profile-runner` owns `createProcessShutdown`, one process-level controller around root disposal. CLI and Native profile launches use this owner; the retired Web launcher remains part of the incident history above:
 
-- Normal shutdown calls coalesce onto one disposal and retain the first requested exit code; they never escalate one another. Successful disposal records that code through `process.exitCode` and lets Node drain its remaining handles naturally. Disposal failure still forces process exit because the launcher cannot assume the failed tree reached quiescence.
-- The first signal starts the same graceful disposal and a referenced five-second exit backstop. Disposal success or failure exits once; neither can cancel the process exit.
-- A signal received while shutdown is pending forces immediate exit with that signal path's code. This includes the first `Ctrl+C` after headless normal completion has already entered disposal, and a second signal after a signal initiated the drain.
+- Normal shutdown calls coalesce onto one disposal; a nonzero result upgrades an earlier zero exit code without starting another disposer. They never escalate one another. Successful disposal records that code through `process.exitCode` and lets Node drain its remaining handles naturally. Disposal failure or timeout reports one diagnostic and forces a nonzero exit because the launcher cannot assume the failed tree reached quiescence.
+- The first signal starts or joins the same graceful disposal under its referenced five-second exit backstop. Disposal success or failure exits once; neither can cancel the process exit.
+- A second signal forces immediate exit. The first signal received during normal disposal joins that drain and requests exit after it settles; a signal after disposal completes forces exit if remaining handles keep Node alive.
 - The five-second bound is a process-safety invariant, not a deployment tunable. It is long enough for the telemetry deployment's ordinary drain ceiling while still bounding any wedged disposer at the launcher boundary.
 
 Normal completion deliberately avoids `process.exit()`: an immediately forced exit after an Undici request can hit Node's [Windows libuv async-handle assertion](https://github.com/nodejs/node/issues/56645) before the completed request's native handle cleanup drains. A signal can still force exit after normal disposal has completed if another handle keeps the process alive.
 
-Headless preserves exit 0 for a completed turn, exit 1 for another turn-end reason or API business error, 130 for SIGINT, and 143 for SIGTERM. Web preserves its existing SIGTERM exit 0 and SIGINT exit 130 behavior.
+The profile launcher requests exit 0 for supervisor SIGTERM and 130 for user SIGINT. A disposer failure or timeout cannot report success. Headless turn outcomes remain owned by its application plugin.
 
 This supersedes the [telemetry deployment Note's](../feature/2026-07-31-web-telemetry-default-mount.md) assumption that SDK exporter/processor timeouts bound complete provider shutdown, and its earlier decision to defer a process-level backstop. The backend owns its export loss/latency policy and closes the known SDK `forceFlush()` gap; the launcher owns the outer guarantee that no plugin can trap the process indefinitely.
 
@@ -43,14 +43,14 @@ This supersedes the [telemetry deployment Note's](../feature/2026-07-31-web-tele
 
 ## Consequences
 
-A healthy normal exit still disposes the complete Cordis tree and then waits for Node's event loop to drain. The known telemetry wait releases after at most three seconds; any other wedged exit lasts at most five seconds without further input, and a signal ends a lingering normal completion or pending shutdown immediately. Forced or deadline-bounded exit can interrupt telemetry export or remaining cleanup, which is intentional only after the graceful contract has failed or the user has explicitly escalated.
+A healthy normal exit still disposes the complete Cordis tree and then waits for Node's event loop to drain. The known telemetry wait releases after at most three seconds; any other wedged exit lasts at most five seconds without further input, and a second signal ends a pending drain immediately. A signal after disposal ends lingering handle draining immediately. Forced or deadline-bounded exit can interrupt telemetry export or remaining cleanup, which is intentional only after the graceful contract has failed or the user has explicitly escalated.
 
 The controller is launcher infrastructure rather than a Cordis plugin: it makes no claim that disposal completed, and it does not weaken the lifecycle rule that ordinary disposers must reach quiescence.
 
 ## Testing
 
-`apps/cli/tests/process-shutdown.spec.ts` pins natural completion after resolved disposal, forced exit after rejected disposal, the five-second backstop, normal-call coalescing, signal-owned disposal, a signal interrupting normal disposal or post-disposal handle draining, and second-signal escalation.
+`packages/boot/profile-runner/tests/process-shutdown.spec.ts` pins natural completion, nonzero failure and timeout diagnostics, the five-second backstop, normal/fatal-call coalescing, a first signal joining normal disposal, post-disposal handle draining, and second-signal escalation. `packages/boot/profile-runner/tests/telemetry-switch.spec.ts` retains the telemetry opt-out boundary; the CLI carries no separate implementation.
 
-`apps/cli/tests/headless-shutdown.e2e.ts` boots the real shipped Web/headless Loader tree in a PTY with a test-only plugin whose disposer announces entry and never settles. The test sends SIGINT after the observation URL, waits for proof that disposal started, sends SIGINT again, and requires exit 130. The source/artifact launch resolver keeps the same regression on both execution planes. This PTY case covers the user-visible process state; no model-output snapshot changes.
+`apps/cli/tests/headless-shutdown.e2e.ts` boots the real shipped headless Loader tree in a PTY with a test-only plugin whose disposer announces entry and never settles. The test sends SIGINT after the observation URL, waits for proof that disposal started, sends SIGINT again, and requires exit 130. The source/artifact launch resolver keeps the same regression on both execution planes. This PTY case covers the user-visible process state; no model-output snapshot changes.
 
 `packages/session/session-telemetry-otel/tests/otel.spec.ts` holds a real OTLP request open after timer export begins and pins that Cordis disposal returns at `shutdownTimeoutMillis`, despite the SDK's `forceFlush()` remaining pending. The collector is then released so the still-observed provider Promise settles cleanly.

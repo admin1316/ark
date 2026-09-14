@@ -11,7 +11,10 @@ export class TeamRuntimeLifecycle {
   /** Whether shutdown has closed admission, independently of completed cleanup. */
   get disposed(): boolean { return this.signal.aborted }
   /** Original cancellation reason used to distinguish shutdown from unexpected failure. */
-  get reason(): unknown { return this.signal.reason }
+  get reason(): unknown {
+    const reason: unknown = this.signal.reason
+    return reason
+  }
 
   private isCancellation(reason: unknown): boolean {
     const seen = new Set<unknown>()
@@ -56,9 +59,11 @@ export class TeamRuntimeLifecycle {
   async withTimeout<T>(operation: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new TeamError(
-        `Agent Teams runtime disposal exceeded ${this.disposalTimeoutMs}ms`, 'TEAM_DISPOSAL_TIMEOUT',
-      )), this.disposalDeadline === undefined ? this.disposalTimeoutMs : Math.max(0, this.disposalDeadline - Date.now()))
+      timer = setTimeout(() => {
+        reject(new TeamError(
+          `Agent Teams runtime disposal exceeded ${this.disposalTimeoutMs}ms`, 'TEAM_DISPOSAL_TIMEOUT',
+        ))
+      }, this.disposalDeadline === undefined ? this.disposalTimeoutMs : Math.max(0, this.disposalDeadline - Date.now()))
     })
     try { return await Promise.race([operation, timeout]) }
     finally { clearTimeout(timer) }

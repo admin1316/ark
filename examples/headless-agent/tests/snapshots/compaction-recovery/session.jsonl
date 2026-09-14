@@ -12,7 +12,7 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_compaction_marker","name":"bash","arguments":"{\"command\":\"printf 'alpha\\n'\",\"description\":\"Emit compaction premise marker\"}"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":24,"outputTokens":6}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_compaction_marker","name":"bash","arguments":"{\"command\":\"printf 'alpha\\n'\",\"description\":\"Emit compaction premise marker\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"bc7247fc-e082-4550-b98e-4f7bcc2e1083"},"usage":{"inputTokens":24,"outputTokens":6}},"sourceEventSeqs":[[8,12]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_compaction_marker","name":"bash","arguments":"{\"command\":\"printf 'alpha\\n'\",\"description\":\"Emit compaction premise marker\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"bc7247fc-e082-4550-b98e-4f7bcc2e1083"},"usage":{"inputTokens":24,"outputTokens":6}},"sourceEventSeqs":[8,9,10,11,12],"surfaceOp":"append"}
 {"type":"tool/call","data":{"turn":1,"step":1,"callId":"call_compaction_marker","name":"bash","arguments":"{\"command\":\"printf 'alpha\\n'\",\"description\":\"Emit compaction premise marker\"}"}}
 {"type":"tool/result","data":{"turn":1,"step":1,"message":{"source":{"kind":"tool","callId":"call_compaction_marker"},"content":[{"type":"tool-result","toolCallId":"call_compaction_marker","content":[{"type":"text","text":"alpha\n"}],"isError":false}],"role":"user","id":"4d8b943a-bbf0-4b5f-988c-9cf7526d465f"}},"sourceEventSeqs":[14],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":1}}
@@ -27,6 +27,6 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"COMPACTION RECOVERED"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"usage","usage":{"inputTokens":20,"outputTokens":4}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"text","text":"COMPACTION RECOVERED"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"dad6fdeb-6d9e-40d4-bbd0-921665ff01af"},"usage":{"inputTokens":20,"outputTokens":4}},"sourceEventSeqs":[[23,27]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"text","text":"COMPACTION RECOVERED"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"dad6fdeb-6d9e-40d4-bbd0-921665ff01af"},"usage":{"inputTokens":20,"outputTokens":4}},"sourceEventSeqs":[23,24,25,26,27],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":2}}
 {"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}

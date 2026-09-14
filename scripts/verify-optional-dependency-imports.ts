@@ -21,14 +21,14 @@
  * deliberately conservative in one direction — a value binding the compiler
  * would elide because nothing references it in a value position is still
  * reported, and the fix it asks for (`import type`, or dropping the binding) is
- * what the published package wants regardless. Both compiler faces are scanned,
+ * what the published package wants regardless. The complete Host project graph is scanned,
  * and only files that ship — a published package's `src` — are subject.
  */
 
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import ts from 'typescript'
-import { TypeScriptProject, type CompilerFace } from './ts-project.ts'
+import { TypeScriptProject } from './ts-project.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -190,13 +190,7 @@ export function collectOptionalImportViolations(project: TypeScriptProject): str
 
 /** CLI entry: list every violation and exit 1, or confirm the invariant holds. */
 function main(): void {
-  const faces: readonly CompilerFace[] = ['host', 'client']
-  const violations = new Set<string>()
-  for (const face of faces) {
-    for (const violation of collectOptionalImportViolations(new TypeScriptProject(root, face))) {
-      violations.add(violation)
-    }
-  }
+  const violations = new Set(collectOptionalImportViolations(new TypeScriptProject(root)))
   if (violations.size === 0) {
     console.log('verify-optional-dependency-imports: no optional dependency is loaded at module scope.')
     return

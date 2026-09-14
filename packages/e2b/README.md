@@ -1,3 +1,8 @@
+---
+description: "An experimental provider-composition POC that places one filesystem/process execution world in an E2B Linux sandbox."
+kind: "package-group"
+---
+
 # e2b/ — E2B remote runtime family
 
 English | [中文](README.zh.md)
@@ -13,3 +18,5 @@ An experimental provider-composition POC that places one filesystem/process exec
 The existing [`dsh-bash-local`](../shell/bash-local/README.md), [`dsh-terminal-bash`](../terminal/terminal-bash/README.md), and [`dsh-lsp-stdio`](../lsp/lsp-stdio/README.md) need no E2B-specific forks. They delegate every execution-world operation to `ctx.fs` and `ctx.subprocess`, so mounting the two E2B adapters places their mutable work in the same sandbox.
 
 This boundary does not move the harness process, Cordis objects, model calls, agent/session state, session persistence, skills, higher-level protocol state, or E2B SDK buffers. The [portable execution-world decision](../../.agents/notes/implemented/architecture/2026-07-28-portable-execution-world-consumers.md) owns both the generic composition and this POC boundary.
+
+The [subprocess reference](../../docs/subsystems/subprocess.md) defines the shared process contract implemented by the remote adapter.

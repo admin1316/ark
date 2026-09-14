@@ -6,6 +6,7 @@
 import { Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm';
+import { installModelSelectionProjection } from "./session-selection.js";
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings';
 /** Settings namespace carrying the default model selection for future Agents. */
 export const AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE = settingsNamespace('agent-default-model');
@@ -38,6 +39,7 @@ export class AgentDefaultModelConfig extends Service {
     source;
     constructor(ctx, config) {
         super(ctx, 'agentDefaultModel');
+        ctx.inject(['sessionProjections'], installModelSelectionProjection);
         const entry = { provider: config.provider, model: config.model };
         this.source = () => entry;
         installSettingsSection(ctx, AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA, entry, {

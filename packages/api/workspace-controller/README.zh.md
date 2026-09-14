@@ -1,5 +1,5 @@
 ---
-description: "Host 与 Client 工作区控制：修改工作区导航并跟随其完整投影。"
+description: "Host Workspace follow 流，以及基于权威 Workspace Registry 的目录选择操作。"
 kind: "package-reference"
 ---
 # Workspace Controller
@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-api-workspace-controller` 拥有 Host 的 `ctx.workspaceController` 服务和生成的 Client `ctx.remote.workspace` namespace。它的 Remote 方法负责创建、重命名、移除和重排 Workspace，在 Workspace 内重排 Session，从 Workspace 导航中归档 Session，以及跟随完整的 Workspace 投影。当 Client 必须修改或跟随 Workspace 导航时，请通过 API Gateway 使用它。本包同时拥有 `ctx.directoryPickerController` 与生成的 `ctx.remote.directoryPicker` namespace，因为它承载的选目录 seam 是抽象的，自身从不作为 Loader entry。
+`@deepseek-ai/dsh-api-workspace-controller` 拥有 Host 的 `ctx.workspaceController` 和 `workspace/follow` 流。`@deepseek-ai/dsh-workspace` 是工作区列表、创建、重命名、删除、排序、归档、恢复及永久删除已归档会话的唯一 Remote 所有者。本包同时拥有 `ctx.directoryPickerController` 与生成的 `ctx.remote.directoryPicker` namespace，因为它承载的选目录 seam 是抽象的，自身从不作为 Loader entry。
 
 ## 目录
 
@@ -22,16 +22,15 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-Host 控制器会串行执行正确性取决于当前 registry 状态的变更，并为预期失败返回稳定的 `WorkspaceError` 值。它的 `follow()` 流会同步订阅持久 Workspace 变更，先发出一份完整 baseline，再按顺序发出 `upsert`、`remove`、`order` 和 `archived` 增量。重连会以替换 baseline 开始新一代，因此消费方不依赖收到断线期间的每个增量。
+Workspace Registry 串行执行变更，在 Remote 传输结果内返回核心领域结果。消费方必须解开两层结果，才能将变更视为成功。空白名称返回 `arguments-invalid`；非法会话排序的诊断详情保留工作区、会话及可选锚点标识。它的 `follow()` 流会同步订阅持久 Workspace 变更，先发出一份完整 baseline，再按顺序发出 `upsert`、`remove`、`order` 和 `archived` 增量。重连会以替换 baseline 开始新一代，因此消费方不依赖收到断线期间的每个增量。
 
-Client 入口提供 `ClientWorkspaceModel` 和 `createWorkspaceStateStream()`。该模型拥有 Workspace 行、registry 顺序、已归档 Session id、一元变更回声，以及流与一元调用的竞态处理。较新的 Host 行按 `updatedAt` 获胜；已提交的流顺序优先于较旧的一元响应；已经移除的 Workspace id 不会被延迟数据复活。该包公开与框架无关的快照和订阅，把导航策略与 React hook 留给 UI owner。
 
 -----
 
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为 Workspace 组织属于浏览器与 Host 控制状态，并且不注册提示词、工具或会话事件。
+无，因为 Workspace 组织属于Host 控制状态，并且不注册提示词、工具或会话事件。
 
 #### KV Cache 影响
 
@@ -42,7 +41,6 @@ Client 入口提供 `ClientWorkspaceModel` 和 `createWorkspaceStateStream()`。
 <a id="known-limitations-and-deferred-work"></a>
 
 - `follow()` 在重连后替换完整投影，不提供持久 cursor 或增量追赶协议。
-- 进程本地删除标记只会在 Client 模型生命周期内阻止延迟数据复活已移除的 Workspace。
 
 
 <a id="dev-note"></a>

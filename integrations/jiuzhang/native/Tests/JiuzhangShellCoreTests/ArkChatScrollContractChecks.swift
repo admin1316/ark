@@ -29,6 +29,40 @@ private func approximatelyEqual(_ left: Double, _ right: Double, tolerance: Doub
 }
 
 func runArkChatScrollContractChecks() {
+  let renderIDs = (0..<6_001).map { "row-\($0)" }
+  var readingWindow = ArkChatRenderWindow()
+  var backwardCoverage = Set<String>()
+  for _ in 0..<100 {
+    let range = readingWindow.range(in: renderIDs, limit: 160)
+    check(range.count <= 160, "manual history paging retains the row bound")
+    backwardCoverage.formUnion(renderIDs[range])
+    if range.lowerBound == 0 { break }
+    readingWindow.earlier(in: renderIDs, limit: 160)
+  }
+  check(backwardCoverage.count == renderIDs.count,
+        "bounded history windows can reach every row beyond the former 2000-row suffix")
+  var forwardCoverage = Set<String>()
+  for _ in 0..<100 {
+    let range = readingWindow.range(in: renderIDs, limit: 160)
+    forwardCoverage.formUnion(renderIDs[range])
+    if range.upperBound == renderIDs.count { break }
+    readingWindow.later(in: renderIDs, limit: 160)
+  }
+  check(forwardCoverage.count == renderIDs.count && readingWindow.followsLatest,
+        "forward history paging reaches the latest row without growing the window")
+  readingWindow.reveal("row-2500", in: renderIDs, limit: 96)
+  let pinned = readingWindow.range(in: renderIDs, limit: 96)
+  let appended = renderIDs + (6_001..<6_500).map { "row-\($0)" }
+  check(pinned.contains(2_500)
+        && readingWindow.range(in: appended, limit: 96) == pinned,
+        "turn navigation materializes the requested row and live appends keep its reading anchor")
+  let prepended = ["older-a", "older-b"] + renderIDs
+  let shifted = readingWindow.range(in: prepended, limit: 96)
+  check(Array(prepended[shifted]) == Array(renderIDs[pinned]),
+        "prepending records preserves the selected row identities")
+  readingWindow.returnToLatest()
+  check(readingWindow.range(in: appended, limit: 96).upperBound == appended.count,
+        "only explicit return to latest resumes the tail")
   let attachmentURL = contractNativeRoot.appendingPathComponent(
     "Sources/JiuzhangShellUI/ArkChatScrollAttachment.swift"
   )
@@ -49,6 +83,19 @@ func runArkChatScrollContractChecks() {
      let root = try? String(contentsOf: rootURL, encoding: .utf8),
      let model = try? String(contentsOf: modelURL, encoding: .utf8),
      let metrics = try? String(contentsOf: metricsURL, encoding: .utf8) {
+    let historyInstallBodies = [
+      chatSourceSlice(model,
+        from: "public func refreshHistory(resetPaging: Bool = false) async",
+        through: "public func loadOlderHistory() async"),
+      chatSourceSlice(model,
+        from: "public func loadOlderHistory() async",
+        through: "private func loadMessageFeedback(for sessionID: String) async"),
+    ]
+    check(
+      historyInstallBodies[0]?.components(separatedBy: "seenEventIDs = Set(events.map(\\.id))").count == 2
+        && historyInstallBodies[1]?.contains("seenEventIDs =") == false,
+      "live recovery builds one retained event-id set while history page navigation leaves it unchanged"
+    )
     check(
       attachment.contains("private func setAtBottom(_ value: Bool)")
         && attachment.contains("guard isAtBottom != value else { return }")
@@ -88,7 +135,18 @@ func runArkChatScrollContractChecks() {
     )
     check(
       feed?.contains("Publishers.MergeMany(triggers)") == true
-        && feed?.contains(".throttle(for: .milliseconds(100)") == true
+        // One in-flight refresh with an adaptive cadence replaced the fixed 100 ms throttle:
+        // a fixed throttle rebuilt the view list faster than a large transcript could apply it.
+        && feed?.contains("guard refreshTask == nil else { return }") == true
+        && feed?.contains("let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15") == true
+        // Adaptive backoff: the cadence grows with the measured main-thread backlog and is capped,
+        // so one expensive layout transaction can no longer queue the next refresh behind it.
+        && feed?.contains("let interval = base + refreshBackoff") == true
+        && feed?.contains("let overshoot = max(0, Date().timeIntervalSince(deadline))") == true
+        // The cap may not clamp below the measured backlog, so no transaction can queue the next
+        // refresh behind itself however long it runs.
+        && feed?.contains("self.refreshBackoff = max(self.refreshBackoff, overshoot)") == true
+        && feed?.contains("static let maxRefreshBackoff: TimeInterval = 3.0") == true
         && feed?.contains("NativeChatSessionFeedState") == true
         && feed?.contains("model.$sessions.map { [weak model] sessions in") == true
         && feed?.contains(".removeDuplicates()") == true
@@ -101,13 +159,27 @@ func runArkChatScrollContractChecks() {
       feed?.contains("NativeGFMParseWorker.shared.blocks(for: source.source)") == true
         && feed?.contains("private var markdownProjectionState") == true
         && feed?.contains("let reconciliation = reconcileMarkdownSources(model: model)") == true
-        && feed?.contains("reconciliation.sessionChanged\n        ? [:]") == true
+        && feed?.contains("reconciliation.sessionChanged") == true
+        && feed?.contains("? [:]") == true
         && feed?.contains("markdownProjectionState.beginRequest(for: source)") == true
         && feed?.contains("markdownProjectionState.stage(blocks, for: request)") == true
         && feed?.contains("markdownProjectionState.cancel(request)") == true
         && feed?.contains("for task in markdownTasks.values { task.cancel() }") == true
-        && feed?.contains("snapshot.installing(ready)") == true
+        // Request identity stays attached until the refresh reconciles the latest source.
+        // A second queue of naked blocks could reinstall an obsolete source after that check.
+        && feed?.contains("pendingMarkdownInstall") == false
+        && feed?.contains("markdownPublishTask") == false
+        && feed?.components(separatedBy: "markdownProjectionState.takeReadyBlocks()").count == 2
+        && chatSourceSlice(
+          feed ?? "", from: "let reconciliation = reconcileMarkdownSources(model: model)",
+          through: "private func reconcileMarkdownSources"
+        )?.contains("let ready = markdownProjectionState.takeReadyBlocks()") == true
+        && feed?.contains("snapshot.installing(ready)") == false
+        && snapshotWriterCount(feed) == 2
+        // The single remaining publish site must suppress implicit animation, exactly like the
+        // markdown path it replaced.
         && feed?.contains("transaction.disablesAnimations = true") == true
+        && feed?.contains("withTransaction(transaction) { snapshot = next }") == true
         && feed?.contains("markdownSessionID") == false
         && feed?.contains("markdownRequestTokens") == false
         && feed?.contains("NativeGFMParser.parse") == false
@@ -201,18 +273,19 @@ func runArkChatScrollContractChecks() {
 
     let livePublish = chatSourceSlice(
       model,
-      from: "private func scheduleLivePublish()",
+      from: "private func scheduleLivePublish(",
       through: "private func scheduleNavigationRefresh()"
     )
     check(
       livePublish?.contains("turnProjection.append(contentsOf: incoming)") == true
         && livePublish?.contains("ArkChatTurnMetrics.projectAll(events: events)") == false
-        && livePublish?.contains("event.type == \"turn/end\"") == true
+        && livePublish?.contains("turnUsageProjection.append(contentsOf: incoming)") == true
+        && livePublish?.contains("ArkChatTurnUsageProjection.projectAll(events: events)") == false
         && livePublish?.contains("var chatPresentationChanged = false") == true
         && livePublish?.contains("if chatPresentationChanged { chatPresentationDidChange.send() }") == true
         && metrics.contains("struct ArkChatTurnProjection: Equatable, Sendable")
         && metrics.contains("metricsByTurn[turn] = metrics(for: value)"),
-      "live chat updates metrics incrementally and folds exact usage only when a turn settles"
+      "live chat updates metrics and strict usage incrementally without refolding the retained log"
     )
     check(
       model.contains("public private(set) var messages: [ArkMessage]")
@@ -354,6 +427,59 @@ func runArkChatScrollContractChecks() {
     _ = batchState.cancel(request)
     check(batchState.takeReadyBlocks().isEmpty, "cancellation discards a staged result before publication")
   }
+
+  var returningSourceState = NativeAssistantMarkdownProjectionState()
+  _ = returningSourceState.reconcile(sessionID: "returning-source", requestedSources: [sourceA])
+  let originalRequest = returningSourceState.beginRequest(for: sourceA)
+  _ = returningSourceState.reconcile(sessionID: "returning-source", requestedSources: [sourceB])
+  _ = returningSourceState.reconcile(sessionID: "returning-source", requestedSources: [sourceA])
+  let currentRequest = returningSourceState.beginRequest(for: sourceA)
+  if let originalRequest {
+    returningSourceState.stage([.paragraph([.text("obsolete attempt")])], for: originalRequest)
+  }
+  let obsoleteCancellation = originalRequest.map { returningSourceState.cancel($0) } ?? false
+  check(
+    originalRequest != nil && currentRequest != nil
+      && originalRequest?.token != currentRequest?.token
+      && !obsoleteCancellation && returningSourceState.takeReadyBlocks().isEmpty,
+    "returning source bytes cannot revive an obsolete parse or cancel the replacement attempt"
+  )
+  let currentBlocks: [NativeGFMBlock] = [.paragraph([.text(sourceA.source)])]
+  if let currentRequest { returningSourceState.stage(currentBlocks, for: currentRequest) }
+  check(
+    returningSourceState.takeReadyBlocks()[sourceID] == currentBlocks
+      && returningSourceState.takeReadyBlocks().isEmpty,
+    "the replacement attempt publishes its complete result exactly once after an obsolete cancellation"
+  )
+
+  var mixedState = NativeAssistantMarkdownProjectionState()
+  let unchangedSource = NativeAssistantMarkdownSource(
+    id: NativeAssistantMarkdownSourceID(messageID: sourceID.messageID + 1, sourceSlot: 0),
+    source: "independent final answer"
+  )
+  _ = mixedState.reconcile(sessionID: "mixed-batch", requestedSources: [sourceA, unchangedSource])
+  for source in [sourceA, unchangedSource] {
+    if let request = mixedState.beginRequest(for: source) {
+      mixedState.stage([.paragraph([.text(source.source)])], for: request)
+    }
+  }
+  _ = mixedState.reconcile(sessionID: "mixed-batch", requestedSources: [sourceB, unchangedSource])
+  let survivingBatch = mixedState.takeReadyBlocks()
+  let replacementRequest = mixedState.beginRequest(for: sourceB)
+  check(
+    survivingBatch.count == 1
+      && survivingBatch[unchangedSource.id] == [.paragraph([.text(unchangedSource.source)])]
+      && survivingBatch[sourceID] == nil
+      && replacementRequest != nil,
+    "a source change before final publication discards only stale blocks and keeps its replacement eligible"
+  )
+  let replacementBlocks: [NativeGFMBlock] = [.paragraph([.text(sourceB.source)])]
+  if let replacementRequest { mixedState.stage(replacementBlocks, for: replacementRequest) }
+  check(
+    mixedState.takeReadyBlocks() == [sourceID: replacementBlocks]
+      && mixedState.installedSourceIDs == Set([sourceID, unchangedSource.id]),
+    "the complete replacement joins the next batch without dropping an unchanged final answer"
+  )
 
   check(
     !NativeAssistantMarkdownPrefixPolicy.hasContent(
@@ -669,6 +795,16 @@ func runArkChatScrollContractChecks() {
 
   MainActor.assumeIsolated {
     runArkChatScrollAppKitHarnessChecks()
+  }
+}
+
+/// Counts live `snapshot = …` writers in a feed slice. Comments are ignored so prose about the
+/// removed publish path can neither satisfy nor break the invariant, and every real write must sit
+/// on its own line: exactly two writers are allowed - the initial snapshot and the gated refresh.
+private func snapshotWriterCount(_ slice: String?) -> Int {
+  (slice ?? "").split(separator: "\n", omittingEmptySubsequences: false).reduce(into: 0) { total, line in
+    let trimmed = String(line).trimmingCharacters(in: .whitespaces)
+    if !trimmed.hasPrefix("//"), line.contains("snapshot =") { total += 1 }
   }
 }
 

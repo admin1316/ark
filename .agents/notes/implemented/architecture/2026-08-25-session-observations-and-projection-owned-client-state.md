@@ -61,6 +61,8 @@ The observation owns no mutation authority. Its event array is an immutable pref
 
 Projection work is deliberately `all | none`. `all` computes every registered projection at the observation's event cursor; `none` leaves projection state untouched. There is no per-key preparation state, `projectionKeys` mode, or cached `viewedState`/`viewedValue` layer. A publisher may filter the completed values for an audience, but the underlying observation is never partly projected.
 
+The Host [semantic history reader](../../../../packages/host/session-remote-operations/README.md) derives numeric record locators from an observation at one fixed cut. Complete message and dependency reads materialize their JSON once and release the observation before returning fragments. A bound content handle owns the remaining JSON until completion, explicit close, idle expiry, or Host disposal; continuations validate source metadata without rebuilding the observation or index. This bounds repeated read work and avoids pinning a prepared Session across requests. Historical preset resolution uses the latest selection within that cut once per body. Domain reducers and the complete durable log remain authoritative; a timing-only dependency bundle cannot seed a strict live stream accumulator.
+
 ### Projection execution boundary
 
 For a live source, `all` reads one synchronous registry snapshot. For a prepared source, the projection cache may seed valid state rows, after which every registered unit advances over the exact remaining event prefix. The resulting client values share one `asOfSeq`.

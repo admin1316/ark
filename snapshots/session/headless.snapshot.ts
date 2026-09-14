@@ -603,9 +603,8 @@ describe('headless recorded-session snapshots', () => {
         join(baseComposition.dir, 'model.cordis.yml'),
       ]
       const patchRoot = '.snapshot-patches'
-      const patches = patchSources.map((source, index) => source.endsWith('.snapshot.yml')
-        ? join(patchRoot, `${String(index)}-${basename(source)}`)
-        : source)
+      const patches = patchSources.map((source, index) =>
+        join(patchRoot, `${String(index)}-${basename(source)}`))
 
       let actualLogs: SessionLog[] = []
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
@@ -652,9 +651,7 @@ describe('headless recorded-session snapshots', () => {
           prepare: async (cwd) => {
             await mkdir(join(cwd, patchRoot), { recursive: true })
             patchSources.forEach((source, index) => {
-              if (source.endsWith('.snapshot.yml')) {
-                materializeProfilePatch(source, cwd, join(cwd, patchRoot), index)
-              }
+              materializeProfilePatch(source, cwd, join(cwd, patchRoot), index, dshBin)
             })
             await seedWorkspace(scenario, cwd)
             initialWorkspace = await captureWorkspaceSnapshot(cwd, {

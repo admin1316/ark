@@ -61,6 +61,7 @@ export type ScopeInstructionProbe = {
  * @param fileSystem - optional provider used instead of host filesystem probes.
  * @param signal - cancellation for provider and host probes.
  * @returns the discovered project root, or `cwd` when no marker exists.
+ * @throws the original marker metadata error or cancellation reason when a probe is unavailable.
  */
 export declare function findProjectRoot(cwd: string, markers: readonly string[], fileSystem?: FileSystem, signal?: AbortSignal): Promise<string>;
 /**

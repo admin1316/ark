@@ -5,6 +5,10 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentDefaultModelConfig, { AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE } from '../src/index.ts'
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { sessionModelSelection } from '../src/session-selection.ts'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 
 /** The smallest real provider: one in-memory document, always writable. */
@@ -93,6 +97,67 @@ describe('AgentDefaultModelConfig', () => {
     await ctx.plugin(AgentDefaultModelConfig, { provider: 'p', model: 'm' })
     await ctx.agentDefaultModel.saveSelection({ provider: 'other', model: 'other' })
     expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'p', model: 'm' })
+    await ctx.fiber.dispose()
+  })
+})
+
+
+describe('transport-independent Session model intent', () => {
+  it('normalizes absent reasoning effort in persisted and wire projections without accepting empty effort', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(AgentDefaultModelConfig, { provider: 'default', model: 'default-model' })
+    const session = ctx.sessions.create(SessionId('schema-test'))
+    const restore = (pending: unknown) => ctx.sessionProjections.restore({
+      modelSelection: { ver: 2, seq: -1, val: { lastUsed: null, pending } },
+    }, [], 0, session.header)
+    for (const pending of [
+      { provider: 'p', model: 'm' },
+      { provider: 'p', model: 'm', reasoningEffort: undefined },
+    ]) {
+      expect(restore(pending).checkpoint.modelSelection?.val).toEqual({
+        lastUsed: null, pending: { provider: 'p', model: 'm' },
+      })
+      const view = restore(pending).snapshot.values.modelSelection
+      expect(view).toEqual({ lastUsed: null, next: { provider: 'p', model: 'm' } })
+      expect(view).not.toHaveProperty('next.reasoningEffort')
+    }
+    expect(() => restore({ provider: 'p', model: 'm', reasoningEffort: '' })).toThrow()
+    expect(restore({ provider: 'p', model: 'm', reasoningEffort: 'high' }).checkpoint.modelSelection?.val).toEqual({ lastUsed: null, pending: { provider: 'p', model: 'm', reasoningEffort: 'high' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('registers and restores pending intent without any Session controller, then consumes only its matching request', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(AgentDefaultModelConfig, { provider: 'default', model: 'default-model' })
+    const original = ctx.sessions.create(SessionId('saved-selection'), { meta: { cwd: '/fixture' } })
+    original.append('request/header', {
+      header: { config: { provider: 'old', model: 'old-model' } }, reason: 'initial',
+    })
+    original.append('model/selection', { provider: 'chosen', model: 'chosen-model', reasoningEffort: 'high' })
+    const restored = ctx.sessions.prepare(SessionId('restored-selection'), {
+      meta: { cwd: '/fixture' }, seed: [...original.events],
+    })
+    const agentCtx = ctx.extend({})
+    const agent = { id: restored.id, session: restored, ctx: agentCtx } as Agent
+    const selection = sessionModelSelection(ctx, agent)
+    expect(sessionModelSelection(ctx, agent)).toBe(selection)
+    expect(selection.current).toEqual({ provider: 'chosen', model: 'chosen-model', reasoningEffort: 'high' })
+    expect(ctx.sessionProjections.snapshot(restored).values.modelSelection?.next).toEqual(selection.current)
+    restored.append('request/header', {
+      header: { config: { provider: 'old', model: 'old-model' } }, reason: 'initial',
+    })
+    expect(selection.current.provider).toBe('chosen')
+    restored.append('request/header', {
+      header: { config: { provider: 'chosen', model: 'chosen-model', reasoningEffort: ReasoningEffortId('high') },
+        adapterDefaults: { reasoningEffort: true } }, reason: 'initial',
+    })
+    expect(ctx.sessionProjections.stateOf(restored, 'modelSelection')?.pending).toBeNull()
+    // Adapter-default effort is logged use, not a persistent explicit override.
+    expect(selection.current).toEqual({ provider: 'chosen', model: 'chosen-model' })
     await ctx.fiber.dispose()
   })
 })

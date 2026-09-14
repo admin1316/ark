@@ -1,8 +1,25 @@
+---
+description: "Same-session continuation driver for ctx.goals."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-goal-round-driver
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Same-session continuation driver for [`ctx.goals`](../goal/README.md). It turns an active, armed goal into sequential [goal rounds](../../../docs/glossary.md#goal-round) through the public `Agent` and session services; the [same-session driver Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-same-session-goal-round-driver.md) owns the race and lifecycle rationale.
+
+## Table of Contents
+
+- [Composition](#composition)
+- [Round contract](#round-contract)
+- [Idle checkpoint](#idle-checkpoint)
+- [Lifecycle and durability](#lifecycle-and-durability)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Composition
 
@@ -62,3 +79,7 @@ Append-only within an epoch: each admitted round extends the existing conversati
 - **Accepted-queue unload race** — Cordis plugin unload is asynchronous. A goal prompt already accepted by the agent inbox can begin and consume its round before unload starts; teardown then cancels the request, disarms the goal, and awaits quiescence. No later round starts.
 - **Round cap, not resource budget** — token, currency, time, and provider quota policies remain independent. Their session events are not attributed to the goal message or mapped into goal blocker codes.
 - **No abnormal auto-retry** — transient provider and persistence failures require a later human-authorized resume rather than an implicit retry policy.
+
+### Dev Note
+
+None.

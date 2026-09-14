@@ -30,6 +30,7 @@ vi.mock('../src/vision.ts', async (importOriginal) => {
 })
 
 import KnowledgeWikiService from '../src/index.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 interface IngestSurface {
   snapshots: { currentGeneration(root: string): number; dispose(): void }
@@ -66,9 +67,9 @@ beforeEach(() => {
       return { text: await mocks.describeImage(request.apiKey, request.path) as string }
     },
   })
-  service = new KnowledgeWikiService(ctx, {
+  service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot, mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-  }) as unknown as IngestSurface
+  })) as unknown as IngestSurface
 })
 
 afterEach(async () => {

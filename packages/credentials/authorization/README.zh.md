@@ -1,6 +1,13 @@
+---
+description: "授权 Service Definition（ctx.authorization）。"
+kind: "package-reference"
+---
+
 # dsh-authorization
 
 [English](README.md) | 中文
+
+## 概述
 
 授权 Service Definition（`ctx.authorization`）。有些凭据无法配置，只能获取：拿到它意味着与人对话——打开这个页面、粘贴那个码、选一个账号。本 seam 拥有这段对话及其生命周期，但从不拥有协议本身。
 
@@ -10,6 +17,15 @@
 
 **交互随请求传入，而非注册表。** 发起授权的一方才是能与人对话的一方，因此提示恰好抵达发问的那个界面，无头调用方则传入一个直接拒绝的交互实现。这样既不存在"环境提供方缺席"的问题，也不会出现某个提示该归两个已打开页面中哪一个的疑问。
 
+## 目录
+
+- [接口](#surface)
+- [交互词汇](#the-interaction-vocabulary)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="surface"></a>
 ## 接口
 
 ```ts
@@ -55,12 +71,14 @@ dispose()
 
 `authorization/settled (key, settlement)` 在键释放之后触发，覆盖每一种终态。`settlement` 在 `begin()` 能返回的两种状态之外增加了 `failed`：失败以抛出的错误抵达其调用方，因此事件流是未发起该尝试的旁观者唯一能区分"被拒绝"与"出故障"的地方。监听器故障被就地遏制：每个监听器都会执行，抛错或拒绝只记录日志、不改变已结束尝试的结果，仅 `INVARIANT` 编码的故障在其余监听器执行完后重抛。
 
+<a id="the-interaction-vocabulary"></a>
 ## 交互词汇
 
 notice 是单向的，且从不携带机密：一条消息，以及可选的"人需要打开的页面"和"需要在该页面输入的码"。prompt 是 flow 无法自答的问题——`text`、`secret` 或 `select`——其中 `secret` 与 `text` 的差别仅在呈现方式。prompt 自带 `signal`，使得一个让手输码与浏览器回调赛跑的 flow 可以在尝试继续的同时撤下落败的那个问题；撤销整次尝试则用请求的 signal。
 
 这套词汇刻意小于任何单个 provider 的词汇：它描述的是界面必须渲染什么，因此能渲染一个 flow 的界面就能渲染全部 flow。
 
+<a id="model-experience"></a>
 ## Model Experience
 
 无，因为授权是配置期与人的对话，flow、notice 与 prompt 都不会抵达模型请求。
@@ -69,8 +87,14 @@ notice 是单向的，且从不携带机密：一条消息，以及可选的"人
 
 不失效；任何授权状态都不会进入请求前缀。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
 
 - **flow 不可恢复** —— 一次尝试只存活于发起它的进程中，因此登录途中刷新浏览器会丢弃它，人需要重来。可持久的尝试需要一个本 seam 并不具备的存储。
 - **没有吊销** —— 登出即 `ctx.credentials.deleteRecord(key)`，它只遗忘本地记录而不通知签发方。需要服务端吊销的 provider 目前无处声明这一点。
 - **没有 flow 的键是惰性的** —— seam 只报告已注册的内容，因此被卸载插件遗留的记录可以删除但无法重新授权。识别这种孤儿记录由调用方自行 join，与 [`listRecords()`](../credentials/README.zh.md#surface) 的情况相同。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

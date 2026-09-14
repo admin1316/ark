@@ -7,7 +7,7 @@
  * removal of registrations and change listeners (HMR safety).
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -90,6 +90,66 @@ describe('SessionProjectionRegistry drive', () => {
     // The lazily-built cell then continues on the live drive path.
     mark(session, ['after'])
     expect(ctx.sessionProjections.snapshot(session).values['test/marks']).toEqual({ marks: ['after'] })
+  })
+
+  it('builds a late unit without copying the log and folds each historical event once', async () => {
+    const { ctx, session } = await harness()
+    for (let index = 0; index < 20_000; index++) mark(session, [String(index)])
+    const snapshots = vi.spyOn(session, 'events', 'get')
+    const unit = countUnit()
+    const apply = vi.fn((state: number, event: SessionEvent) => unit.apply(state, event))
+    ctx.sessionProjections.register({ ...unit, apply })
+    mark(session, ['live'])
+    expect(apply).toHaveBeenCalledTimes(20_001)
+    expect(ctx.sessionProjections.stateOf(session, 'test/count')).toBe(20_001)
+    expect(ctx.sessionProjections.snapshot(session).asOfSeq).toBe(20_000)
+    expect(apply).toHaveBeenCalledTimes(20_001)
+    mark(session, ['next'])
+    expect(apply).toHaveBeenCalledTimes(20_002)
+    expect(snapshots).not.toHaveBeenCalled()
+    snapshots.mockRestore()
+    await ctx.fiber.dispose()
+  })
+
+  it('continues a hydrated prefix once and never replaces a newer cell with an older checkpoint', async () => {
+    const { ctx, session } = await harness()
+    mark(session, ['first'])
+    mark(session, ['second'])
+    mark(session, ['third'])
+    const unit = countUnit()
+    const apply = vi.fn((state: number, event: SessionEvent) => unit.apply(state, event))
+    ctx.sessionProjections.register({ ...unit, apply })
+    const prefix = [session.eventAt(0)!]
+    const checkpoint = { 'test/count': { ver: 1, seq: 0, val: 1 } }
+    expect(ctx.sessionProjections.hydrate(session, checkpoint, prefix, 0).asOfSeq).toBe(0)
+    expect(apply).not.toHaveBeenCalled()
+    expect(ctx.sessionProjections.stateOf(session, 'test/count')).toBe(3)
+    expect(apply.mock.calls.map(([, event]) => event.seq)).toEqual([1, 2])
+    ctx.sessionProjections.hydrate(session, checkpoint, prefix, 0)
+    expect(ctx.sessionProjections.stateOf(session, 'test/count')).toBe(3)
+    mark(session, ['fourth'])
+    expect(ctx.sessionProjections.stateOf(session, 'test/count')).toBe(4)
+    expect(apply.mock.calls.map(([, event]) => event.seq)).toEqual([1, 2, 3])
+    await ctx.fiber.dispose()
+  })
+
+  it('retries a failed fold from its uncommitted watermark on the next event', async () => {
+    const { ctx, session } = await harness()
+    let reject = true
+    const apply = vi.fn((state: number, event: SessionEvent) => {
+      if (event.seq === 1 && reject) {
+        reject = false
+        throw new Error('projection failed before commit')
+      }
+      return state + 1
+    })
+    ctx.sessionProjections.register({ ...countUnit(), apply })
+    mark(session, ['first'])
+    expect(() => mark(session, ['retry'])).not.toThrow()
+    mark(session, ['third'])
+    expect(ctx.sessionProjections.stateOf(session, 'test/count')).toBe(3)
+    expect(apply.mock.calls.map(([, event]) => event.seq)).toEqual([0, 1, 1, 2])
+    await ctx.fiber.dispose()
   })
 
   it('serves init-derived state and asOfSeq -1 for an empty log', async () => {

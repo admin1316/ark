@@ -1,3 +1,8 @@
+---
+description: "The Host services used by native desktop and API integrations: the typed business gateway, authenticated HTTP/WebSocket carrier, loopback listener, and Host-owned desktop capabilities."
+kind: "package-group"
+---
+
 # host/ — native/API host layer
 
 English | [中文](README.zh.md)

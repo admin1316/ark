@@ -31,7 +31,9 @@ export declare function mapUsage(usage: WireUsage): TokenUsage;
  * @param payloads - SSE data payloads from {@link parseSse}, `[DONE]`-terminated.
  * @returns deltas as they arrive; `block-end`s, `usage`, and `finish` are all deferred to the `[DONE]` sentinel.
  *   A `stop` (or absent) finish with no opened blocks is a degenerate provider completion and maps to an
- *   `EMPTY_RESPONSE` error finish instead of a successful empty message.
+ *   `EMPTY_RESPONSE` error finish instead of a successful empty message. A tool call left without an `id` or
+ *   `name` is unusable, so the response ends in a `MALFORMED_TOOL_CALL` error finish, after any usage and
+ *   without a `block-end` for any block.
  */
 export declare function translate(payloads: AsyncIterable<string>): AsyncGenerator<StreamChunk>;
 //# sourceMappingURL=translate.d.ts.map

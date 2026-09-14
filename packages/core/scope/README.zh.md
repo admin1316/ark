@@ -1,9 +1,24 @@
+---
+description: "带作用域的注册原语。"
+kind: "package-library"
+---
+
 # dsh-scope
 
 [English](README.md) | 中文
 
+## 概述
+
 带作用域的注册原语。`createScope(ctx, key)` 创建一个带标签的 Cordis 上下文，其底层 fiber 拥有通过该上下文进行的每项注册。`scopeOf(ctx)` 读取标签；`scopeTarget(base, key)` 将带作用域的事件路由到键相同的监听器，同时让无作用域监听器保持全局可见。键可以构成可选的父链（`bindScopeParent`）：注册视图沿链**向下**继承——子作用域看得见祖先各层，近者遮蔽远者——事件放行沿链**向上**扩展——标签为祖先的监听器能收到子孙键的事件，反向永不成立。agent loop（智能体循环）为每个存活的 agent 创建一个作用域，agent preset 的常驻挂载则是其 agent 们的父作用域，但该机制与键的具体含义无关，底层包无需依赖两者即可使用。
 
+## 目录
+
+- [公开 API](#public-api)
+- [设计约定](#design-contract)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="public-api"></a>
 ## 公开 API
 
 - `createScope(ctx: Context, key: ScopeKey, options?): Scope`：在 `ctx` 的 fiber 下创建作用域。可以同步使用（effect 收集受 uid 门禁约束；服务解析会沿创建该作用域的插件依赖范围继续查找）。同进程、带类型的键受信任；处于非活动状态的创建上下文仍会通过 Cordis 失败（`INACTIVE_EFFECT`）。`options.parent` 在作用域可用之前经 `bindScopeParent` 绑定其外围作用域；绑定句柄不外泄。
@@ -22,6 +37,7 @@
 
 可选配套包 `@deepseek-ai/dsh-scope/invariant` 拥有该运行时断言。它使用生成的 `scoped-events.generated.ts` 解析器映射，要求每个已声明的带作用域事件都携带载体；当 payload 公开路由主体时，还要求路由主体与载体键严格相等。基于 Program 的生成器根据事件声明和真实的 `scopeTarget(base, key)` 调用生成该映射。
 
+<a id="design-contract"></a>
 ## 设计约定
 
 注册上下文同时决定可见性和所有权，防止注册在一个作用域中可见、却随另一个作用域 dispose（资源释放）。作用域用于路由受信任的同进程插件；它们不是沙箱或权限边界。原理与明确排除的安全目标见 [agent 作用域 Agent Note](../../../.agents/notes/implemented/architecture/2026-07-08-agent-scope-contexts.zh.md#security-and-authority-are-non-goals)。
@@ -30,8 +46,14 @@
 
 交出带作用域的上下文，也会交出创建该上下文的插件的服务解析范围（解析会沿创建者 fiber 的依赖链，而非持有者的依赖链行进），因此应由具备这些带作用域注册所需依赖的插件来创建它。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **只有感知作用域的表层才会隔离状态**：注册表必须按 `scopeOf()` 归档，事件必须通过 `scopeTarget()` 分发；仅仅通过带作用域的上下文调用任意 Cordis 服务，并不会改变该服务仍为上下文全局这一事实。
 - **一个上下文只携带一个最近的作用域键**：层级关系存在于键级父关系中而非上下文标签里；嵌套作用域**上下文**仍遮蔽为单一标签，多成员策略集仍不受支持。
 - **服务可达性来自作用域创建者**：交出 `Scope.ctx` 也会交出创建插件注入的服务范围，因此，若作用域创建者提供的服务范围较宽，持有者之后也无法将其收窄。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

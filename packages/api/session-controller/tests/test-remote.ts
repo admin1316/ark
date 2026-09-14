@@ -2,7 +2,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import { isJsonValue, SessionPromptInvocationId, type JsonValue, type SessionId, type SessionRemoteUpdateQueueRequest } from '@deepseek-ai/dsh-session'
+import { installModelSelectionProjection } from '@deepseek-ai/dsh-agent-default-model/session-selection'
+import SessionRemoteOperationsService from '@deepseek-ai/dsh-host-session-remote-operations'
 import {
   SessionPersistenceCorruptionError,
   SessionPersistenceNotFoundError,
@@ -19,58 +21,23 @@ import {
 } from '@deepseek-ai/dsh-typert-protocol'
 import SessionController from '../src/index.ts'
 import type {
-  ModelCatalog,
   SessionAttachmentRequest,
-  SessionAttachmentValue,
   SessionCancelRequest,
-  SessionCancelValue,
-  SessionControlFrame,
   SessionCreateRequest,
-  SessionCreateValue,
   SessionForkRequest,
-  SessionForkValue,
-  SessionFollowFrame,
   SessionFollowRequest,
   SessionListRequest,
-  SessionListValue,
   SessionOpenWorkspacePathRequest,
-  SessionOpenWorkspacePathValue,
-  SessionPage,
   SessionPageRequest,
   SessionPromptRequest,
-  SessionPromptValue,
   SessionRenameRequest,
-  SessionRenameValue,
   SessionSearchRequest,
-  SessionSearchValue,
   SessionSelectModelRequest,
-  SessionSelectModelValue,
   SessionUpdateQueueRequest,
-  SessionUpdateQueueValue,
 } from '../src/types.ts'
 
-/** Direct test face matching the generated `ctx.remote.session` unary methods. */
-export interface TestSessionRemote {
-  canOpenWorkspacePath(): Promise<RemoteResult<boolean>>
-  list(request: SessionListRequest, signal?: AbortSignal): Promise<RemoteResult<SessionListValue>>
-  search(request: SessionSearchRequest, signal?: AbortSignal): Promise<RemoteResult<SessionSearchValue>>
-  create(request: SessionCreateRequest): Promise<RemoteResult<SessionCreateValue>>
-  selectModel(request: SessionSelectModelRequest): Promise<RemoteResult<SessionSelectModelValue>>
-  modelCatalog(): Promise<RemoteResult<ModelCatalog>>
-  rename(request: SessionRenameRequest): Promise<RemoteResult<SessionRenameValue>>
-  fork(request: SessionForkRequest): Promise<RemoteResult<SessionForkValue>>
-  prompt(request: SessionPromptRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPromptValue>>
-  attachment(request: SessionAttachmentRequest): Promise<RemoteResult<SessionAttachmentValue>>
-  updateQueue(request: SessionUpdateQueueRequest): Promise<RemoteResult<SessionUpdateQueueValue>>
-  cancel(request: SessionCancelRequest): Promise<RemoteResult<SessionCancelValue>>
-  openWorkspacePath(
-    request: SessionOpenWorkspacePathRequest,
-    signal?: AbortSignal,
-  ): Promise<RemoteResult<SessionOpenWorkspacePathValue>>
-  page(request: SessionPageRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPage>>
-  follow(request: SessionFollowRequest, signal?: AbortSignal): AsyncIterable<SessionFollowFrame>
-  control(signal?: AbortSignal): AsyncIterable<SessionControlFrame>
-}
+/** Direct domain face; the generated transport adds its independent outer result. */
+export type TestSessionRemote = ReturnType<typeof createSessionTestRemote>
 
 /** Dependencies and policy supplied by a Session Controller unit harness. */
 export interface TestSessionRemoteDefaults {
@@ -183,15 +150,13 @@ function installControllers(
     } as never)
   }
   installSessionReadTestServices(ctx)
+  installModelSelectionProjection(ctx)
   const cwd = vi.spyOn(process, 'cwd').mockReturnValue(defaults.cwd)
   let controller: SessionController
   try {
     controller = new SessionController(
       ctx,
       {
-        ...defaults.coldBlankProbeMaxBytes === undefined
-          ? {}
-          : { coldBlankProbeMaxBytes: defaults.coldBlankProbeMaxBytes },
         ...defaults.nativeOpen === undefined ? {} : { nativeOpen: defaults.nativeOpen },
       },
       {
@@ -235,43 +200,67 @@ function remoteResult<T>(
     }))
 }
 
+/** Narrow using the Session owner's actual lossless JSON validator. */
+function isQueueWireContent(content: unknown): content is JsonValue[] {
+  return Array.isArray(content) && isJsonValue(content)
+}
+
+/** Preserve every queue block while enforcing the generated lossless JSON boundary. */
+function queueWireRequest(request: SessionUpdateQueueRequest): SessionRemoteUpdateQueueRequest {
+  if (request.action.kind !== 'edit') return { ...request, action: request.action }
+  const content = [...request.action.content]
+  if (!isQueueWireContent(content)) throw new TypeError('queue content must be lossless JSON')
+  return { ...request, action: { kind: 'edit', content } }
+}
+
 /** Build the generated Session Remote's unary result semantics without a carrier. */
 export function createSessionTestRemote(
   ctx: Context,
   defaults: TestSessionRemoteDefaults,
-): TestSessionRemote {
+) {
   const direct = createSessionTestController(ctx, defaults)
+  const workspace = ctx.get('workspaceRegistry')
+  if (workspace === undefined) {
+    ctx.provide('workspaceRegistry', {
+      get: () => undefined, list: () => [], archivedSessionIds: [],
+      sessionAdmissionRevision: () => 0, assertSessionAdmission: () => {},
+    } as never)
+  } else {
+    // Earlier controller fixtures omitted the canonical admission capability.
+    if (typeof workspace.sessionAdmissionRevision !== 'function') Object.assign(workspace, {
+      sessionAdmissionRevision: () => 0, assertSessionAdmission: () => {},
+    })
+  }
+  const core = ctx.get('sessionRemoteOperations') ?? new SessionRemoteOperationsService(ctx, {
+    cwd: defaults.cwd,
+    ...(defaults.coldBlankProbeMaxBytes === undefined ? {} : { coldBlankProbeMaxBytes: defaults.coldBlankProbeMaxBytes }),
+  })
   return {
     canOpenWorkspacePath: () => remoteResult(() => direct.canOpenWorkspacePath()),
-    list: (request, signal = new AbortController().signal) => remoteResult(
-      () => direct.list(request, signal),
-      signal,
-    ),
-    search: (request, signal = new AbortController().signal) => remoteResult(
-      () => direct.search(request, signal),
-      signal,
-    ),
-    create: request => remoteResult(() => direct.create(request)),
-    selectModel: request => remoteResult(() => direct.selectModel(request)),
+    list: (request: SessionListRequest, signal = new AbortController().signal) => Promise.resolve().then(() => core.list(request, signal)),
+    search: (request: SessionSearchRequest, signal = new AbortController().signal) =>
+      Promise.resolve().then(() => core.search(request, signal)),
+    create: (request: SessionCreateRequest) => Promise.resolve().then(() => core.create(request, new AbortController().signal)),
+    selectModel: (request: SessionSelectModelRequest) =>
+      Promise.resolve().then(() => core.selectModel(request, new AbortController().signal)),
     modelCatalog: () => remoteResult(() => direct.modelCatalog()),
-    rename: request => remoteResult(() => direct.rename(request)),
-    fork: request => remoteResult(() => direct.fork(request)),
-    prompt: (request, signal = new AbortController().signal) => remoteResult(
-      () => direct.prompt(request, signal),
-      signal,
-    ),
-    attachment: request => remoteResult(() => direct.attachment(request)),
-    updateQueue: request => remoteResult(() => direct.updateQueue(request)),
-    cancel: request => remoteResult(() => direct.cancel(request)),
-    openWorkspacePath: (request, signal = new AbortController().signal) => remoteResult(
+    rename: (request: SessionRenameRequest) => Promise.resolve().then(() => core.rename(request, new AbortController().signal)),
+    fork: (request: SessionForkRequest) => Promise.resolve().then(() => core.fork(request, new AbortController().signal)),
+    prompt: ({ requestId, ...request }: SessionPromptRequest, signal = new AbortController().signal) =>
+      Promise.resolve().then(() => core.prompt({ ...request, invocationId: SessionPromptInvocationId(requestId) }, signal)),
+    attachment: (request: SessionAttachmentRequest) => Promise.resolve().then(() => core.attachment(request, new AbortController().signal)),
+    updateQueue: (request: SessionUpdateQueueRequest) =>
+      Promise.resolve().then(() => core.updateQueue(queueWireRequest(request), new AbortController().signal)),
+    cancel: (request: SessionCancelRequest) => Promise.resolve().then(() => core.cancel(request, new AbortController().signal)),
+    openWorkspacePath: (request: SessionOpenWorkspacePathRequest, signal = new AbortController().signal) => remoteResult(
       () => direct.openWorkspacePath(request, signal),
       signal,
     ),
-    page: (request, signal = new AbortController().signal) => remoteResult(
+    page: (request: SessionPageRequest, signal = new AbortController().signal) => remoteResult(
       () => direct.page(request, signal),
       signal,
     ),
-    follow: (request, signal = new AbortController().signal) => direct.follow(request, signal),
+    follow: (request: SessionFollowRequest, signal = new AbortController().signal) => direct.follow(request, signal),
     control: (signal = new AbortController().signal) => direct.control(signal),
   }
 }

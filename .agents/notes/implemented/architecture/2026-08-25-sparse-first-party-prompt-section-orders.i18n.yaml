@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-25-sparse-first-party-prompt-section-orders.md
 2026-08-25-sparse-first-party-prompt-section-orders.md: 4b2568f18d104a77d00f91bb98f64047ecd85fa9
-2026-08-25-sparse-first-party-prompt-section-orders.zh.md: 4dfb0d0bd87ff5f245c28f3dbab6a48ba898f924
+2026-08-25-sparse-first-party-prompt-section-orders.zh.md: d9417d06d4dfcd26897f017dba53780bdb2c54e2

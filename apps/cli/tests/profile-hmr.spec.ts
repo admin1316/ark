@@ -9,7 +9,7 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 
 /** Load one shipped bundle patch through the same parser as profile boot. */
-function bundle(name: 'acp-app' | 'base' | 'headless' | 'sdk-app' | 'sdk-minimal' | 'web-app'): PatchOptions[] {
+function bundle(name: 'acp-app' | 'base' | 'headless' | 'sdk-app' | 'sdk-minimal' | 'native-api-app'): PatchOptions[] {
   return loadOverlayPatches('profile-hmr test', join(REPOSITORY_ROOT, 'packages', 'bundle', name, 'cordis.patch.yml'))
 }
 
@@ -21,7 +21,7 @@ function hmr(layers: PatchOptions[][]) {
 }
 
 describe('profile module-HMR policy', () => {
-  it.each(['web-app', 'headless', 'sdk-app', 'acp-app'] as const)(
+  it.each(['headless', 'sdk-app', 'acp-app'] as const)(
     '%s inherits the disabled base row without a mode override',
     (mode) => {
       const modePatches = bundle(mode)
@@ -32,6 +32,13 @@ describe('profile module-HMR policy', () => {
       })
     },
   )
+
+  it('keeps Native module reload disabled even over an enabled base layer', () => {
+    expect(hmr([bundle('base'), [{ id: 'hmr', disabled: false }], bundle('native-api-app')])).toMatchObject({
+      disabled: true,
+      config: { root: ['.'] },
+    })
+  })
 
   it('requires an explicit later layer to enable source-module reload', () => {
     expect(hmr([bundle('base'), [{ id: 'hmr', disabled: false }]])).toMatchObject({

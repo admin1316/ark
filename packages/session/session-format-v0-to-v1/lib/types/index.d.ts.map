@@ -1,0 +1,1 @@
+{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../src/index.ts"],"names":[],"mappings":"AAAA,sFAAsF;AAEtF,cAAc,YAAY,CAAA;AAC1B,cAAc,mBAAmB,CAAA;AACjC,cAAc,gBAAgB,CAAA;AAC9B,OAAO,EAAE,8BAA8B,EAAE,MAAM,yBAAyB,CAAA;AACxE,OAAO,EAAE,mCAAmC,EAAE,MAAM,oBAAoB,CAAA;AACxE,OAAO,EACL,6BAA6B,EAC7B,0BAA0B,EAC1B,sBAAsB,EACtB,yBAAyB,GAC1B,MAAM,iBAAiB,CAAA"}

@@ -1012,8 +1012,17 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 			assertZstdHeaderFrame(headerFrame.value);
 			const scanner = new SessionLogScanner(headerFrame.value);
 			let remainingFrames = frames.length - 1;
+			let tailFrameStart;
+			let cleanBeforeTail = true;
+			let eventsBeforeTail = 0;
 			for (const plaintext of decodedFrames) {
 				signal?.throwIfAborted();
+				if (remainingFrames === 1) {
+					tailFrameStart = frames[frames.length - 1]?.start;
+					const beforeTail = scanner.checkpoint();
+					cleanBeforeTail = beforeTail.inputBytes === beforeTail.committedBytes;
+					eventsBeforeTail = beforeTail.eventCount;
+				}
 				scanner.write(plaintext);
 				remainingFrames -= 1;
 				if (remainingFrames > 0 && performance.now() >= yieldDeadline) {
@@ -1024,7 +1033,18 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 			}
 			signal?.throwIfAborted();
 			const complete = scanner.checkpoint();
-			if (complete.committedBytes !== complete.inputBytes) throw new Error("corrupt Zstandard session log: complete frame contains a torn JSONL record");
+			if (complete.committedBytes !== complete.inputBytes) {
+				if (tailFrameStart === void 0 || !cleanBeforeTail) throw new Error("corrupt Zstandard session log: complete frame contains a torn JSONL record");
+				const prefix = scanner.finish();
+				return {
+					meta: prefix.meta,
+					events: prefix.events.slice(0, eventsBeforeTail),
+					tornMarker: {
+						truncateTo: tailFrameStart,
+						recoveredEvents: []
+					}
+				};
+			}
 			if (tornStart === void 0) {
 				const prefix = scanner.finish();
 				return {
@@ -1192,7 +1212,16 @@ var JsonlSessionPersistence = class extends SessionPersistence {
 				const pathExists = await this.exists(path);
 				signal?.throwIfAborted();
 				if (!pathExists) continue;
-				const first = this.compression === "zstd" ? await this.readFirstZstdLine(path, signal) : await this.readFirstLine(path, signal);
+				let first;
+				try {
+					first = this.compression === "zstd" ? await this.readFirstZstdLine(path, signal) : await this.readFirstLine(path, signal);
+				} catch (error) {
+					signal?.throwIfAborted();
+					if (isENOENT(error)) continue;
+					if (!(error instanceof Error) || !error.message.startsWith("corrupt Zstandard session log:")) throw error;
+					this.ctx.logger.warn(`${this.name}: skipping corrupt session header at "${dir}": ${error.message}`);
+					continue;
+				}
 				signal?.throwIfAborted();
 				if (first === void 0) continue;
 				const meta = parseHeaderMeta(first);

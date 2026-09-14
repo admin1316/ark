@@ -1,6 +1,13 @@
+---
+description: "Local credentials provider: four layers, one honest precedence, with either a file or the macOS login Keychain as the writable reference store."
+kind: "package-reference"
+---
+
 # dsh-credentials-local
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Local [credentials](../credentials/README.md) provider: four layers, one honest precedence, with either a file or the macOS login Keychain as the writable reference store.
 
@@ -16,6 +23,17 @@ The launching environment wins because a per-run override (`DEEPSEEK_API_KEY=…
 Everything below it loses to the managed store, so a key written by the Models page takes effect immediately even when an older key sits in a `.env`. Those two layers still resolve when nothing is stored, and `describe()` names them `project-env` or `user-env` with `writable: true` — storing a key replaces them as the effective source.
 
 Under the product CLI, resolution reads the launcher's frozen [environment snapshot](../../util/launch-environment/README.md) rather than `process.env`: only the snapshot can say whether a value came from the launching shell or from a file. A composition the product CLI did not boot has the inherited environment as its only layer, which keeps embedders on the semantics they already had.
+
+## Table of Contents
+
+- [Config](#config)
+- [The document](#the-document)
+- [Permissions](#permissions)
+- [Hot reload](#hot-reload)
+- [Security boundary](#security-boundary)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config
 
@@ -94,3 +112,7 @@ No direct invalidation; credentials never enter a request prefix.
 - **A same-UID process can read the document in `file` mode** — see [Security boundary](#security-boundary): the file-effect sandbox modes do not deny reads. `keychain` mode removes reference values from that document but retains structured records there.
 - **Environment changes are invisible** — the snapshot is frozen at launch, so a variable exported after startup reaches neither resolution nor `describe`; changing an environment-sourced credential takes a restart.
 - **Atomic, not crash-durable** — inherited from `dsh-atomic-write`; the store re-reads on boot.
+
+### Dev Note
+
+None.

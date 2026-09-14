@@ -15,6 +15,7 @@ Custom editing tool for viewing, creating and editing files
 * If \`path\` is a file, \`view\` displays the result of applying \`cat -n\`. If \`path\` is a directory, \`view\` lists non-hidden files and directories up to 2 levels deep
 * The \`create\` command cannot be used if the specified \`path\` already exists as a file
 * If a \`command\` generates a long output, it will be truncated and marked with \`<response clipped>\`
+* A null placeholder for a parameter unused by the selected command is treated as omitted. Required parameters still need values; omit \`str_replace.new_str\` rather than setting it to null when deleting a match
 
 Notes for using the \`str_replace\` command:
 * The \`old_str\` parameter should match EXACTLY one or more consecutive lines from the original file. Be mindful of whitespaces!
@@ -252,7 +253,7 @@ function presentEditorCall(args) {
 			kind: "edit",
 			locations: [{
 				path: args.path,
-				...args.insert_line === void 0 ? {} : { line: Math.max(1, args.insert_line + 1) }
+				...args.insert_line == null ? {} : { line: Math.max(1, args.insert_line + 1) }
 			}]
 		};
 	}
@@ -281,25 +282,27 @@ function registerStrReplaceEditor(ctx, config) {
 				description: "Absolute path to file or directory, e.g. `/repo/file.py` or `/repo`."
 			},
 			file_text: {
-				type: "string",
-				description: "Required parameter of `create` command, with the content of the file to be created."
+				oneOf: [{ type: "string" }, { type: "null" }],
+				description: "Required string parameter of `create` command, with the content of the file to be created. A null placeholder is treated as omitted by commands that do not use this parameter."
 			},
 			insert_line: {
-				type: "integer",
-				description: "Required parameter of `insert` command. The `new_str` will be inserted AFTER the line `insert_line` of `path`."
+				oneOf: [{ type: "integer" }, { type: "null" }],
+				description: "Required integer parameter of `insert` command. The `new_str` will be inserted AFTER the line `insert_line` of `path`. A null placeholder is treated as omitted by commands that do not use this parameter."
 			},
 			new_str: {
-				type: "string",
-				description: "Optional parameter of `str_replace` command containing the new string (if not given, no string will be added). Required parameter of `insert` command containing the string to insert."
+				oneOf: [{ type: "string" }, { type: "null" }],
+				description: "Optional string parameter of `str_replace` command containing the new string (if omitted, no string will be added). Required string parameter of `insert` command containing the string to insert. A null placeholder is accepted only by commands that do not use this parameter."
 			},
 			old_str: {
-				type: "string",
-				description: "Required parameter of `str_replace` command containing the string in `path` to replace."
+				oneOf: [{ type: "string" }, { type: "null" }],
+				description: "Required string parameter of `str_replace` command containing the string in `path` to replace. A null placeholder is treated as omitted by commands that do not use this parameter."
 			},
 			view_range: {
-				type: "array",
-				items: { type: "integer" },
-				description: "Optional parameter of `view` command when `path` points to a file. If none is given, the full file is shown. If provided, the file will be shown in the indicated line number range, e.g. [11, 12] will show lines 11 and 12. Indexing at 1 to start. Setting `[start_line, -1]` shows all lines from `start_line` to the end of the file."
+				oneOf: [{
+					type: "array",
+					items: { type: "integer" }
+				}, { type: "null" }],
+				description: "Optional parameter of `view` command when `path` points to a file. If omitted or null, the full file is shown. If provided, the file will be shown in the indicated line number range, e.g. [11, 12] will show lines 11 and 12. Indexing at 1 to start. Setting `[start_line, -1]` shows all lines from `start_line` to the end of the file."
 			}
 		},
 		output: {
@@ -311,10 +314,12 @@ function registerStrReplaceEditor(ctx, config) {
 		},
 		async execute(args, exec) {
 			switch (args.command) {
-				case "view": return viewPath(ctx, args.path, args.view_range, config.maxOutputChars, exec);
-				case "create": return createFile(ctx, policy, args.path, args.file_text, exec);
-				case "str_replace": return replaceInFile(ctx, policy, args.path, args.old_str, args.new_str, exec);
-				case "insert": return insertInFile(ctx, policy, args.path, args.insert_line, args.new_str, exec);
+				case "view": return viewPath(ctx, args.path, args.view_range ?? void 0, config.maxOutputChars, exec);
+				case "create": return createFile(ctx, policy, args.path, args.file_text ?? void 0, exec);
+				case "str_replace":
+					if (args.new_str === null) throw new Error("Parameter `new_str` must be a string; omit it to delete a match");
+					return replaceInFile(ctx, policy, args.path, args.old_str ?? void 0, args.new_str, exec);
+				case "insert": return insertInFile(ctx, policy, args.path, args.insert_line ?? void 0, args.new_str ?? void 0, exec);
 			}
 		},
 		presentCall: presentEditorCall

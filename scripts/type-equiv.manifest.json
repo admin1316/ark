@@ -324,22 +324,22 @@
     {
       "doc": "docs/subsystems/agent-team.md",
       "symbol": "TeamMemberSnapshot",
-      "source": "packages/experimental/agent-team/src/types.ts"
+      "source": "packages/subagent/agent-team/src/types.ts"
     },
     {
       "doc": "docs/subsystems/agent-team.md",
       "symbol": "TeamMessageSnapshot",
-      "source": "packages/experimental/agent-team/src/types.ts"
+      "source": "packages/subagent/agent-team/src/types.ts"
     },
     {
       "doc": "docs/subsystems/agent-team.md",
       "symbol": "TeamMessageSource",
-      "source": "packages/experimental/agent-team/src/types.ts"
+      "source": "packages/subagent/agent-team/src/types.ts"
     },
     {
       "doc": "docs/subsystems/agent-team.md",
       "symbol": "TeamTaskSnapshot",
-      "source": "packages/experimental/agent-team/src/types.ts"
+      "source": "packages/subagent/agent-team/src/types.ts"
     },
     {
       "doc": "docs/subsystems/commands.md",
@@ -1801,31 +1801,6 @@
       "source": "packages/workspace/workspace/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/client-modules.md",
-      "symbol": "WebBootEntry",
-      "source": "packages/client/modules/src/client/manifest.ts"
-    },
-    {
-      "doc": "docs/subsystems/client-modules.md",
-      "symbol": "WebBootBatchPhase",
-      "source": "packages/client/modules/src/client/manifest.ts"
-    },
-    {
-      "doc": "docs/subsystems/client-modules.md",
-      "symbol": "WebBootBatch",
-      "source": "packages/client/modules/src/client/manifest.ts"
-    },
-    {
-      "doc": "docs/subsystems/client-modules.md",
-      "symbol": "WebBootGraph",
-      "source": "packages/client/modules/src/client/manifest.ts"
-    },
-    {
-      "doc": "docs/subsystems/client-modules.md",
-      "symbol": "ClientArtifactBaseline",
-      "source": "packages/client/modules/src/index.ts"
-    },
-    {
       "doc": "docs/subsystems/session-telemetry.md",
       "symbol": "SessionTelemetrySharingStatus",
       "source": "packages/session/session-telemetry/src/index.ts"
@@ -2034,11 +2009,6 @@
       "doc": "docs/subsystems/feedback.md",
       "symbol": "MessageFeedbackDeleteResult",
       "source": "packages/feedback/message-feedback/src/types.ts"
-    },
-    {
-      "doc": "packages/client/ui-conversation/README.md",
-      "symbol": "ComposerChainProps",
-      "source": "packages/client/ui-conversation/src/client/contract/slots.ts"
     }
   ]
 }

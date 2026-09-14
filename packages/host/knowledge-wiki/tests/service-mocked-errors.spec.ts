@@ -49,6 +49,7 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 import KnowledgeWikiService from '../src/index.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 interface ErrorSurface {
   snapshots: { dispose(): void }
@@ -72,10 +73,10 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'wiki-service-mocked-errors-'))
   mkdirSync(join(root, 'wiki'), { recursive: true })
   ctx = new Context()
-  service = new KnowledgeWikiService(ctx, {
+  service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot: join(root, 'wiki'), mainRoot: root,
     credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-  }) as unknown as ErrorSurface
+  })) as unknown as ErrorSurface
 })
 
 afterEach(async () => {

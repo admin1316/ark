@@ -2,7 +2,10 @@
  * Guarantee tests for the tool-schema catalog generator (`scripts/gen-tool-catalog.ts`).
  */
 
-import { describe, expect, it } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   assertManifestComplete,
   assertToolsHarvested,
@@ -21,7 +24,33 @@ interface JsonSchema {
   required?: string[]
 }
 
+const TEAM_TOOL_NAMES = ['spawn_teammate', 'send_message', 'followup_task', 'list_agents', 'wait_agent',
+  'interrupt_agent', 'team_task_create', 'team_task_list', 'team_task_get', 'team_task_update']
+
 describe('gen-tool-catalog collectToolCatalog', () => {
+  it('harvests supported and experimental Team schemas from their separate real plugins', async () => {
+    const catalog = await collectToolCatalog()
+    const supported = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-agent-team')
+    const experimental = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-experimental-tool-agent-team')
+    for (const entry of [supported, experimental]) {
+      expect(entry?.schemas.map(schema => schema.name).sort()).toEqual([...TEAM_TOOL_NAMES].sort())
+    }
+    expect(supported?.sources).toEqual(Object.fromEntries(TEAM_TOOL_NAMES.map(name =>
+      [name, 'packages/subagent/tool-agent-team/src/index.ts'])))
+    expect(experimental?.sources).toEqual(Object.fromEntries(TEAM_TOOL_NAMES.map(name =>
+      [name, 'packages/experimental/tool-agent-team/src/index.ts'])))
+    const update = supported?.schemas.find(schema => schema.name === 'team_task_update')?.parameters
+    expect(update).toMatchObject({
+      required: ['task_id', 'expected_revision', 'action'],
+      properties: {
+        expected_revision: { type: 'integer' },
+        action: { enum: ['claim', 'release', 'edit', 'set_dependencies', 'complete', 'reopen', 'reassign', 'delete'] },
+      },
+    })
+    const list = supported?.schemas.find(schema => schema.name === 'team_task_list')?.parameters
+    expect(list).toMatchObject({ properties: { cursor: { type: 'integer' }, limit: { type: 'integer' } } })
+  })
+
   it('boots every shipped tool package and harvests its model-facing schemas', async () => {
     const catalog = await collectToolCatalog()
     const names = catalog.flatMap(entry => entry.schemas.map(s => s.name)).sort()
@@ -38,7 +67,8 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'team_task_get', 'team_task_list', 'team_task_update', 'terminal_close', 'terminal_list',
       'terminal_open', 'terminal_read', 'terminal_send', 'terminal_signal', 'todo_write',
       'update_goal', 'wait_agent', 'web_fetch', 'web_search', 'workflow', 'write',
-    ])
+      ...TEAM_TOOL_NAMES,
+    ].sort())
     // Every tool carries a JSON-Schema `parameters` object (what the model sees).
     for (const entry of catalog) {
       for (const schema of entry.schemas) {
@@ -94,6 +124,56 @@ describe('gen-tool-catalog collectToolCatalog', () => {
 })
 
 describe('gen-tool-catalog assertManifestComplete', () => {
+  const roots: string[] = []
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+  function fixture(entries: readonly { dir: string; pkg: string }[]): { root: string; packages: ToolPackage[] } {
+    const root = mkdtempSync(join(tmpdir(), 'tool-manifest-'))
+    roots.push(root)
+    for (const entry of entries) {
+      const dir = join(root, entry.dir)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: entry.pkg }))
+    }
+    return { root, packages: entries.map(entry => ({
+      ...entry, source: `${entry.dir}/src/index.ts`, requires: [], writes: [], mount: () => Promise.resolve(),
+    })) }
+  }
+
+  it('requires both same-basename packages and normalizes their complete relative paths', () => {
+    const run = fixture([
+      { dir: 'packages/experimental/tool-team', pkg: '@fixture/experimental-team' },
+      { dir: 'packages/subagent/tool-team', pkg: '@fixture/team' },
+    ])
+    expect(() => { assertManifestComplete(run.packages.slice(0, 1), run.root) })
+      .toThrow(/not in the boot manifest: packages\/subagent\/tool-team/)
+    expect(() => { assertManifestComplete(run.packages, run.root) }).not.toThrow()
+    expect(() => { assertManifestComplete(run.packages.map(entry => ({
+      ...entry, dir: entry.dir.replaceAll('/', '\\'),
+    })), run.root) }).not.toThrow()
+  })
+
+  it('rejects duplicate directory or package identities even when all disk paths are listed', () => {
+    const run = fixture([{ dir: 'packages/a/tool-demo', pkg: '@fixture/demo' }])
+    expect(() => { assertManifestComplete([...run.packages, ...run.packages], run.root) })
+      .toThrow(/duplicate boot directory 'packages\/a\/tool-demo'/)
+    const sameName = fixture([
+      { dir: 'packages/a/tool-demo', pkg: '@fixture/demo' },
+      { dir: 'packages/b/tool-demo', pkg: '@fixture/demo' },
+    ])
+    expect(() => { assertManifestComplete(sameName.packages, sameName.root) })
+      .toThrow(/duplicate boot package '@fixture\/demo'/)
+  })
+
+  it('rejects a catalog identity that disagrees with the real package manifest', () => {
+    const run = fixture([{ dir: 'packages/a/tool-demo', pkg: '@fixture/demo' }])
+    expect(() => { assertManifestComplete(run.packages.map(entry => ({ ...entry, pkg: '@fixture/wrong' })), run.root) })
+      .toThrow(/does not match package.json name '@fixture\/demo'/)
+    expect(() => { assertManifestComplete(run.packages.map(entry => ({ ...entry, dir: 'tool-demo' })), run.root) })
+      .toThrow(/use its complete packages/)
+  })
+
   it('passes when the manifest lists every on-disk tool package (the default)', () => {
     expect(() => { assertManifestComplete() }).not.toThrow()
   })
@@ -109,7 +189,7 @@ describe('gen-tool-catalog assertManifestComplete', () => {
 describe('gen-tool-catalog assertToolsHarvested', () => {
   const entry: ToolPackage = {
     pkg: '@deepseek-ai/dsh-tool-demo',
-    dir: 'tool-demo',
+    dir: 'packages/demo/tool-demo',
     source: 'packages/demo/tool-demo/src/index.ts',
     requires: ['ctx.tools', 'ctx.somethingUnmounted'],
     writes: ['tool/result'],

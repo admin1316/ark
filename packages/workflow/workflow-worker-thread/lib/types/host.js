@@ -227,7 +227,7 @@ export class WorkerRun {
             ]);
             await this.worker.terminate();
             this.reapChildren('workflow disposed');
-        })().then(() => { claimed.resolve(undefined); },
+        })().then(() => { claimed.resolve(undefined); }, 
         /* v8 ignore next -- result/quiescence never reject and Worker.terminate is the only external promise */
         (error) => { claimed.reject(error); });
         return this.disposed;
@@ -321,7 +321,7 @@ export class WorkerRun {
         this.hostStarted += 1;
         const task = this.startChild(callId, request);
         this.pendingStarts.add(task);
-        void task.then(() => { this.finishPendingStart(task); },
+        void task.then(() => { this.finishPendingStart(task); }, 
         /* v8 ignore next -- startChild contains provider and cleanup failures */
         () => { this.finishPendingStart(task); });
     }

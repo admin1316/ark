@@ -25,7 +25,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var terminationDeadlineWorkItem: DispatchWorkItem?
   private var currentLanguage = "zh"
 
+  /// Single-instance guard: two copies writing the same session store corrupt session logs
+  /// (observed 2026-09-12 with six overlapping launches). A second launch hands focus back to the
+  /// running instance and exits before any window, backend, or data write exists.
+  private func anotherInstanceIsRunning() -> Bool {
+    guard let bundleID = Bundle.main.bundleIdentifier else { return false }
+    let current = ProcessInfo.processInfo.processIdentifier
+    let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+      .filter { $0.processIdentifier != current }
+    guard let existing = others.first else { return false }
+    existing.activate(options: [.activateIgnoringOtherApps])
+    return true
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
+    if anotherInstanceIsRunning() {
+      NSApp.terminate(nil)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 2) { exit(0) }
+      return
+    }
     NSApp.setActivationPolicy(.regular)
     NSWindow.allowsAutomaticWindowTabbing = false
     NSApp.mainMenu = makeJiuzhangMainMenu(
@@ -45,9 +63,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       showFailure("Ark 数据目录配置无效：\(error.localizedDescription)")
       return
     }
+    if let locations = dataLocations {
+      sweepOrphanSessionLocks(harnessHome: locations.harnessHome)
+    }
     makeWindow()
     startBackend()
     NSApp.activate(ignoringOtherApps: true)
+  }
+
+  /// Reclaim session writer locks left behind by a crashed process. `kill -9` inside the append
+  /// critical section was reproduced 8/8 to strand `~locks/<id>.lock`, after which every append to
+  /// that session timed out after ~2.1s until an operator deleted the lock. Only locks whose
+  /// recorded PID is provably gone *and* that are older than a minute are reclaimed; a live owner
+  /// (including EPERM) is never touched, and PID reuse errs on the safe side by keeping the lock.
+  private func sweepOrphanSessionLocks(harnessHome: URL) {
+    let lockDirectory = harnessHome
+      .appendingPathComponent("sessions", isDirectory: true)
+      .appendingPathComponent("~locks", isDirectory: true)
+    let fileManager = FileManager.default
+    guard let entries = try? fileManager.contentsOfDirectory(
+      at: lockDirectory,
+      includingPropertiesForKeys: [.contentModificationDateKey],
+      options: [.skipsSubdirectoryDescendants, .skipsHiddenFiles]
+    ) else { return }
+    let cutoff = Date().addingTimeInterval(-60)
+    var reclaimed = 0
+    for entry in entries where entry.pathExtension == "lock" {
+      guard let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+            modified < cutoff,
+            let raw = try? String(contentsOf: entry, encoding: .utf8),
+            let owner = pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+      else { continue }
+      if kill(owner, 0) == 0 || errno == EPERM { continue }
+      if (try? fileManager.removeItem(at: entry)) != nil { reclaimed += 1 }
+    }
+    if reclaimed > 0 {
+      FileHandle.standardError.write(Data("ark: reclaimed \(reclaimed) orphan session writer lock(s)\n".utf8))
+    }
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

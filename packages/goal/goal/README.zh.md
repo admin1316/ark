@@ -1,9 +1,26 @@
+---
+description: "事件溯源的同会话目标状态。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-goal
 
 [English](README.md) | 中文
 
+## 概述
+
 事件溯源的同会话目标状态。该服务在 agent（智能体）的现有会话中保留一个当前待完成目标，同时将继续执行的权限作为进程本地续行启用状态。[goal 领域 Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-persisted-same-session-goal-domain.zh.md) 负责设计理由；[goal 类型目录](../../../docs/subsystems/goal.zh.md)记录具体的数据形状。
 
+## 目录
+
+- [配置](#config)
+- [服务约定](#service-contract)
+- [扩展点](#extension-points)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="config"></a>
 ## 配置
 
 ```yaml
@@ -15,6 +32,7 @@
 
 `defaultMaxGoalRounds` 必须是正的安全整数。`create()` 会在提交目标前于内部物化这项部署默认值；请求级取值可以覆盖它。
 
+<a id="service-contract"></a>
 ## 服务约定
 
 `ctx.goals` 只接受以对应 id 注册的完全相同的活跃 `Agent` 实例。`get()` 返回与内部状态脱离的 `GoalView`；变更以 `GoalRef { id, revision }` 作为比较并设置防护，并拒绝陈旧引用。服务通过 [goal.md](../../../docs/subsystems/goal.zh.md#cordis-surface) 的生成区块公开 create、edit、pause、resume、complete、block 和 clear 动词。创建默认值在内部解析。`disarm()` 是仅供生命周期使用的例外：它移除进程本地续行权限，不写入新 revision，也不发出变更事件。
@@ -29,10 +47,12 @@
 
 单独发布的 `./invariant` 配套模块会为每个已挂接会话维护独立折叠。它会在候选事件进入持久日志前拒绝格式错误的 goal 变更、不连续 revision、非法生命周期转换、时间戳回退，以及不连续的已准入 Round。
 
+<a id="extension-points"></a>
 ## 扩展点
 
 策略插件调用服务动词，并响应限定范围的 `goal/changed` 事件。续行消费方将 Round 准入为 `user/message` 事件，并携带 `GoalMessageSource`；普通的人类轮次绝不会增加 `roundsStarted`。消费方使用 `Agent` 接口和事件，不导入 `dsh-agent-loop`。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 目标状态变更
@@ -49,6 +69,7 @@ Goal 变更事件本身不增加模型 token。工具结果和续行调度提示
 
 在其他组件把 goal 状态暴露为模型可见输入之前，不会影响 KV Cache。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **只负责状态，不负责任务调度**：此包不决定已启用续行的目标何时继续，不重试异常失败，也不取消活跃轮次；这些策略属于 agent seam 消费方。
@@ -56,3 +77,8 @@ Goal 变更事件本身不增加模型 token。工具结果和续行调度提示
 - **没有独立评估器**：记录完成或阻塞的调用方拥有最终决定权；由评估器支持的认证暂缓到独立策略层。
 - **只有一个当前目标**：系统有意不支持并行目标或独立目标数据库；替换或清除后，历史仍可在会话日志中读取。
 - **信任进程内生产方**：能直接访问 `Session` 的插件可以追加伪造的 `goal/change` 数据。严格回放会检测格式错误或不一致的记录，并使 goal 访问从该记录起失败，直到日志修复；这是完整性检测，不是插件隔离。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

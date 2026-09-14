@@ -1,8 +1,8 @@
 import { createProcessShutdown } from "./process-shutdown.js";
 import { writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { PROFILE_PATCH_FILENAME, boot, composeEntries, healProfilesModuleFallback, installFailLoud, loadOptionalPatches, loadOverlayPatches, loadProfile, watchUserPatches } from "@deepseek-ai/dsh-app-boot";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { PROFILE_PATCH_FILENAME, boot, composeEntries, healProfilesModuleFallback, installFailLoud, isSnapshotServedDirectory, loadOptionalPatches, loadOverlayPatches, loadProfile, watchUserPatches } from "@deepseek-ai/dsh-app-boot";
 import { resolveDshHome } from "@deepseek-ai/dsh-home-paths";
 import { DSH_LAUNCH_ENVIRONMENT_KEY } from "@deepseek-ai/dsh-launch-environment";
 import { provideCmdline } from "@deepseek-ai/dsh-cmdline";
@@ -187,6 +187,10 @@ async function runProfile(options) {
 		...(options.homePatchMode ?? "user") === "user" ? loadOptionalPatches(NAME, homePatchPath()) ?? [] : [],
 		...composed.overlays
 	]);
+	const bareModuleBase = isSnapshotServedDirectory(dirname(options.installAnchor)) ? {
+		url: pathToFileURL(options.installAnchor).href,
+		order: "configuration-first"
+	} : void 0;
 	const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
 		app.current = hostCtx;
 		hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment);
@@ -194,9 +198,9 @@ async function runProfile(options) {
 			args: options.args,
 			exit: (code) => void shutdown.shutdown(code)
 		});
-	});
+	}, bareModuleBase);
 	app.current = ctx;
-	const watchedPatchPaths = [...(options.profilePatchMode ?? "user") === "user" ? [composed.profile.patchPath] : [], ...(options.homePatchMode ?? "user") === "user" ? [homePatchPath()] : []];
+	const watchedPatchPaths = composed.profile.patchReload === "startup" ? [] : [...(options.profilePatchMode ?? "user") === "user" ? [composed.profile.patchPath] : [], ...(options.homePatchMode ?? "user") === "user" ? [homePatchPath()] : []];
 	if (options.watchLiveConfig !== false && watchedPatchPaths.length > 0 && !signalShutdown.signal.aborted && ctx.fiber.state === 2 && ctx.get("loader") !== void 0) try {
 		if (ctx.get("hmr") === void 0) {
 			if (ctx.get("timer") === void 0) await ctx.loader.create({ name: "@deepseek-ai/cordis-plugin-timer" });

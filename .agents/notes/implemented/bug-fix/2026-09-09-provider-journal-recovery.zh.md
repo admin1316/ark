@@ -40,4 +40,4 @@ Status: implemented
 
 值摘要条件保护使用同一凭据文档的参与写入方，不保护任意钥匙串写入方或变回相同值的 ABA 改动。保留的旧计划无法证明已有的未引用秘密是否由该事务暂存；恢复会保留它，而不猜测删除。这种拒绝不等于凭据完整回滚。
 
-[冻结的 fixture（测试前置数据）](../../../../packages/llm/llm/tests/fixtures/legacy-v1-journals.json) 是保留实现使用合成凭据生成并按字节固定的输出，不是改写后的当前格式样本。[行为检查](../../../../packages/llm/llm/tests/provider-transaction.spec.ts)、[新进程检查](../../../../packages/llm/llm/tests/provider-process.spec.ts)与 [Loader 快照](../../../../snapshots/native-provider-recovery.snapshot.ts)覆盖只读状态、规范化、陈旧及重复恢复、秘密安全的失败和重启。强制退出发生在持久写入释放文件锁之后；这不代表能从任意断电或遗留锁恢复。原生编解码与生命周期约定仍和候选包 GUI、正式版验收分开。
+[冻结的 fixture（测试前置数据）](../../../../packages/llm/llm/tests/fixtures/legacy-v1-journals.json) 是保留实现使用合成凭据生成并按字节固定的输出，不是改写后的当前格式样本。[行为检查](../../../../packages/llm/llm/tests/provider-transaction.spec.ts)、[新进程检查](../../../../packages/llm/llm/tests/provider-process.spec.ts)覆盖只读状态、规范化、陈旧及重复恢复、秘密安全的失败和重启。强制退出发生在持久写入释放文件锁之后；这不代表能从任意断电或遗留锁恢复。原生编解码与生命周期约定仍和候选包 GUI、正式版验收分开。

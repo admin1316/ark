@@ -11,8 +11,7 @@
 
 # The shared module-reload HMR row stays off; the launcher's watch-only
 # fallback still keeps the user patch layers live until the run exits.
-- id: hmr
-  disabled: true
+# (the disabled row is inherited from dsh-base; mode layers must not re-declare it)
 
 - id: tools
   config:

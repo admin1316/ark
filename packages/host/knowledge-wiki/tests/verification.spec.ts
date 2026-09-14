@@ -14,6 +14,7 @@ import { canonicalJson, readTrustedReceipt, readTrustedVerification, sha256, ver
 import type { WikiSnapshotStore } from '../src/snapshot-store.ts'
 import type { WikiReviewItem } from '../src/types.ts'
 import { verifierAuthority } from './verifier-authority-fixture.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 const roots: string[] = []
 
@@ -124,9 +125,9 @@ describe('Candidate verification gate', () => {
     const item = fixture()
     const ctx = new Context()
     ctx.provide('knowledgeWikiVerifierAuthority', verifierAuthority('fail'))
-    const service = new KnowledgeWikiService(ctx, {
+    const service = new KnowledgeWikiService(ctx, wikiTestConfig({
       wikiRoot: item.wikiRoot, mainRoot: item.root, credential: 'UNUSED_FIXTURE_REF', llmProvider: 'p', llmModel: 'm',
-    })
+    }))
     try {
       const result = await service.verifyCandidate({ reviewId: item.reviewId, action: 'Promote' }, new AbortController().signal)
       expect(result).toMatchObject({ ok: false, result: 'fail' })
@@ -235,13 +236,13 @@ describe('Candidate verification gate', () => {
     const item = fixture()
     const ctx = new Context()
     ctx.provide('knowledgeWikiVerifierAuthority', verifierAuthority())
-    const service = new KnowledgeWikiService(ctx, {
+    const service = new KnowledgeWikiService(ctx, wikiTestConfig({
       wikiRoot: item.wikiRoot,
       mainRoot: item.root,
       credential: 'VISION_API_KEY',
       llmProvider: 'p',
       llmModel: 'm',
-    }) as unknown as {
+    })) as unknown as {
       verifyCandidate(
         request: { reviewId: string; action: 'Promote' },
         signal: AbortSignal,

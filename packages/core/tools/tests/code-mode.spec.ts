@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, CallId  } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SystemPrompt, { FIRST_PARTY_SECTION_ORDER, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 import ToolRuntime, { CodeRunFailedError, RUN_CODE_NAME, TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, defineContentToolFixture, defineTool, isPtcPresentationMode } from '@deepseek-ai/dsh-tools'
@@ -184,9 +184,7 @@ describe('mode-aware wire contribution', () => {
   it("mode 'code' states the run_code-only rule BEFORE the per-tool guidance that names each tool", async () => {
     const { ctx, systemPrompt } = await setup({ mode: 'code' })
     registerEcho(ctx)
-    // Stand in for a real tool's guidance section, which sits in the 100-199
-    // band and names its tool without saying how it is reached.
-    ctx.systemPrompt.section({ name: 'tool:echo', order: 100, text: 'Use the echo tool.' })
+    ctx.systemPrompt.section({ name: 'tool:echo', order: FIRST_PARTY_SECTION_ORDER.TOOL_READ, text: 'Use the echo tool.' })
 
     const assembly = await systemPrompt.assemble()
     const names = assembly.sections.map(section => section.name)
@@ -195,6 +193,30 @@ describe('mode-aware wire contribution', () => {
     // The rule is worthless after the guidance it qualifies.
     expect(names.indexOf('tools:code-only')).toBeLessThan(names.indexOf('tool:echo'))
     expect(names.indexOf('tools:code-only')).toBeLessThan(names.indexOf('tools:sdk'))
+  })
+
+  it.each(['code', 'ptc', 'both'] as const)('orders retained guidance before the SDK in %s mode', async (mode) => {
+    const { ctx, systemPrompt } = await setup({ mode })
+    registerEcho(ctx)
+    ctx.systemPrompt.section({
+      name: 'tool:early-guidance', order: FIRST_PARTY_SECTION_ORDER.TOOL_BASH, text: 'Early tool guidance.',
+    })
+    ctx.systemPrompt.section({
+      name: 'tool:late-guidance', order: FIRST_PARTY_SECTION_ORDER.TOOL_REPORT, text: 'Late tool guidance.',
+    })
+    const assembly = await systemPrompt.assemble()
+    const prompt = renderPrompt(assembly)
+    const early = prompt.indexOf('Early tool guidance.')
+    const late = prompt.indexOf('Late tool guidance.')
+    const sdk = prompt.indexOf('## Writing code for run_code')
+    expect(early).toBeGreaterThanOrEqual(0)
+    expect(late).toBeGreaterThan(early)
+    expect(sdk).toBeGreaterThan(late)
+    if (mode !== 'both') {
+      const policy = prompt.indexOf('`run_code` is the only tool you can call directly')
+      expect(policy).toBeGreaterThanOrEqual(0)
+      expect(policy).toBeLessThan(early)
+    }
   })
 
   it("mode 'both' omits the run_code-only rule, because native calls do execute there", async () => {

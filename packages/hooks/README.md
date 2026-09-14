@@ -1,3 +1,8 @@
+---
+description: "The hooks subsystem lets users extend the agent at lifecycle points the way Claude Code and Codex do — by pointing a bridge plugin at an existing hooks.json (or settings) so those external shell hooks run faithfully."
+kind: "package-group"
+---
+
 # hooks/ — hook bridges + shared protocol
 
 English | [中文](README.zh.md)

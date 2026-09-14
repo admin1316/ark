@@ -81,7 +81,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-credentials#credentials/set:result',
         schema: _deepseek_ai_dsh_credentials_credentials_set_result$schema,
       },
-      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":360,"column":9},
+      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":367,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-credentials#credentials/unset',
@@ -107,7 +107,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-credentials#credentials/unset:result',
         schema: _deepseek_ai_dsh_credentials_credentials_unset_result$schema,
       },
-      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":381,"column":9},
+      sourceLocation: {"file":"packages/credentials/credentials/src/index.ts","line":389,"column":9},
     },
   ],
   model: {
@@ -194,15 +194,15 @@ export const TYPERT = {
             "kind": "method",
             "name": "remoteSet",
             "signature": "@Remote('set') async remoteSet(refName: string, value: string): Promise<Record<never, never>>",
-            "summary": "Store one write-only credential value through the Native Remote plane.",
-            "jsDoc": "/**\n * Store one write-only credential value through the Native Remote plane.\n * @param refName - credential reference name to update.\n * @param value - write-only credential value.\n * @returns an empty object after the value is stored.\n */"
+            "summary": "Store one write-only credential value through the shared Remote plane.",
+            "jsDoc": "/**\n * Store one write-only credential value through the shared Remote plane.\n * @param refName - credential reference name to update.\n * @param value - write-only credential value.\n * @returns an empty object after the value is stored.\n */"
           },
           {
             "kind": "method",
             "name": "remoteUnset",
             "signature": "@Remote('unset') async remoteUnset(refName: string): Promise<Record<never, never>>",
-            "summary": "Remove one provider-managed credential through the Native Remote plane.",
-            "jsDoc": "/**\n * Remove one provider-managed credential through the Native Remote plane.\n * @param refName - credential reference name to remove.\n * @returns an empty object after the reference is removed.\n */"
+            "summary": "Remove one provider-managed credential through the shared Remote plane.",
+            "jsDoc": "/**\n * Remove one provider-managed credential through the shared Remote plane.\n * @param refName - credential reference name to remove.\n * @returns an empty object after the reference is removed.\n */"
           }
         ],
         "types": [

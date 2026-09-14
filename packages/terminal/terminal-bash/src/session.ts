@@ -505,9 +505,15 @@ export class LocalPtySession implements TerminalBackendSession {
       // A prompt candidate can race bash's foreground handoff, but an interactive
       // child also inherits PROMPT_COMMAND. Silence therefore remains the bound
       // on waiting for shell ownership instead of letting a child marker suppress
-      // readiness until the absolute timeout.
+      // readiness until the absolute timeout. For pwsh the silence bound alone
+      // settles before the first submitted pipeline has even been consumed on a
+      // cold runner (PSReadLine warm-up), so the inferred handoff additionally
+      // requires the foreground to be observed back in its stdin wait; bash
+      // keeps the silence-only bound and settles on its prompt reprint.
       const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
-      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) {
+      const handoffReady = startupHasOutput
+        && (this.config.shellDialect !== 'pwsh' || acceptsStdinWait)
+      if (handoffReady && idleFor >= this.config.idleSilenceMs + handoffGrace) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {

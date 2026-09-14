@@ -27,7 +27,6 @@ const ARK_RUNTIME_REPOSITORY_INPUTS = [
   'tsconfig.json',
   'tsdown.config.ts',
   'scripts/build-host-bundles.ts',
-  'scripts/tsdown-host-package.config.ts',
   'integrations/jiuzhang/src/pack-runtime.mjs',
   'integrations/jiuzhang/src/build-native.mjs',
   'integrations/jiuzhang/src/runtime-plan.mjs',

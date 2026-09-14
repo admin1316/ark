@@ -119,15 +119,7 @@ declare module '@deepseek-ai/cordis' {
         settings: SettingsProvider;
     }
 }
-/**
- * Deep equality over JSON-compatible data (objects, arrays, primitives) — the
- * Service Definition's single change-detection predicate, exported so the invariant
- * companion checks exactly the implementation's relation.
- * @param a - one JSON-compatible value.
- * @param b - the other JSON-compatible value.
- * @returns whether the two values are structurally equal.
- */
-export declare function deepEqualJson(a: unknown, b: unknown): boolean;
+export { deepEqualJson } from '@deepseek-ai/dsh-util-values';
 /**
  * A write refused because the namespace moved since the caller read it. The
  * Service Definition's serialized write queue orders writes; it cannot tell a fresh writer

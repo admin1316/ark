@@ -39,6 +39,26 @@ function stubAgent(rawId: string, overrides: Partial<Agent> = {}): Agent {
 }
 
 describe('Inbox', () => {
+  it('projects a pending splice without publishing or mutating either live list', () => {
+    const session = Session.create(SessionId('inbox-projection'))
+    const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+    const first = createUserMessage({ content: [{ type: 'text', text: 'first' }], source: { kind: 'user' } })
+    const second = createUserMessage({ content: [{ type: 'text', text: 'second' }], source: { kind: 'user' } })
+    inbox.append('next-turn', first)
+    const through = session.events.length
+    const insertion = { target: 'next-step' as const, start: 0, inserted: [second] }
+    expect(inbox.project('next-turn')).toBe(inbox.nextTurn)
+    expect(inbox.project('next-turn', insertion)).toBe(inbox.nextTurn)
+    expect(inbox.project('next-step', insertion)).toEqual([second])
+    expect(inbox.project('next-turn', { target: 'next-turn', start: 0, removedCount: 1, inserted: [second] }))
+      .toEqual([second])
+    expect(inbox.project('next-turn', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] }))
+      .toEqual([])
+    expect(inbox.nextTurn).toEqual([first])
+    expect(inbox.nextStep).toEqual([])
+    expect(session.events).toHaveLength(through)
+  })
+
   it('rejects an invalid durable splice during reconstruction', () => {
     const session = Session.create(SessionId('invalid-inbox-replay'))
     session.append('agent/inbox/spliced', {

@@ -46,4 +46,4 @@ The read tool now computes `presentationMeta` for every top-level read, a small 
 
 - [Tagged render-intent union for tool-call presentation](../architecture/2026-07-02-tool-render-intent-union.md) — the `card`-tagged vocabulary this extends with the `read` result arm.
 - [Canonical tool output contract](../architecture/2026-07-20-canonical-tool-output-contract.md) — owns the `presentationMeta` persisted channel this projects the read window onto.
-- [Web terminal card](2026-07-28-web-terminal-card.md) — the precedent for a client consuming a structured card; the read card follows the same producer pattern, result-side only.
+- [Web terminal card](../../archived/feature/2026-07-28-web-terminal-card.md) — the precedent for a client consuming a structured card; the read card follows the same producer pattern, result-side only.

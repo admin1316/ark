@@ -14,6 +14,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import KnowledgeWikiService from '../src/index.ts'
 import type { IngestQueueTask } from '../src/types.ts'
 import type { ProjectExecutionContext } from '../src/project-context.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 interface QueueSurface {
   snapshots: { dispose(): void }
@@ -47,10 +48,10 @@ beforeEach(() => {
   writeFileSync(join(root, 'raw', 'sources', 'a.md'), 'A', 'utf8')
   writeFileSync(join(root, 'raw', 'sources', 'nested', 'b.md'), 'B', 'utf8')
   ctx = new Context()
-  service = new KnowledgeWikiService(ctx, {
+  service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot: join(root, 'wiki'), mainRoot: root,
     credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-  }) as unknown as QueueSurface
+  })) as unknown as QueueSurface
 })
 
 afterEach(async () => {
@@ -93,10 +94,10 @@ describe('service initialization', () => {
       configurable: true,
       value: { interval: () => { throw 'timer primitive failure' } },
     })
-    const failing = new KnowledgeWikiService(failingContext, {
+    const failing = new KnowledgeWikiService(failingContext, wikiTestConfig({
       wikiRoot: join(root, 'other-wiki'), mainRoot: root,
       credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-    }) as unknown as QueueSurface
+    })) as unknown as QueueSurface
     await expect(failing[Service.init]()).rejects.toThrow('knowledge-wiki synchronous operation failed')
     failing.snapshots.dispose()
     await failingContext.fiber.dispose()
@@ -112,10 +113,10 @@ describe('queue restore and dispatch edges', () => {
     expect(service.queue).toEqual([])
 
     const recoveryContext = new Context()
-    const recovery = new KnowledgeWikiService(recoveryContext, {
+    const recovery = new KnowledgeWikiService(recoveryContext, wikiTestConfig({
       wikiRoot: join(root, 'wiki'), mainRoot: root,
       credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-    }) as unknown as QueueSurface
+    })) as unknown as QueueSurface
     try {
       writeFileSync(queueFile, JSON.stringify([
         null,

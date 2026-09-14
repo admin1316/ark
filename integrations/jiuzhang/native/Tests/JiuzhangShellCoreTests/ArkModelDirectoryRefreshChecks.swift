@@ -135,6 +135,10 @@ func runArkModelDirectoryRefreshChecks() async {
     interactions: ArkInteractionAPI(baseURL: endpoint, apiToken: "fixture"),
     eventPump: ArkEventPump(baseURL: endpoint, apiToken: "fixture"),
     fallbackWikiRoot: URL(fileURLWithPath: "/private/tmp/ark-model-directory-fixture"), defaults: defaults)
+  model.sendComposer()
+  check(model.composerErrorMessage != nil, "unconfigured composer exposes its current send error")
+  model.beginNewConversation()
+  check(model.composerErrorMessage == nil, "new conversation clears the previous composer error")
   ModelDirectoryURLProtocol.configure(["removed": ["old"], "kept": ["a", "b"]])
   model.selectedSessionID = "history"
   await model.loadSettings()

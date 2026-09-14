@@ -80,8 +80,11 @@ const _deepseek_ai_dsh_session_session_create_result$schema = z.union([z.object(
 }).readonly(),
 })])
 const _deepseek_ai_dsh_session_session_fork_parameter_0$schema = z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
   'atSeq': z.number().readonly().optional(),
+  'sourceRevision': z.string().readonly().optional(),
+  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
+  'expectedSubagentMode': z.union([z.literal("one-shot"), z.literal("continuable")]).readonly().optional(),
 })
 const _deepseek_ai_dsh_session_session_fork_result$schema = z.union([z.object({
   'ok': z.literal(false).readonly(),
@@ -96,12 +99,35 @@ const _deepseek_ai_dsh_session_session_fork_result$schema = z.union([z.object({
   'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
 }).readonly(),
 })])
-const _deepseek_ai_dsh_session_session_history_parameter_0$schema = z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
-  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
+const _deepseek_ai_dsh_session_session_history_parameter_0$schema = z.union([z.object({
+  'view': z.literal("raw").readonly().optional(),
+  'sourceRevision': z.string().readonly().optional(),
   'beforeSeq': z.number().readonly().optional(),
   'maxMessages': z.number().readonly().optional(),
-})
+  'maxEvents': z.number().readonly().optional(),
+  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
+  'expectedSubagentMode': z.union([z.literal("one-shot"), z.literal("continuable")]).readonly().optional(),
+}), z.object({
+  'view': z.literal("semantic").readonly(),
+  'sourceRevision': z.string().readonly().optional(),
+  'beforeRecordId': z.string().readonly().optional(),
+  'maxRecords': z.number().readonly().optional(),
+  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
+  'expectedSubagentMode': z.union([z.literal("one-shot"), z.literal("continuable")]).readonly().optional(),
+}), z.object({
+  'view': z.literal("content").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'recordId': z.string().readonly(),
+  'contentReadId': z.string().readonly().optional(),
+  'close': z.boolean().readonly().optional(),
+  'offset': z.number().readonly().optional(),
+  'maxCodeUnits': z.number().readonly().optional(),
+  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'expectedParentSessionId': z.intersection(z.string(), z.unknown()).readonly().optional(),
+  'expectedSubagentMode': z.union([z.literal("one-shot"), z.literal("continuable")]).readonly().optional(),
+})])
 const _deepseek_ai_dsh_session_session_history_result$schema = z.union([z.object({
   'ok': z.literal(false).readonly(),
   'error': z.object({
@@ -111,7 +137,10 @@ const _deepseek_ai_dsh_session_session_history_result$schema = z.union([z.object
 }).readonly(),
 }), z.object({
   'ok': z.literal(true).readonly(),
-  'value': z.object({
+  'value': z.union([z.object({
+  'view': z.literal("raw").readonly().optional(),
+  'sourceRevision': z.string().readonly().optional(),
+  'asOfThroughSeq': z.number().readonly().optional(),
   'events': z.array(z.object({
   'event': z.object({
   'type': z.string().readonly(),
@@ -129,7 +158,62 @@ const _deepseek_ai_dsh_session_session_history_result$schema = z.union([z.object
   'asOfSeq': z.number().readonly(),
   'values': z.record(z.string(), z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => JsonValueRemoteCodec$schema4)), z.record(z.string(), z.lazy(() => JsonValueRemoteCodec$schema4))])).readonly(),
 }).readonly().optional(),
+}), z.object({
+  'view': z.literal("semantic").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'asOfThroughSeq': z.number().readonly(),
+  'records': z.array(z.object({
+  'id': z.string().readonly(),
+  'kind': z.union([z.literal("user"), z.literal("assistant"), z.literal("tool")]).readonly(),
+  'orderSeq': z.number().readonly(),
+  'time': z.number().readonly(),
+  'turn': z.number().readonly().optional(),
+  'step': z.number().readonly().optional(),
+  'state': z.union([z.literal("active"), z.literal("complete"), z.literal("interrupted"), z.literal("failed-prefix"), z.literal("orphaned-prefix"), z.literal("unpaired")]).readonly(),
+  'preview': z.string().readonly(),
+  'contentState': z.literal("complete-at-cut").readonly(),
+  'canonicalEventSeq': z.number().readonly().optional(),
+  'callEventSeq': z.number().readonly().optional(),
+  'resultEventSeq': z.number().readonly().optional(),
+  'completedTurnEndSeq': z.number().readonly().optional(),
+})).readonly(),
+  'turns': z.array(z.object({
+  'turn': z.number().readonly(),
+  'startSeq': z.number().readonly().optional(),
+  'endSeq': z.number().readonly().optional(),
+  'usage': z.union([z.literal(null), z.object({
+  'uncachedInputTokens': z.number().readonly(),
+  'outputTokens': z.number().readonly(),
+  'totalTokens': z.number().readonly(),
+  'cacheReadTokens': z.number().readonly().optional(),
+  'cacheWriteTokens': z.number().readonly().optional(),
+  'reasoningTokens': z.number().readonly().optional(),
+  'routes': z.array(z.object({
+  'provider': z.string().readonly(),
+  'model': z.string().readonly(),
+})).readonly().optional(),
+})]).readonly(),
+})).readonly(),
+  'dependencyRecords': z.object({
+  'tool': z.string().readonly(),
+  'status': z.string().readonly(),
+  'turn': z.string().readonly(),
 }).readonly(),
+  'hasMore': z.boolean().readonly(),
+  'nextBeforeRecordId': z.string().readonly().optional(),
+  'pendingDomains': z.array(z.union([z.literal("status"), z.literal("usage-context"), z.literal("workflow")])).readonly(),
+}), z.object({
+  'view': z.literal("content").readonly(),
+  'sourceRevision': z.string().readonly(),
+  'asOfThroughSeq': z.number().readonly(),
+  'recordId': z.string().readonly(),
+  'encoding': z.literal("json").readonly(),
+  'contentReadId': z.string().readonly(),
+  'offset': z.number().readonly(),
+  'text': z.string().readonly(),
+  'nextOffset': z.number().readonly(),
+  'done': z.boolean().readonly(),
+})]).readonly(),
 })])
 const _deepseek_ai_dsh_session_session_list_parameter_0$schema = z.object({
   'cursor': z.string().readonly().optional(),
@@ -353,7 +437,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_attachment_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":932,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":941,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/cancel',
@@ -380,7 +464,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_cancel_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":960,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":969,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/create',
@@ -407,7 +491,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_create_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":852,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":861,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/fork',
@@ -434,7 +518,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_fork_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":910,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":919,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/history',
@@ -461,7 +545,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_history_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":863,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":872,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/list',
@@ -488,7 +572,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_list_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":830,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":839,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/models',
@@ -515,7 +599,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_models_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":874,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":883,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/prompt',
@@ -542,7 +626,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_prompt_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":921,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":930,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/rename',
@@ -569,7 +653,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_rename_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":899,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":908,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/search',
@@ -596,7 +680,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_search_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":841,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":850,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/selectModel',
@@ -623,7 +707,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_selectModel_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":885,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":894,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-session#session/updateQueue',
@@ -650,7 +734,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-session/types#SessionRemoteResult',
         schema: _deepseek_ai_dsh_session_session_updateQueue_result$schema,
       },
-      sourceLocation: {"file":"packages/core/session/src/index.ts","line":946,"column":3},
+      sourceLocation: {"file":"packages/core/session/src/index.ts","line":955,"column":3},
     },
   ],
   model: {
@@ -1043,7 +1127,7 @@ export const TYPERT = {
           },
           {
             "name": "Session",
-            "declaration": "export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    get id(): SessionId;\n    readonly firstLiveSeq: number;\n    get events(): readonly SessionEvent[];\n    get seq(): number;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}"
+            "declaration": "export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    get id(): SessionId;\n    readonly firstLiveSeq: number;\n    get events(): readonly SessionEvent[];\n    eventAt(seq: number): SessionEvent | undefined;\n    get seq(): number;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}"
           },
           {
             "name": "SessionEvent",
@@ -1119,23 +1203,43 @@ export const TYPERT = {
           },
           {
             "name": "SessionRemoteForkRequest",
-            "declaration": "export interface SessionRemoteForkRequest {\n    readonly sessionId: SessionId;\n    readonly atSeq?: number;\n}"
+            "declaration": "export interface SessionRemoteForkRequest extends SessionRemoteHistoryIdentity {\n    readonly atSeq?: number;\n    readonly sourceRevision?: string;\n}"
           },
           {
             "name": "SessionRemoteForkValue",
             "declaration": "export interface SessionRemoteForkValue {\n    readonly sessionId: SessionId;\n}"
           },
           {
+            "name": "SessionRemoteHistoryContentRequest",
+            "declaration": "export interface SessionRemoteHistoryContentRequest extends SessionRemoteHistoryIdentity {\n    readonly view: 'content';\n    readonly sourceRevision: string;\n    readonly recordId: string;\n    readonly contentReadId?: string;\n    readonly close?: boolean;\n    readonly offset?: number;\n    readonly maxCodeUnits?: number;\n}"
+          },
+          {
+            "name": "SessionRemoteHistoryContentValue",
+            "declaration": "export interface SessionRemoteHistoryContentValue {\n    readonly view: 'content';\n    readonly sourceRevision: string;\n    readonly asOfThroughSeq: number;\n    readonly recordId: string;\n    readonly encoding: 'json';\n    readonly contentReadId: string;\n    readonly offset: number;\n    readonly text: string;\n    readonly nextOffset: number;\n    readonly done: boolean;\n}"
+          },
+          {
             "name": "SessionRemoteHistoryEntry",
             "declaration": "export interface SessionRemoteHistoryEntry {\n    readonly event: SessionRemoteEvent;\n    readonly view?: JsonValue;\n}"
           },
           {
+            "name": "SessionRemoteHistoryIdentity",
+            "declaration": "export interface SessionRemoteHistoryIdentity {\n    readonly sessionId: SessionId;\n    readonly expectedParentSessionId?: SessionId;\n    readonly expectedSubagentMode?: 'one-shot' | 'continuable';\n}"
+          },
+          {
             "name": "SessionRemoteHistoryRequest",
-            "declaration": "export interface SessionRemoteHistoryRequest {\n    readonly sessionId: SessionId;\n    readonly expectedParentSessionId?: SessionId;\n    readonly beforeSeq?: number;\n    readonly maxMessages?: number;\n}"
+            "declaration": "export type SessionRemoteHistoryRequest = SessionRemoteRawHistoryRequest | SessionRemoteSemanticHistoryRequest | SessionRemoteHistoryContentRequest;"
+          },
+          {
+            "name": "SessionRemoteHistoryTurnContext",
+            "declaration": "export interface SessionRemoteHistoryTurnContext {\n    readonly turn: number;\n    readonly startSeq?: number;\n    readonly endSeq?: number;\n    readonly usage: SessionRemoteHistoryTurnUsage | null;\n}"
+          },
+          {
+            "name": "SessionRemoteHistoryTurnUsage",
+            "declaration": "export interface SessionRemoteHistoryTurnUsage {\n    readonly uncachedInputTokens: number;\n    readonly outputTokens: number;\n    readonly totalTokens: number;\n    readonly cacheReadTokens?: number;\n    readonly cacheWriteTokens?: number;\n    readonly reasoningTokens?: number;\n    readonly routes?: readonly { readonly provider: string; readonly model: string; }[];\n}"
           },
           {
             "name": "SessionRemoteHistoryValue",
-            "declaration": "export interface SessionRemoteHistoryValue {\n    readonly events: readonly SessionRemoteHistoryEntry[];\n    readonly hasMore: boolean;\n    readonly projections?: SessionRemoteProjections;\n}"
+            "declaration": "export type SessionRemoteHistoryValue = SessionRemoteRawHistoryValue | SessionRemoteSemanticHistoryValue | SessionRemoteHistoryContentValue;"
           },
           {
             "name": "SessionRemoteImageAttachment",
@@ -1194,6 +1298,14 @@ export const TYPERT = {
             "declaration": "export type SessionRemoteQueueAction = { readonly kind: 'edit'; readonly content: readonly JsonValue[]; } | { readonly kind: 'remove'; } | { readonly kind: 'steer'; };"
           },
           {
+            "name": "SessionRemoteRawHistoryRequest",
+            "declaration": "export interface SessionRemoteRawHistoryRequest extends SessionRemoteHistoryIdentity {\n    readonly view?: 'raw';\n    readonly sourceRevision?: string;\n    readonly beforeSeq?: number;\n    readonly maxMessages?: number;\n    readonly maxEvents?: number;\n}"
+          },
+          {
+            "name": "SessionRemoteRawHistoryValue",
+            "declaration": "export interface SessionRemoteRawHistoryValue {\n    readonly view?: 'raw';\n    readonly sourceRevision?: string;\n    readonly asOfThroughSeq?: number;\n    readonly events: readonly SessionRemoteHistoryEntry[];\n    readonly hasMore: boolean;\n    readonly projections?: SessionRemoteProjections;\n}"
+          },
+          {
             "name": "SessionRemoteReasoningEffort",
             "declaration": "export interface SessionRemoteReasoningEffort {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n}"
           },
@@ -1228,6 +1340,18 @@ export const TYPERT = {
           {
             "name": "SessionRemoteSelectModelValue",
             "declaration": "export interface SessionRemoteSelectModelValue {\n    readonly selected: SessionRemoteModelSelection;\n}"
+          },
+          {
+            "name": "SessionRemoteSemanticHistoryRequest",
+            "declaration": "export interface SessionRemoteSemanticHistoryRequest extends SessionRemoteHistoryIdentity {\n    readonly view: 'semantic';\n    readonly sourceRevision?: string;\n    readonly beforeRecordId?: string;\n    readonly maxRecords?: number;\n}"
+          },
+          {
+            "name": "SessionRemoteSemanticHistoryValue",
+            "declaration": "export interface SessionRemoteSemanticHistoryValue {\n    readonly view: 'semantic';\n    readonly sourceRevision: string;\n    readonly asOfThroughSeq: number;\n    readonly records: readonly SessionRemoteSemanticRecord[];\n    readonly turns: readonly SessionRemoteHistoryTurnContext[];\n    readonly dependencyRecords: { readonly tool: string; readonly status: string; readonly turn: string; };\n    readonly hasMore: boolean;\n    readonly nextBeforeRecordId?: string;\n    readonly pendingDomains: readonly ('status' | 'usage-context' | 'workflow')[];\n}"
+          },
+          {
+            "name": "SessionRemoteSemanticRecord",
+            "declaration": "export interface SessionRemoteSemanticRecord {\n    readonly id: string;\n    readonly kind: 'user' | 'assistant' | 'tool';\n    readonly orderSeq: number;\n    readonly time: number;\n    readonly turn?: number;\n    readonly step?: number;\n    readonly state: 'complete' | 'interrupted' | 'active' | 'failed-prefix' | 'orphaned-prefix' | 'unpaired';\n    readonly preview: string;\n    readonly contentState: 'complete-at-cut';\n    readonly canonicalEventSeq?: number;\n    readonly callEventSeq?: number;\n    readonly resultEventSeq?: number;\n    readonly completedTurnEndSeq?: number;\n}"
           },
           {
             "name": "SessionRemoteSuccess",
@@ -1517,6 +1641,13 @@ export const TYPERT = {
             "signature": "get events(): readonly SessionEvent[]",
             "summary": "An immutable snapshot of the append-only event log.",
             "jsDoc": "/**\n * An immutable snapshot of the append-only event log. The snapshot is reused\n * until the next append; a previously returned array does not grow later.\n * Events and their nested data are deep-frozen at acceptance, so neither a\n * cast nor ordinary JavaScript can rewrite durable history.\n */"
+          },
+          {
+            "kind": "method",
+            "name": "eventAt",
+            "signature": "eventAt(seq: number): SessionEvent | undefined",
+            "summary": "Read one deeply frozen accepted event without materializing a log snapshot.",
+            "jsDoc": "/**\n * Read one deeply frozen accepted event without materializing a log snapshot.\n * @param seq - event sequence number.\n * @returns the accepted event, or undefined when the sequence is absent.\n */"
           },
           {
             "kind": "getter",

@@ -436,9 +436,10 @@ async function validateOwnedDirectory(path, info, ownerOnly) {
   return realpath(path)
 }
 
-async function walkOwnedDirectoryChain(home, parts, create, { ownerOnly = true } = {}) {
+async function walkOwnedDirectoryChain(home, parts, create, { ownerOnly = true, tightenLegacyPermissions = false } = {}) {
   let current = home
-  let currentReal = await validateOwnedDirectory(home, await lstat(home), false)
+  let currentInfo = await lstat(home)
+  let currentReal = await validateOwnedDirectory(home, currentInfo, false)
   for (const part of parts) {
     const child = join(current, part)
     let info = await optionalLstat(child)
@@ -447,14 +448,52 @@ async function walkOwnedDirectoryChain(home, parts, create, { ownerOnly = true }
       await mkdir(child, { mode: 0o700 })
       info = await lstat(child)
     }
+    if (ownerOnly && tightenLegacyPermissions && (info.mode & 0o077) !== 0) {
+      await tightenLegacyFallbackDirectory(current, currentInfo, child, info)
+      info = await lstat(child)
+    }
     const childReal = await validateOwnedDirectory(child, info, ownerOnly)
     if (dirname(childReal) !== currentReal) {
       throw new Error(`Ark-owned directory escapes its validated parent: ${child}`)
     }
     current = child
+    currentInfo = info
     currentReal = childReal
   }
   return current
+}
+
+/** Tighten only a trusted legacy fallback directory, never a replacement reached through its path. */
+async function tightenLegacyFallbackDirectory(parent, parentInfo, path, expected) {
+  const assertPathUnchanged = async () => {
+    await assertUnchangedOwnedDirectory(parent, path, expected)
+    if (!sameFileIdentity(parentInfo, await lstat(parent))) {
+      throw new Error(`fallback directory parent changed during permission upgrade: ${parent}`)
+    }
+  }
+  // This check rejects foreign ownership, links, and group/other writes before
+  // opening or changing anything. Read/execute-only legacy permissions are safe.
+  await assertPathUnchanged()
+  if (!Number.isInteger(constants.O_NOFOLLOW) || !Number.isInteger(constants.O_DIRECTORY)) {
+    throw new Error('fallback permission upgrade requires no-follow directory descriptors')
+  }
+  const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+  try {
+    const before = await handle.stat()
+    assertOrdinaryDirectory(path, before, false)
+    assertCurrentUserOwner(path, before)
+    if (!sameFileIdentity(expected, before)) throw new Error(`fallback directory changed before permission upgrade: ${path}`)
+    await assertPathUnchanged()
+    // Preserve the owner's permissions and remove only group/other access.
+    await handle.chmod(before.mode & 0o700)
+    const after = await handle.stat()
+    assertOrdinaryDirectory(path, after, true)
+    assertCurrentUserOwner(path, after)
+    if (!sameFileIdentity(expected, after)) throw new Error(`fallback directory changed during permission upgrade: ${path}`)
+    await assertPathUnchanged()
+  } finally {
+    await handle.close()
+  }
 }
 
 function sameFileIdentity(left, right) {
@@ -761,6 +800,8 @@ export async function installRuntimeConfiguration(home) {
  * installed runtime. The profile scope is a real directory containing one
  * absolute link per canonical package; a scope-level symlink would let the
  * loader's healer rewrite the pnpm tree through the alias.
+ * Owned legacy directories with only group/other read or execute access are
+ * tightened through validated descriptors; writable or aliased directories fail.
  * @param {string} home - Absolute Harness home.
  * @returns {Promise<{created: number, replaced: number, kept: number, pruned: number}>} Reconciliation counts.
  */
@@ -773,6 +814,7 @@ export async function ensureProfileModuleFallback(home) {
     homeRoot,
     ['profiles', 'node_modules', '@deepseek-ai'],
     true,
+    { tightenLegacyPermissions: true },
   )
   const runtimeStat = await lstat(runtimeScope)
   if (!runtimeStat.isDirectory() || runtimeStat.isSymbolicLink()) {
@@ -803,12 +845,32 @@ export async function ensureProfileModuleFallback(home) {
         kept += 1
         continue
       }
-      await unlinkValidatedProfileSymlink(profileScope, link, linkStat, currentTarget)
-      replaced += 1
-    } else {
-      created += 1
     }
-    await symlink(target, link, process.platform === 'win32' ? 'junction' : undefined)
+    // Stage then rename: the fallback is resolved through by every preset
+    // roster and mount, and the previous runtime may still be serving while a
+    // restart replaces this scope. Unlinking before creating would leave the
+    // entry missing for that whole window, which marks every preset naming the
+    // package broken.
+    const staged = `${link}.staged-${String(process.pid)}`
+    await rm(staged, { recursive: false, force: true })
+    await symlink(target, staged, process.platform === 'win32' ? 'junction' : undefined)
+    try {
+      await rename(staged, link)
+    } catch (error) {
+      // Windows may refuse to rename over an existing reparse point; keep the
+      // validated replace path as the fallback there.
+      if (!['EEXIST', 'EPERM', 'ENOTEMPTY', 'EISDIR'].includes(error?.code ?? '')) {
+        await rm(staged, { recursive: false, force: true })
+        throw error
+      }
+      await rm(staged, { recursive: false, force: true })
+      if (linkStat !== undefined) {
+        await unlinkValidatedProfileSymlink(profileScope, link, linkStat, await readlink(link))
+      }
+      await symlink(target, link, process.platform === 'win32' ? 'junction' : undefined)
+    }
+    if (linkStat === undefined) created += 1
+    else replaced += 1
   }
   for (const name of await readdir(profileScope)) {
     if (runtimeNames.has(name)) continue

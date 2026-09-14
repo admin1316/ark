@@ -1,10 +1,25 @@
+---
+description: "Host-only Typert Remote owner for Ark's browser-free Workbench reader."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-host-workbench
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Host-only Typert Remote owner for Ark's browser-free Workbench reader. `WorkbenchRemoteService` registers only `workbench/webRead`; Files tree/read stay in the existing descriptor-confined Native owner, and Native Review owns Git. The Host method takes one strict `request` object followed by the Gateway-injected `AbortSignal`.
 
 This package owns its filesystem and Git primitives directly. It validates the strict slash-Remote request before any filesystem access, canonicalizes the root and child path, preserves the root-confinement and bounded-read policy, and raises one typed Typert failure so the Gateway emits exactly one `RemoteResult`.
+
+## Table of Contents
+
+- [Migration boundary](#migration-boundary)
+- [Security and behavior](#security-and-behavior)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Migration boundary
 
@@ -38,3 +53,7 @@ Independent of model-content caching because Workbench reads do not modify model
 
 - Parent integration still needs to redirect and remove the temporary compatibility surface, update the Gateway descriptors, and refresh the runtime receipt.
 - This lane does not mount the package in the Native bundle or edit central Gateway route tables.
+
+### Dev Note
+
+None.

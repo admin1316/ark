@@ -101,7 +101,7 @@ func runArkWorkbenchShellContractChecks() async {
       && workbench.contains("request.rootPath == model.rootURL.standardizedFileURL.path")
       && workbench.contains("appModel.completeWorkbenchFileOpenRequest(request.id)")
       && workbench.contains("func validatedRegularFileURL(_ url: URL) throws -> URL")
-      && workbench.contains("let descriptor = try openFile(components, flags: O_RDONLY)"),
+      && workbench.contains("let descriptor = try openFile(components, flags: O_RDONLY | O_NONBLOCK)"),
     "native tool file references route through one root-confined Files owner and fail closed across dirty roots"
   )
   let workbenchChrome = workbenchShellSlice(
@@ -257,26 +257,14 @@ func runArkWorkbenchShellContractChecks() async {
   )
 
   check(
-    !browser.contains("import WebKit")
-      && !browser.contains("WKWebView")
-      && browser.contains("let document = try await reader(url)")
-      && browser.contains("NativeMarkdownDocument(")
-      && browser.contains("text: document.markdown")
-      && browser.contains("openURLAction: { url in")
-      && browser.contains("session.navigate()")
-      && browser.contains("return .discarded")
-      && browser.contains(".onDisappear(perform: session.cancel)")
-      && browser.contains("document.statusCode >= 400")
-      && browser.contains("ark.workbench.browser.reader")
+    browser.contains("import WebKit") && browser.contains("NSViewRepresentable")
+      && browser.contains("configuration.websiteDataStore = .nonPersistent()")
+      && browser.contains("configuration.defaultWebpagePreferences.allowsContentJavaScript = true")
       && browser.contains("NSWorkspace.shared.open(url)")
-      && browser.contains("NativeWorkbenchBrowserSession")
-      && browser.contains("ark.workbench.browser")
-      && browser.contains("[\"http\", \"https\"].contains(scheme)")
-      && browser.contains("components.user == nil")
-      && browser.contains("components.password == nil")
-      && browser.contains(".onChange(of: language)")
-      && !browser.contains("ArkRootView"),
-    "native Browser reads safe Host-fetched Markdown internally with an explicit system-browser fallback"
+      && !browser.contains("NativeMarkdownDocument(") && !browser.contains("loadFileURL")
+      && !browser.contains("addScriptMessageHandler") && !browser.contains("HostToken")
+      && !browser.contains(".onDisappear(perform: session.cancel)"),
+    "native Browser contains the website-only WebKit exception without Host bridge or Markdown replacement"
   )
   check(
     validatedExternalBrowserURL("example.com")?.absoluteString == "https://example.com"
@@ -291,9 +279,10 @@ func runArkWorkbenchShellContractChecks() async {
   )
   check(
     ArkL10n.text(.workbenchBrowserOpen, .en) == "Open Here"
-      && ArkL10n.text(.workbenchBrowserDetail, .en)
-        == "Fetch pages through safe WebFetch and read them as native Markdown in Ark; use the system browser for interactive sites.",
-    "native Browser copy accurately describes native reading and the external fallback"
+      && !browser.contains("workbenchBrowserDetail")
+      && !browser.contains("hasCommittedPage")
+      && !browser.contains("Image(systemName: \"globe\")"),
+    "website content has no Ark instructional overlay before or after navigation"
   )
   check(
     workbench.contains("case .files:")
@@ -318,7 +307,6 @@ func runArkWorkbenchShellContractChecks() async {
       && terminalProcess.contains("TERM\"] = \"xterm-256color\"")
       && terminal.contains("sendControlC()")
       && terminal.contains("TIOCSWINSZ")
-      && terminal.contains("NativeANSIText")
       && terminal.contains("NativeTerminalOutputInbox")
       && terminal.contains("private let byteLimit: Int")
       && terminal.contains("trimToLimit()")
@@ -329,15 +317,20 @@ func runArkWorkbenchShellContractChecks() async {
       && terminal.contains("safeUTF8PrefixLength")
       && terminal.contains("resetsANSIState")
       && terminal.contains("publishIntervalNanoseconds")
-      && terminal.contains("textView.textStorage?.append")
-      && terminal.contains("ensureLayout(forCharacterRange: changedRange)")
+      // The visible surface is SwiftTerm; the hand-rolled renderer is gone.
+      && terminal.contains("import SwiftTerm")
+      && terminal.contains("TerminalView(frame:")
+      && terminal.contains("view.terminalDelegate =")
+      && terminal.contains("view.feed(byteArray:")
+      && terminal.contains("func send(source: TerminalView, data: ArraySlice<UInt8>)")
+      && terminal.contains("func sizeChanged(source: TerminalView, newCols: Int, newRows: Int)")
+      && terminal.contains("session?.send(bytes: data)")
       && terminalProcess.contains("SIGHUP")
       && terminalProcess.contains("SIGTERM")
       && terminalProcess.contains("SIGKILL")
       && terminalProcess.contains("waitpid")
       && terminal.contains("await processOwner.shutdown()")
-      && terminal.contains("character == \"\\u{0008}\"")
-      && !terminal.contains("textView.sizeToFit()")
+      && !terminal.contains("NativeANSIText")
       && !terminal.contains("Process()")
       && !terminal.contains("Pipe()"),
     "native Terminal is a session-owned PTY with bounded output, process-tree teardown, and no pipe-based shell"
@@ -533,14 +526,14 @@ func runArkWorkbenchShellContractChecks() async {
       && workbench.contains("let access = try NativeWorkspaceAccess(rootURL: rootURL)")
       && workbench.contains("return try access.listDirectory(directory, showHiddenNoise: showHiddenNoise)")
       && workbench.contains("return try access.readUTF8Text(at: url)")
-      && workbench.contains("webReader: { url in")
-      && workbench.contains("appModel.workbenchWebRead(url: url)")
+      && !workbench.contains("webReader: { url in")
+      && !workbench.contains("appModel.workbenchWebRead(url: url)")
       && workbench.contains(".onChange(of: browserCancellationRevision)")
       && workbench.contains("model.cancelBrowserRequests()")
-      && workbench.contains("model.disposeBrowserSessions()")
+      && workbench.contains("browserSessions.removeValue(forKey: id)?.dispose()")
       && root.contains("workbenchBrowserCancellationRevision &+= 1")
       && root.contains("browserCancellationRevision: workbenchBrowserCancellationRevision"),
-    "native Workbench keeps Files in one asynchronous descriptor owner and only Web reading on Host"
+    "native Workbench keeps Files in its descriptor owner and website browsing independent of Host"
   )
   check(
     workbench.contains("@MainActor\nfinal class NativeWorkbenchModel"),
@@ -651,116 +644,22 @@ func runArkWorkbenchShellContractChecks() async {
     "native tool tab close selects a surviving neighbor"
   )
 
-  let reader = NativeWorkbenchBrowserSession { url in
-    ArkWorkbenchWebDocument(
-      url: url.absoluteString,
-      title: url.host ?? "",
-      statusCode: 200,
-      markdown: "# Native reader\n\nLoaded inside Ark.",
-      truncated: false
-    )
-  }
-  reader.address = "docs.example.test/guide"
-  reader.navigate()
-  for _ in 0..<100 where reader.document == nil { await Task.yield() }
-  check(
-    reader.document?.markdown.contains("Loaded inside Ark") == true
-      && reader.address == "https://docs.example.test/guide"
-      && reader.title == "Native reader"
-      && reader.isLoading == false,
-    "native Browser loads typed Host Markdown inside its tab"
-  )
-
-  let cancelledReader = NativeWorkbenchBrowserSession { _ in
-    try await Task.sleep(for: .seconds(10))
-    return ArkWorkbenchWebDocument(
-      url: "https://example.test",
-      title: "example.test",
-      statusCode: 200,
-      markdown: "late",
-      truncated: false
-    )
-  }
-  cancelledReader.address = "https://example.test"
-  cancelledReader.navigate()
-  cancelledReader.cancel()
-  await Task.yield()
-  check(
-    cancelledReader.document == nil && cancelledReader.isLoading == false,
-    "native Browser cancellation cannot publish a stale page"
-  )
-
-  let failedReader = NativeWorkbenchBrowserSession { url in
-    if url.host == "page-a.example.test" {
-      return ArkWorkbenchWebDocument(
-        url: url.absoluteString,
-        title: "Page A",
-        statusCode: 200,
-        markdown: "# Page A\n\nOld content",
-        truncated: false
-      )
-    }
-    throw NSError(domain: "ArkReaderContract", code: 1)
-  }
-  failedReader.address = "https://page-a.example.test"
-  failedReader.navigate()
-  for _ in 0..<100 where failedReader.document == nil { await Task.yield() }
-  failedReader.address = "https://page-b.example.test"
-  failedReader.navigate()
-  for _ in 0..<100 where failedReader.isLoading { await Task.yield() }
-  check(
-    failedReader.document == nil
-      && failedReader.title == "page-b.example.test"
-      && failedReader.validationMessage != nil,
-    "failed native Browser navigation replaces page A and labels the failure as page B"
-  )
-  failedReader.address = "file:///tmp/not-web"
-  failedReader.navigate()
-  check(
-    failedReader.document == nil
-      && failedReader.title.isEmpty
-      && failedReader.validationMessage != nil,
-    "invalid native Browser navigation also clears the previous committed page"
-  )
-
-  let modelCancellation = NativeWorkbenchModel(
-    rootURL: contractNativeRoot,
-    webReader: { _ in
-      try await Task.sleep(for: .seconds(10))
-      return ArkWorkbenchWebDocument(
-        url: "https://late.example.test",
-        title: "late.example.test",
-        statusCode: 200,
-        markdown: "late",
-        truncated: false
-      )
-    }
-  )
-  let modelReader = modelCancellation.browserSession(for: "browser:contract")
-  let otherModelReader = modelCancellation.browserSession(for: "browser:other")
-  otherModelReader.address = "https://other.example.test/kept"
-  modelReader.address = "https://late.example.test"
-  modelReader.navigate()
+  await runArkWorkbenchBrowserRuntimeContractChecks()
+  let modelCancellation = NativeWorkbenchModel(rootURL: contractNativeRoot)
+  let first = modelCancellation.browserSession(for: "browser:contract")
+  let second = modelCancellation.browserSession(for: "browser:other")
+  let retainedView = first.webView
+  first.address = "https://unsent.example.test"
   modelCancellation.cancelBrowserRequests()
-  await Task.yield()
-  let reusedModelReader = modelCancellation.browserSession(for: "browser:contract")
-  reusedModelReader.address = "https://late.example.test/second"
-  reusedModelReader.navigate()
-  modelCancellation.cancelBrowserRequests()
-  await Task.yield()
-  check(
-    reusedModelReader === modelReader
-      && modelCancellation.browserSession(for: "browser:other") === otherModelReader
-      && otherModelReader.address == "https://other.example.test/kept"
-      && reusedModelReader.document == nil
-      && reusedModelReader.isLoading == false,
-    "two Workbench hide cycles cancel pending reads without detaching mounted browser sessions"
-  )
+  check(modelCancellation.browserSession(for: "browser:contract") === first
+      && modelCancellation.browserSession(for: "browser:other") === second
+      && first.webView === retainedView && !first.isDisposed,
+    "hiding Workbench stops requests without discarding per-tab WebKit ownership")
   modelCancellation.disposeBrowserSessions()
-  check(
-    modelCancellation.browserSession(for: "browser:contract") !== modelReader,
-    "true Workbench disposal removes browser session ownership"
-  )
+  check(first.isDisposed && second.isDisposed && first.webView == nil
+      && modelCancellation.browserSession(for: "browser:contract") !== first,
+    "true Workbench disposal closes all website sessions")
+  modelCancellation.disposeBrowserSessions()
 
   let operationRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
     "ark-workbench-operation-\(UUID().uuidString)",
