@@ -132,8 +132,24 @@ async function seedRecord(
   await writeFile(path, JSON.stringify({ version: projectionCacheDomainSpec.version, record: { identity, rows } }))
 }
 
-/** Wait until queued fail-soft writes (event-listener fire-and-forget over real fs I/O) drain. */
+/** Give queued fire-and-forget listeners one turn to reach their fs I/O. */
 const settle = () => new Promise(resolve => setTimeout(resolve, 40))
+
+/**
+ * Wait until the durable record observably satisfies a condition. Write-backs are
+ * fire-and-forget over real fs I/O, so a fixed sleep only assumes the write
+ * landed; this waits for the store to reflect it and still fails when it never does.
+ * @param root - temp store root.
+ * @param id - session whose record document is read.
+ * @param satisfied - predicate over the stored rows.
+ */
+async function waitForRow(
+  root: string, id: Session['id'], satisfied: (rows: CheckpointRecord['rows'] | undefined) => boolean,
+): Promise<void> {
+  await vi.waitFor(async () => {
+    if (!satisfied(await storedRows(root, id))) throw new Error('durable checkpoint row has not settled')
+  }, { timeout: 5_000 })
+}
 
 afterEach(async () => {
   vi.useRealTimers()
@@ -148,10 +164,10 @@ describe('SessionProjectionCache write policy', () => {
     mark(session, ['a'])
     // Creation already wrote the init cut; the mark is throttled, so the
     // stored row is still the creation-time cut (no marks folded).
-    await settle()
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks'] !== undefined)
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1)
     const end = endTurn(session)
-    await settle()
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === end.seq)
     const rows = await storedRows(root, session.id)
     expect(rows?.['cache-test/marks']).toEqual({ ver: 1, seq: end.seq, val: { marks: ['a'] } })
   })
@@ -164,7 +180,7 @@ describe('SessionProjectionCache write policy', () => {
     const session = ctx.sessions.create(SessionId('seeded'), {
       seed: [{ type: 'cache-test/mark', seq: 0, time: 1, data: { marks: ['seed'] } }] as SessionEvent[],
     })
-    await settle()
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.val !== undefined)
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.val)
       .toEqual({ marks: ['seed'] })
   })
@@ -179,7 +195,7 @@ describe('SessionProjectionCache write policy', () => {
     if (session === undefined) throw new Error('session was not created')
     mark(session, ['live'])
     await owner.dispose()
-    await settle()
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.val?.marks?.[0] === 'live')
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['live'] })
   })
 
@@ -188,10 +204,10 @@ describe('SessionProjectionCache write policy', () => {
     const session = ctx.sessions.create(SessionId('count'))
     mark(session, ['1'])
     mark(session, ['2'])
-    await settle()
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === -1)
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1) // still the creation cut
     mark(session, ['3'])
-    await settle()
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.val?.marks?.[0] === '3')
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['3'] })
   })
 
@@ -268,7 +284,7 @@ describe('SessionProjectionCache write policy', () => {
     await rm(recordPath(root, session.id), { recursive: true })
     mark(session, ['y'])
     endTurn(session)
-    await settle()
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.val?.marks?.[0] === 'y')
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['y'] })
   })
 })
@@ -415,14 +431,14 @@ describe('SessionProjectionCache cold-read seeding', () => {
     // Host-only unit: folded but not served; the refreshed row is written
     // back (fail-soft, fire-and-forget) once the write lands.
     expect(Object.keys(snapshot.values)).not.toContain('cache-test/count')
-    await settle()
+    await waitForRow(root, meta.id, rows => rows?.['cache-test/count']?.seq === 4)
     expect((await storedRows(root, meta.id))?.['cache-test/count']?.seq).toBe(4)
     // No cached row yet: the first cold read folds from init over the full
     // log and creates the cache row (the `?? {}` seed path).
     const fresh = headerOf(SessionId('cold-fresh'), 10)
     cache.coldSnapshot(fresh, events)
     expect(apply).toHaveBeenCalledTimes(7) // 2 tail + 5 full
-    await settle()
+    await waitForRow(root, fresh.id, rows => rows?.['cache-test/count']?.seq === 4)
     expect((await storedRows(root, fresh.id))?.['cache-test/count']?.seq).toBe(4)
   })
 
