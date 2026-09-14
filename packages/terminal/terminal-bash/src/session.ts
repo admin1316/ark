@@ -94,7 +94,11 @@ class LocalSendOperation implements TerminalSendOperation {
   ) {
     this.output = new BoundedTextBuffer(maxBytes)
     this.promise = Promise.withResolvers<TerminalSendResult>()
-    this.initialForegroundLeftWait = true
+    // The exact probe may only settle once this send observed the foreground
+    // leave its read (processing our input) and return to it. Pre-setting the
+    // flag would accept the wait state that pre-dated the submission — on a
+    // cold shell that settles before the command produced any output at all.
+    this.initialForegroundLeftWait = false
   }
 
   get done(): Promise<TerminalSendResult> {
