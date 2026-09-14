@@ -12,7 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   appendCandidateReviews,
   applyCandidateReview as applyCandidateReviewWithAuthority,
@@ -28,6 +28,34 @@ import {
 } from '../src/verifier.ts'
 import type { WikiReviewItem } from '../src/types.ts'
 import { issueTestReceipt, verifierAuthority } from './verifier-authority-fixture.ts'
+
+// Directory-fsync fault injection: a real Windows runner cannot fsync directory
+// handles (EPERM), and a damaged one can fail with other errno codes. The fault
+// is inert unless a test activates it.
+const fsFault = vi.hoisted(() => ({ mode: 'none' as 'none' | 'eperm' | 'eio' }))
+const directoryFds = vi.hoisted(() => new Set<number>())
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    openSync: (...args: Parameters<typeof actual.openSync>) => {
+      const fd = actual.openSync(...args)
+      try { if (actual.statSync(String(args[0])).isDirectory()) directoryFds.add(fd) } catch { /* not stat-able */ }
+      return fd
+    },
+    closeSync: (fd: number) => {
+      directoryFds.delete(fd)
+      actual.closeSync(fd)
+    },
+    fsyncSync: (descriptor: number) => {
+      if (fsFault.mode !== 'none' && directoryFds.has(descriptor)) {
+        const code = fsFault.mode === 'eperm' ? 'EPERM' : 'EIO'
+        throw Object.assign(new Error(`${code}: fsync fault`), { code })
+      }
+      actual.fsyncSync(descriptor)
+    },
+  }
+})
 
 const roots: string[] = []
 const authority = verifierAuthority()
@@ -557,6 +585,28 @@ describe('prepared journal revalidation', () => {
     )).toThrow('promotion journal lacks immutable pre-state')
     expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
     expect(review.before).toBeDefined()
+  })
+
+  it('completes the promotion when the directory fsync fails with EPERM like windows', () => {
+    const item = fixture()
+    verify(item)
+    interruptAtJournalPersistence(item)
+    fsFault.mode = 'eperm'
+    try {
+      expect(() => recoverCandidateReviewTransactions(authority, item.reviewFile, item.wikiRoot, item.archiveRoot)).not.toThrow()
+      expect(readItems(item.reviewFile)[0]?.resolved).toBe(true)
+    } finally { fsFault.mode = 'none' }
+  })
+
+  it('surfaces a non-EPERM directory fsync failure instead of completing the promotion', () => {
+    const item = fixture()
+    verify(item)
+    interruptAtJournalPersistence(item)
+    fsFault.mode = 'eio'
+    try {
+      expect(() => recoverCandidateReviewTransactions(authority, item.reviewFile, item.wikiRoot, item.archiveRoot))
+        .toThrow('EIO: fsync fault')
+    } finally { fsFault.mode = 'none' }
   })
 
   it('refuses an authentically sealed journal whose review pre-state is not an array', () => {
