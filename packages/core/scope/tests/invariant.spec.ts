@@ -92,6 +92,9 @@ describe('scoped-dispatch invariants', () => {
       ['tools/post-execute', [{ callId: 'c', name: 't', arguments: {}, agent }, { content: [], isError: false }, () => Promise.resolve({ kind: 'accept' })]],
       ['tools/pre-execute', [{ callId: 'c', name: 't', arguments: {}, agent }, () => Promise.resolve({ kind: 'allow' })]],
       ['tools/result', [{ callId: 'c', name: 't', arguments: {}, agent }, { content: [], isError: false }]],
+      // The request carries its Agent as an optional field, so the resolver
+      // reads it from the payload rather than a positional argument.
+      ['user-questions/request', [{ questions: [], agent }, () => Promise.resolve({ answers: [] })]],
     ]
 
     for (const [event, args] of rows) {
