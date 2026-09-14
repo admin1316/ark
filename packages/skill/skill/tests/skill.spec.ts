@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
+import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
 import SkillRegistry, {
   isModelInvocable,
   isUserInvocable,
@@ -82,6 +83,116 @@ describe('SkillRegistry registry', () => {
       await expect(ctx.skills.remoteList(agent, AbortSignal.abort())).rejects.toMatchObject({ code: 'cancelled' })
     } finally {
       await scope.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('refuses a Remote listing without a project cwd before touching providers', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const scope = createScope(ctx, { preset: 'remote-no-cwd' })
+    const list = vi.fn(async () => [memorySkill('never-listed', 'Never listed', 100)])
+    scopedSkills(scope.ctx).registerProvider(() => ({ name: 'remote-no-cwd', list, get: async () => undefined }))
+    // A session persisted without a project cwd cannot resolve workspace-sensitive
+    // skills, so the catalog read is refused instead of degrading to a global list.
+    const agent = { id: 'remote-no-cwd', session: { header: {} }, ctx: scope.ctx } as Agent
+    try {
+      await expect(ctx.skills.remoteList(agent, new AbortController().signal)).rejects.toMatchObject({
+        code: 'session-unavailable',
+        details: { sessionId: 'remote-no-cwd' },
+      })
+      expect(list).not.toHaveBeenCalled()
+    } finally {
+      await scope.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('borrows the receiving registry when the Agent context declares no skills service', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    registerProvider(ctx, {
+      name: 'relay',
+      list: async () => [
+        { ...memorySkill('relayed-skill', 'Relayed skill', 100), provider: 'relay', whenToUse: 'When the relay lists it.' },
+      ],
+      get: async () => undefined,
+    })
+    // The Agent context resolves no skills service of its own, so the receiving
+    // registry owns discovery; a declared whenToUse survives the projection.
+    const agent = { id: 'relay-session', session: { header: { cwd: '/workspace' } }, ctx: new Context() } as Agent
+    try {
+      await expect(ctx.skills.remoteList(agent, new AbortController().signal)).resolves.toEqual({
+        skills: [{
+          name: 'relayed-skill',
+          description: 'Relayed skill',
+          whenToUse: 'When the relay lists it.',
+          modelInvocable: true,
+        }],
+      })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('preserves a classification relayed by the Agent\'s own skills service', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    // A relayed Agent context is served by a skills service of its own: the
+    // remote-facing registry the receiving one delegates discovery to. Its
+    // classified protocol failure must reach the caller unchanged instead of
+    // being collapsed into an unactionable internal error.
+    const relayCtx = new Context()
+    await relayCtx.plugin(SkillRegistry)
+    const relayed = new TypertLookupFailure({
+      code: 'relay-failed',
+      message: 'the upstream skill relay rejected the listing',
+      details: { provider: 'upstream' },
+    })
+    vi.spyOn(relayCtx.skills, 'list').mockRejectedValue(relayed)
+    const agent = { id: 'relay-failure', session: { header: { cwd: '/workspace' } }, ctx: relayCtx } as Agent
+    await expect(ctx.skills.remoteList(agent, new AbortController().signal)).rejects.toBe(relayed)
+    await relayCtx.fiber.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('renders any thrown value a malformed provider payload escapes with', async () => {
+    const hostile = new Context()
+    await hostile.plugin(SkillRegistry)
+    registerProvider(hostile, {
+      name: 'hostile',
+      // A malformed observation whose accessor throws a non-Error: the listing
+      // must still answer with a rendered message rather than escaping untyped.
+      list: async () => ({ get candidates(): readonly SkillCandidate[] { throw 'hostile provider payload' }, complete: true }),
+      get: async () => undefined,
+    })
+    const hostileAgent = { id: 'hostile', session: { header: { cwd: '/workspace' } }, ctx: new Context() } as Agent
+    await expect(hostile.skills.remoteList(hostileAgent, new AbortController().signal)).rejects.toMatchObject({
+      code: 'internal',
+      failure: { message: 'skill listing failed: hostile provider payload' },
+    })
+    await hostile.fiber.dispose()
+  })
+
+  it('rechecks cancellation when a provider ignores a signal that aborts during discovery', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const controller = new AbortController()
+    registerProvider(ctx, {
+      name: 'late-abort',
+      list: async () => [{
+        ...memorySkill('late-skill', 'Late skill', 100),
+        provider: 'late-abort',
+        // Read only while the registry projects the winning candidate, i.e. after
+        // discovery completed: the provider itself never observes this signal.
+        get resourceBase(): undefined { controller.abort(new Error('caller went away')); return undefined },
+      }],
+      get: async () => undefined,
+    })
+    const agent = { id: 'late-abort', session: { header: { cwd: '/workspace' } }, ctx: new Context() } as Agent
+    try {
+      await expect(ctx.skills.remoteList(agent, controller.signal)).rejects.toMatchObject({ code: 'cancelled' })
+    } finally {
       await ctx.fiber.dispose()
     }
   })

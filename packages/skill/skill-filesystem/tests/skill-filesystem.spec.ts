@@ -480,6 +480,40 @@ describe('FileSystemSkillProvider', () => {
     expect((await bundledCtx.skills.get('bundled-host'))?.source).toBe('bundled')
   })
 
+  it('skips skill files the filesystem reports as absent, non-file, or non-text', async () => {
+    const home = await tempDir('skill-fs-skip')
+    const root = join(home, 'custom-skills')
+    await writeFlatSkill(root, 'present-skill', 'Present skill')
+    await writeFlatSkill(root, 'resolve-gone', 'Resolve gone')
+    await writeFlatSkill(root, 'stat-gone', 'Stat gone')
+    await writeFlatSkill(root, 'vanished', 'Vanished')
+    await mkdir(join(root, 'directory-entry/SKILL.md'), { recursive: true })
+    await writeFile(join(root, 'binary-entry.md'), Buffer.concat([
+      Buffer.from('---\nname: binary-entry\ndescription: Binary entry\n---\n\n'),
+      Buffer.from([0xff]),
+      Buffer.from('\n'),
+    ]))
+
+    const ctx = new Context()
+    await ctx.plugin(TestFileSystem)
+    const fs = ctx.fs as TestFileSystem
+    fs.failResolvePaths.add(join(root, 'resolve-gone.md'))
+    fs.failStatPaths.add(join(root, 'stat-gone.md'))
+    fs.statOverrides.set(join(root, 'vanished.md'), undefined)
+    const warnings: string[] = []
+    await ctx.plugin(SkillRegistry)
+    ctx.logger.warn = (message: string) => { warnings.push(message) }
+    await ctx.plugin(SkillFileSystem, { includeDefaultRoots: false, customSkillDirs: [root], watch: false })
+
+    // Every unusable entry is skipped without failing the sibling catalog: an
+    // absent path, a path the service reports no info for, a SKILL.md that is a
+    // directory rather than a file, and a file that is not valid UTF-8 text.
+    expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['present-skill'])
+    expect((await ctx.skills.snapshot()).complete).toBe(true)
+    expect(await ctx.skills.get('binary-entry')).toBeUndefined()
+    expect(warnings.some(warning => warning.includes(`skill file ${join(root, 'binary-entry.md')} ignored: failed to read text file at ${join(root, 'binary-entry.md')}`))).toBe(true)
+  })
+
   it('reports transient root reads as incomplete without caching an empty catalog', async () => {
     const home = await tempDir('skill-transient-root')
     const root = join(home, 'custom-skills')

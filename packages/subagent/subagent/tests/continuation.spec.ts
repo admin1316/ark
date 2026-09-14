@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -2787,4 +2788,96 @@ describe('SubagentRuntime.interrupt', () => {
     hold.resolve(undefined)
     await drained
   })
+})
+
+describe('continuable invocation identity and live receipts', () => {
+  /** The package-private Activation entry the receipt paths are observed through. */
+  function activationOf(ctx: Context, childId: SessionId): { handle: { dispose: () => Promise<void> } } {
+    const manager = (ctx.subagents as unknown as {
+      continuations: { activations: Map<SessionId, { handle: { dispose: () => Promise<void> } }> }
+    }).continuations
+    const activation = manager.activations.get(childId)
+    if (activation === undefined) throw new Error('expected a live Activation')
+    return activation
+  }
+
+  it('rejects an invocation that does not match its durable prompt source', async () => {
+    const { ctx, parent } = await setup([textResponse('first')])
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+    const invocationId = randomUUID()
+
+    // A caller-minted retry identity has no durable home unless the message
+    // itself is a subagent prompt, so the delivery is refused before routing.
+    await expect(ctx.subagents.followupReceipt(parent, started.childId, message('plain'), {
+      source: { kind: 'user' }, invocationId, signal: testSignal,
+    })).rejects.toMatchObject({ code: 'INVALID_INVOCATION' })
+
+    // A prompt source must name exactly the identity and the parent the caller
+    // presents: an idempotency claim is only as strong as its durable owner.
+    await expect(ctx.subagents.followupReceipt(parent, started.childId, message('forged sender'), {
+      source: { kind: 'subagent-prompt', form: 'relay', senderSessionId: SessionId('stranger'), invocationId },
+      invocationId, signal: testSignal,
+    })).rejects.toMatchObject({ code: 'INVALID_INVOCATION' })
+    await expect(ctx.subagents.followupReceipt(parent, started.childId, message('swapped id'), {
+      source: { kind: 'subagent-prompt', form: 'relay', senderSessionId: parent.id, invocationId: randomUUID() },
+      invocationId, signal: testSignal,
+    })).rejects.toMatchObject({ code: 'INVALID_INVOCATION' })
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    expect(userTexts(loaded.events)).toEqual(['child task'])
+  })
+
+  it('rejects a persisted invocation id whose durable message identity conflicts', async () => {
+    const { ctx, parent } = await setup([textResponse('first')])
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+    const invocationId = randomUUID()
+    const durable = createUserMessage({
+      content: [{ type: 'text', text: 'one delivery' }],
+      source: { kind: 'subagent-prompt', form: 'relay', senderSessionId: parent.id, invocationId },
+    })
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    const next = (loaded.events.at(-1)?.seq ?? -1) + 1
+    // One message id cannot carry two different persisted values: the retry
+    // identity is ambiguous, so the duplicate read refuses to guess.
+    await ctx.sessionPersistence.append(started.childId, [
+      { type: 'user/message', seq: next, time: 1, data: durable, surfaceOp: 'append' },
+      {
+        type: 'user/message', seq: next + 1, time: 2,
+        data: { ...durable, content: [{ type: 'text', text: 'a different value' }] },
+        surfaceOp: 'append',
+      },
+    ] as SessionEvent[])
+
+    await expect(ctx.subagents.followupReceipt(parent, started.childId, message('one delivery'), {
+      source: { kind: 'subagent-prompt', form: 'relay', senderSessionId: parent.id, invocationId },
+      invocationId, signal: testSignal,
+    })).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
+  })
+
+  it('rejects a persisted invocation id that resolves to several messages', async () => {
+    const { ctx, parent } = await setup([textResponse('first')])
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+    const invocationId = randomUUID()
+    const source = { kind: 'subagent-prompt' as const, form: 'relay' as const, senderSessionId: parent.id, invocationId }
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    const next = (loaded.events.at(-1)?.seq ?? -1) + 1
+    // Two accepted messages under one retry identity cannot both be the answer.
+    await ctx.sessionPersistence.append(started.childId, [
+      {
+        type: 'user/message', seq: next, time: 1, surfaceOp: 'append',
+        data: createUserMessage({ content: [{ type: 'text', text: 'first copy' }], source }),
+      },
+      {
+        type: 'user/message', seq: next + 1, time: 2, surfaceOp: 'append',
+        data: createUserMessage({ content: [{ type: 'text', text: 'second copy' }], source }),
+      },
+    ] as SessionEvent[])
+
+    await expect(ctx.subagents.followupReceipt(parent, started.childId, message('first copy'), {
+      source, invocationId, signal: testSignal,
+    })).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
+  })
+
 })
