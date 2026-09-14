@@ -2122,6 +2122,11 @@ describe('Session Remote model catalog, selection, and titles', () => {
       ok: false,
       error: { code: 'agent-busy' },
     })
+    state.admissionError = new Error('admission error failure')
+    await expect(internals.agentFor(SessionId('admission-error'))).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'agent-busy', message: 'admission error failure', details: { reason: 'admission error failure' } },
+    })
     state.admissionError = undefined
 
     await expect(internals.agentFor(SessionId('missing'))).resolves.toMatchObject({

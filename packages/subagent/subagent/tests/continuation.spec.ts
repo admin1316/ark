@@ -2880,4 +2880,34 @@ describe('continuable invocation identity and live receipts', () => {
     })).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
   })
 
+  it('replays the durable receipt for a live continuable retry', async () => {
+    const { ctx, parent } = await setup([textResponse('first')])
+    parkParent(ctx, parent)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeDefined() })
+    const invocationId = randomUUID()
+    const deliver = () => ctx.subagents.followupReceipt(parent, started.childId, message('durable twice'), {
+      source: { kind: 'subagent-prompt', form: 'relay', senderSessionId: parent.id, invocationId },
+      invocationId, signal: testSignal,
+    })
+    const receipt = await deliver()
+    expect(receipt.duplicate).toBe(false)
+    await expect(deliver()).resolves.toMatchObject({ duplicate: true })
+  })
+
+  it('reports the missing live durability owner when persistence is disabled', async () => {
+    const { ctx, parent } = await setup([textResponse('first')])
+    parkParent(ctx, parent)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeDefined() })
+    // Simulate the documented no-durability-listener state: the store's flush
+    // reports false when nothing owns the durable cut for this session.
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(false)
+    const invocationId = randomUUID()
+    await expect(ctx.subagents.followupReceipt(parent, started.childId, message('durable once'), {
+      source: { kind: 'subagent-prompt', form: 'relay', senderSessionId: parent.id, invocationId },
+      invocationId, signal: testSignal,
+    })).rejects.toMatchObject({ code: 'PERSISTENCE_UNAVAILABLE' })
+  })
+
 })

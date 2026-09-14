@@ -382,6 +382,20 @@ describe('review and verification gates', () => {
       { reviewId: 'missing-review', action: 'Promote' },
       new AbortController().signal,
     )).resolves.toEqual({ ok: false, evidence: [], errorCode: 'review-not-found' })
+
+    // A verifier result whose outcomes are not independent outcomes is rejected
+    // by the result contract before the review lookup.
+    provided.set('knowledgeWikiVerifierAuthority', {
+      ...full,
+      verifyCandidate: async (request: Parameters<typeof full.verifyCandidate>[0], signal: AbortSignal) => ({
+        ...(await full.verifyCandidate(request, signal)),
+        outcomes: ['not-an-outcome'],
+      }),
+    })
+    await expect(service.verifyCandidate(
+      { reviewId: 'missing-review', action: 'Promote' },
+      new AbortController().signal,
+    )).resolves.toMatchObject({ ok: false })
   })
 
   it('keeps the receipt but reports failure when the candidate changes after verification', async () => {

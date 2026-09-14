@@ -70,3 +70,16 @@ it('folds every inserted message of one splice, including an undigested identity
     messageId: second.id, seq: splice.seq, digest: 'v1:digested', conflict: false,
   })
 })
+
+it('folds a splice whose conflicting re-admission follows a new entry', async () => {
+  const { session, receipts } = await fixture()
+  const accepted = SessionPromptInvocationId('folding-splice2-accepted')
+  session.append('user/message', remoteUser(accepted, 'v1:origin'), { surfaceOp: 'append' })
+  const newcomer = SessionPromptInvocationId('folding-splice2-new')
+  session.append('agent/inbox/spliced', {
+    target: 'next-turn', start: 0,
+    inserted: [remoteUser(newcomer, 'v1:new'), remoteUser(accepted, 'v1:changed')],
+  })
+  expect(receipts()?.entries[newcomer]).toMatchObject({ digest: 'v1:new', conflict: false })
+  expect(receipts()?.entries[accepted]).toMatchObject({ conflict: true, digest: 'v1:origin' })
+})
