@@ -9,7 +9,9 @@ describe('openAgentPresetDirectory failure surfaces', () => {
       resolve: (id: string) => Promise.resolve({ id, trust: 'user', path: '/presets/' + id + '/agent.cordis.yml' }),
     } as never)
     const controller = new SettingsController(ctx, { nativeOpen: true }, {
-      openPath: () => Promise.reject('spawn exploded'),
+      openPath: () =>
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- a non-Error rejection is the test subject.
+        Promise.reject('spawn exploded'),
     })
     await expect(controller.openAgentPresetDirectory('mine', new AbortController().signal))
       .rejects.toMatchObject({ failure: { code: 'internal', message: 'path open failed: spawn exploded' } })
