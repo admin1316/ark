@@ -147,6 +147,21 @@ describe('registration', () => {
     expect(scope.get()).toMatchObject({ fontSize: 18 })
   })
 
+  it('refuses change once the revision space is exhausted', async () => {
+    const { ctx } = await boot()
+    const ns = settingsNamespace('ui-theme')
+    ctx.settings.register(ns, ThemeSchema)
+    // Seed the boundary: a registration that has already bumped through its
+    // whole revision space can only refuse further change, in-process or raw.
+    const internals = ctx.settings as unknown as { registrations: Map<string, { revision: number }> }
+    internals.registrations.get(ns)!.revision = Number.MAX_SAFE_INTEGER
+    await expect(ctx.settings.update(ns, { fontSize: 18 })).rejects.toThrow(/revision space is exhausted/)
+    expect(() => {
+      (ctx.settings as unknown as { publish(doc: Record<string, unknown>): void })
+        .publish({ 'ui-theme': { theme: 'light', fontSize: 20 } })
+    }).toThrow(/revision space is exhausted/)
+  })
+
   it('fails the registration itself when the already-stored section is unserviceable', async () => {
     // The other direction of the same contract: `register` resolves inline, so
     // at cold start there is no last good value to keep. A stored section the

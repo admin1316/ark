@@ -49,7 +49,7 @@ type: concept
 status: candidate
 origin: ingest
 title: ${title}
-sources: ["repo:ark/docs/closure.md"]
+sources: ["repo:ark/docs/architecture.md"]
 related: ["concepts/closure"]
 ---
 
@@ -254,7 +254,7 @@ describe('canonical stamping and durable target selection', () => {
       'type: concept',
       'origin: ingest',
       'title: Closure stamping',
-      'sources: ["repo:ark/docs/closure.md"]',
+      'sources: ["repo:ark/docs/architecture.md"]',
       'related: ["concepts/closure"]',
       '---',
       '',

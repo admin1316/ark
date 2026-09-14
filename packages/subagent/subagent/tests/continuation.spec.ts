@@ -2791,16 +2791,6 @@ describe('SubagentRuntime.interrupt', () => {
 })
 
 describe('continuable invocation identity and live receipts', () => {
-  /** The package-private Activation entry the receipt paths are observed through. */
-  function activationOf(ctx: Context, childId: SessionId): { handle: { dispose: () => Promise<void> } } {
-    const manager = (ctx.subagents as unknown as {
-      continuations: { activations: Map<SessionId, { handle: { dispose: () => Promise<void> } }> }
-    }).continuations
-    const activation = manager.activations.get(childId)
-    if (activation === undefined) throw new Error('expected a live Activation')
-    return activation
-  }
-
   it('rejects an invocation that does not match its durable prompt source', async () => {
     const { ctx, parent } = await setup([textResponse('first')])
     const started = await ctx.subagents.startContinuable(startSpec(parent))
@@ -2893,6 +2883,30 @@ describe('continuable invocation identity and live receipts', () => {
     const receipt = await deliver()
     expect(receipt.duplicate).toBe(false)
     await expect(deliver()).resolves.toMatchObject({ duplicate: true })
+  })
+
+  it('reports the missing live durability owner for an already-accepted duplicate', async () => {
+    const { ctx, parent } = await setup([textResponse('first')])
+    parkParent(ctx, parent)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+    const invocationId = randomUUID()
+    const deliver = () => ctx.subagents.followupReceipt(parent, started.childId, message('duplicate live once'), {
+      source: { kind: 'subagent-prompt', form: 'relay', senderSessionId: parent.id, invocationId },
+      invocationId, signal: testSignal,
+    })
+    expect((await deliver()).duplicate).toBe(false)
+    await waitNoActivation(ctx, started.childId)
+    // Re-mount the child session live without a runtime Activation: the
+    // duplicate retry then observes a live source whose durability owner is
+    // gone, and must refuse instead of replaying the receipt.
+    await ctx.agents.resume({
+      resumeSessionId: started.childId,
+      agentOptions: { provider: 'mock', model: 'mock' },
+      signal: testSignal,
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(false)
+    await expect(deliver()).rejects.toMatchObject({ code: 'PERSISTENCE_UNAVAILABLE' })
   })
 
   it('reports the missing live durability owner when persistence is disabled', async () => {

@@ -193,6 +193,15 @@ describe('keychain construction and failure surfaces', () => {
     }
   })
 
+  it('describes keychain-stored and absent references through the security backend', async () => {
+    const ctx = await boot()
+    await ctx.credentials.set(KEY, 'described-synthetic')
+    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'keychain', writable: true })
+    // An absent keychain item defers to the launch-environment fallback.
+    expect(await ctx.credentials.describe(credentialRef('DSH_CRED_TEST_ABSENT')))
+      .toEqual({ configured: false, writable: true })
+  })
+
   it('propagates a security failure that is not item-not-found', async () => {
     const ctx = await boot()
     execFileMock.mockImplementationOnce((_file, _args, callback) => {

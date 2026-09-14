@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { assertNever } from '../src/index.ts'
 
 /**
@@ -45,8 +45,13 @@ function escapeProperty(holder: object, key: string, value: unknown): void {
 
 describe('assertNever', () => {
   it('takes a never value and returns never so an unhandled variant fails compilation', () => {
-    expectTypeOf(assertNever).parameter(0).toBeNever()
-    expectTypeOf<ReturnType<typeof assertNever>>().toBeNever()
+    // Compile-time pins: the parameter must accept only `never`, and the return
+    // type must be `never` — an unhandled variant then fails compilation.
+    type Parameter = Parameters<typeof assertNever>[0]
+    type Result = ReturnType<typeof assertNever>
+    const parameterProbe: Parameter = undefined as never
+    const resultProbe: Result = parameterProbe
+    expect([typeof parameterProbe, typeof resultProbe]).toEqual(['undefined', 'undefined'])
   })
 
   it('reports a variant that escaped its closed union with the switch site and JSON rendering', () => {

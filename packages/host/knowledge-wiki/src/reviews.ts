@@ -372,16 +372,18 @@ function rollbackPromotionOperation(operation: PromotionOperation): void {
     }
   }
   const current = readOptionalText(operation.path, 8 * 1024 * 1024)
+  // before === undefined marks an archive-create operation, which always
+  // stages its content (see promotionOperation), so stagingPath is defined.
   if (operation.before === undefined) {
     if (current === undefined) {
-      if (operation.stagingPath !== undefined) durableUnlinkFile(operation.stagingPath)
+      durableUnlinkFile(operation.stagingPath as string)
       return
     }
     if (operation.after !== undefined && current !== operation.after) {
       throw new Error(`promotion rollback conflict at ${operation.path}`)
     }
     durableUnlinkFile(operation.path)
-    if (operation.stagingPath !== undefined) durableUnlinkFile(operation.stagingPath)
+    durableUnlinkFile(operation.stagingPath as string)
     return
   }
   if (current === operation.before) {
@@ -760,12 +762,13 @@ export function recordCandidateVerification(
   )
   if (trusted === undefined) return false
   const nextVerification = trusted.verification
+  // readTrustedVerification only returns a passed verification, so the action
+  // options always keep the requested action beside the Archive escape hatch.
   all[index] = {
     ...item,
     verification: nextVerification,
-    options: nextVerification.status === 'passed'
-      ? candidateActions(wikiRoot, item.targetPath).filter(option => option.action === action || option.action === 'Archive')
-      : [{ action: 'Archive', label: '归档候选' }],
+    options: candidateActions(wikiRoot, item.targetPath)
+      .filter(option => option.action === action || option.action === 'Archive'),
   }
   writeReviewItemsAtomically(reviewFile, all)
   appendGovernanceLog(reviewFile, {
@@ -773,7 +776,7 @@ export function recordCandidateVerification(
     policyVersion: governancePolicyVersion(),
     reviewId: reviewIdValue,
     action: 'Verify',
-    actor: nextVerification.verifiedBy ?? 'unverified',
+    actor: nextVerification.verifiedBy,
     outcome: nextVerification.status,
     candidateHash: actualHash,
     methods: nextVerification.methods,
@@ -858,8 +861,9 @@ export function applyCandidateReview(
   let archivedCanonical = ''
   let archivedCanonicalContent = ''
   if (action === 'Merge' || action === 'Replace' || action === 'Deduplicate') {
-    if (!item.targetPath) return false
-    const target = resolveCanonicalReviewPath(wikiRoot, item.targetPath, false)
+    // actionIsCompatible already rejected these actions without a target before
+    // the verification could pass, so the target path is present here.
+    const target = resolveCanonicalReviewPath(wikiRoot, item.targetPath as string, false)
     if (target === undefined) return false
     const canonicalBefore = readRegularFileBounded(target.absolutePath, 5 * 1024 * 1024).toString('utf8')
     const approvedAt = new Date().toISOString()
@@ -888,8 +892,7 @@ export function applyCandidateReview(
     targetPath = target.relativePath
     appliedPath = target.relativePath
   } else if (action === 'Promote') {
-    if (!item.targetPath) return false
-    const target = resolveCanonicalReviewPath(wikiRoot, item.targetPath, true)
+    const target = resolveCanonicalReviewPath(wikiRoot, item.targetPath as string, true)
     if (target === undefined || pathEntryExists(target.absolutePath)) return false
     targetAfter = target.relativePath.startsWith('_evidence/')
       ? stampEvidence(content, today, actor)

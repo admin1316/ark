@@ -1,7 +1,9 @@
 import { expect, it, vi } from 'vitest'
 import type { UpdateTeamTaskRequest } from '@deepseek-ai/dsh-agent-team'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { foldTeam } from '../src/fold.ts'
 import { createTeamRuntime } from './runtime.ts'
 
 it('runs task CAS, dependency and ownership checks through a real Loader composition', async () => {
@@ -143,6 +145,48 @@ it('keeps the target queue usable after a dispatch failure that cannot even be d
       target: 'worker', content: [{ type: 'text', text: 'next task' }], delivery: 'wakeup', signal: new AbortController().signal,
     })
     expect(retried.status).toBe('accepted')
+  } finally { await run.dispose() }
+})
+
+it('reports a provisioning conflict when the durable member vanished before settle', async () => {
+  const run = await createTeamRuntime(Array.from({ length: 6 }, () => textResponse('done')))
+  try {
+    const teams = run.ctx.agentTeams
+    const startResult = Promise.withResolvers<never>()
+    vi.spyOn(run.ctx.subagents, 'startContinuable').mockImplementation(() => startResult.promise)
+    // Simulate a durable journal that lost the provisioning member (e.g. a
+    // compacted or replaced root log): the settle must refuse instead of
+    // recording a terminal phase for a teammate the journal never knew.
+    let vanishNext = false
+    // The roster owns its journal privately; reach it structurally for this
+    // corruption simulation without importing the class.
+    const journal = (teams as unknown as {
+      journal: { state(root: Agent): { members: Map<string, { phase: string }> } }
+    }).journal
+    const stateSpy = vi.spyOn(journal, 'state').mockImplementation((root: Agent) => {
+      const state = foldTeam(root.id, root.session.events)
+      if (vanishNext) {
+        vanishNext = false
+        for (const [id, member] of state.members) {
+          if (member.phase === 'provisioning') state.members.delete(id)
+        }
+      }
+      return state
+    })
+    const spawning = teams.spawnTeammate(run.lead, {
+      name: 'vanishing-worker', description: 'Vanished mid-provisioning', prompt: [{ type: 'text', text: 'initial child task' }],
+      provider: 'spawn', context: 'fresh', signal: new AbortController().signal,
+    }).catch((error: unknown) => error)
+    await vi.waitFor(() => {
+      expect(run.lead.session.events.some(event => event.type === 'team/member')).toBe(true)
+    })
+    vanishNext = true
+    startResult.reject(new Error('start failed'))
+    const failure = await spawning
+    if (!(failure instanceof AggregateError)) throw new Error('a vanished member must report both failures')
+    expect(failure.errors[0]).toBeInstanceOf(Error)
+    expect(failure.errors[1]).toMatchObject({ code: 'TEAM_PROVISIONING_CONFLICT' })
+    stateSpy.mockRestore()
   } finally { await run.dispose() }
 })
 

@@ -89,7 +89,6 @@ export class TeamTaskBoard {
         `stale team task "${current.id}" revision ${request.expectedRevision}; current revision is ${current.revision}`, 'TEAM_TASK_STALE_REVISION',
       )
       if (current.status === 'deleted') throw new TeamError(`team task "${current.id}" is deleted`, 'TEAM_TASK_DELETED')
-      if (current.revision === Number.MAX_SAFE_INTEGER) throw new TeamError('Team task revision space exhausted', 'TEAM_TASK_LIMIT')
       const lead = membership.role === 'lead'
       const authorizeOwner = (): void => {
         if (!lead && current.ownerId !== caller.id) throw new TeamError('task mutation requires its owner or Team Lead', 'TEAM_TASK_UNAUTHORIZED')
@@ -177,10 +176,13 @@ export class TeamTaskBoard {
   private writeScopes(values: readonly string[]): string[] { return [...new Set(values.map(writeScope))] }
 
   private assertTaskGraph(state: TeamFoldState, candidate: TeamTaskSnapshot): void {
+    // assertTaskGraphCandidate only throws TeamTaskGraphError (the fold
+    // zod-validates every journal event before folding), so every failure
+    // here maps onto the team-error surface.
     try { assertTaskGraphCandidate(state.tasks, candidate) }
     catch (error) {
-      if (!(error instanceof TeamTaskGraphError)) throw error
-      throw new TeamError(error.message, TASK_GRAPH_ERROR_CODES[error.violation], { cause: error })
+      const graphError = error as TeamTaskGraphError
+      throw new TeamError(graphError.message, TASK_GRAPH_ERROR_CODES[graphError.violation], { cause: graphError })
     }
   }
 

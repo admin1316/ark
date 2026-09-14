@@ -721,9 +721,9 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       if (!this.preparations.discardForDelete(id)) throw new SessionPersistenceDeleteBlockedError(id, 'reserved')
       const removed = await this.backend.deleteStored(id)
       this.states.delete(id)
-      for (const [candidate] of this.live) {
-        if (candidate.header.id === id) this.live.delete(candidate)
-      }
+      // Any live entry for this id belongs to a session that is still in
+      // ctx.sessions or still owns its state, both of which blocked above —
+      // and retirement removes its own entry — so nothing to release here.
       return removed
     })
     try {
