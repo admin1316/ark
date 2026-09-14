@@ -319,7 +319,8 @@ function writePromotionStage(path: string, content: string): void {
     closeSync(descriptor)
   }
   const directory = openSync(dirname(path), constants.O_RDONLY)
-  try { fsyncSync(directory) } finally { closeSync(directory) }
+  // Windows cannot fsync directory handles (EPERM); NTFS journals its own metadata.
+  if (process.platform !== 'win32') { try { fsyncSync(directory) } finally { closeSync(directory) } } else { closeSync(directory) }
 }
 
 function applyPromotionOperation(

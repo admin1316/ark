@@ -206,6 +206,24 @@ export function readConfinedText(root: string, input: string, maxBytes = MAX_WIK
 }
 
 /**
+ * Flush one open directory handle so its entry mutation survives a crash.
+ * POSIX honours fsync on directory handles; Windows cannot fsync them (EPERM) —
+ * NTFS journals its own metadata, so the handle is simply released there.
+ * @param descriptor - The open parent-directory descriptor to release.
+ */
+function fsyncDirectory(descriptor: number): void {
+  if (process.platform === 'win32') {
+    closeSync(descriptor)
+    return
+  }
+  try {
+    fsyncSync(descriptor)
+  } finally {
+    closeSync(descriptor)
+  }
+}
+
+/**
  * Atomically replace one file and durably publish both bytes and directory entry.
  * File fsync precedes rename; published identity is checked before the parent directory is fsynced.
  * @param path - Destination, absent or an ordinary single-link file; missing parent directories are created.
@@ -239,7 +257,7 @@ export function atomicWriteFile(path: string, content: string | Buffer, mode = 0
       closeSync(published)
     }
     const directory = openSync(parent, constants.O_RDONLY)
-    try { fsyncSync(directory) } finally { closeSync(directory) }
+    fsyncDirectory(directory)
   } finally {
     if (descriptor !== undefined) closeSync(descriptor)
     if (existsSync(temporary)) unlinkSync(temporary)
@@ -270,7 +288,7 @@ export function createPrivateFileIfMissing(path: string, content: Buffer): boole
     closeSync(descriptor)
   }
   const directory = openSync(parent, constants.O_RDONLY)
-  try { fsyncSync(directory) } finally { closeSync(directory) }
+  fsyncDirectory(directory)
   return true
 }
 
@@ -316,7 +334,7 @@ export function durableUnlinkFile(path: string): void {
   }
   unlinkSync(tombstone)
   const directory = openSync(dirname(path), constants.O_RDONLY)
-  try { fsyncSync(directory) } finally { closeSync(directory) }
+  fsyncDirectory(directory)
 }
 
 /**
