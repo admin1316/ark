@@ -195,7 +195,7 @@ describe('SessionProjectionCache write policy', () => {
     if (session === undefined) throw new Error('session was not created')
     mark(session, ['live'])
     await owner.dispose()
-    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.val?.marks?.[0] === 'live')
+    await waitForRow(root, session.id, rows => (rows?.['cache-test/marks']?.val as { marks?: string[] } | undefined)?.marks?.[0] === 'live')
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['live'] })
   })
 
@@ -207,7 +207,7 @@ describe('SessionProjectionCache write policy', () => {
     await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === -1)
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1) // still the creation cut
     mark(session, ['3'])
-    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.val?.marks?.[0] === '3')
+    await waitForRow(root, session.id, rows => (rows?.['cache-test/marks']?.val as { marks?: string[] } | undefined)?.marks?.[0] === '3')
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['3'] })
   })
 
@@ -284,7 +284,7 @@ describe('SessionProjectionCache write policy', () => {
     await rm(recordPath(root, session.id), { recursive: true })
     mark(session, ['y'])
     endTurn(session)
-    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.val?.marks?.[0] === 'y')
+    await waitForRow(root, session.id, rows => (rows?.['cache-test/marks']?.val as { marks?: string[] } | undefined)?.marks?.[0] === 'y')
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['y'] })
   })
 })

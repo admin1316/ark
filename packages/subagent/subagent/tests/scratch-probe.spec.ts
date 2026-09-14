@@ -11,7 +11,6 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
-import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import SubagentRuntime from '../src/index.ts'
 import { TestSessionQuery } from './test-session-query.ts'
@@ -21,7 +20,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
 
-async function setup(script: Parameters<typeof MockAdapter>[0]) {
+async function setup(script: ConstructorParameters<typeof MockAdapter>[0]) {
   const adapter = new MockAdapter(script)
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)

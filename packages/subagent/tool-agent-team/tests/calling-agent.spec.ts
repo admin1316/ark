@@ -1,5 +1,4 @@
 import { expect, it } from 'vitest'
-import * as TeamTools from '../src/index.ts'
 import { createTeamRuntime } from '../../agent-team/tests/runtime.ts'
 
 it('rejects Team tools invoked without a calling Agent', async () => {

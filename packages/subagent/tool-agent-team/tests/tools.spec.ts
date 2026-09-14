@@ -35,25 +35,29 @@ it('confines Team tools to the Agent scopes of the mounting composition', async 
 
     // A member outside the mounting composition keeps no Team surface: an
     // unknown session id is ignored, and a live non-member is left alone.
-    run.ctx.emit('agent-preset/selected', SessionId('absent-member'))
-    run.ctx.emit('agent-preset/selected', run.lead.id)
+    run.ctx.emit('agent-preset/selected', SessionId('absent-member'), '')
+    run.ctx.emit('agent-preset/selected', run.lead.id, '')
     await Promise.resolve()
     expect(run.ctx.tools.get('list_agents', run.lead)).toBeUndefined()
 
     // Joining the composition (the preset re-parents the Agent scope) installs
     // the complete surface and the role-bearing policy section for that member.
     const binding = bindScopeParent(run.lead, scopeOf(composition.ctx)!)
-    run.ctx.emit('agent-preset/selected', run.lead.id)
+    run.ctx.emit('agent-preset/selected', run.lead.id, '')
     await vi.waitFor(() => { expect(run.ctx.tools.get('list_agents', run.lead)).toBeDefined() })
-    const joined = await run.ctx.systemPrompt.assemble({ scope: scopeOf(run.lead.ctx) })
+    const leadScope = scopeOf(run.lead.ctx)
+    if (leadScope === undefined) throw new Error('lead scope missing')
+    const joined = await run.ctx.systemPrompt.assemble({ scope: leadScope })
     expect(renderPrompt(joined)).toContain('Your Team role is lead')
 
     // Recompose away from the composition withdraws the surface for that Agent
     // while the composition itself keeps serving its own members.
     binding.rebind(scopeOf(replacement.ctx)!)
-    run.ctx.emit('agent-preset/selected', run.lead.id)
+    run.ctx.emit('agent-preset/selected', run.lead.id, '')
     expect(run.ctx.tools.get('list_agents', run.lead)).toBeUndefined()
-    expect(renderPrompt(await run.ctx.systemPrompt.assemble({ scope: scopeOf(run.lead.ctx) })))
+    const detachedScope = scopeOf(run.lead.ctx)
+    if (detachedScope === undefined) throw new Error('lead scope missing after detach')
+    expect(renderPrompt(await run.ctx.systemPrompt.assemble({ scope: detachedScope })))
       .not.toContain('Your Team role is lead')
 
     await replacement.dispose()
@@ -77,7 +81,9 @@ it('renders the base policy for a teammate whose provisioning failed while it wa
       if (session.id !== run.lead.id || teammate === undefined || policy !== undefined) return
       // Sampled inside the failing spawn, while the failed member is already
       // durable: the section is still installed for the live teammate Agent.
-      policy = renderPrompt(await run.ctx.systemPrompt.assemble({ scope: scopeOf(teammate.ctx) }))
+      const teammateScope = scopeOf(teammate.ctx)
+      if (teammateScope === undefined) throw new Error('teammate scope missing')
+      policy = renderPrompt(await run.ctx.systemPrompt.assemble({ scope: teammateScope }))
     })
 
     await expect(run.ctx.agentTeams.spawnTeammate(run.lead, {

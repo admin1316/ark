@@ -544,7 +544,12 @@ describe('prepared journal revalidation', () => {
 
     resealJournal(item, journal, (core) => {
       core.operations = core.operations.map(operation => operation.role === 'review'
-        ? { role: operation.role, path: operation.path, after: operation.after, stagingPath: operation.stagingPath }
+        ? {
+          role: operation.role,
+          path: operation.path,
+          ...(operation.after !== undefined ? { after: operation.after } : {}),
+          ...(operation.stagingPath !== undefined ? { stagingPath: operation.stagingPath } : {}),
+        }
         : operation)
     })
     expect(() => recoverCandidateReviewTransactions(

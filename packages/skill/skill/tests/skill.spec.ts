@@ -186,7 +186,7 @@ describe('SkillRegistry registry', () => {
         // Read only while the registry projects the winning candidate, i.e. after
         // discovery completed: the provider itself never observes this signal.
         get resourceBase(): undefined { controller.abort(new Error('caller went away')); return undefined },
-      }],
+      }] as unknown as SkillCandidate[],
       get: async () => undefined,
     })
     const agent = { id: 'late-abort', session: { header: { cwd: '/workspace' } }, ctx: new Context() } as Agent

@@ -280,7 +280,7 @@ describe('expandAssistantStream', () => {
   })
 
   it('rejects a run whose dt does not describe exactly one gap per extra member', () => {
-    const base = { type: 'reasoning-chunks', time0: 0, index: 0, dt: [1], texts: ['a', 'b'] }
+    const base: AssistantStreamRecord = { type: 'reasoning-chunks', time0: 0, index: 0, dt: [1], texts: ['a', 'b'] }
     expect(expandAssistantStream([base])).toEqual([timed(0, reasoning(0, 'a')), timed(1, reasoning(0, 'b'))])
     expect(() => expandAssistantStream([rogueRecord({ ...base, dt: [] })]))
       .toThrow('reasoning-chunks dt length must be one less than its members')
@@ -297,9 +297,9 @@ describe('expandAssistantStream', () => {
   })
 
   it('validates Tool-call runs: exact keys, non-empty args, id, and name', () => {
-    const named = { type: 'tool-call-chunks', time0: 0, index: 0, dt: [], id: 'c1', name: 'echo', args: ['{}'] }
+    const named: AssistantStreamRecord = { type: 'tool-call-chunks', time0: 0, index: 0, dt: [], id: CallId('c1'), name: 'echo', args: ['{}'] }
     expect(expandAssistantStream([named])).toEqual([timed(0, toolCall(0, 'c1', '{}', 'echo'))])
-    const unnamed = { type: 'tool-call-chunks', time0: 0, index: 0, dt: [], id: 'c1', args: ['{}'] }
+    const unnamed: AssistantStreamRecord = { type: 'tool-call-chunks', time0: 0, index: 0, dt: [], id: CallId('c1'), args: ['{}'] }
     expect(expandAssistantStream([unnamed])).toEqual([timed(0, toolCall(0, 'c1', '{}'))])
     expect(() => expandAssistantStream([rogueRecord({ ...named, extra: 1 })]))
       .toThrow('tool-call-chunks Assistant stream record must contain exactly type, time0, index, dt, id, name, args')
@@ -320,7 +320,7 @@ describe('expandAssistantStream', () => {
   })
 
   it('validates raw chunk records and rejects a chunk outside the lossless JSON boundary', () => {
-    const record = { type: 'chunk', time: 3, chunk: { type: 'finish', reason: { kind: 'stop' } } }
+    const record: AssistantStreamRecord = { type: 'chunk', time: 3, chunk: { type: 'finish', reason: { kind: 'stop' } } }
     expect(expandAssistantStream([record])).toEqual([timed(3, { type: 'finish', reason: { kind: 'stop' } })])
     expect(() => expandAssistantStream([rogueRecord({ ...record, extra: 1 })]))
       .toThrow('chunk Assistant stream record must contain exactly type, time, chunk')

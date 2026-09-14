@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import SkillRegistry from '@deepseek-ai/dsh-skill'
+import SkillRegistry, { type SkillCandidate } from '@deepseek-ai/dsh-skill'
 
 function scopedSkills(ctx: Context): SkillRegistry {
   const skills = ctx.get('skills')
@@ -38,9 +38,12 @@ describe('remoteList failure surfaces', () => {
     const scope = createScope(ctx, { preset: 'remote' })
     // A malformed observation (not an array) makes the registry's own
     // validation throw through remoteList's catch.
+    // The malformed payload (not an array) is intentional: registry validation
+    // must reject it through remoteList's catch.
+    const malformed = Promise.resolve([{ nope: true }]) as unknown as Promise<readonly SkillCandidate[]>
     scopedSkills(scope.ctx).registerProvider(() => ({
       name: 'remote-test',
-      list: async () => ({ nope: true }),
+      list: () => malformed,
       get: async () => { throw new Error('catalog must not read bodies') },
     }))
     await expect(ctx.skills.remoteList(remoteAgent(scope), new AbortController().signal))

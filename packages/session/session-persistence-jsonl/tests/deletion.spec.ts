@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { lstat, mkdtemp, mkdir, readFile, readdir, readlink, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -130,7 +130,7 @@ it('refuses an id with pending tombstones in two projects instead of choosing on
   try {
     await ctx.plugin(SessionStore)
     await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
-    const id = 'ambiguous-target'
+    const id = SessionId('ambiguous-target')
     const pendings: string[] = []
     for (const cwd of ['/work/one', '/work/two']) {
       const project = dirname(sessionDir(root, cwd, id))

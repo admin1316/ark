@@ -167,10 +167,10 @@ describe('Remote stream mux server carrier lifecycle', () => {
   })
 
   it('delivers every item and one terminal end frame for a source that completes', async () => {
-    const entry = await startMux(async function * () {
+    const entry = await startMux(() => Promise.resolve((async function * () {
       yield 'first'
       yield 'second'
-    })
+    })()))
     const client = await connect(entry.url)
     const frames: unknown[] = []
     client.on('message', (data) => {
@@ -188,9 +188,9 @@ describe('Remote stream mux server carrier lifecycle', () => {
   })
 
   it('turns an item that cannot cross JSON into a stream error without dropping the carrier', async () => {
-    const entry = await startMux(async function * () {
+    const entry = await startMux(() => Promise.resolve((async function * () {
       yield 1n
-    })
+    })()))
     const client = await connect(entry.url)
     const frames: unknown[] = []
     client.on('message', (data) => {
@@ -218,7 +218,7 @@ describe('Remote stream mux server carrier lifecycle', () => {
     const ended = once(socket, 'end')
     rejectRemoteStreamUpgrade(socket, status)
     await ended
-    const [head, body] = Buffer.concat(chunks).toString('utf8').split('\r\n\r\n')
+    const [head = '', body = ''] = Buffer.concat(chunks).toString('utf8').split('\r\n\r\n')
     const lines = head.split('\r\n')
     const reason = status === 401 ? 'Unauthorized' : 'Forbidden'
     expect(lines[0]).toBe(`HTTP/1.1 ${String(status)} ${reason}`)

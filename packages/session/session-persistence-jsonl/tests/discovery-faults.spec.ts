@@ -9,7 +9,7 @@
  * `jsonl.spec.ts` — while the rest of the scan runs against real files.
  */
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -98,7 +98,7 @@ it('skips a log that vanished after discovery and still lists the remaining sess
   expect(listed.map(item => item.id)).toEqual([survivor.id])
   expect(injected.opens).toBe(2)
   // The survivor is still a real, loadable log.
-  expect((await ctx.sessionPersistence.load(survivor.id)).events).toEqual(oneTurnLog())
+  expect((await ctx.sessionPersistence.load(SessionId(survivor.id))).events).toEqual(oneTurnLog())
 })
 
 it('surfaces an unexpected header-read fault instead of reporting a shorter inventory', async () => {

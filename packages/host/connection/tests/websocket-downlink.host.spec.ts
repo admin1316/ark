@@ -110,7 +110,7 @@ function internals(downlinks: WebSocketDownlinks): {
 }
 
 /** The unreferenced heartbeat callback the owner registered, driven manually by tests. */
-function heartbeatTick(heartbeat: ReturnType<typeof vi.spyOn>): () => void {
+function heartbeatTick(heartbeat: { mock: { calls: unknown[][] } }): () => void {
   const call = heartbeat.mock.calls.find(candidate => candidate[1] === DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS)
   if (call === undefined || typeof call[0] !== 'function') {
     throw new Error('WebSocket downlink did not register its heartbeat')
@@ -119,7 +119,7 @@ function heartbeatTick(heartbeat: ReturnType<typeof vi.spyOn>): () => void {
 }
 
 /** The bounded close deadline the owner registered, driven manually by tests. */
-function closeDeadline(timers: ReturnType<typeof vi.spyOn>): () => void {
+function closeDeadline(timers: { mock: { calls: unknown[][] } }): () => void {
   const call = timers.mock.calls.find(candidate => candidate[1] === DEFAULT_WEBSOCKET_CLOSE_GRACE_MS)
   if (call === undefined || typeof call[0] !== 'function') {
     throw new Error('WebSocket downlink did not register its bounded close deadline')
