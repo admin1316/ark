@@ -69,6 +69,12 @@ describe('durable writes tolerate EPERM directory fsync', () => {
     expect(() => {
       atomicWriteFile(page, 'body')
     }).toThrow('EIO: operation not permitted, fsync')
+    // The other two durable helpers surface the same non-EPERM failure.
+    const ledger = join(root, '_governance', 'log.md')
+    expect(() => createPrivateFileIfMissing(ledger, Buffer.from('entry')))
+      .toThrow('EIO: operation not permitted, fsync')
+    expect(() => durableUnlinkFile(ledger)).toThrow('EIO: operation not permitted, fsync')
+    faultFsync.code = 'EPERM'
     faultFsync.code = 'EPERM'
     atomicWriteFile(page, 'body')
     faultFsync.active = false
