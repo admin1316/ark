@@ -54,6 +54,27 @@ if (typeof config.lifecycleActor !== 'string' || !config.lifecycleActor) {
 }
 
 /**
+ * The repository this run acts on, resolved from the workflow context.
+ *
+ * A static owner/name pair would point every API call at the upstream
+ * repository (a 404 on requested_reviewers at best, a write landing in the
+ * wrong repository at worst), so the identity is read per run. GitHub sets
+ * GITHUB_REPOSITORY to owner/name for every Actions job.
+ * @param {NodeJS.ProcessEnv} environment Process environment.
+ * @returns {{owner: string, name: string, slug: string}} The current repository.
+ */
+export function repositoryIdentity(environment = process.env) {
+  const match = /^([^/\s]+)\/([^/\s]+)$/u.exec((environment.GITHUB_REPOSITORY ?? '').trim())
+  if (!match) {
+    throw new Error('GITHUB_REPOSITORY 必须为 owner/repository；GitHub Actions 会注入该变量')
+  }
+  return { owner: match[1], name: match[2], slug: match[1] + '/' + match[2] }
+}
+
+/** @returns {{owner: string, name: string, slug: string}} The repository this process acts on. */
+const currentRepository = () => repositoryIdentity()
+
+/**
  * Return Markdown outside balanced details elements.
  * @param {string} body Markdown body.
  * @returns {{text: string, balanced: boolean, detailsCount: number, allCollapsed: boolean}} Visible source and details shape.
@@ -416,10 +437,10 @@ async function graphql(query, variables) {
 }
 
 async function issueSnapshot(number, status = undefined) {
-  const issue = await api(`/repos/${config.organization}/${config.repository}/issues/${number}`)
+  const issue = await api(`/repos/${currentRepository().slug}/issues/${number}`)
   if (issue.pull_request) return null
   const values = await api(
-    `/repos/${config.organization}/${config.repository}/issues/${number}/issue-field-values?per_page=100`,
+    `/repos/${currentRepository().slug}/issues/${number}/issue-field-values?per_page=100`,
   )
   const field = (name) => values.find((value) => value.issue_field_name === name)
   return {
@@ -483,8 +504,8 @@ async function projectContext(number, includeStatusActor = false) {
       }
     }`,
     {
-      organization: config.organization,
-      repository: config.repository,
+      organization: currentRepository().owner,
+      repository: currentRepository().name,
       number,
       project: config.projectNumber,
       includeStatusActor,
@@ -557,14 +578,14 @@ async function setStatus(number, status) {
 
 async function upsertAudit(number, errors) {
   const comments = await api(
-    `/repos/${config.organization}/${config.repository}/issues/${number}/comments?per_page=100`,
+    `/repos/${currentRepository().slug}/issues/${number}/comments?per_page=100`,
   )
   const existing = comments.find(
     (comment) => comment.user?.type === 'Bot' && comment.body?.includes(AUDIT_MARKER),
   )
   if (errors.length === 0) {
     if (existing) {
-      await api(`/repos/${config.organization}/${config.repository}/issues/comments/${existing.id}`, {
+      await api(`/repos/${currentRepository().slug}/issues/comments/${existing.id}`, {
         method: 'DELETE',
       })
     }
@@ -573,13 +594,13 @@ async function upsertAudit(number, errors) {
   const body = `${AUDIT_MARKER}\n⚠️ Issue policy 未通过：\n\n${errors.map((error) => `- ${error}`).join('\n')}`
   if (existing) {
     if (existing.body === body) return
-    await api(`/repos/${config.organization}/${config.repository}/issues/comments/${existing.id}`, {
+    await api(`/repos/${currentRepository().slug}/issues/comments/${existing.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ body }),
       headers: { 'Content-Type': 'application/json' },
     })
   } else {
-    await api(`/repos/${config.organization}/${config.repository}/issues/${number}/comments`, {
+    await api(`/repos/${currentRepository().slug}/issues/${number}/comments`, {
       method: 'POST',
       body: JSON.stringify({ body }),
       headers: { 'Content-Type': 'application/json' },
@@ -598,7 +619,7 @@ async function auditIssue(number, extraErrors = [], status = undefined) {
 async function resolvingReferencesSnapshot(number, pull) {
   const references = parseReferences({
     body: pull.body ?? '',
-    repository: `${config.organization}/${config.repository}`,
+    repository: currentRepository().slug,
   })
   const issues = new Map()
   for (const issueNumber of references.all) {
@@ -614,9 +635,9 @@ async function resolvingReferencesSnapshot(number, pull) {
 
 async function pullRequestSnapshot(number) {
   const [pull, reviewRequests, reviews] = await Promise.all([
-    api(`/repos/${config.organization}/${config.repository}/pulls/${number}`),
-    api(`/repos/${config.organization}/${config.repository}/pulls/${number}/requested_reviewers`),
-    api(`/repos/${config.organization}/${config.repository}/pulls/${number}/reviews?per_page=100`),
+    api(`/repos/${currentRepository().slug}/pulls/${number}`),
+    api(`/repos/${currentRepository().slug}/pulls/${number}/requested_reviewers`),
+    api(`/repos/${currentRepository().slug}/pulls/${number}/reviews?per_page=100`),
   ])
   const resolving = await resolvingReferencesSnapshot(number, pull)
   return {
@@ -630,7 +651,7 @@ async function pullRequestSnapshot(number) {
 }
 
 async function lifecyclePullRequestSnapshot(number) {
-  const pull = await api(`/repos/${config.organization}/${config.repository}/pulls/${number}`)
+  const pull = await api(`/repos/${currentRepository().slug}/pulls/${number}`)
   return resolvingReferencesSnapshot(number, pull)
 }
 
