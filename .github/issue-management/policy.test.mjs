@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
@@ -7,6 +8,7 @@ import {
   parseReferences,
   retainIssueReferences,
   resolvingIssueStatusCommand,
+  repositoryIdentity,
   requiresPullRequestPolicy,
   validateBody,
   validateIssue,
@@ -410,4 +412,31 @@ test('allows missing Priority only when resolving Issues are also unprioritized'
       '有 Priority 的解决型 PR 要求每个被解决 Issue 都设置 Priority',
     ),
   )
+})
+
+test('resolves the repository identity from the workflow context', () => {
+  assert.deepEqual(repositoryIdentity({ GITHUB_REPOSITORY: 'admin1316/ark' }), {
+    owner: 'admin1316',
+    name: 'ark',
+    slug: 'admin1316/ark',
+  })
+  assert.deepEqual(repositoryIdentity({ GITHUB_REPOSITORY: 'some-fork/ark' }).slug, 'some-fork/ark')
+  assert.throws(() => repositoryIdentity({}), /GITHUB_REPOSITORY/u)
+  assert.throws(() => repositoryIdentity({ GITHUB_REPOSITORY: 'deepseek-harness' }), /GITHUB_REPOSITORY/u)
+})
+
+test('keeps no static repository identity in the configuration', () => {
+  const configuration = JSON.parse(readFileSync(new URL('./config.json', import.meta.url), 'utf8'))
+  assert.equal(configuration.organization, undefined)
+  assert.equal(configuration.repository, undefined)
+})
+
+test('resolves same-repository references against the current identity only', () => {
+  const repository = repositoryIdentity({ GITHUB_REPOSITORY: 'admin1316/ark' }).slug
+  const references = parseReferences({
+    body: '修复 admin1316/ark#12，并跟踪 deepseek-harness/deepseek-harness#34。',
+    repository,
+  })
+  assert.deepEqual(references.all, [12])
+  assert.ok(!references.all.includes(34))
 })
