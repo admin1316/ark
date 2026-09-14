@@ -190,9 +190,7 @@ function sessionDeletionPostOrder(rootSessionId: SessionId, headers: readonly Se
   const path: SessionId[] = []
   const order: SessionId[] = []
   const stack: { id: SessionId; exiting: boolean }[] = [{ id: rootSessionId, exiting: false }]
-  while (stack.length > 0) {
-    const frame = stack.pop()
-    if (frame === undefined) break
+  for (let frame = stack.pop(); frame !== undefined; frame = stack.pop()) {
     if (frame.exiting) {
       path.pop()
       visiting.delete(frame.id)

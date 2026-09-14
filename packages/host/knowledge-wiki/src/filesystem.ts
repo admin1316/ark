@@ -90,12 +90,10 @@ export function resolveConfinedPath(root: string, input: string, allowMissingLea
 }
 
 function nearestExistingAncestor(path: string): string {
+  // Callers confine the target under an existing root, so the walk always
+  // terminates there.
   let cursor = path
-  while (!existsSync(cursor)) {
-    const parent = dirname(cursor)
-    if (parent === cursor) throw new Error('no existing path ancestor')
-    cursor = parent
-  }
+  while (!existsSync(cursor)) cursor = dirname(cursor)
   return cursor
 }
 

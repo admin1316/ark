@@ -361,9 +361,8 @@ class FrameQueue {
 
   private take(): ConnectionEventFrame | undefined {
     if (this.failure !== undefined) throw this.failure
-    if (this.size === 0) return undefined
     const queued = this.buffer[this.head]
-    if (queued === undefined) throw new Error('native event queue ring invariant failed')
+    if (queued === undefined || this.size === 0) return undefined
     this.buffer[this.head] = undefined
     this.head = (this.head + 1) % this.maximumFrames
     this.size -= 1

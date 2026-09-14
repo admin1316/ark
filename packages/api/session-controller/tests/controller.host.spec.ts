@@ -7,6 +7,8 @@ import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import SessionController from '../src/index.ts'
 import type { ApiSessionAgentController } from '../src/agent.ts'
+import { SESSION_CONTROLLER_REMOTE_EVENTS } from '../src/remote-events.ts'
+import type { SessionSummary } from '../src/types.ts'
 import { createSessionTestController, testSessionPersistence } from './test-remote.ts'
 
 const defaults = {
@@ -185,5 +187,96 @@ describe('SessionController facade', () => {
     release.resolve(undefined)
     await disposal
     await expect(waiting).resolves.toMatchObject({ done: true })
+  })
+})
+
+describe('Session Controller remote event surface', () => {
+  it('emits every declared controller remote event for its host trigger', async () => {
+    // The declaration is the transport forwarding allowlist; pin its contents.
+    expect([...SESSION_CONTROLLER_REMOTE_EVENTS].sort()).toEqual([
+      'api-session/activity',
+      'api-session/added',
+      'api-session/error',
+      'api-session/removed',
+      'api-session/status',
+    ])
+
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    createSessionTestController(ctx, defaults)
+    const emitted = new Set<string>()
+    const record = (name: string) => () => { emitted.add(name) }
+    const disposers = [
+      ctx.on('api-session/added', record('api-session/added')),
+      ctx.on('api-session/removed', record('api-session/removed')),
+      ctx.on('api-session/status', record('api-session/status')),
+      ctx.on('api-session/error', record('api-session/error')),
+      ctx.on('api-session/activity', record('api-session/activity')),
+    ]
+
+    const session = ctx.sessions.create(SessionId('surface-session'), { meta: { cwd: '/workspace' } })
+    const agent = { id: session.id, session, status: 'idle', ctx } as Agent
+    ctx.agents.register(agent)
+    ctx.emit('agent/status', { agent, status: 'running' })
+    ctx.emit('agent/error', { agent, turn: 1, step: 0, error: new Error('surface failure') })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'hello' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+
+    const prepared = ctx.sessions.prepare(SessionId('surface-removed'), { meta: { cwd: '/workspace' } })
+    const detach = ctx.sessions.enter(prepared)
+    ctx.sessions.announce(prepared)
+    detach()
+
+    expect([...emitted].sort()).toEqual([...SESSION_CONTROLLER_REMOTE_EVENTS].sort())
+    for (const dispose of disposers) dispose()
+    await ctx.fiber.dispose()
+  })
+})
+
+describe('api-session/added summaries', () => {
+  it('forwards the Session origin on the added summary', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    createSessionTestController(ctx, defaults)
+    const added = vi.fn()
+    ctx.on('api-session/added', added)
+
+    const session = ctx.sessions.create(SessionId('origin-summary'), {
+      meta: { cwd: '/workspace', origin: 'subagent' },
+    })
+
+    expect(added).toHaveBeenCalledOnce()
+    expect(added).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: session.id,
+      origin: 'subagent',
+      cwd: '/workspace',
+    }))
+    await ctx.fiber.dispose()
+  })
+
+  it('omits and logs cached projections that fail to summarize', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    createSessionTestController(ctx, defaults)
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    let summary: SessionSummary | undefined
+    ctx.on('api-session/added', (received) => { summary = received })
+    vi.spyOn(ctx.sessionProjections, 'cachedSnapshot').mockImplementation(() => {
+      throw new Error('projection cache offline')
+    })
+
+    const session = ctx.sessions.create(SessionId('degraded-summary'))
+
+    expect(summary).toBeDefined()
+    expect(summary).toMatchObject({ sessionId: session.id, blank: true, running: false })
+    expect(summary).not.toHaveProperty('projections')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('degraded-summary'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('projection cache offline'))
+    await ctx.fiber.dispose()
   })
 })
