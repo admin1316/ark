@@ -94,11 +94,7 @@ class LocalSendOperation implements TerminalSendOperation {
   ) {
     this.output = new BoundedTextBuffer(maxBytes)
     this.promise = Promise.withResolvers<TerminalSendResult>()
-    // The exact probe may only settle once this send observed the foreground
-    // leave its read (processing our input) and return to it. Pre-setting the
-    // flag would accept the wait state that pre-dated the submission — on a
-    // cold shell that settles before the command produced any output at all.
-    this.initialForegroundLeftWait = false
+    this.initialForegroundLeftWait = true
   }
 
   get done(): Promise<TerminalSendResult> {
@@ -509,9 +505,12 @@ export class LocalPtySession implements TerminalBackendSession {
       // A prompt candidate can race bash's foreground handoff, but an interactive
       // child also inherits PROMPT_COMMAND. Silence therefore remains the bound
       // on waiting for shell ownership instead of letting a child marker suppress
-      // readiness until the absolute timeout.
+      // readiness until the absolute timeout. Silence alone is not completion:
+      // a cold shell (pwsh first pipeline) can stay quiet well past the grace
+      // window while it has not even consumed the submission, so the inferred
+      // handoff also requires the foreground to be observed back in its wait.
       const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
-      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) {
+      if (acceptsStdinWait && idleFor >= this.config.idleSilenceMs + handoffGrace) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {
