@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -14,6 +14,14 @@ import {
 const NAME = 'dsh-test-bin'
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-app-boot-'))
+
+/** Stage a bare-name package under `root/node_modules` for the installed-base tests. */
+function stageBarePackage(root: string, name: string, body: string): void {
+  const dir = join(root, 'node_modules', name)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, type: 'module', exports: './index.mjs' }))
+  writeFileSync(join(dir, 'index.mjs'), body)
+}
 
 describe('resolveConfigPath', () => {
   it('resolves relative to the given cwd outside replay mode', () => {
@@ -733,6 +741,112 @@ describe('boot', () => {
     } finally {
       await closed.fiber.dispose()
     }
+  })
+
+  it('keeps a configuration-owned plugin\'s own load failure instead of reporting it unresolvable', async () => {
+    // A bare name the configuration resolves is loaded from there, so a failure
+    // while that copy loads is that copy's own failure — never the "not
+    // resolvable from the configuration or the installed runtime" diagnostic,
+    // which would hide the real error behind a resolution story.
+    const dir = tmp()
+    stageBarePackage(dir, '@deepseek-ai/dsh-own-load-failure-probe', [
+      'export function apply() {}',
+      'throw new TypeError("configuration copy cannot evaluate")',
+      '',
+    ].join('\n'))
+    writeFileSync(join(dir, 'cordis.yml'), "- id: broken\n  name: '@deepseek-ai/dsh-own-load-failure-probe'\n")
+    const base = { url: pathToFileURL(join(tmp(), 'entry.mjs')).href, order: 'configuration-first' as const }
+    const message = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, base).then(
+      (ctx: Context) => {
+        void ctx.fiber.dispose()
+        return 'resolved'
+      },
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    )
+    expect(message).toContain('configuration copy cannot evaluate')
+    expect(message).not.toContain('is not resolvable from the configuration or the installed runtime')
+  })
+
+  it('keeps the installed copy\'s own failure when the configuration copy cannot load', async () => {
+    // The configuration's copy of a bare plugin resolves but its own dependency
+    // is missing, so that anchor reports not-found; the installation's copy
+    // exists and fails while loading. The installation's failure names the real
+    // problem and must be the one reported.
+    const dir = tmp()
+    const harness = tmp()
+    // The configuration's copy records that it ran before its own import fails,
+    // so the assertion below cannot be satisfied by the installed copy alone.
+    const ranMarker = join(dir, 'configuration-copy-ran')
+    stageBarePackage(dir, '@deepseek-ai/dsh-broken-copy-probe', [
+      "import { writeFileSync } from 'node:fs'",
+      `writeFileSync(${JSON.stringify(ranMarker)}, '')`,
+      "await import('dsh-absent-dependency-probe')",
+      'export function apply() {}',
+      '',
+    ].join('\n'))
+    stageBarePackage(harness, '@deepseek-ai/dsh-broken-copy-probe', [
+      'export function apply() {}',
+      'throw new TypeError("installed copy cannot evaluate")',
+      '',
+    ].join('\n'))
+    writeFileSync(join(dir, 'cordis.yml'), "- id: broken\n  name: '@deepseek-ai/dsh-broken-copy-probe'\n")
+    const base = { url: pathToFileURL(join(harness, 'entry.mjs')).href, order: 'configuration-first' as const }
+    const message = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, base).then(
+      (ctx: Context) => {
+        void ctx.fiber.dispose()
+        return 'resolved'
+      },
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    )
+    expect(existsSync(ranMarker)).toBe(true)
+    expect(message).toContain('installed copy cannot evaluate')
+    // The installation's failure is reported, not the configuration's not-found:
+    // a resolution story here would name the wrong copy and hide the real error.
+    expect(message).not.toContain("Cannot find package 'dsh-absent-dependency-probe'")
+    expect(message).not.toContain('is not resolvable from the configuration or the installed runtime')
+  })
+
+  it('renders a non-Error thrown by the installed copy into the combined diagnostic', async () => {
+    // A module may throw anything. The loader's not-found check is duck-typed on
+    // `code`, so a plain object carrying that code is treated as a missing
+    // package and reaches the both-anchors-missed diagnostic, where it has to be
+    // rendered (String) rather than crash the failure path.
+    const dir = tmp()
+    const harness = tmp()
+    const ranMarker = join(dir, 'configuration-copy-ran')
+    stageBarePackage(dir, '@deepseek-ai/dsh-plain-throw-probe', [
+      "import { writeFileSync } from 'node:fs'",
+      `writeFileSync(${JSON.stringify(ranMarker)}, '')`,
+      "await import('dsh-absent-dependency-probe')",
+      'export function apply() {}',
+      '',
+    ].join('\n'))
+    // `message` and `toString` differ on purpose: rendering the thrown value
+    // itself (String) must be what reaches the diagnostic, not a `message`
+    // property lifted as if this were an Error.
+    stageBarePackage(harness, '@deepseek-ai/dsh-plain-throw-probe', [
+      'export function apply() {}',
+      'throw {',
+      '  code: "ERR_MODULE_NOT_FOUND",',
+      '  message: "a plain object is not an Error",',
+      '  toString() { return "plain-object installed failure" },',
+      '}',
+      '',
+    ].join('\n'))
+    writeFileSync(join(dir, 'cordis.yml'), "- id: broken\n  name: '@deepseek-ai/dsh-plain-throw-probe'\n")
+    const base = { url: pathToFileURL(join(harness, 'entry.mjs')).href, order: 'configuration-first' as const }
+    const message = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, base).then(
+      (ctx: Context) => {
+        void ctx.fiber.dispose()
+        return 'resolved'
+      },
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    )
+    expect(existsSync(ranMarker)).toBe(true)
+    expect(message).toContain('is not resolvable from the configuration or the installed runtime')
+    expect(message).toContain("Cannot find package 'dsh-absent-dependency-probe'")
+    expect(message).toContain('plain-object installed failure')
+    expect(message).not.toContain('a plain object is not an Error')
   })
 
   it('resolves a bare import the configuration cannot see from the installed runtime', async () => {

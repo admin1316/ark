@@ -4,7 +4,7 @@
  * empty-root composition, and the installation module-fallback healing.
  */
 
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { once } from 'node:events'
@@ -34,10 +34,18 @@ import {
 const snapshotVfs = vi.hoisted(() => ({
   /** Directory prefix served by the simulated snapshot VFS; undefined: off. */
   root: undefined as string | undefined,
-  /** Error code the simulated syscall-backed canonicalizer raises there. */
-  nativeCode: 'ENOENT',
-  /** Exact path where the simulated snapshot canonicalizer itself fails, and how. */
-  snapshotFailure: undefined as { path: string; code: string } | undefined,
+  /** Error code the simulated syscall-backed canonicalizer raises there; undefined: a hook fault with no errno code. */
+  nativeCode: 'ENOENT' as string | undefined,
+  /** Exact path where the simulated snapshot canonicalizer itself fails, and how; a missing code means the hook threw a bare Error. */
+  snapshotFailure: undefined as { path: string; code?: string } | undefined,
+  /**
+   * Destination the simulated host refuses to replace through `renameSync`, and
+   * the errno it reports. POSIX rename always replaces a link, so this is the
+   * only way to reach the Windows-only delete-and-recreate fallback in
+   * `profile.ts`; it is the same fs-boundary simulation the snapshot VFS uses,
+   * and it refuses exactly one destination path.
+   */
+  renameRefusal: undefined as { destination: string; code: string } | undefined,
 }))
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -45,7 +53,10 @@ vi.mock('node:fs', async (importOriginal) => {
   const { sep: separator } = await import('node:path')
   const inSnapshot = (path: unknown): boolean => snapshotVfs.root !== undefined
     && (String(path) === snapshotVfs.root || String(path).startsWith(`${snapshotVfs.root}${separator}`))
-  const failure = (code: string, path: unknown): NodeJS.ErrnoException => Object.assign(
+  // A hook fault the simulated canonicalizer reports without any errno code.
+  const codelessFault = (path: unknown): Error =>
+    new Error(`simulated canonicalizer fault without an errno code at ${JSON.stringify(String(path))}`)
+  const failure = (code: string | undefined, path: unknown): Error => code === undefined ? codelessFault(path) : Object.assign(
     new Error(`${code}: simulated pkg snapshot VFS entry ${JSON.stringify(String(path))}`),
     { code, errno: code === 'ENOENT' ? -2 : -1, syscall: 'realpath', path: String(path) },
   )
@@ -62,7 +73,20 @@ vi.mock('node:fs', async (importOriginal) => {
       },
     },
   )
-  return { ...actual, realpathSync }
+  // A host whose rename cannot replace an existing destination (Windows): the
+  // refusal is reported for exactly one destination path, everything else takes
+  // the real rename.
+  const renameSync = (from: string, to: string): void => {
+    const refusal = snapshotVfs.renameRefusal
+    if (refusal !== undefined && to === refusal.destination) {
+      throw Object.assign(
+        new Error(`${refusal.code}: simulated host refusing to replace ${JSON.stringify(to)}`),
+        { code: refusal.code, errno: -1, syscall: 'rename', path: to, dest: to },
+      )
+    }
+    actual.renameSync(from, to)
+  }
+  return { ...actual, realpathSync, renameSync }
 })
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-profile-'))
@@ -190,6 +214,7 @@ describe('resolveBundleDir in a packaged snapshot process', () => {
     snapshotVfs.root = undefined
     snapshotVfs.nativeCode = 'ENOENT'
     snapshotVfs.snapshotFailure = undefined
+    snapshotVfs.renameRefusal = undefined
     Reflect.deleteProperty(process, 'pkg')
   })
 
@@ -254,6 +279,17 @@ describe('resolveBundleDir in a packaged snapshot process', () => {
     expect(() => resolveBundleDir('t', 'in-box', anchor, tmp())).toThrow(/EACCES/)
   })
 
+  it('keeps a codeless snapshot canonicalizer fault loud', () => {
+    const { anchor, root } = stageSnapshotInstallation({ 'in-box': { patch: '[]\n' } })
+    // The candidate is really there (directory and manifest) but the snapshot's
+    // own canonicalizer fails without an errno code: that is not "missing", so
+    // it must surface instead of being reported as an unresolvable bundle.
+    snapshotVfs.snapshotFailure = { path: join(root, 'node_modules', 'in-box') }
+    expect(() => realpathSync(join(root, 'node_modules', 'in-box'))).toThrow(/without an errno code/)
+    expect(() => resolveBundleDir('t', 'in-box', anchor, tmp()))
+      .toThrow(/simulated canonicalizer fault without an errno code/)
+  })
+
   it('keeps a non-missing syscall failure loud instead of falling back', () => {
     const { anchor, root } = stageSnapshotInstallation({ 'in-box': { patch: '[]\n' } })
     snapshotVfs.nativeCode = 'ELOOP'
@@ -274,6 +310,7 @@ describe('isSnapshotServedDirectory', () => {
     snapshotVfs.root = undefined
     snapshotVfs.nativeCode = 'ENOENT'
     snapshotVfs.snapshotFailure = undefined
+    snapshotVfs.renameRefusal = undefined
     Reflect.deleteProperty(process, 'pkg')
   })
 
@@ -296,6 +333,11 @@ describe('isSnapshotServedDirectory', () => {
     expect(isSnapshotServedDirectory(join(served, 'absent'))).toBe(false)
     // A real I/O fault is not a snapshot entry either.
     snapshotVfs.nativeCode = 'EACCES'
+    expect(isSnapshotServedDirectory(served)).toBe(false)
+    // A hooked canonicalizer may fail without any errno code at all; that is
+    // still not the snapshot arm, and checking the code must not throw.
+    snapshotVfs.nativeCode = undefined
+    expect(() => realpathSync.native(served)).toThrow(/without an errno code/)
     expect(isSnapshotServedDirectory(served)).toBe(false)
   })
 })
@@ -405,6 +447,10 @@ describe('composeEntries', () => {
 })
 
 describe('healProfilesModuleFallback', () => {
+  afterEach(() => {
+    snapshotVfs.renameRefusal = undefined
+  })
+
   it('links the app and bundle dependency surface flat under profiles/node_modules', () => {
     const anchor = stageInstallation({
       'bundle-a': { patch: '[]\n', deps: { 'dep-of-a': '0.0.0', 'ghost-dep': '0.0.0' } },
@@ -468,6 +514,44 @@ describe('healProfilesModuleFallback', () => {
     symlinkSync(tmp(), join(fallback, 'dsh-app'), 'junction')
     healProfilesModuleFallback(anchor, home)
     expect(readlinkSync(join(fallback, 'dsh-app'))).toContain('app')
+  })
+
+  it('re-points a wrong link when the host refuses the replacing rename (Windows fallback)', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const fallback = join(home, 'profiles', 'node_modules')
+    mkdirSync(fallback, { recursive: true })
+    const link = join(fallback, 'dsh-app')
+    symlinkSync(tmp(), link, 'junction')
+    // POSIX rename always replaces the destination (the ignore comment on the
+    // branch above says as much), so the Windows-only delete-and-recreate arm is
+    // reached by refusing exactly this one destination at the syscall boundary —
+    // the same boundary simulation the snapshot VFS above uses. The staged link,
+    // the recreated link, and the resolver all stay real.
+    snapshotVfs.renameRefusal = { destination: link, code: 'EPERM' }
+    expect(() => { renameSync(link, link) }).toThrow(/EPERM: simulated host refusing to replace/)
+    healProfilesModuleFallback(anchor, home)
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    const profileDir = join(home, 'profiles', 'active')
+    expect(resolveBundleDir('t', 'dsh-app', join(profileDir, 'absent', 'package.json'), profileDir))
+      .toBe(realpathSync.native(dirname(anchor)))
+    // The refused rename removed its staging file: only the managed link is left.
+    expect(readdirSync(fallback)).toEqual(['dsh-app'])
+  })
+
+  it('creates a missing link when the host refuses the replacing rename (Windows fallback)', () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const home = tmp()
+    const fallback = join(home, 'profiles', 'node_modules')
+    const link = join(fallback, 'bundle-a')
+    snapshotVfs.renameRefusal = { destination: link, code: 'EEXIST' }
+    expect(() => { renameSync(link, link) }).toThrow(/EEXIST: simulated host refusing to replace/)
+    healProfilesModuleFallback(anchor, home)
+    // There was no destination to unlink, so the fallback itself creates the
+    // entry while every other link still takes the ordinary replace path.
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(realpathSync(link)).toBe(realpathSync.native(join(dirname(anchor), 'node_modules', 'bundle-a')))
+    expect(readdirSync(fallback).sort()).toEqual(['bundle-a', 'dsh-app'])
   })
 
   it('tolerates losing the concurrent-heal race to an identical link and rejects a different one', () => {

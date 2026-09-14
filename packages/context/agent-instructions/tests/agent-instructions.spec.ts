@@ -306,6 +306,28 @@ describe('workspace context instruction discovery', () => {
     }
   })
 
+  // POSIX-only fixture: a cyclic symlink needs POSIX errno reporting (ELOOP).
+  it.skipIf(process.platform === 'win32')('surfaces a host marker probe fault instead of treating it as absence', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      const cwd = join(root, 'pkg')
+      await mkdir(join(root, '.git'), { recursive: true })
+      await mkdir(cwd, { recursive: true })
+      await write(join(root, 'AGENTS.md'), 'ancestor rule must not load')
+      // A cyclic link makes the marker probe fail with ELOOP: a metadata fault
+      // that must propagate rather than read as a missing marker and let the walk
+      // cross into the ancestor project root above cwd.
+      await symlink('loop', join(cwd, 'loop'))
+
+      await expect(discoverBaselineInstructionFiles({ cwd, dshHome: home, projectRootMarkers: ['loop'] }))
+        .rejects.toMatchObject({ code: 'ELOOP' })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
   it('loads user-global first, then every root-to-cwd candidate in precedence order', async () => {
     const root = await tempRepo()
     const home = await tempRepo()
@@ -2256,6 +2278,38 @@ describe('workspace context request injection', () => {
       expect(derivedText(agent)).not.toContain('ancestor rule must not load')
     } finally {
       await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('treats a ctx.fs marker path that passes through a regular file as confirmed absence', async () => {
+    const outer = await tempRepo()
+    const home = await tempRepo()
+    try {
+      const cwd = join(outer, 'pkg')
+      // ctx.fs (LocalFileSystem) reports resolve() of "blocked/.git" as FS_NOT_FOUND
+      // because "blocked" is a regular file; that is confirmed absence, not a provider
+      // fault, so the walk must continue and still reach the ancestor marker.
+      await write(join(cwd, 'blocked'), 'a regular file, not a directory')
+      await write(join(cwd, 'AGENTS.md'), 'rule below the blocked marker')
+      await mkdir(join(outer, '.git'), { recursive: true })
+      await write(join(outer, 'AGENTS.md'), 'ancestor rule after the blocked marker')
+      const ctx = new Context()
+      await mountWorkspaceContext(ctx, {
+        dshHome: home,
+        maxBytes: 65536,
+        projectRootMarkers: ['blocked/.git', '.git'],
+      })
+      const agent = stubAgent(cwd)
+
+      await composeBaselinePrefix(ctx, agent)
+
+      expect(derivedText(agent)).toContain('Instructions from: AGENTS.md')
+      expect(derivedText(agent)).toContain(`Instructions from: ${join('pkg', 'AGENTS.md')}`)
+      expect(derivedText(agent)).toContain('ancestor rule after the blocked marker')
+      expect(derivedText(agent)).toContain('rule below the blocked marker')
+    } finally {
+      await rm(outer, { recursive: true, force: true })
       await rm(home, { recursive: true, force: true })
     }
   })

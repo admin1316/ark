@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest'
+import type { UpdateTeamTaskRequest } from '@deepseek-ai/dsh-agent-team'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { createTeamRuntime } from './runtime.ts'
@@ -94,6 +95,95 @@ it('queues quiet mail for an inactive teammate and delivers it once on wakeup', 
     expect(acknowledgements.filter(id => id === quiet.messageId)).toHaveLength(1)
     expect(acknowledgements.filter(id => id === wakeup.messageId)).toHaveLength(1)
     expect(run.adapter.requests.filter(request => request.sessionId === spawned.member.id)).toHaveLength(2)
+  } finally { await run.dispose() }
+})
+
+it('refuses a task action this build does not implement without committing a revision', async () => {
+  const run = await createTeamRuntime([])
+  try {
+    const teams = run.ctx.agentTeams
+    const task = await teams.createTask(run.lead, { subject: 'Guarded', description: 'Unsupported transition', writeScopes: ['src'] })
+    // A caller compiled against another protocol revision can name an action this
+    // build has no transition for. The board must refuse it by name and leave the
+    // durable revision untouched rather than committing a snapshot it cannot compute.
+    const unsupportedAction: string = 'teleport'
+    const request = { taskId: task.id, expectedRevision: task.revision, action: unsupportedAction } as UpdateTeamTaskRequest
+    await expect(teams.updateTask(run.lead, request)).rejects.toMatchObject({
+      code: 'TEAM_INVALID_ARGUMENT',
+      message: expect.stringContaining('unsupported task action teleport') as string,
+    })
+    expect(teams.getTask(run.lead, task.id)).toMatchObject({ revision: 1, status: 'pending' })
+    expect(run.lead.session.events.filter(event => event.type === 'team/task')).toHaveLength(1)
+  } finally { await run.dispose() }
+})
+
+it('keeps the target queue usable after a dispatch failure that cannot even be described', async () => {
+  const run = await createTeamRuntime(Array.from({ length: 6 }, () => textResponse('done')))
+  try {
+    const teams = run.ctx.agentTeams
+    const spawned = await teams.spawnTeammate(run.lead, {
+      name: 'worker', description: 'A worker', prompt: [{ type: 'text', text: 'initial task' }],
+      provider: 'spawn', context: 'fresh', signal: new AbortController().signal,
+    })
+    await vi.waitFor(() => { expect(run.ctx.agents.get(spawned.member.id)).toBeUndefined() })
+    // The continuation owner rejects with a value that cannot even be inspected.
+    // Even then the mailbox must report the failed admission to its sender, keep the
+    // message queued exactly once, and leave the per-target dispatch order usable.
+    const undescribable = {
+      [Symbol.for('nodejs.util.inspect.custom')](): never { throw new Error('uninspectable delivery failure') },
+    }
+    const followup = vi.spyOn(run.ctx.subagents, 'followup').mockRejectedValueOnce(undescribable)
+    await expect(teams.sendMessage(run.lead, {
+      target: 'worker', content: [{ type: 'text', text: 'wake the worker' }], delivery: 'wakeup', signal: new AbortController().signal,
+    })).rejects.toThrow('uninspectable delivery failure')
+    expect(run.lead.session.events.filter(event => event.type === 'team/message/queued')).toHaveLength(1)
+    expect(run.lead.session.events.filter(event => event.type === 'team/message/delivered')).toHaveLength(0)
+    followup.mockRestore()
+    const retried = await teams.sendMessage(run.lead, {
+      target: 'worker', content: [{ type: 'text', text: 'next task' }], delivery: 'wakeup', signal: new AbortController().signal,
+    })
+    expect(retried.status).toBe('accepted')
+  } finally { await run.dispose() }
+})
+
+it('aggregates a provisioning conflict with the cleanup failure that followed it', async () => {
+  const run = await createTeamRuntime(Array.from({ length: 6 }, () => textResponse('done')))
+  try {
+    const teams = run.ctx.agentTeams
+    const start = run.ctx.subagents.startContinuable.bind(run.ctx.subagents)
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    let childId: string | undefined
+    vi.spyOn(run.ctx.subagents, 'startContinuable').mockImplementation(async (spec) => {
+      childId = spec.childId
+      entered.resolve(undefined)
+      await release.promise
+      return await start(spec)
+    })
+    const spawning = teams.spawnTeammate(run.lead, {
+      name: 'racing-worker', description: 'Racing creation', prompt: [{ type: 'text', text: 'initial child task' }],
+      provider: 'spawn', context: 'fresh', signal: new AbortController().signal,
+    }).catch((error: unknown) => error)
+    await entered.promise
+    // A resumed Lead reconciles the still-provisioning member before its creator finishes.
+    run.ctx.emit('agent/session-start', { agent: run.lead, source: 'resume' })
+    await vi.waitFor(() => {
+      expect(run.lead.session.events.filter(event => event.type === 'team/member').map(event => event.data.member.phase))
+        .toEqual(['provisioning', 'failed'])
+    })
+    const cleanupFailure = new Error('continuation drain unavailable')
+    const drain = vi.spyOn(run.ctx.subagents, 'drainContinuableChildren').mockRejectedValueOnce(cleanupFailure)
+    release.resolve(undefined)
+    const failure = await spawning
+    expect(failure).toBeInstanceOf(AggregateError)
+    if (!(failure instanceof AggregateError)) throw new Error('a conflicted provisioning must report both failures')
+    expect(failure.errors).toHaveLength(2)
+    expect(failure.errors[0]).toMatchObject({ code: 'TEAM_PROVISIONING_CONFLICT' })
+    expect(failure.errors[1]).toBe(cleanupFailure)
+    expect(drain).toHaveBeenCalledWith(run.lead, [childId])
+    expect(teams.listMembers(run.lead).find(member => member.name === 'racing-worker')?.status).toBe('failed')
+    expect(run.lead.session.events.filter(event => event.type === 'team/member').map(event => event.data.member.phase))
+      .toEqual(['provisioning', 'failed'])
   } finally { await run.dispose() }
 })
 
