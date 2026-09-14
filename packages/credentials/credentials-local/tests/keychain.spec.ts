@@ -280,4 +280,24 @@ describe('keychain construction and failure surfaces', () => {
     expect(kill).toHaveBeenCalledOnce()
     timeout.mockRestore()
   })
+
+  it('honors a condition on a keychain write and unsets an item the backend does not hold', async () => {
+    const ctx = await boot()
+    // Keychain mode resolves the condition through the mocked security backend,
+    // so it sees an unconfigured reference before the first write.
+    await ctx.credentials.set(KEY, 'first-synthetic', credentialCondition(undefined))
+    const current = await ctx.credentials.resolve(KEY)
+    expect(current).toEqual({ value: 'first-synthetic', source: 'keychain' })
+
+    await ctx.credentials.set(KEY, 'second-synthetic', credentialCondition(current))
+    const replaced = await ctx.credentials.resolve(KEY)
+    expect(replaced).toEqual({ value: 'second-synthetic', source: 'keychain' })
+    // The replacement no longer matches the condition the first write stored.
+    await expect(ctx.credentials.unset(KEY, credentialCondition(current)))
+      .rejects.toMatchObject({ name: 'CredentialConflictError' })
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'second-synthetic', source: 'keychain' })
+
+    // Deleting an item the Keychain never held is silent, exactly as in file mode.
+    await ctx.credentials.unset(credentialRef('DSH_CRED_ABSENT'))
+  })
 })
