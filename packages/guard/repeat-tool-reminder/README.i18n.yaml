@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/guard/repeat-tool-reminder/README.md
 README.md: 607f18d3b0a04752261d89a919a3739e3f942e6a
-README.zh.md: c10fdc33890c983cc2b649c7f12201c6750d52c6
+README.zh.md: c7a9ed0795f337d50f4365da4e4533e3f6f91b70

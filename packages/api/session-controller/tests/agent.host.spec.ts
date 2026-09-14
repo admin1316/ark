@@ -2,8 +2,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
+import type { Agent, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-presets'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
@@ -11,10 +11,12 @@ import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import {
   ApiSessionAgentController,
   ApiSessionCwdConflict,
   ApiSessionNotFound,
+  ApiSessionPresetConflict,
   ApiSessionSubagentOwnership,
   inspectApiSession,
 } from '../src/agent.ts'
@@ -76,6 +78,22 @@ describe('ApiSession identity failures', () => {
       .toContain('records no cwd')
     expect(new ApiSessionCwdConflict(SessionId('wrong-cwd'), '/wanted', '/existing').message)
       .toContain('belongs to "/existing"')
+  })
+
+  it('describes preset conflicts with and without a recorded preset', () => {
+    const unrecorded = new ApiSessionPresetConflict(SessionId('unrecorded-preset'), 'standard', undefined)
+    expect(unrecorded.message).toContain(
+      'session "unrecorded-preset" records no agent preset and cannot be adopted under "standard"',
+    )
+    expect(unrecorded.sessionId).toBe(SessionId('unrecorded-preset'))
+    expect(unrecorded.requestedPreset).toBe('standard')
+    expect(unrecorded.existingPreset).toBeUndefined()
+
+    const mismatched = new ApiSessionPresetConflict(SessionId('mismatched-preset'), 'standard', 'minimal')
+    expect(mismatched.message).toContain(
+      'session "mismatched-preset" runs agent preset "minimal", not "standard"',
+    )
+    expect(mismatched.existingPreset).toBe('minimal')
   })
 
   it('maps absent and cwd-less point observations to not found', async () => {
@@ -226,6 +244,16 @@ describe('ApiSession Agent lookup and recovery', () => {
     })
   })
 
+  it('fences an identity already attached to subagent routing before resuming', async () => {
+    const { ctx, agents } = await harness()
+    const meta = { ...header('attached-subagent-lookup'), origin: 'subagent' as const }
+    ctx.sessions.create(meta.id, { meta })
+    const resume = vi.spyOn(ctx.agents, 'resume')
+
+    await expect(agents.resolveAgent(meta.id)).resolves.toMatchObject({ error: { code: 'agent-busy' } })
+    expect(resume).not.toHaveBeenCalled()
+  })
+
   it('requires projected observations before activation', async () => {
     const { agents } = await harness()
     const meta = header('unprojected-observation')
@@ -270,7 +298,7 @@ describe('ApiSession model selection', () => {
     pending.session.append('model/selection', {
       provider: 'selected-provider',
       model: 'selected-model',
-      reasoningEffort: 'high' as never,
+      reasoningEffort: 'high',
     })
     expect(selection.current).toMatchObject({
       provider: 'selected-provider', model: 'selected-model', reasoningEffort: 'high',
@@ -292,6 +320,75 @@ describe('ApiSession model selection', () => {
     expect(ctx.sessionProjections.stateOf(pending.session, 'modelSelection')?.pending).toBeNull()
     expect(selection.current).toEqual({ provider: 'selected-provider', model: 'selected-model' })
 
+  })
+
+  it('installs the shared selection and mounts the resolved preset during composition', async () => {
+    const { ctx, agents } = await harness()
+    await ctx.plugin(SystemPrompt, { persona: '' })
+    const mount = vi.fn(() => Promise.resolve())
+    ctx.provide('agentPresets', {
+      resolve: (id?: string) => Promise.resolve({ id: id ?? 'standard' }),
+      mount,
+    } as never)
+
+    const composition = await agents.composeAgent('review')
+    expect(composition.agentPreset).toBe('review')
+
+    // The factory hands setup the Agent's exact scope, carrying the agent association.
+    const session = ctx.sessions.create(SessionId('composed-setup'))
+    const holder = { id: session.id, session, status: 'idle', ctx }
+    const agentCtx = ctx.extend({ agent: holder })
+    holder.ctx = agentCtx
+    const scoped = holder as Agent
+
+    await composition.setup(agentCtx)
+    expect(mount).toHaveBeenCalledWith(agentCtx, 'review')
+
+    // What setup installed is what prompt assembly and request routing read.
+    expect((await ctx.systemPrompt.assemble()).variables)
+      .toMatchObject({ provider: 'fixture', model: 'fixture-model' })
+    const signal = new AbortController().signal
+    await expect(agentEvents(ctx, scoped).waterfall(
+      'agent/request', { turn: 1, step: 0, signal }, () => Promise.resolve({ provider: 'seed', model: 'seed' }),
+    )).resolves.toMatchObject({ provider: 'fixture', model: 'fixture-model' })
+  })
+
+  it('serializes image admission per Agent and survives a rejected operation', async () => {
+    const { ctx, agents } = await harness()
+    const first = agent(ctx, header('admission-first'))
+    const second = agent(ctx, header('admission-second'))
+    const order: string[] = []
+    const releaseFirst = Promise.withResolvers<undefined>()
+
+    const admitted = agents.serializeImageAdmission(first, async () => {
+      order.push('first:start')
+      await releaseFirst.promise
+      order.push('first:end')
+      return 'first'
+    })
+    const queued = agents.serializeImageAdmission(first, async () => {
+      order.push('queued')
+      return 'queued'
+    })
+    const independent = agents.serializeImageAdmission(second, async () => {
+      order.push('independent')
+      return 'independent'
+    })
+
+    // A second Agent is never blocked by the first Agent's in-flight admission.
+    await expect(independent).resolves.toBe('independent')
+    expect(order).toEqual(['first:start', 'independent'])
+
+    releaseFirst.resolve(undefined)
+    await expect(admitted).resolves.toBe('first')
+    await expect(queued).resolves.toBe('queued')
+    expect(order).toEqual(['first:start', 'independent', 'first:end', 'queued'])
+
+    // A rejected admission releases the chain instead of poisoning it.
+    const failure = new Error('admission rejected')
+    await expect(agents.serializeImageAdmission(first, () => Promise.reject(failure))).rejects.toBe(failure)
+    await expect(agents.serializeImageAdmission(first, () => Promise.resolve('after-failure')))
+      .resolves.toBe('after-failure')
   })
 })
 
@@ -440,5 +537,105 @@ describe('ApiSession create or adoption', () => {
 
     const composition = await agents.composeAgent(undefined)
     expect(() => composition.setup(new Context())).toThrow('Agent setup has no scoped Agent')
+  })
+
+  it('reuses a live Agent for an attached identity without factory work', async () => {
+    const { ctx, agents } = await harness()
+    const meta = header('live-reuse')
+    const live = agent(ctx, meta)
+    ctx.agents.register(live)
+    const create = vi.spyOn(ctx.agents, 'create')
+    const resume = vi.spyOn(ctx.agents, 'resume')
+
+    await expect(agents.ensureSession(meta.id, '/workspace', false)).resolves.toBe(live)
+    expect(create).not.toHaveBeenCalled()
+    expect(resume).not.toHaveBeenCalled()
+  })
+
+  it('rejects a creation that raced a live subagent Agent with the ownership fence', async () => {
+    const { ctx, agents } = await harness()
+    const cwd = mkdtempSync(join(tmpdir(), 'dsh-session-controller-raced-child-'))
+    const childMeta = { ...header('raced-live-child', cwd), origin: 'subagent' as const }
+    vi.spyOn(ctx.agents, 'create').mockImplementation(async () => {
+      const session = ctx.sessions.create(childMeta.id, { meta: childMeta })
+      ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
+      throw new Error('raced live child creation')
+    })
+
+    // The factory failed, but the identity already belongs to subagent routing:
+    // the caller must see the stable ownership fence, never the raw error.
+    await expect(agents.ensureSession(childMeta.id, cwd, false))
+      .rejects.toBeInstanceOf(ApiSessionSubagentOwnership)
+  })
+
+  it('refuses to create over an identity already attached to subagent routing', async () => {
+    const { ctx, agents } = await harness()
+    const childMeta = { ...header('attached-child-create'), origin: 'subagent' as const }
+    ctx.sessions.create(childMeta.id, { meta: childMeta })
+    const create = vi.spyOn(ctx.agents, 'create')
+    const resume = vi.spyOn(ctx.agents, 'resume')
+
+    await expect(agents.ensureSession(childMeta.id, '/workspace', false))
+      .rejects.toBeInstanceOf(ApiSessionSubagentOwnership)
+    expect(create).not.toHaveBeenCalled()
+    expect(resume).not.toHaveBeenCalled()
+  })
+
+  it('refuses to adopt a persisted subagent identity during creation', async () => {
+    const { ctx, agents } = await harness()
+    const childMeta = { ...header('stored-child-create'), origin: 'subagent' as const }
+    providePersistence(ctx, {
+      list: () => Promise.resolve([childMeta]),
+      inspect: () => Promise.resolve({ meta: childMeta, events: [] }),
+    })
+    const create = vi.spyOn(ctx.agents, 'create')
+
+    await expect(agents.ensureSession(childMeta.id, '/workspace', true))
+      .rejects.toBeInstanceOf(ApiSessionSubagentOwnership)
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('creates a fresh Session when no identity is persisted and records the resolved preset', async () => {
+    const { ctx, agents } = await harness()
+    const cwd = mkdtempSync(join(tmpdir(), 'dsh-session-controller-fresh-'))
+    const freshId = SessionId('fresh-create')
+    ctx.provide('agentPresets', {
+      resolve: (id?: string) => Promise.resolve({ id: id ?? 'standard' }),
+      mount: () => Promise.resolve(),
+    } as never)
+    providePersistence(ctx, {
+      list: () => Promise.resolve([]),
+      inspect: vi.fn(),
+    })
+    vi.spyOn(ctx.agents, 'create').mockImplementation(async (options: CreateAgentOptions) => {
+      const session = ctx.sessions.create(options.sessionId, options.meta === undefined ? {} : { meta: options.meta })
+      return { agent: { id: session.id, session, status: 'idle', ctx } as Agent, dispose: () => Promise.resolve() }
+    })
+
+    const created = await agents.ensureSession(freshId, cwd, true, 'review')
+    expect(created.id).toBe(freshId)
+    expect(ctx.sessions.get(freshId)?.header).toMatchObject({ cwd, agentPreset: 'review' })
+  })
+
+  it('refuses to adopt a live preset-less Session under a requested preset', async () => {
+    const { ctx, agents } = await harness()
+    const meta = header('preset-less-live')
+    const live = agent(ctx, meta)
+    ctx.agents.register(live)
+    const create = vi.spyOn(ctx.agents, 'create')
+    const resume = vi.spyOn(ctx.agents, 'resume')
+
+    const failure = agents.ensureSession(meta.id, '/workspace', false, 'standard')
+    const error = await failure.then(() => undefined, (caught: unknown) => caught)
+    if (!(error instanceof ApiSessionPresetConflict)) {
+      throw new Error(`expected ApiSessionPresetConflict, got ${String(error)}`)
+    }
+    expect(error.sessionId).toBe(meta.id)
+    expect(error.requestedPreset).toBe('standard')
+    // A projection state of null means "no recorded preset", reported as undefined.
+    expect(error.existingPreset).toBeUndefined()
+    expect(error.message).toContain('records no agent preset')
+    expect(create).not.toHaveBeenCalled()
+    expect(resume).not.toHaveBeenCalled()
   })
 })

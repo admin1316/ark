@@ -68,6 +68,11 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 const mode = process.env.DSH_SNAPSHOT ?? 'replay'
 const recording = mode === 'record'
 const refreshing = mode === 'refresh'
+// The lane replays 16 processes beside the static gates, so the SDK handshake
+// needs the same headroom the 110s request budget already gives model replay:
+// the client's interactive 10s default is a latency assertion this suite does
+// not make. A profile that genuinely fails to answer still fails here.
+const SNAPSHOT_INITIALIZE_TIMEOUT_MS = 30_000
 const RUNTIME_WORKSPACE_ENTRIES = [
   '.agents',
   '.child-dsh',
@@ -551,6 +556,7 @@ async function runScenario(scenario: CorpusScenario): Promise<{
     dshHome,
     processCwd: cwd,
     env,
+    initializeTimeoutMs: SNAPSHOT_INITIALIZE_TIMEOUT_MS,
     requestTimeoutMs: 110_000,
     cwd,
     provider: route.provider,

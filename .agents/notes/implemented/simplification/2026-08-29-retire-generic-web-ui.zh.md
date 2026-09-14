@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-DeepSeek Harness 不交付通用浏览器 UI。`dsh web` alias 与 Web profile、`apps/web`、`packages/client`、`dsh-web-app` 组合包、Client Cordis runner 与 UI、静态前端 fallback、仅供浏览器使用的目录选择器与 Session 导出适配器、Client 编译/构建/测试车道，以及相应的现行用户与贡献者文档都不存在。
+DeepSeek Harness 不交付通用浏览器 UI。`dsh web` alias 与 Web profile、`apps/web`、客户端包树、`dsh-web-app` 组合包、Client Cordis runner 与 UI、静态前端 fallback、仅供浏览器使用的目录选择器与 Session 导出适配器、Client 编译/构建/测试车道，以及相应的现行用户与贡献者文档都不存在。
 
 通用 `dsh` CLI（命令行界面）持有任意 profile、插件管理与一次性 headless 模板。它不导出、也不依赖 Ark 的受管理 Native 入口。Ark 启动 [`dsh-native-api-runner`](../../../../packages/boot/native-api-runner/README.zh.md)，后者只会在 [`dsh-native-api-app`](../../../../packages/bundle/native-api-app/README.zh.md)之上引导受管理 profile。
 
@@ -30,7 +30,7 @@ Native 组合声明其配置实际挂载的工作区包，并在源码检查时�
 
 ## 取代关系
 
-本决策完全取代 [Web Client 架构](../../archived/architecture/2026-07-19-gui-web-client-architecture.md)、[Web 组装](../architecture/2026-07-24-web-config-tree-boot-and-transport-layering.zh.md)、[浏览器 e2e 车道](../testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)、[Web 样式系统](../process/2026-07-19-web-styling-system.zh.md)，以及实现已不存在的纯 Web 功能 Note 中关于当前产品的结论。这些记录保持不变，以便恢复其依据与事故历史；它们不授权重新引入浏览器 fallback。
+本决策完全取代 [Web Client 架构](../../archived/architecture/2026-07-19-gui-web-client-architecture.zh.md)、[Web 组装](../architecture/2026-07-24-web-config-tree-boot-and-transport-layering.zh.md)、[浏览器 e2e 车道](../testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)、[Web 样式系统](../../archived/process/2026-07-19-web-styling-system.zh.md)，以及实现已不存在的纯 Web 功能 Note 中关于当前产品的结论。这些记录保持不变，以便恢复其依据与事故历史；它们不授权重新引入浏览器 fallback。
 
 原生、headless、ACP 或 SDK 消费方仍在使用的 Host 协议、持久 Session 事实、模型工具与其他机制只被部分取代。其现行 owner 文档会在不假定浏览器存在的前提下描述保留行为。
 

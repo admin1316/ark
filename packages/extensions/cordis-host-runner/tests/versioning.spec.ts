@@ -49,12 +49,11 @@ describe('dynamic Plugin versions', () => {
     })
     const controller = new AbortController()
     controller.abort()
-    await expect(runner.run(AGENT_A, defined.pluginId, defined.packageId, 'run', controller.signal))
-      .resolves.toMatchObject({
-        ok: false,
-        reason: 'host-half-failed',
-        message: expect.stringContaining('was cancelled'),
-      })
+    const refusedActivation = await runner.run(AGENT_A, defined.pluginId, defined.packageId, 'run', controller.signal)
+    // The response union carries the failure text as a real string once narrowed.
+    if (refusedActivation.ok) throw new Error('expected the aborted activation to be refused')
+    expect(refusedActivation.reason).toBe('host-half-failed')
+    expect(refusedActivation.message).toContain('was cancelled')
 
     // The refusal must tear nothing down and record no attempt: the package is
     // still versionless, with no active run and no pending next version.

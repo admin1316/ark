@@ -12,7 +12,7 @@ The word “web” also names a separate model capability in this repository. Re
 
 ## Decision
 
-DeepSeek Harness ships no generic browser UI. The `dsh web` alias and Web profile, `apps/web`, `packages/client`, the `dsh-web-app` bundle, the Client Cordis runner and UI, static-frontend fallback, browser-only directory picker and session export adapters, Client compiler/build/test lanes, and their current user and contributor documentation are absent.
+DeepSeek Harness ships no generic browser UI. The `dsh web` alias and Web profile, `apps/web`, the client package tree, the `dsh-web-app` bundle, the Client Cordis runner and UI, static-frontend fallback, browser-only directory picker and session export adapters, Client compiler/build/test lanes, and their current user and contributor documentation are absent.
 
 The generic `dsh` CLI owns arbitrary profiles, plugin management, and the one-shot headless template. It does not export or depend on Ark's managed Native entry. Ark starts [`dsh-native-api-runner`](../../../../packages/boot/native-api-runner/README.md), which boots only the managed profile over [`dsh-native-api-app`](../../../../packages/bundle/native-api-app/README.md).
 
@@ -30,7 +30,7 @@ The Native composition declares the workspace packages its configuration actuall
 
 ## Supersession
 
-This decision fully supersedes the current-product claims in the [Web Client architecture](../../archived/architecture/2026-07-19-gui-web-client-architecture.md), [Web composition](../architecture/2026-07-24-web-config-tree-boot-and-transport-layering.md), [browser e2e lane](../testing/2026-07-24-web-gui-browser-e2e-lane.md), and [Web styling system](../process/2026-07-19-web-styling-system.md), plus Web-only feature notes whose implementations are absent. Those records remain unchanged so their rationale and incident history are recoverable; they do not authorize reintroducing a browser fallback.
+This decision fully supersedes the current-product claims in the [Web Client architecture](../../archived/architecture/2026-07-19-gui-web-client-architecture.md), [Web composition](../architecture/2026-07-24-web-config-tree-boot-and-transport-layering.md), [browser e2e lane](../testing/2026-07-24-web-gui-browser-e2e-lane.md), and [Web styling system](../../archived/process/2026-07-19-web-styling-system.md), plus Web-only feature notes whose implementations are absent. Those records remain unchanged so their rationale and incident history are recoverable; they do not authorize reintroducing a browser fallback.
 
 The Host protocol, durable Session facts, model tools, and other mechanisms that native, headless, ACP, or SDK consumers still use are only partially superseded. Their owning current documentation describes the surviving behavior without a browser assumption.
 

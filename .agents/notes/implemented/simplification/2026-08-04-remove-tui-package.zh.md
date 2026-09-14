@@ -16,7 +16,7 @@ Status: implemented
 
 作为 TUI 包最后消费方的 SDK 项目工具链已由[工具链移除决策](2026-08-11-remove-sdk-project-toolchain.zh.md)删除。宿主应用仍可直接挂载提供方无关的 `dsh-user-questions`、`dsh-commands` 和呈现服务。
 
-本决策取代[显式配置 `dsh` 入口决策](../../archived/simplification/2026-08-03-explicit-config-dsh-entrypoint.md)中保留可复用包的决定，也使已归档 TUI 实现记录不再适用于当前状态。这些历史记录继续保持冻结，但不再作为受支持包或应用清单的依据。
+本决策取代[显式配置 `dsh` 入口决策](../../archived/simplification/2026-08-03-explicit-config-dsh-entrypoint.zh.md)中保留可复用包的决定，也使已归档 TUI 实现记录不再适用于当前状态。这些历史记录继续保持冻结，但不再作为受支持包或应用清单的依据。
 
 本记录汇总了因移除该包而无法继续保持现行有效、现已删除的仅涉及该包的记录。终端 UI 曾在长对话期间保持会话身份可见、移除重复模型标签、为消息附加耗时与阶段状态、在提示词旁显示 workspace 与分支上下文，并保守地解析完整 XML 包装层，以生成人类可读的回退输出。这些选择改善了一个终端前端，但在没有部署的情况下，并不足以证明应保留它。未来的 XML 回退仍必须使用真正的解析器而非正则表达式。
 

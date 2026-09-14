@@ -1077,7 +1077,7 @@ describe('DeepSeekAdapter against a mock server', () => {
       })).then(() => undefined, (error: unknown) => error)
       expect(resolveAttachments).toHaveBeenCalled()
       expect(resolveApiKey).toHaveBeenCalled()
-      expect(String((failure as Error | undefined)?.message ?? '')).not.toMatch(/does not accept image input/)
+      expect((failure as Error | undefined)?.message ?? '').not.toMatch(/does not accept image input/)
     },
   )
 

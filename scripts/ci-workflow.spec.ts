@@ -11,6 +11,21 @@ const runnerPrivatePnpmDestination =
 const nativeWindowsPnpmDestination = '${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}'
 
 describe('CI workflow', () => {
+  it('gives the Linux coverage lane the extended gate timeout budget', () => {
+    // The Linux coverage lane runs instrumented plus heavy subprocess fixtures.
+    // Vitest's default 5 s per-test budget is not enough for scripts/oxlint-contract.spec.ts
+    // under gate contention (it timed out at 5000 ms on this runner and locally),
+    // so the job must keep supplying the budget run-gates already knows how to apply.
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const coverage = workflowJob(workflow, 'node-24-coverage')
+    expect(coverage.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: '2',
+      DSH_COVERAGE_PARTITIONS: '4',
+      DSH_GATE_CONCURRENCY: '2',
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+    })
+  })
+
   it('isolates every pnpm action setup destination per runner', () => {
     const files = ['.github/workflows/ci.yml', '.github/workflows/ci-master.yml']
     const setups: Array<{ jobName: string; step: unknown }> = []
@@ -244,21 +259,28 @@ describe('DeepSeek e2e workflow', () => {
 })
 
 describe('E2B e2e workflow', () => {
-  it('is manual-only and fails loud before running the focused live suite', () => {
+  it('is manual-only and gates the focused live suite on the optional secret', () => {
     const workflow = loadWorkflow('.github/workflows/e2b-e2e.yml')
     expect(workflow.on).toEqual({ workflow_dispatch: null })
-    if (!isRecord(workflow.jobs) || !isRecord(workflow.jobs.e2b) || !Array.isArray(workflow.jobs.e2b.steps)) {
-      throw new TypeError('E2B e2e workflow must define the e2b job steps')
-    }
+    const job = workflowJob(workflow, 'e2b')
+    if (!Array.isArray(job.steps)) throw new TypeError('E2B e2e workflow must define the e2b job steps')
 
-    const steps = workflow.jobs.e2b.steps.filter(isRecord)
-    const preflight = steps.find(step => step.name === 'Preflight (require E2B API key)')
+    const steps = job.steps.filter(isRecord)
+    const gate = steps.find(step => step.name === 'Gate optional E2B_API_KEY')
+    const build = steps.find(step => step.name === 'Build (lib for the E2B Loader smoke)')
     const e2b = steps.find(step => step.name === 'E2B tests (live sandbox)')
 
-    expect(preflight).toMatchObject({
+    // The optional secret is what makes this live suite opt-in: one gate reports
+    // presence, and both the build and the live suite run only when it reported
+    // the secret. A missing secret therefore produces a neutral skip, never a red
+    // run, and never an unconditional skip either.
+    expect(gate).toMatchObject({
+      id: 'e2b-secret',
       env: { E2B_API_KEY: '${{ secrets.E2B_API_KEY_EXTERNAL }}' },
     })
-    expect(preflight?.run).toContain('E2B_API_KEY_EXTERNAL repository secret')
+    expect(gate?.run).toBe('bash scripts/ci-secret-gate.sh E2B_API_KEY')
+    expect(build?.if).toBe("steps.e2b-secret.outputs.enabled == 'true'")
+    expect(e2b?.if).toBe("steps.e2b-secret.outputs.enabled == 'true'")
     expect(e2b).toMatchObject({
       env: {
         E2B_API_KEY: '${{ secrets.E2B_API_KEY_EXTERNAL }}',
@@ -267,6 +289,28 @@ describe('E2B e2e workflow', () => {
       },
     })
     expect(e2b?.run).toContain('packages/e2b/e2b/tests/composition.e2e.ts')
+
+    // A genuine build or live-suite failure must still fail the job: no step opts
+    // out of failure and none swallows one.
+    for (const step of steps) {
+      expect(step['continue-on-error']).toBeUndefined()
+      expect(stepText(step.run)).not.toContain('|| true')
+    }
+
+    // Gate behaviour, executed for real. GitHub passes an unconfigured secret as an
+    // empty environment value, which is the shape pinned here.
+    const absent = runSecretGate('bash scripts/ci-secret-gate.sh E2B_API_KEY', { E2B_API_KEY: '' })
+    expect(absent.status).toBe(0)
+    expect(absent.output).toContain('enabled=false')
+    expect(absent.stdout).toContain('E2B_API_KEY')
+    expect(absent.stdout).not.toContain('value')
+
+    const sentinel = 'e2b-secret-sentinel'
+    const present = runSecretGate('bash scripts/ci-secret-gate.sh E2B_API_KEY', { E2B_API_KEY: sentinel })
+    expect(present.status).toBe(0)
+    expect(present.output).toContain('enabled=true')
+    expect(present.stdout).not.toContain(sentinel)
+    expect(present.stderr).not.toContain(sentinel)
   })
 })
 
@@ -299,6 +343,16 @@ describe('Python release workflows', () => {
       rmSync(join(fixture, `dist/deepseek_harness_runtime_bin-${version}-py3-none-win_amd64.whl`))
       expect(run().status).not.toBe(0)
     } finally { rmSync(fixture, { recursive: true, force: true }) }
+  })
+
+  it('gives the single-exe build the repository host heap budget', () => {
+    const workflow = loadWorkflow('.github/workflows/build-exe-for-python-sdk.yml')
+    const build = workflowJob(workflow, 'build')
+    if (!Array.isArray(build.steps)) throw new TypeError('build job must have steps')
+    const step = build.steps.filter(isRecord).find(value => value.name === 'Build single-exe')
+    // Step-scoped on purpose: only this build inherits the 4096 MB budget the Wine
+    // lane already pins; install, smoke and release steps keep the default.
+    expect(step?.env).toEqual({ NODE_OPTIONS: '--max-old-space-size=4096' })
   })
 
   it('executes the target planner for all published carriers and rejects unsupported targets', () => {
@@ -458,17 +512,17 @@ describe('Python release workflows', () => {
     const manylinuxAddon = buildSteps.find(step => isRecord(step) && step.name === 'Rebuild Linux node-pty against manylinux 2.28')
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
+    if (!isRecord(manylinuxSmoke)) throw new TypeError('Python wheel builder must define the manylinux container smoke')
     const cleanVenvPosix = buildSteps.find(step => isRecord(step) && step.name === 'Install local SDK and runtime wheels into a clean venv (POSIX)')
     const cleanVenvWindows = buildSteps.find(step => isRecord(step) && step.name === 'Install local SDK and runtime wheels into a clean venv (Windows)')
     const installedKeylessPosix = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel keyless black-box tests (POSIX)')
     const installedKeylessWindows = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel keyless black-box tests (Windows)')
-    const realApiPreflightPosix = buildSteps.find(step => isRecord(step) && step.name === 'Preflight installed-wheel real API test (POSIX)')
-    const realApiPreflightWindows = buildSteps.find(step => isRecord(step) && step.name === 'Preflight installed-wheel real API test (Windows)')
+    const apiSecretGate = buildSteps.find(step => isRecord(step) && step.name === 'Gate optional real-API secret')
     const installedRealApiPosix = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel real API black-box test (POSIX)')
     const installedRealApiWindows = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel real API black-box test (Windows)')
     if (!isRecord(cleanVenvPosix) || !isRecord(cleanVenvWindows)
       || !isRecord(installedKeylessPosix) || !isRecord(installedKeylessWindows)
-      || !isRecord(realApiPreflightPosix) || !isRecord(realApiPreflightWindows)
+      || !isRecord(apiSecretGate)
       || !isRecord(installedRealApiPosix) || !isRecord(installedRealApiWindows)) {
       throw new TypeError('Python wheel builder must define native POSIX and Windows installed-wheel steps')
     }
@@ -517,13 +571,19 @@ describe('Python release workflows', () => {
     expect(installedKeylessWindows).toMatchObject({ if: "runner.os == 'Windows'", shell: 'pwsh' })
     expect(cleanVenvWindows).toMatchObject({ if: "runner.os == 'Windows'", shell: 'pwsh' })
     expect(String(cleanVenvWindows.run)).toContain('Scripts/python.exe')
-    expect(realApiPreflightPosix).toMatchObject({
+    // The live-API test is gated on the optional secret: an unconfigured
+    // secret skips it instead of failing the required runtime leg, and the
+    // keyless black-box above stays unconditional.
+    expect(apiSecretGate).toMatchObject({
+      id: 'api-secret',
+      shell: 'bash',
       env: { DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}' },
     })
-    expect(String(realApiPreflightPosix.if)).toContain('inputs.ci')
-    expect(String(realApiPreflightPosix.if)).toContain('head.repo.fork')
-    expect(String(realApiPreflightPosix.if)).toContain('dependabot[bot]')
-    expect(realApiPreflightWindows).toMatchObject({ shell: 'pwsh' })
+    expect(String(apiSecretGate.run)).toBe('bash scripts/ci-secret-gate.sh DEEPSEEK_API_KEY')
+    expect(String(installedRealApiPosix.if)).toContain("steps.api-secret.outputs.enabled == 'true'")
+    expect(String(installedRealApiWindows.if)).toContain("steps.api-secret.outputs.enabled == 'true'")
+    expect(String(installedKeylessPosix.if)).toBe("runner.os != 'Windows'")
+    expect(String(installedKeylessWindows.if)).toBe("runner.os == 'Windows'")
     expect(installedRealApiPosix).toMatchObject({
       env: {
         DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}',
@@ -536,13 +596,23 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(installedRealApiWindows)).toContain('--scenario sdk-live --installed-wheel')
     expect(workflow.on).not.toHaveProperty('pull_request_target')
     expect(workflow.permissions).toEqual({ contents: 'read' })
-    for (const secretStep of [realApiPreflightPosix, realApiPreflightWindows, installedRealApiPosix, installedRealApiWindows]) {
+    for (const secretStep of [apiSecretGate]) {
       expect(String(secretStep.if)).toContain('inputs.ci')
       expect(String(secretStep.if)).toContain("github.event_name == 'pull_request'")
       expect(String(secretStep.if)).toContain('!github.event.pull_request.head.repo.fork')
       expect(String(secretStep.if)).toContain("github.event.pull_request.user.login != 'dependabot[bot]'")
     }
     expect(manylinuxSmoke).toMatchObject({ if: "runner.os == 'Linux'" })
+    // The pnpm-backed out-of-tree-plugin scenario runs inside the container
+    // too, so the runner's Node and pnpm toolchain is shared read-only at
+    // identical paths and prepended to the container's PATH.
+    expect(String(manylinuxSmoke.run)).toContain('PATH_EXTRA="$node_root/bin:$PNPM_HOME"')
+    // The pnpm shim resolves its JavaScript from the setup root, so that root —
+    // not just PNPM_HOME — is what gets mounted into the container.
+    const linuxPnpmSetupRoot = '${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}'
+    expect(String(manylinuxSmoke.run)).toContain(`pnpm_setup_root="${linuxPnpmSetupRoot}"`)
+    expect(String(manylinuxSmoke.run)).toContain('-v "$pnpm_setup_root:$pnpm_setup_root:ro"')
+    expect(String(manylinuxSmoke.run)).toContain('pnpm --version')
     expect(JSON.stringify(manylinuxSmoke)).toContain('-e DSH_TELEMETRY_DISABLED')
   })
 
@@ -584,7 +654,7 @@ describe('Python release workflows', () => {
 })
 
 describe('Issue lifecycle workflow', () => {
-  it('runs the lifecycle job on every PR/review event but gates token and board steps', () => {
+  it('keeps the trusted-policy boundary and a bootstrap-safe optional gate', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
@@ -605,12 +675,73 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
-    const gated = "${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}"
+
     const steps = lifecycleJob.steps.filter(isRecord)
+    const checkoutIndex = steps.findIndex(step => stepText(step.uses).startsWith('actions/checkout@'))
+    const gateIndex = steps.findIndex(step => step.name === 'Gate optional Project automation')
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')
-    expect(tokenStep).toMatchObject({ if: gated })
-    expect(handleStep).toMatchObject({ if: gated })
+
+    // The policy that judges a run comes from the TRUSTED default branch, never from
+    // the pull request being judged, and the gate runs after that checkout.
+    expect(checkoutIndex).toBeGreaterThanOrEqual(0)
+    expect(steps[checkoutIndex]).toMatchObject({
+      with: { ref: '${{ github.event.repository.default_branch }}' },
+    })
+    expect(gateIndex).toBeGreaterThan(checkoutIndex)
+
+    // Bootstrap safety: the gate body is inline because a helper introduced on a
+    // pull-request branch is absent from the trusted tree this job just checked out,
+    // and depending on it failed every event with exit 127.
+    const gateRun = stepText(steps[gateIndex]?.run)
+    expect(gateRun).not.toContain('scripts/ci-secret-gate.sh')
+    expect(gateRun).toContain('enabled=false')
+    expect(gateRun).toContain('GITHUB_OUTPUT')
+
+    // Unconfigured optional automation: the write-capable steps skip, and the job
+    // does not fail merely because the App is not installed on this repository.
+    const enabled = "steps.app-config.outputs.enabled == 'true'"
+    const reviewOnly = "github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested'"
+    const expectedIf = '${{ ' + enabled + ' && (' + reviewOnly + ') }}'
+    expect(tokenStep).toMatchObject({ if: expectedIf })
+    expect(handleStep).toMatchObject({ if: expectedIf })
+
+    // A configured App still targets THIS repository and never the upstream one.
+    expect(tokenStep).toMatchObject({
+      with: {
+        'client-id': '${{ vars.DSH_ISSUE_APP_CLIENT_ID }}',
+        'private-key': '${{ secrets.DSH_ISSUE_APP_PRIVATE_KEY }}',
+        owner: '${{ github.repository_owner }}',
+        repositories: '${{ github.event.repository.name }}',
+      },
+    })
+    expect(JSON.stringify(lifecycle)).not.toContain('deepseek-harness')
+
+    // A real board mutation failure must still fail the job.
+    for (const step of steps) {
+      expect(step['continue-on-error']).toBeUndefined()
+      expect(stepText(step.run)).not.toContain('|| true')
+    }
+
+    // Gate behaviour, executed for real: an empty environment value is what GitHub
+    // passes for an unconfigured variable or secret.
+    const absent = runSecretGate(gateRun, {
+      DSH_ISSUE_APP_CLIENT_ID: '',
+      DSH_ISSUE_APP_PRIVATE_KEY: '',
+    })
+    expect(absent.status).toBe(0)
+    expect(absent.output).toContain('enabled=false')
+    expect(absent.output).toContain('DSH_ISSUE_APP_CLIENT_ID')
+
+    const sentinel = 'app-key-sentinel'
+    const present = runSecretGate(gateRun, {
+      DSH_ISSUE_APP_CLIENT_ID: 'client-id-sentinel',
+      DSH_ISSUE_APP_PRIVATE_KEY: sentinel,
+    })
+    expect(present.status).toBe(0)
+    expect(present.output).toContain('enabled=true')
+    expect(present.stdout).not.toContain(sentinel)
+    expect(present.stderr).not.toContain(sentinel)
 
     // issue-policy owns PR validation; it is read-only and a real gate.
     const policyPullRequest = workflowEvent(policy, 'pull_request')
@@ -721,4 +852,43 @@ function workflowJob(workflow: Record<string, unknown>, job: string): Record<str
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Read one parsed workflow step field: `run` and `uses` are YAML scalars, so only
+ * a string carries command text and anything else reads as absent.
+ */
+function stepText(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+/**
+ * Run one workflow gate body with the environment GitHub would provide and report
+ * its stdout, stderr and the `GITHUB_OUTPUT` file it wrote.
+ * @param script - Gate body exactly as the workflow runs it.
+ * @param environment - Variables passed to the gate (empty string models an unconfigured secret).
+ * @returns Exit status, captured streams and the parsed output file.
+ */
+function runSecretGate(
+  script: string,
+  environment: Record<string, string>,
+): { status: number | null; stdout: string; stderr: string; output: string } {
+  const directory = mkdtempSync(join(tmpdir(), 'ark-ci-gate-'))
+  const outputPath = join(directory, 'github-output.txt')
+  try {
+    const result = spawnSync('bash', ['-c', script], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, ...environment, GITHUB_OUTPUT: outputPath },
+    })
+    let output = ''
+    try {
+      output = readFileSync(outputPath, 'utf8')
+    } catch {
+      output = ''
+    }
+    return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '', output }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 }

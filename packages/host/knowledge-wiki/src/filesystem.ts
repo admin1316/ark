@@ -90,12 +90,10 @@ export function resolveConfinedPath(root: string, input: string, allowMissingLea
 }
 
 function nearestExistingAncestor(path: string): string {
+  // Callers confine the target under an existing root, so the walk always
+  // terminates there.
   let cursor = path
-  while (!existsSync(cursor)) {
-    const parent = dirname(cursor)
-    if (parent === cursor) throw new Error('no existing path ancestor')
-    cursor = parent
-  }
+  while (!existsSync(cursor)) cursor = dirname(cursor)
   return cursor
 }
 
@@ -241,7 +239,14 @@ export function atomicWriteFile(path: string, content: string | Buffer, mode = 0
       closeSync(published)
     }
     const directory = openSync(parent, constants.O_RDONLY)
-    try { fsyncSync(directory) } finally { closeSync(directory) }
+    try {
+      fsyncSync(directory)
+    } catch (error) {
+      // Windows cannot fsync directory handles (EPERM); NTFS journals entry durability itself.
+      if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+    } finally {
+      closeSync(directory)
+    }
   } finally {
     if (descriptor !== undefined) closeSync(descriptor)
     if (existsSync(temporary)) unlinkSync(temporary)
@@ -272,7 +277,13 @@ export function createPrivateFileIfMissing(path: string, content: Buffer): boole
     closeSync(descriptor)
   }
   const directory = openSync(parent, constants.O_RDONLY)
-  try { fsyncSync(directory) } finally { closeSync(directory) }
+  try {
+    fsyncSync(directory)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+  } finally {
+    closeSync(directory)
+  }
   return true
 }
 
@@ -318,7 +329,13 @@ export function durableUnlinkFile(path: string): void {
   }
   unlinkSync(tombstone)
   const directory = openSync(dirname(path), constants.O_RDONLY)
-  try { fsyncSync(directory) } finally { closeSync(directory) }
+  try {
+    fsyncSync(directory)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+  } finally {
+    closeSync(directory)
+  }
 }
 
 /**

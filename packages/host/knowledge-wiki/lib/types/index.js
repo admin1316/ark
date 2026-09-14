@@ -232,11 +232,12 @@ let KnowledgeWikiService = (() => {
             this.credential = credentialRef(config.credential);
             this.llmProvider = config.llmProvider;
             this.llmModel = config.llmModel;
-            // Direct construction in tests bypasses the schema defaults, so every new
-            // option is read defensively.
-            this.llmBaseUrl = (config.llmBaseUrl ?? 'https://api.deepseek.com').replace(/\/+$/u, '');
-            this.llmCredential = config.llmCredential ?? '';
-            this.ownedStageExecutor = config.ownedStageExecutor === true
+            // The loader schema (KnowledgeWikiService.Config) fills every optional
+            // deployment field, so a resolved Config is already complete: tests build one
+            // through the wikiTestConfig test fixture instead of hand-writing a partial object.
+            this.llmBaseUrl = config.llmBaseUrl.replace(/\/+$/u, '');
+            this.llmCredential = config.llmCredential;
+            this.ownedStageExecutor = config.ownedStageExecutor
                 ? createOwnedStageExecutor({ resolveConnection: () => this.resolveStageConnection() })
                 : undefined;
         }
@@ -256,7 +257,7 @@ let KnowledgeWikiService = (() => {
                 candidates.push(this.llmCredential);
             try {
                 const settings = this.ctx.get('settings');
-                const declared = settings?.remoteDescribe?.().namespaces?.find(entry => entry?.ns === 'llm-deepseek')?.value;
+                const declared = settings?.remoteDescribe?.().namespaces?.find(entry => entry.ns === 'llm-deepseek')?.value;
                 if (typeof declared?.apiKeyEnv === 'string' && declared.apiKeyEnv !== '')
                     candidates.push(declared.apiKeyEnv);
             }

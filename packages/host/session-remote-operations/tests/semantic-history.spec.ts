@@ -14,6 +14,44 @@ import { SemanticHistoryReader } from '../src/semantic-history.ts'
 import { SessionRemoteOperationsService } from '../src/index.ts'
 import type { SemanticHistoryLimits } from '../src/semantic-history.ts'
 
+/** One presented history entry; the content endpoint serializes the presenter's exact event echo. */
+const presentedEntrySchema = z.object({
+  event: z.object({ seq: z.number(), type: z.string(), time: z.number(), data: z.json() }),
+})
+/** Preserved content blocks of one complete user or assistant message. */
+const contentBlockSchema = z.object({ type: z.string(), text: z.string() })
+/** Complete user-message body. */
+const userMessageBodySchema = z.object({
+  kind: z.literal('user'),
+  entry: z.object({ event: z.object({ data: z.object({ content: z.array(contentBlockSchema) }) }) }),
+})
+/** Complete assistant-message body. */
+const assistantMessageBodySchema = z.object({
+  kind: z.literal('assistant'),
+  entry: z.object({ event: z.object({ data: z.object({
+    message: z.object({ content: z.array(contentBlockSchema) }),
+  }) }) }),
+})
+/** Recovered streamed blocks of a record with no canonical final message. */
+const assistantPrefixBodySchema = z.object({
+  kind: z.literal('assistant-prefix'),
+  content: z.array(contentBlockSchema),
+})
+/** Domain evidence bundle assembled at one source cut. */
+const dependencyBundleSchema = z.object({
+  domain: z.enum(['tool', 'status', 'turn']),
+  completeness: z.enum(['complete', 'unknown']),
+  chunkCoverage: z.enum(['none', 'timing-boundaries']),
+  missing: z.array(z.string()),
+  entries: z.array(presentedEntrySchema),
+  turns: z.array(z.json()),
+})
+/** Presented call/result pair of one tool record. */
+const toolBodySchema = z.object({
+  kind: z.literal('tool'),
+  result: z.object({ view: z.object({ callSeq: z.number() }) }),
+})
+
 const contexts: Context[] = []
 afterEach(async () => { await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose())) })
 const signal = (): AbortSignal => new AbortController().signal
@@ -80,7 +118,8 @@ describe('semantic history complete-content reads', () => {
     if (!page.ok || page.value.view !== 'semantic') throw new Error('expected semantic result')
     const content = await service.history({ sessionId: session.id, view: 'content', sourceRevision: page.value.sourceRevision, recordId: page.value.records[0]!.id }, signal())
     if (!content.ok || content.value.view !== 'content') throw new Error('expected content result')
-    expect(JSON.parse(content.value.text).entry.event.data.message.content[0].text).toBe('wirewire')
+    const body = assistantMessageBodySchema.parse(JSON.parse(content.value.text))
+    expect(body.entry.event.data.message.content[0]!.text).toBe('wirewire')
     const raw = await service.history({ sessionId: session.id }, signal())
     expect(raw.ok && raw.value.events.length).toBe(3)
     const denied = await service.history({ sessionId: session.id, expectedParentSessionId: SessionId('wrong'), view: 'semantic' }, signal())
@@ -109,9 +148,12 @@ describe('semantic history complete-content reads', () => {
     if (!page.ok || page.value.view !== 'semantic') throw new Error('expected semantic page')
     let indexedReads = 0
     const snapshot = session.events
-    const monitored = new Proxy(snapshot, { get(target, key, receiver) {
+    const monitored = new Proxy(snapshot, { get(target, key, receiver): unknown {
       if (typeof key === 'string' && /^\d+$/.test(key)) indexedReads += 1
-      return Reflect.get(target, key, receiver)
+      // Reflect.get is typed `any`; one declared `unknown` boundary keeps the exact
+      // runtime value without leaking an untyped read into the caller.
+      const value: unknown = Reflect.get(target, key, receiver)
+      return value
     } })
     const spy = vi.spyOn(session, 'events', 'get').mockReturnValue(monitored)
     const request = { sessionId: session.id, view: 'content' as const, sourceRevision: page.value.sourceRevision,
@@ -145,8 +187,8 @@ describe('semantic history complete-content reads', () => {
     const record = result.records[0]!
     expect(record.state).toBe('complete')
     expect(record.preview.length).toBeLessThanOrEqual(256)
-    const body = JSON.parse(await content(result.sourceRevision, record.id, 4097))
-    expect(body.entry.event.data.message.content[0].text).toBe('😀'.repeat(50_001))
+    const body = assistantMessageBodySchema.parse(JSON.parse(await content(result.sourceRevision, record.id, 4097)))
+    expect(body.entry.event.data.message.content[0]!.text).toBe('😀'.repeat(50_001))
     expect(result.pendingDomains).toEqual([])
   })
 
@@ -163,9 +205,9 @@ describe('semantic history complete-content reads', () => {
     expect(latest.records[0]?.state).toBe('interrupted')
     const older = await page({ sourceRevision: active.sourceRevision })
     expect(older.records[0]?.state).toBe('active')
-    const body = JSON.parse(await content(active.sourceRevision, record.id))
+    const body = assistantPrefixBodySchema.parse(JSON.parse(await content(active.sourceRevision, record.id)))
     expect(body.kind).toBe('assistant-prefix')
-    expect(body.content[0].text).toBe('x'.repeat(50_001))
+    expect(body.content[0]!.text).toBe('x'.repeat(50_001))
   })
 
   it('separates failed and retried prefixes in the same step using canonical source linkage', async () => {
@@ -178,10 +220,10 @@ describe('semantic history complete-content reads', () => {
     const result = await page()
     expect(result.records.map(record => record.state)).toEqual(['failed-prefix', 'complete'])
     expect(new Set(result.records.map(record => record.id)).size).toBe(2)
-    const first = JSON.parse(await content(result.sourceRevision, result.records[0]!.id))
-    expect(first.content[0].text).toBe('failedfailedfailed')
-    const second = JSON.parse(await content(result.sourceRevision, result.records[1]!.id))
-    expect(second.entry.event.data.message.content[0].text).toBe('successsuccess')
+    const first = assistantPrefixBodySchema.parse(JSON.parse(await content(result.sourceRevision, result.records[0]!.id)))
+    expect(first.content[0]!.text).toBe('failedfailedfailed')
+    const second = assistantMessageBodySchema.parse(JSON.parse(await content(result.sourceRevision, result.records[1]!.id)))
+    expect(second.entry.event.data.message.content[0]!.text).toBe('successsuccess')
   })
 
   it('continues the same cursor and full content with all caching disabled', async () => {
@@ -192,7 +234,8 @@ describe('semantic history complete-content reads', () => {
     const third = await page({ sourceRevision: first.sourceRevision, beforeRecordId: second.nextBeforeRecordId, maxRecords: 2 })
     expect([...third.records, ...second.records, ...first.records].map(record => record.orderSeq)).toEqual([0, 1, 2, 3, 4])
     expect(third.hasMore).toBe(false)
-    expect(JSON.parse(await content(first.sourceRevision, first.records[0]!.id, 3)).entry.event.data.content[0].text).toBe('用户😀-3')
+    const tail = userMessageBodySchema.parse(JSON.parse(await content(first.sourceRevision, first.records[0]!.id, 3)))
+    expect(tail.entry.event.data.content[0]!.text).toBe('用户😀-3')
   })
 
   it('rejects replacement with identical id and length and repeats parent admission for content', async () => {
@@ -215,8 +258,8 @@ describe('semantic history complete-content reads', () => {
     const first = await page()
     expect(first.records[0]?.state).toBe('orphaned-prefix')
     expect(dispose).toHaveBeenCalledTimes(1)
-    const body = JSON.parse(await content(first.sourceRevision, first.records[0]!.id))
-    expect(body.content[0].text).toBe('cold'.repeat(50_001))
+    const body = assistantPrefixBodySchema.parse(JSON.parse(await content(first.sourceRevision, first.records[0]!.id)))
+    expect(body.content[0]!.text).toBe('cold'.repeat(50_001))
     expect(dispose).toHaveBeenCalledTimes(2)
     revision = 'fixture:two'
     await expect(page({ sourceRevision: first.sourceRevision })).rejects.toMatchObject({ code: 'history-stale-source' })
@@ -231,7 +274,8 @@ describe('semantic history complete-content reads', () => {
     const result = await page()
     expect(result.records).toHaveLength(1)
     expect(result.records[0]?.state).toBe('interrupted')
-    expect(JSON.parse(await content(result.sourceRevision, result.records[0]!.id)).entry.event.data.message.content[0].text).toBe('beforetail')
+    const body = assistantMessageBodySchema.parse(JSON.parse(await content(result.sourceRevision, result.records[0]!.id)))
+    expect(body.entry.event.data.message.content[0]!.text).toBe('beforetail')
   })
 
   it('assembles oversized content exactly once across all fragments, with bounded preview work', async () => {
@@ -242,8 +286,8 @@ describe('semantic history complete-content reads', () => {
       const result = await page()
       expect(push.mock.calls.length).toBeLessThanOrEqual(4096)
       push.mockClear()
-      const body = JSON.parse(await content(result.sourceRevision, result.records[0]!.id, 4096))
-      expect(body.content[0].text).toBe('streamed-'.repeat(50_001))
+      const body = assistantPrefixBodySchema.parse(JSON.parse(await content(result.sourceRevision, result.records[0]!.id, 4096)))
+      expect(body.content[0]!.text).toBe('streamed-'.repeat(50_001))
       expect(push).toHaveBeenCalledTimes(50_001)
     } finally { push.mockRestore() }
   })
@@ -255,7 +299,7 @@ describe('semantic history complete-content reads', () => {
     session.append('assistant/chunk', { turn: 0, step: 0, chunk: { type: 'block-end', index: 0, block: { type: 'text', text: 'authoritative' } } })
     session.append('assistant/chunk', { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: 'ignored straggler' } })
     const result = await page()
-    const body = JSON.parse(await content(result.sourceRevision, result.records[0]!.id))
+    const body = assistantPrefixBodySchema.parse(JSON.parse(await content(result.sourceRevision, result.records[0]!.id)))
     expect(body.content).toEqual([{ type: 'reasoning', text: 'reason' }, { type: 'text', text: 'authoritative' }])
   })
 
@@ -314,11 +358,12 @@ describe('semantic history complete-content reads', () => {
     const result = await page()
     expect(result.turns[0]?.usage).toEqual({ uncachedInputTokens: 10, outputTokens: 20, totalTokens: 30, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 4, routes: [{ provider: 'p', model: 'm' }] })
     expect(Object.isFrozen(result.turns[0]?.usage)).toBe(true)
-    const bundle = JSON.parse(await content(result.sourceRevision, result.dependencyRecords.turn))
+    const bundle = dependencyBundleSchema.parse(JSON.parse(await content(result.sourceRevision, result.dependencyRecords.turn)))
     expect(bundle.domain).toBe('turn')
     expect(bundle.chunkCoverage).toBe('timing-boundaries')
     expect(bundle.completeness).toBe('complete')
-    expect(bundle.entries.filter((entry: { event: { type: string } }) => entry.event.type === 'assistant/chunk').map((entry: { event: { seq: number } }) => entry.event.seq)).toEqual([source[0], source.at(-1)])
+    expect(bundle.entries.filter(entry => entry.event.type === 'assistant/chunk').map(entry => entry.event.seq))
+      .toEqual([source[0], source.at(-1)])
     expect(bundle.turns).toEqual(result.turns)
   })
 
@@ -344,18 +389,18 @@ describe('semantic history complete-content reads', () => {
     session.append('tool/result', { turn: 0, step: 0, message: createToolResultMessage({ callId, content: [{ type: 'text', text: 'result' }], isError: false }) }, { surfaceOp: 'append' })
     session.append('turn/end', { turn: 0, reason: { kind: 'completed' } })
     const result = await page()
-    const tools = JSON.parse(await content(result.sourceRevision, result.dependencyRecords.tool))
+    const tools = dependencyBundleSchema.parse(JSON.parse(await content(result.sourceRevision, result.dependencyRecords.tool)))
     expect(tools.completeness).toBe('complete')
-    expect(tools.entries.map((entry: { event: { type: string } }) => entry.event.type)).toEqual(['turn/start', 'tool/call', 'tool/code-dispatch-start', 'tool/code-dispatch', 'tool-workflow/run-start', 'tool-workflow/agent-start', 'tool-workflow/agent-end', 'tool-workflow/run-end', 'tool/result', 'turn/end'])
-    const statuses = JSON.parse(await content(result.sourceRevision, result.dependencyRecords.status))
+    expect(tools.entries.map(entry => entry.event.type)).toEqual(['turn/start', 'tool/call', 'tool/code-dispatch-start', 'tool/code-dispatch', 'tool-workflow/run-start', 'tool-workflow/agent-start', 'tool-workflow/agent-end', 'tool-workflow/run-end', 'tool/result', 'turn/end'])
+    const statuses = dependencyBundleSchema.parse(JSON.parse(await content(result.sourceRevision, result.dependencyRecords.status)))
     expect(statuses.completeness).toBe('complete')
-    expect(statuses.entries.map((entry: { event: { type: string } }) => entry.event.type)).toEqual(['turn/start', 'command/run', 'compaction/start', 'compaction/end', 'command/done', 'turn/end'])
+    expect(statuses.entries.map(entry => entry.event.type)).toEqual(['turn/start', 'command/run', 'compaction/start', 'compaction/end', 'command/done', 'turn/end'])
     session.append('command/done', { commandId: CommandId('missing'), kind: 'error' })
     const latest = await page()
-    const incomplete = JSON.parse(await content(latest.sourceRevision, latest.dependencyRecords.status))
+    const incomplete = dependencyBundleSchema.parse(JSON.parse(await content(latest.sourceRevision, latest.dependencyRecords.status)))
     expect(incomplete.completeness).toBe('unknown')
     expect(incomplete.missing).toContain('command-start')
-    const old = JSON.parse(await content(result.sourceRevision, result.dependencyRecords.status))
+    const old = dependencyBundleSchema.parse(JSON.parse(await content(result.sourceRevision, result.dependencyRecords.status)))
     expect(old).toEqual(statuses)
   })
 
@@ -371,7 +416,7 @@ describe('semantic history complete-content reads', () => {
     expect(tool.callEventSeq).toBe(call.seq)
     expect(tool.resultEventSeq).toBe(resultEvent.seq)
     expect(tool.completedTurnEndSeq).toBe(session.seq - 1)
-    const body = JSON.parse(await content(result.sourceRevision, tool.id))
+    const body = toolBodySchema.parse(JSON.parse(await content(result.sourceRevision, tool.id)))
     expect(body.result.view.callSeq).toBe(call.seq)
     expect(present.mock.calls.some(([event, dependencies]) => event.type === 'tool/result' && dependencies[0]?.seq === call.seq)).toBe(true)
   })

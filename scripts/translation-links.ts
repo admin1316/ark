@@ -11,6 +11,7 @@ import {
   visitMarkdown,
   type MarkdownDestination,
 } from './markdown.ts'
+import { isArchivedAgentNotePath } from './repo-files.ts'
 
 /** Repository and source document used to resolve one relative link. */
 export interface TranslationLinkContext {
@@ -138,8 +139,17 @@ function translationPairTarget(targetPath: string, context: TranslationLinkConte
   const source = targetPath.endsWith('.zh.md')
     ? targetPath.replace(/\.zh\.md$/, '.md')
     : targetPath.endsWith('.md') ? targetPath : undefined
-  if (source === undefined || !context.isTranslationPairSource(source)) return undefined
+  // An archived Agent Note triplet is a bilingual pair too. It stays outside the
+  // checked corpus (frozen artifacts are never verified or repaired), but active
+  // prose may cite it, and both language sides must still normalize to one
+  // semantic target so pair structure stays comparable.
+  if (source === undefined
+    || (!context.isTranslationPairSource(source) && !isArchivedAgentNotePath(source))) return undefined
   const zh = source.replace(/\.md$/, '.zh.md')
+  // The frozen archive also holds English-only pages (its AGENTS.md), which are
+  // not a pair whose Chinese sibling merely went missing.
+  if (isArchivedAgentNotePath(source) && !context.isTranslationPairSource(source)
+    && !repositoryFileExists(context, zh)) return undefined
   return { source, zh }
 }
 

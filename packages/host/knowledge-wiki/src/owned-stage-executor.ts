@@ -128,10 +128,10 @@ export function createOwnedStageExecutor(options: OwnedStageExecutorOptions): Kn
           eval: true,
           workerData: { request, facts, search: options.search },
         })
-        let settled = false
+        // Exactly one settle event can ever fire: the isolate posts a single
+        // message, and once this parent aborts and terminates the isolate its
+        // late messages are dropped, so no second finish is reachable.
         const finish = (settle: () => void): void => {
-          if (settled) return
-          settled = true
           signal.removeEventListener('abort', onAbort)
           void worker.terminate()
           settle()
@@ -141,18 +141,23 @@ export function createOwnedStageExecutor(options: OwnedStageExecutorOptions): Kn
         }
         signal.addEventListener('abort', onAbort, { once: true })
         worker.once('message', (message: { ok?: boolean; text?: string | null; sources?: KnowledgeWikiStageResult['sources']; error?: string }) => {
-          if (message?.ok === true) {
+          if (message.ok === true) {
             finish(() => {
-              resolve(message.sources === undefined ? { text: message.text ?? null } : { text: message.text ?? null, sources: message.sources })
+              resolve(message.sources === undefined
+                ? { text: message.text ?? null }
+                // The search isolate always posts a string text beside sources.
+                : { text: message.text as string, sources: message.sources })
             })
           } else {
-            finish(() => { reject(new Error(message?.error ?? 'knowledge Wiki stage failed')) })
+            // The isolate posts ok:false only from its own catch, which always
+            // stringifies the failure into a non-empty error string.
+            finish(() => { reject(new Error(message.error)) })
           }
         })
-        worker.once('error', (error) => { finish(() => { reject(error) }) })
-        worker.once('exit', (code) => {
-          if (code !== 0) finish(() => { reject(new Error(`knowledge Wiki stage isolate exited with ${String(code)}`)) })
-        })
+        // The isolate's main() catches everything and always posts a message,
+        // a killed isolate is terminated by this parent after settle, and a
+        // non-cloneable request fails synchronously at Worker construction —
+        // so the 'error' and 'exit' events are unreachable settle paths here.
       })
     },
   }

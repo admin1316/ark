@@ -42,6 +42,14 @@ describe('semantic search degradation', () => {
     expect(diagnostics[0]).toContain('ECONNREFUSED')
   })
 
+  it('reports a non-Error embedding rejection verbatim', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw 'embedding socket reset' }))
+    const diagnostics: string[] = []
+    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', 'rejected-key', 8, d => diagnostics.push(d.reason))
+    expect(diagnostics).toEqual(['embedding socket reset'])
+    expect(hits.map(hit => hit.path)).toContain('concepts/orbital-mechanics.md')
+  })
+
   it('falls back when the embedding response is malformed', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ nope: true }), { status: 200, headers: { 'content-type': 'application/json' } })))
     const diagnostics: string[] = []

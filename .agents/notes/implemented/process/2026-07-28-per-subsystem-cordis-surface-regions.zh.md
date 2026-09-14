@@ -8,7 +8,7 @@ Status: implemented
 
 一个子系统的文档过去分散在三个归属：手写的 subsystems 页面（介绍、数据结构、动词）、平铺生成的 `docs/cordis-catalog/services.md` 中属于它的 `ctx.<key>` 切片，以及平铺的 `docs/cordis-catalog/events.md` 中属于其事件作用域的切片。shell.md 的读者必须再打开两份文档，才能看到该页面正在描述的服务接口与事件；除了手工维护的链接，没有任何机制把这三个视图联系在一起。平铺目录还游离在双语语料之外（生成输出只有英文，故被排除在配对之外），因此，这套参考内容完全没有中文入口。
 
-[生成式目录决策](../../archived/process/2026-06-20-generated-cordis-catalog.md)本身（从源码生成、`@mode` 标签交叉校验、失败关闭的类型链接覆盖、`ts cordis-catalog` 围栏）不在质疑之列；改变的只是生成输出「落在哪里」。
+[生成式目录决策](../../archived/process/2026-06-20-generated-cordis-catalog.zh.md)本身（从源码生成、`@mode` 标签交叉校验、失败关闭的类型链接覆盖、`ts cordis-catalog` 围栏）不在质疑之列；改变的只是生成输出「落在哪里」。
 
 ## 决策
 

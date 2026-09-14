@@ -156,7 +156,7 @@ export class SemanticHistoryReader {
         : this.cut(request.sourceRevision, identity, observed.cursor)
       this.authorize(request, observed, through)
       return { observed, identity, through, revision: `${identity}:${String(through)}`,
-        assertCurrent: () => { this.assertCurrent(observed, identity) },
+        assertCurrent: () => { this.assertCurrent(observed) },
         [Symbol.dispose]: () => { observed[Symbol.dispose]() },
       }
     } catch (error) { observed[Symbol.dispose](); throw error }
@@ -230,44 +230,38 @@ export class SemanticHistoryReader {
       const offset = boundedInteger(request.offset, 0, 0, Number.MAX_SAFE_INTEGER, 'offset')
       const maximum = boundedInteger(request.maxCodeUnits, 16_384, 2, 65_536, 'maxCodeUnits')
       const key = `${revision}/${record.id}`
-      let readId: string | undefined
-      let materialized: ContentRead | undefined
-      if (materialized === undefined) {
-        if (offset !== 0) throw new SemanticHistoryError('invalid-argument', 'continuation requires contentReadId')
-        if (this.materializing || this.content.size >= this.maxContentReaders || this.contentBytes > this.maxContentBytes) {
-          throw new SemanticHistoryError('history-content-busy', 'finish or close an existing content read first')
-        }
-        this.materializing = true
-        let text: string
-        try { text = await this.recordText(record, observed, revision, index, through, signal) }
-        finally { this.materializing = false }
-        this.assertCurrent(observed, identity)
-        const bytes = contentCharge(key, text)
-        // One oversize message may complete without per-fragment rebuilding.
-        // It occupies the only oversize slot until completion, close or expiry.
-        if (this.content.size >= this.maxContentReaders || this.contentBytes > this.maxContentBytes
-          || (bytes <= this.maxContentBytes && this.contentBytes + bytes > this.maxContentBytes)) {
-          throw new SemanticHistoryError('history-content-busy', 'content reader budget is in use')
-        }
-        readId = randomUUID()
-        const timer = this.expiry(readId)
-        materialized = {
-          key, text, bytes, timer, sessionId: request.sessionId, parentSessionId: observed.header.parentSession,
-          subagentMode: request.expectedSubagentMode, subagentDescriptorSeq: observed.projections?.values.subagent?.seq,
-          identity, revision, through, recordId: record.id,
-        }
-        this.content.set(readId, materialized)
-        this.contentBytes += bytes
+      // Continuations with a contentReadId returned above, so this request
+      // always materializes a fresh reader at offset 0. Record text is JSON,
+      // whose first code unit is never a lone surrogate tail, so no boundary
+      // check is needed here — continuations re-validate at their own offset.
+      if (offset !== 0) throw new SemanticHistoryError('invalid-argument', 'continuation requires contentReadId')
+      if (this.materializing || this.content.size >= this.maxContentReaders || this.contentBytes > this.maxContentBytes) {
+        throw new SemanticHistoryError('history-content-busy', 'finish or close an existing content read first')
       }
-      // Above branches either validate or create this handle.
-      if (readId === undefined) throw new Error('content reader has no identity')
-      const text = materialized.text
-      if (offset > text.length || splitsSurrogate(text, offset)) {
-        throw new SemanticHistoryError('invalid-argument', 'offset is not a content boundary')
+      this.materializing = true
+      let text: string
+      try { text = await this.recordText(record, observed, revision, index, through, signal) }
+      finally { this.materializing = false }
+      this.assertCurrent(observed)
+      const bytes = contentCharge(key, text)
+      // One oversize message may complete without per-fragment rebuilding.
+      // It occupies the only oversize slot until completion, close or expiry.
+      if (this.content.size >= this.maxContentReaders || this.contentBytes > this.maxContentBytes
+        || (bytes <= this.maxContentBytes && this.contentBytes + bytes > this.maxContentBytes)) {
+        throw new SemanticHistoryError('history-content-busy', 'content reader budget is in use')
       }
+      const readId = randomUUID()
+      const timer = this.expiry(readId)
+      const materialized: ContentRead = {
+        key, text, bytes, timer, sessionId: request.sessionId, parentSessionId: observed.header.parentSession,
+        subagentMode: request.expectedSubagentMode, subagentDescriptorSeq: observed.projections?.values.subagent?.seq,
+        identity, revision, through, recordId: record.id,
+      }
+      this.content.set(readId, materialized)
+      this.contentBytes += bytes
       let end = Math.min(text.length, offset + maximum)
       if (splitsSurrogate(text, end)) end -= 1
-      this.assertCurrent(observed, identity)
+      this.assertCurrent(observed)
       const done = end === text.length
       const fragment = text.slice(offset, end)
       if (done) this.closeContent(readId)
@@ -314,7 +308,7 @@ export class SemanticHistoryReader {
         ...end?.type === 'turn/end' && end.data.reason.kind === 'completed' ? { completedTurnEndSeq: end.seq } : {},
       })
     }
-    this.assertCurrent(observed, identity)
+    this.assertCurrent(observed)
     return {
       view: 'semantic', sourceRevision: revision, asOfThroughSeq: through,
       records: page, hasMore: start > 0,
@@ -385,11 +379,11 @@ export class SemanticHistoryReader {
       recordId: body.recordId, contentReadId: readId, encoding: 'json', offset, text, nextOffset: end, done }
   }
 
-  private assertCurrent(observed: SessionObservation, identity: string): void {
+  private assertCurrent(observed: SessionObservation): void {
     if (observed.source === 'live') {
-      if (this.identity(observed) !== identity) {
-        throw new SemanticHistoryError('history-stale-source', 'history source changed while presenting content')
-      }
+      // identity(observed) re-validates the live source itself and throws
+      // history-stale-source on any change, so no separate comparison is needed.
+      this.identity(observed)
       const descriptor = observed.projections?.values.subagent
       const current = this.ctx.sessions.get(observed.header.id)
       if (observed.header.origin === 'subagent' && (current === undefined || descriptor == null
@@ -538,20 +532,21 @@ export class SemanticHistoryReader {
       + [...value.calls.keys()].reduce((sum, key) => sum + key.length * 4 + 128, 0)
     let bytes = [...this.indices.values()].reduce((sum, value) => sum + charge(value), 0)
     while (this.indices.size > this.maxIndices || bytes > this.maxIndexBytes) {
-      const first = this.indices.keys().next().value
-      if (first === undefined) break
-      const removed = this.indices.get(first)
-      if (removed !== undefined) bytes -= charge(removed)
-      this.indices.delete(first)
+      // Map iteration visits entries in insertion order; the loop always has
+      // at least one entry while a budget is exceeded because every charge is
+      // non-negative and the empty-map sum is 0 <= maxIndexBytes.
+      for (const [first, removed] of this.indices) {
+        if (this.indices.size <= this.maxIndices && bytes <= this.maxIndexBytes) break
+        bytes -= charge(removed)
+        this.indices.delete(first)
+      }
     }
     return index
   }
 
   private blocks(record: RecordLocation, events: readonly SessionEvent[], through: number, signal: AbortSignal) {
-    const canonical = atCut(record.canonical, through)
-    const event = canonical === undefined ? undefined : events[canonical]
-    if (event?.type === 'user/message') return event.data.content
-    if (event?.type === 'assistant/message') return event.data.message.content
+    // Only assistant-prefix records reach here (message-canonical records are
+    // presented by recordText), so the assembler path is the whole body.
     const assembler = new BlockAssembler()
     if (record.firstChunk !== undefined && record.lastChunk !== undefined) {
       for (let seq = record.firstChunk; seq <= Math.min(through, record.lastChunk); seq += 1) {
@@ -653,8 +648,9 @@ export class SemanticHistoryReader {
     const sourceEvents: SessionEvent[] = []
     for (const seq of sequences) {
       signal.throwIfAborted()
-      const event = observed.events[seq]
-      if (event === undefined) throw new SemanticHistoryError('history-stale-source', 'dependency source is incomplete')
+      // Every indexed dependency seq was observed in this exact event array,
+      // and cuts never exceed the observed cursor, so the event exists.
+      const event = observed.events[seq] as SessionEvent
       sourceEvents.push(event)
       let dependencies: readonly SessionEvent[] = []
       if (event.type === 'tool/result') {

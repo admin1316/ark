@@ -16,7 +16,7 @@ declare module '@deepseek-ai/cordis' {
         dshHomePath?: typeof dshHomePath;
     }
 }
-export { composeEntries, DEFAULT_PROFILE_BUNDLES, healProfilesModuleFallback, initProfile, loadProfile, PROFILE_PATCH_FILENAME, PROFILE_TEMPLATES, PROFILES_DIR, readProfileManifest, resolveBundleDir, resolveProfileDir, writeProfileManifest, type DshBundleManifest, type DshManifestSection, type DshProfileManifest, type Profile, type ProfileLayer, type ProfileManifest, } from './profile.ts';
+export { composeEntries, DEFAULT_PROFILE_BUNDLES, healProfilesModuleFallback, initProfile, isSnapshotServedDirectory, loadProfile, PROFILE_PATCH_FILENAME, PROFILE_TEMPLATES, PROFILES_DIR, readProfileManifest, resolveBundleDir, resolveProfileDir, writeProfileManifest, type DshBundleManifest, type DshManifestSection, type DshProfileManifest, type Profile, type ProfileLayer, type ProfileManifest, } from './profile.ts';
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
  * `cordis.snapshot.yml` in the same directory; every other mode keeps the path.
@@ -132,17 +132,34 @@ export interface ConfigDumpLayer {
  */
 export declare function renderConfigDump(binName: string, absoluteConfigPath: string, layers: ConfigDumpLayer[], warn?: (line: string) => void): string;
 /**
+ * Bare package name resolution for {@link boot} and {@link mountRootInclude}.
+ */
+export interface BareModuleBase {
+    /** File URL inside the installed runtime whose `node_modules` tree resolves bare package names. */
+    url: string;
+    /**
+     * `'installed-only'` (default) resolves every bare name from `url`, so a
+     * configuration cannot shadow the installed plugin set — the packaged entry
+     * contract. `'configuration-first'` resolves from the configuration first
+     * and uses `url` only for a package the configuration cannot see at all —
+     * the profile launcher contract, where a profile-local plugin keeps winning
+     * while an in-box name still comes from the installation even when a
+     * packaged snapshot hides the host-filesystem fallback links.
+     */
+    order?: 'installed-only' | 'configuration-first';
+}
+/**
  * Mount and remember the exact root Include entry used by app boot and user patch-layer HMR.
  * @param ctx - context carrying an initialized Loader service.
  * @param absoluteConfigPath - absolute YAML or JSON configuration path.
  * @param patches - initial app and user patches, applied in order.
- * @param bareModuleBaseUrl - optional installed-host base for bare package
+ * @param bareModuleBase - optional installed-runtime base for bare package
  * names; relative names continue to resolve beside the configuration file.
  * @returns the created root Include entry, or `undefined` when a surface
  * disposed the whole tree (taking the Loader service with it) while the
  * transactional create was still settling entry lifecycle.
  */
-export declare function mountRootInclude(ctx: Context, absoluteConfigPath: string, patches?: readonly PatchOptions[], bareModuleBaseUrl?: string): Promise<Entry | undefined>;
+export declare function mountRootInclude(ctx: Context, absoluteConfigPath: string, patches?: readonly PatchOptions[], bareModuleBase?: string | BareModuleBase): Promise<Entry | undefined>;
 /**
  * The slice of `process` {@link installFailLoud} needs — injectable so tests
  * exercise the handler without registering on (or exiting) the real process.
@@ -220,7 +237,8 @@ export declare function assertEntriesActivated(ctx: Context, binName: string): P
  * Boot the Loader against `absoluteConfigPath` and return only after the whole
  * tree settles. Relative entry names resolve against the config directory;
  * bare package names resolve there by default or against an explicit
- * `bareModuleBaseUrl` for closed packaged runtimes. The bootstrap include
+ * `bareModuleBase` for packaged runtimes (a closed plugin set, and the profile
+ * launcher's configuration-first order). The bootstrap include
  * is statically imported and mounted as the `cordis:include` builtin, loading
  * through the ambient module pipeline (vite/tsx/plain ESM). The package build
  * embeds Include while leaving Loader external, so the built include tree and
@@ -237,16 +255,16 @@ export declare function assertEntriesActivated(ctx: Context, binName: string): P
  * @param patches - optional overlay patches applied over the included tree
  * (see {@link loadOptionalPatches}); an empty list mounts none.
  * @param prepare - optional host setup run after Loader installation and before any config-tree entry mounts.
- * @param bareModuleBaseUrl - optional installed-host base for bare package
- * names; use it when the host, rather than the configuration project, owns the
- * complete plugin set.
+ * @param bareModuleBase - optional installed-runtime base for bare package
+ * names; a bare string means the host owns the complete plugin set, while
+ * {@link BareModuleBase} selects whether the configuration resolves first.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
  * preparation failed` when `prepare` threw before any config-tree entry
  * mounted, `plugin tree failed to load` afterwards.
  */
-export declare function boot(binName: string, absoluteConfigPath: string, patches?: PatchOptions[], prepare?: (ctx: Context) => Promise<void> | void, bareModuleBaseUrl?: string): Promise<Context>;
+export declare function boot(binName: string, absoluteConfigPath: string, patches?: PatchOptions[], prepare?: (ctx: Context) => Promise<void> | void, bareModuleBase?: string | BareModuleBase): Promise<Context>;
 /** Prompt-section name for the harness-source location line an app bin adds after boot. */
 export declare const HARNESS_SOURCE_SECTION = "harness:source";
 /**

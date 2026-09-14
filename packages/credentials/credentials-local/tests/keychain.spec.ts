@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -98,7 +98,12 @@ async function boot(): Promise<Context> {
   return ctx
 }
 
-describe('keychain credential mode', () => {
+// Keychain mode is a macOS-only product contract (`keychain mode requires macOS` in
+// src/index.ts), so the describe that boots that mode runs on darwin only. The
+// construction/failure describe below pins that contract on every host: it stubs the
+// platform to darwin while it drives the mocked /usr/bin/security backend, and the
+// rejection case re-stubs linux to pin the off-macOS guard.
+describe.skipIf(process.platform !== 'darwin')('keychain credential mode', () => {
   it('refuses conditional removal of a replacement and excludes writes during a checked record commit', async () => {
     const ctx = await boot()
     await ctx.credentials.set(KEY, 'first-synthetic')
@@ -155,6 +160,19 @@ describe('keychain credential mode', () => {
 })
 
 describe('keychain construction and failure surfaces', () => {
+  const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+
+  // These cases boot keychain mode with the mocked security backend, so they pin the
+  // platform whose contract they assert instead of inheriting the host's.
+  beforeEach(() => {
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' })
+  })
+
+  afterEach(() => {
+    if (hostPlatform === undefined) delete (process as { platform?: string }).platform
+    else Object.defineProperty(process, 'platform', hostPlatform)
+  })
+
   it('resolves the file-mode and keychain-service defaults for programmatic construction', () => {
     const provider = new LocalCredentialProvider(new Context(), { watch: false, path: '/unused/creds.yaml' })
     // Plugin loading normalizes config through the Schemastery schema, which
@@ -173,6 +191,15 @@ describe('keychain construction and failure surfaces', () => {
       if (platform === undefined) delete (process as { platform?: string }).platform
       else Object.defineProperty(process, 'platform', platform)
     }
+  })
+
+  it('describes keychain-stored and absent references through the security backend', async () => {
+    const ctx = await boot()
+    await ctx.credentials.set(KEY, 'described-synthetic')
+    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'keychain', writable: true })
+    // An absent keychain item defers to the launch-environment fallback.
+    expect(await ctx.credentials.describe(credentialRef('DSH_CRED_TEST_ABSENT')))
+      .toEqual({ configured: false, writable: true })
   })
 
   it('propagates a security failure that is not item-not-found', async () => {
@@ -261,5 +288,25 @@ describe('keychain construction and failure surfaces', () => {
     await expect(pending).rejects.toThrow(/security command timed out/)
     expect(kill).toHaveBeenCalledOnce()
     timeout.mockRestore()
+  })
+
+  it('honors a condition on a keychain write and unsets an item the backend does not hold', async () => {
+    const ctx = await boot()
+    // Keychain mode resolves the condition through the mocked security backend,
+    // so it sees an unconfigured reference before the first write.
+    await ctx.credentials.set(KEY, 'first-synthetic', credentialCondition(undefined))
+    const current = await ctx.credentials.resolve(KEY)
+    expect(current).toEqual({ value: 'first-synthetic', source: 'keychain' })
+
+    await ctx.credentials.set(KEY, 'second-synthetic', credentialCondition(current))
+    const replaced = await ctx.credentials.resolve(KEY)
+    expect(replaced).toEqual({ value: 'second-synthetic', source: 'keychain' })
+    // The replacement no longer matches the condition the first write stored.
+    await expect(ctx.credentials.unset(KEY, credentialCondition(current)))
+      .rejects.toMatchObject({ name: 'CredentialConflictError' })
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'second-synthetic', source: 'keychain' })
+
+    // Deleting an item the Keychain never held is silent, exactly as in file mode.
+    await ctx.credentials.unset(credentialRef('DSH_CRED_ABSENT'))
   })
 })

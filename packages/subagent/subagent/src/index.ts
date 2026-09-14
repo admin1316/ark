@@ -215,7 +215,9 @@ export class SubagentRuntime extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'subagents', { namespace: 'subagent' })
     this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
-    ctx.inject(['agents'], (childCtx: Context) => {
+    // The continuation manager's own teardown persists child sessions, so its
+    // scoped binding needs the session store, not only the agent registry.
+    ctx.inject(['agents', 'sessions'], (childCtx: Context) => {
       const manager = new SubagentContinuationManager(childCtx, {
         prepareContinuable: (name, request) => this.prepareContinuable(name, request),
         observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),

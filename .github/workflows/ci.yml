@@ -77,6 +77,12 @@ jobs:
       DSH_COVERAGE_MAX_WORKERS: '2'
       DSH_COVERAGE_PARTITIONS: '4'
       DSH_GATE_CONCURRENCY: '2'
+      # Instrumented and heavy subprocess fixtures can exceed Vitest's default 5 s
+      # under gate contention (scripts/oxlint-contract.spec.ts timed out at 5000 ms
+      # on this runner as well as locally). This reuses the extended-budget owner
+      # run-gates already applies through coverageTestTimeoutArgs(); the complete
+      # native Windows lane sets the same 30 s.
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -122,6 +128,13 @@ jobs:
           if (( install_status != 0 )); then exit "$install_status"; fi
           exit "$sandbox_status"
 
+      # The native-api-app coverage specs boot the sandbox-local plugin tree, which
+      # imports the built Landlock entry. Without that build they fail with
+      # "Cannot find module .../node-addon-landlock-run/lib/index.js"; the release and
+      # sandbox lanes already build this same owner before their pack runs.
+      - name: Build the native Landlock entry (coverage prerequisite)
+        run: pnpm --dir native/landlock-run run build:ts
+
       - name: Run exhaustive coverage
         run: pnpm run check:ci:coverage
 
@@ -134,8 +147,11 @@ jobs:
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
       DSH_OXLINT_THREADS: '8'
       DSH_PUBLINT_CONCURRENCY: '8'
-      # Failover halves snapshot concurrency for the shared 64-core VM.
-      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32' }}
+      # The shared 64-core failover VM halves snapshot concurrency to 12. The
+      # GitHub-hosted 4-vCPU runner keeps the config's capacity-aware default
+      # (min(5, availableParallelism())): 32 concurrent process boots there
+      # oversubscribe the runner and push the SDK handshake past its 10s budget.
+      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '' }}
     steps:
       - uses: actions/checkout@v6
         with:

@@ -117,13 +117,15 @@ export function createOwnedStageExecutor(options) {
                 };
                 signal.addEventListener('abort', onAbort, { once: true });
                 worker.once('message', (message) => {
-                    if (message?.ok === true) {
+                    if (message.ok === true) {
                         finish(() => {
-                            resolve(message.sources === undefined ? { text: message.text ?? null } : { text: message.text ?? null, sources: message.sources });
+                            resolve(message.sources === undefined
+                                ? { text: message.text ?? null }
+                                : { text: message.text ?? null, sources: message.sources });
                         });
                     }
                     else {
-                        finish(() => { reject(new Error(message?.error ?? 'knowledge Wiki stage failed')); });
+                        finish(() => { reject(new Error(message.error ?? 'knowledge Wiki stage failed')); });
                     }
                 });
                 worker.once('error', (error) => { finish(() => { reject(error); }); });

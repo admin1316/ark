@@ -3758,14 +3758,14 @@ function createOwnedStageExecutor(options) {
 				};
 				signal.addEventListener("abort", onAbort, { once: true });
 				worker.once("message", (message) => {
-					if (message?.ok === true) finish(() => {
+					if (message.ok === true) finish(() => {
 						resolve(message.sources === void 0 ? { text: message.text ?? null } : {
 							text: message.text ?? null,
 							sources: message.sources
 						});
 					});
 					else finish(() => {
-						reject(new Error(message?.error ?? "knowledge Wiki stage failed"));
+						reject(new Error(message.error ?? "knowledge Wiki stage failed"));
 					});
 				});
 				worker.once("error", (error) => {
@@ -4675,9 +4675,9 @@ let KnowledgeWikiService = (() => {
 			this.credential = credentialRef(config.credential);
 			this.llmProvider = config.llmProvider;
 			this.llmModel = config.llmModel;
-			this.llmBaseUrl = (config.llmBaseUrl ?? "https://api.deepseek.com").replace(/\/+$/u, "");
-			this.llmCredential = config.llmCredential ?? "";
-			this.ownedStageExecutor = config.ownedStageExecutor === true ? createOwnedStageExecutor({ resolveConnection: () => this.resolveStageConnection() }) : void 0;
+			this.llmBaseUrl = config.llmBaseUrl.replace(/\/+$/u, "");
+			this.llmCredential = config.llmCredential;
+			this.ownedStageExecutor = config.ownedStageExecutor ? createOwnedStageExecutor({ resolveConnection: () => this.resolveStageConnection() }) : void 0;
 		}
 		/** Resolve on every operation so Keychain updates apply without a restart. */
 		async resolveApiKey() {
@@ -4693,7 +4693,7 @@ let KnowledgeWikiService = (() => {
 			const candidates = [];
 			if (this.llmCredential !== "") candidates.push(this.llmCredential);
 			try {
-				const declared = this.ctx.get("settings")?.remoteDescribe?.().namespaces?.find((entry) => entry?.ns === "llm-deepseek")?.value;
+				const declared = this.ctx.get("settings")?.remoteDescribe?.().namespaces?.find((entry) => entry.ns === "llm-deepseek")?.value;
 				if (typeof declared?.apiKeyEnv === "string" && declared.apiKeyEnv !== "") candidates.push(declared.apiKeyEnv);
 			} catch {}
 			candidates.push("DEEPSEEK_API_KEY");

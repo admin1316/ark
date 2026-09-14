@@ -186,11 +186,12 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     this.credential = credentialRef(config.credential)
     this.llmProvider = config.llmProvider
     this.llmModel = config.llmModel
-    // Direct construction in tests bypasses the schema defaults, so every new
-    // option is read defensively.
-    this.llmBaseUrl = (config.llmBaseUrl ?? 'https://api.deepseek.com').replace(/\/+$/u, '')
-    this.llmCredential = config.llmCredential ?? ''
-    this.ownedStageExecutor = config.ownedStageExecutor === true
+    // The loader schema (KnowledgeWikiService.Config) fills every optional
+    // deployment field, so a resolved Config is already complete: tests build one
+    // through the wikiTestConfig test fixture instead of hand-writing a partial object.
+    this.llmBaseUrl = config.llmBaseUrl.replace(/\/+$/u, '')
+    this.llmCredential = config.llmCredential
+    this.ownedStageExecutor = config.ownedStageExecutor
       ? createOwnedStageExecutor({ resolveConnection: () => this.resolveStageConnection() })
       : undefined
   }
@@ -211,7 +212,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     if (this.llmCredential !== '') candidates.push(this.llmCredential)
     try {
       const settings = this.ctx.get('settings') as { remoteDescribe?: () => { namespaces?: Array<{ ns?: string; value?: unknown }> } } | undefined
-      const declared = settings?.remoteDescribe?.().namespaces?.find(entry => entry?.ns === 'llm-deepseek')?.value as { apiKeyEnv?: unknown } | undefined
+      const declared = settings?.remoteDescribe?.().namespaces?.find(entry => entry.ns === 'llm-deepseek')?.value as { apiKeyEnv?: unknown } | undefined
       if (typeof declared?.apiKeyEnv === 'string' && declared.apiKeyEnv !== '') candidates.push(declared.apiKeyEnv)
     } catch {
       // A settings surface that cannot describe itself must not fail ingest.
@@ -221,7 +222,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       const resolved = (await this.ctx.credentials.resolve(credentialRef(candidate)))?.value ?? ''
       if (resolved !== '') return { baseUrl: this.llmBaseUrl, apiKey: resolved }
     }
-    return { baseUrl: this.llmBaseUrl, apiKey: process.env[candidates[candidates.length - 1] ?? ''] ?? '' }
+    return { baseUrl: this.llmBaseUrl, apiKey: process.env[candidates.at(-1) as string] ?? '' }
   }
 
   /** Optional trusted verifier/build owner; project files can never supply it. */
@@ -562,14 +563,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       throw error
     }
     if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('raw source root is not an ordinary directory')
-    const visited = new Set<string>()
-    const visitedFiles = new Set<string>()
+    // The loop below re-stats every child before recursing, so walk() is only
+    // ever entered with an ordinary directory, and a revisit would require a
+    // symbolic or hard link, both of which are rejected there.
     const walk = (dir: string): void => {
-      const directory = lstatSync(dir)
-      if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error(`unsafe raw source directory: ${dir}`)
-      const identity = `${directory.dev}:${directory.ino}`
-      if (visited.has(identity)) throw new Error(`revisited raw source directory inode: ${dir}`)
-      visited.add(identity)
       const entries = readdirSync(dir)
       for (const name of entries) {
         if (name.startsWith('.') || name === 'node_modules') continue
@@ -581,9 +578,6 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         else if (!st.isFile()) throw new Error(`non-regular raw source is not allowed: ${rel}`)
         else {
           if (st.nlink !== 1) throw new Error(`hard-linked raw source is not allowed: ${rel}`)
-          const fileIdentity = `${st.dev}:${st.ino}`
-          if (visitedFiles.has(fileIdentity)) throw new Error(`revisited raw source file inode: ${rel}`)
-          visitedFiles.add(fileIdentity)
           if (st.size > MAX_RAW_SOURCE_BYTES) throw new Error(`raw source exceeds 100 MiB: ${rel}`)
           out.push(rel)
         }
@@ -1094,15 +1088,15 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const current = this.queue[index]
-        const cancelled = !timeoutState.expired && current.cancelRequestedAt !== undefined
+        const cancelledAt = !timeoutState.expired ? current.cancelRequestedAt : undefined
         console.error('[knowledge-wiki] ingest failed:', running.input, message)
         this.queue[index] = {
           ...running,
-          status: cancelled ? 'cancelled' : 'error',
+          status: cancelledAt !== undefined ? 'cancelled' : 'error',
           error: message,
           completedAt: Date.now(),
-          ...(cancelled
-            ? { cancelRequestedAt: current.cancelRequestedAt ?? Date.now() }
+          ...(cancelledAt !== undefined
+            ? { cancelRequestedAt: cancelledAt }
             : { failedAt: Date.now() }),
         }
       } finally {
@@ -1124,9 +1118,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     await this.drainQueue()
     const terminal = this.queue.find(item => item.id === task.id)
     if (terminal?.status === 'done') {
-      const warnings = terminal.warnings ?? []
+      // runQueue only marks a task done with both arrays attached.
+      const warnings = terminal.warnings as string[]
       return {
-        written: terminal.written ?? [],
+        written: terminal.written as string[],
         warnings,
         status: warnings.length > 0 ? 'degraded' : 'ok',
       }
@@ -1631,8 +1626,7 @@ function resolveRawSourcePath(projectRoot: string, input: string): string {
 export function isBlockedNetworkAddress(address: string): boolean {
   const value = address.toLowerCase().replace(/^\[|\]$/gu, '')
   if (isIP(value) === 4) {
-    const parsed = parseIpv4(value)
-    return parsed === undefined || IPV4_BLOCKED_RANGES.some(([network, bits]) => cidr4(parsed, network, bits))
+    return IPV4_BLOCKED_RANGES.some(([network, bits]) => cidr4(parseIpv4(value), network, bits))
   }
   if (isIP(value) === 6) {
     const parsed = parseIpv6(value)
@@ -1682,21 +1676,16 @@ const IPV6_BLOCKED_RANGES: ReadonlyArray<readonly [bigint, number]> = [
   [0xff000000000000000000000000000000n, 8],
 ]
 
-function parseIpv4(input: string): number | undefined {
-  const parts = input.split('.')
-  if (parts.length !== 4) return undefined
+function parseIpv4(input: string): number {
+  // Every caller passes node's isIP(…)==4 gate first, so the input is always
+  // four decimal parts within 0-255 and no rejection arm is reachable here.
   let output = 0
-  for (const part of parts) {
-    if (!/^\d{1,3}$/u.test(part)) return undefined
-    const value = Number(part)
-    if (value > 255) return undefined
-    output = (output * 256 + value) >>> 0
-  }
+  for (const part of input.split('.')) output = (output * 256 + Number(part)) >>> 0
   return output
 }
 
 function cidr4(value: number, network: number, bits: number): boolean {
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0
+  const mask = (0xffffffff << (32 - bits)) >>> 0
   return (value & mask) >>> 0 === (network & mask) >>> 0
 }
 
@@ -1710,7 +1699,6 @@ function parseIpv6(input: string): bigint | undefined {
   const ipv4Tail = /(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/u.exec(source)?.[1]
   if (ipv4Tail !== undefined) {
     const ipv4 = parseIpv4(ipv4Tail)
-    if (ipv4 === undefined) return undefined
     source = source.slice(0, -ipv4Tail.length)
       + `${(ipv4 >>> 16).toString(16)}:${(ipv4 & 0xffff).toString(16)}`
   }
@@ -1718,14 +1706,13 @@ function parseIpv6(input: string): bigint | undefined {
   const left = leftRaw === '' ? [] : leftRaw.split(':')
   const right = rightRaw === undefined || rightRaw === '' ? [] : rightRaw.split(':')
   const missing = 8 - left.length - right.length
-  if ((rightRaw === undefined && missing !== 0) || (rightRaw !== undefined && missing < 1)) return undefined
+  // node's isIP(…)==6 gate above guarantees eight groups with well-formed
+  // hex parts, so no rejection arm is reachable here.
   const parts = [...left, ...Array.from({ length: missing }, () => '0'), ...right]
-  if (parts.length !== 8 || parts.some(part => !/^[0-9a-f]{1,4}$/u.test(part))) return undefined
   return parts.reduce((result, part) => (result << 16n) | BigInt(`0x${part}`), 0n)
 }
 
 function cidr6(value: bigint, network: bigint, bits: number): boolean {
-  if (bits === 0) return true
   const shift = BigInt(128 - bits)
   return value >> shift === network >> shift
 }

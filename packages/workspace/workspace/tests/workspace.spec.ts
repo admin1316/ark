@@ -972,7 +972,7 @@ describe('native Workspace restoration', () => {
 
     const late = new AbortController()
     const setTitle = created.setTitle.bind(created)
-    vi.spyOn(created, 'setTitle').mockImplementationOnce(async title => {
+    vi.spyOn(created, 'setTitle').mockImplementationOnce(async (title) => {
       await setTitle(title)
       late.abort()
     })
@@ -1031,7 +1031,7 @@ describe('native Workspace restoration', () => {
     run.ctx.on('workspace/session-deleted', (id) => { notifications.push(id) })
     const deleting = run.registry.deleteArchivedSession(root.id)
     await entered.promise
-    expect(() => run.registry.assertSessionAdmission(child.id, generation)).toThrow('permanent deletion raced')
+    expect(() => { run.registry.assertSessionAdmission(child.id, generation) }).toThrow('permanent deletion raced')
     expect(notifications).toEqual([])
     release.resolve(undefined)
     await deleting
@@ -1039,7 +1039,7 @@ describe('native Workspace restoration', () => {
     expect(notifications).toEqual([grandchild.id, child.id, root.id])
     expect(run.registry.archivedSessionIds).toEqual([])
     expect(run.registry.list()[0]?.sessionIds).toEqual([other.id])
-    expect(() => run.registry.assertSessionAdmission(child.id, generation)).toThrow('permanent deletion raced')
+    expect(() => { run.registry.assertSessionAdmission(child.id, generation) }).toThrow('permanent deletion raced')
   })
 
   it('retains retry evidence after a partial delete and clears every affected account on retry', async () => {

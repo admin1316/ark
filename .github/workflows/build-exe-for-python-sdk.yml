@@ -227,6 +227,13 @@ jobs:
           }
 
       - name: Build single-exe
+        env:
+          # Reuse the repository's existing Host TypeScript heap budget: stage 1 of
+          # build-host-bundles (tsc -b tsconfig.host.json) exceeds the default V8
+          # old-space on hosted macOS runners and aborts with SIGABRT after
+          # "Ineffective mark-compacts near heap limit". scripts/wine-windows-gates.sh
+          # pins the same 4096 MB limit for the identical compile.
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm exec tsx scripts/build-exe-for-python-sdk.ts --targets=${{ matrix.target }}
 
       - name: Resolve platform outputs
@@ -279,16 +286,20 @@ jobs:
           cd "$RUNNER_TEMP"
           env -u PYTHONPATH -u DSH_RUNTIME_MODE "$RUNNER_TEMP/dsh-sdk-smoke/bin/python" "$GITHUB_WORKSPACE/scripts/smoke-python-runtime.py" --scenario all --installed-wheel
 
-      - name: Preflight installed-wheel real API test (POSIX)
-        if: runner.os != 'Windows' && inputs.ci && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]'
+      # Optional-secret gate: the live-API test runs only when the repository
+      # secret is configured, so an unconfigured secret can never turn the
+      # required runtime leg red. The keyless black-box above is unconditional
+      # and remains the release authority.
+      - name: Gate optional real-API secret
+        id: api-secret
+        if: inputs.ci && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]'
         shell: bash
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
-        run: |
-          test -n "$DEEPSEEK_API_KEY" || { echo '::error::DEEPSEEK_API_KEY_EXTERNAL is required for trusted CI'; exit 1; }
+        run: bash scripts/ci-secret-gate.sh DEEPSEEK_API_KEY
 
       - name: Run installed-wheel real API black-box test (POSIX)
-        if: runner.os != 'Windows' && inputs.ci && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]'
+        if: runner.os != 'Windows' && steps.api-secret.outputs.enabled == 'true'
         shell: bash
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
@@ -320,16 +331,8 @@ jobs:
           Set-Location $env:RUNNER_TEMP
           & "$env:RUNNER_TEMP/dsh-sdk-smoke/Scripts/python.exe" "$env:GITHUB_WORKSPACE/scripts/smoke-python-runtime.py" --scenario all --installed-wheel
 
-      - name: Preflight installed-wheel real API test (Windows)
-        if: runner.os == 'Windows' && inputs.ci && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]'
-        shell: pwsh
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) { throw 'DEEPSEEK_API_KEY_EXTERNAL is required for trusted CI' }
-
       - name: Run installed-wheel real API black-box test (Windows)
-        if: runner.os == 'Windows' && inputs.ci && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]'
+        if: runner.os == 'Windows' && steps.api-secret.outputs.enabled == 'true'
         shell: pwsh
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
@@ -374,7 +377,18 @@ jobs:
             ARM64) image=quay.io/pypa/manylinux_2_28_aarch64 ;;
             *) echo "::error::Unsupported Linux runner architecture $RUNNER_ARCH"; exit 1 ;;
           esac
-          docker run --rm -e RUNTIME_WHEEL -e SDK_WHEEL -e DSH_TELEMETRY_DISABLED -v "$PWD:/work" -w /work "$image" bash -euxo pipefail -c '
+          # The keyless suite manages an out-of-tree profile plugin through the
+          # `dsh plugin` CLI, whose pnpm needs Node on PATH: share the runner's
+          # toolchain read-only with the container at identical paths (the
+          # official Node build targets this container's glibc).
+          node_root="$(dirname "$(dirname "$(command -v node)")")"
+          pnpm_setup_root="${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"
+          docker run --rm -e RUNTIME_WHEEL -e SDK_WHEEL -e DSH_TELEMETRY_DISABLED -e PNPM_HOME -e PATH_EXTRA="$node_root/bin:$PNPM_HOME" \
+            -v "$PWD:/work" -v "$node_root:$node_root:ro" -v "$pnpm_setup_root:$pnpm_setup_root:ro" \
+            -w /work "$image" bash -euxo pipefail -c '
+            export PATH="$PATH_EXTRA:$PATH"
+            node --version
+            pnpm --version
             /opt/python/cp310-cp310/bin/python -m venv /tmp/dsh-sdk
             /tmp/dsh-sdk/bin/python -m pip install "/work/dist-python/$SDK_WHEEL" "/work/dist-python/$RUNTIME_WHEEL"
             cd /tmp

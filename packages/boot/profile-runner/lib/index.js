@@ -1,107 +1,11 @@
+import { createProcessShutdown } from "./process-shutdown.js";
 import { writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { PROFILE_PATCH_FILENAME, boot, composeEntries, healProfilesModuleFallback, installFailLoud, loadOptionalPatches, loadOverlayPatches, loadProfile, watchUserPatches } from "@deepseek-ai/dsh-app-boot";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { PROFILE_PATCH_FILENAME, boot, composeEntries, healProfilesModuleFallback, installFailLoud, isSnapshotServedDirectory, loadOptionalPatches, loadOverlayPatches, loadProfile, watchUserPatches } from "@deepseek-ai/dsh-app-boot";
 import { resolveDshHome } from "@deepseek-ai/dsh-home-paths";
 import { DSH_LAUNCH_ENVIRONMENT_KEY } from "@deepseek-ai/dsh-launch-environment";
 import { provideCmdline } from "@deepseek-ai/dsh-cmdline";
-//#region lib/types/process-shutdown.js
-/** Bounded, escalating process shutdown for the long-lived CLI surfaces. */
-/** Maximum grace allowed for the application tree to dispose before process exit. */
-const PROCESS_SHUTDOWN_TIMEOUT_MS = 5e3;
-/** Typed diagnostic for a disposer that did not quiesce inside its grace period. */
-var ProcessShutdownTimeoutError = class extends Error {
-	constructor(timeoutMs) {
-		super(`application disposal timed out after ${String(timeoutMs)}ms`);
-		this.name = "ProcessShutdownTimeoutError";
-	}
-};
-/**
-* Create one process-exit controller around an application disposer.
-* @param dispose - Whole-application teardown that resolves at quiescence.
-* @param forceExit - Function that exits the process immediately, replaceable by tests.
-* @param complete - Function that records the natural completion code, replaceable by tests.
-* @param timeoutMs - Grace before forced exit, replaceable by tests.
-* @param reportFailure - Diagnostic sink called at most once for disposer failure
-*   or timeout; defaults to stderr. Its exceptions are swallowed before forced exit.
-* @returns A controller whose normal calls coalesce and whose repeated signal call escalates.
-*/
-function createProcessShutdown(dispose, forceExit = (code) => {
-	process.exit(code);
-}, complete = (code) => {
-	process.exitCode = code;
-}, timeoutMs = PROCESS_SHUTDOWN_TIMEOUT_MS, reportFailure = (error) => {
-	const detail = error instanceof Error ? error.stack ?? error.message : String(error);
-	console.error(`dsh: shutdown failed: ${detail}`);
-}) {
-	let pending;
-	let timeout;
-	let completed = false;
-	let forceExited = false;
-	let forceAfterDispose = false;
-	let interruptCount = 0;
-	let requestedCode = 0;
-	let failureReported = false;
-	const clearExitTimeout = () => {
-		/* v8 ignore else -- shutdown() arms the timer before any asynchronous exit path can run. */
-		if (timeout !== void 0) clearTimeout(timeout);
-	};
-	const forceExitOnce = (code) => {
-		if (forceExited) return;
-		forceExited = true;
-		clearExitTimeout();
-		forceExit(code);
-	};
-	const completeOnce = (code) => {
-		if (completed || forceExited) return;
-		completed = true;
-		clearExitTimeout();
-		complete(code);
-	};
-	const mergeCode = (code) => {
-		if (requestedCode === 0 && code !== 0) requestedCode = code;
-	};
-	const failOnce = (error) => {
-		if (!failureReported) {
-			failureReported = true;
-			try {
-				reportFailure(error);
-			} catch {}
-		}
-		forceExitOnce(requestedCode === 0 ? 1 : requestedCode);
-	};
-	const start = () => {
-		if (pending !== void 0) return pending;
-		timeout = setTimeout(() => {
-			failOnce(new ProcessShutdownTimeoutError(timeoutMs));
-		}, timeoutMs);
-		pending = Promise.resolve().then(dispose).then(() => {
-			if (forceAfterDispose) forceExitOnce(requestedCode);
-			else completeOnce(requestedCode);
-		}, (error) => {
-			failOnce(error);
-		});
-		return pending;
-	};
-	return {
-		shutdown(code) {
-			mergeCode(code);
-			return start();
-		},
-		interrupt(code) {
-			if (code !== 0) requestedCode = code;
-			else mergeCode(code);
-			forceAfterDispose = true;
-			interruptCount += 1;
-			if (completed || interruptCount > 1) {
-				forceExitOnce(requestedCode);
-				return;
-			}
-			start();
-		}
-	};
-}
-//#endregion
 //#region lib/types/index.js
 /**
 * Shared profile boot for every `dsh` surface: resolve the profile, stack its
@@ -283,6 +187,10 @@ async function runProfile(options) {
 		...(options.homePatchMode ?? "user") === "user" ? loadOptionalPatches(NAME, homePatchPath()) ?? [] : [],
 		...composed.overlays
 	]);
+	const bareModuleBase = isSnapshotServedDirectory(dirname(options.installAnchor)) ? {
+		url: pathToFileURL(options.installAnchor).href,
+		order: "configuration-first"
+	} : void 0;
 	const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
 		app.current = hostCtx;
 		hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment);
@@ -290,9 +198,9 @@ async function runProfile(options) {
 			args: options.args,
 			exit: (code) => void shutdown.shutdown(code)
 		});
-	});
+	}, bareModuleBase);
 	app.current = ctx;
-	const watchedPatchPaths = [...(options.profilePatchMode ?? "user") === "user" ? [composed.profile.patchPath] : [], ...(options.homePatchMode ?? "user") === "user" ? [homePatchPath()] : []];
+	const watchedPatchPaths = composed.profile.patchReload === "startup" ? [] : [...(options.profilePatchMode ?? "user") === "user" ? [composed.profile.patchPath] : [], ...(options.homePatchMode ?? "user") === "user" ? [homePatchPath()] : []];
 	if (options.watchLiveConfig !== false && watchedPatchPaths.length > 0 && !signalShutdown.signal.aborted && ctx.fiber.state === 2 && ctx.get("loader") !== void 0) try {
 		if (ctx.get("hmr") === void 0) {
 			if (ctx.get("timer") === void 0) await ctx.loader.create({ name: "@deepseek-ai/cordis-plugin-timer" });

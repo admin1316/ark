@@ -261,7 +261,7 @@ Keep `@deepseek-ai/dsh-subagent-dsh-sdk`, its provider id `dsh-sdk`, external AC
 | `packages/support/` | `packages/test-support/` | The group is test-only infrastructure. Its path must say so. |
 | `invariants/` in the former support family | `runtime-diagnostics/invariants/` | Invariants can run in production diagnostics even though shipped presets omit them. They are not test support. |
 | `InvariantService` | `InvariantRegistry` | The object owns registered invariant checks. Keep `@deepseek-ai/dsh-invariants` and `ctx.invariants`. |
-| `packages/client/test-runtime/` | `packages/test-support/client-runtime/` | The package is client test infrastructure. Keep its npm name if it already states that contract. |
+| `packages/` `client/test-runtime/` | `packages/test-support/client-runtime/` | The package is client test infrastructure. Keep its npm name if it already states that contract. |
 
 Keep MCP, Todo, and the Plan Mode package, key, events, and tool names. This decision renames the controller class, not the product feature.
 

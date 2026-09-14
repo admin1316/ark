@@ -2202,4 +2202,20 @@ describe('SessionPersistence service registration', () => {
       await fiber.dispose()
     }
   })
+
+  it('blocks delete while a preparation reservation owns the identity', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(MemoryPersistence)
+      const m = meta('reserved-delete')
+      await ctx.sessionPersistence.create(m)
+      await ctx.sessionPersistence.append(m.id, oneTurnLog())
+      const preparation = await ctx.sessionPersistence.prepare(m.id)
+      await expect(ctx.sessionPersistence.delete(m.id)).rejects.toThrow(/reserved/)
+      preparation[Symbol.dispose]()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
 })

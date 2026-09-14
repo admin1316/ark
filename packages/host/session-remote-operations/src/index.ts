@@ -1885,7 +1885,7 @@ export class SessionRemoteOperationsService extends Service
           if (skillPrompt === undefined) {
             return failure(
               'unknown-command',
-              `unknown command: ${commandLine.split(/\s/u, 1)[0] ?? commandLine}`,
+              `unknown command: ${commandLine.split(/\s/u, 1)[0]}`,
             )
           }
           request = { ...request, content: [{ type: 'text', text: skillPrompt }] }

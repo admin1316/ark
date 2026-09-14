@@ -49,12 +49,12 @@ export class TeamService extends Service {
         };
         this.activity = new TeamActivity();
         this.lifecycle = new TeamRuntimeLifecycle(this.config.disposalTimeoutMs);
-        this.journal = new TeamJournal(ctx, root => this.activity.notify(TeamId(root.id)));
+        this.journal = new TeamJournal(ctx, (root) => { this.activity.notify(TeamId(root.id)); });
         this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers);
         this.mailbox = new TeamMailbox(ctx, this.journal, this.roster, this.lifecycle, this.config.maxPendingMessagesPerMember, this.config.maxMessageBytes);
         this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks);
-        ctx.on('session/event', (session, event) => this.mailbox.observeSessionEvent(session, event));
-        ctx.on('agent/session-start', ({ agent }) => this.scheduleRecovery(agent));
+        ctx.on('session/event', (session, event) => { this.mailbox.observeSessionEvent(session, event); });
+        ctx.on('agent/session-start', ({ agent }) => { this.scheduleRecovery(agent); });
         ctx.on('agent/status', ({ agent }) => {
             const membership = this.roster.tryMembership(agent);
             if (membership !== undefined)

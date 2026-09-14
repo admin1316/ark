@@ -98,6 +98,35 @@ async function acceptedSocket(downlinks: WebSocketDownlinks): Promise<WebSocket>
   return accepted as WebSocket
 }
 
+/** Typed view of the heartbeat and pump bookkeeping the downlink shares per socket. */
+function internals(downlinks: WebSocketDownlinks): {
+  server: { clients: Set<WebSocket> }
+  leases: Map<WebSocket, { channel: string; closing: boolean; awaitingPong: boolean }>
+} {
+  return downlinks as unknown as {
+    server: { clients: Set<WebSocket> }
+    leases: Map<WebSocket, { channel: string; closing: boolean; awaitingPong: boolean }>
+  }
+}
+
+/** The unreferenced heartbeat callback the owner registered, driven manually by tests. */
+function heartbeatTick(heartbeat: { mock: { calls: unknown[][] } }): () => void {
+  const call = heartbeat.mock.calls.find(candidate => candidate[1] === DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS)
+  if (call === undefined || typeof call[0] !== 'function') {
+    throw new Error('WebSocket downlink did not register its heartbeat')
+  }
+  return call[0] as () => void
+}
+
+/** The bounded close deadline the owner registered, driven manually by tests. */
+function closeDeadline(timers: { mock: { calls: unknown[][] } }): () => void {
+  const call = timers.mock.calls.find(candidate => candidate[1] === DEFAULT_WEBSOCKET_CLOSE_GRACE_MS)
+  if (call === undefined || typeof call[0] !== 'function') {
+    throw new Error('WebSocket downlink did not register its bounded close deadline')
+  }
+  return call[0] as () => void
+}
+
 describe('WebSocket downlinks', () => {
   it('writes one closed 403 HTTP response for a rejected upgrade', async () => {
     const socket = new PassThrough()
@@ -588,6 +617,181 @@ describe('WebSocket downlinks', () => {
     const downlinks = new WebSocketDownlinks(sources(idle, idle))
     await downlinks.close()
     await expect(downlinks.close()).rejects.toThrow('The server is not running')
+  })
+
+  it('skips a socket it does not own and still heartbeats the ones it does', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const heartbeat = vi.spyOn(globalThis, 'setInterval')
+    const downlinks = new WebSocketDownlinks(sources(
+      async function * () { await release.promise },
+      async function * (signal) {
+        yield { rpcId: 'host-live', payload: { type: 'host/remote-event', event: 'commands/change', args: [] } }
+        await untilAbort(signal)
+      },
+    ))
+    const host = await serve(downlinks)
+    running.push(host.close)
+    const mux = new WebSocket(`${host.origin}${MUX_EVENTS_PATH}`)
+    const hostSocket = new WebSocket(`${host.origin}${HOST_EVENTS_PATH}`)
+    expect((await read(hostSocket)).payload).toMatchObject({ type: 'host/remote-event' })
+    const state = internals(downlinks)
+    await vi.waitFor(() => { expect(state.server.clients.size).toBe(2) })
+    const muxAccepted = [...state.server.clients].find(socket => state.leases.get(socket)?.channel === 'mux')
+    const hostAccepted = [...state.server.clients].find(socket => state.leases.get(socket)?.channel === 'host')
+    if (muxAccepted === undefined || hostAccepted === undefined) throw new Error('missing accepted sockets')
+    const orphanPing = vi.spyOn(muxAccepted, 'ping')
+    const ownedPing = vi.spyOn(hostAccepted, 'ping')
+
+    // The socket no longer has a lease: the heartbeat must skip it without
+    // failing, while the socket it does own is still pinged in the same tick.
+    state.leases.delete(muxAccepted)
+    heartbeatTick(heartbeat)()
+    expect(orphanPing).not.toHaveBeenCalled()
+    expect(ownedPing).toHaveBeenCalledOnce()
+    expect(muxAccepted.readyState).toBe(WebSocket.OPEN)
+
+    // The source ends for a socket the heartbeat no longer owns: the pump
+    // closes it directly instead of scheduling a graced close for a lease that
+    // no longer exists, and the owned socket stays live.
+    const closed = once(mux, 'close')
+    release.resolve(undefined)
+    const [code] = await closed as [number, Buffer]
+    expect(code).toBe(1005)
+    expect(hostSocket.readyState).toBe(WebSocket.OPEN)
+  })
+
+  it('reports one failure outcome when a late ping error follows the bounded close', async () => {
+    const heartbeat = vi.spyOn(globalThis, 'setInterval')
+    const downlinks = new WebSocketDownlinks(sources(idle, idle))
+    const host = await serve(downlinks)
+    running.push(host.close)
+    const socket = new WebSocket(`${host.origin}${MUX_EVENTS_PATH}`)
+    const accepted = await new Promise<WebSocket>((resolve) => {
+      socket.once('open', () => { resolve(acceptedSocket(downlinks)) })
+    })
+    const failures: ConnectionServerEvent[] = []
+    socket.on('message', (data: RawData) => { failures.push(JSON.parse(rawText(data)) as ConnectionServerEvent) })
+    const pings: ((error?: Error | null) => void)[] = []
+    vi.spyOn(accepted, 'ping').mockImplementation(((callback?: (error?: Error | null) => void) => {
+      if (callback !== undefined) pings.push(callback)
+    }) as WebSocket['ping'])
+    const tick = heartbeatTick(heartbeat)
+
+    tick()
+    expect(pings).toHaveLength(1)
+    const closed = once(socket, 'close')
+    tick()
+    await vi.waitFor(() => { expect(failures).toHaveLength(1) })
+    expect(failures[0]?.payload).toMatchObject({ type: 'stream/error', error: { code: 'EVENT_HEARTBEAT_TIMEOUT' } })
+
+    // The transport error of the earlier ping arrives after the socket already
+    // entered its bounded close: the second failure must not add a second
+    // terminal outcome or reopen the close.
+    pings[0]?.(new Error('ping transport failed after the deadline'))
+    const [code] = await closed as [number, Buffer]
+    expect(code).toBe(1011)
+    expect(failures).toHaveLength(1)
+  })
+
+  it('contains a failure frame that cannot be written before the deadline terminates the socket', async () => {
+    const heartbeat = vi.spyOn(globalThis, 'setInterval')
+    let sourceAborted = false
+    const downlinks = new WebSocketDownlinks(sources(async function * (signal) {
+      try { await untilAbort(signal) } finally { sourceAborted = true }
+    }, idle))
+    const host = await serve(downlinks)
+    running.push(host.close)
+    const socket = new WebSocket(`${host.origin}${MUX_EVENTS_PATH}`)
+    await once(socket, 'open')
+    const accepted = await acceptedSocket(downlinks)
+    const frames: unknown[] = []
+    socket.on('message', (data: RawData) => { frames.push(JSON.parse(rawText(data))) })
+    vi.spyOn(accepted, 'send').mockImplementation(((_data: unknown, callback?: (error?: Error) => void) => {
+      callback?.(new Error('fixture ws write failure'))
+    }) as WebSocket['send'])
+    const lease = internals(downlinks).leases.get(accepted)
+    if (lease === undefined) throw new Error('missing socket lease')
+    lease.awaitingPong = true
+
+    const peerClosed = once(socket, 'close')
+    heartbeatTick(heartbeat)()
+    // The transport is gone before the rejected failure frame is handled, so
+    // the write-through close is skipped and the bounded deadline stays the
+    // only closer of this socket generation.
+    accepted.terminate()
+    await vi.waitFor(() => { expect(sourceAborted).toBe(true) })
+    expect(frames).toEqual([])
+    const [code] = await peerClosed as [number, Buffer]
+    expect(code).toBe(1006)
+  })
+
+  it('does not let a finishing pump re-close a socket already in its bounded failure close', async () => {
+    const heartbeat = vi.spyOn(globalThis, 'setInterval')
+    const gate = Promise.withResolvers<undefined>()
+    const returned = Promise.withResolvers<undefined>()
+    const downlinks = new WebSocketDownlinks(sources(async function * () {
+      try { await gate.promise } finally { returned.resolve(undefined) }
+    }, idle))
+    const host = await serve(downlinks)
+    running.push(host.close)
+    const socket = new WebSocket(`${host.origin}${MUX_EVENTS_PATH}`)
+    await once(socket, 'open')
+    const accepted = await acceptedSocket(downlinks)
+    const stuck: ((error?: Error | null) => void)[] = []
+    vi.spyOn(accepted, 'send').mockImplementation(((_data: unknown, callback?: (error?: Error | null) => void) => {
+      if (callback !== undefined) stuck.push(callback)
+    }) as WebSocket['send'])
+    const lease = internals(downlinks).leases.get(accepted)
+    if (lease === undefined) throw new Error('missing socket lease')
+    lease.awaitingPong = true
+
+    heartbeatTick(heartbeat)()
+    expect(lease.closing).toBe(true)
+    expect(stuck).toHaveLength(1)
+    const closed = once(socket, 'close')
+    gate.resolve(undefined)
+    await returned.promise
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    // The pump finished while the failing socket was still open; it must leave
+    // the close to the bounded failure path instead of closing it gracefully.
+    expect(accepted.readyState).toBe(WebSocket.OPEN)
+    stuck[0]?.()
+    const [code] = await closed as [number, Buffer]
+    expect(code).toBe(1011)
+  })
+
+  it('terminates a peer that never finishes the close handshake after its source ends', async () => {
+    const timers = vi.spyOn(globalThis, 'setTimeout')
+    const gate = Promise.withResolvers<undefined>()
+    const downlinks = new WebSocketDownlinks(sources(async function * () { await gate.promise }, idle))
+    const host = await serve(downlinks)
+    running.push(host.close)
+    const socket = new WebSocket(`${host.origin}${MUX_EVENTS_PATH}`)
+    await once(socket, 'open')
+    const accepted = await acceptedSocket(downlinks)
+    const terminate = vi.spyOn(accepted, 'terminate')
+    const acceptedClosed = once(accepted, 'close')
+    socket.pause()
+
+    // The source ends normally, so the socket closes gracefully; a peer that
+    // stops reading never answers the close frame.
+    gate.resolve(undefined)
+    await vi.waitFor(() => {
+      expect(timers.mock.calls.some(call => call[1] === DEFAULT_WEBSOCKET_CLOSE_GRACE_MS)).toBe(true)
+    })
+    const deadline = closeDeadline(timers)
+    expect(terminate).not.toHaveBeenCalled()
+    deadline()
+    await acceptedClosed
+    expect(terminate).toHaveBeenCalledOnce()
+
+    const peerClosed = once(socket, 'close')
+    socket.resume()
+    const [code] = await peerClosed as [number, Buffer]
+    // The paused peer buffered the stateless close frame the graceful path had
+    // already sent, so it reports 1005; only an unbuffered hard termination
+    // surfaces as 1006. The server-side terminate() is asserted above.
+    expect([1005, 1006]).toContain(code)
   })
 
   it('waits for source cleanup before teardown resolves', async () => {

@@ -76,41 +76,51 @@ describe('installed current Session restoration', () => {
       ...malformed,
       events: [{ type: 'request/header', seq: 0, time: 1, data: { header: { config: {} }, reason: 'initial' } }],
     }
-    expect(() => validateInstalledCurrentSessionArtifact(invalid)).toThrow(/lacks provider\/model/)
-    expect(() => validateInstalledCurrentSessionArtifact({
-      ...invalid,
-      events: [{ type: 'request/header-delta', seq: 0, time: 1, data: {} }],
-    })).toThrow(/unsupported legacy request\/header-delta/)
+    expect(() => { validateInstalledCurrentSessionArtifact(invalid) }).toThrow(/lacks provider\/model/)
+    expect(() => {
+      validateInstalledCurrentSessionArtifact({
+        ...invalid,
+        events: [{ type: 'request/header-delta', seq: 0, time: 1, data: {} }],
+      })
+    }).toThrow(/unsupported legacy request\/header-delta/)
   })
 
   it('accepts an unseeded current header and empty artifact', () => {
-    expect(() => validateInstalledCurrentSessionHeader({ ...currentHeader })).not.toThrow()
-    expect(() => validateInstalledCurrentSessionArtifact({
-      header: { ...currentHeader }, inheritedEventCount: 0, events: [],
-    })).not.toThrow()
+    expect(() => { validateInstalledCurrentSessionHeader({ ...currentHeader }) }).not.toThrow()
+    expect(() => {
+      validateInstalledCurrentSessionArtifact({
+        header: { ...currentHeader }, inheritedEventCount: 0, events: [],
+      })
+    }).not.toThrow()
   })
 
   it.each([-1, -0, 0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, 2])(
     'rejects an invalid inherited event count %s before restoration', (inheritedEventCount) => {
-      expect(() => validateInstalledCurrentSessionArtifact({
-        header: { ...currentHeader }, inheritedEventCount,
-        events: [{ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }],
-      })).toThrow(/inherited event count must be/)
+      expect(() => {
+        validateInstalledCurrentSessionArtifact({
+          header: { ...currentHeader }, inheritedEventCount,
+          events: [{ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }],
+        })
+      }).toThrow(/inherited event count must be/)
     },
   )
 
   it('refuses a nonzero cut instead of dropping inherited history metadata', () => {
-    expect(() => validateInstalledCurrentSessionArtifact({
-      header: { ...currentHeader }, inheritedEventCount: 1,
-      events: [{ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }],
-    })).toThrow(/does not support a nonzero catalog inherited event count/)
+    expect(() => {
+      validateInstalledCurrentSessionArtifact({
+        header: { ...currentHeader }, inheritedEventCount: 1,
+        events: [{ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }],
+      })
+    }).toThrow(/does not support a nonzero catalog inherited event count/)
   })
 
   it('refuses a seeded catalog header even when its inherited prefix is empty', () => {
     const header = { ...currentHeader, isSeeded: true }
-    expect(() => validateInstalledCurrentSessionHeader(header)).toThrow(/does not support inherited catalog seeds/)
-    expect(() => validateInstalledCurrentSessionArtifact({
-      header, inheritedEventCount: 0, events: [],
-    })).toThrow(/does not support inherited catalog seeds/)
+    expect(() => { validateInstalledCurrentSessionHeader(header) }).toThrow(/does not support inherited catalog seeds/)
+    expect(() => {
+      validateInstalledCurrentSessionArtifact({
+        header, inheritedEventCount: 0, events: [],
+      })
+    }).toThrow(/does not support inherited catalog seeds/)
   })
 })

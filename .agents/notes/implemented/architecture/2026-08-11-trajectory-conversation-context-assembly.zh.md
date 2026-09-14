@@ -38,7 +38,7 @@ Assistant chunk 只更新对应的 `turn:step` Context。带内容的 chunk 请�
 
 ### 通过前序 Context 恢复 steering
 
-Trajectory 从持久 inbox 历史恢复 steering，使用与 [Chat steering 决策](../feature/2026-08-04-web-context-source-and-steer-marks.zh.md)相同的标识规则，但不共享 Chat 的最终 Node。
+Trajectory 从持久 inbox 历史恢复 steering，使用与 [Chat steering 决策](../../archived/feature/2026-08-04-web-context-source-and-steer-marks.zh.md)相同的标识规则，但不共享 Chat 的最终 Node。
 
 每条目标为 `next-step` 的 `agent/inbox/spliced` Event 都会启动一个以 Event seq 标识的不可见 Context。它的 `start()` 读取最近的前序 inbox Context，应用 splice，并存储待处理标识以及累计的已领取 message ID 集合。后续用户来源的 `user/message` 读取最近的前序 inbox Context：已领取的 ID 生成 Steering Node，其余用户来源消息生成普通 User Node。
 

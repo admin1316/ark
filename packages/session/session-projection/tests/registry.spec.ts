@@ -96,8 +96,9 @@ describe('SessionProjectionRegistry drive', () => {
     const { ctx, session } = await harness()
     for (let index = 0; index < 20_000; index++) mark(session, [String(index)])
     const snapshots = vi.spyOn(session, 'events', 'get')
-    const apply = vi.fn(countUnit().apply)
-    ctx.sessionProjections.register({ ...countUnit(), apply })
+    const unit = countUnit()
+    const apply = vi.fn((state: number, event: SessionEvent) => unit.apply(state, event))
+    ctx.sessionProjections.register({ ...unit, apply })
     mark(session, ['live'])
     expect(apply).toHaveBeenCalledTimes(20_001)
     expect(ctx.sessionProjections.stateOf(session, 'test/count')).toBe(20_001)
@@ -115,8 +116,9 @@ describe('SessionProjectionRegistry drive', () => {
     mark(session, ['first'])
     mark(session, ['second'])
     mark(session, ['third'])
-    const apply = vi.fn(countUnit().apply)
-    ctx.sessionProjections.register({ ...countUnit(), apply })
+    const unit = countUnit()
+    const apply = vi.fn((state: number, event: SessionEvent) => unit.apply(state, event))
+    ctx.sessionProjections.register({ ...unit, apply })
     const prefix = [session.eventAt(0)!]
     const checkpoint = { 'test/count': { ver: 1, seq: 0, val: 1 } }
     expect(ctx.sessionProjections.hydrate(session, checkpoint, prefix, 0).asOfSeq).toBe(0)

@@ -133,7 +133,7 @@ switch (invocation.mode) {
 		break;
 	}
 	case "plugin": {
-		const { runPlugin } = await import("./plugin-CEFw9rDO.js");
+		const { runPlugin } = await import("./plugin-gf7dapNU.js");
 		process.exit(runPlugin(invocation.profile, invocation.args));
 		break;
 	}

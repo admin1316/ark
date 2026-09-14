@@ -4,11 +4,11 @@ Status: implemented
 
 [English](2026-08-01-packaged-ripgrep-search.md) | 中文
 
-> 取代 [bash 承载的 grep/glob 发现工具](../../archived/feature/2026-07-09-bash-backed-grep-glob-discovery.md)：v1 决策中明确延期的方案——直接 spawn ripgrep——现在成为实际交付的实现。
+> 取代 [bash 承载的 grep/glob 发现工具](../../archived/feature/2026-07-09-bash-backed-grep-glob-discovery.zh.md)：v1 决策中明确延期的方案——直接 spawn ripgrep——现在成为实际交付的实现。
 
 ## 问题
 
-`glob`/`grep` 工具经由 bash 执行器 seam 运行，这使系统 `rg` 安装成为宿主依赖。Windows 和容器镜像的 `PATH` 默认没有 `rg`，工具在那里会静默消失；部署方只能从加载期探针警告里发现这一点。bash seam 还迫使整个模型可见参数面经过一个 shell 引号工具，因为工具与 ripgrep 之间隔着一层 shell——[bash 承载决策](../../archived/feature/2026-07-09-bash-backed-grep-glob-discovery.md) 把这种耦合记为 v1 的取舍，并把直接 spawn 列为 shell 字符串域一旦被证明过于敏感时的合理后续。它确实被证明了：每个模型值都要经受 POSIX 单引号转义，探针要在测试里脚本化，执行器自身的超时分类还与协作式工具超时策略已有的职责重复。
+`glob`/`grep` 工具经由 bash 执行器 seam 运行，这使系统 `rg` 安装成为宿主依赖。Windows 和容器镜像的 `PATH` 默认没有 `rg`，工具在那里会静默消失；部署方只能从加载期探针警告里发现这一点。bash seam 还迫使整个模型可见参数面经过一个 shell 引号工具，因为工具与 ripgrep 之间隔着一层 shell——[bash 承载决策](../../archived/feature/2026-07-09-bash-backed-grep-glob-discovery.zh.md) 把这种耦合记为 v1 的取舍，并把直接 spawn 列为 shell 字符串域一旦被证明过于敏感时的合理后续。它确实被证明了：每个模型值都要经受 POSIX 单引号转义，探针要在测试里脚本化，执行器自身的超时分类还与协作式工具超时策略已有的职责重复。
 
 ## 决策
 
