@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const faultFsync = vi.hoisted(() => ({ active: false }))
+const faultFsync = vi.hoisted(() => ({ active: false, code: 'EPERM' }))
 const directoryFds = vi.hoisted(() => new Set<number>())
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -22,7 +22,7 @@ vi.mock('node:fs', async (importOriginal) => {
     },
     fsyncSync: (descriptor: number) => {
       if (faultFsync.active && directoryFds.has(descriptor)) {
-        throw Object.assign(new Error('EPERM: operation not permitted, fsync'), { code: 'EPERM' })
+        throw Object.assign(new Error(`${faultFsync.code}: operation not permitted, fsync`), { code: faultFsync.code })
       }
       actual.fsyncSync(descriptor)
     },
@@ -38,6 +38,7 @@ import {
 const roots: string[] = []
 afterEach(() => {
   faultFsync.active = false
+  faultFsync.code = 'EPERM'
   directoryFds.clear()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -57,6 +58,21 @@ describe('durable writes tolerate EPERM directory fsync', () => {
     atomicWriteFile(page, 'second body')
     expect(readFileSync(page, 'utf8')).toBe('second body')
     expect(existsSync(join(root, 'concepts'))).toBe(true)
+  })
+
+  it('rethrows non-EPERM fsync failures instead of swallowing them', () => {
+    const root = mkdtempSync(join(tmpdir(), 'wiki-eperm-'))
+    roots.push(root)
+    const page = join(root, 'concepts', 'eio.md')
+    faultFsync.active = true
+    faultFsync.code = 'EIO'
+    expect(() => {
+      atomicWriteFile(page, 'body')
+    }).toThrow('EIO: operation not permitted, fsync')
+    faultFsync.code = 'EPERM'
+    atomicWriteFile(page, 'body')
+    faultFsync.active = false
+    expect(readFileSync(page, 'utf8')).toBe('body')
   })
 
   it('createPrivateFileIfMissing and durableUnlinkFile tolerate the EPERM fsync', () => {
