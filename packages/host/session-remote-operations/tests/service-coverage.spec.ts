@@ -2701,6 +2701,29 @@ describe('Session Remote fork ownership', () => {
     }, new AbortController().signal)
     expect(result).toBeUndefined()
   })
+
+  it('keeps a fork result when releasing its source observations fails', async () => {
+    const state = await harness()
+    const warn = vi.spyOn(state.ctx.logger, 'warn').mockImplementation(() => undefined)
+    const source = completedSession('fork-release-failure', state.cwd, { agentPreset: 'standard' })
+    let failing = false
+    Reflect.set(state.ctx.sessionPersistence, 'borrowSession', async () => ({
+      source: 'prepared',
+      inspection: { meta: source.header, events: source.events },
+      revision: SessionPersistenceRevision('fork-release-v1'),
+      preparedSession: source,
+      [Symbol.dispose]: () => {
+        if (failing) throw new Error('synthetic release failure')
+      },
+    }))
+    const sourceRevision = await historyRevision(state, source)
+    failing = true
+    const result = await state.service.fork({ sessionId: source.id, sourceRevision }, new AbortController().signal)
+    expect(result).toMatchObject({ ok: true })
+    expect(state.create).toHaveBeenCalledOnce()
+    expect(state.flush).toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledWith('failed to release a fork source observation')
+  })
 })
 
 describe('Session Remote prompt, attachment, queue, and cancellation', () => {
@@ -3369,5 +3392,268 @@ describe('Session Remote archived retirement', () => {
     failed.disposeError = new Error('dispose failed')
     await expect(failed.service.retireArchivedSession(failedId, new AbortController().signal))
       .rejects.toThrow('dispose failed')
+  })
+})
+
+describe('Session Remote admission, history source, and delivery contracts', () => {
+  const requestFor = (
+    sessionId: SessionId,
+    invocationId: string,
+    overrides: Record<string, unknown> = {},
+  ) => ({
+    sessionId,
+    invocationId: SessionPromptInvocationId(invocationId),
+    mode: 'queue' as const,
+    content: [{ type: 'text' as const, text: 'hello' }],
+    ...overrides,
+  })
+
+  it('rejects a cold blank probe budget that is not a non-negative safe integer', async () => {
+    for (const coldBlankProbeMaxBytes of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(harness({ config: { coldBlankProbeMaxBytes } }))
+        .rejects.toThrow(new RangeError('coldBlankProbeMaxBytes must be a non-negative safe integer'))
+    }
+  })
+
+  it('reports a non-Error admission refusal across the model route', async () => {
+    const state = await harness()
+    const session = emptySession('models-admission-refusal', state.cwd)
+    attach(state, session)
+    state.admissionError = 'workspace admission revoked'
+    await expect(state.service.models({ sessionId: session.id }, new AbortController().signal))
+      .resolves.toEqual({
+        ok: false,
+        error: {
+          code: 'agent-busy',
+          message: 'workspace admission revoked',
+          details: { reason: 'workspace admission revoked' },
+        },
+      })
+  })
+
+  it('fails a semantic history read whose source cannot be observed', async () => {
+    const state = await harness()
+    const missing = SessionId('semantic-missing')
+    Reflect.set(state.ctx.sessionPersistence, 'borrowSession', async () => {
+      throw new SessionPersistenceNotFoundError(missing)
+    })
+    await expect(state.service.history({ sessionId: missing, view: 'semantic' }, new AbortController().signal))
+      .resolves.toEqual({
+        ok: false,
+        error: {
+          code: 'internal',
+          message: 'semantic history unavailable: SessionQueryError: session "semantic-missing" not found',
+          details: {},
+        },
+      })
+  })
+
+  it('returns cancellation for a semantic history source aborted while it was read', async () => {
+    const state = await harness()
+    const controller = new AbortController()
+    Reflect.set(state.ctx.sessionPersistence, 'borrowSession', async () => {
+      controller.abort(new Error('caller cancelled the semantic read'))
+      throw new Error('borrow interrupted')
+    })
+    await expect(state.service.history({
+      sessionId: SessionId('semantic-aborted'),
+      view: 'semantic',
+    }, controller.signal)).resolves.toEqual({
+      ok: false,
+      error: { code: 'cancelled', message: 'session Remote invocation was cancelled', details: {} },
+    })
+  })
+
+  it('confirms durability before reporting an ordinary prompt accepted', async () => {
+    const state = await harness()
+    const session = emptySession('prompt-durability-owner', state.cwd)
+    const agent = attach(state, session)
+    state.flush.mockResolvedValueOnce(false)
+    const request = requestFor(session.id, 'durability')
+    await expect(state.service.prompt(request, new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'prompt-durability-unconfirmed',
+        message: 'prompt was accepted but its durable acknowledgement is not confirmed',
+        details: {
+          accepted: true,
+          invocationId: SessionPromptInvocationId('durability'),
+          reason: 'Error: ordinary prompt has no durability owner',
+        },
+      },
+    })
+    await expect(state.service.prompt(request, new AbortController().signal))
+      .resolves.toEqual({ ok: true, value: { accepted: true } })
+    expect(agent.followup).toHaveBeenCalledOnce()
+  })
+
+  it('rejects a prompt for a live session owned by subagent routing', async () => {
+    // Omitting the projection owner proves admission returns at the ownership
+    // fence: without it the receipt lookup would report prompt-unavailable.
+    const state = await harness({ omit: ['sessionProjections'] })
+    const session = emptySession('prompt-subagent-owned', state.cwd, {
+      origin: 'subagent',
+      parentSession: SessionId('parent-of-child'),
+    })
+    const agent = attach(state, session)
+    await expect(state.service.prompt(requestFor(session.id, 'invocation'), new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'agent-busy',
+        message: 'session "prompt-subagent-owned" is owned by subagent routing',
+        details: { reason: 'use subagent delivery for this child session' },
+      },
+    })
+    expect(agent.followup).not.toHaveBeenCalled()
+  })
+
+  it('fails a cold prompt when no persistence owner is mounted', async () => {
+    const state = await harness({ omit: ['sessionPersistence'] })
+    const sessionId = SessionId('prompt-cold-without-persistence')
+    await expect(state.service.prompt(requestFor(sessionId, 'invocation'), new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'internal',
+        message: `resume failed for session "${sessionId}": Error: session persistence is not configured`,
+        details: {},
+      },
+    })
+    expect(state.resume).not.toHaveBeenCalled()
+  })
+
+  it('requires a persistence owner before admitting a live ordinary prompt', async () => {
+    const state = await harness({ omit: ['sessionPersistence'] })
+    const session = emptySession('prompt-live-without-persistence', state.cwd)
+    const agent = attach(state, session)
+    await expect(state.service.prompt(requestFor(session.id, 'invocation'), new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'prompt-unavailable',
+        message: 'ordinary prompts require a persistence owner',
+        details: {},
+      },
+    })
+    expect(agent.followup).not.toHaveBeenCalled()
+  })
+
+  it('rechecks a session that became live while its cold log was verified', async () => {
+    const state = await harness()
+    // The persistence owner returns the pre-race snapshot while the live log
+    // already recorded this invocation under a different digest.
+    const prepared = emptySession('prompt-live-race', state.cwd)
+    const session = emptySession('prompt-live-race', state.cwd)
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'accepted before this delivery' }],
+      source: {
+        kind: 'user',
+        invocationId: SessionPromptInvocationId('invocation'),
+        promptDigest: 'v1:already-accepted',
+      },
+    }), { surfaceOp: 'append' })
+    let live: TestAgent | undefined
+    Reflect.set(state.ctx.sessionPersistence, 'borrowSession', async () => {
+      live = attach(state, session)
+      return {
+        source: 'prepared',
+        inspection: { meta: prepared.header, events: prepared.events },
+        revision: SessionPersistenceRevision('prompt-live-race-v1'),
+        preparedSession: prepared,
+        [Symbol.dispose]: () => {},
+      }
+    })
+    await expect(state.service.prompt(requestFor(session.id, 'invocation'), new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'invocation-conflict',
+        message: 'invocationId was already accepted with different or unverifiable input',
+        details: {},
+      },
+    })
+    expect(state.resume).not.toHaveBeenCalled()
+    expect(live?.followup).not.toHaveBeenCalled()
+  })
+
+  it('rejects a prompt whose cold source resolved live outside the registry', async () => {
+    const state = await harness()
+    const session = emptySession('prompt-live-outside-registry', state.cwd)
+    Reflect.set(state.ctx.sessionPersistence, 'borrowSession', async () => ({
+      source: 'live',
+      inspection: { meta: session.header, events: session.events },
+      [Symbol.dispose]: () => {},
+    }))
+    await expect(state.service.prompt(requestFor(session.id, 'invocation'), new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'agent-busy',
+        message: 'session lifecycle changed while verifying prompt admission',
+        details: {},
+      },
+    })
+    expect(state.resume).not.toHaveBeenCalled()
+  })
+
+  it('prefers caller cancellation over a failed cold prompt admission', async () => {
+    const state = await harness()
+    const controller = new AbortController()
+    Reflect.set(state.ctx.sessionPersistence, 'borrowSession', async () => {
+      controller.abort(new Error('caller cancelled admission'))
+      throw new Error('borrow interrupted')
+    })
+    await expect(state.service.prompt(requestFor(SessionId('prompt-admission-aborted'), 'invocation'), controller.signal))
+      .resolves.toEqual({
+        ok: false,
+        error: { code: 'cancelled', message: 'session Remote invocation was cancelled', details: {} },
+      })
+  })
+
+  it('rejects prompt content without non-whitespace text or an attachment', async () => {
+    const state = await harness()
+    const session = emptySession('prompt-blank-content', state.cwd)
+    const agent = attach(state, session)
+    await expect(state.service.prompt(requestFor(session.id, 'invocation', {
+      content: [{ type: 'text', text: '  \n\t ' }],
+    }), new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'bad-request',
+        message: 'prompt content must include non-whitespace text or an attachment',
+        details: {},
+      },
+    })
+    expect(agent.followup).not.toHaveBeenCalled()
+    expect(state.flush).not.toHaveBeenCalled()
+  })
+
+  it('retains acceptance when a reentrant observer throws after the splice committed', async () => {
+    const state = await harness()
+    const session = emptySession('prompt-reentrant-observer', state.cwd)
+    const agent = attach(state, session)
+    agent.followup.mockImplementationOnce((message: UserMessage) => {
+      session.append('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [message] })
+      throw new Error('reentrant observer rejected the committed splice')
+    })
+    const request = requestFor(session.id, 'reentrant')
+    await expect(state.service.prompt(request, new AbortController().signal))
+      .resolves.toEqual({ ok: true, value: { accepted: true } })
+    await expect(state.service.prompt(request, new AbortController().signal))
+      .resolves.toEqual({ ok: true, value: { accepted: true } })
+    expect(agent.followup).toHaveBeenCalledOnce()
+  })
+
+  it('rejects a delivery the session log never recorded', async () => {
+    const state = await harness()
+    const session = emptySession('prompt-unrecorded-delivery', state.cwd)
+    const agent = attach(state, session)
+    agent.followup.mockImplementationOnce(() => undefined)
+    await expect(state.service.prompt(requestFor(session.id, 'invocation'), new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'agent-busy',
+        message: 'prompt rejected',
+        details: { reason: 'Error: inbox did not record prompt acceptance' },
+      },
+    })
+    expect(agent.inbox.nextTurn).toHaveLength(0)
+    expect(state.flush).not.toHaveBeenCalled()
   })
 })
