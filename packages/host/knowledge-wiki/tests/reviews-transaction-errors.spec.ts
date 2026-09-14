@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -26,6 +35,19 @@ const faults = vi.hoisted(() => ({
   readOverridePath: '',
   readOverrideAt: 0,
   readOverrideValue: '',
+  openCounts: {} as Record<string, number>,
+  descriptorPaths: {} as Record<number, string>,
+  tamperReadPath: '',
+  tamperReadAt: 0,
+  tamperReadValue: '',
+  tamperReadFired: false,
+  armOnOpenPath: '',
+  armOnOpenAt: 0,
+  armOnOpenRun: '',
+  armOnOpenTarget: '',
+  armOnOpenContent: '',
+  armOnOpenFired: false,
+  armLstatSymlink: false,
   resolveCount: 0,
   resolveOverrideAt: 0,
 }))
@@ -76,7 +98,8 @@ vi.mock('node:fs', async (importOriginal) => {
       }
       const result = actual.lstatSync(...args)
       if (result === undefined) return result
-      if (path === faults.lstatSymlinkPath && faults.lstatCounts[path] === faults.lstatSymlinkAt) {
+      if (path === faults.lstatSymlinkPath
+        && (faults.armLstatSymlink || faults.lstatCounts[path] === faults.lstatSymlinkAt)) {
         return new Proxy(result, {
           get(target, property, receiver) {
             if (property === 'isSymbolicLink') return () => true
@@ -94,6 +117,34 @@ vi.mock('node:fs', async (importOriginal) => {
         actual.writeFileSync(faults.mkdirCreateFile, 'concurrent target', 'utf8')
       }
       return result
+    },
+    openSync: (...args: Parameters<typeof actual.openSync>): ReturnType<typeof actual.openSync> => {
+      const path = String(args[0])
+      const descriptor = actual.openSync(...args)
+      faults.descriptorPaths[descriptor] = path
+      faults.openCounts[path] = (faults.openCounts[path] ?? 0) + 1
+      if (path === faults.armOnOpenPath && faults.openCounts[path] === faults.armOnOpenAt && !faults.armOnOpenFired) {
+        faults.armOnOpenFired = true
+        if (faults.armOnOpenRun === 'create-target') {
+          actual.writeFileSync(faults.armOnOpenTarget, faults.armOnOpenContent, 'utf8')
+        }
+        if (faults.armOnOpenRun === 'symlink-target') faults.armLstatSymlink = true
+        if (faults.armOnOpenRun === 'symlink-entry') {
+          actual.symlinkSync(faults.armOnOpenContent, faults.armOnOpenTarget)
+        }
+      }
+      return descriptor
+    },
+    readSync: (...args: Parameters<typeof actual.readSync>): ReturnType<typeof actual.readSync> => {
+      const count = actual.readSync(...args)
+      const path = faults.descriptorPaths[args[0]]
+      if (path === faults.tamperReadPath && faults.openCounts[path] === faults.tamperReadAt
+        && !faults.tamperReadFired && count > 0) {
+        faults.tamperReadFired = true
+        const view = args[1]
+        Buffer.from(view.buffer, view.byteOffset, count).write(faults.tamperReadValue.slice(0, count))
+      }
+      return count
     },
     readFileSync: (...args: Parameters<typeof actual.readFileSync>): ReturnType<typeof actual.readFileSync> => {
       const result = actual.readFileSync(...args)
@@ -116,6 +167,7 @@ import {
   applyCandidateReview as applyCandidateReviewWithAuthority,
   recordCandidateVerification as recordCandidateVerificationWithAuthority,
 } from '../src/reviews.ts'
+import { verifyCandidate } from '../src/verifier.ts'
 import { issueTestReceipt, verifierAuthority } from './verifier-authority-fixture.ts'
 import type { WikiReviewItem } from '../src/types.ts'
 
@@ -144,6 +196,19 @@ beforeEach(() => {
   faults.readOverridePath = ''
   faults.readOverrideAt = 0
   faults.readOverrideValue = ''
+  faults.openCounts = {}
+  faults.descriptorPaths = {}
+  faults.tamperReadPath = ''
+  faults.tamperReadAt = 0
+  faults.tamperReadValue = ''
+  faults.tamperReadFired = false
+  faults.armOnOpenPath = ''
+  faults.armOnOpenAt = 0
+  faults.armOnOpenRun = ''
+  faults.armOnOpenTarget = ''
+  faults.armOnOpenContent = ''
+  faults.armOnOpenFired = false
+  faults.armLstatSymlink = false
   faults.resolveCount = 0
   faults.resolveOverrideAt = 0
 })
@@ -229,6 +294,10 @@ function readItems(reviewFile: string): WikiReviewItem[] {
   return JSON.parse(readFileSync(reviewFile, 'utf8')) as WikiReviewItem[]
 }
 
+function writeItems(reviewFile: string, items: WikiReviewItem[]): void {
+  writeFileSync(reviewFile, JSON.stringify(items, null, 2), 'utf8')
+}
+
 function governanceLog(item: Fixture): string {
   return join(dirname(item.reviewFile), 'governance.jsonl')
 }
@@ -236,7 +305,13 @@ function governanceLog(item: Fixture): string {
 function resetOperationCounters(): void {
   faults.lstatCounts = {}
   faults.readCounts = {}
+  faults.openCounts = {}
+  faults.descriptorPaths = {}
+  faults.tamperReadFired = false
+  faults.armOnOpenFired = false
+  faults.armLstatSymlink = false
   faults.resolveCount = 0
+  faults.resolveOverrideAt = 0
 }
 
 function candidateArchivePath(item: Fixture): string {
@@ -471,5 +546,132 @@ describe('candidate review transaction rollback', () => {
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
     )).toBe(true)
     expect(readFileSync(governanceLog(item), 'utf8')).toContain('external audit line')
+  })
+})
+describe('concurrent mutation guards during a review transaction', () => {
+  it('refuses a canonical target whose resolved identity changes during staging', () => {
+    const item = fixture('_candidates/sessions/candidate.md')
+    expect(verifyFixture(item)).toBe(true)
+    const target = readItems(item.reviewFile)[0]!.targetPath!
+    const targetFull = join(item.wikiRoot, target)
+    const reviewBefore = readFileSync(item.reviewFile, 'utf8')
+    mkdirSync(dirname(targetFull), { recursive: true })
+    resetOperationCounters()
+    // The target is resolved again after the review pre-state has been read; an
+    // external actor can turn its leaf into a link inside that window.
+    faults.armOnOpenPath = item.reviewFile
+    faults.armOnOpenAt = 2
+    faults.armOnOpenRun = 'symlink-entry'
+    faults.armOnOpenTarget = targetFull
+    faults.armOnOpenContent = join(item.root, 'outside-canonical.md')
+
+    expect(() => applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+    )).toThrow(/canonical target changed during review transaction/u)
+    expect(lstatSync(targetFull).isSymbolicLink()).toBe(true)
+    expect(existsSync(faults.armOnOpenContent)).toBe(false)
+    expect(existsSync(item.candidateFull)).toBe(true)
+    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
+  })
+
+  it('refuses a canonical target that appears during staging', () => {
+    const item = fixture('_candidates/sessions/candidate.md')
+    expect(verifyFixture(item)).toBe(true)
+    const target = readItems(item.reviewFile)[0]!.targetPath!
+    const targetFull = join(item.wikiRoot, target)
+    mkdirSync(dirname(targetFull), { recursive: true })
+    resetOperationCounters()
+    faults.armOnOpenPath = item.reviewFile
+    faults.armOnOpenAt = 2
+    faults.armOnOpenRun = 'create-target'
+    faults.armOnOpenTarget = targetFull
+    faults.armOnOpenContent = 'concurrent target'
+
+    expect(() => applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+    )).toThrow(/canonical target appeared during review transaction/u)
+    expect(readFileSync(targetFull, 'utf8')).toBe('concurrent target')
+    expect(existsSync(item.candidateFull)).toBe(true)
+    expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
+  })
+
+  it('refuses an existing canonical target whose bytes change during staging', () => {
+    const item = fixture()
+    const target = readItems(item.reviewFile)[0]!.targetPath!
+    const targetFull = join(item.wikiRoot, target)
+    mkdirSync(dirname(targetFull), { recursive: true })
+    writeFileSync(targetFull, candidate('Canonical', 'stable canonical body'), 'utf8')
+    expect(verifyFixture(item, 'Replace')).toBe(true)
+    const targetBefore = readFileSync(targetFull, 'utf8')
+    resetOperationCounters()
+    faults.tamperReadPath = targetFull
+    faults.tamperReadAt = 3
+    faults.tamperReadValue = 'canonical bytes replaced by a concurrent writer'
+
+    expect(() => applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Replace', 'human',
+    )).toThrow(/canonical target changed during review transaction/u)
+    expect(readFileSync(targetFull, 'utf8')).toBe(targetBefore)
+    expect(existsSync(item.candidateFull)).toBe(true)
+  })
+
+  it('refuses candidate bytes that change during staging', () => {
+    const item = fixture('_candidates/sessions/candidate.md')
+    expect(verifyFixture(item)).toBe(true)
+    const candidateBefore = readFileSync(item.candidateFull, 'utf8')
+    resetOperationCounters()
+    faults.tamperReadPath = item.candidateFull
+    faults.tamperReadAt = 3
+    faults.tamperReadValue = 'candidate bytes replaced by a concurrent writer'
+
+    expect(() => applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+    )).toThrow(/candidate content changed during review transaction/u)
+    expect(readFileSync(item.candidateFull, 'utf8')).toBe(candidateBefore)
+    expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
+    expect(existsSync(join(item.wikiRoot, 'concepts', 'candidate.md'))).toBe(false)
+  })
+
+  it('refuses review state that changes during staging', () => {
+    const item = fixture('_candidates/sessions/candidate.md')
+    expect(verifyFixture(item)).toBe(true)
+    resetOperationCounters()
+    faults.tamperReadPath = item.reviewFile
+    faults.tamperReadAt = 3
+    faults.tamperReadValue = 'review bytes replaced by a concurrent writer'
+
+    expect(() => applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+    )).toThrow('review state changed during review transaction')
+    expect(existsSync(item.candidateFull)).toBe(true)
+    expect(existsSync(join(item.wikiRoot, 'concepts', 'candidate.md'))).toBe(false)
+  })
+
+  it('refuses a governance log that changes during staging', () => {
+    const item = fixture('_candidates/sessions/candidate.md')
+    expect(verifyFixture(item)).toBe(true)
+    resetOperationCounters()
+    faults.tamperReadPath = governanceLog(item)
+    faults.tamperReadAt = 2
+    faults.tamperReadValue = 'governance bytes replaced by a concurrent writer\n'
+
+    expect(() => applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+    )).toThrow('governance log changed during review transaction')
+    expect(existsSync(item.candidateFull)).toBe(true)
+    expect(existsSync(join(item.wikiRoot, 'concepts', 'candidate.md'))).toBe(false)
+  })
+
+  it('propagates a non-missing failure while inspecting a canonical target', async () => {
+    const item = fixture()
+    const targetPath = 'concepts/missing-dir/leaf.md'
+    const rows = readItems(item.reviewFile)
+    writeItems(item.reviewFile, [{ ...rows[0]!, targetPath }])
+    faults.lstatErrorPath = join(item.wikiRoot, targetPath)
+    faults.lstatErrorCount = 1
+
+    await expect(verifyCandidate(
+      authority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote', new AbortController().signal,
+    )).rejects.toThrow(/injected lstat failure/u)
   })
 })

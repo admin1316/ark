@@ -10,7 +10,7 @@ import { Context } from '@deepseek-ai/cordis'
 const mocks = vi.hoisted(() => ({
   lookup: vi.fn(),
   request: vi.fn(),
-  responses: [] as Array<{ status: number; headers?: Record<string, string>; body?: Buffer | string; error?: unknown }>,
+  responses: [] as Array<{ status?: number; headers?: Record<string, string>; body?: Buffer | string; error?: unknown }>,
   requestOptions: [] as RequestOptions[],
 }))
 vi.mock('node:dns/promises', () => ({ lookup: mocks.lookup }))
@@ -215,6 +215,28 @@ describe('public URL security and clipping', () => {
     mocks.lookup.mockResolvedValue([{ address: '1.1.1.1', family: 4 }])
     mocks.responses.push({ status: 0, error: 'primitive fetch failure' })
     await expectUrlError('https://example.test/fail', 'primitive fetch failure')
+  })
+
+  it('rejects a redirect that leaves the http(s) scheme', async () => {
+    mocks.lookup.mockResolvedValue([{ address: '1.1.1.1', family: 4 }])
+    mocks.responses.push({ status: 302, headers: { location: 'file:///etc/passwd' } })
+    // The redirect target is re-validated on the next hop, so a non-http(s)
+    // scheme must be refused there instead of being fetched.
+    await expectUrlError('https://example.test/scheme-escape', 'only http and https URLs are allowed')
+    expect(mocks.request).toHaveBeenCalledOnce()
+  })
+
+  it('treats a response without a status line as an HTTP failure', async () => {
+    mocks.lookup.mockResolvedValue([{ address: '1.1.1.1', family: 4 }])
+    mocks.responses.push({ body: 'no status line' })
+    await expectUrlError('https://example.test/status-less', 'fetch failed (0)')
+  })
+
+  it('rejects a redirect whose location header is present but empty', async () => {
+    mocks.lookup.mockResolvedValue([{ address: '1.1.1.1', family: 4 }])
+    mocks.responses.push({ status: 302, headers: { location: '' } })
+    await expectUrlError('https://example.test/blank-location', 'redirect 302 has no location')
+    expect(mocks.request).toHaveBeenCalledOnce()
   })
 })
 
