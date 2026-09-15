@@ -88,14 +88,18 @@ class LocalSendOperation implements TerminalSendOperation {
   private initialForegroundLeftWait: boolean
   private initialForegroundPgid: number | undefined
 
+  readonly expectedPromptTail: string | undefined
+
   constructor(
     maxBytes: number,
     readonly startedAt: number,
     private readonly onCancel: () => void,
+    request: TerminalSendRequest,
   ) {
     this.output = new BoundedTextBuffer(maxBytes)
     this.promise = Promise.withResolvers<TerminalSendResult>()
     this.initialForegroundLeftWait = true
+    this.expectedPromptTail = request.expectedPromptTail
   }
 
   get done(): Promise<TerminalSendResult> {
@@ -287,11 +291,14 @@ export class LocalPtySession implements TerminalBackendSession {
     }
     if (request.signal?.aborted === true) throw new Error('PTY send aborted before write')
 
+    const holder: { operation?: LocalSendOperation } = {}
     const operation = new LocalSendOperation(
       this.config.maxReadBytes,
       Date.now(),
-      () => { this.interrupt(operation) },
+      () => { if (holder.operation !== undefined) this.interrupt(holder.operation) },
+      request,
     )
+    holder.operation = operation
     this.active = operation
     this.resetReadinessEvidence()
 
@@ -458,19 +465,24 @@ export class LocalPtySession implements TerminalBackendSession {
       this.atStartup('T3_PROMPT_MARKER promptSeen=yes')
     }
     if (this.promptSeen && sanitized.promptTail !== undefined) {
-      const remaining = Math.max(0, CONTROLLED_PROMPT.length + 1 - this.promptTail.length)
+      // The expected prompt text is the send's declared tail (a caller that
+      // installed a custom shell prompt declares what its prompt emits) or the
+      // session dialect's default controlled prompt.
+      const expectedPrompt = this.active?.expectedPromptTail ?? CONTROLLED_PROMPT
+      const remaining = Math.max(0, expectedPrompt.length + 1 - this.promptTail.length)
       const tailBeforeLength = this.promptTail.length
       const overflowed = sanitized.promptTail.length > remaining
-      const overflowBlank = sanitized.promptTail.slice(remaining).trim().length === 0
       const overflowPart = sanitized.promptTail.slice(remaining)
       const tail = this.promptTail + sanitized.promptTail.slice(0, remaining)
       this.promptTail += sanitized.promptTail.slice(0, remaining)
-      if (overflowed) this.promptTail = `${CONTROLLED_PROMPT}\0`
+      if (overflowed) this.promptTail = `${expectedPrompt}\0`
       // An overflow tail may carry trailing CR/LF the shell emitted after the
       // prompt text (Windows PSReadLine rendering); pure-whitespace extra
       // bytes still complete the prompt. Non-whitespace extra bytes are a
       // command echo, which must never be attributed as prompt readiness.
-      const promptTextSeen = overflowed ? overflowBlank : this.promptTail === CONTROLLED_PROMPT
+      const promptTextSeen = overflowed
+        ? overflowPart.trim().length === 0
+        : this.promptTail === expectedPrompt
       if (promptTextSeen && !this.promptTextSeen) this.atStartup('T4_PROMPT_TEXT promptTextSeen=yes')
       this.promptTextSeen = promptTextSeen
       if (!promptTextSeen && this.startupTraceTarget !== undefined) {

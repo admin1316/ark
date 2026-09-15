@@ -330,6 +330,7 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
           text: PWSH_PROMPT_SETUP,
           submit: true,
           signal: combinedSignal,
+          expectedPromptTail: SHELL_PROMPT,
         })
         at('T5 PWSH_PROMPT_SETUP written')
         const result = await setup.done
