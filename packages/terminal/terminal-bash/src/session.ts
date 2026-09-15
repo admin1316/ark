@@ -470,10 +470,8 @@ export class LocalPtySession implements TerminalBackendSession {
       // session dialect's default controlled prompt.
       const expectedPrompt = this.active?.expectedPromptTail ?? CONTROLLED_PROMPT
       const remaining = Math.max(0, expectedPrompt.length + 1 - this.promptTail.length)
-      const tailBeforeLength = this.promptTail.length
       const overflowed = sanitized.promptTail.length > remaining
       const overflowPart = sanitized.promptTail.slice(remaining)
-      const tail = this.promptTail + sanitized.promptTail.slice(0, remaining)
       this.promptTail += sanitized.promptTail.slice(0, remaining)
       if (overflowed) this.promptTail = `${expectedPrompt}\0`
       // An overflow tail may carry trailing CR/LF the shell emitted after the
@@ -485,26 +483,6 @@ export class LocalPtySession implements TerminalBackendSession {
         : this.promptTail === expectedPrompt
       if (promptTextSeen && !this.promptTextSeen) this.atStartup('T4_PROMPT_TEXT promptTextSeen=yes')
       this.promptTextSeen = promptTextSeen
-      if (!promptTextSeen && this.startupTraceTarget !== undefined) {
-        // Bounded byte-boundary diagnostics for the unresolved tail: lengths,
-        // hex bookends, control-byte flags, and overflow code points only.
-        const tailHex = (value: string, fromEnd = false): string => {
-          const bytes = Buffer.from(value, 'utf8')
-          const slice = fromEnd ? bytes.subarray(Math.max(0, bytes.length - 32)) : bytes.subarray(0, 32)
-          return slice.toString('hex')
-        }
-        const overflowBytes = Buffer.from(overflowPart, 'utf8')
-        const codePoints = Array.from(overflowPart).slice(0, 16).map(ch => `U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}`).join(',')
-        this.atStartup(`TAIL u16len=${tail.length} bytes=${Buffer.byteLength(tail, 'utf8')} `
-          + `first32=${tailHex(tail)} last32=${tailHex(tail, true)} `
-          + `overflowed=${String(overflowed)} overflowBytes=${overflowBytes.length} `
-          + `overflowFirst32=${tailHex(overflowPart)} overflowLast32=${tailHex(overflowPart, true)} `
-          + `overflowCodePoints=${codePoints} `
-          + `flags ESC=${String(tail.includes('\x1b'))} BEL=${String(tail.includes('\x07'))} CR=${String(tail.includes('\r'))} LF=${String(tail.includes('\n'))} `
-          + `BS=${String(tail.includes('\b'))} NUL=${String(tail.includes('\0'))} C1=${String(Array.from(tail).some(ch => ch.charCodeAt(0) >= 0x80 && ch.charCodeAt(0) <= 0x9f))} C1CSI=${String(tail.includes('\u009b'))} `
-          + `remaining=${remaining} tailBefore=${tailBeforeLength} sanitizedTailLen=${sanitized.promptTail.length} `
-          + `overflowTrimmedLen=${overflowPart.trim().length} promptTextSeen=no`)
-      }
     }
   }
 

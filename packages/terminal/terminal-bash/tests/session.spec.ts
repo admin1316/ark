@@ -200,32 +200,6 @@ describe('LocalPtySession startup trace', () => {
     }
   })
 
-  it('emits tail byte-boundary diagnostics when an expected prompt never completes', async () => {
-    vi.useFakeTimers()
-    const previous = process.env.DSH_DEBUG_PWSH_STARTUP
-    const traceFile = join(tmpdir(), `pty-tail-${Date.now()}-${Math.random().toString(36).slice(2)}.log`)
-    process.env.DSH_DEBUG_PWSH_STARTUP = traceFile
-    try {
-      const terminal = new FakeTerminal()
-      const session = makeSession(terminal, new FakeInspector(), config())
-      // A caller that declared a different prompt text than the shell emits:
-      // promptTextSeen never completes, so the bounded byte diagnostics fire.
-      const pending = session.startSend({ text: 'echo mismatch', submit: true, expectedPromptTail: 'other> ' })
-      terminal.emitData('\x1b]133;D;0\x07dsh> ')
-      // The mismatched expected tail never completes promptTextSeen; the send
-      // eventually falls through to inferred_idle while the bounded byte
-      // diagnostics record the unresolved tail.
-      await vi.advanceTimersByTimeAsync(120)
-      await pending.done
-      const phases = readFileSync(traceFile, 'utf8').split('\n').filter(line => line.includes('TAIL u16len='))
-      expect(phases.length).toBeGreaterThan(0)
-      expect(phases[0]).toContain('promptTextSeen=no')
-    } finally {
-      rmSync(traceFile, { force: true })
-      if (previous === undefined) delete process.env.DSH_DEBUG_PWSH_STARTUP
-      else process.env.DSH_DEBUG_PWSH_STARTUP = previous
-    }
-  })
 })
 
 describe('LocalPtySession readiness and output', () => {
