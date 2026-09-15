@@ -493,17 +493,15 @@ export class LocalPtySession implements TerminalBackendSession {
           const slice = fromEnd ? bytes.subarray(Math.max(0, bytes.length - 32)) : bytes.subarray(0, 32)
           return slice.toString('hex')
         }
-        const has = (needle: string): string => (tail.includes(needle) ? 'yes' : 'no')
-        const c1 = Array.from(tail).some(ch => ch.charCodeAt(0) >= 0x80 && ch.charCodeAt(0) <= 0x9f) ? 'yes' : 'no'
         const overflowBytes = Buffer.from(overflowPart, 'utf8')
         const codePoints = Array.from(overflowPart).slice(0, 16).map(ch => `U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}`).join(',')
         this.atStartup(`TAIL u16len=${tail.length} bytes=${Buffer.byteLength(tail, 'utf8')} `
           + `first32=${tailHex(tail)} last32=${tailHex(tail, true)} `
-          + `overflowed=${overflowed ? 'yes' : 'no'} overflowBytes=${overflowBytes.length} `
+          + `overflowed=${String(overflowed)} overflowBytes=${overflowBytes.length} `
           + `overflowFirst32=${tailHex(overflowPart)} overflowLast32=${tailHex(overflowPart, true)} `
           + `overflowCodePoints=${codePoints} `
-          + `flags ESC=${has('\x1b')} BEL=${has('\x07')} CR=${has('\r')} LF=${has('\n')} `
-          + `BS=${has('\b')} NUL=${has('\0')} C1=${c1} C1CSI=${has('\u009b')} `
+          + `flags ESC=${String(tail.includes('\x1b'))} BEL=${String(tail.includes('\x07'))} CR=${String(tail.includes('\r'))} LF=${String(tail.includes('\n'))} `
+          + `BS=${String(tail.includes('\b'))} NUL=${String(tail.includes('\0'))} C1=${String(Array.from(tail).some(ch => ch.charCodeAt(0) >= 0x80 && ch.charCodeAt(0) <= 0x9f))} C1CSI=${String(tail.includes('\u009b'))} `
           + `remaining=${remaining} tailBefore=${tailBeforeLength} sanitizedTailLen=${sanitized.promptTail.length} `
           + `overflowTrimmedLen=${overflowPart.trim().length} promptTextSeen=no`)
       }
@@ -571,7 +569,7 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
-      this.atStartupState(`fg=${foreground === undefined ? 'undef' : foreground.processGroupId} shellPgid=${this.shellPgid ?? 'undef'} inputWaiting=${foreground?.inputWaiting === true ? 'yes' : 'no'} promptSeen=${this.promptSeen ? 'yes' : 'no'} promptTextSeen=${this.promptTextSeen ? 'yes' : 'no'} output=${startupHasOutput ? 'yes' : 'no'} idleForMs=${idleFor}`)
+      this.atStartupState(`fg=${foreground === undefined ? 'undef' : foreground.processGroupId} shellPgid=${this.shellPgid ?? 'undef'} inputWaiting=${String(foreground?.inputWaiting === true)} promptSeen=${this.promptSeen ? 'yes' : 'no'} promptTextSeen=${this.promptTextSeen ? 'yes' : 'no'} output=${startupHasOutput ? 'yes' : 'no'} idleForMs=${idleFor}`)
       if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
         this.settleActive('stdin_read')
         return
