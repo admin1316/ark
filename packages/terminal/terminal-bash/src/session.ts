@@ -1,5 +1,6 @@
 /** Persistent PTY session with bounded output, readiness, and terminal-protocol replies. */
 
+import { appendFileSync } from 'node:fs'
 import { Buffer } from 'node:buffer'
 import { createRequire } from 'node:module'
 import type { IDisposable, Terminal as HeadlessTerminalType } from '@xterm/headless'
@@ -234,11 +235,20 @@ export class LocalPtySession implements TerminalBackendSession {
    */
   async initialize(signal?: AbortSignal): Promise<void> {
     // Bounded startup diagnostics (DSH_DEBUG_PWSH_STARTUP): monotonic phase
-    // timestamps for the readiness chain; never logs environment or user data.
-    const trace = process.env.DSH_DEBUG_PWSH_STARTUP !== undefined
+    // timestamps for the readiness chain. The flag value is a file path to
+    // append to, or any other non-empty value for console.error. Never logs
+    // environment or user data.
+    const traceTarget = process.env.DSH_DEBUG_PWSH_STARTUP
+    const trace = traceTarget !== undefined
     const t0 = Date.now()
     const at = (phase: string): void => {
-      if (trace) console.error(`[pty-startup] +${Date.now() - t0}ms ${phase}`)
+      if (!trace) return
+      const line = `[pty-startup] +${Date.now() - t0}ms ${phase}`
+      if (/[/\\]/.test(traceTarget)) {
+        try { appendFileSync(traceTarget, `${line}\n`) } catch { /* diagnostics never crash the host */ }
+      } else {
+        console.error(line)
+      }
     }
     at('T0 initialize entered')
     this.initializing = true
@@ -251,7 +261,7 @@ export class LocalPtySession implements TerminalBackendSession {
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       this.motd = result.viewport
     } catch (error: unknown) {
-      if (trace) console.error(`[pty-startup] FAILED +${Date.now() - t0}ms ${String(error).slice(0, 160)}`)
+      at(`FAILED ${String(error).slice(0, 160)}`)
       signal?.throwIfAborted()
       throw error
     } finally {

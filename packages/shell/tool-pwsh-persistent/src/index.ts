@@ -5,6 +5,7 @@
  * @module @deepseek-ai/dsh-tool-pwsh-persistent
  */
 
+import { appendFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -294,12 +295,20 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
     const combinedSignal = AbortSignal.any([signal, lifecycle.signal])
     const creation = (async () => {
       // Bounded startup diagnostics: monotonic phase timestamps for the pwsh
-      // bootstrap chain. Enabled only through the debug flag; never logs
-      // environment values, tokens, or user data.
-      const trace = process.env.DSH_DEBUG_PWSH_STARTUP !== undefined
+      // bootstrap chain. The flag value is a file path to append to (survives
+      // SDK stderr capture) or any other non-empty value for console.error.
+      // Never logs environment values, tokens, or user data.
+      const traceTarget = process.env.DSH_DEBUG_PWSH_STARTUP
+      const trace = traceTarget !== undefined
       const t0 = Date.now()
       const at = (phase: string): void => {
-        if (trace) console.error(`[pwsh-startup] +${Date.now() - t0}ms ${phase}`)
+        if (!trace) return
+        const line = `[pwsh-startup] +${Date.now() - t0}ms ${phase}`
+        if (/[/\\]/.test(traceTarget)) {
+          try { appendFileSync(traceTarget, `${line}\n`) } catch { /* diagnostics never crash the host */ }
+        } else {
+          console.error(line)
+        }
       }
       at('T0 session requested')
       try {
@@ -330,7 +339,7 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
         }
         return spawned.sessionId
       } catch (error: unknown) {
-        if (trace) console.error(`[pwsh-startup] FAILED +${Date.now() - t0}ms ${String(error).slice(0, 160)}`)
+        at(`FAILED ${String(error).slice(0, 160)}`)
         await reset(owner, 'persistent pwsh initialization failed')
         throw error
       }

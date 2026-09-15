@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
@@ -576,6 +577,18 @@ describe('tool-pwsh-persistent', () => {
       expect(phases.some(line => line.includes('T7 setup.done settled: status=running'))).toBe(true)
     } finally {
       errorSpy.mockRestore()
+      if (previous === undefined) delete process.env.DSH_DEBUG_PWSH_STARTUP
+      else process.env.DSH_DEBUG_PWSH_STARTUP = previous
+    }
+  })
+
+  it('never crashes the host when the trace sink is unwritable', async () => {
+    const previous = process.env.DSH_DEBUG_PWSH_STARTUP
+    process.env.DSH_DEBUG_PWSH_STARTUP = tmpdir()
+    try {
+      const { ctx, owner } = await setup({ backendType: 'stub' })
+      expect(text(await call(ctx, owner, 'pwd'))).toBe('hello from stub')
+    } finally {
       if (previous === undefined) delete process.env.DSH_DEBUG_PWSH_STARTUP
       else process.env.DSH_DEBUG_PWSH_STARTUP = previous
     }
