@@ -390,6 +390,7 @@ async function executeCommand(
         text: first ? wrapped : '',
         submit: first,
         signal: commandDeadline.signal,
+        expectedPromptTail: SHELL_PROMPT,
       })
       first = false
       result = await operation.done
