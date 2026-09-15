@@ -216,7 +216,7 @@ describe('LocalPtySession startup trace', () => {
       // eventually falls through to inferred_idle while the bounded byte
       // diagnostics record the unresolved tail.
       await vi.advanceTimersByTimeAsync(120)
-      await pending
+      await pending.done
       const phases = readFileSync(traceFile, 'utf8').split('\n').filter(line => line.includes('TAIL u16len='))
       expect(phases.length).toBeGreaterThan(0)
       expect(phases[0]).toContain('promptTextSeen=no')

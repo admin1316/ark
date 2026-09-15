@@ -477,7 +477,10 @@ describe('SessionPersistenceSqlite schema ownership', () => {
         : undefined
     })
 
-    const db = await openDatabase(BusyOnceDatabase, path, 'wal', 100)
+    // The 1s fixture budget leaves room for scheduler overshoot on loaded
+    // CI runners; the retry interval itself stays 10ms, and the open-relative
+    // cutoff contract is pinned separately by the mocked-clock test below.
+    const db = await openDatabase(BusyOnceDatabase, path, 'wal', 1_000)
     expect(attempts).toBe(2)
     expect(db.prepare(sql('journal-mode-wal')).get()).toEqual({ journal_mode: 'wal' })
     expect(db.prepare(sql('select-trusted-schema')).get()).toEqual({ trusted_schema: 0 })
