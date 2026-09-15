@@ -293,12 +293,22 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
     if (existing !== undefined) return existing
     const combinedSignal = AbortSignal.any([signal, lifecycle.signal])
     const creation = (async () => {
+      // Bounded startup diagnostics: monotonic phase timestamps for the pwsh
+      // bootstrap chain. Enabled only through the debug flag; never logs
+      // environment values, tokens, or user data.
+      const trace = process.env.DSH_DEBUG_PWSH_STARTUP !== undefined
+      const t0 = Date.now()
+      const at = (phase: string): void => {
+        if (trace) console.error(`[pwsh-startup] +${Date.now() - t0}ms ${phase}`)
+      }
+      at('T0 session requested')
       try {
         const cwd = owner.session.header.cwd
         const spawned = await ctx.terminals.spawn(owner, {
           type: config.backendType,
           ...cwd === undefined ? {} : { cwd },
         }, combinedSignal)
+        at('T1 spawn returned (session id assigned)')
         live.set(owner, spawned.sessionId)
         if (!ownerCleanupInstalled.has(owner)) {
           ownerCleanupInstalled.add(owner)
@@ -312,12 +322,18 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
           submit: true,
           signal: combinedSignal,
         })
+        at('T5 PWSH_PROMPT_SETUP written')
         const result = await setup.done
+        at(`T7 setup.done settled: status=${result.sessionStatus.kind} waitReason=${result.waitReason ?? 'none'}`)
         if (result.sessionStatus.kind === 'exited' || result.waitReason === 'timeout') {
           throw new Error('persistent pwsh shell did not accept initialization')
         }
         return spawned.sessionId
       } catch (error: unknown) {
+        if (trace) {
+          const detail = error instanceof Error ? `${error.name}: ${error.message.slice(0, 160)}` : String(error).slice(0, 160)
+          console.error(`[pwsh-startup] FAILED +${Date.now() - t0}ms ${detail}`)
+        }
         await reset(owner, 'persistent pwsh initialization failed')
         throw error
       }

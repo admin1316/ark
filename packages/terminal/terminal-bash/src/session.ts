@@ -233,14 +233,28 @@ export class LocalPtySession implements TerminalBackendSession {
    * @returns Resolves after startup readiness; rejects on exit or readiness timeout.
    */
   async initialize(signal?: AbortSignal): Promise<void> {
+    // Bounded startup diagnostics (DSH_DEBUG_PWSH_STARTUP): monotonic phase
+    // timestamps for the readiness chain; never logs environment or user data.
+    const trace = process.env.DSH_DEBUG_PWSH_STARTUP !== undefined
+    const t0 = Date.now()
+    const at = (phase: string): void => {
+      if (trace) console.error(`[pty-startup] +${Date.now() - t0}ms ${phase}`)
+    }
+    at('T0 initialize entered')
     this.initializing = true
     try {
       const operation = this.startSend({ text: '', submit: false, ...signal !== undefined ? { signal } : {} })
+      at('T1 send operation created')
       const result = await operation.done
+      at(`T7 settled: reason=${result.waitReason}`)
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       this.motd = result.viewport
     } catch (error: unknown) {
+      if (trace) {
+        const detail = error instanceof Error ? `${error.name}: ${error.message.slice(0, 160)}` : String(error).slice(0, 160)
+        console.error(`[pty-startup] FAILED +${Date.now() - t0}ms ${detail}`)
+      }
       signal?.throwIfAborted()
       throw error
     } finally {
