@@ -35,7 +35,10 @@ describe('Wiki tree and graph edge contracts', () => {
     const file = join(root, 'ordinary-file')
     writeFileSync(file, 'keep')
     expect(() => { visitWikiTree(file, {}) }).toThrow('Wiki root is not an ordinary directory')
-    expect(() => { visitWikiTree(join(file, 'child'), {}) }).toThrow('ENOTDIR')
+    // A path beneath an ordinary file: POSIX reports ENOTDIR, Windows
+    // reports ENOENT for the same containment violation.
+    expect(() => { visitWikiTree(join(file, 'child'), {}) })
+      .toThrow(process.platform === 'win32' ? 'ENOENT' : 'ENOTDIR')
     expect(readFileSync(file, 'utf8')).toBe('keep')
   })
 

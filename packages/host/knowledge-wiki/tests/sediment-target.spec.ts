@@ -22,6 +22,6 @@ describe('sedimentTarget', () => {
 
   it('skips a cwd that merely starts with the same prefix but is not under the main root', () => {
     const target = sedimentTarget('/Users/hui/ark-draft', '/Users/hui/ark')
-    expect(target).toEqual({ wikiRoot: '/Users/hui/ark-draft/wiki', workspaceName: 'ark-draft' })
+    expect(target).toEqual({ wikiRoot: join('/Users/hui/ark-draft', 'wiki'), workspaceName: 'ark-draft' })
   })
 })

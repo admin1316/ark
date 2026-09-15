@@ -404,7 +404,7 @@ describe('profile runner lifecycle', () => {
 
     expect(stubs.watchUserPatches).toHaveBeenCalledOnce()
     expect(stubs.watchUserPatches.mock.calls[0]?.[1].filename)
-      .toBe(managedProfile ? '/home/dsh/cordis.patch.yml' : currentProfile.patchPath)
+      .toBe(managedProfile ? homePatch : currentProfile.patchPath)
     expect(compositions).toEqual([[
       { id: 'bundle-patch' },
       managedProfile ? managedPatch : { id: 'profile-user-patch' },

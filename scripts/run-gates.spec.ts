@@ -1,4 +1,3 @@
-import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   defaultConcurrency,
@@ -174,7 +173,9 @@ describe('gate graph validation', () => {
       const gates = withPnpmEntrypoint(() => gatesForMode(mode))
         .filter(gate => gate.id === 'coverage-exclude')
       expect(gates).toHaveLength(1)
-      expect(gates[0]?.args).toEqual([resolve('/private/pnpm.cjs'), 'run', 'verify-coverage-exclude'])
+      // pnpmInvocation passes npm_execpath through verbatim (raw entrypoint,
+      // no resolve) so the spawn matches pnpm's own lifecycle environment.
+      expect(gates[0]?.args).toEqual(['/private/pnpm.cjs', 'run', 'verify-coverage-exclude'])
       expect(gates[0]?.allowFailure).not.toBe(true)
     },
   )
