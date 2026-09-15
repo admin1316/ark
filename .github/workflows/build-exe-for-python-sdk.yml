@@ -324,6 +324,10 @@ jobs:
       - name: Run installed-wheel keyless black-box tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          # Scoped to this failing step only: bounded pwsh startup phase
+          # timestamps (no environment values, tokens, or user data).
+          DSH_DEBUG_PWSH_STARTUP: '1'
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
