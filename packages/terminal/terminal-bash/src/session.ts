@@ -251,10 +251,7 @@ export class LocalPtySession implements TerminalBackendSession {
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       this.motd = result.viewport
     } catch (error: unknown) {
-      if (trace) {
-        const detail = error instanceof Error ? `${error.name}: ${error.message.slice(0, 160)}` : String(error).slice(0, 160)
-        console.error(`[pty-startup] FAILED +${Date.now() - t0}ms ${detail}`)
-      }
+      if (trace) console.error(`[pty-startup] FAILED +${Date.now() - t0}ms ${String(error).slice(0, 160)}`)
       signal?.throwIfAborted()
       throw error
     } finally {

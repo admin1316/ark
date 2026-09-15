@@ -324,16 +324,13 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
         })
         at('T5 PWSH_PROMPT_SETUP written')
         const result = await setup.done
-        at(`T7 setup.done settled: status=${result.sessionStatus.kind} waitReason=${result.waitReason ?? 'none'}`)
+        at(`T7 setup.done settled: status=${result.sessionStatus.kind} waitReason=${result.waitReason}`)
         if (result.sessionStatus.kind === 'exited' || result.waitReason === 'timeout') {
           throw new Error('persistent pwsh shell did not accept initialization')
         }
         return spawned.sessionId
       } catch (error: unknown) {
-        if (trace) {
-          const detail = error instanceof Error ? `${error.name}: ${error.message.slice(0, 160)}` : String(error).slice(0, 160)
-          console.error(`[pwsh-startup] FAILED +${Date.now() - t0}ms ${detail}`)
-        }
+        if (trace) console.error(`[pwsh-startup] FAILED +${Date.now() - t0}ms ${String(error).slice(0, 160)}`)
         await reset(owner, 'persistent pwsh initialization failed')
         throw error
       }

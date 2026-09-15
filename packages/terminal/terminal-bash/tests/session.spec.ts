@@ -175,6 +175,27 @@ describe('LocalPtySession startup trace', () => {
       else process.env.DSH_DEBUG_PWSH_STARTUP = previous
     }
   })
+
+  it('traces the startup failure path under the debug flag', async () => {
+    vi.useFakeTimers()
+    const previous = process.env.DSH_DEBUG_PWSH_STARTUP
+    process.env.DSH_DEBUG_PWSH_STARTUP = '1'
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const terminal = new FakeTerminal()
+      const session = makeSession(terminal, new FakeInspector(), config())
+      const pending = session.initialize()
+      terminal.emitExit(7, 9)
+      await expect(pending).rejects.toThrow('PTY shell exited during startup')
+      const phases = errorSpy.mock.calls.map(call => String(call[0])).filter(line => line.includes('[pty-startup]'))
+      expect(phases.some(line => line.includes('T7 settled: reason=session_exit'))).toBe(true)
+      expect(phases.some(line => line.includes('FAILED'))).toBe(true)
+    } finally {
+      errorSpy.mockRestore()
+      if (previous === undefined) delete process.env.DSH_DEBUG_PWSH_STARTUP
+      else process.env.DSH_DEBUG_PWSH_STARTUP = previous
+    }
+  })
 })
 
 describe('LocalPtySession readiness and output', () => {
