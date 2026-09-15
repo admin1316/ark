@@ -167,6 +167,28 @@ export class LocalPtySession implements TerminalBackendSession {
   private readonly emulator: HeadlessTerminalType
   private readonly emulatorData: IDisposable
   private readonly sanitizer: TerminalSanitizer
+  // Bounded startup diagnostics (DSH_DEBUG_PWSH_STARTUP): the value is a file
+  // path to append to, or any other non-empty value for console.error. Only
+  // booleans, counts, and ids are recorded — never environment values or user
+  // content. State lines are deduplicated to one log per state change.
+  private readonly startupTraceTarget = process.env.DSH_DEBUG_PWSH_STARTUP
+  private readonly startupT0 = Date.now()
+  private startupLastState = ''
+
+  private atStartup(phase: string): void {
+    if (this.startupTraceTarget === undefined) return
+    const line = `[pty-startup] +${Date.now() - this.startupT0}ms ${phase}`
+    try {
+      if (/[/\\]/.test(this.startupTraceTarget)) appendFileSync(this.startupTraceTarget, `${line}\n`)
+      else console.error(line)
+    } catch { /* diagnostics never crash the host */ }
+  }
+
+  private atStartupState(state: string): void {
+    if (state === this.startupLastState) return
+    this.startupLastState = state
+    this.atStartup(`state ${state}`)
+  }
   private readonly scrollback: BoundedTextBuffer
   private readonly outputEnded = Promise.withResolvers<void>()
   private readonly completion: Promise<void>
@@ -234,34 +256,17 @@ export class LocalPtySession implements TerminalBackendSession {
    * @returns Resolves after startup readiness; rejects on exit or readiness timeout.
    */
   async initialize(signal?: AbortSignal): Promise<void> {
-    // Bounded startup diagnostics (DSH_DEBUG_PWSH_STARTUP): monotonic phase
-    // timestamps for the readiness chain. The flag value is a file path to
-    // append to, or any other non-empty value for console.error. Never logs
-    // environment or user data.
-    const traceTarget = process.env.DSH_DEBUG_PWSH_STARTUP
-    const trace = traceTarget !== undefined
-    const t0 = Date.now()
-    const at = (phase: string): void => {
-      if (!trace) return
-      const line = `[pty-startup] +${Date.now() - t0}ms ${phase}`
-      if (/[/\\]/.test(traceTarget)) {
-        try { appendFileSync(traceTarget, `${line}\n`) } catch { /* diagnostics never crash the host */ }
-      } else {
-        console.error(line)
-      }
-    }
-    at('T0 initialize entered')
+    this.atStartup('T0 initialize entered')
     this.initializing = true
     try {
       const operation = this.startSend({ text: '', submit: false, ...signal !== undefined ? { signal } : {} })
-      at('T1 send operation created')
+      this.atStartup('T1 send operation created')
       const result = await operation.done
-      at(`T7 settled: reason=${result.waitReason}`)
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       this.motd = result.viewport
     } catch (error: unknown) {
-      at(`FAILED ${String(error).slice(0, 160)}`)
+      this.atStartup(`FAILED ${String(error).slice(0, 160)}`)
       signal?.throwIfAborted()
       throw error
     } finally {
@@ -438,6 +443,7 @@ export class LocalPtySession implements TerminalBackendSession {
   }
 
   private onData(data: string): void {
+    this.atStartupState(`T2_FIRST_OUTPUT bytes=${Buffer.byteLength(data, 'utf8')}`)
     const sanitized = this.sanitizer.push(data)
     this.appendOutput(sanitized.text)
     if (sanitized.prompt) {
@@ -449,12 +455,15 @@ export class LocalPtySession implements TerminalBackendSession {
       this.promptSeen = true
       this.promptTail = ''
       this.lastOutputAt = Date.now()
+      this.atStartup('T3_PROMPT_MARKER promptSeen=yes')
     }
     if (this.promptSeen && sanitized.promptTail !== undefined) {
       const remaining = Math.max(0, CONTROLLED_PROMPT.length + 1 - this.promptTail.length)
       this.promptTail += sanitized.promptTail.slice(0, remaining)
       if (sanitized.promptTail.length > remaining) this.promptTail = `${CONTROLLED_PROMPT}\0`
-      this.promptTextSeen = this.promptTail === CONTROLLED_PROMPT
+      const promptTextSeen = this.promptTail === CONTROLLED_PROMPT
+      if (promptTextSeen && !this.promptTextSeen) this.atStartup('T4_PROMPT_TEXT promptTextSeen=yes')
+      this.promptTextSeen = promptTextSeen
     }
   }
 
@@ -519,6 +528,7 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
+      this.atStartupState(`fg=${foreground === undefined ? 'undef' : foreground.processGroupId} shellPgid=${this.shellPgid ?? 'undef'} inputWaiting=${foreground?.inputWaiting === true ? 'yes' : 'no'} promptSeen=${this.promptSeen ? 'yes' : 'no'} promptTextSeen=${this.promptTextSeen ? 'yes' : 'no'} output=${startupHasOutput ? 'yes' : 'no'} idleForMs=${idleFor}`)
       if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
         this.settleActive('stdin_read')
         return
@@ -647,6 +657,7 @@ export class LocalPtySession implements TerminalBackendSession {
   private settleActive(waitReason: TerminalWaitReason, retainOwnership = false): void {
     const operation = this.active
     if (operation === undefined) return
+    if (this.initializing) this.atStartup(`T7 settled: reason=${waitReason} status=${this.statusValue.kind}`)
     const scrollbackTruncated = this.scrollback.snapshot().truncated
     if (retainOwnership) {
       this.stopPolling()
