@@ -5,6 +5,9 @@ import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { Profile } from '@deepseek-ai/dsh-app-boot'
 
+// The fixture home patch path, built with the platform separator via join().
+const homePatch = join('/home/dsh', 'cordis.patch.yml')
+
 const testDoubles = vi.hoisted(() => ({
   writeFileSync: vi.fn<typeof import('node:fs').writeFileSync>(),
   resolveDshHome: vi.fn<typeof import('@deepseek-ai/dsh-home-paths').resolveDshHome>(),
@@ -152,7 +155,7 @@ describe('profile runner lifecycle', () => {
     const currentProfile = profile()
     const defaults = installProfileDefaults(currentProfile)
 
-    expect(homePatchPath()).toBe('/home/dsh/cordis.patch.yml')
+    expect(homePatchPath()).toBe(homePatch)
     expect(prepareProfile('sdk', '/app/package.json')).toBe(currentProfile)
     expect(prepareProfile('managed', '/app/package.json', false)).toBe(currentProfile)
 
@@ -239,7 +242,7 @@ describe('profile runner lifecycle', () => {
     }
 
     testDoubles.loadOptionalPatches.mockImplementation((_name, path) =>
-      path === '/home/dsh/cordis.patch.yml'
+      path === homePatch
         ? [{ id: 'home-patch' }]
         : [{ id: 'profile-user-patch' }])
     testDoubles.createProcessShutdown.mockImplementation((dispose) => {
@@ -279,7 +282,7 @@ describe('profile runner lifecycle', () => {
     expect(result.shutdown).toBe(shutdown)
     const firstBoot = boot.mock.calls[0]
     expect(firstBoot?.[0]).toBe('dsh')
-    expect(firstBoot?.[1]).toBe('/profiles/sdk/cordis.yml')
+    expect(firstBoot?.[1]).toBe(join('/profiles/sdk', 'cordis.yml'))
     expect(firstBoot?.[2]).toEqual(expect.arrayContaining([
       { id: 'bundle-patch' },
       { id: 'profile-patch' },
@@ -341,7 +344,7 @@ describe('profile runner lifecycle', () => {
     testDoubles.loadOverlayPatches.mockImplementation((_name, path) =>
       path === currentProfile.patchPath ? [managedPatch] : [{ id: 'unexpected-overlay' }])
     testDoubles.loadOptionalPatches.mockImplementation((_name, path) =>
-      path === '/home/dsh/cordis.patch.yml' ? [{ id: 'home-patch' }] : [{ id: 'profile-user-patch' }])
+      path === homePatch ? [{ id: 'home-patch' }] : [{ id: 'profile-user-patch' }])
     const stubs = installRunStubs(fixture)
 
     await runProfile({
@@ -410,7 +413,7 @@ describe('profile runner lifecycle', () => {
       { id: 'agent-presets', config: { existing: true, roots: [{ path: SHIPPED_PRESET_ROOT, trust: 'system' }] } },
     ]])
     expect(testDoubles.loadOptionalPatches.mock.calls.every(([, path]) =>
-      path === (managedProfile ? '/home/dsh/cordis.patch.yml' : currentProfile.patchPath))).toBe(true)
+      path === (managedProfile ? homePatch : currentProfile.patchPath))).toBe(true)
   })
 
   it('keeps watcher setup live when HMR already exists and skips a duplicate timer when only HMR is absent', async () => {

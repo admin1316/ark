@@ -61,8 +61,16 @@ describe('Wiki tree and graph edge contracts', () => {
     expect(() => { visitWikiTree(root, {
       onDirectory(entry) {
         visited.push(entry.path)
-        if (first === undefined) first = entry.path
-        else renameSync(join(root, first), join(root, entry.path))
+        if (first === undefined) {
+          first = entry.path
+        } else {
+          // Move the first directory's inode onto the current entry's name in
+          // two steps that each target a free name: rename-onto-existing is
+          // POSIX-only, and Windows rejects it with EPERM. The walker's
+          // post-callback identity re-check then reports the revisited inode.
+          renameSync(join(root, entry.path), join(root, entry.path + '-held'))
+          renameSync(join(root, first), join(root, entry.path))
+        }
       },
     }) }).toThrow('revisited Wiki directory inode:')
     expect(visited).toHaveLength(2)
