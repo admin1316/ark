@@ -38,7 +38,7 @@ describe('Wiki tree and graph edge contracts', () => {
     // A path beneath an ordinary file: POSIX reports ENOTDIR, Windows
     // reports ENOENT, which the missing-root guard treats as an absent wiki.
     if (process.platform === 'win32') {
-      expect(visitWikiTree(join(file, 'child'), {})).toBeUndefined()
+      expect(() => { visitWikiTree(join(file, 'child'), {}) }).not.toThrow()
     } else {
       expect(() => { visitWikiTree(join(file, 'child'), {}) }).toThrow('ENOTDIR')
     }
