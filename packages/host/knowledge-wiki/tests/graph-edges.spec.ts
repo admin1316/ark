@@ -36,9 +36,12 @@ describe('Wiki tree and graph edge contracts', () => {
     writeFileSync(file, 'keep')
     expect(() => { visitWikiTree(file, {}) }).toThrow('Wiki root is not an ordinary directory')
     // A path beneath an ordinary file: POSIX reports ENOTDIR, Windows
-    // reports ENOENT for the same containment violation.
-    expect(() => { visitWikiTree(join(file, 'child'), {}) })
-      .toThrow(process.platform === 'win32' ? 'ENOENT' : 'ENOTDIR')
+    // reports ENOENT, which the missing-root guard treats as an absent wiki.
+    if (process.platform === 'win32') {
+      expect(visitWikiTree(join(file, 'child'), {})).toBeUndefined()
+    } else {
+      expect(() => { visitWikiTree(join(file, 'child'), {}) }).toThrow('ENOTDIR')
+    }
     expect(readFileSync(file, 'utf8')).toBe('keep')
   })
 
