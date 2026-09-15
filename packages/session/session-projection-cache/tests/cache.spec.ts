@@ -132,8 +132,6 @@ async function seedRecord(
   await writeFile(path, JSON.stringify({ version: projectionCacheDomainSpec.version, record: { identity, rows } }))
 }
 
-/** Give queued fire-and-forget listeners one turn to reach their fs I/O. */
-const settle = () => new Promise(resolve => setTimeout(resolve, 40))
 
 /**
  * Wait until the durable record observably satisfies a condition. Write-backs are
@@ -277,9 +275,12 @@ describe('SessionProjectionCache write policy', () => {
     const session = ctx.sessions.create(SessionId('fail-soft'))
     mark(session, ['x'])
     endTurn(session)
-    await settle()
+    // The write-back is fire-and-forget; the warn call is its observable
+    // completion, so wait on the mock interaction instead of a fixed delay.
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('turn/end write for "fail-soft" failed'))
+    })
     expect(await storedRows(root, session.id)).toBeUndefined()
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('turn/end write for "fail-soft" failed'))
     // Self-heal: once the blocker clears, the next mandatory point writes.
     await rm(recordPath(root, session.id), { recursive: true })
     mark(session, ['y'])
@@ -460,7 +461,8 @@ describe('SessionProjectionCache cold-read seeding', () => {
     const meta = headerOf(SessionId('cold-fail'))
     await mkdir(recordPath(root, meta.id), { recursive: true })
     expect(ctx.sessionProjectionCache.coldSnapshot(meta, [])).toBeDefined()
-    await settle()
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('cold-read write-back for "cold-fail" failed'))
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('cold-read write-back for "cold-fail" failed'))
+    })
   })
 })
