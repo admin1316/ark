@@ -95,7 +95,7 @@ describe('turn extraction and classification edges', () => {
     expect(sedimentTarget('/main', '/main')).toBeNull()
     expect(sedimentTarget('/main/sub', '/main')).toBeNull()
     expect(sedimentTarget('/work/project', '/main')).toEqual({
-      wikiRoot: '/work/project/wiki', workspaceName: 'project',
+      wikiRoot: join('/work/project', 'wiki'), workspaceName: 'project',
     })
 
     expect(titleFrom('short\nA sufficiently long title / with bad:* chars', undefined))

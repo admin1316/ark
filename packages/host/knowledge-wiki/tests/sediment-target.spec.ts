@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { join } from 'node:path'
 import { sedimentTarget } from '../src/auto-sediment.ts'
 
 describe('sedimentTarget', () => {
   it('returns the workspace wiki for a non-main workspace cwd', () => {
     const target = sedimentTarget('/Users/hui/技能强化', '/Users/hui/ark')
-    expect(target).toEqual({ wikiRoot: '/Users/hui/技能强化/wiki', workspaceName: '技能强化' })
+    expect(target).toEqual({ wikiRoot: join('/Users/hui/技能强化', 'wiki'), workspaceName: '技能强化' })
   })
 
   it('skips the main workspace (batch ingest covers it)', () => {
