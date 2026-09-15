@@ -326,14 +326,22 @@ jobs:
         shell: pwsh
         env:
           # Scoped to this failing step only: bounded pwsh startup phase
-          # timestamps (no environment values, tokens, or user data).
-          DSH_DEBUG_PWSH_STARTUP: '1'
+          # timestamps appended to a file (no environment values, tokens, or
+          # user data). A later always() step prints the captured trace.
+          DSH_DEBUG_PWSH_STARTUP: ${{ runner.temp }}\pwsh-startup-trace.log
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           Remove-Item Env:PYTHONPATH, Env:DSH_RUNTIME_MODE -ErrorAction SilentlyContinue
           Set-Location $env:RUNNER_TEMP
           & "$env:RUNNER_TEMP/dsh-sdk-smoke/Scripts/python.exe" "$env:GITHUB_WORKSPACE/scripts/smoke-python-runtime.py" --scenario all --installed-wheel
+
+      - name: Print the pwsh startup trace
+        if: always()
+        shell: pwsh
+        run: |
+          $trace = "${{ runner.temp }}\pwsh-startup-trace.log"
+          if (Test-Path $trace) { Get-Content $trace } else { Write-Host 'no pwsh startup trace was captured' }
 
       - name: Run installed-wheel real API black-box test (Windows)
         if: runner.os == 'Windows' && steps.api-secret.outputs.enabled == 'true'
