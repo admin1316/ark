@@ -152,6 +152,31 @@ async function initialize(session: LocalPtySession, terminal: FakeTerminal): Pro
   await pending
 }
 
+describe('LocalPtySession startup trace', () => {
+  it('emits bounded phase timestamps when DSH_DEBUG_PWSH_STARTUP is set', async () => {
+    vi.useFakeTimers()
+    const previous = process.env.DSH_DEBUG_PWSH_STARTUP
+    process.env.DSH_DEBUG_PWSH_STARTUP = '1'
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const terminal = new FakeTerminal()
+      const session = makeSession(terminal, new FakeInspector(), config())
+      const pending = session.initialize()
+      terminal.emitData('\x1b]133;D;0\x07dsh> ')
+      await vi.advanceTimersByTimeAsync(10)
+      await pending
+      const phases = errorSpy.mock.calls.map(call => String(call[0])).filter(line => line.includes('[pty-startup]'))
+      expect(phases.some(line => line.includes('T0 initialize entered'))).toBe(true)
+      expect(phases.some(line => line.includes('T1 send operation created'))).toBe(true)
+      expect(phases.some(line => line.includes('T7 settled: reason='))).toBe(true)
+    } finally {
+      errorSpy.mockRestore()
+      if (previous === undefined) delete process.env.DSH_DEBUG_PWSH_STARTUP
+      else process.env.DSH_DEBUG_PWSH_STARTUP = previous
+    }
+  })
+})
+
 describe('LocalPtySession readiness and output', () => {
   it('answers split cursor-position queries before publishing prompt readiness', async () => {
     vi.useFakeTimers()

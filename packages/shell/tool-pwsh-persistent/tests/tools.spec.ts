@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -561,6 +561,42 @@ describe('tool-pwsh-persistent', () => {
       expect(stub.sessions[0]?.closed).toContain('persistent pwsh initialization failed')
     },
   )
+
+  it('emits the bounded startup trace when DSH_DEBUG_PWSH_STARTUP is set', async () => {
+    const previous = process.env.DSH_DEBUG_PWSH_STARTUP
+    process.env.DSH_DEBUG_PWSH_STARTUP = '1'
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { ctx, owner } = await setup({ backendType: 'stub' })
+      expect(text(await call(ctx, owner, 'pwd'))).toBe('hello from stub')
+      const phases = errorSpy.mock.calls.map(call => String(call[0])).filter(line => line.includes('[pwsh-startup]'))
+      expect(phases.some(line => line.includes('T0 session requested'))).toBe(true)
+      expect(phases.some(line => line.includes('T1 spawn returned'))).toBe(true)
+      expect(phases.some(line => line.includes('T5 PWSH_PROMPT_SETUP written'))).toBe(true)
+      expect(phases.some(line => line.includes('T7 setup.done settled: status=running'))).toBe(true)
+    } finally {
+      errorSpy.mockRestore()
+      if (previous === undefined) delete process.env.DSH_DEBUG_PWSH_STARTUP
+      else process.env.DSH_DEBUG_PWSH_STARTUP = previous
+    }
+  })
+
+  it('traces the initialization failure path under the debug flag', async () => {
+    const previous = process.env.DSH_DEBUG_PWSH_STARTUP
+    process.env.DSH_DEBUG_PWSH_STARTUP = '1'
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { ctx, owner } = await setup({ backendType: 'stub' }, 'init-timeout')
+      expect((await call(ctx, owner, 'pwd')).isError).toBe(true)
+      const phases = errorSpy.mock.calls.map(call => String(call[0])).filter(line => line.includes('[pwsh-startup]'))
+      expect(phases.some(line => line.includes('T7 setup.done settled: status=running waitReason=timeout'))).toBe(true)
+      expect(phases.some(line => line.includes('FAILED'))).toBe(true)
+    } finally {
+      errorSpy.mockRestore()
+      if (previous === undefined) delete process.env.DSH_DEBUG_PWSH_STARTUP
+      else process.env.DSH_DEBUG_PWSH_STARTUP = previous
+    }
+  })
 
   it('clears a failed spawn without trying to close an unpublished shell', async () => {
     const { ctx, owner, stub } = await setup({ backendType: 'stub' }, 'spawn-error')
