@@ -459,9 +459,15 @@ export class LocalPtySession implements TerminalBackendSession {
     }
     if (this.promptSeen && sanitized.promptTail !== undefined) {
       const remaining = Math.max(0, CONTROLLED_PROMPT.length + 1 - this.promptTail.length)
+      const overflowed = sanitized.promptTail.length > remaining
+      const overflowBlank = sanitized.promptTail.slice(remaining).trim().length === 0
       this.promptTail += sanitized.promptTail.slice(0, remaining)
-      if (sanitized.promptTail.length > remaining) this.promptTail = `${CONTROLLED_PROMPT}\0`
-      const promptTextSeen = this.promptTail === CONTROLLED_PROMPT
+      if (overflowed) this.promptTail = `${CONTROLLED_PROMPT}\0`
+      // An overflow tail may carry trailing CR/LF the shell emitted after the
+      // prompt text (Windows PSReadLine rendering); pure-whitespace extra
+      // bytes still complete the prompt. Non-whitespace extra bytes are a
+      // command echo, which must never be attributed as prompt readiness.
+      const promptTextSeen = overflowed ? overflowBlank : this.promptTail === CONTROLLED_PROMPT
       if (promptTextSeen && !this.promptTextSeen) this.atStartup('T4_PROMPT_TEXT promptTextSeen=yes')
       this.promptTextSeen = promptTextSeen
     }
