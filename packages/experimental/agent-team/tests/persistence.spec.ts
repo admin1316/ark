@@ -214,7 +214,11 @@ for (const backend of backends) {
         delivery: 'wakeup',
         signal: SIGNAL,
       })
-      expect(receipt.status).toBe('accepted')
+      // Both receipt statuses are valid product outcomes (types.ts): the
+      // dispatch either lands in the target's inbox immediately ('accepted')
+      // or parks in the mailbox under load ('queued'). The waitFor below
+      // asserts the actual delivery either way.
+      expect(['accepted', 'queued']).toContain(receipt.status)
       await vi.waitFor(() => { expect(second.ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
       await vi.waitFor(() => { expect(durable(activeHandle.agent).pendingMessages).toEqual([]) })
 
