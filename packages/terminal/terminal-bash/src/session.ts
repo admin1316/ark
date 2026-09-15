@@ -291,16 +291,12 @@ export class LocalPtySession implements TerminalBackendSession {
     }
     if (request.signal?.aborted === true) throw new Error('PTY send aborted before write')
 
-    // The cancel callback closes over this slot; the assignment lands right
-    // after construction, so it is always set before any cancellation can run.
-    let created: LocalSendOperation | undefined = undefined
     const operation = new LocalSendOperation(
       this.config.maxReadBytes,
       Date.now(),
-      () => { if (created !== undefined) this.interrupt(created) },
+      () => { this.interrupt(operation) },
       request,
     )
-    created = operation
     this.active = operation
     this.resetReadinessEvidence()
 
