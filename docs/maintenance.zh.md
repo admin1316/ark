@@ -14,7 +14,7 @@
 
 - 源码：`packages/`、`native/`、`integrations/`、`apps/`、`python/`、`scripts/` 与 `.agents/` 工作流。
 - 生成物且当前被跟踪：`packages/`、`vendor/`、`apps/` 下的 `lib/` 构建输出与 208 个被跟踪的 `*.tsbuildinfo`。移出版本控制是专项变更，必须先证明完整链路：干净检出 → `pnpm install --frozen-lockfile` → 构建 → 测试 → 打包 → 安装验证。
-- 历史证据，保留并索引：`orig/`（三份改写前 Swift 副本）、根目录阶段报告（`evidence-r18.md`、`handoff-r18.md`、`integration-l1517-report.md`、`package-audit-r18.json`）、`.agents/notes/archived/` 下的冻结 Agent Notes。
+- 历史证据，保留并索引：`orig/`（三份改写前 Swift 副本）、根目录阶段报告（`archive/evidence-r18.md`、`archive/handoff-r18.md`、`archive/integration-l1517-report.md`、`archive/package-audit-r18.json`）、`.agents/notes/archived/` 下的冻结 Agent Notes。
 - 可重建缓存：`.tmp-swift-module-cache-*/` —— Swift 编译器输出（`.pcm`/`.swiftmodule`/`.timestamp`）。自 2026-09-16 起移出跟踪并被忽略；产品与契约测试按名称前缀排除该目录，没有任何跟踪文件把它当作输入。
 - 用途不明，保持不动：根目录 `.lock` 文件（内容 `1872`，无跟踪引用）。
 

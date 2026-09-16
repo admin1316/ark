@@ -14,7 +14,7 @@ One entry for what counts as source, generated output, and historical evidence; 
 
 - Source: `packages/`, `native/`, `integrations/`, `apps/`, `python/`, `scripts/`, and `.agents/` workflows.
 - Generated and currently tracked: `lib/` build outputs across `packages/`, `vendor/`, `apps/` and 208 tracked `*.tsbuildinfo`. Removal from version control is a dedicated change that must first prove the full chain: clean checkout → `pnpm install --frozen-lockfile` → build → tests → pack → install verification.
-- Historical evidence, keep and index: `orig/` (three pre-rewrite Swift copies), the root stage reports (`evidence-r18.md`, `handoff-r18.md`, `integration-l1517-report.md`, `package-audit-r18.json`), and frozen Agent Notes under `.agents/notes/archived/`.
+- Historical evidence, keep and index: `orig/` (three pre-rewrite Swift copies), the root stage reports (`archive/evidence-r18.md`, `archive/handoff-r18.md`, `archive/integration-l1517-report.md`, `archive/package-audit-r18.json`), and frozen Agent Notes under `.agents/notes/archived/`.
 - Rebuildable caches: `.tmp-swift-module-cache-*/` — Swift compiler outputs (`.pcm`/`.swiftmodule`/`.timestamp`). Untracked and ignored since 2026-09-16; the product and its contract tests exclude this prefix by name and nothing consumes it as input.
 - Unknown purpose, leave alone: the root `.lock` file (content `1872`, no tracked reference).
 
