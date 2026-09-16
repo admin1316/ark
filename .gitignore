@@ -11,3 +11,13 @@ node_modules/
 .sessions/
 .llm-wiki/
 wiki/
+
+# Stale Swift compilation module caches: compiler outputs (.pcm/.swiftmodule/
+# .timestamp). Product code and contract tests exclude this prefix by name and
+# nothing consumes it as input; a rebuild regenerates it.
+/.tmp-swift-module-cache-*/
+# Local environment files. Example files (.env.example/.env.template) stay
+# trackable - only the real secret-bearing names are guarded.
+/.env
+/.env.local
+/.env.*.local
