@@ -903,6 +903,9 @@ describe('Sandbox workflow build prerequisite', () => {
     expect(landlock.if).toBe("matrix.runner == 'landlock'")
     expect(stepText(landlock.run)).toContain('pnpm --dir native/landlock-run run build:native')
     const rehearsal = requireStep('Build packages for the pack rehearsal')
+    const warmup = requireStep('Warm up pwsh (seatbelt)')
+    expect(warmup.if).toBe("matrix.runner == 'seatbelt'")
+    expect(stepPosition('Warm up pwsh (seatbelt)')).toBeLessThan(stepPosition('Unit tests (darwin parity)'))
     expect(rehearsal.if).toBe("matrix.runner == 'landlock'")
   })
 
