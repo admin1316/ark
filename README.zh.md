@@ -93,24 +93,24 @@ JIUZHANG_SELF_CONTAINED=1 JIUZHANG_PACK_RECEIPT=/private/tmp/runtime-pack/pack-r
 - 回退步骤：停正式实例 → 替换 `~/ark/Ark.app` → `codesign --verify --deep --strict` → 冷启动 → 复验（健康检查、单实例、会话/设置/凭据数量与哈希不变）。
 - 保留策略：只保留当前正式件 + 一份直接前驱回退副本；被淘汰的旧副本在发布记录中标记为 `RETIRED DURING RETENTION CLEANUP`，不静默丢弃。
 
-## 9. clean baseline
+## 9. 基线与权威边界
 
-当前源码标准是干净基线分支 `release/20260913-clean-baseline`：
+三个身份互不覆盖：
 
-- 快照提交（生产源码快照）：`9e83b626add9e31511185bc61a2d29f14042f490`
-- 干净基线提交（仓库卫生）：`795c5306ad81ce79d95d45686214503665fee382`
-- 干净门：`git status --porcelain=v1 -z --untracked-files=all` 与 `git diff --binary --no-ext-diff HEAD --` 的 SHA256 均为空流哈希；HEAD 必须等于基线提交。
-- 快照等价性：快照提交的每个变更路径与生产源码工作树逐文件 SHA256 一致，仅因“GitHub 以前有”而存在的旧源码不再保留，由 Git deletion 正常删除。
+- **执行时源码入口：`main`** — 当前开发与验收以 main 为准（本节更新时 HEAD 为 `4d0da264d373d6a2f8e948ac9683efcdbc947880`，即 PR #27 的 merge commit，父提交 `85f89f10d82cbae312f14c6c20c298439494bc91` + `aa944dc872404e527089a0d746507ac765a8f696`）。main 只经正常 PR 合入前进而；不使用 force push、不重写历史、不做无关历史合并。
+- **历史 clean-baseline：分支 `release/20260913-clean-baseline`** — 快照提交（生产源码快照）`9e83b626add9e31511185bc61a2d29f14042f490`、干净基线提交（仓库卫生）`795c5306ad81ce79d95d45686214503665fee382`。这两个提交不在 main 祖先中（两条历史无共同祖先）；基线内容经 PR #27 分支的 "chore: adopt verified Ark clean baseline"（`cd6b7d297b48`）采纳进 main。该分支仅作追溯依据，不再作为"当前源码标准"引用。
+- **已安装正式件：`~/ark/Ark.app`** — 独立发布身份；版本、构建号、provenance 与生产验收结论以其自身记录为准，不随 main 前进而改写。
 
-main 的更新方式：以 `main` 为唯一父提交、以干净基线 tree 为 tree 的前向提交，经正常 PR 合入；不使用 force push、不重写历史、不做无关历史合并。
+干净门定义保持不变：`git status --porcelain=v1 -z --untracked-files=all` 与 `git diff --binary --no-ext-diff HEAD --` 的 SHA256 均为空流哈希 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。
 
-## 10. 已知工程债
+## 10. 已知工程债与合并后 CI 状态
 
+- **合并后 main CI（只读核查 2026-09-16，HEAD `4d0da264…`）**：CI main run `35040003082` 与 Sandbox run `35040003084` 均 failure——serial / linux 的 coverage 门因一条未处理拒绝（`Error: start failed`，`packages/subagent/agent-team/tests/runtime.spec.ts:184:24`）以退出码 1 失败，其 14,209 个测试全部通过；serial / windows 失败属 Issue #28 范围；serial / macos 因 `if: false` 禁用；Sandbox 的 seatbelt job 因 `@deepseek-ai/dsh-sandbox-local` 在 macOS 缺失 `@deepseek-ai/node-addon-landlock-run` 而失败。同一 HEAD 其余 run 成功（2026-09-16 复查共 11 个 run：9 success / 2 failure，新增为 scheduled E2E run `35056874410`，无新增失败）。合并前 PR 头 `aa944dc8…` 的 PR CI（run `35002470747`）不能替代上述 main 结论。
+- **Windows 原生债务**：以 Issue #28（open）的实查范围为准；Windows 运行时形态通过不等于 Windows 原生测试全面一致。
 - **CI 缺口**：`build:official` 在 CI 中缺失，本地构建路径完整但未纳入持续集成。
-- **生成物入库**：`lib/**` 构建产物被纳入版本控制（含 208 个被跟踪的 `*.tsconfig.tsbuildinfo`）；由此产生 3 处 white-space 命中（2 处在生成文件、1 处在测试源码 `packages/util/http-proxy/tests/proxy-env.ts`）。根因修法是一次性把生成目录移出版本控制，而不是逐文件打补丁。
-- **钩子与冻结快照的冲突**：`pre-push` 钩子执行 `pnpm run typecheck`（即 `build:lib:host`），会重写已提交的 `lib/` 产物；因此在冻结 provenance 的仓库内提交/推送必须显式跳过钩子，或先装依赖再执行。
-- **本地 remote 失效**：Ark 仓库原有的 `origin` 指向一个已删除的本地路径，GitHub 远端以 `github` remote 单独配置。
-- **血缘分离**：干净基线与 GitHub `main` 没有共同祖先，因此 main 采用“采纳 tree”的前向提交方式，而非直接合并两条历史。
+- **生成物入库**：`lib/**` 构建产物被纳入版本控制（含 208 个被跟踪的 `*.tsbuildinfo`）；由此产生 3 处 white-space 命中（2 处在生成文件、1 处在测试源码 `packages/util/http-proxy/tests/proxy-env.ts`）。根因修法是一次性把生成目录移出版本控制，而不是逐文件打补丁；移出前提见 [docs/maintenance.md](docs/maintenance.zh.md)。
+- **钩子与 lib/ 产物**：`pre-push` 钩子执行 `pnpm run typecheck`（即 `build:lib:host`），会重写已提交的 `lib/` 产物；提交与推送时不得把生成差异混入变更。
+- **迁移期历史说明**：原本地 checkout 的 `origin` 曾指向已删除的本地路径，现以 GitHub 远端为准；干净基线血统与 main 的关系见第 9 节。
 - **未验证项**：Mach-O 主程序与 Swift 源码的字节对应关系未做可复现构建比对；`ArkSourceSnapshotSHA256` 未独立重算；轨迹/聊天的真实鼠标验收需要人工复点，没有自动化点击能力时不报程序化 PASS。
 
 ## 安全边界

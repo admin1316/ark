@@ -73,6 +73,32 @@ describe('CI workflow', () => {
     }
   })
 
+  it('builds the host lib outputs before the static and coverage consumers run', () => {
+    // The lib outputs are no longer tracked: the static and coverage lanes must
+    // build them after install (and re-link the workspace bins) before any
+    // consumer gate reads them, or knip and the plugin-loading specs fail on a
+    // clean checkout.
+    const workflow: unknown = yaml.load(readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8'))
+    if (!isRecord(workflow) || !isRecord(workflow.jobs)) throw new TypeError('ci.yml must define jobs')
+    for (const jobName of ['node-24', 'node-24-coverage']) {
+      const job = workflow.jobs[jobName]
+      if (!isRecord(job) || !Array.isArray(job.steps)) throw new TypeError(jobName + ' must define steps')
+      const runs = job.steps.map(step => (isRecord(step) && typeof step.run === 'string' ? step.run : ''))
+      const buildIndex = runs.findIndex(run => run === 'pnpm run build:lib:host')
+      const relinkIndex = runs.findIndex(run => run === 'pnpm install --frozen-lockfile --offline')
+      const consumerIndexes = runs.reduce<Array<number>>((acc, run, index) => {
+        if (run.includes('check:ci:static') || run.includes('check:ci:coverage')) acc.push(index)
+        return acc
+      }, [])
+      expect(buildIndex, jobName + ' must build the host lib outputs').toBeGreaterThan(-1)
+      expect(relinkIndex, jobName + ' must re-link workspace bins after the build').toBeGreaterThan(buildIndex)
+      expect(consumerIndexes.length, jobName + ' must run its consumers').toBeGreaterThan(0)
+      for (const index of consumerIndexes) {
+        expect(index, jobName + ' consumers must run after the build and re-link').toBeGreaterThan(relinkIndex)
+      }
+    }
+  })
+
   it('keeps required hosted Linux, Wine and macOS checks plus complete native Windows reporting', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     const master = loadWorkflow('.github/workflows/ci-master.yml')
