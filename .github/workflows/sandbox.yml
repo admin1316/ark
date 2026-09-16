@@ -117,14 +117,6 @@ jobs:
           pnpm --dir native/landlock-run run build:ts
           pnpm --dir native/landlock-run run build:native
 
-      # pwsh ships with the macOS image, but its first launch pays the .NET/JIT
-      # warm-up cost; the pwsh terminal specs then fight the runner's cold start
-      # and miss their own readiness budget. Prime it once, still inside the
-      # suite's assertions — no timeout, skip, or assertion is changed.
-      - name: Warm up pwsh (seatbelt)
-        if: matrix.runner == 'seatbelt'
-        run: pwsh -NoLogo -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()'
-
       # The unit suite runs on ubuntu in `checks`; this is the one darwin leg
       # in the workflow, so run it here too — the platform-dependent unit
       # expectations (Seatbelt path canonicalization: /tmp IS /private/tmp)
