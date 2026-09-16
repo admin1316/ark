@@ -21,3 +21,8 @@ wiki/
 /.env
 /.env.local
 /.env.*.local
+
+# Knowledge-project initialization artifacts that a workspace init can drop at
+# a repo root; the shipped repo does not consume them (verified 2026-09-16).
+/purpose.md
+/schema.md
