@@ -856,6 +856,65 @@ describe('Git hooks', () => {
   })
 })
 
+describe('Sandbox workflow build prerequisite', () => {
+  const sandboxSteps = (): Record<string, unknown>[] => {
+    const workflow = loadWorkflow('.github/workflows/sandbox.yml')
+    const job = workflowJob(workflow, 'sandbox-e2e')
+    if (!Array.isArray(job.steps)) throw new TypeError('sandbox-e2e must define steps')
+    return job.steps as Record<string, unknown>[]
+  }
+  const requireStep = (name: string): Record<string, unknown> => {
+    const step = sandboxSteps().find(candidate => candidate.name === name)
+    if (step === undefined) throw new TypeError(`sandbox-e2e must define the ${name} step`)
+    return step
+  }
+  const stepPosition = (name: string): number => sandboxSteps().findIndex(candidate => candidate.name === name)
+
+  it('builds the host lib outputs before the darwin parity and sandbox e2e consumers', () => {
+    // The generated lib tree is untracked, so every consumer of it must follow a
+    // real build. The seatbelt leg previously failed to load the Cordis plugin
+    // tree and the Landlock JS/types entry because no step produced them.
+    const build = stepPosition('Build host lib outputs')
+    const unit = stepPosition('Unit tests (darwin parity)')
+    const e2e = stepPosition('Sandbox e2e (real kernel confinement, world-verified)')
+    expect(build).toBeGreaterThanOrEqual(0)
+    expect(unit).toBeGreaterThan(build)
+    expect(e2e).toBeGreaterThan(build)
+    expect(stepText(requireStep('Build host lib outputs').run)).toBe('pnpm run build:lib:host')
+  })
+
+  it('fails the job when the build or a consumer fails', () => {
+    const build = requireStep('Build host lib outputs')
+    expect(build['continue-on-error']).toBeUndefined()
+    expect(stepText(build.run)).not.toContain('|| true')
+    const e2e = requireStep('Sandbox e2e (real kernel confinement, world-verified)')
+    expect(e2e['continue-on-error']).toBeUndefined()
+    expect(stepText(e2e.run)).toContain('[ "$status" -eq 0 ]')
+    expect(stepText(e2e.run)).toContain('Test Files[[:space:]]+2 passed \\(2\\)')
+  })
+
+  it('keeps the per-platform preparation steps intact', () => {
+    const bwrap = requireStep('Install bubblewrap (unrestrict userns)')
+    expect(bwrap.if).toBe("matrix.runner == 'bwrap'")
+    expect(stepText(bwrap.run)).toContain('bubblewrap')
+    const landlock = requireStep('Build Landlock launcher for this architecture')
+    expect(landlock.if).toBe("matrix.runner == 'landlock'")
+    expect(stepText(landlock.run)).toContain('pnpm --dir native/landlock-run run build:native')
+    const rehearsal = requireStep('Build packages for the pack rehearsal')
+    expect(rehearsal.if).toBe("matrix.runner == 'landlock'")
+  })
+
+  it('adds a path-scoped pull_request proof without pull_request_target or secrets', () => {
+    const workflow = loadWorkflow('.github/workflows/sandbox.yml')
+    const trigger = workflowEvent(workflow, 'pull_request')
+    expect(trigger.paths).toContain('.github/workflows/sandbox.yml')
+    expect(trigger.paths).toContain('scripts/build-host-bundles.ts')
+    expect(workflow.pull_request_target).toBeUndefined()
+    expect(workflow.env).toMatchObject({ DSH_TELEMETRY_DISABLED: '1' })
+    for (const step of sandboxSteps()) expect(step.env ?? {}).not.toHaveProperty('DEEPSEEK_API_KEY')
+  })
+})
+
 function loadWorkflow(path: string): Record<string, unknown> {
   const workflow: unknown = yaml.load(readFileSync(resolve(root, path), 'utf8'))
   if (!isRecord(workflow)) throw new TypeError(`${path} must define a workflow`)

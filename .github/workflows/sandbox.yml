@@ -1,5 +1,6 @@
-# Sandbox CI: the keyless real-kernel confinement proofs. This master-only
-# reference stays outside the pull-request verdict; rationale lives in
+# Sandbox CI: the keyless real-kernel confinement proofs. The full matrix is the
+# master-push reference; a path-scoped pull_request entry proves the build
+# prerequisite for changes that can affect it. Rationale lives in
 # .agents/notes/implemented/process/2026-07-21-serial-cross-platform-ci-reference.md.
 # A separate workflow from ci.yml because the axis is different — these jobs
 # fan out over OS×runner (kernel capabilities), not node versions. The Landlock
@@ -10,6 +11,23 @@ name: Sandbox
 on:
   push:
     branches: [main]
+  # Path-scoped pre-merge proof. Every leg below consumes untracked generated
+  # entries (plugin tree + the Landlock JS/types entry), so a change that can
+  # move that prerequisite must be provable on the pull request instead of
+  # after the merge. No leg uses secrets.
+  pull_request:
+    paths:
+      - '.github/workflows/sandbox.yml'
+      - 'packages/sandbox/**'
+      - 'packages/shell/bash-sandbox/**'
+      - 'native/landlock-run/**'
+      - 'packages/experimental/inspector/**'
+      - 'packages/extensions/tool-cordis/**'
+      - 'packages/preset/agent-presets/**'
+      - 'packages/host/workbench/**'
+      - 'scripts/build-host-bundles.ts'
+      - 'tsconfig.host.json'
+      - 'pnpm-lock.yaml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -66,6 +84,14 @@ jobs:
 
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
+
+      # lib outputs are untracked (.gitignore): the unit and e2e consumers below
+      # load built entries (Cordis plugin tree, the Landlock JS/types entry), so
+      # build them here, before any consumer. A failing build fails this step and
+      # therefore the job — consumers cannot report success over a missing tree.
+      # The Linux-only native binary stays behind its own per-arch step.
+      - name: Build host lib outputs
+        run: pnpm run build:lib:host
 
       # The bwrap rung needs bubblewrap on PATH and unprivileged user
       # namespaces. Ubuntu 24.04 gates the latter behind an AppArmor knob;
