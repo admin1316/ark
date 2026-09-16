@@ -20,7 +20,7 @@ Chat target 通过共享 settings scope 绑定持久化的 transcript 偏好，�
 
 收起的过程成员使用 `hidden="until-found"`。在支持该能力的浏览器中，任一成员触发 `beforematch` 都会打开共享过程组。由于 hidden-until-found 成员会保留可搜索的零高度 box，Chat 列只在可见的相邻成员之间设置间距；控件分隔线横跨内容宽度，只有中间没有独立输入时，收起的过程控件才与正文相隔 8px，展开后恢复普通的 16px 行间距。在 Compact 模式下，不持久化的会话 store 只保存用户手动展开的「轮次 + 正文步骤」generation；没有记录即为收起，不同正文 generation 默认收起。因此，每个合格的已关闭轮次都使用相同默认状态，不区分实时完成、在「加载更早」后出现，或在读者离开尾部时结束。这可能在轮次关闭或历史变完整时让读者上方的内容重排。若自动收起会隐藏过程成员中的键盘焦点，则改为打开共享过程组并把焦点留在原处；手动收起会先把焦点移到过程控件，再隐藏成员。存在「加载更早」时，每个过程保持展开且控件隐藏；历史加载完整后，合格过程立即使用默认收起状态。页面重新加载会恢复持久化的 Normal 或 Compact 偏好；逐轮手动展开只在同一页面生命周期内的 view remount 之间保留。切换到 Normal 会显示所有过程行，切回 Compact 时会在默认收起状态上重新应用当前页面生命周期内的手动展开记录。
 
-这项展示与 [Conversation Node 组装](../architecture/2026-08-09-client-conversation-node-assembly.zh.md)共同成立：Definition 持有确定性的过程事实，Seat 持有共享交互状态，keyed renderer 保持独立。[按日志顺序投影的人工 transcript](../bug-fix/2026-07-30-web-transcript-log-ordered-projection.zh.md)保持完整，因为折叠不改变任何会话事件或模型输入。
+这项展示与 [Conversation Node 组装](../architecture/2026-08-09-client-conversation-node-assembly.zh.md)共同成立：Definition 持有确定性的过程事实，Seat 持有共享交互状态，keyed renderer 保持独立。[按日志顺序投影的人工 transcript](../../archived/bug-fix/2026-07-30-web-transcript-log-ordered-projection.zh.md)保持完整，因为折叠不改变任何会话事件或模型输入。
 
 ## 曾考虑的替代方案
 

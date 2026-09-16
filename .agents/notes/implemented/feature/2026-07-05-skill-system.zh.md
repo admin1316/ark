@@ -24,7 +24,7 @@ DeepSeek Harness 使用同一原语，使项目特定的评审、插件编写和
 
 加载文件系统服务时，项目与自定义 skill 根通过 `ctx.fs` 读取：项目根目录查找使用 `resolve` 和 `stat` 探测 `.git`，根目录发现使用 `listDir`，skill 读取使用 `readText`。由操作者拥有的用户根与配置的 bundled 根使用可中止的宿主 Node I/O，使会话的工作区文件系统无法隐藏部署配置；每个胜出的 locator 都保留这项信任分类，确保目录发现与后续正文加载使用同一权限。缺失根、格式错误或非文本文件均随警告跳过。根目录或单个条目的意外失败会把目录观测标为不完整，同时保留仍可读取的同级候选项，使消费方继续使用最后一份完整目录，而不会发布看似发生删除的结果。
 
-`dsh-tool-skill` 在会话的第一个 `agent/pre-step` 注入一个持久化的 user-role `<system-reminder>` 目录，作为带来源的 `user/message`，且仅当该 agent 的工具视图解析到本插件精确的 `skill` 注册时才注入。该目录仅包含排序后的 skill 名称与描述；不包含正文、路径、来源、提供方和路由提示。描述经过空白规范化、XML 转义，并受 `catalogDescriptionMaxLength` 上限约束，其默认值为 `500`，最小值为 `3`。完整的 skill 正文从不包含在目录中。（目录最初通过仅请求的[会话前缀扩展点](../../archived/feature/2026-07-07-session-prefix.md)（已归档）传递；[统一带来源消息的决策](../architecture/2026-07-22-unified-send-and-coalesced-user-messages.zh.md)将其移入持久化历史。）
+`dsh-tool-skill` 在会话的第一个 `agent/pre-step` 注入一个持久化的 user-role `<system-reminder>` 目录，作为带来源的 `user/message`，且仅当该 agent 的工具视图解析到本插件精确的 `skill` 注册时才注入。该目录仅包含排序后的 skill 名称与描述；不包含正文、路径、来源、提供方和路由提示。描述经过空白规范化、XML 转义，并受 `catalogDescriptionMaxLength` 上限约束，其默认值为 `500`，最小值为 `3`。完整的 skill 正文从不包含在目录中。（目录最初通过仅请求的[会话前缀扩展点](../../archived/feature/2026-07-07-session-prefix.zh.md)（已归档）传递；[统一带来源消息的决策](../architecture/2026-07-22-unified-send-and-coalesced-user-messages.zh.md)将其移入持久化历史。）
 
 注册表的 `list()` 返回全部胜出摘要，而模型与用户消费方应用[独立调用策略决策](2026-07-28-skill-invocation-policy.zh.md)定义的调用判定。`skill({ name })` 工具为当前 agent cwd 加载一个模型可调用的 skill，返回包含 `<skill_content name="...">`、`<skill_resources>` 和 `<skill_instructions>` 的工具结果。`resourceBase` 提供一个目录、URL 或不透明的提供方管理的基路径，用于显式引用的脚本、参考资料和资产；资源仅按需加载，不进行目录枚举。无法解析的名称报告该 skill 未知或不再可用；无效名称和 `invocation.modelInvocable` 为 `false` 的 skill 保留不同的工具错误。工具结果是面向模型的可见披露路径。
 
@@ -38,7 +38,7 @@ DeepSeek Harness 使用同一原语，使项目特定的评审、插件编写和
 
 **将本地文件系统扫描直接放入 `ctx.skills`。** 否决，因为编码 agent、Web agent 和未来的插件生态需要不同的 skill 来源。提供方注册表与 subagent seam 镜像：注册表拥有冲突解决和消费方，实现负责加载。
 
-**使用系统提示词段落。** 否决，因为渲染后的系统提示词是单一字符串，而目录是一条 user-role `<system-reminder>` 消息。[仅请求的会话前缀扩展点](../../archived/feature/2026-07-07-session-prefix.md)（已归档）是最初的机制；统一带来源消息的决策移除该扩展点后，目录改为具有相同消息形状的持久化带来源注入。
+**使用系统提示词段落。** 否决，因为渲染后的系统提示词是单一字符串，而目录是一条 user-role `<system-reminder>` 消息。[仅请求的会话前缀扩展点](../../archived/feature/2026-07-07-session-prefix.zh.md)（已归档）是最初的机制；统一带来源消息的决策移除该扩展点后，目录改为具有相同消息形状的持久化带来源注入。
 
 **在 `~/.dsh/skills/.system` 下物化内置 DSH 编写 skill。** 否决，因为打包的 skill 不会在启动时写入用户主目录，嵌入式或远程提供方在配置后提供 skill。
 
@@ -54,4 +54,4 @@ agent-core 主干包含一个目录贡献者、一个本地提供方和一个面
 
 ## 延后
 
-fork 的 skill 上下文（`context: fork`）、参数声明与提示（`arguments` 和 `argument-hint`）、以及逐 skill 的工具约束（`allowed-tools` 和 `disallowed-tools`）不在已交付的约定范围内。注册表、本地提供方和面向模型的工具不解析、不广播、也不强制执行这些字段。直接用户调用已作为 TUI 功能交付，基于共享调用策略和受信的 `get()` 原语；见[已归档的 TUI skill 斜杠命令](../../archived/feature/2026-07-21-tui-skill-slash-command.md)。
+fork 的 skill 上下文（`context: fork`）、参数声明与提示（`arguments` 和 `argument-hint`）、以及逐 skill 的工具约束（`allowed-tools` 和 `disallowed-tools`）不在已交付的约定范围内。注册表、本地提供方和面向模型的工具不解析、不广播、也不强制执行这些字段。直接用户调用已作为 TUI 功能交付，基于共享调用策略和受信的 `get()` 原语；见[已归档的 TUI skill 斜杠命令](../../archived/feature/2026-07-21-tui-skill-slash-command.zh.md)。

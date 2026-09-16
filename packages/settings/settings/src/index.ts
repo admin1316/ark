@@ -9,6 +9,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { isAbsolute } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { openNativeTextFile } from '@deepseek-ai/dsh-native-command'
 import { Remote, TypertLookupFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type z from '@deepseek-ai/schemastery'
@@ -146,27 +147,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/**
- * Deep equality over JSON-compatible data (objects, arrays, primitives) — the
- * Service Definition's single change-detection predicate, exported so the invariant
- * companion checks exactly the implementation's relation.
- * @param a - one JSON-compatible value.
- * @param b - the other JSON-compatible value.
- * @returns whether the two values are structurally equal.
- */
-export function deepEqualJson(a: unknown, b: unknown): boolean {
-  if (a === b) return true
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
-    return a.every((entry, index) => deepEqualJson(entry, b[index]))
-  }
-  const left = a as Record<string, unknown>
-  const right = b as Record<string, unknown>
-  const keys = Object.keys(left)
-  if (keys.length !== Object.keys(right).length) return false
-  return keys.every(key => Object.hasOwn(right, key) && deepEqualJson(left[key], right[key]))
-}
+export { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 
 /**
  * A write refused because the namespace moved since the caller read it. The

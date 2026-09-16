@@ -1,21 +1,986 @@
 import { Buffer } from "node:buffer";
-import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { z } from "zod";
+import { mkdir, stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { Service } from "@deepseek-ai/cordis";
-import { installModelSelection } from "@deepseek-ai/dsh-agent";
+import { canonicalClientTimeZone } from "@deepseek-ai/dsh-subagent";
+import { sessionModelSelection } from "@deepseek-ai/dsh-agent-default-model/session-selection";
 import { PresetMountError, UnknownPresetError, resolveSessionPreset } from "@deepseek-ai/dsh-agent-presets";
 import { ApiRemoteSessionNotFound, ApiRemoteSubagentSessionOwnership, apiRemoteSubagentOwnershipError, hasApiRemoteSubagentOwner } from "@deepseek-ai/dsh-api-remotes/agent-lookup";
 import { AttachmentError, admitEncodedImages } from "@deepseek-ai/dsh-attachment";
-import { createUserMessage, freezeMessage } from "@deepseek-ai/dsh-llm";
+import { BlockAssembler, createUserMessage, deepFreeze, freezeMessage } from "@deepseek-ai/dsh-llm";
 import { MessageId, ReasoningEffortId } from "@deepseek-ai/dsh-llm/brand";
 import { SessionId, findToolCallArguments, isAppendSurfaceEvent, snapshotJsonValue } from "@deepseek-ai/dsh-session";
 import { SessionQueryError } from "@deepseek-ai/dsh-session-query";
 import { SessionTitleInvalidError } from "@deepseek-ai/dsh-session-title";
 import { isSkillName, isUserInvocable } from "@deepseek-ai/dsh-skill";
 import { WorkspaceId, WorkspaceSessionDeletionBlockedError } from "@deepseek-ai/dsh-workspace";
-import { z } from "zod";
+import { deriveTurnTokenUsage } from "@deepseek-ai/dsh-token-meter/client";
 import { Zip, ZipDeflate } from "fflate";
+//#region lib/types/prompt-receipts.js
+/** Incremental ordinary-prompt receipts derived from the existing inbox log. */
+const receiptSchema = z.object({
+	messageId: z.string(),
+	seq: z.number().int().nonnegative(),
+	digest: z.string().nullable(),
+	conflict: z.boolean()
+});
+const stateSchema = z.object({
+	seedLength: z.number().int().nonnegative(),
+	entries: z.record(z.string(), receiptSchema)
+});
+/**
+* Canonical request fingerprint; hash the encoded image instead of retaining it.
+* @param request - original content and delivery mode; invocation and Session identities are not part of the digest.
+* @param clientTimeZone - already canonicalized client time zone, or undefined when absent.
+* @returns version-prefixed SHA-256 digest used to reject changed payloads under an accepted invocation identity.
+*/
+function promptDigest(request, clientTimeZone) {
+	const content = request.content.map((part) => part.type === "text" ? {
+		type: part.type,
+		text: part.text
+	} : {
+		type: part.type,
+		mediaType: part.mediaType,
+		data: part.data,
+		name: part.name ?? null
+	});
+	return "v1:" + createHash("sha256").update(JSON.stringify({
+		mode: request.mode,
+		clientTimeZone: clientTimeZone ?? null,
+		content
+	})).digest("hex");
+}
+/** Existing receipt entries are never rewritten by queue edits or later consumption. */
+function foldReceipts(state, event) {
+	if (event.seq < state.seedLength) return state;
+	const messages = event.type === "agent/inbox/spliced" ? event.data.inserted : event.type === "user/message" ? [event.data] : [];
+	let entries = state.entries;
+	for (const message of messages) {
+		const source = message.source;
+		if (source.kind !== "user" || !("invocationId" in source) || typeof source.invocationId !== "string") continue;
+		const previous = Object.hasOwn(entries, source.invocationId) ? entries[source.invocationId] : void 0;
+		const digest = "promptDigest" in source && typeof source.promptDigest === "string" ? source.promptDigest : null;
+		if (previous !== void 0) {
+			if (previous.messageId === message.id && previous.digest === digest || previous.conflict) continue;
+			if (entries === state.entries) entries = { ...entries };
+			Object.defineProperty(entries, source.invocationId, {
+				value: {
+					...previous,
+					conflict: true
+				},
+				enumerable: true,
+				configurable: true,
+				writable: true
+			});
+		} else {
+			if (entries === state.entries) entries = { ...entries };
+			Object.defineProperty(entries, source.invocationId, {
+				value: {
+					messageId: message.id,
+					seq: event.seq,
+					digest,
+					conflict: false
+				},
+				enumerable: true,
+				configurable: true,
+				writable: true
+			});
+		}
+	}
+	return entries === state.entries ? state : {
+		...state,
+		entries
+	};
+}
+/**
+* Register with the shared projection owner; no receipt data is exposed on the wire.
+* @param ctx - Host context with an injected projection registry that owns incremental replay and disposal.
+*/
+function installPromptReceipts(ctx) {
+	ctx.sessionProjections.register({
+		key: "promptReceipts",
+		stateSchema,
+		init: (header) => ({
+			seedLength: header.seedLength ?? 0,
+			entries: {}
+		}),
+		apply: foldReceipts,
+		stateVersion: 1
+	});
+}
+//#endregion
+//#region lib/types/semantic-history.js
+/** Complete message reads over the existing immutable Session observation owner. */
+var __addDisposableResource$1 = function(env, value, async) {
+	if (value !== null && value !== void 0) {
+		if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
+		var dispose, inner;
+		if (async) {
+			if (!Symbol.asyncDispose) throw new TypeError("Symbol.asyncDispose is not defined.");
+			dispose = value[Symbol.asyncDispose];
+		}
+		if (dispose === void 0) {
+			if (!Symbol.dispose) throw new TypeError("Symbol.dispose is not defined.");
+			dispose = value[Symbol.dispose];
+			if (async) inner = dispose;
+		}
+		if (typeof dispose !== "function") throw new TypeError("Object not disposable.");
+		if (inner) dispose = function() {
+			try {
+				inner.call(this);
+			} catch (e) {
+				return Promise.reject(e);
+			}
+		};
+		env.stack.push({
+			value,
+			dispose,
+			async
+		});
+	} else if (async) env.stack.push({ async: true });
+	return value;
+};
+var __disposeResources$1 = (function(SuppressedError) {
+	return function(env) {
+		function fail(e) {
+			env.error = env.hasError ? new SuppressedError(e, env.error, "An error was suppressed during disposal.") : e;
+			env.hasError = true;
+		}
+		var r, s = 0;
+		function next() {
+			while (r = env.stack.pop()) try {
+				if (!r.async && s === 1) return s = 0, env.stack.push(r), Promise.resolve().then(next);
+				if (r.dispose) {
+					var result = r.dispose.call(r.value);
+					if (r.async) return s |= 2, Promise.resolve(result).then(next, function(e) {
+						fail(e);
+						return next();
+					});
+				} else s |= 1;
+			} catch (e) {
+				fail(e);
+			}
+			if (s === 1) return env.hasError ? Promise.reject(env.error) : Promise.resolve();
+			if (env.hasError) throw env.error;
+		}
+		return next();
+	};
+})(typeof SuppressedError === "function" ? SuppressedError : function(error, suppressed, message) {
+	var e = new Error(message);
+	return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+});
+/** A read refusal that can cross the existing Remote result boundary. */
+var SemanticHistoryError = class extends Error {
+	code;
+	constructor(code, message) {
+		super(message);
+		this.code = code;
+	}
+};
+/** Numeric indices and optional assembled text; never retains a prepared lease or raw log. */
+var SemanticHistoryReader = class {
+	ctx;
+	createPresenter;
+	generations = /* @__PURE__ */ new WeakMap();
+	indices = /* @__PURE__ */ new Map();
+	content = /* @__PURE__ */ new Map();
+	contentBytes = 0;
+	materializing = false;
+	maxIndices;
+	maxIndexBytes;
+	maxContentBytes;
+	maxContentReaders;
+	contentIdleMs;
+	constructor(ctx, createPresenter, limits = {}) {
+		this.ctx = ctx;
+		this.createPresenter = createPresenter;
+		this.maxIndices = limits.indexEntries ?? 8;
+		this.maxIndexBytes = limits.indexBytes ?? 16 * 1024 * 1024;
+		this.maxContentBytes = limits.contentBytes ?? 8 * 1024 * 1024;
+		this.maxContentReaders = limits.contentReaders ?? 8;
+		this.contentIdleMs = limits.contentIdleMs ?? 6e4;
+		for (const value of [
+			this.maxIndices,
+			this.maxIndexBytes,
+			this.maxContentBytes,
+			this.maxContentReaders,
+			this.contentIdleMs
+		]) if (!Number.isSafeInteger(value) || value < 0) throw new Error("semantic history limits must be non-negative safe integers");
+	}
+	/** Release cached indices and retained content readers, including their expiry timers. */
+	clear() {
+		this.indices.clear();
+		for (const id of this.content.keys()) this.closeContent(id);
+	}
+	/**
+	* Retain one authoritative immutable source for raw and semantic history alike.
+	* @param request - Session identity, optional expected child ownership, and optional previously issued source cut.
+	* @param signal - cancels observation acquisition; an abort detected before return releases the acquired observation.
+	* @returns authorized source and cut with a current-source assertion; the caller must dispose the returned lease.
+	* @throws SemanticHistoryError when the query owner is absent, the source is stale, or child ownership is invalid.
+	*/
+	async observe(request, signal) {
+		const query = this.ctx.get("sessionQuery");
+		if (query === void 0) throw new SemanticHistoryError("history-unavailable", "session query is not mounted");
+		if (request.sourceRevision !== void 0 && typeof request.sourceRevision !== "string") throw new SemanticHistoryError("invalid-argument", "sourceRevision must be a string");
+		let observed;
+		try {
+			observed = await query.observeSession(request.sessionId, {
+				projectionMode: request.expectedSubagentMode === void 0 ? "none" : "all",
+				signal
+			});
+		} catch (error) {
+			if (request.sourceRevision !== void 0 && error instanceof SessionQueryError && error.code === "SESSION_QUERY_SESSION_NOT_FOUND") throw new SemanticHistoryError("history-stale-source", "history source is no longer available");
+			throw error;
+		}
+		try {
+			signal.throwIfAborted();
+			const identity = this.identity(observed);
+			const through = request.sourceRevision === void 0 ? observed.cursor : this.cut(request.sourceRevision, identity, observed.cursor);
+			this.authorize(request, observed, through);
+			return {
+				observed,
+				identity,
+				through,
+				revision: `${identity}:${String(through)}`,
+				assertCurrent: () => {
+					this.assertCurrent(observed, identity);
+				},
+				[Symbol.dispose]: () => {
+					observed[Symbol.dispose]();
+				}
+			};
+		} catch (error) {
+			observed[Symbol.dispose]();
+			throw error;
+		}
+	}
+	authorize(request, observed, through) {
+		if (request.expectedParentSessionId !== void 0 && observed.header.parentSession !== request.expectedParentSessionId) throw new SemanticHistoryError("subagent-unauthorized", "subagent parent changed during history read");
+		if (observed.header.origin !== "subagent" && request.expectedSubagentMode === void 0) return;
+		if (observed.header.origin !== "subagent" || request.expectedParentSessionId === void 0 || request.expectedSubagentMode === void 0) throw new SemanticHistoryError("subagent-unauthorized", "child history requires its direct parent and mode");
+		const descriptor = observed.projections?.values.subagent;
+		if (descriptor === void 0 || descriptor === null || descriptor.seq < (observed.header.seedLength ?? 0) || descriptor.seq > through) throw new SemanticHistoryError("subagent-catalog-diagnostic", "child history has no valid own descriptor at this cut");
+		if (descriptor.mode !== request.expectedSubagentMode) throw new SemanticHistoryError("subagent-not-found", "requested child mode does not match the history source");
+	}
+	/**
+	* Existing preset owner receives only the latest selection at the bound cut.
+	* @param observed - retained immutable source whose header and events belong to this read.
+	* @param identity - source identity returned with the observation, used to reuse its numeric index.
+	* @param through - inclusive fixed event cut; later preset selections are excluded.
+	* @param signal - checked while indexing to stop cancelled reads.
+	* @returns original header and at most one preset-selection event for the existing preset resolver.
+	*/
+	presentationSource(observed, identity, through, signal) {
+		const seq = this.index(identity, observed.events, through, signal).presetSelections.findLast((seq) => seq <= through);
+		const preset = seq === void 0 ? void 0 : observed.events[seq];
+		return {
+			header: observed.header,
+			events: preset === void 0 ? [] : [preset]
+		};
+	}
+	/**
+	* Read semantic descriptors or fragments of exact JSON content at an authorized source cut.
+	* @param request - page cursor or content-reader request, including ownership and source revision where required.
+	* @param signal - caller cancellation checked during source observation, indexing, and content production.
+	* @returns a semantic page or content fragment; unfinished content is retained until completion, close, expiry, or clear.
+	* @throws SemanticHistoryError for invalid requests, stale sources, ownership failures, or exhausted reader budgets.
+	*/
+	async read(request, signal) {
+		const env_1 = {
+			stack: [],
+			error: void 0,
+			hasError: false
+		};
+		try {
+			if (request.view === "content" && typeof request.sourceRevision !== "string") throw new SemanticHistoryError("invalid-argument", "content requires sourceRevision");
+			if (request.view === "semantic" && request.beforeRecordId !== void 0 && request.sourceRevision === void 0) throw new SemanticHistoryError("invalid-argument", "pagination requires sourceRevision");
+			if (request.view === "content" && request.contentReadId !== void 0) return this.continueContent(request, request.contentReadId, signal);
+			if (request.view === "content" && request.close === true) throw new SemanticHistoryError("invalid-argument", "close requires contentReadId");
+			const { observed, identity, through, revision } = __addDisposableResource$1(env_1, await this.observe(request, signal), false);
+			const index = this.index(identity, observed.events, through, signal);
+			const records = index.records.filter((record) => record.orderSeq <= through);
+			if (request.view === "content") {
+				const domain = [
+					"tool",
+					"status",
+					"turn"
+				].find((domain) => request.recordId === `${identity}/dependency-${domain}`);
+				const record = domain === void 0 ? records.find((item) => item.id === request.recordId) : {
+					id: request.recordId,
+					kind: "tool",
+					domain,
+					orderSeq: 0
+				};
+				if (record === void 0) throw new SemanticHistoryError("invalid-argument", "record does not belong to this history cut");
+				const offset = boundedInteger(request.offset, 0, 0, Number.MAX_SAFE_INTEGER, "offset");
+				const maximum = boundedInteger(request.maxCodeUnits, 16384, 2, 65536, "maxCodeUnits");
+				const key = `${revision}/${record.id}`;
+				let readId;
+				let materialized;
+				if (materialized === void 0) {
+					if (offset !== 0) throw new SemanticHistoryError("invalid-argument", "continuation requires contentReadId");
+					if (this.materializing || this.content.size >= this.maxContentReaders || this.contentBytes > this.maxContentBytes) throw new SemanticHistoryError("history-content-busy", "finish or close an existing content read first");
+					this.materializing = true;
+					let text;
+					try {
+						text = await this.recordText(record, observed, revision, index, through, signal);
+					} finally {
+						this.materializing = false;
+					}
+					this.assertCurrent(observed, identity);
+					const bytes = contentCharge(key, text);
+					if (this.content.size >= this.maxContentReaders || this.contentBytes > this.maxContentBytes || bytes <= this.maxContentBytes && this.contentBytes + bytes > this.maxContentBytes) throw new SemanticHistoryError("history-content-busy", "content reader budget is in use");
+					readId = randomUUID();
+					const timer = this.expiry(readId);
+					materialized = {
+						key,
+						text,
+						bytes,
+						timer,
+						sessionId: request.sessionId,
+						parentSessionId: observed.header.parentSession,
+						subagentMode: request.expectedSubagentMode,
+						subagentDescriptorSeq: observed.projections?.values.subagent?.seq,
+						identity,
+						revision,
+						through,
+						recordId: record.id
+					};
+					this.content.set(readId, materialized);
+					this.contentBytes += bytes;
+				}
+				if (readId === void 0) throw new Error("content reader has no identity");
+				const text = materialized.text;
+				if (offset > text.length || splitsSurrogate(text, offset)) throw new SemanticHistoryError("invalid-argument", "offset is not a content boundary");
+				let end = Math.min(text.length, offset + maximum);
+				if (splitsSurrogate(text, end)) end -= 1;
+				this.assertCurrent(observed, identity);
+				const done = end === text.length;
+				const fragment = text.slice(offset, end);
+				if (done) this.closeContent(readId);
+				else {
+					clearTimeout(materialized.timer);
+					materialized.timer = this.expiry(readId);
+				}
+				return {
+					view: "content",
+					sourceRevision: revision,
+					asOfThroughSeq: through,
+					recordId: record.id,
+					contentReadId: readId,
+					encoding: "json",
+					offset,
+					text: fragment,
+					nextOffset: end,
+					done
+				};
+			}
+			const count = boundedInteger(request.maxRecords, 50, 1, 200, "maxRecords");
+			const before = request.beforeRecordId === void 0 ? records.length : records.findIndex((record) => record.id === request.beforeRecordId);
+			if (before < 0) throw new SemanticHistoryError("invalid-argument", "cursor does not belong to this history cut");
+			const start = Math.max(0, before - count);
+			const page = [];
+			for (const record of records.slice(start, before)) {
+				signal.throwIfAborted();
+				const canonical = atCut(record.canonical, through);
+				const call = atCut(record.call, through);
+				const result = atCut(record.result, through);
+				const endSeq = record.turn === void 0 ? void 0 : atCut(index.turnEnds.get(record.turn), through);
+				const end = endSeq === void 0 ? void 0 : observed.events[endSeq];
+				const finalized = canonical === void 0 ? void 0 : observed.events[canonical];
+				const state = record.kind === "assistant" ? finalized?.type === "assistant/message" ? finalized.data.interrupted === true ? "interrupted" : "complete" : atCut(record.orphaned, through) !== void 0 ? "orphaned-prefix" : atCut(record.closed, through) !== void 0 || end !== void 0 ? "failed-prefix" : observed.source === "live" ? "active" : "orphaned-prefix" : record.kind === "tool" && (call === void 0 || result === void 0) ? "unpaired" : "complete";
+				page.push({
+					id: record.id,
+					kind: record.kind,
+					orderSeq: record.orderSeq,
+					time: observed.events[record.orderSeq]?.time ?? 0,
+					...record.turn === void 0 ? {} : { turn: record.turn },
+					...record.step === void 0 ? {} : { step: record.step },
+					state,
+					contentState: "complete-at-cut",
+					preview: safePreview(this.preview(record, observed.events, through, signal)),
+					...canonical === void 0 ? {} : { canonicalEventSeq: canonical },
+					...call === void 0 ? {} : { callEventSeq: call },
+					...result === void 0 ? {} : { resultEventSeq: result },
+					...end?.type === "turn/end" && end.data.reason.kind === "completed" ? { completedTurnEndSeq: end.seq } : {}
+				});
+			}
+			this.assertCurrent(observed, identity);
+			return {
+				view: "semantic",
+				sourceRevision: revision,
+				asOfThroughSeq: through,
+				records: page,
+				hasMore: start > 0,
+				turns: this.turnContexts(index, through, new Set(page.flatMap((record) => record.turn === void 0 ? [] : [record.turn]))),
+				dependencyRecords: {
+					tool: `${identity}/dependency-tool`,
+					status: `${identity}/dependency-status`,
+					turn: `${identity}/dependency-turn`
+				},
+				...start > 0 && page[0] !== void 0 ? { nextBeforeRecordId: page[0].id } : {},
+				pendingDomains: []
+			};
+		} catch (e_1) {
+			env_1.error = e_1;
+			env_1.hasError = true;
+		} finally {
+			__disposeResources$1(env_1);
+		}
+	}
+	async continueContent(request, readId, signal) {
+		signal.throwIfAborted();
+		const body = this.content.get(readId);
+		if (body === void 0 || body.sessionId !== request.sessionId || body.recordId !== request.recordId || body.revision !== request.sourceRevision) throw new SemanticHistoryError("history-content-expired", "content reader expired or belongs to another record");
+		if (request.expectedParentSessionId !== void 0 && body.parentSessionId !== request.expectedParentSessionId) throw new SemanticHistoryError("subagent-unauthorized", "content reader belongs to another parent");
+		if (body.subagentMode !== void 0 && (request.expectedSubagentMode !== body.subagentMode || request.expectedParentSessionId !== body.parentSessionId)) throw new SemanticHistoryError("subagent-unauthorized", "content reader requires its original child address");
+		const offset = boundedInteger(request.offset, 0, 0, Number.MAX_SAFE_INTEGER, "offset");
+		const maximum = boundedInteger(request.maxCodeUnits, 16384, 2, 65536, "maxCodeUnits");
+		if (request.close === true) {
+			this.closeContent(readId);
+			return {
+				view: "content",
+				sourceRevision: body.revision,
+				asOfThroughSeq: body.through,
+				recordId: body.recordId,
+				contentReadId: readId,
+				encoding: "json",
+				offset,
+				text: "",
+				nextOffset: offset,
+				done: true
+			};
+		}
+		const current = this.ctx.sessions.get(body.sessionId);
+		let valid = false;
+		if (current !== void 0) {
+			valid = this.generations.get(current) === body.identity && current.seq - 1 >= body.through && current.header.parentSession === body.parentSessionId;
+			if (valid && body.subagentMode !== void 0) valid = this.currentChildDescriptor(current, body.subagentMode, body.subagentDescriptorSeq);
+		} else if (body.identity.startsWith("cold-")) {
+			const persistence = this.ctx.get("sessionPersistence");
+			if (persistence !== void 0) {
+				const snapshot = (await persistence.listSnapshots(signal)).find((item) => item.header.id === body.sessionId);
+				signal.throwIfAborted();
+				valid = this.ctx.sessions.get(body.sessionId) === void 0 && snapshot !== void 0 && coldIdentity(String(snapshot.revision)) === body.identity && snapshot.header.parentSession === body.parentSessionId;
+			}
+		}
+		if (!valid) {
+			this.closeContent(readId);
+			throw new SemanticHistoryError("history-stale-source", "content source was replaced or changed");
+		}
+		if (offset > body.text.length || splitsSurrogate(body.text, offset)) throw new SemanticHistoryError("invalid-argument", "offset is not a content boundary");
+		let end = Math.min(body.text.length, offset + maximum);
+		if (splitsSurrogate(body.text, end)) end -= 1;
+		const done = end === body.text.length;
+		const text = body.text.slice(offset, end);
+		if (done) this.closeContent(readId);
+		else {
+			clearTimeout(body.timer);
+			body.timer = this.expiry(readId);
+		}
+		return {
+			view: "content",
+			sourceRevision: body.revision,
+			asOfThroughSeq: body.through,
+			recordId: body.recordId,
+			contentReadId: readId,
+			encoding: "json",
+			offset,
+			text,
+			nextOffset: end,
+			done
+		};
+	}
+	assertCurrent(observed, identity) {
+		if (observed.source === "live") {
+			if (this.identity(observed) !== identity) throw new SemanticHistoryError("history-stale-source", "history source changed while presenting content");
+			const descriptor = observed.projections?.values.subagent;
+			const current = this.ctx.sessions.get(observed.header.id);
+			if (observed.header.origin === "subagent" && (current === void 0 || descriptor == null || !this.currentChildDescriptor(current, descriptor.mode, descriptor.seq))) throw new SemanticHistoryError("history-stale-source", "child descriptor changed while reading history");
+		}
+	}
+	currentChildDescriptor(session, mode, seq) {
+		try {
+			const descriptor = this.ctx.get("sessionProjections")?.snapshot(session, ["subagent"]).values.subagent;
+			return descriptor !== void 0 && descriptor !== null && descriptor.mode === mode && descriptor.seq === seq;
+		} catch {
+			return false;
+		}
+	}
+	identity(observed) {
+		if (observed.source === "prepared") return coldIdentity(String(observed.revision));
+		const session = this.ctx.sessions.get(observed.header.id);
+		if (session === void 0 || session.header !== observed.header || session.seq - 1 < observed.cursor || session.eventAt(observed.cursor) !== observed.events[observed.cursor]) throw new SemanticHistoryError("history-stale-source", "live source changed during observation");
+		let generation = this.generations.get(session);
+		if (generation === void 0) {
+			generation = `live-${randomUUID()}`;
+			this.generations.set(session, generation);
+		}
+		return generation;
+	}
+	cut(revision, identity, available) {
+		const prefix = `${identity}:`;
+		if (!revision.startsWith(prefix)) throw new SemanticHistoryError("history-stale-source", "history source was replaced or changed");
+		const text = revision.slice(prefix.length);
+		const cut = Number(text);
+		if (!Number.isSafeInteger(cut) || cut < -1 || cut > available || String(cut) !== text) throw new SemanticHistoryError("history-stale-source", "history cut is no longer available");
+		return cut;
+	}
+	index(identity, events, through, signal) {
+		let index = this.indices.get(identity);
+		this.indices.delete(identity);
+		index ??= {
+			through: -1,
+			records: [],
+			currentAttempts: /* @__PURE__ */ new Map(),
+			firstChunks: /* @__PURE__ */ new Map(),
+			calls: /* @__PURE__ */ new Map(),
+			turnEnds: /* @__PURE__ */ new Map(),
+			turnStarts: /* @__PURE__ */ new Map(),
+			turnUsage: /* @__PURE__ */ new Map(),
+			usageBytes: 0,
+			presetSelections: [],
+			activeTurn: void 0,
+			dependencies: {
+				tool: [],
+				status: [],
+				turn: []
+			},
+			lastMetricChunk: void 0
+		};
+		for (let seq = index.through + 1; seq <= through; seq += 1) {
+			if ((seq & 4095) === 0) signal.throwIfAborted();
+			const event = events[seq];
+			if (event === void 0) throw new SemanticHistoryError("history-stale-source", "history prefix is not contiguous");
+			indexDependencies(index, event);
+			switch (event.type) {
+				case "agent-preset/selected":
+					index.presetSelections.push(seq);
+					break;
+				case "turn/start":
+					if (!index.turnStarts.has(event.data.turn)) index.turnStarts.set(event.data.turn, seq);
+					index.activeTurn = event.data.turn;
+					break;
+				case "user/message":
+					index.records.push({
+						id: `${identity}/user-${String(seq)}`,
+						kind: "user",
+						orderSeq: seq,
+						canonical: seq,
+						...index.activeTurn === void 0 ? {} : { turn: index.activeTurn }
+					});
+					break;
+				case "assistant/chunk": {
+					const key = `${String(event.data.turn)}:${String(event.data.step)}`;
+					let attempt = index.currentAttempts.get(key);
+					if (attempt === void 0 || attempt.canonical !== void 0) {
+						attempt = {
+							id: `${identity}/assistant-${String(seq)}`,
+							kind: "assistant",
+							orderSeq: seq,
+							firstChunk: seq,
+							turn: event.data.turn,
+							step: event.data.step
+						};
+						index.records.push(attempt);
+						index.currentAttempts.set(key, attempt);
+						index.firstChunks.set(seq, attempt);
+					}
+					attempt.lastChunk = seq;
+					if (event.data.chunk.type === "finish" && (event.data.chunk.reason.kind === "error" || event.data.chunk.reason.kind === "aborted")) attempt.closed = seq;
+					break;
+				}
+				case "assistant/message": {
+					let first;
+					for (const source of event.sourceEventSeqs ?? []) {
+						const chunk = events[source];
+						if (chunk?.type === "assistant/chunk" && chunk.data.turn === event.data.turn && chunk.data.step === event.data.step) first = first === void 0 ? source : Math.min(first, source);
+					}
+					const key = `${String(event.data.turn)}:${String(event.data.step)}`;
+					let attempt = first === void 0 ? void 0 : index.firstChunks.get(first);
+					if (attempt === void 0 || attempt.canonical !== void 0) {
+						attempt = {
+							id: `${identity}/assistant-${String(seq)}`,
+							kind: "assistant",
+							orderSeq: seq,
+							turn: event.data.turn,
+							step: event.data.step
+						};
+						index.records.push(attempt);
+					}
+					attempt.canonical = seq;
+					index.currentAttempts.delete(key);
+					break;
+				}
+				case "llm/retry-started": {
+					const key = `${String(event.data.turn)}:${String(event.data.step)}`;
+					const attempt = index.currentAttempts.get(key);
+					if (attempt !== void 0) attempt.closed ??= seq;
+					index.currentAttempts.delete(key);
+					break;
+				}
+				case "tool/call": {
+					const key = `${String(event.data.turn)}:${String(event.data.step)}:${event.data.callId}`;
+					const record = {
+						id: `${identity}/tool-${String(seq)}`,
+						kind: "tool",
+						orderSeq: seq,
+						call: seq,
+						turn: event.data.turn,
+						step: event.data.step
+					};
+					index.calls.set(key, record);
+					index.records.push(record);
+					break;
+				}
+				case "tool/result": {
+					const key = `${String(event.data.turn)}:${String(event.data.step)}:${event.data.message.source.callId}`;
+					let record = index.calls.get(key);
+					if (record === void 0) {
+						record = {
+							id: `${identity}/tool-${String(seq)}`,
+							kind: "tool",
+							orderSeq: seq,
+							turn: event.data.turn,
+							step: event.data.step
+						};
+						index.records.push(record);
+					}
+					record.result = seq;
+					break;
+				}
+				case "session/end-seed":
+					for (const attempt of index.currentAttempts.values()) attempt.orphaned ??= seq;
+					index.currentAttempts.clear();
+					break;
+				case "turn/end":
+					index.turnEnds.set(event.data.turn, seq);
+					const start = index.turnStarts.get(event.data.turn);
+					const usage = start === void 0 ? null : deriveTurnTokenUsage(eventRange(events, start, seq, signal)) ?? null;
+					index.turnUsage.set(event.data.turn, usage === null ? null : deepFreeze(usage));
+					index.usageBytes += JSON.stringify(usage).length * 2;
+					if (index.activeTurn === event.data.turn) index.activeTurn = void 0;
+					for (const [key, attempt] of index.currentAttempts) if (attempt.turn === event.data.turn) {
+						attempt.closed ??= seq;
+						index.currentAttempts.delete(key);
+					}
+					break;
+				default: break;
+			}
+			index.through = seq;
+		}
+		this.indices.set(identity, index);
+		const charge = (value) => value.usageBytes + value.presetSelections.length * 16 + value.records.length * 1024 + (value.dependencies.tool.length + value.dependencies.status.length + value.dependencies.turn.length) * 16 + (value.turnEnds.size + value.turnStarts.size + value.turnUsage.size) * 1024 + [...value.calls.keys()].reduce((sum, key) => sum + key.length * 4 + 128, 0);
+		let bytes = [...this.indices.values()].reduce((sum, value) => sum + charge(value), 0);
+		while (this.indices.size > this.maxIndices || bytes > this.maxIndexBytes) {
+			const first = this.indices.keys().next().value;
+			if (first === void 0) break;
+			const removed = this.indices.get(first);
+			if (removed !== void 0) bytes -= charge(removed);
+			this.indices.delete(first);
+		}
+		return index;
+	}
+	blocks(record, events, through, signal) {
+		const canonical = atCut(record.canonical, through);
+		const event = canonical === void 0 ? void 0 : events[canonical];
+		if (event?.type === "user/message") return event.data.content;
+		if (event?.type === "assistant/message") return event.data.message.content;
+		const assembler = new BlockAssembler();
+		if (record.firstChunk !== void 0 && record.lastChunk !== void 0) for (let seq = record.firstChunk; seq <= Math.min(through, record.lastChunk); seq += 1) {
+			if ((seq & 4095) === 0) signal.throwIfAborted();
+			const chunk = events[seq];
+			if (chunk?.type === "assistant/chunk" && chunk.data.turn === record.turn && chunk.data.step === record.step) assembler.push(chunk.data.chunk);
+		}
+		return assembler.interruptedBlocks();
+	}
+	preview(record, events, through, signal) {
+		if (record.kind === "tool") {
+			const call = record.call === void 0 ? void 0 : events[record.call];
+			return call?.type === "tool/call" ? call.data.name.slice(0, 256) : "tool result";
+		}
+		const canonical = atCut(record.canonical, through);
+		const event = canonical === void 0 ? void 0 : events[canonical];
+		if (event?.type === "user/message") return blockPreview(event.data.content);
+		if (event?.type === "assistant/message") return blockPreview(event.data.message.content);
+		const assembler = new BlockAssembler();
+		if (record.firstChunk === void 0 || record.lastChunk === void 0) return "";
+		const end = Math.min(through, record.lastChunk, record.firstChunk + 4095);
+		for (let seq = record.firstChunk; seq <= end; seq += 1) {
+			signal.throwIfAborted();
+			const event = events[seq];
+			if (event?.type !== "assistant/chunk" || event.data.turn !== record.turn || event.data.step !== record.step) continue;
+			const chunk = event.data.chunk;
+			if (chunk.type === "text-delta" || chunk.type === "reasoning-delta") assembler.push({
+				...chunk,
+				text: chunk.text.slice(0, 256)
+			});
+			else if (chunk.type === "block-end" && (chunk.block.type === "text" || chunk.block.type === "reasoning")) assembler.push({
+				...chunk,
+				block: {
+					...chunk.block,
+					text: chunk.block.text.slice(0, 256)
+				}
+			});
+			else if (chunk.type === "block-start" && (chunk.blockType === "text" || chunk.blockType === "reasoning")) assembler.push(chunk);
+			const preview = blockPreview(assembler.interruptedBlocks());
+			if (preview.length >= 256) return preview;
+		}
+		return blockPreview(assembler.interruptedBlocks());
+	}
+	async recordText(record, observed, revision, index, through, signal) {
+		const canonical = atCut(record.canonical, through);
+		const event = canonical === void 0 ? void 0 : observed.events[canonical];
+		const presetSeq = index.presetSelections.findLast((seq) => seq <= through);
+		const preset = presetSeq === void 0 ? void 0 : observed.events[presetSeq];
+		const present = this.createPresenter({
+			header: observed.header,
+			events: preset === void 0 ? [] : [preset]
+		});
+		let body;
+		if (record.domain !== void 0) body = await this.dependencyBundle(record.domain, observed, revision, index, through, signal, present);
+		else if (record.kind === "tool") {
+			const callSeq = atCut(record.call, through);
+			const resultSeq = atCut(record.result, through);
+			const call = callSeq === void 0 ? void 0 : observed.events[callSeq];
+			const result = resultSeq === void 0 ? void 0 : observed.events[resultSeq];
+			const dependencies = call === void 0 ? [] : [call];
+			body = {
+				kind: "tool",
+				...call === void 0 ? {} : { call: await present(call, dependencies) },
+				...result === void 0 ? {} : { result: await present(result, dependencies) }
+			};
+		} else if (event?.type === "user/message" || event?.type === "assistant/message") body = {
+			kind: record.kind,
+			entry: await present(event, [])
+		};
+		else body = {
+			kind: "assistant-prefix",
+			turn: record.turn,
+			step: record.step,
+			content: this.blocks(record, observed.events, through, signal)
+		};
+		signal.throwIfAborted();
+		return JSON.stringify(body);
+	}
+	turnContexts(index, through, turns = index.turnStarts.keys()) {
+		const result = [];
+		for (const turn of turns) {
+			const startSeq = atCut(index.turnStarts.get(turn), through);
+			const endSeq = atCut(index.turnEnds.get(turn), through);
+			if (startSeq === void 0 && endSeq === void 0) continue;
+			result.push({
+				turn,
+				...startSeq === void 0 ? {} : { startSeq },
+				...endSeq === void 0 ? {} : { endSeq },
+				usage: endSeq === void 0 ? null : index.turnUsage.get(turn) ?? null
+			});
+		}
+		return result;
+	}
+	async dependencyBundle(domain, observed, revision, index, through, signal, present) {
+		const sequences = index.dependencies[domain].filter((seq) => seq <= through);
+		if (domain === "turn" && observed.events[through]?.type === "assistant/chunk" && sequences.at(-1) !== through) sequences.push(through);
+		const entries = [];
+		const missing = /* @__PURE__ */ new Set();
+		const sourceEvents = [];
+		for (const seq of sequences) {
+			signal.throwIfAborted();
+			const event = observed.events[seq];
+			if (event === void 0) throw new SemanticHistoryError("history-stale-source", "dependency source is incomplete");
+			sourceEvents.push(event);
+			let dependencies = [];
+			if (event.type === "tool/result") {
+				const key = `${String(event.data.turn)}:${String(event.data.step)}:${event.data.message.source.callId}`;
+				const callSeq = atCut(index.calls.get(key)?.call, through);
+				const call = callSeq === void 0 ? void 0 : observed.events[callSeq];
+				if (call === void 0) missing.add("parent-call");
+				else dependencies = [call];
+			}
+			entries.push(await present(event, dependencies));
+		}
+		for (const reason of missingDependencies(sourceEvents)) missing.add(reason);
+		return {
+			kind: "dependency",
+			domain,
+			sourceRevision: revision,
+			asOfThroughSeq: through,
+			completeness: missing.size === 0 ? "complete" : "unknown",
+			missing: [...missing],
+			chunkCoverage: domain === "turn" ? "timing-boundaries" : "none",
+			entries,
+			turns: this.turnContexts(index, through)
+		};
+	}
+	expiry(readId) {
+		const timer = setTimeout(() => {
+			this.closeContent(readId);
+		}, this.contentIdleMs);
+		timer.unref();
+		return timer;
+	}
+	closeContent(readId) {
+		const body = this.content.get(readId);
+		if (body === void 0) return;
+		clearTimeout(body.timer);
+		this.contentBytes -= body.bytes;
+		this.content.delete(readId);
+	}
+};
+function atCut(seq, through) {
+	return seq !== void 0 && seq <= through ? seq : void 0;
+}
+function boundedInteger(value, fallback, minimum, maximum, name) {
+	const result = value ?? fallback;
+	if (!Number.isSafeInteger(result) || result < minimum || result > maximum) throw new SemanticHistoryError("invalid-argument", `${name} must be an integer from ${String(minimum)} through ${String(maximum)}`);
+	return result;
+}
+function splitsSurrogate(text, offset) {
+	return offset > 0 && offset < text.length && text.charCodeAt(offset - 1) >= 55296 && text.charCodeAt(offset - 1) <= 56319 && text.charCodeAt(offset) >= 56320 && text.charCodeAt(offset) <= 57343;
+}
+function contentCharge(key, text) {
+	return Math.max(Buffer.byteLength(text), text.length * 2) + key.length * 2 + 128;
+}
+function blockPreview(blocks) {
+	let preview = "";
+	for (const block of blocks) {
+		if (block.type !== "text" && block.type !== "reasoning") continue;
+		if (preview.length > 0) preview += "\n";
+		preview += block.text.slice(0, 256 - preview.length);
+		if (preview.length >= 256) break;
+	}
+	return preview;
+}
+function safePreview(text) {
+	const last = text.charCodeAt(text.length - 1);
+	return last >= 55296 && last <= 56319 ? text.slice(0, -1) : text;
+}
+function* eventRange(events, start, end, signal) {
+	for (let seq = start; seq <= end; seq += 1) {
+		if ((seq & 4095) === 0) signal.throwIfAborted();
+		const event = events[seq];
+		if (event !== void 0) yield event;
+	}
+}
+function coldIdentity(revision) {
+	return `cold-${createHash("sha256").update(revision).digest("hex")}`;
+}
+/** Event interests declared by the existing Native domain reducers. */
+function indexDependencies(index, event) {
+	if (event.type === "assistant/chunk") {
+		if (index.lastMetricChunk === void 0) index.dependencies.turn.push(event.seq);
+		index.lastMetricChunk = event.seq;
+		if (event.data.chunk.type === "finish" && (event.data.chunk.reason.kind === "error" || event.data.chunk.reason.kind === "aborted")) {
+			if (index.dependencies.turn.at(-1) !== event.seq) index.dependencies.turn.push(event.seq);
+			index.lastMetricChunk = void 0;
+		}
+	} else {
+		if (index.lastMetricChunk !== void 0 && index.dependencies.turn.at(-1) !== index.lastMetricChunk) index.dependencies.turn.push(index.lastMetricChunk);
+		index.lastMetricChunk = void 0;
+	}
+	switch (event.type) {
+		case "turn/start":
+		case "turn/end":
+			index.dependencies.tool.push(event.seq);
+			index.dependencies.status.push(event.seq);
+			index.dependencies.turn.push(event.seq);
+			break;
+		case "tool/call":
+		case "tool/result":
+		case "tool/code-dispatch-start":
+		case "tool/code-dispatch":
+		case "tool-workflow/run-start":
+		case "tool-workflow/agent-start":
+		case "tool-workflow/agent-end":
+		case "tool-workflow/run-end":
+			index.dependencies.tool.push(event.seq);
+			break;
+		case "assistant/message":
+			index.dependencies.status.push(event.seq);
+			index.dependencies.turn.push(event.seq);
+			break;
+		case "step/start":
+		case "step/end":
+			index.dependencies.turn.push(event.seq);
+			break;
+		case "command/run":
+		case "command/done":
+		case "compaction/start":
+		case "compaction/summary":
+		case "compaction/end":
+		case "user/message":
+		case "request/context":
+		case "request/header":
+		case "llm/retry":
+		case "llm/retry-started":
+			index.dependencies.status.push(event.seq);
+			break;
+		default: break;
+	}
+}
+/** Check relationship presence; domain rendering remains with the existing consumer. */
+function missingDependencies(events) {
+	const missing = /* @__PURE__ */ new Set();
+	const calls = /* @__PURE__ */ new Set();
+	const dispatches = /* @__PURE__ */ new Set();
+	const workflows = /* @__PURE__ */ new Set();
+	const members = /* @__PURE__ */ new Set();
+	const commands = /* @__PURE__ */ new Set();
+	const compactions = /* @__PURE__ */ new Set();
+	const turns = /* @__PURE__ */ new Set();
+	for (const event of events) switch (event.type) {
+		case "turn/start":
+			turns.add(event.data.turn);
+			break;
+		case "turn/end":
+			if (!turns.has(event.data.turn)) missing.add("turn-start");
+			break;
+		case "tool/call":
+			calls.add(event.data.callId);
+			break;
+		case "tool/result":
+			if (!calls.has(event.data.message.source.callId)) missing.add("parent-call");
+			break;
+		case "tool/code-dispatch-start":
+		case "tool/code-dispatch":
+			if (!calls.has(event.data.rootCallId) || event.data.parentCallId !== event.data.rootCallId && !dispatches.has(event.data.parentCallId)) missing.add("parent-call");
+			if (event.type === "tool/code-dispatch-start") dispatches.add(event.data.subCallId);
+			else if (!dispatches.has(event.data.subCallId)) missing.add("dispatch-start");
+			break;
+		case "tool-workflow/run-start":
+			workflows.add(event.data.runId);
+			break;
+		case "tool-workflow/agent-start":
+			if (!workflows.has(event.data.runId)) missing.add("workflow-start");
+			members.add(`${event.data.runId}:${String(event.data.seq)}`);
+			break;
+		case "tool-workflow/agent-end":
+			if (!members.has(`${event.data.runId}:${String(event.data.seq)}`)) missing.add("workflow-member");
+			break;
+		case "tool-workflow/run-end":
+			if (!workflows.has(event.data.runId)) missing.add("workflow-start");
+			break;
+		case "command/run":
+			commands.add(event.data.commandId);
+			break;
+		case "command/done":
+			if (!commands.has(event.data.commandId)) missing.add("command-start");
+			break;
+		case "compaction/start":
+			compactions.add(event.data.compactionId);
+			break;
+		case "compaction/summary":
+		case "compaction/end":
+			if (!compactions.has(event.data.compactionId)) missing.add("compaction-start");
+			break;
+		default: break;
+	}
+	return [...missing];
+}
+//#endregion
 //#region lib/types/session-export.js
 /**
 * Host-owned Session log download.
@@ -413,13 +1378,74 @@ async function fetchSessionLogExport(ctx, request, compressionLevel) {
 * Workspace-session retirement.
 *
 * The package reads each domain's live owner directly. It deliberately owns
-* no transcript, projection, workspace, attachment, or model-catalog cache.
-* Its only mutable maps serialize identity creation/resume, retain exact
-* AgentHandle capabilities, and hold the session-local model selection that
-* prompt assembly consumes.
+* no durable transcript, workspace, attachment, or model-catalog copy.
+* Its bounded semantic reader retains numeric history indices and explicitly
+* released content materializations over the existing Session query owner.
+* Other maps serialize identity creation/resume, retain exact AgentHandle
+* capabilities, and hold the session-local selection consumed by prompt assembly.
 *
 * @module @deepseek-ai/dsh-host-session-remote-operations
 */
+var __addDisposableResource = function(env, value, async) {
+	if (value !== null && value !== void 0) {
+		if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
+		var dispose, inner;
+		if (async) {
+			if (!Symbol.asyncDispose) throw new TypeError("Symbol.asyncDispose is not defined.");
+			dispose = value[Symbol.asyncDispose];
+		}
+		if (dispose === void 0) {
+			if (!Symbol.dispose) throw new TypeError("Symbol.dispose is not defined.");
+			dispose = value[Symbol.dispose];
+			if (async) inner = dispose;
+		}
+		if (typeof dispose !== "function") throw new TypeError("Object not disposable.");
+		if (inner) dispose = function() {
+			try {
+				inner.call(this);
+			} catch (e) {
+				return Promise.reject(e);
+			}
+		};
+		env.stack.push({
+			value,
+			dispose,
+			async
+		});
+	} else if (async) env.stack.push({ async: true });
+	return value;
+};
+var __disposeResources = (function(SuppressedError) {
+	return function(env) {
+		function fail(e) {
+			env.error = env.hasError ? new SuppressedError(e, env.error, "An error was suppressed during disposal.") : e;
+			env.hasError = true;
+		}
+		var r, s = 0;
+		function next() {
+			while (r = env.stack.pop()) try {
+				if (!r.async && s === 1) return s = 0, env.stack.push(r), Promise.resolve().then(next);
+				if (r.dispose) {
+					var result = r.dispose.call(r.value);
+					if (r.async) return s |= 2, Promise.resolve(result).then(next, function(e) {
+						fail(e);
+						return next();
+					});
+				} else s |= 1;
+			} catch (e) {
+				fail(e);
+			}
+			if (s === 1) return env.hasError ? Promise.reject(env.error) : Promise.resolve();
+			if (env.hasError) throw env.error;
+		}
+		return next();
+	};
+})(typeof SuppressedError === "function" ? SuppressedError : function(error, suppressed, message) {
+	var e = new Error(message);
+	return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+});
+const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024;
+const COLD_SUMMARY_BATCH_SIZE = 16;
 const DEFAULT_MAX_MESSAGES = 50;
 const MAX_HISTORY_MESSAGES = 2048;
 const MAX_HISTORY_PAGE_EVENTS = 2048;
@@ -428,7 +1454,6 @@ const SESSION_SEARCH_RESULT_LIMIT = 20;
 const SESSION_SEARCH_SNIPPET_MAX_CODE_POINTS = 240;
 const SESSION_SEARCH_PROVIDER_CALL_LIMIT = 100;
 const MESSAGE_TYPES = new Set(["user/message", "assistant/message"]);
-const IANA_TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+.-]*(?:\/[A-Za-z0-9_+.-]+)+$/;
 const sessionListMetadataSchema = z.object({
 	blank: z.boolean(),
 	lastPromptAt: z.number().nullable()
@@ -515,37 +1540,14 @@ function truncateUnicodeCodePoints(value, maximum) {
 	}
 	return value;
 }
-/** Validate and canonicalize one user-supplied IANA time zone. */
-function canonicalClientTimeZone(value) {
-	if (value.length === 0 || value.trim() !== value || value !== "UTC" && !IANA_TIME_ZONE.test(value)) return void 0;
-	try {
-		const canonical = new Intl.DateTimeFormat("en-US", { timeZone: value }).resolvedOptions().timeZone;
-		return canonical === "UTC" || IANA_TIME_ZONE.test(canonical) ? canonical : void 0;
-	} catch {
-		return;
-	}
-}
-/** Whether one transcript has started an Agent turn. */
-function sessionBlank(events) {
-	return !events.some((event) => event.type === "turn/start");
-}
-/** Latest human prompt time in one exact log cut. */
-function lastPromptAt(events) {
-	let latest = null;
-	for (const event of events) if (event.type === "user/message" && event.data.source.kind === "user") latest = event.time;
-	return latest;
-}
 /** Session-header fields shared by attached and cold listing rows. */
-function summaryFields(header, events = []) {
-	const preset = resolveSessionPreset({
-		header,
-		events
-	});
+function summaryFields(header, projections) {
+	const preset = projections?.values.agentPreset;
 	return {
 		...header.parentSession === void 0 ? {} : { parentSessionId: header.parentSession },
 		...header.origin === void 0 ? {} : { origin: header.origin },
 		...header.cwd === void 0 ? {} : { cwd: header.cwd },
-		...preset === void 0 ? {} : { agentPreset: preset }
+		...typeof preset !== "string" ? {} : { agentPreset: preset }
 	};
 }
 /** Convert a projection snapshot without leaking mutable registry state. */
@@ -594,12 +1596,12 @@ function historyEndIndex(events, beforeSeq) {
 * Select one newest-first bounded event window. Message count is a secondary
 * readability boundary; the hard event bound always wins.
 */
-function historyEventWindow(events, beforeSeq, maxMessages) {
+function historyEventWindow(events, beforeSeq, maxMessages, maxEvents) {
 	const end = historyEndIndex(events, beforeSeq);
 	let start = end;
 	let count = 0;
 	let groupStart;
-	while (start > 0 && end - start < MAX_HISTORY_PAGE_EVENTS) {
+	while (start > 0 && end - start < maxEvents) {
 		start -= 1;
 		const event = events[start];
 		if (groupStart !== void 0) {
@@ -740,6 +1742,7 @@ var SessionRemoteOperationsService = class extends Service {
 		"sessions",
 		"workspaceRegistry"
 	];
+	coldBlankProbeMaxBytes;
 	defaultCwd;
 	/** Exact loopback-only path for streaming Session archives. */
 	path = SESSION_EXPORT_PATH;
@@ -747,11 +1750,23 @@ var SessionRemoteOperationsService = class extends Service {
 	handles = /* @__PURE__ */ new Map();
 	creations = /* @__PURE__ */ new Map();
 	resumes = /* @__PURE__ */ new Map();
-	selections = /* @__PURE__ */ new WeakMap();
-	imageAdmissionChains = /* @__PURE__ */ new WeakMap();
+	admissionChains = /* @__PURE__ */ new WeakMap();
 	lifetime = new AbortController();
+	semanticHistory;
 	constructor(ctx, config = {}) {
 		super(ctx, "sessionRemoteOperations");
+		this.semanticHistory = new SemanticHistoryReader(ctx, (source) => {
+			let scope;
+			return async (event, dependencies) => {
+				const view = event.type === "tool/call" || event.type === "tool/result" ? eventView(ctx, event, dependencies, await (scope ??= this.standingPresenterScope(source))) : void 0;
+				return {
+					event: remoteEvent(event),
+					...view === void 0 ? {} : { view }
+				};
+			};
+		}, config.semanticHistory);
+		this.coldBlankProbeMaxBytes = config.coldBlankProbeMaxBytes ?? DEFAULT_COLD_BLANK_PROBE_MAX_BYTES;
+		if (!Number.isSafeInteger(this.coldBlankProbeMaxBytes) || this.coldBlankProbeMaxBytes < 0) throw new RangeError("coldBlankProbeMaxBytes must be a non-negative safe integer");
 		this.defaultCwd = config.cwd ?? process.cwd();
 		this.sessionExportCompressionLevel = sessionLogCompressionLevel(config.sessionExportCompressionLevel);
 		if (!isAbsolute(this.defaultCwd)) throw new Error(`host-session-remote-operations cwd must be absolute: ${JSON.stringify(this.defaultCwd)}`);
@@ -762,11 +1777,13 @@ var SessionRemoteOperationsService = class extends Service {
 		});
 		ctx.effect(() => async () => {
 			this.lifetime.abort(/* @__PURE__ */ new Error("session Remote operations disposed"));
+			this.semanticHistory.clear();
 			const handles = [...this.handles.values()];
 			this.handles.clear();
 			await Promise.allSettled(handles.map((handle) => handle.dispose({ keepInbox: true })));
 		}, "host-session-remote-operations: owned Agent handles");
 		ctx.inject(["sessionProjections"], (projectionCtx) => {
+			installPromptReceipts(projectionCtx);
 			projectionCtx.sessionProjections.register({
 				key: "sessionListMetadata",
 				stateSchema: sessionListMetadataSchema,
@@ -818,29 +1835,7 @@ var SessionRemoteOperationsService = class extends Service {
 	}
 	/** Install or retrieve the session-local request selection. */
 	selectionFor(agent) {
-		const existing = this.selections.get(agent);
-		if (existing !== void 0) return existing;
-		let selected;
-		const currentDefault = () => ({ ...this.ctx.agentDefaultModel.currentSelection() });
-		const selection = {
-			get current() {
-				if (selected !== void 0) return selected;
-				const logged = agent.session.requestHeader()?.config;
-				if (logged !== void 0) return {
-					provider: logged.provider,
-					model: logged.model,
-					...logged.reasoningEffort === void 0 ? {} : { reasoningEffort: logged.reasoningEffort }
-				};
-				return currentDefault();
-			},
-			set current(next) {
-				selected = next;
-			},
-			assembled: void 0
-		};
-		installModelSelection(agent.ctx, selection);
-		this.selections.set(agent, selection);
-		return selection;
+		return sessionModelSelection(this.ctx, agent);
 	}
 	/** Resolve and mount the preset that owns one Agent's tool composition. */
 	async composeAgent(presetId) {
@@ -966,10 +1961,10 @@ var SessionRemoteOperationsService = class extends Service {
 			return failure("internal", `resume failed for session "${sessionId}": ${String(error)}`);
 		}
 	}
-	/** Serialize model switching with image admission for one exact Agent. */
-	serializeImageAdmission(agent, operation) {
-		const result = (this.imageAdmissionChains.get(agent) ?? Promise.resolve()).then(operation);
-		this.imageAdmissionChains.set(agent, result.then(() => void 0, () => void 0));
+	/** Serialize model switching and prompt admission for one exact Agent. */
+	serializeAdmission(agent, operation) {
+		const result = (this.admissionChains.get(agent) ?? Promise.resolve()).then(operation);
+		this.admissionChains.set(agent, result.then(() => void 0, () => void 0));
 		return result;
 	}
 	/** One exact projection cut for an attached or detached transcript. */
@@ -987,6 +1982,10 @@ var SessionRemoteOperationsService = class extends Service {
 	async presenterScope(sessionId, source) {
 		const live = this.ctx.agents.get(sessionId);
 		if (live !== void 0) return live;
+		return this.standingPresenterScope(source);
+	}
+	/** Historical scope is resolved from the caller's fixed cut, never today's live preset. */
+	async standingPresenterScope(source) {
 		const presets = this.ctx.get("agentPresets");
 		if (presets === void 0) return void 0;
 		try {
@@ -995,68 +1994,98 @@ var SessionRemoteOperationsService = class extends Service {
 			return;
 		}
 	}
-	/** Build the current visible Session listing without retaining a second index. */
-	async visibleSummaries(signal) {
+	/** Cached listing hints never materialize a missing projection or replay a log. */
+	listProjections(header, session) {
+		try {
+			return remoteProjections(session === void 0 ? this.ctx.get("sessionProjectionCache")?.cachedSnapshot(header) : this.ctx.get("sessionProjections")?.cachedSnapshot(session));
+		} catch (error) {
+			this.ctx.logger.warn(`session.list: cached projections unavailable for "${header.id}": ${String(error)}`);
+			return;
+		}
+	}
+	attachedSummary(session) {
+		const projections = this.listProjections(session.header, session);
+		const metadata = sessionListMetadataSchema.safeParse(projections?.values.sessionListMetadata);
+		return {
+			sessionId: session.id,
+			updatedAt: Math.max(session.header.createdAt, metadata.success ? metadata.data.lastPromptAt ?? 0 : 0),
+			running: this.ctx.agents.get(session.id)?.status === "running",
+			blank: metadata.success ? metadata.data.blank : session.seq === 0,
+			...summaryFields(session.header, projections),
+			...projections === void 0 ? {} : { projections }
+		};
+	}
+	/** Only small physical artifacts may be observed for an unknown cold blank hint. */
+	async smallColdProjections(query, header, signal) {
+		if (this.coldBlankProbeMaxBytes === 0) return void 0;
+		const location = this.ctx.get("sessionPersistence")?.locate(header);
+		if (location === void 0) return void 0;
 		signal.throwIfAborted();
-		const rows = this.ctx.sessions.list().map((session) => {
-			const promptAt = lastPromptAt(session.events);
-			const projections = this.projectionsFor({
-				kind: "attached",
-				session
-			});
-			return {
-				sessionId: session.id,
-				updatedAt: Math.max(session.header.createdAt, promptAt ?? 0),
-				running: this.ctx.agents.get(session.id)?.status === "running",
-				blank: sessionBlank(session.events),
-				...summaryFields(session.header, session.events),
-				...projections === void 0 ? {} : { projections }
+		try {
+			if ((await stat(location.path)).size > this.coldBlankProbeMaxBytes) return void 0;
+		} catch {
+			signal.throwIfAborted();
+			return;
+		}
+		try {
+			const env_1 = {
+				stack: [],
+				error: void 0,
+				hasError: false
 			};
-		});
-		const liveIds = new Set(rows.map((row) => row.sessionId));
-		const persistence = this.ctx.get("sessionPersistence");
-		if (persistence !== void 0) {
-			const headers = (await persistence.list(signal)).filter((header) => !liveIds.has(header.id) && header.cwd !== void 0);
-			for (const header of headers) {
+			try {
+				const observation = __addDisposableResource(env_1, await query.observeSession(header.id, {
+					signal,
+					projectionMode: "all"
+				}), false);
 				signal.throwIfAborted();
-				let events;
-				try {
-					events = [...(await persistence.inspect(header.id, signal)).events];
-				} catch (error) {
-					if (signal.aborted) throw error;
-					this.ctx.logger.warn(`session.list: cold inspection for "${header.id}" failed; serving it visible: ${String(error)}`);
-				}
-				const raced = this.ctx.sessions.get(header.id);
-				if (raced !== void 0) {
-					const promptAt = lastPromptAt(raced.events);
-					const projections = this.projectionsFor({
-						kind: "attached",
-						session: raced
-					});
-					rows.push({
-						sessionId: raced.id,
-						updatedAt: Math.max(raced.header.createdAt, promptAt ?? 0),
-						running: this.ctx.agents.get(raced.id)?.status === "running",
-						blank: sessionBlank(raced.events),
-						...summaryFields(raced.header, raced.events),
-						...projections === void 0 ? {} : { projections }
-					});
-					continue;
-				}
-				const projections = events === void 0 ? remoteProjections(this.ctx.get("sessionProjectionCache")?.cachedSnapshot(header)) : this.projectionsFor({
-					kind: "detached",
-					header,
-					events
-				});
-				const promptAt = events === void 0 ? null : lastPromptAt(events);
-				rows.push({
-					sessionId: header.id,
-					updatedAt: Math.max(header.createdAt, promptAt ?? 0),
-					running: false,
-					blank: events === void 0 ? false : sessionBlank(events),
-					...summaryFields(header, events),
-					...projections === void 0 ? {} : { projections }
-				});
+				return remoteProjections(observation.projections);
+			} catch (e_1) {
+				env_1.error = e_1;
+				env_1.hasError = true;
+			} finally {
+				__disposeResources(env_1);
+			}
+		} catch (error) {
+			signal.throwIfAborted();
+			this.ctx.logger.warn(`session.list: small cold observation for "${header.id}" failed; serving it visible: ${String(error)}`);
+			return;
+		}
+	}
+	async coldSummary(query, header, signal) {
+		const cached = this.listProjections(header);
+		const metadata = sessionListMetadataSchema.safeParse(cached?.values.sessionListMetadata);
+		const projections = metadata.success && !metadata.data.blank ? cached : await this.smallColdProjections(query, header, signal) ?? cached;
+		const raced = this.ctx.sessions.get(header.id);
+		if (raced !== void 0) return this.attachedSummary(raced);
+		const current = sessionListMetadataSchema.safeParse(projections?.values.sessionListMetadata);
+		return {
+			sessionId: header.id,
+			updatedAt: Math.max(header.createdAt, current.success ? current.data.lastPromptAt ?? 0 : 0),
+			running: false,
+			blank: current.success ? current.data.blank : false,
+			...summaryFields(header, projections),
+			...projections === void 0 ? {} : { projections }
+		};
+	}
+	/** Reuse query corpus visibility and cached hints; bound concurrent physical probes. */
+	async visibleSummaries(query, signal) {
+		signal.throwIfAborted();
+		const records = await query.listSessions(signal);
+		signal.throwIfAborted();
+		const rows = [];
+		const cold = [];
+		for (const record of records) {
+			const live = this.ctx.sessions.get(record.header.id);
+			if (live !== void 0) rows.push(this.attachedSummary(live));
+			else if (record.header.cwd !== void 0) cold.push(record.header);
+		}
+		for (let offset = 0; offset < cold.length; offset += COLD_SUMMARY_BATCH_SIZE) {
+			signal.throwIfAborted();
+			const settled = await Promise.allSettled(cold.slice(offset, offset + COLD_SUMMARY_BATCH_SIZE).map((header) => this.coldSummary(query, header, signal)));
+			for (const result of settled) {
+				if (result.status === "rejected") throw result.reason;
+				rows.push(result.value);
 			}
 		}
 		rows.sort((left, right) => right.updatedAt - left.updatedAt);
@@ -1065,8 +2094,10 @@ var SessionRemoteOperationsService = class extends Service {
 	/** List every attached or persisted Session visible to ordinary routing. */
 	async list(_request, signal) {
 		if (aborted(signal)) return cancelled();
+		const query = this.ctx.get("sessionQuery");
+		if (query === void 0) return failure("internal", "session listing is unavailable: this deployment does not mount @deepseek-ai/dsh-session-query");
 		try {
-			return success({ items: await this.visibleSummaries(signal) });
+			return success({ items: await this.visibleSummaries(query, signal) });
 		} catch (error) {
 			if (aborted(signal)) return cancelled();
 			return failure("internal", `session listing failed: ${String(error)}`);
@@ -1080,8 +2111,9 @@ var SessionRemoteOperationsService = class extends Service {
 		const sessionQuery = this.ctx.get("sessionQuery");
 		if (sessionQuery === void 0) return failure("internal", "session search is unavailable: this deployment does not mount @deepseek-ai/dsh-session-query");
 		try {
-			const visible = await this.visibleSummaries(signal);
-			const visibleIds = new Set(visible.map((item) => item.sessionId));
+			const visible = await sessionQuery.listSessions(signal);
+			signal.throwIfAborted();
+			const visibleIds = new Set(visible.filter((record) => record.header.cwd !== void 0).map((record) => record.header.id));
 			if (visibleIds.size === 0) return success({
 				items: [],
 				hasMore: false
@@ -1126,6 +2158,7 @@ var SessionRemoteOperationsService = class extends Service {
 					}
 					throw error;
 				}
+				signal.throwIfAborted();
 				if (page.items.length > requestedLimit) throw new Error(`session search provider returned ${page.items.length} items; maximum is ${requestedLimit}`);
 				for (const hit of page.items) {
 					if (accepted.length > SESSION_SEARCH_RESULT_LIMIT) continue;
@@ -1291,53 +2324,91 @@ var SessionRemoteOperationsService = class extends Service {
 			events: state.events
 		};
 	}
-	/**
-	* Serve a consistent attached-or-cold transcript page and projection cut.
-	* When `hasMore` is true, the first returned event sequence is the strictly
-	* smaller exclusive `beforeSeq` cursor for the next request.
-	*/
 	async history(request, signal) {
-		if (aborted(signal)) return cancelled();
+		const readSignal = AbortSignal.any([signal, this.lifetime.signal]);
+		if (aborted(readSignal)) return cancelled();
+		if (request.view === "semantic" || request.view === "content") try {
+			return success(await this.semanticHistory.read(request, readSignal));
+		} catch (error) {
+			if (aborted(readSignal) || this.lifetime.signal.aborted) return cancelled();
+			if (error instanceof SemanticHistoryError) return failure(error.code, error.message);
+			return failure("internal", `semantic history unavailable: ${String(error)}`);
+		}
 		if (request.beforeSeq !== void 0 && (!Number.isSafeInteger(request.beforeSeq) || request.beforeSeq < 0)) return failure("invalid-argument", "beforeSeq must be a non-negative safe integer");
+		if (request.maxEvents !== void 0 && (!Number.isSafeInteger(request.maxEvents) || request.maxEvents < 1 || request.maxEvents > MAX_HISTORY_PAGE_EVENTS)) return failure("invalid-argument", `maxEvents must be an integer from 1 through ${String(MAX_HISTORY_PAGE_EVENTS)}`);
 		if (request.maxMessages !== void 0 && (!Number.isSafeInteger(request.maxMessages) || request.maxMessages < 1 || request.maxMessages > MAX_HISTORY_MESSAGES)) return failure("invalid-argument", `maxMessages must be an integer from 1 through ${String(MAX_HISTORY_MESSAGES)}`);
 		try {
-			const source = await this.historySource(request.sessionId, signal);
-			const bearing = source.kind === "attached" ? {
-				header: source.session.header,
-				events: source.session.events
-			} : {
-				header: source.header,
-				events: source.events
+			const env_2 = {
+				stack: [],
+				error: void 0,
+				hasError: false
 			};
-			if (request.expectedParentSessionId !== void 0 && bearing.header.parentSession !== request.expectedParentSessionId) return failure("subagent-unauthorized", "subagent parent changed during history read", { sessionId: request.sessionId });
-			const scope = await this.presenterScope(request.sessionId, bearing);
-			signal.throwIfAborted();
-			const events = source.kind === "attached" ? [...source.session.events] : source.events;
-			const projections = request.beforeSeq === void 0 ? this.projectionsFor(source) : void 0;
-			const sourcePage = historyEventWindow(events, request.beforeSeq, request.maxMessages ?? DEFAULT_MAX_MESSAGES);
-			const fixedValue = {
-				events: [],
-				hasMore: true,
-				...projections === void 0 ? {} : { projections }
-			};
-			const fixedEncodedBytes = Buffer.byteLength(JSON.stringify(fixedValue), "utf8");
-			if (fixedEncodedBytes > MAX_HISTORY_PAGE_ENCODED_BYTES) throw new Error("history projection baseline exceeded the encoded page budget");
-			const page = historyEntryWindow(sourcePage, (event, pageEvents) => {
-				const view = eventView(this.ctx, event, pageEvents, scope);
-				return {
-					event: remoteEvent(event),
-					...view === void 0 ? {} : { view }
+			try {
+				const fixed = __addDisposableResource(env_2, request.view === "raw" || request.sourceRevision !== void 0 || request.expectedSubagentMode !== void 0 ? await this.semanticHistory.observe(request, readSignal) : void 0, false);
+				const source = fixed === void 0 ? await this.historySource(request.sessionId, readSignal) : {
+					kind: "detached",
+					header: fixed.observed.header,
+					events: fixed.observed.events
 				};
-			}, MAX_HISTORY_PAGE_ENCODED_BYTES - fixedEncodedBytes + 2);
-			const value = {
-				events: page.entries,
-				hasMore: page.hasMore,
-				...projections === void 0 ? {} : { projections }
-			};
-			if (Buffer.byteLength(JSON.stringify(value), "utf8") > MAX_HISTORY_PAGE_ENCODED_BYTES && page.entries.length !== 1) throw new Error("history page exceeded the encoded byte budget");
-			return success(value);
+				const bearing = source.kind === "attached" ? {
+					header: source.session.header,
+					events: source.session.events
+				} : {
+					header: source.header,
+					events: source.events
+				};
+				if (request.expectedParentSessionId !== void 0 && bearing.header.parentSession !== request.expectedParentSessionId) return failure("subagent-unauthorized", "subagent parent changed during history read", { sessionId: request.sessionId });
+				if (bearing.header.origin === "subagent" && fixed === void 0) return failure("subagent-unauthorized", "child history requires its direct parent and mode");
+				let scope = fixed === void 0 ? await this.presenterScope(request.sessionId, bearing) : void 0;
+				readSignal.throwIfAborted();
+				fixed?.assertCurrent();
+				const events = fixed?.observed.events ?? (source.kind === "attached" ? source.session.events : source.events);
+				const projections = fixed === void 0 && request.beforeSeq === void 0 ? this.projectionsFor(source) : void 0;
+				const binding = fixed === void 0 ? {} : {
+					view: "raw",
+					sourceRevision: fixed.revision,
+					asOfThroughSeq: fixed.through
+				};
+				const sourcePage = historyEventWindow(events, fixed === void 0 ? request.beforeSeq : Math.min(request.beforeSeq ?? fixed.through + 1, fixed.through + 1), request.maxMessages ?? DEFAULT_MAX_MESSAGES, request.maxEvents ?? MAX_HISTORY_PAGE_EVENTS);
+				if (fixed !== void 0 && sourcePage.events.some((event) => event.type === "tool/call" || event.type === "tool/result")) {
+					scope = await this.standingPresenterScope(this.semanticHistory.presentationSource(fixed.observed, fixed.identity, fixed.through, readSignal));
+					readSignal.throwIfAborted();
+					this.lifetime.signal.throwIfAborted();
+					fixed.assertCurrent();
+				}
+				const fixedValue = {
+					...binding,
+					events: [],
+					hasMore: true,
+					...projections === void 0 ? {} : { projections }
+				};
+				const fixedEncodedBytes = Buffer.byteLength(JSON.stringify(fixedValue), "utf8");
+				if (fixedEncodedBytes > MAX_HISTORY_PAGE_ENCODED_BYTES) throw new Error("history projection baseline exceeded the encoded page budget");
+				const page = historyEntryWindow(sourcePage, (event, pageEvents) => {
+					const view = eventView(this.ctx, event, pageEvents, scope);
+					return {
+						event: remoteEvent(event),
+						...view === void 0 ? {} : { view }
+					};
+				}, MAX_HISTORY_PAGE_ENCODED_BYTES - fixedEncodedBytes + 2);
+				const value = {
+					...binding,
+					events: page.entries,
+					hasMore: page.hasMore,
+					...projections === void 0 ? {} : { projections }
+				};
+				if (Buffer.byteLength(JSON.stringify(value), "utf8") > MAX_HISTORY_PAGE_ENCODED_BYTES && page.entries.length !== 1) throw new Error("history page exceeded the encoded byte budget");
+				fixed?.assertCurrent();
+				return success(value);
+			} catch (e_2) {
+				env_2.error = e_2;
+				env_2.hasError = true;
+			} finally {
+				__disposeResources(env_2);
+			}
 		} catch (error) {
-			if (aborted(signal)) return cancelled();
+			if (aborted(readSignal)) return cancelled();
+			if (error instanceof SemanticHistoryError) return failure(error.code, error.message);
 			if (error instanceof ApiRemoteSessionNotFound) return failure("session-not-found", error.message, { sessionId: request.sessionId });
 			return failure("internal", `history unavailable for session "${request.sessionId}": ${String(error)}`);
 		}
@@ -1415,7 +2486,7 @@ var SessionRemoteOperationsService = class extends Service {
 		if (aborted(signal)) return cancelled();
 		const found = await this.agentFor(request.sessionId);
 		if (!found.ok) return found;
-		return this.serializeImageAdmission(found.value, async () => {
+		return this.serializeAdmission(found.value, async () => {
 			try {
 				const resolved = await this.ctx.llm.resolveCallConfig({
 					provider: request.provider,
@@ -1428,7 +2499,8 @@ var SessionRemoteOperationsService = class extends Service {
 					model: resolved.model,
 					...resolved.reasoningEffort === void 0 ? {} : { reasoningEffort: resolved.reasoningEffort }
 				};
-				this.selectionFor(found.value).current = selected;
+				found.value.session.append("model/selection", selected);
+				this.selectionFor(found.value);
 				try {
 					await this.ctx.agentDefaultModel.saveSelection(selected);
 				} catch (error) {
@@ -1479,6 +2551,7 @@ var SessionRemoteOperationsService = class extends Service {
 	}
 	/** Fork one completed-turn prefix under a new exact Agent lifecycle handle. */
 	async fork(request, signal) {
+		signal = AbortSignal.any([signal, this.lifetime.signal]);
 		if (aborted(signal)) return cancelled();
 		if (request.atSeq !== void 0 && (!Number.isSafeInteger(request.atSeq) || request.atSeq < 0)) return failure("invalid-argument", "atSeq must be a non-negative safe integer");
 		const parentRevision = this.ctx.workspaceRegistry.sessionAdmissionRevision(request.sessionId);
@@ -1487,75 +2560,121 @@ var SessionRemoteOperationsService = class extends Service {
 		} catch (error) {
 			return failure("fork-unavailable", error instanceof Error ? error.message : String(error), { sessionId: request.sessionId });
 		}
-		let source;
+		let fixed;
+		let checkedSource;
 		try {
-			source = await this.readSessionState(request.sessionId, signal);
-		} catch (error) {
-			if (aborted(signal)) return cancelled();
-			if (error instanceof ApiRemoteSessionNotFound) return failure("session-not-found", error.message, { sessionId: request.sessionId });
-			return failure("internal", `fork source unavailable for session "${request.sessionId}": ${String(error)}`);
-		}
-		const lastSeq = source.events.at(-1)?.seq ?? -1;
-		const boundary = (request.atSeq === void 0 ? void 0 : source.events.find((event) => event.type === "turn/end" && event.seq >= request.atSeq)) ?? (request.atSeq === void 0 || request.atSeq > lastSeq ? source.events.findLast((event) => event.type === "turn/end") : void 0);
-		if (boundary === void 0) return failure("fork-unavailable", request.atSeq !== void 0 && request.atSeq <= lastSeq ? `session "${request.sessionId}" has not completed the turn containing event ${request.atSeq}` : `session "${request.sessionId}" has no completed turn to fork from`, { sessionId: request.sessionId });
-		let cut = boundary.seq + 1;
-		while (cut < source.events.length && source.events[cut]?.type !== "turn/start") cut += 1;
-		let workspace;
-		try {
-			workspace = await this.forkWorkspace(source, signal);
-		} catch (error) {
-			if (aborted(signal)) return cancelled();
-			return failure("internal", `failed to resolve fork workspace for session "${request.sessionId}": ${String(error)}`);
-		}
-		const childId = SessionId(`session-${randomUUID()}`);
-		const childRevision = this.ctx.workspaceRegistry.sessionAdmissionRevision(childId);
-		const composition = await this.composeAgent(resolveSessionPreset({
-			header: source.header,
-			events: source.events
-		}));
-		let handle;
-		try {
-			handle = await this.ctx.agents.create({
-				sessionId: childId,
-				seed: source.events.slice(0, cut),
-				meta: {
-					...source.header.cwd === void 0 ? {} : { cwd: source.header.cwd },
-					parentSession: source.id,
-					seedLength: cut,
-					...composition.agentPreset === void 0 ? {} : { agentPreset: composition.agentPreset }
-				},
-				agentOptions: this.agentOptions(),
-				signal,
-				setup: this.withSessionAdmission(composition.setup, [{
+			let source;
+			try {
+				if (request.sourceRevision !== void 0) {
+					const observation = await this.semanticHistory.observe(request, signal);
+					fixed = observation;
+					source = {
+						id: request.sessionId,
+						header: observation.observed.header,
+						events: observation.observed.events
+					};
+					if (request.atSeq !== void 0 && request.atSeq > observation.through) return failure("invalid-argument", "fork anchor is outside the bound history cut");
+				} else source = await this.readSessionState(request.sessionId, signal);
+			} catch (error) {
+				if (aborted(signal)) return cancelled();
+				if (error instanceof SemanticHistoryError) return failure(error.code, error.message);
+				if (error instanceof ApiRemoteSessionNotFound) return failure("session-not-found", error.message, { sessionId: request.sessionId });
+				return failure("internal", `fork source unavailable for session "${request.sessionId}": ${String(error)}`);
+			}
+			const lastSeq = fixed?.through ?? source.events.at(-1)?.seq ?? -1;
+			const boundary = (request.atSeq === void 0 ? void 0 : source.events.find((event) => event.type === "turn/end" && event.seq >= request.atSeq && event.seq <= lastSeq)) ?? (request.atSeq === void 0 || request.atSeq > lastSeq ? source.events.findLast((event) => event.type === "turn/end" && event.seq <= lastSeq) : void 0);
+			if (boundary === void 0) return failure("fork-unavailable", request.atSeq !== void 0 && request.atSeq <= lastSeq ? `session "${request.sessionId}" has not completed the turn containing event ${request.atSeq}` : `session "${request.sessionId}" has no completed turn to fork from`, { sessionId: request.sessionId });
+			let cut = boundary.seq + 1;
+			while (cut <= lastSeq && source.events[cut]?.type !== "turn/start") cut += 1;
+			let workspace;
+			try {
+				workspace = await this.forkWorkspace(source, signal);
+			} catch (error) {
+				if (aborted(signal)) return cancelled();
+				return failure("internal", `failed to resolve fork workspace for session "${request.sessionId}": ${String(error)}`);
+			}
+			const childId = SessionId(`session-${randomUUID()}`);
+			const childRevision = this.ctx.workspaceRegistry.sessionAdmissionRevision(childId);
+			const seed = source.events.slice(0, cut);
+			let handle;
+			try {
+				fixed?.assertCurrent();
+				const composition = await this.composeAgent(resolveSessionPreset({
+					header: source.header,
+					events: fixed === void 0 ? source.events : seed
+				}));
+				const admission = this.withSessionAdmission(composition.setup, [{
 					sessionId: request.sessionId,
 					revision: parentRevision
 				}, {
 					sessionId: childId,
 					revision: childRevision
-				}])
-			});
-			signal.throwIfAborted();
-			await this.ctx.sessions.flush(handle.agent.session);
-			signal.throwIfAborted();
-			this.ownHandle(handle);
-		} catch (error) {
-			if (handle !== void 0) try {
-				await handle.dispose();
-			} catch (disposeError) {
-				this.ctx.logger.warn(`failed to dispose undurable fork "${childId}": ${String(disposeError)}`);
+				}]);
+				const bound = fixed;
+				const setup = bound === void 0 ? admission : async (agentCtx) => {
+					const prepared = await admission(agentCtx);
+					bound.assertCurrent();
+					const checked = await this.semanticHistory.observe({
+						...request,
+						sourceRevision: bound.revision
+					}, signal);
+					checkedSource = checked;
+					const assertSource = () => {
+						signal.throwIfAborted();
+						bound.assertCurrent();
+						checked.assertCurrent();
+						if (bound.observed.source === "prepared" && this.ctx.sessions.get(request.sessionId) !== void 0) throw new SemanticHistoryError("history-stale-source", "fork source became live before publication");
+					};
+					assertSource();
+					return { commit: () => {
+						assertSource();
+						prepared?.commit();
+						assertSource();
+					} };
+				};
+				handle = await this.ctx.agents.create({
+					sessionId: childId,
+					seed,
+					meta: {
+						...source.header.cwd === void 0 ? {} : { cwd: source.header.cwd },
+						parentSession: source.id,
+						seedLength: cut,
+						...composition.agentPreset === void 0 ? {} : { agentPreset: composition.agentPreset }
+					},
+					agentOptions: this.agentOptions(),
+					signal,
+					setup
+				});
+				signal.throwIfAborted();
+				await this.ctx.sessions.flush(handle.agent.session);
+				signal.throwIfAborted();
+				this.ownHandle(handle);
+			} catch (error) {
+				if (handle !== void 0) try {
+					await handle.dispose();
+				} catch (disposeError) {
+					this.ctx.logger.warn(`failed to dispose undurable fork "${childId}": ${String(disposeError)}`);
+				}
+				if (aborted(signal)) return cancelled();
+				if (error instanceof SemanticHistoryError) return failure(error.code, error.message);
+				return failure("internal", `failed to fork session "${request.sessionId}": ${String(error)}`);
 			}
-			if (aborted(signal)) return cancelled();
-			return failure("internal", `failed to fork session "${request.sessionId}": ${String(error)}`);
+			if (workspace !== void 0) try {
+				await workspace.attachSession(childId);
+			} catch (error) {
+				return failure("workspace-attach-failed", `session "${childId}" was forked but could not attach to workspace "${workspace.id}": ${String(error)}`, {
+					sessionId: childId,
+					workspaceId: workspace.id
+				});
+			}
+			return success({ sessionId: childId });
+		} finally {
+			for (const observation of [checkedSource, fixed]) try {
+				observation?.[Symbol.dispose]();
+			} catch {
+				this.ctx.logger.warn("failed to release a fork source observation");
+			}
 		}
-		if (workspace !== void 0) try {
-			await workspace.attachSession(childId);
-		} catch (error) {
-			return failure("workspace-attach-failed", `session "${childId}" was forked but could not attach to workspace "${workspace.id}": ${String(error)}`, {
-				sessionId: childId,
-				workspaceId: workspace.id
-			});
-		}
-		return success({ sessionId: childId });
 	}
 	/** Promote base64 image parts to durable references in caller order. */
 	async durablePromptContent(content) {
@@ -1591,12 +2710,85 @@ var SessionRemoteOperationsService = class extends Service {
 			signal
 		})).some((skill) => skill.name === name && isUserInvocable(skill)) ? commandLine : void 0;
 	}
+	/** Read the existing projection without retaining a second transcript or receipt cache. */
+	promptReceipt(session, invocationId) {
+		const state = this.ctx.get("sessionProjections")?.stateOf(session, "promptReceipts");
+		if (state === void 0) throw new Error("ordinary prompt receipt projection is unavailable");
+		return Object.hasOwn(state.entries, invocationId) ? state.entries[invocationId] : void 0;
+	}
+	receiptConflict(receipt, digest) {
+		return receipt.conflict || receipt.digest === null || receipt.digest !== digest ? failure("invocation-conflict", "invocationId was already accepted with different or unverifiable input") : void 0;
+	}
+	/** Once accepted, caller cancellation cannot undo delivery or bypass durability confirmation. */
+	async confirmPrompt(session, invocationId) {
+		try {
+			const persistence = this.ctx.get("sessionPersistence");
+			if (persistence === void 0 || !await this.ctx.sessions.flush(session)) throw new Error("ordinary prompt has no durability owner");
+			await persistence.ensureMaterialized(session);
+			return success({ accepted: true });
+		} catch (error) {
+			return failure("prompt-durability-unconfirmed", "prompt was accepted but its durable acknowledgement is not confirmed", {
+				accepted: true,
+				invocationId,
+				reason: String(error)
+			});
+		}
+	}
+	/** Confirm a retry before provider lookup or Agent activation, including a cold completed Session. */
+	async acceptedPrompt(request, digest, signal) {
+		const env_3 = {
+			stack: [],
+			error: void 0,
+			hasError: false
+		};
+		try {
+			const revision = this.ctx.workspaceRegistry.sessionAdmissionRevision(request.sessionId);
+			try {
+				this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision);
+			} catch (error) {
+				return failure("agent-busy", "session lifecycle changed before prompt admission", { reason: String(error) });
+			}
+			const live = this.ctx.sessions.get(request.sessionId);
+			if (live !== void 0) {
+				if (hasApiRemoteSubagentOwner(this.ctx, live, this.ctx.agents.get(request.sessionId))) return this.subagentFailure(request.sessionId);
+				const receipt = this.promptReceipt(live, request.invocationId);
+				if (receipt === void 0) return void 0;
+				return this.receiptConflict(receipt, digest) ?? this.confirmPrompt(live, request.invocationId);
+			}
+			const persistence = this.ctx.get("sessionPersistence");
+			if (persistence === void 0) return void 0;
+			const borrowed = __addDisposableResource(env_3, await persistence.borrowSession(request.sessionId, signal), false);
+			signal.throwIfAborted();
+			this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision);
+			if (this.ctx.sessions.get(request.sessionId) !== void 0) return await this.acceptedPrompt(request, digest, signal);
+			if (borrowed.source === "live") return failure("agent-busy", "session lifecycle changed while verifying prompt admission");
+			const session = borrowed.preparedSession;
+			if (hasApiRemoteSubagentOwner(this.ctx, session, void 0)) return this.subagentFailure(request.sessionId);
+			this.ctx.get("sessionProjectionCache")?.hydratePrepared(session, borrowed.inspection.meta, borrowed.inspection.events);
+			const receipt = this.promptReceipt(session, request.invocationId);
+			if (receipt === void 0) return void 0;
+			return this.receiptConflict(receipt, digest) ?? success({ accepted: true });
+		} catch (e_3) {
+			env_3.error = e_3;
+			env_3.hasError = true;
+		} finally {
+			__disposeResources(env_3);
+		}
+	}
 	/** Admit ordinary queued or steering input to the exact live Agent. */
 	async prompt(request, signal) {
 		if (aborted(signal)) return cancelled();
 		if (request.invocationId.length === 0) return failure("invalid-invocation-id", "invocationId must be a non-empty opaque prompt identity");
 		const canonicalTimeZone = request.clientTimeZone === void 0 ? void 0 : canonicalClientTimeZone(request.clientTimeZone);
 		if (request.clientTimeZone !== void 0 && canonicalTimeZone === void 0) return failure("invalid-time-zone", "clientTimeZone must be UTC or a valid IANA Area/Location name", { value: request.clientTimeZone });
+		const digest = promptDigest(request, canonicalTimeZone);
+		try {
+			const accepted = await this.acceptedPrompt(request, digest, signal);
+			if (accepted !== void 0) return accepted;
+		} catch (error) {
+			if (aborted(signal)) return cancelled();
+			return failure("prompt-unavailable", "cannot verify ordinary prompt admission", { reason: String(error) });
+		}
 		const found = await this.agentFor(request.sessionId);
 		if (!found.ok) return found;
 		const agent = found.value;
@@ -1636,14 +2828,13 @@ var SessionRemoteOperationsService = class extends Service {
 			provider: selection.provider,
 			model: selection.model
 		});
-		const hasImage = request.content.some((part) => part.type === "image");
+		if (!request.content.some((part) => part.type !== "text" || part.text.trim().length > 0)) return failure("bad-request", "prompt content must include non-whitespace text or an attachment", {});
 		const admit = async () => {
 			try {
 				signal.throwIfAborted();
-				if (hasImage) {
-					const modelInfo = await this.ctx.llm.resolveModelInfo(selection.provider, selection.model, signal);
-					if (modelInfo.inputModalities !== void 0 && !modelInfo.inputModalities.includes("image")) return failure("attachment-error", `Model "${selection.model}" does not support image input.`, { reason: "MODEL_DOES_NOT_SUPPORT_IMAGES" });
-				}
+				const receipt = this.promptReceipt(agent.session, request.invocationId);
+				if (receipt !== void 0) return this.receiptConflict(receipt, digest) ?? await this.confirmPrompt(agent.session, request.invocationId);
+				if (this.ctx.get("sessionPersistence") === void 0) return failure("prompt-unavailable", "ordinary prompts require a persistence owner");
 				const content = await this.durablePromptContent(request.content);
 				signal.throwIfAborted();
 				const message = createUserMessage({
@@ -1651,20 +2842,26 @@ var SessionRemoteOperationsService = class extends Service {
 					source: {
 						kind: "user",
 						invocationId: request.invocationId,
+						promptDigest: digest,
 						...canonicalTimeZone === void 0 ? {} : { clientTimeZone: canonicalTimeZone }
 					}
 				});
 				this.assertPromptAdmission(request.sessionId, agent);
-				if (request.mode === "steer") agent.steer(message);
-				else agent.followup(message);
-				return success({ accepted: true });
+				try {
+					if (request.mode === "steer") agent.steer(message);
+					else agent.followup(message);
+				} catch (error) {
+					if (this.promptReceipt(agent.session, request.invocationId) === void 0) throw error;
+				}
+				if (this.promptReceipt(agent.session, request.invocationId) === void 0) throw new Error("inbox did not record prompt acceptance");
+				return await this.confirmPrompt(agent.session, request.invocationId);
 			} catch (error) {
 				if (aborted(signal)) return cancelled();
 				if (error instanceof AttachmentError) return failure("attachment-error", error.message, { reason: error.code });
 				return failure("agent-busy", "prompt rejected", { reason: String(error) });
 			}
 		};
-		return hasImage ? this.serializeImageAdmission(agent, admit) : admit();
+		return this.serializeAdmission(agent, admit);
 	}
 	/** Return bytes only for an image referenced by the addressed Session log. */
 	async attachment(request, signal) {
@@ -1703,8 +2900,8 @@ var SessionRemoteOperationsService = class extends Service {
 		if (aborted(signal)) return settled(cancelled());
 		const edited = request.action.kind === "edit" ? this.queueEditContent(request.action.content) : void 0;
 		if (request.action.kind === "edit" && edited === void 0) return settled(failure("attachment-error", "queue edits accept text content only", { reason: "QUEUE_EDIT_NON_TEXT" }));
+		if (edited !== void 0 && !edited.some((block) => block.type === "text" && block.text.trim().length > 0)) return settled(failure("invalid-argument", "queue edit content must not be empty"));
 		const agent = this.ctx.agents.get(request.sessionId);
-		if (agent !== void 0 && hasApiRemoteSubagentOwner(this.ctx, agent.session, agent)) return settled(this.subagentFailure(request.sessionId));
 		if (agent === void 0) return settled(failure("queue-item-not-found", "queued item is no longer pending", { itemId: request.itemId }));
 		const messageId = MessageId(request.itemId);
 		const target = agent.inbox.nextTurn.some((message) => message.id === messageId) ? "next-turn" : agent.inbox.nextStep.some((message) => message.id === messageId) ? "next-step" : void 0;

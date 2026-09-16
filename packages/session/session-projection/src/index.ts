@@ -568,25 +568,25 @@ export class SessionProjectionRegistry extends Service {
     for (const registration of this.registrations.values()) this.cellFor(registration, session)
   }
 
-  /** Fold one unit from init over `events`, producing a cell watermarked at the last folded event. */
+  /** Fold one unit from init through a fixed inclusive Session watermark. */
   private buildCell(
     def: ErasedDefinition,
-    header: SessionHeader,
-    events: readonly SessionEvent[],
+    session: Session,
+    throughSeq: number,
   ): UnitCell {
-    let state = def.init(header)
-    for (const event of events) state = def.apply(state, event)
-    return { state, observedSeq: (events.at(-1)?.seq ?? -1) }
+    const cell = { state: def.init(session.header), observedSeq: -1 }
+    this.advanceCell(def, cell, session, throughSeq)
+    return cell
   }
 
   /** Read (or lazily build, folding the full in-memory log) one unit's cell. */
   private cellFor(registration: Registration, session: Session): UnitCell {
     let cell = registration.cells.get(session)
     if (cell === undefined) {
-      cell = this.buildCell(registration.def, session.header, session.events)
+      cell = this.buildCell(registration.def, session, session.seq - 1)
       registration.cells.set(session, cell)
     } else {
-      this.advanceCell(registration.def, cell, session.events, session.seq - 1)
+      this.advanceCell(registration.def, cell, session, session.seq - 1)
     }
     return cell
   }
@@ -595,12 +595,12 @@ export class SessionProjectionRegistry extends Service {
   private advanceCell(
     def: ErasedDefinition,
     cell: UnitCell,
-    events: readonly SessionEvent[],
+    session: Session,
     throughSeq: number,
   ): void {
     if (cell.observedSeq >= throughSeq) return
     for (let seq = cell.observedSeq + 1; seq <= throughSeq; seq++) {
-      const event = events[seq]
+      const event = session.eventAt(seq)
       if (event === undefined || event.seq !== seq) {
         throw new Error(`session projection ${JSON.stringify(def.key)} cannot advance across missing seq ${String(seq)}`)
       }
@@ -616,12 +616,12 @@ export class SessionProjectionRegistry extends Service {
       let cell = registration.cells.get(session)
       if (cell !== undefined && cell.observedSeq >= event.seq) continue
       if (cell === undefined) {
-        // Late build mid-stream: fold history before this event (seq = log
-        // index, so the prefix slice is exact), then take the normal gate.
-        cell = this.buildCell(registration.def, session.header, session.events.slice(0, event.seq))
+        // Late build mid-stream: fold the fixed prefix before this event,
+        // then take the normal notification gate for the current event.
+        cell = this.buildCell(registration.def, session, event.seq - 1)
         registration.cells.set(session, cell)
       } else {
-        this.advanceCell(registration.def, cell, session.events, event.seq - 1)
+        this.advanceCell(registration.def, cell, session, event.seq - 1)
       }
       const next = registration.def.apply(cell.state, event)
       const changed = !Object.is(next, cell.state)

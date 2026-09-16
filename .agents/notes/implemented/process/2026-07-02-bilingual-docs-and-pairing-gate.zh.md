@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-本仓库的文档语料会被公司内外的人和 agent（智能体）以中英两种语言阅读。在没有机制的情况下纯靠手工维护第二语言，正是译文腐烂的根源：一侧持续演进，另一侧默默失实，而没有门禁能够发现。对于这类不变式，本仓库一贯的做法是将其编码为机械检查（见[质量门禁](2026-06-11-quality-gates.zh.md)与 [doc-sync（文档同步门禁）强制](../../archived/process/2026-06-11-doc-sync-enforcement.md)），因此双语政策随附一道门禁一起交付。
+本仓库的文档语料会被公司内外的人和 agent（智能体）以中英两种语言阅读。在没有机制的情况下纯靠手工维护第二语言，正是译文腐烂的根源：一侧持续演进，另一侧默默失实，而没有门禁能够发现。对于这类不变式，本仓库一贯的做法是将其编码为机械检查（见[质量门禁](2026-06-11-quality-gates.zh.md)与 [doc-sync（文档同步门禁）强制](../../archived/process/2026-06-11-doc-sync-enforcement.zh.md)），因此双语政策随附一道门禁一起交付。
 
 ## 决策
 
@@ -19,7 +19,7 @@ Status: implemented
 
 ## 验证
 
-验证约定分别覆盖每个边界。`verify-translation-pairing` 固定配对完整性、hash、语言切换行和结构；[`project-doc-site.spec.ts`](../../../../scripts/project-doc-site.spec.ts) 固定已发布配对按 locale 选择对应源文件；[`cordis-config-files.spec.ts`](../../../../scripts/cordis-config-files.spec.ts) 固定 Loader YAML 的发现以及翻译记录的排除；[翻译提示词可运行快照](../../../../scripts/translation-prompt.snapshot.ts)则固定渲染后的系统消息、五对经评审的示例、源请求和所消费的响应。这些检查共同使配对漂移、发布漂移、配置误分类和模型可见提示词漂移都可在评审中看见。
+验证约定分别覆盖每个边界。`verify-translation-pairing` 固定配对完整性、hash、语言切换行和结构；[`project-doc-site.spec.ts`](../../../../scripts/project-doc-site.spec.ts) 固定已发布配对按 locale 选择对应源文件；[`cordis-config-files.spec.ts`](../../../../scripts/cordis-config-files.spec.ts) 固定 Loader YAML 的发现以及翻译记录的排除；[翻译提示词可运行快照](../../../../scripts/translation-prompt.expected.spec.ts)则固定渲染后的系统消息、五对经评审的示例、源请求和所消费的响应。这些检查共同使配对漂移、发布漂移、配置误分类和模型可见提示词漂移都可在评审中看见。
 
 ## 曾考虑的替代方案
 

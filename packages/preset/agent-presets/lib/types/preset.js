@@ -20,7 +20,7 @@ export class UnknownPresetError extends Error {
     available;
     constructor(
     /** The id that was requested. */
-    presetId,
+    presetId, 
     /** Ids the roster does supply, for the caller to offer instead. */
     available) {
         super(`agent-presets: preset "${presetId}" not found (available: ${available.join(', ') || 'none'})`);
@@ -38,7 +38,7 @@ export class PresetLockedError extends Error {
     presetId;
     constructor(
     /** The session whose composition is already fixed. */
-    sessionId,
+    sessionId, 
     /** The preset that was refused. */
     presetId) {
         super(`agent-presets: session "${sessionId}" has already started; its agent preset is fixed`);
@@ -52,7 +52,7 @@ export class PresetMountError extends Error {
     reason;
     constructor(
     /** The preset whose composition failed. */
-    presetId,
+    presetId, 
     /** Why it failed, without this package's own message prefix. */
     reason, options) {
         super(`agent-presets: preset "${presetId}" failed to mount: ${reason}`, options);

@@ -14,8 +14,8 @@ import SqliteSessionPersistence from '@deepseek-ai/dsh-session-persistence-sqlit
 import SubagentService, { seedDescriptorTurn, snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
-import TeamService, { foldTeam, TeamId, TeamMessageId } from '../src/index.ts'
-import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
+import TeamService, { foldTeam, TeamId, TeamMessageId } from '@deepseek-ai/dsh-agent-team'
+import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '@deepseek-ai/dsh-agent-team'
 import { TestSessionQuery } from './test-session-query.ts'
 
 const SIGNAL = new AbortController().signal
@@ -214,7 +214,11 @@ for (const backend of backends) {
         delivery: 'wakeup',
         signal: SIGNAL,
       })
-      expect(receipt.status).toBe('accepted')
+      // Both receipt statuses are valid product outcomes (types.ts): the
+      // dispatch either lands in the target's inbox immediately ('accepted')
+      // or parks in the mailbox under load ('queued'). The waitFor below
+      // asserts the actual delivery either way.
+      expect(['accepted', 'queued']).toContain(receipt.status)
       await vi.waitFor(() => { expect(second.ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
       await vi.waitFor(() => { expect(durable(activeHandle.agent).pendingMessages).toEqual([]) })
 

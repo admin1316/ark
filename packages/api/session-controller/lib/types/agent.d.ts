@@ -1,6 +1,7 @@
 /** Agent activation, composition, and model-selection policy owned by API Session. */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Agent, AgentSetup, ModelSelection as AgentModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent';
+import { type SessionModelSelection } from '@deepseek-ai/dsh-agent-default-model/session-selection';
+import type { Agent, AgentSetup } from '@deepseek-ai/dsh-agent';
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session';
 import { type SessionObservation } from '@deepseek-ai/dsh-session-query';
 import type { SessionError } from './types.ts';
@@ -37,24 +38,7 @@ export type ApiSessionAgentResult = {
 } | {
     readonly error: ApiSessionAgentError;
 };
-type InstalledSelection = ModelSelectionRef & {
-    current: AgentModelSelection;
-    consume(provider: string, model: string, reasoningEffort: string | undefined): boolean;
-};
-/**
- * Test whether generic Session routing must leave an identity to subagent routing.
- * @param ctx - Host context carrying the Agent ownership registry.
- * @param session - attached or live Session whose ownership is tested.
- * @param agent - live Agent when one exists for the Session.
- * @returns whether subagent routing owns the Session identity.
- */
-export declare function hasApiSessionSubagentOwner(ctx: Context, session: Pick<Session, 'header'>, agent: Agent | undefined): boolean;
-/**
- * Build the stable caller-facing subagent ownership rejection.
- * @param sessionId - Session identity owned by subagent routing.
- * @returns a stable Session-domain failure.
- */
-export declare function apiSessionSubagentOwnershipError(sessionId: SessionId): ApiSessionAgentError;
+export { hasApiRemoteSubagentOwner as hasApiSessionSubagentOwner, apiRemoteSubagentOwnershipError as apiSessionSubagentOwnershipError, } from '@deepseek-ai/dsh-api-remotes/agent-lookup';
 /**
  * Inspect one cold Session without repairing, resuming, or publishing it.
  * @param ctx - Host context carrying Session persistence.
@@ -71,7 +55,6 @@ export declare class ApiSessionAgentController {
     private readonly ctx;
     private readonly resumes;
     private readonly creations;
-    private readonly selections;
     private readonly imageAdmissionChains;
     /** @param ctx - Host context carrying Agent, model, persistence, and Typert services. */
     constructor(ctx: Context);
@@ -102,22 +85,7 @@ export declare class ApiSessionAgentController {
      * @param agent - live Agent that owns the selection.
      * @returns the installed mutable selection reference.
      */
-    selectionFor(agent: Agent): InstalledSelection;
-    /**
-     * Commit and cache one validated selection for the next prompt assembly.
-     * @param agent - live Agent that owns the selection.
-     * @param selection - validated selection to record and apply.
-     */
-    selectForNextRequest(agent: Agent, selection: AgentModelSelection): void;
-    /**
-     * Let a matching durable request header retire the execution cache.
-     * @param agent - live Agent whose request was recorded.
-     * @param provider - provider route used by the request.
-     * @param model - provider-owned model used by the request.
-     * @param reasoningEffort - adapter-owned effort used by the request.
-     * @returns whether the pending selection was consumed.
-     */
-    consumeSelection(agent: Agent, provider: string, model: string, reasoningEffort: string | undefined): boolean;
+    selectionFor(agent: Agent): SessionModelSelection;
     /**
      * Read the current Agent preset from the Session projection.
      * @param session - live Session whose projection state is available.
@@ -154,5 +122,4 @@ export declare class ApiSessionAgentController {
     presetForObservation(observation: SessionObservation): string | undefined;
     private assertPresetUnchanged;
 }
-export {};
 //# sourceMappingURL=agent.d.ts.map

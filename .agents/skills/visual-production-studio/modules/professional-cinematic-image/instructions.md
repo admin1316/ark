@@ -13,7 +13,7 @@ description: 专业电影感生图提示词专家。把情绪意图反推成确�
 
 默认**只写和优化提示词、不出图**（用户明确要求生成时才出）。输出语言跟随用户。默认面向 **GPT Image 2**，同样适用 **Nano Banana**。
 
-用户要求细致表情、哭戏或情绪递进时，必须先完整读取 [真人微表情与连续表演合同](../_shared/micro-expression-performance-contract.md)。每一个人物关键帧都必须由其所在镜头的 `performance_state_id` 推导，不能重复粘贴通用悲伤/喜悦模板。单张电影关键帧只能冻结其中一个阶段：按景别写眼、眉、嘴、呼吸、视线、手势和泪水在**当前瞬间**的状态；删掉"缓慢、逐渐、随后、最后、反复"等时间推进词。完整递进必须先拆成多张关键帧，不能让一张静帧同时承担整段表演。
+用户要求细致表情、哭戏或情绪递进时，必须先完整读取 [真人微表情与连续表演合同](../../../_shared/micro-expression-performance-contract.md)。每一个人物关键帧都必须由其所在镜头的 `performance_state_id` 推导，不能重复粘贴通用悲伤/喜悦模板。单张电影关键帧只能冻结其中一个阶段：按景别写眼、眉、嘴、呼吸、视线、手势和泪水在**当前瞬间**的状态；删掉"缓慢、逐渐、随后、最后、反复"等时间推进词。完整递进必须先拆成多张关键帧，不能让一张静帧同时承担整段表演。
 
 > **深档索引**：技能内 >80 行的深档（方法论/风格库/流程文档）不默认加载；需要时先查 `knowledge/index.md` 的用途→章节→只读对应小节，并按文件头 metadata（loading: on-demand）判断。
 > **震惊工程**：产出必须过震惊点检查——画面/章节/方案里至少一个观众预期之外的元素（反常元素/情绪炸弹/隐喻层/唯一性指纹），标准见 `../_shared/shock-engineering.md`。先专业后震惊，顺序不能反。
@@ -48,8 +48,8 @@ description: 专业电影感生图提示词专家。把情绪意图反推成确�
 - **空镜提示词**（场景镜头：叙事锚点/动态元素/构图即情绪）→ `references/empty-shot.md`
 - **物理连接（画面元素不许悬浮）**：光柱必须落点（水面光斑）、人物必须有来处、光源必须有动机——防“AI 拼贴感”
 - **物理相机+材质物理层**（焦距/T/ISO/SSS/IOR）→ `references/camera-materials.md`
-- **剧照级十维细节**（景别/机位/镜头/灯光/色彩/质感/表演/环境/时间/情绪——ShotDeck 级全细节检查清单，生图提示词必过）→ 读取 [../_shared/shotdeck-max-detail.md](../_shared/shotdeck-max-detail.md)
-- **实战提示词模板库**（模特一致性/角色设定卡/风格矩阵/12宫格分镜/2D转真人/人物真实感——7 组已验证模板，按需直接套用）→ 读取 [../_shared/image-prompt-templates.md](../_shared/image-prompt-templates.md)
+- **剧照级十维细节**（景别/机位/镜头/灯光/色彩/质感/表演/环境/时间/情绪——ShotDeck 级全细节检查清单，生图提示词必过）→ 读取 [../_shared/shotdeck-max-detail.md](../../../_shared/shotdeck-max-detail.md)
+- **实战提示词模板库**（模特一致性/角色设定卡/风格矩阵/12宫格分镜/2D转真人/人物真实感——7 组已验证模板，按需直接套用）→ 读取 [../_shared/image-prompt-templates.md](../../../_shared/image-prompt-templates.md)
 - **海报版式与系列一致性** → `references/poster-series.md`
 - **奇观记忆点**（光的意外/尺度背叛/静止中的动等）→ `references/spectacle-card.md`
 - **失败模式与兜底**（CHECKPOINT/反AI感/用户字段/Fallback/负面约束/输出格式）→ `references/fallback.md`

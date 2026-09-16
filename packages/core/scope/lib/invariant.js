@@ -34,7 +34,8 @@ const scopedSubjectResolvers = Object.freeze({
 	"tools/post-execute": (args) => args[0]["agent"],
 	"tools/pre-execute": (args) => args[0]["agent"],
 	"tools/ptc-dispatch-log": (args) => args[0]["agent"],
-	"tools/result": (args) => args[0]["agent"]
+	"tools/result": (args) => args[0]["agent"],
+	"user-questions/request": (args) => args[0]["agent"]
 });
 /**
 * Resolve the routing key named by one scoped event payload. A null

@@ -69,11 +69,13 @@ describe('Session control queue projection', () => {
     await iterator.next()
   })
 
-  it('projects the prompt rpcId from a user-rpc source and omits it elsewhere', async () => {
+  it.each(['rpcId', 'invocationId'] as const)('projects the prompt correlation from %s and omits it elsewhere', async (identity) => {
     const { control, inbox } = await harness()
     const identified = createUserMessage({
       content: [{ type: 'text', text: 'browser prompt' }],
-      source: { kind: 'user', rpcId: 'req-42' as never },
+      source: identity === 'rpcId'
+        ? { kind: 'user', rpcId: 'req-42' as never }
+        : { kind: 'user', invocationId: 'req-42' as never },
     })
     inbox.append('next-turn', identified)
     inbox.append('next-step', message('plain steering'))

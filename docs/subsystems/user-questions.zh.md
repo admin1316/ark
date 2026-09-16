@@ -190,11 +190,12 @@ Source: [`packages/interaction/user-questions/src/index.ts`](../../packages/inte
 
 #### `user-questions/request` — waterfall
 
-Ask scoped answerers; call next to delegate an unclaimed request.
+Scope-filtered dispatch targets the requesting Agent when supplied; requests without an Agent use the global waterfall. Call next to delegate an unclaimed request.
 
 ```ts cordis-catalog
 /**
- * Ask scoped answerers; call next to delegate an unclaimed request.
+ * Scope-filtered dispatch targets the requesting Agent when supplied; requests
+ * without an Agent use the global waterfall. Call next to delegate an unclaimed request.
  * @param request - borrowed Host request and cancellation signal.
  * @mode waterfall
  */

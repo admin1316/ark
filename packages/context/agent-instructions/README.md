@@ -1,8 +1,26 @@
+---
+description: "Per-session workspace instruction loading for AGENTS.md-compatible files."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-agent-instructions
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Per-session workspace instruction loading for `AGENTS.md`-compatible files. The plugin injects the initial user-global and project instruction chain into durable history, then discovers nested files and reports later changes or removals after successful filesystem tool calls.
+
+## Table of Contents
+
+- [Lifecycle](#lifecycle)
+- [Prompt Shape](#prompt-shape)
+- [State And Refresh](#state-and-refresh)
+- [Configuration](#configuration)
+- [Budgeting And Bounded Reads](#budgeting-and-bounded-reads)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Lifecycle
 
@@ -25,9 +43,14 @@ Instructions from: ~/.dsh/AGENTS.md
 ...
 
 Instructions from: AGENTS.md
+```
 
-...
-</system-reminder>
+Root discovery climbs only when a marker probe confirms that the marker is absent. A permission or I/O failure stops discovery and surfaces the host or filesystem-provider error instead of selecting an ancestor project.
+
+```yaml
+- name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
 ```
 
 Newly reached scopes use a durable sourced `user/message`:
@@ -167,3 +190,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 - **Per-directory dedup is content-based** — sibling candidates collapse only when byte-identical after trimming leading and trailing whitespace; a `CLAUDE.md` that symlinks its sibling `AGENTS.md` resolves to the same content and collapses like any duplicate, while a distinct real copy that has drifted from `AGENTS.md` loads in full alongside it.
 - **Symlinked instruction files are followed across the trust boundary** — a candidate whose final component is a symlink is resolved and its target loaded, so a cloned repository can surface off-tree file content as lower-authority workspace guidance (it never overrides system, developer, or direct user instructions). Confine `ctx.fs` with the filesystem policy gate or an OS sandbox when loading untrusted repositories.
 - **Instruction content is bounded, not summarized** — over-budget broad files are omitted and the most-specific file may be truncated; the plugin never asks a model to compress instruction prose.
+
+### Dev Note
+
+None.

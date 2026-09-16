@@ -1,8 +1,24 @@
+---
+description: "ACP automation server app: the default agent spine, client-created agents through @deepseek-ai/dsh-acp, JSONL persistence, and semantic checkpointing behind one JSON-RPC stdio bin."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-acp-demo
 
 English | [中文](README.zh.md)
 
+## Summary
+
 ACP automation server app: the default agent spine, client-created agents through [`@deepseek-ai/dsh-acp`](../../acp/acp/README.md), JSONL persistence, and semantic checkpointing behind one JSON-RPC stdio bin. Programmatic clients create fresh sessions; this package mounts no human UI.
+
+## Table of Contents
+
+- [Composition](#composition)
+- [Config](#config)
+- [Bin](#bin)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Composition
 
@@ -57,3 +73,7 @@ Append-only per session; the app adds no request-prefix content itself.
 - **JSONL persistence is fixed** — a different backend requires another composition.
 - **Sibling plugins can corrupt stdout** — the app cannot prevent another entry from writing non-protocol bytes.
 - **Fresh automation sessions only** — resume and human interaction belong to other entry points.
+
+### Dev Note
+
+None.

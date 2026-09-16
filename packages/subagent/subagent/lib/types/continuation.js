@@ -262,7 +262,7 @@ export class SubagentContinuationManager {
                 composition: { persona: request.persona, toolFilter: request.toolFilter },
                 signal: spec.signal,
             });
-            return this.submitMaterialized(activation, createUserMessage({ content: request.prompt, source: { kind: 'user' } }), parent, spec.signal);
+            return this.submitMaterialized(activation, createUserMessage({ content: request.prompt, source: { kind: 'user' } }), parent, spec.signal, 'queue');
         });
         return { childId, messageId };
     }
@@ -327,7 +327,7 @@ export class SubagentContinuationManager {
                     await this.flushAccepted(activation);
                     return duplicate;
                 }
-                const messageId = this.submitAdmitted(activation, message, parent, options.signal);
+                const messageId = this.submitAdmitted(activation, message, parent, options.signal, options.delivery ?? 'queue');
                 await this.flushAccepted(activation);
                 return { messageId, durable: true, duplicate: false };
             });
@@ -757,7 +757,7 @@ export class SubagentContinuationManager {
                     throw error;
                 throw new SubagentError(`subagent "${childId}" is unavailable`, 'NOT_RESUMABLE', { cause: error });
             }
-            const messageId = await this.submitMaterialized(activation, message, parent, options.signal);
+            const messageId = await this.submitMaterialized(activation, message, parent, options.signal, options.delivery ?? 'queue');
             // A failed flush does not retract an already accepted inbox message; a retry must find it.
             await this.flushAccepted(activation);
             return { messageId, durable: true, duplicate: false };
@@ -778,9 +778,9 @@ export class SubagentContinuationManager {
      * @param signal - caller cancellation owning admission until acceptance.
      * @returns the accepted inbox message id.
      */
-    async submitMaterialized(activation, message, parent, signal) {
+    async submitMaterialized(activation, message, parent, signal, delivery) {
         try {
-            return this.submitAdmitted(activation, message, parent, signal);
+            return this.submitAdmitted(activation, message, parent, signal, delivery);
         }
         catch (error) {
             /* v8 ignore next -- rollback disposal failures must not mask the
@@ -948,16 +948,21 @@ export class SubagentContinuationManager {
         activation.poke = Promise.withResolvers();
     }
     /**
-     * Submit one message as the child's next FIFO turn and return its accepted
-     * inbox id. Acceptance is the operation's success boundary; the manager owns
-     * the Activation independently afterwards.
+     * Submit one message to the child's inbox and return its accepted id.
+     * Acceptance is the operation's success boundary; the manager owns the
+     * Activation independently afterwards. `queue` makes the message the child's
+     * next FIFO turn; `steer` routes it to the nearest step boundary and starts a
+     * turn when the child is idle.
      */
-    submit(activation, message, parent) {
+    submit(activation, message, parent, delivery) {
         // Parent-originated delivery keeps the parent live through ownership, so
         // establish it before the message can enter the child's inbox.
         this.acquireOwnership(parent, activation.childId);
         const accepted = this.admitWaking(activation, message.id, () => {
-            activation.handle.agent.followup(message);
+            if (delivery === 'steer')
+                activation.handle.agent.steer(message);
+            else
+                activation.handle.agent.followup(message);
         });
         // Past this point the caller has an id for this child, so its eventual
         // settlement is something the parent is owed an account of.
@@ -992,7 +997,7 @@ export class SubagentContinuationManager {
      * manager drain, or Activation disposal that wins before this synchronous
      * span rejects without inbox acceptance.
      */
-    submitAdmitted(activation, message, parent, signal) {
+    submitAdmitted(activation, message, parent, signal, delivery) {
         signal.throwIfAborted();
         this.assertAdmitting(parent);
         /* v8 ignore next 6 -- only a synchronous re-entrant disposer can change
@@ -1001,7 +1006,7 @@ export class SubagentContinuationManager {
             throw new SubagentError(`subagent "${activation.childId}" activation is being disposed; the message was not accepted`, 'ACTIVATION_CLOSING');
         }
         this.authorizeLineage(parent, activation.childId, activation.handle.agent.session.header.parentSession);
-        return this.submit(activation, message, parent);
+        return this.submit(activation, message, parent, delivery);
     }
     async flushAccepted(activation) {
         const child = activation.handle.agent;

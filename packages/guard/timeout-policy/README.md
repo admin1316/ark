@@ -1,8 +1,22 @@
+---
+description: "Tool-call timeout enforcer: a single tools/execute around-dispatch listener that arms a per-call cooperative deadline on exec.signal for a tool declaring timeoutMs on its ToolDefinition and returns a structured TOOL_TIMEOUT result when that deadline wins."
+kind: "package-reference"
+---
+
 # dsh-tool-call-timeout-policy
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Tool-call timeout enforcer: a single `tools/execute` around-dispatch listener that arms a per-call cooperative deadline on `exec.signal` for a tool declaring `timeoutMs` on its `ToolDefinition` and returns a structured `TOOL_TIMEOUT` result when that deadline wins. The budget is read from the tool's own declaration (`ToolDefinition.timeoutMs`, set by the owning tool plugin), so this plugin is **zero-config**. It is the reference `tools/execute` wrapper and the enforcement home for model-facing tool-call budgets ([timeout-library Agent Note](../../../.agents/notes/implemented/architecture/2026-07-06-timeout-deadline-library.md)).
+
+## Table of Contents
+
+- [Plugin (namespace: timeout-policy)](#plugin-namespace-timeout-policy)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Plugin (namespace: `timeout-policy`)
 
@@ -55,3 +69,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 - **Cooperative, never a hard kill** — the deadline only notifies via `exec.signal`; a tool that ignores the signal does not stop on timeout (see § Cooperative, not a hard kill).
 - **No blanket budget** — only tools that declare `timeoutMs` on their `ToolDefinition` get a deadline; there is no registry-wide default for undeclared tools (the shipped `bash`/`read`/`write`/`edit` deliberately declare none).
+
+### Dev Note
+
+None.

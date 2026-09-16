@@ -1,5 +1,5 @@
 ---
-description: "会话检索能力家族的包映射：搜索、追踪与读取实时和持久会话历史，以及 Web 端会话日志导出。"
+description: "会话检索能力家族的包映射：搜索、追踪与读取实时和持久会话历史。"
 kind: "package-group"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-`session-query/` 组提供对实时与持久会话历史的检索，且独立于压缩（compaction）：程序化调用方通过一个统一服务查询精确日志、过滤后的列表、关系追踪与全文搜索；SQLite 后端支撑搜索；模型获得五个经工作区授权的工具；Web 界面获得下载会话 ZIP 的 `/export` 命令。搜索结果与模型看到的对话历史一致。本页是组的映射；各包 README 负责各自的包级约定。
+`session-query/` 组提供对实时与持久会话历史的检索，且独立于压缩（compaction）：程序化调用方通过一个统一服务查询精确日志、过滤后的列表、关系追踪与全文搜索；SQLite 后端支撑搜索；模型获得五个经工作区授权的工具。搜索结果与模型看到的对话历史一致。本页是组的映射；各包 README 负责各自的包级约定。
 
 ## 目录
 
@@ -28,7 +28,6 @@ kind: "package-group"
 |---|---|---|
 | [`session-query/`](session-query/README.zh.md) | 统一的会话历史查询服务：精确读取、关系追踪与过滤 | `ctx.sessionQuery` |
 | [`session-query-sqlite/`](session-query-sqlite/README.zh.md) | 基于 SQLite FTS5 索引的会话历史全文搜索 | 注册到 `ctx.sessionQuery` |
-| [`session-log-export/`](session-log-export/README.zh.md) | Web `/export` 命令与浏览器下载会话 ZIP | `ctx.sessionLogDownload`（浏览器） |
 | [`tool-session-query/`](tool-session-query/README.zh.md) | 面向模型的搜索、追踪与读取会话历史工具 | 注册到 `ctx.tools` |
 
 -----

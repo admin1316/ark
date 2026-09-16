@@ -1,6 +1,13 @@
+---
+description: "这是 @deepseek-ai/dsh-attachment 的私有本地实现。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-attachment-local
 
 [English](README.md) | 中文
+
+## 概述
 
 这是 [`@deepseek-ai/dsh-attachment`](../attachment) 的私有本地实现。对象存放在 `<DSH_HOME>/attachments/v1/objects/<sha256-prefix>/<sha256>`，并通过不透明的 `sha256:` 标识符寻址。每个进程都会把每级祖先目录项同步到文件系统根目录，以此一次性证明 home 已持久化。写入使用私有暂存目录、仅所有者可访问的文件、经过同步的临时文件、原子且排他的硬链接发布，并对发布路径执行目录同步（适用于 POSIX；Windows 依赖文件系统元数据日志），确保已报告的引用能够在崩溃后继续存在。
 
@@ -10,6 +17,13 @@
 
 `DSH_HOME` 按共享路径策略解析：显式配置、`$DSH_HOME`，最后是 `~/.dsh`。会话日志只包含引用和经过校验的元数据，绝不包含这个宿主路径。`readImage` 会把可选取消信号传入文件系统读取、在校验前后观察该信号，并保留取消语义，而不会将其包装成 `ATTACHMENT_READ_FAILED`。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与待完成工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="model-experience"></a>
 ## 模型体验
 
 该包通过重启和 fork 后对历史用户图片与结构化模型图片输出的持久回放间接影响模型。
@@ -18,9 +32,15 @@
 
 规范化和请求投影都是确定性的。附件和路由策略不变时，之后各轮会复用相同的缓存请求字节。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与待完成工作
 
 - 对象会无限期保留；基于引用的垃圾回收尚未实现。
 - 本地后端假定宿主与提供方适配器共享同一个文件系统服务。
 - 动态 GIF 源图只保留首帧；动画在版本一图片契约之外。
 - 规范化和请求版本编码器由安装的 sharp/libvips 构建钉定；编码器或变换策略版本升级会让未来的规范化附件或请求变体产生新地址，已有对象保持有效。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

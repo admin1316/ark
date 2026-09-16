@@ -3,19 +3,74 @@
  * Workspace-session retirement.
  *
  * The package reads each domain's live owner directly. It deliberately owns
- * no transcript, projection, workspace, attachment, or model-catalog cache.
- * Its only mutable maps serialize identity creation/resume, retain exact
- * AgentHandle capabilities, and hold the session-local model selection that
- * prompt assembly consumes.
+ * no durable transcript, workspace, attachment, or model-catalog copy.
+ * Its bounded semantic reader retains numeric history indices and explicitly
+ * released content materializations over the existing Session query owner.
+ * Other maps serialize identity creation/resume, retain exact AgentHandle
+ * capabilities, and hold the session-local selection consumed by prompt assembly.
  *
  * @module @deepseek-ai/dsh-host-session-remote-operations
  */
+var __addDisposableResource = (this && this.__addDisposableResource) || function (env, value, async) {
+    if (value !== null && value !== void 0) {
+        if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
+        var dispose, inner;
+        if (async) {
+            if (!Symbol.asyncDispose) throw new TypeError("Symbol.asyncDispose is not defined.");
+            dispose = value[Symbol.asyncDispose];
+        }
+        if (dispose === void 0) {
+            if (!Symbol.dispose) throw new TypeError("Symbol.dispose is not defined.");
+            dispose = value[Symbol.dispose];
+            if (async) inner = dispose;
+        }
+        if (typeof dispose !== "function") throw new TypeError("Object not disposable.");
+        if (inner) dispose = function() { try { inner.call(this); } catch (e) { return Promise.reject(e); } };
+        env.stack.push({ value: value, dispose: dispose, async: async });
+    }
+    else if (async) {
+        env.stack.push({ async: true });
+    }
+    return value;
+};
+var __disposeResources = (this && this.__disposeResources) || (function (SuppressedError) {
+    return function (env) {
+        function fail(e) {
+            env.error = env.hasError ? new SuppressedError(e, env.error, "An error was suppressed during disposal.") : e;
+            env.hasError = true;
+        }
+        var r, s = 0;
+        function next() {
+            while (r = env.stack.pop()) {
+                try {
+                    if (!r.async && s === 1) return s = 0, env.stack.push(r), Promise.resolve().then(next);
+                    if (r.dispose) {
+                        var result = r.dispose.call(r.value);
+                        if (r.async) return s |= 2, Promise.resolve(result).then(next, function(e) { fail(e); return next(); });
+                    }
+                    else s |= 1;
+                }
+                catch (e) {
+                    fail(e);
+                }
+            }
+            if (s === 1) return env.hasError ? Promise.reject(env.error) : Promise.resolve();
+            if (env.hasError) throw env.error;
+        }
+        return next();
+    };
+})(typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
+    var e = new Error(message);
+    return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+});
 import { Buffer } from 'node:buffer';
+import { installPromptReceipts, promptDigest } from "./prompt-receipts.js";
 import { randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
-import { installModelSelection, } from '@deepseek-ai/dsh-agent';
+import { canonicalClientTimeZone } from '@deepseek-ai/dsh-subagent';
+import { sessionModelSelection } from '@deepseek-ai/dsh-agent-default-model/session-selection';
 import { PresetMountError, UnknownPresetError, resolveSessionPreset, } from '@deepseek-ai/dsh-agent-presets';
 import { ApiRemoteSessionNotFound, ApiRemoteSubagentSessionOwnership, apiRemoteSubagentOwnershipError, hasApiRemoteSubagentOwner, } from '@deepseek-ai/dsh-api-remotes/agent-lookup';
 import { AttachmentError, admitEncodedImages, } from '@deepseek-ai/dsh-attachment';
@@ -27,8 +82,11 @@ import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title';
 import { isSkillName, isUserInvocable } from '@deepseek-ai/dsh-skill';
 import { WorkspaceId as brandWorkspaceId, WorkspaceSessionDeletionBlockedError, } from '@deepseek-ai/dsh-workspace';
 import { z } from 'zod';
+import { SemanticHistoryReader, SemanticHistoryError } from "./semantic-history.js";
 import { fetchSessionLogExport, sessionLogCompressionLevel, SESSION_EXPORT_PATH, } from "./session-export.js";
 export { DEFAULT_SESSION_LOG_COMPRESSION_LEVEL, fetchSessionLogExport, flushLiveSessionLog, SESSION_EXPORT_PATH, sessionLogCompressionLevel, sessionLogZipEntries, sessionLogZipFilename, streamSessionLogZip, } from "./session-export.js";
+const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024;
+const COLD_SUMMARY_BATCH_SIZE = 16;
 const DEFAULT_MAX_MESSAGES = 50;
 const MAX_HISTORY_MESSAGES = 2_048;
 const MAX_HISTORY_PAGE_EVENTS = 2_048;
@@ -37,7 +95,6 @@ const SESSION_SEARCH_RESULT_LIMIT = 20;
 const SESSION_SEARCH_SNIPPET_MAX_CODE_POINTS = 240;
 const SESSION_SEARCH_PROVIDER_CALL_LIMIT = 100;
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message']);
-const IANA_TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+.-]*(?:\/[A-Za-z0-9_+.-]+)+$/;
 const sessionListMetadataSchema = z.object({
     blank: z.boolean(),
     lastPromptAt: z.number().nullable(),
@@ -118,41 +175,14 @@ function truncateUnicodeCodePoints(value, maximum) {
     }
     return value;
 }
-/** Validate and canonicalize one user-supplied IANA time zone. */
-function canonicalClientTimeZone(value) {
-    if (value.length === 0 || value.trim() !== value
-        || (value !== 'UTC' && !IANA_TIME_ZONE.test(value)))
-        return undefined;
-    try {
-        const canonical = new Intl.DateTimeFormat('en-US', { timeZone: value })
-            .resolvedOptions().timeZone;
-        return canonical === 'UTC' || IANA_TIME_ZONE.test(canonical) ? canonical : undefined;
-    }
-    catch {
-        return undefined;
-    }
-}
-/** Whether one transcript has started an Agent turn. */
-function sessionBlank(events) {
-    return !events.some(event => event.type === 'turn/start');
-}
-/** Latest human prompt time in one exact log cut. */
-function lastPromptAt(events) {
-    let latest = null;
-    for (const event of events) {
-        if (event.type === 'user/message' && event.data.source.kind === 'user')
-            latest = event.time;
-    }
-    return latest;
-}
 /** Session-header fields shared by attached and cold listing rows. */
-function summaryFields(header, events = []) {
-    const preset = resolveSessionPreset({ header, events });
+function summaryFields(header, projections) {
+    const preset = projections?.values.agentPreset;
     return {
         ...header.parentSession === undefined ? {} : { parentSessionId: header.parentSession },
         ...header.origin === undefined ? {} : { origin: header.origin },
         ...header.cwd === undefined ? {} : { cwd: header.cwd },
-        ...preset === undefined ? {} : { agentPreset: preset },
+        ...typeof preset !== 'string' ? {} : { agentPreset: preset },
     };
 }
 /** Convert a projection snapshot without leaking mutable registry state. */
@@ -211,12 +241,12 @@ function historyEndIndex(events, beforeSeq) {
  * Select one newest-first bounded event window. Message count is a secondary
  * readability boundary; the hard event bound always wins.
  */
-function historyEventWindow(events, beforeSeq, maxMessages) {
+function historyEventWindow(events, beforeSeq, maxMessages, maxEvents) {
     const end = historyEndIndex(events, beforeSeq);
     let start = end;
     let count = 0;
     let groupStart;
-    while (start > 0 && end - start < MAX_HISTORY_PAGE_EVENTS) {
+    while (start > 0 && end - start < maxEvents) {
         start -= 1;
         const event = events[start];
         if (groupStart !== undefined) {
@@ -379,6 +409,7 @@ export class SessionRemoteOperationsService extends Service {
         'sessions',
         'workspaceRegistry',
     ];
+    coldBlankProbeMaxBytes;
     defaultCwd;
     /** Exact loopback-only path for streaming Session archives. */
     path = SESSION_EXPORT_PATH;
@@ -386,11 +417,26 @@ export class SessionRemoteOperationsService extends Service {
     handles = new Map();
     creations = new Map();
     resumes = new Map();
-    selections = new WeakMap();
-    imageAdmissionChains = new WeakMap();
+    admissionChains = new WeakMap();
     lifetime = new AbortController();
+    semanticHistory;
     constructor(ctx, config = {}) {
         super(ctx, 'sessionRemoteOperations');
+        this.semanticHistory = new SemanticHistoryReader(ctx, (source) => {
+            let scope;
+            return async (event, dependencies) => {
+                // Non-tool domain records need only the lossless wire envelope. Resolve
+                // one historical preset scope lazily for all tool entries in this body.
+                const view = event.type === 'tool/call' || event.type === 'tool/result'
+                    ? eventView(ctx, event, dependencies, await (scope ??= this.standingPresenterScope(source)))
+                    : undefined;
+                return { event: remoteEvent(event), ...view === undefined ? {} : { view } };
+            };
+        }, config.semanticHistory);
+        this.coldBlankProbeMaxBytes = config.coldBlankProbeMaxBytes ?? DEFAULT_COLD_BLANK_PROBE_MAX_BYTES;
+        if (!Number.isSafeInteger(this.coldBlankProbeMaxBytes) || this.coldBlankProbeMaxBytes < 0) {
+            throw new RangeError('coldBlankProbeMaxBytes must be a non-negative safe integer');
+        }
         this.defaultCwd = config.cwd ?? process.cwd();
         this.sessionExportCompressionLevel = sessionLogCompressionLevel(config.sessionExportCompressionLevel);
         if (!isAbsolute(this.defaultCwd)) {
@@ -404,11 +450,13 @@ export class SessionRemoteOperationsService extends Service {
         });
         ctx.effect(() => async () => {
             this.lifetime.abort(new Error('session Remote operations disposed'));
+            this.semanticHistory.clear();
             const handles = [...this.handles.values()];
             this.handles.clear();
             await Promise.allSettled(handles.map(handle => handle.dispose({ keepInbox: true })));
         }, 'host-session-remote-operations: owned Agent handles');
         ctx.inject(['sessionProjections'], (projectionCtx) => {
+            installPromptReceipts(projectionCtx);
             projectionCtx.sessionProjections.register({
                 key: 'sessionListMetadata',
                 stateSchema: sessionListMetadataSchema,
@@ -452,37 +500,7 @@ export class SessionRemoteOperationsService extends Service {
     }
     /** Install or retrieve the session-local request selection. */
     selectionFor(agent) {
-        const existing = this.selections.get(agent);
-        if (existing !== undefined)
-            return existing;
-        let selected;
-        const currentDefault = () => ({
-            ...this.ctx.agentDefaultModel.currentSelection(),
-        });
-        const selection = {
-            get current() {
-                if (selected !== undefined)
-                    return selected;
-                const logged = agent.session.requestHeader()?.config;
-                if (logged !== undefined) {
-                    return {
-                        provider: logged.provider,
-                        model: logged.model,
-                        ...logged.reasoningEffort === undefined
-                            ? {}
-                            : { reasoningEffort: logged.reasoningEffort },
-                    };
-                }
-                return currentDefault();
-            },
-            set current(next) {
-                selected = next;
-            },
-            assembled: undefined,
-        };
-        installModelSelection(agent.ctx, selection);
-        this.selections.set(agent, selection);
-        return selection;
+        return sessionModelSelection(this.ctx, agent);
     }
     /** Resolve and mount the preset that owns one Agent's tool composition. */
     async composeAgent(presetId) {
@@ -627,10 +645,10 @@ export class SessionRemoteOperationsService extends Service {
             return failure('internal', `resume failed for session "${sessionId}": ${String(error)}`);
         }
     }
-    /** Serialize model switching with image admission for one exact Agent. */
-    serializeImageAdmission(agent, operation) {
-        const result = (this.imageAdmissionChains.get(agent) ?? Promise.resolve()).then(operation);
-        this.imageAdmissionChains.set(agent, result.then(() => undefined, () => undefined));
+    /** Serialize model switching and prompt admission for one exact Agent. */
+    serializeAdmission(agent, operation) {
+        const result = (this.admissionChains.get(agent) ?? Promise.resolve()).then(operation);
+        this.admissionChains.set(agent, result.then(() => undefined, () => undefined));
         return result;
     }
     /** One exact projection cut for an attached or detached transcript. */
@@ -654,6 +672,10 @@ export class SessionRemoteOperationsService extends Service {
         const live = this.ctx.agents.get(sessionId);
         if (live !== undefined)
             return live;
+        return this.standingPresenterScope(source);
+    }
+    /** Historical scope is resolved from the caller's fixed cut, never today's live preset. */
+    async standingPresenterScope(source) {
         const presets = this.ctx.get('agentPresets');
         if (presets === undefined)
             return undefined;
@@ -664,65 +686,109 @@ export class SessionRemoteOperationsService extends Service {
             return undefined;
         }
     }
-    /** Build the current visible Session listing without retaining a second index. */
-    async visibleSummaries(signal) {
+    /** Cached listing hints never materialize a missing projection or replay a log. */
+    listProjections(header, session) {
+        try {
+            return remoteProjections(session === undefined
+                ? this.ctx.get('sessionProjectionCache')?.cachedSnapshot(header)
+                : this.ctx.get('sessionProjections')?.cachedSnapshot(session));
+        }
+        catch (error) {
+            this.ctx.logger.warn(`session.list: cached projections unavailable for "${header.id}": ${String(error)}`);
+            return undefined;
+        }
+    }
+    attachedSummary(session) {
+        const projections = this.listProjections(session.header, session);
+        const metadata = sessionListMetadataSchema.safeParse(projections?.values.sessionListMetadata);
+        return {
+            sessionId: session.id,
+            updatedAt: Math.max(session.header.createdAt, metadata.success ? metadata.data.lastPromptAt ?? 0 : 0),
+            running: this.ctx.agents.get(session.id)?.status === 'running',
+            blank: metadata.success ? metadata.data.blank : session.seq === 0,
+            ...summaryFields(session.header, projections),
+            ...projections === undefined ? {} : { projections },
+        };
+    }
+    /** Only small physical artifacts may be observed for an unknown cold blank hint. */
+    async smallColdProjections(query, header, signal) {
+        if (this.coldBlankProbeMaxBytes === 0)
+            return undefined;
+        const location = this.ctx.get('sessionPersistence')?.locate(header);
+        if (location === undefined)
+            return undefined;
         signal.throwIfAborted();
-        const attached = this.ctx.sessions.list();
-        const rows = attached.map((session) => {
-            const promptAt = lastPromptAt(session.events);
-            const projections = this.projectionsFor({ kind: 'attached', session });
-            return {
-                sessionId: session.id,
-                updatedAt: Math.max(session.header.createdAt, promptAt ?? 0),
-                running: this.ctx.agents.get(session.id)?.status === 'running',
-                blank: sessionBlank(session.events),
-                ...summaryFields(session.header, session.events),
-                ...projections === undefined ? {} : { projections },
-            };
-        });
-        const liveIds = new Set(rows.map(row => row.sessionId));
-        const persistence = this.ctx.get('sessionPersistence');
-        if (persistence !== undefined) {
-            const headers = (await persistence.list(signal))
-                .filter(header => !liveIds.has(header.id) && header.cwd !== undefined);
-            for (const header of headers) {
+        try {
+            if ((await stat(location.path)).size > this.coldBlankProbeMaxBytes)
+                return undefined;
+        }
+        catch {
+            signal.throwIfAborted();
+            return undefined;
+        }
+        try {
+            const env_1 = { stack: [], error: void 0, hasError: false };
+            try {
+                const observation = __addDisposableResource(env_1, await query.observeSession(header.id, { signal, projectionMode: 'all' }), false);
                 signal.throwIfAborted();
-                let events;
-                try {
-                    events = [...(await persistence.inspect(header.id, signal)).events];
-                }
-                catch (error) {
-                    if (signal.aborted)
-                        throw error;
-                    this.ctx.logger.warn(`session.list: cold inspection for "${header.id}" failed; serving it visible: ${String(error)}`);
-                }
-                const raced = this.ctx.sessions.get(header.id);
-                if (raced !== undefined) {
-                    const promptAt = lastPromptAt(raced.events);
-                    const projections = this.projectionsFor({ kind: 'attached', session: raced });
-                    rows.push({
-                        sessionId: raced.id,
-                        updatedAt: Math.max(raced.header.createdAt, promptAt ?? 0),
-                        running: this.ctx.agents.get(raced.id)?.status === 'running',
-                        blank: sessionBlank(raced.events),
-                        ...summaryFields(raced.header, raced.events),
-                        ...projections === undefined ? {} : { projections },
-                    });
-                    continue;
-                }
-                const projections = events === undefined
-                    ? remoteProjections(this.ctx.get('sessionProjectionCache')?.cachedSnapshot(header))
-                    : this.projectionsFor({ kind: 'detached', header, events });
-                const promptAt = events === undefined ? null : lastPromptAt(events);
-                rows.push({
-                    sessionId: header.id,
-                    updatedAt: Math.max(header.createdAt, promptAt ?? 0),
-                    running: false,
-                    // A failed cold read must never hide a real conversation.
-                    blank: events === undefined ? false : sessionBlank(events),
-                    ...summaryFields(header, events),
-                    ...projections === undefined ? {} : { projections },
-                });
+                return remoteProjections(observation.projections);
+            }
+            catch (e_1) {
+                env_1.error = e_1;
+                env_1.hasError = true;
+            }
+            finally {
+                __disposeResources(env_1);
+            }
+        }
+        catch (error) {
+            signal.throwIfAborted();
+            this.ctx.logger.warn(`session.list: small cold observation for "${header.id}" failed; serving it visible: ${String(error)}`);
+            return undefined;
+        }
+    }
+    async coldSummary(query, header, signal) {
+        const cached = this.listProjections(header);
+        const metadata = sessionListMetadataSchema.safeParse(cached?.values.sessionListMetadata);
+        const projections = metadata.success && !metadata.data.blank
+            ? cached
+            : await this.smallColdProjections(query, header, signal) ?? cached;
+        const raced = this.ctx.sessions.get(header.id);
+        if (raced !== undefined)
+            return this.attachedSummary(raced);
+        const current = sessionListMetadataSchema.safeParse(projections?.values.sessionListMetadata);
+        return {
+            sessionId: header.id,
+            updatedAt: Math.max(header.createdAt, current.success ? current.data.lastPromptAt ?? 0 : 0),
+            running: false,
+            // Large, inaccessible, or failed observations remain unknown and visible.
+            blank: current.success ? current.data.blank : false,
+            ...summaryFields(header, projections),
+            ...projections === undefined ? {} : { projections },
+        };
+    }
+    /** Reuse query corpus visibility and cached hints; bound concurrent physical probes. */
+    async visibleSummaries(query, signal) {
+        signal.throwIfAborted();
+        const records = await query.listSessions(signal);
+        signal.throwIfAborted();
+        const rows = [];
+        const cold = [];
+        for (const record of records) {
+            const live = this.ctx.sessions.get(record.header.id);
+            if (live !== undefined)
+                rows.push(this.attachedSummary(live));
+            else if (record.header.cwd !== undefined)
+                cold.push(record.header);
+        }
+        for (let offset = 0; offset < cold.length; offset += COLD_SUMMARY_BATCH_SIZE) {
+            signal.throwIfAborted();
+            const settled = await Promise.allSettled(cold.slice(offset, offset + COLD_SUMMARY_BATCH_SIZE)
+                .map(header => this.coldSummary(query, header, signal)));
+            for (const result of settled) {
+                if (result.status === 'rejected')
+                    throw result.reason;
+                rows.push(result.value);
             }
         }
         rows.sort((left, right) => right.updatedAt - left.updatedAt);
@@ -732,8 +798,12 @@ export class SessionRemoteOperationsService extends Service {
     async list(_request, signal) {
         if (aborted(signal))
             return cancelled();
+        const query = this.ctx.get('sessionQuery');
+        if (query === undefined) {
+            return failure('internal', 'session listing is unavailable: this deployment does not mount @deepseek-ai/dsh-session-query');
+        }
         try {
-            return success({ items: await this.visibleSummaries(signal) });
+            return success({ items: await this.visibleSummaries(query, signal) });
         }
         catch (error) {
             if (aborted(signal))
@@ -754,8 +824,11 @@ export class SessionRemoteOperationsService extends Service {
             return failure('internal', 'session search is unavailable: this deployment does not mount @deepseek-ai/dsh-session-query');
         }
         try {
-            const visible = await this.visibleSummaries(signal);
-            const visibleIds = new Set(visible.map(item => item.sessionId));
+            const visible = await sessionQuery.listSessions(signal);
+            signal.throwIfAborted();
+            const visibleIds = new Set(visible
+                .filter(record => record.header.cwd !== undefined)
+                .map(record => record.header.id));
             if (visibleIds.size === 0)
                 return success({ items: [], hasMore: false });
             const accepted = [];
@@ -800,6 +873,7 @@ export class SessionRemoteOperationsService extends Service {
                     }
                     throw error;
                 }
+                signal.throwIfAborted();
                 if (page.items.length > requestedLimit) {
                     throw new Error(`session search provider returned ${page.items.length} items; maximum is ${requestedLimit}`);
                 }
@@ -999,17 +1073,31 @@ export class SessionRemoteOperationsService extends Service {
         const state = await this.readSessionState(sessionId, signal);
         return { kind: 'detached', header: state.header, events: state.events };
     }
-    /**
-     * Serve a consistent attached-or-cold transcript page and projection cut.
-     * When `hasMore` is true, the first returned event sequence is the strictly
-     * smaller exclusive `beforeSeq` cursor for the next request.
-     */
     async history(request, signal) {
-        if (aborted(signal))
+        const readSignal = AbortSignal.any([signal, this.lifetime.signal]);
+        if (aborted(readSignal))
             return cancelled();
+        if (request.view === 'semantic' || request.view === 'content') {
+            try {
+                return success(await this.semanticHistory.read(request, readSignal));
+            }
+            catch (error) {
+                if (aborted(readSignal) || this.lifetime.signal.aborted)
+                    return cancelled();
+                if (error instanceof SemanticHistoryError)
+                    return failure(error.code, error.message);
+                return failure('internal', `semantic history unavailable: ${String(error)}`);
+            }
+        }
         if (request.beforeSeq !== undefined
             && (!Number.isSafeInteger(request.beforeSeq) || request.beforeSeq < 0)) {
             return failure('invalid-argument', 'beforeSeq must be a non-negative safe integer');
+        }
+        if (request.maxEvents !== undefined
+            && (!Number.isSafeInteger(request.maxEvents)
+                || request.maxEvents < 1
+                || request.maxEvents > MAX_HISTORY_PAGE_EVENTS)) {
+            return failure('invalid-argument', `maxEvents must be an integer from 1 through ${String(MAX_HISTORY_PAGE_EVENTS)}`);
         }
         if (request.maxMessages !== undefined
             && (!Number.isSafeInteger(request.maxMessages)
@@ -1018,50 +1106,83 @@ export class SessionRemoteOperationsService extends Service {
             return failure('invalid-argument', `maxMessages must be an integer from 1 through ${String(MAX_HISTORY_MESSAGES)}`);
         }
         try {
-            const source = await this.historySource(request.sessionId, signal);
-            const bearing = source.kind === 'attached'
-                ? { header: source.session.header, events: source.session.events }
-                : { header: source.header, events: source.events };
-            if (request.expectedParentSessionId !== undefined && bearing.header.parentSession !== request.expectedParentSessionId) {
-                return failure('subagent-unauthorized', 'subagent parent changed during history read', { sessionId: request.sessionId });
-            }
-            const scope = await this.presenterScope(request.sessionId, bearing);
-            signal.throwIfAborted();
-            // Events and live projection baseline are read synchronously from one cut.
-            const events = source.kind === 'attached' ? [...source.session.events] : source.events;
-            const projections = request.beforeSeq === undefined ? this.projectionsFor(source) : undefined;
-            const sourcePage = historyEventWindow(events, request.beforeSeq, request.maxMessages ?? DEFAULT_MAX_MESSAGES);
-            const fixedValue = {
-                events: [],
-                hasMore: true,
-                ...projections === undefined ? {} : { projections },
-            };
-            const fixedEncodedBytes = Buffer.byteLength(JSON.stringify(fixedValue), 'utf8');
-            if (fixedEncodedBytes > MAX_HISTORY_PAGE_ENCODED_BYTES) {
-                throw new Error('history projection baseline exceeded the encoded page budget');
-            }
-            const eventArrayBudget = MAX_HISTORY_PAGE_ENCODED_BYTES - fixedEncodedBytes + 2;
-            const page = historyEntryWindow(sourcePage, (event, pageEvents) => {
-                const view = eventView(this.ctx, event, pageEvents, scope);
-                return {
-                    event: remoteEvent(event),
-                    ...view === undefined ? {} : { view },
+            const env_2 = { stack: [], error: void 0, hasError: false };
+            try {
+                const fixed = __addDisposableResource(env_2, request.view === 'raw' || request.sourceRevision !== undefined || request.expectedSubagentMode !== undefined
+                    ? await this.semanticHistory.observe(request, readSignal) : undefined, false);
+                const source = fixed === undefined ? await this.historySource(request.sessionId, readSignal)
+                    : { kind: 'detached', header: fixed.observed.header, events: fixed.observed.events };
+                const bearing = source.kind === 'attached'
+                    ? { header: source.session.header, events: source.session.events }
+                    : { header: source.header, events: source.events };
+                if (request.expectedParentSessionId !== undefined && bearing.header.parentSession !== request.expectedParentSessionId) {
+                    return failure('subagent-unauthorized', 'subagent parent changed during history read', { sessionId: request.sessionId });
+                }
+                if (bearing.header.origin === 'subagent' && fixed === undefined) {
+                    return failure('subagent-unauthorized', 'child history requires its direct parent and mode');
+                }
+                let scope = fixed === undefined ? await this.presenterScope(request.sessionId, bearing) : undefined;
+                readSignal.throwIfAborted();
+                fixed?.assertCurrent();
+                // A bound read retains the actual immutable observation/lease. Later
+                // appends cannot enter its page or change the authorized descriptor cut.
+                const events = fixed?.observed.events ?? (source.kind === 'attached' ? source.session.events : source.events);
+                const projections = fixed === undefined && request.beforeSeq === undefined
+                    ? this.projectionsFor(source) : undefined;
+                const binding = fixed === undefined ? {} : {
+                    view: 'raw', sourceRevision: fixed.revision, asOfThroughSeq: fixed.through,
                 };
-            }, eventArrayBudget);
-            const value = {
-                events: page.entries,
-                hasMore: page.hasMore,
-                ...projections === undefined ? {} : { projections },
-            };
-            const valueEncodedBytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
-            if (valueEncodedBytes > MAX_HISTORY_PAGE_ENCODED_BYTES && page.entries.length !== 1) {
-                throw new Error('history page exceeded the encoded byte budget');
+                const sourcePage = historyEventWindow(events, fixed === undefined ? request.beforeSeq : Math.min(request.beforeSeq ?? fixed.through + 1, fixed.through + 1), request.maxMessages ?? DEFAULT_MAX_MESSAGES, request.maxEvents ?? MAX_HISTORY_PAGE_EVENTS);
+                if (fixed !== undefined && sourcePage.events.some(event => event.type === 'tool/call' || event.type === 'tool/result')) {
+                    scope = await this.standingPresenterScope(this.semanticHistory.presentationSource(fixed.observed, fixed.identity, fixed.through, readSignal));
+                    readSignal.throwIfAborted();
+                    this.lifetime.signal.throwIfAborted();
+                    fixed.assertCurrent();
+                }
+                const fixedValue = {
+                    ...binding,
+                    events: [],
+                    hasMore: true,
+                    ...projections === undefined ? {} : { projections },
+                };
+                const fixedEncodedBytes = Buffer.byteLength(JSON.stringify(fixedValue), 'utf8');
+                if (fixedEncodedBytes > MAX_HISTORY_PAGE_ENCODED_BYTES) {
+                    throw new Error('history projection baseline exceeded the encoded page budget');
+                }
+                const eventArrayBudget = MAX_HISTORY_PAGE_ENCODED_BYTES - fixedEncodedBytes + 2;
+                const page = historyEntryWindow(sourcePage, (event, pageEvents) => {
+                    const view = eventView(this.ctx, event, pageEvents, scope);
+                    return {
+                        event: remoteEvent(event),
+                        ...view === undefined ? {} : { view },
+                    };
+                }, eventArrayBudget);
+                const value = {
+                    ...binding,
+                    events: page.entries,
+                    hasMore: page.hasMore,
+                    ...projections === undefined ? {} : { projections },
+                };
+                const valueEncodedBytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
+                if (valueEncodedBytes > MAX_HISTORY_PAGE_ENCODED_BYTES && page.entries.length !== 1) {
+                    throw new Error('history page exceeded the encoded byte budget');
+                }
+                fixed?.assertCurrent();
+                return success(value);
             }
-            return success(value);
+            catch (e_2) {
+                env_2.error = e_2;
+                env_2.hasError = true;
+            }
+            finally {
+                __disposeResources(env_2);
+            }
         }
         catch (error) {
-            if (aborted(signal))
+            if (aborted(readSignal))
                 return cancelled();
+            if (error instanceof SemanticHistoryError)
+                return failure(error.code, error.message);
             if (error instanceof ApiRemoteSessionNotFound) {
                 return failure('session-not-found', error.message, { sessionId: request.sessionId });
             }
@@ -1151,7 +1272,7 @@ export class SessionRemoteOperationsService extends Service {
         const found = await this.agentFor(request.sessionId);
         if (!found.ok)
             return found;
-        return this.serializeImageAdmission(found.value, async () => {
+        return this.serializeAdmission(found.value, async () => {
             try {
                 const resolved = await this.ctx.llm.resolveCallConfig({
                     provider: request.provider,
@@ -1168,7 +1289,8 @@ export class SessionRemoteOperationsService extends Service {
                         ? {}
                         : { reasoningEffort: resolved.reasoningEffort },
                 };
-                this.selectionFor(found.value).current = selected;
+                found.value.session.append('model/selection', selected);
+                this.selectionFor(found.value);
                 try {
                     await this.ctx.agentDefaultModel.saveSelection(selected);
                 }
@@ -1229,6 +1351,7 @@ export class SessionRemoteOperationsService extends Service {
     }
     /** Fork one completed-turn prefix under a new exact Agent lifecycle handle. */
     async fork(request, signal) {
+        signal = AbortSignal.any([signal, this.lifetime.signal]);
         if (aborted(signal))
             return cancelled();
         if (request.atSeq !== undefined
@@ -1242,94 +1365,153 @@ export class SessionRemoteOperationsService extends Service {
         catch (error) {
             return failure('fork-unavailable', error instanceof Error ? error.message : String(error), { sessionId: request.sessionId });
         }
-        let source;
+        let fixed;
+        let checkedSource;
         try {
-            source = await this.readSessionState(request.sessionId, signal);
-        }
-        catch (error) {
-            if (aborted(signal))
-                return cancelled();
-            if (error instanceof ApiRemoteSessionNotFound) {
-                return failure('session-not-found', error.message, { sessionId: request.sessionId });
-            }
-            return failure('internal', `fork source unavailable for session "${request.sessionId}": ${String(error)}`);
-        }
-        const lastSeq = source.events.at(-1)?.seq ?? -1;
-        const anchoredBoundary = request.atSeq === undefined
-            ? undefined
-            : source.events.find(event => event.type === 'turn/end' && event.seq >= request.atSeq);
-        const boundary = anchoredBoundary
-            ?? (request.atSeq === undefined || request.atSeq > lastSeq
-                ? source.events.findLast(event => event.type === 'turn/end')
-                : undefined);
-        if (boundary === undefined) {
-            return failure('fork-unavailable', request.atSeq !== undefined && request.atSeq <= lastSeq
-                ? `session "${request.sessionId}" has not completed the turn containing event ${request.atSeq}`
-                : `session "${request.sessionId}" has no completed turn to fork from`, { sessionId: request.sessionId });
-        }
-        let cut = boundary.seq + 1;
-        while (cut < source.events.length && source.events[cut]?.type !== 'turn/start')
-            cut += 1;
-        let workspace;
-        try {
-            workspace = await this.forkWorkspace(source, signal);
-        }
-        catch (error) {
-            if (aborted(signal))
-                return cancelled();
-            return failure('internal', `failed to resolve fork workspace for session "${request.sessionId}": ${String(error)}`);
-        }
-        const childId = SessionId(`session-${randomUUID()}`);
-        const childRevision = this.ctx.workspaceRegistry.sessionAdmissionRevision(childId);
-        const composition = await this.composeAgent(resolveSessionPreset({
-            header: source.header,
-            events: source.events,
-        }));
-        let handle;
-        try {
-            handle = await this.ctx.agents.create({
-                sessionId: childId,
-                seed: source.events.slice(0, cut),
-                meta: {
-                    ...source.header.cwd === undefined ? {} : { cwd: source.header.cwd },
-                    parentSession: source.id,
-                    seedLength: cut,
-                    ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
-                },
-                agentOptions: this.agentOptions(),
-                signal,
-                setup: this.withSessionAdmission(composition.setup, [
-                    { sessionId: request.sessionId, revision: parentRevision },
-                    { sessionId: childId, revision: childRevision },
-                ]),
-            });
-            signal.throwIfAborted();
-            await this.ctx.sessions.flush(handle.agent.session);
-            signal.throwIfAborted();
-            this.ownHandle(handle);
-        }
-        catch (error) {
-            if (handle !== undefined) {
-                try {
-                    await handle.dispose();
-                }
-                catch (disposeError) {
-                    this.ctx.logger.warn(`failed to dispose undurable fork "${childId}": ${String(disposeError)}`);
-                }
-            }
-            if (aborted(signal))
-                return cancelled();
-            return failure('internal', `failed to fork session "${request.sessionId}": ${String(error)}`);
-        }
-        if (workspace !== undefined) {
+            let source;
             try {
-                await workspace.attachSession(childId);
+                if (request.sourceRevision !== undefined) {
+                    const observation = await this.semanticHistory.observe(request, signal);
+                    fixed = observation;
+                    source = { id: request.sessionId, header: observation.observed.header, events: observation.observed.events };
+                    if (request.atSeq !== undefined && request.atSeq > observation.through) {
+                        return failure('invalid-argument', 'fork anchor is outside the bound history cut');
+                    }
+                }
+                else {
+                    source = await this.readSessionState(request.sessionId, signal);
+                }
             }
             catch (error) {
-                return failure('workspace-attach-failed', `session "${childId}" was forked but could not attach to workspace "${workspace.id}": ${String(error)}`, { sessionId: childId, workspaceId: workspace.id });
+                if (aborted(signal))
+                    return cancelled();
+                if (error instanceof SemanticHistoryError)
+                    return failure(error.code, error.message);
+                if (error instanceof ApiRemoteSessionNotFound) {
+                    return failure('session-not-found', error.message, { sessionId: request.sessionId });
+                }
+                return failure('internal', `fork source unavailable for session "${request.sessionId}": ${String(error)}`);
+            }
+            const lastSeq = fixed?.through ?? (source.events.at(-1)?.seq ?? -1);
+            const anchoredBoundary = request.atSeq === undefined
+                ? undefined
+                : source.events.find(event => event.type === 'turn/end' && event.seq >= request.atSeq && event.seq <= lastSeq);
+            const boundary = anchoredBoundary
+                ?? (request.atSeq === undefined || request.atSeq > lastSeq
+                    ? source.events.findLast(event => event.type === 'turn/end' && event.seq <= lastSeq)
+                    : undefined);
+            if (boundary === undefined) {
+                return failure('fork-unavailable', request.atSeq !== undefined && request.atSeq <= lastSeq
+                    ? `session "${request.sessionId}" has not completed the turn containing event ${request.atSeq}`
+                    : `session "${request.sessionId}" has no completed turn to fork from`, { sessionId: request.sessionId });
+            }
+            let cut = boundary.seq + 1;
+            while (cut <= lastSeq && source.events[cut]?.type !== 'turn/start')
+                cut += 1;
+            let workspace;
+            try {
+                workspace = await this.forkWorkspace(source, signal);
+            }
+            catch (error) {
+                if (aborted(signal))
+                    return cancelled();
+                return failure('internal', `failed to resolve fork workspace for session "${request.sessionId}": ${String(error)}`);
+            }
+            const childId = SessionId(`session-${randomUUID()}`);
+            const childRevision = this.ctx.workspaceRegistry.sessionAdmissionRevision(childId);
+            // This seed is taken only from the initial immutable observation. Later
+            // source validation never supplies replacement events or a newer preset.
+            const seed = source.events.slice(0, cut);
+            let handle;
+            try {
+                fixed?.assertCurrent();
+                const composition = await this.composeAgent(resolveSessionPreset({
+                    header: source.header, events: fixed === undefined ? source.events : seed,
+                }));
+                const admission = this.withSessionAdmission(composition.setup, [
+                    { sessionId: request.sessionId, revision: parentRevision },
+                    { sessionId: childId, revision: childRevision },
+                ]);
+                const bound = fixed;
+                const setup = bound === undefined ? admission : async (agentCtx) => {
+                    const prepared = await admission(agentCtx);
+                    bound.assertCurrent();
+                    // Reuse the source owner after all asynchronous composition work. A
+                    // cold lease is a pinned snapshot, not an external-file write lock.
+                    const checked = await this.semanticHistory.observe({
+                        ...request, sourceRevision: bound.revision,
+                    }, signal);
+                    checkedSource = checked;
+                    const assertSource = () => {
+                        signal.throwIfAborted();
+                        bound.assertCurrent();
+                        checked.assertCurrent();
+                        if (bound.observed.source === 'prepared' && this.ctx.sessions.get(request.sessionId) !== undefined) {
+                            throw new SemanticHistoryError('history-stale-source', 'fork source became live before publication');
+                        }
+                    };
+                    assertSource();
+                    return { commit: () => {
+                            assertSource();
+                            prepared?.commit();
+                            assertSource();
+                        } };
+                };
+                handle = await this.ctx.agents.create({
+                    sessionId: childId,
+                    seed,
+                    meta: {
+                        ...source.header.cwd === undefined ? {} : { cwd: source.header.cwd },
+                        parentSession: source.id,
+                        seedLength: cut,
+                        ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
+                    },
+                    agentOptions: this.agentOptions(),
+                    signal,
+                    setup,
+                });
+                signal.throwIfAborted();
+                await this.ctx.sessions.flush(handle.agent.session);
+                signal.throwIfAborted();
+                this.ownHandle(handle);
+            }
+            catch (error) {
+                if (handle !== undefined) {
+                    try {
+                        await handle.dispose();
+                    }
+                    catch (disposeError) {
+                        this.ctx.logger.warn(`failed to dispose undurable fork "${childId}": ${String(disposeError)}`);
+                    }
+                }
+                if (aborted(signal))
+                    return cancelled();
+                if (error instanceof SemanticHistoryError)
+                    return failure(error.code, error.message);
+                return failure('internal', `failed to fork session "${request.sessionId}": ${String(error)}`);
+            }
+            if (workspace !== undefined) {
+                try {
+                    await workspace.attachSession(childId);
+                }
+                catch (error) {
+                    return failure('workspace-attach-failed', `session "${childId}" was forked but could not attach to workspace "${workspace.id}": ${String(error)}`, { sessionId: childId, workspaceId: workspace.id });
+                }
+            }
+            return success({ sessionId: childId });
+        }
+        finally {
+            // Both leases cover every early return and cancellation. A release
+            // failure must not replace the operation's original result or error.
+            for (const observation of [checkedSource, fixed]) {
+                try {
+                    observation?.[Symbol.dispose]();
+                }
+                catch {
+                    this.ctx.logger.warn('failed to release a fork source observation');
+                }
             }
         }
-        return success({ sessionId: childId });
     }
     /** Promote base64 image parts to durable references in caller order. */
     async durablePromptContent(content) {
@@ -1363,6 +1545,81 @@ export class SessionRemoteOperationsService extends Service {
             ? commandLine
             : undefined;
     }
+    /** Read the existing projection without retaining a second transcript or receipt cache. */
+    promptReceipt(session, invocationId) {
+        const state = this.ctx.get('sessionProjections')?.stateOf(session, 'promptReceipts');
+        if (state === undefined)
+            throw new Error('ordinary prompt receipt projection is unavailable');
+        return Object.hasOwn(state.entries, invocationId) ? state.entries[invocationId] : undefined;
+    }
+    receiptConflict(receipt, digest) {
+        return receipt.conflict || receipt.digest === null || receipt.digest !== digest
+            ? failure('invocation-conflict', 'invocationId was already accepted with different or unverifiable input') : undefined;
+    }
+    /** Once accepted, caller cancellation cannot undo delivery or bypass durability confirmation. */
+    async confirmPrompt(session, invocationId) {
+        try {
+            const persistence = this.ctx.get('sessionPersistence');
+            if (persistence === undefined || !await this.ctx.sessions.flush(session)) {
+                throw new Error('ordinary prompt has no durability owner');
+            }
+            await persistence.ensureMaterialized(session);
+            return success({ accepted: true });
+        }
+        catch (error) {
+            return failure('prompt-durability-unconfirmed', 'prompt was accepted but its durable acknowledgement is not confirmed', {
+                accepted: true, invocationId, reason: String(error),
+            });
+        }
+    }
+    /** Confirm a retry before provider lookup or Agent activation, including a cold completed Session. */
+    async acceptedPrompt(request, digest, signal) {
+        const env_3 = { stack: [], error: void 0, hasError: false };
+        try {
+            const revision = this.ctx.workspaceRegistry.sessionAdmissionRevision(request.sessionId);
+            try {
+                this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision);
+            }
+            catch (error) {
+                return failure('agent-busy', 'session lifecycle changed before prompt admission', { reason: String(error) });
+            }
+            const live = this.ctx.sessions.get(request.sessionId);
+            if (live !== undefined) {
+                if (hasApiRemoteSubagentOwner(this.ctx, live, this.ctx.agents.get(request.sessionId)))
+                    return this.subagentFailure(request.sessionId);
+                const receipt = this.promptReceipt(live, request.invocationId);
+                if (receipt === undefined)
+                    return undefined;
+                return this.receiptConflict(receipt, digest) ?? this.confirmPrompt(live, request.invocationId);
+            }
+            const persistence = this.ctx.get('sessionPersistence');
+            if (persistence === undefined)
+                return undefined;
+            const borrowed = __addDisposableResource(env_3, await persistence.borrowSession(request.sessionId, signal), false);
+            signal.throwIfAborted();
+            this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision);
+            if (this.ctx.sessions.get(request.sessionId) !== undefined)
+                return await this.acceptedPrompt(request, digest, signal);
+            if (borrowed.source === 'live')
+                return failure('agent-busy', 'session lifecycle changed while verifying prompt admission');
+            const session = borrowed.preparedSession;
+            if (hasApiRemoteSubagentOwner(this.ctx, session, undefined))
+                return this.subagentFailure(request.sessionId);
+            this.ctx.get('sessionProjectionCache')?.hydratePrepared(session, borrowed.inspection.meta, borrowed.inspection.events);
+            const receipt = this.promptReceipt(session, request.invocationId);
+            if (receipt === undefined)
+                return undefined;
+            // This exact retained source was already read from persistence; no live flush or Agent resume is needed.
+            return this.receiptConflict(receipt, digest) ?? success({ accepted: true });
+        }
+        catch (e_3) {
+            env_3.error = e_3;
+            env_3.hasError = true;
+        }
+        finally {
+            __disposeResources(env_3);
+        }
+    }
     /** Admit ordinary queued or steering input to the exact live Agent. */
     async prompt(request, signal) {
         if (aborted(signal))
@@ -1375,6 +1632,17 @@ export class SessionRemoteOperationsService extends Service {
             : canonicalClientTimeZone(request.clientTimeZone);
         if (request.clientTimeZone !== undefined && canonicalTimeZone === undefined) {
             return failure('invalid-time-zone', 'clientTimeZone must be UTC or a valid IANA Area/Location name', { value: request.clientTimeZone });
+        }
+        const digest = promptDigest(request, canonicalTimeZone);
+        try {
+            const accepted = await this.acceptedPrompt(request, digest, signal);
+            if (accepted !== undefined)
+                return accepted;
+        }
+        catch (error) {
+            if (aborted(signal))
+                return cancelled();
+            return failure('prompt-unavailable', 'cannot verify ordinary prompt admission', { reason: String(error) });
         }
         const found = await this.agentFor(request.sessionId);
         if (!found.ok)
@@ -1423,31 +1691,46 @@ export class SessionRemoteOperationsService extends Service {
         if (!this.ctx.llm.listProviders().some(provider => provider.id === selection.provider)) {
             return failure('model-unavailable', `no adapter serves provider "${selection.provider}"; select a model for this session`, { provider: selection.provider, model: selection.model });
         }
-        const hasImage = request.content.some(part => part.type === 'image');
+        // The Ark host path mirrors the controller: empty prompts never start a turn.
+        const hasContent = request.content.some(part => part.type !== 'text' || part.text.trim().length > 0);
+        if (!hasContent) {
+            return failure('bad-request', 'prompt content must include non-whitespace text or an attachment', {});
+        }
         const admit = async () => {
             try {
                 signal.throwIfAborted();
-                if (hasImage) {
-                    const modelInfo = await this.ctx.llm.resolveModelInfo(selection.provider, selection.model, signal);
-                    if (modelInfo.inputModalities !== undefined
-                        && !modelInfo.inputModalities.includes('image')) {
-                        return failure('attachment-error', `Model "${selection.model}" does not support image input.`, { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' });
-                    }
+                const receipt = this.promptReceipt(agent.session, request.invocationId);
+                if (receipt !== undefined) {
+                    return this.receiptConflict(receipt, digest) ?? await this.confirmPrompt(agent.session, request.invocationId);
                 }
+                if (this.ctx.get('sessionPersistence') === undefined) {
+                    return failure('prompt-unavailable', 'ordinary prompts require a persistence owner');
+                }
+                // Ark 定制：图片一律允许上传，能否识别由模型自行决定；不再按模型模态拦截。
                 const content = await this.durablePromptContent(request.content);
                 signal.throwIfAborted();
                 const source = {
                     kind: 'user',
                     invocationId: request.invocationId,
+                    promptDigest: digest,
                     ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
                 };
                 const message = createUserMessage({ content, source });
                 this.assertPromptAdmission(request.sessionId, agent);
-                if (request.mode === 'steer')
-                    agent.steer(message);
-                else
-                    agent.followup(message);
-                return success({ accepted: true });
+                try {
+                    if (request.mode === 'steer')
+                        agent.steer(message);
+                    else
+                        agent.followup(message);
+                }
+                catch (error) {
+                    // A reentrant observer can throw or cancel after the log append committed.
+                    if (this.promptReceipt(agent.session, request.invocationId) === undefined)
+                        throw error;
+                }
+                if (this.promptReceipt(agent.session, request.invocationId) === undefined)
+                    throw new Error('inbox did not record prompt acceptance');
+                return await this.confirmPrompt(agent.session, request.invocationId);
             }
             catch (error) {
                 if (aborted(signal))
@@ -1458,7 +1741,7 @@ export class SessionRemoteOperationsService extends Service {
                 return failure('agent-busy', 'prompt rejected', { reason: String(error) });
             }
         };
-        return hasImage ? this.serializeImageAdmission(agent, admit) : admit();
+        return this.serializeAdmission(agent, admit);
     }
     /** Return bytes only for an image referenced by the addressed Session log. */
     async attachment(request, signal) {
@@ -1511,10 +1794,17 @@ export class SessionRemoteOperationsService extends Service {
         if (request.action.kind === 'edit' && edited === undefined) {
             return settled(failure('attachment-error', 'queue edits accept text content only', { reason: 'QUEUE_EDIT_NON_TEXT' }));
         }
-        const agent = this.ctx.agents.get(request.sessionId);
-        if (agent !== undefined && hasApiRemoteSubagentOwner(this.ctx, agent.session, agent)) {
-            return settled(this.subagentFailure(request.sessionId));
+        if (edited !== undefined && !edited.some(block => block.type === 'text' && block.text.trim().length > 0)) {
+            return settled(failure('invalid-argument', 'queue edit content must not be empty'));
         }
+        const agent = this.ctx.agents.get(request.sessionId);
+        // Upstream lets a continuable subagent's queue be edited, removed, and
+        // steered; the child's inbox is its only turn queue, so mutating it here
+        // is semantically correct. The shared ownership fence stays for every
+        // other generic route (prompt, cancel, cold resume), so only an identity
+        // with no live Agent at all — one that could not be a continuable child —
+        // keeps rejecting below. A cold child has no live inbox to mutate, so it
+        // rejects as queue-item-not-found rather than resuming under this route.
         if (agent === undefined) {
             return settled(failure('queue-item-not-found', 'queued item is no longer pending', { itemId: request.itemId }));
         }

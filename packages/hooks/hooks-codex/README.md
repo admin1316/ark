@@ -1,6 +1,13 @@
+---
+description: "A cordis plugin that runs the supported subset of a user's existing Codex hook config on the harness's canonical interception points."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-hooks-codex
 
 English | [中文](README.zh.md)
+
+## Summary
 
 A cordis plugin that runs the supported subset of a user's existing **Codex** hook config on the harness's canonical interception points. The **Codex dialect** half of the hooks subsystem. The dialect-agnostic primitives come from [`@deepseek-ai/dsh-hook-protocol`](../hook-protocol/README.md); this bridge owns the Codex-shaped payloads, matcher mode, and decision mapping.
 
@@ -13,6 +20,15 @@ This bridge implements a deliberate subset of Codex's current hook protocol:
 - **No pre-tool approval or rewrite path** — a hook can block, but the bridge does not pre-approve or replace tool input.
 
 A native cordis plugin could do everything this bridge does, more powerfully; the bridge exists only as a compatibility path for the mapped Codex subset (see [the interception extension-points Agent Note](../../../.agents/notes/implemented/feature/2026-06-30-interception-extension-points.md)).
+
+## Table of Contents
+
+- [Config](#config)
+- [Hook points → typed Decisions](#hook-points--typed-decisions)
+- [Context source](#context-source)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config
 
@@ -98,3 +114,7 @@ A blocked prompt sends no request and invalidates nothing. Denial, feedback, and
 - **`Stop` is partial:** blocking forces another model turn, but `stop_hook_active` is always `false`, `last_assistant_message` is always `null`, and `{"continue": false}` is not enforced. An unconditionally blocking hook therefore force-continues every step unless it self-limits (`TODO(stop-loop-guard)`).
 - **Common payload and output fields are partial:** every mapped event reports the statically configured `model` and `permission_mode: "default"` instead of current Codex runtime values. `systemMessage` is logged + warned but not surfaced, and `{"continue": false}` is recorded but does not apply Codex's event-specific stop behavior (`TODO(hook-continue-false)`).
 - **Config loading and execution are partial:** one process-level `configPath` is parsed at load; Codex's active user, project, session, system/managed, and plugin layers, trust controls, and inline `config.toml` hook form are not implemented (`TODO(per-session-hook-config)`). Only synchronous `command` handlers run, current metadata such as `statusMessage` and `commandWindows` is ignored, and matching handlers run serially rather than with Codex's concurrent launch semantics.
+
+### Dev Note
+
+None.

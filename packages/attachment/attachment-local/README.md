@@ -1,6 +1,13 @@
+---
+description: "The private local implementation of @deepseek-ai/dsh-attachment."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-attachment-local
 
 English | [中文](README.zh.md)
+
+## Summary
 
 The private local implementation of [`@deepseek-ai/dsh-attachment`](../attachment). Objects land at `<DSH_HOME>/attachments/v1/objects/<sha256-prefix>/<sha256>` and are addressed by an opaque `sha256:` id. Each process proves a home durable once by syncing every ancestor entry to the filesystem root. Writes use a private staging directory, owner-only files, a synced temporary file, an atomic exclusive hard-link publish, and directory syncs on the publication path (POSIX; Windows relies on filesystem metadata journaling) so the reported reference survives a crash.
 
@@ -9,6 +16,12 @@ Admission accepts at most 20 images and 200MiB of encoded source bytes per messa
 Request versions live below `<DSH_HOME>/attachments/v1/request-images/`. `readImageRequest` scales the stored normalized attachment under a total-pixel budget without enlargement, then enforces a separate encoded-byte cap. The request encoder uses the same fixed 85, 75, and 60 quality ladder, with WebP for alpha and JPEG for opaque images. It executes candidates lazily and reduces dimensions only after every quality attempt exceeds the request cap. Its cache identity includes the attachment id, transform version, pixel and byte budgets, and fixed encoder settings. Cached bytes are fully decoded and checked as 8-bit sRGB/sRGBA before use. Concurrent calls for one identity share one transform and cache write; cancelling one waiter does not cancel the shared work. Callers compose ordered batches from singular reads, while the service's FIFO limiter applies `imageCompressionConcurrency` to simultaneous normalization and request transforms. The setting ranges from 1 through 8 and defaults to 2; file publication remains ordered after preparation.
 
 `DSH_HOME` resolves through the shared path policy: explicit config, `$DSH_HOME`, then `~/.dsh`. Session logs contain only the reference and verified metadata, never this host path. `readImage` forwards optional cancellation into the filesystem read, observes it around verification, and preserves it instead of wrapping it as `ATTACHMENT_READ_FAILED`.
+
+## Table of Contents
+
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Model Experience
 
@@ -24,3 +37,7 @@ Normalization and request projection are deterministic. An unchanged attachment 
 - The local backend assumes the host and provider adapter share this filesystem service.
 - Animated GIF sources keep only their first frame; animation is outside the version-one image contract.
 - The normalization and request encoders are pinned by the installed sharp/libvips build; an encoder or transform-version upgrade re-addresses future normalized attachments or request variants while existing objects stay valid.
+
+### Dev Note
+
+None.

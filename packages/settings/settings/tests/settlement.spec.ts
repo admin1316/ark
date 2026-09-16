@@ -12,6 +12,7 @@ async function boot() {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(MemorySettings)
+  const provider = ctx.get('settings') as MemorySettings
   let scope: SettingsScope<{ value: number }> | undefined
   const owner = ctx.plugin({
     inject: ['settings'],
@@ -19,7 +20,7 @@ async function boot() {
   })
   await owner
   if (scope === undefined) throw new Error('namespace did not register')
-  return { ctx, owner, scope }
+  return { ctx, owner, scope, provider }
 }
 
 afterEach(async () => { await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose())) })
@@ -165,6 +166,41 @@ it('previews secret positions and rejects new unsafe writes before storage', asy
   expect(() => ctx.settings.previewMutation(ns, [{ op: 'set', path: ['value'], value: 0 }])).toThrow('unsafe')
   await expect(ctx.settings.update(ns, { value: 0 })).rejects.toThrow('unsafe')
   expect(ctx.settings.remoteDescribe().namespaces[0]).toMatchObject({ value: {}, user: {} })
+})
+
+it('previews only for a live namespace and refuses ops outside lossless JSON', async () => {
+  const ctx = new Context()
+  contexts.push(ctx)
+  await ctx.plugin(MemorySettings)
+  ctx.settings.register(ns, schema)
+  expect(() => ctx.settings.previewMutation(settingsNamespace('unregistered'), [{ op: 'set', path: ['value'], value: 1 }]))
+    .toThrow('is not registered')
+  // A preview persists nothing, and a value JSON cannot carry is refused before
+  // the path ops are even validated.
+  expect(() => ctx.settings.previewMutation(ns, [{ op: 'set', path: ['value'], value: new Date(0) }]))
+    .toThrow('settings mutate for "settlement-test" must contain only JSON-compatible data (found a Date at $.ops[0].value)')
+  expect(ctx.settings.get(ns)).toEqual({ value: 0 })
+})
+
+it('keeps an external change away from a namespace whose owner is draining', async () => {
+  const { ctx, owner, scope, provider } = await boot()
+  const started = Promise.withResolvers<undefined>()
+  const finished = Promise.withResolvers<undefined>()
+  scope.watch(async () => { started.resolve(undefined); await finished.promise })
+  await scope.update({ value: 1 })
+  await started.promise
+  const disposal = owner.dispose()
+  await vi.waitFor(() => { expect(() => scope.watch(() => {})).toThrow('disposed') })
+  // The registration is still reserved (its started invocation is draining) but
+  // no longer active: a provider publication must not reach it.
+  expect(ctx.settings.get(ns)).toEqual({ value: 1 })
+  provider.pushExternal({ [ns]: { value: 2 } })
+  expect(ctx.settings.get(ns)).toEqual({ value: 1 })
+  finished.resolve(undefined)
+  await disposal
+  // The publication stayed in storage: the replacement owner reads it.
+  expect(ctx.settings.get(ns)).toBeUndefined()
+  expect(ctx.settings.register(ns, schema).get()).toEqual({ value: 2 })
 })
 
 it('preserves prototype-shaped keys as own JSON data through merge and path edits', async () => {

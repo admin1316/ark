@@ -1,0 +1,1 @@
+{"version":3,"file":"typert.remote-client.d.ts","names":["createDirectory","list","pick","follow"],"sources":["../src/directory-picker.ts","../src/index.ts"],"sourcesContent":[null,null],"mappings":";;;;;;;;;;IAqFQA,e;IAhBAC,I;IAjBAC,I;;;ICXNC,M;;;ID4CMH,iC;IAhBAC,sB;IAjBAC,sB;ICXNC,kB","ignoreList":[]}

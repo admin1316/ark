@@ -8,7 +8,12 @@ import { expect, it } from 'vitest'
 
 const execute = promisify(execFile)
 
-it.each([0, 1])('runs compilation before bundling and preserves compiler failure %i', async (status) => {
+it.each([
+  { compile: 0, reflection: 0, bundle: 0 },
+  { compile: 1, reflection: 0, bundle: 0 },
+  { compile: 0, reflection: 7, bundle: 0 },
+  { compile: 0, reflection: 0, bundle: 9 },
+])('serializes and preserves stage failures: %j', async (status) => {
   const root = await mkdtemp(join(tmpdir(), 'ark-build-order-'))
   try {
     for (const directory of ['scripts', 'node_modules/typescript/bin', 'node_modules/tsdown/dist', 'packages/example/lib']) {
@@ -17,17 +22,21 @@ it.each([0, 1])('runs compilation before bundling and preserves compiler failure
     await writeFile(join(root, 'scripts/build-host-bundles.mjs'), await readFile(
       new URL('./build-host-bundles.ts', import.meta.url), 'utf8',
     ))
+    await reflectionFixture(root, status.reflection)
     await writeFile(join(root, 'packages/example/lib/index.js'), 'existing artifact')
     await writeFile(join(root, 'node_modules/typescript/bin/tsc'),
-      `require('node:fs').appendFileSync('order.txt', 'compile\\n'); process.exit(${status})`,
+      `require('node:fs').appendFileSync('order.txt', 'compile\\n'); process.exit(${status.compile})`,
     )
     await writeFile(join(root, 'node_modules/tsdown/dist/run.mjs'),
-      "import { appendFileSync } from 'node:fs'; appendFileSync('order.txt', 'bundle\\n')",
+      `import { appendFileSync } from 'node:fs'; appendFileSync('order.txt', 'bundle\\n'); process.exit(${status.bundle})`,
     )
     const run = execute(process.execPath, [join(root, 'scripts/build-host-bundles.mjs')], { cwd: root })
-    if (status === 0) await expect(run).resolves.toMatchObject({ stderr: '' })
-    else await expect(run).rejects.toMatchObject({ code: 1 })
-    expect(await readFile(join(root, 'order.txt'), 'utf8')).toBe(status === 0 ? 'compile\nbundle\n' : 'compile\n')
+    const failure = status.compile || status.reflection || status.bundle
+    if (failure === 0) await expect(run).resolves.toMatchObject({ stderr: '' })
+    else await expect(run).rejects.toMatchObject({ code: failure })
+    expect(await readFile(join(root, 'order.txt'), 'utf8')).toBe(status.compile !== 0
+      ? 'compile\n'
+      : status.reflection !== 0 ? 'compile\nreflection\n' : 'compile\nreflection\nbundle\n')
     expect(await readFile(join(root, 'packages/example/lib/index.js'), 'utf8')).toBe('existing artifact')
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -45,6 +54,7 @@ it.each([false, true])('uses real TypeScript build options with invalid source %
     await writeFile(join(root, 'scripts/build-host-bundles.mjs'), await readFile(
       new URL('./build-host-bundles.ts', import.meta.url), 'utf8',
     ))
+    await reflectionFixture(root, 0)
     const base = await readFile(new URL('../tsconfig.base.json', import.meta.url), 'utf8')
     expect(base).toContain('"noEmitOnError": true')
     await writeFile(join(root, 'tsconfig.host.json'), JSON.stringify({
@@ -67,3 +77,19 @@ it.each([false, true])('uses real TypeScript build options with invalid source %
     await rm(root, { recursive: true, force: true })
   }
 })
+
+async function reflectionFixture(root: string, status: number): Promise<void> {
+  const directory = join(root, 'packages/typert/generator/lib/types')
+  await mkdir(directory, { recursive: true })
+  await writeFile(join(directory, 'package.json'), '{"type":"module"}')
+  await writeFile(join(directory, 'tsdown-plugin.js'), `
+    import { appendFileSync } from 'node:fs';
+    import assert from 'node:assert/strict';
+    export function emitVerifiedWorkspaceArtifacts(root, faces) {
+      assert.equal(root, process.cwd());
+      assert.deepEqual(faces, ['host']);
+      appendFileSync('order.txt', 'reflection\\n');
+      process.exit(${status});
+    }
+  `)
+}

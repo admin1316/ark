@@ -1,8 +1,24 @@
+---
+description: "ctx.sessionReferenceResolver prepares bounded, read-only snapshots of other sessions as sourced model-facing context."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-session-reference`
 
 English | [中文](README.zh.md)
 
+## Summary
+
 `ctx.sessionReferenceResolver` prepares bounded, read-only snapshots of other sessions as sourced model-facing context. It consumes `ctx.sessionQuery` and the backend-independent compact checkpoint marker; SQLite FTS is not required. Hosts that support cross-session mentions may opt into the service.
+
+## Table of Contents
+
+- [Public API](#public-api)
+- [Snapshot semantics](#snapshot-semantics)
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Public API
 
@@ -48,3 +64,7 @@ The request and snapshot are consecutive append-only target messages and preserv
 - **Trusted caller boundary** — the service assumes its host is authorized to read every session exposed by `ctx.sessionQuery`; it is not a model-facing search tool.
 - **Text projection only** — non-text user and assistant blocks are not propagated across sessions.
 - **No live link** — references are snapshots, not forks, resumes, subscriptions, or source-session mutations.
+
+### Dev Note
+
+None.

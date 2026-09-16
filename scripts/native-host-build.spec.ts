@@ -38,8 +38,10 @@ it('includes every native runtime workspace in the Host compiler aggregate', () 
   const parsed = ts.parseConfigFileTextToJson('tsconfig.host.json', readFileSync(join(root, 'tsconfig.host.json'), 'utf8'))
   expect(parsed.error).toBeUndefined()
   const config = parsed.config as { references: { path: string }[] }
+  // resolve() emits the platform separator (backslash on Windows), so the
+  // tsconfig suffix strip and the directory equality must accept both forms.
   const references = new Set(config.references.map(reference =>
-    resolve(root, reference.path).replace(/\/tsconfig[^/]*\.json$/, '')))
+    resolve(root, reference.path).replace(/[\\/]tsconfig[^\\/]*\.json$/, '')))
   const missingSources: string[] = []
   for (const name of reachable) {
     const directory = resolve(root, packages.get(name)!.directory)

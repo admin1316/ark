@@ -62,7 +62,6 @@ export const SERVICE_PAGE: Record<string, string> = {
   attachments: 'attachment.md',
   shell: 'shell.md',
   shellEnv: 'shell.md',
-  clientModules: 'client-modules.md',
   codeRuntime: 'code-runtime.md',
   commands: 'commands.md',
   compaction: 'compaction.md',
@@ -70,7 +69,6 @@ export const SERVICE_PAGE: Record<string, string> = {
   cordisInspect: 'extensions.md',
   authorization: 'credentials.md',
   credentials: 'credentials.md',
-  credentialsController: 'credentials.md',
   settingsController: 'settings.md',
   directoryPicker: 'workspace.md',
   deepseekLlmApiExtensions: 'llm-streaming.md',
@@ -93,7 +91,6 @@ export const SERVICE_PAGE: Record<string, string> = {
   sandboxPolicy: 'sandbox.md',
   sessionPersistence: 'persistence.md',
   sessionQuery: 'session-query.md',
-  sessionFileReferences: 'session-reference.md',
   sessionReferenceResolver: 'session-reference.md',
   sessionProjectionCache: 'session-projection.md',
   sessionProjections: 'session-projection.md',
@@ -113,6 +110,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   jobs: 'jobs.md',
   sessionTelemetry: 'session-telemetry.md',
   agentTeams: 'agent-team.md',
+  agentTeamRemote: 'agent-team.md',
   tokenMeter: 'token-meter.md',
   toolResultPruner: 'compaction.md',
   tools: 'tools.md',
@@ -142,8 +140,7 @@ export const SERVICE_PAGE: Record<string, string> = {
  * or Host composition installs; optional interface-typed ports name their
  * concrete implementation owner below. A client-face key belongs to
  * the browser Context, which this host-face program never sees; the browser
- * surface has its own generated catalog (`scripts/gen-client-catalog.ts`, served
- * to a model as `cordis_runtime_inspect what:"client"`).
+ * surface is outside the Host service projection.
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   agent: 'not a service: the DX accessor field on Agent.ctx (root accessor defaulting to undefined) — docs/subsystems/core.md owns the Agent handle',
@@ -156,26 +153,6 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   launchEnvironment: 'not a service: launcher-provided root accessor value (LaunchEnvironmentSnapshot | undefined) — packages/util/launch-environment/README.md owns this launcher contract',
   sessionRemoteOperations: 'optional interface-typed Host port implemented by packages/host/session-remote-operations/src/index.ts; docs/subsystems/session.md owns the generated session methods',
   workspaceSessionRetirer: 'optional interface-typed lifecycle port provided by packages/host/session-remote-operations/src/index.ts; docs/subsystems/workspace.md owns archived-session deletion',
-  uiRenderer: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
-  uiSession: 'client-side Session source adapter — packages/client/ui-session/README.md owns the API',
-  uiConversation: 'client-side Conversation registries and assembler — packages/client/ui-conversation/README.md owns the API',
-  uiWorkspace: 'client-side Workspace navigation adapter — packages/client/ui-workspace/README.md owns the API',
-  settingsSchema: 'client-side schema introspection service — packages/client/ui-settings/README.md owns the API',
-  settingsScope: 'client-side settings-namespace transport service — packages/client/ui-settings/README.md owns the API',
-  chatFileMentions: 'client-side slot-contract accessor (ChatFileMentions) — packages/client/ui-chat/README.md owns the API',
-  commandUi: 'client-side interface-typed browser service — packages/client/ui-commands/README.md owns the API',
-  conversation: 'client-side interface-typed browser service — packages/client/ui-conversation/README.md owns the API',
-  layout: 'client-side interface-typed browser service — packages/client/ui-layout/README.md owns the API',
-  locale: 'client-side interface-typed browser service — packages/client/locale/README.md owns the API',
-  modelDirectories: 'client-side interface-typed browser service — packages/client/ui-model-selection/README.md owns the API',
-  modules: 'client-side interface-typed browser service — packages/client/modules/README.md owns the API',
-  remote: 'client-side interface-typed gateway accessor (ClientRemote) — packages/api/gateway/README.md owns the API',
-  sessionLogDownload: 'client-side browser download controller — packages/session-query/session-log-export/README.md owns the API',
-  inputTriggers: 'client-side interface-typed browser service — packages/client/ui-input-trigger/README.md owns the API',
-  timer: 'client-side dynamic-package timer service — packages/extensions/cordis-client-runner/README.md owns the API',
-  slots: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
-  theme: 'client-side interface-typed browser service — packages/client/ui-theme/README.md owns the API',
-  workspaces: 'client-side interface-typed browser service — packages/api/workspace-controller/README.md owns the API',
 }
 
 /**
@@ -223,15 +200,6 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
  * exemption cannot mask another declaration in that scope.
  */
 export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
-  'command/executed': 'client-face local command acknowledgment — packages/client/ui-commands/README.md owns the API',
-  'connection/reset': 'client-face transport signal — packages/api/session-controller/README.md owns the API',
-  'locale/change': 'client-face locale switch signal — packages/client/locale/README.md owns the API',
-  'slash/input-begin-command': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
-  'slash/input-consume-token': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
-  'slash/input-insert-reference': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
-  'slash/input-insert-text': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
-  'slots/changed': 'client-face slot invalidation signal — packages/client/ui-renderer/README.md owns the API',
-  'theme/change': 'client-face theme switch signal — packages/client/ui-theme/README.md owns the API',
 }
 
 /**
@@ -556,6 +524,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SubagentCatalog: 'subagent.md',
   SubagentDescendantListEntry: 'subagent.md',
   SubagentFollowupOptions: 'subagent.md',
+  SubagentHistoryOptions: 'subagent.md',
   SubagentInterruptAuthority: 'subagent.md',
   SubagentInterruptReceipt: 'subagent.md',
   SubagentListEntry: 'subagent.md',
@@ -679,8 +648,6 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   WorkspaceOrderValue: 'workspace.md',
   WorkspaceRenameRequest: 'workspace.md',
   WorkspaceValue: 'workspace.md',
-  ClientArtifactBaseline: 'client-modules.md',
-  WebBootGraph: 'client-modules.md',
   SessionTelemetryRecord: 'session-telemetry.md',
   WorkflowRunInfo: 'workflow.md',
   WorkflowStartRequest: 'workflow.md',
@@ -726,10 +693,6 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   z: 'schemastery schema constructor is owned by vendor/schemastery (vendored upstream)',
-  BeginCommandRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
-  InsertReferenceRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
-  ConsumeTokenRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
-  InsertTextRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
   AgentHandle: 'agent ownership handle is owned by packages/core/agent/README.md',
   AgentPreset: 'discovered preset record is owned by packages/preset/agent-presets/README.md',
   AgentPresetRoster: 'path-free preset roster is owned by packages/preset/agent-presets/README.md',
@@ -739,7 +702,6 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   BashEnvVariableInfo: 'service-local metadata type is owned by packages/shell/tool-bash/src/index.ts',
   CompactionAgentContext: 'compaction service input is owned by packages/compaction/compaction/src/index.ts',
   ManualCompactAgentContext: 'manual compaction service input is owned by packages/compaction/compaction/src/index.ts',
-  ClientResponse: 'wire response message is owned by packages/client/connection/src/rpc.ts',
   ApprovalRequestId: 'dynamic Plugin approval identity is owned by packages/extensions/cordis-host-runner/src/types.ts',
   CordisErrorDetails: 'Cordis runtime error payload is owned by packages/extensions/cordis-host-runner/src/types.ts',
   CordisInspectPlatform: 'Cordis inspect platform identity is owned by packages/extensions/cordis-host-runner/src/types.ts',
@@ -781,9 +743,6 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   'z.core.ToJSONSchemaParams': 'zod projection parameters are owned by the zod v4 API',
   TypertDisposer: 'Typert lifecycle contract is owned by packages/typert/protocol/README.md',
   InvokeRemoteRequest: 'gateway invocation contract is owned by packages/api/gateway/README.md',
-  LocaleDict: 'service-local dictionary fields are owned by packages/client/i18n/src/index.ts',
-  ThemeTokens: 'service-local token dictionary is owned by packages/client/ui-theme/src/index.ts',
-  Translate: 'service-local bound translator is owned by packages/client/i18n/src/index.ts',
   WebUpgradeRoute:
     'upgrade route registration contract is owned by packages/host/webserver/src/index.ts',
   InvariantRegistration: 'service-local lifecycle handle is owned by packages/runtime-diagnostics/invariants/README.md',
@@ -792,7 +751,6 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   PermissionSelect: 'permissions projection payload is owned by packages/interaction/permission-presets/src/types.ts',
   PromptAssembly: 'assembly result is owned by packages/core/system-prompt/README.md',
   RequestRunId: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
-  RpcReceipt: 'carrier-layer receipt is owned by packages/client/connection/src/rpc.ts',
   Sandbox: 'external E2B SDK handle is owned by packages/e2b/e2b/README.md',
   SessionForkSource: 'service-local fork input is owned by packages/core/session/src/index.ts',
   SubagentRunEndInfo: 'event payload contract is owned by packages/subagent/subagent/src/types.ts',

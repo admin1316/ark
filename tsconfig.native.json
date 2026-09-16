@@ -171,6 +171,9 @@
       "path": "./packages/host/workbench"
     },
     {
+      "path": "./packages/util/http-proxy"
+    },
+    {
       "path": "./packages/runtime-diagnostics/invariants"
     },
     {
@@ -460,6 +463,9 @@
     },
     {
       "path": "./packages/util/crypto"
+    },
+    {
+      "path": "./packages/util/values"
     },
     {
       "path": "./packages/web/web"

@@ -23,7 +23,10 @@ function ark_refuse_unsafe_output() {
 
   local canonical="${requested:A}"
   local padded="/${canonical#/}/"
-  if [[ "${canonical}" == "/" || "${canonical}" == "/Applications" || "${canonical}" == /Applications/* ]]; then
+  local production_app="${HOME}/ark/Ark.app"
+  production_app="${production_app:A}"
+  if [[ "${canonical}" == "/" || "${canonical}" == "/Applications" || "${canonical}" == /Applications/* \
+    || "${canonical}" == "${production_app}" || "${canonical}" == ${production_app}/* ]]; then
     print -u2 "refusing Ark candidate output in the production application hierarchy: ${canonical}"
     return 2
   fi
@@ -49,7 +52,10 @@ function ark_refuse_unsafe_candidate() {
     return 2
   }
   local canonical="${requested:A}"
-  [[ "${canonical}" != "/Applications/Ark.app" && "${canonical}" != /Applications/* ]] || {
+  local production_app="${HOME}/ark/Ark.app"
+  production_app="${production_app:A}"
+  [[ "${canonical}" != "${production_app}" && "${canonical}" != ${production_app}/* \
+    && "${canonical}" != "/Applications/Ark.app" && "${canonical}" != /Applications/* ]] || {
     print -u2 "refusing the production Ark.app as a candidate: ${canonical}"
     return 2
   }
@@ -772,7 +778,8 @@ def safe_dependency(value: str):
             r"/System/Library/Frameworks/[A-Za-z0-9_.+-]+\.framework/"
             r"Versions/[A-Za-z0-9_.+-]+/[A-Za-z0-9_.+-]+"
         ),
-        re.compile(r"/usr/lib/(?:libSystem\.B|libc\+\+\.1|libobjc\.A)\.dylib"),
+        # libcompression is an OS-shipped system library the SwiftTerm engine links.
+        re.compile(r"/usr/lib/(?:libSystem\.B|libc\+\+\.1|libobjc\.A|libcompression)\.dylib"),
         re.compile(r"/usr/lib/swift/libswift[A-Za-z0-9_]+\.dylib"),
     ))
 
@@ -1750,6 +1757,22 @@ python_executable="${JIUZHANG_PYTHON_EXECUTABLE:-$(command -v python3)}"
   exit 2
 }
 
+function ark_remove_tree() {
+  # Finder and Spotlight can drop .DS_Store into a browsed tree while it is being deleted, so a
+  # single rm -rf can fail with ENOTEMPTY — and that once aborted a fully signed candidate build.
+  # Retry briefly and only report a tree that really still exists.
+  local path="${1}" attempt
+  for attempt in 1 2 3 4 5; do
+    [[ -e "${path}" ]] || return 0
+    /bin/rm -rf -- "${path}" 2>/dev/null || true
+    [[ -e "${path}" ]] || return 0
+    /bin/sleep 0.3
+  done
+  [[ -e "${path}" ]] || return 0
+  print -u2 "could not remove the build staging tree: ${path}"
+  return 1
+}
+
 final_app_path="${destination}/Ark.app"
 scratch="$(mktemp -d /private/tmp/jiuzhang-native-build.XXXXXX)"
 build_stage_root=""
@@ -1762,9 +1785,9 @@ function ark_cleanup_build() {
   if [[ -n "${swiftmath_math_font_backup}" && -f "${swiftmath_math_font_backup}" ]]; then
     /bin/cp -p "${swiftmath_math_font_backup}" "${swiftmath_checkout}/Sources/SwiftMath/MathBundle/MathFont.swift"
   fi
-  /bin/rm -rf -- "${scratch}"
+  ark_remove_tree "${scratch}" || true
   if [[ -n "${build_stage_root}" && -d "${build_stage_root}" ]]; then
-    /bin/rm -rf -- "${build_stage_root}"
+    ark_remove_tree "${build_stage_root}" || true
   fi
 }
 trap ark_cleanup_build EXIT
@@ -1831,11 +1854,11 @@ export SWIFTPM_MODULECACHE_OVERRIDE="${scratch}/swift-cache"
 icon_master="${scratch}/AppIcon-1024.png"
 icon_width="$(/usr/bin/sips -g pixelWidth "${icon_source}" | awk '/pixelWidth/ { print $2 }')"
 icon_height="$(/usr/bin/sips -g pixelHeight "${icon_source}" | awk '/pixelHeight/ { print $2 }')"
-[[ "${icon_width}" == 1024 && "${icon_height}" == 1024 ]] || {
-  print -u2 "Ark seal icon source must be exactly 1024x1024 pixels."
+(( icon_width >= 1024 && icon_width == icon_height )) || {
+  print -u2 "Ark icon source must be square and at least 1024x1024 pixels."
   exit 2
 }
-install -m 0644 "${icon_source}" "${icon_master}"
+/usr/bin/sips -s format png -z 1024 1024 "${icon_source}" --out "${icon_master}" >/dev/null
 
 icon_preview="${scratch}/AppIcon-128.png"
 /usr/bin/sips -z 128 128 "${icon_master}" --out "${icon_preview}" >/dev/null
@@ -2314,7 +2337,7 @@ output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 PYTHON
 
 if [[ -n "${staged_pack_root}" ]]; then
-  /bin/rm -rf -- "${staged_pack_root}"
+  ark_remove_tree "${staged_pack_root}"
   staged_pack_root=""
 fi
 ark_refuse_unsafe_output "${destination}" >/dev/null

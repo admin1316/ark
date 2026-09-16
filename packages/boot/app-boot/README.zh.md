@@ -1,6 +1,13 @@
+---
+description: "供 app bin（dsh 与 dsh-acp-demo）共用的启动粘合层：每个 bin 都是在这些辅助函数之上构建的精简自执行组合，并以自身诊断前缀参数化。"
+kind: "package-library"
+---
+
 # `@deepseek-ai/dsh-app-boot`
 
 [English](README.md) | 中文
+
+## 概述
 
 供 app bin（[`dsh`](../../../apps/cli/README.zh.md) 与 [`dsh-acp-demo`](../../examples/acp-demo/README.zh.md)）共用的启动粘合层：每个 bin 都是在这些辅助函数之上构建的精简自执行组合，并以自身诊断前缀参数化。这样，Loader 故障行为只由一处负责，不会在已发布产物之间逐渐分化。
 
@@ -33,9 +40,19 @@ Loader 并发挂载各个条目，因此当其他环节失败时，某个界面�
 
 此包不包含 loader 钩子，也不提供开发模式接口。[`dsh` 应用](../../../apps/cli/README.zh.md) 持有自己的 Node 源码启动钩子，并在启动序列中使用这些 helper；构建后的消费方仍使用普通 Node 包解析。
 
+## 目录
+
+- [Profiles](#profiles)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="profiles"></a>
 ## Profiles
 
 profile 是位于 `$DSH_HOME/profiles/<name>` 下的目录（harness home 由 [`resolveDshHome`](../../util/home-paths/README.zh.md) 解析：先取 `$DSH_HOME`，否则取 `~/.dsh`），其中包含一个 `package.json`（树外插件 `dependencies`，加上 profile manifest `dsh.profile` 及其有序的 `bundles` 层列表）和用户自己的 `cordis.patch.yml`。组合包是在 manifest 中声明 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }` 的 npm 包；`loadProfile` 以双锚点解析每个 `dsh.profile.bundles` 名称（先从 dsh 安装目录，再从 profile 目录），列出的包若没有组合包声明则明确报错。`composeEntries` 通过 include 自己的 `applyEntryPatches` 在空条目列表之上应用各 patch 层，因此组合、标志推导和配置 dump 绝不会与实际启动内容发生偏离。`healProfilesModuleFallback` 维护扁平的 `$DSH_HOME/profiles/node_modules` 目录，为应用依赖、已安装 optional dependency 与 peer 的闭包中每个包建立一个符号链接，使任意 profile 中的裸插件名都能经 Node 常规的逐级向上查找解析，而无需由 pnpm 管理随安装内置的包；未安装的可选组合包不会贡献链接。`PROFILE_TEMPLATES`（`web`、`headless`）在首次使用时自动初始化；其他名称在 `initProfile` 创建之前都会明确报错（即 `dsh plugin` 路径）。`loadProfile` 会将与安装自有组合包元组完全一致的列表规范化为随发行版交付的模板，同时保留 manifest 中其他所有字段；一旦条目有任何额外、缺失或重排，该列表就归用户所有并保持不变。
+
+组合包查找会先确定规范包目录，再读取 manifest，因此并发替换后备链接不会重定向后续读取；候选路径缺失时继续查找，其他解析错误向上传递。
 
 用户级的机器本地偏好同样位于 harness home 中：
 
@@ -44,6 +61,7 @@ profile 是位于 `$DSH_HOME/profiles/<name>` 下的目录（harness home 由 [`
 
 `loadProfile` 将 `dsh.profile.patchReload` 解析为默认的 `live` 或显式的 `startup`，其他值会被拒绝。CLI 仅为 live profile 安装 `watchUserPatches`；受管原生启动器还会执行自身明确的监视策略。即使该文件或其直接父目录不存在，监视器仍会监视确切路径；它会串行处理突发变更，并按调用方的层次顺序重新组合用户 patch（组合包层在下、overlay 在上）。读取失败、解析失败或 Loader 候选被拒时，最后一个可用树会继续运行；HMR 服务记录错误后广播 `hmr/config-update-failed(filename, Error)`，并隔离观察方的失败。上下文 dispose 时会关闭 watcher，并等待进行中的刷新结束。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 模型通过此包加载的插件树间接受到影响；该树决定最终应用中的提示词、schema、消息和模型适配器。唯一贡献模型可见文本的导出 `addHarnessSourceSection`，也只有在消费方启动后调用它时才会产生影响。
@@ -52,9 +70,15 @@ profile 是位于 `$DSH_HOME/profiles/<name>` 下的目录（harness home 由 [`
 
 `boot()` 不会直接使缓存失效；消费方调用 `addHarnessSourceSection` 时，会在系统提示词靠前位置、逐请求内容之前添加一行短文本，因此不会使跨轮次缓存失效。请求前缀的其他任何变化均由相应的具名消费方负责。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **裸包 specifier 依赖 Loader 内部机制**：生产 bin 需要 Loader 的可选原生辅助组件；没有该辅助组件的进程内调用方必须使用可解析的相对／file specifier，或提供自己的模块解析钩子。
 - **快照回放替换仅识别特定 basename**：只有以 `cordis.yml` 或 `cordis.yaml` 结尾的配置会映射到同级 `cordis.snapshot.yml`；自定义配置名称需要调用方自行选择。
 - **环境发现以启动为界**：`loadLayeredEnv` 只读取一次调用目录与 harness home 中的 `.env`；它不搜索父目录，也不跟随之后选择的 workspace。`loadEnv` 仍是非产品 bin 使用的单目录 helper。
 - **用户 patch 会替换匹配到的整个配置**：按 id 定位的 patch 不做深度合并，因此 profile 覆盖必须重述需要保留的组合包字段。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

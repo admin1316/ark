@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceDeleteBlockedError } from '@deepseek-ai/dsh-session-persistence'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
@@ -190,9 +190,7 @@ function sessionDeletionPostOrder(rootSessionId: SessionId, headers: readonly Se
   const path: SessionId[] = []
   const order: SessionId[] = []
   const stack: { id: SessionId; exiting: boolean }[] = [{ id: rootSessionId, exiting: false }]
-  while (stack.length > 0) {
-    const frame = stack.pop()
-    if (frame === undefined) break
+  for (let frame = stack.pop(); frame !== undefined; frame = stack.pop()) {
     if (frame.exiting) {
       path.pop()
       visiting.delete(frame.id)
@@ -354,6 +352,7 @@ export class WorkspaceRegistry extends TypertRemoteService {
     } catch (error) {
       const cancellation = workspaceCancelledAfterAwait(signal)
       if (cancellation !== undefined) return cancellation
+      if (error instanceof TypertRemoteFailure) throw error
       return workspaceRemoteError('workspace-invalid-path', error, { path: request.path })
     }
   }
@@ -411,15 +410,23 @@ export class WorkspaceRegistry extends TypertRemoteService {
    * @returns updated account.
    */
   @Remote('insertSessionBefore')
-  remoteExportInsertSessionBefore(
+  async remoteExportInsertSessionBefore(
     request: WorkspaceRemoteInsertSessionBeforeRequest, signal: AbortSignal,
   ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>> {
-    return this.remoteOperation(signal, async () => {
+    const result = await this.remoteOperation(signal, async () => {
       const workspace = this.get(request.workspaceId)
       if (workspace === undefined) throw new WorkspaceOrderInvalidError(request.workspaceId)
       await workspace.insertSessionBefore(request.sessionId, request.beforeSessionId)
       return { workspace: workspaceRemoteView(workspace) }
     })
+    if (!result.ok && result.error.code === 'workspace-move-invalid') {
+      return { ok: false, error: { ...result.error, details: {
+        workspaceId: request.workspaceId,
+        sessionId: request.sessionId,
+        ...request.beforeSessionId === undefined ? {} : { beforeSessionId: request.beforeSessionId },
+      } } }
+    }
+    return result
   }
 
   /**

@@ -1,3 +1,8 @@
+---
+description: "ACP（Agent Client Protocol）组通过该协议将 harness 中的 agent（智能体）公开给程序化客户端。"
+kind: "package-group"
+---
+
 # acp/：Agent Client Protocol 自动化
 
 [English](README.md) | 中文

@@ -1,15 +1,32 @@
+---
+description: "@deepseek-ai/dsh-subprocess seam 的 E2B 实现。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-subprocess-e2b
 
 [English](README.md) | 中文
 
+## 概述
+
 [`@deepseek-ai/dsh-subprocess`](../../subprocess/subprocess/README.zh.md) seam 的 E2B 实现。先加载 [`@deepseek-ai/dsh-e2b`](../e2b/README.zh.md)，再用本服务取代 `dsh-subprocess-local`。现有的 Bash、PTY 和 LSP 消费方随后会在共享远程沙箱中执行，无需 E2B 专用的能力包。
 
+## 目录
+
+- [配置](#configuration)
+- [行为](#behavior)
+- [模型体验](#model-experience)
+- [已知限制与延后工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="configuration"></a>
 ## 配置
 
 | 键 | 默认值 | 含义 |
 | --- | --- | --- |
 | `pollMs` | `20` | 远程状态／存活轮询间隔（毫秒）；每个 tick 是一次控制面请求，调大该值以牺牲退出观察延迟换取更少的请求。 |
 
+<a id="behavior"></a>
 ## 行为
 
 - **异步远程启动**：同步 seam 会立即返回一个句柄，同时由 `Sandbox.commands.run(..., { background: true })` 在远程启动进程。包装层发布进程组 ID 并由适配器完成验证之前，`pid` 为 `-1`；stdin 和常规观察会等待该发布。自有启动信号会在分配前中止环境和私有状态准备；分配开始后，取消会等待可清理的临时 SDK 句柄。
@@ -22,6 +39,7 @@
 
 E2B 默认基础镜像提供该适配器调用的运行时和 Bash/GNU 工具：`node`、`bash`、`setsid`、`ps`、`awk`、`tr`、`env`、`base64`、`chmod`、`tee`、`head`、`rm`、`kill`、`id` 和 `getent`。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 通过 Consumer 间接影响模型，例如 `dsh-tool-bash` 背后的 Bash 执行器；这些 Consumer 会渲染远程输出、退出事实、后台增量和 spill 路径。
@@ -30,6 +48,7 @@ E2B 默认基础镜像提供该适配器调用的运行时和 Bash/GNU 工具：
 
 不会直接失效；请求前缀变更由具名消费方负责。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与延后工作
 
 - **SDK 仍会在宿主内存中保留完整命令输出**：即使本适配器公开的是有界原始字节尾部，E2B `CommandHandle.stdout` 和 `.stderr` 仍会累积 base64 传输内容，因此无法达到进程管理 seam 通常提供的宿主内存边界，而且传输保留量大于源数据流。
@@ -41,3 +60,8 @@ E2B 默认基础镜像提供该适配器调用的运行时和 Bash/GNU 工具：
 - **E2B 不公开信号事实**：适配器请求的 `SIGTERM` 或 `SIGKILL` 只有在包装层发布的直接退出码没有胜出时才报告为信号；其他未请求的 SDK 退出始终保留为退出码，包括等于 `128 + signal` 的值。
 - **无法精确检查终端 stdin 等待状态**：E2B 会公开前台进程组，但不提供证明其正在等待 fd 0 所需的 syscall 证据，因此通用 PTY 后端会回退到受控提示符标记与有界静默机制。
 - **依赖 Linux 工具与 E2B 传输语义**：没有 Windows、逃逸会话恢复或网络分区的保真层。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

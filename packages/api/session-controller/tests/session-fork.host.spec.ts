@@ -216,7 +216,7 @@ describe('sessions.fork', () => {
 
     for (const atSeq of [-1, 0.5]) {
       await expect(proxy.fork(request({ sessionId: sid('missing'), atSeq })))
-        .resolves.toMatchObject({ ok: false, error: { code: 'bad-request' } })
+        .resolves.toMatchObject({ ok: false, error: { code: 'invalid-argument' } })
     }
     expect(ctx.sessions.list()).toEqual([])
     await ctx.fiber.dispose()

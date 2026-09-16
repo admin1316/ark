@@ -8,6 +8,7 @@ import KnowledgeWikiService from '../src/index.ts'
 import type { IngestQueueTask } from '../src/types.ts'
 import type { ProjectExecutionContext } from '../src/project-context.ts'
 import { executeKnowledgeWikiStage } from '../src/stage-executor.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 /** Private service surface exercised by the queue tests. */
 interface TestService {
@@ -40,7 +41,7 @@ beforeEach(() => {
   writeFileSync(join(root, 'wiki', 'index.md'), '# Wiki Index\n')
   writeFileSync(join(root, 'raw', 'sources', 'ark-sessions', 'a.md'), 'content A')
   ctx = new Context()
-  service = new KnowledgeWikiService(ctx, { wikiRoot: join(root, 'wiki'), mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm' }) as unknown as TestService
+  service = new KnowledgeWikiService(ctx, wikiTestConfig({ wikiRoot: join(root, 'wiki'), mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm' })) as unknown as TestService
 })
 
 afterEach(async () => {
@@ -230,7 +231,7 @@ describe('queue persistence', () => {
     expect(durable[0]!.createdAt).toBeTypeOf('number')
 
     const ctx2 = new Context()
-    const fresh = new KnowledgeWikiService(ctx2, { wikiRoot: join(root, 'wiki'), mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm' }) as unknown as TestService
+    const fresh = new KnowledgeWikiService(ctx2, wikiTestConfig({ wikiRoot: join(root, 'wiki'), mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm' })) as unknown as TestService
     fresh.restoreQueue()
     expect(fresh.queue.map(task => task.input)).toEqual(['ark-sessions/a.md'])
     expect(fresh.queue[0]!.status).toBe('pending')
@@ -252,13 +253,13 @@ describe('queue persistence', () => {
     mkdirSync(join(queueFile, '..'), { recursive: true })
     writeFileSync(queueFile, JSON.stringify([{ id: 7, input: 'ark-sessions/a.md', status: 'pending' }]))
     const ctx2 = new Context()
-    const fresh = new KnowledgeWikiService(ctx2, {
+    const fresh = new KnowledgeWikiService(ctx2, wikiTestConfig({
       wikiRoot: join(root, 'wiki'),
       mainRoot: root,
       credential: 'VISION_API_KEY',
       llmProvider: 'p',
       llmModel: 'm',
-    }) as unknown as TestService
+    })) as unknown as TestService
 
     fresh.restoreQueue(root)
 
@@ -345,13 +346,13 @@ describe('pending cancellation', () => {
     expect(durable[0]).toMatchObject({ input: 'ark-sessions/a.md', status: 'cancelled' })
 
     const ctx2 = new Context()
-    const fresh = new KnowledgeWikiService(ctx2, {
+    const fresh = new KnowledgeWikiService(ctx2, wikiTestConfig({
       wikiRoot: join(root, 'wiki'),
       mainRoot: root,
       credential: 'VISION_API_KEY',
       llmProvider: 'p',
       llmModel: 'm',
-    }) as unknown as TestService
+    })) as unknown as TestService
     fresh.restoreQueue(root)
     expect(fresh.queue).toHaveLength(1)
     expect(fresh.queue[0]).toMatchObject({ input: 'ark-sessions/a.md', status: 'cancelled' })

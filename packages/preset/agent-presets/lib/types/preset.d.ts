@@ -78,7 +78,7 @@ export declare class UnknownPresetError extends Error {
     readonly available: readonly string[];
     constructor(
     /** The id that was requested. */
-    presetId: string,
+    presetId: string, 
     /** Ids the roster does supply, for the caller to offer instead. */
     available: readonly string[]);
 }
@@ -94,7 +94,7 @@ export declare class PresetLockedError extends Error {
     readonly presetId: string;
     constructor(
     /** The session whose composition is already fixed. */
-    sessionId: SessionId,
+    sessionId: SessionId, 
     /** The preset that was refused. */
     presetId: string);
 }
@@ -106,7 +106,7 @@ export declare class PresetMountError extends Error {
     readonly reason: string;
     constructor(
     /** The preset whose composition failed. */
-    presetId: string,
+    presetId: string, 
     /** Why it failed, without this package's own message prefix. */
     reason: string, options?: ErrorOptions);
 }

@@ -1,6 +1,6 @@
 /** Host-side source layout invariants. */
 
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, access } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -10,8 +10,9 @@ const packageRoot = fileURLToPath(new URL('../', import.meta.url))
 const testsRoot = fileURLToPath(new URL('./', import.meta.url))
 
 describe('Inspector execution layout', () => {
-  it('keeps Client and Host implementation paths mirrored', async () => {
-    expect(await sourceFiles('client')).toEqual(await sourceFiles('host'))
+  it('retains Host implementation without a browser Client plugin', async () => {
+    await expect(access(resolve(sourceRoot, 'client'))).rejects.toThrow()
+    expect((await sourceFiles('host')).length).toBeGreaterThan(0)
   })
 
   it('keeps Worker Client and Host backend paths mirrored', async () => {
@@ -23,15 +24,12 @@ describe('Inspector execution layout', () => {
   })
 
   it('keeps Client and Host modules isolated from each other and the Worker implementation', async () => {
-    await expectNoImports('client', ['host', 'worker'])
     await expectNoImports('host', ['client', 'worker'])
   })
 
   it('keeps compiler files and specs on their declared execution face', async () => {
     const hostFiles = await compilerFiles('tsconfig.host.json')
-    const clientFiles = await compilerFiles('tsconfig.client.json')
     expect(hostFiles.some(file => file.startsWith('src/client/'))).toBe(false)
-    expect(clientFiles.some(file => file.startsWith('src/host/') || file.startsWith('src/worker/'))).toBe(false)
 
     const testFiles = (await walk(testsRoot)).filter(file => file.endsWith('.ts'))
     const specs = testFiles.filter(file => file.endsWith('.spec.ts'))

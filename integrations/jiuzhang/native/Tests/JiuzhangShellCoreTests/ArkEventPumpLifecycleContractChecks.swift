@@ -135,6 +135,9 @@ func runArkEventPumpLifecycleContractChecks() async {
     "active event pump concurrent stop callers reach one terminal stream"
   )
 
+  await runArkManualReconnectContractChecks()
+  await runArkWorkspaceControlContractChecks()
+
   let mailbox = ArkEventMailbox<Int>(capacity: 2)
   let firstAccepted = await mailbox.send(1)
   let secondAccepted = await mailbox.send(2)
@@ -211,6 +214,13 @@ func runArkEventPumpLifecycleContractChecks() async {
     return
   }
 
+  if let reconnect = eventLifecycleSourceSlice(pump, from: "public func reconnect() async", through: "public func stop() async") {
+    check(reconnect.contains("if let reconnectTask { return await reconnectTask.value }")
+      && appearsInOrder(reconnect, ["socket.cancel(with: .goingAway", "pump.cancel()", "await pump.value", "guard lifecycle == .running", "self?.run(channel: channel)"])
+      && !reconnect.contains("mailbox.finish()"),
+      "manual reconnect joins concurrent requests, quiesces old sockets and preserves the single mailbox")
+  } else { check(false, "manual reconnect lifecycle implementation is present") }
+
   let teardownOwnerInstall = pumpStop
     .components(separatedBy: "lifecycle = .stopping")
     .last?
@@ -235,9 +245,32 @@ func runArkEventPumpLifecycleContractChecks() async {
   )
   check(
     modelStart.contains("guard eventLifecycle == .idle else { return }")
-      && modelStart.contains("while !Task.isCancelled, let frame = await eventPump.nextEvent()"),
+      // One consumer, one view-graph transaction per burst: the loop consumes a whole batch
+      // (nextEvents, <=128 frames) per MainActor turn instead of one frame per turn.
+      && modelStart.contains("while !Task.isCancelled")
+      && modelStart.contains("let batch = await eventPump.nextEvents()")
+      && modelStart.contains("for frame in batch { self.consume(frame) }"),
     "app model starts one event consumer and refuses a second lifecycle"
   )
+  check(
+    modelStart.contains("ArkMainThreadStallMonitor.shared.contextProvider =")
+      && modelStart.contains("ArkMainThreadStallMonitor.shared.startIfEnabled()"),
+    "the opt-in real-usage stall recorder is wired into the app model start"
+  )
+  let monitorURL = contractNativeRoot.appendingPathComponent(
+    "Sources/JiuzhangShellUI/ArkMainThreadStallMonitor.swift"
+  )
+  if let monitor = try? String(contentsOf: monitorURL, encoding: .utf8) {
+    check(
+      monitor.contains("defaultsKey = \"ark.native.diagnostics.mainThreadStalls\"")
+        && monitor.contains("guard UserDefaults.standard.bool(forKey: Self.defaultsKey), timer == nil else { return }")
+        && monitor.contains("main-thread-stalls.log")
+        && monitor.contains("private func tick()"),
+      "the stall recorder stays off unless the opt-in default is set"
+    )
+  } else {
+    check(false, "the stall monitor source is readable for its opt-in contract")
+  }
   check(
     pump.contains("publishConnectionState(channel: channel, state: .connecting)")
       && pump.contains("publishConnectionFailure(")
@@ -304,4 +337,31 @@ func runArkEventPumpLifecycleContractChecks() async {
       && delegate.contains("restartCircuitBreaker.restartDelayAfterUnexpectedExit()"),
     "readiness starts a stable-window breaker instead of immediately resetting crash history"
   )
+}
+
+func runArkManualReconnectContractChecks() async {
+  let session = URLSession(configuration: .ephemeral)
+  defer { session.invalidateAndCancel() }
+  let pump = ArkEventPump(baseURL: URL(string: "http://127.0.0.1:1")!, apiToken: "synthetic-reconnect", session: session)
+  await pump.start()
+  // A genuine connecting frame proves the existing consumer mailbox is active.
+  let initial = await pump.nextEvents()
+  check(!initial.isEmpty, "manual reconnect starts from a live mailbox")
+  async let first = pump.reconnect()
+  async let second = pump.reconnect()
+  let results = await (first, second)
+  check(results.0 && results.1, "concurrent manual reconnect callers both complete a successful restart")
+  let after = await pump.nextEvents()
+  check(!after.isEmpty, "manual reconnect keeps the original mailbox and consumer usable")
+  let cancelled = Task { await pump.reconnect() }
+  cancelled.cancel()
+  _ = await cancelled.value
+  let recoveredAfterCancellation = await pump.reconnect()
+  check(recoveredAfterCancellation, "cancelled reconnect caller cannot strand shared socket lifecycle")
+  async let reconnecting = pump.reconnect()
+  async let stopping: Void = pump.stop()
+  _ = await (reconnecting, stopping)
+  let refused = await pump.reconnect()
+  let ended = await pump.nextEvent()
+  check(!refused && ended == nil, "reconnect racing shutdown never resurrects sockets or finished mailbox")
 }

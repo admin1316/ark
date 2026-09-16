@@ -1,6 +1,7 @@
 import { CallId, MessageId, assertNever, callConfigEquals, deepFreeze, freezeMessage } from "@deepseek-ai/dsh-llm";
 import { scopeOf, scopeTarget } from "@deepseek-ai/dsh-scope";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
+import { isJsonValue, snapshotJsonValue } from "@deepseek-ai/dsh-util-values";
 import { isAbsolute } from "node:path";
 //#region lib/types/types.js
 /**
@@ -43,175 +44,6 @@ function SessionPromptInvocationId(id) {
 * (`.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md`).
 */
 const SESSION_FORMAT_VERSION = 0;
-//#endregion
-//#region lib/types/json.js
-/** Lossless-JSON validation and detached snapshots for durable session data. @module @deepseek-ai/dsh-session/json */
-/** Whether a realm-owned intrinsic prototype is backed by its native constructor. */
-function hasIntrinsicConstructor(prototype, name) {
-	const constructor = Object.getOwnPropertyDescriptor(prototype, "constructor")?.value;
-	if (typeof constructor !== "function") return false;
-	try {
-		return constructor.name === name && constructor.prototype === prototype && Function.prototype.toString.call(constructor) === `function ${name}() { [native code] }`;
-	} catch {
-		return false;
-	}
-}
-/** Whether a candidate is one realm's intrinsic `Object.prototype`. */
-function isIntrinsicObjectPrototype(value) {
-	return Object.getPrototypeOf(value) === null && hasIntrinsicConstructor(value, "Object");
-}
-/** Whether an array uses one realm's intrinsic `Array.prototype`, not a subclass or forged prototype. */
-function hasPlainArrayPrototype(value) {
-	const prototype = Object.getPrototypeOf(value);
-	if (!Array.isArray(prototype) || !hasIntrinsicConstructor(prototype, "Array")) return false;
-	const objectPrototype = Object.getPrototypeOf(prototype);
-	return typeof objectPrototype === "object" && objectPrototype !== null && isIntrinsicObjectPrototype(objectPrototype);
-}
-/** Whether an object is a plain or null-prototype record from any JavaScript realm. */
-function hasPlainObjectPrototype(value) {
-	const prototype = Object.getPrototypeOf(value);
-	return prototype === null || typeof prototype === "object" && isIntrinsicObjectPrototype(prototype);
-}
-/** Return every JSON-visible object key, or reject own data JSON would discard. */
-function enumerableStringKeys(value) {
-	const keys = Reflect.ownKeys(value);
-	if (keys.some((key) => typeof key !== "string" || !Object.prototype.propertyIsEnumerable.call(value, key))) return void 0;
-	return keys;
-}
-/** Validate lossless JSON iteratively, optionally materializing a detached snapshot. */
-function walkJsonValue(value, detach) {
-	const ancestors = /* @__PURE__ */ new Set();
-	let root;
-	const assign = (destination, item) => {
-		if (destination === void 0) return;
-		if (destination.kind === "root") root = item;
-		else if (destination.kind === "array") destination.target[destination.index] = item;
-		else Object.defineProperty(destination.target, destination.key, {
-			value: item,
-			enumerable: true,
-			configurable: true,
-			writable: true
-		});
-	};
-	const tasks = [{
-		kind: "visit",
-		value,
-		...detach ? { destination: { kind: "root" } } : {}
-	}];
-	for (let task = tasks.pop(); task !== void 0; task = tasks.pop()) {
-		if (task.kind === "leave") {
-			ancestors.delete(task.source);
-			continue;
-		}
-		if (task.kind === "array-item") {
-			if (!Object.prototype.hasOwnProperty.call(task.source, task.index)) return void 0;
-			tasks.push({
-				kind: "visit",
-				value: task.source[task.index],
-				...task.target === void 0 ? {} : { destination: {
-					kind: "array",
-					target: task.target,
-					index: task.index
-				} }
-			});
-			continue;
-		}
-		if (task.kind === "object-property") {
-			tasks.push({
-				kind: "visit",
-				value: task.source[task.key],
-				...task.target === void 0 ? {} : { destination: {
-					kind: "object",
-					target: task.target,
-					key: task.key
-				} }
-			});
-			continue;
-		}
-		const current = task.value;
-		if (current === null) {
-			assign(task.destination, null);
-			continue;
-		}
-		if (typeof current === "boolean" || typeof current === "string") {
-			assign(task.destination, current);
-			continue;
-		}
-		if (typeof current === "number") {
-			if (!Number.isFinite(current) || Object.is(current, -0)) return void 0;
-			assign(task.destination, current);
-			continue;
-		}
-		if (typeof current !== "object") return void 0;
-		if (ancestors.has(current)) return void 0;
-		if (Array.isArray(current)) {
-			if (!hasPlainArrayPrototype(current)) return void 0;
-			const length = current.length;
-			if (Reflect.ownKeys(current).length !== length + 1) return void 0;
-			const target = detach ? [] : void 0;
-			if (target !== void 0) assign(task.destination, target);
-			ancestors.add(current);
-			tasks.push({
-				kind: "leave",
-				source: current
-			});
-			for (let index = length - 1; index >= 0; index--) tasks.push({
-				kind: "array-item",
-				source: current,
-				index,
-				...target === void 0 ? {} : { target }
-			});
-			continue;
-		}
-		if (!hasPlainObjectPrototype(current)) return void 0;
-		const keys = enumerableStringKeys(current);
-		if (keys === void 0) return void 0;
-		const target = detach ? {} : void 0;
-		if (target !== void 0) assign(task.destination, target);
-		ancestors.add(current);
-		tasks.push({
-			kind: "leave",
-			source: current
-		});
-		for (let index = keys.length - 1; index >= 0; index--) {
-			const key = keys[index];
-			/* v8 ignore next -- the loop is bounded by the captured key count. */
-			if (key === void 0) return void 0;
-			tasks.push({
-				kind: "object-property",
-				source: current,
-				key,
-				...target === void 0 ? {} : { target }
-			});
-		}
-	}
-	return detach ? root : true;
-}
-/**
-* Validate and detach lossless JSON in one read per property, so a stateful
-* getter cannot change between validation and copying. Traversal is iterative,
-* so valid nesting is bounded by available memory rather than the JavaScript
-* call stack. Accepts ordinary arrays, plain or null-prototype objects, and JSON
-* scalars; rejects sparse, cyclic, exotic, negative-zero, and non-finite values.
-* Getter throws propagate.
-*
-* @param value - the candidate value to validate and detach.
-* @returns the detached snapshot, or `undefined` when the value is not
-*   losslessly JSON-serializable.
-*/
-function snapshotJsonValue(value) {
-	return walkJsonValue(value, true);
-}
-/**
-* Test the same lossless JSON boundary as {@link snapshotJsonValue} without
-* detaching it. Only own enumerable string properties participate; `toJSON`
-* is ignored and getters run, so persistence boundaries use the snapshotter.
-* @param value - the candidate event data to test.
-* @returns whether `value` survives JSON round-trip losslessly.
-*/
-function isJsonValue(value) {
-	return walkJsonValue(value, false) === true;
-}
 //#endregion
 //#region lib/types/validation.js
 /**
@@ -1459,10 +1291,9 @@ function assertSeq(value) {
 /**
 * Every `SessionEventMap` member declared in this repository — the event
 * vocabulary this build understands. The persistence read path refuses to
-* interpret a log containing a type outside this set unless the event
-* carries the envelope's `ignorable` marker (see `SessionEvent.ignorable`
-* in `./types.ts`): such a log was likely written by a newer harness, and
-* silently skipping a required event would reconstruct a wrong session.
+* interpret a log containing a type outside this set: such a log was likely
+* written by a newer harness, and silently skipping the event could
+* reconstruct a wrong session.
 * Downstream (out-of-repo) plugin events are outside this list by
 * construction; a registration surface for them is deferred until such a
 * consumer exists.
@@ -1487,6 +1318,7 @@ const KNOWN_SESSION_EVENT_TYPES = new Set([
 	"hook/result",
 	"llm/retry",
 	"llm/retry-started",
+	"model/selection",
 	"permission/preset",
 	"plan/mode",
 	"request/context",
@@ -1688,6 +1520,14 @@ var Session = class Session {
 	get events() {
 		this.eventsSnapshot ??= Object.freeze([...this.log]);
 		return this.eventsSnapshot;
+	}
+	/**
+	* Read one deeply frozen accepted event without materializing a log snapshot.
+	* @param seq - event sequence number.
+	* @returns the accepted event, or undefined when the sequence is absent.
+	*/
+	eventAt(seq) {
+		return this.log[seq];
 	}
 	/** The next event's sequence number — always the log length (the `seq = log.length` contiguity contract). */
 	get seq() {

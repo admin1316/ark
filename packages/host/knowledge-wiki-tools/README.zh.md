@@ -1,9 +1,23 @@
+---
+description: "基于已组合的 knowledgeWiki 服务提供面向模型的知识库工具。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-tool-knowledge-wiki`
 
 [English](README.md) | 中文
 
+## 概述
+
 基于已组合的 `knowledgeWiki` 服务提供面向模型的知识库工具。本插件通过共享工具注册表注册 `wiki_search`、`wiki_files`、`wiki_read`、`wiki_graph`、`wiki_reviews` 和 `wiki_ingest`，并延迟解析该服务，因此知识库 provider 尚未出现时插件也可以加载。本包不增加 MCP bridge 或桌面 UI。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 知识库工具
@@ -26,7 +40,13 @@ Use wiki_search to find knowledge-base pages, wiki_read to read one page, wiki_f
 
 本包不保留模型内容缓存。每次工具调用都可能追加取决于数据的结果；已安装的 prompt guidance 在本插件组合发生变化前保持稳定。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - 组合中没有 `knowledgeWiki` 服务时，调用会以 `knowledgeWiki service unavailable` 失败；本插件不会创建备用存储。
 - `wiki_ingest` 接受项目相对来源路径或 `http(s)` URL，并已注册到工具面，但当前安装的 prompt guidance 只点名了其他五个工具。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

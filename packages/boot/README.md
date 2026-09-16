@@ -1,3 +1,8 @@
+---
+description: "The channel-neutral boot library shared by apps/cli and the examples/ demo bins."
+kind: "package-group"
+---
+
 # boot/ — shared app-bin boot glue
 
 English | [中文](README.zh.md)

@@ -13,6 +13,7 @@ import type {
   SessionProjectionBaseline,
   SessionProjectionValues,
   SessionQueuedItem,
+  SessionRequestId,
 } from './types.ts'
 
 /** Owns the Host-wide Session control stream. */
@@ -178,20 +179,14 @@ function queueItems(
   agent: Agent,
   splice?: SessionEventMap['agent/inbox/spliced'],
 ): SessionQueuedItem[] {
-  const project = (target: 'next-turn' | 'next-step'): readonly UserMessage[] => {
-    const messages = target === 'next-turn' ? agent.inbox.nextTurn : agent.inbox.nextStep
-    return splice?.target === target
-      ? messages.toSpliced(splice.start, splice.removedCount ?? 0, ...splice.inserted)
-      : messages
-  }
   return [
-    ...project('next-turn').map(message => ({
+    ...agent.inbox.project('next-turn', splice).map(message => ({
       id: message.id,
       placement: 'queued' as const,
       ...promptRpcId(message),
       message: { id: message.id, content: message.content as unknown as JsonValue[] },
     })),
-    ...project('next-step').map(message => ({
+    ...agent.inbox.project('next-step', splice).map(message => ({
       id: message.id,
       placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
       ...promptRpcId(message),
@@ -203,7 +198,10 @@ function queueItems(
 /** Prompt-RPC identity carried by a browser-submitted message's user source. */
 function promptRpcId(message: UserMessage): Pick<SessionQueuedItem, 'rpcId'> {
   const source = message.source
-  return source.kind === 'user' && 'rpcId' in source ? { rpcId: source.rpcId } : {}
+  if (source.kind !== 'user') return {}
+  if ('invocationId' in source && typeof source.invocationId === 'string') return { rpcId: source.invocationId as SessionRequestId }
+  return 'rpcId' in source && typeof source.rpcId === 'string'
+    ? { rpcId: source.rpcId as SessionRequestId } : {}
 }
 
 function jobView(job: JobSnapshot): SessionJob {

@@ -11,6 +11,8 @@ kind: "package-reference"
 
 `dsh-workspace` 为宿主提供一组持久 workspace：命名用户目录，每个目录带有在其中运行的会话，并在重启之间保持稳定顺序。借助它，UI 可以显示项目侧边栏、把会话附加到正确的项目、把会话从分组中隐藏而不丢失它，以及移除项目——移除绝不会删除文件夹或会话历史，它们变成 Ungrouped。在需要持久项目分组的 GUI 或宿主组合中使用它；headless 与最小运行可以完全省略它。此包只面向宿主侧：模型、工具与 agent loop 永远不会看到它，因此不会增加任何 token、提示词或请求上下文。它需要会话存储与持久化后端一并挂载；设置只需几行组合配置。
 
+Workspace Registry 是 `workspace/list`、`create`、`rename`、`delete`、`insertBefore`、`insertSessionBefore`、`archiveSession`、`unarchiveSession` 和 `deleteArchivedSession` 的唯一 Remote 所有者。生成的 Client 调用在传输结果内包含领域结果，需分别解开两层。`workspace/follow` 和目录选择仍由可选 API Workspace Controller 提供。取消在分派前及异步工作返回后检查；取消响应不会撤销已经持久提交的变更。删除工作区注册保留目录和日志，而永久删除已归档会话仍须由既有生命周期所有者安全退出驻留会话。
+
 ## 目录
 
 - [使用本包](#use-this-package)

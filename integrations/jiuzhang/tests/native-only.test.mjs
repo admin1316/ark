@@ -91,7 +91,6 @@ test('Ark uses a native SwiftUI interface and a dedicated API-only bundle', asyn
     readFile(join(nativeRoot, 'Resources/ark.entitlements'), 'utf8'),
   ])
 
-  assert.doesNotMatch(manifest, /linkedFramework\("WebKit"\)/)
   assert.doesNotMatch(manifest, /Sparkle/)
   assert.doesNotMatch(mainSource, /Sparkle|SPUStandardUpdaterController/)
   assert.doesNotMatch(infoPlist, /SUFeedURL|SUEnableAutomaticChecks|SUPublicEDKey/)
@@ -101,7 +100,10 @@ test('Ark uses a native SwiftUI interface and a dedicated API-only bundle', asyn
   for (const nativeShellSource of [model, rootView, trajectoryView, workbenchView]) {
     assert.doesNotMatch(nativeShellSource, /\bWKWebView\b|import WebKit/)
   }
-  assert.doesNotMatch(browserView, /import WebKit|WKWebView/)
+  // Only external webpage tabs use WebKit; the application shell remains native.
+  assert.match(browserView, /import WebKit/)
+  assert.match(browserView, /WKWebView/)
+  assert.doesNotMatch(browserView, /loadFileURL|WKScriptMessageHandler|apiToken|DSH_API_TOKEN/)
   assert.match(browserView, /NSWorkspace\.shared\.open/)
   assert.match(browserView, /ark\.workbench\.browser/)
   assert.match(nativeEntry, /watchLiveConfig: false/)

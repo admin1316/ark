@@ -3,6 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SettingsProvider, SettingsConflictError, deepEqualJson, installSettingsSection, settingsNamespace, type SettingsNamespace, type SettingsScope, type SettingsUpdateSource } from '../src/index.ts'
 import { MemorySettings } from './memory.ts'
+import { deepEqualJson as compareValues } from '@deepseek-ai/dsh-util-values'
 
 /** A provider implementing only the three primitives: the Service Definition owns initialization. */
 class BareProvider extends SettingsProvider {
@@ -24,6 +25,32 @@ class BareProvider extends SettingsProvider {
   protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
     this.doc[ns] = structuredClone(section)
     return Promise.resolve()
+  }
+}
+
+/**
+ * In-memory provider whose persist holds the write open until the test releases
+ * it, so a concurrent external edit lands inside the write deterministically
+ * instead of at the mercy of a sleep.
+ */
+class GatedProvider extends MemorySettings {
+  private readonly entered = Promise.withResolvers<undefined>()
+  private readonly gate = Promise.withResolvers<undefined>()
+
+  /** Resolves once a write is inside persist and the test may interleave. */
+  get persistEntered(): Promise<undefined> {
+    return this.entered.promise
+  }
+
+  /** Lets the in-flight write reach storage. */
+  release(): void {
+    this.gate.resolve(undefined)
+  }
+
+  protected override async persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.entered.resolve(undefined)
+    await this.gate.promise
+    await super.persist(ns, section)
   }
 }
 
@@ -118,6 +145,21 @@ describe('registration', () => {
 
     await ctx.settings.update(ns, { fontSize: 18 })
     expect(scope.get()).toMatchObject({ fontSize: 18 })
+  })
+
+  it('refuses change once the revision space is exhausted', async () => {
+    const { ctx } = await boot()
+    const ns = settingsNamespace('ui-theme')
+    ctx.settings.register(ns, ThemeSchema)
+    // Seed the boundary: a registration that has already bumped through its
+    // whole revision space can only refuse further change, in-process or raw.
+    const internals = ctx.settings as unknown as { registrations: Map<string, { revision: number }> }
+    internals.registrations.get(ns)!.revision = Number.MAX_SAFE_INTEGER
+    await expect(ctx.settings.update(ns, { fontSize: 18 })).rejects.toThrow(/revision space is exhausted/)
+    expect(() => {
+      (ctx.settings as unknown as { publish(doc: Record<string, unknown>): void })
+        .publish({ 'ui-theme': { theme: 'light', fontSize: 20 } })
+    }).toThrow(/revision space is exhausted/)
   })
 
   it('fails the registration itself when the already-stored section is unserviceable', async () => {
@@ -307,6 +349,19 @@ describe('update', () => {
 
 describe('deepEqualJson', () => {
   it.each([
+    { owner: 'Settings public API', compare: deepEqualJson },
+    { owner: 'shared value owner', compare: compareValues },
+  ])('rejects inherited matching keys through $owner', ({ compare }) => {
+    const inherited = { y: 2 }
+    Object.setPrototypeOf(inherited, { x: 1 })
+    expect(compare({ x: 1 }, inherited)).toBe(false)
+    expect(compare({ nested: { x: 1 } }, { nested: inherited })).toBe(false)
+    const own = { x: 1 }
+    Object.setPrototypeOf(own, null)
+    expect(compare({ x: 1 }, own)).toBe(true)
+  })
+
+  it.each([
     [{ a: [1, 2] }, { a: [1, 2] }, true],
     [{ a: [1, 2] }, { a: [1] }, false],
     [{ a: [1] }, { a: { 0: 1 } }, false],
@@ -458,6 +513,15 @@ describe('second review regressions', () => {
     expect(provider.persisted.length).toBe(persistedAtDispose)
   })
 
+  it('refuses a registration that arrives after the service was disposed', async () => {
+    const { ctx, fiber } = await boot()
+    const service = ctx.settings
+    ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    await fiber.dispose()
+    expect(() => service.register(settingsNamespace('workspace'), ThemeSchema))
+      .toThrow(/settings service is disposed: "workspace" cannot be registered/)
+  })
+
   it('serializes invocations of one async watcher in commit order', async () => {
     const { ctx, provider } = await boot()
     const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
@@ -575,6 +639,42 @@ describe('publish', () => {
     expect(scope.get()).toEqual({ theme: 'dark', fontSize: 14 })
     provider.pushExternal({ 'ui-theme': { fontSize: 18 } })
     expect(scope.get()).toEqual({ theme: 'dark', fontSize: 18 })
+  })
+})
+
+describe('reentrant publication', () => {
+  it('stops delivering a superseded state once a listener republishes the document', async () => {
+    const { ctx, provider } = await boot({ doc: { 'ui-theme': { theme: 'dark' } } })
+    const ns = settingsNamespace('ui-theme')
+    const scope = ctx.settings.register(ns, ThemeSchema)
+    const documents: Array<[string, number]> = []
+    const updates: Array<{ next: unknown; prev: unknown; source: SettingsUpdateSource }> = []
+    const triggered: Array<[string, number]> = []
+    let republished = false
+    ctx.on('settings/document-updated', (namespace, revision) => {
+      triggered.push([String(namespace), revision])
+      // A provider's reload loop republishing from storage reenters the fan-out
+      // that is still delivering the revision it just superseded.
+      if (republished) return
+      republished = true
+      provider.pushExternal({ 'ui-theme': { theme: 'light', fontSize: 20 } })
+    })
+    ctx.on('settings/document-updated', (namespace, revision) => { documents.push([String(namespace), revision]) })
+    ctx.on('settings/updated', (_namespace, next, prev, source) => { updates.push({ next, prev, source }) })
+
+    await ctx.settings.update(ns, { theme: 'light' })
+
+    // The republication reentered the first listener with revision 2 before the
+    // fan-out stopped, and the superseded revision 1 reached no later listener.
+    expect(triggered).toEqual([['ui-theme', 1], ['ui-theme', 2]])
+    expect(documents).toEqual([['ui-theme', 2]])
+    expect(updates).toEqual([{
+      next: { theme: 'light', fontSize: 20 },
+      prev: { theme: 'light', fontSize: 14 },
+      source: 'provider',
+    }])
+    expect(scope.get()).toEqual({ theme: 'light', fontSize: 20 })
+    expect(ctx.settings.describe().find(entry => entry.ns === ns)!.revision).toBe(2)
   })
 })
 
@@ -913,6 +1013,12 @@ describe('mutate (path-addressed writes)', () => {
       .rejects.toThrow(/must be \{op:'set'\|'unset', path\}/)
     await expect(ctx.settings.mutate(KEYED, [{ op: 'unset', path: ['a', 1] as never }]))
       .rejects.toThrow(/op paths must be arrays of strings/)
+    await expect(ctx.settings.mutate(KEYED, [{ op: 'set', path: ['baseURL'] } as never]))
+      .rejects.toThrow(/set ops must include a JSON value/)
+    // An explicit `undefined` is not a JSON value: the call-time snapshot drops
+    // the key, so it is refused exactly like an absent one.
+    await expect(ctx.settings.mutate(KEYED, [{ op: 'set', path: ['baseURL'], value: undefined } as never]))
+      .rejects.toThrow(/set ops must include a JSON value/)
     expect(ctx.settings.describe().find(d => d.ns === KEYED)!.user).toEqual({ apiKey: 'sk-stored' })
   })
 
@@ -992,6 +1098,36 @@ describe('revision and conflict detection', () => {
     await ctx.settings.update(REV, { b: 'same' })
     expect(documents).toEqual([])
     expect(ctx.settings.describe().find(d => d.ns === REV)!.revision).toBe(0)
+  })
+
+  it('keeps the revision still when an unchanged write lands after an external edit', async () => {
+    // An external edit arriving while a write is inside persist leaves the
+    // write storing a section identical to the one it read before that edit:
+    // the raw document change belongs to the external edit alone, while the
+    // resolved value still commits.
+    const ctx = new Context()
+    const fiber = ctx.plugin(GatedProvider, { doc: { rev: { b: 'same' } } })
+    await fiber
+    const provider = ctx.get('settings') as GatedProvider
+    ctx.settings.register(REV, RevSchema)
+    const documents: Array<[string, number]> = []
+    const updates: Array<{ next: unknown; prev: unknown; source: SettingsUpdateSource }> = []
+    ctx.on('settings/document-updated', (ns, revision) => { documents.push([String(ns), revision]) })
+    ctx.on('settings/updated', (_ns, next, prev, source) => { updates.push({ next, prev, source }) })
+
+    const pending = ctx.settings.update(REV, { b: 'same' })
+    await provider.persistEntered
+    provider.pushExternal({ rev: { b: 'edited on disk' } })
+    provider.release()
+    await pending
+
+    expect(documents).toEqual([['rev', 1]])
+    expect(updates).toEqual([
+      { next: { a: 'base-a', b: 'edited on disk' }, prev: { a: 'base-a', b: 'same' }, source: 'provider' },
+      { next: { a: 'base-a', b: 'same' }, prev: { a: 'base-a', b: 'edited on disk' }, source: 'update' },
+    ])
+    expect(ctx.settings.describe().find(entry => entry.ns === REV)!.revision).toBe(1)
+    expect(ctx.settings.get(REV)).toEqual({ a: 'base-a', b: 'same' })
   })
 
   it('moves the revision for an external edit the provider publishes', async () => {

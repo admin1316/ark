@@ -1,8 +1,23 @@
+---
+description: "The row an agent preset carries to say which form of its tools the model sees: native (every schema), code (only run_code plus a generated TypeScript SDK), or both."
+kind: "package-reference"
+---
+
 # dsh-agent-tool-presentation
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The row an [agent preset](../../preset/agent-presets/README.md) carries to say which form of its tools the model sees: `native` (every schema), `code` (only `run_code` plus a generated TypeScript SDK), or `both`.
+
+## Table of Contents
+
+- [Why a row rather than a registry](#why-a-row-rather-than-a-registry)
+- [What it does](#what-it-does)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Why a row rather than a registry
 
@@ -29,3 +44,7 @@ No direct invalidation; the presentation is fixed when the agent is composed, so
 ## Known Limitations and Deferred Work
 
 - **The runtime stays host-plane** — a preset can select Code Mode but cannot supply the TypeScript runtime it needs; a deployment that composes none can compose no code-mode preset.
+
+### Dev Note
+
+None.

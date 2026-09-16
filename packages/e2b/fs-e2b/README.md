@@ -1,8 +1,22 @@
+---
+description: "E2B implementation of the @deepseek-ai/dsh-fs provider contract."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-fs-e2b
 
 English | [中文](README.zh.md)
 
+## Summary
+
 E2B implementation of the [`@deepseek-ai/dsh-fs`](../../fs/fs/README.md) provider contract. It has no config: load [`@deepseek-ai/dsh-e2b`](../e2b/README.md) first, then this service in place of `dsh-fs-local`. The provider uses the owner's remote cwd and SDK handle, so file tools observe the same world as E2B-backed Bash processes.
+
+## Table of Contents
+
+- [Behavior](#behavior)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Behavior
 
@@ -30,3 +44,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 - **Reads reopen canonical targets by path** — a concurrent remote path replacement between resolution and stream opening is not fenced by a stable file handle; no observed product defect justifies a provider-specific bounded-read protocol in this POC.
 - **Whole-file mutation costs remain** — overwrite diffs and literal edits read complete files into host memory, and every operation incurs E2B controller latency.
 - **The POC targets E2B's default Linux image** — it relies on GNU `realpath`/`base64`/`chmod`, same-filesystem rename, streaming reads, and metadata extended attributes; custom templates are outside this POC.
+
+### Dev Note
+
+None.

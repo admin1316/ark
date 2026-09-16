@@ -80,7 +80,7 @@ kind: "package-reference"
 - **精确读取具体，搜索抽象。** 读取、过滤与追踪在此只实现一次；两个全文方法是由后端拥有的唯一抽象表面。
 - **一次规范的表层折叠。** `listEvents`、`readSurface` 与 `traceEvent` 使用同一个 `dsh-session` 折叠校验整个日志，因此搜索与追踪和模型历史推导一致。
 
-决策历史记录在[统一服务决策](../../../.agents/notes/archived/architecture/2026-07-23-unified-session-query-service.md)、[追踪笔记](../../../.agents/notes/implemented/feature/2026-07-13-session-query-tracing.zh.md)与 [SQLite 提供方笔记](../../../.agents/notes/implemented/feature/2026-07-10-sqlite-session-query-provider.zh.md)中。
+决策历史记录在[统一服务决策](../../../.agents/notes/archived/architecture/2026-07-23-unified-session-query-service.zh.md)、[追踪笔记](../../../.agents/notes/implemented/feature/2026-07-13-session-query-tracing.zh.md)与 [SQLite 提供方笔记](../../../.agents/notes/implemented/feature/2026-07-10-sqlite-session-query-provider.zh.md)中。
 
 ### 源码地图
 

@@ -14,7 +14,7 @@ Status: implemented
 
 profile runner、Python runtime closure、原生 preset、示例组合、TypeScript path map、Host aggregate、工具目录生成器与发布族断言都使用这些正式名称和路径。dsh 发布族从 Subagent 分组发现两个包，其 manifest 使用共享发布版本和公开发布元数据。
 
-不保留 experimental 名称的兼容包。预发布兼容策略允许原子重命名，而保留别名会形成第二个 Team identity，并掩盖不完整 runtime closure。先前的[孵化决策](../../archived/architecture/2026-08-18-experimental-agent-teams-packages.md)保留私有包阶段的历史记录。
+不保留 experimental 名称的兼容包。预发布兼容策略允许原子重命名，而保留别名会形成第二个 Team identity，并掩盖不完整 runtime closure。先前的[孵化决策](../../archived/architecture/2026-08-18-experimental-agent-teams-packages.zh.md)保留私有包阶段的历史记录。
 
 ## 考虑过的替代方案
 

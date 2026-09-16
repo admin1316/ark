@@ -90,8 +90,21 @@ export interface Profile {
  * @returns the absolute profile directory (which may not exist yet).
  */
 export declare function resolveProfileDir(name: string, home?: string): string;
-/** The shipped profile templates auto-initialized on first use, by name. */
-export declare const PROFILE_TEMPLATES: Record<string, readonly string[]>;
+/** One shipped profile template: the initial bundle layers and the patch lifecycle it pins. */
+export interface ProfileTemplate {
+    /** Initial `dsh.profile.bundles` layer list. */
+    bundles: readonly string[];
+    /** Initial `dsh.profile.patchReload`; an omitted lifecycle keeps the default live reload. */
+    patchReload?: 'live' | 'startup';
+}
+/**
+ * The shipped profile templates auto-initialized on first use, by name.
+ *
+ * `sdk-minimal` is the standalone minimal SDK roster: its one bundle inserts
+ * the complete Cordis tree over the empty profile root, so the profile pins
+ * startup-only patch loading and never lists `@deepseek-ai/dsh-base`.
+ */
+export declare const PROFILE_TEMPLATES: Record<string, ProfileTemplate>;
 /** The bundle list a `dsh plugin` init uses for a name with no shipped template. */
 export declare const DEFAULT_PROFILE_BUNDLES: readonly string[];
 /**
@@ -100,8 +113,10 @@ export declare const DEFAULT_PROFILE_BUNDLES: readonly string[];
  * so re-running is a no-op on an initialized profile.
  * @param dir - the profile directory from {@link resolveProfileDir}.
  * @param bundles - the initial `dsh.profile.bundles` layer list.
+ * @param patchReload - the initial patch lifecycle a startup-only template
+ * pins; omitted keeps the default live reload out of the manifest.
  */
-export declare function initProfile(dir: string, bundles: readonly string[]): void;
+export declare function initProfile(dir: string, bundles: readonly string[], patchReload?: 'live' | 'startup'): void;
 /**
  * Maintain the flat module fallback `$DSH_HOME/profiles/node_modules`: one
  * symlink per package in the dsh app's resolvable dependency CLOSURE (BFS
@@ -117,7 +132,11 @@ export declare function initProfile(dir: string, bundles: readonly string[]): vo
  * symlink-following), so each package needs only its one flat link.
  * Idempotent: correct links are kept and moved installations are
  * re-pointed; a stale link to a vanished package stays until its name is
- * reused (dangling links are invisible to resolution).
+ * reused (dangling links are invisible to resolution). A packaged installation
+ * is skipped outright: its packages live inside the executable's snapshot,
+ * which no host-filesystem resolver or tool can follow, so links there could
+ * only dangle — the packaged runtime resolves bare names through the installed
+ * base instead (see {@link isSnapshotServedDirectory}).
  * @param installAnchor - absolute path of the dsh app's package.json.
  * @param home - the Harness home; defaults to {@link resolveDshHome}.
  */
@@ -135,6 +154,23 @@ export declare function readProfileManifest(binName: string, dir: string): Profi
  * @param manifest - the manifest value to persist.
  */
 export declare function writeProfileManifest(dir: string, manifest: ProfileManifest): void;
+/**
+ * Whether `directory` is served by pkg's read-only snapshot VFS rather than
+ * the physical filesystem. The `--sea` route this repo packages with hooks the
+ * JavaScript `realpathSync` inside the snapshot (directories only) while the
+ * syscall-backed `realpathSync.native` cannot see the snapshot at all, so a
+ * snapshot directory canonicalizes through the former and reports ENOENT
+ * through the latter — a divergence no real filesystem produces for an
+ * existing directory. Only the packaged process can see that VFS at all, and
+ * only through the same marker the ripgrep sidecar selection uses. Callers
+ * pass an anchor's containing directory because that is the entry kind every
+ * resolution candidate is; a launcher whose installation lives inside the
+ * snapshot also uses this to know that host-filesystem resolution cannot reach
+ * that installation at all.
+ * @param directory - the containing directory of a resolution anchor.
+ * @returns whether the directory resolves through the embedded snapshot VFS.
+ */
+export declare function isSnapshotServedDirectory(directory: string): boolean;
 /**
  * Resolve one bundle package's directory: installation anchor first, then the
  * profile directory. The installation-first order is the contract that

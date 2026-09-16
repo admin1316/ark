@@ -1,9 +1,25 @@
+---
+description: "通过 ctx.compaction 提供面向用户的 /compact 压缩（compaction）控制。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-command-compact
 
 [English](README.md) | 中文
 
+## 概述
+
 通过 [`ctx.compaction`](../compaction/README.zh.md) 提供面向用户的 `/compact` 压缩（compaction）控制。该插件通过 [`ctx.commands`](../../interaction/commands/README.zh.md) 注册一个全局命令，因此组合中的每个命令适配器都能发现并执行它，无需模型轮次。[排队手动压缩 Agent Note](../../../.agents/notes/implemented/feature/2026-07-30-queued-manual-compaction.zh.md)拥有接纳、锁与持久性决策。
 
+## 目录
+
+- [命令约定](#command-contract)
+- [组合](#composition)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="command-contract"></a>
 ## 命令约定
 
 | 输入 | 结果 |
@@ -28,6 +44,7 @@ busy 结果有意限定在进程范围内：活动的未匹配标记会阻塞，
 
 压缩运行期间提交的提示词仍会按 agent 的普通 FIFO 获得接纳，保留相同的身份与唤醒信息。它们仅在压缩的显式持久性检查点和接纳预留释放后启动。空闲注入的上下文不受阻塞：它可以记录在 `compaction/start` 与 `compaction/end` 之间，位置替换会使其在检查点之后保持可见。
 
+<a id="composition"></a>
 ## 组合
 
 生产方注入 `commands` 和 `compact`。挂载命令注册表、一个后端与本插件：
@@ -43,6 +60,7 @@ busy 结果有意限定在进程范围内：活动的未匹配标记会阻塞，
 
 随附 `dsh` 基础配置将它挂载在 `compaction-basic` 旁，Web 客户端提供命令适配器。未组合命令适配器的自动化接口只保留自动压缩。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 用户 `/compact` 控制
@@ -59,8 +77,14 @@ busy 结果有意限定在进程范围内：活动的未匹配标记会阻塞，
 
 命令发现与簿记不会影响缓存。已获接纳的 surface 替换会从第一个被遮蔽的历史 token 起使复用失效。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **仅限空闲状态**：当一个轮次或已获接纳的唤醒提示词拥有优先权时，`/compact` 会报告 `busy`；命令本身不会排队。
 - **不接受范围或策略参数**：无参数形式使各命令适配器的行为保持稳定。显式范围仍由编程接口 `compactRegion()` 处理。
 - **仅限命令适配器**：没有 `ctx.commands` 的接口无法调用该命令，只能依赖自动压力压缩。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

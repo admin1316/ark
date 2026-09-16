@@ -3,29 +3,31 @@
  * Workspace-session retirement.
  *
  * The package reads each domain's live owner directly. It deliberately owns
- * no transcript, projection, workspace, attachment, or model-catalog cache.
- * Its only mutable maps serialize identity creation/resume, retain exact
- * AgentHandle capabilities, and hold the session-local model selection that
- * prompt assembly consumes.
+ * no durable transcript, workspace, attachment, or model-catalog copy.
+ * Its bounded semantic reader retains numeric history indices and explicitly
+ * released content materializations over the existing Session query owner.
+ * Other maps serialize identity creation/resume, retain exact AgentHandle
+ * capabilities, and hold the session-local selection consumed by prompt assembly.
  *
  * @module @deepseek-ai/dsh-host-session-remote-operations
  */
 
 import { Buffer } from 'node:buffer'
+import { installPromptReceipts, promptDigest, type PromptReceipt } from './prompt-receipts.ts'
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
+import { canonicalClientTimeZone } from '@deepseek-ai/dsh-subagent'
 import {
-  installModelSelection,
   type Agent,
   type AgentHandle,
   type AgentOptions,
   type AgentSetup,
   type ModelSelection,
-  type ModelSelectionRef,
 } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+import { sessionModelSelection, type SessionModelSelection } from '@deepseek-ai/dsh-agent-default-model/session-selection'
 import {
   PresetMountError,
   UnknownPresetError,
@@ -77,6 +79,8 @@ import {
   type SessionRemoteHistoryEntry,
   type SessionRemoteHistoryRequest,
   type SessionRemoteHistoryValue,
+  type SessionRemoteRawHistoryRequest,
+  type SessionRemoteRawHistoryValue,
   type SessionRemoteListRequest,
   type SessionRemoteListValue,
   type SessionRemoteModels,
@@ -115,6 +119,7 @@ import {
   type WorkspaceSessionRetirer,
 } from '@deepseek-ai/dsh-workspace'
 import { z } from 'zod'
+import { SemanticHistoryReader, SemanticHistoryError, type SemanticHistoryLimits } from './semantic-history.ts'
 import {
   fetchSessionLogExport,
   sessionLogCompressionLevel,
@@ -156,25 +161,21 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   }
 }
 
-declare module '@deepseek-ai/dsh-llm' {
-  interface MessageSourceMap {
-    /** User input admitted by generated Session Remote with caller identity. */
-    'session-remote-user': {
-      kind: 'user'
-      invocationId: SessionPromptInvocationId
-      clientTimeZone?: string
-    }
-  }
-}
 
 /** Composition options owned by the Host, not by the generated wire contract. */
 export interface Config {
   /** Project directory used when Session creation names neither workspace nor cwd. */
   readonly cwd?: string
+  /** Maximum physical cold artifact bytes eligible for a list projection read; 0 disables it. */
+  readonly coldBlankProbeMaxBytes?: number
   /** DEFLATE level for each Session archive entry; defaults to 6. */
   readonly sessionExportCompressionLevel?: SessionLogCompressionLevel
+  /** Bounded semantic read reuse; eviction never invalidates a fixed-cut cursor. */
+  readonly semanticHistory?: SemanticHistoryLimits
 }
 
+const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024
+const COLD_SUMMARY_BATCH_SIZE = 16
 const DEFAULT_MAX_MESSAGES = 50
 const MAX_HISTORY_MESSAGES = 2_048
 const MAX_HISTORY_PAGE_EVENTS = 2_048
@@ -183,7 +184,6 @@ const SESSION_SEARCH_RESULT_LIMIT = 20
 const SESSION_SEARCH_SNIPPET_MAX_CODE_POINTS = 240
 const SESSION_SEARCH_PROVIDER_CALL_LIMIT = 100
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
-const IANA_TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+.-]*(?:\/[A-Za-z0-9_+.-]+)+$/
 
 const sessionListMetadataSchema: z.ZodType<SessionListMetadata> = z.object({
   blank: z.boolean(),
@@ -236,14 +236,13 @@ class SessionPresetConflict extends Error {
 type SessionReadState = {
   readonly id: SessionId
   readonly header: SessionHeader
-  readonly events: SessionEvent[]
+  readonly events: readonly SessionEvent[]
 }
 
 type HistorySource =
   | { readonly kind: 'attached'; readonly session: Session }
-  | { readonly kind: 'detached'; readonly header: SessionHeader; readonly events: SessionEvent[] }
+  | { readonly kind: 'detached'; readonly header: SessionHeader; readonly events: readonly SessionEvent[] }
 
-type MutableModelSelectionRef = ModelSelectionRef & { current: ModelSelection }
 
 /** Build one successful generated-port result. */
 function success<Value>(value: Value): SessionRemoteResult<Value> {
@@ -291,44 +290,17 @@ function truncateUnicodeCodePoints(value: string, maximum: number): string {
   return value
 }
 
-/** Validate and canonicalize one user-supplied IANA time zone. */
-function canonicalClientTimeZone(value: string): string | undefined {
-  if (value.length === 0 || value.trim() !== value
-    || (value !== 'UTC' && !IANA_TIME_ZONE.test(value))) return undefined
-  try {
-    const canonical = new Intl.DateTimeFormat('en-US', { timeZone: value })
-      .resolvedOptions().timeZone
-    return canonical === 'UTC' || IANA_TIME_ZONE.test(canonical) ? canonical : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/** Whether one transcript has started an Agent turn. */
-function sessionBlank(events: readonly SessionEvent[]): boolean {
-  return !events.some(event => event.type === 'turn/start')
-}
-
-/** Latest human prompt time in one exact log cut. */
-function lastPromptAt(events: readonly SessionEvent[]): number | null {
-  let latest: number | null = null
-  for (const event of events) {
-    if (event.type === 'user/message' && event.data.source.kind === 'user') latest = event.time
-  }
-  return latest
-}
-
 /** Session-header fields shared by attached and cold listing rows. */
 function summaryFields(
   header: SessionHeader,
-  events: readonly SessionEvent[] = [],
+  projections?: SessionRemoteProjections,
 ): Pick<SessionRemoteSummary, 'parentSessionId' | 'origin' | 'cwd' | 'agentPreset'> {
-  const preset = resolveSessionPreset({ header, events })
+  const preset = projections?.values.agentPreset
   return {
     ...header.parentSession === undefined ? {} : { parentSessionId: header.parentSession },
     ...header.origin === undefined ? {} : { origin: header.origin },
     ...header.cwd === undefined ? {} : { cwd: header.cwd },
-    ...preset === undefined ? {} : { agentPreset: preset },
+    ...typeof preset !== 'string' ? {} : { agentPreset: preset },
   }
 }
 
@@ -402,12 +374,13 @@ function historyEventWindow(
   events: readonly SessionEvent[],
   beforeSeq: number | undefined,
   maxMessages: number,
+  maxEvents: number,
 ): HistoryEventWindow {
   const end = historyEndIndex(events, beforeSeq)
   let start = end
   let count = 0
   let groupStart: number | undefined
-  while (start > 0 && end - start < MAX_HISTORY_PAGE_EVENTS) {
+  while (start > 0 && end - start < maxEvents) {
     start -= 1
     const event = events[start] as SessionEvent
     if (groupStart !== undefined) {
@@ -588,6 +561,7 @@ export class SessionRemoteOperationsService extends Service
     'workspaceRegistry',
   ]
 
+  private readonly coldBlankProbeMaxBytes: number
   private readonly defaultCwd: string
   /** Exact loopback-only path for streaming Session archives. */
   readonly path = SESSION_EXPORT_PATH
@@ -595,12 +569,27 @@ export class SessionRemoteOperationsService extends Service
   private readonly handles = new Map<SessionId, AgentHandle>()
   private readonly creations = new Map<SessionId, Promise<Agent>>()
   private readonly resumes = new Map<SessionId, Promise<Agent>>()
-  private readonly selections = new WeakMap<Agent, MutableModelSelectionRef>()
-  private readonly imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
+  private readonly admissionChains = new WeakMap<Agent, Promise<void>>()
   private readonly lifetime = new AbortController()
+  private readonly semanticHistory: SemanticHistoryReader
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'sessionRemoteOperations')
+    this.semanticHistory = new SemanticHistoryReader(ctx, (source) => {
+      let scope: Promise<ScopeKey | undefined> | undefined
+      return async (event, dependencies) => {
+        // Non-tool domain records need only the lossless wire envelope. Resolve
+        // one historical preset scope lazily for all tool entries in this body.
+        const view = event.type === 'tool/call' || event.type === 'tool/result'
+          ? eventView(ctx, event, dependencies, await (scope ??= this.standingPresenterScope(source)))
+          : undefined
+        return { event: remoteEvent(event), ...view === undefined ? {} : { view } }
+      }
+    }, config.semanticHistory)
+    this.coldBlankProbeMaxBytes = config.coldBlankProbeMaxBytes ?? DEFAULT_COLD_BLANK_PROBE_MAX_BYTES
+    if (!Number.isSafeInteger(this.coldBlankProbeMaxBytes) || this.coldBlankProbeMaxBytes < 0) {
+      throw new RangeError('coldBlankProbeMaxBytes must be a non-negative safe integer')
+    }
     this.defaultCwd = config.cwd ?? process.cwd()
     this.sessionExportCompressionLevel = sessionLogCompressionLevel(config.sessionExportCompressionLevel)
     if (!isAbsolute(this.defaultCwd)) {
@@ -617,12 +606,14 @@ export class SessionRemoteOperationsService extends Service
     })
     ctx.effect(() => async () => {
       this.lifetime.abort(new Error('session Remote operations disposed'))
+      this.semanticHistory.clear()
       const handles = [...this.handles.values()]
       this.handles.clear()
       await Promise.allSettled(handles.map(handle => handle.dispose({ keepInbox: true })))
     }, 'host-session-remote-operations: owned Agent handles')
 
     ctx.inject(['sessionProjections'], (projectionCtx) => {
+      installPromptReceipts(projectionCtx)
       projectionCtx.sessionProjections.register<'sessionListMetadata', SessionListMetadata>({
         key: 'sessionListMetadata',
         stateSchema: sessionListMetadataSchema,
@@ -672,36 +663,8 @@ export class SessionRemoteOperationsService extends Service
   }
 
   /** Install or retrieve the session-local request selection. */
-  private selectionFor(agent: Agent): MutableModelSelectionRef {
-    const existing = this.selections.get(agent)
-    if (existing !== undefined) return existing
-    let selected: ModelSelection | undefined
-    const currentDefault = (): ModelSelection => ({
-      ...this.ctx.agentDefaultModel.currentSelection(),
-    })
-    const selection: MutableModelSelectionRef = {
-      get current(): ModelSelection {
-        if (selected !== undefined) return selected
-        const logged = agent.session.requestHeader()?.config
-        if (logged !== undefined) {
-          return {
-            provider: logged.provider,
-            model: logged.model,
-            ...logged.reasoningEffort === undefined
-              ? {}
-              : { reasoningEffort: logged.reasoningEffort },
-          }
-        }
-        return currentDefault()
-      },
-      set current(next: ModelSelection) {
-        selected = next
-      },
-      assembled: undefined,
-    }
-    installModelSelection(agent.ctx, selection)
-    this.selections.set(agent, selection)
-    return selection
+  private selectionFor(agent: Agent): SessionModelSelection {
+    return sessionModelSelection(this.ctx, agent)
   }
 
   /** Resolve and mount the preset that owns one Agent's tool composition. */
@@ -858,13 +821,13 @@ export class SessionRemoteOperationsService extends Service
     }
   }
 
-  /** Serialize model switching with image admission for one exact Agent. */
-  private serializeImageAdmission<Value>(
+  /** Serialize model switching and prompt admission for one exact Agent. */
+  private serializeAdmission<Value>(
     agent: Agent,
     operation: () => Promise<Value>,
   ): Promise<Value> {
-    const result = (this.imageAdmissionChains.get(agent) ?? Promise.resolve()).then(operation)
-    this.imageAdmissionChains.set(agent, result.then(() => undefined, () => undefined))
+    const result = (this.admissionChains.get(agent) ?? Promise.resolve()).then(operation)
+    this.admissionChains.set(agent, result.then(() => undefined, () => undefined))
     return result
   }
 
@@ -890,6 +853,11 @@ export class SessionRemoteOperationsService extends Service
   ): Promise<ScopeKey | undefined> {
     const live = this.ctx.agents.get(sessionId)
     if (live !== undefined) return live
+    return this.standingPresenterScope(source)
+  }
+
+  /** Historical scope is resolved from the caller's fixed cut, never today's live preset. */
+  private async standingPresenterScope(source: PresetBearingSession): Promise<ScopeKey | undefined> {
     const presets = this.ctx.get('agentPresets')
     if (presets === undefined) return undefined
     try {
@@ -899,63 +867,93 @@ export class SessionRemoteOperationsService extends Service
     }
   }
 
-  /** Build the current visible Session listing without retaining a second index. */
-  private async visibleSummaries(signal: AbortSignal): Promise<SessionRemoteSummary[]> {
+  /** Cached listing hints never materialize a missing projection or replay a log. */
+  private listProjections(header: SessionHeader, session?: Session): SessionRemoteProjections | undefined {
+    try {
+      return remoteProjections(session === undefined
+        ? this.ctx.get('sessionProjectionCache')?.cachedSnapshot(header)
+        : this.ctx.get('sessionProjections')?.cachedSnapshot(session))
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`session.list: cached projections unavailable for "${header.id}": ${String(error)}`)
+      return undefined
+    }
+  }
+
+  private attachedSummary(session: Session): SessionRemoteSummary {
+    const projections = this.listProjections(session.header, session)
+    const metadata = sessionListMetadataSchema.safeParse(projections?.values.sessionListMetadata)
+    return {
+      sessionId: session.id,
+      updatedAt: Math.max(session.header.createdAt, metadata.success ? metadata.data.lastPromptAt ?? 0 : 0),
+      running: this.ctx.agents.get(session.id)?.status === 'running',
+      blank: metadata.success ? metadata.data.blank : session.seq === 0,
+      ...summaryFields(session.header, projections),
+      ...projections === undefined ? {} : { projections },
+    }
+  }
+
+  /** Only small physical artifacts may be observed for an unknown cold blank hint. */
+  private async smallColdProjections(query: Context['sessionQuery'], header: SessionHeader, signal: AbortSignal): Promise<SessionRemoteProjections | undefined> {
+    if (this.coldBlankProbeMaxBytes === 0) return undefined
+    const location = this.ctx.get('sessionPersistence')?.locate(header)
+    if (location === undefined) return undefined
     signal.throwIfAborted()
-    const attached = this.ctx.sessions.list()
-    const rows = attached.map((session): SessionRemoteSummary => {
-      const promptAt = lastPromptAt(session.events)
-      const projections = this.projectionsFor({ kind: 'attached', session })
-      return {
-        sessionId: session.id,
-        updatedAt: Math.max(session.header.createdAt, promptAt ?? 0),
-        running: this.ctx.agents.get(session.id)?.status === 'running',
-        blank: sessionBlank(session.events),
-        ...summaryFields(session.header, session.events),
-        ...projections === undefined ? {} : { projections },
-      }
-    })
-    const liveIds = new Set(rows.map(row => row.sessionId))
-    const persistence = this.ctx.get('sessionPersistence')
-    if (persistence !== undefined) {
-      const headers = (await persistence.list(signal))
-        .filter(header => !liveIds.has(header.id) && header.cwd !== undefined)
-      for (const header of headers) {
-        signal.throwIfAborted()
-        let events: SessionEvent[] | undefined
-        try {
-          events = [...(await persistence.inspect(header.id, signal)).events]
-        } catch (error: unknown) {
-          if (signal.aborted) throw error
-          this.ctx.logger.warn(`session.list: cold inspection for "${header.id}" failed; serving it visible: ${String(error)}`)
-        }
-        const raced = this.ctx.sessions.get(header.id)
-        if (raced !== undefined) {
-          const promptAt = lastPromptAt(raced.events)
-          const projections = this.projectionsFor({ kind: 'attached', session: raced })
-          rows.push({
-            sessionId: raced.id,
-            updatedAt: Math.max(raced.header.createdAt, promptAt ?? 0),
-            running: this.ctx.agents.get(raced.id)?.status === 'running',
-            blank: sessionBlank(raced.events),
-            ...summaryFields(raced.header, raced.events),
-            ...projections === undefined ? {} : { projections },
-          })
-          continue
-        }
-        const projections = events === undefined
-          ? remoteProjections(this.ctx.get('sessionProjectionCache')?.cachedSnapshot(header))
-          : this.projectionsFor({ kind: 'detached', header, events })
-        const promptAt = events === undefined ? null : lastPromptAt(events)
-        rows.push({
-          sessionId: header.id,
-          updatedAt: Math.max(header.createdAt, promptAt ?? 0),
-          running: false,
-          // A failed cold read must never hide a real conversation.
-          blank: events === undefined ? false : sessionBlank(events),
-          ...summaryFields(header, events),
-          ...projections === undefined ? {} : { projections },
-        })
+    try {
+      if ((await stat(location.path)).size > this.coldBlankProbeMaxBytes) return undefined
+    } catch {
+      signal.throwIfAborted()
+      return undefined
+    }
+    try {
+      using observation = await query.observeSession(header.id, { signal, projectionMode: 'all' })
+      signal.throwIfAborted()
+      return remoteProjections(observation.projections)
+    } catch (error: unknown) {
+      signal.throwIfAborted()
+      this.ctx.logger.warn(`session.list: small cold observation for "${header.id}" failed; serving it visible: ${String(error)}`)
+      return undefined
+    }
+  }
+
+  private async coldSummary(query: Context['sessionQuery'], header: SessionHeader, signal: AbortSignal): Promise<SessionRemoteSummary> {
+    const cached = this.listProjections(header)
+    const metadata = sessionListMetadataSchema.safeParse(cached?.values.sessionListMetadata)
+    const projections = metadata.success && !metadata.data.blank
+      ? cached
+      : await this.smallColdProjections(query, header, signal) ?? cached
+    const raced = this.ctx.sessions.get(header.id)
+    if (raced !== undefined) return this.attachedSummary(raced)
+    const current = sessionListMetadataSchema.safeParse(projections?.values.sessionListMetadata)
+    return {
+      sessionId: header.id,
+      updatedAt: Math.max(header.createdAt, current.success ? current.data.lastPromptAt ?? 0 : 0),
+      running: false,
+      // Large, inaccessible, or failed observations remain unknown and visible.
+      blank: current.success ? current.data.blank : false,
+      ...summaryFields(header, projections),
+      ...projections === undefined ? {} : { projections },
+    }
+  }
+
+  /** Reuse query corpus visibility and cached hints; bound concurrent physical probes. */
+  private async visibleSummaries(query: Context['sessionQuery'], signal: AbortSignal): Promise<SessionRemoteSummary[]> {
+    signal.throwIfAborted()
+    const records = await query.listSessions(signal)
+    signal.throwIfAborted()
+    const rows: SessionRemoteSummary[] = []
+    const cold: SessionHeader[] = []
+    for (const record of records) {
+      const live = this.ctx.sessions.get(record.header.id)
+      if (live !== undefined) rows.push(this.attachedSummary(live))
+      else if (record.header.cwd !== undefined) cold.push(record.header)
+    }
+    for (let offset = 0; offset < cold.length; offset += COLD_SUMMARY_BATCH_SIZE) {
+      signal.throwIfAborted()
+      const settled = await Promise.allSettled(cold.slice(offset, offset + COLD_SUMMARY_BATCH_SIZE)
+        .map(header => this.coldSummary(query, header, signal)))
+      for (const result of settled) {
+        if (result.status === 'rejected') throw result.reason
+        rows.push(result.value)
       }
     }
     rows.sort((left, right) => right.updatedAt - left.updatedAt)
@@ -968,8 +966,15 @@ export class SessionRemoteOperationsService extends Service
     signal: AbortSignal,
   ): Promise<SessionRemoteResult<SessionRemoteListValue>> {
     if (aborted(signal)) return cancelled()
+    const query = this.ctx.get('sessionQuery')
+    if (query === undefined) {
+      return failure(
+        'internal',
+        'session listing is unavailable: this deployment does not mount @deepseek-ai/dsh-session-query',
+      )
+    }
     try {
-      return success({ items: await this.visibleSummaries(signal) })
+      return success({ items: await this.visibleSummaries(query, signal) })
     } catch (error: unknown) {
       if (aborted(signal)) return cancelled()
       return failure('internal', `session listing failed: ${String(error)}`)
@@ -994,8 +999,11 @@ export class SessionRemoteOperationsService extends Service
       )
     }
     try {
-      const visible = await this.visibleSummaries(signal)
-      const visibleIds = new Set(visible.map(item => item.sessionId))
+      const visible = await sessionQuery.listSessions(signal)
+      signal.throwIfAborted()
+      const visibleIds = new Set(visible
+        .filter(record => record.header.cwd !== undefined)
+        .map(record => record.header.id))
       if (visibleIds.size === 0) return success({ items: [], hasMore: false })
       const accepted: SessionRemoteSearchItem[] = []
       const acceptedIds = new Set<SessionId>()
@@ -1038,6 +1046,7 @@ export class SessionRemoteOperationsService extends Service
           }
           throw error
         }
+        signal.throwIfAborted()
         if (page.items.length > requestedLimit) {
           throw new Error(`session search provider returned ${page.items.length} items; maximum is ${requestedLimit}`)
         }
@@ -1260,14 +1269,32 @@ export class SessionRemoteOperationsService extends Service
    * When `hasMore` is true, the first returned event sequence is the strictly
    * smaller exclusive `beforeSeq` cursor for the next request.
    */
+  history(request: SessionRemoteRawHistoryRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteRawHistoryValue>>
+  history(request: SessionRemoteHistoryRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteHistoryValue>>
   async history(
     request: SessionRemoteHistoryRequest,
     signal: AbortSignal,
   ): Promise<SessionRemoteResult<SessionRemoteHistoryValue>> {
-    if (aborted(signal)) return cancelled()
+    const readSignal = AbortSignal.any([signal, this.lifetime.signal])
+    if (aborted(readSignal)) return cancelled()
+    if (request.view === 'semantic' || request.view === 'content') {
+      try {
+        return success(await this.semanticHistory.read(request, readSignal))
+      } catch (error: unknown) {
+        if (aborted(readSignal) || this.lifetime.signal.aborted) return cancelled()
+        if (error instanceof SemanticHistoryError) return failure(error.code, error.message)
+        return failure('internal', `semantic history unavailable: ${String(error)}`)
+      }
+    }
     if (request.beforeSeq !== undefined
       && (!Number.isSafeInteger(request.beforeSeq) || request.beforeSeq < 0)) {
       return failure('invalid-argument', 'beforeSeq must be a non-negative safe integer')
+    }
+    if (request.maxEvents !== undefined
+      && (!Number.isSafeInteger(request.maxEvents)
+        || request.maxEvents < 1
+        || request.maxEvents > MAX_HISTORY_PAGE_EVENTS)) {
+      return failure('invalid-argument', `maxEvents must be an integer from 1 through ${String(MAX_HISTORY_PAGE_EVENTS)}`)
     }
     if (request.maxMessages !== undefined
       && (!Number.isSafeInteger(request.maxMessages)
@@ -1279,24 +1306,46 @@ export class SessionRemoteOperationsService extends Service
       )
     }
     try {
-      const source = await this.historySource(request.sessionId, signal)
+      using fixed = request.view === 'raw' || request.sourceRevision !== undefined || request.expectedSubagentMode !== undefined
+        ? await this.semanticHistory.observe(request, readSignal) : undefined
+      const source: HistorySource = fixed === undefined ? await this.historySource(request.sessionId, readSignal)
+        : { kind: 'detached', header: fixed.observed.header, events: fixed.observed.events }
       const bearing: PresetBearingSession = source.kind === 'attached'
         ? { header: source.session.header, events: source.session.events }
         : { header: source.header, events: source.events }
       if (request.expectedParentSessionId !== undefined && bearing.header.parentSession !== request.expectedParentSessionId) {
         return failure('subagent-unauthorized', 'subagent parent changed during history read', { sessionId: request.sessionId })
       }
-      const scope = await this.presenterScope(request.sessionId, bearing)
-      signal.throwIfAborted()
-      // Events and live projection baseline are read synchronously from one cut.
-      const events = source.kind === 'attached' ? [...source.session.events] : source.events
-      const projections = request.beforeSeq === undefined ? this.projectionsFor(source) : undefined
+      if (bearing.header.origin === 'subagent' && fixed === undefined) {
+        return failure('subagent-unauthorized', 'child history requires its direct parent and mode')
+      }
+      let scope = fixed === undefined ? await this.presenterScope(request.sessionId, bearing) : undefined
+      readSignal.throwIfAborted()
+      fixed?.assertCurrent()
+      // A bound read retains the actual immutable observation/lease. Later
+      // appends cannot enter its page or change the authorized descriptor cut.
+      const events = fixed?.observed.events ?? (source.kind === 'attached' ? source.session.events : source.events)
+      const projections = fixed === undefined && request.beforeSeq === undefined
+        ? this.projectionsFor(source) : undefined
+      const binding = fixed === undefined ? {} : {
+        view: 'raw' as const, sourceRevision: fixed.revision, asOfThroughSeq: fixed.through,
+      }
       const sourcePage = historyEventWindow(
         events,
-        request.beforeSeq,
+        fixed === undefined ? request.beforeSeq : Math.min(request.beforeSeq ?? fixed.through + 1, fixed.through + 1),
         request.maxMessages ?? DEFAULT_MAX_MESSAGES,
+        request.maxEvents ?? MAX_HISTORY_PAGE_EVENTS,
       )
+      if (fixed !== undefined && sourcePage.events.some(event => event.type === 'tool/call' || event.type === 'tool/result')) {
+        scope = await this.standingPresenterScope(this.semanticHistory.presentationSource(
+          fixed.observed, fixed.identity, fixed.through, readSignal,
+        ))
+        readSignal.throwIfAborted()
+        this.lifetime.signal.throwIfAborted()
+        fixed.assertCurrent()
+      }
       const fixedValue = {
+        ...binding,
         events: [] as SessionRemoteHistoryEntry[],
         hasMore: true,
         ...projections === undefined ? {} : { projections },
@@ -1314,6 +1363,7 @@ export class SessionRemoteOperationsService extends Service
         }
       }, eventArrayBudget)
       const value: SessionRemoteHistoryValue = {
+        ...binding,
         events: page.entries,
         hasMore: page.hasMore,
         ...projections === undefined ? {} : { projections },
@@ -1322,9 +1372,11 @@ export class SessionRemoteOperationsService extends Service
       if (valueEncodedBytes > MAX_HISTORY_PAGE_ENCODED_BYTES && page.entries.length !== 1) {
         throw new Error('history page exceeded the encoded byte budget')
       }
+      fixed?.assertCurrent()
       return success(value)
     } catch (error: unknown) {
-      if (aborted(signal)) return cancelled()
+      if (aborted(readSignal)) return cancelled()
+      if (error instanceof SemanticHistoryError) return failure(error.code, error.message)
       if (error instanceof ApiRemoteSessionNotFound) {
         return failure('session-not-found', error.message, { sessionId: request.sessionId })
       }
@@ -1421,7 +1473,7 @@ export class SessionRemoteOperationsService extends Service
     if (aborted(signal)) return cancelled()
     const found = await this.agentFor(request.sessionId)
     if (!found.ok) return found
-    return this.serializeImageAdmission(found.value, async () => {
+    return this.serializeAdmission(found.value, async () => {
       try {
         const resolved = await this.ctx.llm.resolveCallConfig({
           provider: request.provider,
@@ -1438,7 +1490,8 @@ export class SessionRemoteOperationsService extends Service
             ? {}
             : { reasoningEffort: resolved.reasoningEffort },
         }
-        this.selectionFor(found.value).current = selected
+        found.value.session.append('model/selection', selected)
+        this.selectionFor(found.value)
         try {
           await this.ctx.agentDefaultModel.saveSelection(selected)
         } catch (error: unknown) {
@@ -1509,6 +1562,7 @@ export class SessionRemoteOperationsService extends Service
     request: SessionRemoteForkRequest,
     signal: AbortSignal,
   ): Promise<SessionRemoteResult<SessionRemoteForkValue>> {
+    signal = AbortSignal.any([signal, this.lifetime.signal])
     if (aborted(signal)) return cancelled()
     if (request.atSeq !== undefined
       && (!Number.isSafeInteger(request.atSeq) || request.atSeq < 0)) {
@@ -1524,102 +1578,154 @@ export class SessionRemoteOperationsService extends Service
         { sessionId: request.sessionId },
       )
     }
-    let source: SessionReadState
+    let fixed: Awaited<ReturnType<SemanticHistoryReader['observe']>> | undefined
+    let checkedSource: Awaited<ReturnType<SemanticHistoryReader['observe']>> | undefined
     try {
-      source = await this.readSessionState(request.sessionId, signal)
-    } catch (error: unknown) {
-      if (aborted(signal)) return cancelled()
-      if (error instanceof ApiRemoteSessionNotFound) {
-        return failure('session-not-found', error.message, { sessionId: request.sessionId })
-      }
-      return failure(
-        'internal',
-        `fork source unavailable for session "${request.sessionId}": ${String(error)}`,
-      )
-    }
-    const lastSeq = source.events.at(-1)?.seq ?? -1
-    const anchoredBoundary = request.atSeq === undefined
-      ? undefined
-      : source.events.find(event => event.type === 'turn/end' && event.seq >= (request.atSeq as number))
-    const boundary = anchoredBoundary
-      ?? (request.atSeq === undefined || request.atSeq > lastSeq
-        ? source.events.findLast(event => event.type === 'turn/end')
-        : undefined)
-    if (boundary === undefined) {
-      return failure(
-        'fork-unavailable',
-        request.atSeq !== undefined && request.atSeq <= lastSeq
-          ? `session "${request.sessionId}" has not completed the turn containing event ${request.atSeq}`
-          : `session "${request.sessionId}" has no completed turn to fork from`,
-        { sessionId: request.sessionId },
-      )
-    }
-    let cut = boundary.seq + 1
-    while (cut < source.events.length && source.events[cut]?.type !== 'turn/start') cut += 1
-    let workspace: Workspace | undefined
-    try {
-      workspace = await this.forkWorkspace(source, signal)
-    } catch (error: unknown) {
-      if (aborted(signal)) return cancelled()
-      return failure(
-        'internal',
-        `failed to resolve fork workspace for session "${request.sessionId}": ${String(error)}`,
-      )
-    }
-    const childId = SessionId(`session-${randomUUID()}`)
-    const childRevision = this.ctx.workspaceRegistry.sessionAdmissionRevision(childId)
-    const composition = await this.composeAgent(resolveSessionPreset({
-      header: source.header,
-      events: source.events,
-    }))
-    let handle: AgentHandle | undefined
-    try {
-      handle = await this.ctx.agents.create({
-        sessionId: childId,
-        seed: source.events.slice(0, cut),
-        meta: {
-          ...source.header.cwd === undefined ? {} : { cwd: source.header.cwd },
-          parentSession: source.id,
-          seedLength: cut,
-          ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
-        },
-        agentOptions: this.agentOptions(),
-        signal,
-        setup: this.withSessionAdmission(composition.setup, [
-          { sessionId: request.sessionId, revision: parentRevision },
-          { sessionId: childId, revision: childRevision },
-        ]),
-      })
-      signal.throwIfAborted()
-      await this.ctx.sessions.flush(handle.agent.session)
-      signal.throwIfAborted()
-      this.ownHandle(handle)
-    } catch (error: unknown) {
-      if (handle !== undefined) {
-        try {
-          await handle.dispose()
-        } catch (disposeError: unknown) {
-          this.ctx.logger.warn(`failed to dispose undurable fork "${childId}": ${String(disposeError)}`)
-        }
-      }
-      if (aborted(signal)) return cancelled()
-      return failure(
-        'internal',
-        `failed to fork session "${request.sessionId}": ${String(error)}`,
-      )
-    }
-    if (workspace !== undefined) {
+      let source: SessionReadState
       try {
-        await workspace.attachSession(childId)
+        if (request.sourceRevision !== undefined) {
+          const observation = await this.semanticHistory.observe(request, signal)
+          fixed = observation
+          source = { id: request.sessionId, header: observation.observed.header, events: observation.observed.events }
+          if (request.atSeq !== undefined && request.atSeq > observation.through) {
+            return failure('invalid-argument', 'fork anchor is outside the bound history cut')
+          }
+        } else {
+          source = await this.readSessionState(request.sessionId, signal)
+        }
       } catch (error: unknown) {
+        if (aborted(signal)) return cancelled()
+        if (error instanceof SemanticHistoryError) return failure(error.code, error.message)
+        if (error instanceof ApiRemoteSessionNotFound) {
+          return failure('session-not-found', error.message, { sessionId: request.sessionId })
+        }
         return failure(
-          'workspace-attach-failed',
-          `session "${childId}" was forked but could not attach to workspace "${workspace.id}": ${String(error)}`,
-          { sessionId: childId, workspaceId: workspace.id },
+          'internal',
+          `fork source unavailable for session "${request.sessionId}": ${String(error)}`,
         )
       }
+      const lastSeq = fixed?.through ?? (source.events.at(-1)?.seq ?? -1)
+      const anchoredBoundary = request.atSeq === undefined
+        ? undefined
+        : source.events.find(event => event.type === 'turn/end' && event.seq >= (request.atSeq as number) && event.seq <= lastSeq)
+      const boundary = anchoredBoundary
+        ?? (request.atSeq === undefined || request.atSeq > lastSeq
+          ? source.events.findLast(event => event.type === 'turn/end' && event.seq <= lastSeq)
+          : undefined)
+      if (boundary === undefined) {
+        return failure(
+          'fork-unavailable',
+          request.atSeq !== undefined && request.atSeq <= lastSeq
+            ? `session "${request.sessionId}" has not completed the turn containing event ${request.atSeq}`
+            : `session "${request.sessionId}" has no completed turn to fork from`,
+          { sessionId: request.sessionId },
+        )
+      }
+      let cut = boundary.seq + 1
+      while (cut <= lastSeq && source.events[cut]?.type !== 'turn/start') cut += 1
+      let workspace: Workspace | undefined
+      try {
+        workspace = await this.forkWorkspace(source, signal)
+      } catch (error: unknown) {
+        if (aborted(signal)) return cancelled()
+        return failure(
+          'internal',
+          `failed to resolve fork workspace for session "${request.sessionId}": ${String(error)}`,
+        )
+      }
+      const childId = SessionId(`session-${randomUUID()}`)
+      const childRevision = this.ctx.workspaceRegistry.sessionAdmissionRevision(childId)
+      // This seed is taken only from the initial immutable observation. Later
+      // source validation never supplies replacement events or a newer preset.
+      const seed = source.events.slice(0, cut)
+      let handle: AgentHandle | undefined
+      try {
+        fixed?.assertCurrent()
+        const composition = await this.composeAgent(resolveSessionPreset({
+          header: source.header, events: fixed === undefined ? source.events : seed,
+        }))
+        const admission = this.withSessionAdmission(composition.setup, [
+          { sessionId: request.sessionId, revision: parentRevision },
+          { sessionId: childId, revision: childRevision },
+        ])
+        const bound = fixed
+        const setup: AgentSetup = bound === undefined ? admission : async (agentCtx) => {
+          const prepared = await admission(agentCtx)
+          bound.assertCurrent()
+          // Reuse the source owner after all asynchronous composition work. A
+          // cold lease is a pinned snapshot, not an external-file write lock.
+          const checked = await this.semanticHistory.observe({
+            ...request, sourceRevision: bound.revision,
+          }, signal)
+          checkedSource = checked
+          const assertSource = () => {
+            signal.throwIfAborted()
+            bound.assertCurrent()
+            checked.assertCurrent()
+            if (bound.observed.source === 'prepared' && this.ctx.sessions.get(request.sessionId) !== undefined) {
+              throw new SemanticHistoryError('history-stale-source', 'fork source became live before publication')
+            }
+          }
+          assertSource()
+          return { commit: () => {
+            assertSource()
+            prepared?.commit()
+            assertSource()
+          } }
+        }
+
+        handle = await this.ctx.agents.create({
+          sessionId: childId,
+          seed,
+          meta: {
+            ...source.header.cwd === undefined ? {} : { cwd: source.header.cwd },
+            parentSession: source.id,
+            seedLength: cut,
+            ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
+          },
+          agentOptions: this.agentOptions(),
+          signal,
+          setup,
+        })
+        signal.throwIfAborted()
+        await this.ctx.sessions.flush(handle.agent.session)
+        signal.throwIfAborted()
+        this.ownHandle(handle)
+      } catch (error: unknown) {
+        if (handle !== undefined) {
+          try {
+            await handle.dispose()
+          } catch (disposeError: unknown) {
+            this.ctx.logger.warn(`failed to dispose undurable fork "${childId}": ${String(disposeError)}`)
+          }
+        }
+        if (aborted(signal)) return cancelled()
+        if (error instanceof SemanticHistoryError) return failure(error.code, error.message)
+        return failure(
+          'internal',
+          `failed to fork session "${request.sessionId}": ${String(error)}`,
+        )
+      }
+      if (workspace !== undefined) {
+        try {
+          await workspace.attachSession(childId)
+        } catch (error: unknown) {
+          return failure(
+            'workspace-attach-failed',
+            `session "${childId}" was forked but could not attach to workspace "${workspace.id}": ${String(error)}`,
+            { sessionId: childId, workspaceId: workspace.id },
+          )
+        }
+      }
+      return success({ sessionId: childId })
+    } finally {
+      // Both leases cover every early return and cancellation. A release
+      // failure must not replace the operation's original result or error.
+      for (const observation of [checkedSource, fixed]) {
+        try { observation?.[Symbol.dispose]() }
+        catch { this.ctx.logger.warn('failed to release a fork source observation') }
+      }
     }
-    return success({ sessionId: childId })
   }
 
   /** Promote base64 image parts to durable references in caller order. */
@@ -1664,6 +1770,69 @@ export class SessionRemoteOperationsService extends Service
       : undefined
   }
 
+  /** Read the existing projection without retaining a second transcript or receipt cache. */
+  private promptReceipt(session: Session, invocationId: SessionPromptInvocationId): PromptReceipt | undefined {
+    const state = this.ctx.get('sessionProjections')?.stateOf(session, 'promptReceipts')
+    if (state === undefined) throw new Error('ordinary prompt receipt projection is unavailable')
+    return Object.hasOwn(state.entries, invocationId) ? state.entries[invocationId] : undefined
+  }
+
+  private receiptConflict(receipt: PromptReceipt, digest: string): SessionRemoteFailure | undefined {
+    return receipt.conflict || receipt.digest === null || receipt.digest !== digest
+      ? failure('invocation-conflict', 'invocationId was already accepted with different or unverifiable input') : undefined
+  }
+
+  /** Once accepted, caller cancellation cannot undo delivery or bypass durability confirmation. */
+  private async confirmPrompt(
+    session: Session, invocationId: SessionPromptInvocationId,
+  ): Promise<SessionRemoteResult<SessionRemotePromptValue>> {
+    try {
+      const persistence = this.ctx.get('sessionPersistence')
+      if (persistence === undefined || !await this.ctx.sessions.flush(session)) {
+        throw new Error('ordinary prompt has no durability owner')
+      }
+      await persistence.ensureMaterialized(session)
+      return success({ accepted: true })
+    } catch (error: unknown) {
+      return failure('prompt-durability-unconfirmed', 'prompt was accepted but its durable acknowledgement is not confirmed', {
+        accepted: true, invocationId, reason: String(error),
+      })
+    }
+  }
+
+  /** Confirm a retry before provider lookup or Agent activation, including a cold completed Session. */
+  private async acceptedPrompt(
+    request: SessionRemotePromptRequest, digest: string, signal: AbortSignal,
+  ): Promise<SessionRemoteResult<SessionRemotePromptValue> | undefined> {
+    const revision = this.ctx.workspaceRegistry.sessionAdmissionRevision(request.sessionId)
+    try {
+      this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision)
+    } catch (error: unknown) {
+      return failure('agent-busy', 'session lifecycle changed before prompt admission', { reason: String(error) })
+    }
+    const live = this.ctx.sessions.get(request.sessionId)
+    if (live !== undefined) {
+      if (hasApiRemoteSubagentOwner(this.ctx, live, this.ctx.agents.get(request.sessionId))) return this.subagentFailure(request.sessionId)
+      const receipt = this.promptReceipt(live, request.invocationId)
+      if (receipt === undefined) return undefined
+      return this.receiptConflict(receipt, digest) ?? this.confirmPrompt(live, request.invocationId)
+    }
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) return undefined
+    using borrowed = await persistence.borrowSession(request.sessionId, signal)
+    signal.throwIfAborted()
+    this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision)
+    if (this.ctx.sessions.get(request.sessionId) !== undefined) return await this.acceptedPrompt(request, digest, signal)
+    if (borrowed.source === 'live') return failure('agent-busy', 'session lifecycle changed while verifying prompt admission')
+    const session = borrowed.preparedSession
+    if (hasApiRemoteSubagentOwner(this.ctx, session, undefined)) return this.subagentFailure(request.sessionId)
+    this.ctx.get('sessionProjectionCache')?.hydratePrepared(session, borrowed.inspection.meta, borrowed.inspection.events)
+    const receipt = this.promptReceipt(session, request.invocationId)
+    if (receipt === undefined) return undefined
+    // This exact retained source was already read from persistence; no live flush or Agent resume is needed.
+    return this.receiptConflict(receipt, digest) ?? success({ accepted: true })
+  }
+
   /** Admit ordinary queued or steering input to the exact live Agent. */
   async prompt(
     request: SessionRemotePromptRequest,
@@ -1685,6 +1854,14 @@ export class SessionRemoteOperationsService extends Service
         'clientTimeZone must be UTC or a valid IANA Area/Location name',
         { value: request.clientTimeZone },
       )
+    }
+    const digest = promptDigest(request, canonicalTimeZone)
+    try {
+      const accepted = await this.acceptedPrompt(request, digest, signal)
+      if (accepted !== undefined) return accepted
+    } catch (error: unknown) {
+      if (aborted(signal)) return cancelled()
+      return failure('prompt-unavailable', 'cannot verify ordinary prompt admission', { reason: String(error) })
     }
     const found = await this.agentFor(request.sessionId)
     if (!found.ok) return found
@@ -1708,7 +1885,7 @@ export class SessionRemoteOperationsService extends Service
           if (skillPrompt === undefined) {
             return failure(
               'unknown-command',
-              `unknown command: ${commandLine.split(/\s/u, 1)[0] ?? commandLine}`,
+              `unknown command: ${commandLine.split(/\s/u, 1)[0]}`,
             )
           }
           request = { ...request, content: [{ type: 'text', text: skillPrompt }] }
@@ -1737,37 +1914,47 @@ export class SessionRemoteOperationsService extends Service
         { provider: selection.provider, model: selection.model },
       )
     }
-    const hasImage = request.content.some(part => part.type === 'image')
+    // The Ark host path mirrors the controller: empty prompts never start a turn.
+    const hasContent = request.content.some(
+      part => part.type !== 'text' || part.text.trim().length > 0,
+    )
+    if (!hasContent) {
+      return failure(
+        'bad-request',
+        'prompt content must include non-whitespace text or an attachment',
+        {},
+      )
+    }
     const admit = async (): Promise<SessionRemoteResult<SessionRemotePromptValue>> => {
       try {
         signal.throwIfAborted()
-        if (hasImage) {
-          const modelInfo = await this.ctx.llm.resolveModelInfo(
-            selection.provider,
-            selection.model,
-            signal,
-          )
-          if (modelInfo.inputModalities !== undefined
-            && !modelInfo.inputModalities.includes('image')) {
-            return failure(
-              'attachment-error',
-              `Model "${selection.model}" does not support image input.`,
-              { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
-            )
-          }
+        const receipt = this.promptReceipt(agent.session, request.invocationId)
+        if (receipt !== undefined) {
+          return this.receiptConflict(receipt, digest) ?? await this.confirmPrompt(agent.session, request.invocationId)
         }
+        if (this.ctx.get('sessionPersistence') === undefined) {
+          return failure('prompt-unavailable', 'ordinary prompts require a persistence owner')
+        }
+        // Ark 定制：图片一律允许上传，能否识别由模型自行决定；不再按模型模态拦截。
         const content = await this.durablePromptContent(request.content)
         signal.throwIfAborted()
         const source: MessageSource = {
           kind: 'user',
           invocationId: request.invocationId,
+          promptDigest: digest,
           ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
         }
         const message: UserMessage = createUserMessage({ content, source })
         this.assertPromptAdmission(request.sessionId, agent)
-        if (request.mode === 'steer') agent.steer(message)
-        else agent.followup(message)
-        return success({ accepted: true })
+        try {
+          if (request.mode === 'steer') agent.steer(message)
+          else agent.followup(message)
+        } catch (error: unknown) {
+          // A reentrant observer can throw or cancel after the log append committed.
+          if (this.promptReceipt(agent.session, request.invocationId) === undefined) throw error
+        }
+        if (this.promptReceipt(agent.session, request.invocationId) === undefined) throw new Error('inbox did not record prompt acceptance')
+        return await this.confirmPrompt(agent.session, request.invocationId)
       } catch (error: unknown) {
         if (aborted(signal)) return cancelled()
         if (error instanceof AttachmentError) {
@@ -1776,7 +1963,7 @@ export class SessionRemoteOperationsService extends Service
         return failure('agent-busy', 'prompt rejected', { reason: String(error) })
       }
     }
-    return hasImage ? this.serializeImageAdmission(agent, admit) : admit()
+    return this.serializeAdmission(agent, admit)
   }
 
   /** Return bytes only for an image referenced by the addressed Session log. */
@@ -1843,10 +2030,17 @@ export class SessionRemoteOperationsService extends Service
         { reason: 'QUEUE_EDIT_NON_TEXT' },
       ))
     }
-    const agent = this.ctx.agents.get(request.sessionId)
-    if (agent !== undefined && hasApiRemoteSubagentOwner(this.ctx, agent.session, agent)) {
-      return settled(this.subagentFailure(request.sessionId))
+    if (edited !== undefined && !edited.some(block => block.type === 'text' && block.text.trim().length > 0)) {
+      return settled(failure('invalid-argument', 'queue edit content must not be empty'))
     }
+    const agent = this.ctx.agents.get(request.sessionId)
+    // Upstream lets a continuable subagent's queue be edited, removed, and
+    // steered; the child's inbox is its only turn queue, so mutating it here
+    // is semantically correct. The shared ownership fence stays for every
+    // other generic route (prompt, cancel, cold resume), so only an identity
+    // with no live Agent at all — one that could not be a continuable child —
+    // keeps rejecting below. A cold child has no live inbox to mutate, so it
+    // rejects as queue-item-not-found rather than resuming under this route.
     if (agent === undefined) {
       return settled(failure(
         'queue-item-not-found',

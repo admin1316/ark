@@ -477,7 +477,10 @@ describe('SessionPersistenceSqlite schema ownership', () => {
         : undefined
     })
 
-    const db = await openDatabase(BusyOnceDatabase, path, 'wal', 100)
+    // The 1s fixture budget leaves room for scheduler overshoot on loaded
+    // CI runners; the retry interval itself stays 10ms, and the open-relative
+    // cutoff contract is pinned separately by the mocked-clock test below.
+    const db = await openDatabase(BusyOnceDatabase, path, 'wal', 1_000)
     expect(attempts).toBe(2)
     expect(db.prepare(sql('journal-mode-wal')).get()).toEqual({ journal_mode: 'wal' })
     expect(db.prepare(sql('select-trusted-schema')).get()).toEqual({ trusted_schema: 0 })
@@ -609,6 +612,24 @@ describe('SessionPersistenceSqlite schema ownership', () => {
     expect(() => { validateSchemaForMutation(DatabaseSync, changedApplication, ':memory:') })
       .toThrow(/application id changed before mutation/)
     changedApplication.close()
+  })
+
+  it('rolls back a delete whose transaction observes a schema changed by another writer', async () => {
+    const path = await freshDbPath('dsh-sqlite-delete-drift-')
+    const store = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
+    const header = meta('delete-drift')
+    await store.appendBatch(header, [chunk(0)], false)
+
+    const migrator = new DatabaseSync(path)
+    migrator.exec(testSql('set-user-version-17'))
+    migrator.close()
+
+    await expect(store.deleteStored(header.id)).rejects.toThrow(/schema changed before mutation/)
+    // The refused delete rolled back instead of half-applying: the session row
+    // and its events are still readable through the same open store.
+    expect((await store.list()).map(entry => entry.id)).toEqual([header.id])
+    expect((await store.loadStored(header.id))?.events).toEqual([chunk(0)])
+    await store.close()
   })
 
   it('validates creation time and restores every optional header field', () => {

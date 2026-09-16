@@ -1,29 +1,14 @@
-/** Package-owned relational checks for Agent Teams durable records. */
-import { applyTeamEvent, foldTeam, isTeamEvent } from "./fold.js";
-const PACKAGE_NAME = '@deepseek-ai/dsh-experimental-agent-team';
+/** Invariant registration for the stateless Remote adapter. */
 /** Cordis companion plugin name. */
-export const name = 'team-invariant';
-/** Invariant registry required by the companion. */
+export const name = 'team-remote-invariant';
+/** Invariant registry dependency. */
 export const inject = ['invariants'];
-/** Validate candidate Team events against the committed prefix before append. */
-const install = Object.assign((ctx, fail) => {
-    ctx.on('internal/dispatch', (_mode, eventName, args) => {
-        if (eventName !== 'session/event')
-            return;
-        const [session, event] = args;
-        if (!isTeamEvent(event))
-            return;
-        try {
-            const state = foldTeam(session.id, session.events);
-            applyTeamEvent(state, event);
-        }
-        catch (error) {
-            /* v8 ignore next -- the strict Team fold throws Error instances. */
-            const message = error instanceof Error ? error.message : String(error);
-            fail(`session event ${event.seq} violates the Agent Teams stream: ${message}`);
-        }
-    }, { global: true });
-}, { inject: ['sessions'] });
-/** Register the package invariant companion. */
-export const apply = (ctx) => Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install));
+// No runtime invariant: this stateless adapter delegates to the domain and owns no mutable Team state.
+const install = () => { };
+/**
+ * Register only this adapter's ownership; do not register a second domain validator.
+ * @param ctx - invariant registry owner.
+ * @returns registration disposer.
+ */
+export const apply = (ctx) => Promise.resolve(ctx.invariants.register('@deepseek-ai/dsh-experimental-agent-team', install));
 //# sourceMappingURL=invariant.js.map

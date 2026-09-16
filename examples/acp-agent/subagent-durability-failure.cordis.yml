@@ -7,4 +7,4 @@
     patches:
       - insert:
           - id: subagent-durability-failure
-            name: './tests/fixtures/subagent-durability-failure.ts'
+            name: '../../packages/subagent/subagent/tests/fixtures/subagent-durability-failure.ts'

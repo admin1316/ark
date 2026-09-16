@@ -54,7 +54,7 @@
     - id: tool-ask-user
       name: '@deepseek-ai/dsh-tool-ask-user'
     - id: child-question-tripwire
-      name: '../../../packages/test-support/session-snapshot/tests/fixtures/child-question-tripwire.ts'
+      name: '../../../packages/interaction/user-questions/tests/fixtures/child-question-tripwire.ts'
 
 - id: user-questions
   name: '@deepseek-ai/dsh-user-questions'

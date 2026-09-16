@@ -18,9 +18,11 @@ func runArkRootNavHitTargetContractChecks() {
     through: ".help(ArkL10n.text(.newSession, model.languagePreference))"
   )
   check(
-    hero?.contains(".frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)") == true
-      && hero?.contains(".contentShape(Rectangle())") == true,
-    "native sidebar hero brand row carries a full-width hit frame and content shape"
+    hero?.contains(".frame(height: 38, alignment: .leading)") == true
+      && hero?.contains(".contentShape(Rectangle())") == true
+      && hero?.contains("ArkBrandView(layout: .wordmark, size: 38)") == true
+      && hero?.contains("maxWidth: .infinity") == false,
+    "native sidebar wordmark keeps a 38-point hit target without stretching toward the collapse control"
   )
 
   let newConversation = sourceSlice(

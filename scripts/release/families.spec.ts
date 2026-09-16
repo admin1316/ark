@@ -4,7 +4,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { officialClientBuildEnvironment, writeClientBuildRecord } from '../client-build-environment.ts'
 import { releaseFamily, type ReleaseMember } from './families.ts'
 import { compareVersions, nextVendorVersion, planShared, reachesPayload } from './bump.ts'
 
@@ -26,13 +25,16 @@ function write(path: string, content: string): void {
   writeFileSync(path, content)
 }
 
-function buildFixture(environment: Record<string, string>): string {
+function buildFixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-release-build-'))
   roots.push(root)
-  write(join(root, 'package.json'), `${JSON.stringify({ version: environment.DSH_CLIENT_VERSION ?? '0.0.1' })}\n`)
-  write(join(root, 'apps/web/dist/index.html'), '<main></main>')
-  write(join(root, 'packages/client/example/lib/client.js'), 'module.exports = {}\n')
-  writeClientBuildRecord(root, environment)
+  write(join(root, 'apps/cli/package.json'), JSON.stringify({
+    name: '@deepseek-ai/dsh', version: '0.0.1', main: 'lib/index.js',
+    types: 'lib/types/index.d.ts', bin: { dsh: 'bin.js' },
+  }))
+  write(join(root, 'apps/cli/lib/index.js'), 'export {}\n')
+  write(join(root, 'apps/cli/lib/types/index.d.ts'), 'export {}\n')
+  write(join(root, 'apps/cli/bin.js'), 'import "./lib/index.js"\n')
   return root
 }
 
@@ -83,7 +85,7 @@ describe('release families', () => {
 
   it('rejects a family whose members disagree on the shared version', () => {
     const dsh = releaseFamily('dsh')
-    const members = [member('apps/cli', '@deepseek-ai/dsh'), { ...member('apps/web', '@deepseek-ai/dsh-web-frontend'), version: '0.0.2' }]
+    const members = [member('apps/cli', '@deepseek-ai/dsh'), { ...member('packages/core/agent', '@deepseek-ai/dsh-agent'), version: '0.0.2' }]
 
     expect(() => { dsh.verifyVersions(members) }).toThrow(/must share one version/)
     expect(() => { dsh.verifyVersions([members[0]!]) }).not.toThrow()
@@ -100,23 +102,17 @@ describe('release families', () => {
     expect(() => { vendor.verifyVersions([{ ...members[0]!, version: 'latest' }]) }).toThrow(/unpublishable version/)
   })
 
-  it('requires a current official client build only for dsh artifacts', () => {
+  it('requires Host runtime, declarations, and executable artifacts before packing', () => {
     const dsh = releaseFamily('dsh')
-    const vendor = releaseFamily('vendor')
-    const officialEnvironment = officialClientBuildEnvironment(resolve(import.meta.dirname, '../..'))
-    vi.stubEnv('DSH_CLIENT_COMMIT_HASH', officialEnvironment.DSH_CLIENT_COMMIT_HASH)
-    const official = buildFixture(officialEnvironment)
-    const defaultBuild = buildFixture({})
-    const missing = join(defaultBuild, 'missing')
-    write(join(missing, 'package.json'), `${JSON.stringify({ version: officialEnvironment.DSH_CLIENT_VERSION })}\n`)
-
-    expect(() => { dsh.verifyBuildArtifacts(official) }).not.toThrow()
-    expect(() => { dsh.verifyBuildArtifacts(defaultBuild) }).toThrow(/DSH_CLIENT_TITLE/)
-    expect(() => { dsh.verifyBuildArtifacts(missing) }).toThrow(/record.*missing/)
-    expect(() => { vendor.verifyBuildArtifacts(missing) }).not.toThrow()
-
-    write(join(official, 'packages/client/example/lib/client.js'), 'module.exports = { changed: true }\n')
-    expect(() => { dsh.verifyBuildArtifacts(official) }).toThrow(/artifacts differ/)
+    const root = buildFixture()
+    expect(() => { dsh.verifyBuildArtifacts(root) }).toThrow(/Host build artifact provenance/)
+    for (const entry of ['lib/index.js', 'lib/types/index.d.ts', 'bin.js']) {
+      const path = join(root, 'apps/cli', entry)
+      rmSync(path)
+      expect(() => { dsh.verifyBuildArtifacts(root) }).toThrow(/missing release artifact/)
+      write(path, 'export {}\n')
+    }
+    expect(() => { releaseFamily('vendor').verifyBuildArtifacts(root) }).not.toThrow()
   })
 
   it('publishes a dependency before its consumer, and orders ties by name', () => {

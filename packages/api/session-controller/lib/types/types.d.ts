@@ -1,5 +1,6 @@
 /** Browser-safe request, result, and lifecycle vocabulary for the Session Remote service. */
 import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment';
+import type { ModelSelection } from '@deepseek-ai/dsh-agent-default-model/session-selection';
 import type { Branded } from '@deepseek-ai/dsh-brand';
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand';
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types';
@@ -14,25 +15,12 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
         sessionListMetadata: SessionListMetadata;
         /** Host state for the boot-constant image-limit view. */
         imageLimits: null;
-        /** Durable model selection already used by a request and still pending for a later request. */
-        modelSelection: ModelSelectionProjectionState;
     }
     interface SessionProjectionMap {
         /** Persisted facts used to summarize a Session without activating it. */
         sessionListMetadata: SessionListMetadata;
         /** Image-intake limits enforced by the Session prompt endpoint. */
         imageLimits: ImageAttachmentLimits;
-        /** Durable model selection already used and selected for the next request. */
-        modelSelection: ModelSelectionProjection;
-    }
-}
-declare module '@deepseek-ai/dsh-session/types' {
-    interface SessionEventMap {
-        /**
-         * Complete validated model selection requested for subsequent prompt
-         * assembly. Log-only: it never enters derived model history.
-         */
-        'model/selection': ModelSelection;
     }
 }
 /** Persisted hints used to summarize a cold Session. */
@@ -66,26 +54,7 @@ export type PromptContentPart = {
     readonly data: string;
     readonly name?: string;
 };
-/** Complete model selection for one Session. */
-export interface ModelSelection {
-    readonly provider: string;
-    readonly model: string;
-    readonly reasoningEffort?: string;
-}
-/** Host fold state for durable model selection. */
-export interface ModelSelectionProjectionState {
-    /** Selection consumed by the latest recorded model request. */
-    readonly lastUsed: ModelSelection | null;
-    /** Later user selection not yet consumed by a matching model request. */
-    readonly pending: ModelSelection | null;
-}
-/** Client view of the durable model-selection fold. */
-export interface ModelSelectionProjection {
-    /** Selection consumed by the latest recorded model request. */
-    readonly lastUsed: ModelSelection | null;
-    /** Selection the next request should use, falling back to {@link lastUsed}. */
-    readonly next: ModelSelection | null;
-}
+export type { ModelSelection, ModelSelectionProjectionState, ModelSelectionProjection } from '@deepseek-ai/dsh-agent-default-model/session-selection';
 /** One adapter-owned reasoning effort for an exact model route. */
 export interface ModelReasoningEffort {
     readonly id: string;

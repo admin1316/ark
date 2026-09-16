@@ -112,7 +112,17 @@ describe('Typert Gateway strict error coverage', () => {
       result: stringCodec,
     })
     const unavailable = harness({ descriptor: good })
-    expect(errorCode(await unavailable.invoke({ args: { value: 'x' } }))).toBe('service-unavailable')
+    const unavailableResult = await unavailable.invoke({ args: { value: 'private-input-must-not-appear' } })
+    expect(errorCode(unavailableResult)).toBe('service-unavailable')
+    // Vitest types its asymmetric matchers as `any`; declaring the compared shape
+    // keeps the expectation typed instead of inferring that `any` into the literal.
+    const unavailableFailure: { readonly ok: boolean; readonly error: { readonly message: unknown } } = {
+      ok: false,
+      error: { message: expect.stringContaining('mount its provider in the Host composition') },
+    }
+    expect(unavailableResult).toMatchObject(unavailableFailure)
+    expect(JSON.stringify(unavailableResult)).toContain('fixture')
+    expect(JSON.stringify(unavailableResult)).not.toContain('private-input-must-not-appear')
 
     const unbound = harness({ descriptor: good, service: { run: () => 'x' } })
     expect(errorCode(await unbound.invoke({ args: { value: 'x' } }))).toBe('binding-invalid')

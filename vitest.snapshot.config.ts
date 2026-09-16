@@ -46,9 +46,6 @@ export default defineConfig({
     setupFiles: ['./scripts/test-invariants.ts'],
     include: [
       'scripts/session-snapshot-corpus.corpus.ts',
-      // The assembled Web snapshot executes generated client bundles; source
-      // mode remains the zero-build path, while lib mode requires a prior build.
-      ...(process.env.DSH_EXAMPLE_MODE === 'lib' ? ['apps/web/tests/**/*.snapshot.ts'] : []),
       'snapshots/**/*.snapshot.ts',
     ],
     // Replay never writes committed outputs and every scenario owns its

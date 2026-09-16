@@ -1,8 +1,23 @@
+---
+description: "Scoped model-facing adapter for ctx.agentTeams."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-agent-team
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Scoped model-facing adapter for [`ctx.agentTeams`](../agent-team/README.md). It installs the Agent Teams policy and collaboration tools in each implicit Lead and durable teammate scope. Scoped Team definitions shadow same-named legacy global continuable-subagent controls, so a composition that mounts both must disable the legacy definitions.
+
+## Table of Contents
+
+- [Config](#config)
+- [Tools and authority](#tools-and-authority)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config
 
@@ -47,3 +62,7 @@ Prefix-stable while the Team plugin generation, configuration, member role/name,
 - **Prompt policy is coordination, not confinement** — it cannot stop Bash or external processes from writing overlapping files.
 - **No autonomous team creation** — ordinary tasks do not trigger delegation unless the user explicitly requests it.
 - **No Web controls** — browser roster and task-board presentation is outside this runtime package.
+
+### Dev Note
+
+None.

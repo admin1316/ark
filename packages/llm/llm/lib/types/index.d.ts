@@ -21,6 +21,7 @@ export * from './error.ts';
 export * from './api-key.ts';
 export * from './types.ts';
 export * from './content.ts';
+export * from './assistant-stream.ts';
 export * from './message.ts';
 export * from './retry-policy.ts';
 export { BlockAssembler } from './assembler.ts';
@@ -233,7 +234,9 @@ export interface DirectoryRegistrationHandle {
 }
 /** Configuration-time verification deadlines, resolved before the LLM service starts. */
 export interface LlmRuntimeConfig {
+    /** Maximum milliseconds allowed for a provider verification attempt. */
     verificationTimeoutMs: number;
+    /** Milliseconds allowed for canceled verification work to settle before reporting cancellation timeout. */
     verificationCancellationGraceMs: number;
 }
 /**

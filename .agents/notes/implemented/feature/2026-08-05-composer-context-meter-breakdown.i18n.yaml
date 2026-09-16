@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-05-composer-context-meter-breakdown.md
-2026-08-05-composer-context-meter-breakdown.md: a757bcbc8bc57f4c3a16f663a9c922155b8bb575
-2026-08-05-composer-context-meter-breakdown.zh.md: 02fcfdf89664dcf932509a0d56193bb4e0d83805
+2026-08-05-composer-context-meter-breakdown.md: b9578330ab2339d4a06f20dd9646f237af20f9a5
+2026-08-05-composer-context-meter-breakdown.zh.md: 599c07bfb837b4f0c1e62569aa4081d192149844

@@ -304,7 +304,7 @@ function modelInfo(provider: string, model: DeepSeekCatalogModel): LlmModelInfo 
     id: model.id,
     name: model.name ?? model.id,
     ...model.description === undefined ? {} : { description: model.description },
-    inputModalities: model.inputModalities ?? ['text'],
+    inputModalities: model.inputModalities ?? ['text', 'image'],
   }
 }
 
@@ -399,11 +399,9 @@ export class DeepSeekAdapter extends LlmAdapter {
     const contextWindow = configured?.contextWindow
       ?? connection.defaultContextWindow
     return {
-      // An uncatalogued endpoint is safely treated as text-only. Declaring an
-      // unverified image capability would let the host persist input that the
-      // endpoint may reject on every later turn.
+      // Ark 定制：未编目的端点同样声明图片能力，先把请求发出去，由端点自己决定。
       ...configured === undefined
-        ? { provider, id: model, name: model, inputModalities: ['text' as const] }
+        ? { provider, id: model, name: model, inputModalities: ['text', 'image'] as const }
         : modelInfo(provider, configured),
       context: { contextWindow },
       defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
@@ -453,13 +451,7 @@ export class DeepSeekAdapter extends LlmAdapter {
     const hasImages = options.messages.some(message => contentHasImage(message.content))
     let attachments: AttachmentStore | undefined
     if (hasImages) {
-      const model = connection.models.find(entry => entry.id === options.model)
-      if (model?.inputModalities?.includes('image') !== true) {
-        throw new LlmError(
-          `DeepSeek model "${options.model}" does not accept image input.`,
-          'UNSUPPORTED_CONTENT',
-        )
-      }
+      // Ark 定制：不再按模态拒绝图片；能发就发，由模型/上游决定。
       attachments = this.config.resolveAttachments?.()
       if (attachments === undefined) {
         throw new LlmError(

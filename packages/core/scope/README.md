@@ -1,8 +1,22 @@
+---
+description: "Scoped registration primitive. createScope(ctx, key) creates a tagged Cordis context whose backing fiber owns every registration made through it. scopeOf(ctx) reads the tag, and scopeTarget(base, key) routes scoped events to listeners with the same key while leaving unscoped listeners global."
+kind: "package-library"
+---
+
 # dsh-scope
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Scoped registration primitive. `createScope(ctx, key)` creates a tagged Cordis context whose backing fiber owns every registration made through it. `scopeOf(ctx)` reads the tag, and `scopeTarget(base, key)` routes scoped events to listeners with the same key while leaving unscoped listeners global. Keys form an optional parent chain (`bindScopeParent`): registration views inherit DOWN it — a child scope sees its ancestors' layers, nearest shadowing farthest — and event admission extends UP it — a listener tagged with an ancestor receives a descendant key's events, never the reverse. The agent loop creates one scope per live agent and an agent preset's standing mount is a parent scope over its agents, but the mechanism is key-agnostic so lower-level packages can use it without depending on either.
+
+## Table of Contents
+
+- [Public API](#public-api)
+- [Design contract](#design-contract)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Public API
 
@@ -35,3 +49,7 @@ Handing out a scoped context hands out the minting plugin's service-resolution A
 - **Only scope-aware APIs isolate state** — registries must file by `scopeOf()` and events must dispatch through `scopeTarget()`; an arbitrary Cordis service remains context-global merely because it is called through a scoped context.
 - **A context carries one nearest scope key** — the hierarchy lives in the key-level parent relation, not in context tags; nested scope CONTEXTS still shadow to a single tag, and multi-membership policy sets remain unsupported.
 - **Service reachability comes from the scope minter** — handing out `Scope.ctx` also hands out the minting plugin's injected services, so a broader minter cannot later be narrowed by the holder.
+
+### Dev Note
+
+None.

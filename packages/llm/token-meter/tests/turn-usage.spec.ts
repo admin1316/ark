@@ -51,6 +51,18 @@ function completeAttempt(...middle: readonly SessionEvent[]): SessionEvent[] {
 }
 
 describe('deriveTurnTokenUsage', () => {
+  it('accepts a single-pass bounded generator without changing array semantics', () => {
+    const events = completeAttempt(message(3, usage()))
+    let visits = 0
+    function* range(): IterableIterator<SessionEvent> {
+      for (const event of events) { visits += 1; yield event }
+    }
+    expect(deriveTurnTokenUsage(range())).toEqual(deriveTurnTokenUsage(events))
+    expect(visits).toBe(events.length)
+    const missingStart = events.slice(1)
+    expect(deriveTurnTokenUsage((function* () { yield* missingStart })())).toBeUndefined()
+  })
+
   it('preserves authoritative totals and explicit optional buckets', () => {
     expect(deriveTurnTokenUsage(completeAttempt(message(3, usage({
       cacheWriteTokens: 0,

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-typert-generator` turns source TypeScript into compiler-independent data and runnable artifacts at build time: it analyzes a workspace's package type trees, produces a `FaceModel` and type graph, and emits executable JavaScript with supported Zod schemas and a `TYPERT` reflection contribution, plus matching declarations. It is a build-time library, not a plugin — it never runs inside a live agent session. The repository's Host tsdown runs it automatically; a business package opts in by exporting `./typert` and `./client/typert` entries, and the generator validates those exports and published file lists. Static consumers can also call the analyzer directly for type inspection or catalog generation without publishing anything.
+`dsh-typert-generator` turns source TypeScript into compiler-independent data and runnable artifacts at build time: it analyzes a workspace's package type trees, produces a `FaceModel` and type graph, and emits executable JavaScript with supported Zod schemas and a `TYPERT` reflection contribution, plus matching declarations. It is a build-time library, not a plugin — it never runs inside a live agent session. The repository's Host build runs it after compilation and before bundling; a business package opts in by exporting `./typert` and `./client/typert` entries, and the generator validates those exports and published file lists. Static consumers can also call the analyzer directly for type inspection or catalog generation without publishing anything.
 
 ## Table of Contents
 
@@ -45,11 +45,11 @@ After the build, `lib/typert.host.js` and `lib/typert.host.d.ts` exist and the [
 
 ### Analyzing a workspace statically
 
-Static consumers call `WorkspaceAnalyzer` directly against the workspace's `tsconfig.host.json` and `tsconfig.client.json` aggregates, select a face and package subset, and read the resulting `FaceModel` and type graph without emitting or loading runtime artifacts. `analyzeInBatches()` processes a large package selection through bounded compiler programs with the same model shape, and `discoverPackages()` finds contributing packages without building a type-checker program.
+Static consumers call `WorkspaceAnalyzer` directly against the workspace's `tsconfig.host.json` aggregate, select a face and package subset, and read the resulting `FaceModel` and type graph without emitting or loading runtime artifacts. `analyzeInBatches()` processes a large package selection through bounded compiler programs with the same model shape, and `discoverPackages()` finds contributing packages without building a type-checker program.
 
 ### Running generation inside a tsdown build
 
-The package's `./tsdown` subpath provides `typertPlugin()` for the root tsdown config: it lowers standard decorators in TypeScript dependencies before bundling and emits the model-driven face artifacts at the package output root. In `package` mode it emits only the bundled package; in `workspace` mode it emits every explicit contributor once.
+The package's `./tsdown` subpath provides `typertPlugin()` for the root tsdown config: it lowers standard decorators in TypeScript dependencies before bundling and emits the model-driven face artifacts at the package output root. In `package` mode it emits only the bundled package; in `workspace` mode it emits every explicit contributor once. The root Host build instead calls `emitVerifiedWorkspaceArtifacts()` in a separate process after successful workspace tsc, then uses `transform-only` mode for tsdown. This releases the reflection compiler before concurrent bundling starts; all Host and Remote artifacts use the same generator and validation rules. Calling tsdown directly performs only the bundling phase and does not replace the ordered Host build.
 
 -----
 
@@ -79,11 +79,11 @@ The generator is built on one separation: extraction and emission are decoupled 
 
 ### Analysis and faces
 
-Host and client are independent TypeScript programs. Direct project references establish compiler-face membership, while `dsh.client` package subpaths establish runtime-face contribution; `package.json#exports` marks every cross-package public boundary, and imports or re-exports are the only cross-face edges. `check` mode fails on syntax or semantic diagnostics, missing public annotations, private cross-package references, and reachable declaration merges the model cannot retain losslessly; `write` mode inserts checker-derived annotations and returns a clean check-mode model. Types owned by NPM dependencies remain `external` references instead of being expanded.
+The repository builds the Host program. The analyzer also supports independently supplied client-face programs for tooling fixtures; that capability does not provide a browser product or a repository Client aggregate. Direct project references establish compiler-face membership, while `dsh.client` package subpaths establish runtime-face contribution; `package.json#exports` marks every cross-package public boundary, and imports or re-exports are the only cross-face edges. `check` mode fails on syntax or semantic diagnostics, missing public annotations, private cross-package references, and reachable declaration merges the model cannot retain losslessly; `write` mode inserts checker-derived annotations and returns a clean check-mode model. Types owned by NPM dependencies remain `external` references instead of being expanded.
 
 ### Emission and publication contract
 
-`FaceModelEmitter` emits executable JavaScript containing supported Zod schemas and the `TYPERT` contribution, plus a declaration file whose schemas are typed `z.ZodType<SourceType>` through the package's public export; unsupported Zod projections fail. The Host face with Remote methods additionally emits `typert.remote-client.*` projections of Host Remote contracts for the Client. `WorkspaceTypertGenerator` validates each contributor's `package.json`: `./typert` and `./client/typert` (and `./remote` when Remote methods exist) must point at the exact generated files, and the `files` list must include them.
+`FaceModelEmitter` emits executable JavaScript containing supported Zod schemas and the `TYPERT` contribution, plus a declaration file whose schemas are typed `z.ZodType<SourceType>` through the package's public export; unsupported Zod projections fail. The Host face with Remote methods additionally emits `typert.remote-client.*` projections of Host Remote contracts for the Client. `WorkspaceTypertGenerator` validates each contributor's `package.json`: the exports for its selected face (`./typert` for Host, `./client/typert` for client, and `./remote` when Remote methods exist) must point at the exact generated files, and the `files` list must include them.
 
 ### Catalog projection
 

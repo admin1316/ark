@@ -161,7 +161,11 @@ describe('session.create Agent preset identity', () => {
       },
     })
     if (response.ok) throw new Error('unreachable')
-    expect('existingPreset' in response.error.details).toBe(false)
+    const details = response.error.details
+    if (details === null || typeof details !== 'object' || Array.isArray(details)) {
+      throw new Error('expected structured preset-conflict details')
+    }
+    expect('existingPreset' in details).toBe(false)
     expect(response.error.message).toContain('records no agent preset')
   })
 })

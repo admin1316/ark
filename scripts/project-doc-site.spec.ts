@@ -450,7 +450,12 @@ describe('docsPages locale routes', () => {
     const translated = rootPages.filter(page => page.contentLocale === 'zh-CN')
     const fallbacks = rootPages.filter(page => page.contentLocale === 'en-US')
 
-    expect(translated).toHaveLength(46)
+    const englishSources = docsPages
+      .filter(page => page.locale === 'en' && page.route.startsWith('en/reference/subsystems/'))
+      .map(page => page.source.replace(/\.md$/, '.zh.md'))
+      .sort()
+    expect(englishSources.length).toBeGreaterThan(0)
+    expect(translated.map(page => page.source).sort()).toEqual(englishSources)
     expect(translated.every(page => page.source.endsWith('.zh.md'))).toBe(true)
     expect(fallbacks).toEqual([])
   })

@@ -1,6 +1,13 @@
+---
+description: "以 profile 组合包形式交付的共享 dsh 核心：cordis.patch.yml 在空的 profile 根之上插入全部基础插件行——模型适配器、共享的 agent-default-model 选择、工具、持久化、策略、settings／credentials、遥测与核心 spawn／fork subagent provider——作为每个 profile 的 dsh.profile.bundles 列表中的第一层。"
+kind: "package-bundle"
+---
+
 # `@deepseek-ai/dsh-base`
 
 [English](README.md) | 中文
+
+## 概述
 
 以 profile 组合包形式交付的共享 dsh 核心：[`cordis.patch.yml`](cordis.patch.yml) 在空的 profile 根之上插入全部基础插件行——模型适配器、共享的 [`agent-default-model`](../../core/agent-default-model/README.zh.md) 选择、工具、持久化、策略、settings／credentials、遥测与核心 spawn／fork subagent provider——作为每个 profile 的 `dsh.profile.bundles` 列表中的第一层。可选的 Codex 与 Claude Code provider 不属于本包及其生产依赖闭包；Profile 仅在需要时安装任一[产品 provider Bundle](../../subagent/README.zh.md)。因此，默认的 `@deepseek-ai/dsh` 生产依赖闭包既不包含任一产品 provider、Claude Agent SDK，也不包含 Codex wrapper 及其平台载荷。后续的组合包层，例如 [`dsh-headless`](../headless/README.zh.md) 与 [`dsh-native-api-app`](../native-api-app/README.zh.md)，再加上用户 profile 的 `cordis.patch.yml`，会按 id 覆盖这些行；patch 会替换目标行的整个 `config`，因此模式专属的值放在模式组合包中，而不是这里。该包没有运行时 API；profile 组合器通过 manifest（元数据清单）的 `dsh.bundle.patch` 字段解析 patch，绝不通过代码。
 
@@ -8,6 +15,13 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 
 行集合及其设计依据以行内注释写在 patch 文件里；[生成的组合图](../../../apps/cli/composition.md)负责渲染它。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="model-experience"></a>
 ## 模型体验
 
 通过插入的行间接产生影响：该组合包选定了随发行版交付的无 persona 提示词基座、工具集合与 DeepSeek 适配器，供各模式组合包进一步特化；它自身不贡献任何模型可见文本。
@@ -16,8 +30,14 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 
 无直接影响；每条插入行的影响由其所属的包负责。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **patch 会替换整行 `config`**：profile 覆盖必须重述该行需要保留的每个字段；不存在深度合并层。
 - **Windows 的临时目录授权是按会话的私有子目录**——`workspace-write` 把写入限制在工作区与会话自己的 temp 子目录（`<temp>\dsh-<hash>`，受限子进程的 TMP/TEMP 被改写）；`read-only` 不授予任何临时目录写入权限。见 `@deepseek-ai/dsh-sandbox-windows-acl`。
 - **出厂默认即 `workspace-write`，属于有意设计**——全新会话把文件效果限制在工作区与会话临时授权内，其余写入一律经逐操作 `ask` 审批（`DSH_PERMISSION_MODE` 可覆盖；见 `cordis.patch.yml`）。`danger-full-access` 会把审批策略映射为 `never`：对宿主机的文件系统与进程拥有不受限访问且无逐操作提示，因此只应在受信任的单用户主机或无审批的 CI 上部署，切勿指向敏感数据。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

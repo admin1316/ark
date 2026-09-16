@@ -1,8 +1,23 @@
+---
+description: "Human-facing /compact control over ctx.compaction."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-command-compact
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Human-facing `/compact` control over [`ctx.compaction`](../compaction/README.md). The plugin registers one global command through [`ctx.commands`](../../interaction/commands/README.md), so every composed command adapter discovers and executes it without a model turn. The [queued manual compaction Agent Note](../../../.agents/notes/implemented/feature/2026-07-30-queued-manual-compaction.md) owns the admission, lock, and durability decisions.
+
+## Table of Contents
+
+- [Command contract](#command-contract)
+- [Composition](#composition)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Command contract
 
@@ -64,3 +79,7 @@ Discovery and command bookkeeping do not affect the cache. The accepted surface 
 - **Idle-only** — `/compact` reports `busy` when a turn or already accepted waking prompt has right of way; the command itself is not queued.
 - **No range or policy arguments** — the argument-free form keeps behavior stable across command adapters. Explicit ranges remain the programmatic `compactRegion()` path.
 - **Command adapters only** — surfaces without `ctx.commands` cannot invoke it and rely on automatic pressure compaction.
+
+### Dev Note
+
+None.

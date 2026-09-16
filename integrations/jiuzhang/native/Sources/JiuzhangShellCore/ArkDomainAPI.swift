@@ -424,11 +424,11 @@ public enum ArkDomainAPIContract {
     return try stringArray(values, context: "workspace archive state")
   }
 
-  public static func createdWorkspace(from value: JSONValue) throws -> ArkWorkspace {
-    guard let workspace = value["workspace"] else {
+  public static func createdWorkspace(from value: JSONValue) throws -> (workspace: ArkWorkspace, created: Bool) {
+    guard let workspace = value["workspace"], let created = value["created"]?.boolValue else {
       throw invalidResponse("workspace.create")
     }
-    return try self.workspace(from: workspace)
+    return (try self.workspace(from: workspace), created)
   }
 
   public static func renamedWorkspace(from value: JSONValue) throws -> ArkWorkspace {
@@ -726,9 +726,15 @@ extension ArkAPIClient {
   }
 
   /// Fork a session at its latest completed turn, or at one explicit event boundary.
-  public func forkSession(sessionID: String, atSequence: Int? = nil) async throws -> String {
+  public func forkSession(
+    sessionID: String, atSequence: Int? = nil, sourceRevision: String? = nil,
+    expectedParentSessionID: String? = nil, expectedSubagentMode: String? = nil
+  ) async throws -> String {
     var payload: [String: JSONValue] = ["sessionId": .string(sessionID)]
     if let atSequence { payload["atSeq"] = .number(Double(atSequence)) }
+    if let sourceRevision { payload["sourceRevision"] = .string(sourceRevision) }
+    if let expectedParentSessionID { payload["expectedParentSessionId"] = .string(expectedParentSessionID) }
+    if let expectedSubagentMode { payload["expectedSubagentMode"] = .string(expectedSubagentMode) }
     let value = try await remoteDomainRequest(
       method: ArkDomainAPIContract.Method.sessionFork,
       request: payload
@@ -805,7 +811,7 @@ extension ArkAPIClient {
 
   /// Register an existing local directory as a Workspace.
   @discardableResult
-  public func createWorkspace(path: String) async throws -> ArkWorkspace {
+  public func createWorkspace(path: String) async throws -> (workspace: ArkWorkspace, created: Bool) {
     let value = try await remoteDomainRequest(
       method: ArkDomainAPIContract.Method.workspaceCreate,
       request: ["path": .string(path)]

@@ -1,10 +1,27 @@
+---
+description: "Automation-only Agent Client Protocol server over JSON-RPC stdio."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-acp
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Automation-only [Agent Client Protocol](https://agentclientprotocol.com) server over JSON-RPC stdio. Programmatic clients create fresh harness agents, send text/image prompts, collect committed assistant text/images, resolve one-shot permission requests by policy, and cancel work. The primary in-repository client is [`dsh-subagent-acp`](../../subagent/subagent-acp/README.md).
 
 This package is a transport adapter, not a UI integration or a capability seam. It does not expose editor navigation, transcript replay, commands, modes, configuration pickers, elicitation, reasoning, plans, titles, or tool presentation. Interactive rendering and human questions belong to the Web host and client modules.
+
+## Table of Contents
+
+- [Plugin](#plugin)
+- [Protocol contract](#protocol-contract)
+- [Lifecycle](#lifecycle)
+- [Running](#running)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Plugin
 
@@ -79,3 +96,7 @@ Append-only through the owning tool result.
 - **Raster images and one workspace only** — image prompts require a durable store plus an exact route that declares image input; only PNG, JPEG, WebP, and GIF are accepted. Audio, embedded resources, non-empty additional directories, and MCP servers reject; resource links flatten to textual references rather than fetched content.
 - **Committed answers only** — live progress, reasoning, tool activity, plans, titles, and usage stay off the wire.
 - **Connection-owned lifetime** — one connection releases all of its sessions; per-session close is not implemented.
+
+### Dev Note
+
+None.

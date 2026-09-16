@@ -1,8 +1,24 @@
+---
+description: "万相织鉴 host knowledge engine — the in-process engine behind the concept-graph tab."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-knowledge-wiki
 
 English | [中文](README.zh.md)
 
+## Summary
+
 万相织鉴 host knowledge engine — the in-process engine behind the concept-graph tab. Owns the wiki page tree (graph + Louvain communities), hybrid search (BM25 + optional embeddings), page editing, a two-stage LLM ingest pipeline with a persisted queue, review items, and deep research, all inside the harness. The LLM Wiki desktop app is not involved.
+
+## Table of Contents
+
+- [Configuration](#configuration)
+- [Durable state (.llm-wiki/)](#durable-state-llm-wiki)
+- [Behavior](#behavior)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Configuration
 
@@ -91,3 +107,7 @@ Independent request per image.
 - **Online embeddings only** — vector search calls the embedding API per query; there is no persisted vector store.
 - **Polling watch** — `raw/sources` is scanned every 60 seconds; there is no filesystem watcher.
 - **Out of scope** — Web Clipper, MCP server, and a desktop UI are not provided; the knowledgeWiki Remote contract and the tool-knowledge-wiki consumer cover the UI surface.
+
+### Dev Note
+
+None.

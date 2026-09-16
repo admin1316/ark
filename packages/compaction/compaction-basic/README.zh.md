@@ -1,11 +1,28 @@
+---
+description: "基础压缩（compaction）后端：BasicCompactionEngine 实现 @deepseek-ai/dsh-compaction Service Definition，使用可复用的 ctx.tokenMeter 压力、token 预算保留与摘要。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-compaction-basic
 
 [English](README.md) | 中文
+
+## 概述
 
 **基础压缩（compaction）后端**：`BasicCompactionEngine` 实现 `@deepseek-ai/dsh-compaction` Service Definition，使用可复用的 `ctx.tokenMeter` 压力、token 预算保留与摘要。摘要是直接的一次性 `ctx.llm.stream()` 调用，它会回放会话前缀以复用提供方的 KV Cache（可在 `llm/stream` 处拦截）。
 
 本包承担压缩能力的 Service Provider 角色；其约定见 [Service Definition 包](../compaction/README.zh.md)，设计见 [能力 seam Agent Note](../../../.agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.zh.md)。
 
+## 目录
+
+- [拥有的职责](#what-it-owns)
+- [配置（BasicCompactionConfig）](#config-basiccompactionconfig)
+- [用法](#usage)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="what-it-owns"></a>
 ## 拥有的职责
 
 该后端拥有压缩策略：
@@ -23,6 +40,7 @@
 
 受保护的 `summarize()` 方法是唯一的子类钩子。基于模板或远程摘要器的子类可以覆盖该方法，同时压力、保留、被引用的源事件、缩减验证与已遮蔽 token 计量仍由 `ctx.tokenMeter` 负责。钩子返回安全摘要，以及完整提供方输出、调用 envelope 和可用时的 usage（`{ summary, rawOutput?, llmStreamCall?, provider, model, maxTokens?, usage? }`）；`llmStreamCall: true` 表示生成该结果时恰好通过此上下文的 `ctx.llm.stream()` 发起了一次调用，且必须提供完整的 `rawOutput`；未带标记的 `rawOutput` 并不能判定调用路径。事务会在 `compaction/summary` 上保留这些字段。
 
+<a id="config-basiccompactionconfig"></a>
 ## 配置（`BasicCompactionConfig`）
 
 所有设置都可选。顶层策略字段是每个已路由模型的默认值；`modelPolicies` 对精确提供方／模型对应用部分覆盖。出现压力时，compaction-basic 会请求所属 LLM（大语言模型）适配器提供该路由的上下文容量，并解析绝对预算。无法识别的配置键、重复目标、互斥保留形式，以及合并后的 `retainRatio` 不低于 `thresholdRatio`，都会使插件加载失败。不低于缩放后阈值的绝对 `retainTokens` 预算会在首次解析出目标时导致失败，因为该比较需要模型容量。
@@ -44,6 +62,7 @@
 
 适配器可能无法为有效动态路由返回容量，已解析容量也可能暴露无效的绝对保留预算。此时手动压力检查会抛出目标特定配置错误；自动 listener 会对该精确目标警告一次，并携带完整历史继续。不相关的操作性失败仍会独立可见。规范提供方溢出仍会尝试恢复，因为提供方已确立压缩的必要性。
 
+<a id="usage"></a>
 ## 用法
 
 `BasicCompactionEngine` 需要 `ctx.llm`、`ctx.tokenMeter` 和 `ctx.sessions`。以下组合从其宿主接收 `ctx.llm`，并安装另外两项服务：
@@ -80,6 +99,7 @@ export function apply(ctx: Context): void {
         retainTokens: 2048
 ```
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 会话历史
@@ -155,6 +175,7 @@ Rules:
 
 已回放系统提示词、工具与已遮蔽区域消息与会话最后一个已路由请求逐字匹配，因此提供方的热前缀 cache 可复用至尾随指令之前；只有该指令与摘要输出未缓存。将摘要器路由到不同提供方／模型，或压缩非头部范围，都会放弃该复用。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **计量准确度取决于固定启发式规则**：可复用提供方用量缺失时，会回退到字符数加结构开销，而非精确的 token 化。
@@ -162,3 +183,8 @@ Rules:
 - **部分不可分单元与仅 envelope 溢出仍不在表层压缩范围内**：恢复无法缩减系统／工具／前缀、拆分不可分的非工具节点，或修复不可剪枝剩余部分仍超出窗口的工具单元。可选 pruner 可以缩减原本不可分工具对内的文本型工具结果主体。
 - **`compactRegion` 要求存在未结束的轮次**：在完全关闭的会话上手动调用会抛出异常（「no open turn」），而不是执行压缩。
 - **摘要失败会保留最新持久表层**：任何替换前，自动路径会记录警告，并携带完整超预算历史继续。如果剪枝已落地，后续摘要失败会从该持久剪枝表层继续。因达到 `maxTokens` 而发生的摘要截断（隐藏推理 token 可能会耗尽该额度）遵循同一规则。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

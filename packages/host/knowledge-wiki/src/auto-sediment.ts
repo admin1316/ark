@@ -39,7 +39,12 @@ const MIN_BODY = 40
  */
 export function sedimentTarget(cwd: string | undefined, mainRoot: string): { wikiRoot: string; workspaceName: string } | null {
   if (!cwd) return null
-  if (cwd === mainRoot || cwd.startsWith(mainRoot + '/')) return null
+  // The containment check is a logical path relationship, so both sides are
+  // compared in canonical forward-slash form; the returned wiki root remains
+  // a platform-native filesystem path built by join().
+  const cwdCanonical = cwd.replace(/\\/gu, '/')
+  const mainCanonical = mainRoot.replace(/\\/gu, '/')
+  if (cwdCanonical === mainCanonical || cwdCanonical.startsWith(mainCanonical + '/')) return null
   return { wikiRoot: join(cwd, 'wiki'), workspaceName: basename(cwd) }
 }
 /** 页面标题最大长度。 */
@@ -261,7 +266,10 @@ export function buildPage(title: string, pair: TurnPair, today: string, workspac
  * @returns The value produced by page rel path.
  */
 export function pageRelPath(kind: 'concept' | 'problem-solving', slug: string): string {
-  return join('_candidates', 'turns', kind === 'problem-solving' ? '问题解决' : '会话沉淀', `${slug}.md`)
+  // Wiki page rel paths are serialized identifiers: always canonical forward
+  // slashes regardless of the platform separator (governance-policy parsing,
+  // frontmatter, and manifests all key on the '/' form).
+  return ['_candidates', 'turns', kind === 'problem-solving' ? '问题解决' : '会话沉淀', `${slug}.md`].join('/')
 }
 
 /**
@@ -427,7 +435,7 @@ export function extractConversationText(events: unknown[]): string {
  * @returns The value produced by session summary rel path.
  */
 export function sessionSummaryRelPath(slug: string): string {
-  return join('_candidates', 'sessions', `${slug}.md`)
+  return ['_candidates', 'sessions', `${slug}.md`].join('/')
 }
 
 /**

@@ -1,10 +1,24 @@
+---
+description: "Agent interface, registry, process-local initiator scope, and agent/ event vocabulary."
+kind: "package-reference"
+---
+
 # dsh-agent
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Agent interface, registry, process-local initiator scope, and `agent/*` event vocabulary. Every plugin (UI, hooks, orchestrators) programs against the `Agent` handle defined here — it has zero loop dependency, so the loop is swappable.
 
 The optional `@deepseek-ai/dsh-agent/invariant` companion registers this package's agent-status transition checks with `ctx.invariants`. The root agent service does not load diagnostics implicitly.
+
+## Table of Contents
+
+- [Service: AgentRegistry (ctx key: agents)](#service-agentregistry-ctx-key-agents)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Service: `AgentRegistry` (ctx key: `agents`)
 
@@ -121,3 +135,7 @@ Prefix-stable while an agent's scoped registrations are unchanged. Setup or relo
 - **`cancel()` clears the inbox by default** — it aborts the in-flight turn plus queued and steering work; `cancel(cause, { keepInbox: true })` aborts only the turn and preserves pending items. There is still no step-only abort that keeps the in-flight turn running ([stop API Agent Note](../../../.agents/notes/implemented/simplification/2026-06-20-public-agent-stop-api.md)).
 - **Each additional `UserMessage` carries exactly one `MessageSource`** — contributions from several plugins merged onto one tool call collapse under one source, so the message cannot name several producers.
 - **`SessionStartSource` reserves `'clear'`/`'compact'` with no emitter yet** — only `'startup'`/`'resume'` occur until the driving subsystems land (`TODO(compaction)`).
+
+### Dev Note
+
+None.

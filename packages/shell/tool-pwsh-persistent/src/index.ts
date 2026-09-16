@@ -5,6 +5,7 @@
  * @module @deepseek-ai/dsh-tool-pwsh-persistent
  */
 
+import { appendFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -293,12 +294,30 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
     if (existing !== undefined) return existing
     const combinedSignal = AbortSignal.any([signal, lifecycle.signal])
     const creation = (async () => {
+      // Bounded startup diagnostics: monotonic phase timestamps for the pwsh
+      // bootstrap chain. The flag value is a file path to append to (survives
+      // SDK stderr capture) or any other non-empty value for console.error.
+      // Never logs environment values, tokens, or user data.
+      const traceTarget = process.env.DSH_DEBUG_PWSH_STARTUP
+      const trace = traceTarget !== undefined
+      const t0 = Date.now()
+      const at = (phase: string): void => {
+        if (!trace) return
+        const line = `[pwsh-startup] +${Date.now() - t0}ms ${phase}`
+        if (/[/\\]/.test(traceTarget)) {
+          try { appendFileSync(traceTarget, `${line}\n`) } catch { /* diagnostics never crash the host */ }
+        } else {
+          console.error(line)
+        }
+      }
+      at('T0 session requested')
       try {
         const cwd = owner.session.header.cwd
         const spawned = await ctx.terminals.spawn(owner, {
           type: config.backendType,
           ...cwd === undefined ? {} : { cwd },
         }, combinedSignal)
+        at('T1 spawn returned (session id assigned)')
         live.set(owner, spawned.sessionId)
         if (!ownerCleanupInstalled.has(owner)) {
           ownerCleanupInstalled.add(owner)
@@ -311,13 +330,17 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
           text: PWSH_PROMPT_SETUP,
           submit: true,
           signal: combinedSignal,
+          expectedPromptTail: SHELL_PROMPT,
         })
+        at('T5 PWSH_PROMPT_SETUP written')
         const result = await setup.done
+        at(`T7 setup.done settled: status=${result.sessionStatus.kind} waitReason=${result.waitReason}`)
         if (result.sessionStatus.kind === 'exited' || result.waitReason === 'timeout') {
           throw new Error('persistent pwsh shell did not accept initialization')
         }
         return spawned.sessionId
       } catch (error: unknown) {
+        at(`FAILED ${String(error).slice(0, 160)}`)
         await reset(owner, 'persistent pwsh initialization failed')
         throw error
       }
@@ -367,6 +390,7 @@ async function executeCommand(
         text: first ? wrapped : '',
         submit: first,
         signal: commandDeadline.signal,
+        expectedPromptTail: SHELL_PROMPT,
       })
       first = false
       result = await operation.done

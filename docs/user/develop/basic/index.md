@@ -2,7 +2,7 @@
 
 English | [中文](index.zh.md)
 
-This tutorial creates a minimal Harness plugin and loads it into the headless profile. Start from a repository checkout that has completed the [run-from-source path](../../../../README.md#run-from-source).
+This tutorial creates a minimal Harness plugin and loads it into the headless profile. Start from a repository checkout that has completed the [development setup](../../../development.md#setup-tutorial).
 
 ## Create a local project
 

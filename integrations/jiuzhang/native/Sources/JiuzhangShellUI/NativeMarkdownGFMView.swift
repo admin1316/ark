@@ -28,7 +28,10 @@ struct NativeGFMDocumentView: View {
 
   var body: some View {
     Group {
-      if model.source == text, !model.blocks.isEmpty {
+      // Append-only streaming: keep rendering the last parsed frame (stable
+      // row identity) until the next parse installs. A message that was
+      // replaced rather than appended falls back to the plain first frame.
+      if canReuseRenderedFrame {
         let blocks = model.blocks
         // The transcript already owns vertical virtualization. A second
         // vertical LazyVStack here creates nested lazy placement engines; after
@@ -37,11 +40,11 @@ struct NativeGFMDocumentView: View {
         // one vertical lazy owner and render one message's parsed blocks as an
         // ordinary stack. Streaming text remains bounded before this point.
         VStack(alignment: .leading, spacing: 10) {
-          ForEach(blocks.indices, id: \.self) { index in
+          ForEach(NativeGFMParagraphSelection.rows(blocks)) { row in
             NativeGFMBlockView(
-              block: blocks[index],
+              block: row.block,
               baseFontSize: baseFontSize,
-              path: "doc.\(documentID).root.\(index)"
+              path: "doc.\(documentID).root.\(row.index)"
             )
           }
         }
@@ -53,10 +56,26 @@ struct NativeGFMDocumentView: View {
         Text(firstFrameText)
           .font(.system(size: baseFontSize))
           .lineSpacing(4)
+          .textSelection(.enabled)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .onChange(of: text) { model.update(source: $0) }
+  }
+
+  /// Whether the retained parsed frame still belongs to this message.
+  ///
+  /// `text` is the presentation policy's bounded suffix window: below the
+  /// limit it grows by appending, above it the window slides, so an older
+  /// frame is no longer a literal prefix of the new text even though it is
+  /// still the previous frame of the same message. Row identity is fixed per
+  /// message, so a frame that did not shrink is safe to keep for one more
+  /// parse; only a shorter/replaced text falls back to the plain first frame.
+  private var canReuseRenderedFrame: Bool {
+    guard !model.blocks.isEmpty else { return false }
+    let rendered = model.renderedSource
+    guard !rendered.isEmpty else { return true }
+    return text.hasPrefix(rendered) || text.count >= rendered.count
   }
 
   private var firstFrameText: String {
@@ -78,9 +97,11 @@ struct NativeGFMBlockView: View {
       inline(content, size: max(baseFontSize + 1, baseFontSize + 9 - CGFloat(level) * 1.7))
         .fontWeight(level <= 2 ? .semibold : .medium)
         .padding(.top, level <= 2 ? 5 : 2)
+        .textSelection(.enabled)
     case .paragraph(let content):
       inline(content, size: baseFontSize)
         .lineSpacing(4)
+        .textSelection(.enabled)
     case .image(let source, let alt):
       NativeGFMRemoteImage(source: source, alt: alt)
     case .quote(let blocks):
@@ -131,6 +152,7 @@ struct NativeGFMBlockView: View {
       Text(source)
         .font(.system(size: max(12, baseFontSize - 1), design: .monospaced))
         .foregroundStyle(Color.secondary)
+        .textSelection(.enabled)
     case .rule:
       Divider().overlay(Color(nsColor: .separatorColor))
     }
@@ -189,6 +211,38 @@ private struct NativeGFMListView: View {
   }
 }
 
+/// Rendered-code cache. `NativeGFMCodeBlock.highlighted` is a computed property, so it used to
+/// re-highlight every visible code block on every body evaluation; the 100 %-CPU samples of
+/// 2026-09-12 15:5x sit in `CTLineCreateWithAttributedString`/`TTypesetterAttrString` reached from
+/// that property (ark-scenarios attach-m2-1554 sample-8). Keys carry the whole source, so a hash
+/// collision can never display the wrong code, and the count limit bounds retained text.
+private final class NativeGFMCodeHighlightCache {
+  static let shared = NativeGFMCodeHighlightCache()
+
+  private final class Box {
+    let value: AttributedString
+    init(_ value: AttributedString) { self.value = value }
+  }
+
+  private let cache = NSCache<NSString, Box>()
+
+  private init() { cache.countLimit = 128 }
+
+  func value(
+    source: String,
+    language: String,
+    fontSize: CGFloat,
+    dark: Bool,
+    build: () -> AttributedString
+  ) -> AttributedString {
+    let key = "\(fontSize)|\(dark ? "dark" : "light")|\(language)|\(source)" as NSString
+    if let box = cache.object(forKey: key) { return box.value }
+    let value = build()
+    cache.setObject(Box(value), forKey: key)
+    return value
+  }
+}
+
 private struct NativeGFMCodeBlock: View {
   let language: String?
   let source: String
@@ -220,6 +274,7 @@ private struct NativeGFMCodeBlock: View {
       Divider().overlay(Color(nsColor: .separatorColor))
       ScrollView(.horizontal) {
         Text(highlighted)
+          .textSelection(.enabled)
           .fixedSize(horizontal: true, vertical: false)
           .padding(11)
       }
@@ -229,6 +284,17 @@ private struct NativeGFMCodeBlock: View {
   }
 
   private var highlighted: AttributedString {
+    NativeGFMCodeHighlightCache.shared.value(
+      source: source,
+      language: normalizedLanguage,
+      fontSize: fontSize,
+      dark: colorScheme == .dark
+    ) {
+      buildHighlighted()
+    }
+  }
+
+  private func buildHighlighted() -> AttributedString {
     let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
     let value = NSMutableAttributedString(
       string: source,
@@ -309,6 +375,23 @@ enum ArkGFMTableAccessibility {
   }
 }
 
+/// Shared column widths from intrinsic text, independent of viewport geometry.
+/// Very long cells wrap at the cap; genuinely wide tables keep native horizontal scrolling.
+enum ArkGFMTableColumnSizing {
+  static func width(header: String, values: [String], fontSize: CGFloat) -> CGFloat {
+    let regular = NSFont.systemFont(ofSize: fontSize)
+    let bold = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
+    func measured(_ value: String, font: NSFont) -> CGFloat {
+      // Width is capped, so measuring an unbounded cell adds cost without improving layout.
+      String(value.prefix(256)).split(separator: "\n", omittingEmptySubsequences: false)
+        .map { (String($0) as NSString).size(withAttributes: [.font: font]).width }
+        .max() ?? 0
+    }
+    let content = values.reduce(measured(header, font: bold)) { max($0, measured($1, font: regular)) }
+    return ceil(min(300, max(fontSize * 4 + 20, content + 20)))
+  }
+}
+
 private struct NativeGFMTableView: View {
   let alignments: [NativeGFMTableAlignment]
   let headers: [[NativeGFMInline]]
@@ -319,12 +402,21 @@ private struct NativeGFMTableView: View {
   @Environment(\.nativeProducedFilePaths) private var producedFilePaths
 
   var body: some View {
+    let widths = headers.indices.map { index in
+      ArkGFMTableColumnSizing.width(
+        header: NativeGFMInlineRenderer.plainText(headers[index]),
+        values: rows.compactMap { row in
+          index < row.count ? NativeGFMInlineRenderer.plainText(row[index]) : nil
+        },
+        fontSize: fontSize
+      )
+    }
     ScrollView(.horizontal) {
       VStack(alignment: .leading, spacing: 0) {
-        tableRow(headers, rowIndex: nil, header: true)
+        tableRow(headers, widths: widths, rowIndex: nil, header: true)
         if !rows.isEmpty { Divider() }
         ForEach(rows.indices, id: \.self) { rowIndex in
-          tableRow(normalized(rows[rowIndex]), rowIndex: rowIndex, header: false)
+          tableRow(normalized(rows[rowIndex]), widths: widths, rowIndex: rowIndex, header: false)
           if rowIndex < rows.count - 1 { Divider() }
         }
       }
@@ -340,25 +432,24 @@ private struct NativeGFMTableView: View {
     return row + Array(repeating: [], count: headers.count - row.count)
   }
 
-  private var cellWidth: CGFloat {
-    min(300, max(120, fontSize * 12))
-  }
-
   private func tableRow(
     _ values: [[NativeGFMInline]],
+    widths: [CGFloat],
     rowIndex: Int?,
     header: Bool
   ) -> some View {
     HStack(alignment: .top, spacing: 0) {
       ForEach(values.indices, id: \.self) { index in
-        cell(values[index], index: index, rowIndex: rowIndex, header: header)
+        cell(values[index], width: widths[index], index: index, rowIndex: rowIndex, header: header)
       }
     }
+    .background(header ? Color(nsColor: .underPageBackgroundColor) : Color.clear)
     .accessibilityElement(children: .contain)
   }
 
   private func cell(
     _ value: [NativeGFMInline],
+    width: CGFloat,
     index: Int,
     rowIndex: Int?,
     header: Bool
@@ -370,11 +461,11 @@ private struct NativeGFMTableView: View {
       producedFilePaths: producedFilePaths
     )
       .fontWeight(header ? .semibold : .regular)
+      .textSelection(.enabled)
       .multilineTextAlignment(textAlignment(index))
       .padding(.horizontal, 10)
       .padding(.vertical, 7)
-      .frame(width: cellWidth, alignment: frameAlignment(index))
-      .background(header ? Color(nsColor: .underPageBackgroundColor) : Color.clear)
+      .frame(width: width, alignment: frameAlignment(index))
       .accessibilityElement(children: .combine)
       .accessibilityLabel(ArkGFMTableAccessibility.label(
         value: NativeGFMInlineRenderer.plainText(value),

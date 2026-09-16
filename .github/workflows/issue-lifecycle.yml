@@ -41,6 +41,12 @@ jobs:
     # are gated at step level (a skipped step does not gray the job): only a
     # changes_requested review drives the Project board; approved/commented
     # reviews never mint a write-capable App token.
+    #
+    # The board automation also needs a GitHub App installed on THIS repository
+    # (vars.DSH_ISSUE_APP_CLIENT_ID + secrets.DSH_ISSUE_APP_PRIVATE_KEY). Where
+    # that configuration does not exist the steps skip after a presence check, so
+    # a repository without upstream Project automation stays neutral instead of
+    # failing every issue and pull-request event.
     runs-on: ubuntu-latest
     steps:
       - name: Check out trusted policy
@@ -48,17 +54,39 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      # The presence check is inline because this job checks out the TRUSTED default
+      # branch: a helper added on a pull-request branch does not exist in that tree
+      # yet, and depending on it failed the job with exit 127 before the gate could
+      # report anything. The step still prints variable names only, never values.
+      - name: Gate optional Project automation
+        id: app-config
+        env:
+          DSH_ISSUE_APP_CLIENT_ID: ${{ vars.DSH_ISSUE_APP_CLIENT_ID }}
+          DSH_ISSUE_APP_PRIVATE_KEY: ${{ secrets.DSH_ISSUE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in DSH_ISSUE_APP_CLIENT_ID DSH_ISSUE_APP_PRIVATE_KEY; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -eq 0 ]; then
+            enabled=true
+          else
+            enabled=false
+            echo "::notice::Skipping Project automation: not configured for this repository (${missing[*]})"
+          fi
+          { echo "enabled=$enabled"; echo "missing=${missing[*]:-}"; } >> "$GITHUB_OUTPUT"
       - name: Create project token
         id: app-token
-        if: ${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}
+        if: ${{ steps.app-config.outputs.enabled == 'true' && (github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
           client-id: ${{ vars.DSH_ISSUE_APP_CLIENT_ID }}
           private-key: ${{ secrets.DSH_ISSUE_APP_PRIVATE_KEY }}
-          owner: deepseek-harness
-          repositories: deepseek-harness
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
       - name: Handle repository event
-        if: ${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}
+        if: ${{ steps.app-config.outputs.enabled == 'true' && (github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: node .github/issue-management/policy.mjs lifecycle

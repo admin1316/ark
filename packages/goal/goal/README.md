@@ -1,8 +1,24 @@
+---
+description: "Event-sourced same-session goal state."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-goal
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Event-sourced same-session goal state. The service retains one current completion objective in an agent's existing session while keeping permission to continue as process-local activation. The [goal-domain Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-persisted-same-session-goal-domain.md) owns the design rationale; the [goal type catalog](../../../docs/subsystems/goal.md) records the literal data shapes.
+
+## Table of Contents
+
+- [Config](#config)
+- [Service contract](#service-contract)
+- [Extension points](#extension-points)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config
 
@@ -56,3 +72,7 @@ There is no KV-cache effect until another component exposes goal state in model-
 - **No independent evaluator** — the caller that records completion or blocking is authoritative; evaluator-backed certification is deferred to a separate policy layer.
 - **One current goal** — parallel objectives and a separate goal database are intentionally absent; history remains available in the session log after replacement or clear.
 - **Trusted in-process producers** — a plugin with direct `Session` access can append counterfeit `goal/change` data. Strict replay detects malformed or inconsistent records and leaves goal access failed at that record until the log is repaired; this is integrity detection, not plugin isolation.
+
+### Dev Note
+
+None.

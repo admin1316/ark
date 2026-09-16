@@ -1,3 +1,8 @@
+---
+description: "预先组合的插件组合包，供轻量叶节点 cordis.yml 加载，无需手工组装主干和运行入口。"
+kind: "package-group"
+---
+
 # examples/：开箱可运行的演示组合包
 
 [English](README.md) | 中文

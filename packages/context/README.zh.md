@@ -1,3 +1,8 @@
+---
+description: "在不定义工具的情况下添加模型可见的请求上下文的产品插件。"
+kind: "package-group"
+---
+
 # context/ — 请求上下文扩展
 
 [English](README.md) | 中文

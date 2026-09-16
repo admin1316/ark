@@ -1126,6 +1126,7 @@ def smoke_sdk_profile_plugin(base_url: str) -> None:
 
         dsh = Path(sysconfig.get_path("scripts")) / ("dsh.exe" if IS_WINDOWS else "dsh")
         environment = {**os.environ, "DSH_HOME": str(dsh_home)}
+        print(f"[profile-plugin] P0_DSH_PATH_EXISTS={dsh.exists()}")
         installed = subprocess.run(
             [str(dsh), "plugin", "--profile", "sdk", "add", f"file:{plugin}"],
             cwd=root,
@@ -1134,10 +1135,23 @@ def smoke_sdk_profile_plugin(base_url: str) -> None:
             capture_output=True,
             check=False,
         )
+        print(f"[profile-plugin] P1_PLUGIN_ADD_RETURN_CODE={installed.returncode}")
+        print(f"[profile-plugin] P1_STDOUT_BYTES={len(installed.stdout.encode('utf-8'))}")
+        print(f"[profile-plugin] P1_STDERR_BYTES={len(installed.stderr.encode('utf-8'))}")
+        profile_package = dsh_home / "profiles" / "sdk" / "package.json"
+        print(f"[profile-plugin] P2_PROFILE_MANIFEST_EXISTS={profile_package.exists()}")
+        if profile_package.exists():
+            manifest_text = profile_package.read_text(encoding="utf-8")
+            print(f"[profile-plugin] P2_DEPENDENCY_RECORDED={'dsh-python-blackbox-plugin' in manifest_text}")
+            print(f"[profile-plugin] P2_BUNDLE_RECORDED={'dsh-python-blackbox-plugin' in manifest_text}")
         if installed.returncode != 0:
+            # Byte counts and return code are the CLI contract evidence; the raw
+            # output may contain machine-local paths, so only counts are raised.
             raise AssertionError(
                 f"Python-installed dsh could not add the external profile plugin: "
-                f"stdout={installed.stdout!r} stderr={installed.stderr!r}"
+                f"returncode={installed.returncode} "
+                f"stdout_bytes={len(installed.stdout.encode('utf-8'))} "
+                f"stderr_bytes={len(installed.stderr.encode('utf-8'))}"
             )
         manifest = json.loads((dsh_home / "profiles" / "sdk" / "package.json").read_text())
         if "dsh-python-blackbox-plugin" not in manifest.get("dependencies", {}):
@@ -1145,6 +1159,11 @@ def smoke_sdk_profile_plugin(base_url: str) -> None:
         if "dsh-python-blackbox-plugin" not in manifest["dsh"]["profile"]["bundles"]:
             raise AssertionError(f"dsh plugin did not activate the external bundle: {manifest}")
 
+        print(f"[profile-plugin] P3_PROFILE_HOME_EXISTS={dsh_home.exists()}")
+        print(f"[profile-plugin] P3_PROFILES_SDK_EXISTS={(dsh_home / 'profiles' / 'sdk').exists()}")
+        print(f"[profile-plugin] P4_PLUGIN_PACKAGE_JSON_EXISTS={(plugin / 'package.json').exists()}")
+        print(f"[profile-plugin] P4_PLUGIN_INDEX_JS_EXISTS={(plugin / 'index.js').exists()}")
+        print(f"[profile-plugin] P4_PLUGIN_PATCH_EXISTS={(plugin / 'cordis.patch.yml').exists()}")
         harness = DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",

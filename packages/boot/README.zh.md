@@ -1,3 +1,8 @@
+---
+description: "由 apps/cli 和 examples/ demo bin 共享、与渠道无关的启动库。"
+kind: "package-group"
+---
+
 # boot/：共享的 app bin 启动粘合层
 
 [English](README.md) | 中文

@@ -1,6 +1,13 @@
+---
+description: "The CompactionEngine (ctx.compaction) defines WHAT compaction does — decide when history is too large and summarize an older range into a single surface node — without saying HOW."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-compaction
 
 English | [中文](README.zh.md)
+
+## Summary
 
 The **`CompactionEngine`** (`ctx.compaction`) defines WHAT compaction does — decide when history is too large and summarize an older range into a single surface node — without saying HOW.
 
@@ -13,6 +20,19 @@ This package owns the Service Definition role of the compaction capability, spli
 | `@deepseek-ai/dsh-command-compact` | Consumer: the human `/compact` command over `ctx.compaction.compactNow()` |
 
 Unlike the bash seam, this Service Definition depends on `@deepseek-ai/dsh-session` and `@deepseek-ai/dsh-llm` — the contract's verbs are defined over a `Session` and its output is the `ContentBlock` vocabulary, so they cannot be expressed without naming those packages. That deviation from the "Service Definition depends only on cordis" guidance is intentional and recorded in the [compaction capability-seam Agent Note](../../../.agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.md).
+
+## Table of Contents
+
+- [Service API (ctx.compaction)](#service-api-ctxcompaction)
+- [Tool-pairing boundaries](#tool-pairing-boundaries)
+- [Surface contract](#surface-contract)
+- [Blocking](#blocking)
+- [Events](#events)
+- [Implementing a backend](#implementing-a-backend)
+- [Recognizing a checkpoint outside the host program (./checkpoint)](#recognizing-a-checkpoint-outside-the-host-program-checkpoint)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Service API (`ctx.compaction`)
 
@@ -91,3 +111,7 @@ A successful backend replacement invalidates reuse from the first shadowed histo
 - **Human command, not a model tool** — `@deepseek-ai/dsh-command-compact` exposes argument-free `/compact` through `ctx.commands`; no model-facing compaction tool is registered.
 - **Some single-unit overflow is out of contract** — balanced summary compaction cannot split one indivisible unit. The optional pruning companion can still repair a closed tool pair when text-bearing tool-result bulk is removable; a large non-tool node or a tool unit whose non-prunable remainder is oversized cannot be compacted.
 - **An envelope that alone approaches the window is not surface-compaction work** — compaction shrinks derived history, never the system prompt, tools, or session prefix.
+
+### Dev Note
+
+None.

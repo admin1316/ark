@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import KnowledgeWikiService from '../src/index.ts'
+import { wikiTestConfig } from './config-fixture.ts'
 
 interface ProjectSurface {
   snapshots: { dispose(): void }
@@ -34,10 +35,10 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'wiki-project-edges-'))
   mkdirSync(join(root, 'wiki'), { recursive: true })
   ctx = new Context()
-  service = new KnowledgeWikiService(ctx, {
+  service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot: join(root, 'wiki'), mainRoot: root,
     credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-  }) as unknown as ProjectSurface
+  })) as unknown as ProjectSurface
 })
 
 afterEach(async () => {
@@ -50,10 +51,10 @@ afterEach(async () => {
 describe('workspace registry validation', () => {
   it('accepts missing workspaces fields and rejects every malformed row shape', async () => {
     const parentDefaultContext = new Context()
-    const parentDefault = new KnowledgeWikiService(parentDefaultContext, {
+    const parentDefault = new KnowledgeWikiService(parentDefaultContext, wikiTestConfig({
       wikiRoot: join(root, 'default-main', 'wiki'), mainRoot: '',
       credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-    }) as unknown as ProjectSurface
+    })) as unknown as ProjectSurface
     expect((await parentDefault.listProjects()).current).toBe(join(root, 'default-main'))
     parentDefault.snapshots.dispose()
     await parentDefaultContext.fiber.dispose()

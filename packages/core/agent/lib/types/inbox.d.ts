@@ -4,7 +4,7 @@
  * @module @deepseek-ai/dsh-agent/inbox
  */
 import type { MessageId } from '@deepseek-ai/dsh-llm';
-import type { Session, UserMessage } from '@deepseek-ai/dsh-session';
+import type { Session, SessionEventMap, UserMessage } from '@deepseek-ai/dsh-session';
 import type { InboxTarget } from './types.ts';
 /** Live notifications committed by inbox mutations. */
 export interface InboxNotifications {
@@ -25,6 +25,15 @@ export declare class Inbox {
     get nextTurn(): readonly UserMessage[];
     /** Input awaiting the next step boundary. */
     get nextStep(): readonly UserMessage[];
+    /**
+     * Read one pending list, optionally projecting a just-committed splice.
+     * Synchronous session/event observers run before the live inbox mutates;
+     * pass that event's splice here only during that notification.
+     * @param target - pending list to project.
+     * @param splice - committed event not yet applied to the live inbox.
+     * @returns borrowed current messages or a new projected list; never mutates state.
+     */
+    project(target: InboxTarget, splice?: SessionEventMap['agent/inbox/spliced']): readonly UserMessage[];
     /** Whether either pending-message list contains work. */
     get hasPending(): boolean;
     /** Durably cancel all pending input, clearing next-step before next-turn. */

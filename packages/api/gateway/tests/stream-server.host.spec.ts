@@ -1,8 +1,10 @@
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
+import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket from 'ws'
 import {
+  rejectRemoteStreamUpgrade,
   RemoteStreamMuxServer,
   type RemoteStreamFailureMapper,
   type RemoteStreamOpener,
@@ -162,6 +164,68 @@ describe('Remote stream mux server carrier lifecycle', () => {
     await vi.waitFor(() => { expect(serverSocket.readyState).toBe(WebSocket.CLOSED) })
     release()
     await didReturn
+  })
+
+  it('delivers every item and one terminal end frame for a source that completes', async () => {
+    const entry = await startMux(() => Promise.resolve((async function * () {
+      yield 'first'
+      yield 'second'
+    })()))
+    const client = await connect(entry.url)
+    const frames: unknown[] = []
+    client.on('message', (data) => {
+      if (!Buffer.isBuffer(data)) throw new TypeError('fixture expected a Buffer frame')
+      frames.push(JSON.parse(data.toString('utf8')) as unknown)
+    })
+    client.send(openFrame('completed'))
+    await vi.waitFor(() => { expect(frames).toHaveLength(3) })
+    expect(frames).toEqual([
+      { type: 'item', streamId: 'completed', value: 'first' },
+      { type: 'item', streamId: 'completed', value: 'second' },
+      { type: 'end', streamId: 'completed' },
+    ])
+    expect(client.readyState).toBe(WebSocket.OPEN)
+  })
+
+  it('turns an item that cannot cross JSON into a stream error without dropping the carrier', async () => {
+    const entry = await startMux(() => Promise.resolve((async function * () {
+      yield 1n
+    })()))
+    const client = await connect(entry.url)
+    const frames: unknown[] = []
+    client.on('message', (data) => {
+      if (!Buffer.isBuffer(data)) throw new TypeError('fixture expected a Buffer frame')
+      frames.push(JSON.parse(data.toString('utf8')) as unknown)
+    })
+    client.send(openFrame('unserializable'))
+    await vi.waitFor(() => { expect(frames).toHaveLength(1) })
+    expect(frames[0]).toEqual({
+      type: 'error',
+      streamId: 'unserializable',
+      error: {
+        code: 'internal',
+        message: 'api gateway: Remote stream item is not JSON serializable',
+        details: {},
+      },
+    })
+    expect(client.readyState).toBe(WebSocket.OPEN)
+  })
+
+  it.each([401, 403] as const)('closes a rejected upgrade with a complete HTTP %i response', async (status) => {
+    const socket = new PassThrough()
+    const chunks: Buffer[] = []
+    socket.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+    const ended = once(socket, 'end')
+    rejectRemoteStreamUpgrade(socket, status)
+    await ended
+    const [head = '', body = ''] = Buffer.concat(chunks).toString('utf8').split('\r\n\r\n')
+    const lines = head.split('\r\n')
+    const reason = status === 401 ? 'Unauthorized' : 'Forbidden'
+    expect(lines[0]).toBe(`HTTP/1.1 ${String(status)} ${reason}`)
+    expect(lines).toContain('Connection: close')
+    expect(lines).toContain('Content-Type: text/plain; charset=utf-8')
+    expect(lines).toContain(`Content-Length: ${String(Buffer.byteLength(body))}`)
+    expect(body).toBe(reason.toLowerCase())
   })
 
   it('terminates active sockets on close and reports a repeated close', async () => {

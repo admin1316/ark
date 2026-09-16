@@ -30,6 +30,12 @@
       "path": "../../interaction/commands"
     },
     {
+      "path": "../../compaction/compaction"
+    },
+    {
+      "path": "../../workflow/tool-workflow"
+    },
+    {
       "path": "../connection"
     },
     {
@@ -37,6 +43,12 @@
     },
     {
       "path": "../../llm/llm"
+    },
+    {
+      "path": "../../llm/llm-retry"
+    },
+    {
+      "path": "../../llm/token-meter"
     },
     {
       "path": "../../core/session"
@@ -70,6 +82,9 @@
     },
     {
       "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../subagent/subagent"
     }
   ]
 }

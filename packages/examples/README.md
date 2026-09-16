@@ -1,3 +1,8 @@
+---
+description: "Pre-composed plugin bundles a thin leaf cordis.yml loads instead of assembling the spine and an entry point by hand."
+kind: "package-group"
+---
+
 # examples/ — ready-to-run demo bundles
 
 English | [中文](README.zh.md)

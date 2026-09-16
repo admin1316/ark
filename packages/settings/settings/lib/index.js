@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isAbsolute } from "node:path";
 import { Service } from "@deepseek-ai/cordis";
+import { deepEqualJson, deepEqualJson as deepEqualJson$1 } from "@deepseek-ai/dsh-util-values";
 import { openNativeTextFile } from "@deepseek-ai/dsh-native-command";
 import { Remote, TypertLookupFailure, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 //#region lib/types/redact.js
@@ -204,27 +205,6 @@ const NAMESPACE_PATTERN = /^[a-z][a-z0-9-]*$/;
 function settingsNamespace(value) {
 	if (!NAMESPACE_PATTERN.test(value)) throw new TypeError(`settings namespace "${value}" must match ${String(NAMESPACE_PATTERN)}`);
 	return value;
-}
-/**
-* Deep equality over JSON-compatible data (objects, arrays, primitives) — the
-* Service Definition's single change-detection predicate, exported so the invariant
-* companion checks exactly the implementation's relation.
-* @param a - one JSON-compatible value.
-* @param b - the other JSON-compatible value.
-* @returns whether the two values are structurally equal.
-*/
-function deepEqualJson(a, b) {
-	if (a === b) return true;
-	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
-	if (Array.isArray(a) || Array.isArray(b)) {
-		if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-		return a.every((entry, index) => deepEqualJson(entry, b[index]));
-	}
-	const left = a;
-	const right = b;
-	const keys = Object.keys(left);
-	if (keys.length !== Object.keys(right).length) return false;
-	return keys.every((key) => Object.hasOwn(right, key) && deepEqualJson(left[key], right[key]));
 }
 /**
 * A write refused because the namespace moved since the caller read it. The
@@ -910,7 +890,7 @@ let SettingsProvider = (() => {
 				const section = mode === "merge" ? mergeLayers(current, snapshot) : mode === "replace" ? snapshot : edits.reduce(applyPathOp, current);
 				const next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate));
 				registration.validateWrite?.(next);
-				if (registration.revision === Number.MAX_SAFE_INTEGER && !deepEqualJson(current, section)) throw new RangeError(`settings namespace "${ns}" revision space is exhausted`);
+				if (registration.revision === Number.MAX_SAFE_INTEGER && !deepEqualJson$1(current, section)) throw new RangeError(`settings namespace "${ns}" revision space is exhausted`);
 				await this.persist(ns, section);
 				this.document[ns] = section;
 				if (isRegistrationActive(registration) && this.registrations.get(ns) === registration && !this.isStopped()) {
@@ -968,7 +948,7 @@ let SettingsProvider = (() => {
 		* Raw changes advance the revision even when the resolved value is unchanged.
 		*/
 		bumpRevision(registration, before, after) {
-			if (deepEqualJson(before, after)) return false;
+			if (deepEqualJson$1(before, after)) return false;
 			if (registration.revision === Number.MAX_SAFE_INTEGER) throw new RangeError(`settings namespace "${registration.ns}" revision space is exhausted`);
 			registration.revision += 1;
 			const settlement = Promise.withResolvers();
@@ -1008,7 +988,7 @@ let SettingsProvider = (() => {
 			const resolveSettlement = registration.settlementResolver;
 			delete registration.settlementResolver;
 			const prev = registration.resolved;
-			if (deepEqualJson(next, prev)) {
+			if (deepEqualJson$1(next, prev)) {
 				resolveSettlement?.(true);
 				if (documentChanged) this.emitDocumentUpdated(registration.ns, revision);
 				return;

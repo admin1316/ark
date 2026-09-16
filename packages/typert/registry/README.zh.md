@@ -25,11 +25,11 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在存储或消费生成 Typert 产物的任何 Host 或 Client 组合中挂载本注册表；它提供 `ctx.typert`。没有配置。
+在存储或消费生成 Typert 产物的 Host 组合中挂载本注册表；它提供 `ctx.typert`。没有配置。
 
 ### 最小设置
 
-加载注册表插件；Client face 由 Client 运行时自身的元数据以同样方式安装，两个 face 运行同一实现：
+通过包根导出加载注册表插件。与环境无关的实现和 client-context adapter 类型仍可供协议消费方使用；该包不导出浏览器插件入口：
 
 ```yaml
 - name: '@deepseek-ai/dsh-typert-registry'
@@ -80,7 +80,6 @@ Remote 调用通过 `ctx.typert.lookups` 与 `ctx.typert.contexts` 解析 Host �
 |---|---|
 | [`src/service.ts`](src/service.ts) | `TypertRegistry` 服务、存储、校验、effect 接线 |
 | [`src/types.ts`](src/types.ts) | 贡献、记录与过滤器类型 |
-| [`src/client/index.ts`](src/client/index.ts) | 安装同一注册表的 Client face |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件 |
 
 </details>

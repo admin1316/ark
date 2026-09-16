@@ -102,9 +102,9 @@ describe('gate graph validation', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('hygiene').map(subject => subject.id))
 
     expect(ids).toEqual([
-      'rescope-vendor', 'knip', 'publint', 'constraints', 'application-entrypoints',
+      'rescope-vendor', 'knip', 'publint', 'constraints', 'application-entrypoints', 'coverage-exclude',
       'dsh-package-licenses', 'package-invariants', 'built-package-invariants', 'node-next-types',
-      'optional-dependency-imports', 'client-packages', 'client-ui-i18n', 'cordis-config',
+      'optional-dependency-imports', 'cordis-config',
       'runtime-closure', 'vendored-links',
     ])
     expect(defaultConcurrency('hygiene', ids.length, 8)).toEqual({
@@ -116,9 +116,9 @@ describe('gate graph validation', () => {
   it('schedules the longest documentation leaves before short checks', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
 
-    expect(ids.slice(0, 10)).toEqual([
+    expect(ids.slice(0, 9)).toEqual([
       'doc-typecheck', 'docs-site-build', 'doc-graphs', 'markdown-links', 'type-equivalence',
-      'cordis-catalog', 'cordis-inspect-catalog', 'mermaid', 'scoped-events', 'translation-pairing',
+      'cordis-catalog', 'mermaid', 'scoped-events', 'translation-pairing',
     ])
   })
 
@@ -142,20 +142,20 @@ describe('gate graph validation', () => {
   )
 
   it.each(['ci-primary', 'ci-static', 'check-all'] as const)(
-    'keeps the client dependency policy in %s',
+    'excludes the retired Client dependency gate in %s',
     (mode) => {
       const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
 
-      expect(ids).toContain('client-packages')
+      expect(ids).not.toContain('client-packages')
     },
   )
 
   it.each(['ci-primary', 'ci-static', 'check-all', 'hygiene'] as const)(
-    'keeps hard-coded Client UI copy enforcement in %s',
+    'excludes the retired Client UI gate in %s',
     (mode) => {
       const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
 
-      expect(ids).toContain('client-ui-i18n')
+      expect(ids).not.toContain('client-ui-i18n')
     },
   )
 
@@ -165,6 +165,18 @@ describe('gate graph validation', () => {
       const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
 
       expect(ids).toContain('application-entrypoints')
+    },
+  )
+
+  it.each(['ci-primary', 'ci-static', 'check-all', 'hygiene'] as const)(
+    'enforces the live coverage exclusion list exactly once in %s', (mode) => {
+      const gates = withPnpmEntrypoint(() => gatesForMode(mode))
+        .filter(gate => gate.id === 'coverage-exclude')
+      expect(gates).toHaveLength(1)
+      // pnpmInvocation passes npm_execpath through verbatim (raw entrypoint,
+      // no resolve) so the spawn matches pnpm's own lifecycle environment.
+      expect(gates[0]?.args).toEqual(['/private/pnpm.cjs', 'run', 'verify-coverage-exclude'])
+      expect(gates[0]?.allowFailure).not.toBe(true)
     },
   )
 
@@ -180,7 +192,7 @@ describe('gate graph validation', () => {
     expect(byId.get('coverage')?.needs).toContain('build')
     expect(byId.get('coverage-exempt-heavy')?.needs).toContain('build')
     expect(byId.get('coverage-exempt-heavy')?.args).toContain(
-      'packages/experimental/webworker-packer/tests/image-loadable.spec.ts',
+      'packages/typert/generator/tests/',
     )
     expect(observational).not.toHaveLength(0)
     for (const gate of observational) {
@@ -415,7 +427,7 @@ describe('Node 24 lane ownership', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-consumers'))
 
     expect(defaultConcurrency('ci-consumers', subject.length, 4)).toEqual({
-      workers: 11,
+      workers: 10,
       source: 'ci-consumers gate count',
     })
     expect(subject.map(item => item.id)).toEqual([
@@ -426,24 +438,18 @@ describe('Node 24 lane ownership', () => {
       'lint-and-duplication',
       'snapshot',
       'expected-output',
-      'web-snapshot',
       'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
     ])
     expect(subject.find(item => item.id === 'publint')?.needs).toEqual(['build'])
-    expect(subject.find(item => item.id === 'build')?.env).toEqual({
-      DSH_BUILD_CLIENT_PROFILE: 'official',
-    })
-    expect(subject.find(item => item.id === 'node-compat')?.env).toEqual({
-      DSH_BUILD_CLIENT_PROFILE: 'official',
-    })
+    expect(subject.find(item => item.id === 'build')?.env).toBeUndefined()
+    expect(subject.find(item => item.id === 'node-compat')?.env).toBeUndefined()
     expect(subject.find(item => item.id === 'built-package-invariants')?.needs).toEqual(['build'])
     expect(subject.find(item => item.id === 'lint-and-duplication')?.needs).toEqual(['built-package-invariants'])
     for (const id of [
       'snapshot',
       'expected-output',
-      'web-snapshot',
       'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
@@ -462,32 +468,15 @@ describe('Node 24 lane ownership', () => {
         'packages/experimental/agent-team/tests/built-lib.e2e.ts',
       ]),
     )
-    expect(subject.find(item => item.id === 'web-snapshot')).toMatchObject({
-      displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
-      env: { DSH_SNAPSHOT: 'replay' },
-      after: [
-        'publint',
-        'lint-and-duplication',
-        'snapshot',
-        'expected-output',
-        'doc-typecheck',
-        'node-next-types',
-        'built-bin-smoke',
-      ],
-    })
+    expect(subject.find(item => item.id === 'web-snapshot')).toBeUndefined()
   })
 })
 
 describe('Linux primary graph', () => {
-  it('adds the same compare-only web gate after built client artifacts', () => {
+  it('retains the Host graph without a retired Web artifact lane', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-linux-primary'))
-    const web = subject.find(item => item.id === 'web-snapshot')
-
-    expect(web).toMatchObject({
-      displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
-      env: { DSH_SNAPSHOT: 'replay' },
-      needs: ['built-package-invariants'],
-    })
+    expect(subject.some(item => item.id === 'web-snapshot')).toBe(false)
+    expect(subject.some(item => item.id === 'built-package-invariants')).toBe(true)
   })
 })
 

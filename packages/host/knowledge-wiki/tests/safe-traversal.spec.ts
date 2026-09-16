@@ -23,6 +23,12 @@ describe('no-follow Wiki traversal', () => {
   })
 
   it('rejects a FIFO rather than blocking or treating it as a page', () => {
+    if (process.platform === 'win32') {
+      // mkfifo is a POSIX syscall with no win32 equivalent; the non-ordinary
+      // entry refusal contract is covered cross-platform by the symlink and
+      // hard-link cases below, which run on every platform.
+      return
+    }
     const root = mkdtempSync(join(tmpdir(), 'wiki-safe-fifo-'))
     roots.push(root)
     mkdirSync(join(root, 'concepts'))

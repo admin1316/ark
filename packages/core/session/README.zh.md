@@ -1,11 +1,26 @@
+---
+description: "事件溯源的会话日志和内存存储。"
+kind: "package-reference"
+---
+
 # dsh-session
 
 [English](README.md) | 中文
+
+## 概述
 
 事件溯源的会话日志和内存存储。`Session` 是 agent（智能体）全部交互历史的仅追加真源，LLM（大语言模型）消息历史由它*派生*。原始日志之上维护一个 **surface** 层（产生消息事件的有序投影），以便高效派生和压缩（compaction）。
 
 可选配套入口 `@deepseek-ai/dsh-session/invariant` 将此包的关系轨迹检查注册到 `ctx.invariants`：序号单调递增、轮次／步骤闭合，以及同一步骤内的工具调用／结果配对。加载或重新加载时，它会回放现有会话；存储校验、快照、冻结、被引用的源事件校验和 surface 准入仍始终由根会话包负责。
 
+## 目录
+
+- [服务：SessionStore（ctx 键：sessions）](#service-sessionstore-ctx-key-sessions)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="service-sessionstore-ctx-key-sessions"></a>
 ## 服务：`SessionStore`（ctx 键：`sessions`）
 
 创建并持有事件溯源的 `Session` 实例。这里有意不实现持久化：插件订阅 `session/event`，在 `session/flush` 时刷新，并可镜像成对的 `session/created`／`session/disposed` 生命周期。
@@ -92,6 +107,7 @@
 - 回放／fork：`create(id, { seed })` 校验并冻结连续的当前格式日志，再重建 surface；请求头必须包含提供方／模型，assistant 消息必须包含提供方／模型溯源信息。持久化层在构造该当前格式 seed 前负责读取兼容性处理。`fork(source, boundary?, childSessionId?)` 选择已完成轮次前缀并记录谱系。
 - 压缩：`dsh-compaction-basic` 为摘要检查点追加一个替换用 `user/message`，而 `dsh-compaction-tool-result-pruner` 追加仅修改内容的 `tool/result` 替换。工具配对边界策略及其缓存归 [`dsh-compaction` seam](../../compaction/compaction/README.zh.md) 所有；此包拥有有序 surface 成员关系、替换校验与 `replaceGeneration`。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 派生消息历史
@@ -136,9 +152,17 @@
 
 记录日志不会导致失效，精确重建会保持请求前缀一致。后续请求头若更改前缀、提示词或 schema，可能从第一处差异开始使复用失效。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **会话分支／树结构**（pi 风格条目树）：除非需要超越基于边界的 `fork()` 能力，否则暂缓。
 - **`fork()` 仅在实时会话的稳定边界处切分**：所选前缀结束时不得有开放轮次，且源会话必须位于存储中；[fork API](../../../.agents/notes/implemented/feature/2026-06-30-session-store-fork-api.zh.md) 不支持对已持久化但未加载的会话进行 fork。
 - **`SESSION_FORMAT_VERSION` 固定为 `0`**：预发布阶段不承诺广泛兼容性；`Session` 只接受当前 seed 形状，后端拒绝其他任何版本并说明方向（更新的版本提示"由更新的 harness 写入，请升级"；更旧的版本说明尚无升级路径）。不认识的事件类型同样被拒绝，除非信封带 `ignorable` 标记；版本机制见 [session-log 版本机制 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.zh.md)。范围受限的存储导入升级应由持久化边界负责（[政策](../../../AGENTS.md)、[消息标识机制引入前的消息恢复](../../../.agents/notes/implemented/bug-fix/2026-07-28-load-pre-identity-session-messages.zh.md)）。
 - **`TurnEndReasonMap` 不含 ACP（Agent Client Protocol）命名的 `refusal`／`max_turn_requests` 变体**：受生产方约束；只有当适配器或循环首次产生这些变体时才加入。
+
+远程 `fork` 请求的可选 `sourceRevision` 复用历史读取的固定来源与 cut；Host 负责保留不可变 seed 并在 publication commit 校验来源。它不会改变同进程 `ctx.sessions.fork()` 的现有接口。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

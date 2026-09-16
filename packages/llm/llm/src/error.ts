@@ -39,6 +39,16 @@ export const QUOTA_EXCEEDED_CODE = 'QUOTA'
 export const EMPTY_RESPONSE_CODE = 'EMPTY_RESPONSE'
 
 /**
+ * Canonical provider-neutral code for a streamed tool call the provider never
+ * identified: its `id` or `name` was absent or empty by the end of the stream.
+ * Such a call cannot be dispatched, and its result cannot be paired back to the
+ * provider on the next request, so adapters classify it as this failure instead
+ * of emitting a tool call the loop would reject as unknown. Nothing durable is
+ * written for the attempt, so retry policy treats it as safe to repeat.
+ */
+export const MALFORMED_TOOL_CALL_CODE = 'MALFORMED_TOOL_CALL'
+
+/**
  * Canonical provider-neutral code for a credential that was supplied but
  * cannot be used — malformed rather than absent. Distinct from
  * `MISSING_CREDENTIAL` because the fix differs: correct the stored value

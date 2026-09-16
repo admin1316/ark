@@ -1,6 +1,13 @@
+---
+description: "The FileSystem (ctx.fs) defines the storage primitives in one execution world — resolve paths, expose canonical process paths and file URIs, test containment, read whole or streaming text, read bounded raw bytes, inspect/list metadata, write atomically, and apply a literal edit — without saying HOW."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-fs
 
 English | [中文](README.zh.md)
+
+## Summary
 
 The **`FileSystem`** (`ctx.fs`) defines the storage primitives in one execution world — resolve paths, expose canonical process paths and file URIs, test containment, read whole or streaming text, read bounded raw bytes, inspect/list metadata, write atomically, and apply a literal edit — without saying HOW. Both mutations take their version guard **optionally**, so `ctx.fs` on its own is a complete, unconstrained storage seam. This package also owns the `fs/*` policy event vocabulary the tool dispatches and the policy plugin listens for.
 
@@ -14,6 +21,16 @@ This package owns the Service Definition and provider contract layer of the four
 | provider | `@deepseek-ai/dsh-fs-local` | the host-filesystem implementation |
 
 `fs-sandbox` and `fs-e2b` implement this interface without touching the policy/tool layers.
+
+## Table of Contents
+
+- [Service API (ctx.fs)](#service-api-ctxfs)
+- [The fs/* policy events](#the-fs-policy-events)
+- [A provider contract, not the policy layer](#a-provider-contract-not-the-policy-layer)
+- [Vocabulary](#vocabulary)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Service API (`ctx.fs`)
 
@@ -64,3 +81,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 - **Twelve primitives only** — no delete, rename/move, copy, or watch; `listDir` is single-level, with recursion, globbing, pagination, and search out of scope per [the directory-listing Agent Note](../../../.agents/notes/archived/architecture/2026-07-03-filesystem-directory-listing-seam.md).
 - **No IO deadline** — the seam arms no timeout; cancellation is a best-effort optional `AbortSignal` per primitive (the deliberate [fs-family stance](../README.md)).
 - **Resolve-then-operate costs a remote backend two round-trips per tool call** — folding or caching resolution is left to such a backend.
+
+### Dev Note
+
+None.

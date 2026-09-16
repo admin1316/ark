@@ -184,6 +184,13 @@ interface SubagentFollowupOptions {
   readonly source: MessageSource
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
+  /**
+   * How the child's inbox takes the message. `queue` (default) makes it the
+   * child's next FIFO turn; `steer` routes it to the nearest step boundary and
+   * starts a turn when the child is idle, so a running child is corrected in
+   * place instead of being made to finish its current plan first.
+   */
+  readonly delivery?: 'queue' | 'steer'
   /** Stable UUID carried by a subagent-prompt source; absent for other sources. */
   readonly invocationId?: string
 }
@@ -709,15 +716,17 @@ interruptByParent( childSessionId: SessionId, parentSessionId: SessionId, mode: 
 
 /**
  * Read the Session owner's bounded page after verifying the direct-child address.
+ * Closing an existing content reader uses its original owner-checked address,
+ * so removal from the current catalog cannot prevent resource release.
  * @param parentSessionId - durable parent authorizing the read.
  * @param childSessionId - direct child session id.
  * @param mode - expected child mode.
- * @param beforeSeq - exclusive cursor for an older page.
+ * @param beforeSeq - legacy exclusive cursor, or typed history view options.
  * @param maxMessages - bounded message count, validated by the Session owner.
  * @param signal - read cancellation; neither Agent is resumed.
  * @returns the original Session page, including its presentation projections.
  */
-@Remote('history') async remoteHistory( parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal: AbortSignal, ): Promise<SessionRemoteHistoryValue>
+@Remote('history') async remoteHistory( parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | SubagentHistoryOptions | undefined, maxMessages: number | undefined, signal: AbortSignal, ): Promise<SessionRemoteHistoryValue>
 
 /**
  * Submit a Native draft under its stable retry identity through the live parent.

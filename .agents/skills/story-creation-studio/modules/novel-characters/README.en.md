@@ -30,7 +30,7 @@ A turnaround sheet (Shen Zhiwei, from the bundled sample story):
 
 ## Use
 
-For installation see the [repository README](../../README.en.md). Then:
+This module is included in [Story Creation Studio](../../SKILL.md). Use the studio entry point to request character extraction; the upstream standalone command is shown below for reference:
 
 ```
 /novel-characters ./your-novel.txt

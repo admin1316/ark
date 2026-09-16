@@ -19,7 +19,7 @@ import type { InspectorSourceDescriptor } from '../src/shared/bridge/messages/ob
 import { createInspectorService } from '../src/shared/service.ts'
 import { CordisTreeStore } from '../src/worker/inspection/cordis-store.ts'
 import { InspectorQueryRouter } from '../src/worker/inspection/query-router.ts'
-import { InspectorClientFixture } from './fixtures/client-source.host.ts'
+import { InspectorProtocolFixture } from './fixtures/protocol-source.host.ts'
 
 describe('consumer-neutral Cordis tree', () => {
   it('projects a detached recursive tree without routing identifiers', () => {
@@ -228,7 +228,7 @@ describe('Inspector query protocol', () => {
 
 describe('Cordis query service integration', () => {
   let inspector: InspectorHandle | undefined
-  let clientSource: InspectorClientFixture | undefined
+  let clientSource: InspectorProtocolFixture | undefined
   const observers: Array<() => void> = []
 
   afterEach(async () => {
@@ -250,7 +250,7 @@ describe('Cordis query service integration', () => {
     observers.push(publishHostCordisTree(hostContext, inspector.source, { maxNodes: 100, maxBytes: 64 * 1_024 }))
     const hostService = createInspectorService(inspector.source)
 
-    clientSource = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Query Client' })
+    clientSource = await InspectorProtocolFixture.start(inspector.endpoint.client, { label: 'Query Client' })
 
     await vi.waitFor(async () => {
       const [hostTree, clientTree] = await Promise.all([

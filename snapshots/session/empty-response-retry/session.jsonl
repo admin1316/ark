@@ -13,7 +13,7 @@
 {"type":"request/context","data":{"provider":"deepseek-official","model":"deepseek-v4-flash"}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":0,"outputTokens":0}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"error","failure":{"message":"model returned a completed response with no content","code":"EMPTY_RESPONSE"}}}}}
-{"type":"llm/retry","data":{"retryId":"{{retry:1}}","turn":1,"step":1,"provider":"deepseek-official","mode":"normal","policyKey":"[\"normal\",2,[\"EMPTY_RESPONSE\",\"RATE_LIMIT\",\"SERVER\",\"TIMEOUT\",\"TRANSPORT\"],1,1,0]","retry":1,"maxRetries":2,"delayMs":1,"failure":{"message":"model returned a completed response with no content","code":"EMPTY_RESPONSE"}}}
+{"type":"llm/retry","data":{"retryId":"{{retry:1}}","turn":1,"step":1,"provider":"deepseek-official","mode":"normal","policyKey":"[\"normal\",2,[\"EMPTY_RESPONSE\",\"MALFORMED_TOOL_CALL\",\"RATE_LIMIT\",\"SERVER\",\"TIMEOUT\",\"TRANSPORT\"],1,1,0]","retry":1,"maxRetries":2,"delayMs":1,"failure":{"message":"model returned a completed response with no content","code":"EMPTY_RESPONSE"}}}
 {"type":"llm/retry-started","data":{"retryId":"{{retry:1}}","turn":1,"step":1,"retry":1}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"text"}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"text-delta","index":0,"text":"Recovered."}}}

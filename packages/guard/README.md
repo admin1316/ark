@@ -1,3 +1,8 @@
+---
+description: "Behavioral guard plugins watch the agent loop for unproductive patterns and enforce per-call budgets."
+kind: "package-group"
+---
+
 # guard/ — loop-hygiene guard family
 
 English | [中文](README.zh.md)

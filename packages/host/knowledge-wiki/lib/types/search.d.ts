@@ -29,6 +29,13 @@ export declare function bm25(pages: IndexedPage[], query: string): Array<{
  */
 export declare function embed(texts: string[], apiKey: string): Promise<number[][] | null>;
 /**
+ * Why semantic search was skipped for a query, when it was skipped.
+ */
+export interface EmbeddingUnavailable {
+    /** Short, user-facing reason, such as `embedding request failed (401)`. */
+    reason: string;
+}
+/**
  * Cosine similarity between two vectors.
  * @param a - The a input.
  * @param b - The b input.
@@ -41,9 +48,10 @@ export declare function cosine(a: number[], b: number[]): number;
  * @param query - The query input.
  * @param apiKey - The api key input.
  * @param topK - The top k input.
+ * @param unavailable - optional notification when embedding throws before falling back to keyword results.
  * @returns The value produced by hybrid search.
  */
-export declare function hybridSearch(wikiRoot: string, query: string, apiKey: string, topK: number): Promise<Array<{
+export declare function hybridSearch(wikiRoot: string, query: string, apiKey: string, topK: number, unavailable?: (diagnostic: EmbeddingUnavailable) => void): Promise<Array<{
     path: string;
     score: number;
 }>>;

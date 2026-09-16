@@ -204,6 +204,15 @@ function startInvariantHost(root: Context): InvariantHost {
       ...companionFibers.map(({ fiber, path }) => requireActive(fiber, path)),
     ])
     root.provide(TEST_INVARIANT_READY_SERVICE, true)
+  }).catch((error: unknown) => {
+    // A short-lived test Context can be disposed before its invariant
+    // companions finish loading, making them settle without becoming active.
+    // The affected tests have already passed — the invariant rejection must
+    // not surface as an unhandled rejection that fails the entire run. The
+    // startup chain (joinInvariantStartup) still propagates the error to any
+    // consumer that explicitly awaits readiness.
+    if (error instanceof Error && /settled without becoming active/.test(error.message)) return
+    throw error
   })
   const host = { byCallback, barrierOwners, ready }
   hosts.set(root, host)

@@ -1,6 +1,13 @@
+---
+description: "该部署默认值供入口在创建尚无会话级模型选择的 Agent 时使用。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-agent-default-model
 
 [English](README.md) | 中文
+
+## 概述
 
 该部署默认值供入口在创建尚无会话级模型选择的 Agent 时使用。`AgentDefaultModelConfig` 提供 `ctx.agentDefaultModel`；`dsh --profile headless` 这类直接入口与 `dsh-host-session-remote-operations` 这类由 Host 支撑的入口读取同一服务，而不是分别持有平行的提供方／模型默认值。
 
@@ -11,6 +18,13 @@
 
 该服务不校验目录成员关系。提供方路由可以服务未在目录中公布的模型；实际发起模型请求的消费方负责可用性诊断。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="model-experience"></a>
 ## 模型体验
 
 通过提供给入口的提供方／模型选择间接影响；模型可见请求由请求组装与适配器负责。
@@ -19,7 +33,15 @@
 
 更改默认值只影响之后从该默认值解析选择的 Agent。请求日志已经指明选择的现有会话仍沿用该选择，因此本服务不会使其已建立的前缀失效。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - 该服务只拥有一项进程级默认值；每个会话的选择仍由入口负责。
 - 未挂载设置提供方时，`saveSelection()` 无法保留选择供后续 Agent 使用。
+
+本包也拥有 Session 专属的模型意图。`./session-selection` 导出既有 version-2 modelSelection 投影与 model/selection 事件契约；AgentDefaultModelConfig 在 SessionProjectionRegistry 可用时注册它。Host 与保留的日志调用方共用同一个 Agent 请求组装适配器，直接读取投影中的 pending 意图，不分别维护待选缓存。匹配的 request/header 会消费 pending；adapter 默认的 reasoning effort 仅是记录的使用事实，不恢复为用户显式覆盖。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

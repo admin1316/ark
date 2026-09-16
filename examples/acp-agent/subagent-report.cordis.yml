@@ -7,4 +7,4 @@
     path: ./cordis.yml
 
 - id: report-fence
-  name: './tests/fixtures/subagent-report-fence.ts'
+  name: '../../packages/test-support/session-snapshot/tests/fixtures/subagent-report-fence.ts'

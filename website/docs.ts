@@ -336,10 +336,6 @@ const subsystemGroups = [
   ]],
   ['平台与接入', 'Platform and access', [
     ['web-server.md', 'HTTP 服务器', 'HTTP server'],
-    ['web-client.md', 'Web Client 架构', 'Web Client architecture'],
-    ['client-modules.md', '客户端模块', 'Client modules'],
-    ['slots.md', '客户端 Slots', 'Client slots'],
-    ['conversation.md', 'Conversation 组装', 'Conversation assembly'],
     ['typert.md', 'Typert', 'Typert'],
     ['storage.md', '存储', 'Storage'],
     ['workspace.md', '工作区', 'Workspaces'],
@@ -430,7 +426,6 @@ const reference = [
     ['adding-a-package.md', '新增 Package', 'Adding a package'],
     ['adding-a-tool.md', '新增 Tool', 'Adding a tool'],
     ['adding-an-llm-adapter.md', '新增 LLM Adapter', 'Adding an LLM adapter'],
-    ['adding-a-settings-card.md', '新增设置卡片', 'Adding a settings card'],
     ['extension-cookbook.md', '扩展模式', 'Extension patterns'],
   ] as const).map(([file, rootLabel, enLabel], order): PairedPage => ({
     source: `docs/cookbook/${file}`,

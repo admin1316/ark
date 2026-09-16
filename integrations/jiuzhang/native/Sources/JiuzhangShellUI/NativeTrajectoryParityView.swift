@@ -163,6 +163,9 @@ public struct ArkTrajectorySemanticRecord: Identifiable, Equatable, Sendable {
   public let compaction: String?
   public let isError: Bool
   public let events: [ArkHistoryEvent]
+  public internal(set) var historyMessageID: Int? = nil
+  public internal(set) var isHistoryPreview: Bool = false
+  public internal(set) var isHistoryPrefix: Bool = false
 
   /// Durable image references carried by user, assistant, or tool-result
   /// content in this record. The raw event list remains authoritative; this
@@ -311,6 +314,55 @@ private struct ArkTrajectoryRecordBuilder {
 /// Fold the raw durable event stream into the semantic records used by the
 /// original Trajectory ledger.
 public enum ArkTrajectoryProjection {
+  /// A fixed-cut semantic window is not a contiguous token log. Reuse the
+  /// established projector only for genuine non-message lifecycle evidence;
+  /// map immutable message bodies directly without manufacturing final events.
+  public static func records(from snapshot: ArkHistoryReadingSnapshot) -> [ArkTrajectorySemanticRecord] {
+    let lower = snapshot.records.first?.orderSequence ?? 0
+    let evidence = snapshot.trajectoryEvents
+    let metadata = evidence.filter { !["assistant/chunk", "assistant/message", "user/message"].contains($0.type) }
+    var result = records(from: metadata).filter { $0.endSequence >= lower && $0.kind != .message }
+    let bySequence = Dictionary(evidence.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    for message in snapshot.messages {
+      guard let descriptor = snapshot.recordByMessageID[message.id] else { continue }
+      let previewOnly = snapshot.previewMessageIDs.contains(message.id)
+      let canonical = descriptor.canonicalEventSequence.flatMap { bySequence[$0] }
+      let requests = evidence.filter {
+        ["request/header", "request/context"].contains($0.type)
+          && $0.id <= descriptor.orderSequence
+          && integer(in: $0.data, key: "turn") == descriptor.turn
+          && integer(in: $0.data, key: "step") == descriptor.step
+      }
+      let provider = requests.reversed().compactMap { string(in: $0.data, keys: ["provider"]) }.first
+      let model = requests.reversed().compactMap { string(in: $0.data["header"] ?? $0.data, keys: ["model"]) }.first
+      let isUser = message.role == .user
+      let canonicalMessage = canonical.map { $0.data["message"] ?? $0.data }
+      let source = canonicalMessage?["source"]
+      if source?["kind"]?.stringValue == "plugin", source?["plugin"]?.stringValue == "compact",
+         source?["compactionId"]?.stringValue != nil { continue }
+      let sourceKind = source?["kind"]?.stringValue
+      let kind: ArkTrajectorySemanticKind = isUser ? (sourceKind == nil || sourceKind == "user" ? .user : .context) : .message
+      let prefix = descriptor.canonicalEventSequence == nil
+      let title = isUser ? (kind == .user ? "User" : "Context") : "Assistant"
+      result.append(ArkTrajectorySemanticRecord(
+        id: "history:\(descriptor.id)", sequence: descriptor.orderSequence,
+        endSequence: descriptor.canonicalEventSequence ?? snapshot.cut.throughSequence,
+        eventType: prefix ? "history/assistant-prefix" : (isUser ? "user/message" : "assistant/message"),
+        time: descriptor.time, completedAt: prefix ? nil : canonical?.time,
+        turn: descriptor.turn, step: descriptor.step, kind: kind,
+        title: title,
+        preview: ArkTrajectoryFormat.preview(previewOnly ? descriptor.preview : message.text),
+        input: previewOnly ? nil : (isUser ? message.text : message.reasoning),
+        output: previewOnly || isUser ? nil : message.text,
+        provider: provider, model: model, usage: canonical.flatMap { usage(in: $0.data) },
+        retry: nil, compaction: nil, isError: false,
+        events: previewOnly ? [] : canonical.map { [$0] } ?? [],
+        historyMessageID: message.id, isHistoryPreview: previewOnly, isHistoryPrefix: prefix
+      ))
+    }
+    return result.sorted { $0.sequence == $1.sequence ? $0.id < $1.id : $0.sequence < $1.sequence }
+  }
+
   public static func records(from sourceEvents: [ArkHistoryEvent]) -> [ArkTrajectorySemanticRecord] {
     let events = sourceEvents.sorted { $0.id < $1.id }
     var builders: [ArkTrajectoryRecordBuilder] = []
@@ -1140,6 +1192,8 @@ private final class NativeTrajectoryFeed: ObservableObject {
   @Published private(set) var records: [ArkTrajectorySemanticRecord]
   @Published private(set) var selectedSessionID: String?
   @Published private(set) var hasOlderHistory: Bool
+  @Published private(set) var hasNewerHistory: Bool
+  @Published private(set) var readingHistory: Bool
   @Published private(set) var loadingOlderHistory: Bool
   @Published private(set) var language: ArkLanguagePreference
   private var cancellables = Set<AnyCancellable>()
@@ -1148,6 +1202,8 @@ private final class NativeTrajectoryFeed: ObservableObject {
     records = model.trajectoryRecords
     selectedSessionID = model.selectedSessionID
     hasOlderHistory = model.hasOlderHistory
+    hasNewerHistory = model.hasNewerHistory
+    readingHistory = model.historyReadingSnapshot != nil
     loadingOlderHistory = model.loadingOlderHistory
     language = model.languagePreference
 
@@ -1169,6 +1225,17 @@ private final class NativeTrajectoryFeed: ObservableObject {
     model.$loadingOlderHistory
       .removeDuplicates()
       .sink { [weak self] in self?.loadingOlderHistory = $0 }
+      .store(in: &cancellables)
+    model.$hasNewerHistory
+      .removeDuplicates()
+      .sink { [weak self] in self?.hasNewerHistory = $0 }
+      .store(in: &cancellables)
+    model.chatPresentationDidChange
+      .sink { [weak self, weak model] in
+        guard let self, let model else { return }
+        let reading = model.historyReadingSnapshot != nil
+        if self.readingHistory != reading { self.readingHistory = reading }
+      }
       .store(in: &cancellables)
     model.$languagePreference
       .removeDuplicates()
@@ -1199,7 +1266,13 @@ struct NativeTrajectoryParityView: View, Equatable {
   init(model: ArkAppModel) {
     self.model = model
     _feed = StateObject(wrappedValue: NativeTrajectoryFeed(model: model))
-    _scrollController = StateObject(wrappedValue: ArkChatScrollController(followThreshold: 24))
+    // The ledger is a reader surface: keep its own top anchor. Reusing the chat's
+    // tail-following default scrolled the table to the estimated bottom as rows
+    // materialized, and the reflow suppression then swallowed the corrective pass.
+    _scrollController = StateObject(wrappedValue: ArkChatScrollController(
+      followThreshold: 24,
+      anchor: .top
+    ))
   }
 
   static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model }
@@ -1486,6 +1559,26 @@ struct NativeTrajectoryParityView: View, Equatable {
         .help(ArkL10n.text(.trajectoryLoadOlderHistory, feed.language))
         .accessibilityIdentifier("ark.trajectory.load-older")
       }
+      if feed.hasNewerHistory {
+        Button { navigateNewer(returnToLatest: false) } label: {
+          Image(systemName: "arrow.down.to.line")
+        }
+        .buttonStyle(.plain)
+        .disabled(loadingOlder || feed.loadingOlderHistory)
+        .help(ArkL10n.text(.chatLoadNewer, feed.language))
+        .accessibilityLabel(ArkL10n.text(.chatLoadNewer, feed.language))
+        .accessibilityIdentifier("ark.trajectory.load-newer")
+      }
+      if feed.readingHistory {
+        Button { navigateNewer(returnToLatest: true) } label: {
+          Image(systemName: "arrow.down")
+        }
+        .buttonStyle(.plain)
+        .disabled(loadingOlder || feed.loadingOlderHistory)
+        .help(ArkL10n.text(.backToLatest, feed.language))
+        .accessibilityLabel(ArkL10n.text(.backToLatest, feed.language))
+        .accessibilityIdentifier("ark.trajectory.return-to-latest")
+      }
     }
     .padding(.horizontal, 6)
     .frame(height: ArkTrajectoryMetrics.toolbarHeight)
@@ -1632,6 +1725,21 @@ struct NativeTrajectoryParityView: View, Equatable {
         scrollController.contentDidChange()
         scrollController.restoreAfterPrepend(anchor)
       }
+    }
+  }
+
+  private func navigateNewer(returnToLatest: Bool) {
+    guard !loadingOlder, !feed.loadingOlderHistory else { return }
+    let sessionID = feed.selectedSessionID
+    loadingOlder = true
+    olderLoadPolicy.reset()
+    Task {
+      if returnToLatest { await model.returnToLatestHistory() }
+      else { await model.loadNewerHistory() }
+      loadingOlder = false
+      guard feed.selectedSessionID == sessionID else { return }
+      selectedRecordID = nil
+      DispatchQueue.main.async { scrollController.scrollBottom() }
     }
   }
 }
@@ -2402,13 +2510,17 @@ private struct NativeTrajectoryInspector: View {
   let close: () -> Void
   @State private var tab: NativeTrajectoryDetailTab = .summary
   @State private var copied = false
+  @State private var contentRequestID: UUID?
+  @State private var contentError: String?
+  private var loadingContent: Bool { contentRequestID != nil }
 
   private var tabs: [NativeTrajectoryDetailTab] {
     NativeTrajectoryDetailTab.allCases.filter { tab in
       switch tab {
       case .input: return record.input?.isEmpty == false
       case .output: return record.output?.isEmpty == false
-      case .summary, .source: return true
+      case .summary: return true
+      case .source: return record.historyMessageID == nil || !record.events.isEmpty
       }
     }
   }
@@ -2439,6 +2551,37 @@ private struct NativeTrajectoryInspector: View {
       .frame(height: 42)
       .background(NativeTrajectoryPalette.panel)
       .overlay(alignment: .bottom) { Divider().overlay(NativeTrajectoryPalette.separator) }
+
+      if record.isHistoryPreview, let messageID = record.historyMessageID {
+        VStack(alignment: .leading, spacing: 6) {
+          Text(ArkL10n.text(.trajectoryHistoryPreview, language))
+            .font(.caption).foregroundStyle(NativeTrajectoryPalette.secondary)
+          Button {
+            contentRequestID = UUID()
+            contentError = nil
+          } label: {
+            HStack(spacing: 6) {
+              if loadingContent { ProgressView().controlSize(.small) }
+              Text(ArkL10n.text(.chatLoadCompleteMessage, language))
+            }
+          }
+          .buttonStyle(.borderless)
+          .disabled(loadingContent)
+          .accessibilityIdentifier("ark.trajectory.history.load-content")
+          .task(id: contentRequestID) {
+            guard let contentRequestID else { return }
+            defer { if self.contentRequestID == contentRequestID { self.contentRequestID = nil } }
+            do { _ = try await model.loadHistoryMessageContent(messageID: messageID) }
+            catch is CancellationError {
+              // Closing or changing the inspector cancels its content read.
+            }
+            catch { if self.contentRequestID == contentRequestID { contentError = error.localizedDescription } }
+          }
+          if let contentError { Text(contentError).font(.caption).foregroundStyle(.red) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+      }
 
       HStack(spacing: 1) {
         ForEach(tabs) { candidate in
@@ -2481,6 +2624,11 @@ private struct NativeTrajectoryInspector: View {
     .onChange(of: record.id) { _ in
       tab = .summary
       copied = false
+      contentRequestID = nil
+      contentError = nil
+    }
+    .onChange(of: tabs) { available in
+      if !available.contains(tab) { tab = .summary }
     }
   }
 
@@ -2489,11 +2637,15 @@ private struct NativeTrajectoryInspector: View {
     switch tab {
     case .summary:
       VStack(alignment: .leading, spacing: 0) {
-        detail(ArkL10n.text(.fieldState, language), record.isError
-          ? ArkL10n.text(.trajectoryError, language)
-          : record.completedAt == nil
-            ? ArkL10n.text(.trajectoryRunning, language)
-            : ArkL10n.text(.trajectoryCompleted, language))
+        detail(ArkL10n.text(.fieldState, language), record.isHistoryPreview
+          ? ArkL10n.text(.trajectoryHistoryPreview, language)
+          : record.isHistoryPrefix
+            ? ArkL10n.text(.trajectoryHistoryPrefix, language)
+            : record.isError
+              ? ArkL10n.text(.trajectoryError, language)
+              : record.completedAt == nil
+                ? ArkL10n.text(.trajectoryRunning, language)
+                : ArkL10n.text(.trajectoryCompleted, language))
         detail(ArkL10n.text(.fieldSequence, language), "#\(record.sequence)–#\(record.endSequence)")
         detail(ArkL10n.text(.fieldStarted, language), ArkTrajectoryFormat.iso.string(from: record.time))
         detail(ArkL10n.text(.fieldDuration, language), record.durationMs.map(ArkTrajectoryFormat.duration) ?? ArkL10n.text(.trajectoryPending, language))

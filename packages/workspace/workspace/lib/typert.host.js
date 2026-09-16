@@ -209,7 +209,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_archiveSession_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":432,"column":3},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":441,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/create',
@@ -263,7 +263,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_delete_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":383,"column":3},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":384,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/deleteArchivedSession',
@@ -290,7 +290,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_deleteArchivedSession_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":464,"column":3},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":473,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/insertBefore',
@@ -317,7 +317,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_insertBefore_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":399,"column":3},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":400,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/insertSessionBefore',
@@ -344,7 +344,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_insertSessionBefore_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":414,"column":3},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":415,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/list',
@@ -388,7 +388,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_rename_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":368,"column":3},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":369,"column":3},
     },
     {
       id: '@deepseek-ai/dsh-workspace#workspace/unarchiveSession',
@@ -415,7 +415,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceRemoteResult',
         schema: _deepseek_ai_dsh_workspace_workspace_unarchiveSession_result$schema,
       },
-      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":448,"column":3},
+      sourceLocation: {"file":"packages/workspace/workspace/src/index.ts","line":457,"column":3},
     },
   ],
   model: {
@@ -494,7 +494,7 @@ export const TYPERT = {
           {
             "kind": "method",
             "name": "remoteExportInsertSessionBefore",
-            "signature": "@Remote('insertSessionBefore') remoteExportInsertSessionBefore( request: WorkspaceRemoteInsertSessionBeforeRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>",
+            "signature": "@Remote('insertSessionBefore') async remoteExportInsertSessionBefore( request: WorkspaceRemoteInsertSessionBeforeRequest, signal: AbortSignal, ): Promise<WorkspaceRemoteResult<WorkspaceRemoteWorkspaceValue>>",
             "summary": "Reorder a session within its workspace account.",
             "jsDoc": "/**\n * Reorder a session within its workspace account.\n * @param request - workspace, session and optional anchor.\n * @param signal - cancellation.\n * @returns updated account.\n */"
           },

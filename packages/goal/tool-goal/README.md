@@ -1,8 +1,24 @@
+---
+description: "The model-facing control tools for ctx.goals: get_goal, create_goal, and update_goal."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-goal
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The model-facing control tools for [`ctx.goals`](../goal/README.md): `get_goal`, `create_goal`, and `update_goal`. The [goal-tool Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-model-facing-goal-tools.md) owns the authority split and Codex-shaped UX.
+
+## Table of Contents
+
+- [Tools](#tools)
+- [Authority](#authority)
+- [Config](#config)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Tools
 
@@ -78,3 +94,7 @@ Schemas are prefix-stable while their definitions and visibility are unchanged. 
 - **No scheduling or direct human rendering** — these tools mutate state only; the same-session driver and [`dsh-command-goal`](../command-goal/README.md) are independent consumers of the same domain.
 - **Goal-round authority requires a driver** — the autonomous `complete`/`blocked` path is dormant unless a continuation driver admits goal-sourced user turns; mounting this tool package alone does not create them.
 - **Prompt registration is independent of filtering** — a scope may hide the tools while retaining their guidance unless the deployment scopes both registrations together.
+
+### Dev Note
+
+None.

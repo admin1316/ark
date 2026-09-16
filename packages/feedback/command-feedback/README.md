@@ -1,8 +1,25 @@
+---
+description: "Trigger-independent session feedback plus human-facing /feedback capture."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-command-feedback
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Trigger-independent session feedback plus human-facing `/feedback` capture. The package exports `recordFeedback(session, text)`, which appends one log-only `feedback/record` event. Its plugin registers one global command through [`ctx.commands`](../../interaction/commands/README.md), so every composed command adapter discovers it; the shipped Web client executes it without a model turn.
+
+## Table of Contents
+
+- [Command contract](#command-contract)
+- [Session-sharing disclosure](#session-sharing-disclosure)
+- [What this plugin does and does not do](#what-this-plugin-does-and-does-not-do)
+- [Composition](#composition)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Command contract
 
@@ -71,3 +88,7 @@ Independent of the model request path. Recording appends to the session log only
 - **No explicit durability barrier** — the acknowledgement follows the append, not a flush, so an entry recorded immediately before a crash can be lost with any other unflushed tail. Feedback is not worth forcing a synchronous disk write for; a consumer that needs one awaits `ctx.sessions.flush(session)`.
 - **No visible acknowledgement on a fresh session** — the web transcript renders command rows only once a session is active, so `/feedback` on a still-blank session records the event but shows no acknowledgement row. Recording feedback after the first message renders normally.
 - **Web only among the shipped entry points** — headless mode, ACP automation, and JSON-RPC do not provide a command adapter, so `/feedback` is unavailable there.
+
+### Dev Note
+
+None.

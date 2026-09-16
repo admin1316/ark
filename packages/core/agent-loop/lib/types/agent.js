@@ -653,11 +653,11 @@ export class ReactLoopAgent {
         const persistedHeader = session.requestHeader();
         const persistedConfig = persistedHeader?.config;
         const route = { provider: this.options.provider ?? '', model: this.options.model ?? '' };
-        const reasoningEffort = persistedConfig?.provider === route.provider
+        const reasoningEffort = this.options.reasoningEffort ?? (persistedConfig?.provider === route.provider
             && persistedConfig.model === route.model
             && persistedHeader?.adapterDefaults?.reasoningEffort !== true
             ? persistedConfig.reasoningEffort
-            : undefined;
+            : undefined);
         const maxTokens = this.options.maxTokens;
         const seedConfig = deepFreeze(structuredClone(this.requestHeaderLogged
             // oxlint-disable-next-line typescript/no-non-null-assertion -- the instance logged the header it now folds

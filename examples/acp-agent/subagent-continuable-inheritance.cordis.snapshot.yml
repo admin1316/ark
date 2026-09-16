@@ -43,4 +43,4 @@
                     - id: deepseek-v4-flash
                     - id: deepseek-v4-pro
           - id: parent-sandbox-override
-            name: './tests/fixtures/parent-sandbox-override.ts'
+            name: '../../packages/test-support/session-snapshot/tests/fixtures/parent-sandbox-override.ts'

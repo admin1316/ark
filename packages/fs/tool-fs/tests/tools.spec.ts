@@ -729,6 +729,38 @@ describe('read caps are plugin config', () => {
     expect(text(result)).not.toContain('cccc')
   })
 
+  it('a byte-capped read reports truncatedByBytes and nextOffset, and paging loses nothing', async () => {
+    const { ctx, fs } = await setupWith({ readMaxBytes: 12 })
+    const total = 40
+    fs.files.set('key:big.txt', Array.from({ length: total }, (_, i) => `line-${i + 1}`).join('\n'))
+    const seen: number[] = []
+    let offset = 1
+    let pages = 0
+    for (;;) {
+      const result = await call(ctx, 'read', { file_path: 'big.txt', offset, limit: 1000 })
+      expect(result.isError).toBe(false)
+      if (result.isError) throw new Error('expected read success')
+      const value = result.value as {
+        lines: { number: number }[]
+        totalLines: number
+        truncatedByBytes?: boolean
+        nextOffset?: number
+      }
+      for (const line of value.lines) seen.push(line.number)
+      if (value.nextOffset === undefined) {
+        // Absent means "not byte-capped"; the canonical output shape stays unchanged.
+        expect(value.truncatedByBytes).toBeUndefined()
+        break
+      }
+      expect(value.truncatedByBytes).toBe(true)
+      expect(value.nextOffset).toBe(value.lines.at(-1)!.number + 1)
+      offset = value.nextOffset
+      if (++pages > total) throw new Error('paging did not terminate')
+    }
+    expect(pages).toBeGreaterThan(1)
+    expect(seen).toEqual(Array.from({ length: total }, (_, i) => i + 1))
+  })
+
   it('a configured readStreamMinSize routes smaller files to the streaming path', async () => {
     const { ctx, fs } = await setupWith({ readStreamMinSize: 5 })
     fs.files.set('key:a.txt', 'alpha\nbeta')

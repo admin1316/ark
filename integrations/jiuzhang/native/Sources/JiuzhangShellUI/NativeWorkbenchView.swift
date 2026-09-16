@@ -59,10 +59,7 @@ public struct NativeWorkbenchView: View {
     self.browserCancellationRevision = browserCancellationRevision
     _model = StateObject(wrappedValue: NativeWorkbenchModel(
       rootURL: rootURL,
-      initialTool: initialTool,
-      webReader: { url in
-        try await appModel.workbenchWebRead(url: url)
-      }
+      initialTool: initialTool
     ))
   }
 
@@ -134,7 +131,7 @@ public struct NativeWorkbenchView: View {
         draftFlushCoordinator.unregister(draftFlushRegistrationID)
         self.draftFlushRegistrationID = nil
       }
-      model.disposeBrowserSessions()
+      model.cancelBrowserRequests()
       model.cancelFileOperations()
       model.cancelGitOperations()
       Task { await model.shutdownTerminalSessions() }
@@ -219,7 +216,7 @@ private struct NativeWorkbenchTabBar: View {
                 Button {
                   model.activateToolTab(tab.id)
                 } label: {
-                  Label(tab.title(language), systemImage: tab.systemImage)
+                  Label(model.toolTabTitle(tab, language: language), systemImage: tab.systemImage)
                     .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
                     .contentShape(Rectangle())
@@ -2031,10 +2028,7 @@ struct NativeGitBranch: Identifiable, Equatable {
 /// 生产路径使用 NativeWorkspaceAccess 的真实读取。
 @MainActor
 final class NativeWorkbenchModel: ObservableObject {
-  typealias WebReader = (URL) async throws -> ArkWorkbenchWebDocument
-
   private let injectedFileReader: ((URL) async throws -> String)?
-  private let injectedWebReader: WebReader?
   let rootURL: URL
   let rootError: String?
 
@@ -2118,13 +2112,11 @@ final class NativeWorkbenchModel: ObservableObject {
     rootURL: URL,
     initialTool: NativeWorkbenchTabKind = .files,
     fileReader: ((URL) async throws -> String)? = nil,
-    webReader: WebReader? = nil,
     draftJournal: NativeWorkbenchDraftJournal? = nil,
     draftDebounceNanoseconds: UInt64 = 350_000_000
   ) {
     toolTabs = NativeWorkbenchTabsState(initial: initialTool)
     self.injectedFileReader = fileReader
-    injectedWebReader = webReader
     let resolvedDraftJournal = draftJournal ?? NativeWorkbenchDraftJournal()
     self.draftJournal = resolvedDraftJournal
     draftWriter = NativeWorkbenchDraftWriter(
@@ -2846,7 +2838,7 @@ final class NativeWorkbenchModel: ObservableObject {
       return
     }
     if tab.kind == .browser {
-      browserSessions.removeValue(forKey: id)?.cancel()
+      browserSessions.removeValue(forKey: id)?.dispose()
     }
     if tab.kind == .terminal {
       guard !terminalShutdownIDs.contains(id) else { return }
@@ -2871,6 +2863,10 @@ final class NativeWorkbenchModel: ObservableObject {
 
   func shutdownTerminalSessions() async {
     let sessions = Array(terminalSessions.values)
+    // Persist before the PTY is torn down so a restart can repair and replay the session.
+    for session in sessions {
+      session.persistNow()
+    }
     for session in sessions {
       _ = await session.shutdown()
     }
@@ -2889,22 +2885,32 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func disposeBrowserSessions() {
-    cancelBrowserRequests()
+    for session in browserSessions.values { session.dispose() }
     browserSessions.removeAll()
   }
 
   func browserSession(for tabID: String) -> NativeWorkbenchBrowserSession {
     if let existing = browserSessions[tabID] { return existing }
-    let session = NativeWorkbenchBrowserSession(reader: injectedWebReader)
+    let session = NativeWorkbenchBrowserSession()
     browserSessions[tabID] = session
     return session
   }
 
   func terminalSession(for tabID: String) -> NativePTYTerminalSession {
     if let existing = terminalSessions[tabID] { return existing }
-    let session = NativePTYTerminalSession(rootURL: rootURL)
+    let sessionKey = "\(rootURL.standardizedFileURL.path)|\(tabID)"
+    let session = NativePTYTerminalSession(rootURL: rootURL, sessionKey: sessionKey)
     terminalSessions[tabID] = session
     return session
+  }
+
+  /// Workbench tool-tab titles. Terminal tabs name the workspace folder so the chrome-free
+  /// terminal surface still shows where it runs (the old generic "终端" label is gone).
+  func toolTabTitle(_ tab: NativeWorkbenchToolTab, language: ArkLanguagePreference) -> String {
+    guard tab.kind == .terminal else { return tab.title(language) }
+    let folder = rootURL.lastPathComponent
+    let base = folder.isEmpty ? ArkL10n.text(.workbenchTerminal, language) : folder
+    return tab.ordinal > 1 ? "\(base) \(tab.ordinal)" : base
   }
 
   func refreshGitIfNeeded() {
@@ -3878,13 +3884,27 @@ final class NativeWorkspaceAccess {
     return components.joined(separator: "/")
   }
 
-  /// Resolve a transcript/tool location through the same descriptor-confined
-  /// path chain that the editor uses. Every directory component and the leaf
-  /// are opened with O_NOFOLLOW, so a symlink cannot become an editor handoff.
+  /// Resolve relative locations against the selected session workspace, never the process cwd.
+  func resolveFileURL(_ rawPath: String) throws -> URL {
+    let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !path.isEmpty, !path.contains("\0") else { throw NativeWorkbenchError.notRegularFile }
+    return path.hasPrefix("/") ? URL(fileURLWithPath: path) : rootURL.appendingPathComponent(path)
+  }
+
   func validatedRegularFileURL(_ url: URL) throws -> URL {
+    try validatedRegularFileURL(url, maximumSize: Self.maximumTextFileSize)
+  }
+
+  /// External applications consume the URL, so the editor's text memory limit does not apply.
+  func validatedExternalFileURL(_ url: URL) throws -> URL {
+    try validatedRegularFileURL(url, maximumSize: nil)
+  }
+
+  /// Validate the shared descriptor-confined path chain without following symlinks.
+  private func validatedRegularFileURL(_ url: URL, maximumSize: Int?) throws -> URL {
     let components = try relativeComponents(for: url)
     guard !components.isEmpty else { throw NativeWorkbenchError.notRegularFile }
-    let descriptor = try openFile(components, flags: O_RDONLY)
+    let descriptor = try openFile(components, flags: O_RDONLY | O_NONBLOCK)
     defer { Darwin.close(descriptor) }
     var fileInfo = stat()
     guard Darwin.fstat(descriptor, &fileInfo) == 0 else {
@@ -3893,7 +3913,7 @@ final class NativeWorkspaceAccess {
     guard (fileInfo.st_mode & S_IFMT) == S_IFREG else {
       throw NativeWorkbenchError.notRegularFile
     }
-    guard fileInfo.st_size <= Self.maximumTextFileSize else {
+    if let maximumSize, fileInfo.st_size > maximumSize {
       throw NativeWorkbenchError.fileTooLarge
     }
     return components.reduce(rootURL) { partial, component in

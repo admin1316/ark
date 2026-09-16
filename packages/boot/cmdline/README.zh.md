@@ -1,9 +1,25 @@
+---
+description: "dsh 启动器交给它所引导应用的那条命令行。"
+kind: "package-library"
+---
+
 # `@deepseek-ai/dsh-cmdline`
 
 [English](README.md) | 中文
 
+## 概述
+
 dsh 启动器交给它所引导应用的那条命令行。启动器只解析属于自己的 flag（`--profile`、`--patch`、配置 dump），并把**其后的一切**原样交给配置树，因此 flag 家族、`--help` 文本和解析错误都由应用自己持有，启动器不必知道它们。
 
+## 目录
+
+- [启动器提供的值](#the-launcher-values)
+- [普通提供方与注入配置](#ordinary-providers-and-injected-config)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="the-launcher-values"></a>
 ## 启动器提供的值
 
 启动器在任何配置树条目挂载之前调用 `provideCmdline(ctx, host)`，它提供：
@@ -14,6 +30,7 @@ dsh 启动器交给它所引导应用的那条命令行。启动器只解析属�
 
 没有命令行的嵌入宿主提供空列表；这是诚实的答案，而不是缺失的值。
 
+<a id="ordinary-providers-and-injected-config"></a>
 ## 普通提供方与注入配置
 
 任何应用插件都可以注入 `cmdlineArgs`、解析它，再发布一个普通的应用自有服务。`parseCmdline(ctx, program)` 只适配 commander；校验与发布的服务都归 program 自己的 action 持有：
@@ -60,6 +77,7 @@ Loader 会把一行的 `!!js` 插值推迟到该行声明的注入全部激活�
 
 树外插件会带来自己的一份 commander 副本，因此 commander 的控制流错误按结构识别，而不是按类身份识别；按身份判断会把已经打印出来的 help 重新抛成致命的加载失败。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 无。本包在任何会话存在之前解析进程自身的命令行。
@@ -68,8 +86,14 @@ Loader 会把一行的 `!!js` 插值推迟到该行声明的注入全部激活�
 
 无；本包既不组装也不发送提供方请求。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与延期工作
 
 - **启动器的 flag 必须写在应用参数之前**：切分按位置进行，启动器不认识的第一个 token 就是内层参数的起点，因此写在某个应用 flag 之后的 `--patch` 属于应用。启动器的解析器会消耗掉一个 `--`，因此必须以字面量 `--` 存活到应用的参数需要写成 `-- --`。
 - **应用自有服务没有静态声明的提供方**：消费行通过普通注入点名它；缺少提供方的组合包会在结算时失败，由待处理条目点名该服务，而不是在加载时失败。
 - **用户 patch 若整体替换某行的 `config`，会连同其中的表达式一起丢掉**：flag 胜过的是表达式旁写着的那个值，而不是用户用字面量替换掉表达式之后的结果；保留表达式才能保留 flag 的优先级。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

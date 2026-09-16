@@ -31,7 +31,7 @@ export function launchAcpTestAgent(options) {
         libBin: agent.libBinScript,
         configArgs: agent.profile === undefined
             ? ['--config', selectedConfig]
-            : profileArgs(agent.profile, agent.configPath, selectedConfig, options.env?.DSH_SNAPSHOT, cwd),
+            : profileArgs(agent.profile, agent.configPath, selectedConfig, options.env?.DSH_SNAPSHOT, cwd, agent.binScript),
         tsconfigPath: agent.tsconfigPath,
         ...agent.profile === undefined ? {} : { sourceImport: 'tsx/esm' },
         env: {
@@ -234,7 +234,7 @@ export function launchAcpTestAgent(options) {
     };
 }
 /** Build one dsh profile invocation from the base and optional scenario patches. */
-function profileArgs(profile, basePatch, selectedPatch, snapshotMode, cwd) {
+function profileArgs(profile, basePatch, selectedPatch, snapshotMode, cwd, binScript) {
     const base = resolve(cwd, basePatch);
     const selected = resolve(cwd, selectedPatch);
     // Replay siblings already contain the selected scenario's complete delta
@@ -245,7 +245,7 @@ function profileArgs(profile, basePatch, selectedPatch, snapshotMode, cwd) {
     const materializedRoot = join(cwd, '.dsh-profile-patches');
     mkdirSync(materializedRoot, { recursive: true });
     const materializedDir = mkdtempSync(join(materializedRoot, 'launch-'));
-    const materialized = patches.map((file, index) => materializeProfilePatch(file, cwd, materializedDir, index));
+    const materialized = patches.map((file, index) => materializeProfilePatch(file, cwd, materializedDir, index, binScript));
     return ['--profile', profile, ...materialized.flatMap(file => ['--patch', file])];
 }
 /** Derive the replay-only sibling patch selected by the former app-bin swap. */
@@ -274,8 +274,9 @@ function packageDirFromPatch(source, packageName) {
  * profile fallback. This mirrors `dsh plugin` while retaining the bare entry
  * name and package provenance used by request metadata.
  */
-function linkProfilePackage(source, cwd, packageName) {
-    const packageDir = packageDirFromPatch(source, packageName);
+function linkProfilePackage(source, cwd, packageName, binScript) {
+    const packageDir = packageDirFromPatch(source, packageName)
+        ?? (binScript === undefined ? undefined : packageDirFromPatch(binScript, packageName));
     // The package may instead belong to the dsh installation; profile boot heals those links.
     if (packageDir === undefined)
         return;
@@ -296,9 +297,10 @@ function linkProfilePackage(source, cwd, packageName) {
  * @param cwd - isolated process cwd whose profile fallback receives package links.
  * @param targetDir - existing directory that owns the materialized patch.
  * @param index - stable patch ordinal used in the output filename.
+ * @param binScript - optional real agent installation anchor for declared test dependencies.
  * @returns absolute materialized patch path.
  */
-export function materializeProfilePatch(source, cwd, targetDir, index) {
+export function materializeProfilePatch(source, cwd, targetDir, index, binScript) {
     const parsed = yaml.load(readFileSync(source, 'utf8'), { schema: entryListSchema });
     if (!Array.isArray(parsed))
         throw new Error(`snapshot profile patch must be a top-level array: ${source}`);
@@ -307,7 +309,7 @@ export function materializeProfilePatch(source, cwd, targetDir, index) {
     const resolveName = (value) => {
         const packageName = barePackageName(value);
         if (packageName !== undefined)
-            linkProfilePackage(source, cwd, packageName);
+            linkProfilePackage(source, cwd, packageName, binScript);
         return value.startsWith('./') || value.startsWith('../')
             ? pathToFileURL(resolve(baseDir, value)).href
             : value;

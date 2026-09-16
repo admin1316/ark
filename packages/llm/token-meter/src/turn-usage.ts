@@ -170,7 +170,7 @@ function sameAttempt(
  * @param events - Turn-local durable events from `turn/start` through `turn/end`.
  * @returns exact aggregate usage, or undefined when it cannot be proven.
  */
-export function deriveTurnTokenUsage(events: readonly SessionEvent[]): TurnTokenUsage | undefined {
+export function deriveTurnTokenUsage(events: Iterable<SessionEvent>): TurnTokenUsage | undefined {
   let state: AttemptState = { kind: 'idle' }
   const attempts: NormalizedAttempt[] = []
   let turn: number | undefined

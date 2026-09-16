@@ -45,6 +45,8 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [jobs.md](jobs.md) | the background-job runtime: branded `JobId`s, the producer contract, consumer views, and `ctx.jobs` service behavior |
 | [permission-presets.md](permission-presets.md) | the permission-preset layer: `PresetSpec`/`PresetOption`, the derived `custom` state, the log-only `permission/preset` event |
 | [plan.md](plan.md) | plan mode: the log-only `plan/mode` state, pending-selection flush, `PlanModeConfig`, the `exit_plan_mode` review arc |
+| [todo.md](todo.md) | session-owned todo lists, whole-list replacement events, and replay projection |
+| [webhook.md](webhook.md) | authenticated external deliveries, rule callback lifetime, and Workspace-backed Session creation |
 | [invariants.md](invariants.md) | the runtime-invariant registry: selection `Config`, `InvariantInstaller`/`InvariantFailure`, the empty-companion contract |
 | [web-server.md](web-server.md) | the authenticated API-only HTTP carrier: exact/prefix routes, upgrades, and listener lifecycle |
 | [storage.md](storage.md) | the storage subsystem: the backend contract (`StorageBackend`), `StorageForms`, `DomainSpec`/`Domain`, `domain/changed` |

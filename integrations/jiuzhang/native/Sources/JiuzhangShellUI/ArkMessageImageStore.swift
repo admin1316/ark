@@ -19,9 +19,17 @@ public final class ArkMessageImageStore: ObservableObject {
 
   @Published public private(set) var states: [String: ArkMessageImageLoadState] = [:]
 
+  /// Bounded window of authorized historical image bytes. History can hold
+  /// arbitrarily many attachments while the machine is small, so the cache
+  /// evicts the least recently used entry instead of growing without limit.
+  private static let maximumCachedImages = 24
+  private static let maximumCachedBytes = 64 * 1024 * 1024
+
   private let loader: Loader
   private var sessionID: String?
   private var dataByAttachmentID: [String: Data] = [:]
+  private var recentAttachmentIDs: [String] = []
+  private var cachedBytes = 0
   private var tasks: [String: Task<Void, Never>] = [:]
   private var attemptTokens: [String: UInt64] = [:]
   private var nextAttemptToken: UInt64 = 0
@@ -41,6 +49,8 @@ public final class ArkMessageImageStore: ObservableObject {
     attemptTokens.removeAll()
     states.removeAll()
     dataByAttachmentID.removeAll()
+    recentAttachmentIDs.removeAll()
+    cachedBytes = 0
     self.sessionID = sessionID
   }
 
@@ -49,7 +59,9 @@ public final class ArkMessageImageStore: ObservableObject {
   }
 
   public func data(for attachmentID: String) -> Data? {
-    dataByAttachmentID[attachmentID]
+    guard let data = dataByAttachmentID[attachmentID] else { return nil }
+    touch(attachmentID)
+    return data
   }
 
   public func load(_ attachmentID: String) {
@@ -69,7 +81,7 @@ public final class ArkMessageImageStore: ObservableObject {
         let data = try await loader(sessionID, attachmentID)
         try Task.checkCancellation()
         guard let self, self.accepts(attachmentID: attachmentID, token: token) else { return }
-        self.dataByAttachmentID[attachmentID] = data
+        self.install(data, for: attachmentID)
         self.states[attachmentID] = .loaded
         self.finish(attachmentID: attachmentID, token: token)
       } catch is CancellationError {
@@ -78,7 +90,7 @@ public final class ArkMessageImageStore: ObservableObject {
         self.finish(attachmentID: attachmentID, token: token)
       } catch {
         guard let self, self.accepts(attachmentID: attachmentID, token: token) else { return }
-        self.dataByAttachmentID.removeValue(forKey: attachmentID)
+        self.discard(attachmentID)
         self.states[attachmentID] = .failed(error.localizedDescription)
         self.finish(attachmentID: attachmentID, token: token)
       }
@@ -93,8 +105,38 @@ public final class ArkMessageImageStore: ObservableObject {
   public func cancel(_ attachmentID: String) {
     attemptTokens.removeValue(forKey: attachmentID)
     tasks.removeValue(forKey: attachmentID)?.cancel()
-    dataByAttachmentID.removeValue(forKey: attachmentID)
+    discard(attachmentID)
     states[attachmentID] = .cancelled
+  }
+
+  /// Publish freshly loaded bytes and evict the least recently used entries.
+  private func install(_ data: Data, for attachmentID: String) {
+    discard(attachmentID)
+    dataByAttachmentID[attachmentID] = data
+    cachedBytes += data.count
+    recentAttachmentIDs.append(attachmentID)
+    while (dataByAttachmentID.count > Self.maximumCachedImages || cachedBytes > Self.maximumCachedBytes),
+      recentAttachmentIDs.count > 1,
+      let victim = recentAttachmentIDs.first
+    {
+      discard(victim)
+      if states[victim] == .loaded { states[victim] = .idle }
+    }
+  }
+
+  private func touch(_ attachmentID: String) {
+    guard let index = recentAttachmentIDs.firstIndex(of: attachmentID),
+      index != recentAttachmentIDs.count - 1
+    else { return }
+    recentAttachmentIDs.remove(at: index)
+    recentAttachmentIDs.append(attachmentID)
+  }
+
+  private func discard(_ attachmentID: String) {
+    if let removed = dataByAttachmentID.removeValue(forKey: attachmentID) {
+      cachedBytes -= removed.count
+    }
+    recentAttachmentIDs.removeAll { $0 == attachmentID }
   }
 
   private func accepts(attachmentID: String, token: UInt64) -> Bool {

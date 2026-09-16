@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { access, copyFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -246,6 +246,8 @@ test('native Ark artifact scripts reject production paths and accept a fresh tem
       '/Applications',
       '/Applications/Ark.app',
       '/Applications/Ark.app/Contents',
+      join(homedir(), 'ark/Ark.app'),
+      join(homedir(), 'ark/Ark.app/Contents'),
       join(sandbox, 'Ark.app', 'nested-output'),
     ]) {
       await rejectsPolicy(buildScript, ['--check-output', dangerous], /refusing/)
@@ -277,6 +279,8 @@ test('native Ark artifact scripts reject production paths and accept a fresh tem
     ])
     assert.match(signing.stdout, /valid Developer ID Application identity and Team ID/)
     await rejectsPolicy(installScript, ['--system'], /governed promotion flow/)
+    await rejectsPolicy(installScript, ['--desktop'], /single fixed candidate/)
+    await rejectsPolicy(buildScript, ['--check-candidate', join(homedir(), 'ark/Ark.app')], /production Ark.app/)
     await rejectsPolicy(updateScript, ['--system'], /governed promotion flow/)
   } finally {
     await rm(sandbox, { recursive: true, force: true })
@@ -328,7 +332,28 @@ test('candidate build audits every Mach-O architecture and publishes only after 
     const publish = buildSource.indexOf('/bin/mv "${build_stage_root}" "${destination}"')
     assert.ok(staging >= 0 && staging < packCopy && packCopy < stagedVerification)
     assert.ok(stagedVerification < signing && signing < publish)
-    assert.match(buildSource, /ark_cleanup_build[\s\S]*\/bin\/rm -rf -- "\$\{build_stage_root\}"/u)
+    assert.match(buildSource, /ark_cleanup_build[\s\S]*ark_remove_tree "\$\{build_stage_root\}"/u)
+    const removeTree = buildSource.match(/^function ark_remove_tree\(\) \{[\s\S]*?^\}/mu)?.[0]
+    const cleanupBuild = buildSource.match(/^function ark_cleanup_build\(\) \{[\s\S]*?^\}/mu)?.[0]
+    assert.ok(removeTree && cleanupBuild)
+    const cleanupScript = join(sandbox, 'cleanup-build.sh')
+    const cleanupScratch = join(sandbox, 'scratch')
+    const cleanupStage = join(sandbox, 'staging')
+    const retained = join(sandbox, 'retained')
+    for (const directory of [cleanupScratch, cleanupStage, retained]) {
+      await mkdir(directory)
+      await writeFile(join(directory, 'marker'), 'fixture')
+    }
+    await writeFile(cleanupScript, [
+      'set -eu', removeTree, cleanupBuild,
+      'scratch="$1"', 'build_stage_root="$2"',
+      'swiftmath_mt_font_backup=""', 'swiftmath_math_font_backup=""',
+      'ark_cleanup_build',
+    ].join('\n'))
+    await runZsh(cleanupScript, [cleanupScratch, cleanupStage])
+    await assert.rejects(access(cleanupScratch), { code: 'ENOENT' })
+    await assert.rejects(access(cleanupStage), { code: 'ENOENT' })
+    assert.equal(await readFile(join(retained, 'marker'), 'utf8'), 'fixture')
     assert.match(buildSource, /staged_pack_root="\$\{build_stage_root\}\/pack-input"/u)
     assert.match(buildSource, /ark_require_pack_receipt "\$\{runtime_root\}" "\$\{effective_pack_receipt\}"/u)
     assert.match(buildSource, /ArkSourceCommit/u)

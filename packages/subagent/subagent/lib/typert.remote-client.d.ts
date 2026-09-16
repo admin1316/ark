@@ -5,17 +5,17 @@ import type {
 } from '@deepseek-ai/dsh-typert-protocol'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionId, SessionRemoteHistoryValue } from '@deepseek-ai/dsh-session/types'
-import type { RemoteSubagentPromptReceipt, SubagentCatalog, SubagentInterruptReceipt } from '@deepseek-ai/dsh-subagent/client'
+import type { RemoteSubagentPromptReceipt, SubagentCatalog, SubagentHistoryOptions, SubagentInterruptReceipt } from '@deepseek-ai/dsh-subagent/client'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$7375626167656e74 {
-    history: (parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal?: AbortSignal) => Promise<RemoteResult<SessionRemoteHistoryValue>>
+    history: (parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | SubagentHistoryOptions | undefined, maxMessages: number | undefined, signal?: AbortSignal) => Promise<RemoteResult<SessionRemoteHistoryValue>>
     interrupt: (parentSessionId: SessionId, childSessionId: SessionId) => Promise<RemoteResult<SubagentInterruptReceipt>>
     list: (parentSessionId: SessionId, signal?: AbortSignal) => Promise<RemoteResult<SubagentCatalog>>
     prompt: (agentId: SessionId, childSessionId: SessionId, content: ContentBlock[], invocationId: string, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentPromptReceipt>>
   }
   interface TypertRemoteMap {
-    'subagent/history': (parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | undefined, maxMessages: number | undefined, signal?: AbortSignal) => Promise<RemoteResult<SessionRemoteHistoryValue>>
+    'subagent/history': (parentSessionId: SessionId, childSessionId: SessionId, mode: 'one-shot' | 'continuable', beforeSeq: number | SubagentHistoryOptions | undefined, maxMessages: number | undefined, signal?: AbortSignal) => Promise<RemoteResult<SessionRemoteHistoryValue>>
     'subagent/interrupt': (parentSessionId: SessionId, childSessionId: SessionId) => Promise<RemoteResult<SubagentInterruptReceipt>>
     'subagent/list': (parentSessionId: SessionId, signal?: AbortSignal) => Promise<RemoteResult<SubagentCatalog>>
     'subagent/prompt': (agentId: SessionId, childSessionId: SessionId, content: ContentBlock[], invocationId: string, signal?: AbortSignal) => Promise<RemoteResult<RemoteSubagentPromptReceipt>>

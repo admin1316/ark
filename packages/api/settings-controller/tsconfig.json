@@ -21,9 +21,6 @@
       "path": "../../credentials/credentials"
     },
     {
-      "path": "../../core/session"
-    },
-    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {

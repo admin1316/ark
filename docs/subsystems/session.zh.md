@@ -438,6 +438,12 @@ declare class Session {
      * cast nor ordinary JavaScript can rewrite durable history.
      */
   get events(): readonly SessionEvent[];
+  /**
+   * Read one deeply frozen accepted event without materializing a log snapshot.
+   * @param seq - event sequence number.
+   * @returns the accepted event, or undefined when the sequence is absent.
+   */
+  eventAt(seq: number): SessionEvent | undefined;
   /** The next event's sequence number — always the log length (the `seq = log.length` contiguity contract). */
   get seq(): number;
   /**
@@ -624,7 +630,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.sessionController` — `SessionController`
 
-Host service backing the generated `ctx.remote.session` namespace.
+Desktop and streaming additions to the canonical Session Remote namespace.
 
 ```ts cordis-catalog
 /**
@@ -641,36 +647,6 @@ resolveAgent(sessionId: SessionId): Promise<ApiSessionAgentResult>
  * @returns the current attached state or persisted header and event prefix.
  */
 inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<{ meta: SessionHeader; events: SessionEvent[] }>
-
-/**
- * Read all visible Session rows without resuming an Agent.
- * @param _request - reserved empty list request.
- * @param signal - cancellation for persistence reads.
- * @returns visible Session summaries ordered by activity.
- */
-@Remote('list') async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue>
-
-/**
- * Search visible Session content without resuming an Agent.
- * @param request - literal message-content query.
- * @param signal - cancellation for list and search reads.
- * @returns authorized bounded Session search results.
- */
-@Remote('search') search(request: SessionSearchRequest, signal: AbortSignal): Promise<SessionSearchValue>
-
-/**
- * Create or idempotently adopt one ordinary Session.
- * @param request - requested identity, location, and Agent preset.
- * @returns the Session identity and resolved preset when configured.
- */
-@Remote('create') create(request: SessionCreateRequest): Promise<SessionCreateValue>
-
-/**
- * Select one Session-local model after explicitly resuming the Session.
- * @param request - Session identity and requested model selection.
- * @returns the normalized selection installed for the Session.
- */
-@Remote('selectModel') selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue>
 
 /**
  * Describe every currently routable model for Host-generation selectors.
@@ -692,49 +668,6 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<{ meta: SessionH
  * @throws TypertRemoteFailure when the request is invalid, cancelled, or the opener fails.
  */
 @Remote('openWorkspacePath') async openWorkspacePath( request: SessionOpenWorkspacePathRequest, signal: AbortSignal, ): Promise<SessionOpenWorkspacePathValue>
-
-/**
- * Rename one Session after explicitly resuming it.
- * @param request - Session identity and proposed title.
- * @returns the accepted title and durable event sequence.
- */
-@Remote('rename') rename(request: SessionRenameRequest): Promise<SessionRenameValue>
-
-/**
- * Fork one cold-readable completed-turn prefix into a new Session.
- * @param request - source Session and optional event anchor.
- * @returns the new Session identity.
- */
-@Remote('fork') fork(request: SessionForkRequest): Promise<SessionForkValue>
-
-/**
- * Admit one prompt after explicitly resuming its Session.
- * @param request - Session identity, prompt content, source metadata, and delivery mode.
- * @param signal - caller cancellation before prompt admission begins.
- * @returns acknowledgement that the Agent accepted the prompt.
- */
-@Remote('prompt') prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue>
-
-/**
- * Read one image proven reachable from the addressed Session log.
- * @param request - Session and attachment identities used for authorization.
- * @returns the durable attachment reference and base64-encoded bytes.
- */
-@Remote('attachment') attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue>
-
-/**
- * Mutate one still-pending queue occurrence on a live Agent.
- * @param request - Session, queue item, and requested mutation.
- * @returns acknowledgement that the queue mutation was applied.
- */
-@Remote('updateQueue') updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue
-
-/**
- * Cancel one active Agent turn without dropping its pending inbox.
- * @param request - Session whose active Agent turn is cancelled.
- * @returns acknowledgement that cancellation was requested.
- */
-@Remote('cancel') cancel(request: SessionCancelRequest): SessionCancelValue
 
 /**
  * Read one cold-safe, message-aligned Session history page.
@@ -760,7 +693,7 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<{ meta: SessionH
 @Remote({ mode: 'stream' }) control(signal: AbortSignal): AsyncIterable<SessionControlFrame>
 ```
 
-Types: [SessionHeader](persistence.zh.md) · [SessionId](core.zh.md) · [SessionSearchRequest](session-query.zh.md)
+Types: [SessionHeader](persistence.zh.md) · [SessionId](core.zh.md)
 
 Source: [`packages/api/session-controller/src/index.ts`](../../packages/api/session-controller/src/index.ts)
 

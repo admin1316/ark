@@ -92,9 +92,17 @@ var TeamActivity = class {
 					reject(reason instanceof Error ? reason : new TeamError(`wait_agent aborted: ${errorMessage(reason)}`, "TEAM_WAIT_ABORTED"));
 				});
 			};
-			const waiter = { resolve: () => finish(() => resolve(true)) };
+			const waiter = { resolve: () => {
+				finish(() => {
+					resolve(true);
+				});
+			} };
 			waiters.add(waiter);
-			const timer = setTimeout(() => finish(() => resolve(false)), timeoutMs);
+			const timer = setTimeout(() => {
+				finish(() => {
+					resolve(false);
+				});
+			}, timeoutMs);
 			signal.addEventListener("abort", onAbort, { once: true });
 			if (signal.aborted) onAbort();
 		}) };
@@ -497,7 +505,9 @@ var TeamRuntimeLifecycle = class {
 	async withTimeout(operation) {
 		let timer;
 		const timeout = new Promise((_resolve, reject) => {
-			timer = setTimeout(() => reject(new TeamError(`Agent Teams runtime disposal exceeded ${this.disposalTimeoutMs}ms`, "TEAM_DISPOSAL_TIMEOUT")), this.disposalDeadline === void 0 ? this.disposalTimeoutMs : Math.max(0, this.disposalDeadline - Date.now()));
+			timer = setTimeout(() => {
+				reject(new TeamError(`Agent Teams runtime disposal exceeded ${this.disposalTimeoutMs}ms`, "TEAM_DISPOSAL_TIMEOUT"));
+			}, this.disposalDeadline === void 0 ? this.disposalTimeoutMs : Math.max(0, this.disposalDeadline - Date.now()));
 		});
 		try {
 			return await Promise.race([operation, timeout]);
@@ -1456,12 +1466,18 @@ var TeamService = class extends Service {
 		};
 		this.activity = new TeamActivity();
 		this.lifecycle = new TeamRuntimeLifecycle(this.config.disposalTimeoutMs);
-		this.journal = new TeamJournal(ctx, (root) => this.activity.notify(TeamId(root.id)));
+		this.journal = new TeamJournal(ctx, (root) => {
+			this.activity.notify(TeamId(root.id));
+		});
 		this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers);
 		this.mailbox = new TeamMailbox(ctx, this.journal, this.roster, this.lifecycle, this.config.maxPendingMessagesPerMember, this.config.maxMessageBytes);
 		this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks);
-		ctx.on("session/event", (session, event) => this.mailbox.observeSessionEvent(session, event));
-		ctx.on("agent/session-start", ({ agent }) => this.scheduleRecovery(agent));
+		ctx.on("session/event", (session, event) => {
+			this.mailbox.observeSessionEvent(session, event);
+		});
+		ctx.on("agent/session-start", ({ agent }) => {
+			this.scheduleRecovery(agent);
+		});
 		ctx.on("agent/status", ({ agent }) => {
 			const membership = this.roster.tryMembership(agent);
 			if (membership !== void 0) this.activity.notify(membership.id);

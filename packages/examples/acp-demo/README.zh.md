@@ -1,9 +1,26 @@
+---
+description: "ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能体）主干、客户端通过 @deepseek-ai/dsh-acp 创建的 agent、JSONL 持久化，以及语义检查点机制，并通过一个 JSON-RPC stdio bin 对外提供服务。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-acp-demo
 
 [English](README.md) | 中文
 
+## 概述
+
 ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能体）主干、客户端通过 [`@deepseek-ai/dsh-acp`](../../acp/acp/README.zh.md) 创建的 agent、JSONL 持久化，以及语义检查点机制，并通过一个 JSON-RPC stdio bin 对外提供服务。程序化客户端创建新会话；此包不挂载人工交互 UI。
 
+## 目录
+
+- [组合](#composition)
+- [配置](#config)
+- [Bin](#bin)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="composition"></a>
 ## 组合
 
 | 插件 | 角色 |
@@ -16,6 +33,7 @@ ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能�
 
 应用不安装命令、用户交互、会话导航、配置选择器或 stdout logger。它通过一个有序 effect 拥有这些插件，因此查询服务会在 ACP 接受工作前就绪，而 ACP 会话会在检查点与持久化插件卸载前完全停稳。叶节点配置负责提供 LLM（大语言模型）、执行器、沙箱、审批、文件系统和面向模型的工具插件。
 
+<a id="config"></a>
 ## 配置
 
 | 键 | 默认值 | 路由目标 |
@@ -40,10 +58,12 @@ ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能�
 
 已交付的 [`examples/acp-agent/cordis.yml`](../../../examples/acp-agent/cordis.yml) 添加 DeepSeek 适配器、沙箱化 bash 与文件系统提供方、一次性审批策略、压缩（compaction）、subagent、工作流、钩子，以及面向模型的工具。应用提供派生会话查询索引，而面向模型的查询消费方仍由叶节点显式选用。快照 overlay 只替换非确定性提供方或策略值。
 
+<a id="bin"></a>
 ## Bin
 
 `dsh-acp-demo [--config path-to-cordis.yml]`（短形式 `-c`；默认为 `./cordis.yml`）会加载 gitignore 排除的 `.env`，回放模式除外；`DSH_SNAPSHOT=replay` 选择同级 `cordis.snapshot.yml`；stdin EOF 会在退出前 dispose（资源释放）上下文并刷新会话。Loader 已安装的可选对等依赖（peer dependency）`node-addon-require-builtin` 使纯 Node 下构建后的 bin 可以解析裸插件说明符。诊断使用 stderr，因为 stdout 是 ACP wire。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 模型体验由 `dsh-agent-spine-demo` 和叶节点的面向模型插件间接提供。ACP 提示词文本会成为普通的已记录用户消息；协议元数据与权限选择不会进入模型请求。
@@ -52,8 +72,14 @@ ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能�
 
 每个会话仅追加；应用本身不添加请求前缀内容。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **JSONL 持久化固定不变**：使用其他后端需要另一种组合。
 - **同级插件可能破坏 stdout**：应用无法阻止另一个 Cordis 配置项写入非协议字节。
 - **只支持新建自动化会话**：恢复和人工交互属于其他运行入口。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

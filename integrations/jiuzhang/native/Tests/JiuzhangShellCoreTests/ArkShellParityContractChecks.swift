@@ -268,22 +268,22 @@ func runArkShellParityContractChecks() {
   )
   check(
     hero?.contains("ArkL10n.text(.newConversationHeroTitle, model.languagePreference)") == true
-      && hero?.contains(".frame(width: 80, height: 80)") == true
-      && hero?.contains(".font(.system(size: 44, weight: .semibold))") == true
-      && hero?.contains(".tracking(4)") == true
+      && hero?.contains("ArkBrandView(layout: .wordmark, size: 96)") == true
+      && hero?.contains(".font(.system(size: 16, weight: .regular))") == true
+      && hero?.contains(".foregroundStyle(ArkPalette.secondary)") == true
       && hero?.contains("NativeComposer(model: model, hero: true)") == true
       && hero?.contains("chooseWorkspaceDirectory") == true
       && hero?.contains("selectAgentPresetForCurrentSession") == true
       && hero?.contains("探索未至之境") == false
       && l10n.contains("所思即行  所创即见")
       && l10n.contains("Think It  Bring It to Life"),
-    "native New Conversation hero uses the enlarged Ark mark and localized product prompt without replacing real composer state"
+    "native New Conversation hero leads with the ARK wordmark and keeps the localized prompt and real composer"
   )
 
   for source in [root, workbench, trajectory] {
     check(
       !source.contains("WKWebView"),
-      "native shell introduces no WKWebView as an Ark product surface"
+      "native chat workbench chrome and trajectory remain native product surfaces"
     )
   }
 }

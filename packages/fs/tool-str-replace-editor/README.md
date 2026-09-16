@@ -1,8 +1,23 @@
+---
+description: "Standalone model-facing str_replace_editor over ctx.fs."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-str-replace-editor
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Standalone model-facing `str_replace_editor` over `ctx.fs`. It can be composed with persistent Bash, one-shot Bash, sandboxed Bash, or another terminal surface.
+
+## Table of Contents
+
+- [Config](#config)
+- [Tool](#tool)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Config
 
@@ -50,3 +65,7 @@ Append-only tool results follow the reusable request prefix.
 - Operations target UTF-8 text; binary files are unsupported.
 - `str_replace` intentionally rejects zero or multiple matches and has no `replace_all` argument.
 - Every mutation goes through `fs/write-intent` or `fs/edit-intent`, resolves the current session sandbox policy, and delegates enforcement to the mounted filesystem and policy plugins.
+
+### Dev Note
+
+None.

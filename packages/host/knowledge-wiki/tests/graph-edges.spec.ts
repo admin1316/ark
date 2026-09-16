@@ -35,7 +35,13 @@ describe('Wiki tree and graph edge contracts', () => {
     const file = join(root, 'ordinary-file')
     writeFileSync(file, 'keep')
     expect(() => { visitWikiTree(file, {}) }).toThrow('Wiki root is not an ordinary directory')
-    expect(() => { visitWikiTree(join(file, 'child'), {}) }).toThrow('ENOTDIR')
+    // A path beneath an ordinary file: POSIX reports ENOTDIR, Windows
+    // reports ENOENT, which the missing-root guard treats as an absent wiki.
+    if (process.platform === 'win32') {
+      expect(() => { visitWikiTree(join(file, 'child'), {}) }).not.toThrow()
+    } else {
+      expect(() => { visitWikiTree(join(file, 'child'), {}) }).toThrow('ENOTDIR')
+    }
     expect(readFileSync(file, 'utf8')).toBe('keep')
   })
 
@@ -61,8 +67,16 @@ describe('Wiki tree and graph edge contracts', () => {
     expect(() => { visitWikiTree(root, {
       onDirectory(entry) {
         visited.push(entry.path)
-        if (first === undefined) first = entry.path
-        else renameSync(join(root, first), join(root, entry.path))
+        if (first === undefined) {
+          first = entry.path
+        } else {
+          // Move the first directory's inode onto the current entry's name in
+          // two steps that each target a free name: rename-onto-existing is
+          // POSIX-only, and Windows rejects it with EPERM. The walker's
+          // post-callback identity re-check then reports the revisited inode.
+          renameSync(join(root, entry.path), join(root, entry.path + '-held'))
+          renameSync(join(root, first), join(root, entry.path))
+        }
       },
     }) }).toThrow('revisited Wiki directory inode:')
     expect(visited).toHaveLength(2)

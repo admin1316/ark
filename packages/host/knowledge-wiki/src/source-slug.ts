@@ -26,8 +26,11 @@ const FALLBACK_SOURCE_PART = 'source'
  * @returns the identity (project-relative raw/sources path or file name).
  */
 export function sourceIdentityForPath(projectPath: string, sourcePath: string): string {
-  const root = normalize(projectPath).replace(/\/+$/u, '')
-  const path = normalize(sourcePath)
+  // The identity is a portable data-format key shared with the wiki's durable
+  // sources/ pages, so the comparison and the emitted value both use canonical
+  // forward slashes regardless of the platform separator produced by normalize.
+  const root = normalize(projectPath).replace(/\\/gu, '/').replace(/\/+$/u, '')
+  const path = normalize(sourcePath).replace(/\\/gu, '/')
   const rooted = `${root}/${RAW_SOURCES_PREFIX}`
   if (path.toLowerCase().startsWith(rooted.toLowerCase())) {
     return path.slice(rooted.length)

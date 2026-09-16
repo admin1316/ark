@@ -1,3 +1,8 @@
+---
+description: "Profile 组合包：在 manifest（元数据清单）中声明 \"dsh\": { \"bundle\": { \"patch\": \"./cordis.patch.yml\" } } 的 npm 包，因此可作为 patch 层安装进 dsh --profile 组合（profile 约定）。"
+kind: "package-group"
+---
+
 # bundle/ — profile 插件组合包
 
 [English](README.md) | 中文

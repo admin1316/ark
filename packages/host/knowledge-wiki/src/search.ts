@@ -146,6 +146,14 @@ export async function embed(texts: string[], apiKey: string): Promise<number[][]
 }
 
 /**
+ * Why semantic search was skipped for a query, when it was skipped.
+ */
+export interface EmbeddingUnavailable {
+  /** Short, user-facing reason, such as `embedding request failed (401)`. */
+  reason: string
+}
+
+/**
  * Cosine similarity between two vectors.
  * @param a - The a input.
  * @param b - The b input.
@@ -171,6 +179,7 @@ export function cosine(a: number[], b: number[]): number {
  * @param query - The query input.
  * @param apiKey - The api key input.
  * @param topK - The top k input.
+ * @param unavailable - optional notification when embedding throws before falling back to keyword results.
  * @returns The value produced by hybrid search.
  */
 export async function hybridSearch(
@@ -178,6 +187,7 @@ export async function hybridSearch(
   query: string,
   apiKey: string,
   topK: number,
+  unavailable?: (diagnostic: EmbeddingUnavailable) => void,
 ): Promise<Array<{ path: string; score: number }>> {
   const pages = collectPages(wikiRoot)
   const scoredPages = scorePages(pages, query)
@@ -185,10 +195,18 @@ export async function hybridSearch(
   const topScoredPages = scoredPages.slice(0, 40)
   const topKeyword = keyword.slice(0, 40)
 
-  const vector = await embed(
-    [query, ...topScoredPages.slice(0, 15).map(({ page }) => `${page.title}\n${page.text.slice(0, 600)}`)],
-    apiKey,
-  )
+  let vector: number[][] | null
+  try {
+    vector = await embed(
+      [query, ...topScoredPages.slice(0, 15).map(({ page }) => `${page.title}\n${page.text.slice(0, 600)}`)],
+      apiKey,
+    )
+  } catch (error) {
+    // Semantic search is optional: embed() still reports the failure (its own contract),
+    // and the query degrades to keyword results instead of failing outright.
+    unavailable?.({ reason: error instanceof Error ? error.message : String(error) })
+    vector = null
+  }
 
   if (!vector || vector.length < 2) {
     return keyword.slice(0, topK)

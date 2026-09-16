@@ -226,6 +226,10 @@ class TurnBudget {
       return await operation()
     } finally {
       this.operations.delete(token)
+      // An aborted turn whose last operation drained is quiescing normally:
+      // the outstanding deadline would only report an empty operation set, so
+      // drop it instead of letting it fire on the wind-down's own IO.
+      if (this.abort.signal.aborted && this.operations.size === 0) this.endResidualDeadline()
     }
   }
 
@@ -270,7 +274,8 @@ class TurnBudget {
     limit: number,
     observed: number,
   ): TurnBudgetExhaustedError {
-    if (this._exhaustion !== undefined) return new TurnBudgetExhaustedError(this._exhaustion)
+    // Single-shot by construction: every caller checks !aborted first and the
+    // abort below is synchronous, so a second exhaustion call is unreachable.
     const reason: AgentTurnBudgetExhaustedReason = {
       kind: 'budget-exhausted',
       dimension,
@@ -289,24 +294,30 @@ class TurnBudget {
     this.armResidualDeadline()
   }
 
+  private endResidualDeadline(): void {
+    if (this.graceTimer !== undefined) {
+      clearTimeout(this.graceTimer)
+      this.graceTimer = undefined
+    }
+  }
+
   private armResidualDeadline(): void {
     if (this.closed || this.reportedResidual || this.graceTimer !== undefined) return
-    const elapsed = this.abortStartedAt === undefined ? 0 : Math.max(0, Date.now() - this.abortStartedAt)
+    const elapsed = Math.max(0, Date.now() - (this.abortStartedAt as number))
     const delay = Math.max(0, this.limits.cancellationGraceMs - elapsed)
+    // Every operation drain ends the deadline while the turn is aborted, so
+    // this callback only ever fires with outstanding operations to report.
     this.graceTimer = setTimeout(() => {
       this.graceTimer = undefined
-      if (this.closed || this.reportedResidual || this.operations.size === 0) return
       this.reportedResidual = true
       const counts = new Map<AgentOperationStage, number>()
       for (const stage of this.operations.values()) counts.set(stage, (counts.get(stage) ?? 0) + 1)
       const abortReason: unknown = this.abort.signal.reason
+      // Reasons are always either a budget exhaustion error or the cancel
+      // cause handed to cancel(); nothing else aborts this controller.
       const abortKind: AgentQuiescenceResidual['abortKind'] = abortReason instanceof TurnBudgetExhaustedError
         ? 'budget-exhausted'
-        : typeof abortReason === 'object' && abortReason !== null && 'kind' in abortReason
-          && (abortReason.kind === 'user' || abortReason.kind === 'parent'
-            || abortReason.kind === 'hook' || abortReason.kind === 'disposed')
-          ? abortReason.kind
-          : 'unknown'
+        : (abortReason as AgentCancelCause).kind
       this.reportResidual({
         code: 'AGENT_OPERATION_UNRESPONSIVE',
         abortKind,
@@ -800,11 +811,11 @@ export class ReactLoopAgent implements Agent {
     const persistedHeader = session.requestHeader()
     const persistedConfig = persistedHeader?.config
     const route = { provider: this.options.provider ?? '', model: this.options.model ?? '' }
-    const reasoningEffort = persistedConfig?.provider === route.provider
+    const reasoningEffort = this.options.reasoningEffort ?? (persistedConfig?.provider === route.provider
       && persistedConfig.model === route.model
       && persistedHeader?.adapterDefaults?.reasoningEffort !== true
       ? persistedConfig.reasoningEffort
-      : undefined
+      : undefined)
     const maxTokens = this.options.maxTokens
     const seedConfig = deepFreeze(structuredClone(
       this.requestHeaderLogged

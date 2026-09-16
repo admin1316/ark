@@ -17,6 +17,9 @@ function signalOptions(signal) {
 function isMissingPathError(error) {
     return error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR');
 }
+function isMissingProviderPathError(error) {
+    return error instanceof Error && 'code' in error && error.code === 'FS_NOT_FOUND';
+}
 async function nodeStatFile(path, signal) {
     try {
         signal?.throwIfAborted();
@@ -63,11 +66,11 @@ async function existsAsMarker(path, fileSystem, signal) {
             const target = await fileSystem.resolve(path, signalOptions(signal));
             return await fileSystem.stat(target, signal) !== undefined;
         }
-        catch {
+        catch (error) {
             signal?.throwIfAborted();
-            // TODO(root-marker-unavailable): preserve provider failure separately from
-            // absence and stop discovery; continuing upward can cross into an ancestor project.
-            return false;
+            if (isMissingProviderPathError(error))
+                return false;
+            throw error;
         }
     }
     try {
@@ -76,9 +79,11 @@ async function existsAsMarker(path, fileSystem, signal) {
         signal?.throwIfAborted();
         return true;
     }
-    catch {
+    catch (error) {
         signal?.throwIfAborted();
-        return false;
+        if (isMissingPathError(error))
+            return false;
+        throw error;
     }
 }
 /**
@@ -88,6 +93,7 @@ async function existsAsMarker(path, fileSystem, signal) {
  * @param fileSystem - optional provider used instead of host filesystem probes.
  * @param signal - cancellation for provider and host probes.
  * @returns the discovered project root, or `cwd` when no marker exists.
+ * @throws the original marker metadata error or cancellation reason when a probe is unavailable.
  */
 export async function findProjectRoot(cwd, markers, fileSystem, signal) {
     let current = resolve(cwd);

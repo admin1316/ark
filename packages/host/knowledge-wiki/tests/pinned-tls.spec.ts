@@ -29,7 +29,10 @@ describe('pinned local TLS transport', () => {
       '[ext]',
       'subjectAltName = DNS:example.test',
     ].join('\n'))
-    execFileSync('/usr/bin/openssl', [
+    // PATH-resolved: macOS/Linux ship openssl in /usr/bin, Windows runners
+    // expose the Git-for-Windows openssl.exe through PATH. The contract under
+    // test is requestPinned's transport, not the openssl binary location.
+    execFileSync('openssl', [
       'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
       '-config', configPath, '-keyout', keyPath, '-out', certPath,
     ], { stdio: 'ignore' })

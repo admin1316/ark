@@ -234,14 +234,14 @@ export declare abstract class CredentialProvider extends TypertRemoteService {
      */
     remoteDescribe(refs: readonly string[]): Promise<RemoteCredentialsDescription>;
     /**
-     * Store one write-only credential value through the Native Remote plane.
+     * Store one write-only credential value through the shared Remote plane.
      * @param refName - credential reference name to update.
      * @param value - write-only credential value.
      * @returns an empty object after the value is stored.
      */
     remoteSet(refName: string, value: string): Promise<Record<never, never>>;
     /**
-     * Remove one provider-managed credential through the Native Remote plane.
+     * Remove one provider-managed credential through the shared Remote plane.
      * @param refName - credential reference name to remove.
      * @returns an empty object after the reference is removed.
      */

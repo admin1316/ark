@@ -169,7 +169,7 @@ describe('hand-declared providers', () => {
     const ctx = await harness(gateway(`${server.url}/v1`))
 
     expect(await ctx.llm.listModels('acme-gateway')).toEqual([
-      { provider: 'acme-gateway', id: 'acme-large', name: 'Acme Large', inputModalities: ['text'] },
+      { provider: 'acme-gateway', id: 'acme-large', name: 'Acme Large', inputModalities: ['text', 'image'] },
     ])
     const info = await ctx.llm.resolveModelInfo('acme-gateway', 'acme-large')
     expect(info).toMatchObject({
@@ -281,7 +281,7 @@ describe('hand-declared providers', () => {
     const inputOf = (route: string, id: string): readonly string[] | undefined =>
       piProviderOf(resolved, route).getModels().find(model => model.id === id)?.input
 
-    expect(inputOf('acme-gateway', 'bare')).toEqual(['text'])
+    expect(inputOf('acme-gateway', 'bare')).toEqual(['text', 'image'])
     expect(inputOf('acme-gateway', 'seeing')).toEqual(['text', 'image'])
     expect(inputOf('acme-gateway', 'deaf')).toEqual(['text'])
     expect(inputOf('seeing-gateway', 'bare')).toEqual(['text', 'image'])
@@ -315,7 +315,7 @@ describe('hand-declared providers', () => {
     const listed = async (provider: string): Promise<Record<string, readonly string[] | undefined>> =>
       Object.fromEntries((await ctx.llm.listModels(provider)).map(model => [model.id, model.inputModalities]))
 
-    expect(await listed('acme-gateway')).toEqual({ bare: ['text'], seeing: ['text', 'image'] })
+    expect(await listed('acme-gateway')).toEqual({ bare: ['text', 'image'], seeing: ['text', 'image'] })
     expect(await listed('vision-gateway')).toEqual({ bare: ['text', 'image'], deaf: ['text'] })
     expect((await ctx.llm.resolveModelInfo('acme-gateway', 'seeing')).inputModalities).toEqual(['text', 'image'])
 
@@ -342,7 +342,7 @@ describe('hand-declared providers', () => {
         models: [{ id: 'bare', input: [] }],
       },
     })
-    expect(piProviderOf(resolved, 'acme-gateway').getModels()[0]?.input).toEqual(['text'])
+    expect(piProviderOf(resolved, 'acme-gateway').getModels()[0]?.input).toEqual(['text', 'image'])
     expect(piProviderOf(resolved, 'deepseek').getModels()[0]?.input).toEqual(catalogModel.input)
 
     // Nothing sits below the route value, so its empty list states no answer
@@ -378,6 +378,18 @@ describe('hand-declared providers', () => {
     expect(() => resolveProfiles({
       'acme-gateway': { api: 'openai-completions', models: [{ id: 'm', contextWindow: 1, maxTokens: 1 }] },
     })).toThrow(/needs a baseURL/)
+  })
+
+  it('retains the missing-api model diagnostic when a stored custom provider cannot be built', () => {
+    const profile = resolveProfiles({
+      'acme-gateway': { baseURL: 'https://acme.test', models: [{ id: '111' }] },
+    }, 'deferred').get('acme-gateway')!
+    const failure = 'llm-pi-ai: provider "acme-gateway" model "111" needs an api; '
+      + 'the installed catalog does not describe it, so set the route\'s api to the wire protocol its endpoint speaks'
+
+    expect(profile.catalogError).toBe(failure)
+    expect(profile.modelErrors.get('111')).toBe(failure)
+    expect(profile.piProvider).toBeUndefined()
   })
 
   it.each(['bedrock-converse-stream', 'google-vertex', 'azure-openai-responses', 'openai-codex-responses'])(

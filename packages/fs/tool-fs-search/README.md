@@ -1,6 +1,13 @@
+---
+description: "The model-facing filesystem discovery tools—glob, grep—are backed by a packaged ripgrep binary, not by ctx.fs provider methods and not by a system rg install."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-fs-search
 
 English | [中文](README.zh.md)
+
+## Summary
 
 The **model-facing filesystem discovery tools**—`glob`, `grep`—are backed by a packaged ripgrep binary, not by `ctx.fs` provider methods and not by a system `rg` install. Ordinary Node deployments resolve the platform binary from `@vscode/ripgrep`; a pkg single-file runtime resolves the executable's co-located `-rg` sidecar and falls back to the dependency binary when that sidecar is absent. Registration is unconditional because both carriers package ripgrep, so there is no load-time availability probe. Each call spawns the resolved binary through the `ctx.subprocess` seam with a fixed argv vector (`--no-config` prepended so a host `RIPGREP_CONFIG_PATH` cannot inject a `--pre` preprocessor into the unconfined spawn; model-controlled values are plain argv elements — no shell layer exists, so no quoting applies), parses the raw `rg` output, and returns a workdir-relative canonical value. The package injects `tools`, `systemPrompt`, and `subprocess`—deliberately **not** `fs`; `ctx.spillStore` is read opportunistically with `ctx.get()` because formatted-result spill is optional.
 
@@ -13,6 +20,17 @@ await ctx.plugin(LocalSpillStore)                           // @deepseek-ai/dsh-
 ```
 
 Why spawn-backed: local workspace discovery is naturally a process-backed `rg` workflow, and putting search on `ctx.fs` would force every filesystem backend to grow a search API. The subprocess seam owns spawn execution, process-tree termination, environment scrubbing, and bounded output capture; this package owns schemas, argument validation, argv construction, parsing, retention, formatted-result spill, and timeout declaration. The tools never expose a background job — the call returns only after `rg` exits, is terminated by the cooperative timeout, is aborted, or fails.
+
+## Table of Contents
+
+- [Deployment requirement: no host rg, co-located workdir/filesystem](#deployment-requirement-no-host-rg-co-located-workdirfilesystem)
+- [Config](#config)
+- [Tools](#tools)
+- [Two budgets, two artifacts](#two-budgets-two-artifacts)
+- [Errors](#errors)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Deployment requirement: no host rg, co-located workdir/filesystem
 
@@ -132,3 +150,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 - **The packaged binary is fixed at dependency version** — Node deployments use the version selected by `@vscode/ripgrep`; Python single-file runtimes copy that target-native version into the required `-rg` sidecar. An unsupported platform or a corrupted installation fails with `SEARCH_FAILED`, while the Python runtime package rejects a missing sidecar before launch. Remote or virtual filesystems need a co-located workspace or another search consumer.
 - **The schemas expose one bounded page** — offset pagination, case-mode switches, alternate output modes, and provider-backed discovery remain outside this package; capped complete output requires a spill backend.
 - **Sampling, when enabled, groups by first path segment beneath the search root only** — an over-cap `glob` page balances across those top-level entries, so a result concentrated deeper (one busy directory inside an otherwise even tree) is still shown unevenly below that level; recursive balancing is deferred.
+
+### Dev Note
+
+None.

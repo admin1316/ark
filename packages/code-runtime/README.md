@@ -1,3 +1,8 @@
+---
+description: "The code-execution capability seam (see capability seams): a runtime Service Definition for executing one model-written program against host-provided async bindings, capturing what it printed and returned; replaceable providers; and the tool registry's Code Mode Consumer (tools: { mode: code } — the run_code tool and the SDK generated in the loaded runtime's language)."
+kind: "package-group"
+---
+
 # code-runtime/ — code-execution capability family
 
 English | [中文](README.zh.md)

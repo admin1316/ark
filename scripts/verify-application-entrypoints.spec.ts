@@ -25,6 +25,21 @@ function write(root: string, path: string, content: string): void {
 }
 
 describe('application entrypoints', () => {
+  it('rejects retired browser entrypoints while permitting SDK and search clients', () => {
+    const root = fixture()
+    write(root, 'packages/sdk/client/package.json', '{}')
+    write(root, 'packages/web/web/package.json', '{}')
+    expect(applicationEntrypointViolations(root)).toEqual([])
+    write(root, 'apps/web/package.json', '{}')
+    write(root, 'packages/client/resurrected/package.json', '{}')
+    write(root, 'packages/api/example/package.json', JSON.stringify({ dsh: { client: {} } }))
+    expect(applicationEntrypointViolations(root)).toEqual(expect.arrayContaining([
+      expect.stringContaining('apps/web/package.json: retired Web'),
+      expect.stringContaining('packages/client/resurrected/package.json: retired browser'),
+      expect.stringContaining('packages/api/example/package.json: retired dsh.client'),
+    ]))
+  })
+
   it('accepts the exact managed Ark bin and rejects an altered target', () => {
     const root = fixture()
     const manifest = 'packages/boot/native-api-runner/package.json'

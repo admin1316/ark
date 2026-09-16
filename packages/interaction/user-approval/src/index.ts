@@ -19,7 +19,7 @@ declare module '@deepseek-ai/cordis' {
   }
   interface Events {
     /**
-     * Ask scoped answerers; call next to delegate an unclaimed request.
+     * Scope-filtered dispatch targets the requesting Agent; call next to delegate an unclaimed request.
      * @param req - borrowed live Agent request and cancellation signal.
      * @mode waterfall
      */

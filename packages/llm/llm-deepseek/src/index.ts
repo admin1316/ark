@@ -88,7 +88,19 @@ const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY'
 /** The single provider route this plugin owns. */
 const PROVIDER = 'deepseek-official'
 
+/** Model id a new session starts on, matching the release's default route. */
+export const DEFAULT_SESSION_MODEL_ID = 'deepseek-flash'
+
 const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
+  {
+    id: DEFAULT_SESSION_MODEL_ID,
+    name: 'DeepSeek-V41-Flash',
+    description: 'Default route: fast, image-capable, and economical; suited to focused, routine, or parallel tasks.',
+    contextWindow: DEFAULT_CONTEXT_WINDOW,
+    inputModalities: ['text', 'image'],
+    imagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+    imageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
+  },
   {
     id: 'deepseek-v4-flash',
     name: 'DeepSeek-V4-Flash',
@@ -168,7 +180,7 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
   description: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
-  inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(['text']),
+  inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(['text', 'image']),
   imagePixelBudget: z.union([z.number().step(1).min(1), 'low']),
   imageMaxBytes: z.number().step(1).min(1),
 })
@@ -232,7 +244,7 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
         `llm-deepseek: catalog model "${model.id}" maxTokens must be a positive integer`,
       )
     }
-    const inputModalities = model.inputModalities ?? ['text']
+    const inputModalities = model.inputModalities ?? ['text', 'image']
     if (inputModalities.length === 0) {
       throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not be empty`)
     }

@@ -358,7 +358,7 @@ var SessionObservationReader = class {
 		}
 	}
 	live(session, projectionMode) {
-		const events = Object.freeze([...session.events]);
+		const events = session.events;
 		const projections = projectionMode === "none" ? void 0 : this.ctx.get("sessionProjections")?.snapshot(session);
 		const lease = () => {
 			let disposed = false;

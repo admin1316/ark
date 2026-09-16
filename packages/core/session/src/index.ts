@@ -343,6 +343,15 @@ export class Session {
     return this.eventsSnapshot
   }
 
+  /**
+   * Read one deeply frozen accepted event without materializing a log snapshot.
+   * @param seq - event sequence number.
+   * @returns the accepted event, or undefined when the sequence is absent.
+   */
+  eventAt(seq: number): SessionEvent | undefined {
+    return this.log[seq]
+  }
+
   /** The next event's sequence number — always the log length (the `seq = log.length` contiguity contract). */
   get seq(): number {
     return this.log.length

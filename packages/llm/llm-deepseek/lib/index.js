@@ -1,5 +1,5 @@
 import z from "@deepseek-ai/schemastery";
-import { CONTEXT_WINDOW_EXCEEDED_CODE, CallId, EMPTY_RESPONSE_CODE, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, assertUsableApiKey, attributionHeaders, contentHasImage, isContextWindowExceededError, isQuotaExceededError, offloadRequestImagesWithPolicy, offloadedImagePrefixCount, offloadedImageText, requestImageHandleText, resolveImageAttachmentAccess, resolveRetryPolicy, textOnlyImageText } from "@deepseek-ai/dsh-llm";
+import { CONTEXT_WINDOW_EXCEEDED_CODE, CallId, EMPTY_RESPONSE_CODE, LlmAdapter, LlmError, MALFORMED_TOOL_CALL_CODE, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, assertUsableApiKey, attributionHeaders, contentHasImage, isContextWindowExceededError, isQuotaExceededError, offloadRequestImagesWithPolicy, offloadedImagePrefixCount, offloadedImageText, requestImageHandleText, resolveImageAttachmentAccess, resolveRetryPolicy, textOnlyImageText } from "@deepseek-ai/dsh-llm";
 import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import { launchEnvironmentOf } from "@deepseek-ai/dsh-launch-environment";
 import { deepEqualJson, installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
@@ -1163,7 +1163,28 @@ function mapUsage(usage) {
 		...reasoning !== void 0 ? { reasoningTokens: reasoning } : {}
 	};
 }
-/** Assemble the final ContentBlock for one open block. */
+/**
+* Accept one streamed identity field for a tool call. `id` and `name` are
+* identity, not accumulation: the wire sends each once, on the call's first
+* delta. A continuation delta that re-sends the field empty — or `null`, which
+* some OpenAI-compatible gateways fill in — means "no update", never "clear".
+* @param current - the identity established by an earlier delta of this call.
+* @param incoming - the field as parsed from this delta. The wire type is a
+*   claim about a remote encoder, so anything but a non-empty string leaves the
+*   established value alone rather than overwriting it.
+* @returns the identity in force after this delta.
+*/
+function acceptIdentity(current, incoming) {
+	return typeof incoming === "string" && incoming.length > 0 ? incoming : current;
+}
+/**
+* Assemble the final ContentBlock for one open block.
+* @param block - the block to close.
+* @returns the assembled block, or which identity field a tool call is missing.
+*   A tool call without both fields cannot be dispatched, and its result cannot
+*   be paired back to the provider, so the caller rejects the whole response
+*   rather than closing the block.
+*/
 function closeBlock(block) {
 	switch (block.kind) {
 		case "text": return {
@@ -1174,12 +1195,17 @@ function closeBlock(block) {
 			type: "reasoning",
 			text: block.text
 		};
-		case "tool-call": return {
-			type: "tool-call",
-			id: CallId(block.callId ?? ""),
-			name: block.name ?? "",
-			arguments: block.text
-		};
+		case "tool-call": {
+			const { callId, name } = block;
+			if (callId === void 0) return { unidentified: "id" };
+			if (name === void 0) return { unidentified: "name" };
+			return {
+				type: "tool-call",
+				id: CallId(callId),
+				name,
+				arguments: block.text
+			};
+		}
 	}
 }
 /**
@@ -1188,7 +1214,9 @@ function closeBlock(block) {
 * @param payloads - SSE data payloads from {@link parseSse}, `[DONE]`-terminated.
 * @returns deltas as they arrive; `block-end`s, `usage`, and `finish` are all deferred to the `[DONE]` sentinel.
 *   A `stop` (or absent) finish with no opened blocks is a degenerate provider completion and maps to an
-*   `EMPTY_RESPONSE` error finish instead of a successful empty message.
+*   `EMPTY_RESPONSE` error finish instead of a successful empty message. A tool call left without an `id` or
+*   `name` is unusable, so the response ends in a `MALFORMED_TOOL_CALL` error finish, after any usage and
+*   without a `block-end` for any block.
 */
 async function* translate(payloads) {
 	let nextIndex = 0;
@@ -1209,11 +1237,33 @@ async function* translate(payloads) {
 	}
 	for await (const payload of payloads) {
 		if (payload === "[DONE]") {
-			for (const block of order) yield {
-				type: "block-end",
-				index: block.index,
-				block: closeBlock(block)
-			};
+			const ends = [];
+			for (const block of order) {
+				const closed = closeBlock(block);
+				if ("unidentified" in closed) {
+					if (pendingUsage) yield {
+						type: "usage",
+						usage: pendingUsage
+					};
+					yield {
+						type: "finish",
+						reason: {
+							kind: "error",
+							failure: {
+								message: `model streamed a tool call with no ${closed.unidentified}`,
+								code: MALFORMED_TOOL_CALL_CODE
+							}
+						}
+					};
+					return;
+				}
+				ends.push({
+					type: "block-end",
+					index: block.index,
+					block: closed
+				});
+			}
+			yield* ends;
 			if (pendingUsage) yield {
 				type: "usage",
 				usage: pendingUsage
@@ -1284,8 +1334,8 @@ async function* translate(payloads) {
 						blockType: "tool-call"
 					};
 				}
-				if (call.id !== void 0) block.callId = call.id;
-				if (call.function?.name !== void 0) block.name = call.function.name;
+				block.callId = acceptIdentity(block.callId, call.id);
+				block.name = acceptIdentity(block.name, call.function?.name);
 				const fragment = call.function?.arguments ?? "";
 				block.text += fragment;
 				yield {
@@ -1486,7 +1536,7 @@ function modelInfo(provider, model) {
 		id: model.id,
 		name: model.name ?? model.id,
 		...model.description === void 0 ? {} : { description: model.description },
-		inputModalities: model.inputModalities ?? ["text"]
+		inputModalities: model.inputModalities ?? ["text", "image"]
 	};
 }
 function providerRetryAfterMs(value) {
@@ -1568,7 +1618,7 @@ var DeepSeekAdapter = class extends LlmAdapter {
 				provider,
 				id: model,
 				name: model,
-				inputModalities: ["text"]
+				inputModalities: ["text", "image"]
 			} : modelInfo(provider, configured),
 			context: { contextWindow },
 			defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
@@ -1601,7 +1651,6 @@ var DeepSeekAdapter = class extends LlmAdapter {
 			const hasImages = options.messages.some((message) => contentHasImage(message.content));
 			let attachments;
 			if (hasImages) {
-				if (connection.models.find((entry) => entry.id === options.model)?.inputModalities?.includes("image") !== true) throw new LlmError(`DeepSeek model "${options.model}" does not accept image input.`, "UNSUPPORTED_CONTENT");
 				attachments = this.config.resolveAttachments?.();
 				if (attachments === void 0) throw new LlmError("DeepSeek image conversion requires the durable attachment service.", "UNSUPPORTED_CONTENT");
 			}
@@ -1822,7 +1871,18 @@ const NS = settingsNamespace("llm-deepseek");
 const DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY";
 /** The single provider route this plugin owns. */
 const PROVIDER = "deepseek-official";
+/** Model id a new session starts on, matching the release's default route. */
+const DEFAULT_SESSION_MODEL_ID = "deepseek-flash";
 const DEFAULT_MODELS = [
+	{
+		id: DEFAULT_SESSION_MODEL_ID,
+		name: "DeepSeek-V41-Flash",
+		description: "Default route: fast, image-capable, and economical; suited to focused, routine, or parallel tasks.",
+		contextWindow: DEFAULT_CONTEXT_WINDOW,
+		inputModalities: ["text", "image"],
+		imagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+		imageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES
+	},
 	{
 		id: "deepseek-v4-flash",
 		name: "DeepSeek-V4-Flash",
@@ -1851,7 +1911,7 @@ const catalogModel = z.object({
 	description: z.string(),
 	contextWindow: z.number().step(1).min(1),
 	maxTokens: z.number().step(1).min(1),
-	inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(["text"]),
+	inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(["text", "image"]),
 	imagePixelBudget: z.union([z.number().step(1).min(1), "low"]),
 	imageMaxBytes: z.number().step(1).min(1)
 });
@@ -1894,7 +1954,7 @@ function resolveModels(models) {
 		if (model.name !== void 0 && model.name.length === 0) throw new Error(`llm-deepseek: catalog model "${model.id}" has an empty name`);
 		if (model.contextWindow !== void 0 && (!Number.isInteger(model.contextWindow) || model.contextWindow <= 0)) throw new Error(`llm-deepseek: catalog model "${model.id}" contextWindow must be a positive integer`);
 		if (model.maxTokens !== void 0 && (!Number.isInteger(model.maxTokens) || model.maxTokens <= 0)) throw new Error(`llm-deepseek: catalog model "${model.id}" maxTokens must be a positive integer`);
-		const inputModalities = model.inputModalities ?? ["text"];
+		const inputModalities = model.inputModalities ?? ["text", "image"];
 		if (inputModalities.length === 0) throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not be empty`);
 		if (inputModalities.some((modality) => !MODEL_MODALITIES.includes(modality))) throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must contain only "text" and "image"`);
 		if (new Set(inputModalities).size !== inputModalities.length) throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not contain duplicates`);
@@ -2055,4 +2115,4 @@ function apply(ctx, config) {
 	});
 }
 //#endregion
-export { Config, DEFAULT_CONTEXT_WINDOW, DEFAULT_FILES_API_TIMEOUT_MS, DEFAULT_FILE_EXPIRY_SECONDS, DEFAULT_FILE_QUOTA_CLEANUP_BATCH, DEFAULT_FILE_REFRESH_MARGIN_SECONDS, DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM, DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM, DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM, DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET, DEFAULT_MAX_IMAGES_PER_REQUEST, DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES, DEFAULT_MAX_REQUEST_FILES_BYTES, DEFAULT_MAX_TOKENS, DEFAULT_REQUEST_IMAGE_MAX_BYTES, DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET, DEFAULT_STREAM_IDLE_TIMEOUT_MS, DeepSeekAdapter, DeepSeekFileId, DeepSeekFileStore, DeepSeekFilesClient, DeepSeekUploadIndex, MAX_CHAT_IMAGE_BYTES, MAX_FILE_EXPIRY_SECONDS, MAX_FILE_UPLOAD_BYTES, MAX_STORED_FILE_BYTES, MAX_STORED_FILE_COUNT, MIN_FILE_EXPIRY_SECONDS, PUBLIC_BASE_URL, apply, deepSeekFileScope, deepSeekImageRequestPricing, deepSeekImageTokens, inject, name, resolveAdapterOptions, resolveRequestImagePolicy };
+export { Config, DEFAULT_CONTEXT_WINDOW, DEFAULT_FILES_API_TIMEOUT_MS, DEFAULT_FILE_EXPIRY_SECONDS, DEFAULT_FILE_QUOTA_CLEANUP_BATCH, DEFAULT_FILE_REFRESH_MARGIN_SECONDS, DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM, DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM, DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM, DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET, DEFAULT_MAX_IMAGES_PER_REQUEST, DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES, DEFAULT_MAX_REQUEST_FILES_BYTES, DEFAULT_MAX_TOKENS, DEFAULT_REQUEST_IMAGE_MAX_BYTES, DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET, DEFAULT_SESSION_MODEL_ID, DEFAULT_STREAM_IDLE_TIMEOUT_MS, DeepSeekAdapter, DeepSeekFileId, DeepSeekFileStore, DeepSeekFilesClient, DeepSeekUploadIndex, MAX_CHAT_IMAGE_BYTES, MAX_FILE_EXPIRY_SECONDS, MAX_FILE_UPLOAD_BYTES, MAX_STORED_FILE_BYTES, MAX_STORED_FILE_COUNT, MIN_FILE_EXPIRY_SECONDS, PUBLIC_BASE_URL, apply, deepSeekFileScope, deepSeekImageRequestPricing, deepSeekImageTokens, inject, name, resolveAdapterOptions, resolveRequestImagePolicy };

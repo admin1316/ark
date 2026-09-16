@@ -63,7 +63,7 @@ one-shot 行始终会用文案替代输入框，说明执行记录为只读。�
 
 普通 `session.history` 路由对于普通会话和 subagent 会话同样只执行观察，但它既不携带目录地址，也不授予继续执行权限。每条需要 Agent 的普通路由都会在恢复冷会话前经过共享所有权栅栏；`session.cancel` 与 `session.updateQueue` 会直接执行同一检查，因为它们有意只查询已附加的 Agent。
 
-适配器仍位于 `dsh-host-apiproxy`；`dsh-host-webserver` 仍作为载体。浏览器代码通过现有连接包导入约定，绝不直接访问宿主 `ctx`，从而保持 [GUI RPC 分层](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.zh.md)。
+适配器仍位于 `dsh-host-apiproxy`；`dsh-host-webserver` 仍作为载体。浏览器代码通过现有连接包导入约定，绝不直接访问宿主 `ctx`，从而保持 [GUI RPC 分层](../../archived/architecture/2026-07-19-gui-layering-and-rpc-protocol.zh.md)。
 
 ## 客户端对象层与呈现
 

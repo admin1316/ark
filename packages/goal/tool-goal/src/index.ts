@@ -277,6 +277,16 @@ export function apply(ctx: Context, config: Config): void {
             'GOAL_TOOL_INVALID_UPDATE',
           )
         }
+        // A durable pause is the user's state to lift: the model may pause, but only a
+        // user-facing goal control resumes it, so a resume that targets a paused goal is refused.
+        const current = ctx.goals.get(execution.agent)
+        if (args.action === 'resume' && current?.id === ref.id && current.revision === ref.revision
+          && current.phase === 'paused') {
+          throw new HarnessError(
+            'the model cannot resume a paused goal; the user must resume it',
+            'GOAL_TOOL_RESUME_PAUSED',
+          )
+        }
         const goal = args.action === 'pause'
           ? ctx.goals.pause(execution.agent, ref)
           : ctx.goals.resume(execution.agent, ref)

@@ -261,7 +261,7 @@ PascalCase 标识符中的首字母缩略词使用首字母大写格式：`Ui`�
 | `packages/support/` | `packages/test-support/` | 该组仅包含测试基础设施，其路径必须明确说明这一点。 |
 | 原 support 系列中的 `invariants/` | `runtime-diagnostics/invariants/` | 尽管交付预设未包含不变量检查，它们仍可在生产诊断中运行，因此不属于测试支持。 |
 | `InvariantService` | `InvariantRegistry` | 该对象拥有已注册的不变量检查。保留 `@deepseek-ai/dsh-invariants` 和 `ctx.invariants`。 |
-| `packages/client/test-runtime/` | `packages/test-support/client-runtime/` | 该包是客户端测试基础设施。如果现有 NPM 名称已经说明这一约定，则予以保留。 |
+| `packages/` `client/test-runtime/` | `packages/test-support/client-runtime/` | 该包是客户端测试基础设施。如果现有 NPM 名称已经说明这一约定，则予以保留。 |
 
 保留 MCP、Todo、Plan Mode 包、键、事件和工具名称。本决策重命名控制器类，而不是产品功能。
 

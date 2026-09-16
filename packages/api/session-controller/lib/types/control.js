@@ -156,20 +156,14 @@ class ControlQueue {
     }
 }
 function queueItems(agent, splice) {
-    const project = (target) => {
-        const messages = target === 'next-turn' ? agent.inbox.nextTurn : agent.inbox.nextStep;
-        return splice?.target === target
-            ? messages.toSpliced(splice.start, splice.removedCount ?? 0, ...splice.inserted)
-            : messages;
-    };
     return [
-        ...project('next-turn').map(message => ({
+        ...agent.inbox.project('next-turn', splice).map(message => ({
             id: message.id,
             placement: 'queued',
             ...promptRpcId(message),
             message: { id: message.id, content: message.content },
         })),
-        ...project('next-step').map(message => ({
+        ...agent.inbox.project('next-step', splice).map(message => ({
             id: message.id,
             placement: message.source.kind === 'user' ? 'steering' : 'context',
             ...promptRpcId(message),
@@ -180,7 +174,12 @@ function queueItems(agent, splice) {
 /** Prompt-RPC identity carried by a browser-submitted message's user source. */
 function promptRpcId(message) {
     const source = message.source;
-    return source.kind === 'user' && 'rpcId' in source ? { rpcId: source.rpcId } : {};
+    if (source.kind !== 'user')
+        return {};
+    if ('invocationId' in source && typeof source.invocationId === 'string')
+        return { rpcId: source.invocationId };
+    return 'rpcId' in source && typeof source.rpcId === 'string'
+        ? { rpcId: source.rpcId } : {};
 }
 function jobView(job) {
     return {

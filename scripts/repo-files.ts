@@ -27,6 +27,15 @@ export function isArchivedAgentNotePath(path: string): boolean {
 }
 
 /**
+ * Inline marker declaring that a line's `packages/...` literals name paths
+ * under a temporary test fixture root, not locations in this repository. A line
+ * carrying it is skipped by the reference scanners, so an intentional fixture
+ * stays visible in the code it belongs to instead of being hidden by a
+ * file-level exclusion. Every use states its reason after the colon.
+ */
+export const FIXTURE_PATH_MARKER = 'repo-path-fixture:'
+
+/**
  * Expand repository-relative globs and deduplicate symlinked files.
  * @param root - absolute repository root.
  * @param patterns - repository-relative glob patterns, processed in order.
@@ -77,6 +86,8 @@ export function findReferenceViolations(
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (line === undefined) continue
+    // A declared fixture path is not a repository reference (see FIXTURE_PATH_MARKER).
+    if (line.includes(FIXTURE_PATH_MARKER)) continue
     for (const match of line.matchAll(pattern)) {
       const ref = normalize(match[0])
       if (isViolation(ref)) out.push({ file, line: i + 1, ref })

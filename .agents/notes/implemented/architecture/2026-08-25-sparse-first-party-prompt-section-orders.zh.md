@@ -8,7 +8,7 @@ Status: implemented
 
 仓库自带的系统提示词段分散在二十多个包中，各自声明互不关联的数字字面量。主要工具序列连续占用 100 到 117，后续插入还使用半步数值。因此，后续更改可能在无法看到完整分配表的情况下与已有段发生冲突。
 
-相同 order 依赖 JavaScript 稳定排序，使插件激活顺序成为实际的平局规则。[Cordis／workflow 提示词顺序修复](../../archived/bug-fix/2026-08-24-system-prompt-section-order-ties.md)表明，完整且有效的组合可能按不同顺序激活同一组插件，进而产生不同的请求 header 和快照结果。局部修复一次冲突，无法阻止另一个包再次使用同一数值。
+相同 order 依赖 JavaScript 稳定排序，使插件激活顺序成为实际的平局规则。[Cordis／workflow 提示词顺序修复](../../archived/bug-fix/2026-08-24-system-prompt-section-order-ties.zh.md)表明，完整且有效的组合可能按不同顺序激活同一组插件，进而产生不同的请求 header 和快照结果。局部修复一次冲突，无法阻止另一个包再次使用同一数值。
 
 此外，shell 指导位于文件系统指导之后，但 shell 命令具有最广泛的执行和失败语义。模型应先读到 shell 结果义务，再阅读将文件操作分流到专用工具的更窄指令。
 

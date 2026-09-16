@@ -32,7 +32,11 @@ describe('confined Wiki filesystem contracts', () => {
     const dir = ensureConfinedDirectory(root, 'concepts/nested')
     expect(dir).toBe(join(root, 'concepts', 'nested'))
     expect(ensureConfinedDirectory(root, 'concepts/nested')).toBe(dir)
-    expect(lstatSync(dir).mode & 0o077).toBe(0)
+    // POSIX mode bits carry the privacy contract on unix; NTFS has no POSIX
+    // mode representation — access privacy on Windows is governed by the ACLs
+    // of the user-private parent directory, so the bit-level assertion is
+    // meaningful only on POSIX platforms.
+    if (process.platform !== 'win32') expect(lstatSync(dir).mode & 0o077).toBe(0)
     writeFileSync(join(dir, 'page.md'), '中文 page')
     expect(normalizeConfinedRelativePath('concepts/nested/page.md')).toBe('concepts/nested/page.md')
     expect(readConfinedText(root, 'concepts/nested/page.md')).toBe('中文 page')
@@ -75,7 +79,8 @@ describe('confined Wiki filesystem contracts', () => {
     const root = fixture()
     const file = join(root, 'private', 'state.json')
     expect(createPrivateFileIfMissing(file, Buffer.from('original'))).toBe(true)
-    expect(lstatSync(file).mode & 0o077).toBe(0)
+    // See the directory-mode note above: POSIX-only privacy bit contract.
+    if (process.platform !== 'win32') expect(lstatSync(file).mode & 0o077).toBe(0)
     expect(createPrivateFileIfMissing(file, Buffer.from('replacement'))).toBe(false)
     expect(readFileSync(file, 'utf8')).toBe('original')
     expect(readdirSync(dirname(file))).toEqual(['state.json'])

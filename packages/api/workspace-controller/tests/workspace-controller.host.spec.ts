@@ -8,7 +8,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
-import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { WorkspaceId, WorkspaceRemoteResult } from '@deepseek-ai/dsh-workspace/types'
 import WorkspaceController from '../src/index.ts'
 import { WorkspaceFeed } from '../src/feed.ts'
 import type { WorkspaceFollowFrame } from '../src/types.ts'
@@ -49,7 +49,21 @@ async function harness() {
     contexts: { configureHost: () => dispose },
   } as never)
   const controller = new WorkspaceController(ctx)
-  return { controller, ctx, root, storageDomain }
+  const signal = new AbortController().signal
+  const unwrap = async <T>(result: Promise<WorkspaceRemoteResult<T>>): Promise<T> => {
+    const value = await result
+    if (!value.ok) throw new TypertRemoteFailure(value.error)
+    return value.value
+  }
+  const commands = {
+    create: (request: Parameters<WorkspaceRegistry['remoteExportCreate']>[0]) => unwrap(ctx.workspaceRegistry.remoteExportCreate(request, signal)),
+    rename: (request: Parameters<WorkspaceRegistry['remoteExportRename']>[0]) => unwrap(ctx.workspaceRegistry.remoteExportRename(request, signal)),
+    delete: (request: Parameters<WorkspaceRegistry['remoteExportDelete']>[0]) => unwrap(ctx.workspaceRegistry.remoteExportDelete(request, signal)),
+    insertBefore: (request: Parameters<WorkspaceRegistry['remoteExportInsertBefore']>[0]) => unwrap(ctx.workspaceRegistry.remoteExportInsertBefore(request, signal)),
+    insertSessionBefore: (request: Parameters<WorkspaceRegistry['remoteExportInsertSessionBefore']>[0]) => unwrap(ctx.workspaceRegistry.remoteExportInsertSessionBefore(request, signal)),
+    archiveSession: (request: Parameters<WorkspaceRegistry['remoteExportArchiveSession']>[0]) => unwrap(ctx.workspaceRegistry.remoteExportArchiveSession(request, signal)),
+  }
+  return { controller, commands, ctx, root, storageDomain }
 }
 
 function stageDir(root: string, name: string): string {
@@ -66,13 +80,13 @@ async function nextFrame(
   return next.value
 }
 
-describe('WorkspaceController commands', () => {
+describe('canonical Workspace commands with retained follow controller', () => {
   it('serializes concurrent path adoption and preserves an existing title', async () => {
-    const { controller, root } = await harness()
+    const { commands, root } = await harness()
     const path = stageDir(root, 'alpha')
     const results = await Promise.all([
-      controller.create({ path }),
-      controller.create({ path }),
+      commands.create({ path }),
+      commands.create({ path }),
     ])
     const created = results.find(result => result.created)
     const resolved = results.find(result => !result.created)
@@ -81,90 +95,89 @@ describe('WorkspaceController commands', () => {
 
     const workspaceId = created?.workspace.workspaceId
     if (workspaceId === undefined) throw new Error('fixture did not create a Workspace')
-    await controller.rename({ workspaceId, title: 'renamed' })
-    await expect(controller.create({ path })).resolves.toMatchObject({
+    await commands.rename({ workspaceId, title: 'renamed' })
+    await expect(commands.create({ path })).resolves.toMatchObject({
       created: false,
       workspace: { workspaceId, title: 'renamed' },
     })
   })
 
   it('maps invalid paths, blank names, conflicts, and unknown ids to stable failures', async () => {
-    const { controller, root } = await harness()
-    const first = await controller.create({ path: stageDir(root, 'first') })
-    const second = await controller.create({ path: stageDir(root, 'second') })
+    const { commands, root } = await harness()
+    const first = await commands.create({ path: stageDir(root, 'first') })
+    const second = await commands.create({ path: stageDir(root, 'second') })
 
-    await expect(controller.create({ path: join(root, 'missing') })).rejects.toMatchObject({
+    await expect(commands.create({ path: join(root, 'missing') })).rejects.toMatchObject({
       failure: { code: 'workspace-invalid-path', details: { path: join(root, 'missing') } },
     })
     expect(existsSync(join(root, 'missing'))).toBe(false)
-    await expect(controller.rename({ workspaceId: first.workspace.workspaceId, title: '  ' }))
-      .rejects.toMatchObject({ failure: { code: 'bad-request' } })
-    await controller.rename({ workspaceId: first.workspace.workspaceId, title: 'occupied' })
-    await expect(controller.rename({ workspaceId: second.workspace.workspaceId, title: ' occupied ' }))
+    await expect(commands.rename({ workspaceId: first.workspace.workspaceId, title: '  ' }))
+      .rejects.toMatchObject({ failure: { code: 'arguments-invalid' } })
+    await commands.rename({ workspaceId: first.workspace.workspaceId, title: 'occupied' })
+    await expect(commands.rename({ workspaceId: second.workspace.workspaceId, title: ' occupied ' }))
       .rejects.toMatchObject({ failure: { code: 'workspace-name-conflict' } })
-    await expect(controller.delete({ workspaceId: 'missing' as WorkspaceId }))
+    await expect(commands.delete({ workspaceId: 'missing' as WorkspaceId }))
       .rejects.toMatchObject({ failure: { code: 'workspace-not-found' } })
   })
 
   it('preserves Remote failures and propagates unexpected registry failures', async () => {
-    const { controller, ctx, root } = await harness()
+    const { commands, ctx, root } = await harness()
     const remoteFailure = new TypertRemoteFailure({
       code: 'fixture-failure',
       message: 'already mapped',
       details: {},
     })
-    const resolveByPath = vi.spyOn(ctx.workspaceRegistry, 'resolveByPath')
+    const createOrResolve = vi.spyOn(ctx.workspaceRegistry, 'createOrResolve')
       .mockRejectedValueOnce(remoteFailure)
       .mockRejectedValueOnce('plain failure')
-    await expect(controller.create({ path: stageDir(root, 'remote-failure') }))
+    await expect(commands.create({ path: stageDir(root, 'remote-failure') }))
       .rejects.toBe(remoteFailure)
-    const plainFailure = controller.create({ path: stageDir(root, 'plain-failure') })
+    const plainFailure = commands.create({ path: stageDir(root, 'plain-failure') })
     await expect(plainFailure).rejects.toMatchObject({
       failure: { code: 'workspace-invalid-path' },
     })
     await expect(plainFailure).rejects.toThrow('plain failure')
-    resolveByPath.mockRestore()
+    createOrResolve.mockRestore()
 
-    const created = await controller.create({ path: stageDir(root, 'created') })
+    const created = await commands.create({ path: stageDir(root, 'created') })
     const workspace = ctx.workspaceRegistry.get(created.workspace.workspaceId)
     if (workspace === undefined) throw new Error('fixture Workspace disappeared')
 
     const orderFailure = new Error('order storage failed')
     vi.spyOn(ctx.workspaceRegistry, 'insertBefore').mockRejectedValueOnce(orderFailure)
-    await expect(controller.insertBefore({ workspaceId: created.workspace.workspaceId }))
+    await expect(commands.insertBefore({ workspaceId: created.workspace.workspaceId }))
       .rejects.toBe(orderFailure)
 
     const moveFailure = new Error('membership storage failed')
     vi.spyOn(workspace, 'insertSessionBefore').mockRejectedValueOnce(moveFailure)
-    await expect(controller.insertSessionBefore({
+    await expect(commands.insertSessionBefore({
       workspaceId: created.workspace.workspaceId,
       sessionId: SessionId('session'),
     })).rejects.toBe(moveFailure)
 
     const archiveFailure = new Error('archive storage failed')
     vi.spyOn(ctx.workspaceRegistry, 'archiveSession').mockRejectedValueOnce(archiveFailure)
-    await expect(controller.archiveSession({ sessionId: SessionId('session') }))
+    await expect(commands.archiveSession({ sessionId: SessionId('session') }))
       .rejects.toBe(archiveFailure)
   })
 
   it('resolves queued Workspace identities when their operation starts', async () => {
-    const { controller, ctx, root } = await harness()
-    const target = await controller.create({ path: stageDir(root, 'target') })
-    const blockerPath = stageDir(root, 'blocker')
+    const { commands, ctx, root } = await harness()
+    const target = await commands.create({ path: stageDir(root, 'target') })
+    const workspace = ctx.workspaceRegistry.get(target.workspace.workspaceId)
+    if (workspace === undefined) throw new Error('fixture Workspace disappeared')
     const gate = deferred<undefined>()
-    const originalResolveByPath = ctx.workspaceRegistry.resolveByPath.bind(ctx.workspaceRegistry)
-    const resolveByPath = vi.spyOn(ctx.workspaceRegistry, 'resolveByPath')
-    resolveByPath.mockImplementationOnce(async (path) => {
+    const entered = deferred<undefined>()
+    const setTitle = workspace.setTitle.bind(workspace)
+    vi.spyOn(workspace, 'setTitle').mockImplementationOnce(async (title) => {
+      entered.resolve(undefined)
       await gate.promise
-      return originalResolveByPath(path)
+      await setTitle(title)
     })
-
-    const blocker = controller.create({ path: blockerPath })
-    const deletion = controller.delete({ workspaceId: target.workspace.workspaceId })
-    const staleRename = controller.rename({
-      workspaceId: target.workspace.workspaceId,
-      title: 'must-not-land',
-    })
+    const blocker = commands.rename({ workspaceId: workspace.id, title: 'blocking' })
+    await entered.promise
+    const deletion = commands.delete({ workspaceId: workspace.id })
+    const staleRename = commands.rename({ workspaceId: workspace.id, title: 'must-not-land' })
     gate.resolve(undefined)
     await blocker
     await expect(deletion).resolves.toEqual({ deleted: true })
@@ -172,16 +185,16 @@ describe('WorkspaceController commands', () => {
   })
 
   it('reorders Workspaces and Sessions and archives only known Sessions', async () => {
-    const { controller, ctx, root } = await harness()
-    const first = await controller.create({ path: stageDir(root, 'first') })
-    const second = await controller.create({ path: stageDir(root, 'second') })
-    await expect(controller.insertBefore({
+    const { commands, ctx, root } = await harness()
+    const first = await commands.create({ path: stageDir(root, 'first') })
+    const second = await commands.create({ path: stageDir(root, 'second') })
+    await expect(commands.insertBefore({
       workspaceId: first.workspace.workspaceId,
       beforeWorkspaceId: second.workspace.workspaceId,
     })).resolves.toEqual({
       workspaceIds: [first.workspace.workspaceId, second.workspace.workspaceId],
     })
-    await expect(controller.insertBefore({ workspaceId: 'missing' as WorkspaceId }))
+    await expect(commands.insertBefore({ workspaceId: 'missing' as WorkspaceId }))
       .rejects.toMatchObject({ failure: { code: 'workspace-not-found' } })
 
     const session = ctx.sessions.create(SessionId('session-one'), {
@@ -190,15 +203,15 @@ describe('WorkspaceController commands', () => {
     const workspace = ctx.workspaceRegistry.get(first.workspace.workspaceId)
     if (workspace === undefined) throw new Error('fixture Workspace disappeared')
     await workspace.attachSession(session.id)
-    await expect(controller.insertSessionBefore({
+    await expect(commands.insertSessionBefore({
       workspaceId: first.workspace.workspaceId,
       sessionId: session.id,
     })).resolves.toMatchObject({ workspace: { sessionIds: [session.id] } })
-    await expect(controller.insertSessionBefore({
+    await expect(commands.insertSessionBefore({
       workspaceId: first.workspace.workspaceId,
       sessionId: SessionId('missing-session'),
     })).rejects.toMatchObject({ failure: { code: 'workspace-move-invalid' } })
-    await expect(controller.insertSessionBefore({
+    await expect(commands.insertSessionBefore({
       workspaceId: first.workspace.workspaceId,
       sessionId: session.id,
       beforeSessionId: SessionId('missing-anchor'),
@@ -208,14 +221,14 @@ describe('WorkspaceController commands', () => {
         details: { beforeSessionId: 'missing-anchor' },
       },
     })
-    await expect(controller.insertSessionBefore({
+    await expect(commands.insertSessionBefore({
       workspaceId: 'missing' as WorkspaceId,
       sessionId: session.id,
     })).rejects.toMatchObject({ failure: { code: 'workspace-not-found' } })
 
-    await expect(controller.archiveSession({ sessionId: session.id }))
+    await expect(commands.archiveSession({ sessionId: session.id }))
       .resolves.toEqual({ archivedSessionIds: [session.id] })
-    await expect(controller.archiveSession({ sessionId: SessionId('unknown') }))
+    await expect(commands.archiveSession({ sessionId: SessionId('unknown') }))
       .rejects.toMatchObject({ failure: { code: 'session-not-found' } })
   })
 })
@@ -245,7 +258,7 @@ describe('WorkspaceController follow', () => {
   })
 
   it('starts with a complete baseline and emits committed increments in domain order', async () => {
-    const { controller, ctx, root } = await harness()
+    const { controller, commands, ctx, root } = await harness()
     const abort = new AbortController()
     const iterator = controller.follow(abort.signal)[Symbol.asyncIterator]()
     await expect(nextFrame(iterator)).resolves.toEqual({
@@ -253,26 +266,26 @@ describe('WorkspaceController follow', () => {
       value: { items: [], archivedSessionIds: [] },
     })
 
-    const first = await controller.create({ path: stageDir(root, 'first') })
+    const first = await commands.create({ path: stageDir(root, 'first') })
     await expect(nextFrame(iterator)).resolves.toMatchObject({
       type: 'upsert', workspace: { workspaceId: first.workspace.workspaceId },
     })
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'order', workspaceIds: [first.workspace.workspaceId],
     })
-    await controller.rename({ workspaceId: first.workspace.workspaceId, title: 'renamed' })
+    await commands.rename({ workspaceId: first.workspace.workspaceId, title: 'renamed' })
     await expect(nextFrame(iterator)).resolves.toMatchObject({
       type: 'upsert', workspace: { title: 'renamed' },
     })
 
-    const second = await controller.create({ path: stageDir(root, 'second') })
+    const second = await commands.create({ path: stageDir(root, 'second') })
     await expect(nextFrame(iterator)).resolves.toMatchObject({
       type: 'upsert', workspace: { workspaceId: second.workspace.workspaceId },
     })
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'order', workspaceIds: [second.workspace.workspaceId, first.workspace.workspaceId],
     })
-    await controller.insertBefore({
+    await commands.insertBefore({
       workspaceId: first.workspace.workspaceId,
       beforeWorkspaceId: second.workspace.workspaceId,
     })
@@ -284,11 +297,11 @@ describe('WorkspaceController follow', () => {
     const session = ctx.sessions.create(SessionId('archived'), {
       meta: { cwd: first.workspace.path },
     })
-    await controller.archiveSession({ sessionId: session.id })
+    await commands.archiveSession({ sessionId: session.id })
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'archived', archivedSessionIds: [session.id],
     })
-    await controller.delete({ workspaceId: second.workspace.workspaceId })
+    await commands.delete({ workspaceId: second.workspace.workspaceId })
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'order', workspaceIds: [first.workspace.workspaceId],
     })
@@ -301,7 +314,7 @@ describe('WorkspaceController follow', () => {
   })
 
   it('ignores unrelated domain writes and closes active followers on disposal', async () => {
-    const { controller, ctx, root } = await harness()
+    const { controller, commands, ctx, root } = await harness()
     const abort = new AbortController()
     const iterator = controller.follow(abort.signal)[Symbol.asyncIterator]()
     await nextFrame(iterator)
@@ -318,7 +331,7 @@ describe('WorkspaceController follow', () => {
       domain: 'workspace', table: 'workspaces', key: 'unknown', operation: 'deleted',
     })
     const pending = iterator.next()
-    const created = await controller.create({ path: stageDir(root, 'visible') })
+    const created = await commands.create({ path: stageDir(root, 'visible') })
     await expect(pending).resolves.toMatchObject({ value: { type: 'upsert' } })
     await expect(iterator.next()).resolves.toEqual({
       done: false,

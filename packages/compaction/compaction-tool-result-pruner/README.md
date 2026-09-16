@@ -1,10 +1,26 @@
+---
+description: "The replay-safe model-free pruning service (ctx.toolResultPruner)."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-compaction-tool-result-pruner
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The replay-safe model-free pruning service (`ctx.toolResultPruner`). It rewrites over-budget `tool/result` surface nodes to a bounded head, a fixed omission marker, and a bounded tail while retaining the full original event in the append-only session log.
 
 This is a concrete companion to [`dsh-compaction-basic`](../compaction-basic/README.md), not a compaction backend or model-facing tool. Compact-basic reads it through optional `ctx.get('toolResultPruner')`, so either package remains independently composable.
+
+## Table of Contents
+
+- [Service API](#service-api)
+- [Config](#config)
+- [Usage](#usage)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Service API
 
@@ -60,3 +76,7 @@ Replacing an earlier result invalidates reuse from the first changed token. The 
 - **Character budgets are not token budgets** — provider token density varies, so `ctx.tokenMeter` remains the authority for deciding whether pruning relieved request pressure.
 - **Pruning is syntactic** — it retains the beginning and end without interpreting which middle lines are semantically important.
 - **Grapheme clusters can split** — code-point slicing protects surrogate pairs but does not perform locale-aware grapheme segmentation.
+
+### Dev Note
+
+None.

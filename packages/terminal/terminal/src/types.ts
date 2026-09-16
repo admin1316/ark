@@ -68,6 +68,10 @@ export interface TerminalSendRequest {
   submit: boolean
   /** Cancellation for the wait; backends also interrupt the foreground command. */
   signal?: AbortSignal
+  /** The prompt text this send's shell emits after its OSC marker, when the
+   * caller installed a custom prompt that differs from the session's dialect
+   * default. When set, prompt readiness completes against this text. */
+  expectedPromptTail?: string
 }
 
 /** Incremental output consumed from one live send operation. */
