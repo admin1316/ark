@@ -105,7 +105,7 @@ JIUZHANG_SELF_CONTAINED=1 JIUZHANG_PACK_RECEIPT=/private/tmp/runtime-pack/pack-r
 
 ## 10. 已知工程债与合并后 CI 状态
 
-- **合并后 main CI（只读核查 2026-09-16，HEAD `4d0da264…`）**：CI main run `35040003082` 与 Sandbox run `35040003084` 均 failure——serial / linux 的 coverage 门因一条未处理拒绝（`Error: start failed`，`packages/subagent/agent-team/tests/runtime.spec.ts:184:24`）以退出码 1 失败，其 14,209 个测试全部通过；serial / windows 失败属 Issue #28 范围；serial / macos 因 `if: false` 禁用；Sandbox 的 seatbelt job 因 `@deepseek-ai/dsh-sandbox-local` 在 macOS 缺失 `@deepseek-ai/node-addon-landlock-run` 而失败。同一 HEAD 其余 8 个 run 成功。合并前 PR 头 `aa944dc8…` 的 PR CI（run `35002470747`）不能替代上述 main 结论。
+- **合并后 main CI（只读核查 2026-09-16，HEAD `4d0da264…`）**：CI main run `35040003082` 与 Sandbox run `35040003084` 均 failure——serial / linux 的 coverage 门因一条未处理拒绝（`Error: start failed`，`packages/subagent/agent-team/tests/runtime.spec.ts:184:24`）以退出码 1 失败，其 14,209 个测试全部通过；serial / windows 失败属 Issue #28 范围；serial / macos 因 `if: false` 禁用；Sandbox 的 seatbelt job 因 `@deepseek-ai/dsh-sandbox-local` 在 macOS 缺失 `@deepseek-ai/node-addon-landlock-run` 而失败。同一 HEAD 其余 run 成功（2026-09-16 复查共 11 个 run：9 success / 2 failure，新增为 scheduled E2E run `35056874410`，无新增失败）。合并前 PR 头 `aa944dc8…` 的 PR CI（run `35002470747`）不能替代上述 main 结论。
 - **Windows 原生债务**：以 Issue #28（open）的实查范围为准；Windows 运行时形态通过不等于 Windows 原生测试全面一致。
 - **CI 缺口**：`build:official` 在 CI 中缺失，本地构建路径完整但未纳入持续集成。
 - **生成物入库**：`lib/**` 构建产物被纳入版本控制（含 208 个被跟踪的 `*.tsbuildinfo`）；由此产生 3 处 white-space 命中（2 处在生成文件、1 处在测试源码 `packages/util/http-proxy/tests/proxy-env.ts`）。根因修法是一次性把生成目录移出版本控制，而不是逐文件打补丁；移出前提见 [docs/maintenance.md](docs/maintenance.zh.md)。
