@@ -91,6 +91,10 @@ jobs:
       # therefore the job — consumers cannot report success over a missing tree.
       # The Linux-only native binary stays behind its own per-arch step.
       - name: Build host lib outputs
+        env:
+          # tsc -b over the host project graph exceeds the default ~2 GB V8 heap
+          # on the macOS runner; the same budget other workflows use.
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm run build:lib:host
 
       # The bwrap rung needs bubblewrap on PATH and unprivileged user

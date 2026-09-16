@@ -887,6 +887,8 @@ describe('Sandbox workflow build prerequisite', () => {
     const build = requireStep('Build host lib outputs')
     expect(build['continue-on-error']).toBeUndefined()
     expect(stepText(build.run)).not.toContain('|| true')
+    // The host project graph exceeds the default V8 heap on the macOS runner.
+    expect(build.env).toMatchObject({ NODE_OPTIONS: '--max-old-space-size=4096' })
     const e2e = requireStep('Sandbox e2e (real kernel confinement, world-verified)')
     expect(e2e['continue-on-error']).toBeUndefined()
     expect(stepText(e2e.run)).toContain('[ "$status" -eq 0 ]')
