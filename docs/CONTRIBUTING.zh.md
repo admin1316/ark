@@ -14,10 +14,10 @@
 
 ## 开发
 
-- 构建、验证、打包与布局细节：[工程说明](integrations/jiuzhang/docs/engineering.md)。
+- 构建、验证、打包与布局细节：[工程说明](../integrations/jiuzhang/docs/engineering.md)。
 - 提交信息遵循 Conventional Commits；本地 pre-commit 与 pre-push 钩子会运行相关检查。
-- 在本仓库工作的 agent 遵循 [AGENTS.md](AGENTS.md)。
+- 在本仓库工作的 agent 遵循 [AGENTS.md](../AGENTS.md)。
 
 ## 许可证
 
-本仓库以 MIT 许可证发布——见 [LICENSE](LICENSE)。第三方许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本仓库以 MIT 许可证发布——见 [LICENSE](../LICENSE)。第三方许可证见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。

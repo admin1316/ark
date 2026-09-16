@@ -14,10 +14,10 @@ This is the private product repository for Ark. It contains the product layer (i
 
 ## Development
 
-- Build, verification, packaging, and layout details: [engineering documentation](integrations/jiuzhang/docs/engineering.md).
+- Build, verification, packaging, and layout details: [engineering documentation](../integrations/jiuzhang/docs/engineering.md).
 - Commit messages follow Conventional Commits; local pre-commit and pre-push hooks run the relevant checks.
-- Agents working in this repository follow [AGENTS.md](AGENTS.md).
+- Agents working in this repository follow [AGENTS.md](../AGENTS.md).
 
 ## License
 
-The repository is MIT licensed — see [LICENSE](LICENSE). Third-party licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The repository is MIT licensed — see [LICENSE](../LICENSE). Third-party licenses are disclosed in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
