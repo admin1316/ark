@@ -62,6 +62,15 @@ jobs:
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
+      # The static gates and knip consume the built lib outputs (package entries
+      # and compiled plugin surfaces). The lib outputs are no longer tracked, so
+      # the job must build them after install and before any consumer runs.
+      - name: Build host lib outputs (static prerequisite)
+        run: pnpm run build:lib:host
+
+      - name: Re-link workspace bins after the host build
+        run: pnpm install --frozen-lockfile --offline
+
       - name: Run static gates
         env:
           DSH_ARCHIVE_BASE_REF: ${{ github.event.pull_request.base.sha }}
@@ -134,6 +143,16 @@ jobs:
       # sandbox lanes already build this same owner before their pack runs.
       - name: Build the native Landlock entry (coverage prerequisite)
         run: pnpm --dir native/landlock-run run build:ts
+
+      # The coverage specs consume the built lib outputs (package entries and the
+      # native-api-app plugin tree). The lib outputs are no longer tracked, so
+      # build them after install, then re-link the workspace bins, before the
+      # consumers run.
+      - name: Build host lib outputs (coverage prerequisite)
+        run: pnpm run build:lib:host
+
+      - name: Re-link workspace bins after the host build
+        run: pnpm install --frozen-lockfile --offline
 
       - name: Run exhaustive coverage
         run: pnpm run check:ci:coverage
