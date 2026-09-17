@@ -108,8 +108,8 @@ JIUZHANG_SELF_CONTAINED=1 JIUZHANG_PACK_RECEIPT=/private/tmp/runtime-pack/pack-r
 - **合并后 main CI（只读核查 2026-09-16，HEAD `4d0da264…`）**：CI main run `35040003082` 与 Sandbox run `35040003084` 均 failure——serial / linux 的 coverage 门因一条未处理拒绝（`Error: start failed`，`packages/subagent/agent-team/tests/runtime.spec.ts:184:24`）以退出码 1 失败，其 14,209 个测试全部通过；serial / windows 失败属 Issue #28 范围；serial / macos 因 `if: false` 禁用；Sandbox 的 seatbelt job 因 `@deepseek-ai/dsh-sandbox-local` 在 macOS 缺失 `@deepseek-ai/node-addon-landlock-run` 而失败。同一 HEAD 其余 run 成功（2026-09-16 复查共 11 个 run：9 success / 2 failure，新增为 scheduled E2E run `35056874410`，无新增失败）。合并前 PR 头 `aa944dc8…` 的 PR CI（run `35002470747`）不能替代上述 main 结论。
 - **Windows 原生债务**：以 Issue #28（open）的实查范围为准；Windows 运行时形态通过不等于 Windows 原生测试全面一致。
 - **CI 缺口**：`build:official` 在 CI 中缺失，本地构建路径完整但未纳入持续集成。
-- **生成物入库**：`lib/**` 构建产物被纳入版本控制（含 208 个被跟踪的 `*.tsbuildinfo`）；由此产生 3 处 white-space 命中（2 处在生成文件、1 处在测试源码 `packages/util/http-proxy/tests/proxy-env.ts`）。根因修法是一次性把生成目录移出版本控制，而不是逐文件打补丁；移出前提见 [docs/maintenance.md](docs/maintenance.md)。
-- **钩子与 lib/ 产物**：`pre-push` 钩子执行 `pnpm run typecheck`（即 `build:lib:host`），会重写已提交的 `lib/` 产物；提交与推送时不得把生成差异混入变更。
+- **生成物入库**：`lib/**` 构建产物与 208 个 `*.tsbuildinfo` 已移出版本控制；`.gitignore` 忽略这些类别，索引中为零。`pnpm run verify-generated-tracking` 已接入 `ci-static` 车道与 pre-commit 钩子，被暂存或强制加入（`git add -f`）的生成产物会直接失败；移出前提见 [docs/maintenance.md](docs/maintenance.md)。
+- **钩子与 lib/ 产物**：`pre-push` 钩子执行 `pnpm run typecheck`（即 `build:lib:host`），在本地重建 `lib/` 产物；这些产物不参与版本控制，不得用 `git add -f` 混入提交，`pnpm run verify-generated-tracking` 会拒绝这种暂存。
 - **迁移期历史说明**：原本地 checkout 的 `origin` 曾指向已删除的本地路径，现以 GitHub 远端为准；干净基线血统与 main 的关系见第 9 节。
 - **未验证项**：Mach-O 主程序与 Swift 源码的字节对应关系未做可复现构建比对；`ArkSourceSnapshotSHA256` 未独立重算；轨迹/聊天的真实鼠标验收需要人工复点，没有自动化点击能力时不报程序化 PASS。
 
