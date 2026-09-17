@@ -119,6 +119,6 @@
     "@deepseek-ai/dsh-web-fetch-http": "workspace:^",
     "@types/js-yaml": "^4.0.9",
     "@types/ws": "8.18.1",
-    "execa": "^10.0.0"
+    "execa": "^10.0.1"
   }
 }
