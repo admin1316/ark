@@ -42,6 +42,8 @@
  *   answer `{}` (no accepted) — same-pipe ordering makes the chunk arrive
  *   before the protocol failure (partial-output retention probe).
  * - `FAKE_IGNORE_EOF` + `FAKE_SIGTERM_FILE`: keep running after stdin EOF; touch the file on SIGTERM (ladder probe).
+ * - `FAKE_EOF_FILE`: with `FAKE_IGNORE_EOF`, touch this file when stdin reaches EOF
+ *   (barrier for callers that must act inside the client's cleanup window).
  * - `FAKE_TRAP_SIGTERM`: with `FAKE_IGNORE_EOF`, survive SIGTERM too (SIGKILL-rung probe).
  * - `FAKE_EXIT_BEFORE_INIT`: exit 3 immediately (spawn-then-die probe).
  * - `FAKE_STDERR`: write this line to stderr at boot (diagnostics-tail probe).
@@ -63,7 +65,10 @@ if (env.FAKE_IGNORE_EOF !== undefined) {
   // Simulate a runtime that never quiesces from EOF so the dispose ladder
   // must escalate; record which rung fired.
   process.stdin.resume()
-  process.stdin.on('end', () => { setInterval(() => {}, 1_000) })
+  process.stdin.on('end', () => {
+    if (env.FAKE_EOF_FILE !== undefined) writeFileSync(env.FAKE_EOF_FILE, 'eof\n')
+    setInterval(() => {}, 1_000)
+  })
   process.on('SIGTERM', () => {
     if (env.FAKE_SIGTERM_FILE !== undefined) writeFileSync(env.FAKE_SIGTERM_FILE, 'sigterm\n')
     if (env.FAKE_TRAP_SIGTERM === undefined) process.exit(0)

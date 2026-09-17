@@ -57,41 +57,61 @@ export class DeepSeekHarness implements AsyncDisposable {
   }
 
   /**
-   * Start the subprocess and perform the `initialize` handshake once. On
-   * failure, successful SDK-owned cleanup reaps the runtime and installs a
-   * fresh client (`HarnessClient.close` is permanent), so a later call retries
-   * with a new subprocess unless {@link close} already ended this harness. If
-   * cleanup also fails, rejects with an `AggregateError` whose ordered errors
-   * preserve both causes and retains the failed client rather than spawning
-   * alongside a process whose exit was not proved.
-   * @returns settlement of the (memoized) handshake.
+   * Start the subprocess and perform the `initialize` handshake once per
+   * attempt. Concurrent calls join the attempt in flight, including its
+   * failed-handshake cleanup window: the attempt still owns the handshake
+   * until the runtime actually stopped, so a retry landing there cannot race a
+   * second client against the exiting one. On failure, successful SDK-owned
+   * cleanup reaps the runtime and installs a fresh client
+   * (`HarnessClient.close` is permanent), so a later call retries with a new
+   * subprocess unless {@link close} already ended this harness. If cleanup also
+   * fails, rejects with an `AggregateError` whose ordered errors preserve both
+   * causes and retains the failed client rather than spawning alongside a
+   * process whose exit was not proved.
+   * @returns settlement of the (memoized) handshake attempt.
    */
   start(): Promise<void> {
-    this.initialized ??= (async () => {
-      try {
-        this.clientInstance.start()
-        await this.clientInstance.initialize({
-          cwd: this.cwd,
-          provider: this.provider,
-          model: this.model,
-          ...this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort },
-          ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
-        })
-      } catch (error) {
-        this.initialized = undefined
-        try {
-          await this.clientInstance.close()
-        } catch (cleanupError: unknown) {
-          throw new AggregateError(
-            [error, cleanupError],
-            'DeepSeek Harness initialization and cleanup failed',
-          )
-        }
-        if (!this.closed) this.clientInstance = this.createClient()
-        throw error
-      }
-    })()
+    this.initialized ??= this.handshake()
     return this.initialized
+  }
+
+  /**
+   * Run one handshake attempt against the client it captures, then release the
+   * memo so a later call may retry. The memo is released only after cleanup
+   * settled, and never before the `start()` assignment that installed it, so a
+   * synchronous handshake throw cannot leave a settled rejection memoized.
+   * @returns settlement of the handshake.
+   */
+  private async handshake(): Promise<void> {
+    const client = this.clientInstance
+    try {
+      client.start()
+      await client.initialize({
+        cwd: this.cwd,
+        provider: this.provider,
+        model: this.model,
+        ...this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort },
+        ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
+      })
+    } catch (error) {
+      let cleanupFailed = false
+      let cleanupError: unknown
+      try {
+        await client.close()
+      } catch (failure: unknown) {
+        cleanupFailed = true
+        cleanupError = failure
+      }
+      this.initialized = undefined
+      // A cleanup failure leaves the attempted client installed: its exit was
+      // not proved and `close` is permanent, so a retry fails fast instead of
+      // spawning alongside a process that may still be running.
+      if (!cleanupFailed && !this.closed) this.clientInstance = this.createClient()
+      if (cleanupFailed) {
+        throw new AggregateError([error, cleanupError], 'DeepSeek Harness initialization and cleanup failed')
+      }
+      throw error
+    }
   }
 
   /**
