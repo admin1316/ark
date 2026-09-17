@@ -93,6 +93,36 @@ async function waitForOutput(operation: TerminalSendOperation, expected: string,
   expect(output).toContain(expected)
 }
 
+// Waits for text only the CHILD can emit. The submitted line is echoed back with
+// readline's wrapped-paste re-rendering, and the line-oriented capture cannot
+// replay cursor/erase sequences, so a marker written verbatim in the command text
+// can be eaten by, or satisfied from, that mangled echo. The session scrollback is
+// the second source because operation output stops at settlement while the backend
+// keeps rendering into the session.
+async function waitForRenderedMarker(
+  operation: TerminalSendOperation,
+  scrollback: () => string,
+  expected: string,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  let observed = ''
+  let viewport = ''
+  // The public operation exposes only done/readOutput/cancel: subscribe once so the
+  // settlement viewport joins the observation without settling the wait early.
+  void operation.done.then((result) => { viewport = result.viewport }, () => {})
+  for (;;) {
+    observed += operation.readOutput().delta
+    const rendered = `${observed}${viewport}${scrollback()}`
+    if (rendered.includes(expected)) return
+    if (Date.now() >= deadline) {
+      expect(rendered).toContain(expected)
+      return
+    }
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+}
+
 // A send the test interrupts settles when bash returns to its prompt, so the
 // kernel may publish the foreground handoff on either side of the silence
 // bound. `handoffGraceMs` widens the window that wins the exact attribution but
@@ -183,10 +213,16 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     const readerPidFile = join(root, 'tty-reader.pid')
 
     const waiting = ctx.terminals.startSend(agent, created.sessionId, {
-      text: `bash -c 'exec </dev/tty; printf "%s" "$BASHPID" > "$1"; printf "WAITING\\n"; read -r answer; printf "ANSWER=%s\\n" "$answer"' dsh "${readerPidFile}"`,
+      // The child assembles its marker from two printf operands, so no echo of this
+      // line ever contains it verbatim: only the child's own output satisfies the wait.
+      text: `bash -c 'exec </dev/tty; printf "%s" "$BASHPID" > "$1"; printf "WAIT%s\\n" "ING"; read -r answer; printf "ANSWER=%s\\n" "$answer"' dsh "${readerPidFile}"`,
       submit: true,
     })
-    await waitForOutput(waiting, 'WAITING')
+    await waitForRenderedMarker(
+      waiting,
+      () => ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 100 }).text,
+      'WAITING',
+    )
     const result = await waiting.done
     const readerPid = Number(readFileSync(readerPidFile, 'utf8'))
     expect(readerPid).toBeGreaterThan(0)
