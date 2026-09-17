@@ -37,6 +37,11 @@ pre-commit:
     - name: vendor manifest guard
       run: scripts/check-vendor-manifest.sh
 
+    # Repo-state check, not a staged-file check: the Git index is authoritative,
+    # so a force-added generated artifact fails before it can reach a commit.
+    - name: generated artifacts untracked
+      run: node_modules/.bin/tsx scripts/verify-generated-tracking.ts
+
 pre-merge-commit:
   jobs:
     - name: translation pairing (staged records)

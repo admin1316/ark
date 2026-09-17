@@ -273,6 +273,7 @@ function ciSharedStaticGates(): Gate[] {
   return [
     pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
     pnpmScript('application-entrypoints', 'verify-application-entrypoints', { label: 'application entrypoints' }),
+    pnpmScript('generated-tracking', 'verify-generated-tracking', { label: 'generated artifacts untracked' }),
     pnpmScript('coverage-exclude', 'verify-coverage-exclude', { label: 'coverage exclude consistency' }),
     pnpmScript('constraints', 'constraints'),
     pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', { label: 'DSH package licenses' }),
@@ -611,6 +612,7 @@ function hygieneLeafGates(options: { artifactNeeds?: string[] } = {}): Gate[] {
     pnpmScript('publint', 'publint', artifactOptions),
     pnpmScript('constraints', 'constraints'),
     pnpmScript('application-entrypoints', 'verify-application-entrypoints', { label: 'application entrypoints' }),
+    pnpmScript('generated-tracking', 'verify-generated-tracking', { label: 'generated artifacts untracked' }),
     pnpmScript('coverage-exclude', 'verify-coverage-exclude', { label: 'coverage exclude consistency' }),
     pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', { label: 'DSH package licenses' }),
     pnpmScript('package-invariants', 'verify-package-invariants', { label: 'package invariants' }),

@@ -62,6 +62,16 @@ async function tempDir(prefix: string): Promise<string> {
   return dir
 }
 
+/** Bounded poll for a marker the runtime writes at a protocol edge (never a fixed sleep). */
+async function waitForFile(path: string, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    if (await stat(path).then(() => true, () => false)) return
+    if (Date.now() >= deadline) throw new Error(`marker file never appeared: ${path}`)
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+}
+
 describe('DeepSeekHarness', () => {
   it('ignores notifications that precede the submitted message receipt', async () => {
     const notifications = [
@@ -274,6 +284,48 @@ describe('DeepSeekHarness', () => {
     await harness.close()
     // close() is terminal: a handshake failure after it must not respawn.
     await expect(harness.run('after-close')).rejects.toThrow(TransportClosedError)
+  })
+
+  it('joins a start that lands inside a failed-handshake cleanup window', async () => {
+    const dir = await tempDir('sdk-client-cleanup-window-')
+    const eofMarker = join(dir, 'eof.txt')
+    const initRecord = join(dir, 'init.jsonl')
+    const harness = createProcessDeepSeekHarness(fakeLaunch({
+      FAKE_INIT_ERROR: '1',
+      // Hold the child alive through EOF and SIGTERM so the cleanup window stays
+      // open long enough to start again inside it.
+      FAKE_IGNORE_EOF: '1',
+      FAKE_TRAP_SIGTERM: '1',
+      FAKE_EOF_FILE: eofMarker,
+      FAKE_RECORD_INIT: initRecord,
+    }, {
+      shutdownTimeoutMs: 200,
+      disposeEofGraceMs: 500,
+      disposeGraceMs: 500,
+    }))
+    cleanups.push(() => harness.close())
+    const originalClient = harness.client
+    const firstAttempt = harness.start()
+
+    // The dispose ladder ends the child's stdin first: that marker proves the
+    // cleanup window is open without racing a fixed sleep against it.
+    await waitForFile(eofMarker)
+    expect(harness.client).toBe(originalClient)
+
+    const windowAttempt = harness.start()
+    const windowFailure = await windowAttempt.then(
+      () => { throw new Error('window start unexpectedly succeeded') },
+      (error: unknown) => error,
+    )
+    // The window start joined the failed attempt: it observes the ORIGINAL
+    // handshake failure, not a TransportClosedError from the closing client.
+    expect(windowFailure).toBeInstanceOf(JsonRpcResponseError)
+    expect(windowFailure).toMatchObject({ code: 7, message: 'scripted init failure' })
+    await expect(firstAttempt).rejects.toMatchObject({ code: 7 })
+    // Exactly one replacement client, installed only after the runtime exited.
+    expect(harness.client).not.toBe(originalClient)
+    const records = (await readFile(initRecord, 'utf8')).trim().split('\n')
+    expect(records).toHaveLength(1)
   })
 
   it('rejects a malformed initialize result as a protocol error', async () => {

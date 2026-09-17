@@ -69,6 +69,7 @@
     "verify-audit": "pnpm audit --prod --audit-level high",
     "verify-config-source-ownership": "tsx scripts/verify-config-source-ownership.ts",
     "verify-coverage-exclude": "tsx scripts/verify-coverage-exclude.ts",
+    "verify-generated-tracking": "tsx scripts/verify-generated-tracking.ts",
     "verify-package-invariants": "tsx scripts/verify-package-invariants.ts",
     "verify-built-package-invariants": "node scripts/verify-built-package-invariants.mjs",
     "verify-package-readme-model-experience": "tsx scripts/verify-package-readme-model-experience.ts",
