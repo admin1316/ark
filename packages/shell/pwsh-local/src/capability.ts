@@ -3,8 +3,9 @@
  *
  * The pwsh-gated suites and the CI preflight must agree on availability, so a
  * suite can never skip silently while a preflight reports the tool present.
- * The probe records the executable, the version, the host architecture, and a
- * typed reason, with one bounded deadline per attempt.
+ * Outcome classification is a pure function over the spawn result, so every
+ * reason is unit-testable without depending on how a platform reports a
+ * timeout or a denied executable.
  *
  * @module @deepseek-ai/dsh-pwsh-local/capability
  */
@@ -24,7 +25,7 @@ export type PwshCapabilityReason =
   | 'PROBE_FAILED'
   | 'VERSION_MISMATCH'
 
-/** One capability observation. */
+/** One capability observation; `detail` is empty only for `OK`. */
 export interface PwshCapability {
   /** Executable the probe attempted. */
   executable: string
@@ -36,8 +37,8 @@ export interface PwshCapability {
   version: string | null
   /** Reported host architecture, when the probe reached it. */
   architecture: string | null
-  /** Human-readable detail for a non-OK reason. */
-  detail: string | null
+  /** Explanation for a non-OK reason; empty string when available. */
+  detail: string
 }
 
 /** Probe inputs; every field defaults to the host environment. */
@@ -48,6 +49,22 @@ export interface PwshProbeOptions {
   env?: NodeJS.ProcessEnv
   /** Single bounded deadline for the probe attempt. */
   timeoutMs?: number
+}
+
+/** One spawn outcome, decoupled from `spawnSync` so classification is pure. */
+export interface PwshProbeOutcome {
+  /** Executable the probe attempted. */
+  executable: string
+  /** Spawn-level failure, when the process could not run. */
+  error?: NodeJS.ErrnoException | undefined
+  /** Exit status; `null` when the child was terminated. */
+  status: number | null
+  /** Terminating signal, when the child was killed. */
+  signal: NodeJS.Signals | null
+  /** Child standard output. */
+  stdout: string
+  /** Child standard error. */
+  stderr: string
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000
@@ -62,7 +79,66 @@ export const REQUIRE_PWSH_ENV = 'DSH_REQUIRE_PWSH'
 /** Absolute executable resolved by a CI preflight, preferred over PATH lookup. */
 export const PWSH_EXECUTABLE_ENV = 'DSH_PWSH_EXECUTABLE'
 
-const CAPABILITY_PATTERN = /^(\d+)\.(\d+)\.(\d+)(?:[^\s]*)\s+(\S+)\s*$/m
+const CAPABILITY_PATTERN = /^(\d+)\.(\d+)\.(\d+)(?:[^\s]*)(?:\s+(\S+))?\s*$/m
+
+/** Spawn error codes that already name the capability outcome. */
+const ERROR_REASONS: Record<string, PwshCapabilityReason> = {
+  ENOENT: 'NOT_FOUND',
+  EACCES: 'NOT_EXECUTABLE',
+  EPERM: 'NOT_EXECUTABLE',
+  ETIMEDOUT: 'TIMEOUT',
+}
+
+/**
+ * Classify one spawn outcome into a capability observation.
+ * @param outcome - captured spawn result.
+ * @returns the typed capability, including the reason and detail.
+ */
+export function classifyPwshProbe(outcome: PwshProbeOutcome): PwshCapability {
+  const base = { executable: outcome.executable, version: null, architecture: null }
+  if (outcome.error !== undefined) {
+    const reason = ERROR_REASONS[outcome.error.code ?? ''] ?? (outcome.signal === null ? 'PROBE_FAILED' : 'TIMEOUT')
+    return { ...base, available: false, reason, detail: outcome.error.message }
+  }
+  if (outcome.status === null) {
+    return {
+      ...base,
+      available: false,
+      reason: 'TIMEOUT',
+      detail: `terminated by ${outcome.signal ?? 'unknown signal'}`,
+    }
+  }
+  if (outcome.status !== 0) {
+    return {
+      ...base,
+      available: false,
+      reason: 'PROBE_FAILED',
+      detail: outcome.stderr.trim() || `exit ${outcome.status}`,
+    }
+  }
+  const match = CAPABILITY_PATTERN.exec(outcome.stdout)
+  if (match === null) {
+    return {
+      ...base,
+      available: false,
+      reason: 'PROBE_FAILED',
+      detail: `unexpected probe output: ${JSON.stringify(outcome.stdout.trim().slice(0, 120))}`,
+    }
+  }
+  const version = `${match[1]}.${match[2]}.${match[3]}`
+  const architecture = match[4] ?? null
+  if (Number(match[1]) < MINIMUM_PWSH_MAJOR) {
+    return {
+      ...base,
+      available: false,
+      version,
+      architecture,
+      reason: 'VERSION_MISMATCH',
+      detail: `requires PowerShell ${MINIMUM_PWSH_MAJOR}.x or newer`,
+    }
+  }
+  return { executable: outcome.executable, available: true, reason: 'OK', version, architecture, detail: '' }
+}
 
 /**
  * Probe PowerShell availability with one bounded attempt.
@@ -76,50 +152,19 @@ export function probePwshCapability(options: PwshProbeOptions = {}): PwshCapabil
   const executable = options.executable
     ?? env[PWSH_EXECUTABLE_ENV]
     ?? resolvePwshPath(undefined, env)
-  const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const result = spawnSync(
     executable,
     ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', PROBE_COMMAND],
-    { encoding: 'utf8', env, timeout },
+    { encoding: 'utf8', env, timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS },
   )
-  const base = { executable, version: null, architecture: null } as const
-  if (result.error !== undefined) {
-    const code = (result.error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') return { ...base, available: false, reason: 'NOT_FOUND', detail: result.error.message }
-    if (code === 'EACCES' || code === 'EPERM') {
-      return { ...base, available: false, reason: 'NOT_EXECUTABLE', detail: result.error.message }
-    }
-    if (code === 'ETIMEDOUT' || result.signal !== null) {
-      return { ...base, available: false, reason: 'TIMEOUT', detail: result.error.message }
-    }
-    return { ...base, available: false, reason: 'PROBE_FAILED', detail: result.error.message }
-  }
-  if (result.status !== 0) {
-    const detail = result.stderr.trim() || `exit ${result.status}`
-    return { ...base, available: false, reason: 'PROBE_FAILED', detail }
-  }
-  const match = CAPABILITY_PATTERN.exec(result.stdout)
-  if (match === null) {
-    return {
-      ...base,
-      available: false,
-      reason: 'PROBE_FAILED',
-      detail: `unexpected probe output: ${JSON.stringify(result.stdout.trim().slice(0, 120))}`,
-    }
-  }
-  const version = `${match[1]}.${match[2]}.${match[3]}`
-  const architecture = match[4] ?? null
-  if (Number(match[1]) < MINIMUM_PWSH_MAJOR) {
-    return {
-      available: false,
-      executable,
-      version,
-      architecture,
-      reason: 'VERSION_MISMATCH',
-      detail: `requires PowerShell ${MINIMUM_PWSH_MAJOR}.x or newer`,
-    }
-  }
-  return { executable, available: true, reason: 'OK', version, architecture, detail: null }
+  return classifyPwshProbe({
+    executable,
+    error: result.error,
+    status: result.status,
+    signal: result.signal,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  })
 }
 
 /**
@@ -136,9 +181,8 @@ export function pwshTestsAvailable(options: PwshProbeOptions = {}): boolean {
   if (capability.available) return true
   const env = options.env ?? process.env
   if (env[REQUIRE_PWSH_ENV] === '1') {
-    const detail = capability.detail === null ? '' : `: ${capability.detail}`
     throw new Error(
-      `PowerShell is required (${REQUIRE_PWSH_ENV}=1) but unusable: ${capability.reason} at ${capability.executable}${detail}`,
+      `PowerShell is required (${REQUIRE_PWSH_ENV}=1) but unusable: ${capability.reason} at ${capability.executable}: ${capability.detail}`,
     )
   }
   return false

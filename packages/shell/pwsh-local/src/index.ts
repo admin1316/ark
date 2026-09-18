@@ -89,10 +89,16 @@ export {
   MINIMUM_PWSH_MAJOR,
   PWSH_EXECUTABLE_ENV,
   REQUIRE_PWSH_ENV,
+  classifyPwshProbe,
   probePwshCapability,
   pwshTestsAvailable,
 } from './capability.ts'
-export type { PwshCapability, PwshCapabilityReason, PwshProbeOptions } from './capability.ts'
+export type {
+  PwshCapability,
+  PwshCapabilityReason,
+  PwshProbeOptions,
+  PwshProbeOutcome,
+} from './capability.ts'
 
 /** Project a settled collect-mode reader into the final CollectedOutput shape. */
 function finalOutput(reader: SubprocessOutputReader): CollectedOutput {

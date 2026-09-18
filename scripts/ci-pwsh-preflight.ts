@@ -178,7 +178,7 @@ export function runPwshPreflight(options: PreflightOptions = {}): PreflightResul
   let installed = false
   let installSource: PreflightResult['installSource'] = null
   if (!capability.available && (options.installDir !== undefined || options.tarball !== undefined)) {
-    log(`pwsh-preflight: installing pinned PowerShell (${capability.reason}: ${capability.detail ?? 'no detail'})`)
+    log(`pwsh-preflight: installing pinned PowerShell (${capability.reason}: ${capability.detail})`)
     const installedPwsh = installPinnedPwsh(options)
     installed = true
     installSource = installedPwsh.source
@@ -209,8 +209,8 @@ export function runPwshPreflight(options: PreflightOptions = {}): PreflightResul
   })}`)
   if (options.require === true && (!capability.available || !roundTrip)) {
     throw new Error(
-      `PowerShell capability is required but unusable: ${capability.reason} at ${capability.executable}`
-      + `${capability.detail === null ? '' : `: ${capability.detail}`}${roundTrip ? '' : ' (execution round trip failed)'}`,
+      `PowerShell capability is required but unusable: ${capability.reason} at ${capability.executable}: `
+      + `${capability.detail}; execution round trip: ${String(roundTrip)}`,
     )
   }
   return result
