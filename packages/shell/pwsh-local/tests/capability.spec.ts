@@ -174,6 +174,17 @@ describe('pwsh capability probe', () => {
     })).toThrow(/VERSION_MISMATCH/u)
   })
 
+  it('falls back to the ambient environment when no options are given', () => {
+    const previous = process.env.DSH_PWSH_EXECUTABLE
+    process.env.DSH_PWSH_EXECUTABLE = join(tmpdir(), 'absent-pwsh')
+    try {
+      expect(pwshTestsAvailable()).toBe(false)
+    } finally {
+      if (previous === undefined) delete process.env.DSH_PWSH_EXECUTABLE
+      else process.env.DSH_PWSH_EXECUTABLE = previous
+    }
+  })
+
   it('lets a required run pass when the tool is usable', () => {
     const executable = fakePwsh("echo '7.6.6 X64'")
     expect(pwshTestsAvailable({ executable, env: { ...noPath, [REQUIRE_PWSH_ENV]: '1' } })).toBe(true)

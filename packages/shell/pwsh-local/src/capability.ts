@@ -177,9 +177,11 @@ export function probePwshCapability(options: PwshProbeOptions = {}): PwshCapabil
  * @returns whether the pwsh-gated suites may run.
  */
 export function pwshTestsAvailable(options: PwshProbeOptions = {}): boolean {
-  const capability = probePwshCapability(options)
-  if (capability.available) return true
+  // Resolve the environment once and reuse it: the gate must judge the same
+  // environment it probed, and the ambient default is part of every suite call.
   const env = options.env ?? process.env
+  const capability = probePwshCapability({ ...options, env })
+  if (capability.available) return true
   if (env[REQUIRE_PWSH_ENV] === '1') {
     throw new Error(
       `PowerShell is required (${REQUIRE_PWSH_ENV}=1) but unusable: ${capability.reason} at ${capability.executable}: ${capability.detail}`,
