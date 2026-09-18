@@ -83,7 +83,7 @@ function createSession(order: string[], quiet: boolean, sent: string[] = []): Fa
     async close() {
       this.closed = true
     },
-  } as FakeSession
+  }
 }
 
 function backend(
