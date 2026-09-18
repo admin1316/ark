@@ -1485,6 +1485,21 @@ describe('LocalPtySession readiness and output', () => {
     await Promise.resolve()
     settle(interruptOperation)
   })
+
+  it('releases parked console input only while the expected prompt is missing', async () => {
+    vi.useFakeTimers()
+    const parkedTerminal = new FakeTerminal()
+    const parked = makeSession(parkedTerminal, new FakeInspector(), config())
+    expect(await parked.submitParkedInput()).toBe(true)
+    expect(parkedTerminal.writes).toEqual(['\r'])
+
+    const readyTerminal = new FakeTerminal()
+    const ready = makeSession(readyTerminal, new FakeInspector(), config())
+    await initialize(ready, readyTerminal)
+    const readyWrites = readyTerminal.writes.length
+    expect(await ready.submitParkedInput()).toBe(false)
+    expect(readyTerminal.writes).toHaveLength(readyWrites)
+  })
 })
 
 describe('LocalPtySession bounds, signals, and teardown', () => {

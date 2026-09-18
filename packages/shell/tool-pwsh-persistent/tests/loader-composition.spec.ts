@@ -133,7 +133,12 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
     })
 
     expect(context.tools.schemas().map(schema => schema.name)).toEqual(['pwsh'])
-    await execute('state', '$env:KEEP = "loader"; New-Item -ItemType Directory -Force -Path nested | Out-Null; Set-Location nested')
+    // The first call's own contract: the wrapper strips its markers, so a
+    // command that prints nothing succeeds with no output. A swallowed submit
+    // returns the timeout notice and resets the shell instead, which is the
+    // failure the cwd assertion below would otherwise misattribute to this call.
+    const state = text(await execute('state', '$env:KEEP = "loader"; New-Item -ItemType Directory -Force -Path nested | Out-Null; Set-Location nested'))
+    expect(state).toBe('')
     const observed = text(await execute('observe', 'Write-Output "cwd=$PWD keep=$env:KEEP"'))
     expect(observed).toContain(`cwd=${join(root, 'nested')} keep=loader`)
     expect(observed).not.toContain('DSH_PERSISTENT_PWSH')

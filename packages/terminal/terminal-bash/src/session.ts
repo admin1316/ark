@@ -307,6 +307,24 @@ export class LocalPtySession implements TerminalBackendSession {
     }
   }
 
+  /**
+   * Submit whatever the console left parked in its line editor.
+   *
+   * A pwsh console that is still starting renders an injected submit as a paste
+   * whose Enter is lost: the line stays typed, no prompt marker is printed, and
+   * the readiness tiers cannot settle it. Writing the submit sequence on its own
+   * releases that parked line — the startup definitions are idempotent — and the
+   * prompt it produces is the readiness evidence the caller already waits for.
+   * A console that already shows the expected prompt is left untouched.
+   * @returns whether a submit was written.
+   */
+  async submitParkedInput(): Promise<boolean> {
+    if (this.promptSeen && this.promptTextSeen) return false
+    this.atStartup('T6_PARK_RELEASE')
+    await this.terminal.write('\r')
+    return true
+  }
+
   startSend(request: TerminalSendRequest): TerminalSendOperation {
     if (this.closing) throw new Error('PTY session is closing')
     if (this.statusValue.kind === 'exited') throw new Error('PTY session has exited')

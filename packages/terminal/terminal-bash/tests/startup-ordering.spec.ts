@@ -10,7 +10,10 @@ interface FakeSession {
   motd: string
   order: string[]
   closed: boolean
+  releases: number
+  settleBootstrap: (() => void) | undefined
   waitForConsoleQuiet(timeoutMs: number, signal?: AbortSignal): Promise<boolean>
+  submitParkedInput(): Promise<boolean>
   initialize(signal?: AbortSignal): Promise<void>
   startSend(request: { text: string; submit: boolean; signal?: AbortSignal }): {
     done: Promise<{ waitReason: string; viewport: string }>
@@ -59,11 +62,13 @@ function fakeOwner(): TerminalBackendSpawnSpec['owner'] {
   } as unknown as TerminalBackendSpawnSpec['owner']
 }
 
-function createSession(order: string[], quiet: boolean, sent: string[] = []): FakeSession {
-  return {
+function createSession(order: string[], quiet: boolean, sent: string[] = [], parkBootstrap = false): FakeSession {
+  const session: FakeSession = {
     motd: '',
     order,
     closed: false,
+    releases: 0,
+    settleBootstrap: undefined,
     async waitForConsoleQuiet() {
       order.push('console-quiet')
       return quiet
@@ -72,23 +77,38 @@ function createSession(order: string[], quiet: boolean, sent: string[] = []): Fa
       order.push('initialize')
       this.motd = 'dsh> '
     },
+    async submitParkedInput() {
+      this.releases += 1
+      order.push('release')
+      this.settleBootstrap?.()
+      return true
+    },
     startSend(request) {
       order.push(request.text.length === 0 ? 'observe' : 'bootstrap')
       sent.push(request.text)
-      return {
-        done: Promise.resolve({ waitReason: 'stdin_read', viewport: 'dsh> ' }),
-        cancel() {},
+      if (!parkBootstrap) {
+        return {
+          done: Promise.resolve({ waitReason: 'stdin_read', viewport: 'dsh> ' }),
+          cancel() {},
+        }
       }
+      // The console swallowed this submit: the send stays pending until the
+      // startup releases the parked line.
+      const parked = Promise.withResolvers<{ waitReason: string; viewport: string }>()
+      session.settleBootstrap = () => { parked.resolve({ waitReason: 'stdin_read', viewport: 'dsh> ' }) }
+      return { done: parked.promise, cancel() {} }
     },
     async close() {
       this.closed = true
     },
   }
+  return session
 }
 
 function backend(
   dialect: 'bash' | 'pwsh',
   quiet: boolean,
+  parkBootstrap = false,
 ): { backend: BashTerminalBackend; order: string[]; sent: string[] } {
   const order: string[] = []
   const sent: string[] = []
@@ -96,7 +116,7 @@ function backend(
     fakeContext(),
     fakeConfig(dialect),
     async () => ({ pid: 4242 }) as never,
-    () => createSession(order, quiet, sent) as never,
+    () => createSession(order, quiet, sent, parkBootstrap) as never,
   )
   return { backend: instance, order, sent }
 }
@@ -127,6 +147,21 @@ describe('terminal-bash startup ordering', () => {
     const { backend: instance, order } = backend('pwsh', false)
     await instance.spawn(spec())
     expect(order).toEqual(['console-quiet', 'bootstrap'])
+  })
+
+  it('releases a bootstrap the console left parked and takes the prompt it produces', async () => {
+    const { backend: instance, order } = backend('pwsh', true, true)
+    const session = (await instance.spawn(spec())) as unknown as FakeSession
+    expect(order).toEqual(['console-quiet', 'bootstrap', 'release'])
+    expect(session.releases).toBe(1)
+    expect(session.motd).toBe('dsh> ')
+  })
+
+  it('does not re-submit a bootstrap whose prompt already arrived', async () => {
+    const { backend: instance, order } = backend('pwsh', true)
+    const session = (await instance.spawn(spec())) as unknown as FakeSession
+    expect(order).toEqual(['console-quiet', 'bootstrap'])
+    expect(session.releases).toBe(0)
   })
 
   it('keeps the bash path on initialize without a console-quiet wait', async () => {
