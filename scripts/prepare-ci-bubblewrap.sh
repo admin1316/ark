@@ -195,6 +195,19 @@ verify_built_binary() {
   built_version="$version"
 }
 
+allow_unprivileged_userns() {
+  # Ubuntu 24.04 gates unprivileged user namespaces behind an AppArmor knob; the
+  # one-shot hosted runner may lift it for this job, and the probe below is still
+  # the authority on whether the tool can actually build a sandbox. A non-hosted
+  # machine is not modified: it must already permit user namespaces.
+  if [[ "${RUNNER_ENVIRONMENT:-}" != 'github-hosted' ]]; then
+    echo 'prepare-ci-bubblewrap: non-hosted runner; leaving the AppArmor userns knob untouched' >&2
+    return 0
+  fi
+  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 \
+    || echo 'apparmor userns knob absent - the functional probe decides'
+}
+
 run_isolation_probes() {
   local bwrap="$1"
   # (1) The namespace must really start and run a command.
@@ -273,6 +286,7 @@ mkdir -p "${tool_dir}/usr/bin"
 cp "${source_dir}/build/bwrap" "$published"
 chmod 0755 "$published"
 
+allow_unprivileged_userns
 run_isolation_probes "$published"
 run_symlink_escape_regression "$published"
 
