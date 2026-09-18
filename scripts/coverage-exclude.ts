@@ -1,7 +1,6 @@
 /** Coverage exclusions shared by Vitest and the live-pattern consistency gate. */
 
-import { spawnSync } from 'node:child_process'
-import { resolvePwshPath } from '../packages/shell/pwsh-local/src/resolve.ts'
+import { pwshTestsAvailable } from '../packages/shell/pwsh-local/src/capability.ts'
 
 /** POSIX-only package lanes; the test and coverage configurations share this list. */
 export const windowsUnsupportedPackages = [
@@ -83,9 +82,12 @@ export function coverageExclusionsFor(platform: NodeJS.Platform, hasPwsh: boolea
   ]
 }
 
-/** The full active list; both consumers import this exact array. */
-export const coverageExcludeEntries = coverageExclusionsFor(process.platform,
-  spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], {
-    encoding: 'utf8',
-  }).status === 0,
-)
+/**
+ * The full active list; both consumers import this exact array.
+ *
+ * The availability input is the shared capability gate, so the exemption list
+ * and the pwsh-gated suites can never disagree. In the complete coverage lane
+ * (`DSH_REQUIRE_PWSH=1`) an unusable tool throws here instead of quietly
+ * exempting the pwsh sources from the 100% thresholds.
+ */
+export const coverageExcludeEntries = coverageExclusionsFor(process.platform, pwshTestsAvailable())
