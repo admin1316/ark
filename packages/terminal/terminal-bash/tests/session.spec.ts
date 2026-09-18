@@ -1494,6 +1494,17 @@ describe('LocalPtySession readiness and output', () => {
     await vi.advanceTimersByTimeAsync(400)
     expect(await waiting).toBe(false)
   })
+  it('records stdin-wait evidence from the foreground inspection', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    inspector.waiting = true
+    const session = makeSession(terminal, inspector, config())
+    expect(session.reportsStdinWait()).toBe(false)
+    await initialize(session, terminal)
+    expect(session.reportsStdinWait()).toBe(true)
+  })
+
   it('releases parked console input only while the expected prompt is missing', async () => {
     vi.useFakeTimers()
     const parkedTerminal = new FakeTerminal()

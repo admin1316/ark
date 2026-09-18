@@ -140,7 +140,10 @@ async function awaitBootstrap(
       clearTimeout(timer)
     }
     if (settled !== undefined) return settled
-    await session.submitParkedInput()
+    // A provider that reports the stdin wait has an exact readiness tier for this
+    // handoff, and injecting an Enter there would land ahead of the next send's
+    // own input; only a host without that evidence needs the release.
+    if (!session.reportsStdinWait()) await session.submitParkedInput()
   }
 }
 

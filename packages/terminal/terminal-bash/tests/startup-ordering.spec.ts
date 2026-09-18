@@ -12,6 +12,7 @@ interface FakeSession {
   closed: boolean
   releases: number
   settleBootstrap: (() => void) | undefined
+  reportsStdinWait(): boolean
   waitForConsoleQuiet(timeoutMs: number, signal?: AbortSignal): Promise<boolean>
   submitParkedInput(): Promise<boolean>
   initialize(signal?: AbortSignal): Promise<void>
@@ -62,7 +63,13 @@ function fakeOwner(): TerminalBackendSpawnSpec['owner'] {
   } as unknown as TerminalBackendSpawnSpec['owner']
 }
 
-function createSession(order: string[], quiet: boolean, sent: string[] = [], parkBootstrap = false): FakeSession {
+function createSession(
+  order: string[],
+  quiet: boolean,
+  sent: string[] = [],
+  parkBootstrap = false,
+  stdinWait = false,
+): FakeSession {
   const session: FakeSession = {
     motd: '',
     order,
@@ -76,6 +83,9 @@ function createSession(order: string[], quiet: boolean, sent: string[] = [], par
     async initialize() {
       order.push('initialize')
       this.motd = 'dsh> '
+    },
+    reportsStdinWait() {
+      return stdinWait
     },
     async submitParkedInput() {
       this.releases += 1
@@ -109,16 +119,22 @@ function backend(
   dialect: 'bash' | 'pwsh',
   quiet: boolean,
   parkBootstrap = false,
-): { backend: BashTerminalBackend; order: string[]; sent: string[] } {
+  stdinWait = false,
+): { backend: BashTerminalBackend; order: string[]; sent: string[]; sessions: FakeSession[] } {
   const order: string[] = []
   const sent: string[] = []
+  const sessions: FakeSession[] = []
   const instance = new BashTerminalBackend(
     fakeContext(),
     fakeConfig(dialect),
     async () => ({ pid: 4242 }) as never,
-    () => createSession(order, quiet, sent, parkBootstrap) as never,
+    () => {
+      const session = createSession(order, quiet, sent, parkBootstrap, stdinWait)
+      sessions.push(session)
+      return session as never
+    },
   )
-  return { backend: instance, order, sent }
+  return { backend: instance, order, sent, sessions }
 }
 
 const spec = (): TerminalBackendSpawnSpec => ({
@@ -155,6 +171,18 @@ describe('terminal-bash startup ordering', () => {
     expect(order).toEqual(['console-quiet', 'bootstrap', 'release'])
     expect(session.releases).toBe(1)
     expect(session.motd).toBe('dsh> ')
+  })
+
+  it('leaves a parked bootstrap to the stdin-wait tier a host actually reports', async () => {
+    const { backend: instance, order, sessions } = backend('pwsh', true, true, true)
+    const spawning = instance.spawn(spec())
+    // Two release windows must pass with no submit: the exact stdin-wait tier
+    // owns this handoff, so the startup only re-checks the bound.
+    await new Promise(resolve => setTimeout(resolve, 700))
+    expect(order).toEqual(['console-quiet', 'bootstrap'])
+    expect(sessions[0]?.releases).toBe(0)
+    sessions[0]?.settleBootstrap?.()
+    expect(((await spawning) as unknown as FakeSession).motd).toBe('dsh> ')
   })
 
   it('does not re-submit a bootstrap whose prompt already arrived', async () => {
