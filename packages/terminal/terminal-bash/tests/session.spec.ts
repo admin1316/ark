@@ -1486,6 +1486,14 @@ describe('LocalPtySession readiness and output', () => {
     settle(interruptOperation)
   })
 
+  it('reports a console-quiet miss at the bound instead of waiting forever', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const session = new LocalPtySession(terminal, config({ pollIntervalMs: 20 }))
+    const waiting = session.waitForConsoleQuiet(200)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(await waiting).toBe(false)
+  })
   it('releases parked console input only while the expected prompt is missing', async () => {
     vi.useFakeTimers()
     const parkedTerminal = new FakeTerminal()
