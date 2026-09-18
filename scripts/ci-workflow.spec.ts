@@ -928,9 +928,13 @@ describe('Sandbox workflow build prerequisite', () => {
   })
 
   it('keeps the per-platform preparation steps intact', () => {
-    const bwrap = requireStep('Install bubblewrap (unrestrict userns)')
+    // The bwrap leg must not keep the distribution package: the 24.04 package
+    // has no CVE-2026-87766 fix, so it prepares through the same pinned-source
+    // build as every other consumer.
+    const bwrap = requireStep('Prepare bubblewrap (unrestrict userns)')
     expect(bwrap.if).toBe("matrix.runner == 'bwrap'")
-    expect(stepText(bwrap.run)).toContain('bubblewrap')
+    expect(stepText(bwrap.run)).toBe('bash scripts/prepare-ci-bubblewrap.sh')
+    expect(JSON.stringify(bwrap)).not.toContain('apt-get')
     const landlock = requireStep('Build Landlock launcher for this architecture')
     expect(landlock.if).toBe("matrix.runner == 'landlock'")
     expect(stepText(landlock.run)).toContain('pnpm --dir native/landlock-run run build:native')
