@@ -72,7 +72,7 @@ fetch_source() {
 }
 
 verify_archive() {
-  local size sha package version architecture
+  local size sha package version architecture listing
   if [[ ! -f "$archive" ]]; then
     echo 'prepare-ci-bubblewrap: no payload was downloaded' >&2
     return 1
@@ -93,7 +93,10 @@ verify_archive() {
     echo "prepare-ci-bubblewrap: unexpected payload identity ${package} ${version} ${architecture}" >&2
     return 1
   fi
-  if ! dpkg-deb --contents "$archive" | grep -qE '\./usr/bin/bwrap$'; then
+  # grep -q would close the listing pipe early and pipefail would then read the
+  # producer's SIGPIPE as a failure, so the listing is captured and matched.
+  listing="$(dpkg-deb --contents "$archive")"
+  if [[ "$listing" != *'./usr/bin/bwrap'* ]]; then
     echo 'prepare-ci-bubblewrap: payload does not contain usr/bin/bwrap' >&2
     return 1
   fi
