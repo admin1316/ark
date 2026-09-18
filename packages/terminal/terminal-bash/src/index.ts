@@ -115,6 +115,11 @@ async function startupSession(
       await session.initialize(signal)
       return
     }
+    // The console must finish its startup negotiation before the first line is
+    // injected: a submit written into that window is lost and the bootstrap
+    // stays typed but never executes. The wait is bounded by the same deadline
+    // as readiness, and a miss falls through to the existing timeout error.
+    await session.waitForConsoleQuiet(timeoutMs, signal)
     // pwsh cannot install its prompt from the environment. Write the prompt
     // function through the session, pin UTF-8 output before user input, and
     // accept only backend stdin_read evidence; echoed setup source containing

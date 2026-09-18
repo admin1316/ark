@@ -278,6 +278,35 @@ export class LocalPtySession implements TerminalBackendSession {
     }
   }
 
+  /**
+   * Wait until the child console has started, answered its terminal queries,
+   * and then stayed quiet for a bounded settle window.
+   *
+   * pwsh negotiates cursor-position queries while its console starts; input
+   * written into that window is rendered as a paste whose submit keystroke is
+   * lost, so the prompt bootstrap would stay typed but never execute and every
+   * readiness tier would eventually time out. Waiting out the startup traffic
+   * is the observable boundary that makes the first injected line reliable;
+   * the wait is bounded by the same startup deadline that bounds readiness.
+   * @param timeoutMs - absolute bound for the wait.
+   * @param signal - optional cancellation while waiting.
+   * @returns whether console quiet was observed before the bound.
+   */
+  async waitForConsoleQuiet(timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
+    const settleMs = Math.max(this.config.pollIntervalMs * 2, 120)
+    const deadline = Date.now() + timeoutMs
+    const pollMs = Math.max(1, Math.min(this.config.pollIntervalMs, 20))
+    for (;;) {
+      signal?.throwIfAborted()
+      const quietFor = Date.now() - this.lastOutputAt
+      if (this.scrollback.snapshot().text.length > 0 && this.pendingResponseWrites === 0 && quietFor >= settleMs) {
+        return true
+      }
+      if (Date.now() >= deadline) return false
+      await new Promise(resolve => setTimeout(resolve, pollMs))
+    }
+  }
+
   startSend(request: TerminalSendRequest): TerminalSendOperation {
     if (this.closing) throw new Error('PTY session is closing')
     if (this.statusValue.kind === 'exited') throw new Error('PTY session has exited')
