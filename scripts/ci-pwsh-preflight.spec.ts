@@ -62,6 +62,15 @@ describe('ci PowerShell preflight', () => {
     expect(env.DSH_PWSH_EXECUTABLE).toBe(executable)
   })
 
+  it('publishes the resolved executable to later steps through GITHUB_ENV', () => {
+    const executable = fakePwsh()
+    const githubEnv = join(scratch(), 'github-env')
+    writeFileSync(githubEnv, '')
+    const env: NodeJS.ProcessEnv = { ...noPath, DSH_PWSH_EXECUTABLE: executable, GITHUB_ENV: githubEnv }
+    runPwshPreflight({ require: true, env, log: () => {} })
+    expect(readFileSync(githubEnv, 'utf8')).toContain(`DSH_PWSH_EXECUTABLE=${executable}`)
+  })
+
   it('installs the pinned asset from a local tarball and proves it by execution', () => {
     const { tarball, sha256 } = pwshTarball()
     const installDir = join(scratch(), 'tools')
