@@ -788,8 +788,11 @@ test('keeps Draft and pre-review boundaries while capability is unsupported', as
       pull: pullPayload(33, { body: 'Related to #34', labels: [] }),
       issues: { 34: issuePayload(34) },
     },
-    async () => {
+    async ({ calls }) => {
       const pull = await pullRequestSnapshot(33)
+      assert.equal(pull.issues.get(34).priorityCapability, 'UNSUPPORTED')
+      assert.equal(pull.issues.get(34).priority, null)
+      assert.ok(!calls.some((path) => path.includes('issue-field-values')), calls.join(' '))
       assert.equal(requiresPullRequestPolicy(pull), false)
       assert.deepEqual(validatePullRequest(pull), [])
       assert.deepEqual(pullRequestPolicyNotices(pull), [])

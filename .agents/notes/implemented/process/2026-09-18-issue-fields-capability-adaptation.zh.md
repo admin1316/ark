@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-Issue 策略会通过 `GET /repos/{owner}/{repo}/issues/{number}/issue-field-values` 读取每个被引用 Issue 的 Issue Field 值。Issue Fields 是组织范围的元数据。[Issue Fields changelog](https://github.blog/changelog/2026-05-21-issue-fields-are-now-in-public-preview-for-all-organizations/) 宣布其面向“所有 GitHub 组织”提供；[组织指南](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/managing-issue-fields-in-your-organization)指出字段“定义在组织层级，并作用于组织内的所有仓库”；[REST 写入端点](https://docs.github.com/en/rest/issues/issue-field-values)也把取值限定为“为仓库所属组织定义的组织级 Issue Fields”。由 User 拥有的仓库没有可用于定义字段的组织，因此该端点返回 `404`——对 `admin1316/ark` 的 `#28` 与 `#34` 的实测结果即为如此，其中 `X-Accepted-Oauth-Scopes: repo` 排除了令牌作用域这一原因。
+Issue 策略会通过 `GET /repos/{owner}/{repo}/issues/{number}/issue-field-values` 读取每个被引用 Issue 的 Issue Field 值。Issue Fields 是组织范围的元数据。[Issue Fields changelog](https://github.blog/changelog/2026-07-02-issue-fields-are-now-generally-available/) 宣布其面向“所有 GitHub 组织”正式可用（5 月起处于公开预览）；[组织指南](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/managing-issue-fields-in-your-organization)指出字段“定义在组织层级，并作用于组织内的所有仓库”；[REST 写入端点](https://docs.github.com/en/rest/issues/issue-field-values)也把取值限定为“为仓库所属组织定义的组织级 Issue Fields”。由 User 拥有的仓库没有可用于定义字段的组织，因此该端点返回 `404`——对 `admin1316/ark` 的 `#28` 与 `#34` 的实测结果即为如此，其中 `X-Accepted-Oauth-Scopes: repo` 排除了令牌作用域这一原因。
 
 策略却把该响应当作致命错误。任何引用了 Issue 的 PR 都会在抓取快照阶段、尚未评估任何政策规则之前，让必需检查失败，无论其引用与标签多么合规。反过来把同一个 `404` 当作成功，则会抹掉真正的 Priority 校验。两种做法都没有回答策略真正需要回答的问题：该仓库究竟能否承载 Issue Fields。
 
@@ -27,7 +27,7 @@ Issue 策略会通过 `GET /repos/{owner}/{repo}/issues/{number}/issue-field-val
 
 [Issue 管理测试](../../../../.github/issue-management/policy.test.mjs)通过伪造传输层锁定从 `pullRequestSnapshot` 到 `validatePullRequest` 的调用链：由 User 拥有的仓库绝不调用仅限组织的端点，同时 kind、area、引用、旧版标签以及“把 PR 当作 Issue 引用”的规则仍然生效；由 Organization 拥有的仓库仍解析 `Priority` 并校验被解决 Issue 中的最高 Priority；`EMPTY` 与 `UNSUPPORTED` 保持可区分；`404`、`403`、`429`、`500`、无效 JSON、传输故障、非数组载荷、缺失 `owner.type` 以及元数据读取失败全部拒绝；同一进程内的两个仓库各自保留能力状态；Draft 与进入评审前的边界保持不变。`pnpm run test:issue-management` 在 `ci-static` 中运行该文件。
 
-[工作流契约测试](../../../../scripts/ci-workflow.spec.ts)继续锁定 [issue-policy.yml](../../../../.github/workflows/issue-policy.yml)：可信的默认分支检出、固定版本的动作以及最小权限均未改动，这正是该变更进入默认分支之前，可信检查仍运行旧实现的原因。
+[工作流契约测试](../../../../scripts/ci-workflow.spec.ts)锁定 [issue-policy.yml](../../../../.github/workflows/issue-policy.yml)的 `ready_for_review` 触发器；本分支未改动任何工作流文件，因此可信的默认分支检出、固定版本的动作与最小权限继续有效——这正是该变更进入默认分支之前，可信检查仍运行旧实现的原因。
 
 ## 考虑过的替代方案
 
