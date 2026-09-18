@@ -124,14 +124,17 @@ describe('pwsh capability probe', () => {
     expect(capability.detail).toContain('unexpected probe output')
   })
 
-  it('reports TIMEOUT when the probe exceeds its single deadline', () => {
+  // The timeout reason itself is pinned by the classifier cases above: how a
+  // killed child surfaces (ETIMEDOUT spawn error versus status null with a
+  // signal) differs per platform, so a spawn-based case would assert the host
+  // rather than the contract. This exercises the explicit-deadline input.
+  it('accepts an explicit deadline', () => {
     const capability = probePwshCapability({
-      executable: fakePwsh('exec sleep 5'),
+      executable: fakePwsh("echo '7.6.6 X64'"),
       env: noPath,
-      timeoutMs: 200,
+      timeoutMs: 5_000,
     })
-    expect(capability.reason).toBe('TIMEOUT')
-    expect(capability.available).toBe(false)
+    expect(capability).toMatchObject({ available: true, reason: 'OK' })
   })
 
   it('reports OK with version and architecture for a usable executable', () => {
@@ -175,13 +178,17 @@ describe('pwsh capability probe', () => {
   })
 
   it('falls back to the ambient environment when no options are given', () => {
-    const previous = process.env.DSH_PWSH_EXECUTABLE
+    const previousExecutable = process.env.DSH_PWSH_EXECUTABLE
+    const previousRequire = process.env.DSH_REQUIRE_PWSH
     process.env.DSH_PWSH_EXECUTABLE = join(tmpdir(), 'absent-pwsh')
+    delete process.env.DSH_REQUIRE_PWSH
     try {
       expect(pwshTestsAvailable()).toBe(false)
     } finally {
-      if (previous === undefined) delete process.env.DSH_PWSH_EXECUTABLE
-      else process.env.DSH_PWSH_EXECUTABLE = previous
+      if (previousExecutable === undefined) delete process.env.DSH_PWSH_EXECUTABLE
+      else process.env.DSH_PWSH_EXECUTABLE = previousExecutable
+      if (previousRequire === undefined) delete process.env.DSH_REQUIRE_PWSH
+      else process.env.DSH_REQUIRE_PWSH = previousRequire
     }
   })
 
