@@ -12,6 +12,15 @@ const AUDIT_MARKER = '<!-- dsh-issue-policy -->'
 const OWNER_LINE = /^Owner: @([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)$/
 const TYPES = new Set(['Idea', 'Feature', 'Bug', 'Research', 'Task'])
 const PRIORITIES = ['p0', 'p1', 'p2', 'p3']
+// Issue Fields are defined per organization, so the field-value endpoint is
+// applicable to Organization-owned repositories and not to User-owned ones.
+// The capability is decided from repository metadata, never from an error.
+const ISSUE_FIELDS = {
+  SUPPORTED: 'SUPPORTED',
+  EMPTY: 'EMPTY',
+  UNSUPPORTED: 'UNSUPPORTED',
+  UNKNOWN_OR_ERROR: 'UNKNOWN_OR_ERROR',
+}
 const PR_KINDS = new Set([
   'kind/feature',
   'kind/bug-fix',
@@ -73,6 +82,23 @@ export function repositoryIdentity(environment = process.env) {
 
 /** @returns {{owner: string, name: string, slug: string}} The repository this process acts on. */
 const currentRepository = () => repositoryIdentity()
+
+/**
+ * Classify Issue Fields support from repository metadata.
+ *
+ * GitHub defines Issue Fields at the organization level ("Fields are defined
+ * at the organization level and apply across all repositories in your
+ * organization"), so a User-owned repository cannot carry field values while
+ * an Organization-owned repository is expected to serve them. Missing or
+ * unrecognized metadata is an error, not an assumption.
+ * @param {string|null|undefined} ownerType Repository owner type.
+ * @returns {'SUPPORTED'|'UNSUPPORTED'|'UNKNOWN_OR_ERROR'} Capability decision.
+ */
+export function issueFieldCapability(ownerType) {
+  if (ownerType === 'Organization') return ISSUE_FIELDS.SUPPORTED
+  if (ownerType === 'User') return ISSUE_FIELDS.UNSUPPORTED
+  return ISSUE_FIELDS.UNKNOWN_OR_ERROR
+}
 
 /**
  * Return Markdown outside balanced details elements.
@@ -346,7 +372,7 @@ export function validateIssue(issue) {
 
 /**
  * Validate PR metadata and its referenced Issues.
- * @param {{authorType: string, labels: string[], references: ReturnType<typeof parseReferences>, issues: Map<number, {priority: string|null}>}} input PR snapshot.
+ * @param {{authorType: string, labels: string[], references: ReturnType<typeof parseReferences>, issues: Map<number, {priority: string|null, priorityCapability?: string}>}} input PR snapshot.
  * @returns {string[]} Validation errors.
  */
 export function validatePullRequest(input) {
@@ -381,7 +407,16 @@ export function validatePullRequest(input) {
     .filter((entry) => entry[1])
   if (resolving.length === 0) return errors
 
-  const issuePriorities = resolving
+  // Priority lives in organization-scoped Issue Fields. Where the repository
+  // cannot carry them the value is unreadable: keep every other error and
+  // surface the gap through pullRequestPolicyNotices instead of inventing a
+  // value, dropping the requirement, or enforcing an impossible rule.
+  const readable = resolving.filter(
+    ([, issue]) => issue.priorityCapability !== ISSUE_FIELDS.UNSUPPORTED,
+  )
+  if (readable.length !== resolving.length) return errors
+
+  const issuePriorities = readable
     .map(([, issue]) => issue.priority?.toLowerCase())
     .filter((priority) => PRIORITIES.includes(priority))
   if (priorities.length === 0 && issuePriorities.length > 0) {
@@ -398,6 +433,23 @@ export function validatePullRequest(input) {
     if (priorities[0] !== highest) errors.push(`PR Priority 应为 ${highest}`)
   }
   return errors
+}
+
+/**
+ * Report PR policy enforcement gaps that must never be silent.
+ * @param {{isDraft: boolean, authorType: string, reviewRequestCount: number, reviewCount: number, references: {resolving: number[]}, issues: Map<number, {priorityCapability?: string}>}} input PR snapshot.
+ * @returns {string[]} Operator-visible notices.
+ */
+export function pullRequestPolicyNotices(input) {
+  if (!requiresPullRequestPolicy(input)) return []
+  const unsupported = input.references.resolving
+    .map((number) => [number, input.issues.get(number)])
+    .filter(([, issue]) => issue?.priorityCapability === ISSUE_FIELDS.UNSUPPORTED)
+  if (unsupported.length === 0) return []
+  return [
+    `${unsupported.map(([number]) => `#${number}`).join('、')} 所在仓库不支持组织级 Issue Fields：` +
+      'Priority 无法读取，本轮不校验 Priority 一致性（不构成 Priority 通过），其余政策校验照常执行。',
+  ]
 }
 
 function token() {
@@ -436,13 +488,67 @@ async function graphql(query, variables) {
   return result.data
 }
 
+const repositoryMetadata = new Map()
+
+/**
+ * Drop cached repository metadata.
+ * @internal Test seam; the cache is keyed by repository slug for one run.
+ */
+export function resetRepositoryMetadataCache() {
+  repositoryMetadata.clear()
+}
+
+async function currentRepositoryMetadata() {
+  const slug = currentRepository().slug
+  if (!repositoryMetadata.has(slug)) {
+    repositoryMetadata.set(slug, await api(`/repos/${slug}`))
+  }
+  return repositoryMetadata.get(slug)
+}
+
+/**
+ * Read Issue Field values for one Issue, or report why they are unavailable.
+ *
+ * A 404 is never accepted as proof of absence. For an Organization-owned
+ * repository the endpoint is part of the documented contract, so a 404 is a
+ * capability contradiction and the run fails. For a User-owned repository the
+ * organization-scoped feature does not apply, so the endpoint is not called at
+ * all and Priority stays unenforceable. Every other failure already rejects in
+ * api(), which keeps 401/403/429/5xx/network faults closed.
+ * @param {number} number Issue number.
+ * @returns {Promise<{capability: string, values: unknown[]|null}>} Field values and capability.
+ */
+async function issueFieldValues(number) {
+  const repository = await currentRepositoryMetadata()
+  const ownerType = repository?.owner?.type ?? null
+  const capability = issueFieldCapability(ownerType)
+  if (capability === ISSUE_FIELDS.UNSUPPORTED) return { capability, values: null }
+  if (capability === ISSUE_FIELDS.UNKNOWN_OR_ERROR) {
+    throw new Error(
+      `无法确认 ${currentRepository().slug} 的 Issue Fields 能力：owner.type=${
+        ownerType === null ? 'null' : JSON.stringify(ownerType)
+      }，按失败处理`,
+    )
+  }
+  const values = await api(
+    `/repos/${currentRepository().slug}/issues/${number}/issue-field-values?per_page=100`,
+    { allow404: true },
+  )
+  if (values === null) {
+    throw new Error(
+      `#${number} 的 Issue Fields 返回 404：组织仓库 ${currentRepository().slug} 与已确认能力矛盾，按失败处理`,
+    )
+  }
+  if (!Array.isArray(values)) throw new Error(`#${number} 的 Issue Fields 响应不是数组，按失败处理`)
+  return { capability: values.length > 0 ? ISSUE_FIELDS.SUPPORTED : ISSUE_FIELDS.EMPTY, values }
+}
+
 async function issueSnapshot(number, status = undefined) {
   const issue = await api(`/repos/${currentRepository().slug}/issues/${number}`)
   if (issue.pull_request) return null
-  const values = await api(
-    `/repos/${currentRepository().slug}/issues/${number}/issue-field-values?per_page=100`,
-  )
-  const field = (name) => values.find((value) => value.issue_field_name === name)
+  const fields = await issueFieldValues(number)
+  const field = (name) =>
+    (fields.values ?? []).find((value) => value.issue_field_name === name)
   return {
     number,
     nodeId: issue.node_id,
@@ -452,6 +558,7 @@ async function issueSnapshot(number, status = undefined) {
     labels: issue.labels.map((label) => label.name),
     type: issue.type?.name ?? null,
     priority: field(config.priorityField)?.single_select_option?.name ?? null,
+    priorityCapability: fields.capability,
     status: status === undefined ? await projectStatus(number) : status,
     state: issue.state,
     stateReason: issue.state_reason ?? null,
@@ -633,7 +740,7 @@ async function resolvingReferencesSnapshot(number, pull) {
   }
 }
 
-async function pullRequestSnapshot(number) {
+export async function pullRequestSnapshot(number) {
   const [pull, reviewRequests, reviews] = await Promise.all([
     api(`/repos/${currentRepository().slug}/pulls/${number}`),
     api(`/repos/${currentRepository().slug}/pulls/${number}/requested_reviewers`),
@@ -673,6 +780,13 @@ async function transitionResolvingIssues(pull, command) {
 
 async function runPullRequestCheck(event) {
   const pull = await pullRequestSnapshot(event.pull_request.number)
+  if (requiresPullRequestPolicy(pull)) {
+    const capabilities = [...new Set([...pull.issues.values()].map((issue) => issue.priorityCapability))]
+    process.stdout.write(
+      `Issue Fields 能力：${capabilities.length > 0 ? capabilities.join('、') : '未引用 Issue'}\n`,
+    )
+  }
+  for (const notice of pullRequestPolicyNotices(pull)) process.stdout.write(`::notice::${notice}\n`)
   const errors = validatePullRequest(pull)
   if (errors.length > 0) {
     for (const error of errors) process.stdout.write(`::error::${error}\n`)

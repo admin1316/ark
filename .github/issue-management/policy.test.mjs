@@ -4,8 +4,12 @@ import test from 'node:test'
 
 import {
   countVisibleUnits,
+  issueFieldCapability,
   nextResolvingIssueStatus,
   parseReferences,
+  pullRequestPolicyNotices,
+  pullRequestSnapshot,
+  resetRepositoryMetadataCache,
   retainIssueReferences,
   resolvingIssueStatusCommand,
   repositoryIdentity,
@@ -439,4 +443,356 @@ test('resolves same-repository references against the current identity only', ()
   })
   assert.deepEqual(references.all, [12])
   assert.ok(!references.all.includes(34))
+})
+
+const FAKE_API_HOST = 'https://api.github.test'
+
+function jsonResponse(status, payload) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => (typeof payload === 'string' ? payload : JSON.stringify(payload)),
+    json: async () => (typeof payload === 'string' ? JSON.parse(payload) : payload),
+  }
+}
+
+function issuePayload(number, overrides = {}) {
+  return {
+    number,
+    node_id: 'I_' + number,
+    title: '议题 ' + number,
+    body: withDetails('正文。'),
+    assignees: [],
+    labels: [],
+    type: { name: 'Task' },
+    state: 'open',
+    state_reason: null,
+    ...overrides,
+  }
+}
+
+function pullPayload(number, overrides = {}) {
+  const { labels = [], ...rest } = overrides
+  return {
+    number,
+    draft: false,
+    user: { type: 'User' },
+    body: 'Related to #' + (number + 1),
+    labels: labels.map((name) => ({ name })),
+    ...rest,
+  }
+}
+
+// A fake transport over the real snapshot -> validation call chain.
+function installFakeApi(options) {
+  const { fields = {}, issues = {}, pull } = options
+  const owners = options.repositories ?? { [options.repository]: options.ownerType ?? 'User' }
+  resetRepositoryMetadataCache()
+  const originalFetch = globalThis.fetch
+  const previousRepository = process.env.GITHUB_REPOSITORY
+  const previousToken = process.env.GH_TOKEN
+  const calls = []
+  process.env.GITHUB_REPOSITORY = options.repository ?? Object.keys(owners)[0]
+  process.env.GH_TOKEN = 'fake-token'
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url))
+    const path = parsed.pathname + parsed.search
+    calls.push(path)
+    const metadataMatch = /^\/repos\/([^/]+)\/([^/]+)$/u.exec(path)
+    if (metadataMatch) {
+      const slug = metadataMatch[1] + '/' + metadataMatch[2]
+      if (options.metadataStatus && options.metadataStatus !== 200) {
+        return jsonResponse(options.metadataStatus, { message: 'metadata failure' })
+      }
+      if (options.metadataNetworkError) throw new Error('metadata network down')
+      if (!(slug in owners)) return jsonResponse(404, { message: 'Not Found' })
+      const owner = owners[slug] === 'MISSING' ? {} : { type: owners[slug] }
+      return jsonResponse(200, { full_name: slug, owner })
+    }
+    const pullMatch = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/u.exec(path)
+    if (pull && pullMatch && Number(pullMatch[3]) === pull.number) return jsonResponse(200, pull)
+    const reviewersMatch = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/requested_reviewers$/u.exec(path)
+    if (pull && reviewersMatch && Number(reviewersMatch[3]) === pull.number) {
+      return jsonResponse(200, options.reviewRequests ?? { users: [], teams: [] })
+    }
+    const reviewsMatch = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/reviews$/u.exec(parsed.pathname)
+    if (pull && reviewsMatch && Number(reviewsMatch[3]) === pull.number) {
+      return jsonResponse(200, options.reviews ?? [])
+    }
+    const issueMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)$/u.exec(path)
+    if (issueMatch) {
+      const issue = issues[Number(issueMatch[1])]
+      return issue ? jsonResponse(200, issue) : jsonResponse(404, { message: 'Not Found' })
+    }
+    const fieldMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/issue-field-values$/u.exec(parsed.pathname)
+    if (fieldMatch) {
+      const entry = fields[Number(fieldMatch[1])]
+      if (entry === undefined) return jsonResponse(200, [])
+      if (Array.isArray(entry)) return jsonResponse(200, entry)
+      if (entry.networkError) throw new Error('fields network down')
+      if (typeof entry.raw === 'string') {
+        return {
+          ok: entry.status === 200,
+          status: entry.status,
+          text: async () => entry.raw,
+          json: async () => JSON.parse(entry.raw),
+        }
+      }
+      if (entry.status !== 200) return jsonResponse(entry.status, { message: 'field failure' })
+      return jsonResponse(200, entry.body)
+    }
+    throw new Error('unexpected request: ' + path + ' (' + FAKE_API_HOST + ')')
+  }
+  return {
+    calls,
+    restore() {
+      globalThis.fetch = originalFetch
+      if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY
+      else process.env.GITHUB_REPOSITORY = previousRepository
+      if (previousToken === undefined) delete process.env.GH_TOKEN
+      else process.env.GH_TOKEN = previousToken
+    },
+  }
+}
+
+async function withFakeApi(options, run) {
+  const fake = installFakeApi(options)
+  try {
+    return await run(fake)
+  } finally {
+    fake.restore()
+  }
+}
+
+const reviewedRequests = { users: [{ login: 'reviewer' }], teams: [] }
+
+test('decides Issue Fields capability from repository metadata alone', () => {
+  assert.equal(issueFieldCapability('Organization'), 'SUPPORTED')
+  assert.equal(issueFieldCapability('User'), 'UNSUPPORTED')
+  for (const ownerType of [undefined, null, 'Bot', '']) {
+    assert.equal(issueFieldCapability(ownerType), 'UNKNOWN_OR_ERROR', String(ownerType))
+  }
+})
+
+test('does not call the organization-only field endpoint on a User-owned repository', async () => {
+  await withFakeApi(
+    {
+      repository: 'personal-owner/ark',
+      ownerType: 'User',
+      pull: pullPayload(33, { body: 'Fixes #34', labels: [] }),
+      issues: { 34: issuePayload(34) },
+      reviewRequests: reviewedRequests,
+    },
+    async ({ calls }) => {
+      const pull = await pullRequestSnapshot(33)
+      assert.ok(!calls.some((path) => path.includes('issue-field-values')), calls.join(' '))
+      assert.equal(pull.issues.get(34).priorityCapability, 'UNSUPPORTED')
+      assert.equal(pull.issues.get(34).priority, null)
+      const errors = validatePullRequest(pull)
+      assert.ok(errors.includes('PR 必须恰好有一个允许的 kind/*，当前为 0'))
+      assert.ok(errors.includes('PR 必须至少有一个 area/*'))
+      assert.ok(!errors.some((error) => error.includes('Priority')), errors.join(' '))
+      const notices = pullRequestPolicyNotices(pull)
+      assert.equal(notices.length, 1)
+      assert.match(notices[0], /#34/u)
+      assert.match(notices[0], /不构成 Priority 通过/u)
+    },
+  )
+})
+
+test('reads Issue Field values on an Organization-owned repository as before', async () => {
+  await withFakeApi(
+    {
+      repository: 'team-owner/ark',
+      ownerType: 'Organization',
+      pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/feature', 'area/web', 'p0'] }),
+      issues: { 34: issuePayload(34) },
+      fields: { 34: [{ issue_field_name: 'Priority', single_select_option: { name: 'P0' } }] },
+      reviewRequests: reviewedRequests,
+    },
+    async ({ calls }) => {
+      const pull = await pullRequestSnapshot(33)
+      assert.ok(calls.some((path) => path.includes('/issues/34/issue-field-values')))
+      assert.equal(pull.issues.get(34).priority, 'P0')
+      assert.equal(pull.issues.get(34).priorityCapability, 'SUPPORTED')
+      assert.deepEqual(validatePullRequest(pull), [])
+      assert.deepEqual(pullRequestPolicyNotices(pull), [])
+      assert.ok(
+        validatePullRequest({ ...pull, labels: ['kind/feature', 'area/web', 'p2'] }).includes(
+          'PR Priority 应为 p0',
+        ),
+      )
+    },
+  )
+})
+
+test('distinguishes empty field values from an unsupported capability', async () => {
+  await withFakeApi(
+    {
+      repository: 'team-owner/ark',
+      ownerType: 'Organization',
+      pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/feature', 'area/web', 'p2'] }),
+      issues: { 34: issuePayload(34) },
+      fields: { 34: [] },
+      reviewRequests: reviewedRequests,
+    },
+    async () => {
+      const pull = await pullRequestSnapshot(33)
+      assert.equal(pull.issues.get(34).priorityCapability, 'EMPTY')
+      assert.equal(pull.issues.get(34).priority, null)
+      assert.ok(
+        validatePullRequest(pull).includes(
+          '有 Priority 的解决型 PR 要求每个被解决 Issue 都设置 Priority',
+        ),
+      )
+      assert.deepEqual(pullRequestPolicyNotices(pull), [])
+    },
+  )
+  await withFakeApi(
+    {
+      repository: 'personal-owner/ark',
+      ownerType: 'User',
+      pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/feature', 'area/web', 'p2'] }),
+      issues: { 34: issuePayload(34) },
+      reviewRequests: reviewedRequests,
+    },
+    async () => {
+      const pull = await pullRequestSnapshot(33)
+      assert.equal(pull.issues.get(34).priorityCapability, 'UNSUPPORTED')
+      assert.ok(!validatePullRequest(pull).some((error) => error.includes('Priority')))
+      assert.equal(pullRequestPolicyNotices(pull).length, 1)
+    },
+  )
+})
+
+test('keeps reference, pull-request, and label violations under an unsupported capability', async () => {
+  const base = { repository: 'personal-owner/ark', ownerType: 'User', reviewRequests: reviewedRequests }
+  await withFakeApi(
+    { ...base, pull: pullPayload(33, { body: 'Related to #99', labels: ['kind/feature', 'area/web'] }), issues: {} },
+    async () => {
+      await assert.rejects(() => pullRequestSnapshot(33), /issues\/99: 404/u)
+    },
+  )
+  await withFakeApi(
+    {
+      ...base,
+      pull: pullPayload(33, { body: 'Related to #34', labels: ['kind/feature', 'area/web'] }),
+      issues: { 34: issuePayload(34, { pull_request: { url: 'https://example.test/pr/34' } }) },
+    },
+    async () => {
+      const pull = await pullRequestSnapshot(33)
+      assert.equal(pull.issues.size, 0)
+      assert.ok(validatePullRequest(pull).includes('PR 正文必须引用至少一个同仓库 Issue'))
+    },
+  )
+  await withFakeApi(
+    {
+      ...base,
+      pull: pullPayload(33, { body: 'Related to other-owner/other-repo#7', labels: ['kind/feature', 'area/web'] }),
+      issues: {},
+    },
+    async () => {
+      const pull = await pullRequestSnapshot(33)
+      assert.ok(validatePullRequest(pull).includes('PR 正文必须引用至少一个同仓库 Issue'))
+    },
+  )
+  await withFakeApi(
+    {
+      ...base,
+      pull: pullPayload(33, { body: 'Related to #34', labels: ['kind/feature', 'area/web', 'doc'] }),
+      issues: { 34: issuePayload(34) },
+    },
+    async () => {
+      const pull = await pullRequestSnapshot(33)
+      assert.ok(validatePullRequest(pull).includes('PR 含旧版标签：doc'))
+    },
+  )
+})
+
+test('fails closed on metadata and field API failures', async () => {
+  const base = {
+    repository: 'team-owner/ark',
+    ownerType: 'Organization',
+    pull: pullPayload(33, { body: 'Related to #34', labels: ['kind/feature', 'area/web'] }),
+    issues: { 34: issuePayload(34) },
+  }
+  const cases = [
+    ['404', { status: 404 }, /Issue Fields 返回 404/u],
+    ['403', { status: 403 }, /403/u],
+    ['429', { status: 429 }, /429/u],
+    ['500', { status: 500 }, /500/u],
+    ['invalid JSON', { status: 200, raw: 'not-json' }, /not valid JSON|Unexpected/u],
+    ['network', { networkError: true }, /fields network down/u],
+    ['non-array payload', { status: 200, body: { message: 'nope' } }, /不是数组/u],
+  ]
+  for (const [label, entry, pattern] of cases) {
+    await withFakeApi({ ...base, fields: { 34: entry } }, async () => {
+      await assert.rejects(() => pullRequestSnapshot(33), pattern, label)
+    })
+  }
+  await withFakeApi({ ...base, ownerType: 'MISSING' }, async ({ calls }) => {
+    await assert.rejects(() => pullRequestSnapshot(33), /owner\.type/u)
+    assert.ok(!calls.some((path) => path.includes('issue-field-values')))
+  })
+  await withFakeApi({ ...base, metadataStatus: 500 }, async () => {
+    await assert.rejects(() => pullRequestSnapshot(33), /500/u)
+  })
+  await withFakeApi({ ...base, metadataNetworkError: true }, async () => {
+    await assert.rejects(() => pullRequestSnapshot(33), /metadata network down/u)
+  })
+})
+
+test('keeps capability state per repository within one process', async () => {
+  await withFakeApi(
+    {
+      repositories: { 'personal-owner/ark': 'User', 'team-owner/ark': 'Organization' },
+      pull: pullPayload(33, { body: 'Related to #34', labels: ['kind/feature', 'area/web'] }),
+      issues: { 34: issuePayload(34) },
+      fields: { 34: [{ issue_field_name: 'Priority', single_select_option: { name: 'P1' } }] },
+    },
+    async ({ calls }) => {
+      const personal = await pullRequestSnapshot(33)
+      assert.equal(personal.issues.get(34).priorityCapability, 'UNSUPPORTED')
+      process.env.GITHUB_REPOSITORY = 'team-owner/ark'
+      const organization = await pullRequestSnapshot(33)
+      assert.equal(organization.issues.get(34).priorityCapability, 'SUPPORTED')
+      assert.equal(organization.issues.get(34).priority, 'P1')
+      assert.equal(calls.filter((path) => path === '/repos/personal-owner/ark').length, 1)
+      assert.equal(calls.filter((path) => path === '/repos/team-owner/ark').length, 1)
+      const fieldCalls = calls.filter((path) => path.includes('issue-field-values'))
+      assert.equal(fieldCalls.length, 1)
+      assert.ok(fieldCalls[0].startsWith('/repos/team-owner/ark/'), fieldCalls.join(' '))
+    },
+  )
+})
+
+test('keeps Draft and pre-review boundaries while capability is unsupported', async () => {
+  await withFakeApi(
+    {
+      repository: 'personal-owner/ark',
+      ownerType: 'User',
+      pull: pullPayload(33, { draft: true, body: '', labels: [] }),
+      issues: {},
+      reviewRequests: reviewedRequests,
+    },
+    async () => {
+      const pull = await pullRequestSnapshot(33)
+      assert.deepEqual(validatePullRequest(pull), [])
+      assert.deepEqual(pullRequestPolicyNotices(pull), [])
+    },
+  )
+  await withFakeApi(
+    {
+      repository: 'personal-owner/ark',
+      ownerType: 'User',
+      pull: pullPayload(33, { body: 'Related to #34', labels: [] }),
+      issues: { 34: issuePayload(34) },
+    },
+    async () => {
+      const pull = await pullRequestSnapshot(33)
+      assert.equal(requiresPullRequestPolicy(pull), false)
+      assert.deepEqual(validatePullRequest(pull), [])
+      assert.deepEqual(pullRequestPolicyNotices(pull), [])
+    },
+  )
 })
