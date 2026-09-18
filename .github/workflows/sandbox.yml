@@ -20,6 +20,8 @@ on:
       - '.github/workflows/sandbox.yml'
       - 'packages/sandbox/**'
       - 'packages/shell/bash-sandbox/**'
+      - 'packages/shell/tool-pwsh-persistent/**'
+      - 'packages/terminal/**'
       - 'native/landlock-run/**'
       - 'packages/experimental/inspector/**'
       - 'packages/extensions/tool-cordis/**'
@@ -137,10 +139,19 @@ jobs:
             packages/sandbox/sandbox-local/tests/${{ matrix.runner }}.e2e.ts \
             packages/shell/bash-sandbox/tests/${{ matrix.runner }}.e2e.ts 2>&1); status=$?
           echo "$out"
-          [ "$status" -eq 0 ]
+          # 'set +e' keeps the step alive until these checks, so a bare
+          # '[ "$status" -eq 0 ]' would be overwritten by the trailing grep and
+          # a real test failure could still report a passing step.
+          if [ "$status" -ne 0 ]; then
+            echo "sandbox e2e exited with status $status" >&2
+            exit "$status"
+          fi
           # Both platform files must have RUN — a self-skip (runner missing on
           # the very platform that exists to prove it) is a failure, not a pass.
-          echo "$out" | grep -qE 'Test Files[[:space:]]+2 passed \(2\)'
+          if ! echo "$out" | grep -qE 'Test Files[[:space:]]+2 passed \(2\)'; then
+            echo "sandbox e2e did not report 'Test Files  2 passed (2)'" >&2
+            exit 1
+          fi
 
       # Publish-path rehearsal, Landlock legs only. Build the launcher on its
       # native architecture, then install the local native and harness tarballs
@@ -158,5 +169,13 @@ jobs:
           out=$(pnpm exec vitest run --config vitest.e2e.config.ts \
             packages/sandbox/sandbox-local/tests/packed-install.e2e.ts 2>&1); status=$?
           echo "$out"
-          [ "$status" -eq 0 ]
-          echo "$out" | grep -qE 'Test Files[[:space:]]+1 passed \(1\)'
+          # Same propagation rule as the sandbox e2e step above: the test status
+          # must fail the step before any summary grep can overwrite it.
+          if [ "$status" -ne 0 ]; then
+            echo "packed-distribution e2e exited with status $status" >&2
+            exit "$status"
+          fi
+          if ! echo "$out" | grep -qE 'Test Files[[:space:]]+1 passed \(1\)'; then
+            echo "packed-distribution e2e did not report 'Test Files  1 passed (1)'" >&2
+            exit 1
+          fi
