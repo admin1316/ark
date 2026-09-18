@@ -103,13 +103,13 @@ jobs:
       # namespaces. Ubuntu 24.04 gates the latter behind an AppArmor knob;
       # lift it best-effort — on images where the knob is absent the
       # functional probe (and the run-guard below) is the arbiter anyway.
-      - name: Install bubblewrap (unrestrict userns)
+      # The bwrap leg must run the same patched tool the other consumers use:
+      # the distribution package for this release carries no CVE-2026-87766 fix,
+      # so the shared preparation builds the fixed upstream release from its
+      # published source asset and publishes only a probe-tested binary.
+      - name: Prepare bubblewrap (unrestrict userns)
         if: matrix.runner == 'bwrap'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -yq bubblewrap
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 \
-            || echo "apparmor userns knob absent — the functional probe decides"
+        run: bash scripts/prepare-ci-bubblewrap.sh
 
       - name: Build Landlock launcher for this architecture
         if: matrix.runner == 'landlock'

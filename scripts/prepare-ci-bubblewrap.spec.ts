@@ -10,26 +10,31 @@ const scriptPath = fileURLToPath(new URL('./prepare-ci-bubblewrap.sh', import.me
 
 /** One controlled preparation scenario; the doubles read it from disk. */
 interface Scenario {
-  /** `uname` answers. */
   platform: { system: string; machine: string }
-  /** Per-source outcome, keyed by URL host. */
-  sources: Record<string, 'serve' | 'http404' | 'network' | 'html'>
+  /** Per-asset download outcome: the tarball and its `.sha256sum` sibling. */
+  assets: Record<'tarball' | 'checksum', 'serve' | 'http404' | 'network' | 'html'>
   /** Digest comparison outcome; `undefined` keeps the double's real comparison. */
-  digest?: 'match' | 'mismatch'
-  /** Bytes the served fixture carries. */
+  digest?: 'match' | 'mismatch' | 'real'
+  /** Digest the served checksum asset carries. */
+  checksumDigest?: string
+  checksumAssetRaw?: string
+  digestMode?: never
   payloadBytes?: number
-  /** Control fields `dpkg-deb --field` answers. */
-  control: Record<string, string>
-  /** `dpkg-deb --contents` output. */
-  contents: string
-  /** `dpkg-deb --extract` exit code. */
-  extractExit?: number
-  /** `bwrap --version` exit code. */
+  /** Whether `tar` produces the expected source tree. */
+  sourceTree?: 'present' | 'absent'
+  sourceVersion?: string
+  binaryVersion?: string
+  binaryMode?: string
+  fileCapabilities?: string
+  aptExit?: number
+  mesonSetupExit?: number
+  mesonCompileExit?: number
   versionExit?: number
-  /** Positive confinement probe exit code. */
-  probeExit?: number
-  /** Negative (read-only bind must refuse) probe exit code. */
-  negativeProbeExit?: number
+  namespaceExit?: number
+  probeMode?: 'ok' | 'writable' | 'noscript' | 'wrong-error'
+  escapeMode?: 'ok' | 'escaped'
+  /** Runner kind; only the disposable hosted runner may install packages. */
+  environment?: 'github-hosted' | 'self-hosted'
 }
 
 const quote = (value: string): string => `'${value.replaceAll('\'', '\\' + '\'')}'`
@@ -41,19 +46,40 @@ afterEach(() => {
 })
 const shimSource = String.raw`#!/usr/bin/env node
 // Command double for scripts/prepare-ci-bubblewrap.spec.ts. It keeps the real
-// command-line contract of each tool it stands in for (flags, stdin, exit
-// codes) so the spec drives the production script's control flow rather than a
-// reimplementation of it.
+// command-line contract of each tool it stands in for (flags, stdout/stderr,
+// exit codes) so the spec drives the production script's control flow instead of
+// reimplementing it. The built binary the script produces is itself a call back
+// into this double, so the probes are scenario-controlled too.
 import { createHash } from 'node:crypto'
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 const command = process.argv[2] ?? ''
 const args = process.argv.slice(3)
 const scenario = JSON.parse(readFileSync(process.env.SPEC_SCENARIO, 'utf8'))
 const log = (entry) => appendFileSync(process.env.SPEC_LOG, JSON.stringify(entry) + '\n')
 const digest = (file) => createHash('sha256').update(readFileSync(file)).digest('hex')
+
+const optionValue = (name) => {
+  const index = args.indexOf(name)
+  return index >= 0 ? args[index + 1] ?? '' : ''
+}
+
+const positional = () => {
+  const valueFlags = ['--output', '--connect-timeout', '--max-time', '-C', '-c', '-xf']
+  const found = []
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (valueFlags.includes(arg)) {
+      index += 1
+      continue
+    }
+    if (arg.startsWith('-')) continue
+    found.push(arg)
+  }
+  return found
+}
 
 if (command === 'uname') {
   process.stdout.write((args.includes('-m') ? scenario.platform.machine : scenario.platform.system) + '\n')
@@ -67,23 +93,17 @@ if (command === 'sudo') {
   process.exit(result.status ?? 1)
 }
 
+if (command === 'apt-get') {
+  log({ command: 'apt-get' })
+  process.exit(scenario.aptExit ?? 0)
+}
+
 if (command === 'curl') {
-  const valueFlags = ['--output', '--connect-timeout', '--max-time']
-  let output = ''
-  let url = ''
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index]
-    if (valueFlags.includes(arg)) {
-      if (arg === '--output') output = args[index + 1] ?? ''
-      index += 1
-      continue
-    }
-    if (arg.startsWith('-')) continue
-    url = arg
-  }
-  const host = new URL(url).host
-  const mode = scenario.sources[host]
-  log({ command: 'curl', host, mode })
+  const output = optionValue('--output')
+  const url = positional()[0] ?? ''
+  const asset = url.endsWith('.sha256sum') ? 'checksum' : 'tarball'
+  const mode = scenario.assets[asset]
+  log({ command: 'curl', asset, mode, url })
   if (mode === 'http404') {
     process.stderr.write('curl: (22) The requested URL returned error: 404\n')
     process.exit(22)
@@ -96,10 +116,16 @@ if (command === 'curl') {
     writeFileSync(output, '<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"><html><head><title>404 Not Found</title></head></html>')
     process.exit(0)
   }
-  // The real package bytes are not available offline, so the served fixture is
-  // a deterministic buffer of the pinned size; the digest outcome is declared
-  // per scenario because no fixture can reproduce the published archive value.
-  writeFileSync(output, Buffer.alloc(scenario.payloadBytes ?? 50436, 0x62))
+  if (asset === 'checksum') {
+    // Mirrors the release's checksum asset: the digest line names the tarball.
+    const value = scenario.checksumDigest ?? '9760d007363e3abba7c747489910f9f82d9fca53ba3bd3282e396fa3c97a3314'
+    writeFileSync(output, scenario.checksumAssetRaw ?? value + ' *bubblewrap-0.12.0.tar.xz\n')
+    process.exit(0)
+  }
+  // The real release bytes are not available offline, so the served fixture is a
+  // deterministic buffer; digest outcomes are declared per scenario because no
+  // fixture can reproduce the published archive value.
+  writeFileSync(output, Buffer.alloc(scenario.payloadBytes ?? 126452, 0x62))
   process.exit(0)
 }
 
@@ -116,43 +142,77 @@ if (command === 'sha256sum') {
   log({ command: 'sha256sum', check: true, lines: lines.length, compared })
   if (scenario.digest === 'match') process.exit(0)
   if (scenario.digest === 'mismatch') process.exit(1)
+  // 'real' (or absent) keeps the genuine comparison, so a served fixture that is
+  // not the published release can never pass.
   process.exit(compared ? 0 : 1)
 }
 
-if (command === 'dpkg-deb') {
-  if (args[0] === '--field') {
-    const requested = args.slice(2)
-    const fields = requested.length > 0 ? requested : Object.keys(scenario.control)
-    for (const field of fields) process.stdout.write(String(scenario.control[field] ?? '') + '\n')
-    process.exit(0)
+if (command === 'tar') {
+  const target = optionValue('-C')
+  log({ command: 'tar', target })
+  if (scenario.sourceTree === 'absent') process.exit(0)
+  const root = join(target, 'bubblewrap-0.12.0')
+  mkdirSync(root, { recursive: true })
+  const version = scenario.sourceVersion ?? '0.12.0'
+  writeFileSync(join(root, 'meson.build'), "project(\n  'bubblewrap',\n  'c',\n  version : '" + version + "',\n  meson_version : '>=0.49.0',\n)\n")
+  process.exit(0)
+}
+
+if (command === 'meson') {
+  if (args[0] === 'setup') {
+    log({ command: 'meson-setup' })
+    process.exit(scenario.mesonSetupExit ?? 0)
   }
-  if (args[0] === '--contents') {
-    process.stdout.write(scenario.contents)
-    process.exit(0)
-  }
-  if (args[0] === '--extract') {
-    const target = args[2]
-    const exit = scenario.extractExit ?? 0
-    if (exit !== 0) {
-      process.stdout.write('extracted ' + target + '\n')
-      process.exit(exit)
-    }
-    mkdirSync(join(target, 'usr/bin'), { recursive: true })
-    writeFileSync(join(target, 'usr/bin/bwrap'), '#!/bin/sh\nexec "' + process.env.SPEC_NODE + '" "' + process.env.SPEC_DOUBLE + '" bwrap "$@"\n', { mode: 0o755 })
+  if (args[0] === 'compile') {
+    const buildDir = optionValue('-C')
+    log({ command: 'meson-compile', buildDir })
+    if (scenario.mesonCompileExit ?? 0 !== 0) process.exit(scenario.mesonCompileExit ?? 1)
+    mkdirSync(buildDir, { recursive: true })
+    const binary = join(buildDir, 'bwrap')
+    writeFileSync(binary, '#!/bin/sh\nexec "' + process.env.SPEC_NODE + '" "' + process.env.SPEC_DOUBLE + '" bwrap "$@"\n', { mode: 0o755 })
+    chmodSync(binary, scenario.binaryMode ? Number.parseInt(scenario.binaryMode, 8) : 0o755)
     process.exit(0)
   }
   process.exit(2)
 }
 
+if (command === 'stat') {
+  process.stdout.write((scenario.binaryMode ?? '755') + '\n')
+  process.exit(0)
+}
+
+if (command === 'getcap') {
+  process.stdout.write(scenario.fileCapabilities ?? '')
+  process.exit(0)
+}
+
 if (command === 'bwrap') {
   if (args.includes('--version')) {
-    process.stdout.write('bubblewrap 0.9.0\n')
+    process.stdout.write('bubblewrap ' + (scenario.binaryVersion ?? '0.12.0') + '\n')
     process.exit(scenario.versionExit ?? 0)
   }
-  const negative = args.some(arg => arg.includes('.dsh-bwrap-probe'))
-  log({ command: 'bwrap', negative })
-  if (negative) process.exit(scenario.negativeProbeExit ?? 1)
-  process.exit(scenario.probeExit ?? 0)
+  const joined = args.join(' ')
+  if (joined.includes('dsh-cve-probe')) {
+    log({ command: 'bwrap', probe: 'escape' })
+    if (scenario.escapeMode === 'escaped') {
+      const target = args.find(arg => arg.includes('dsh-cve-probe')) ?? ''
+      const escapeDir = target.slice(0, target.indexOf('/sandbox/escape/dsh-cve-probe'))
+      mkdirSync(join(escapeDir, 'outside', 'dsh-cve-probe'), { recursive: true })
+    }
+    process.exit(scenario.escapeExit ?? 0)
+  }
+  if (joined.includes('inner.txt')) {
+    log({ command: 'bwrap', probe: 'readonly' })
+    if (scenario.probeMode === 'noscript') process.exit(1)
+    if (scenario.probeMode === 'writable') process.exit(0)
+    process.stdout.write('inner-started\n')
+    const message = scenario.probeMode === 'wrong-error' ? 'bwrap: no such file or directory\n' : 'printf: /tmp/inner.txt: Read-only file system\n'
+    process.stderr.write(message)
+    process.exit(1)
+  }
+  log({ command: 'bwrap', probe: 'namespace' })
+  process.stdout.write('nested-ok\n')
+  process.exit(scenario.namespaceExit ?? 0)
 }
 
 process.stderr.write('unexpected double: ' + command + '\n')
@@ -160,9 +220,10 @@ process.exit(127)`
 
 interface PrepareCall {
   command: string
-  host?: string
+  asset?: string
   mode?: string
-  negative?: boolean
+  probe?: string
+  compared?: boolean
 }
 
 interface PrepareRun {
@@ -172,8 +233,7 @@ interface PrepareRun {
   githubPath: string
   calls: PrepareCall[]
   runner: string
-  bwrapPath: string
-  payloadPath: string
+  publishedPath: string
 }
 
 function runPrepare(overrides: Partial<Scenario> = {}, seed?: (runner: string) => void): PrepareRun {
@@ -188,7 +248,7 @@ function runPrepare(overrides: Partial<Scenario> = {}, seed?: (runner: string) =
   writeFileSync(doublePath, shimSource, { mode: 0o755 })
   // Node resolves a shebang symlink to its real path, so each command gets a
   // one-line wrapper that names the double and passes the command on.
-  for (const command of ['curl', 'sha256sum', 'dpkg-deb', 'bwrap', 'uname', 'sudo', 'sysctl']) {
+  for (const command of ['uname', 'sysctl', 'sudo', 'apt-get', 'curl', 'sha256sum', 'tar', 'meson', 'stat', 'getcap', 'bwrap']) {
     const wrapper = join(bin, command)
     writeFileSync(wrapper, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(doublePath)} ${command} "$@"\n`, { mode: 0o755 })
   }
@@ -196,15 +256,19 @@ function runPrepare(overrides: Partial<Scenario> = {}, seed?: (runner: string) =
   seed?.(runner)
   const scenario: Scenario = {
     platform: { system: 'Linux', machine: 'x86_64' },
-    sources: { 'archive.ubuntu.com': 'serve', 'security.ubuntu.com': 'serve' },
+    assets: { tarball: 'serve', checksum: 'serve' },
     digest: 'match',
-    payloadBytes: 50_436,
-    control: { Package: 'bubblewrap', Version: '0.9.0-1ubuntu0.3', Architecture: 'amd64' },
-    contents: '-rwxr-xr-x root/root 12345 2026-09-17 12:00 ./usr/bin/bwrap\n',
-    extractExit: 0,
+    payloadBytes: 126_452,
+    sourceTree: 'present',
+    sourceVersion: '0.12.0',
+    binaryVersion: '0.12.0',
+    binaryMode: '755',
+    probeMode: 'ok',
+    escapeMode: 'ok',
     ...overrides,
   }
   const scenarioPath = join(workspace, 'scenario.json')
+  const scenarioEnvironment = scenario.environment ?? 'github-hosted'
   const logPath = join(workspace, 'calls.jsonl')
   writeFileSync(scenarioPath, JSON.stringify(scenario))
   writeFileSync(logPath, '')
@@ -215,6 +279,9 @@ function runPrepare(overrides: Partial<Scenario> = {}, seed?: (runner: string) =
       PATH: `${bin}:${process.env.PATH ?? ''}`,
       RUNNER_TEMP: runner,
       GITHUB_PATH: githubPath,
+      // The package-installation branch is authorized only on the disposable
+      // hosted runner; the spec simulates that environment.
+      RUNNER_ENVIRONMENT: scenarioEnvironment,
       SPEC_SCENARIO: scenarioPath,
       SPEC_LOG: logPath,
       SPEC_NODE: process.execPath,
@@ -232,124 +299,152 @@ function runPrepare(overrides: Partial<Scenario> = {}, seed?: (runner: string) =
     githubPath: readFileSync(githubPath, 'utf8'),
     calls,
     runner,
-    bwrapPath: join(runner, 'dsh-bubblewrap', 'usr', 'bin', 'bwrap'),
-    payloadPath: join(runner, 'dsh-bubblewrap', 'usr', 'bin', 'bwrap'),
+    publishedPath: join(runner, 'dsh-bubblewrap', 'usr', 'bin', 'bwrap'),
   }
 }
 
-describe('prepare-ci-bubblewrap', () => {
-  it('verifies the pinned payload and publishes only a working tool', () => {
+// The preparation script targets Linux x86_64 only (it builds and probes a Linux
+// sandbox tool), so its spec is POSIX-only as well.
+describe.skipIf(process.platform === 'win32')('prepare-ci-bubblewrap', () => {
+  it('builds the pinned release from source and publishes a probe-tested binary', () => {
     const run = runPrepare()
     expect(run.status, run.stderr).toBe(0)
     expect(run.githubPath).toBe(`${run.runner}/dsh-bubblewrap/usr/bin\n`)
-    expect(existsSync(run.bwrapPath)).toBe(true)
-    expect(run.stderr).toContain('verified bubblewrap 0.9.0-1ubuntu0.3 amd64')
-    expect(run.stdout).toContain('bubblewrap 0.9.0-1ubuntu0.3 amd64 sha256=')
-    expect(run.stdout).toContain('source=https://archive.ubuntu.com/ubuntu/pool/main/b/bubblewrap/')
+    expect(existsSync(run.publishedPath)).toBe(true)
+    expect(run.stderr).toContain('verified bubblewrap-0.12.0.tar.xz sha256=9760d007')
+    expect(run.stdout).toContain('bubblewrap 0.12.0 built from source')
+    expect(run.stdout).toContain('binary_sha256=')
     expect(run.stdout).toContain('bubblewrap functional probe passed')
-  })
+    expect(run.stdout).toContain('bubblewrap CVE-2026-87766 symlink-escape regression passed')
+    expect(run.calls.map(call => call.command)).toEqual(expect.arrayContaining(['curl', 'apt-get', 'meson-setup', 'meson-compile', 'bwrap']))
+  }, 30_000)
 
-  it('falls back to the audited security mirror, without retrying the 404', () => {
-    const run = runPrepare({ sources: { 'archive.ubuntu.com': 'http404', 'security.ubuntu.com': 'serve' } })
-    expect(run.status, run.stderr).toBe(0)
-    const hosts = run.calls.filter(call => call.command === 'curl').map(call => call.host)
-    expect(hosts).toEqual(['archive.ubuntu.com', 'security.ubuntu.com'])
-    expect(run.stdout).toContain('source=https://security.ubuntu.com/ubuntu/pool/main/b/bubblewrap/')
-  })
+  it('bounds retries on a transient failure and refuses a withdrawn asset at once', () => {
+    const flaky = runPrepare({ assets: { tarball: 'network', checksum: 'serve' } })
+    expect(flaky.status, flaky.stderr).not.toBe(0)
+    expect(flaky.calls.filter(call => call.command === 'curl' && call.asset === 'tarball')).toHaveLength(2)
+    expect(flaky.githubPath).toBe('')
+    const withdrawn = runPrepare({ assets: { tarball: 'http404', checksum: 'serve' } })
+    expect(withdrawn.status, withdrawn.stderr).not.toBe(0)
+    expect(withdrawn.calls.filter(call => call.command === 'curl' && call.asset === 'tarball')).toHaveLength(1)
+    expect(withdrawn.stderr).toContain('the pinned source is unavailable')
+  }, 30_000)
 
-  it('bounds retries per source and never retries a withdrawn artifact', () => {
-    const run = runPrepare({ sources: { 'archive.ubuntu.com': 'network', 'security.ubuntu.com': 'serve' } })
-    expect(run.status, run.stderr).toBe(0)
-    const hosts = run.calls.filter(call => call.command === 'curl').map(call => call.host)
-    expect(hosts).toEqual(['archive.ubuntu.com', 'archive.ubuntu.com', 'security.ubuntu.com'])
-  })
+  it('rejects tampered bytes before any build step', () => {
+    const html = runPrepare({ assets: { tarball: 'html', checksum: 'serve' }, digest: 'real' })
+    expect(html.status, html.stderr).not.toBe(0)
+    expect(html.stderr).toContain('source tarball digest does not match the pinned release value')
+    const mismatch = runPrepare({ digest: 'mismatch' })
+    expect(mismatch.status, mismatch.stderr).not.toBe(0)
+    expect(mismatch.stderr).toContain('source tarball digest does not match the pinned release value')
+    for (const run of [html, mismatch]) {
+      expect(run.githubPath).toBe('')
+      expect(run.calls.some(call => call.command === 'meson-setup')).toBe(false)
+      expect(existsSync(run.publishedPath)).toBe(false)
+    }
+  }, 30_000)
 
-  it('fails without publishing when every source is unavailable', () => {
-    const run = runPrepare({ sources: { 'archive.ubuntu.com': 'http404', 'security.ubuntu.com': 'http404' } })
+  it('rejects a checksum asset that does not describe the pinned tarball', () => {
+    const wrongName = runPrepare({ checksumAssetRaw: `${'0'.repeat(64)} *another-file.tar.xz\n`, digest: 'match' })
+    expect(wrongName.status, wrongName.stderr).not.toBe(0)
+    expect(wrongName.stderr).toContain('checksum asset does not describe the pinned tarball')
+    const wrongDigest = runPrepare({ checksumDigest: '0'.repeat(64), digest: 'match' })
+    expect(wrongDigest.status, wrongDigest.stderr).not.toBe(0)
+    expect(wrongDigest.stderr).toContain('checksum asset carries a different digest')
+    for (const run of [wrongName, wrongDigest]) expect(run.githubPath).toBe('')
+  }, 30_000)
+
+  it('rejects a source tree that is not the pinned release', () => {
+    const absent = runPrepare({ sourceTree: 'absent' })
+    expect(absent.status, absent.stderr).not.toBe(0)
+    expect(absent.stderr).toContain('the source tree has no meson.build')
+    const wrong = runPrepare({ sourceVersion: '0.11.2' })
+    expect(wrong.status, wrong.stderr).not.toBe(0)
+    expect(wrong.stderr).toContain('is not bubblewrap 0.12.0')
+    for (const run of [absent, wrong]) {
+      expect(run.githubPath).toBe('')
+      expect(run.calls.some(call => call.command === 'meson-setup')).toBe(false)
+    }
+  }, 30_000)
+
+  it('stops when the build itself fails', () => {
+    const setup = runPrepare({ mesonSetupExit: 1 })
+    expect(setup.status, setup.stderr).not.toBe(0)
+    expect(setup.githubPath).toBe('')
+    const compile = runPrepare({ mesonCompileExit: 2 })
+    expect(compile.status, compile.stderr).not.toBe(0)
+    expect(compile.githubPath).toBe('')
+    expect(existsSync(compile.publishedPath)).toBe(false)
+  }, 30_000)
+
+  it('refuses a binary that is not the pinned version', () => {
+    const run = runPrepare({ binaryVersion: '0.11.2' })
     expect(run.status, run.stderr).not.toBe(0)
+    expect(run.stderr).toContain('unexpected version string: bubblewrap 0.11.2')
     expect(run.githubPath).toBe('')
-    expect(existsSync(run.bwrapPath)).toBe(false)
-    expect(run.stderr).toContain('no audited source could deliver the pinned payload')
-  })
+  }, 30_000)
 
-  it('rejects an HTML error page served with status 200', () => {
-    const run = runPrepare({ sources: { 'archive.ubuntu.com': 'html', 'security.ubuntu.com': 'html' } })
+  it('refuses a setuid binary or one carrying file capabilities', () => {
+    const setuid = runPrepare({ binaryMode: '4755' })
+    expect(setuid.status, setuid.stderr).not.toBe(0)
+    expect(setuid.stderr).toContain('refusing a setuid binary')
+    const capabilities = runPrepare({ fileCapabilities: '/tmp/bwrap cap_net_admin=ep' })
+    expect(capabilities.status, capabilities.stderr).not.toBe(0)
+    expect(capabilities.stderr).toContain('refusing a binary with file capabilities')
+    for (const run of [setuid, capabilities]) expect(run.githubPath).toBe('')
+  }, 30_000)
+
+  it('fails when the namespace probe does not run or the read-only bind is writable', () => {
+    const namespace = runPrepare({ namespaceExit: 1 })
+    expect(namespace.status, namespace.stderr).not.toBe(0)
+    const writable = runPrepare({ probeMode: 'writable' })
+    expect(writable.status, writable.stderr).not.toBe(0)
+    expect(writable.stderr).toContain('the read-only bind was writable inside the sandbox')
+    const noscript = runPrepare({ probeMode: 'noscript' })
+    expect(noscript.status, noscript.stderr).not.toBe(0)
+    expect(noscript.stderr).toContain('the sandboxed command never started')
+    const wrongError = runPrepare({ probeMode: 'wrong-error' })
+    expect(wrongError.status, wrongError.stderr).not.toBe(0)
+    expect(wrongError.stderr).toContain('the refusal did not come from the read-only bind')
+    for (const run of [namespace, writable, noscript, wrongError]) expect(run.githubPath).toBe('')
+  }, 30_000)
+
+  it('fails the CVE-2026-87766 regression when setup escapes the sandbox', () => {
+    const run = runPrepare({ escapeMode: 'escaped' })
     expect(run.status, run.stderr).not.toBe(0)
+    expect(run.stderr).toContain('sandbox setup created a directory outside the sandbox')
     expect(run.githubPath).toBe('')
-    expect(run.stderr).toContain('expected 50436')
-  })
+  }, 30_000)
 
-  it('fails on a digest mismatch before extracting or publishing', () => {
-    const run = runPrepare({ digest: 'mismatch' })
-    expect(run.status, run.stderr).not.toBe(0)
-    expect(run.stderr).toContain('payload digest does not match the pinned index value')
-    expect(run.githubPath).toBe('')
-    expect(existsSync(run.bwrapPath)).toBe(false)
-    expect(run.calls.some(call => call.command === 'dpkg-deb')).toBe(false)
-  })
-
-  it('fails on a payload whose control identity is another revision', () => {
-    const run = runPrepare({ control: { Package: 'bubblewrap', Version: '0.9.0-1ubuntu0.2', Architecture: 'amd64' } })
-    expect(run.status, run.stderr).not.toBe(0)
-    expect(run.stderr).toContain('unexpected payload identity')
-    expect(run.githubPath).toBe('')
-  })
-
-  it('fails on a payload built for another architecture', () => {
-    const run = runPrepare({ control: { Package: 'bubblewrap', Version: '0.9.0-1ubuntu0.3', Architecture: 'arm64' } })
-    expect(run.status, run.stderr).not.toBe(0)
-    expect(run.githubPath).toBe('')
-  })
-
-  it('fails when the payload carries no bwrap executable', () => {
-    const run = runPrepare({ contents: 'drwxr-xr-x root/root 0 2026-09-17 12:00 ./usr/\n' })
-    expect(run.status, run.stderr).not.toBe(0)
-    expect(run.stderr).toContain('does not contain usr/bin/bwrap')
-    expect(run.githubPath).toBe('')
-  })
-
-  it('fails when extraction fails even after printing progress', () => {
-    const run = runPrepare({ extractExit: 2 })
-    expect(run.status, run.stderr).not.toBe(0)
-    expect(run.stderr).toContain('payload extraction failed')
-    expect(run.githubPath).toBe('')
-  })
-
-  it('fails when the version probe passes but confinement does not run', () => {
-    const run = runPrepare({ probeExit: 1 })
-    expect(run.status, run.stderr).not.toBe(0)
-    expect(run.githubPath).toBe('')
-  })
-
-  it('fails when the read-only bind is writable', () => {
-    const run = runPrepare({ negativeProbeExit: 0 })
-    expect(run.status, run.stderr).not.toBe(0)
-    expect(run.stderr).toContain('the read-only bind was writable; confinement probe failed')
-    expect(run.githubPath).toBe('')
-  })
-
-  it('never trusts a leftover tree from an earlier attempt', () => {
+  it('never trusts a leftover tool tree and never publishes an unverified one', () => {
     const seed = (runner: string): void => {
       const stale = join(runner, 'dsh-bubblewrap', 'usr', 'bin')
       mkdirSync(stale, { recursive: true })
       writeFileSync(join(stale, 'bwrap'), 'poisoned')
-      writeFileSync(join(runner, 'bubblewrap_0.9.0-1ubuntu0.3_amd64.deb'), 'stale-archive')
     }
-    const failed = runPrepare({ sources: { 'archive.ubuntu.com': 'http404', 'security.ubuntu.com': 'http404' } }, seed)
+    const failed = runPrepare({ assets: { tarball: 'http404', checksum: 'serve' } }, seed)
     expect(failed.status, failed.stderr).not.toBe(0)
     expect(failed.githubPath).toBe('')
     expect(readFileSync(join(failed.runner, 'dsh-bubblewrap', 'usr', 'bin', 'bwrap'), 'utf8')).toBe('poisoned')
     const recovered = runPrepare({}, seed)
     expect(recovered.status, recovered.stderr).toBe(0)
-    const replaced = readFileSync(join(recovered.runner, 'dsh-bubblewrap', 'usr', 'bin', 'bwrap'), 'utf8')
-    expect(replaced).not.toBe('poisoned')
-  })
+    expect(readFileSync(recovered.publishedPath, 'utf8')).not.toBe('poisoned')
+  }, 30_000)
+
+  it('refuses to install packages on a runner that is not disposable', () => {
+    const run = runPrepare({ environment: 'self-hosted' })
+    expect(run.status, run.stderr).not.toBe(0)
+    expect(run.stderr).toContain('refusing to install packages here')
+    expect(run.calls.some(call => call.command === 'apt-get')).toBe(false)
+    expect(run.githubPath).toBe('')
+  }, 30_000)
+
   it('refuses to prepare outside Linux x86_64', () => {
     const run = runPrepare({ platform: { system: 'Darwin', machine: 'arm64' } })
     expect(run.status, run.stderr).not.toBe(0)
     expect(run.stderr).toContain('supports only Linux x86_64 hosted runners')
     expect(run.calls).toEqual([])
-  })
+  }, 30_000)
 
   it('keeps the digest double faithful to sha256sum', () => {
     const workspace = mkdtempSync(join(tmpdir(), 'dsh-bwrap-spec-'))
@@ -358,12 +453,13 @@ describe('prepare-ci-bubblewrap', () => {
     mkdirSync(bin, { recursive: true })
     const doublePath = join(bin, 'command-double.mjs')
     writeFileSync(doublePath, shimSource, { mode: 0o755 })
-    writeFileSync(join(bin, 'sha256sum'), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(doublePath)} sha256sum "$@"\n`, { mode: 0o755 })
-    const fixture = join(workspace, 'fixture.deb')
-    writeFileSync(fixture, 'fixture-bytes')
+    const wrapper = join(bin, 'sha256sum')
+    writeFileSync(wrapper, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(doublePath)} sha256sum "$@"\n`, { mode: 0o755 })
     const scenarioPath = join(workspace, 'scenario.json')
-    writeFileSync(scenarioPath, JSON.stringify({ sources: {}, control: {}, contents: '', platform: {} }))
-    const result = spawnSync(join(bin, 'sha256sum'), [fixture], {
+    writeFileSync(scenarioPath, JSON.stringify({ assets: {}, platform: {} }))
+    const fixture = join(workspace, 'fixture.tar.xz')
+    writeFileSync(fixture, 'fixture-bytes')
+    const result = spawnSync(wrapper, [fixture], {
       encoding: 'utf8',
       env: { PATH: bin, SPEC_SCENARIO: scenarioPath, SPEC_LOG: join(workspace, 'calls.jsonl') },
     })
