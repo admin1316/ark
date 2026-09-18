@@ -31,32 +31,32 @@ describe('CI workflow', () => {
     // concurrently and owns both children: a rejected source must reach the
     // step result instead of being masked by the other branch's success.
     const files = ['.github/workflows/ci.yml', '.github/workflows/ci-master.yml']
-    let checked = 0
-    for (const file of files) {
+    const runs = files.flatMap((file) => {
       const workflow: unknown = yaml.load(readFileSync(resolve(root, file), 'utf8'))
       if (!isRecord(workflow) || !isRecord(workflow.jobs)) throw new TypeError(`${file} must define jobs`)
-      for (const [jobName, job] of Object.entries(workflow.jobs)) {
-        if (!isRecord(job) || !Array.isArray(job.steps)) continue
-        for (const step of job.steps) {
-          if (!isRecord(step) || typeof step.run !== 'string' || !step.run.includes('scripts/prepare-ci-bubblewrap.sh')) continue
-          checked += 1
-          const run = step.run
-          if (!run.includes('pnpm install --frozen-lockfile')) {
-            // Serial caller: the script is the step command, so its exit code
-            // is already the step result.
-            expect(run, `${file} ${jobName}`).toBe('bash scripts/prepare-ci-bubblewrap.sh')
-            continue
-          }
-          expect(run, `${file} ${jobName}`).toContain('pnpm install --frozen-lockfile &')
-          expect(run).toContain('bash scripts/prepare-ci-bubblewrap.sh &')
-          expect(run).toContain('wait "$install_pid" || install_status=$?')
-          expect(run).toContain('wait "$sandbox_pid" || sandbox_status=$?')
-          expect(run).toContain('if (( install_status != 0 )); then exit "$install_status"; fi')
-          expect(run).toContain('exit "$sandbox_status"')
-        }
+      return Object.entries(workflow.jobs).flatMap(([jobName, job]) => {
+        if (!isRecord(job) || !Array.isArray(job.steps)) return []
+        return job.steps
+          .filter(isRecord)
+          .filter(step => typeof step.run === 'string' && step.run.includes('scripts/prepare-ci-bubblewrap.sh'))
+          .map(step => ({ label: `${file} ${jobName}`, run: step.run as string }))
+      })
+    })
+    expect(runs.length).toBeGreaterThan(0)
+    for (const { label, run } of runs) {
+      if (!run.includes('pnpm install --frozen-lockfile')) {
+        // Serial caller: the script is the step command, so its exit code is
+        // already the step result.
+        expect(run, label).toBe('bash scripts/prepare-ci-bubblewrap.sh')
+        continue
       }
+      expect(run, label).toContain('pnpm install --frozen-lockfile &')
+      expect(run, label).toContain('bash scripts/prepare-ci-bubblewrap.sh &')
+      expect(run, label).toContain('wait "$install_pid" || install_status=$?')
+      expect(run, label).toContain('wait "$sandbox_pid" || sandbox_status=$?')
+      expect(run, label).toContain('if (( install_status != 0 )); then exit "$install_status"; fi')
+      expect(run, label).toContain('exit "$sandbox_status"')
     }
-    expect(checked).toBeGreaterThan(0)
   })
   it('isolates every pnpm action setup destination per runner', () => {
     const files = ['.github/workflows/ci.yml', '.github/workflows/ci-master.yml']
