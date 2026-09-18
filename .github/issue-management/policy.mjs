@@ -101,6 +101,23 @@ export function issueFieldCapability(ownerType) {
 }
 
 /**
+ * True when an Issue's Priority was read from an authoritative field source.
+ *
+ * A snapshot without capability metadata predates this adaptation and keeps the
+ * value it carries. UNSUPPORTED and UNKNOWN_OR_ERROR are unreadable, and any
+ * other unrecognized state is treated the same way rather than assumed empty.
+ * @param {{priorityCapability?: string}} issue Issue snapshot.
+ * @returns {boolean} Whether the Priority value may be trusted.
+ */
+function priorityReadable(issue) {
+  return (
+    issue.priorityCapability === undefined ||
+    issue.priorityCapability === ISSUE_FIELDS.SUPPORTED ||
+    issue.priorityCapability === ISSUE_FIELDS.EMPTY
+  )
+}
+
+/**
  * Return Markdown outside balanced details elements.
  * @param {string} body Markdown body.
  * @returns {{text: string, balanced: boolean, detailsCount: number, allCollapsed: boolean}} Visible source and details shape.
@@ -407,18 +424,29 @@ export function validatePullRequest(input) {
     .filter((entry) => entry[1])
   if (resolving.length === 0) return errors
 
-  // Priority lives in organization-scoped Issue Fields. Where the repository
-  // cannot carry them the value is unreadable: keep every other error and
-  // surface the gap through pullRequestPolicyNotices instead of inventing a
-  // value, dropping the requirement, or enforcing an impossible rule.
-  const readable = resolving.filter(
-    ([, issue]) => issue.priorityCapability !== ISSUE_FIELDS.UNSUPPORTED,
-  )
-  if (readable.length !== resolving.length) return errors
-
-  const issuePriorities = readable
+  // Priority lives in organization-scoped Issue Fields, so a User-owned
+  // repository can leave the value unreadable. Unreadability never creates an
+  // obligation and never discharges one: the obligation exists when the PR
+  // declares a Priority or a resolving Issue carries a readable one. With that
+  // obligation pending, an unreadable required value is a blocked
+  // verification — not a silent pass and not a fabricated "no Priority".
+  const unreadable = resolving.filter(([, issue]) => !priorityReadable(issue))
+  const readablePriorities = resolving
+    .filter(([, issue]) => priorityReadable(issue))
     .map(([, issue]) => issue.priority?.toLowerCase())
     .filter((priority) => PRIORITIES.includes(priority))
+  if (unreadable.length > 0) {
+    if (priorities.length > 0 || readablePriorities.length > 0) {
+      errors.push(
+        `BLOCKED_UNVERIFIED：${unreadable
+          .map(([number]) => `#${number}`)
+          .join('、')} 的 Issue Priority 无法验证（该仓库不支持组织级 Issue Fields），所需 Priority 一致性规则未通过验证`,
+      )
+    }
+    return errors
+  }
+
+  const issuePriorities = readablePriorities
   if (priorities.length === 0 && issuePriorities.length > 0) {
     const highest = issuePriorities.sort(
       (left, right) => PRIORITIES.indexOf(left) - PRIORITIES.indexOf(right),
@@ -436,19 +464,33 @@ export function validatePullRequest(input) {
 }
 
 /**
- * Report PR policy enforcement gaps that must never be silent.
- * @param {{isDraft: boolean, authorType: string, reviewRequestCount: number, reviewCount: number, references: {resolving: number[]}, issues: Map<number, {priorityCapability?: string}>}} input PR snapshot.
+ * Explain a Priority outcome that is not a failure.
+ *
+ * A notice never carries failure: when an obligation is pending and
+ * unverifiable, validatePullRequest returns the blocking error instead. This
+ * function covers only the genuinely not-applicable case, and states the
+ * reason instead of inferring it from an unreadable or empty value.
+ * @param {{isDraft: boolean, authorType: string, reviewRequestCount: number, reviewCount: number, labels: string[], references: {resolving: number[]}, issues: Map<number, {priority?: string|null, priorityCapability?: string}>}} input PR snapshot.
  * @returns {string[]} Operator-visible notices.
  */
 export function pullRequestPolicyNotices(input) {
   if (!requiresPullRequestPolicy(input)) return []
-  const unsupported = input.references.resolving
+  const resolving = input.references.resolving
     .map((number) => [number, input.issues.get(number)])
-    .filter(([, issue]) => issue?.priorityCapability === ISSUE_FIELDS.UNSUPPORTED)
-  if (unsupported.length === 0) return []
+    .filter(([, issue]) => issue !== undefined)
+  const unreadable = resolving.filter(([, issue]) => !priorityReadable(issue))
+  if (unreadable.length === 0) return []
+  const declared = input.labels.filter((label) => PRIORITIES.includes(label)).length > 0
+  const readablePriority = resolving.some(
+    ([, issue]) =>
+      priorityReadable(issue) && PRIORITIES.includes((issue.priority ?? '').toLowerCase()),
+  )
+  if (declared || readablePriority) return []
   return [
-    `${unsupported.map(([number]) => `#${number}`).join('、')} 所在仓库不支持组织级 Issue Fields：` +
-      'Priority 无法读取，本轮不校验 Priority 一致性（不构成 Priority 通过），其余政策校验照常执行。',
+    `NOT_APPLICABLE：${unreadable
+      .map(([number]) => `#${number}`)
+      .join('、')} 的 Issue Priority 无法读取（该仓库不支持组织级 Issue Fields），` +
+      '但 PR 未声明 Priority，可信规则也未产生一致性义务，故该项按不适用处理；这不是 Priority 一致性通过。',
   ]
 }
 
@@ -458,17 +500,32 @@ function token() {
   return value
 }
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
+
+/** @returns {number} Bounded per-request timeout in milliseconds. */
+function requestTimeoutMs() {
+  const value = Number(process.env.DSH_ISSUE_POLICY_TIMEOUT_MS ?? DEFAULT_REQUEST_TIMEOUT_MS)
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_REQUEST_TIMEOUT_MS
+}
+
 async function api(path, options = {}) {
-  const response = await fetch(`${process.env.GITHUB_API_URL ?? 'https://api.github.com'}${path}`, {
-    ...options,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token()}`,
-      'X-GitHub-Api-Version': API_VERSION,
-      'User-Agent': 'dsh-issue-policy',
-      ...options.headers,
-    },
-  })
+  let response
+  try {
+    response = await fetch(`${process.env.GITHUB_API_URL ?? 'https://api.github.com'}${path}`, {
+      ...options,
+      signal: options.signal ?? AbortSignal.timeout(requestTimeoutMs()),
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token()}`,
+        'X-GitHub-Api-Version': API_VERSION,
+        'User-Agent': 'dsh-issue-policy',
+        ...options.headers,
+      },
+    })
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`${options.method ?? 'GET'} ${path}: ${reason}`)
+  }
   if (options.allow404 && response.status === 404) return null
   if (!response.ok) {
     const body = await response.text()
@@ -790,7 +847,12 @@ async function runPullRequestCheck(event) {
   const errors = validatePullRequest(pull)
   if (errors.length > 0) {
     for (const error of errors) process.stdout.write(`::error::${error}\n`)
-    throw new Error(`Issue policy 未通过，共 ${errors.length} 项`)
+    const blocked = errors.filter((error) => error.startsWith('BLOCKED_UNVERIFIED'))
+    throw new Error(
+      blocked.length > 0
+        ? `Issue policy 存在无法验证的义务（BLOCKED_UNVERIFIED），共 ${errors.length} 项`
+        : `Issue policy 未通过，共 ${errors.length} 项`,
+    )
   }
   process.stdout.write(
     requiresPullRequestPolicy(pull) ? 'Issue policy 通过。\n' : 'PR 尚未进入 Issue policy 强制范围。\n',

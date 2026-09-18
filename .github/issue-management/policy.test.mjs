@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import {
   countVisibleUnits,
@@ -464,7 +469,9 @@ function issuePayload(number, overrides = {}) {
     body: withDetails('正文。'),
     assignees: [],
     labels: [],
-    type: { name: 'Task' },
+    // A User-owned repository cannot set a native Issue Type, and the
+    // pull-request policy path does not read it.
+    type: null,
     state: 'open',
     state_reason: null,
     ...overrides,
@@ -483,9 +490,55 @@ function pullPayload(number, overrides = {}) {
   }
 }
 
+/**
+ * Route one synthetic GitHub API request.
+ * @returns {{status: number, body: unknown}|{raw: string, status: number}|{networkError: string}|{never: true}} Routed result.
+ */
+function routeApiRequest(options, path, pathname) {
+  const { fields = {}, issues = {}, pull } = options
+  const owners = options.repositories ?? { [options.repository]: options.ownerType ?? 'User' }
+  const metadataMatch = /^\/repos\/([^/]+)\/([^/]+)$/u.exec(path)
+  if (metadataMatch) {
+    if (options.metadataStatus && options.metadataStatus !== 200) {
+      return { status: options.metadataStatus, body: { message: 'metadata failure' } }
+    }
+    if (options.metadataNetworkError) return { networkError: 'metadata network down' }
+    const slug = metadataMatch[1] + '/' + metadataMatch[2]
+    if (!(slug in owners)) return { status: 404, body: { message: 'Not Found' } }
+    const owner = owners[slug] === 'MISSING' ? {} : { type: owners[slug] }
+    return { status: 200, body: { full_name: slug, owner } }
+  }
+  const pullMatch = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/u.exec(path)
+  if (pull && pullMatch && Number(pullMatch[3]) === pull.number) return { status: 200, body: pull }
+  const reviewersMatch = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/requested_reviewers$/u.exec(path)
+  if (pull && reviewersMatch && Number(reviewersMatch[3]) === pull.number) {
+    return { status: 200, body: options.reviewRequests ?? { users: [], teams: [] } }
+  }
+  const reviewsMatch = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/reviews$/u.exec(pathname)
+  if (pull && reviewsMatch && Number(reviewsMatch[3]) === pull.number) {
+    return { status: 200, body: options.reviews ?? [] }
+  }
+  const issueMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)$/u.exec(path)
+  if (issueMatch) {
+    const issue = issues[Number(issueMatch[1])]
+    return issue ? { status: 200, body: issue } : { status: 404, body: { message: 'Not Found' } }
+  }
+  const fieldMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/issue-field-values$/u.exec(pathname)
+  if (fieldMatch) {
+    const entry = fields[Number(fieldMatch[1])]
+    if (entry === undefined) return { status: 200, body: [] }
+    if (Array.isArray(entry)) return { status: 200, body: entry }
+    if (entry.never) return { never: true }
+    if (entry.networkError) return { networkError: 'fields network down' }
+    if (typeof entry.raw === 'string') return { raw: entry.raw, status: entry.status }
+    if (entry.status !== 200) return { status: entry.status, body: { message: 'field failure' } }
+    return { status: 200, body: entry.body }
+  }
+  throw new Error('unexpected request: ' + path + ' (' + FAKE_API_HOST + ')')
+}
+
 // A fake transport over the real snapshot -> validation call chain.
 function installFakeApi(options) {
-  const { fields = {}, issues = {}, pull } = options
   const owners = options.repositories ?? { [options.repository]: options.ownerType ?? 'User' }
   resetRepositoryMetadataCache()
   const originalFetch = globalThis.fetch
@@ -494,54 +547,26 @@ function installFakeApi(options) {
   const calls = []
   process.env.GITHUB_REPOSITORY = options.repository ?? Object.keys(owners)[0]
   process.env.GH_TOKEN = 'fake-token'
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init = {}) => {
     const parsed = new URL(String(url))
     const path = parsed.pathname + parsed.search
     calls.push(path)
-    const metadataMatch = /^\/repos\/([^/]+)\/([^/]+)$/u.exec(path)
-    if (metadataMatch) {
-      const slug = metadataMatch[1] + '/' + metadataMatch[2]
-      if (options.metadataStatus && options.metadataStatus !== 200) {
-        return jsonResponse(options.metadataStatus, { message: 'metadata failure' })
+    const result = routeApiRequest(options, path, parsed.pathname)
+    if (result.never) {
+      return new Promise((_, reject) => {
+        init.signal?.addEventListener('abort', () => reject(init.signal.reason ?? new Error('aborted')))
+      })
+    }
+    if (result.networkError) throw new Error(result.networkError)
+    if (result.raw !== undefined) {
+      return {
+        ok: result.status === 200,
+        status: result.status,
+        text: async () => result.raw,
+        json: async () => JSON.parse(result.raw),
       }
-      if (options.metadataNetworkError) throw new Error('metadata network down')
-      if (!(slug in owners)) return jsonResponse(404, { message: 'Not Found' })
-      const owner = owners[slug] === 'MISSING' ? {} : { type: owners[slug] }
-      return jsonResponse(200, { full_name: slug, owner })
     }
-    const pullMatch = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/u.exec(path)
-    if (pull && pullMatch && Number(pullMatch[3]) === pull.number) return jsonResponse(200, pull)
-    const reviewersMatch = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/requested_reviewers$/u.exec(path)
-    if (pull && reviewersMatch && Number(reviewersMatch[3]) === pull.number) {
-      return jsonResponse(200, options.reviewRequests ?? { users: [], teams: [] })
-    }
-    const reviewsMatch = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/reviews$/u.exec(parsed.pathname)
-    if (pull && reviewsMatch && Number(reviewsMatch[3]) === pull.number) {
-      return jsonResponse(200, options.reviews ?? [])
-    }
-    const issueMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)$/u.exec(path)
-    if (issueMatch) {
-      const issue = issues[Number(issueMatch[1])]
-      return issue ? jsonResponse(200, issue) : jsonResponse(404, { message: 'Not Found' })
-    }
-    const fieldMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/issue-field-values$/u.exec(parsed.pathname)
-    if (fieldMatch) {
-      const entry = fields[Number(fieldMatch[1])]
-      if (entry === undefined) return jsonResponse(200, [])
-      if (Array.isArray(entry)) return jsonResponse(200, entry)
-      if (entry.networkError) throw new Error('fields network down')
-      if (typeof entry.raw === 'string') {
-        return {
-          ok: entry.status === 200,
-          status: entry.status,
-          text: async () => entry.raw,
-          json: async () => JSON.parse(entry.raw),
-        }
-      }
-      if (entry.status !== 200) return jsonResponse(entry.status, { message: 'field failure' })
-      return jsonResponse(200, entry.body)
-    }
-    throw new Error('unexpected request: ' + path + ' (' + FAKE_API_HOST + ')')
+    return jsonResponse(result.status, result.body)
   }
   return {
     calls,
@@ -551,6 +576,7 @@ function installFakeApi(options) {
       else process.env.GITHUB_REPOSITORY = previousRepository
       if (previousToken === undefined) delete process.env.GH_TOKEN
       else process.env.GH_TOKEN = previousToken
+      resetRepositoryMetadataCache()
     },
   }
 }
@@ -561,6 +587,68 @@ async function withFakeApi(options, run) {
     return await run(fake)
   } finally {
     fake.restore()
+  }
+}
+
+/**
+ * Run the real CLI against a synthetic API on a loopback server, proving the
+ * exit code and the stdout/stderr an operator or workflow actually sees.
+ */
+async function runPolicyCli(options, { event = { pull_request: { number: 33 } }, timeoutMs = '2000' } = {}) {
+  const owners = options.repositories ?? { [options.repository]: options.ownerType ?? 'User' }
+  const slug = options.repository ?? Object.keys(owners)[0]
+  const server = createServer((request, response) => {
+    const parsed = new URL(request.url, 'http://127.0.0.1')
+    const path = parsed.pathname + parsed.search
+    let result
+    try {
+      result = routeApiRequest(options, path, parsed.pathname)
+    } catch (error) {
+      response.writeHead(500, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ message: error.message }))
+      return
+    }
+    if (result.never) return
+    if (result.networkError) {
+      response.destroy()
+      return
+    }
+    const body = result.raw !== undefined ? result.raw : JSON.stringify(result.body)
+    response.writeHead(result.status, { 'content-type': 'application/json' })
+    response.end(body)
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  const port = typeof address === 'string' || address === null ? 0 : address.port
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-issue-policy-'))
+  const eventPath = join(directory, 'event.json')
+  writeFileSync(eventPath, JSON.stringify(event))
+  try {
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./policy.mjs', import.meta.url)), 'pr'], {
+      env: {
+        ...process.env,
+        GITHUB_API_URL: 'http://127.0.0.1:' + port,
+        GITHUB_REPOSITORY: slug,
+        GH_TOKEN: 'fake-token',
+        GITHUB_TOKEN: '',
+        GITHUB_EVENT_PATH: eventPath,
+        DSH_ISSUE_POLICY_TIMEOUT_MS: timeoutMs,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+    })
+    const code = await new Promise((resolve) => child.on('close', resolve))
+    return { code, stdout, stderr }
+  } finally {
+    server.close()
+    rmSync(directory, { recursive: true, force: true })
   }
 }
 
@@ -594,8 +682,9 @@ test('does not call the organization-only field endpoint on a User-owned reposit
       assert.ok(!errors.some((error) => error.includes('Priority')), errors.join(' '))
       const notices = pullRequestPolicyNotices(pull)
       assert.equal(notices.length, 1)
+      assert.match(notices[0], /^NOT_APPLICABLE：/u)
       assert.match(notices[0], /#34/u)
-      assert.match(notices[0], /不构成 Priority 通过/u)
+      assert.match(notices[0], /不是 Priority 一致性通过/u)
     },
   )
 })
@@ -659,8 +748,11 @@ test('distinguishes empty field values from an unsupported capability', async ()
     async () => {
       const pull = await pullRequestSnapshot(33)
       assert.equal(pull.issues.get(34).priorityCapability, 'UNSUPPORTED')
-      assert.ok(!validatePullRequest(pull).some((error) => error.includes('Priority')))
-      assert.equal(pullRequestPolicyNotices(pull).length, 1)
+      const errors = validatePullRequest(pull)
+      assert.equal(errors.length, 1, errors.join(' '))
+      assert.match(errors[0], /^BLOCKED_UNVERIFIED：/u)
+      assert.match(errors[0], /#34/u)
+      assert.deepEqual(pullRequestPolicyNotices(pull), [])
     },
   )
 })
@@ -718,7 +810,9 @@ test('fails closed on metadata and field API failures', async () => {
   }
   const cases = [
     ['404', { status: 404 }, /Issue Fields 返回 404/u],
+    ['401', { status: 401 }, /401/u],
     ['403', { status: 403 }, /403/u],
+    ['410', { status: 410 }, /410/u],
     ['429', { status: 429 }, /429/u],
     ['500', { status: 500 }, /500/u],
     ['invalid JSON', { status: 200, raw: 'not-json' }, /not valid JSON|Unexpected/u],
@@ -798,4 +892,325 @@ test('keeps Draft and pre-review boundaries while capability is unsupported', as
       assert.deepEqual(pullRequestPolicyNotices(pull), [])
     },
   )
+})
+
+
+test('keeps every applicable check on the Related-to path of a User-owned repository', async () => {
+  const base = { repository: 'personal-owner/ark', ownerType: 'User', reviewRequests: reviewedRequests }
+  await withFakeApi(
+    {
+      ...base,
+      pull: pullPayload(33, { body: 'Related to #34', labels: ['kind/bug-fix', 'area/web'] }),
+      issues: { 34: issuePayload(34) },
+    },
+    async ({ calls }) => {
+      const pull = await pullRequestSnapshot(33)
+      assert.ok(!calls.some((path) => path.includes('issue-field-values')), calls.join(' '))
+      assert.equal(pull.issues.get(34).priorityCapability, 'UNSUPPORTED')
+      assert.deepEqual(validatePullRequest(pull), [])
+      assert.deepEqual(pullRequestPolicyNotices(pull), [])
+    },
+  )
+  await withFakeApi(
+    { ...base, pull: pullPayload(33, { body: 'Related to #34', labels: [] }), issues: { 34: issuePayload(34) } },
+    async () => {
+      const errors = validatePullRequest(await pullRequestSnapshot(33))
+      assert.ok(errors.includes('PR 必须恰好有一个允许的 kind/*，当前为 0'))
+      assert.ok(errors.includes('PR 必须至少有一个 area/*'))
+      assert.ok(!errors.some((error) => error.includes('Priority')))
+    },
+  )
+  await withFakeApi(
+    {
+      ...base,
+      pull: pullPayload(33, { body: 'Related to other-owner/other-repo#7', labels: ['kind/bug-fix', 'area/web'] }),
+      issues: {},
+    },
+    async () => {
+      assert.ok(
+        validatePullRequest(await pullRequestSnapshot(33)).includes('PR 正文必须引用至少一个同仓库 Issue'),
+      )
+    },
+  )
+})
+
+test('blocks a declared Priority when the resolving Issue Priority cannot be verified', async () => {
+  const options = {
+    repository: 'personal-owner/ark',
+    ownerType: 'User',
+    reviewRequests: reviewedRequests,
+    pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/bug-fix', 'area/web', 'p2'] }),
+    issues: { 34: issuePayload(34) },
+  }
+  await withFakeApi(options, async ({ calls }) => {
+    const pull = await pullRequestSnapshot(33)
+    assert.ok(!calls.some((path) => path.includes('issue-field-values')), calls.join(' '))
+    const errors = validatePullRequest(pull)
+    assert.equal(errors.length, 1, errors.join(' '))
+    assert.match(errors[0], /^BLOCKED_UNVERIFIED：/u)
+    assert.match(errors[0], /#34/u)
+    assert.match(errors[0], /无法验证/u)
+    assert.ok(!errors[0].includes('没有设置 Priority'), 'must not fabricate an empty Priority')
+    assert.deepEqual(pullRequestPolicyNotices(pull), [])
+  })
+  const cli = await runPolicyCli(options)
+  assert.notEqual(cli.code, 0)
+  assert.match(cli.stdout, /::error::BLOCKED_UNVERIFIED/u)
+  assert.match(cli.stderr, /BLOCKED_UNVERIFIED/u)
+  assert.ok(!cli.stdout.includes('Issue policy 通过'), cli.stdout)
+})
+
+test('treats a resolving reference without a Priority obligation as not applicable', async () => {
+  await withFakeApi(
+    {
+      repository: 'personal-owner/ark',
+      ownerType: 'User',
+      reviewRequests: reviewedRequests,
+      pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/bug-fix', 'area/web'] }),
+      issues: { 34: issuePayload(34) },
+    },
+    async () => {
+      const pull = await pullRequestSnapshot(33)
+      assert.deepEqual(validatePullRequest(pull), [])
+      const notices = pullRequestPolicyNotices(pull)
+      assert.equal(notices.length, 1)
+      assert.match(notices[0], /^NOT_APPLICABLE：/u)
+      assert.match(notices[0], /未声明 Priority/u)
+      assert.match(notices[0], /不是 Priority 一致性通过/u)
+    },
+  )
+  // The same trusted rule on an organization path where the read succeeded and
+  // the Issue simply carries no Priority: no consistency duty is triggered.
+  await withFakeApi(
+    {
+      repository: 'team-owner/ark',
+      ownerType: 'Organization',
+      reviewRequests: reviewedRequests,
+      pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/bug-fix', 'area/web'] }),
+      issues: { 34: issuePayload(34) },
+      fields: { 34: [] },
+    },
+    async () => {
+      const pull = await pullRequestSnapshot(33)
+      assert.equal(pull.issues.get(34).priorityCapability, 'EMPTY')
+      assert.deepEqual(validatePullRequest(pull), [])
+      assert.deepEqual(pullRequestPolicyNotices(pull), [])
+    },
+  )
+})
+
+test('preserves every organization Priority rule for readable values', async () => {
+  const base = { repository: 'team-owner/ark', ownerType: 'Organization', reviewRequests: reviewedRequests }
+  const fieldValues = (priority) =>
+    priority === null ? [] : [{ issue_field_name: 'Priority', single_select_option: { name: priority } }]
+  const scenarios = [
+    {
+      name: 'matching priority',
+      labels: ['kind/bug-fix', 'area/web', 'p0'],
+      fields: { 34: fieldValues('P0') },
+      expected: [],
+    },
+    {
+      name: 'mismatched priority',
+      labels: ['kind/bug-fix', 'area/web', 'p2'],
+      fields: { 34: fieldValues('P0') },
+      expected: ['PR Priority 应为 p0'],
+    },
+    {
+      name: 'declared label with a missing Issue Priority',
+      labels: ['kind/bug-fix', 'area/web', 'p2'],
+      fields: { 34: [] },
+      expected: ['有 Priority 的解决型 PR 要求每个被解决 Issue 都设置 Priority'],
+    },
+    {
+      name: 'readable Issue Priority without a declared label',
+      labels: ['kind/bug-fix', 'area/web'],
+      fields: { 34: fieldValues('P2') },
+      expected: ['PR Priority 应为 p2'],
+    },
+  ]
+  for (const scenario of scenarios) {
+    await withFakeApi(
+      {
+        ...base,
+        pull: pullPayload(33, { body: 'Fixes #34', labels: scenario.labels }),
+        issues: { 34: issuePayload(34) },
+        fields: scenario.fields,
+      },
+      async () => {
+        const errors = validatePullRequest(await pullRequestSnapshot(33))
+        assert.deepEqual(errors, scenario.expected, scenario.name)
+      },
+    )
+  }
+  const multiple = {
+    ...base,
+    pull: pullPayload(33, { body: 'Fixes #34, Fixes #35', labels: ['kind/bug-fix', 'area/web', 'p0'] }),
+    issues: { 34: issuePayload(34), 35: issuePayload(35) },
+    fields: { 34: fieldValues('P2'), 35: fieldValues('P0') },
+  }
+  await withFakeApi(multiple, async () => {
+    assert.deepEqual(validatePullRequest(await pullRequestSnapshot(33)), [])
+  })
+  await withFakeApi(
+    { ...multiple, pull: pullPayload(33, { body: 'Fixes #34, Fixes #35', labels: ['kind/bug-fix', 'area/web', 'p2'] }) },
+    async () => {
+      assert.deepEqual(validatePullRequest(await pullRequestSnapshot(33)), ['PR Priority 应为 p0'])
+    },
+  )
+})
+
+test('never drops readable Priority values when another resolving Issue is unreadable', () => {
+  const pull = {
+    isDraft: false,
+    authorType: 'User',
+    reviewRequestCount: 1,
+    reviewCount: 0,
+    labels: ['kind/bug-fix', 'area/web', 'p2'],
+    references: { all: [34, 35], resolving: [34, 35], related: [] },
+    issues: new Map([
+      [34, { priority: null, priorityCapability: 'UNSUPPORTED' }],
+      [35, { priority: 'P0', priorityCapability: 'SUPPORTED' }],
+    ]),
+  }
+  const errors = validatePullRequest(pull)
+  assert.equal(errors.length, 1, errors.join(' '))
+  assert.match(errors[0], /^BLOCKED_UNVERIFIED：/u)
+  assert.match(errors[0], /#34/u)
+  assert.deepEqual(pullRequestPolicyNotices(pull), [])
+  // Even a declared label equal to the readable value cannot pass while the
+  // other required value stays unreadable.
+  assert.equal(validatePullRequest({ ...pull, labels: ['kind/bug-fix', 'area/web', 'p0'] }).length, 1)
+})
+
+test('fails closed when a request exceeds the bounded timeout', async () => {
+  const previousTimeout = process.env.DSH_ISSUE_POLICY_TIMEOUT_MS
+  process.env.DSH_ISSUE_POLICY_TIMEOUT_MS = '40'
+  try {
+    await withFakeApi(
+      {
+        repository: 'team-owner/ark',
+        ownerType: 'Organization',
+        pull: pullPayload(33, { body: 'Related to #34', labels: ['kind/bug-fix', 'area/web'] }),
+        issues: { 34: issuePayload(34) },
+        fields: { 34: { never: true } },
+      },
+      async () => {
+        // AbortSignal.timeout uses an unref'd timer, so keep the loop alive
+        // for the duration of the assertion.
+        const keepAlive = setTimeout(() => {}, 250)
+        try {
+          await assert.rejects(() => pullRequestSnapshot(33), /aborted due to timeout|TimeoutError/iu)
+        } finally {
+          clearTimeout(keepAlive)
+        }
+      },
+    )
+  } finally {
+    if (previousTimeout === undefined) delete process.env.DSH_ISSUE_POLICY_TIMEOUT_MS
+    else process.env.DSH_ISSUE_POLICY_TIMEOUT_MS = previousTimeout
+  }
+})
+
+test('binds capability to the current repository and never to a stale response', async () => {
+  await withFakeApi(
+    {
+      repositories: { 'personal-owner/ark': 'User', 'team-owner/ark': 'Organization' },
+      pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/bug-fix', 'area/web'] }),
+      issues: { 34: issuePayload(34) },
+      fields: { 34: [{ issue_field_name: 'Priority', single_select_option: { name: 'P1' } }] },
+    },
+    async ({ calls }) => {
+      const personal = await pullRequestSnapshot(33)
+      assert.equal(personal.issues.get(34).priorityCapability, 'UNSUPPORTED')
+      process.env.GITHUB_REPOSITORY = 'team-owner/ark'
+      const organization = await pullRequestSnapshot(33)
+      assert.equal(organization.issues.get(34).priorityCapability, 'SUPPORTED')
+      assert.equal(organization.issues.get(34).priority, 'P1')
+      assert.equal(calls.filter((path) => path === '/repos/personal-owner/ark').length, 1)
+      assert.equal(calls.filter((path) => path === '/repos/team-owner/ark').length, 1)
+    },
+  )
+  // A metadata response that is unknown or failed is never reused as evidence.
+  await withFakeApi(
+    {
+      repositories: { 'personal-owner/ark': 'User', 'team-owner/ark': 'MISSING' },
+      pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/bug-fix', 'area/web'] }),
+      issues: { 34: issuePayload(34) },
+    },
+    async () => {
+      assert.equal((await pullRequestSnapshot(33)).issues.get(34).priorityCapability, 'UNSUPPORTED')
+      process.env.GITHUB_REPOSITORY = 'team-owner/ark'
+      await assert.rejects(() => pullRequestSnapshot(33), /owner\.type/u)
+    },
+  )
+})
+
+test('enters Priority enforcement only for a reviewed, non-draft pull request', async () => {
+  const fixture = {
+    repository: 'personal-owner/ark',
+    ownerType: 'User',
+    pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/bug-fix', 'area/web', 'p2'] }),
+    issues: { 34: issuePayload(34) },
+  }
+  await withFakeApi(fixture, async () => {
+    const pull = await pullRequestSnapshot(33)
+    assert.equal(requiresPullRequestPolicy(pull), false)
+    assert.deepEqual(validatePullRequest(pull), [])
+    assert.deepEqual(pullRequestPolicyNotices(pull), [])
+  })
+  await withFakeApi({ ...fixture, reviewRequests: reviewedRequests }, async () => {
+    const pull = await pullRequestSnapshot(33)
+    assert.equal(requiresPullRequestPolicy(pull), true)
+    assert.equal(validatePullRequest(pull).length, 1)
+  })
+  await withFakeApi(
+    {
+      ...fixture,
+      pull: pullPayload(33, { draft: true, body: 'Fixes #34', labels: ['kind/bug-fix', 'area/web', 'p2'] }),
+      reviewRequests: reviewedRequests,
+    },
+    async () => {
+      const pull = await pullRequestSnapshot(33)
+      assert.equal(requiresPullRequestPolicy(pull), false)
+      assert.deepEqual(validatePullRequest(pull), [])
+    },
+  )
+})
+
+test('aligns the CLI exit code with PASS, FAIL, and BLOCKED_UNVERIFIED', async () => {
+  const personal = { repository: 'personal-owner/ark', ownerType: 'User', reviewRequests: reviewedRequests }
+  const passing = await runPolicyCli({
+    ...personal,
+    pull: pullPayload(33, { body: 'Related to #34', labels: ['kind/bug-fix', 'area/web'] }),
+    issues: { 34: issuePayload(34) },
+  })
+  assert.equal(passing.code, 0, passing.stderr)
+  assert.match(passing.stdout, /Issue policy 通过。/u)
+
+  const notApplicable = await runPolicyCli({
+    ...personal,
+    pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/bug-fix', 'area/web'] }),
+    issues: { 34: issuePayload(34) },
+  })
+  assert.equal(notApplicable.code, 0, notApplicable.stderr)
+  assert.match(notApplicable.stdout, /::notice::NOT_APPLICABLE/u)
+
+  const failed = await runPolicyCli({
+    ...personal,
+    pull: pullPayload(33, { body: 'Related to #34', labels: [] }),
+    issues: { 34: issuePayload(34) },
+  })
+  assert.notEqual(failed.code, 0)
+  assert.match(failed.stdout, /::error::PR 必须恰好有一个允许的 kind\/\*/u)
+  assert.ok(!failed.stdout.includes('Issue policy 通过'), failed.stdout)
+
+  const blocked = await runPolicyCli({
+    ...personal,
+    pull: pullPayload(33, { body: 'Fixes #34', labels: ['kind/bug-fix', 'area/web', 'p2'] }),
+    issues: { 34: issuePayload(34) },
+  })
+  assert.notEqual(blocked.code, 0)
+  assert.match(blocked.stdout, /::error::BLOCKED_UNVERIFIED/u)
+  assert.match(blocked.stderr, /BLOCKED_UNVERIFIED/u)
 })
