@@ -48,6 +48,7 @@ const FORBIDDEN_CLASSES: readonly ForbiddenClass[] = [
     matches: (path) => {
       const segments = path.split('/')
       return /(?:^|\/)(?:AGENTS|CLAUDE)\.local\.md[^/]*$/u.test(path)
+        || (segments.at(-1) ?? '').startsWith('.claude.json')
         || (segments.includes('.claude') && path !== '.claude/skills')
         || (segments.includes('.codex') && path !== '.codex/config.toml')
     },
@@ -55,6 +56,7 @@ const FORBIDDEN_CLASSES: readonly ForbiddenClass[] = [
   {
     reason: 'personal media-tool credentials, cloud account state, identity, or intent history; project assets remain allowed',
     matches: path => path.split('/').includes('.aws')
+      || /(?:^|\/)\.config\/gcloud(?:\/|$)/u.test(path)
       || /(?:^|\/)\.heygen\/credentials[^/]*$/u.test(path)
       || /(?:^|\/)\.hyperframes\/(?:config|cloudrun-state)\.json[^/]*$/u.test(path)
       || /(?:^|\/)\.media\/(?:anon-id|misses\.jsonl)[^/]*$/u.test(path),
@@ -73,7 +75,9 @@ const FORBIDDEN_CLASSES: readonly ForbiddenClass[] = [
     matches: (path) => {
       const segments = path.split('/')
       return segments.includes('.sessions') || segments.includes('.llm-wiki') || segments.includes('wiki')
-        || ['.dsh', 'Harness', 'profiles', '.agent-presets', 'skills', 'logs', 'cache', 'llm-deepseek', 'Knowledge', 'Default Workspace', 'Document References', 'Workbench Drafts', 'sessions', 'storages', 'attachments', 'terminal-sessions'].includes(segments[0] ?? '')
+        || /(?:^|\/)raw\/sources\//u.test(path)
+        || path.endsWith('.log')
+        || ['.dsh', 'Harness', 'profiles', 'projcache', 'workspace-registry', 'runtime-state', '.agent-presets', 'skills', 'logs', 'cache', 'llm-deepseek', 'Knowledge', 'Default Workspace', 'Document References', 'Workbench Drafts', 'sessions', 'storages', 'attachments', 'terminal-sessions'].includes(segments[0] ?? '')
         || (segments[0] ?? '').startsWith('.ark-')
         || ['.anonymous-user-id', 'cordis.patch.yml', 'SETTINGS.md'].includes(path)
         || path.startsWith('settings.yaml')

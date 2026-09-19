@@ -88,6 +88,11 @@ describe('verify-generated-tracking', () => {
     const forbidden = [
       '.env', 'nested/.env.production', '.env.local.bak',
       'AGENTS.local.md', 'nested/CLAUDE.local.md', 'nested/AGENTS.local.md~',
+      '.claude.json', '.claude.json.backup', 'nested/.claude.json~',
+      '.config/gcloud/application_default_credentials.json', 'nested/.config/gcloud/credentials.db',
+      'raw/sources/private.txt', 'nested/raw/sources/private.txt',
+      'projcache/private.sqlite', 'workspace-registry/private.json', 'runtime-state/private.json',
+      'Library/Logs/Ark/main-thread-stalls.log', 'nested/diagnostic.log',
       '.claude/settings.local.json', '.claude/history.jsonl', '.claude/projects/private/session.jsonl',
       'nested/.claude/settings.local.json', '.codex/sessions/private.jsonl', '.codex/history.jsonl',
       '.codex/shell_snapshots/private.sh', '.codex/state_5.sqlite', '.codex/memories/private.md',
@@ -113,6 +118,7 @@ describe('verify-generated-tracking', () => {
     const retained = [
       '.env.example', 'nested/.env.template', '.env.sample',
       'AGENTS.md', 'nested/CLAUDE.md', '.claude/skills',
+      '.config/project/config.json', 'raw/source-guide.md', 'nested/raw/sources-guide.md',
       '.media/manifest.jsonl', '.media/preferences.json', '.media/recipes/example/recipe.json',
       '.media/images/project.png', '.hyperframes/frame-packets/plan.json', '.codex/config.toml',
       '.aws-sam/template.yaml',
