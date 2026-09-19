@@ -92,7 +92,9 @@ describe('verify-generated-tracking', () => {
       'wiki/private.md', 'Knowledge/wiki/private.md', 'nested/wiki/private.md',
       'Knowledge/raw/sources/private.txt', 'Default Workspace/private.txt',
       'Document References/private.json', 'Workbench Drafts/private.md',
-      'profiles/private/cordis.patch.yml', 'logs/private.jsonl', 'cache/private.json',
+      'profiles/private/cordis.patch.yml', '.agent-presets/private/agent.cordis.yml',
+      'skills/private/SKILL.md', '.ark-startup-recovery/payload/private.json', '.ark-settings-import.json',
+      'logs/private.jsonl', 'cache/private.json',
       'llm-deepseek/private.json', '.ark-profile-rollbacks/private/cordis.yml',
       '.anonymous-user-id', 'cordis.patch.yml', 'SETTINGS.md',
       '.dsh/settings.yaml', 'Harness/profiles/cordis.yml',
@@ -104,6 +106,7 @@ describe('verify-generated-tracking', () => {
       'snapshots/session/example/session.jsonl',
       'snapshots/session/skill-load/workspace/.dsh/skills/example/SKILL.md',
       'packages/session/session/tests/fixtures/settings.yaml',
+      'packages/preset/agent-presets/presets/cordis/agent.cordis.yml',
       'examples/agent/cordis.patch.yml', 'packages/boot/app-boot/tests/fixtures/profiles/example/cordis.patch.yml',
     ]
     for (const path of [...forbidden, ...retained]) write(root, path)
