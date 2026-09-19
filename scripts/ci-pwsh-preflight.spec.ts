@@ -4,7 +4,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { installPinnedPwsh, parsePreflightArgs, runPwshPreflight } from './ci-pwsh-preflight.ts'
+import { probePwshCapability } from '@deepseek-ai/dsh-pwsh-local'
+import { installPinnedPwsh, parsePreflightArgs, resolveAbsoluteExecutable, runPwshPreflight } from './ci-pwsh-preflight.ts'
 
 const roots: string[] = []
 
@@ -43,8 +44,15 @@ function pwshTarball(): { tarball: string; sha256: string } {
 
 const noPath = { PATH: '/nonexistent' }
 
+// Platform mapping for this suite. The preflight's POSIX fixtures (a shell
+// script standing in for pwsh, a tar-based local install) cannot execute on
+// Windows, so those cases are scheduled for POSIX hosts; the classification,
+// required/optional and CLI-contract cases run everywhere, and Windows keeps
+// its own case for the lookup that has no /bin/sh to fall back on.
+const posixFixtures = process.platform !== 'win32'
+
 describe('ci PowerShell preflight', () => {
-  it('reports an existing usable tool without installing anything', () => {
+  it.skipIf(!posixFixtures)('reports an existing usable tool without installing anything', () => {
     const executable = fakePwsh()
     const result = runPwshPreflight({ require: true, env: { ...noPath, DSH_PWSH_EXECUTABLE: executable }, log: () => {} })
     expect(result.installed).toBe(false)
@@ -53,7 +61,7 @@ describe('ci PowerShell preflight', () => {
     expect(result.roundTrip).toBe(true)
   })
 
-  it('exports the PATH-resolved tool as an absolute executable', () => {
+  it.skipIf(!posixFixtures)('exports the PATH-resolved tool as an absolute executable', () => {
     const executable = fakePwsh()
     const env: NodeJS.ProcessEnv = { PATH: `${join(executable, '..')}:/bin` }
     const result = runPwshPreflight({ require: true, env, log: () => {} })
@@ -62,7 +70,7 @@ describe('ci PowerShell preflight', () => {
     expect(env.DSH_PWSH_EXECUTABLE).toBe(executable)
   })
 
-  it('publishes the resolved executable to later steps through GITHUB_ENV', () => {
+  it.skipIf(!posixFixtures)('publishes the resolved executable to later steps through GITHUB_ENV', () => {
     const executable = fakePwsh()
     const githubEnv = join(scratch(), 'github-env')
     writeFileSync(githubEnv, '')
@@ -71,7 +79,7 @@ describe('ci PowerShell preflight', () => {
     expect(readFileSync(githubEnv, 'utf8')).toContain(`DSH_PWSH_EXECUTABLE=${executable}`)
   })
 
-  it('installs the pinned asset from a local tarball and proves it by execution', () => {
+  it.skipIf(!posixFixtures)('installs the pinned asset from a local tarball and proves it by execution', () => {
     const { tarball, sha256 } = pwshTarball()
     const installDir = join(scratch(), 'tools')
     const env: NodeJS.ProcessEnv = { ...noPath }
@@ -84,7 +92,7 @@ describe('ci PowerShell preflight', () => {
     expect(existsSync(join(installDir, 'pwsh-local', 'pwsh'))).toBe(true)
   })
 
-  it('refuses a tarball whose digest does not match the published value', () => {
+  it.skipIf(!posixFixtures)('refuses a tarball whose digest does not match the published value', () => {
     const { tarball } = pwshTarball()
     const installDir = join(scratch(), 'tools')
     expect(() => runPwshPreflight({
@@ -113,6 +121,16 @@ describe('ci PowerShell preflight', () => {
       .toEqual({ require: true, installDir: '/tmp/tools', tarball: '/tmp/a.tgz', sha256: 'ab' })
     expect(() => parsePreflightArgs(['--wat'])).toThrow(/unknown preflight argument/u)
   })
+
+  it.skipIf(process.platform !== 'win32')('resolves without a POSIX shell on Windows', () => {
+    // Windows has no /bin/sh: the lookup must return the input unchanged and
+    // the preflight must still classify an absent tool as NOT_FOUND.
+    const env = { PATH: 'C:\\definitely-missing' }
+    expect(resolveAbsoluteExecutable('pwsh', env)).toBe('pwsh')
+    const capability = probePwshCapability({ executable: 'pwsh', env })
+    expect(capability.available).toBe(false)
+    expect(capability.reason).toBe('NOT_FOUND')
+  }, 30_000)
 
   it('installs only through the documented inputs', () => {
     expect(() => installPinnedPwsh({ env: { ...noPath } })).toThrow(/--install-dir is required/u)

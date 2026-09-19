@@ -156,12 +156,19 @@ export function installPinnedPwsh(
  */
 export function resolveAbsoluteExecutable(executable: string, env: NodeJS.ProcessEnv): string {
   if (executable.startsWith('/')) return executable
+  if (/^[A-Za-z]:[\\/]/.test(executable)) return executable
+  if (process.platform === 'win32') {
+    // A Windows host has no /bin/sh, so the POSIX lookup cannot run; the caller
+    // gets the executable back instead of a crash on a missing stdout.
+    return executable
+  }
   const lookup = spawnSync('/bin/sh', ['-c', 'command -v "$0"', executable], {
     encoding: 'utf8',
     env,
     timeout: 5_000,
   })
-  const resolved = lookup.stdout.trim().split('\n')[0] ?? ''
+  const stdout = typeof lookup.stdout === 'string' ? lookup.stdout : ''
+  const resolved = stdout.trim().split('\n')[0] ?? ''
   return lookup.status === 0 && resolved.startsWith('/') ? resolved : executable
 }
 

@@ -94,6 +94,13 @@ describe('pwsh probe outcome classification', () => {
   })
 })
 
+// Platform mapping. The classifier block above is pure and runs everywhere;
+// the probe cases that spawn a stand-in tool need a POSIX shell script with an
+// execute bit, so they are scheduled for POSIX hosts, while the absent-tool,
+// optional-skip and required-mode cases stay cross-platform. Windows keeps its
+// own preflight lookup case in scripts/ci-pwsh-preflight.spec.ts.
+const posixToolFixtures = process.platform !== 'win32'
+
 describe('pwsh capability probe', () => {
   it('reports NOT_FOUND for a missing executable', () => {
     const capability = probePwshCapability({ executable: join(tmpdir(), 'absent-pwsh'), env: noPath })
@@ -101,24 +108,24 @@ describe('pwsh capability probe', () => {
     expect(capability.detail.length).toBeGreaterThan(0)
   })
 
-  it('reports NOT_EXECUTABLE for a file without the execute bit', () => {
+  it.skipIf(!posixToolFixtures)('reports NOT_EXECUTABLE for a file without the execute bit', () => {
     const capability = probePwshCapability({ executable: fakePwsh("echo '7.6.6 X64'", 0o644), env: noPath })
     expect(capability.available).toBe(false)
     expect(capability.reason).toBe('NOT_EXECUTABLE')
   })
 
-  it('reports VERSION_MISMATCH below the supported major', () => {
+  it.skipIf(!posixToolFixtures)('reports VERSION_MISMATCH below the supported major', () => {
     const capability = probePwshCapability({ executable: fakePwsh("echo '5.1.14409.100 X64'"), env: noPath })
     expect(capability).toMatchObject({ available: false, reason: 'VERSION_MISMATCH', version: '5.1.14409' })
   })
 
-  it('reports PROBE_FAILED with the child stderr on a non-zero exit', () => {
+  it.skipIf(!posixToolFixtures)('reports PROBE_FAILED with the child stderr on a non-zero exit', () => {
     const capability = probePwshCapability({ executable: fakePwsh('echo broken-tool >&2; exit 3'), env: noPath })
     expect(capability).toMatchObject({ available: false, reason: 'PROBE_FAILED' })
     expect(capability.detail).toContain('broken-tool')
   })
 
-  it('reports PROBE_FAILED on unexpected output', () => {
+  it.skipIf(!posixToolFixtures)('reports PROBE_FAILED on unexpected output', () => {
     const capability = probePwshCapability({ executable: fakePwsh("echo 'not a version'"), env: noPath })
     expect(capability.reason).toBe('PROBE_FAILED')
     expect(capability.detail).toContain('unexpected probe output')
@@ -128,7 +135,7 @@ describe('pwsh capability probe', () => {
   // killed child surfaces (ETIMEDOUT spawn error versus status null with a
   // signal) differs per platform, so a spawn-based case would assert the host
   // rather than the contract. This exercises the explicit-deadline input.
-  it('accepts an explicit deadline', () => {
+  it.skipIf(!posixToolFixtures)('accepts an explicit deadline', () => {
     const capability = probePwshCapability({
       executable: fakePwsh("echo '7.6.6 X64'"),
       env: noPath,
@@ -137,26 +144,26 @@ describe('pwsh capability probe', () => {
     expect(capability).toMatchObject({ available: true, reason: 'OK' })
   })
 
-  it('reports OK with version and architecture for a usable executable', () => {
+  it.skipIf(!posixToolFixtures)('reports OK with version and architecture for a usable executable', () => {
     const capability = probePwshCapability({ executable: fakePwsh("echo '7.6.6 X64'"), env: noPath })
     expect(capability).toMatchObject({
       available: true, reason: 'OK', version: '7.6.6', architecture: 'X64', detail: '',
     })
   })
 
-  it('falls back to the shared resolver when no executable is supplied', () => {
+  it.skipIf(!posixToolFixtures)('falls back to the shared resolver when no executable is supplied', () => {
     const capability = probePwshCapability({ env: noPath })
     expect(capability.executable).toBe('pwsh')
     expect(capability.available).toBe(false)
   })
 
-  it('prefers the preflight-resolved absolute executable from the environment', () => {
+  it.skipIf(!posixToolFixtures)('prefers the preflight-resolved absolute executable from the environment', () => {
     const executable = fakePwsh("echo '7.6.6 X64'")
     const capability = probePwshCapability({ env: { ...noPath, [PWSH_EXECUTABLE_ENV]: executable } })
     expect(capability).toMatchObject({ available: true, executable, version: '7.6.6' })
   })
 
-  it('can read the ambient environment and its own default deadline', () => {
+  it.skipIf(!posixToolFixtures)('can read the ambient environment and its own default deadline', () => {
     const capability = probePwshCapability()
     expect(typeof capability.available).toBe('boolean')
     expect(capability.executable.length).toBeGreaterThan(0)
