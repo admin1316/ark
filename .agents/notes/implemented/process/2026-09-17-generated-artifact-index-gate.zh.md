@@ -20,6 +20,10 @@ Status: implemented
 
 门禁运行在其它仓库门禁所在的入口：`scripts/run-gates.ts` 中 `ci-static`、`ci-primary`、`ci-linux-primary`、`ci-windows-observational` 图里的 `generated-tracking`，本地 `hygiene` 与 `check-all` 聚合，以及 lefthook `pre-commit` 任务。钩子扫描整个索引而不是只看暂存路径，因为索引本身已包含暂存状态，而单一全索引定义让提交时与 CI 的答案完全一致。
 
+同一索引检查拒绝属于本机的分发输入：任意深度的真实 `.env` 变体及 `.credentials.yaml` 备份、`.sessions` 和 `.llm-wiki` 目录，以及根目录 Harness、`.dsh`、会话、存储、附件、终端状态和设置文件。具名环境示例与录制的快照夹具仍属于有效输入。这是路径检查，不是基于内容的密钥检测。
+
+[源码隐私检查](../../../../.github/workflows/source-privacy.yml) 在拉取请求与 main 推送时，用固定摘要校验的 Gitleaks 扫描已获取的 Git 历史。[配置](../../../../.gitleaks.toml) 保留默认规则，只对 Git blob 元数据、精确的测试字面量以及原始提交中的上游公开遥测标识作限定豁免。输出经过脱敏。媒体技能要求显式提供遥测接收密钥，不再自带该标识；未配置的安装不发送媒体遥测。本机用户数据和离线恢复归档不在源码检查范围内；CI 不删除它们，也不重写历史。
+
 ## 测试
 
 `scripts/verify-generated-tracking.spec.ts` 在操作系统临时目录创建一次性仓库，覆盖：普通源码通过；仅存在于磁盘的被忽略构建输出通过；对已移出产物执行 `git add -f` 失败并给出路径与理由；从索引移除但保留磁盘文件后通过；vendor 与 `.agents` 的 `lib/` 目录、tsconfig、原生与 Python 输入通过；相似名称路径（`library/`、`libx/`、层级少一层的包、`notes.tsbuildinfo.bak`、非根 `schema.md`、`src/lib.ts`）通过；已移出目录内的空格与非 ASCII 名称失败；未合并索引失败；Git 无法读取的目录失败而不是通过。

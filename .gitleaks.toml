@@ -1,0 +1,31 @@
+title = "Ark source privacy"
+
+[extend]
+useDefault = true
+
+# Translation records contain Git blob identities, not provider credentials.
+# Both the exact path suffix AND the whole metadata line must match.
+[[allowlists]]
+description = "Bilingual documentation Git blob records"
+targetRules = ["generic-api-key", "cloudflare-api-key"]
+condition = "AND"
+paths = ['''\.i18n\.yaml$''']
+regexTarget = "match"
+regexes = ['''^[^\s:]+\.md: [a-f0-9]{40}$''']
+
+[[allowlists]]
+description = "Synthetic literals in credential and redaction regression tests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(?:^|/)packages/(client/ui-settings-models/tests/components\.client\.spec\.tsx|session/session-telemetry-otel/tests/loader-composition\.e2e\.ts|session/session-telemetry/tests/redact\.spec\.ts)$''']
+regexTarget = "secret"
+regexes = ['''^sk-(fixture1234567890|e2efixture1234567890|0123456789)$''']
+
+[[allowlists]]
+description = "Historical public PostHog ingestion identifier removed from current source"
+targetRules = ["generic-api-key"]
+condition = "AND"
+commits = ["95dc1aa63c6602b45c338fb22b0abe3363eea435", "a9bd3d364532c69937b6f7e064c9f1b6e979b323"]
+paths = ['''^\.agents/skills/media-production-studio/modules/media-use/scripts/lib/telemetry\.mjs$''']
+regexTarget = "secret"
+regexes = ['''^phc_[A-Za-z0-9]+$''']

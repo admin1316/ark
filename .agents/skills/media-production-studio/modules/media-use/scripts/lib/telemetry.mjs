@@ -1,4 +1,4 @@
-// Opt-out usage tracking for media-use, sharing the hyperframes CLI/studio
+// Opt-in usage tracking for media-use, sharing the hyperframes CLI/studio
 // identity (packages/cli/src/telemetry): the same install id from
 // ~/.hyperframes/config.json, plus a $identify to the HeyGen account on sign-in,
 // so a person is one PostHog profile across surfaces — not a fresh id per tool.
@@ -6,17 +6,14 @@
 // account-linked after. Event PROPERTIES stay coarse — media TYPE, resolution
 // SOURCE, winning PROVIDER — never the intent text, file names, or paths.
 //
-// Same public PostHog project key as the CLI (a write-only ingestion key, safe
-// to ship), same opt-outs (DO_NOT_TRACK / HYPERFRAMES_NO_TELEMETRY / CI / dev),
-// and $ip:null so no IP is recorded. Fire-and-forget: telemetry never blocks a
-// resolve and never throws into it.
+// Disabled unless the user supplies MEDIA_USE_TELEMETRY_API_KEY. No project
+// ingestion key ships with Ark. Existing opt-outs still override opt-in.
 
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const POSTHOG_API_KEY = "phc_zjjbX0PnWxERXrMHhkEJWj9A9BhGVLRReICgsfTMmpx";
 const POSTHOG_HOST = "https://us.i.posthog.com";
 const TIMEOUT_MS = 1500;
 let identifiedAccount = false;
@@ -56,9 +53,10 @@ function posthogHost() {
   return override || POSTHOG_HOST;
 }
 
-/** True when telemetry must NOT be sent (opt-out envs, CI, dev). */
+/** True without explicit configuration, or when opt-out envs, CI or dev disable telemetry. */
 export function optedOut() {
   return (
+    !process.env.MEDIA_USE_TELEMETRY_API_KEY?.trim() ||
     process.env.HYPERFRAMES_NO_TELEMETRY === "1" ||
     process.env.DO_NOT_TRACK === "1" ||
     process.env.CI === "true" ||
@@ -172,7 +170,7 @@ async function postBatch(batch) {
     await fetch(`${posthogHost()}/batch/`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Connection: "close" },
-      body: JSON.stringify({ api_key: POSTHOG_API_KEY, batch }),
+      body: JSON.stringify({ api_key: process.env.MEDIA_USE_TELEMETRY_API_KEY, batch }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch {

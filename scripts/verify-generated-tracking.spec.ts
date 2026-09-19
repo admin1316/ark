@@ -82,6 +82,30 @@ function fixture(): string {
 }
 
 describe('verify-generated-tracking', () => {
+  it('rejects forced personal-state additions without rejecting examples or recorded test scenarios', () => {
+    const root = fixture()
+    const forbidden = [
+      '.env', 'nested/.env.production', '.env.local.bak',
+      '.credentials.yaml', 'nested/.credentials.yaml.bak',
+      '.sessions/session-query.db', 'workspace/.llm-wiki/review.json',
+      '.dsh/settings.yaml', 'Harness/profiles/cordis.yml',
+      'sessions/workspace/session.jsonl.zstd', 'storages/workspace.json',
+      'attachments/private.png', 'terminal-sessions/state.json', 'settings.yaml.bak',
+    ]
+    const retained = [
+      '.env.example', 'nested/.env.template', '.env.sample',
+      'snapshots/session/example/session.jsonl',
+      'snapshots/session/skill-load/workspace/.dsh/skills/example/SKILL.md',
+      'packages/session/session/tests/fixtures/settings.yaml',
+    ]
+    for (const path of [...forbidden, ...retained]) write(root, path)
+    git(root, ['add', '-f', '--', ...forbidden, ...retained])
+    expect(new Set(scanTrackedGeneratedPaths(root).violations.map(entry => entry.path))).toEqual(new Set(forbidden))
+    expect(verifyGeneratedTracking(root, recorder().io)).toBe(1)
+    git(root, ['rm', '--cached', '-q', '--', ...forbidden])
+    expect(verifyGeneratedTracking(root, recorder().io)).toBe(0)
+  })
+
   it('passes with source, retained vendor/.agents libs, tsconfig and native inputs tracked', () => {
     const root = fixture()
     const { io, out, err } = recorder()

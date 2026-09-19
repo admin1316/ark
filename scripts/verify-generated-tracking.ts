@@ -44,6 +44,24 @@ interface ForbiddenClass {
  */
 const FORBIDDEN_CLASSES: readonly ForbiddenClass[] = [
   {
+    reason: 'machine-owned credentials or environment configuration; only named examples may be shipped',
+    matches: (path) => {
+      const name = path.split('/').at(-1) ?? ''
+      return name.startsWith('.credentials.yaml')
+        || ((name === '.env' || name.startsWith('.env.'))
+          && !['.env.example', '.env.template', '.env.sample'].includes(name))
+    },
+  },
+  {
+    reason: 'local conversation, knowledge, or Harness state; not a distribution input',
+    matches: (path) => {
+      const segments = path.split('/')
+      return segments.includes('.sessions') || segments.includes('.llm-wiki')
+        || ['.dsh', 'Harness', 'sessions', 'storages', 'attachments', 'terminal-sessions'].includes(segments[0] ?? '')
+        || /^settings\.yaml(?:\.|$)/u.test(path)
+    },
+  },
+  {
     reason: 'generated host build output (retired in 8fc73e52; .gitignore packages/*/*/lib/)',
     matches: (path) => {
       const segments = path.split('/')

@@ -22,6 +22,21 @@ wiki/
 /.env.local
 /.env.*.local
 
+# Machine-owned state is never part of a fresh source checkout.
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+.credentials.yaml*
+/.dsh/
+/Harness/
+/sessions/
+/storages/
+/attachments/
+/terminal-sessions/
+/settings.yaml*
+
 # Knowledge-project initialization artifacts that a workspace init can drop at
 # a repo root; the shipped repo does not consume them (verified 2026-09-16).
 /purpose.md

@@ -27,6 +27,7 @@ function restoreEnv(saved) {
 }
 
 function withoutTelemetryOptOut() {
+  process.env.MEDIA_USE_TELEMETRY_API_KEY = "local-test-ingestion";
   for (const k of ["DO_NOT_TRACK", "HYPERFRAMES_NO_TELEMETRY", "CI", "NODE_ENV"])
     delete process.env[k];
 }
@@ -40,7 +41,10 @@ test("optedOut respects DO_NOT_TRACK / HYPERFRAMES_NO_TELEMETRY / CI", () => {
   try {
     for (const k of ["DO_NOT_TRACK", "HYPERFRAMES_NO_TELEMETRY", "CI", "NODE_ENV"])
       delete process.env[k];
-    assert.equal(optedOut(), false, "default: tracking allowed");
+    delete process.env.MEDIA_USE_TELEMETRY_API_KEY;
+    assert.equal(optedOut(), true, "fresh installations do not track");
+    process.env.MEDIA_USE_TELEMETRY_API_KEY = "local-test-ingestion";
+    assert.equal(optedOut(), false, "explicit key enables tracking");
     process.env.DO_NOT_TRACK = "1";
     assert.equal(optedOut(), true, "DO_NOT_TRACK opts out");
     delete process.env.DO_NOT_TRACK;
@@ -55,7 +59,7 @@ test("optedOut respects DO_NOT_TRACK / HYPERFRAMES_NO_TELEMETRY / CI", () => {
   }
 });
 
-test("track is a no-op (no network, resolves) when opted out", async () => {
+test("track is a no-op without a configured key even when opt-out variables are absent", async () => {
   const savedEnv = { ...process.env };
   const originalFetch = globalThis.fetch;
   const { root, home } = sandbox();
@@ -64,7 +68,8 @@ test("track is a no-op (no network, resolves) when opted out", async () => {
     calls.push(args);
     return { ok: true };
   };
-  process.env.DO_NOT_TRACK = "1";
+  withoutTelemetryOptOut();
+  delete process.env.MEDIA_USE_TELEMETRY_API_KEY;
   try {
     // must resolve immediately without throwing or hitting the network
     await track("media_use_resolve", { type: "bgm", source: "search" });
