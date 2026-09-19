@@ -4,10 +4,16 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { probePwshCapability } from '@deepseek-ai/dsh-pwsh-local'
+import { PWSH_EXECUTABLE_ENV, probePwshCapability } from '@deepseek-ai/dsh-pwsh-local'
 import { installPinnedPwsh, parsePreflightArgs, resolveAbsoluteExecutable, runPwshPreflight } from './ci-pwsh-preflight.ts'
 
 const roots: string[] = []
+
+/** Path-only environment plus a pinned absent executable. */
+const absentEnv = (): NodeJS.ProcessEnv => ({
+  PATH: 'C:\\definitely-missing',
+  [PWSH_EXECUTABLE_ENV]: join(tmpdir(), 'absent-pwsh'),
+})
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -106,12 +112,14 @@ describe('ci PowerShell preflight', () => {
   })
 
   it('fails with the concrete reason when the tool is required and absent', () => {
-    expect(() => runPwshPreflight({ require: true, env: { ...noPath }, log: () => {} }))
+    // Pinning the executable keeps the case deterministic on Windows, where the
+    // shared resolver also probes well-known PowerShell install locations.
+    expect(() => runPwshPreflight({ require: true, env: absentEnv(), log: () => {} }))
       .toThrow(/required but unusable: NOT_FOUND/u)
   })
 
   it('keeps the optional-skip semantics when the tool is not required', () => {
-    const result = runPwshPreflight({ env: { ...noPath }, log: () => {} })
+    const result = runPwshPreflight({ env: absentEnv(), log: () => {} })
     expect(result.capability.available).toBe(false)
     expect(result.roundTrip).toBe(false)
   })

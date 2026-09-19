@@ -173,11 +173,14 @@ describe('pwsh capability probe', () => {
     expect(pwshTestsAvailable({ executable: join(tmpdir(), 'absent-pwsh'), env: noPath })).toBe(false)
   })
 
-  it('fails with the concrete reason when the tool is required', () => {
+  it('fails with the concrete reason when a required tool is absent', () => {
     expect(() => pwshTestsAvailable({
       executable: join(tmpdir(), 'absent-pwsh'),
       env: { ...noPath, [REQUIRE_PWSH_ENV]: '1' },
     })).toThrow(/NOT_FOUND/u)
+  })
+
+  it.skipIf(!posixToolFixtures)('fails with the version reason when a required tool is too old', () => {
     expect(() => pwshTestsAvailable({
       executable: fakePwsh("echo '5.1.14409.100 X64'"),
       env: { ...noPath, [REQUIRE_PWSH_ENV]: '1' },
@@ -199,7 +202,7 @@ describe('pwsh capability probe', () => {
     }
   })
 
-  it('lets a required run pass when the tool is usable', () => {
+  it.skipIf(!posixToolFixtures)('lets a required run pass when the tool is usable', () => {
     const executable = fakePwsh("echo '7.6.6 X64'")
     expect(pwshTestsAvailable({ executable, env: { ...noPath, [REQUIRE_PWSH_ENV]: '1' } })).toBe(true)
   })
