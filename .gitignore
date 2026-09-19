@@ -22,6 +22,53 @@ wiki/
 /.env.local
 /.env.*.local
 
+# Machine-owned state is never part of a fresh source checkout.
+AGENTS.local.md*
+CLAUDE.local.md*
+.claude.json*
+**/.claude/*
+!/.claude/skills
+**/.codex/*
+!/.codex/config.toml
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+.credentials.yaml*
+/.dsh/
+/Harness/
+/profiles/
+/projcache/
+/workspace-registry/
+/runtime-state/
+/.agent-presets/
+/skills/
+/logs/
+/cache/
+/llm-deepseek/
+/.ark-*
+/.anonymous-user-id
+/cordis.patch.yml
+/SETTINGS.md
+.aws/
+**/.config/gcloud/
+**/raw/sources/
+**/.heygen/credentials*
+**/.hyperframes/config.json*
+**/.hyperframes/cloudrun-state.json*
+**/.media/anon-id*
+**/.media/misses.jsonl*
+/Knowledge/
+/Default Workspace/
+/Document References/
+/Workbench Drafts/
+/sessions/
+/storages/
+/attachments/
+/terminal-sessions/
+/settings.yaml*
+
 # Knowledge-project initialization artifacts that a workspace init can drop at
 # a repo root; the shipped repo does not consume them (verified 2026-09-16).
 /purpose.md

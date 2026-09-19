@@ -2,14 +2,32 @@
 
 Reproducible definition of the media-use usage dashboard. The dashboard answers
 "how much is media-use used, for what, is reuse working, and what can't it
-satisfy" from the telemetry `scripts/lib/telemetry.mjs` already emits. Build it
+satisfy" from the events `scripts/lib/telemetry.mjs` emits after explicit opt-in. Build it
 in an authorized HyperFrames analytics project; this doc is the source of truth
 so it can be recreated. Local complement: `resolve --stats` (same questions,
 from `.media/` + `~/.media`, no dashboard access needed).
 
+## Setup
+
+Ark disables media telemetry by default and ships no ingestion key. For a direct,
+user-launched media-tool process, configure
+`MEDIA_USE_TELEMETRY_API_KEY` in the tool process environment with the ingestion
+key for your authorized analytics project before expecting dashboard events.
+Keep this machine configuration outside Git. `HYPERFRAMES_NO_TELEMETRY=1`,
+`DO_NOT_TRACK=1`, CI, and development mode still override an explicit key.
+Without opt-in, the media telemetry path sends no events and does not create
+its shared identity or read the HeyGen account. Local `resolve --stats` remains
+available independently of remote telemetry.
+
+Setting the key on the parent Ark/dsh process does not enable telemetry in
+model-facing Bash invocations: the subprocess boundary strips ambient
+credential-shaped variables, including this key. That isolation is intentional;
+this skill does not register a secret-forwarding contributor. Opt-in here applies
+to a user-launched tool process with its own explicit environment.
+
 ## Identity (see `scripts/lib/telemetry.mjs`)
 
-Events attribute to the **same person as the hyperframes CLI and studio**
+When telemetry is enabled, events attribute to the **same person as the hyperframes CLI and studio**
 — the shared install id in `~/.hyperframes/config.json` (`anonymousId`), stitched
 to the HeyGen account (`$identify`, `distinct_id` = email/username) on sign-in.
 Not fully anonymous by design; pseudonymous before sign-in, account-linked after.

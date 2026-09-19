@@ -20,6 +20,12 @@ Status: implemented
 
 门禁运行在其它仓库门禁所在的入口：`scripts/run-gates.ts` 中 `ci-static`、`ci-primary`、`ci-linux-primary`、`ci-windows-observational` 图里的 `generated-tracking`，本地 `hygiene` 与 `check-all` 聚合，以及 lefthook `pre-commit` 任务。钩子扫描整个索引而不是只看暂存路径，因为索引本身已包含暂存状态，而单一全索引定义让提交时与 CI 的答案完全一致。
 
+同一索引检查拒绝属于本机的分发输入：任意深度的真实 `.env` 变体及 `.credentials.yaml` 备份、`.sessions`、`.llm-wiki` 和 `wiki` 目录，以及根目录 profiles、候选运行数据和缓存注册目录、用户预设与技能、logs、cache、提供商状态、`.ark-*` 恢复及导入状态、Harness、Knowledge、Default Workspace、Document References、Workbench Drafts、`.dsh`、会话、存储、附件、终端状态和设置文件。根目录身份标识、运行时补丁及生成的设置参考文件也属于本机；嵌套源码 profile 夹具和示例补丁仍允许跟踪。具名环境示例与录制的快照夹具仍属于有效输入。媒体工具个人凭据、云账户状态、安装身份和未命中日志（包括编辑器备份）按文件形态拦截；项目媒体资产、清单、配方和偏好仍允许作为源码。导入的 `raw/sources` 原文、诊断日志、gcloud 凭据目录、个人指令覆盖文件和 Claude/Codex 本地状态（含 Claude 主配置备份）同样被排除；已提交的 `.claude/skills` 集成路径、`.codex/config.toml` 项目配置及基础指令文件仍属于源码。这是路径检查，不是基于内容的密钥检测。
+
+[源码隐私检查](../../../../.github/workflows/source-privacy.yml) 在拉取请求与 main 推送时，用固定摘要校验的 Gitleaks 扫描已获取的 Git 历史。PR 和 main 工作流复用同一检查；PR 的 `all checks passed` 必须等待该检查成功，失败、取消或跳过都会阻止总检查通过。[配置](../../../../.gitleaks.toml) 保留默认规则，只对 Git blob 元数据、精确的测试字面量以及原始提交中的上游公开遥测标识作限定豁免。输出经过脱敏。媒体技能要求在直接启动的工具进程中显式提供遥测接收密钥，不再自带该标识；模型子进程继续过滤继承的密钥；未配置的安装不发送媒体遥测。本机用户数据和离线恢复归档不在源码检查范围内；CI 不删除它们，也不重写历史。
+
+同一任务复用索引分类规则，检查 PR head 相对 base 或 main 推送相对前一 tip 新增可达的每个提交树，涵盖在最终提交前删除的文件及合入的侧分支。提交缺失或边界无效会使检查失败；已有历史不会被重写。
+
 ## 测试
 
 `scripts/verify-generated-tracking.spec.ts` 在操作系统临时目录创建一次性仓库，覆盖：普通源码通过；仅存在于磁盘的被忽略构建输出通过；对已移出产物执行 `git add -f` 失败并给出路径与理由；从索引移除但保留磁盘文件后通过；vendor 与 `.agents` 的 `lib/` 目录、tsconfig、原生与 Python 输入通过；相似名称路径（`library/`、`libx/`、层级少一层的包、`notes.tsbuildinfo.bak`、非根 `schema.md`、`src/lib.ts`）通过；已移出目录内的空格与非 ASCII 名称失败；未合并索引失败；Git 无法读取的目录失败而不是通过。

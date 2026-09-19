@@ -1009,6 +1009,7 @@ test("track() posts to MEDIA_USE_TELEMETRY_HOST when set, proving real intercept
         HOME: sandboxHome,
         HEYGEN_CONFIG_DIR: join(sandboxHome, ".heygen"),
         MEDIA_USE_TELEMETRY_HOST: `http://127.0.0.1:${port}`,
+        MEDIA_USE_TELEMETRY_API_KEY: "local-test-ingestion",
       },
     });
 

@@ -5,7 +5,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -14,6 +14,7 @@ import {
   retirementReason,
   scanTrackedGeneratedPaths,
   verifyGeneratedTracking,
+  verifyTrackingHistory,
   type TrackingIo,
 } from './verify-generated-tracking.ts'
 
@@ -82,6 +83,96 @@ function fixture(): string {
 }
 
 describe('verify-generated-tracking', () => {
+  it('rejects a deleted personal file in introduced history, including merged side branches', () => {
+    const root = fixture()
+    const base = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['checkout', '-b', 'private-fixture'])
+    write(root, 'sessions/个人 file.jsonl', 'ordinary conversation without a credential signature\n')
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'intermediate personal file'])
+    git(root, ['rm', 'sessions/个人 file.jsonl'])
+    git(root, ['commit', '-m', 'clean tip'])
+    git(root, ['checkout', 'main'])
+    git(root, ['merge', '--no-ff', 'private-fixture', '-m', 'merge clean tree'])
+    const head = git(root, ['rev-parse', 'HEAD'])
+    expect(verifyGeneratedTracking(root, recorder().io)).toBe(0)
+    const report = recorder()
+    expect(verifyTrackingHistory(root, base, head, report.io)).toBe(1)
+    expect(report.err.join('\n')).toContain('sessions/个人 file.jsonl')
+    expect(report.err.join('\n')).not.toContain('ordinary conversation')
+    expect(verifyTrackingHistory(root, head, head, recorder().io)).toBe(0)
+  })
+
+  it('accepts clean history and rejects unavailable or malformed commit ranges', () => {
+    const root = fixture()
+    const head = git(root, ['rev-parse', 'HEAD'])
+    expect(verifyTrackingHistory(root, '0'.repeat(40), head, recorder().io)).toBe(0)
+    expect(verifyTrackingHistory(root, 'f'.repeat(40), head, recorder().io)).toBe(1)
+    expect(verifyTrackingHistory(root, head, '--all', recorder().io)).toBe(1)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(main(['--root', root, '--history-base', head])).toBe(2)
+    error.mockRestore()
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    expect(main(['--root', root, '--history-base', head, '--history-head', head])).toBe(0)
+    log.mockRestore()
+  })
+
+  it('rejects forced personal-state additions without rejecting examples or recorded test scenarios', () => {
+    const root = fixture()
+    write(root, '.gitignore', readFileSync(new URL('../.gitignore', import.meta.url), 'utf8'))
+    const forbidden = [
+      '.env', 'nested/.env.production', '.env.local.bak',
+      'AGENTS.local.md', 'nested/CLAUDE.local.md', 'nested/AGENTS.local.md~',
+      '.claude.json', '.claude.json.backup', 'nested/.claude.json~',
+      '.config/gcloud/application_default_credentials.json', 'nested/.config/gcloud/credentials.db',
+      'raw/sources/private.txt', 'nested/raw/sources/private.txt',
+      'projcache/private.sqlite', 'workspace-registry/private.json', 'runtime-state/private.json',
+      'Library/Logs/Ark/main-thread-stalls.log', 'nested/diagnostic.log',
+      '.claude/settings.local.json', '.claude/history.jsonl', '.claude/projects/private/session.jsonl',
+      'nested/.claude/settings.local.json', '.codex/sessions/private.jsonl', '.codex/history.jsonl',
+      '.codex/shell_snapshots/private.sh', '.codex/state_5.sqlite', '.codex/memories/private.md',
+      '.heygen/credentials', 'nested/.heygen/credentials.bak', '.hyperframes/config.json',
+      '.codex/auth.json', '.media/anon-id', '.media/misses.jsonl', 'nested/.media/misses.jsonl.bak',
+      '.heygen/credentials~', '.codex/auth.json~', '.hyperframes/config.json~', '.media/anon-id~',
+      '.media/misses.jsonl~', '.hyperframes/cloudrun-state.json', '.hyperframes/cloudrun-state.json~',
+      '.aws/credentials', 'nested/.aws/credentials~', '.aws/config', '.aws/sso/cache/token.json',
+      '.credentials.yaml', 'nested/.credentials.yaml.bak',
+      '.sessions/session-query.db', 'workspace/.llm-wiki/review.json',
+      'wiki/private.md', 'Knowledge/wiki/private.md', 'nested/wiki/private.md',
+      'Knowledge/raw/sources/private.txt', 'Default Workspace/private.txt',
+      'Document References/private.json', 'Workbench Drafts/private.md',
+      'profiles/private/cordis.patch.yml', '.agent-presets/private/agent.cordis.yml',
+      'skills/private/SKILL.md', '.ark-startup-recovery/payload/private.json', '.ark-settings-import.json',
+      'logs/private.jsonl', 'cache/private.json',
+      'llm-deepseek/private.json', '.ark-profile-rollbacks/private/cordis.yml',
+      '.anonymous-user-id', 'cordis.patch.yml', 'SETTINGS.md',
+      '.dsh/settings.yaml', 'Harness/profiles/cordis.yml',
+      'sessions/workspace/session.jsonl.zstd', 'storages/workspace.json',
+      'attachments/private.png', 'terminal-sessions/state.json', 'settings.yaml.bak', 'settings.yaml~',
+    ]
+    const retained = [
+      '.env.example', 'nested/.env.template', '.env.sample',
+      'AGENTS.md', 'nested/CLAUDE.md', '.claude/skills',
+      '.config/project/config.json', 'raw/source-guide.md', 'nested/raw/sources-guide.md',
+      '.media/manifest.jsonl', '.media/preferences.json', '.media/recipes/example/recipe.json',
+      '.media/images/project.png', '.hyperframes/frame-packets/plan.json', '.codex/config.toml',
+      '.aws-sam/template.yaml',
+      'snapshots/session/example/session.jsonl',
+      'snapshots/session/skill-load/workspace/.dsh/skills/example/SKILL.md',
+      'packages/session/session/tests/fixtures/settings.yaml',
+      'packages/preset/agent-presets/presets/cordis/agent.cordis.yml',
+      'examples/agent/cordis.patch.yml', 'packages/boot/app-boot/tests/fixtures/profiles/example/cordis.patch.yml',
+    ]
+    for (const path of [...forbidden, ...retained]) write(root, path)
+    expect(new Set(git(root, ['check-ignore', '--no-index', '--', ...forbidden]).split('\n').filter(Boolean))).toEqual(new Set(forbidden))
+    git(root, ['add', '--', ...retained])
+    git(root, ['add', '-f', '--', ...forbidden, ...retained])
+    expect(new Set(scanTrackedGeneratedPaths(root).violations.map(entry => entry.path))).toEqual(new Set(forbidden))
+    expect(verifyGeneratedTracking(root, recorder().io)).toBe(1)
+    git(root, ['rm', '--cached', '-q', '--', ...forbidden])
+    expect(verifyGeneratedTracking(root, recorder().io)).toBe(0)
+  })
+
   it('passes with source, retained vendor/.agents libs, tsconfig and native inputs tracked', () => {
     const root = fixture()
     const { io, out, err } = recorder()
