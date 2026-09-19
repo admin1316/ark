@@ -44,9 +44,11 @@ interface ForbiddenClass {
  */
 const FORBIDDEN_CLASSES: readonly ForbiddenClass[] = [
   {
-    reason: 'personal media-tool credentials, identity, or intent history; project media assets remain allowed',
-    matches: path => /(?:^|\/)(?:\.heygen\/credentials|\.codex\/auth\.json)(?:[.-][^/]*)?$/u.test(path)
-      || /(?:^|\/)(?:\.hyperframes\/config\.json|\.media\/(?:anon-id|misses\.jsonl))(?:[.-][^/]*)?$/u.test(path),
+    reason: 'personal media-tool credentials, cloud account state, identity, or intent history; project assets remain allowed',
+    matches: path => path.split('/').includes('.aws')
+      || /(?:^|\/)(?:\.heygen\/credentials|\.codex\/auth\.json)[^/]*$/u.test(path)
+      || /(?:^|\/)\.hyperframes\/(?:config|cloudrun-state)\.json[^/]*$/u.test(path)
+      || /(?:^|\/)\.media\/(?:anon-id|misses\.jsonl)[^/]*$/u.test(path),
   },
   {
     reason: 'machine-owned credentials or environment configuration; only named examples may be shipped',
@@ -65,7 +67,7 @@ const FORBIDDEN_CLASSES: readonly ForbiddenClass[] = [
         || ['.dsh', 'Harness', 'profiles', '.agent-presets', 'skills', 'logs', 'cache', 'llm-deepseek', 'Knowledge', 'Default Workspace', 'Document References', 'Workbench Drafts', 'sessions', 'storages', 'attachments', 'terminal-sessions'].includes(segments[0] ?? '')
         || (segments[0] ?? '').startsWith('.ark-')
         || ['.anonymous-user-id', 'cordis.patch.yml', 'SETTINGS.md'].includes(path)
-        || /^settings\.yaml(?:\.|$)/u.test(path)
+        || path.startsWith('settings.yaml')
     },
   },
   {

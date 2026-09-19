@@ -41,8 +41,10 @@ wiki/
 /.anonymous-user-id
 /cordis.patch.yml
 /SETTINGS.md
+.aws/
 **/.heygen/credentials*
 **/.hyperframes/config.json*
+**/.hyperframes/cloudrun-state.json*
 **/.codex/auth.json*
 **/.media/anon-id*
 **/.media/misses.jsonl*
