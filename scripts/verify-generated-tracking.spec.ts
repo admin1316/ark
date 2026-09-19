@@ -87,6 +87,8 @@ describe('verify-generated-tracking', () => {
     write(root, '.gitignore', readFileSync(new URL('../.gitignore', import.meta.url), 'utf8'))
     const forbidden = [
       '.env', 'nested/.env.production', '.env.local.bak',
+      '.heygen/credentials', 'nested/.heygen/credentials.bak', '.hyperframes/config.json',
+      '.codex/auth.json', '.media/anon-id', '.media/misses.jsonl', 'nested/.media/misses.jsonl.bak',
       '.credentials.yaml', 'nested/.credentials.yaml.bak',
       '.sessions/session-query.db', 'workspace/.llm-wiki/review.json',
       'wiki/private.md', 'Knowledge/wiki/private.md', 'nested/wiki/private.md',
@@ -103,6 +105,8 @@ describe('verify-generated-tracking', () => {
     ]
     const retained = [
       '.env.example', 'nested/.env.template', '.env.sample',
+      '.media/manifest.jsonl', '.media/preferences.json', '.media/recipes/example/recipe.json',
+      '.media/images/project.png', '.hyperframes/frame-packets/plan.json', '.codex/config.toml',
       'snapshots/session/example/session.jsonl',
       'snapshots/session/skill-load/workspace/.dsh/skills/example/SKILL.md',
       'packages/session/session/tests/fixtures/settings.yaml',

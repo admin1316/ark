@@ -44,6 +44,11 @@ interface ForbiddenClass {
  */
 const FORBIDDEN_CLASSES: readonly ForbiddenClass[] = [
   {
+    reason: 'personal media-tool credentials, identity, or intent history; project media assets remain allowed',
+    matches: path => /(?:^|\/)(?:\.heygen\/credentials|\.codex\/auth\.json)(?:[.-][^/]*)?$/u.test(path)
+      || /(?:^|\/)(?:\.hyperframes\/config\.json|\.media\/(?:anon-id|misses\.jsonl))(?:[.-][^/]*)?$/u.test(path),
+  },
+  {
     reason: 'machine-owned credentials or environment configuration; only named examples may be shipped',
     matches: (path) => {
       const name = path.split('/').at(-1) ?? ''
