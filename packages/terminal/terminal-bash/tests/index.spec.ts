@@ -92,6 +92,7 @@ function spec(owner: Agent, signal?: AbortSignal) {
 function stubLocalSession(initialize: () => Promise<void> = () => Promise.resolve()): LocalPtySession {
   return {
     motd: '',
+    waitForConsoleQuiet: () => Promise.resolve(true),
     initialize,
     startSend: () => { throw new Error('unused') },
     read: () => { throw new Error('unused') },
@@ -350,6 +351,7 @@ describe('BashTerminalBackend startup rollback', () => {
     let sent: TerminalSendRequest | undefined
     const session = {
       motd: '',
+      waitForConsoleQuiet: () => Promise.resolve(true),
       startSend: (request: TerminalSendRequest) => {
         sent = request
         return {
@@ -386,6 +388,7 @@ describe('BashTerminalBackend startup rollback', () => {
     const sends: TerminalSendRequest[] = []
     const session = {
       motd: '',
+      waitForConsoleQuiet: () => Promise.resolve(true),
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
         const second = sends.length > 1
@@ -418,6 +421,7 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const sessionFor = (waitReason: TerminalWaitReason): LocalPtySession => ({
+      waitForConsoleQuiet: () => Promise.resolve(true),
       startSend: () => ({
         done: Promise.resolve({
           viewport: 'no-prompt', waitReason,
@@ -452,6 +456,7 @@ describe('BashTerminalBackend startup rollback', () => {
       let closes = 0
       const session = {
         motd: '',
+        waitForConsoleQuiet: () => Promise.resolve(true),
         startSend: () => {
           sends += 1
           return {
@@ -496,6 +501,7 @@ describe('BashTerminalBackend startup rollback', () => {
     const sends: TerminalSendRequest[] = []
     const session = {
       motd: '',
+      waitForConsoleQuiet: () => Promise.resolve(true),
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
         return {

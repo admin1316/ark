@@ -1485,6 +1485,40 @@ describe('LocalPtySession readiness and output', () => {
     await Promise.resolve()
     settle(interruptOperation)
   })
+
+  it('reports a console-quiet miss at the bound instead of waiting forever', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const session = new LocalPtySession(terminal, config({ pollIntervalMs: 20 }))
+    const waiting = session.waitForConsoleQuiet(200)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(await waiting).toBe(false)
+  })
+  it('records stdin-wait evidence from the foreground inspection', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    inspector.waiting = true
+    const session = makeSession(terminal, inspector, config())
+    expect(session.reportsStdinWait()).toBe(false)
+    await initialize(session, terminal)
+    expect(session.reportsStdinWait()).toBe(true)
+  })
+
+  it('releases parked console input only while the expected prompt is missing', async () => {
+    vi.useFakeTimers()
+    const parkedTerminal = new FakeTerminal()
+    const parked = makeSession(parkedTerminal, new FakeInspector(), config())
+    expect(await parked.submitParkedInput()).toBe(true)
+    expect(parkedTerminal.writes).toEqual(['\r'])
+
+    const readyTerminal = new FakeTerminal()
+    const ready = makeSession(readyTerminal, new FakeInspector(), config())
+    await initialize(ready, readyTerminal)
+    const readyWrites = readyTerminal.writes.length
+    expect(await ready.submitParkedInput()).toBe(false)
+    expect(readyTerminal.writes).toHaveLength(readyWrites)
+  })
 })
 
 describe('LocalPtySession bounds, signals, and teardown', () => {

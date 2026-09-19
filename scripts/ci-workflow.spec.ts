@@ -26,6 +26,38 @@ describe('CI workflow', () => {
     })
   })
 
+  it('fails the preparation step when either parallel branch fails', () => {
+    // The step starts dependency installation and bubblewrap preparation
+    // concurrently and owns both children: a rejected source must reach the
+    // step result instead of being masked by the other branch's success.
+    const files = ['.github/workflows/ci.yml', '.github/workflows/ci-master.yml']
+    const runs = files.flatMap((file) => {
+      const workflow: unknown = yaml.load(readFileSync(resolve(root, file), 'utf8'))
+      if (!isRecord(workflow) || !isRecord(workflow.jobs)) throw new TypeError(`${file} must define jobs`)
+      return Object.entries(workflow.jobs).flatMap(([jobName, job]) => {
+        if (!isRecord(job) || !Array.isArray(job.steps)) return []
+        return job.steps
+          .filter(isRecord)
+          .filter(step => typeof step.run === 'string' && step.run.includes('scripts/prepare-ci-bubblewrap.sh'))
+          .map(step => ({ label: `${file} ${jobName}`, run: step.run as string }))
+      })
+    })
+    expect(runs.length).toBeGreaterThan(0)
+    for (const { label, run } of runs) {
+      if (!run.includes('pnpm install --frozen-lockfile')) {
+        // Serial caller: the script is the step command, so its exit code is
+        // already the step result.
+        expect(run, label).toBe('bash scripts/prepare-ci-bubblewrap.sh')
+        continue
+      }
+      expect(run, label).toContain('pnpm install --frozen-lockfile &')
+      expect(run, label).toContain('bash scripts/prepare-ci-bubblewrap.sh &')
+      expect(run, label).toContain('wait "$install_pid" || install_status=$?')
+      expect(run, label).toContain('wait "$sandbox_pid" || sandbox_status=$?')
+      expect(run, label).toContain('if (( install_status != 0 )); then exit "$install_status"; fi')
+      expect(run, label).toContain('exit "$sandbox_status"')
+    }
+  })
   it('isolates every pnpm action setup destination per runner', () => {
     const files = ['.github/workflows/ci.yml', '.github/workflows/ci-master.yml']
     const setups: Array<{ jobName: string; step: unknown }> = []
@@ -896,9 +928,13 @@ describe('Sandbox workflow build prerequisite', () => {
   })
 
   it('keeps the per-platform preparation steps intact', () => {
-    const bwrap = requireStep('Install bubblewrap (unrestrict userns)')
+    // The bwrap leg must not keep the distribution package: the 24.04 package
+    // has no CVE-2026-87766 fix, so it prepares through the same pinned-source
+    // build as every other consumer.
+    const bwrap = requireStep('Prepare bubblewrap (unrestrict userns)')
     expect(bwrap.if).toBe("matrix.runner == 'bwrap'")
-    expect(stepText(bwrap.run)).toContain('bubblewrap')
+    expect(stepText(bwrap.run)).toBe('bash scripts/prepare-ci-bubblewrap.sh')
+    expect(JSON.stringify(bwrap)).not.toContain('apt-get')
     const landlock = requireStep('Build Landlock launcher for this architecture')
     expect(landlock.if).toBe("matrix.runner == 'landlock'")
     expect(stepText(landlock.run)).toContain('pnpm --dir native/landlock-run run build:native')

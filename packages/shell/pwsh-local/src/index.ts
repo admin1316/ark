@@ -83,6 +83,22 @@ type ResolvedConfig = Required<Omit<Config, 'cwd' | 'pwshPath'>> & Pick<Config, 
 // Resolution lives in its own dependency-free module so the repository's
 // coverage-gate probe shares the exact definition the suites use.
 export { candidatePwshPaths, resolvePwshPath } from './resolve.ts'
+// Capability lives beside resolution: one owner for "can this host run pwsh",
+// shared by the pwsh-gated suites and the CI preflight.
+export {
+  MINIMUM_PWSH_MAJOR,
+  PWSH_EXECUTABLE_ENV,
+  REQUIRE_PWSH_ENV,
+  classifyPwshProbe,
+  probePwshCapability,
+  pwshTestsAvailable,
+} from './capability.ts'
+export type {
+  PwshCapability,
+  PwshCapabilityReason,
+  PwshProbeOptions,
+  PwshProbeOutcome,
+} from './capability.ts'
 
 /** Project a settled collect-mode reader into the final CollectedOutput shape. */
 function finalOutput(reader: SubprocessOutputReader): CollectedOutput {

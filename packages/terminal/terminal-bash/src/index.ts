@@ -8,7 +8,12 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TerminalBackendCleanupError } from '@deepseek-ai/dsh-terminal'
-import type { TerminalBackend, TerminalBackendSpawnSpec, TerminalSendOperation } from '@deepseek-ai/dsh-terminal'
+import type {
+  TerminalBackend,
+  TerminalBackendSpawnSpec,
+  TerminalSendOperation,
+  TerminalSendResult,
+} from '@deepseek-ai/dsh-terminal'
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { effectiveSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
@@ -100,6 +105,48 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
   return sandbox.confine(argv, { ...policy, mode: policy.mode }).argv
 }
 
+/** How often the pwsh bootstrap re-submits input the console left parked. */
+const PWSH_PARK_RELEASE_MS = 250
+
+/**
+ * Await the pwsh bootstrap, releasing input the console's startup window parked.
+ *
+ * A console that is still starting renders the injected submit as a paste whose
+ * Enter is lost, so the bootstrap line stays typed and its prompt never appears.
+ * On darwin the provider reports no stdin wait, so no other readiness tier can
+ * settle it and the whole startup would run into its deadline. Re-submitting
+ * releases the parked line (the bootstrap definition is idempotent) and the
+ * prompt it produces settles this same send. The caller's absolute startup
+ * deadline still bounds the loop by cancelling the operation.
+ * @param session - the started PTY session awaiting its bootstrap.
+ * @param operation - the in-flight bootstrap send.
+ * @returns the bootstrap send result.
+ */
+async function awaitBootstrap(
+  session: LocalPtySession,
+  operation: TerminalSendOperation,
+): Promise<TerminalSendResult> {
+  for (;;) {
+    let timer: NodeJS.Timeout | undefined
+    let settled: TerminalSendResult | undefined
+    try {
+      settled = await Promise.race([
+        operation.done,
+        new Promise<undefined>((resolve) => {
+          timer = setTimeout(() => { resolve(undefined) }, PWSH_PARK_RELEASE_MS)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+    if (settled !== undefined) return settled
+    // A provider that reports the stdin wait has an exact readiness tier for this
+    // handoff, and injecting an Enter there would land ahead of the next send's
+    // own input; only a host without that evidence needs the release.
+    if (!session.reportsStdinWait()) await session.submitParkedInput()
+  }
+}
+
 // TODO(pty-initialize-race-home): Fold this outer abort race into
 // LocalPtySession.initialize when the send-state consolidation lands; the
 // session already owns the send lifecycle the race protects.
@@ -115,6 +162,11 @@ async function startupSession(
       await session.initialize(signal)
       return
     }
+    // The console must finish its startup negotiation before the first line is
+    // injected: a submit written into that window is lost and the bootstrap
+    // stays typed but never executes. The wait is bounded by the same deadline
+    // as readiness, and a miss falls through to the existing timeout error.
+    await session.waitForConsoleQuiet(timeoutMs, signal)
     // pwsh cannot install its prompt from the environment. Write the prompt
     // function through the session, pin UTF-8 output before user input, and
     // accept only backend stdin_read evidence; echoed setup source containing
@@ -128,7 +180,9 @@ async function startupSession(
         submit: first,
         ...signal !== undefined ? { signal } : {},
       })
-      const result = await startupOperation.done
+      // Follow-up sends keep the same release loop: a startup that has not reached
+      // its prompt yet can have parked the line the previous send wrote.
+      const result = await awaitBootstrap(session, startupOperation)
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport

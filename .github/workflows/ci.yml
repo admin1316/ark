@@ -137,6 +137,18 @@ jobs:
           if (( install_status != 0 )); then exit "$install_status"; fi
           exit "$sandbox_status"
 
+      # The coverage gate owns per-file 100% thresholds on the pwsh suites, so
+      # PowerShell is a requirement of this job rather than an optional tool: the
+      # preflight resolves the executable, prints its version/architecture/reason,
+      # and installs the pinned official build (published SHA-256) into the job
+      # tools directory when the runner image cannot provide a usable one. It
+      # fails here, with the concrete cause, instead of letting the suites skip
+      # and surfacing a confusing low-coverage error later.
+      - name: PowerShell capability (coverage prerequisite)
+        env:
+          DSH_REQUIRE_PWSH: '1'
+        run: pnpm exec tsx scripts/ci-pwsh-preflight.ts --require --install-dir "${{ runner.temp }}/pwsh-tools"
+
       # The native-api-app coverage specs boot the sandbox-local plugin tree, which
       # imports the built Landlock entry. Without that build they fail with
       # "Cannot find module .../node-addon-landlock-run/lib/index.js"; the release and
@@ -155,6 +167,11 @@ jobs:
         run: pnpm install --frozen-lockfile --offline
 
       - name: Run exhaustive coverage
+        env:
+          # Required mode: the pwsh-gated suites fail with the capability reason
+          # instead of reporting a green skip, and the coverage exemption probe
+          # cannot silently exempt the pwsh sources.
+          DSH_REQUIRE_PWSH: '1'
         run: pnpm run check:ci:coverage
 
   node-24-consumers:

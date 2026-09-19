@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,15 +16,12 @@ import SandboxProvider from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import LocalSubprocessService from '@deepseek-ai/dsh-subprocess-local'
-import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local/src/resolve.ts'
+import { pwshTestsAvailable } from '@deepseek-ai/dsh-pwsh-local'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRegistry from '@deepseek-ai/dsh-tools'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
 
-const hasPwsh = spawnSync(
-  resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'],
-  { encoding: 'utf8' },
-).status === 0
+const hasPwsh = pwshTestsAvailable()
 
 let root: string | undefined
 let context: Context | undefined
@@ -137,7 +133,16 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
     })
 
     expect(context.tools.schemas().map(schema => schema.name)).toEqual(['pwsh'])
-    await execute('state', '$env:KEEP = "loader"; New-Item -ItemType Directory -Force -Path nested | Out-Null; Set-Location nested')
+    // The first call's own contract: the wrapper strips its markers, so a
+    // command that prints nothing succeeds with no output. A swallowed submit
+    // returns the timeout notice and resets the shell instead, which is the
+    // failure the cwd assertion below would otherwise misattribute to this call.
+    const state = text(await execute('state', '$env:KEEP = "loader"; New-Item -ItemType Directory -Force -Path nested | Out-Null; Set-Location nested'))
+    // The first call's own contract: a successful command returns neither the
+    // timeout notice nor the shell-reset notice. Windows PSReadLine additionally
+    // clips the echo of the long wrapper, which is not a failure of this call.
+    expect(state).not.toContain('timed out after')
+    expect(state).not.toContain('was reset; the next pwsh call starts from the workspace')
     const observed = text(await execute('observe', 'Write-Output "cwd=$PWD keep=$env:KEEP"'))
     expect(observed).toContain(`cwd=${join(root, 'nested')} keep=loader`)
     expect(observed).not.toContain('DSH_PERSISTENT_PWSH')

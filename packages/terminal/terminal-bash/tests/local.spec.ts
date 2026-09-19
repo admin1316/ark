@@ -1,5 +1,4 @@
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -13,8 +12,10 @@ import SandboxProvider from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local/src/resolve.ts'
+import { pwshTestsAvailable, resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
+import { resolveConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
+import { LocalPtySession } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -346,10 +347,7 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
   }, 35_000)
 })
 
-const hasPwsh = spawnSync(
-  resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'],
-  { encoding: 'utf8' },
-).status === 0
+const hasPwsh = pwshTestsAvailable()
 
 describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
   it('bootstraps a persistent pwsh, persists state, and scrubs secrets', async () => {
@@ -384,6 +382,55 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
     } finally {
       if (previous === undefined) delete process.env.DSH_TEST_SECRET
       else process.env.DSH_TEST_SECRET = previous
+    }
+  }, 30_000)
+
+  it('releases a line the console left parked in its editor', async () => {
+    const { ctx, root } = await harness('danger-full-access', {
+      idleSilenceMs: 300,
+      handoffGraceMs: 300,
+      timeoutMs: 8_000,
+    }, 'pwsh')
+    const executable = resolvePwshPath()
+    const terminal = await ctx.subprocess.spawnTerminal({
+      argv: [executable, '-NoLogo', '-NoProfile'],
+      cwd: root,
+      env: { TERM: 'dumb', NO_COLOR: '1' },
+      rows: 40,
+      cols: 160,
+      graceMs: 500,
+    })
+    const session = new LocalPtySession(terminal, resolveConfig({
+      backendType: 'shell',
+      shellDialect: 'pwsh',
+      shellPath: executable,
+      shellArgs: [],
+      rows: 40,
+      cols: 160,
+      scrollbackLines: 200,
+      scrollbackMaxBytes: 65536,
+      maxReadBytes: 16384,
+      pollIntervalMs: 10,
+      exactProbeAfterMs: 20,
+      idleSilenceMs: 300,
+      handoffGraceMs: 300,
+      timeoutMs: 8_000,
+      disposeGraceMs: 500,
+    }))
+    try {
+      const scrollback = (): string => session.read({ offset: 0, count: 100 }).text
+      // The startup's own readiness boundary first, so this pins the release
+      // contract rather than the console-start window the backend waits out.
+      expect(await session.waitForConsoleQuiet(8_000)).toBe(true)
+      // No submit, and the marker is assembled by the shell: the rendered echo
+      // carries both halves, only the executed line prints the joined value.
+      const parked = session.startSend({ text: 'Write-Output ("PARKED_" + "OUTPUT")', submit: false })
+      await waitForRenderedMarker(parked, scrollback, '"PARKED_"')
+      expect(scrollback()).not.toContain('PARKED_OUTPUT')
+      expect(await session.submitParkedInput()).toBe(true)
+      await waitForRenderedMarker(parked, scrollback, 'PARKED_OUTPUT')
+    } finally {
+      await session.close('parked-input test cleanup')
     }
   }, 30_000)
 

@@ -213,6 +213,8 @@ export class LocalPtySession implements TerminalBackendSession {
   private promptTextSeen = false
   private promptTail = ''
   private shellPgid: number | undefined
+  /** Whether the provider ever reported the foreground waiting on stdin. */
+  private stdinWaitObserved = false
   private initializing = false
   private lastOutputAt = Date.now()
   private closing = false
@@ -278,6 +280,67 @@ export class LocalPtySession implements TerminalBackendSession {
     }
   }
 
+  /**
+   * Wait until the child console has started, answered its terminal queries,
+   * and then stayed quiet for a bounded settle window.
+   *
+   * pwsh negotiates cursor-position queries while its console starts; input
+   * written into that window is rendered as a paste whose submit keystroke is
+   * lost, so the prompt bootstrap would stay typed but never execute and every
+   * readiness tier would eventually time out. Waiting out the startup traffic
+   * is the observable boundary that makes the first injected line reliable;
+   * the wait is bounded by the same startup deadline that bounds readiness.
+   * @param timeoutMs - absolute bound for the wait.
+   * @param signal - optional cancellation while waiting.
+   * @returns whether console quiet was observed before the bound.
+   */
+  async waitForConsoleQuiet(timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
+    const settleMs = Math.max(this.config.pollIntervalMs * 2, 120)
+    const deadline = Date.now() + timeoutMs
+    const pollMs = Math.max(1, Math.min(this.config.pollIntervalMs, 20))
+    for (;;) {
+      signal?.throwIfAborted()
+      const quietFor = Date.now() - this.lastOutputAt
+      if (this.scrollback.snapshot().text.length > 0 && this.pendingResponseWrites === 0 && quietFor >= settleMs) {
+        return true
+      }
+      if (Date.now() >= deadline) return false
+      await new Promise(resolve => setTimeout(resolve, pollMs))
+    }
+  }
+
+  /**
+   * Whether the provider has reported the foreground waiting on stdin.
+   *
+   * A provider that reports this wait has an exact readiness tier for it, and the
+   * startup must leave the handoff to that tier: an injected Enter would land
+   * ahead of the next send's own input. Hosts whose provider cannot report the
+   * wait (the console hosts that answer `false` unconditionally) have no such
+   * tier, so the bootstrap release below is their only recovery.
+   * @returns whether stdin-wait evidence was observed for this session.
+   */
+  reportsStdinWait(): boolean {
+    return this.stdinWaitObserved
+  }
+
+  /**
+   * Submit whatever the console left parked in its line editor.
+   *
+   * A pwsh console that is still starting renders an injected submit as a paste
+   * whose Enter is lost: the line stays typed, no prompt marker is printed, and
+   * the readiness tiers cannot settle it. Writing the submit sequence on its own
+   * releases that parked line — the startup definitions are idempotent — and the
+   * prompt it produces is the readiness evidence the caller already waits for.
+   * A console that already shows the expected prompt is left untouched.
+   * @returns whether a submit was written.
+   */
+  async submitParkedInput(): Promise<boolean> {
+    if (this.promptSeen && this.promptTextSeen) return false
+    this.atStartup('T6_PARK_RELEASE')
+    await this.terminal.write('\r')
+    return true
+  }
+
   startSend(request: TerminalSendRequest): TerminalSendOperation {
     if (this.closing) throw new Error('PTY session is closing')
     if (this.statusValue.kind === 'exited') throw new Error('PTY session has exited')
@@ -326,6 +389,7 @@ export class LocalPtySession implements TerminalBackendSession {
       if (this.protocolStateChanged(emulatorWrites, responseWrites)) {
         foreground = await this.inspectForegroundAfterProtocol()
       }
+      if (foreground?.inputWaiting === true) this.stdinWaitObserved = true
     } catch (error: unknown) {
       if (this.protocolWorkPending()) await this.drainTerminalProtocol()
       // A pre-write inspection failure while cancellation owns the slot must not
@@ -532,6 +596,7 @@ export class LocalPtySession implements TerminalBackendSession {
         foreground = await this.inspectForegroundAfterProtocol()
       }
       if (this.active !== operation || this.closing || this.interrupting === operation) return
+      if (foreground?.inputWaiting === true) this.stdinWaitObserved = true
       const idleFor = Date.now() - this.lastOutputAt
       if (this.promptSeen && foreground !== undefined && this.shellPgid === undefined) {
         this.shellPgid = foreground.processGroupId
