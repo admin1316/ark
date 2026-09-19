@@ -86,6 +86,46 @@ func runArkTrajectoryPipelineContractChecks() async {
     !model.trajectoryRecords.isEmpty,
     "the reading window still shows rows after loading two bodies"
   )
+
+  // A context change must not present one session's rows as another's. Switching
+  // sessions replaces the context, so the retained rows are cleared at the switch
+  // rather than surviving into the new session's surface.
+  let beforeSwitch = model.trajectoryRecords.count
+  check(beforeSwitch > 0, "the reading window has rows to carry into a session switch")
+  model.selectSession("other-session", navigateToChat: false)
+  model.selectedTab = .trajectory
+  check(
+    model.trajectoryRecords.isEmpty,
+    "switching sessions clears the previous session's rows instead of showing them as the new session's"
+  )
+
+  // A session the fixture serves no records for must present a real empty state,
+  // and the projection must recover when a populated session is selected again.
+  HistoryWindowURLProtocol.fixture = HistoryWindowFixture(rows: 0)
+  model.selectSession("empty-session", navigateToChat: false)
+  model.selectedTab = .trajectory
+  let emptySettled = await trajectoryPipelineEventually { model.historyLoadState == .loaded }
+  check(emptySettled, "the empty fixture session reaches a loaded history state")
+  check(
+    model.trajectoryRecords.isEmpty,
+    "a session with no records shows an empty ledger rather than stale rows"
+  )
+
+  // Select the populated session again: the projection must repopulate rather
+  // than stay permanently cleared by the earlier context change.
+  HistoryWindowURLProtocol.fixture = HistoryWindowFixture(rows: 12)
+  model.selectSession("fixture", navigateToChat: false)
+  model.selectedTab = .trajectory
+  let recovered = await trajectoryPipelineEventually { model.historyLoadState == .loaded }
+  check(recovered, "the populated fixture session loads again after an empty one")
+  await model.loadOlderHistory()
+  let readingAgain = await trajectoryPipelineEventually { model.historyReadingSnapshot != nil }
+  check(readingAgain, "the repopulated session can enter its own reading window")
+  let repopulated = await trajectoryPipelineEventually { !model.trajectoryRecords.isEmpty }
+  check(
+    repopulated,
+    "the projection repopulates for the new context instead of staying permanently cleared"
+  )
 }
 
 /// Let queued main-actor work and one projection fold settle.
