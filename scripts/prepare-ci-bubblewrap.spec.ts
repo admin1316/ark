@@ -32,7 +32,10 @@ interface Scenario {
   versionExit?: number
   namespaceExit?: number
   probeMode?: 'ok' | 'writable' | 'noscript' | 'wrong-error'
-  escapeMode?: 'ok' | 'escaped'
+  /** Upstream adapter outcome for the reviewed security regressions. */
+  upstream?: 'pass' | 'fail' | 'skipped'
+  /** How the adapter double answers the two negative-control invocations. */
+  controls?: 'reject' | 'accept-ok' | 'accept-fail'
   /** Runner kind; only the disposable hosted runner may install packages. */
   environment?: 'github-hosted' | 'self-hosted'
 }
@@ -186,21 +189,36 @@ if (command === 'getcap') {
   process.exit(0)
 }
 
+if (command === 'python3') {
+  const bwrap = optionValue('--bwrap')
+  if (bwrap.includes('always-ok-bwrap')) {
+    log({ command: 'python3', control: 'always-ok' })
+    process.exit(scenario.controls === 'accept-ok' ? 0 : 1)
+  }
+  if (bwrap.includes('always-fail-bwrap')) {
+    log({ command: 'python3', control: 'always-fail' })
+    process.exit(scenario.controls === 'accept-fail' ? 0 : 1)
+  }
+  const mode = scenario.upstream ?? 'pass'
+  log({ command: 'python3', upstream: mode })
+  if (mode === 'pass') {
+    process.stdout.write('upstream-security: testsRun=2 failures=0 errors=0 skipped=0 selected=2\nupstream-security: passed\n')
+    process.exit(0)
+  }
+  if (mode === 'skipped') {
+    process.stdout.write('upstream-security: testsRun=2 failures=0 errors=0 skipped=2 selected=2\n')
+    process.exit(1)
+  }
+  process.stdout.write('upstream-security: testsRun=2 failures=1 errors=0 skipped=0 selected=2\n')
+  process.exit(1)
+}
+
 if (command === 'bwrap') {
   if (args.includes('--version')) {
     process.stdout.write('bubblewrap ' + (scenario.binaryVersion ?? '0.12.0') + '\n')
     process.exit(scenario.versionExit ?? 0)
   }
   const joined = args.join(' ')
-  if (joined.includes('dsh-cve-probe')) {
-    log({ command: 'bwrap', probe: 'escape' })
-    if (scenario.escapeMode === 'escaped') {
-      const target = args.find(arg => arg.includes('dsh-cve-probe')) ?? ''
-      const escapeDir = target.slice(0, target.indexOf('/sandbox/escape/dsh-cve-probe'))
-      mkdirSync(join(escapeDir, 'outside', 'dsh-cve-probe'), { recursive: true })
-    }
-    process.exit(scenario.escapeExit ?? 0)
-  }
   if (joined.includes('inner.txt')) {
     log({ command: 'bwrap', probe: 'readonly' })
     if (scenario.probeMode === 'noscript') process.exit(1)
@@ -248,7 +266,7 @@ function runPrepare(overrides: Partial<Scenario> = {}, seed?: (runner: string) =
   writeFileSync(doublePath, shimSource, { mode: 0o755 })
   // Node resolves a shebang symlink to its real path, so each command gets a
   // one-line wrapper that names the double and passes the command on.
-  for (const command of ['uname', 'sysctl', 'sudo', 'apt-get', 'curl', 'sha256sum', 'tar', 'meson', 'stat', 'getcap', 'bwrap']) {
+  for (const command of ['uname', 'sysctl', 'sudo', 'apt-get', 'curl', 'sha256sum', 'tar', 'meson', 'stat', 'getcap', 'bwrap', 'python3']) {
     const wrapper = join(bin, command)
     writeFileSync(wrapper, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(doublePath)} ${command} "$@"\n`, { mode: 0o755 })
   }
@@ -264,7 +282,8 @@ function runPrepare(overrides: Partial<Scenario> = {}, seed?: (runner: string) =
     binaryVersion: '0.12.0',
     binaryMode: '755',
     probeMode: 'ok',
-    escapeMode: 'ok',
+    upstream: 'pass',
+    controls: 'reject',
     ...overrides,
   }
   const scenarioPath = join(workspace, 'scenario.json')
@@ -303,8 +322,10 @@ function runPrepare(overrides: Partial<Scenario> = {}, seed?: (runner: string) =
   }
 }
 
-// The preparation script targets Linux x86_64 only (it builds and probes a Linux
-// sandbox tool), so its spec is POSIX-only as well.
+// Platform mapping. The build-flow suite below drives a POSIX shell script and
+// its command doubles, so it runs on POSIX hosts only. Windows keeps its own
+// case: the script must refuse a non-Linux host without invoking a package
+// manager or publishing an unverified tool path to later steps.
 describe.skipIf(process.platform === 'win32')('prepare-ci-bubblewrap', () => {
   it('builds the pinned release from source and publishes a probe-tested binary', () => {
     const run = runPrepare()
@@ -315,7 +336,8 @@ describe.skipIf(process.platform === 'win32')('prepare-ci-bubblewrap', () => {
     expect(run.stdout).toContain('bubblewrap 0.12.0 built from source')
     expect(run.stdout).toContain('binary_sha256=')
     expect(run.stdout).toContain('bubblewrap functional probe passed')
-    expect(run.stdout).toContain('bubblewrap CVE-2026-87766 symlink-escape regression passed')
+    expect(run.stdout).toContain('upstream-security: testsRun=2 failures=0 errors=0 skipped=0')
+    expect(run.stdout).toContain('bubblewrap CVE-2026-87766 upstream security regressions passed')
     expect(run.calls.map(call => call.command)).toEqual(expect.arrayContaining(['curl', 'apt-get', 'meson-setup', 'meson-compile', 'bwrap']))
   }, 30_000)
 
@@ -409,13 +431,30 @@ describe.skipIf(process.platform === 'win32')('prepare-ci-bubblewrap', () => {
     for (const run of [namespace, writable, noscript, wrongError]) expect(run.githubPath).toBe('')
   }, 30_000)
 
-  it('fails the CVE-2026-87766 regression when setup escapes the sandbox', () => {
-    const run = runPrepare({ escapeMode: 'escaped' })
-    expect(run.status, run.stderr).not.toBe(0)
-    expect(run.stderr).toContain('sandbox setup created a directory outside the sandbox')
-    expect(run.githubPath).toBe('')
+  it('fails the CVE-2026-87766 regression when the tool cannot defend anything', () => {
+    // The negative controls prove the gate discriminates: an always-successful
+    // tool must trip the refusal assertion, and a tool that never runs must
+    // trip the adapter's skip-is-failure rule.
+    const alwaysOk = runPrepare({ controls: 'accept-ok' })
+    expect(alwaysOk.status, alwaysOk.stderr).not.toBe(0)
+    expect(alwaysOk.stderr).toContain('the security regression accepted an always-successful tool')
+    const alwaysFail = runPrepare({ controls: 'accept-fail' })
+    expect(alwaysFail.status, alwaysFail.stderr).not.toBe(0)
+    expect(alwaysFail.stderr).toContain('the security regression accepted a tool that never runs')
+    for (const run of [alwaysOk, alwaysFail]) expect(run.githubPath).toBe('')
   }, 30_000)
 
+  it('fails when the upstream security regressions fail or are skipped', () => {
+    const failed = runPrepare({ upstream: 'fail' })
+    expect(failed.status, failed.stderr).not.toBe(0)
+    expect(failed.githubPath).toBe('')
+    const skipped = runPrepare({ upstream: 'skipped' })
+    expect(skipped.status, skipped.stderr).not.toBe(0)
+    expect(skipped.githubPath).toBe('')
+    const run = runPrepare()
+    expect(run.status, run.stderr).toBe(0)
+    expect(run.calls.filter(call => call.command === 'python3').length).toBe(3)
+  }, 30_000)
   it('never trusts a leftover tool tree and never publishes an unverified one', () => {
     const seed = (runner: string): void => {
       const stale = join(runner, 'dsh-bubblewrap', 'usr', 'bin')
@@ -466,4 +505,20 @@ describe.skipIf(process.platform === 'win32')('prepare-ci-bubblewrap', () => {
     const expected = createHash('sha256').update('fixture-bytes').digest('hex')
     expect(result.stdout.trim()).toBe(`${expected}  ${fixture}`)
   })
+})
+
+describe.skipIf(process.platform !== 'win32')('prepare-ci-bubblewrap on a non-Linux host', () => {
+  it('refuses without publishing a tool path', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'dsh-bwrap-win-'))
+    workspaces.push(workspace)
+    const githubPath = join(workspace, 'github-path')
+    writeFileSync(githubPath, '')
+    const result = spawnSync('bash', [scriptPath], {
+      encoding: 'utf8',
+      env: { ...process.env, RUNNER_TEMP: workspace, GITHUB_PATH: githubPath },
+    })
+    expect(result.status, result.stderr).not.toBe(0)
+    expect(result.stderr).toContain('supports only Linux x86_64 hosted runners')
+    expect(readFileSync(githubPath, 'utf8')).toBe('')
+  }, 30_000)
 })

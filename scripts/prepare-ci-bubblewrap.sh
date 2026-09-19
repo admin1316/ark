@@ -52,6 +52,7 @@ fi
 
 # A fresh per-run directory: a half-downloaded archive, or a tree left behind by
 # an earlier attempt, is never trusted as a prepared tool.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 built_version=''
 pinned_source=''
 work="$(mktemp -d "${RUNNER_TEMP}/dsh-bubblewrap-build.XXXXXX")"
@@ -242,28 +243,50 @@ run_isolation_probes() {
   fi
 }
 
-run_symlink_escape_regression() {
-  # CVE-2026-87766 / GHSA-pxhw-h44j-8pfx: sandbox setup could follow a parent
-  # symlink out of the sandbox and create files or directories on the host.
-  # 0.12.0 resolves absolute symlinks inside the sandbox root (openat2 with
-  # RESOLVE_IN_ROOT, or the release's fallback), so a setup step that writes
-  # under an absolute symlink must never reach the host directory it names.
-  local bwrap="$1" escape_dir outside
-  escape_dir="$(mktemp -d "${RUNNER_TEMP}/dsh-bwrap-escape.XXXXXX")"
-  outside="${escape_dir}/outside"
-  mkdir -p "${outside}" "${escape_dir}/sandbox"
-  printf 'outside-marker' > "${outside}/marker.txt"
-  ln -s "$outside" "${escape_dir}/sandbox/escape"
-  "$bwrap" --ro-bind / / --bind "$escape_dir" "$escape_dir" --dev /dev --unshare-pid --proc /proc \
-    --die-with-parent --dir "${escape_dir}/sandbox/escape/dsh-cve-probe" -- true >/dev/null 2>&1 || true
-  if [[ -e "${outside}/dsh-cve-probe" ]]; then
-    echo 'prepare-ci-bubblewrap: sandbox setup created a directory outside the sandbox' >&2
+run_upstream_security_tests() {
+  # CVE-2026-87766 / GHSA-pxhw-h44j-8pfx is covered by the release's own reviewed
+  # regressions (TestSandbox.test_proc_symlink_escape_blocked and its fallback),
+  # run by scripts/bwrap-upstream-security-tests.py strictly: a skip, a failure
+  # or a wrong selected-test count fails this step. The adapter prints the full
+  # TAP output; nothing here discards it.
+  #
+  # Path mapping of that test (host side -> sandbox side):
+  #   upstream temp tree (TMPDIR)      -> hidden by '--tmpfs /tmp', not mapped
+  #   the escape fd's target directory -> '/proc/self/fd/<fd>' reached through an
+  #                                       absolute symlink at /tmp/mnt/symlink
+  #   '/tmp/mnt/symlink/created'       -> created by setup, must be refused
+  #   '/'                              -> '/' (ro), '/dev' -> '/dev',
+  #                                       '/proc' -> '/proc'
+  # A bind-mounted host directory can never serve as the observation point: it is
+  # visible inside the sandbox, so writing there is a legal in-sandbox write. The
+  # observation point is the fd target, which the sandbox does not map at all.
+  local published="$1" adapter="$2" tests_dir="$3"
+  python3 "$adapter" --bwrap "$published" --tests-dir "$tests_dir" \
+    >"${work}/upstream-security.txt" 2>"${work}/upstream-security.err"
+  cat "${work}/upstream-security.txt"
+  cat "${work}/upstream-security.err" >&2
+}
+
+run_security_negative_controls() {
+  # The regression must fail when the tool cannot defend anything, otherwise a
+  # green step proves nothing: an always-successful tool must be caught by the
+  # refusal assertion, and a tool that never runs must be caught by the adapter's
+  # skip-is-failure rule.
+  local adapter="$1" tests_dir="$2"
+  printf '#!/bin/sh\nexit 0\n' >"${work}/always-ok-bwrap"
+  printf '#!/bin/sh\nexit 1\n' >"${work}/always-fail-bwrap"
+  chmod 0755 "${work}/always-ok-bwrap" "${work}/always-fail-bwrap"
+  if python3 "$adapter" --bwrap "${work}/always-ok-bwrap" --tests-dir "$tests_dir" \
+    >"${work}/control-always-ok.txt" 2>&1; then
+    echo 'prepare-ci-bubblewrap: the security regression accepted an always-successful tool' >&2
     return 1
   fi
-  if [[ "$(cat "${outside}/marker.txt")" != 'outside-marker' ]]; then
-    echo 'prepare-ci-bubblewrap: the host control directory changed during setup' >&2
+  if python3 "$adapter" --bwrap "${work}/always-fail-bwrap" --tests-dir "$tests_dir" \
+    >"${work}/control-always-fail.txt" 2>&1; then
+    echo 'prepare-ci-bubblewrap: the security regression accepted a tool that never runs' >&2
     return 1
   fi
+  echo 'prepare-ci-bubblewrap: security regression negative controls rejected both non-defending tools'
 }
 
 pinned_source=''
@@ -288,11 +311,13 @@ chmod 0755 "$published"
 
 allow_unprivileged_userns
 run_isolation_probes "$published"
-run_symlink_escape_regression "$published"
+security_adapter="${script_dir}/bwrap-upstream-security-tests.py"
+run_security_negative_controls "$security_adapter" "${source_dir}/tests"
+run_upstream_security_tests "$published" "$security_adapter" "${source_dir}/tests"
 
 # Only a verified, built and probe-tested payload reaches the consumers.
 printf '%s\n' "${tool_dir}/usr/bin" >> "$GITHUB_PATH"
 binary_sha="$(sha256sum "$published" | cut -d' ' -f1)"
 echo "prepare-ci-bubblewrap: bubblewrap ${BWRAP_VERSION} built from source sha256=${BWRAP_TARBALL_SHA256} binary_sha256=${binary_sha} source=${source_url} path=${published}"
 echo 'bubblewrap functional probe passed'
-echo 'bubblewrap CVE-2026-87766 symlink-escape regression passed'
+echo 'bubblewrap CVE-2026-87766 upstream security regressions passed'
