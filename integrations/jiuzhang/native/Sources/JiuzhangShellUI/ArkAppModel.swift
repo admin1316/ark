@@ -701,6 +701,9 @@ public final class ArkAppModel: ObservableObject {
   /// 轨迹语义记录的模型层缓存：历史更新时 fold 一次，
   /// Tab 切换/视图重建只读缓存，避免每次切换对全量 events 重折。
   @Published public private(set) var trajectoryRecords: [ArkTrajectorySemanticRecord] = []
+  /// 当前已安装轨迹记录所属的会话与阅读截点。同一上下文的重算保留现有行，
+  /// 只有上下文变化时才清空——否则切换会话会把 A 的账本当 B 显示。
+  private var trajectoryContext: ArkTrajectoryContext?
   public private(set) var chatStatuses: [ArkChatStatus] = []
   @Published public private(set) var respondingInteractionIDs = Set<String>()
   @Published public private(set) var messageFeedbackByID: [String: ArkMessageFeedback] = [:]
@@ -753,7 +756,7 @@ public final class ArkAppModel: ObservableObject {
       guard oldValue != selectedSessionID else { return }
       goalMutationError = nil
       composerErrorMessage = nil
-      resetTrajectoryProjectionState()
+      resetTrajectoryProjectionState(for: ArkTrajectoryContext(sessionID: selectedSessionID, cut: nil))
       persistComposerDraft(for: oldValue)
       switchComposerAttachments(from: oldValue, to: selectedSessionID)
       installComposerDraft(Self.loadComposerDraft(defaults: defaults, sessionID: selectedSessionID))
@@ -4922,7 +4925,7 @@ public final class ArkAppModel: ObservableObject {
     historyReader?.cancel()
     historyReader = nil
     historyReadingSnapshot = nil
-    resetTrajectoryProjectionState()
+    resetTrajectoryProjectionState(for: ArkTrajectoryContext(sessionID: selectedSessionID, cut: nil))
     markTrajectoryProjectionDirty()
     hasNewerHistory = false
     hasOlderHistory = (liveHistoryRecords.values.map(\.orderSequence).min() ?? events.first?.id ?? 0) > 0
@@ -4964,7 +4967,7 @@ public final class ArkAppModel: ObservableObject {
 
   private func installReadingSnapshot(_ snapshot: ArkHistoryReadingSnapshot) {
     historyReadingSnapshot = snapshot
-    resetTrajectoryProjectionState()
+    resetTrajectoryProjectionState(for: ArkTrajectoryContext(sessionID: selectedSessionID, cut: snapshot.cut))
     if selectedTab == .trajectory { scheduleTrajectoryProjectionIfNeeded() }
     hasOlderHistory = snapshot.hasOlderHistory
     hasNewerHistory = snapshot.hasNewerHistory
@@ -6434,12 +6437,23 @@ public final class ArkAppModel: ObservableObject {
     }
   }
 
-  private func resetTrajectoryProjectionState() {
+  /// Reset the trajectory projection for a recompute belonging to `next`.
+  ///
+  /// Rows are kept when `next` names the same session and reading cut as the rows
+  /// already installed: loading a second message body inside one reading window is
+  /// a same-context recompute, and clearing first would flash the table through an
+  /// empty state it never had. Rows are cleared when the context moved, because a
+  /// stale ledger would present one session's records as another's.
+  /// @param next - session and reading cut the incoming fold belongs to.
+  private func resetTrajectoryProjectionState(for next: ArkTrajectoryContext) {
     trajectoryProjectionGeneration &+= 1
     trajectoryProjectionTask?.cancel()
     trajectoryProjectionTask = nil
     trajectoryProjectionDirty = true
-    trajectoryRecords = []
+    if arkTrajectoryRecomputeDiscardsRecords(current: trajectoryContext, next: next) {
+      trajectoryRecords = []
+    }
+    trajectoryContext = next
   }
 
   private func markTrajectoryProjectionDirty() {
@@ -6475,6 +6489,7 @@ public final class ArkAppModel: ObservableObject {
             selectedSessionID == sessionID
       else { return }
       trajectoryRecords = records
+      trajectoryContext = ArkTrajectoryContext(sessionID: sessionID, cut: readingSnapshot?.cut)
       trajectoryProjectionTask = nil
       if trajectoryProjectionDirty, selectedTab == .trajectory {
         scheduleTrajectoryProjectionIfNeeded()

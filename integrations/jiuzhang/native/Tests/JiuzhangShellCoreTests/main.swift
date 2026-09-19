@@ -56,6 +56,7 @@ let expectedContractGroups = [
   "reasoning-effort",
   "shell-parity",
   "trajectory",
+  "trajectory-recompute",
   "settings",
   "provider-recovery-wire",
   "files-tabs",
@@ -127,6 +128,7 @@ runContractGroup("trajectory") {
   runArkTrajectoryScrollContractChecks()
   runArkTrajectoryScrollScenarioChecks()
 }
+runContractGroup("trajectory-recompute", runArkTrajectoryRecomputeContractChecks)
 runContractGroup("settings", runArkSettingsContractChecks)
 await runAsyncContractGroup("provider-recovery-wire", runArkProviderRecoveryContractChecks)
 runContractGroup("files-tabs", runArkFilesTabsContractChecks)
