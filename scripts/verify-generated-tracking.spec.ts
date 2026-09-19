@@ -14,6 +14,7 @@ import {
   retirementReason,
   scanTrackedGeneratedPaths,
   verifyGeneratedTracking,
+  verifyTrackingHistory,
   type TrackingIo,
 } from './verify-generated-tracking.ts'
 
@@ -82,6 +83,40 @@ function fixture(): string {
 }
 
 describe('verify-generated-tracking', () => {
+  it('rejects a deleted personal file in introduced history, including merged side branches', () => {
+    const root = fixture()
+    const base = git(root, ['rev-parse', 'HEAD'])
+    git(root, ['checkout', '-b', 'private-fixture'])
+    write(root, 'sessions/个人 file.jsonl', 'ordinary conversation without a credential signature\n')
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'intermediate personal file'])
+    git(root, ['rm', 'sessions/个人 file.jsonl'])
+    git(root, ['commit', '-m', 'clean tip'])
+    git(root, ['checkout', 'main'])
+    git(root, ['merge', '--no-ff', 'private-fixture', '-m', 'merge clean tree'])
+    const head = git(root, ['rev-parse', 'HEAD'])
+    expect(verifyGeneratedTracking(root, recorder().io)).toBe(0)
+    const report = recorder()
+    expect(verifyTrackingHistory(root, base, head, report.io)).toBe(1)
+    expect(report.err.join('\n')).toContain('sessions/个人 file.jsonl')
+    expect(report.err.join('\n')).not.toContain('ordinary conversation')
+    expect(verifyTrackingHistory(root, head, head, recorder().io)).toBe(0)
+  })
+
+  it('accepts clean history and rejects unavailable or malformed commit ranges', () => {
+    const root = fixture()
+    const head = git(root, ['rev-parse', 'HEAD'])
+    expect(verifyTrackingHistory(root, '0'.repeat(40), head, recorder().io)).toBe(0)
+    expect(verifyTrackingHistory(root, 'f'.repeat(40), head, recorder().io)).toBe(1)
+    expect(verifyTrackingHistory(root, head, '--all', recorder().io)).toBe(1)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(main(['--root', root, '--history-base', head])).toBe(2)
+    error.mockRestore()
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    expect(main(['--root', root, '--history-base', head, '--history-head', head])).toBe(0)
+    log.mockRestore()
+  })
+
   it('rejects forced personal-state additions without rejecting examples or recorded test scenarios', () => {
     const root = fixture()
     write(root, '.gitignore', readFileSync(new URL('../.gitignore', import.meta.url), 'utf8'))

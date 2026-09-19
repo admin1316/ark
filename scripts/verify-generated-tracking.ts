@@ -200,8 +200,48 @@ export function verifyGeneratedTracking(root: string, io: TrackingIo = console):
 }
 
 /**
+ * Inspect every tree newly reachable from a PR head or pushed main commit.
+ * Deleted intermediate files and side-branch commits remain subject to the same
+ * path policy as the index. Only commit IDs are accepted; Git failures fail closed.
+ * @param root - Repository root with the complete commit range fetched.
+ * @param base - Exclusive base commit, or all zeroes for a newly created ref.
+ * @param head - Inclusive head commit.
+ * @param io - Output sinks; no blob contents are read or printed.
+ * @returns `0` when every introduced tree passes, otherwise `1`.
+ */
+export function verifyTrackingHistory(root: string, base: string, head: string, io: TrackingIo = console): number {
+  try {
+    if (!/^[0-9a-f]{40}$/u.test(base) || !/^[0-9a-f]{40}$/u.test(head)) {
+      throw new Error('history base and head must be full commit IDs')
+    }
+    const range = /^0{40}$/u.test(base) ? head : `${base}..${head}`
+    const commits = runGit(root, ['rev-list', range], 'listing introduced commits')
+      .toString('utf8').trim().split('\n').filter(Boolean)
+    let violations = 0
+    for (const commit of commits) {
+      const paths = nulSeparated(runGit(root, ['ls-tree', '-r', '--name-only', '-z', commit], 'listing commit paths'))
+      for (const path of paths) {
+        const reason = retirementReason(path)
+        if (reason === undefined) continue
+        if (violations < MAX_REPORTED) io.error(`  ${commit}: ${JSON.stringify(path)}\n    ${reason}`)
+        violations++
+      }
+    }
+    if (violations > 0) {
+      io.error(`verify-generated-tracking: ${violations} forbidden historical path(s); deleting from the tip is insufficient.`)
+      return 1
+    }
+    io.log(`verify-generated-tracking: ${commits.length} introduced commit tree(s) checked; no forbidden paths.`)
+    return 0
+  } catch (failure) {
+    io.error(`verify-generated-tracking: cannot inspect history: ${failure instanceof Error ? failure.message : String(failure)}`)
+    return 1
+  }
+}
+
+/**
  * Resolve the repository root and verify its index.
- * @param args - CLI arguments; `--root <path>` overrides discovery from the cwd.
+ * @param args - CLI arguments: optional `--root <path>` and paired `--history-base <sha>` / `--history-head <sha>`.
  * @returns The process exit code.
  */
 export function main(args: readonly string[] = process.argv.slice(2)): number {
@@ -218,6 +258,17 @@ export function main(args: readonly string[] = process.argv.slice(2)): number {
     if (resolved.length === 0) {
       console.error('verify-generated-tracking: git rev-parse --show-toplevel returned no path.')
       return 1
+    }
+    const baseIndex = args.indexOf('--history-base')
+    const headIndex = args.indexOf('--history-head')
+    if (baseIndex >= 0 || headIndex >= 0) {
+      const base = baseIndex < 0 ? undefined : args[baseIndex + 1]
+      const head = headIndex < 0 ? undefined : args[headIndex + 1]
+      if (base === undefined || head === undefined) {
+        console.error('verify-generated-tracking: history base and head are both required.')
+        return 2
+      }
+      if (verifyTrackingHistory(resolved, base, head) !== 0) return 1
     }
     return verifyGeneratedTracking(resolved)
   } catch (failure) {

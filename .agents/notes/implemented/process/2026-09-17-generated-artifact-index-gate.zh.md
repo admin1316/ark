@@ -24,6 +24,8 @@ Status: implemented
 
 [源码隐私检查](../../../../.github/workflows/source-privacy.yml) 在拉取请求与 main 推送时，用固定摘要校验的 Gitleaks 扫描已获取的 Git 历史。PR 和 main 工作流复用同一检查；PR 的 `all checks passed` 必须等待该检查成功，失败、取消或跳过都会阻止总检查通过。[配置](../../../../.gitleaks.toml) 保留默认规则，只对 Git blob 元数据、精确的测试字面量以及原始提交中的上游公开遥测标识作限定豁免。输出经过脱敏。媒体技能要求在直接启动的工具进程中显式提供遥测接收密钥，不再自带该标识；模型子进程继续过滤继承的密钥；未配置的安装不发送媒体遥测。本机用户数据和离线恢复归档不在源码检查范围内；CI 不删除它们，也不重写历史。
 
+同一任务复用索引分类规则，检查 PR head 相对 base 或 main 推送相对前一 tip 新增可达的每个提交树，涵盖在最终提交前删除的文件及合入的侧分支。提交缺失或边界无效会使检查失败；已有历史不会被重写。
+
 ## 测试
 
 `scripts/verify-generated-tracking.spec.ts` 在操作系统临时目录创建一次性仓库，覆盖：普通源码通过；仅存在于磁盘的被忽略构建输出通过；对已移出产物执行 `git add -f` 失败并给出路径与理由；从索引移除但保留磁盘文件后通过；vendor 与 `.agents` 的 `lib/` 目录、tsconfig、原生与 Python 输入通过；相似名称路径（`library/`、`libx/`、层级少一层的包、`notes.tsbuildinfo.bak`、非根 `schema.md`、`src/lib.ts`）通过；已移出目录内的空格与非 ASCII 名称失败；未合并索引失败；Git 无法读取的目录失败而不是通过。

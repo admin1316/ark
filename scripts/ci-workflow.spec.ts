@@ -30,6 +30,12 @@ describe('CI workflow', () => {
     expect(scan.steps.filter(isRecord).find(step => step.uses === 'actions/checkout@v6')).toMatchObject({
       with: { 'fetch-depth': 0, 'persist-credentials': false },
     })
+    const history = scan.steps.filter(isRecord).find(step => step.name === 'Scan introduced commit trees for personal state')
+    expect(history?.env).toEqual({
+      SCAN_BASE: '${{ github.event.pull_request.base.sha || github.event.before }}',
+      SCAN_HEAD: '${{ github.event.pull_request.head.sha || github.sha }}',
+    })
+    expect(history?.run).toBe('node scripts/verify-generated-tracking.ts --history-base "$SCAN_BASE" --history-head "$SCAN_HEAD"')
     const run = scan.steps.filter(isRecord).find(step => step.name === 'Scan source history for credentials')
     expect(run?.['continue-on-error']).toBeUndefined()
     expect(run?.run).toContain('set -euo pipefail')
