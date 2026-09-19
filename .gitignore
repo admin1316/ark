@@ -23,6 +23,12 @@ wiki/
 /.env.*.local
 
 # Machine-owned state is never part of a fresh source checkout.
+AGENTS.local.md*
+CLAUDE.local.md*
+**/.claude/*
+!/.claude/skills
+**/.codex/*
+!/.codex/config.toml
 .env
 .env.*
 !.env.example
@@ -45,7 +51,6 @@ wiki/
 **/.heygen/credentials*
 **/.hyperframes/config.json*
 **/.hyperframes/cloudrun-state.json*
-**/.codex/auth.json*
 **/.media/anon-id*
 **/.media/misses.jsonl*
 /Knowledge/

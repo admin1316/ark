@@ -44,9 +44,18 @@ interface ForbiddenClass {
  */
 const FORBIDDEN_CLASSES: readonly ForbiddenClass[] = [
   {
+    reason: 'personal agent instructions or local agent state; committed integration inputs remain allowed',
+    matches: (path) => {
+      const segments = path.split('/')
+      return /(?:^|\/)(?:AGENTS|CLAUDE)\.local\.md[^/]*$/u.test(path)
+        || (segments.includes('.claude') && path !== '.claude/skills')
+        || (segments.includes('.codex') && path !== '.codex/config.toml')
+    },
+  },
+  {
     reason: 'personal media-tool credentials, cloud account state, identity, or intent history; project assets remain allowed',
     matches: path => path.split('/').includes('.aws')
-      || /(?:^|\/)(?:\.heygen\/credentials|\.codex\/auth\.json)[^/]*$/u.test(path)
+      || /(?:^|\/)\.heygen\/credentials[^/]*$/u.test(path)
       || /(?:^|\/)\.hyperframes\/(?:config|cloudrun-state)\.json[^/]*$/u.test(path)
       || /(?:^|\/)\.media\/(?:anon-id|misses\.jsonl)[^/]*$/u.test(path),
   },

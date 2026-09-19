@@ -35,7 +35,7 @@ node <SKILL_DIR>/scripts/resolve.mjs --stats --project . --days 7
 
 ## Telemetry
 
-When `MEDIA_USE_TELEMETRY_API_KEY` is explicitly set, `resolve` and the edit tools (transcribe / transcript-cut / audio-duck) send an
+When `MEDIA_USE_TELEMETRY_API_KEY` is explicitly set on a directly launched tool process, `resolve` and the edit tools (transcribe / transcript-cut / audio-duck) send an
 anonymous usage event to PostHog (`scripts/lib/telemetry.mjs`), so we can see
 which capabilities are actually used. It records only the media TYPE, the
 resolution SOURCE, and the winning PROVIDER: never the intent text, file names,
@@ -44,6 +44,8 @@ resolve never waits on or fails from telemetry).
 
 Opt out with `DO_NOT_TRACK=1` or `HYPERFRAMES_NO_TELEMETRY=1` (also off in CI and
 dev). Ark ships no ingestion key and leaves tracking disabled by default.
+The Ark/dsh subprocess boundary removes this key from model-facing Bash
+invocations; setting it on the parent app does not opt those invocations in.
 
 HeyGen request tagging: every generating `heygen` call (TTS, avatar video, catalog
 search) carries the allowlisted `X-HeyGen-Client-Source: media-use` header, sourced
