@@ -57,7 +57,8 @@ const FORBIDDEN_CLASSES: readonly ForbiddenClass[] = [
     matches: (path) => {
       const segments = path.split('/')
       return segments.includes('.sessions') || segments.includes('.llm-wiki') || segments.includes('wiki')
-        || ['.dsh', 'Harness', 'Knowledge', 'Default Workspace', 'Document References', 'Workbench Drafts', 'sessions', 'storages', 'attachments', 'terminal-sessions'].includes(segments[0] ?? '')
+        || ['.dsh', 'Harness', 'profiles', 'logs', 'cache', 'llm-deepseek', '.ark-profile-rollbacks', 'Knowledge', 'Default Workspace', 'Document References', 'Workbench Drafts', 'sessions', 'storages', 'attachments', 'terminal-sessions'].includes(segments[0] ?? '')
+        || ['.anonymous-user-id', 'cordis.patch.yml', 'SETTINGS.md'].includes(path)
         || /^settings\.yaml(?:\.|$)/u.test(path)
     },
   },

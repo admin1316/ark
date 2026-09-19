@@ -31,6 +31,14 @@ wiki/
 .credentials.yaml*
 /.dsh/
 /Harness/
+/profiles/
+/logs/
+/cache/
+/llm-deepseek/
+/.ark-profile-rollbacks/
+/.anonymous-user-id
+/cordis.patch.yml
+/SETTINGS.md
 /Knowledge/
 /Default Workspace/
 /Document References/

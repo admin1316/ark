@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-17-generated-artifact-index-gate.md
-2026-09-17-generated-artifact-index-gate.md: 51566ec00477afa6cbf87bc923efcd0bfd1a3db5
-2026-09-17-generated-artifact-index-gate.zh.md: acb9ad4e426bbacfa1242293e2bdffb940eac606
+2026-09-17-generated-artifact-index-gate.md: 594b2016ca451b8fcce256d1cc00fdb6c47290a6
+2026-09-17-generated-artifact-index-gate.zh.md: 15bf39ff5d10044f63d3e3aa4b4e7045acb2fc4b

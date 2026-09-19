@@ -5,7 +5,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -84,6 +84,7 @@ function fixture(): string {
 describe('verify-generated-tracking', () => {
   it('rejects forced personal-state additions without rejecting examples or recorded test scenarios', () => {
     const root = fixture()
+    write(root, '.gitignore', readFileSync(new URL('../.gitignore', import.meta.url), 'utf8'))
     const forbidden = [
       '.env', 'nested/.env.production', '.env.local.bak',
       '.credentials.yaml', 'nested/.credentials.yaml.bak',
@@ -91,6 +92,9 @@ describe('verify-generated-tracking', () => {
       'wiki/private.md', 'Knowledge/wiki/private.md', 'nested/wiki/private.md',
       'Knowledge/raw/sources/private.txt', 'Default Workspace/private.txt',
       'Document References/private.json', 'Workbench Drafts/private.md',
+      'profiles/private/cordis.patch.yml', 'logs/private.jsonl', 'cache/private.json',
+      'llm-deepseek/private.json', '.ark-profile-rollbacks/private/cordis.yml',
+      '.anonymous-user-id', 'cordis.patch.yml', 'SETTINGS.md',
       '.dsh/settings.yaml', 'Harness/profiles/cordis.yml',
       'sessions/workspace/session.jsonl.zstd', 'storages/workspace.json',
       'attachments/private.png', 'terminal-sessions/state.json', 'settings.yaml.bak',
@@ -100,8 +104,11 @@ describe('verify-generated-tracking', () => {
       'snapshots/session/example/session.jsonl',
       'snapshots/session/skill-load/workspace/.dsh/skills/example/SKILL.md',
       'packages/session/session/tests/fixtures/settings.yaml',
+      'examples/agent/cordis.patch.yml', 'packages/boot/app-boot/tests/fixtures/profiles/example/cordis.patch.yml',
     ]
     for (const path of [...forbidden, ...retained]) write(root, path)
+    expect(new Set(git(root, ['check-ignore', '--no-index', '--', ...forbidden]).split('\n').filter(Boolean))).toEqual(new Set(forbidden))
+    git(root, ['add', '--', ...retained])
     git(root, ['add', '-f', '--', ...forbidden, ...retained])
     expect(new Set(scanTrackedGeneratedPaths(root).violations.map(entry => entry.path))).toEqual(new Set(forbidden))
     expect(verifyGeneratedTracking(root, recorder().io)).toBe(1)
