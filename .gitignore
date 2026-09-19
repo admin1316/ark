@@ -31,6 +31,10 @@ wiki/
 .credentials.yaml*
 /.dsh/
 /Harness/
+/Knowledge/
+/Default Workspace/
+/Document References/
+/Workbench Drafts/
 /sessions/
 /storages/
 /attachments/

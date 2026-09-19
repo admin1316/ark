@@ -56,8 +56,8 @@ const FORBIDDEN_CLASSES: readonly ForbiddenClass[] = [
     reason: 'local conversation, knowledge, or Harness state; not a distribution input',
     matches: (path) => {
       const segments = path.split('/')
-      return segments.includes('.sessions') || segments.includes('.llm-wiki')
-        || ['.dsh', 'Harness', 'sessions', 'storages', 'attachments', 'terminal-sessions'].includes(segments[0] ?? '')
+      return segments.includes('.sessions') || segments.includes('.llm-wiki') || segments.includes('wiki')
+        || ['.dsh', 'Harness', 'Knowledge', 'Default Workspace', 'Document References', 'Workbench Drafts', 'sessions', 'storages', 'attachments', 'terminal-sessions'].includes(segments[0] ?? '')
         || /^settings\.yaml(?:\.|$)/u.test(path)
     },
   },

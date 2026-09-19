@@ -17,6 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  source-privacy:
+    uses: ./.github/workflows/source-privacy.yml
 
   # Standard hosted workers isolate static, coverage, and built-consumer checks.
   node-24:
@@ -471,7 +473,7 @@ jobs:
   all-checks-passed:
     name: all checks passed
     runs-on: ubuntu-24.04
-    needs: [node-24, node-24-coverage, node-24-consumers, node-compat, python-sdk, python-runtime, windows, macos-native]
+    needs: [node-24, node-24-coverage, node-24-consumers, node-compat, python-sdk, python-runtime, windows, macos-native, source-privacy]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Fail if any needed job did not succeed

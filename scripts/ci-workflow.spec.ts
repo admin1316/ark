@@ -11,6 +11,31 @@ const runnerPrivatePnpmDestination =
 const nativeWindowsPnpmDestination = '${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}'
 
 describe('CI workflow', () => {
+  it('includes the shared privacy scan in the PR verdict and main push graph', () => {
+    const pullRequest = loadWorkflow('.github/workflows/ci.yml')
+    const main = loadWorkflow('.github/workflows/ci-master.yml')
+    const privacy = loadWorkflow('.github/workflows/source-privacy.yml')
+    expect(privacy.on).toEqual({ workflow_call: null })
+    expect(workflowJob(pullRequest, 'source-privacy')).toEqual({
+      uses: './.github/workflows/source-privacy.yml',
+    })
+    expect(workflowJob(pullRequest, 'all-checks-passed').needs).toContain('source-privacy')
+    expect(workflowJob(main, 'source-privacy')).toEqual({
+      if: "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+      uses: './.github/workflows/source-privacy.yml',
+    })
+    const scan = workflowJob(privacy, 'source-privacy')
+    expect(scan['continue-on-error']).toBeUndefined()
+    if (!Array.isArray(scan.steps)) throw new TypeError('privacy scan must define steps')
+    expect(scan.steps.filter(isRecord).find(step => step.uses === 'actions/checkout@v6')).toMatchObject({
+      with: { 'fetch-depth': 0, 'persist-credentials': false },
+    })
+    const run = scan.steps.filter(isRecord).find(step => step.name === 'Scan source history for credentials')
+    expect(run?.['continue-on-error']).toBeUndefined()
+    expect(run?.run).toContain('set -euo pipefail')
+    expect(run?.run).toContain('--redact=100')
+  })
+
   it('gives the Linux coverage lane the extended gate timeout budget', () => {
     // The Linux coverage lane runs instrumented plus heavy subprocess fixtures.
     // Vitest's default 5 s per-test budget is not enough for scripts/oxlint-contract.spec.ts
@@ -153,7 +178,7 @@ describe('CI workflow', () => {
     }
     expect(aggregate.needs).toEqual([
       'node-24', 'node-24-coverage', 'node-24-consumers', 'node-compat',
-      'python-sdk', 'python-runtime', 'windows', 'macos-native',
+      'python-sdk', 'python-runtime', 'windows', 'macos-native', 'source-privacy',
     ])
     expect(aggregate.if).toContain('always()')
     const verdict = JSON.stringify(aggregate.steps)
@@ -222,7 +247,7 @@ describe('CI workflow', () => {
     }
 
     // What bounds the cost of exempting push: a master push may only carry the
-    // cache seeder and the two drills. Any job reachable on push would start
+    // cache seeder, privacy scan, and the two drills. Any job reachable on push would start
     // accumulating uncancelled runs, so the set is pinned here.
     const NOT_PUSH_REACHABLE = new Set([
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'larger-runner-benchmark'",
@@ -238,7 +263,7 @@ describe('CI workflow', () => {
       })
       .map(([name]) => name)
       .sort()
-    expect(pushReachable).toEqual(['serial-linux-selfhosted', 'serial-windows', 'wine-apt-cache'])
+    expect(pushReachable).toEqual(['serial-linux-selfhosted', 'serial-windows', 'source-privacy', 'wine-apt-cache'])
 
     // Why workflow_dispatch must keep cancelling: each benchmark fans out to a
     // dozen larger runners at once, in this same group on master. If it stopped

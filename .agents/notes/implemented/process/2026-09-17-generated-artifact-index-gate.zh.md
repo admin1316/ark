@@ -20,9 +20,9 @@ Status: implemented
 
 门禁运行在其它仓库门禁所在的入口：`scripts/run-gates.ts` 中 `ci-static`、`ci-primary`、`ci-linux-primary`、`ci-windows-observational` 图里的 `generated-tracking`，本地 `hygiene` 与 `check-all` 聚合，以及 lefthook `pre-commit` 任务。钩子扫描整个索引而不是只看暂存路径，因为索引本身已包含暂存状态，而单一全索引定义让提交时与 CI 的答案完全一致。
 
-同一索引检查拒绝属于本机的分发输入：任意深度的真实 `.env` 变体及 `.credentials.yaml` 备份、`.sessions` 和 `.llm-wiki` 目录，以及根目录 Harness、`.dsh`、会话、存储、附件、终端状态和设置文件。具名环境示例与录制的快照夹具仍属于有效输入。这是路径检查，不是基于内容的密钥检测。
+同一索引检查拒绝属于本机的分发输入：任意深度的真实 `.env` 变体及 `.credentials.yaml` 备份、`.sessions`、`.llm-wiki` 和 `wiki` 目录，以及根目录 Harness、Knowledge、Default Workspace、Document References、Workbench Drafts、`.dsh`、会话、存储、附件、终端状态和设置文件。具名环境示例与录制的快照夹具仍属于有效输入。这是路径检查，不是基于内容的密钥检测。
 
-[源码隐私检查](../../../../.github/workflows/source-privacy.yml) 在拉取请求与 main 推送时，用固定摘要校验的 Gitleaks 扫描已获取的 Git 历史。[配置](../../../../.gitleaks.toml) 保留默认规则，只对 Git blob 元数据、精确的测试字面量以及原始提交中的上游公开遥测标识作限定豁免。输出经过脱敏。媒体技能要求显式提供遥测接收密钥，不再自带该标识；未配置的安装不发送媒体遥测。本机用户数据和离线恢复归档不在源码检查范围内；CI 不删除它们，也不重写历史。
+[源码隐私检查](../../../../.github/workflows/source-privacy.yml) 在拉取请求与 main 推送时，用固定摘要校验的 Gitleaks 扫描已获取的 Git 历史。PR 和 main 工作流复用同一检查；PR 的 `all checks passed` 必须等待该检查成功，失败、取消或跳过都会阻止总检查通过。[配置](../../../../.gitleaks.toml) 保留默认规则，只对 Git blob 元数据、精确的测试字面量以及原始提交中的上游公开遥测标识作限定豁免。输出经过脱敏。媒体技能要求显式提供遥测接收密钥，不再自带该标识；未配置的安装不发送媒体遥测。本机用户数据和离线恢复归档不在源码检查范围内；CI 不删除它们，也不重写历史。
 
 ## 测试
 
