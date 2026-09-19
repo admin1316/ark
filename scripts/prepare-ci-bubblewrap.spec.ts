@@ -510,17 +510,52 @@ describe.skipIf(process.platform === 'win32')('prepare-ci-bubblewrap', () => {
 })
 
 describe.skipIf(process.platform !== 'win32')('prepare-ci-bubblewrap on a non-Linux host', () => {
-  it('refuses without publishing a tool path', () => {
-    const workspace = mkdtempSync(join(tmpdir(), 'dsh-bwrap-win-'))
-    workspaces.push(workspace)
-    const githubPath = join(workspace, 'github-path')
+  it('refuses without publishing a tool path or touching the host', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-bwrap-win-'))
+    workspaces.push(root)
+    const stubs = join(root, 'stubs')
+    const stubLog = join(root, 'stub-calls.txt')
+    const githubPath = join(root, 'github-path')
+    mkdirSync(stubs, { recursive: true })
+    writeFileSync(stubLog, '')
     writeFileSync(githubPath, '')
+    // The controlled PATH makes the outcome deterministic on any Windows host:
+    // `uname` reports a non-Linux system, so the script's own platform guard is
+    // what refuses, and every command that could change the host (package
+    // manager, toolchain, downloader, python) only records its invocation and
+    // fails. A refusal that never happened therefore cannot pass this test, and
+    // a Linux sub-environment cannot silently build the tool.
+    const stubsToStage = ['uname', 'curl', 'apt-get', 'sudo', 'sysctl', 'tar', 'meson', 'ninja', 'cc', 'pkg-config', 'python3', 'git']
+    for (const name of stubsToStage) {
+      const body = name === 'uname'
+        ? '#!/bin/sh\ncase "$1" in -m) echo x86_64 ;; *) echo MINGW64_NT-10.0 ;; esac\n'
+        : `#!/bin/sh\nprintf '%s\\n' "${name} $*" >> "${stubLog}"\nexit 42\n`
+      writeFileSync(join(stubs, name), body, { mode: 0o755 })
+    }
+    // First prove the interpreter is a working Bash, not a launcher that prints
+    // a banner and returns 0: it must emit the unique marker AND the requested
+    // exit code. A missing interpreter fails here as an environment failure,
+    // never as a host refusal.
+    const preflight = spawnSync('bash', ['-c', 'printf dsh-bash-ready; exit 7'], { encoding: 'utf8' })
+    expect(preflight.error, 'this case needs a working Bash interpreter on the host').toBeUndefined()
+    expect(preflight.stdout, 'the interpreter must run commands, not just start').toContain('dsh-bash-ready')
+    expect(preflight.status, 'the interpreter must propagate the requested exit code').toBe(7)
     const result = spawnSync('bash', [scriptPath], {
       encoding: 'utf8',
-      env: { ...process.env, RUNNER_TEMP: workspace, GITHUB_PATH: githubPath },
+      env: {
+        ...process.env,
+        PATH: `${stubs};${process.env.PATH ?? ''}`,
+        RUNNER_TEMP: join(root, 'runner'),
+        GITHUB_PATH: githubPath,
+      },
     })
+    if (result.error !== undefined) throw result.error
+    // A readable script path is part of the fixture: bash reports a missing file
+    // with its own message and exit code, which must not be mistaken for a refusal.
+    expect(result.stderr ?? '', 'the target script must be readable by the interpreter').not.toContain('No such file')
     expect(result.status, result.stderr).not.toBe(0)
     expect(result.stderr).toContain('supports only Linux x86_64 hosted runners')
     expect(readFileSync(githubPath, 'utf8')).toBe('')
-  }, 30_000)
+    expect(readFileSync(stubLog, 'utf8')).toBe('')
+  }, 60_000)
 })
