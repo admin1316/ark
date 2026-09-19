@@ -4,7 +4,7 @@ import Foundation
 import JiuzhangShellCore
 @testable import JiuzhangShellUI
 
-private final class HistoryWindowFixture: @unchecked Sendable {
+final class HistoryWindowFixture: @unchecked Sendable {
   let events: [JSONValue]
   let records: [JSONValue]
   let turns: [JSONValue]
@@ -174,7 +174,7 @@ private final class HistoryWindowFixture: @unchecked Sendable {
   }
 }
 
-private final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
+final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
   static var fixture = HistoryWindowFixture(rows: 0)
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
