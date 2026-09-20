@@ -966,7 +966,12 @@ func runArkChatPresentationContractChecks() {
       chatView?.contains("let projection = bodyProjection") == true
         && root.contains("final class NativeProjectionMemo<Key: Equatable, Value>: ObservableObject")
         && root.contains("struct NativeChatProjectionKey: Equatable")
-        && chatView?.contains("@StateObject private var projectionMemo") == true
+        && root.contains("@StateObject private var chatProjectionMemo")
+        && root.contains("@StateObject private var chatRowCache")
+        && chatView?.contains("@ObservedObject private var projectionMemo") == true
+        && chatView?.contains("@ObservedObject private var rowCache") == true
+        && chatView?.contains("@StateObject private var projectionMemo") == false
+        && chatView?.contains("@StateObject private var rowCache") == false
         && chatView?.contains("sessionRunning: context.sessionRunning") == true
         && chatView?.contains("feedbackByID: context.feedbackByID") == true
         && chatView?.contains("turnMetricsByTurn: context.turnMetricsByTurn") == true

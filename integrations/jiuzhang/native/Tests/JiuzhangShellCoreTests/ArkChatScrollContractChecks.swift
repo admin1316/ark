@@ -217,18 +217,28 @@ func runArkChatScrollContractChecks() {
       mainArea?.contains("@StateObject private var chatScrollController") == true
         && mainArea?.contains("@StateObject private var chatTranscriptFeed") == true
         && mainArea?.contains("_chatTranscriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))") == true
+        && mainArea?.contains("@StateObject private var chatProjectionMemo") == true
+        && mainArea?.contains("@StateObject private var chatRowCache") == true
+        && mainArea?.contains("_chatProjectionMemo = StateObject(wrappedValue: NativeProjectionMemo())") == true
+        && mainArea?.contains("_chatRowCache = StateObject(wrappedValue: NativeProjectedRowCache())") == true
         && mainArea?.contains("transcriptTextSelectionEnabled") == false
         && mainArea?.contains("NativeChatView(") == true
         && mainArea?.contains("model: model") == true
         && mainArea?.contains("transcriptFeed: chatTranscriptFeed") == true
+        && mainArea?.contains("projectionMemo: chatProjectionMemo") == true
+        && mainArea?.contains("rowCache: chatRowCache") == true
         && mainArea?.contains("scrollController: chatScrollController") == true
         && mainArea?.contains(".id(model.selectedSessionID)") == false
         && mainArea?.contains("NativeChatView(model: model).equatable()") == false
         && chatView?.contains("@ObservedObject private var transcriptFeed") == true
         && chatView?.contains("StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))") == false
+        && chatView?.contains("@ObservedObject private var projectionMemo") == true
+        && chatView?.contains("@ObservedObject private var rowCache") == true
+        && chatView?.contains("@StateObject private var projectionMemo") == false
+        && chatView?.contains("@StateObject private var rowCache") == false
         && chatView?.contains("@ObservedObject private var scrollController") == true
         && chatView?.contains("transcriptTextSelectionEnabled") == false,
-      "chat session and tab replacement preserve one transcript feed and one shared scroll owner"
+      "chat session and tab replacement preserve the feed, row projection owners, and scroll owner"
     )
     check(
       chatView?.contains("case .assistantPrefix(let row):") == true

@@ -1712,10 +1712,19 @@ private struct NativeMainArea: View {
   /// The chat tab is conditionally mounted, but its authoritative feed must outlive that mount.
   /// Otherwise every chat/trajectory round trip reparses and republishes every restored answer.
   @StateObject private var chatTranscriptFeed: NativeChatTranscriptFeed
+  /// The conditional chat view also derives a large row projection from that feed. Retain its
+  /// existing memo and per-entry rows at the same lifetime so an active stream only rebuilds its
+  /// changing entry when chat is mounted again.
+  @StateObject private var chatProjectionMemo: NativeProjectionMemo<
+    NativeChatProjectionKey, NativeChatBodyProjection
+  >
+  @StateObject private var chatRowCache: NativeProjectedRowCache
 
   init(model: ArkAppModel) {
     self.model = model
     _chatTranscriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))
+    _chatProjectionMemo = StateObject(wrappedValue: NativeProjectionMemo())
+    _chatRowCache = StateObject(wrappedValue: NativeProjectedRowCache())
   }
 
   private var showsConversationChrome: Bool {
@@ -1737,6 +1746,8 @@ private struct NativeMainArea: View {
             NativeChatView(
               model: model,
               transcriptFeed: chatTranscriptFeed,
+              projectionMemo: chatProjectionMemo,
+              rowCache: chatRowCache,
               scrollController: chatScrollController
             )
           case .trajectory: NativeTrajectoryParityView(model: model).equatable()
@@ -3703,6 +3714,10 @@ enum ArkChatTurnNavigationProjection {
 private struct NativeChatView: View {
   let model: ArkAppModel
   @ObservedObject private var transcriptFeed: NativeChatTranscriptFeed
+  @ObservedObject private var projectionMemo: NativeProjectionMemo<
+    NativeChatProjectionKey, NativeChatBodyProjection
+  >
+  @ObservedObject private var rowCache: NativeProjectedRowCache
   @ObservedObject private var scrollController: ArkChatScrollController
   @AppStorage("ark.native.chat.font-size") private var transcriptFontSize = Double(ChatLayoutMetrics.messageFontSize)
   @AppStorage("ark.native.chat.content-width") private var contentWidth = Double(ChatLayoutMetrics.contentColumnMaxWidth)
@@ -3720,10 +3735,14 @@ private struct NativeChatView: View {
   init(
     model: ArkAppModel,
     transcriptFeed: NativeChatTranscriptFeed,
+    projectionMemo: NativeProjectionMemo<NativeChatProjectionKey, NativeChatBodyProjection>,
+    rowCache: NativeProjectedRowCache,
     scrollController: ArkChatScrollController
   ) {
     self.model = model
     _transcriptFeed = ObservedObject(wrappedValue: transcriptFeed)
+    _projectionMemo = ObservedObject(wrappedValue: projectionMemo)
+    _rowCache = ObservedObject(wrappedValue: rowCache)
     _scrollController = ObservedObject(wrappedValue: scrollController)
   }
 
@@ -3735,13 +3754,6 @@ private struct NativeChatView: View {
   /// The projection is O(turns x text), so reuse it across unrelated body
   /// evaluations. The memo is reference-only and does not publish a state
   /// mutation from inside `bodyProjection`.
-  @StateObject private var projectionMemo = NativeProjectionMemo<
-    NativeChatProjectionKey, NativeChatBodyProjection
-  >()
-
-  /// Per-entry projection reuse; see ``NativeProjectedRowCache``.
-  @StateObject private var rowCache = NativeProjectedRowCache()
-
   private var bodyProjection: NativeChatBodyProjection {
     let key = NativeChatProjectionKey(
       historyCut: context.historyCut,
