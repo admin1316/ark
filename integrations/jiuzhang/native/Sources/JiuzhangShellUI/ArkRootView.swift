@@ -4,6 +4,7 @@ import JiuzhangShellCore
 import QuartzCore
 import SwiftUI
 import UniformTypeIdentifiers
+import os
 
 struct ArkOpenToolFileActionKey: EnvironmentKey {
   static let defaultValue: (String) -> Void = { _ in }
@@ -1708,6 +1709,23 @@ private struct WorkspaceSection: View {
 private struct NativeMainArea: View {
   @ObservedObject var model: ArkAppModel
   @StateObject private var chatScrollController = ArkChatScrollController()
+  /// The chat tab is conditionally mounted, but its authoritative feed must outlive that mount.
+  /// Otherwise every chat/trajectory round trip reparses and republishes every restored answer.
+  @StateObject private var chatTranscriptFeed: NativeChatTranscriptFeed
+  /// The conditional chat view also derives a large row projection from that feed. Retain its
+  /// existing memo and per-entry rows at the same lifetime so an active stream only rebuilds its
+  /// changing entry when chat is mounted again.
+  @StateObject private var chatProjectionMemo: NativeProjectionMemo<
+    NativeChatProjectionKey, NativeChatBodyProjection
+  >
+  @StateObject private var chatRowCache: NativeProjectedRowCache
+
+  init(model: ArkAppModel) {
+    self.model = model
+    _chatTranscriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))
+    _chatProjectionMemo = StateObject(wrappedValue: NativeProjectionMemo())
+    _chatRowCache = StateObject(wrappedValue: NativeProjectedRowCache())
+  }
 
   private var showsConversationChrome: Bool {
     model.selectedSessionID != nil && model.selectedSession?.blank != true
@@ -1727,6 +1745,9 @@ private struct NativeMainArea: View {
           case .chat:
             NativeChatView(
               model: model,
+              transcriptFeed: chatTranscriptFeed,
+              projectionMemo: chatProjectionMemo,
+              rowCache: chatRowCache,
               scrollController: chatScrollController
             )
           case .trajectory: NativeTrajectoryParityView(model: model).equatable()
@@ -3013,9 +3034,9 @@ private struct NativeChatSnapshot {
   }
 
   func hasSamePresentation(as other: NativeChatSnapshot) -> Bool {
-    entries == other.entries
+    contentRevision == other.contentRevision
       && context == other.context
-      && contentRevision == other.contentRevision
+      && entries == other.entries
   }
 }
 
@@ -3036,7 +3057,23 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   /// Adaptive part of the refresh cadence; grows with the main thread's backlog after a heavy
   /// layout transaction and decays when it drains. See `scheduleRefresh`.
   private var refreshBackoff: TimeInterval = 0
+  private var presentationGeneration: UInt64 = 0
+  private var installedPresentationGeneration: UInt64 = 0
   private weak var model: ArkAppModel?
+  private static let diagnostics = Logger(
+    subsystem: ArkEventChannelDiagnostics.subsystem, category: "chat-feed"
+  )
+  private static let tracesCandidate = Bundle.main.object(forInfoDictionaryKey: "ArkCandidateBuild") != nil
+
+  /// Candidate-only timing metadata. No message bodies or credentials enter the journal.
+  fileprivate func trace(_ stage: String, model: ArkAppModel, delay: TimeInterval = 0) {
+    guard Self.tracesCandidate else { return }
+    let session = model.selectedSessionID ?? "none"
+    let sequence = model.events.last?.id ?? -1
+    let running = model.selectedSession?.running == true
+    let reading = model.historyReadingSnapshot != nil
+    Self.diagnostics.notice("stage=\(stage, privacy: .public) session=\(session, privacy: .public) sequence=\(sequence) revision=\(self.snapshot.contentRevision) entries=\(self.snapshot.entries.count) running=\(running) reading=\(reading) delayMs=\(Int(delay * 1000))")
+  }
 
   init(model: ArkAppModel) {
     self.model = model
@@ -3052,7 +3089,6 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     )
 
     let triggers: [AnyPublisher<Void, Never>] = [
-      model.chatPresentationDidChange.eraseToAnyPublisher(),
       model.$selectedSessionID.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
       model.$sessions.map { [weak model] sessions in
         let id = model?.selectedSessionID
@@ -3079,6 +3115,14 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     }
     .store(in: &cancellables)
 
+    model.chatPresentationDidChange
+    .sink { [weak self, weak model] in
+      guard let self, let model else { return }
+      self.presentationGeneration &+= 1
+      self.scheduleRefresh(model: model)
+    }
+    .store(in: &cancellables)
+
     _ = reconcileMarkdownSources(model: model)
     scheduleMissingMarkdownSources()
   }
@@ -3097,25 +3141,35 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   /// streamed answers spent 9 s above 80% CPU because one layout transaction is longer than the
   /// 800 ms base interval. The cadence below therefore measures how late the main thread actually
   /// resumed (its backlog) and grows the interval by that overshoot, capped, decaying when the
-  /// thread is idle again. Nobody sees "slower text" for more than a frame: the tail is still the
-  /// thing being refreshed.
+  /// thread is idle again. Once the session stops running, completion work drops this streaming
+  /// backoff instead of retaining a delay caused by an earlier layout transaction.
   private func scheduleRefresh(model: ArkAppModel) {
-    guard refreshTask == nil else { return }
     let running = model.sessions.first { $0.id == model.selectedSessionID }?.running == true
-    let heavy = snapshot.entries.count > 600
+    // Back pressure protects continuous streaming. Once the task is idle,
+    // its final answer and completed parse must not inherit an old layout stall.
+    if !running, refreshBackoff > 0 {
+      refreshBackoff = 0
+      refreshTask?.cancel()
+      refreshTask = nil
+    }
+    guard refreshTask == nil else { return }
+    let heavy = isHeavy(model: model)
     // base must sit above the cost of one transaction (~1 s measured): a base below it means the
     // next refresh is already due when the previous transaction finishes, so the queue never drains.
-    let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15
+    let base = Self.baseRefreshInterval(running: running, heavy: heavy)
     let interval = base + refreshBackoff
     let deadline = Date().addingTimeInterval(interval)
+    trace("scheduled", model: model, delay: interval)
     refreshTask = Task { @MainActor [weak self, weak model] in
       try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
-      guard let self else { return }
+      guard !Task.isCancelled, let self, let model else { return }
       self.refreshTask = nil
       // How long past the deadline the main actor came back to us: that is the backlog a heavy
       // layout transaction left behind. Grow the next interval by it (×2, capped), or decay.
       let overshoot = max(0, Date().timeIntervalSince(deadline))
-      if overshoot > 0.05 {
+      if model.selectedSession?.running != true {
+        self.refreshBackoff = 0
+      } else if overshoot > 0.05 {
         self.refreshBackoff = min(Self.maxRefreshBackoff, self.refreshBackoff * 0.5 + overshoot)
         // …but the cadence may never be shorter than the backlog it just measured, or a single
         // transaction longer than the cap would still queue the next refresh behind itself.
@@ -3123,9 +3177,39 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       } else {
         self.refreshBackoff = max(0, self.refreshBackoff - base * 0.5)
       }
-      guard let model else { return }
+      self.trace("resumed", model: model, delay: overshoot)
       self.refresh(model: model)
     }
+  }
+
+  private static func baseRefreshInterval(running: Bool, heavy: Bool) -> TimeInterval {
+    let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15
+    return base
+  }
+
+  /// The renderer expands one assistant message into many Markdown rows, while
+  /// the event pump folds hundreds of streaming chunks into that same message.
+  /// Counting only merged transcript entries therefore misclassifies the exact
+  /// long-stream shape that needs the slower cadence.
+  private func isHeavy(model: ArkAppModel) -> Bool {
+    var projectedRows = 0
+    for blocks in snapshot.markdownBlocksBySourceID.values {
+      projectedRows += blocks.count
+      if projectedRows > 600 { break }
+    }
+    return Self.isHeavyWorkload(
+      entryCount: snapshot.entries.count,
+      eventCount: model.events.count,
+      markdownRowCount: projectedRows
+    )
+  }
+
+  private static func isHeavyWorkload(
+    entryCount: Int,
+    eventCount: Int,
+    markdownRowCount: Int
+  ) -> Bool {
+    entryCount > 600 || eventCount > 600 || markdownRowCount > 600
   }
 
   /// Ceiling for the adaptive part of the refresh cadence (base + this). Long enough to let a
@@ -3150,7 +3234,9 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     let ready = markdownProjectionState.takeReadyBlocks()
     retainedMarkdown.merge(ready) { _, new in new }
     let projectionRemoved = retainedMarkdown.count != snapshot.markdownBlocksBySourceID.count
-    let revision = entries == snapshot.entries && !projectionRemoved && ready.isEmpty
+    let presentationChanged = installedPresentationGeneration != presentationGeneration
+    installedPresentationGeneration = presentationGeneration
+    let revision = !presentationChanged && !projectionRemoved && ready.isEmpty
       ? snapshot.contentRevision
       : snapshot.contentRevision &+ 1
     let next = NativeChatSnapshot(
@@ -3166,6 +3252,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       var transaction = Transaction(animation: nil)
       transaction.disablesAnimations = true
       withTransaction(transaction) { snapshot = next }
+      trace("published", model: model)
     }
     scheduleMissingMarkdownSources()
   }
@@ -3247,13 +3334,13 @@ enum NativeAssistantProjectedBodyRow: Identifiable, Equatable {
     case companion(messageID: Int, blockIndex: Int)
   }
 
-  case pending(NativeAssistantMarkdownSourceID)
+  case pending(NativeAssistantMarkdownSource)
   case markdown(NativeAssistantMarkdownBlockRow)
   case companion(messageID: Int, blockIndex: Int, block: ArkMessageBlock)
 
   var id: ID {
     switch self {
-    case .pending(let sourceID): return .pending(sourceID)
+    case .pending(let source): return .pending(source.id)
     case .markdown(let row): return .markdown(row.id)
     case .companion(let messageID, let blockIndex, _):
       return .companion(messageID: messageID, blockIndex: blockIndex)
@@ -3284,7 +3371,7 @@ enum NativeAssistantMarkdownRowProjection {
     var rows: [NativeAssistantProjectedBodyRow] = []
     func appendMarkdownRows(for source: NativeAssistantMarkdownSource) {
       guard let blocks = blocksBySourceID[source.id] else {
-        rows.append(.pending(source.id))
+        rows.append(.pending(source))
         return
       }
       rows.append(contentsOf: NativeGFMParagraphSelection.rows(blocks).map { row in
@@ -3423,8 +3510,16 @@ enum NativeAssistantMarkdownFlatProjection {
   }
 }
 
-private struct NativeChatDisplayEntry: Identifiable, Equatable {
-  enum Kind: Equatable {
+/// Lightweight identity wrapper for a rendered transcript row.
+///
+/// Deliberately not `Equatable`: SwiftUI otherwise discovers the conditional
+/// `Array<NativeChatDisplayEntry>: Equatable` conformance and compares every
+/// mounted row on each streamed delta. A live assistant row carries the whole
+/// growing message, so that implicit comparison repeatedly walked the common
+/// text prefix on the main thread and starved wheel handling. `ForEach` already
+/// owns row reconciliation through the stable `id` below.
+private struct NativeChatDisplayEntry: Identifiable {
+  enum Kind {
     case process(NativeChatProcess)
     case entry(NativeChatEntry)
     case assistantPrefix(NativeAssistantMarkdownPrefixRow)
@@ -3637,7 +3732,11 @@ enum ArkChatTurnNavigationProjection {
 
 private struct NativeChatView: View {
   let model: ArkAppModel
-  @StateObject private var transcriptFeed: NativeChatTranscriptFeed
+  @ObservedObject private var transcriptFeed: NativeChatTranscriptFeed
+  @ObservedObject private var projectionMemo: NativeProjectionMemo<
+    NativeChatProjectionKey, NativeChatBodyProjection
+  >
+  @ObservedObject private var rowCache: NativeProjectedRowCache
   @ObservedObject private var scrollController: ArkChatScrollController
   @AppStorage("ark.native.chat.font-size") private var transcriptFontSize = Double(ChatLayoutMetrics.messageFontSize)
   @AppStorage("ark.native.chat.content-width") private var contentWidth = Double(ChatLayoutMetrics.contentColumnMaxWidth)
@@ -3647,17 +3746,23 @@ private struct NativeChatView: View {
   @State private var renderWindow = ArkChatRenderWindow()
   @State private var requestedHistoryAnchorID: String?
   static let largeTranscriptEntryThreshold = 600
+  static let activeStreamingRenderWindowEntries = 24
 
-  private static func streamingRenderWindowEntries(forEntryCount count: Int) -> Int {
+  private static func largeTranscriptRenderWindowEntries(forEntryCount count: Int) -> Int {
     count >= 2000 ? 96 : 160
   }
 
   init(
     model: ArkAppModel,
+    transcriptFeed: NativeChatTranscriptFeed,
+    projectionMemo: NativeProjectionMemo<NativeChatProjectionKey, NativeChatBodyProjection>,
+    rowCache: NativeProjectedRowCache,
     scrollController: ArkChatScrollController
   ) {
     self.model = model
-    _transcriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))
+    _transcriptFeed = ObservedObject(wrappedValue: transcriptFeed)
+    _projectionMemo = ObservedObject(wrappedValue: projectionMemo)
+    _rowCache = ObservedObject(wrappedValue: rowCache)
     _scrollController = ObservedObject(wrappedValue: scrollController)
   }
 
@@ -3669,13 +3774,6 @@ private struct NativeChatView: View {
   /// The projection is O(turns x text), so reuse it across unrelated body
   /// evaluations. The memo is reference-only and does not publish a state
   /// mutation from inside `bodyProjection`.
-  @StateObject private var projectionMemo = NativeProjectionMemo<
-    NativeChatProjectionKey, NativeChatBodyProjection
-  >()
-
-  /// Per-entry projection reuse; see ``NativeProjectedRowCache``.
-  @StateObject private var rowCache = NativeProjectedRowCache()
-
   private var bodyProjection: NativeChatBodyProjection {
     let key = NativeChatProjectionKey(
       historyCut: context.historyCut,
@@ -3941,7 +4039,10 @@ private struct NativeChatView: View {
 
   private func navigationDetail(_ text: String?, fallback: String) -> String {
     guard let text else { return fallback }
-    let lines = text.components(separatedBy: .newlines).compactMap { raw -> String? in
+    // The rail displays at most 520 characters. Do not split and normalize an
+    // unbounded live answer merely to discard its tail afterwards.
+    let excerpt = String(text.prefix(2_048))
+    let lines = excerpt.components(separatedBy: .newlines).compactMap { raw -> String? in
       var line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !line.isEmpty else { return nil }
       while line.hasPrefix("#") { line.removeFirst() }
@@ -3959,9 +4060,17 @@ private struct NativeChatView: View {
   var body: some View {
     let projection = bodyProjection
     let allDisplayEntries = projection.displayEntries
-    let heavyTranscript = entries.count > Self.largeTranscriptEntryThreshold
-    let effectiveWindow = (context.sessionRunning || heavyTranscript)
-      ? Self.streamingRenderWindowEntries(forEntryCount: entries.count) : 400
+    let heavyTranscript = allDisplayEntries.count > Self.largeTranscriptEntryThreshold
+    // Every streamed delta invalidates the active answer's text layout. An eager
+    // transcript stack then recomputes spacing for every mounted row, even when
+    // those rows are outside the viewport. Keep roughly one to two screens mounted
+    // while streaming; restore the wider browsing window as soon as the turn
+    // finishes so completed conversations retain their existing scroll range.
+    let effectiveWindow = context.sessionRunning
+      ? Self.activeStreamingRenderWindowEntries
+      : (heavyTranscript
+        ? Self.largeTranscriptRenderWindowEntries(forEntryCount: allDisplayEntries.count)
+        : 400)
     let displayIDs = allDisplayEntries.map(\.id)
     let visibleRange = renderWindow.range(in: displayIDs, limit: effectiveWindow)
     let hiddenEntryCount = visibleRange.lowerBound
@@ -4191,6 +4300,7 @@ private struct NativeChatView: View {
             }
           }
           .onChange(of: contentRevision) { _ in
+            transcriptFeed.trace("view-updated", model: model)
             let ids = bodyProjection.displayEntries.map(\.id)
             if let anchor = requestedHistoryAnchorID,
                let index = ids.firstIndex(of: anchor), index > 0 {
@@ -4198,7 +4308,21 @@ private struct NativeChatView: View {
               requestedHistoryAnchorID = nil
               DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .center) }
             }
-            DispatchQueue.main.async { scrollController.contentDidChange() }
+            let running = context.sessionRunning
+            DispatchQueue.main.async {
+              if running { scrollController.contentDidChange() }
+              else { scrollController.settleStreamingCompletion() }
+            }
+          }
+          .onChange(of: context.sessionRunning) { running in
+            guard !running else { return }
+            // The final Markdown body replaces the bounded live frame in this
+            // transaction. Reconcile after SwiftUI commits the replacement so
+            // AppKit measures the final rows before preserving the existing
+            // follow-or-read position.
+            DispatchQueue.main.async {
+              scrollController.settleStreamingCompletion()
+            }
           }
           .onChange(of: context.loadingOlderHistory) { loading in
             guard !loading, let anchor = requestedHistoryAnchorID else { return }
@@ -4347,16 +4471,16 @@ private struct NativeChatView: View {
     let row = displayRow.row
     let context = displayRow.context
     switch row {
-    case .pending(let sourceID):
-      HStack(spacing: 8) {
-        ProgressView().controlSize(.small)
-        Text(ArkL10n.text(.chatSyncingHistory, context.language))
-          .font(.system(size: max(11, fontSize - 3)))
-          .foregroundStyle(ArkPalette.secondary)
-      }
-      .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+    case .pending(let source):
+      // Completion changes the presentation before the full projection is ready.
+      // Keep one bounded plain frame visible while the existing worker parses it. Starting a
+      // second Markdown document here duplicated the parse and mounted every table row in each
+      // pending restored answer before the transcript's row window could take ownership. After a
+      // chat/trajectory switch that temporary responder tree could monopolize SwiftUI's focus and
+      // accessibility pass for minutes. The canonical worker below still installs every block.
+      NativePendingMarkdownText(text: source.source, baseFontSize: fontSize)
       .accessibilityIdentifier(
-        "ark.chat.message.\(sourceID.messageID).markdown.\(sourceID.sourceSlot).pending"
+        "ark.chat.message.\(source.messageID).markdown.\(source.sourceSlot).pending"
       )
     case .markdown(let projected):
       NativeGFMBlockView(
@@ -8204,21 +8328,56 @@ private struct NativeMarkdownText: View {
   }
 }
 
-/// Streaming Markdown parses only a policy-bounded live window. Final
-/// assistant messages still use ``NativeMarkdownText`` and receive the
-/// complete canonical rendering from the unchanged session model.
+/// A restored or completed answer keeps a small selectable opening-and-tail frame while its
+/// canonical block projection is in flight. This deliberately has no Markdown document model:
+/// the transcript feed already owns the one parser that will install every complete block.
+private struct NativePendingMarkdownText: View {
+  let text: String
+  var baseFontSize: CGFloat = 14
+
+  init(text: String, baseFontSize: CGFloat = 14) {
+    // Bound the stored view value, rather than only bounding inside `body`.
+    // AttributeGraph compares stored inputs before evaluating the body.
+    self.text = ArkStreamingPresentationPolicy.firstFrameText(
+      ArkStreamingPresentationPolicy.markdownText(text, streaming: true)
+    )
+    self.baseFontSize = baseFontSize
+  }
+
+  var body: some View {
+    Text(text)
+      .font(.system(size: baseFontSize))
+      .lineSpacing(4)
+      .textSelection(.enabled)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .fixedSize(horizontal: false, vertical: true)
+  }
+}
+
+/// Streaming answers keep one policy-bounded plain frame. Rebuilding even a bounded Markdown
+/// document for every partial update can remount hundreds of table responders and monopolize the
+/// main actor. Final assistant messages still receive the complete canonical Markdown projection.
 private struct NativeStreamingMarkdownText: View {
   let text: String
   var baseFontSize: CGFloat = 14
   var producedFilePaths: [String] = []
 
-  var body: some View {
-    NativeMarkdownDocument(
-      text: ArkStreamingPresentationPolicy.markdownText(text, streaming: true),
-      baseFontSize: baseFontSize,
-      producedFilePaths: producedFilePaths
+  init(
+    text: String,
+    baseFontSize: CGFloat = 14,
+    producedFilePaths: [String] = []
+  ) {
+    // Keep the transient View value itself bounded. The complete answer
+    // remains in ArkMessage and replaces this frame after completion.
+    self.text = ArkStreamingPresentationPolicy.firstFrameText(
+      ArkStreamingPresentationPolicy.markdownText(text, streaming: true)
     )
-      .fixedSize(horizontal: false, vertical: true)
+    self.baseFontSize = baseFontSize
+    self.producedFilePaths = producedFilePaths
+  }
+
+  var body: some View {
+    NativePendingMarkdownText(text: text, baseFontSize: baseFontSize)
   }
 }
 
@@ -12694,5 +12853,110 @@ private struct NativeSettingsEmpty: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .padding(30)
+  }
+}
+
+// MARK: - Chat feed fixed-replay probe
+
+/// Diagnostics accessors for the transcript feed.
+///
+/// A file-private `private` member is reachable from an extension in the same
+/// file, so these live on the feed itself rather than widening the feed, its
+/// snapshot, or the view-layer types behind them.
+@MainActor
+extension NativeChatTranscriptFeed {
+  func probeEntryCount() -> Int { snapshot.entries.count }
+
+  func probeContainsAssistantText(_ text: String) -> Bool {
+    snapshot.entries.contains { entry in
+      guard case .message(let message, _) = entry else { return false }
+      return message.role == .assistant && message.text == text
+    }
+  }
+
+  func probeContainsToolResult(_ text: String) -> Bool {
+    snapshot.entries.contains { entry in
+      guard case .tool(let activity) = entry else { return false }
+      return activity.result?.contains(text) == true
+    }
+  }
+
+  /// Drive the production coalescing schedule; no replacement refresh path.
+  func probeScheduleRefresh(model: ArkAppModel) { scheduleRefresh(model: model) }
+
+  /// The adaptive part of the cadence at the time it is read.
+  func probeRefreshBackoff() -> TimeInterval { refreshBackoff }
+
+  /// The base interval the scheduler pairs with the current backoff.
+  func probeBaseInterval(running: Bool, heavy: Bool) -> TimeInterval {
+    Self.baseRefreshInterval(running: running, heavy: heavy)
+  }
+
+  /// The production workload classifier used by the refresh scheduler.
+  func probeIsHeavy(model: ArkAppModel) -> Bool { isHeavy(model: model) }
+
+  static func probeIsHeavyWorkload(
+    entryCount: Int,
+    eventCount: Int,
+    markdownRowCount: Int
+  ) -> Bool {
+    isHeavyWorkload(
+      entryCount: entryCount,
+      eventCount: eventCount,
+      markdownRowCount: markdownRowCount
+    )
+  }
+}
+
+/// Fixed-replay handle for a contract check.
+///
+/// Holds the real feed privately and hands back only simple results, so a check
+/// can observe the transcript without importing the private view-layer types.
+@MainActor
+enum ArkChatFeedProbe {
+  static func isHeavyWorkload(
+    entryCount: Int,
+    eventCount: Int,
+    markdownRowCount: Int
+  ) -> Bool {
+    NativeChatTranscriptFeed.probeIsHeavyWorkload(
+      entryCount: entryCount,
+      eventCount: eventCount,
+      markdownRowCount: markdownRowCount
+    )
+  }
+
+  @MainActor final class Feed {
+    private let feed: NativeChatTranscriptFeed
+    private let model: ArkAppModel
+    private var observation: AnyCancellable?
+    private(set) var installOrder: [Int] = []
+
+    init(model: ArkAppModel) {
+      self.model = model
+      feed = NativeChatTranscriptFeed(model: model)
+      observation = feed.$snapshot.sink { [weak self] snapshot in
+        self?.installOrder.append(snapshot.entries.count)
+      }
+    }
+
+    var entryCount: Int { feed.probeEntryCount() }
+    func containsAssistantText(_ text: String) -> Bool { feed.probeContainsAssistantText(text) }
+    func containsToolResult(_ text: String) -> Bool { feed.probeContainsToolResult(text) }
+    func scheduleRefresh() { feed.probeScheduleRefresh(model: model) }
+
+    /// Backoff the next scheduled refresh will add to its base interval.
+    var refreshBackoff: TimeInterval { feed.probeRefreshBackoff() }
+
+    /// Base interval the scheduler selects for this cadence, backoff excluded.
+    func baseInterval(running: Bool, heavy: Bool) -> TimeInterval {
+      feed.probeBaseInterval(running: running, heavy: heavy)
+    }
+
+    /// What the refresh scheduler currently sees for cadence selection.
+    var cadence: (running: Bool, heavy: Bool) {
+      let running = model.sessions.first { $0.id == model.selectedSessionID }?.running == true
+      return (running, feed.probeIsHeavy(model: model))
+    }
   }
 }

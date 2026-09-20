@@ -194,11 +194,11 @@ public struct ArkChatScrollStateMachine: Sendable {
     metrics: ArkChatScrollMetrics
   ) -> ArkChatScrollCommand {
     var state = sessions[sessionID] ?? SessionState()
-    state.contentHeight = metrics.contentHeight
 
     if state.anchor == .bottom, state.followsBottom || metrics.maximumOffset == 0 {
       state.followsBottom = true
       state.offset = metrics.maximumOffset
+      state.contentHeight = metrics.contentHeight
       sessions[sessionID] = state
       guard activeSessionID == sessionID else { return .none }
       let outsidePhysicalBounds =
@@ -209,8 +209,9 @@ public struct ArkChatScrollStateMachine: Sendable {
         : .none
     }
 
-    let retainedOffset = min(max(state.offset, 0), metrics.maximumOffset)
+    let retainedOffset = retainedReaderOffset(state: state, metrics: metrics)
     state.offset = retainedOffset
+    state.contentHeight = metrics.contentHeight
     sessions[sessionID] = state
     guard activeSessionID == sessionID,
       abs(metrics.offset - retainedOffset) > 0.5
@@ -226,9 +227,9 @@ public struct ArkChatScrollStateMachine: Sendable {
     metrics: ArkChatScrollMetrics
   ) -> ArkChatScrollCommand {
     var state = sessions[sessionID] ?? SessionState()
-    state.contentHeight = metrics.contentHeight
     if state.anchor == .bottom, state.followsBottom {
       state.offset = metrics.clampedOffset
+      state.contentHeight = metrics.contentHeight
       sessions[sessionID] = state
       // Compare the physical origin, not its clamped projection. After a large
       // final-message reflow AppKit can temporarily retain an origin beyond the
@@ -242,15 +243,79 @@ public struct ArkChatScrollStateMachine: Sendable {
         ? .scrollToBottom
         : .none
     }
-    state.offset = metrics.clampedOffset
+    let retainedOffset = retainedReaderOffset(state: state, metrics: metrics)
+    state.offset = retainedOffset
+    state.contentHeight = metrics.contentHeight
     if state.anchor == .bottom, metrics.distanceFromBottom <= followThreshold {
-      state.followsBottom = true
-      state.offset = metrics.maximumOffset
+      // A programmatic content shrink can physically clamp AppKit to the tail.
+      // Preserve the suspended reader state; only direct user movement may
+      // resume following.
       sessions[sessionID] = state
-      return activeSessionID == sessionID ? .scrollToBottom : .none
+      guard activeSessionID == sessionID,
+        abs(metrics.offset - retainedOffset) > 0.5
+      else { return .none }
+      return .scrollTo(offset: retainedOffset)
     }
     sessions[sessionID] = state
-    return .none
+    guard activeSessionID == sessionID,
+      abs(metrics.offset - retainedOffset) > 0.5
+    else { return .none }
+    return .scrollTo(offset: retainedOffset)
+  }
+
+  /// Reconcile the streaming leaf being replaced by its final Markdown rows.
+  /// A reader normally keeps the same top-normalized pixel offset. If the final
+  /// document is shorter and that old offset no longer exists, retain the same
+  /// approximate reading progress instead of clamping the viewport to the
+  /// bottom and making completion look like user-requested tail following.
+  public mutating func streamingBodyDidSettle(
+    sessionID: String,
+    metrics: ArkChatScrollMetrics
+  ) -> ArkChatScrollCommand {
+    var state = sessions[sessionID] ?? SessionState()
+
+    if state.anchor == .bottom, state.followsBottom {
+      state.offset = metrics.maximumOffset
+      state.contentHeight = metrics.contentHeight
+      sessions[sessionID] = state
+      guard activeSessionID == sessionID else { return .none }
+      return abs(metrics.offset - metrics.maximumOffset) > 0.5
+        ? .scrollToBottom
+        : .none
+    }
+
+    let target = retainedReaderOffset(state: state, metrics: metrics)
+    state.offset = target
+    state.contentHeight = metrics.contentHeight
+    sessions[sessionID] = state
+    guard activeSessionID == sessionID,
+      abs(metrics.offset - target) > 0.5
+    else { return .none }
+    return .scrollTo(offset: target)
+  }
+
+  /// Preserve a suspended reader through a document shrink that may already
+  /// have forced AppKit's physical origin to the new bottom. The retained
+  /// state still carries the last user-selected offset and old content size.
+  private func retainedReaderOffset(
+    state: SessionState,
+    metrics: ArkChatScrollMetrics
+  ) -> Double {
+    let previousMaximumOffset = max(state.contentHeight - metrics.viewportHeight, 0)
+    let previousOffset = min(max(state.offset, 0), previousMaximumOffset)
+    var target = min(previousOffset, metrics.maximumOffset)
+    let previouslyAwayFromBottom =
+      previousMaximumOffset - previousOffset > followThreshold
+    if previouslyAwayFromBottom,
+      previousOffset > metrics.maximumOffset,
+      previousMaximumOffset > 0
+    {
+      target = (previousOffset / previousMaximumOffset) * metrics.maximumOffset
+      if metrics.maximumOffset > followThreshold {
+        target = min(target, metrics.maximumOffset - followThreshold - 1)
+      }
+    }
+    return min(max(target, 0), metrics.maximumOffset)
   }
 
   /// Explicitly return a session to the live-following mode.
@@ -368,8 +433,6 @@ public final class ArkChatScrollCoordinator {
   private var scrollWheelMonitor: Any?
   private var priorClipPostsBoundsChanges = false
   private var applyingCommand = false
-  /// Consumes the single reflow-driven resize a programmatic scroll can cause.
-  private var suppressResizeOnce = false
   private var transitioning = false
   private var pendingSessionID: String?
   private var invalidated = false
@@ -482,6 +545,24 @@ public final class ArkChatScrollCoordinator {
     }
     rememberGeometry(metrics)
     apply(stateMachine.contentDidResize(sessionID: sessionID, metrics: metrics))
+    reportFollowingState()
+  }
+
+  /// Reconcile the one-time streaming-to-final-body replacement after SwiftUI
+  /// commits it. Final Markdown can replace one bounded live text leaf with
+  /// many measured rows without producing another feed revision. Force that
+  /// pending AppKit layout before applying the existing resize policy so a
+  /// following transcript lands on the final tail while a history reader keeps
+  /// the retained anchor.
+  public func settleStreamingCompletion() {
+    guard !invalidated, !transitioning,
+      let sessionID = stateMachine.activeSessionID
+    else { return }
+    scrollView?.layoutSubtreeIfNeeded()
+    scrollView?.documentView?.layoutSubtreeIfNeeded()
+    guard let metrics = currentMetrics() else { return }
+    rememberGeometry(metrics)
+    apply(stateMachine.streamingBodyDidSettle(sessionID: sessionID, metrics: metrics))
     reportFollowingState()
   }
 
@@ -737,22 +818,12 @@ public final class ArkChatScrollCoordinator {
       let sessionID = stateMachine.activeSessionID,
       let metrics = currentMetrics()
     else { return }
-    let previousViewportHeight = lastHandledViewportHeight
     let resized = geometryChanged(metrics)
     rememberGeometry(metrics)
-    let suppressed = suppressResizeOnce
-    suppressResizeOnce = false
     if resized {
-      // The one-shot suppression exists to eat the reflow a programmatic scroll causes: SwiftUI
-      // re-lays out the document, so only the content height moves. A real viewport change
-      // (window or split-pane resize) must never be swallowed — without this check a pinned
-      // transcript stayed at its old offset when the viewport shrank 200 -> 150, which is the
-      // failing AppKit harness contract.
-      let viewportChanged = previousViewportHeight.map { abs($0 - metrics.viewportHeight) > 0.5 } ?? true
-      if suppressed && !viewportChanged {
-        reportFollowingState()
-        return
-      }
+      // Late Markdown layout can grow the document after a programmatic pin.
+      // Observe every actual geometry change; apply already rejects no-op
+      // scrolling, and applyingCommand suppresses synchronous feedback.
       apply(stateMachine.viewportDidResize(sessionID: sessionID, metrics: metrics))
     } else {
       let isUserMove =
@@ -810,12 +881,6 @@ public final class ArkChatScrollCoordinator {
       ))
     scrollView.reflectScrolledClipView(scrollView.contentView)
     applyingCommand = false
-    // Materializing lazily placed rows can resize the document in a later
-    // layout pass; consume that one follow-up resize instead of scrolling twice.
-    // A top-anchored reader never re-pins, so its first materialization resize
-    // must be observed (recorded) rather than swallowed.
-    suppressResizeOnce = anchor == .bottom
-
     if let applied = currentMetrics() {
       stateMachine.viewportDidMove(
         sessionID: sessionID,

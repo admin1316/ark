@@ -63,6 +63,59 @@ func runArkChatScrollContractChecks() {
   readingWindow.returnToLatest()
   check(readingWindow.range(in: appended, limit: 96).upperBound == appended.count,
         "only explicit return to latest resumes the tail")
+
+  var completionMachine = ArkChatScrollStateMachine(followThreshold: 44)
+  _ = completionMachine.activate(
+    sessionID: "completion-reader",
+    metrics: ArkChatScrollMetrics(contentHeight: 2_000, viewportHeight: 200, offset: 1_800)
+  )
+  completionMachine.viewportDidMove(
+    sessionID: "completion-reader",
+    metrics: ArkChatScrollMetrics(contentHeight: 2_000, viewportHeight: 200, offset: 1_200),
+    source: .user
+  )
+  let completionReaderCommand = completionMachine.streamingBodyDidSettle(
+    sessionID: "completion-reader",
+    metrics: ArkChatScrollMetrics(contentHeight: 900, viewportHeight: 200, offset: 700)
+  )
+  check(
+    scrollOffset(completionReaderCommand).map { $0 < 656 } == true
+      && completionMachine.snapshot(for: "completion-reader")?.followsBottom == false,
+    "final-body shrink preserves reading progress instead of clamping a reader to the bottom"
+  )
+
+  var earlyClampMachine = ArkChatScrollStateMachine(followThreshold: 44)
+  _ = earlyClampMachine.activate(
+    sessionID: "completion-reader-early-clamp",
+    metrics: ArkChatScrollMetrics(contentHeight: 2_000, viewportHeight: 200, offset: 1_800)
+  )
+  earlyClampMachine.viewportDidMove(
+    sessionID: "completion-reader-early-clamp",
+    metrics: ArkChatScrollMetrics(contentHeight: 2_000, viewportHeight: 200, offset: 1_200),
+    source: .user
+  )
+  let earlyClampCommand = earlyClampMachine.viewportDidResize(
+    sessionID: "completion-reader-early-clamp",
+    metrics: ArkChatScrollMetrics(contentHeight: 900, viewportHeight: 200, offset: 700)
+  )
+  check(
+    scrollOffset(earlyClampCommand).map { $0 < 656 } == true
+      && earlyClampMachine.snapshot(for: "completion-reader-early-clamp")?.followsBottom == false,
+    "final-body layout shrink restores a reader before AppKit can persist its clamped tail"
+  )
+
+  var completionFollower = ArkChatScrollStateMachine(followThreshold: 44)
+  _ = completionFollower.activate(
+    sessionID: "completion-follower",
+    metrics: ArkChatScrollMetrics(contentHeight: 2_000, viewportHeight: 200, offset: 1_800)
+  )
+  check(
+    completionFollower.streamingBodyDidSettle(
+      sessionID: "completion-follower",
+      metrics: ArkChatScrollMetrics(contentHeight: 900, viewportHeight: 200, offset: 410)
+    ) == .scrollToBottom,
+    "final-body shrink keeps a live follower pinned to the new bottom"
+  )
   let attachmentURL = contractNativeRoot.appendingPathComponent(
     "Sources/JiuzhangShellUI/ArkChatScrollAttachment.swift"
   )
@@ -150,6 +203,12 @@ func runArkChatScrollContractChecks() {
         && feed?.contains("NativeChatSessionFeedState") == true
         && feed?.contains("model.$sessions.map { [weak model] sessions in") == true
         && feed?.contains(".removeDuplicates()") == true
+        && feed?.contains("private var presentationGeneration: UInt64 = 0") == true
+        && feed?.contains("private var installedPresentationGeneration: UInt64 = 0") == true
+        && feed?.contains("model.chatPresentationDidChange") == true
+        && feed?.contains("self.presentationGeneration &+= 1") == true
+        && feed?.contains("let presentationChanged = installedPresentationGeneration != presentationGeneration") == true
+        && feed?.contains("entries == snapshot.entries") == false
         && feed?.contains("let next = NativeChatSnapshot(") == true
         && feed?.contains("model: model") == true
         && feed?.contains("entries: entries") == true,
@@ -215,15 +274,30 @@ func runArkChatScrollContractChecks() {
     )
     check(
       mainArea?.contains("@StateObject private var chatScrollController") == true
+        && mainArea?.contains("@StateObject private var chatTranscriptFeed") == true
+        && mainArea?.contains("_chatTranscriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))") == true
+        && mainArea?.contains("@StateObject private var chatProjectionMemo") == true
+        && mainArea?.contains("@StateObject private var chatRowCache") == true
+        && mainArea?.contains("_chatProjectionMemo = StateObject(wrappedValue: NativeProjectionMemo())") == true
+        && mainArea?.contains("_chatRowCache = StateObject(wrappedValue: NativeProjectedRowCache())") == true
         && mainArea?.contains("transcriptTextSelectionEnabled") == false
         && mainArea?.contains("NativeChatView(") == true
         && mainArea?.contains("model: model") == true
+        && mainArea?.contains("transcriptFeed: chatTranscriptFeed") == true
+        && mainArea?.contains("projectionMemo: chatProjectionMemo") == true
+        && mainArea?.contains("rowCache: chatRowCache") == true
         && mainArea?.contains("scrollController: chatScrollController") == true
         && mainArea?.contains(".id(model.selectedSessionID)") == false
         && mainArea?.contains("NativeChatView(model: model).equatable()") == false
+        && chatView?.contains("@ObservedObject private var transcriptFeed") == true
+        && chatView?.contains("StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))") == false
+        && chatView?.contains("@ObservedObject private var projectionMemo") == true
+        && chatView?.contains("@ObservedObject private var rowCache") == true
+        && chatView?.contains("@StateObject private var projectionMemo") == false
+        && chatView?.contains("@StateObject private var rowCache") == false
         && chatView?.contains("@ObservedObject private var scrollController") == true
         && chatView?.contains("transcriptTextSelectionEnabled") == false,
-      "chat session replacement preserves one transcript feed and one shared scroll owner without rebuilding the full LazyVStack"
+      "chat session and tab replacement preserve the feed, row projection owners, and scroll owner"
     )
     check(
       chatView?.contains("case .assistantPrefix(let row):") == true
@@ -281,6 +355,10 @@ func runArkChatScrollContractChecks() {
         && livePublish?.contains("ArkChatTurnMetrics.projectAll(events: events)") == false
         && livePublish?.contains("turnUsageProjection.append(contentsOf: incoming)") == true
         && livePublish?.contains("ArkChatTurnUsageProjection.projectAll(events: events)") == false
+        && livePublish?.contains("let messagesChanged = messageProjection.append(contentsOf: incoming)") == true
+        && livePublish?.contains("if messagesChanged {") == true
+        && livePublish?.contains("messages = messageProjection.messages") == true
+        && livePublish?.contains("if messages != nextMessages") == false
         && livePublish?.contains("var chatPresentationChanged = false") == true
         && livePublish?.contains("if chatPresentationChanged { chatPresentationDidChange.send() }") == true
         && metrics.contains("struct ArkChatTurnProjection: Equatable, Sendable")
@@ -940,10 +1018,42 @@ private func runArkChatScrollAppKitHarnessChecks() {
     "AppKit chat coordinator follows stable-id content height growth"
   )
 
+  // The final Markdown body materializes after the pending body was pinned.
+  // Its late layout posts clip geometry, without another feed revision.
+  document.setFrameSize(NSSize(width: 320, height: 1_380))
+  NotificationCenter.default.post(name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+  check(
+    coordinator.snapshot(for: "appkit-a")?.followsBottom == true
+      && approximatelyEqual(coordinator.currentMetrics()?.offset ?? -1, 1_180),
+    "AppKit follows a late final-body height change without waiting for another content revision"
+  )
+
+  // Completion can replace a single bounded streaming leaf without a later
+  // feed revision or clip notification. The explicit handoff forces AppKit to
+  // measure that final document before applying the same following policy.
+  document.setFrameSize(NSSize(width: 320, height: 1_520))
+  coordinator.settleStreamingCompletion()
+  check(
+    coordinator.snapshot(for: "appkit-a")?.followsBottom == true
+      && approximatelyEqual(coordinator.currentMetrics()?.offset ?? -1, 1_320),
+    "AppKit streaming completion settles the final body at the live tail"
+  )
+
   setLiveUserLogicalOffset(640, scrollView: scrollView, document: document)
   check(
     coordinator.snapshot(for: "appkit-a")?.followsBottom == false,
     "AppKit live-scroll notifications classify an offset move as user-driven"
+  )
+  document.setFrameSize(NSSize(width: 320, height: 1_680))
+  NotificationCenter.default.post(name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+  check(approximatelyEqual(coordinator.currentMetrics()?.offset ?? -1, 640),
+    "late final-body layout preserves a manually anchored history reader")
+  document.setFrameSize(NSSize(width: 320, height: 1_760))
+  coordinator.settleStreamingCompletion()
+  check(
+    coordinator.snapshot(for: "appkit-a")?.followsBottom == false
+      && approximatelyEqual(coordinator.currentMetrics()?.offset ?? -1, 640),
+    "AppKit streaming completion preserves a manual history anchor"
   )
   resizeViewport(150, scrollView: scrollView)
   resizeViewport(240, scrollView: scrollView)

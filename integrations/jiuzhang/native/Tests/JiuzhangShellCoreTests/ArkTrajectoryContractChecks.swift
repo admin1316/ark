@@ -183,6 +183,26 @@ func runArkTrajectoryContractChecks() {
     trajectoryEvent(404, "turn/end", time: 29, .object(["turn": .number(1)])),
   ])
 
+  // Match the sustained native stream: one answer, many small text deltas.
+  let delta = "片段 **text**\n"
+  let longEvents = (0..<20_000).map { index in
+    trajectoryEvent(index, "assistant/chunk", time: Double(index), .object([
+      "turn": .number(1), "step": .number(1),
+      "chunk": .object(["type": .string("text-delta"), "text": .string(delta)]),
+    ]))
+  }
+  let foldStarted = Date()
+  let longRecords = ArkTrajectoryProjection.records(from: longEvents)
+  let foldSeconds = Date().timeIntervalSince(foldStarted)
+  let expectedBody = String(repeating: delta, count: 20_000)
+  let expectedPreview = String(expectedBody.replacingOccurrences(of: "\n", with: " ").prefix(240)) + "…"
+  print("TRAJECTORY_LONG_FOLD events=20000 seconds=\(foldSeconds)")
+  check(longRecords.count == 1 && longRecords[0].output == expectedBody
+    && longRecords[0].preview == expectedPreview && longRecords[0].events.count == 20_000,
+    "long trajectory fold preserves complete body, exact preview and all source events")
+  check(foldSeconds < 5,
+    "20k-event trajectory fold completes within the five-second display budget (\(foldSeconds)s)")
+
   let projected = ArkTrajectoryProjection.records(from: events)
   check(
     projected.filter { $0.kind == .message }.count == 1,

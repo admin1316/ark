@@ -561,6 +561,14 @@ func runArkChatPresentationContractChecks() {
       && ArkStreamingPresentationPolicy.intervalNanoseconds(eventCount: 10_000) == 500_000_000,
     "live transcript cadence coalesces large restored ledgers without slowing short conversations"
   )
+  let completionMarker = "FINAL-TAIL-👨‍👩‍👧‍👦"
+  let completionWindow = ArkStreamingPresentationPolicy.markdownText(
+    String(repeating: "long table row\n", count: 20_000) + completionMarker, streaming: true)
+  let completionFirstFrame = ArkStreamingPresentationPolicy.firstFrameText(completionWindow)
+  check(completionFirstFrame.hasSuffix(completionMarker)
+      && completionFirstFrame.hasPrefix(String(completionWindow.prefix(128)))
+      && completionFirstFrame.count <= ArkStreamingPresentationPolicy.markdownFirstFrameCharacterLimit + 5,
+    "bounded completion first frame retains both context and the final tail while Markdown parses")
   let unicodeStream = "a👨‍👩‍👧‍👦e\u{301}"
   let boundedUnicodeStream = ArkStreamingPresentationPolicy.markdownText(
     String(repeating: "x", count: ArkStreamingPresentationPolicy.markdownCharacterLimit)
@@ -698,7 +706,10 @@ func runArkChatPresentationContractChecks() {
         && appModel.contains("turnUsageProjection.append(contentsOf: incoming)")
         && appModel.contains("public private(set) var events: [ArkHistoryEvent] = []")
         && appModel.contains("public var turnMetricsByTurn:")
-        && appModel.contains("if messages != nextMessages")
+        && appModel.contains("let messagesChanged = messageProjection.append(contentsOf: incoming)")
+        && appModel.contains("if messagesChanged {")
+        && appModel.contains("messages = messageProjection.messages")
+        && !appModel.contains("if messages != nextMessages")
         && appModel.contains("if toolActivities != nextToolActivities")
         && appModel.contains("if producedFiles != nextProducedFiles")
         && appModel.contains("if chatStatuses != nextChatStatuses")
@@ -802,7 +813,7 @@ func runArkChatPresentationContractChecks() {
     let modelHydration = chatSourceSlice(
       appModel,
       from: "private func refreshSubscribedModelMetadata(for sessionID: String) async",
-      through: "private func consume(_ frame: ArkEventFrame)"
+      through: "func consume(_ frame: ArkEventFrame)"
     )
     check(
       modelHydration?.contains("guard modelMetadataHydrationSessionID != sessionID else { return }") == true
@@ -828,6 +839,16 @@ func runArkChatPresentationContractChecks() {
       root,
       from: "private struct NativeChatView",
       through: "private struct NativeMessageRow"
+    )
+    let chatDisplayEntry = chatSourceSlice(
+      root,
+      from: "private struct NativeChatDisplayEntry",
+      through: "private struct NativeChatProcess"
+    )
+    let assistantBodyRow = chatSourceSlice(
+      root,
+      from: "private func assistantProjectedBodyRow",
+      through: "private func assistantProjectedSuffix"
     )
     let chatEntry = chatSourceSlice(
       root,
@@ -864,6 +885,11 @@ func runArkChatPresentationContractChecks() {
       from: "private struct NativeStreamingMarkdownText",
       through: "@MainActor\nprivate final class NativeWikiFeed"
     )
+    let pendingMarkdown = chatSourceSlice(
+      root,
+      from: "private struct NativePendingMarkdownText",
+      through: "private struct NativeStreamingMarkdownText"
+    )
     let statusRow = chatSourceSlice(
       root,
       from: "private struct NativeChatStatusRow",
@@ -897,10 +923,13 @@ func runArkChatPresentationContractChecks() {
     )
     check(
       transcriptFeed?.contains("Publishers.MergeMany(triggers)") == true
-        // One in-flight refresh with an adaptive cadence (heavy session 800 ms, light 400 ms,
+        // One in-flight refresh with an adaptive cadence (heavy session 1.1 s, light 400 ms,
         // idle 150 ms) replaced the fixed 100 ms throttle that pegged a core on large transcripts.
         && transcriptFeed?.contains("guard refreshTask == nil else { return }") == true
         && transcriptFeed?.contains("let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15") == true
+        && transcriptFeed?.contains("entryCount > 600 || eventCount > 600 || markdownRowCount > 600") == true
+        && transcriptFeed?.contains("snapshot.markdownBlocksBySourceID.values") == true
+        && transcriptFeed?.contains("let base = Self.baseRefreshInterval(running: running, heavy: heavy)") == true
         && transcriptFeed?.contains("let interval = base + refreshBackoff") == true
         && transcriptFeed?.contains("self.refreshBackoff = min(Self.maxRefreshBackoff, self.refreshBackoff * 0.5 + overshoot)") == true
         && transcriptFeed?.contains("self.refreshBackoff = max(self.refreshBackoff, overshoot)") == true
@@ -925,14 +954,45 @@ func runArkChatPresentationContractChecks() {
         && chatView?.contains("renderWindow.range(in: displayIDs, limit: effectiveWindow)") == true
         && chatView?.contains("renderWindow.earlier(in: displayIDs, limit: effectiveWindow)") == true
         && chatView?.contains("renderWindow.later(in: displayIDs, limit: effectiveWindow)") == true
+        && chatView?.contains(".onChange(of: context.sessionRunning)") == true
+        && chatView?.contains("scrollController.settleStreamingCompletion()") == true
         && chatView?.contains("allDisplayEntries.suffix(effectiveWindow)") == false,
       "manual navigation moves a bounded range instead of growing an unreachable suffix"
+    )
+    check(
+      assistantBodyRow?.contains("case .pending(let source):") == true
+        && assistantBodyRow?.contains("NativePendingMarkdownText(text: source.source") == true
+        && assistantBodyRow?.contains("NativeStreamingMarkdownText(") == false,
+      "pending restored Markdown uses one bounded plain frame until canonical blocks install"
+    )
+    check(
+      pendingMarkdown?.contains("self.text = ArkStreamingPresentationPolicy.firstFrameText(") == true
+        && pendingMarkdown?.contains("ArkStreamingPresentationPolicy.markdownText(text, streaming: true)") == true
+        && pendingMarkdown?.contains("Text(text)") == true
+        && pendingMarkdown?.contains("NativeMarkdownDocument(") == false
+        && pendingMarkdown?.contains(".textSelection(.enabled)") == true,
+      "pending Markdown bounds its stored view input before one selectable text leaf"
+    )
+    check(
+      chatDisplayEntry?.contains("private struct NativeChatDisplayEntry: Identifiable {") == true
+        && chatDisplayEntry?.contains("enum Kind {") == true
+        && chatDisplayEntry?.contains("NativeChatDisplayEntry: Identifiable, Equatable") == false
+        && chatDisplayEntry?.contains("enum Kind: Equatable") == false
+        && chatView?.contains("let excerpt = String(text.prefix(2_048))") == true
+        && streamingMarkdown?.contains("self.text = ArkStreamingPresentationPolicy.firstFrameText(") == true
+        && streamingMarkdown?.contains("ArkStreamingPresentationPolicy.markdownText(text, streaming: true)") == true,
+      "live chat avoids whole-row array equality and bounds stored text plus navigation work"
     )
     check(
       chatView?.contains("let projection = bodyProjection") == true
         && root.contains("final class NativeProjectionMemo<Key: Equatable, Value>: ObservableObject")
         && root.contains("struct NativeChatProjectionKey: Equatable")
-        && chatView?.contains("@StateObject private var projectionMemo") == true
+        && root.contains("@StateObject private var chatProjectionMemo")
+        && root.contains("@StateObject private var chatRowCache")
+        && chatView?.contains("@ObservedObject private var projectionMemo") == true
+        && chatView?.contains("@ObservedObject private var rowCache") == true
+        && chatView?.contains("@StateObject private var projectionMemo") == false
+        && chatView?.contains("@StateObject private var rowCache") == false
         && chatView?.contains("sessionRunning: context.sessionRunning") == true
         && chatView?.contains("feedbackByID: context.feedbackByID") == true
         && chatView?.contains("turnMetricsByTurn: context.turnMetricsByTurn") == true
@@ -950,9 +1010,12 @@ func runArkChatPresentationContractChecks() {
         // The transcript renders the tail window of that one projection, not every entry:
         // a full-window rebuild is one AttributeGraph transaction (measured 2026-09-12).
         && chatView?.contains("ForEach(visibleEntries)") == true
-        && chatView?.contains("let effectiveWindow = (context.sessionRunning || heavyTranscript)") == true
-        && chatView?.contains("entries.count > Self.largeTranscriptEntryThreshold") == true
-        && chatView?.contains("Self.streamingRenderWindowEntries(forEntryCount: entries.count)") == true
+        && chatView?.contains("let effectiveWindow = context.sessionRunning") == true
+        && chatView?.contains("allDisplayEntries.count > Self.largeTranscriptEntryThreshold") == true
+        && chatView?.contains("context.sessionRunning") == true
+        && chatView?.contains("Self.activeStreamingRenderWindowEntries") == true
+        && chatView?.contains("Self.largeTranscriptRenderWindowEntries(forEntryCount: allDisplayEntries.count)") == true
+        && chatView?.contains("static let activeStreamingRenderWindowEntries = 24") == true
         && chatView?.contains("projection.turnAnchorByTurn[turn] == item.id") == true
         && chatView?.contains("ForEach(displayEntries)") == false
         && chatView?.contains("entries.first(where:") == false
@@ -993,8 +1056,8 @@ func runArkChatPresentationContractChecks() {
         && root.contains("isLatestAssistant: message.id == latestAssistantMessageID")
         && messageRow?.contains("NativeStreamingMarkdownText(") == true
         && messageRow?.contains("streaming: isStreamingAssistant") == true
-        && streamingMarkdown?.contains("NativeMarkdownDocument(") == true
-        && streamingMarkdown?.contains("ArkStreamingPresentationPolicy.markdownText(text, streaming: true)") == true
+        && streamingMarkdown?.contains("NativePendingMarkdownText(text: text") == true
+        && streamingMarkdown?.contains("NativeMarkdownDocument(") == false
         && streamingMarkdown?.contains("regions.stable") == false
         && streamingMarkdown?.contains("private func partition") == false
         && reasoningBlock?.contains("ArkStreamingPresentationPolicy.reasoningText") == true

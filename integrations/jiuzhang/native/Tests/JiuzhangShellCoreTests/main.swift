@@ -56,6 +56,11 @@ let expectedContractGroups = [
   "reasoning-effort",
   "shell-parity",
   "trajectory",
+  "trajectory-recompute",
+  "trajectory-pipeline",
+  "chat-refresh",
+  "chat-history-reading",
+  "injected-cut",
   "settings",
   "provider-recovery-wire",
   "files-tabs",
@@ -127,6 +132,11 @@ runContractGroup("trajectory") {
   runArkTrajectoryScrollContractChecks()
   runArkTrajectoryScrollScenarioChecks()
 }
+runContractGroup("trajectory-recompute", runArkTrajectoryRecomputeContractChecks)
+await runAsyncContractGroup("trajectory-pipeline", runArkTrajectoryPipelineContractChecks)
+await runAsyncContractGroup("chat-refresh", runArkChatRefreshContractChecks)
+await runAsyncContractGroup("chat-history-reading", runArkChatHistoryReadingContractChecks)
+runContractGroup("injected-cut", runArkInjectedCutContractChecks)
 runContractGroup("settings", runArkSettingsContractChecks)
 await runAsyncContractGroup("provider-recovery-wire", runArkProviderRecoveryContractChecks)
 runContractGroup("files-tabs", runArkFilesTabsContractChecks)

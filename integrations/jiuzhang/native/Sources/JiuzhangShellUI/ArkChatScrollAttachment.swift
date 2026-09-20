@@ -82,6 +82,11 @@ public final class ArkChatScrollController: ObservableObject {
     synchronizeFromCoordinator()
   }
 
+  public func settleStreamingCompletion() {
+    coordinator?.settleStreamingCompletion()
+    synchronizeFromCoordinator()
+  }
+
   public func capturePrependAnchor(
     visibleAnchor: ArkChatScrollContentAnchor? = nil
   ) -> ArkChatScrollPrependAnchor? {

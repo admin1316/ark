@@ -4,8 +4,11 @@ import Foundation
 import JiuzhangShellCore
 @testable import JiuzhangShellUI
 
-private final class HistoryWindowFixture: @unchecked Sendable {
+final class HistoryWindowFixture: @unchecked Sendable {
   let events: [JSONValue]
+  /// Live events a check injected. An authoritative history read echoes them, so
+  /// a reload of latest behaves the way a real server's history would.
+  private var injectedEvents: [JSONValue] = []
   let records: [JSONValue]
   let turns: [JSONValue]
   let dependencies: [String: [JSONValue]]
@@ -13,10 +16,35 @@ private final class HistoryWindowFixture: @unchecked Sendable {
   var rawLimit = 2_048
   private var incarnation = "fixture"
   func replaceSource() { lock.lock(); defer { lock.unlock() }; incarnation = "replacement" }
+
+  /// Sequence of one history row, tolerant of the `{"event": ...}` envelope.
+  private static func sequence(of row: JSONValue) -> Double {
+    row["seq"]?.numberValue ?? row["event"]?["seq"]?.numberValue ?? 0
+  }
+
+  /// Newest through-sequence the fixture serves, injected events included.
+  func latestThrough() -> Int { (events + injectedEvents).count - 1 }
+
+  /// Revision string the fixture accepts for one through-sequence.
+  func revision(through: Int) -> String { "\(incarnation):\(through)" }
+
+  /// Echo one injected live event from later history reads, in sequence order.
+  func recordInjected(_ event: JSONValue) {
+    lock.lock(); defer { lock.unlock() }
+    guard !injectedEvents.contains(event) else { return }
+    injectedEvents.append(event)
+    injectedEvents.sort { Self.sequence(of: $0) < Self.sequence(of: $1) }
+  }
   private(set) var reads: [String: Int] = [:]
   private(set) var rawEventsRead = 0
   private var bodies: [String: String] = [:]
   private let lock = NSLock()
+
+  /// Session the navigation routes describe, and the workspace path they report.
+  /// The chat replay sets these so `session/list` names the selected session.
+  var sessionID = "fixture"
+  var sessionRunning = true
+  var workspacePath = "/private/tmp/ark-fixture-workspace"
 
   init(rows count: Int, bodyBytes: Int = 0) {
     expectedText = ""
@@ -112,7 +140,8 @@ private final class HistoryWindowFixture: @unchecked Sendable {
 
   func response(_ options: JSONValue) throws -> JSONValue {
     lock.lock(); defer { lock.unlock() }
-    let current = events.count - 1
+    let all = events + injectedEvents
+    let current = all.count - 1
     let revision = options["sourceRevision"]?.stringValue ?? "\(incarnation):\(current)"
     guard revision.hasPrefix("\(incarnation):"), let through = Int(revision.dropFirst(incarnation.count + 1)), through <= current else {
       throw ArkAPIError(message: "stale fixture", code: "history-stale-source")
@@ -122,10 +151,12 @@ private final class HistoryWindowFixture: @unchecked Sendable {
     result["view"] = .string(view)
     reads[view, default: 0] += 1
     if view == "raw" {
-      let before = min(Int(options["beforeSeq"]?.numberValue ?? Double(through + 1)), through + 1)
+      // The cut bounds the read: an explicit cursor may walk backwards inside it,
+      // but omitting the cursor must not reach past the requested source revision.
+      let before = options["beforeSeq"]?.numberValue.map { min(Int($0), through + 1) } ?? (through + 1)
       let count = min(rawLimit, Int(options["maxEvents"]?.numberValue ?? 2_048))
       let lower = max(0, before - count)
-      let rows = Array(events[lower..<before])
+      let rows = Array(all[lower..<before])
       result["events"] = .array(rows); result["hasMore"] = .bool(lower > 0)
       rawEventsRead += rows.count
     } else if view == "semantic" {
@@ -174,7 +205,7 @@ private final class HistoryWindowFixture: @unchecked Sendable {
   }
 }
 
-private final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
+final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
   static var fixture = HistoryWindowFixture(rows: 0)
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -187,18 +218,63 @@ private final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
         while stream.hasBytesAvailable { let n = stream.read(&bytes, maxLength: bytes.count); if n <= 0 { break }; data.append(bytes, count: n) }
       }
       let envelope = try JSONDecoder().decode(JSONValue.self, from: data)
-      guard let options = envelope["payload"]?["args"]?["request"] else {
-        throw ArkAPIError(message: "History fixture does not implement this unrelated RPC")
-      }
       let business: JSONValue
-      do { business = .object(["ok": .bool(true), "value": try Self.fixture.response(options)]) }
-      catch let error as ArkAPIError { business = .object(["ok": .bool(false), "error": .object(["code": .string(error.code ?? "fixture-error"), "message": .string(error.message)])]) }
+      do {
+        let value: JSONValue
+        switch envelope["method"]?.stringValue {
+        case "workspace/list":
+          value = Self.workspaceList()
+        case "session/list":
+          value = Self.sessionList()
+        default:
+          // `workspace/list` sends no args at all, so the history request shape
+          // must not be required before dispatch.
+          guard let options = envelope["payload"]?["args"]?["request"] else {
+            let name = envelope["method"]?.stringValue ?? "<unknown>"
+            throw ArkAPIError(message: "History fixture does not implement RPC: \(name)")
+          }
+          value = try Self.fixture.response(options)
+        }
+        business = .object(["ok": .bool(true), "value": value])
+      } catch let error as ArkAPIError {
+        business = .object(["ok": .bool(false), "error": .object(["code": .string(error.code ?? "fixture-error"), "message": .string(error.message)])])
+      }
       let response: JSONValue = .object(["type": .string("server-response"), "rpcId": envelope["rpcId"]!, "result": .object(["ok": .bool(true), "value": .object(["ok": .bool(true), "value": business])])])
       client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
       client?.urlProtocol(self, didLoad: try JSONEncoder().encode(response)); client?.urlProtocolDidFinishLoading(self)
     } catch { client?.urlProtocol(self, didFailWithError: error) }
   }
   override func stopLoading() {}
+
+  /// `ArkWorkspaceList` decodes `items` with `workspaceId` / `path` / `title`.
+  private static func workspaceList() -> JSONValue {
+    .object([
+      "items": .array([
+        .object([
+          "workspaceId": .string("fixture-workspace"),
+          "path": .string(Self.fixture.workspacePath),
+          "title": .string("fixture"),
+          "sessionIds": .array([.string(Self.fixture.sessionID)]),
+        ]),
+      ]),
+      "archivedSessionIds": .array([]),
+    ])
+  }
+
+  /// `ArkSessionSummary` decodes `sessionId` / `updatedAt` (ms) / `running` / `blank`.
+  private static func sessionList() -> JSONValue {
+    .object([
+      "items": .array([
+        .object([
+          "sessionId": .string(Self.fixture.sessionID),
+          "updatedAt": .number(Date().timeIntervalSince1970 * 1_000),
+          "running": .bool(Self.fixture.sessionRunning),
+          "blank": .bool(false),
+          "cwd": .string(Self.fixture.workspacePath),
+        ]),
+      ]),
+    ])
+  }
 }
 
 @MainActor

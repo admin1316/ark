@@ -167,7 +167,18 @@ async function packageContentManifest(packageRoot) {
       } else if (entry.isDirectory()) {
         await visit(path, child)
       } else if (entry.isFile()) {
-        files.push({ path: child, sha256: createHash('sha256').update(await readFile(path)).digest('hex') })
+        let contents
+        try {
+          contents = await readFile(path)
+        } catch (error) {
+          console.error('Ark package content manifest read failed:', JSON.stringify({
+            path,
+            operation: 'readFile',
+            code: error?.code ?? null,
+          }))
+          throw error
+        }
+        files.push({ path: child, sha256: createHash('sha256').update(contents).digest('hex') })
       } else {
         throw new Error(`Ark root-lock package content has a special file: ${path}`)
       }
