@@ -4,6 +4,7 @@ import JiuzhangShellCore
 import QuartzCore
 import SwiftUI
 import UniformTypeIdentifiers
+import os
 
 struct ArkOpenToolFileActionKey: EnvironmentKey {
   static let defaultValue: (String) -> Void = { _ in }
@@ -3037,6 +3038,20 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   /// layout transaction and decays when it drains. See `scheduleRefresh`.
   private var refreshBackoff: TimeInterval = 0
   private weak var model: ArkAppModel?
+  private static let diagnostics = Logger(
+    subsystem: ArkEventChannelDiagnostics.subsystem, category: "chat-feed"
+  )
+  private static let tracesCandidate = Bundle.main.object(forInfoDictionaryKey: "ArkCandidateBuild") != nil
+
+  /// Candidate-only timing metadata. No message bodies or credentials enter the journal.
+  fileprivate func trace(_ stage: String, model: ArkAppModel, delay: TimeInterval = 0) {
+    guard Self.tracesCandidate else { return }
+    let session = model.selectedSessionID ?? "none"
+    let sequence = model.events.last?.id ?? -1
+    let running = model.selectedSession?.running == true
+    let reading = model.historyReadingSnapshot != nil
+    Self.diagnostics.notice("stage=\(stage, privacy: .public) session=\(session, privacy: .public) sequence=\(sequence) revision=\(self.snapshot.contentRevision) entries=\(self.snapshot.entries.count) running=\(running) reading=\(reading) delayMs=\(Int(delay * 1000))")
+  }
 
   init(model: ArkAppModel) {
     self.model = model
@@ -3108,6 +3123,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     let base = Self.baseRefreshInterval(running: running, heavy: heavy)
     let interval = base + refreshBackoff
     let deadline = Date().addingTimeInterval(interval)
+    trace("scheduled", model: model, delay: interval)
     refreshTask = Task { @MainActor [weak self, weak model] in
       try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
       guard let self else { return }
@@ -3124,6 +3140,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
         self.refreshBackoff = max(0, self.refreshBackoff - base * 0.5)
       }
       guard let model else { return }
+      self.trace("resumed", model: model, delay: overshoot)
       self.refresh(model: model)
     }
   }
@@ -3171,6 +3188,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       var transaction = Transaction(animation: nil)
       transaction.disablesAnimations = true
       withTransaction(transaction) { snapshot = next }
+      trace("published", model: model)
     }
     scheduleMissingMarkdownSources()
   }
@@ -4196,6 +4214,7 @@ private struct NativeChatView: View {
             }
           }
           .onChange(of: contentRevision) { _ in
+            transcriptFeed.trace("view-updated", model: model)
             let ids = bodyProjection.displayEntries.map(\.id)
             if let anchor = requestedHistoryAnchorID,
                let index = ids.firstIndex(of: anchor), index > 0 {
