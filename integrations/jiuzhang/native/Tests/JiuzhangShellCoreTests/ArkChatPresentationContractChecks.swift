@@ -1035,8 +1035,8 @@ func runArkChatPresentationContractChecks() {
         && root.contains("isLatestAssistant: message.id == latestAssistantMessageID")
         && messageRow?.contains("NativeStreamingMarkdownText(") == true
         && messageRow?.contains("streaming: isStreamingAssistant") == true
-        && streamingMarkdown?.contains("NativeMarkdownDocument(") == true
-        && streamingMarkdown?.contains("ArkStreamingPresentationPolicy.markdownText(text, streaming: true)") == true
+        && streamingMarkdown?.contains("NativePendingMarkdownText(text: text") == true
+        && streamingMarkdown?.contains("NativeMarkdownDocument(") == false
         && streamingMarkdown?.contains("regions.stable") == false
         && streamingMarkdown?.contains("private func partition") == false
         && reasoningBlock?.contains("ArkStreamingPresentationPolicy.reasoningText") == true

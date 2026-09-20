@@ -8313,21 +8313,16 @@ private struct NativePendingMarkdownText: View {
   }
 }
 
-/// Streaming Markdown parses only a policy-bounded live window. Final
-/// assistant messages still use ``NativeMarkdownText`` and receive the
-/// complete canonical rendering from the unchanged session model.
+/// Streaming answers keep one policy-bounded plain frame. Rebuilding even a bounded Markdown
+/// document for every partial update can remount hundreds of table responders and monopolize the
+/// main actor. Final assistant messages still receive the complete canonical Markdown projection.
 private struct NativeStreamingMarkdownText: View {
   let text: String
   var baseFontSize: CGFloat = 14
   var producedFilePaths: [String] = []
 
   var body: some View {
-    NativeMarkdownDocument(
-      text: ArkStreamingPresentationPolicy.markdownText(text, streaming: true),
-      baseFontSize: baseFontSize,
-      producedFilePaths: producedFilePaths
-    )
-      .fixedSize(horizontal: false, vertical: true)
+    NativePendingMarkdownText(text: text, baseFontSize: baseFontSize)
   }
 }
 
