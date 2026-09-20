@@ -4288,7 +4288,11 @@ private struct NativeChatView: View {
               requestedHistoryAnchorID = nil
               DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .center) }
             }
-            DispatchQueue.main.async { scrollController.contentDidChange() }
+            let running = context.sessionRunning
+            DispatchQueue.main.async {
+              if running { scrollController.contentDidChange() }
+              else { scrollController.settleStreamingCompletion() }
+            }
           }
           .onChange(of: context.sessionRunning) { running in
             guard !running else { return }

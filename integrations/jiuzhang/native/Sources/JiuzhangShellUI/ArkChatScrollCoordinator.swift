@@ -253,6 +253,50 @@ public struct ArkChatScrollStateMachine: Sendable {
     return .none
   }
 
+  /// Reconcile the streaming leaf being replaced by its final Markdown rows.
+  /// A reader normally keeps the same top-normalized pixel offset. If the final
+  /// document is shorter and that old offset no longer exists, retain the same
+  /// approximate reading progress instead of clamping the viewport to the
+  /// bottom and making completion look like user-requested tail following.
+  public mutating func streamingBodyDidSettle(
+    sessionID: String,
+    metrics: ArkChatScrollMetrics
+  ) -> ArkChatScrollCommand {
+    var state = sessions[sessionID] ?? SessionState()
+    let previousMaximumOffset = max(state.contentHeight - metrics.viewportHeight, 0)
+    let previousOffset = min(max(state.offset, 0), previousMaximumOffset)
+    state.contentHeight = metrics.contentHeight
+
+    if state.anchor == .bottom, state.followsBottom {
+      state.offset = metrics.maximumOffset
+      sessions[sessionID] = state
+      guard activeSessionID == sessionID else { return .none }
+      return abs(metrics.offset - metrics.maximumOffset) > 0.5
+        ? .scrollToBottom
+        : .none
+    }
+
+    var target = min(previousOffset, metrics.maximumOffset)
+    let previouslyAwayFromBottom =
+      previousMaximumOffset - previousOffset > followThreshold
+    if previouslyAwayFromBottom,
+      previousOffset > metrics.maximumOffset,
+      previousMaximumOffset > 0
+    {
+      target = (previousOffset / previousMaximumOffset) * metrics.maximumOffset
+      if metrics.maximumOffset > followThreshold {
+        target = min(target, metrics.maximumOffset - followThreshold - 1)
+      }
+    }
+    target = min(max(target, 0), metrics.maximumOffset)
+    state.offset = target
+    sessions[sessionID] = state
+    guard activeSessionID == sessionID,
+      abs(metrics.offset - target) > 0.5
+    else { return .none }
+    return .scrollTo(offset: target)
+  }
+
   /// Explicitly return a session to the live-following mode.
   public mutating func requestBottom(
     sessionID: String,
@@ -490,10 +534,15 @@ public final class ArkChatScrollCoordinator {
   /// following transcript lands on the final tail while a history reader keeps
   /// the retained anchor.
   public func settleStreamingCompletion() {
-    guard !invalidated, !transitioning else { return }
+    guard !invalidated, !transitioning,
+      let sessionID = stateMachine.activeSessionID
+    else { return }
     scrollView?.layoutSubtreeIfNeeded()
     scrollView?.documentView?.layoutSubtreeIfNeeded()
-    contentDidChange()
+    guard let metrics = currentMetrics() else { return }
+    rememberGeometry(metrics)
+    apply(stateMachine.streamingBodyDidSettle(sessionID: sessionID, metrics: metrics))
+    reportFollowingState()
   }
 
   public func capturePrependAnchor(

@@ -63,6 +63,39 @@ func runArkChatScrollContractChecks() {
   readingWindow.returnToLatest()
   check(readingWindow.range(in: appended, limit: 96).upperBound == appended.count,
         "only explicit return to latest resumes the tail")
+
+  var completionMachine = ArkChatScrollStateMachine(followThreshold: 44)
+  _ = completionMachine.activate(
+    sessionID: "completion-reader",
+    metrics: ArkChatScrollMetrics(contentHeight: 2_000, viewportHeight: 200, offset: 1_800)
+  )
+  completionMachine.viewportDidMove(
+    sessionID: "completion-reader",
+    metrics: ArkChatScrollMetrics(contentHeight: 2_000, viewportHeight: 200, offset: 1_200),
+    source: .user
+  )
+  let completionReaderCommand = completionMachine.streamingBodyDidSettle(
+    sessionID: "completion-reader",
+    metrics: ArkChatScrollMetrics(contentHeight: 900, viewportHeight: 200, offset: 700)
+  )
+  check(
+    scrollOffset(completionReaderCommand).map { $0 < 656 } == true
+      && completionMachine.snapshot(for: "completion-reader")?.followsBottom == false,
+    "final-body shrink preserves reading progress instead of clamping a reader to the bottom"
+  )
+
+  var completionFollower = ArkChatScrollStateMachine(followThreshold: 44)
+  _ = completionFollower.activate(
+    sessionID: "completion-follower",
+    metrics: ArkChatScrollMetrics(contentHeight: 2_000, viewportHeight: 200, offset: 1_800)
+  )
+  check(
+    completionFollower.streamingBodyDidSettle(
+      sessionID: "completion-follower",
+      metrics: ArkChatScrollMetrics(contentHeight: 900, viewportHeight: 200, offset: 410)
+    ) == .scrollToBottom,
+    "final-body shrink keeps a live follower pinned to the new bottom"
+  )
   let attachmentURL = contractNativeRoot.appendingPathComponent(
     "Sources/JiuzhangShellUI/ArkChatScrollAttachment.swift"
   )
