@@ -3034,9 +3034,9 @@ private struct NativeChatSnapshot {
   }
 
   func hasSamePresentation(as other: NativeChatSnapshot) -> Bool {
-    entries == other.entries
+    contentRevision == other.contentRevision
       && context == other.context
-      && contentRevision == other.contentRevision
+      && entries == other.entries
   }
 }
 
@@ -3057,6 +3057,8 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   /// Adaptive part of the refresh cadence; grows with the main thread's backlog after a heavy
   /// layout transaction and decays when it drains. See `scheduleRefresh`.
   private var refreshBackoff: TimeInterval = 0
+  private var presentationGeneration: UInt64 = 0
+  private var installedPresentationGeneration: UInt64 = 0
   private weak var model: ArkAppModel?
   private static let diagnostics = Logger(
     subsystem: ArkEventChannelDiagnostics.subsystem, category: "chat-feed"
@@ -3087,7 +3089,6 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     )
 
     let triggers: [AnyPublisher<Void, Never>] = [
-      model.chatPresentationDidChange.eraseToAnyPublisher(),
       model.$selectedSessionID.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
       model.$sessions.map { [weak model] sessions in
         let id = model?.selectedSessionID
@@ -3110,6 +3111,14 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     Publishers.MergeMany(triggers)
     .sink { [weak self, weak model] _ in
       guard let self, let model else { return }
+      self.scheduleRefresh(model: model)
+    }
+    .store(in: &cancellables)
+
+    model.chatPresentationDidChange
+    .sink { [weak self, weak model] in
+      guard let self, let model else { return }
+      self.presentationGeneration &+= 1
       self.scheduleRefresh(model: model)
     }
     .store(in: &cancellables)
@@ -3225,7 +3234,9 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     let ready = markdownProjectionState.takeReadyBlocks()
     retainedMarkdown.merge(ready) { _, new in new }
     let projectionRemoved = retainedMarkdown.count != snapshot.markdownBlocksBySourceID.count
-    let revision = entries == snapshot.entries && !projectionRemoved && ready.isEmpty
+    let presentationChanged = installedPresentationGeneration != presentationGeneration
+    installedPresentationGeneration = presentationGeneration
+    let revision = !presentationChanged && !projectionRemoved && ready.isEmpty
       ? snapshot.contentRevision
       : snapshot.contentRevision &+ 1
     let next = NativeChatSnapshot(

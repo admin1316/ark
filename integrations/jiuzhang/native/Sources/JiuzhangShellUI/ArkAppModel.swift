@@ -6352,7 +6352,7 @@ public final class ArkAppModel: ObservableObject {
       // All semantic reducers advance at the same published boundary. Frames
       // buffered during a history fold or a gap must not mutate just some of
       // these owners before their contiguous batch is installed.
-      messageProjection.append(contentsOf: incoming)
+      let messagesChanged = messageProjection.append(contentsOf: incoming)
       for event in incoming {
         toolProjection.append(event)
         producedFilesProjection.append(event)
@@ -6387,9 +6387,8 @@ public final class ArkAppModel: ObservableObject {
       }
       markTrajectoryProjectionDirty()
       synchronizeModelLabelFromEvents()
-      let nextMessages = messageProjection.messages
-      if messages != nextMessages {
-        messages = nextMessages
+      if messagesChanged {
+        messages = messageProjection.messages
         chatPresentationChanged = true
       }
       let nextToolActivities = toolProjection.activities

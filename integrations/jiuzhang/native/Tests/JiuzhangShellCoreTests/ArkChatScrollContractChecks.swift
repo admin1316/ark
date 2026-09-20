@@ -150,6 +150,12 @@ func runArkChatScrollContractChecks() {
         && feed?.contains("NativeChatSessionFeedState") == true
         && feed?.contains("model.$sessions.map { [weak model] sessions in") == true
         && feed?.contains(".removeDuplicates()") == true
+        && feed?.contains("private var presentationGeneration: UInt64 = 0") == true
+        && feed?.contains("private var installedPresentationGeneration: UInt64 = 0") == true
+        && feed?.contains("model.chatPresentationDidChange") == true
+        && feed?.contains("self.presentationGeneration &+= 1") == true
+        && feed?.contains("let presentationChanged = installedPresentationGeneration != presentationGeneration") == true
+        && feed?.contains("entries == snapshot.entries") == false
         && feed?.contains("let next = NativeChatSnapshot(") == true
         && feed?.contains("model: model") == true
         && feed?.contains("entries: entries") == true,
@@ -296,6 +302,10 @@ func runArkChatScrollContractChecks() {
         && livePublish?.contains("ArkChatTurnMetrics.projectAll(events: events)") == false
         && livePublish?.contains("turnUsageProjection.append(contentsOf: incoming)") == true
         && livePublish?.contains("ArkChatTurnUsageProjection.projectAll(events: events)") == false
+        && livePublish?.contains("let messagesChanged = messageProjection.append(contentsOf: incoming)") == true
+        && livePublish?.contains("if messagesChanged {") == true
+        && livePublish?.contains("messages = messageProjection.messages") == true
+        && livePublish?.contains("if messages != nextMessages") == false
         && livePublish?.contains("var chatPresentationChanged = false") == true
         && livePublish?.contains("if chatPresentationChanged { chatPresentationDidChange.send() }") == true
         && metrics.contains("struct ArkChatTurnProjection: Equatable, Sendable")
