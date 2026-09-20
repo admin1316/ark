@@ -905,10 +905,12 @@ func runArkChatPresentationContractChecks() {
     )
     check(
       transcriptFeed?.contains("Publishers.MergeMany(triggers)") == true
-        // One in-flight refresh with an adaptive cadence (heavy session 800 ms, light 400 ms,
+        // One in-flight refresh with an adaptive cadence (heavy session 1.1 s, light 400 ms,
         // idle 150 ms) replaced the fixed 100 ms throttle that pegged a core on large transcripts.
         && transcriptFeed?.contains("guard refreshTask == nil else { return }") == true
         && transcriptFeed?.contains("let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15") == true
+        && transcriptFeed?.contains("entryCount > 600 || eventCount > 600 || markdownRowCount > 600") == true
+        && transcriptFeed?.contains("snapshot.markdownBlocksBySourceID.values") == true
         && transcriptFeed?.contains("let base = Self.baseRefreshInterval(running: running, heavy: heavy)") == true
         && transcriptFeed?.contains("let interval = base + refreshBackoff") == true
         && transcriptFeed?.contains("self.refreshBackoff = min(Self.maxRefreshBackoff, self.refreshBackoff * 0.5 + overshoot)") == true

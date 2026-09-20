@@ -3124,7 +3124,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       refreshTask = nil
     }
     guard refreshTask == nil else { return }
-    let heavy = snapshot.entries.count > 600
+    let heavy = isHeavy(model: model)
     // base must sit above the cost of one transaction (~1 s measured): a base below it means the
     // next refresh is already due when the previous transaction finishes, so the queue never drains.
     let base = Self.baseRefreshInterval(running: running, heavy: heavy)
@@ -3156,6 +3156,31 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   private static func baseRefreshInterval(running: Bool, heavy: Bool) -> TimeInterval {
     let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15
     return base
+  }
+
+  /// The renderer expands one assistant message into many Markdown rows, while
+  /// the event pump folds hundreds of streaming chunks into that same message.
+  /// Counting only merged transcript entries therefore misclassifies the exact
+  /// long-stream shape that needs the slower cadence.
+  private func isHeavy(model: ArkAppModel) -> Bool {
+    var projectedRows = 0
+    for blocks in snapshot.markdownBlocksBySourceID.values {
+      projectedRows += blocks.count
+      if projectedRows > 600 { break }
+    }
+    return Self.isHeavyWorkload(
+      entryCount: snapshot.entries.count,
+      eventCount: model.events.count,
+      markdownRowCount: projectedRows
+    )
+  }
+
+  private static func isHeavyWorkload(
+    entryCount: Int,
+    eventCount: Int,
+    markdownRowCount: Int
+  ) -> Bool {
+    entryCount > 600 || eventCount > 600 || markdownRowCount > 600
   }
 
   /// Ceiling for the adaptive part of the refresh cadence (base + this). Long enough to let a
@@ -12764,6 +12789,21 @@ extension NativeChatTranscriptFeed {
   func probeBaseInterval(running: Bool, heavy: Bool) -> TimeInterval {
     Self.baseRefreshInterval(running: running, heavy: heavy)
   }
+
+  /// The production workload classifier used by the refresh scheduler.
+  func probeIsHeavy(model: ArkAppModel) -> Bool { isHeavy(model: model) }
+
+  static func probeIsHeavyWorkload(
+    entryCount: Int,
+    eventCount: Int,
+    markdownRowCount: Int
+  ) -> Bool {
+    isHeavyWorkload(
+      entryCount: entryCount,
+      eventCount: eventCount,
+      markdownRowCount: markdownRowCount
+    )
+  }
 }
 
 /// Fixed-replay handle for a contract check.
@@ -12772,6 +12812,18 @@ extension NativeChatTranscriptFeed {
 /// can observe the transcript without importing the private view-layer types.
 @MainActor
 enum ArkChatFeedProbe {
+  static func isHeavyWorkload(
+    entryCount: Int,
+    eventCount: Int,
+    markdownRowCount: Int
+  ) -> Bool {
+    NativeChatTranscriptFeed.probeIsHeavyWorkload(
+      entryCount: entryCount,
+      eventCount: eventCount,
+      markdownRowCount: markdownRowCount
+    )
+  }
+
   @MainActor final class Feed {
     private let feed: NativeChatTranscriptFeed
     private let model: ArkAppModel
@@ -12802,7 +12854,7 @@ enum ArkChatFeedProbe {
     /// What the refresh scheduler currently sees for cadence selection.
     var cadence: (running: Bool, heavy: Bool) {
       let running = model.sessions.first { $0.id == model.selectedSessionID }?.running == true
-      return (running, feed.probeEntryCount() > 600)
+      return (running, feed.probeIsHeavy(model: model))
     }
   }
 }

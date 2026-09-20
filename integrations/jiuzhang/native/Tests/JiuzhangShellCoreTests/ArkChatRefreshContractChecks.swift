@@ -104,6 +104,22 @@ func runArkChatRefreshContractChecks() async {
     ]))
   }
 
+  // The failed candidate carried 1,200 raw chunks in only 33 merged entries.
+  // Classify that exact shape, plus a restored Markdown-heavy transcript,
+  // without replaying an intentionally quadratic stream inside this contract.
+  check(
+    ArkChatFeedProbe.isHeavyWorkload(
+      entryCount: 33, eventCount: 1_200, markdownRowCount: 0
+    )
+      && ArkChatFeedProbe.isHeavyWorkload(
+        entryCount: 33, eventCount: 0, markdownRowCount: 1_200
+      )
+      && !ArkChatFeedProbe.isHeavyWorkload(
+        entryCount: 33, eventCount: 600, markdownRowCount: 600
+      ),
+    "hundreds of folded stream chunks select the heavy cadence before merged entries reach 600"
+  )
+
   var turn = 1
   // Each turn contributes one rendered assistant message, so the bound has to
   // clear the 600 threshold on top of the paged history baseline.
