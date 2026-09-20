@@ -1015,7 +1015,7 @@ func runArkChatPresentationContractChecks() {
         && chatView?.contains("context.sessionRunning") == true
         && chatView?.contains("Self.activeStreamingRenderWindowEntries") == true
         && chatView?.contains("Self.largeTranscriptRenderWindowEntries(forEntryCount: allDisplayEntries.count)") == true
-        && chatView?.contains("static let activeStreamingRenderWindowEntries = 48") == true
+        && chatView?.contains("static let activeStreamingRenderWindowEntries = 24") == true
         && chatView?.contains("projection.turnAnchorByTurn[turn] == item.id") == true
         && chatView?.contains("ForEach(displayEntries)") == false
         && chatView?.contains("entries.first(where:") == false
