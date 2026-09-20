@@ -960,8 +960,8 @@ func runArkChatPresentationContractChecks() {
         // a full-window rebuild is one AttributeGraph transaction (measured 2026-09-12).
         && chatView?.contains("ForEach(visibleEntries)") == true
         && chatView?.contains("let effectiveWindow = (context.sessionRunning || heavyTranscript)") == true
-        && chatView?.contains("entries.count > Self.largeTranscriptEntryThreshold") == true
-        && chatView?.contains("Self.streamingRenderWindowEntries(forEntryCount: entries.count)") == true
+        && chatView?.contains("allDisplayEntries.count > Self.largeTranscriptEntryThreshold") == true
+        && chatView?.contains("Self.streamingRenderWindowEntries(forEntryCount: allDisplayEntries.count)") == true
         && chatView?.contains("projection.turnAnchorByTurn[turn] == item.id") == true
         && chatView?.contains("ForEach(displayEntries)") == false
         && chatView?.contains("entries.first(where:") == false

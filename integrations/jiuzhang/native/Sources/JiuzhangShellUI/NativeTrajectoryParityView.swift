@@ -542,17 +542,19 @@ public enum ArkTrajectoryProjection {
         let chunkType = chunk?["type"]?.stringValue
         let delta = chunk?["text"]?.stringValue ?? ""
         if let index = indexByID[id], builders.indices.contains(index) {
-          var builder = builders[index]
-          builder.endSequence = event.id
-          builder.eventType = event.type
-          builder.completedAt = nil
-          builder.events.append(event)
+          // Mutate the owned builder in place: copying it first shares the
+          // growing event/text buffers and makes every append copy the prefix.
+          builders[index].endSequence = event.id
+          builders[index].eventType = event.type
+          builders[index].completedAt = nil
+          builders[index].events.append(event)
           if chunkType == "text-delta" {
-            builder.output = (builder.output ?? "") + delta
+            if builders[index].output == nil { builders[index].output = "" }
+            builders[index].output?.append(delta)
           } else if chunkType == "reasoning-delta" {
-            builder.input = (builder.input ?? "") + delta
+            if builders[index].input == nil { builders[index].input = "" }
+            builders[index].input?.append(delta)
           }
-          builders[index] = builder
         } else {
           let started = stepStart["\(turn):\(step)"] ?? event.time
           let output = chunkType == "text-delta" ? delta : nil

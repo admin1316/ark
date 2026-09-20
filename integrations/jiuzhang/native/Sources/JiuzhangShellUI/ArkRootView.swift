@@ -3964,9 +3964,9 @@ private struct NativeChatView: View {
   var body: some View {
     let projection = bodyProjection
     let allDisplayEntries = projection.displayEntries
-    let heavyTranscript = entries.count > Self.largeTranscriptEntryThreshold
+    let heavyTranscript = allDisplayEntries.count > Self.largeTranscriptEntryThreshold
     let effectiveWindow = (context.sessionRunning || heavyTranscript)
-      ? Self.streamingRenderWindowEntries(forEntryCount: entries.count) : 400
+      ? Self.streamingRenderWindowEntries(forEntryCount: allDisplayEntries.count) : 400
     let displayIDs = allDisplayEntries.map(\.id)
     let visibleRange = renderWindow.range(in: displayIDs, limit: effectiveWindow)
     let hiddenEntryCount = visibleRange.lowerBound
