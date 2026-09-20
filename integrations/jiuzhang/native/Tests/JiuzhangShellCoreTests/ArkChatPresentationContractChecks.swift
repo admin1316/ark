@@ -949,6 +949,8 @@ func runArkChatPresentationContractChecks() {
         && chatView?.contains("renderWindow.range(in: displayIDs, limit: effectiveWindow)") == true
         && chatView?.contains("renderWindow.earlier(in: displayIDs, limit: effectiveWindow)") == true
         && chatView?.contains("renderWindow.later(in: displayIDs, limit: effectiveWindow)") == true
+        && chatView?.contains(".onChange(of: context.sessionRunning)") == true
+        && chatView?.contains("scrollController.settleStreamingCompletion()") == true
         && chatView?.contains("allDisplayEntries.suffix(effectiveWindow)") == false,
       "manual navigation moves a bounded range instead of growing an unreachable suffix"
     )

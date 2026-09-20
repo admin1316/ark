@@ -4290,6 +4290,16 @@ private struct NativeChatView: View {
             }
             DispatchQueue.main.async { scrollController.contentDidChange() }
           }
+          .onChange(of: context.sessionRunning) { running in
+            guard !running else { return }
+            // The final Markdown body replaces the bounded live frame in this
+            // transaction. Reconcile after SwiftUI commits the replacement so
+            // AppKit measures the final rows before preserving the existing
+            // follow-or-read position.
+            DispatchQueue.main.async {
+              scrollController.settleStreamingCompletion()
+            }
+          }
           .onChange(of: context.loadingOlderHistory) { loading in
             guard !loading, let anchor = requestedHistoryAnchorID else { return }
             // Failed loads and page eviction leave no prepend anchor to restore.

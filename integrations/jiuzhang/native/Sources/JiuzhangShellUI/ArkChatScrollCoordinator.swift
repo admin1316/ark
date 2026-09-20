@@ -483,6 +483,19 @@ public final class ArkChatScrollCoordinator {
     reportFollowingState()
   }
 
+  /// Reconcile the one-time streaming-to-final-body replacement after SwiftUI
+  /// commits it. Final Markdown can replace one bounded live text leaf with
+  /// many measured rows without producing another feed revision. Force that
+  /// pending AppKit layout before applying the existing resize policy so a
+  /// following transcript lands on the final tail while a history reader keeps
+  /// the retained anchor.
+  public func settleStreamingCompletion() {
+    guard !invalidated, !transitioning else { return }
+    scrollView?.layoutSubtreeIfNeeded()
+    scrollView?.documentView?.layoutSubtreeIfNeeded()
+    contentDidChange()
+  }
+
   public func capturePrependAnchor(
     visibleAnchor: ArkChatScrollContentAnchor? = nil
   ) -> ArkChatScrollPrependAnchor? {
