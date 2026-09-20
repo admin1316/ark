@@ -16,6 +16,8 @@ The [native transcript feed](../../../../integrations/jiuzhang/native/Sources/Ji
 
 The transcript render window moves by stable row identity instead of expanding to include the entire past. Earlier and newer controls keep every row reachable while preserving one bounded rendering owner. Historical preview rows load complete same-source content before enabling whole-message actions. Table columns use shared intrinsic text widths with a wrapping cap, independent of viewport geometry, so short columns do not force unnecessary horizontal scrolling.
 
+The transcript scheduler and its contract probe share one base-interval policy; the probe does not maintain a second cadence formula. Trajectory body-loading checks require both a successful body response and a subsequent projection publication, so an empty observation window cannot establish row retention. Source-boundary checks do not depend on the event consumer being private.
+
 ## Alternatives considered
 
 **Skip startup verification or cache only file timestamps.** This loses content and syntax validation after package changes. Batching retains the verification work and removes repeated process startup.

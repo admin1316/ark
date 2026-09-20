@@ -3105,7 +3105,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     let heavy = snapshot.entries.count > 600
     // base must sit above the cost of one transaction (~1 s measured): a base below it means the
     // next refresh is already due when the previous transaction finishes, so the queue never drains.
-    let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15
+    let base = Self.baseRefreshInterval(running: running, heavy: heavy)
     let interval = base + refreshBackoff
     let deadline = Date().addingTimeInterval(interval)
     refreshTask = Task { @MainActor [weak self, weak model] in
@@ -3126,6 +3126,11 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       guard let model else { return }
       self.refresh(model: model)
     }
+  }
+
+  private static func baseRefreshInterval(running: Bool, heavy: Bool) -> TimeInterval {
+    let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15
+    return base
   }
 
   /// Ceiling for the adaptive part of the refresh cadence (base + this). Long enough to let a
@@ -12694,5 +12699,83 @@ private struct NativeSettingsEmpty: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .padding(30)
+  }
+}
+
+// MARK: - Chat feed fixed-replay probe
+
+/// Diagnostics accessors for the transcript feed.
+///
+/// A file-private `private` member is reachable from an extension in the same
+/// file, so these live on the feed itself rather than widening the feed, its
+/// snapshot, or the view-layer types behind them.
+@MainActor
+extension NativeChatTranscriptFeed {
+  func probeEntryCount() -> Int { snapshot.entries.count }
+
+  func probeContainsAssistantText(_ text: String) -> Bool {
+    snapshot.entries.contains { entry in
+      guard case .message(let message, _) = entry else { return false }
+      return message.role == .assistant && message.text == text
+    }
+  }
+
+  func probeContainsToolResult(_ text: String) -> Bool {
+    snapshot.entries.contains { entry in
+      guard case .tool(let activity) = entry else { return false }
+      return activity.result?.contains(text) == true
+    }
+  }
+
+  /// Drive the production coalescing schedule; no replacement refresh path.
+  func probeScheduleRefresh(model: ArkAppModel) { scheduleRefresh(model: model) }
+
+  /// The adaptive part of the cadence at the time it is read.
+  func probeRefreshBackoff() -> TimeInterval { refreshBackoff }
+
+  /// The base interval the scheduler pairs with the current backoff.
+  func probeBaseInterval(running: Bool, heavy: Bool) -> TimeInterval {
+    Self.baseRefreshInterval(running: running, heavy: heavy)
+  }
+}
+
+/// Fixed-replay handle for a contract check.
+///
+/// Holds the real feed privately and hands back only simple results, so a check
+/// can observe the transcript without importing the private view-layer types.
+@MainActor
+enum ArkChatFeedProbe {
+  @MainActor final class Feed {
+    private let feed: NativeChatTranscriptFeed
+    private let model: ArkAppModel
+    private var observation: AnyCancellable?
+    private(set) var installOrder: [Int] = []
+
+    init(model: ArkAppModel) {
+      self.model = model
+      feed = NativeChatTranscriptFeed(model: model)
+      observation = feed.$snapshot.sink { [weak self] snapshot in
+        self?.installOrder.append(snapshot.entries.count)
+      }
+    }
+
+    var entryCount: Int { feed.probeEntryCount() }
+    func containsAssistantText(_ text: String) -> Bool { feed.probeContainsAssistantText(text) }
+    func containsToolResult(_ text: String) -> Bool { feed.probeContainsToolResult(text) }
+    func scheduleRefresh() { feed.probeScheduleRefresh(model: model) }
+
+    /// Backoff the next scheduled refresh will add to its base interval.
+    var refreshBackoff: TimeInterval { feed.probeRefreshBackoff() }
+
+    /// Base interval the scheduler selects for this cadence, backoff excluded.
+    func baseInterval(running: Bool, heavy: Bool) -> TimeInterval {
+      feed.probeBaseInterval(running: running, heavy: heavy)
+    }
+
+    /// What the refresh scheduler currently sees for cadence selection.
+    var cadence: (running: Bool, heavy: Bool) {
+      let running = model.sessions.first { $0.id == model.selectedSessionID }?.running == true
+      return (running, feed.probeEntryCount() > 600)
+    }
   }
 }

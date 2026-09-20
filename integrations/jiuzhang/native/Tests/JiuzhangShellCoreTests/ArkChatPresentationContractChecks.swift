@@ -802,7 +802,7 @@ func runArkChatPresentationContractChecks() {
     let modelHydration = chatSourceSlice(
       appModel,
       from: "private func refreshSubscribedModelMetadata(for sessionID: String) async",
-      through: "private func consume(_ frame: ArkEventFrame)"
+      through: "func consume(_ frame: ArkEventFrame)"
     )
     check(
       modelHydration?.contains("guard modelMetadataHydrationSessionID != sessionID else { return }") == true
@@ -901,6 +901,7 @@ func runArkChatPresentationContractChecks() {
         // idle 150 ms) replaced the fixed 100 ms throttle that pegged a core on large transcripts.
         && transcriptFeed?.contains("guard refreshTask == nil else { return }") == true
         && transcriptFeed?.contains("let base: TimeInterval = running ? (heavy ? 1.1 : 0.4) : 0.15") == true
+        && transcriptFeed?.contains("let base = Self.baseRefreshInterval(running: running, heavy: heavy)") == true
         && transcriptFeed?.contains("let interval = base + refreshBackoff") == true
         && transcriptFeed?.contains("self.refreshBackoff = min(Self.maxRefreshBackoff, self.refreshBackoff * 0.5 + overshoot)") == true
         && transcriptFeed?.contains("self.refreshBackoff = max(self.refreshBackoff, overshoot)") == true

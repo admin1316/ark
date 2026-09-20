@@ -72,9 +72,17 @@ func runArkTrajectoryPipelineContractChecks() async {
   // Two consecutive bodies inside one window: same session, same cut.
   let baseline = published.count
   for id in ids.prefix(2) {
-    _ = try? await model.loadHistoryMessageContent(messageID: id)
-    // Give the same-context re-install and its fold a chance to publish.
-    await trajectoryPipelineSettle()
+    let beforeLoad = published.count
+    do {
+      let message = try await model.loadHistoryMessageContent(messageID: id)
+      check(message.id == id, "the requested history message body is returned")
+    } catch {
+      check(false, "loading a trajectory history body failed: \(error)")
+      return
+    }
+    let recomputed = await trajectoryPipelineEventually { published.count > beforeLoad }
+    check(recomputed, "each loaded body completes a new trajectory publication")
+    guard recomputed else { return }
   }
   let window = Array(published.dropFirst(baseline))
 
@@ -126,15 +134,6 @@ func runArkTrajectoryPipelineContractChecks() async {
     repopulated,
     "the projection repopulates for the new context instead of staying permanently cleared"
   )
-}
-
-/// Let queued main-actor work and one projection fold settle.
-@MainActor
-private func trajectoryPipelineSettle() async {
-  for _ in 0..<40 {
-    await Task.yield()
-    try? await Task.sleep(nanoseconds: 5_000_000)
-  }
 }
 
 /// Poll for an observable condition rather than assuming a fixed delay.

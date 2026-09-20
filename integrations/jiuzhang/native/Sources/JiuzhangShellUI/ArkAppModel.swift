@@ -5879,7 +5879,7 @@ public final class ArkAppModel: ObservableObject {
     _ = await (label, catalog)
   }
 
-  private func consume(_ frame: ArkEventFrame) {
+  func consume(_ frame: ArkEventFrame) {
     switch frame.method {
     case "stream/state":
       guard frame.payload["channel"]?.stringValue == frame.channel.rawValue,
