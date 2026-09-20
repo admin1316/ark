@@ -3510,8 +3510,16 @@ enum NativeAssistantMarkdownFlatProjection {
   }
 }
 
-private struct NativeChatDisplayEntry: Identifiable, Equatable {
-  enum Kind: Equatable {
+/// Lightweight identity wrapper for a rendered transcript row.
+///
+/// Deliberately not `Equatable`: SwiftUI otherwise discovers the conditional
+/// `Array<NativeChatDisplayEntry>: Equatable` conformance and compares every
+/// mounted row on each streamed delta. A live assistant row carries the whole
+/// growing message, so that implicit comparison repeatedly walked the common
+/// text prefix on the main thread and starved wheel handling. `ForEach` already
+/// owns row reconciliation through the stable `id` below.
+private struct NativeChatDisplayEntry: Identifiable {
+  enum Kind {
     case process(NativeChatProcess)
     case entry(NativeChatEntry)
     case assistantPrefix(NativeAssistantMarkdownPrefixRow)
@@ -4030,7 +4038,10 @@ private struct NativeChatView: View {
 
   private func navigationDetail(_ text: String?, fallback: String) -> String {
     guard let text else { return fallback }
-    let lines = text.components(separatedBy: .newlines).compactMap { raw -> String? in
+    // The rail displays at most 520 characters. Do not split and normalize an
+    // unbounded live answer merely to discard its tail afterwards.
+    let excerpt = String(text.prefix(2_048))
+    let lines = excerpt.components(separatedBy: .newlines).compactMap { raw -> String? in
       var line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !line.isEmpty else { return nil }
       while line.hasPrefix("#") { line.removeFirst() }
@@ -8315,10 +8326,17 @@ private struct NativePendingMarkdownText: View {
   let text: String
   var baseFontSize: CGFloat = 14
 
-  var body: some View {
-    Text(ArkStreamingPresentationPolicy.firstFrameText(
+  init(text: String, baseFontSize: CGFloat = 14) {
+    // Bound the stored view value, rather than only bounding inside `body`.
+    // AttributeGraph compares stored inputs before evaluating the body.
+    self.text = ArkStreamingPresentationPolicy.firstFrameText(
       ArkStreamingPresentationPolicy.markdownText(text, streaming: true)
-    ))
+    )
+    self.baseFontSize = baseFontSize
+  }
+
+  var body: some View {
+    Text(text)
       .font(.system(size: baseFontSize))
       .lineSpacing(4)
       .textSelection(.enabled)
@@ -8334,6 +8352,20 @@ private struct NativeStreamingMarkdownText: View {
   let text: String
   var baseFontSize: CGFloat = 14
   var producedFilePaths: [String] = []
+
+  init(
+    text: String,
+    baseFontSize: CGFloat = 14,
+    producedFilePaths: [String] = []
+  ) {
+    // Keep the transient View value itself bounded. The complete answer
+    // remains in ArkMessage and replaces this frame after completion.
+    self.text = ArkStreamingPresentationPolicy.firstFrameText(
+      ArkStreamingPresentationPolicy.markdownText(text, streaming: true)
+    )
+    self.baseFontSize = baseFontSize
+    self.producedFilePaths = producedFilePaths
+  }
 
   var body: some View {
     NativePendingMarkdownText(text: text, baseFontSize: baseFontSize)

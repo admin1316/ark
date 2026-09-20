@@ -840,6 +840,11 @@ func runArkChatPresentationContractChecks() {
       from: "private struct NativeChatView",
       through: "private struct NativeMessageRow"
     )
+    let chatDisplayEntry = chatSourceSlice(
+      root,
+      from: "private struct NativeChatDisplayEntry",
+      through: "private struct NativeChatProcess"
+    )
     let assistantBodyRow = chatSourceSlice(
       root,
       from: "private func assistantProjectedBodyRow",
@@ -961,11 +966,22 @@ func runArkChatPresentationContractChecks() {
       "pending restored Markdown uses one bounded plain frame until canonical blocks install"
     )
     check(
-      pendingMarkdown?.contains("Text(ArkStreamingPresentationPolicy.firstFrameText(") == true
+      pendingMarkdown?.contains("self.text = ArkStreamingPresentationPolicy.firstFrameText(") == true
         && pendingMarkdown?.contains("ArkStreamingPresentationPolicy.markdownText(text, streaming: true)") == true
+        && pendingMarkdown?.contains("Text(text)") == true
         && pendingMarkdown?.contains("NativeMarkdownDocument(") == false
         && pendingMarkdown?.contains(".textSelection(.enabled)") == true,
-      "pending Markdown has one selectable text leaf without a duplicate document parser"
+      "pending Markdown bounds its stored view input before one selectable text leaf"
+    )
+    check(
+      chatDisplayEntry?.contains("private struct NativeChatDisplayEntry: Identifiable {") == true
+        && chatDisplayEntry?.contains("enum Kind {") == true
+        && chatDisplayEntry?.contains("NativeChatDisplayEntry: Identifiable, Equatable") == false
+        && chatDisplayEntry?.contains("enum Kind: Equatable") == false
+        && chatView?.contains("let excerpt = String(text.prefix(2_048))") == true
+        && streamingMarkdown?.contains("self.text = ArkStreamingPresentationPolicy.firstFrameText(") == true
+        && streamingMarkdown?.contains("ArkStreamingPresentationPolicy.markdownText(text, streaming: true)") == true,
+      "live chat avoids whole-row array equality and bounds stored text plus navigation work"
     )
     check(
       chatView?.contains("let projection = bodyProjection") == true
