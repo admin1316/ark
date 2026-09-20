@@ -3252,13 +3252,13 @@ enum NativeAssistantProjectedBodyRow: Identifiable, Equatable {
     case companion(messageID: Int, blockIndex: Int)
   }
 
-  case pending(NativeAssistantMarkdownSourceID)
+  case pending(NativeAssistantMarkdownSource)
   case markdown(NativeAssistantMarkdownBlockRow)
   case companion(messageID: Int, blockIndex: Int, block: ArkMessageBlock)
 
   var id: ID {
     switch self {
-    case .pending(let sourceID): return .pending(sourceID)
+    case .pending(let source): return .pending(source.id)
     case .markdown(let row): return .markdown(row.id)
     case .companion(let messageID, let blockIndex, _):
       return .companion(messageID: messageID, blockIndex: blockIndex)
@@ -3289,7 +3289,7 @@ enum NativeAssistantMarkdownRowProjection {
     var rows: [NativeAssistantProjectedBodyRow] = []
     func appendMarkdownRows(for source: NativeAssistantMarkdownSource) {
       guard let blocks = blocksBySourceID[source.id] else {
-        rows.append(.pending(source.id))
+        rows.append(.pending(source))
         return
       }
       rows.append(contentsOf: NativeGFMParagraphSelection.rows(blocks).map { row in
@@ -4352,16 +4352,16 @@ private struct NativeChatView: View {
     let row = displayRow.row
     let context = displayRow.context
     switch row {
-    case .pending(let sourceID):
-      HStack(spacing: 8) {
-        ProgressView().controlSize(.small)
-        Text(ArkL10n.text(.chatSyncingHistory, context.language))
-          .font(.system(size: max(11, fontSize - 3)))
-          .foregroundStyle(ArkPalette.secondary)
-      }
-      .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+    case .pending(let source):
+      // Completion changes the presentation before the full projection is ready.
+      // Keep the same bounded live body visible while the existing worker parses it.
+      NativeStreamingMarkdownText(
+        text: source.source,
+        baseFontSize: fontSize,
+        producedFilePaths: context.producedFilePaths
+      )
       .accessibilityIdentifier(
-        "ark.chat.message.\(sourceID.messageID).markdown.\(sourceID.sourceSlot).pending"
+        "ark.chat.message.\(source.messageID).markdown.\(source.sourceSlot).pending"
       )
     case .markdown(let projected):
       NativeGFMBlockView(

@@ -363,11 +363,36 @@ func runArkMarkdownGFMContractChecks() {
   )
   check(
     pendingRows.contains {
-      if case .pending(let sourceID) = $0 { return sourceID == sourceBID }
+      if case .pending(let source) = $0 { return source == sourceB }
       return false
     },
-    "outer Markdown row projection exposes one non-truncating pending row until a complete source installs"
+    "outer Markdown row projection retains the exact current source until complete parsed blocks install"
   )
+  // The streamed text already exists when the finished-message projection starts.
+  // Delaying the canonical parse must preserve that body, not a content-free spinner.
+  var handoff = NativeAssistantMarkdownProjectionState()
+  _ = handoff.reconcile(sessionID: "completion-a", requestedSources: [sourceB])
+  let handoffRequest = handoff.beginRequest(for: sourceB)!
+  let beforeParse = NativeAssistantMarkdownRowProjection.rows(
+    message: mixedMessage, sources: [sourceB], blocksBySourceID: handoff.takeReadyBlocks()
+  )
+  check(beforeParse.contains {
+    if case .pending(let source) = $0 { return source.source == "source-b" }
+    return false
+  }, "completed answer retains received text while canonical Markdown is delayed")
+  handoff.stage([.paragraph([.text("source-b")])], for: handoffRequest)
+  let installed = handoff.takeReadyBlocks()
+  let afterParse = NativeAssistantMarkdownRowProjection.rows(
+    message: mixedMessage, sources: [sourceB], blocksBySourceID: installed
+  )
+  check(afterParse.contains {
+    if case .markdown(let row) = $0 { return row.sourceID == sourceBID }
+    return false
+  } && !afterParse.contains {
+    if case .pending = $0 { return true }
+    return false
+  }, "completed answer replaces the transitional body only after canonical blocks install")
+
   let hugeSourceID = NativeAssistantMarkdownSourceID(messageID: 99, sourceSlot: 0)
   let hugeSource = NativeAssistantMarkdownSource(
     id: hugeSourceID,

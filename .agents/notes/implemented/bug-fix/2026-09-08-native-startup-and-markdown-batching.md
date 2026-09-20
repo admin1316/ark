@@ -18,6 +18,8 @@ The transcript render window moves by stable row identity instead of expanding t
 
 The transcript scheduler and its contract probe share one base-interval policy; the probe does not maintain a second cadence formula. Trajectory body-loading checks require both a successful body response and a subsequent projection publication, so an empty observation window cannot establish row retention. Source-boundary checks do not depend on the event consumer being private.
 
+When a turn completes, full Markdown parsing is asynchronous. A pending projected row retains its exact source and uses the existing bounded streaming renderer until canonical blocks install; it must not replace an already received answer with a history-loading spinner. Row identities still contain only the message ID and source slot, and the projection worker retains the existing session, source, and request checks. This transition does not imply that the complete long answer has already been laid out.
+
 ## Alternatives considered
 
 **Skip startup verification or cache only file timestamps.** This loses content and syntax validation after package changes. Batching retains the verification work and removes repeated process startup.
