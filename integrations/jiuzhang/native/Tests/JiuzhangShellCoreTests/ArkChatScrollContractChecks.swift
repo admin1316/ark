@@ -940,11 +940,25 @@ private func runArkChatScrollAppKitHarnessChecks() {
     "AppKit chat coordinator follows stable-id content height growth"
   )
 
+  // The final Markdown body materializes after the pending body was pinned.
+  // Its late layout posts clip geometry, without another feed revision.
+  document.setFrameSize(NSSize(width: 320, height: 1_380))
+  NotificationCenter.default.post(name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+  check(
+    coordinator.snapshot(for: "appkit-a")?.followsBottom == true
+      && approximatelyEqual(coordinator.currentMetrics()?.offset ?? -1, 1_180),
+    "AppKit follows a late final-body height change without waiting for another content revision"
+  )
+
   setLiveUserLogicalOffset(640, scrollView: scrollView, document: document)
   check(
     coordinator.snapshot(for: "appkit-a")?.followsBottom == false,
     "AppKit live-scroll notifications classify an offset move as user-driven"
   )
+  document.setFrameSize(NSSize(width: 320, height: 1_580))
+  NotificationCenter.default.post(name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+  check(approximatelyEqual(coordinator.currentMetrics()?.offset ?? -1, 640),
+    "late final-body layout preserves a manually anchored history reader")
   resizeViewport(150, scrollView: scrollView)
   resizeViewport(240, scrollView: scrollView)
   check(

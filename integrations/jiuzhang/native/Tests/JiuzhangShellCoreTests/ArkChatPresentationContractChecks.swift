@@ -561,6 +561,14 @@ func runArkChatPresentationContractChecks() {
       && ArkStreamingPresentationPolicy.intervalNanoseconds(eventCount: 10_000) == 500_000_000,
     "live transcript cadence coalesces large restored ledgers without slowing short conversations"
   )
+  let completionMarker = "FINAL-TAIL-👨‍👩‍👧‍👦"
+  let completionWindow = ArkStreamingPresentationPolicy.markdownText(
+    String(repeating: "long table row\n", count: 20_000) + completionMarker, streaming: true)
+  let completionFirstFrame = ArkStreamingPresentationPolicy.firstFrameText(completionWindow)
+  check(completionFirstFrame.hasSuffix(completionMarker)
+      && completionFirstFrame.hasPrefix(String(completionWindow.prefix(128)))
+      && completionFirstFrame.count <= ArkStreamingPresentationPolicy.markdownFirstFrameCharacterLimit + 5,
+    "bounded completion first frame retains both context and the final tail while Markdown parses")
   let unicodeStream = "a👨‍👩‍👧‍👦e\u{301}"
   let boundedUnicodeStream = ArkStreamingPresentationPolicy.markdownText(
     String(repeating: "x", count: ArkStreamingPresentationPolicy.markdownCharacterLimit)

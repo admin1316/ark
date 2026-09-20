@@ -396,7 +396,9 @@ enum ArkStreamingPresentationPolicy {
   }
 
   static func firstFrameText(_ text: String) -> String {
-    boundedPrefix(text, maximumCharacters: markdownFirstFrameCharacterLimit)
+    // Preserve the latest tail as well as the opening context. A prefix of an
+    // already bounded streaming suffix hides the final answer during handoff.
+    boundedEdges(text, maximumCharacters: markdownFirstFrameCharacterLimit)
   }
 
   static func usesStreamingAssistantPresentation(
@@ -428,10 +430,11 @@ enum ArkStreamingPresentationPolicy {
     return "…\n" + visible
   }
 
-  private static func boundedPrefix(_ text: String, maximumCharacters: Int) -> String {
-    let visible = text.prefix(maximumCharacters)
-    guard visible.endIndex != text.endIndex else { return text }
-    return visible + "\n\n…"
+  private static func boundedEdges(_ text: String, maximumCharacters: Int) -> String {
+    let prefix = text.prefix(maximumCharacters)
+    guard prefix.endIndex != text.endIndex else { return text }
+    let headCount = maximumCharacters / 2
+    return String(prefix.prefix(headCount)) + "\n\n…\n\n" + text.suffix(maximumCharacters - headCount)
   }
 }
 

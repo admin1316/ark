@@ -368,8 +368,6 @@ public final class ArkChatScrollCoordinator {
   private var scrollWheelMonitor: Any?
   private var priorClipPostsBoundsChanges = false
   private var applyingCommand = false
-  /// Consumes the single reflow-driven resize a programmatic scroll can cause.
-  private var suppressResizeOnce = false
   private var transitioning = false
   private var pendingSessionID: String?
   private var invalidated = false
@@ -737,22 +735,12 @@ public final class ArkChatScrollCoordinator {
       let sessionID = stateMachine.activeSessionID,
       let metrics = currentMetrics()
     else { return }
-    let previousViewportHeight = lastHandledViewportHeight
     let resized = geometryChanged(metrics)
     rememberGeometry(metrics)
-    let suppressed = suppressResizeOnce
-    suppressResizeOnce = false
     if resized {
-      // The one-shot suppression exists to eat the reflow a programmatic scroll causes: SwiftUI
-      // re-lays out the document, so only the content height moves. A real viewport change
-      // (window or split-pane resize) must never be swallowed — without this check a pinned
-      // transcript stayed at its old offset when the viewport shrank 200 -> 150, which is the
-      // failing AppKit harness contract.
-      let viewportChanged = previousViewportHeight.map { abs($0 - metrics.viewportHeight) > 0.5 } ?? true
-      if suppressed && !viewportChanged {
-        reportFollowingState()
-        return
-      }
+      // Late Markdown layout can grow the document after a programmatic pin.
+      // Observe every actual geometry change; apply already rejects no-op
+      // scrolling, and applyingCommand suppresses synchronous feedback.
       apply(stateMachine.viewportDidResize(sessionID: sessionID, metrics: metrics))
     } else {
       let isUserMove =
@@ -810,12 +798,6 @@ public final class ArkChatScrollCoordinator {
       ))
     scrollView.reflectScrolledClipView(scrollView.contentView)
     applyingCommand = false
-    // Materializing lazily placed rows can resize the document in a later
-    // layout pass; consume that one follow-up resize instead of scrolling twice.
-    // A top-anchored reader never re-pins, so its first materialization resize
-    // must be observed (recorded) rather than swallowed.
-    suppressResizeOnce = anchor == .bottom
-
     if let applied = currentMetrics() {
       stateMachine.viewportDidMove(
         sessionID: sessionID,
