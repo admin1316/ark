@@ -200,6 +200,44 @@ func runArkChatRefreshContractChecks() async {
       + " preMessages=\(preMessages) preEntries=\(preEntries) running=\(cadence.running) heavy=\(cadence.heavy)"
       + " finalEntries=\(feed.entryCount) installs=\(feed.installOrder.count)"
   )
+
+  // Reproduce the candidate's observed 10.7-second adaptive wait: an actual
+  // main-actor stall raises the real scheduler's backoff, then ends before the
+  // final event arrives. Completion must not inherit that streaming delay.
+  feed.scheduleRefresh()
+  try? await Task.sleep(nanoseconds: 50_000_000)
+  stallChatRefreshMainActor(seconds: 7.2)
+  let backedOff = await arkChatRefreshEventually { feed.refreshBackoff > 5 }
+  check(backedOff, "a completed main-thread stall raises the real streaming refresh backoff")
+  guard backedOff else { return }
+  let observedBackoff = feed.refreshBackoff
+  feed.scheduleRefresh()
+  fixture.sessionRunning = false
+  await model.refreshNavigation(refreshWiki: false)
+  check(model.selectedSession?.running == false, "the completion fixture reports an idle session")
+  let completionText = "COMPLETED-AFTER-LAYOUT-STALL"
+  let completionTurn = finalTurn + 1
+  let started = Date()
+  inject("turn/start", .object(["turn": .number(Double(completionTurn))]))
+  inject("assistant/message", .object([
+    "turn": .number(Double(completionTurn)), "step": .number(Double(completionTurn)),
+    "message": .object(["content": .array([.object(["type": .string("text"), "text": .string(completionText)])])]),
+  ]))
+  inject("turn/end", .object([
+    "turn": .number(Double(completionTurn)), "reason": .object(["kind": .string("completed")]),
+  ]))
+  while !feed.containsAssistantText(completionText), Date().timeIntervalSince(started) < 5 {
+    try? await Task.sleep(nanoseconds: 10_000_000)
+  }
+  let elapsed = Date().timeIntervalSince(started)
+  print("[chat-refresh][completion-backoff] observed=\(observedBackoff) elapsed=\(elapsed) installed=\(feed.containsAssistantText(completionText))")
+  check(feed.containsAssistantText(completionText) && elapsed < 5,
+        "an idle completion bypasses stale streaming backoff and publishes its final answer within five seconds")
+}
+
+@MainActor
+private func stallChatRefreshMainActor(seconds: TimeInterval) {
+  Thread.sleep(forTimeInterval: seconds)
 }
 
 /// Poll for an observable condition rather than assuming a fixed delay.

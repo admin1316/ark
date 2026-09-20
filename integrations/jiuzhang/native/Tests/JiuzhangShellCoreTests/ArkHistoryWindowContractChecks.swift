@@ -43,6 +43,7 @@ final class HistoryWindowFixture: @unchecked Sendable {
   /// Session the navigation routes describe, and the workspace path they report.
   /// The chat replay sets these so `session/list` names the selected session.
   var sessionID = "fixture"
+  var sessionRunning = true
   var workspacePath = "/private/tmp/ark-fixture-workspace"
 
   init(rows count: Int, bodyBytes: Int = 0) {
@@ -267,7 +268,7 @@ final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
         .object([
           "sessionId": .string(Self.fixture.sessionID),
           "updatedAt": .number(Date().timeIntervalSince1970 * 1_000),
-          "running": .bool(true),
+          "running": .bool(Self.fixture.sessionRunning),
           "blank": .bool(false),
           "cwd": .string(Self.fixture.workspacePath),
         ]),

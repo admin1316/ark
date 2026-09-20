@@ -3112,11 +3112,18 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   /// streamed answers spent 9 s above 80% CPU because one layout transaction is longer than the
   /// 800 ms base interval. The cadence below therefore measures how late the main thread actually
   /// resumed (its backlog) and grows the interval by that overshoot, capped, decaying when the
-  /// thread is idle again. Nobody sees "slower text" for more than a frame: the tail is still the
-  /// thing being refreshed.
+  /// thread is idle again. Once the session stops running, completion work drops this streaming
+  /// backoff instead of retaining a delay caused by an earlier layout transaction.
   private func scheduleRefresh(model: ArkAppModel) {
-    guard refreshTask == nil else { return }
     let running = model.sessions.first { $0.id == model.selectedSessionID }?.running == true
+    // Back pressure protects continuous streaming. Once the task is idle,
+    // its final answer and completed parse must not inherit an old layout stall.
+    if !running, refreshBackoff > 0 {
+      refreshBackoff = 0
+      refreshTask?.cancel()
+      refreshTask = nil
+    }
+    guard refreshTask == nil else { return }
     let heavy = snapshot.entries.count > 600
     // base must sit above the cost of one transaction (~1 s measured): a base below it means the
     // next refresh is already due when the previous transaction finishes, so the queue never drains.
@@ -3126,12 +3133,14 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     trace("scheduled", model: model, delay: interval)
     refreshTask = Task { @MainActor [weak self, weak model] in
       try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
-      guard let self else { return }
+      guard !Task.isCancelled, let self, let model else { return }
       self.refreshTask = nil
       // How long past the deadline the main actor came back to us: that is the backlog a heavy
       // layout transaction left behind. Grow the next interval by it (×2, capped), or decay.
       let overshoot = max(0, Date().timeIntervalSince(deadline))
-      if overshoot > 0.05 {
+      if model.selectedSession?.running != true {
+        self.refreshBackoff = 0
+      } else if overshoot > 0.05 {
         self.refreshBackoff = min(Self.maxRefreshBackoff, self.refreshBackoff * 0.5 + overshoot)
         // …but the cadence may never be shorter than the backlog it just measured, or a single
         // transaction longer than the cap would still queue the next refresh behind itself.
@@ -3139,7 +3148,6 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       } else {
         self.refreshBackoff = max(0, self.refreshBackoff - base * 0.5)
       }
-      guard let model else { return }
       self.trace("resumed", model: model, delay: overshoot)
       self.refresh(model: model)
     }
