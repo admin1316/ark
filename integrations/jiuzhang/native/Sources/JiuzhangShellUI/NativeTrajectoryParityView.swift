@@ -532,9 +532,6 @@ public enum ArkTrajectoryProjection {
           } else if chunkType == "reasoning-delta" {
             builder.input = (builder.input ?? "") + delta
           }
-          builder.preview = ArkTrajectoryFormat.preview(
-            builder.output?.isEmpty == false ? builder.output! : builder.input ?? "Streaming response…"
-          )
           builders[index] = builder
         } else {
           let started = stepStart["\(turn):\(step)"] ?? event.time
@@ -761,6 +758,14 @@ public enum ArkTrajectoryProjection {
     }
 
     for index in builders.indices {
+      // Only the final folded row is published. Reformatting its growing body
+      // for every token made a single long answer quadratic in text scanned.
+      if builders[index].eventType == "assistant/chunk", builders[index].events.count > 1 {
+        let builder = builders[index]
+        builders[index].preview = ArkTrajectoryFormat.preview(
+          builder.output?.isEmpty == false ? builder.output! : builder.input ?? "Streaming response…"
+        )
+      }
       guard let key = stepKey(builders[index].turn, builders[index].step),
         let request = requestByStep[key]
       else { continue }
