@@ -1709,6 +1709,14 @@ private struct WorkspaceSection: View {
 private struct NativeMainArea: View {
   @ObservedObject var model: ArkAppModel
   @StateObject private var chatScrollController = ArkChatScrollController()
+  /// The chat tab is conditionally mounted, but its authoritative feed must outlive that mount.
+  /// Otherwise every chat/trajectory round trip reparses and republishes every restored answer.
+  @StateObject private var chatTranscriptFeed: NativeChatTranscriptFeed
+
+  init(model: ArkAppModel) {
+    self.model = model
+    _chatTranscriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))
+  }
 
   private var showsConversationChrome: Bool {
     model.selectedSessionID != nil && model.selectedSession?.blank != true
@@ -1728,6 +1736,7 @@ private struct NativeMainArea: View {
           case .chat:
             NativeChatView(
               model: model,
+              transcriptFeed: chatTranscriptFeed,
               scrollController: chatScrollController
             )
           case .trajectory: NativeTrajectoryParityView(model: model).equatable()
@@ -3693,7 +3702,7 @@ enum ArkChatTurnNavigationProjection {
 
 private struct NativeChatView: View {
   let model: ArkAppModel
-  @StateObject private var transcriptFeed: NativeChatTranscriptFeed
+  @ObservedObject private var transcriptFeed: NativeChatTranscriptFeed
   @ObservedObject private var scrollController: ArkChatScrollController
   @AppStorage("ark.native.chat.font-size") private var transcriptFontSize = Double(ChatLayoutMetrics.messageFontSize)
   @AppStorage("ark.native.chat.content-width") private var contentWidth = Double(ChatLayoutMetrics.contentColumnMaxWidth)
@@ -3710,10 +3719,11 @@ private struct NativeChatView: View {
 
   init(
     model: ArkAppModel,
+    transcriptFeed: NativeChatTranscriptFeed,
     scrollController: ArkChatScrollController
   ) {
     self.model = model
-    _transcriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))
+    _transcriptFeed = ObservedObject(wrappedValue: transcriptFeed)
     _scrollController = ObservedObject(wrappedValue: scrollController)
   }
 

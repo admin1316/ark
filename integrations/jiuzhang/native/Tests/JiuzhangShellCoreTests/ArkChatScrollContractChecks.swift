@@ -215,15 +215,20 @@ func runArkChatScrollContractChecks() {
     )
     check(
       mainArea?.contains("@StateObject private var chatScrollController") == true
+        && mainArea?.contains("@StateObject private var chatTranscriptFeed") == true
+        && mainArea?.contains("_chatTranscriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))") == true
         && mainArea?.contains("transcriptTextSelectionEnabled") == false
         && mainArea?.contains("NativeChatView(") == true
         && mainArea?.contains("model: model") == true
+        && mainArea?.contains("transcriptFeed: chatTranscriptFeed") == true
         && mainArea?.contains("scrollController: chatScrollController") == true
         && mainArea?.contains(".id(model.selectedSessionID)") == false
         && mainArea?.contains("NativeChatView(model: model).equatable()") == false
+        && chatView?.contains("@ObservedObject private var transcriptFeed") == true
+        && chatView?.contains("StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))") == false
         && chatView?.contains("@ObservedObject private var scrollController") == true
         && chatView?.contains("transcriptTextSelectionEnabled") == false,
-      "chat session replacement preserves one transcript feed and one shared scroll owner without rebuilding the full LazyVStack"
+      "chat session and tab replacement preserve one transcript feed and one shared scroll owner"
     )
     check(
       chatView?.contains("case .assistantPrefix(let row):") == true
