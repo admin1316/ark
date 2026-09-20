@@ -41,6 +41,9 @@ func runArkTrajectoryPipelineContractChecks() async {
   // Enough rows that the reading window has older history to load.
   HistoryWindowURLProtocol.fixture = HistoryWindowFixture(rows: 12)
 
+  var completedLoads = 0
+  let historyObservation = model.$historyLoadState.sink { if $0 == .loaded { completedLoads += 1 } }
+  defer { historyObservation.cancel() }
   var published: [Int] = []
   let observation = model.$trajectoryRecords.sink { published.append($0.count) }
   defer { observation.cancel() }
@@ -52,6 +55,12 @@ func runArkTrajectoryPipelineContractChecks() async {
   let loaded = await trajectoryPipelineEventually { model.historyLoadState == .loaded }
   check(loaded, "trajectory pipeline fixture session reaches a loaded history state")
   guard loaded else { return }
+
+  let coldRows = await trajectoryPipelineEventually {
+    model.trajectoryRecords.filter { $0.kind == .user }.count == model.messages.count
+  }
+  check(coldRows && model.messages.count == 12,
+    "cold semantic history populates trajectory before entering a reading window")
 
   await model.loadOlderHistory()
   let reading = await trajectoryPipelineEventually { model.historyReadingSnapshot != nil }
@@ -122,10 +131,19 @@ func runArkTrajectoryPipelineContractChecks() async {
   // Select the populated session again: the projection must repopulate rather
   // than stay permanently cleared by the earlier context change.
   HistoryWindowURLProtocol.fixture = HistoryWindowFixture(rows: 12)
+  let beforeWarmLoads = completedLoads
   model.selectSession("fixture", navigateToChat: false)
   model.selectedTab = .trajectory
-  let recovered = await trajectoryPipelineEventually { model.historyLoadState == .loaded }
+  // Cache restoration publishes loaded immediately; wait for the subsequent
+  // authoritative refresh before asking to change its reading window.
+  let recovered = await trajectoryPipelineEventually {
+    completedLoads >= beforeWarmLoads + 2 && model.historyLoadState == .loaded
+  }
   check(recovered, "the populated fixture session loads again after an empty one")
+  let warmRows = await trajectoryPipelineEventually {
+    model.trajectoryRecords.filter { $0.kind == .user }.count == 12
+  }
+  check(warmRows, "warm session restoration retains every semantic trajectory row")
   await model.loadOlderHistory()
   let readingAgain = await trajectoryPipelineEventually { model.historyReadingSnapshot != nil }
   check(readingAgain, "the repopulated session can enter its own reading window")
@@ -134,6 +152,25 @@ func runArkTrajectoryPipelineContractChecks() async {
     repopulated,
     "the projection repopulates for the new context instead of staying permanently cleared"
   )
+  // A closed turn recovers its bodies semantically; its raw tail is turn/end.
+  // An active turn replays chunks as well, which must replace rather than
+  // duplicate the semantic assistant prefix.
+  for closed in [true, false] {
+    let fixture = HistoryWindowFixture(chunks: 8, closed: closed)
+    HistoryWindowURLProtocol.fixture = fixture
+    model.selectSession(closed ? "closed-turn" : "active-turn", navigateToChat: false)
+    model.selectedTab = .trajectory
+    let ready = await trajectoryPipelineEventually {
+      model.historyLoadState == .loaded && model.trajectoryRecords.contains { $0.kind == .message }
+    }
+    check(ready, "closed and active semantic recovery each publish an assistant trajectory row")
+    let answers = model.trajectoryRecords.filter { $0.kind == .message }
+    check(answers.count == 1 && answers.first?.output == fixture.expectedText,
+      "semantic baseline and raw tail preserve one complete assistant body (closed=\(closed))")
+    check(model.trajectoryRecords.filter { $0.kind == .user }.count == 1,
+      "semantic baseline and raw tail do not duplicate the user row")
+  }
+
 }
 
 /// Poll for an observable condition rather than assuming a fixed delay.

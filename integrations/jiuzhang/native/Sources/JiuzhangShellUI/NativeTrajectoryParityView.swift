@@ -363,6 +363,26 @@ public enum ArkTrajectoryProjection {
     return result.sorted { $0.sequence == $1.sequence ? $0.id < $1.id : $0.sequence < $1.sequence }
   }
 
+  /// Recovery keeps a semantic baseline and only replays the active/raw tail.
+  /// Prefer replayed rows for overlapping messages, retaining closed history
+  /// that intentionally no longer exists in the bounded raw event window.
+  static func records(from events: [ArkHistoryEvent], history: ArkHistoryReadingSnapshot?) -> [ArkTrajectorySemanticRecord] {
+    let live = records(from: events)
+    guard let history else { return live }
+    func identity(_ row: ArkTrajectorySemanticRecord) -> String {
+      if row.kind == .message, let turn = row.turn, let step = row.step {
+        return "assistant:\(turn):\(step)"
+      }
+      if row.kind == .message || row.kind == .user || row.kind == .context {
+        return "\(row.kind.rawValue):\(row.sequence)"
+      }
+      return row.id
+    }
+    let liveIDs = Set(live.map(identity))
+    let historical = records(from: history).filter { !liveIDs.contains(identity($0)) }
+    return (historical + live).sorted { $0.sequence == $1.sequence ? $0.id < $1.id : $0.sequence < $1.sequence }
+  }
+
   public static func records(from sourceEvents: [ArkHistoryEvent]) -> [ArkTrajectorySemanticRecord] {
     let events = sourceEvents.sorted { $0.id < $1.id }
     var builders: [ArkTrajectoryRecordBuilder] = []

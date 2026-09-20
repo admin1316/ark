@@ -610,9 +610,7 @@ private struct ArkConversationSurfaceSnapshot {
   let turnUsageProjection: ArkChatTurnUsageProjection.Accumulator
   let liveHistoryCut: ArkHistoryCut?
   let historicalUsageFacts: [Int: ArkChatTurnUsage]
-  let liveHistoryRecords: [Int: ArkSemanticHistoryRecord]
-  let liveHistoryRecordsCut: ArkHistoryCut?
-  let liveHistoryPreviewIDs: Set<Int>
+  let liveHistorySnapshot: ArkHistoryReadingSnapshot?
   let feedback: [String: ArkMessageFeedback]
   let feedbackAvailable: Bool
   let sessionProjections: [String: JSONValue]
@@ -682,9 +680,13 @@ public final class ArkAppModel: ObservableObject {
   private var historyReader: ArkHistoryReadingWindow?
   private var liveHistoryCut: ArkHistoryCut?
   private var historicalUsageFacts: [Int: ArkChatTurnUsage] = [:]
-  private var liveHistoryRecords: [Int: ArkSemanticHistoryRecord] = [:]
-  private var liveHistoryRecordsCut: ArkHistoryCut?
-  private var liveHistoryPreviewIDs = Set<Int>()
+  private var liveHistorySnapshot: ArkHistoryReadingSnapshot?
+  private var liveHistoryRecords: [Int: ArkSemanticHistoryRecord] { liveHistorySnapshot?.recordByMessageID ?? [:] }
+  private var liveHistoryRecordsCut: ArkHistoryCut? { liveHistorySnapshot?.cut }
+  private var liveHistoryPreviewIDs: Set<Int> {
+    guard let snapshot = liveHistorySnapshot else { return [] }
+    return snapshot.previewMessageIDs.filter { snapshot.recordByMessageID[$0]?.state != .active }
+  }
   public var displayedPreviewMessageIDs: Set<Int> {
     historyReadingSnapshot?.previewMessageIDs ?? liveHistoryPreviewIDs
   }
@@ -3317,9 +3319,7 @@ public final class ArkAppModel: ObservableObject {
       turnUsageProjection: turnUsageProjection,
       liveHistoryCut: liveHistoryCut,
       historicalUsageFacts: historicalUsageFacts,
-      liveHistoryRecords: liveHistoryRecords,
-      liveHistoryRecordsCut: liveHistoryRecordsCut,
-      liveHistoryPreviewIDs: liveHistoryPreviewIDs,
+      liveHistorySnapshot: liveHistorySnapshot,
       feedback: messageFeedbackByID,
       feedbackAvailable: messageFeedbackAvailable,
       sessionProjections: sessionProjections,
@@ -3352,9 +3352,7 @@ public final class ArkAppModel: ObservableObject {
     turnUsageProjection = snapshot.turnUsageProjection
     liveHistoryCut = snapshot.liveHistoryCut
     historicalUsageFacts = snapshot.historicalUsageFacts
-    liveHistoryRecords = snapshot.liveHistoryRecords
-    liveHistoryRecordsCut = snapshot.liveHistoryRecordsCut
-    liveHistoryPreviewIDs = snapshot.liveHistoryPreviewIDs
+    liveHistorySnapshot = snapshot.liveHistorySnapshot
     messageFeedbackByID = snapshot.feedback
     messageFeedbackAvailable = snapshot.feedbackAvailable
     sessionProjections = snapshot.sessionProjections
@@ -4842,9 +4840,7 @@ public final class ArkAppModel: ObservableObject {
       liveHistoryCut = head.cut
       if let seed, let reading, let reader = recoveryReader {
         historicalUsageFacts = seed.usage
-        liveHistoryRecords = reading.recordByMessageID
-        liveHistoryRecordsCut = reading.cut
-        liveHistoryPreviewIDs = reading.previewMessageIDs.filter { reading.recordByMessageID[$0]?.state != .active }
+        liveHistorySnapshot = reading
         historyReader = reader
         recoveryReader = nil
         historyReadingSnapshot = nil
@@ -4857,7 +4853,7 @@ public final class ArkAppModel: ObservableObject {
       sessionProjections = projectionBaseline.projections
       historyLoadState = .loaded
       composerErrorMessage = nil
-      if previousHead != events.last?.id || previousReadingCut != historyReadingSnapshot?.cut {
+      if seed != nil || previousHead != events.last?.id || previousReadingCut != historyReadingSnapshot?.cut {
         markTrajectoryProjectionDirty()
       }
       synchronizeModelLabelFromEvents()
@@ -4947,11 +4943,9 @@ public final class ArkAppModel: ObservableObject {
       installReadingSnapshot(snapshot)
     } else {
       var rows: [ArkMessage] = []
-      var previews = Set<Int>()
       for (id, record) in liveHistoryRecords where record.state != .active {
         if let cached = reader.cachedMessage(recordID: record.id) { rows.append(cached) }
         else {
-          previews.insert(id)
           rows.append(ArkMessage(id: id, role: record.kind == .user ? .user : .assistant,
             text: record.preview, turn: record.turn, step: record.step,
             interrupted: record.state != .complete, time: record.time))
@@ -4959,7 +4953,8 @@ public final class ArkAppModel: ObservableObject {
       }
       try messageProjection.installHistoricalRows(rows, canonicalIDs: Set(liveHistoryRecords.values.compactMap(\.canonicalEventSequence)))
       messages = messageProjection.messages
-      liveHistoryPreviewIDs = previews
+      liveHistorySnapshot = reader.snapshot
+      markTrajectoryProjectionDirty()
       chatPresentationDidChange.send()
     }
     return message
@@ -5007,9 +5002,7 @@ public final class ArkAppModel: ObservableObject {
     hasNewerHistory = false
     liveHistoryCut = nil
     historicalUsageFacts = [:]
-    liveHistoryRecords = [:]
-    liveHistoryRecordsCut = nil
-    liveHistoryPreviewIDs = []
+    liveHistorySnapshot = nil
   }
 
   private func loadMessageFeedback(for sessionID: String) async {
@@ -6478,10 +6471,11 @@ public final class ArkAppModel: ObservableObject {
     let sessionID = selectedSessionID
     let snapshot = events
     let readingSnapshot = historyReadingSnapshot
+    let liveSnapshot = liveHistorySnapshot
     trajectoryProjectionTask = Task { [weak self] in
       let records = await Task.detached(priority: .userInitiated) {
         if let readingSnapshot { return ArkTrajectoryProjection.records(from: readingSnapshot) }
-        return ArkTrajectoryProjection.records(from: snapshot)
+        return ArkTrajectoryProjection.records(from: snapshot, history: liveSnapshot)
       }.value
       guard let self,
             !Task.isCancelled,

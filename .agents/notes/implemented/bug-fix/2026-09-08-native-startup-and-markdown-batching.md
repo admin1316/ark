@@ -30,6 +30,8 @@ The trajectory fold computes an active assistant preview once after folding its 
 
 **Publish every completed parse immediately.** Each completion copies the projection map and invalidates SwiftUI. Coalescing trades up to one short presentation interval for fewer copies and layout invalidations.
 
+Cold and restored live sessions now retain the existing semantic reading snapshot in their conversation surface, replacing the separate record/cut/preview fields. The raw recovery tail is intentionally incomplete for closed turns; trajectory therefore combines semantic rows with replayed live rows and gives overlapping live messages precedence. Message body loads invalidate the same trajectory owner. This preserves closed history without a second reader, polling loop, or cache. Contracts check complete cold and warm row counts plus closed/active assistant bodies and duplicate suppression; native candidate acceptance remains separate.
+
 ## Consequences
 
 Syntax parser objects remain bounded by the batch size and live outside the launcher heap. The selected Node must support VM modules and package-manifest discovery. The [runtime closure tests](../../../../integrations/jiuzhang/tests/runtime-closure.test.mjs) cover mixed syntax, invalid entries across batch boundaries, and absence of execution. The [native scroll tests](../../../../integrations/jiuzhang/native/Tests/JiuzhangShellCoreTests/ArkChatScrollContractChecks.swift) cover a 128-source batch, duplicate drain, source replacement, cancellation, and stale session completions. These checks do not establish production promotion or unbounded-session performance.
