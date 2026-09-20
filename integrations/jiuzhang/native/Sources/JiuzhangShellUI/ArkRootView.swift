@@ -3746,8 +3746,9 @@ private struct NativeChatView: View {
   @State private var renderWindow = ArkChatRenderWindow()
   @State private var requestedHistoryAnchorID: String?
   static let largeTranscriptEntryThreshold = 600
+  static let activeStreamingRenderWindowEntries = 48
 
-  private static func streamingRenderWindowEntries(forEntryCount count: Int) -> Int {
+  private static func largeTranscriptRenderWindowEntries(forEntryCount count: Int) -> Int {
     count >= 2000 ? 96 : 160
   }
 
@@ -4060,8 +4061,16 @@ private struct NativeChatView: View {
     let projection = bodyProjection
     let allDisplayEntries = projection.displayEntries
     let heavyTranscript = allDisplayEntries.count > Self.largeTranscriptEntryThreshold
-    let effectiveWindow = (context.sessionRunning || heavyTranscript)
-      ? Self.streamingRenderWindowEntries(forEntryCount: allDisplayEntries.count) : 400
+    // Every streamed delta invalidates the active answer's text layout. An eager
+    // transcript stack then recomputes spacing for every mounted row, even when
+    // those rows are outside the viewport. Keep two or more screens mounted
+    // while streaming; restore the wider browsing window as soon as the turn
+    // finishes so completed conversations retain their existing scroll range.
+    let effectiveWindow = context.sessionRunning
+      ? Self.activeStreamingRenderWindowEntries
+      : (heavyTranscript
+        ? Self.largeTranscriptRenderWindowEntries(forEntryCount: allDisplayEntries.count)
+        : 400)
     let displayIDs = allDisplayEntries.map(\.id)
     let visibleRange = renderWindow.range(in: displayIDs, limit: effectiveWindow)
     let hiddenEntryCount = visibleRange.lowerBound
