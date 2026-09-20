@@ -194,11 +194,11 @@ public struct ArkChatScrollStateMachine: Sendable {
     metrics: ArkChatScrollMetrics
   ) -> ArkChatScrollCommand {
     var state = sessions[sessionID] ?? SessionState()
-    state.contentHeight = metrics.contentHeight
 
     if state.anchor == .bottom, state.followsBottom || metrics.maximumOffset == 0 {
       state.followsBottom = true
       state.offset = metrics.maximumOffset
+      state.contentHeight = metrics.contentHeight
       sessions[sessionID] = state
       guard activeSessionID == sessionID else { return .none }
       let outsidePhysicalBounds =
@@ -209,8 +209,9 @@ public struct ArkChatScrollStateMachine: Sendable {
         : .none
     }
 
-    let retainedOffset = min(max(state.offset, 0), metrics.maximumOffset)
+    let retainedOffset = retainedReaderOffset(state: state, metrics: metrics)
     state.offset = retainedOffset
+    state.contentHeight = metrics.contentHeight
     sessions[sessionID] = state
     guard activeSessionID == sessionID,
       abs(metrics.offset - retainedOffset) > 0.5
@@ -226,9 +227,9 @@ public struct ArkChatScrollStateMachine: Sendable {
     metrics: ArkChatScrollMetrics
   ) -> ArkChatScrollCommand {
     var state = sessions[sessionID] ?? SessionState()
-    state.contentHeight = metrics.contentHeight
     if state.anchor == .bottom, state.followsBottom {
       state.offset = metrics.clampedOffset
+      state.contentHeight = metrics.contentHeight
       sessions[sessionID] = state
       // Compare the physical origin, not its clamped projection. After a large
       // final-message reflow AppKit can temporarily retain an origin beyond the
@@ -242,15 +243,24 @@ public struct ArkChatScrollStateMachine: Sendable {
         ? .scrollToBottom
         : .none
     }
-    state.offset = metrics.clampedOffset
+    let retainedOffset = retainedReaderOffset(state: state, metrics: metrics)
+    state.offset = retainedOffset
+    state.contentHeight = metrics.contentHeight
     if state.anchor == .bottom, metrics.distanceFromBottom <= followThreshold {
-      state.followsBottom = true
-      state.offset = metrics.maximumOffset
+      // A programmatic content shrink can physically clamp AppKit to the tail.
+      // Preserve the suspended reader state; only direct user movement may
+      // resume following.
       sessions[sessionID] = state
-      return activeSessionID == sessionID ? .scrollToBottom : .none
+      guard activeSessionID == sessionID,
+        abs(metrics.offset - retainedOffset) > 0.5
+      else { return .none }
+      return .scrollTo(offset: retainedOffset)
     }
     sessions[sessionID] = state
-    return .none
+    guard activeSessionID == sessionID,
+      abs(metrics.offset - retainedOffset) > 0.5
+    else { return .none }
+    return .scrollTo(offset: retainedOffset)
   }
 
   /// Reconcile the streaming leaf being replaced by its final Markdown rows.
@@ -263,12 +273,10 @@ public struct ArkChatScrollStateMachine: Sendable {
     metrics: ArkChatScrollMetrics
   ) -> ArkChatScrollCommand {
     var state = sessions[sessionID] ?? SessionState()
-    let previousMaximumOffset = max(state.contentHeight - metrics.viewportHeight, 0)
-    let previousOffset = min(max(state.offset, 0), previousMaximumOffset)
-    state.contentHeight = metrics.contentHeight
 
     if state.anchor == .bottom, state.followsBottom {
       state.offset = metrics.maximumOffset
+      state.contentHeight = metrics.contentHeight
       sessions[sessionID] = state
       guard activeSessionID == sessionID else { return .none }
       return abs(metrics.offset - metrics.maximumOffset) > 0.5
@@ -276,6 +284,25 @@ public struct ArkChatScrollStateMachine: Sendable {
         : .none
     }
 
+    let target = retainedReaderOffset(state: state, metrics: metrics)
+    state.offset = target
+    state.contentHeight = metrics.contentHeight
+    sessions[sessionID] = state
+    guard activeSessionID == sessionID,
+      abs(metrics.offset - target) > 0.5
+    else { return .none }
+    return .scrollTo(offset: target)
+  }
+
+  /// Preserve a suspended reader through a document shrink that may already
+  /// have forced AppKit's physical origin to the new bottom. The retained
+  /// state still carries the last user-selected offset and old content size.
+  private func retainedReaderOffset(
+    state: SessionState,
+    metrics: ArkChatScrollMetrics
+  ) -> Double {
+    let previousMaximumOffset = max(state.contentHeight - metrics.viewportHeight, 0)
+    let previousOffset = min(max(state.offset, 0), previousMaximumOffset)
     var target = min(previousOffset, metrics.maximumOffset)
     let previouslyAwayFromBottom =
       previousMaximumOffset - previousOffset > followThreshold
@@ -288,13 +315,7 @@ public struct ArkChatScrollStateMachine: Sendable {
         target = min(target, metrics.maximumOffset - followThreshold - 1)
       }
     }
-    target = min(max(target, 0), metrics.maximumOffset)
-    state.offset = target
-    sessions[sessionID] = state
-    guard activeSessionID == sessionID,
-      abs(metrics.offset - target) > 0.5
-    else { return .none }
-    return .scrollTo(offset: target)
+    return min(max(target, 0), metrics.maximumOffset)
   }
 
   /// Explicitly return a session to the live-following mode.

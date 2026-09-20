@@ -84,6 +84,26 @@ func runArkChatScrollContractChecks() {
     "final-body shrink preserves reading progress instead of clamping a reader to the bottom"
   )
 
+  var earlyClampMachine = ArkChatScrollStateMachine(followThreshold: 44)
+  _ = earlyClampMachine.activate(
+    sessionID: "completion-reader-early-clamp",
+    metrics: ArkChatScrollMetrics(contentHeight: 2_000, viewportHeight: 200, offset: 1_800)
+  )
+  earlyClampMachine.viewportDidMove(
+    sessionID: "completion-reader-early-clamp",
+    metrics: ArkChatScrollMetrics(contentHeight: 2_000, viewportHeight: 200, offset: 1_200),
+    source: .user
+  )
+  let earlyClampCommand = earlyClampMachine.viewportDidResize(
+    sessionID: "completion-reader-early-clamp",
+    metrics: ArkChatScrollMetrics(contentHeight: 900, viewportHeight: 200, offset: 700)
+  )
+  check(
+    scrollOffset(earlyClampCommand).map { $0 < 656 } == true
+      && earlyClampMachine.snapshot(for: "completion-reader-early-clamp")?.followsBottom == false,
+    "final-body layout shrink restores a reader before AppKit can persist its clamped tail"
+  )
+
   var completionFollower = ArkChatScrollStateMachine(followThreshold: 44)
   _ = completionFollower.activate(
     sessionID: "completion-follower",
