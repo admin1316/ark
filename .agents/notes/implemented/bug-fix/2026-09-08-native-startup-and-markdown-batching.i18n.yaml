@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-08-native-startup-and-markdown-batching.md
-2026-09-08-native-startup-and-markdown-batching.md: db98fa6265d41a06c4b7bd95e7d53a5d99b0b5d0
-2026-09-08-native-startup-and-markdown-batching.zh.md: a2461b933a50347b7c155f14b2cba44051ea7a1b
+2026-09-08-native-startup-and-markdown-batching.md: 25aa21f6e1a5743c6ec3d8d3e52180280f1b0cc4
+2026-09-08-native-startup-and-markdown-batching.zh.md: 40e417a3ae367dcb4da0e312f6cd3c31cfb44c13

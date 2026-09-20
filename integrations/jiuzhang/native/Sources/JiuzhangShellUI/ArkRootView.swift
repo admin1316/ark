@@ -4406,12 +4406,12 @@ private struct NativeChatView: View {
     switch row {
     case .pending(let source):
       // Completion changes the presentation before the full projection is ready.
-      // Keep the same bounded live body visible while the existing worker parses it.
-      NativeStreamingMarkdownText(
-        text: source.source,
-        baseFontSize: fontSize,
-        producedFilePaths: context.producedFilePaths
-      )
+      // Keep one bounded plain frame visible while the existing worker parses it. Starting a
+      // second Markdown document here duplicated the parse and mounted every table row in each
+      // pending restored answer before the transcript's row window could take ownership. After a
+      // chat/trajectory switch that temporary responder tree could monopolize SwiftUI's focus and
+      // accessibility pass for minutes. The canonical worker below still installs every block.
+      NativePendingMarkdownText(text: source.source, baseFontSize: fontSize)
       .accessibilityIdentifier(
         "ark.chat.message.\(source.messageID).markdown.\(source.sourceSlot).pending"
       )
@@ -8257,6 +8257,25 @@ private struct NativeMarkdownText: View {
       baseFontSize: baseFontSize,
       producedFilePaths: producedFilePaths
     )
+      .fixedSize(horizontal: false, vertical: true)
+  }
+}
+
+/// A restored or completed answer keeps a small selectable opening-and-tail frame while its
+/// canonical block projection is in flight. This deliberately has no Markdown document model:
+/// the transcript feed already owns the one parser that will install every complete block.
+private struct NativePendingMarkdownText: View {
+  let text: String
+  var baseFontSize: CGFloat = 14
+
+  var body: some View {
+    Text(ArkStreamingPresentationPolicy.firstFrameText(
+      ArkStreamingPresentationPolicy.markdownText(text, streaming: true)
+    ))
+      .font(.system(size: baseFontSize))
+      .lineSpacing(4)
+      .textSelection(.enabled)
+      .frame(maxWidth: .infinity, alignment: .leading)
       .fixedSize(horizontal: false, vertical: true)
   }
 }

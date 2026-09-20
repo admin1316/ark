@@ -837,6 +837,11 @@ func runArkChatPresentationContractChecks() {
       from: "private struct NativeChatView",
       through: "private struct NativeMessageRow"
     )
+    let assistantBodyRow = chatSourceSlice(
+      root,
+      from: "private func assistantProjectedBodyRow",
+      through: "private func assistantProjectedSuffix"
+    )
     let chatEntry = chatSourceSlice(
       root,
       from: "private enum NativeChatEntry",
@@ -871,6 +876,11 @@ func runArkChatPresentationContractChecks() {
       root,
       from: "private struct NativeStreamingMarkdownText",
       through: "@MainActor\nprivate final class NativeWikiFeed"
+    )
+    let pendingMarkdown = chatSourceSlice(
+      root,
+      from: "private struct NativePendingMarkdownText",
+      through: "private struct NativeStreamingMarkdownText"
     )
     let statusRow = chatSourceSlice(
       root,
@@ -938,6 +948,19 @@ func runArkChatPresentationContractChecks() {
         && chatView?.contains("renderWindow.later(in: displayIDs, limit: effectiveWindow)") == true
         && chatView?.contains("allDisplayEntries.suffix(effectiveWindow)") == false,
       "manual navigation moves a bounded range instead of growing an unreachable suffix"
+    )
+    check(
+      assistantBodyRow?.contains("case .pending(let source):") == true
+        && assistantBodyRow?.contains("NativePendingMarkdownText(text: source.source") == true
+        && assistantBodyRow?.contains("NativeStreamingMarkdownText(") == false,
+      "pending restored Markdown uses one bounded plain frame until canonical blocks install"
+    )
+    check(
+      pendingMarkdown?.contains("Text(ArkStreamingPresentationPolicy.firstFrameText(") == true
+        && pendingMarkdown?.contains("ArkStreamingPresentationPolicy.markdownText(text, streaming: true)") == true
+        && pendingMarkdown?.contains("NativeMarkdownDocument(") == false
+        && pendingMarkdown?.contains(".textSelection(.enabled)") == true,
+      "pending Markdown has one selectable text leaf without a duplicate document parser"
     )
     check(
       chatView?.contains("let projection = bodyProjection") == true
