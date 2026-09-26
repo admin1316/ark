@@ -163,6 +163,11 @@ suite('persistent Bash through a real cordis.yml Loader composition', () => {
     expect(large).toContain('<response clipped>')
     expect(large).not.toContain('beginning of this command output was dropped')
 
+    const unicode = text(await execute('unicode-output', "printf 'x%.0s' {1..15999}; printf '😀tail\\n'"))
+    expect(unicode.startsWith(`${'x'.repeat(15_999)}<response clipped>`)).toBe(true)
+    expect(unicode).not.toContain('\uD83D')
+    expect(text(await execute('after-unicode-output', 'printf "ready\\n"'))).toBe('ready')
+
     // `exec` replaces the wrapper before its end marker prints; the seam's
     // stdin_read readiness is what returns the replacement shell's prompt
     // instead of spinning until the tool deadline.
