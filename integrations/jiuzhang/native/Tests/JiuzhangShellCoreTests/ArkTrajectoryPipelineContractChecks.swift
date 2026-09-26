@@ -32,6 +32,7 @@ func runArkTrajectoryPipelineContractChecks() async {
     documentStore: store,
     defaults: defaults
   )
+  let feed = NativeTrajectoryFeed(model: model)
   defer {
     transport.invalidateAndCancel()
     defaults.removePersistentDomain(forName: suite)
@@ -47,6 +48,9 @@ func runArkTrajectoryPipelineContractChecks() async {
   var published: [Int] = []
   let observation = model.$trajectoryRecords.sink { published.append($0.count) }
   defer { observation.cancel() }
+  var displayed: [Int] = []
+  let feedObservation = feed.$records.sink { displayed.append($0.count) }
+  defer { feedObservation.cancel() }
 
   // Selecting a session navigates to the chat tab by default, which would
   // suppress the trajectory projection. Keep the trajectory surface selected.
@@ -58,9 +62,12 @@ func runArkTrajectoryPipelineContractChecks() async {
 
   let coldRows = await trajectoryPipelineEventually {
     model.trajectoryRecords.filter { $0.kind == .user }.count == model.messages.count
+      && feed.records == model.trajectoryRecords
   }
   check(coldRows && model.messages.count == 12,
     "cold semantic history populates trajectory before entering a reading window")
+  check(feed.records == model.trajectoryRecords,
+    "trajectory feed displays the current authoritative fold after same-context coalescing")
 
   await model.loadOlderHistory()
   let reading = await trajectoryPipelineEventually { model.historyReadingSnapshot != nil }
@@ -80,6 +87,7 @@ func runArkTrajectoryPipelineContractChecks() async {
 
   // Two consecutive bodies inside one window: same session, same cut.
   let baseline = published.count
+  let displayedBaseline = displayed.count
   for id in ids.prefix(2) {
     let beforeLoad = published.count
     do {
@@ -92,12 +100,18 @@ func runArkTrajectoryPipelineContractChecks() async {
     let recomputed = await trajectoryPipelineEventually { published.count > beforeLoad }
     check(recomputed, "each loaded body completes a new trajectory publication")
     guard recomputed else { return }
+    let displayedBody = await trajectoryPipelineEventually { feed.records == model.trajectoryRecords }
+    check(displayedBody, "same-cut body recompute reaches the coalesced trajectory feed")
   }
   let window = Array(published.dropFirst(baseline))
 
   check(
     !window.contains(0),
     "loading message bodies inside one reading window never publishes an empty trajectory array"
+  )
+  check(
+    !displayed.dropFirst(displayedBaseline).contains(0),
+    "same-context body recomputes never clear the displayed trajectory feed"
   )
   check(
     !model.trajectoryRecords.isEmpty,
@@ -115,6 +129,8 @@ func runArkTrajectoryPipelineContractChecks() async {
     model.trajectoryRecords.isEmpty,
     "switching sessions clears the previous session's rows instead of showing them as the new session's"
   )
+  check(feed.selectedSessionID == "other-session" && feed.records.isEmpty,
+    "switching sessions clears the displayed feed before the new session can show previous rows")
 
   // A session the fixture serves no records for must present a real empty state,
   // and the projection must recover when a populated session is selected again.
@@ -144,6 +160,26 @@ func runArkTrajectoryPipelineContractChecks() async {
     model.trajectoryRecords.filter { $0.kind == .user }.count == 12
   }
   check(warmRows, "warm session restoration retains every semantic trajectory row")
+  // An earlier feed throttle could retain the just-published A fold until
+  // after B's identity was visible. Rapid round trips must not queue old rows.
+  // Follow the sidebar's production route: selecting a session opens Chat,
+  // and selecting Trajectory schedules the current generation's fold.
+  model.selectSession("empty-session")
+  model.selectedTab = .trajectory
+  check(feed.selectedSessionID == "empty-session" && feed.records.isEmpty,
+    "an A-to-B switch immediately removes A rows from the displayed feed")
+  let beforeRoundTripLoads = completedLoads
+  model.selectSession("fixture")
+  model.selectedTab = .trajectory
+  check(feed.selectedSessionID == "fixture" && feed.records.isEmpty,
+    "an A-to-B-to-A round trip waits for the current generation without retained rows")
+  let roundTripReady = await trajectoryPipelineEventually {
+    completedLoads >= beforeRoundTripLoads + 1 && model.historyLoadState == .loaded
+      && model.selectedSessionID == "fixture" && feed.selectedSessionID == "fixture"
+      && model.trajectoryRecords.filter { $0.kind == .user }.count == 12
+      && feed.records == model.trajectoryRecords
+  }
+  check(roundTripReady, "the current trajectory generation reaches the feed after a rapid round trip")
   await model.loadOlderHistory()
   let readingAgain = await trajectoryPipelineEventually { model.historyReadingSnapshot != nil }
   check(readingAgain, "the repopulated session can enter its own reading window")
@@ -152,6 +188,17 @@ func runArkTrajectoryPipelineContractChecks() async {
     repopulated,
     "the projection repopulates for the new context instead of staying permanently cleared"
   )
+  let displayedCut = await trajectoryPipelineEventually { feed.records == model.trajectoryRecords }
+  check(displayedCut,
+    "a new reading cut reaches the feed without retaining a delayed live projection")
+  let beforeReturningLive = displayed.count
+  await model.returnToLatestHistory()
+  check(model.historyReadingSnapshot == nil && displayed.dropFirst(beforeReturningLive).contains(0),
+    "returning from a reading cut publishes an empty feed at the context reset")
+  let displayedLive = await trajectoryPipelineEventually {
+    !model.trajectoryRecords.isEmpty && feed.records == model.trajectoryRecords
+  }
+  check(displayedLive, "the live projection replaces the cleared historical feed")
   // A closed turn recovers its bodies semantically; its raw tail is turn/end.
   // An active turn replays chunks as well, which must replace rather than
   // duplicate the semantic assistant prefix.

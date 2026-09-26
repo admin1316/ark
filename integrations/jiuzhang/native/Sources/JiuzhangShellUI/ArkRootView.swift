@@ -4344,7 +4344,10 @@ private struct NativeChatView: View {
           .frame(maxWidth: .infinity)
         NativeSessionStatsBar(model: model)
           .frame(height: ChatLayoutMetrics.statsBarHeight)
-          .frame(maxWidth: transcriptWidth)
+          .frame(maxWidth: ArkChatLayoutResolver.composerWidth(
+            maximumWidth: ChatLayoutMetrics.composerMaxWidth,
+            transcriptWidth: transcriptWidth
+          ))
           .padding(.horizontal, 20)
           .padding(.bottom, ChatLayoutMetrics.statsBarBottomInset)
           .frame(maxWidth: .infinity)
@@ -8077,14 +8080,15 @@ private struct NativeSessionStatsBar: View {
   var body: some View {
     if !line.isEmpty {
       Text(line)
-      .font(.system(size: 9, design: .monospaced))
-      .foregroundStyle(ArkPalette.secondary)
-      .lineLimit(1)
-      .truncationMode(.tail)
-      .help(line)
-      .padding(.horizontal, 12)
-      .padding(.top, 6)
-      .frame(maxWidth: .infinity, alignment: .leading)
+        .font(.system(size: 12))
+        .foregroundStyle(ArkPalette.secondary)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .help(line)
+        .accessibilityLabel(line)
+        .accessibilityIdentifier("ark.chat.sessionStats")
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
   }
 
