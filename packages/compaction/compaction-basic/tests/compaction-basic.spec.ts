@@ -285,6 +285,27 @@ async function compactIfNeeded(
 }
 
 describe('compact configuration and defaults', () => {
+  it('caps pressure at the remaining message budget without rescaling the threshold ratio', () => {
+    const policy = resolveTargetPolicy(resolveCompactionConfig({}), { provider: MODEL, model: MODEL })
+    expect(resolveCompactSpec(policy, 1_000_000, 256_000)).toMatchObject({
+      thresholdTokens: 744_000, retainTokens: 119_040, maxTokens: 8192,
+    })
+    expect(resolveCompactSpec(policy, 1_000, 100)).toMatchObject({ thresholdTokens: 800, retainTokens: 144 })
+    expect(resolveCompactSpec(policy, 1_000, 0)).toMatchObject({ thresholdTokens: 800, retainTokens: 160 })
+  })
+
+  it('rejects invalid reserves and retention beyond the remaining message budget', () => {
+    const policy = resolveTargetPolicy(resolveCompactionConfig({}), { provider: MODEL, model: MODEL })
+    for (const reserve of [-1, 1.5, Number.NaN]) {
+      expect(() => resolveCompactSpec(policy, 1_000, reserve)).toThrow(/non-negative integer/)
+    }
+    for (const reserve of [1_000, 1_500]) {
+      expect(() => resolveCompactSpec(policy, 1_000, reserve)).toThrow(/leaving no message budget/)
+    }
+    const retained = resolveTargetPolicy(resolveCompactionConfig({ retainTokens: 500 }), { provider: MODEL, model: MODEL })
+    expect(() => resolveCompactSpec(retained, 1_000, 500)).toThrow(/less than threshold/)
+  })
+
   it('uses low-friction service-wide defaults', () => {
     const resolved = resolveCompactionConfig({})
 
@@ -341,11 +362,11 @@ describe('compact configuration and defaults', () => {
       model: 'shared-id',
     })
 
-    expect(resolveCompactSpec(small, 1_000)).toMatchObject({
+    expect(resolveCompactSpec(small, 1_000, 0)).toMatchObject({
       thresholdTokens: 500,
       retainTokens: 120,
     })
-    expect(resolveCompactSpec(otherProvider, 2_000)).toMatchObject({
+    expect(resolveCompactSpec(otherProvider, 2_000, 0)).toMatchObject({
       thresholdTokens: 1_600,
       retainTokens: 200,
     })
@@ -364,7 +385,7 @@ describe('compact configuration and defaults', () => {
         maxOverflowRetries: 3,
       }],
     }), { provider: 'ratio-provider', model: 'ratio-model' })
-    expect(resolveCompactSpec(ratioOverride, 2_000)).toMatchObject({
+    expect(resolveCompactSpec(ratioOverride, 2_000, 0)).toMatchObject({
       thresholdTokens: 1_200,
       retainTokens: 400,
       summarizationProvider: 'summary-provider',
@@ -469,9 +490,9 @@ describe('compact configuration and defaults', () => {
       thresholdRatio: 0.5,
       retainTokens: 500,
     }), { provider: MODEL, model: MODEL })
-    expect(() => resolveCompactSpec(invalidPressure, 1_000)).toThrow(/less than threshold/)
-    expect(() => resolveCompactSpec(invalidPressure, 1.5)).toThrow(/positive integer/)
-    expect(() => resolveCompactSpec(invalidPressure, 0)).toThrow(/positive integer/)
+    expect(() => resolveCompactSpec(invalidPressure, 1_000, 0)).toThrow(/less than threshold/)
+    expect(() => resolveCompactSpec(invalidPressure, 1.5, 0)).toThrow(/positive integer/)
+    expect(() => resolveCompactSpec(invalidPressure, 0, 0)).toThrow(/positive integer/)
   })
 
 })
@@ -482,6 +503,90 @@ describe('pressure measurement and retention', () => {
     thresholdRatio: 0.5,
     retainTokens: 180,
   }
+
+  it.each(['envelope', 'adapter'] as const)('reserves the %s output cap before proactive compaction and stops after relief', async (source) => {
+    const ctx = createContext(1_000)
+    const compact = service({ auto: false, thresholdRatio: 0.8, retainRatio: 0.1 }, ctx)
+    const session = conversation(4)
+    const measured = ctx.tokenMeter.measure(session).totalTokens
+    expect(measured).toBeLessThan(800)
+    await expect(compactIfNeeded(compact, session)).resolves.toBeNull()
+
+    const maxTokens = 1_000 - measured + 1
+    if (source === 'envelope') {
+      session.append('request/header', {
+        header: { config: { provider: MODEL, model: MODEL, maxTokens } },
+        reason: 'change',
+      })
+    } else {
+      vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementation((provider, model) => Promise.resolve({
+        provider, id: model, name: model, context: { contextWindow: 1_000 }, defaultMaxTokens: maxTokens,
+      }))
+    }
+
+    await expect(compactIfNeeded(compact, session)).resolves.not.toBeNull()
+    const calls = compact.calls.length
+    expect(calls).toBeGreaterThan(0)
+    expect(ctx.tokenMeter.measure(session).totalTokens).toBeLessThan(1_000 - maxTokens)
+    await expect(compactIfNeeded(compact, session)).resolves.toBeNull()
+    expect(compact.calls).toHaveLength(calls)
+  })
+
+  it('keeps the whole-window ratio when it is below the remaining message budget', async () => {
+    const ctx = createContext(1_000)
+    const compact = service({ auto: false, thresholdRatio: 0.8, retainRatio: 0.1 }, ctx)
+    const session = conversation(4)
+    const measured = ctx.tokenMeter.measure(session).totalTokens
+    // A ratio applied again to the remaining budget would compact this history too early.
+    const maxTokens = 1_000 - measured - 1
+    expect(measured).toBeLessThan(800)
+    expect(measured).toBeGreaterThan(0.8 * (1_000 - maxTokens))
+    session.append('request/header', {
+      header: { config: { provider: MODEL, model: MODEL, maxTokens } },
+      reason: 'change',
+    })
+    await expect(compactIfNeeded(compact, session)).resolves.toBeNull()
+    expect(compact.calls).toHaveLength(0)
+  })
+
+  it('uses the durable envelope cap before the adapter default', async () => {
+    const ctx = createContext(1_000)
+    const compact = service({ auto: false, thresholdRatio: 0.8, retainRatio: 0.1 }, ctx)
+    const session = conversation(4)
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementation((provider, model) => Promise.resolve({
+      provider, id: model, name: model, context: { contextWindow: 1_000 }, defaultMaxTokens: 900,
+    }))
+    session.append('request/header', {
+      header: { config: { provider: MODEL, model: MODEL, maxTokens: 1 } },
+      reason: 'change',
+    })
+    await expect(compactIfNeeded(compact, session)).resolves.toBeNull()
+    expect(compact.calls).toHaveLength(0)
+  })
+
+  it('re-resolves the output reservation when the durable provider changes for the same model id', async () => {
+    const ctx = createContext(1_000)
+    const compact = service({ auto: false, thresholdRatio: 0.8, retainRatio: 0.1 }, ctx)
+    const session = conversation(4)
+    const measured = ctx.tokenMeter.measure(session).totalTokens
+    const routes: string[] = []
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementation((provider, model) => {
+      routes.push(provider)
+      return Promise.resolve({
+        provider, id: model, name: model, context: { contextWindow: 1_000 },
+        defaultMaxTokens: provider === 'small-output' ? 1 : 1_000 - measured + 1,
+      })
+    })
+    for (const provider of ['small-output', 'large-output']) {
+      session.append('request/header', {
+        header: { config: { provider, model: 'same-model-id' } }, reason: 'change',
+      })
+      const result = await compactIfNeeded(compact, session)
+      if (provider === 'small-output') expect(result).toBeNull()
+      else expect(result).not.toBeNull()
+    }
+    expect(routes).toEqual(['small-output', 'large-output'])
+  })
 
   it('skips when no durable routed model exists instead of using AgentOptions fallback', async () => {
     const compact = service(compactConfig)
@@ -1531,6 +1636,23 @@ describe('automatic listener and loader composition', () => {
     expect(warnings).toEqual([
       expect.stringContaining(`no context capacity for ${MODEL}/${MODEL}`),
     ])
+  })
+
+  it('warns once for an output reservation that leaves no message budget without mutating history', async () => {
+    const ctx = createContext(1_000)
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
+    const compact = new TestCompactionEngine(ctx, {})
+    const session = conversation(4)
+    session.append('request/header', {
+      header: { config: { provider: MODEL, model: MODEL, maxTokens: 1_000 } }, reason: 'change',
+    })
+    const before = session.events.length
+    await preStep(ctx, agent(session, MODEL))
+    await preStep(ctx, agent(session, MODEL))
+    expect(warnings).toEqual([expect.stringContaining('leaving no message budget')])
+    expect(session.events).toHaveLength(before)
+    expect(compact.calls).toHaveLength(0)
   })
 
   it('warns once per routed target when absolute retention exceeds its resolved threshold', async () => {
