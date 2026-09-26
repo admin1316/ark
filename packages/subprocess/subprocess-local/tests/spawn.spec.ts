@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -55,14 +55,31 @@ function shellArgv(command: string): string[] {
   }
 }
 
-const { failNextClose, failNextUnlink } = vi.hoisted(() => ({
+const { failNextClose, failNextUnlink, failNextWrite, nextOpenCollision } = vi.hoisted(() => ({
   failNextClose: { value: false },
   failNextUnlink: { value: false },
+  failNextWrite: { value: false },
+  nextOpenCollision: { create: false, path: '' },
 }))
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
+    openSync(path: string, flags: string, mode?: number): number {
+      if (nextOpenCollision.create) {
+        nextOpenCollision.create = false
+        nextOpenCollision.path = path
+        actual.writeFileSync(path, 'another owner', { flag: 'wx', mode: 0o600 })
+      }
+      return actual.openSync(path, flags, mode)
+    },
+    writeSync(fd: number, buffer: Buffer): number {
+      if (failNextWrite.value) {
+        failNextWrite.value = false
+        throw Object.assign(new Error('simulated ENOSPC on write'), { code: 'ENOSPC' })
+      }
+      return actual.writeSync(fd, buffer)
+    },
     closeSync(fd: number): void {
       if (failNextClose.value) {
         failNextClose.value = false
@@ -480,6 +497,67 @@ describe('output truncation and spill', () => {
 })
 
 describe('OutputCollector', () => {
+  it('preserves a pre-existing file when exclusive spill creation loses a collision', () => {
+    const report = vi.fn()
+    const collector = new OutputCollector(4, 100, 'collision', spillDir, report)
+    nextOpenCollision.create = true
+    try {
+      collector.push(Buffer.from('abcdefgh'))
+      expect(collector.finalize()).toEqual({ text: 'efgh', truncated: true })
+      expect(readFileSync(nextOpenCollision.path, 'utf8')).toBe('another owner')
+      expect(report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'EEXIST' }), 'collision')
+    } finally {
+      nextOpenCollision.create = false
+      try { unlinkSync(nextOpenCollision.path) } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
+  })
+
+  it.each(['removed-directory', 'not-a-directory'])('retains the tail when spill open fails: %s', (failure) => {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-spill-open-'))
+    rmdirSync(directory)
+    if (failure === 'not-a-directory') writeFileSync(directory, 'occupied')
+    const report = vi.fn()
+    const collector = new OutputCollector(4, 100, 'openfail', directory, report)
+    try {
+      expect(() => { collector.push(Buffer.from('abcdefgh')) }).not.toThrow()
+      collector.push(Buffer.from('ijkl'))
+      expect(collector.readFrom(0)).toEqual({ text: 'ijkl', nextOffset: 12, lossy: true })
+      expect(collector.finalize()).toEqual({ text: 'ijkl', truncated: true })
+      expect(report).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ code: failure === 'removed-directory' ? 'ENOENT' : 'ENOTDIR' }), 'openfail',
+      )
+    } finally {
+      if (failure === 'not-a-directory') unlinkSync(directory)
+    }
+  })
+
+  it('withdraws an incomplete spill after append fails and keeps collecting', () => {
+    const report = vi.fn()
+    const collector = new OutputCollector(4, 100, 'writefail', spillDir, report)
+    collector.push(Buffer.from('abcdefgh'))
+    const path = collector.readFrom(0).spillPath!
+    failNextWrite.value = true
+    expect(() => { collector.push(Buffer.from('ijkl')) }).not.toThrow()
+    expect(failNextWrite.value).toBe(false)
+    collector.push(Buffer.from('mn'))
+    expect(collector.finalize()).toEqual({ text: 'klmn', truncated: true })
+    expect(() => readFileSync(path)).toThrow()
+    expect(report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'ENOSPC' }), 'writefail')
+  })
+
+  it('contains a failing spill reporter in the stream data path', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-spill-report-'))
+    rmdirSync(directory)
+    const report = vi.fn(() => { throw new Error('logger unavailable') })
+    const collector = new OutputCollector(4, 100, 'reportfail', directory, report)
+    expect(() => { collector.push(Buffer.from('abcdefgh')) }).not.toThrow()
+    collector.push(Buffer.from('ijkl'))
+    expect(collector.finalize()).toEqual({ text: 'ijkl', truncated: true })
+    expect(report).toHaveBeenCalledOnce()
+  })
+
   it('keeps the tail of a single oversized chunk', () => {
     const collector = new OutputCollector(10, 100, 'test', spillDir)
     collector.push(Buffer.from('0123456789abcdef'))

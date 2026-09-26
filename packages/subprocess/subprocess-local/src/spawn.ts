@@ -68,6 +68,8 @@ function withChildProxyEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 export interface SpawnInternals {
   /** Directory for spill files (defaults to the OS temp dir). */
   spillDir?: string
+  /** Receives one spill open/write failure per stream; callback failures are contained. */
+  onSpillFailure?: (error: unknown, label: string) => void
   /** Windows tree-termination runner (defaults to `taskkill /PID <pid> /T /F`). */
   taskkill?: (pid: number) => void
   /** Host platform override for signalling decisions. */
@@ -109,12 +111,19 @@ function privateSpillDir(): string {
   return defaultSpillDir
 }
 
+/** Report optional spill loss when a caller has no plugin logger. */
+function reportSpillFailure(error: unknown, label: string): void {
+  process.stderr.write(`subprocess-local: ${label} spill failed; only the in-memory tail is retained: ${String(error)}\n`)
+}
+
 /**
  * Collects one stream with a bounded in-memory tail. With a spill cap, on
  * first overflow a spill file is created and every chunk (including those
  * already collected) is appended there while the full stream remains within
  * the cap; without one, only the in-memory tail is ever retained (the
  * diagnostic-tail shape — a language server's stderr).
+ * Spill open/write failures disable spilling, report once, and preserve the
+ * in-memory tail; they cannot escape the stream's data callback.
  *
  * Tail-keep rationale (pi/OpenCode): errors and final results cluster at the
  * end of command output; the spill file covers the head.
@@ -134,6 +143,7 @@ export class OutputCollector {
     private readonly maxSpillBytes: number | undefined,
     private readonly label: string,
     private readonly spillDir: string,
+    private readonly onSpillFailure = reportSpillFailure,
   ) {
     this.spillDisabled = maxSpillBytes === undefined
   }
@@ -149,7 +159,18 @@ export class OutputCollector {
   push(chunk: Buffer): void {
     this.total += chunk.length
     const overflows = this.bytes + chunk.length > this.maxBytes
-    if (!this.spillDisabled && (overflows || this.spillFd !== undefined)) this.spillAll(chunk)
+    if (!this.spillDisabled && (overflows || this.spillFd !== undefined)) {
+      try {
+        this.spillAll(chunk)
+      } catch (error) {
+        this.discardSpill()
+        try {
+          this.onSpillFailure(error, this.label)
+        } catch {
+          // A failed diagnostic sink must not turn optional spill loss into a host crash.
+        }
+      }
+    }
     this.chunks.push(chunk)
     this.bytes += chunk.length
     while (this.bytes > this.maxBytes) {
@@ -180,11 +201,12 @@ export class OutputCollector {
       // Random suffix + O_EXCL + no-follow-equivalent ('wx' fails on any
       // existing path, symlink or not) + owner-only mode: defeats spill-path
       // prediction and symlink planting in shared tmp dirs.
-      this.spillFile = join(
+      const file = join(
         this.spillDir,
         `dsh-subprocess-${process.pid}-${++spillCounter}-${randomBytes(6).toString('hex')}-${this.label}.log`,
       )
-      this.spillFd = openSync(this.spillFile, 'wx', 0o600)
+      this.spillFd = openSync(file, 'wx', 0o600)
+      this.spillFile = file
       for (const prior of this.chunks) writeSync(this.spillFd, prior)
     }
     writeSync(this.spillFd, chunk)
@@ -337,7 +359,7 @@ function signalTree(
  * dispositions. Runtime exits resolve `done` as {@link SubprocessOutcome};
  * only spawn failures reject.
  * @param spec - fully resolved argv, cwd, stdio, grace, cancellation, environment.
- * @param internals - test-only spill-directory, platform, and taskkill overrides.
+ * @param internals - spill-failure reporter and test-only spill-directory, platform, and taskkill overrides.
  * @returns live subprocess handle.
  * @throws when `graceMs` cannot be represented by one Node timer.
  */
@@ -380,7 +402,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
 
   const collectStream = (mode: SubprocessOutputMode, stream: Readable | null, label: string): OutputCollector | undefined => {
     if (!isCollect(mode) || stream === null) return undefined
-    const collector = new OutputCollector(mode.maxBytes, mode.spill?.maxBytes, label, spillDir)
+    const collector = new OutputCollector(mode.maxBytes, mode.spill?.maxBytes, label, spillDir, internals.onSpillFailure)
     stream.on('data', (chunk: Buffer) => { collector.push(chunk) })
     return collector
   }
