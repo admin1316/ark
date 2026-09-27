@@ -31,6 +31,52 @@ private func approximatelyEqual(_ left: Double, _ right: Double, tolerance: Doub
 func runArkChatScrollContractChecks() {
   let renderIDs = (0..<6_001).map { "row-\($0)" }
   var readingWindow = ArkChatRenderWindow()
+  let tailWindow = readingWindow.range(
+    in: renderIDs,
+    limit: readingWindow.visibleLimit(entryCount: renderIDs.count, running: true)
+  )
+  readingWindow.revealEarlier(
+    in: renderIDs,
+    entryCount: renderIDs.count,
+    running: true
+  )
+  let firstReadingPage = readingWindow.range(
+    in: renderIDs,
+    limit: readingWindow.visibleLimit(entryCount: renderIDs.count, running: true)
+  )
+  check(
+    firstReadingPage.count == 96
+      && firstReadingPage.upperBound == renderIDs.count
+      && tailWindow.allSatisfy(firstReadingPage.contains),
+    "the first automatic reading page preserves the current tail while mounting older rows"
+  )
+  readingWindow.revealEarlier(
+    in: renderIDs,
+    entryCount: renderIDs.count,
+    running: true
+  )
+  let secondReadingPage = readingWindow.range(
+    in: renderIDs,
+    limit: readingWindow.visibleLimit(entryCount: renderIDs.count, running: true)
+  )
+  check(
+    secondReadingPage.lowerBound < firstReadingPage.lowerBound
+      && secondReadingPage.contains(firstReadingPage.lowerBound)
+      && secondReadingPage.count == 96,
+    "automatic reading pages overlap and keep the previous first row materialized"
+  )
+  var smallReadingWindow = ArkChatRenderWindow()
+  let shortTranscript = Array(renderIDs.prefix(100))
+  smallReadingWindow.revealEarlier(in: shortTranscript, entryCount: shortTranscript.count, running: true)
+  check(
+    smallReadingWindow.visibleLimit(entryCount: shortTranscript.count, running: true) == 400
+      && smallReadingWindow.range(
+        in: shortTranscript,
+        limit: smallReadingWindow.visibleLimit(entryCount: shortTranscript.count, running: true)
+      ).count == shortTranscript.count,
+    "reading an active short transcript mounts all rows beyond the 24-row follower tail"
+  )
+  readingWindow.returnToLatest()
   for count in [601, 4_444] {
     check(readingWindow.visibleLimit(entryCount: count, running: true) == 24
           && readingWindow.visibleLimit(entryCount: count, running: false) == 24,
@@ -241,6 +287,9 @@ func runArkChatScrollContractChecks() {
         && coordinator.contains("NSScrollView.willStartLiveScrollNotification")
         && coordinator.contains("private func hitsTranscriptScroller")
         && coordinator.contains("private func isTranscriptScrollKey")
+        && coordinator.contains("private func reportUserReachedTop")
+        && coordinator.contains("guard isUserMove, !userReachedTopLatched else { return }")
+        && coordinator.contains("metrics.offset <= 1")
         && coordinator.contains("ArkChatScrollFollowMotion")
         && coordinator.contains("context.duration = Self.followAnimationDuration")
         && coordinator.contains("animator().setBoundsOrigin(targetOrigin)")
@@ -252,7 +301,11 @@ func runArkChatScrollContractChecks() {
         && root.contains("@Published private(set) var snapshot: NativeChatSnapshot")
         && root.contains("snapshot.contentRevision &+ 1")
         && root.contains(".onChange(of: contentRevision)")
-        && root.contains("ArkChatScrollAttachment(controller: scrollController)"),
+        && root.contains("onUserReachedTop: {")
+        && root.contains("renderWindow.revealEarlier(")
+        && root.contains("pendingRenderPrependAnchor")
+        && root.contains("scrollController.restoreAfterPrepend(anchor)")
+        && attachment.contains("onUserReachedTop"),
       "chat scroll follows semantic transcript revisions without an AppKit frame-to-layout feedback loop"
     )
 

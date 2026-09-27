@@ -482,6 +482,7 @@ public final class ArkChatScrollCoordinator {
   public private(set) var stateMachine: ArkChatScrollStateMachine
   /// Vertical anchor declared by this coordinator's owning surface.
   public let anchor: ArkScrollAnchor
+  var onUserReachedTop: (@MainActor () -> Void)?
   public var onFollowingBottomChange: (@MainActor (Bool) -> Void)? {
     didSet { reportFollowingState() }
   }
@@ -499,6 +500,7 @@ public final class ArkChatScrollCoordinator {
   private var invalidated = false
   private var liveUserScroll = false
   private var scrollbarGestureActive = false
+  private var userReachedTopLatched = false
   private var userScrollIntentDeadline = 0.0
   /// Last document/viewport size handled by a semantic transcript revision.
   /// Repeated revisions whose final geometry is unchanged never ask AppKit to
@@ -577,6 +579,7 @@ public final class ArkChatScrollCoordinator {
   public func completeSessionTransition() {
     guard !invalidated, let sessionID = pendingSessionID else { return }
     pendingSessionID = nil
+    userReachedTopLatched = false
     let metrics =
       currentMetrics()
       ?? ArkChatScrollMetrics(
@@ -893,6 +896,8 @@ public final class ArkChatScrollCoordinator {
     else { return }
     let previousContentHeight = lastHandledContentHeight
     let resized = geometryChanged(metrics)
+    let isUserMove = liveUserScroll
+      || ProcessInfo.processInfo.systemUptime <= userScrollIntentDeadline
     rememberGeometry(metrics)
     if resized {
       // Late Markdown layout can grow the document after a programmatic pin.
@@ -906,16 +911,30 @@ public final class ArkChatScrollCoordinator {
         animateBottomFollow: contentChanged
       )
     } else {
-      let isUserMove =
-        liveUserScroll
-        || ProcessInfo.processInfo.systemUptime <= userScrollIntentDeadline
       stateMachine.viewportDidMove(
         sessionID: sessionID,
         metrics: metrics,
         source: isUserMove ? .user : .programmatic
       )
     }
+    reportUserReachedTop(metrics: metrics, isUserMove: isUserMove)
     reportFollowingState()
+  }
+
+  private func reportUserReachedTop(
+    metrics: ArkChatScrollMetrics,
+    isUserMove: Bool
+  ) {
+    guard metrics.offset <= 1 else {
+      userReachedTopLatched = false
+      return
+    }
+    guard isUserMove, !userReachedTopLatched else { return }
+    userReachedTopLatched = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self, !self.invalidated else { return }
+      self.onUserReachedTop?()
+    }
   }
 
   private func apply(_ command: ArkChatScrollCommand, animateBottomFollow: Bool = false) {

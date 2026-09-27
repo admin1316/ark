@@ -3750,6 +3750,9 @@ private struct NativeChatView: View {
   @State private var expandedProcessGenerations = Set<String>()
   @State private var renderWindow = ArkChatRenderWindow()
   @State private var requestedHistoryAnchorID: String?
+  @State private var requestedHistoryAnchorAtTop = false
+  @State private var pendingRenderPrependAnchor: ArkChatScrollPrependAnchor?
+  @State private var renderWindowRestoreToken = 0
 
   init(
     model: ArkAppModel,
@@ -4135,6 +4138,7 @@ private struct NativeChatView: View {
                   if context.hasOlderHistory && hiddenEntryCount == 0 {
                     Button {
                       requestedHistoryAnchorID = displayIDs.first
+                      requestedHistoryAnchorAtTop = false
                       Task { await model.loadOlderHistory() }
                     } label: {
                       HStack(spacing: 7) {
@@ -4151,8 +4155,16 @@ private struct NativeChatView: View {
                   }
                   if hiddenEntryCount > 0 {
                     Button {
-                      renderWindow.earlier(in: displayIDs, limit: effectiveWindow)
-                      let range = renderWindow.range(in: displayIDs, limit: effectiveWindow)
+                      renderWindow.revealEarlier(
+                        in: displayIDs,
+                        entryCount: allDisplayEntries.count,
+                        running: context.sessionRunning
+                      )
+                      let expandedLimit = renderWindow.visibleLimit(
+                        entryCount: allDisplayEntries.count,
+                        running: context.sessionRunning
+                      )
+                      let range = renderWindow.range(in: displayIDs, limit: expandedLimit)
                       if let id = displayIDs[range].first {
                         DispatchQueue.main.async { proxy.scrollTo(id, anchor: .top) }
                       }
@@ -4234,7 +4246,28 @@ private struct NativeChatView: View {
                 // not compete with transcript measurement and scroll following.
                 .transaction { transaction in transaction.animation = nil }
               }
-              ArkChatScrollAttachment(controller: scrollController)
+              ArkChatScrollAttachment(
+                controller: scrollController,
+                onUserReachedTop: {
+                  guard !context.loadingOlderHistory else { return }
+                  if hiddenEntryCount > 0 {
+                    guard pendingRenderPrependAnchor == nil,
+                      let anchor = scrollController.capturePrependAnchor()
+                    else { return }
+                    pendingRenderPrependAnchor = anchor
+                    renderWindow.revealEarlier(
+                      in: displayIDs,
+                      entryCount: allDisplayEntries.count,
+                      running: context.sessionRunning
+                    )
+                    renderWindowRestoreToken &+= 1
+                  } else if context.hasOlderHistory, let anchor = displayIDs.first {
+                    requestedHistoryAnchorID = anchor
+                    requestedHistoryAnchorAtTop = true
+                    Task { await model.loadOlderHistory() }
+                  }
+                }
+              )
                 .frame(width: 0, height: 0)
             }
             .overlay(alignment: .bottomTrailing) {
@@ -4288,6 +4321,8 @@ private struct NativeChatView: View {
             // than the fresh one needs.
             renderWindow.returnToLatest()
             requestedHistoryAnchorID = nil
+            requestedHistoryAnchorAtTop = false
+            pendingRenderPrependAnchor = nil
             guard let sessionID else { return }
             scrollController.beginSessionTransition(to: sessionID)
             DispatchQueue.main.async {
@@ -4301,7 +4336,9 @@ private struct NativeChatView: View {
                let index = ids.firstIndex(of: anchor), index > 0 {
               renderWindow.reveal(anchor, in: ids, limit: effectiveWindow)
               requestedHistoryAnchorID = nil
-              DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .center) }
+              let alignment: UnitPoint = requestedHistoryAnchorAtTop ? .top : .center
+              requestedHistoryAnchorAtTop = false
+              DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: alignment) }
             }
             let running = context.sessionRunning
             DispatchQueue.main.async {
@@ -4319,6 +4356,13 @@ private struct NativeChatView: View {
               scrollController.settleStreamingCompletion()
             }
           }
+          .onChange(of: renderWindowRestoreToken) { _ in
+            guard let anchor = pendingRenderPrependAnchor else { return }
+            pendingRenderPrependAnchor = nil
+            DispatchQueue.main.async {
+              scrollController.restoreAfterPrepend(anchor)
+            }
+          }
           .onChange(of: context.loadingOlderHistory) { loading in
             guard !loading, let anchor = requestedHistoryAnchorID else { return }
             // Failed loads and page eviction leave no prepend anchor to restore.
@@ -4326,6 +4370,7 @@ private struct NativeChatView: View {
             let ids = bodyProjection.displayEntries.map(\.id)
             if ids.firstIndex(of: anchor).map({ $0 > 0 }) != true {
               requestedHistoryAnchorID = nil
+              requestedHistoryAnchorAtTop = false
             }
           }
         }

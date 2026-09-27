@@ -955,7 +955,7 @@ func runArkChatPresentationContractChecks() {
     check(
       chatView?.contains("@State private var renderWindow = ArkChatRenderWindow()") == true
         && chatView?.contains("renderWindow.range(in: displayIDs, limit: effectiveWindow)") == true
-        && chatView?.contains("renderWindow.earlier(in: displayIDs, limit: effectiveWindow)") == true
+        && chatView?.contains("renderWindow.revealEarlier(") == true
         && chatView?.contains("renderWindow.later(in: displayIDs, limit: effectiveWindow)") == true
         && chatView?.contains(".onChange(of: context.sessionRunning)") == true
         && chatView?.contains("scrollController.settleStreamingCompletion()") == true
