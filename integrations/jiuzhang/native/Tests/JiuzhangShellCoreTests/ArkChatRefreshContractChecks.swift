@@ -49,6 +49,48 @@ func runArkChatRefreshContractChecks() async {
   check(loaded, "chat refresh fixture session reaches a loaded history state")
   guard loaded else { return }
 
+  // A mux gap can arrive while a prior history owner is still releasing its
+  // content reader. The resync must use the same queue as subscription reads.
+  var priorReadStarted = false
+  var priorReadCleaned = false
+  model.replaceHistoryTask { _ in
+    priorReadStarted = true
+    try? await Task.sleep(nanoseconds: 700_000_000)
+    await Task.detached { try? await Task.sleep(nanoseconds: 100_000_000) }.value
+    priorReadCleaned = true
+  }
+  let priorEntered = await arkChatRefreshEventually { priorReadStarted }
+  check(priorEntered, "the history owner starts before a mux gap requests resync")
+  guard priorEntered else { return }
+  let boundReadsBeforeGap = fixture.boundRawRequestsSnapshot()
+  let missingSequence = (model.events.last?.id ?? -1) + 1
+  func gapWire(_ sequence: Int, _ type: String) -> JSONValue {
+    var data: [String: JSONValue] = ["turn": .number(9_999)]
+    if type == "turn/end" { data["reason"] = .object(["kind": .string("completed")]) }
+    return .object([
+      "seq": .number(Double(sequence)), "type": .string(type),
+      "time": .number(Double(sequence * 10)),
+      "data": .object(data),
+    ])
+  }
+  let missing = gapWire(missingSequence, "turn/start")
+  let late = gapWire(missingSequence + 1, "turn/end")
+  fixture.recordInjected(.object(["event": missing]))
+  fixture.recordInjected(.object(["event": late]))
+  model.consume(ArkEventFrame(
+    channel: .mux, rpcID: "gap-before-reader-cleanup", method: "session/event",
+    payload: .object(["sessionId": .string(sessionID), "event": late])
+  ))
+  try? await Task.sleep(nanoseconds: 350_000_000)
+  check(fixture.boundRawRequestsSnapshot() == boundReadsBeforeGap,
+        "a mux gap does not overlap the still-active history reader")
+  let gapReconciled = await arkChatRefreshEventually {
+    model.events.last?.id == missingSequence + 1 && model.historyLoadState == .loaded
+  }
+  check(gapReconciled && priorReadCleaned && fixture.boundRawRequestsSnapshot() > boundReadsBeforeGap,
+        "queued gap recovery starts after reader cleanup and reaches the exact missing sequence")
+  guard gapReconciled else { return }
+
   // Populate session state through the production navigation entry point.
   await model.refreshNavigation(refreshWiki: false)
   let workspaceCount = model.workspaces.count
@@ -75,7 +117,7 @@ func runArkChatRefreshContractChecks() async {
   )
 
   // --- Section 2: build the long transcript from contiguous live events ---
-  var nextSequence = historyRows
+  var nextSequence = (model.events.last?.id ?? -1) + 1
   func inject(_ type: String, _ data: JSONValue) {
     defer { nextSequence += 1 }
     model.consume(ArkEventFrame(
@@ -297,6 +339,31 @@ func runArkChatRefreshContractChecks() async {
   let queued = await arkChatRefreshEventually { queuedStarted }
   check(queued && subscribedFinished && !subscribedCancelled && !queuedStartedEarly,
         "the queued baseline read starts only after the initial transfer has finished")
+
+  var ancestorStarted = false
+  var ancestorCancelled = false
+  var ancestorCleaned = false
+  var middleStarted = false
+  var finalStarted = false
+  var finalStartedBeforeCleanup = false
+  model.replaceHistoryTask { _ in
+    ancestorStarted = true
+    try? await Task.sleep(nanoseconds: 600_000_000)
+    ancestorCancelled = Task.isCancelled
+    await Task.detached { try? await Task.sleep(nanoseconds: 100_000_000) }.value
+    ancestorCleaned = true
+  }
+  let ancestorEntered = await arkChatRefreshEventually { ancestorStarted }
+  check(ancestorEntered, "the active ancestor starts before rapid replacement")
+  guard ancestorEntered else { return }
+  model.replaceHistoryTask(cancelPrevious: false) { _ in middleStarted = true }
+  model.replaceHistoryTask { _ in
+    finalStartedBeforeCleanup = !ancestorCleaned
+    finalStarted = true
+  }
+  let finalEntered = await arkChatRefreshEventually { finalStarted }
+  check(finalEntered && ancestorCancelled && ancestorCleaned && !middleStarted && !finalStartedBeforeCleanup,
+        "rapid replacement cancels the active ancestor and waits for its content-reader cleanup")
 }
 
 @MainActor

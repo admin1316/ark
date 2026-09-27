@@ -3289,30 +3289,41 @@ public final class ArkAppModel: ObservableObject {
     chatPresentationDidChange.send()
     replaceHistoryTask { model in
       let resetHistory = model.events.isEmpty
-      async let history: Void = model.refreshHistory(resetPaging: resetHistory)
+      // Model metadata may resume a cold session on the Host. Finish the
+      // immutable history read before that changes its source identity.
+      await model.refreshHistory(resetPaging: resetHistory)
+      guard model.selectedSessionID == sessionID, !Task.isCancelled else { return }
       async let feedback: Void = model.loadMessageFeedback(for: sessionID)
       async let modelLabel: Void = model.refreshModelLabel(for: sessionID)
       async let modelCatalog: Void = model.refreshModelCatalog(for: sessionID)
       if model.selectedSession?.origin == "subagent" {
         _ = try? await model.subagentAddress(for: sessionID)
       }
-      _ = await (history, feedback, modelLabel, modelCatalog)
+      _ = await (feedback, modelLabel, modelCatalog)
     }
   }
 
+  @discardableResult
   func replaceHistoryTask(
     cancelPrevious: Bool = true,
     _ operation: @escaping @MainActor (ArkAppModel) async -> Void
-  ) {
+  ) -> Task<Void, Never> {
     let previous = historyTask
     if cancelPrevious { previous?.cancel() }
-    historyTask = Task { [weak self] in
+    let task = Task { [weak self] in
       // A predecessor may still be closing a content handle, or resolving the
-      // first read of a fresh subscription. Never overlap its replacement.
-      await previous?.value
+      // first read of a fresh subscription. Never overlap its replacement;
+      // cancellation of a queued successor must reach the active ancestor.
+      await withTaskCancellationHandler {
+        await previous?.value
+      } onCancel: {
+        previous?.cancel()
+      }
       guard !Task.isCancelled, let self else { return }
       await operation(self)
     }
+    historyTask = task
+    return task
   }
 
   private func refreshSubscribedHistoryIfNeeded(sessionID: String, resetPaging: Bool) async {
@@ -4892,9 +4903,9 @@ public final class ArkAppModel: ObservableObject {
       if sourceChanged {
         // One fresh transaction catches events committed while the replaced
         // source was being recovered, without trusting old pending identities.
-        Task { [weak self] in
-          guard let self, self.selectedSessionID == sessionID else { return }
-          await self.refreshHistory()
+        replaceHistoryTask(cancelPrevious: false) { model in
+          guard model.selectedSessionID == sessionID else { return }
+          await model.refreshHistory()
         }
       }
     } catch {
@@ -6277,7 +6288,11 @@ public final class ArkAppModel: ObservableObject {
       // The walk keeps the installed tail as its anchor and stops at the reported target, so the
       // page it pulls is exactly the missing range. Resetting the page would discard the tail and
       // move the head backwards below the stream.
-      await self.refreshHistory()
+      let queued = self.replaceHistoryTask(cancelPrevious: false) { model in
+        guard model.selectedSessionID == sessionID else { return }
+        await model.refreshHistory()
+      }
+      await queued.value
     }
   }
 
