@@ -2905,9 +2905,9 @@ export interface Config {
   completionDelivery?: CompletionDelivery
   /**
    * Turns one owner may have opened by completion wakes before the next
-   * notice degrades to injection, reset by any user-authored input (default 3).
-   * Bounds the self-exciting chain where a woken turn starts the job whose
-   * completion wakes it again.
+   * notice degrades to injection, reset by any user-authored input. Omitted
+   * by default so legitimate long job chains do not silently stop; set a cap
+   * to bound self-exciting chains that start another job on each wake.
    */
   maxConsecutiveWakes?: number
 }

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import QuartzCore
 
 /// Geometry observed by the chat scroll state machine. `offset` is normalized
 /// from the top of the document and always increases toward the bottom,
@@ -48,6 +49,64 @@ public enum ArkChatScrollCommand: Equatable, Sendable {
   case none
   case scrollToBottom
   case scrollTo(offset: Double)
+}
+
+enum ArkChatScrollFollowAction: Equatable, Sendable {
+  case none
+  case jump(to: Double)
+  case animate(to: Double)
+}
+
+/// Keeps one native follow animation active. Completion reads the current
+/// measured tail; user movement cancels the animation before AppKit handles it.
+struct ArkChatScrollFollowMotion: Sendable {
+  private(set) var target: Double?
+
+  var isAnimating: Bool { target != nil }
+
+  mutating func requestBottom(to offset: Double, animated: Bool) -> ArkChatScrollFollowAction {
+    let target = offset.isFinite ? max(offset, 0) : 0
+    guard animated else {
+      self.target = nil
+      return .jump(to: target)
+    }
+    if let activeTarget = self.target {
+      if target < activeTarget - 0.5 {
+        self.target = nil
+        return .jump(to: target)
+      }
+      return .none
+    }
+    self.target = target
+    return .animate(to: target)
+  }
+
+  mutating func animationDidComplete(
+    at offset: Double,
+    latestBottom: Double,
+    followsBottom: Bool,
+    tolerance: Double = 0.5
+  ) -> ArkChatScrollFollowAction {
+    guard let completedTarget = target else { return .none }
+    target = nil
+    guard followsBottom else { return .none }
+    let next = latestBottom.isFinite ? max(latestBottom, 0) : 0
+    let actual = offset.isFinite ? offset : 0
+    let allowedDifference = max(tolerance.isFinite ? tolerance : 0, 0)
+    guard abs(next - actual) > allowedDifference else { return .none }
+    // A stationary or clamped AppKit animation must settle once; another
+    // animation is useful only when the document grew beyond its old target.
+    if next <= completedTarget + allowedDifference { return .jump(to: next) }
+    target = next
+    return .animate(to: next)
+  }
+
+  @discardableResult
+  mutating func interrupt() -> Bool {
+    let wasAnimating = target != nil
+    target = nil
+    return wasAnimating
+  }
 }
 
 /// Pure routing rule for a wheel event that landed in a nested horizontal
@@ -433,6 +492,8 @@ public final class ArkChatScrollCoordinator {
   private var scrollWheelMonitor: Any?
   private var priorClipPostsBoundsChanges = false
   private var applyingCommand = false
+  private var followMotion = ArkChatScrollFollowMotion()
+  private var followAnimationGeneration: UInt64 = 0
   private var transitioning = false
   private var pendingSessionID: String?
   private var invalidated = false
@@ -448,6 +509,8 @@ public final class ArkChatScrollCoordinator {
   /// id belongs to the prior view. Do not let this view's initial origin
   /// overwrite that retained position before its first restoration.
   private var hasActivatedCurrentDocument = false
+
+  static let followAnimationDuration = 0.16
 
   public convenience init(
     scrollView: NSScrollView,
@@ -495,6 +558,7 @@ public final class ArkChatScrollCoordinator {
   /// main view replaces its transcript document.
   public func beginSessionTransition(to sessionID: String) {
     guard !invalidated else { return }
+    interruptFollowAnimation()
     if hasActivatedCurrentDocument,
       let current = stateMachine.activeSessionID,
       let metrics = currentMetrics()
@@ -544,7 +608,10 @@ public final class ArkChatScrollCoordinator {
       return
     }
     rememberGeometry(metrics)
-    apply(stateMachine.contentDidResize(sessionID: sessionID, metrics: metrics))
+    apply(
+      stateMachine.contentDidResize(sessionID: sessionID, metrics: metrics),
+      animateBottomFollow: true
+    )
     reportFollowingState()
   }
 
@@ -562,7 +629,10 @@ public final class ArkChatScrollCoordinator {
     scrollView?.documentView?.layoutSubtreeIfNeeded()
     guard let metrics = currentMetrics() else { return }
     rememberGeometry(metrics)
-    apply(stateMachine.streamingBodyDidSettle(sessionID: sessionID, metrics: metrics))
+    apply(
+      stateMachine.streamingBodyDidSettle(sessionID: sessionID, metrics: metrics),
+      animateBottomFollow: true
+    )
     reportFollowingState()
   }
 
@@ -626,6 +696,7 @@ public final class ArkChatScrollCoordinator {
   }
 
   public func removeSession(_ sessionID: String) {
+    if stateMachine.activeSessionID == sessionID { interruptFollowAnimation() }
     stateMachine.removeSession(sessionID)
     reportFollowingState()
   }
@@ -633,6 +704,7 @@ public final class ArkChatScrollCoordinator {
   /// Release notifications before the owning representable tears down.
   public func invalidate() {
     guard !invalidated else { return }
+    interruptFollowAnimation()
     invalidated = true
     if let clipObserver {
       NotificationCenter.default.removeObserver(clipObserver)
@@ -795,6 +867,7 @@ public final class ArkChatScrollCoordinator {
   /// The short lease covers momentum callbacks without letting a later
   /// geometry resize inherit user intent; size changes are classified first.
   func noteUserScrollInput() {
+    interruptFollowAnimation()
     userScrollIntentDeadline = max(
       userScrollIntentDeadline,
       ProcessInfo.processInfo.systemUptime + 0.35
@@ -818,13 +891,20 @@ public final class ArkChatScrollCoordinator {
       let sessionID = stateMachine.activeSessionID,
       let metrics = currentMetrics()
     else { return }
+    let previousContentHeight = lastHandledContentHeight
     let resized = geometryChanged(metrics)
     rememberGeometry(metrics)
     if resized {
       // Late Markdown layout can grow the document after a programmatic pin.
       // Observe every actual geometry change; apply already rejects no-op
       // scrolling, and applyingCommand suppresses synchronous feedback.
-      apply(stateMachine.viewportDidResize(sessionID: sessionID, metrics: metrics))
+      let contentChanged = previousContentHeight.map {
+        abs($0 - metrics.contentHeight) > 0.5
+      } ?? true
+      apply(
+        stateMachine.viewportDidResize(sessionID: sessionID, metrics: metrics),
+        animateBottomFollow: contentChanged
+      )
     } else {
       let isUserMove =
         liveUserScroll
@@ -838,7 +918,7 @@ public final class ArkChatScrollCoordinator {
     reportFollowingState()
   }
 
-  private func apply(_ command: ArkChatScrollCommand) {
+  private func apply(_ command: ArkChatScrollCommand, animateBottomFollow: Bool = false) {
     guard command != .none,
       let scrollView,
       let document = scrollView.documentView,
@@ -852,13 +932,21 @@ public final class ArkChatScrollCoordinator {
     case .scrollToBottom: logicalOffset = metrics.maximumOffset
     case .scrollTo(let offset): logicalOffset = min(max(offset, 0), metrics.maximumOffset)
     }
+    let wasAnimating = followMotion.isAnimating
+    let wantsAnimation = animateBottomFollow
+      && command == .scrollToBottom
+      && anchor == .bottom
+      && stateMachine.snapshot(for: sessionID)?.followsBottom == true
+      && metrics.offset >= -0.5
+      && metrics.offset <= metrics.maximumOffset + 0.5
+      && logicalOffset > metrics.offset + 0.5
+      && scrollView.window != nil
+      && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     // A no-op `scroll(to:)` is not free: NSScrollView may invalidate the
     // hosting document even when its logical origin is unchanged. Record the
     // semantic position without asking AppKit to scroll again.
-    // A raw out-of-range origin must be corrected even when its clamped value
-    // equals the desired endpoint. Otherwise post-reflow bottom overscroll is
-    // misclassified as a no-op.
-    if abs(metrics.offset - logicalOffset) <= 0.5 {
+    // A raw out-of-range origin must still be corrected after reflow.
+    if !wasAnimating && abs(metrics.offset - logicalOffset) <= 0.5 {
       stateMachine.viewportDidMove(
         sessionID: sessionID,
         metrics: metrics,
@@ -866,28 +954,161 @@ public final class ArkChatScrollCoordinator {
       )
       return
     }
+
+    let action = followMotion.requestBottom(to: logicalOffset, animated: wantsAnimation)
+    switch action {
+    case .none:
+      return
+    case .animate(let target):
+      animateFollow(to: target, metrics: metrics, scrollView: scrollView, document: document)
+    case .jump(let target):
+      followAnimationGeneration &+= 1
+      applyImmediate(
+        to: target,
+        metrics: metrics,
+        scrollView: scrollView,
+        document: document,
+        replacingAnimation: wasAnimating
+      )
+    }
+  }
+
+  private func animateFollow(
+    to logicalOffset: Double,
+    metrics: ArkChatScrollMetrics,
+    scrollView: NSScrollView,
+    document: NSView
+  ) {
     let bounds = document.bounds
     let visibleHeight = CGFloat(metrics.viewportHeight)
     let targetY =
       document.isFlipped
       ? bounds.minY + CGFloat(logicalOffset)
       : bounds.maxY - visibleHeight - CGFloat(logicalOffset)
+    let targetOrigin = NSPoint(x: scrollView.contentView.bounds.origin.x, y: targetY)
+    followAnimationGeneration &+= 1
+    let generation = followAnimationGeneration
 
     applyingCommand = true
-    scrollView.contentView.scroll(
-      to: NSPoint(
-        x: scrollView.contentView.bounds.origin.x,
-        y: targetY
-      ))
+    NSAnimationContext.runAnimationGroup({ context in
+      context.duration = Self.followAnimationDuration
+      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      scrollView.contentView.animator().setBoundsOrigin(targetOrigin)
+    }, completionHandler: { [weak self] in
+      MainActor.assumeIsolated {
+        guard let self,
+          self.followAnimationGeneration == generation,
+          !self.invalidated,
+          !self.transitioning
+        else { return }
+        DispatchQueue.main.async { [weak self] in
+          MainActor.assumeIsolated { self?.followAnimationDidComplete() }
+        }
+      }
+    })
     scrollView.reflectScrolledClipView(scrollView.contentView)
     applyingCommand = false
-    if let applied = currentMetrics() {
+  }
+
+  private func followAnimationDidComplete() {
+    guard !invalidated, !transitioning,
+      let sessionID = stateMachine.activeSessionID,
+      let metrics = currentMetrics(),
+      let scrollView,
+      let document = scrollView.documentView
+    else {
+      followMotion.interrupt()
+      return
+    }
+    let action = followMotion.animationDidComplete(
+      at: metrics.offset,
+      latestBottom: metrics.maximumOffset,
+      followsBottom: stateMachine.snapshot(for: sessionID)?.followsBottom == true
+    )
+    switch action {
+    case .none:
+      reportFollowingState()
+    case .animate(let target):
+      animateFollow(to: target, metrics: metrics, scrollView: scrollView, document: document)
+    case .jump(let target):
+      followAnimationGeneration &+= 1
+      applyImmediate(
+        to: target,
+        metrics: metrics,
+        scrollView: scrollView,
+        document: document,
+        replacingAnimation: false
+      )
+    }
+  }
+
+  private func applyImmediate(
+    to logicalOffset: Double,
+    metrics: ArkChatScrollMetrics,
+    scrollView: NSScrollView,
+    document: NSView,
+    replacingAnimation: Bool
+  ) {
+    let bounds = document.bounds
+    let visibleHeight = CGFloat(metrics.viewportHeight)
+    let targetY = document.isFlipped
+      ? bounds.minY + CGFloat(logicalOffset)
+      : bounds.maxY - visibleHeight - CGFloat(logicalOffset)
+    let targetOrigin = NSPoint(x: scrollView.contentView.bounds.origin.x, y: targetY)
+    applyingCommand = true
+    if replacingAnimation {
+      NSAnimationContext.runAnimationGroup { context in
+        context.duration = 0
+        scrollView.contentView.animator().setBoundsOrigin(targetOrigin)
+      }
+    } else {
+      scrollView.contentView.scroll(to: targetOrigin)
+    }
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+    applyingCommand = false
+    if let applied = currentMetrics(), let sessionID = stateMachine.activeSessionID {
       stateMachine.viewportDidMove(
         sessionID: sessionID,
         metrics: applied,
         source: .programmatic
       )
     }
+  }
+
+  private func interruptFollowAnimation() {
+    guard followMotion.interrupt() else { return }
+    followAnimationGeneration &+= 1
+    guard let metrics = currentMetrics(),
+      let scrollView,
+      let document = scrollView.documentView
+    else { return }
+    let visibleOffset = presentationOffset(
+      fallback: metrics.offset,
+      metrics: metrics,
+      scrollView: scrollView,
+      document: document
+    )
+    applyImmediate(
+      to: visibleOffset,
+      metrics: metrics,
+      scrollView: scrollView,
+      document: document,
+      replacingAnimation: true
+    )
+  }
+
+  private func presentationOffset(
+    fallback: Double,
+    metrics: ArkChatScrollMetrics,
+    scrollView: NSScrollView,
+    document: NSView
+  ) -> Double {
+    guard let presentation = scrollView.contentView.layer?.presentation() else { return fallback }
+    let visibleOriginY = Double(presentation.bounds.origin.y)
+    let rawOffset = document.isFlipped
+      ? visibleOriginY - Double(document.bounds.minY)
+      : Double(document.bounds.maxY) - (visibleOriginY + metrics.viewportHeight)
+    return min(max(rawOffset, 0), metrics.maximumOffset)
   }
 
   private func reportFollowingState() {

@@ -7975,11 +7975,10 @@ private struct NativeQueueDock: View {
                 .frame(minHeight: 36)
                 if editingItemID == item.id {
                   HStack(spacing: 7) {
-                    TextField(
-                      ArkL10n.text(.queueEditPlaceholder, model.languagePreference),
-                      text: $editDraft
-                    )
-                      .textFieldStyle(.roundedBorder)
+                    TextEditor(text: $editDraft)
+                      .frame(minHeight: 68, maxHeight: 96)
+                      .overlay(RoundedRectangle(cornerRadius: 5).stroke(ArkPalette.border))
+                      .accessibilityLabel(ArkL10n.text(.queueEditPlaceholder, model.languagePreference))
                       .accessibilityIdentifier("ark.queue.editor.\(item.id)")
                     Button(ArkL10n.text(.commonCancel, model.languagePreference)) {
                       editingItemID = nil

@@ -116,6 +116,66 @@ func runArkChatScrollContractChecks() {
     ) == .scrollToBottom,
     "final-body shrink keeps a live follower pinned to the new bottom"
   )
+
+  var followMotion = ArkChatScrollFollowMotion()
+  check(
+    followMotion.requestBottom(to: 500, animated: true) == .animate(to: 500)
+      && followMotion.isAnimating,
+    "a following content change starts one native scroll animation"
+  )
+  check(
+    followMotion.requestBottom(to: 640, animated: true) == .none,
+    "content growth during an animation does not restart the active motion"
+  )
+  check(
+    followMotion.animationDidComplete(
+      at: 500,
+      latestBottom: 700,
+      followsBottom: true
+    ) == .animate(to: 700),
+    "completion follows current geometry even if a pending target became stale"
+  )
+  check(
+    followMotion.animationDidComplete(
+      at: 700,
+      latestBottom: 700,
+      followsBottom: true
+    ) == .none
+      && !followMotion.isAnimating,
+    "follow animation stops when it reaches the current tail"
+  )
+  check(
+    followMotion.requestBottom(to: 750, animated: true) == .animate(to: 750)
+      && followMotion.animationDidComplete(
+        at: 700,
+        latestBottom: 750,
+        followsBottom: true
+      ) == .jump(to: 750)
+      && !followMotion.isAnimating,
+    "an animation that made no useful progress settles once instead of looping"
+  )
+  check(
+    followMotion.requestBottom(to: 1_000, animated: true) == .animate(to: 1_000)
+      && followMotion.requestBottom(to: 800, animated: true) == .jump(to: 800)
+      && !followMotion.isAnimating,
+    "content shrink corrects the viewport instead of animating toward a stale tail"
+  )
+  check(
+    followMotion.requestBottom(to: 800, animated: true) == .animate(to: 800)
+      && followMotion.interrupt()
+      && !followMotion.isAnimating
+      && followMotion.animationDidComplete(
+        at: 600,
+        latestBottom: 800,
+        followsBottom: true
+      ) == .none,
+    "reader input invalidates a stale animation completion"
+  )
+  check(
+    followMotion.requestBottom(to: 900, animated: false) == .jump(to: 900)
+      && !followMotion.isAnimating,
+    "reduced motion and explicit positioning use a synchronous jump"
+  )
   let attachmentURL = contractNativeRoot.appendingPathComponent(
     "Sources/JiuzhangShellUI/ArkChatScrollAttachment.swift"
   )
@@ -171,6 +231,11 @@ func runArkChatScrollContractChecks() {
         && coordinator.contains("NSScrollView.willStartLiveScrollNotification")
         && coordinator.contains("private func hitsTranscriptScroller")
         && coordinator.contains("private func isTranscriptScrollKey")
+        && coordinator.contains("ArkChatScrollFollowMotion")
+        && coordinator.contains("context.duration = Self.followAnimationDuration")
+        && coordinator.contains("animator().setBoundsOrigin(targetOrigin)")
+        && coordinator.contains("NSWorkspace.shared.accessibilityDisplayShouldReduceMotion")
+        && coordinator.contains("func noteUserScrollInput() {\n    interruptFollowAnimation()")
         && !coordinator.contains(
           "stateMachine.viewportDidMove(sessionID: sessionID, metrics: metrics, source: .user)"
         )
