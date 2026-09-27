@@ -37,8 +37,14 @@ final class HistoryWindowFixture: @unchecked Sendable {
   }
   private(set) var reads: [String: Int] = [:]
   private(set) var rawEventsRead = 0
+  private var boundRawRequests = 0
   private var bodies: [String: String] = [:]
   private let lock = NSLock()
+
+  func boundRawRequestsSnapshot() -> Int {
+    lock.lock(); defer { lock.unlock() }
+    return boundRawRequests
+  }
 
   /// Session the navigation routes describe, and the workspace path they report.
   /// The chat replay sets these so `session/list` names the selected session.
@@ -151,6 +157,9 @@ final class HistoryWindowFixture: @unchecked Sendable {
     result["view"] = .string(view)
     reads[view, default: 0] += 1
     if view == "raw" {
+      // Metadata requests in this generic URL fixture have no view and also
+      // fall back to `raw`; count only explicit bound-history reads here.
+      if options["view"] == .string("raw") { boundRawRequests += 1 }
       // The cut bounds the read: an explicit cursor may walk backwards inside it,
       // but omitting the cursor must not reach past the requested source revision.
       let before = options["beforeSeq"]?.numberValue.map { min(Int($0), through + 1) } ?? (through + 1)

@@ -65,6 +65,8 @@ interface ContentRead {
   text: string
   bytes: number
   timer: ReturnType<typeof setTimeout>
+  abortSignal: AbortSignal
+  abortListener: () => void
 }
 
 /** Host bounds affect reuse only: self-contained cursors can rebuild evicted indices. */
@@ -252,13 +254,21 @@ export class SemanticHistoryReader {
       }
       const readId = randomUUID()
       const timer = this.expiry(readId)
+      const abortListener = (): void => { this.closeContent(readId) }
       const materialized: ContentRead = {
         key, text, bytes, timer, sessionId: request.sessionId, parentSessionId: observed.header.parentSession,
         subagentMode: request.expectedSubagentMode, subagentDescriptorSeq: observed.projections?.values.subagent?.seq,
-        identity, revision, through, recordId: record.id,
+        identity, revision, through, recordId: record.id, abortSignal: signal, abortListener,
       }
       this.content.set(readId, materialized)
       this.contentBytes += bytes
+      // The first response can be cancelled before the caller learns readId;
+      // its signal releases the budget without waiting for idle expiry.
+      signal.addEventListener('abort', abortListener, { once: true })
+      if (signal.aborted) {
+        this.closeContent(readId)
+        signal.throwIfAborted()
+      }
       let end = Math.min(text.length, offset + maximum)
       if (splitsSurrogate(text, end)) end -= 1
       this.assertCurrent(observed)
@@ -678,6 +688,7 @@ export class SemanticHistoryReader {
     const body = this.content.get(readId)
     if (body === undefined) return
     clearTimeout(body.timer)
+    body.abortSignal.removeEventListener('abort', body.abortListener)
     this.contentBytes -= body.bytes
     this.content.delete(readId)
   }

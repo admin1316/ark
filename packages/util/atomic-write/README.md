@@ -36,7 +36,7 @@ declare const text: string
 await writeFileAtomic('/home/u/.dsh/settings.yaml', text, { mode: 0o600 })
 ```
 
-Parent directories are created as needed, and readers observe either the old or the new complete content. On any failure the temporary file is removed and the failure is rethrown, so a failed replacement leaves the target untouched.
+Parent directories are created as needed, and readers observe either the old or the new complete content. Cleanup applies only after the temporary file was exclusively created by this call: a refused create never removes another writer's file. Later failures attempt to close and remove the owned temporary file and rethrow the original failure, leaving the target untouched. A cleanup failure can leave that temporary file for later inspection.
 
 ### Coordinating writers
 
@@ -54,11 +54,11 @@ await withFileLock('/home/u/.dsh/settings.yaml', async () => {
 })
 ```
 
-Only writers contend — readers never take the lock — and a contender backs off exponentially and fails with a timed-out error rather than blocking forever. How long a contender waits is stated per call through `waitMs`: the default is sized for file work alone, so a holder whose cycle includes a network round trip — a credential mutation that refreshes an expired token — states a longer one, because leaving the default would fail every other writer of that file for the duration. The retry cadence stays fixed. A contender never removes an existing lock, because file age cannot prove that its owner stopped.
+Only writers contend — readers never take the lock — and a contender backs off exponentially and fails with a timed-out error rather than blocking forever. How long a contender waits is stated per call through `waitMs`: the default is sized for file work alone, so a holder whose cycle includes a network round trip — a credential mutation that refreshes an expired token — states a longer one, because leaving the default would fail every other writer of that file for the duration. The retry cadence stays fixed. A contender may take over a complete PID record only when a process probe proves that its holder exited (`ESRCH`); file age is never evidence of ownership.
 
 ### Failures to plan for
 
-The lock's parent directory must already exist, so `withFileLock` rejects an invalid parent hierarchy before running the operation. A process that exits while holding the lock leaves the lock sibling behind; later writers time out, and an operator removes it only after verifying that no writer still owns it.
+The lock's parent directory must already exist, so `withFileLock` rejects an invalid parent hierarchy before running the operation. A process that exits while holding the lock leaves a sibling that a later writer can take over. Live holders, other-user holders (`EPERM`), the contender's own PID, and incomplete records remain protected. A leftover takeover claim also makes contenders time out; an operator must verify both owners before recovering that exceptional state.
 
 -----
 
@@ -81,13 +81,14 @@ The package is built on one separation: the atomic commit owns the swap, and the
 
 `writeFileAtomic` writes a random-suffix sibling opened with exclusive create (`wx`), then renames it over the target. The exclusive open refuses to follow a symlink planted at a guessable temp path; the same-directory sibling keeps the rename on one filesystem; and the rename replaces a symlinked target itself instead of writing through to its referent.
 
-`withFileLock` creates a `<filename>.lock` sibling with `wx`. `EEXIST` identifies contention directly; `EPERM` does so only when a fresh `lstat` confirms the lock path exists, covering Windows exclusive-create behavior without hiding an unrelated permission failure. The lock records its creator's PID and is removed by the holder in a `finally`; contention backs off exponentially and fails when the per-call `waitMs` deadline (default two seconds) passes.
+`withFileLock` creates a `<filename>.lock` sibling with `wx`. `EEXIST` identifies contention directly; `EPERM` does so only when a fresh `lstat` confirms the lock path exists, covering Windows exclusive-create behavior without hiding an unrelated permission failure. Windows retries one unconfirmed `EPERM` because a holder may release between exclusive create and the existence probe; repeated permission errors are rethrown. The lock retains the interoperable `<pid>\n` record. A dead-holder contender serializes on a record-specific claim, then re-reads the record and probes its PID again before removing the old lock. Release checks the held file identity and record before removing it in `finally`. Contention backs off exponentially and fails when the per-call `waitMs` deadline (default two seconds) passes.
 
 ### Why the swap stays safe
 
 - **Fresh inode, caller-stated mode** — the temp carries `mode` through the rename, so narrowing a wider-permission file has no chmod race. `mode` is required so the permission decision stays visible at every call site.
 - **Readers never contend** — the rename commit is atomic, so a reader needs no lock.
-- **A contender never deletes a lock** — age cannot distinguish a crashed owner from a paused live writer; recovery is an operator action.
+- **Takeover requires proof of exit** — only `ESRCH` permits takeover, and the record and PID are checked again under the claim. A paused live writer remains protected.
+- **Release preserves an observed replacement** — a different inode or PID record is not removed. These checks and unlink are separate filesystem operations, not atomic compare-and-unlink against external interference.
 
 </details>
 
@@ -122,7 +123,9 @@ These limits define where the package is not the right tool. They are current pa
 
 - **Atomic, not durable** — no `fsync` of the file or its directory, so after a crash the rename may be observed unwound. The file-backed stores here re-read and republish on boot, keeping durability the caller's policy.
 - **String content only** — no `Buffer` or stream form until a consumer needs one.
-- **Orphaned locks require operator recovery** — a process that exits while holding the lock leaves the sibling behind; later writers time out without deleting it.
+- **Some orphan states require operator recovery** — incomplete records, live reused PIDs, and a claim left before its old lock was removed remain blocked. Contenders never remove existing claims.
+- **One host and PID namespace** — shared files across hosts or separate PID namespaces are unsupported. Takeover proves the holder exited, not that child writers exited; callers that start such writers must manage their lifecycle.
+- **Cooperating writers** — identity checks preserve replacements observed before release, but cannot fence an arbitrary external replacement between the final check and unlink.
 
 <a id="dev-note"></a>
 ### Dev Note

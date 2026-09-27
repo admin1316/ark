@@ -1,0 +1,9 @@
+# An unavailable private spill directory exercises the real collector through Bash.
+- id: bash-sandbox
+  name: '@deepseek-ai/dsh-bash-sandbox'
+  config:
+    maxOutputBytes: 16
+
+- insert:
+    - id: spill-open-failure
+      name: './spill-open-failure.ts'

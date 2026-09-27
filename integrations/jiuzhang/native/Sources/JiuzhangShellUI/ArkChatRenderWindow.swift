@@ -7,6 +7,33 @@ struct ArkChatRenderWindow: Equatable {
 
   var followsLatest: Bool { firstRowID == nil }
 
+  /// Keep a large transcript's mounted range stable when a stream completes.
+  /// Paging explicitly widens a reader's window; completion alone must not
+  /// prepend rows above a follower and move its viewport away from the tail.
+  func visibleLimit(entryCount: Int, running: Bool) -> Int {
+    if followsLatest {
+      return entryCount > 600 ? 24 : (running ? 24 : 400)
+    }
+    return readingLimit(entryCount: entryCount)
+  }
+
+  /// Start or continue a bounded reading window when the user reaches its top.
+  /// The first expansion includes the current tail; later expansions overlap
+  /// the previous page so the visible row remains materialized during restore.
+  mutating func revealEarlier(
+    in ids: [String],
+    entryCount: Int,
+    running: Bool
+  ) {
+    guard !ids.isEmpty else { return }
+    if followsLatest {
+      let limit = readingLimit(entryCount: entryCount)
+      firstRowID = ids[max(0, ids.count - limit)]
+    } else {
+      earlier(in: ids, limit: visibleLimit(entryCount: entryCount, running: running))
+    }
+  }
+
   func range(in ids: [String], limit: Int) -> Range<Int> {
     guard limit > 0, !ids.isEmpty else { return 0..<0 }
     let start = firstRowID.flatMap { ids.firstIndex(of: $0) }
@@ -37,4 +64,9 @@ struct ArkChatRenderWindow: Equatable {
   }
 
   mutating func returnToLatest() { firstRowID = nil }
+
+  private func readingLimit(entryCount: Int) -> Int {
+    if entryCount > 600 { return entryCount >= 2_000 ? 96 : 160 }
+    return 400
+  }
 }

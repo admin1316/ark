@@ -10,14 +10,14 @@ Status: implemented
 
 ## Decision
 
-每个可变 JSONL 操作都在根级 per-id 跨进程锁（`<root>/.dsh-locks/<encoded-id>`）下执行。锁文件以 `wx` 创建并写入持有者 pid；遇到已有锁的竞争者会检查该 pid 是否仍存活，并回收崩溃进程遗留的 stale 锁（`ESRCH`），因此崩溃不会楔死该 id。竞争按指数退避，10s 后失败。`appendBatch`、`deleteStored` 与 `commitRepair` 全部持锁；读路径（list、load、inspect）保持无锁，因为日志只追加、delete 经 rename 到 tombstone 分阶段完成。锁目录被排除在项目发现之外，绝不会被误认为会话项目。回归测试植入死 pid 锁（被回收）并运行并发写入对（两次 append 都落盘且不交错）。
+每个可变 JSONL 操作通过共享的 `withFileLock` 实现在根级按 id 的跨进程锁（`<root>/~locks/<encoded-id>.lock`）下执行。`appendBatch`、仅含头部的落盘、`deleteStored` 与修复提交都会持锁；读路径保持无锁，其可见性由追加及 rename 定义。共享辅助函数采用独占创建、PID 记录、有界等待及受保护的已退出持锁者恢复。[恢复决策](2026-09-27-selective-upstream-runtime-reliability.zh.md) 定义保守失败情形及释放归属检查。锁目录被排除在项目发现之外，不会被当作会话项目。
 
 ## Alternatives considered
 
-**复用 dsh-atomic-write 的 `withFileLock`。** 否决：它从不回收 stale 锁（孤儿恢复是运维动作），一个崩溃进程会让该 id 的每次写入永久 10s 超时；JSONL 需要自动回收 stale，因为其写入在热路径上。
+**复用不带遗留持锁者恢复的 dsh-atomic-write `withFileLock`。** 最初的决策否决了这一行为，因为崩溃写入者可能无限期阻止后续修改。JSONL 使用共享实现，其已退出持锁者恢复满足该要求，无需重复锁协议；无法确认的持锁者及遗留接管声明仍采取保守失败。
 
 **按日志文件加锁。** 否决：delete 会把会话目录 rename 走、文件随之移动；根级 per-id 锁与工件当前路径无关，统一覆盖 materialize→append→repair→delete。
 
 ## Consequences
 
-同一根上的跨进程写入者按 id 串行；崩溃写入者的锁由下一个竞争者回收。根下出现 `.dsh-locks` 目录（排除在发现之外，绝不当作项目）。单进程行为不变，只是每个写批次多一次 mkdir+锁文件往返。
+同一根上的跨进程写入者按 id 串行。共享协议可回收合法的已退出持锁者记录，但并非每种孤儿文件都能自动恢复。`~locks` 目录保持在会话发现范围之外。单进程写入也使用文件锁，在第二个进程加入时仍维持同一修改边界。

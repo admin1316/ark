@@ -24,7 +24,7 @@ kind: "package-reference"
 
 | 键 | 默认值 | 含义 |
 |---|---:|---|
-| `maxOutputChars` | `16000` | 文件和目录查看结果保留的前缀字符数。 |
+| `maxOutputChars` | `16000` | 文件和目录查看结果保留的前缀 UTF-16 码元数；截断保留完整代理对。 |
 | `description` | 编辑器命令指南 | 面向模型的工具描述。 |
 
 <a id="tool"></a>

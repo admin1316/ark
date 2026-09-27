@@ -1,0 +1,7 @@
+# Pressure is capped by the routed request's reserved output space.
+- id: compaction-basic
+  name: '@deepseek-ai/dsh-compaction-basic'
+  config:
+    thresholdRatio: 0.99
+    retainTokens: 20
+    maxTokens: 32
