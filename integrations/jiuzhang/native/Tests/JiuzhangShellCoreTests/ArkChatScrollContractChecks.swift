@@ -303,10 +303,16 @@ func runArkChatScrollContractChecks() {
         && root.contains(".onChange(of: contentRevision)")
         && root.contains("onUserReachedTop: {")
         && root.contains("renderWindow.revealEarlier(")
-        && root.contains("pendingRenderPrependAnchor")
+        && root.contains("pendingTranscriptPrependAnchor")
+        && root.contains("pendingTranscriptPrependAnchor = scrollController.capturePrependAnchor()")
+        && root.contains("let previousFirstRecordID = model.historyReadingSnapshot?.records.first?.id")
+        && root.contains("nextFirstRecordID != previousFirstRecordID")
+        && root.contains("transcriptPrependRestoreToken &+= 1")
         && root.contains("scrollController.restoreAfterPrepend(anchor)")
+        && root.contains("proxy.scrollTo(anchor, anchor: alignment)")
+        && !root.contains(".onChange(of: context.loadingOlderHistory)")
         && attachment.contains("onUserReachedTop"),
-      "chat scroll follows semantic transcript revisions without an AppKit frame-to-layout feedback loop"
+      "chat scroll retains the older-page anchor through coalesced feed publication"
     )
 
     let feed = chatSourceSlice(

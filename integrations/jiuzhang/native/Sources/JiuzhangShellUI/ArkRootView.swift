@@ -3751,8 +3751,8 @@ private struct NativeChatView: View {
   @State private var renderWindow = ArkChatRenderWindow()
   @State private var requestedHistoryAnchorID: String?
   @State private var requestedHistoryAnchorAtTop = false
-  @State private var pendingRenderPrependAnchor: ArkChatScrollPrependAnchor?
-  @State private var renderWindowRestoreToken = 0
+  @State private var pendingTranscriptPrependAnchor: ArkChatScrollPrependAnchor?
+  @State private var transcriptPrependRestoreToken = 0
 
   init(
     model: ArkAppModel,
@@ -4251,20 +4251,40 @@ private struct NativeChatView: View {
                 onUserReachedTop: {
                   guard !context.loadingOlderHistory else { return }
                   if hiddenEntryCount > 0 {
-                    guard pendingRenderPrependAnchor == nil,
+                    guard pendingTranscriptPrependAnchor == nil,
                       let anchor = scrollController.capturePrependAnchor()
                     else { return }
-                    pendingRenderPrependAnchor = anchor
+                    pendingTranscriptPrependAnchor = anchor
                     renderWindow.revealEarlier(
                       in: displayIDs,
                       entryCount: allDisplayEntries.count,
                       running: context.sessionRunning
                     )
-                    renderWindowRestoreToken &+= 1
+                    transcriptPrependRestoreToken &+= 1
                   } else if context.hasOlderHistory, let anchor = displayIDs.first {
+                    guard pendingTranscriptPrependAnchor == nil,
+                      requestedHistoryAnchorID == nil,
+                      let sessionID = context.sessionID
+                    else { return }
+                    let previousFirstRecordID = model.historyReadingSnapshot?.records.first?.id
+                    pendingTranscriptPrependAnchor = scrollController.capturePrependAnchor()
                     requestedHistoryAnchorID = anchor
                     requestedHistoryAnchorAtTop = true
-                    Task { await model.loadOlderHistory() }
+                    Task {
+                      await model.loadOlderHistory()
+                      guard model.selectedSessionID == sessionID else { return }
+                      let nextFirstRecordID = model.historyReadingSnapshot?.records.first?.id
+                      guard nextFirstRecordID != nil,
+                        nextFirstRecordID != previousFirstRecordID
+                      else {
+                        guard requestedHistoryAnchorID == anchor else { return }
+                        requestedHistoryAnchorID = nil
+                        requestedHistoryAnchorAtTop = false
+                        pendingTranscriptPrependAnchor = nil
+                        return
+                      }
+                      // The model finishes before the coalesced transcript feed publishes its page.
+                    }
                   }
                 }
               )
@@ -4322,7 +4342,7 @@ private struct NativeChatView: View {
             renderWindow.returnToLatest()
             requestedHistoryAnchorID = nil
             requestedHistoryAnchorAtTop = false
-            pendingRenderPrependAnchor = nil
+            pendingTranscriptPrependAnchor = nil
             guard let sessionID else { return }
             scrollController.beginSessionTransition(to: sessionID)
             DispatchQueue.main.async {
@@ -4337,8 +4357,14 @@ private struct NativeChatView: View {
               renderWindow.reveal(anchor, in: ids, limit: effectiveWindow)
               requestedHistoryAnchorID = nil
               let alignment: UnitPoint = requestedHistoryAnchorAtTop ? .top : .center
+              let restorePrepend = requestedHistoryAnchorAtTop
+                && pendingTranscriptPrependAnchor != nil
               requestedHistoryAnchorAtTop = false
-              DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: alignment) }
+              if restorePrepend {
+                transcriptPrependRestoreToken &+= 1
+              } else {
+                DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: alignment) }
+              }
             }
             let running = context.sessionRunning
             DispatchQueue.main.async {
@@ -4356,21 +4382,12 @@ private struct NativeChatView: View {
               scrollController.settleStreamingCompletion()
             }
           }
-          .onChange(of: renderWindowRestoreToken) { _ in
-            guard let anchor = pendingRenderPrependAnchor else { return }
-            pendingRenderPrependAnchor = nil
+          .onChange(of: transcriptPrependRestoreToken) { _ in
+            guard let anchor = pendingTranscriptPrependAnchor else { return }
+            pendingTranscriptPrependAnchor = nil
             DispatchQueue.main.async {
+              scrollController.contentDidChange()
               scrollController.restoreAfterPrepend(anchor)
-            }
-          }
-          .onChange(of: context.loadingOlderHistory) { loading in
-            guard !loading, let anchor = requestedHistoryAnchorID else { return }
-            // Failed loads and page eviction leave no prepend anchor to restore.
-            // Successful overlapping pages are positioned by contentRevision.
-            let ids = bodyProjection.displayEntries.map(\.id)
-            if ids.firstIndex(of: anchor).map({ $0 > 0 }) != true {
-              requestedHistoryAnchorID = nil
-              requestedHistoryAnchorAtTop = false
             }
           }
         }
