@@ -3277,7 +3277,6 @@ public final class ArkAppModel: ObservableObject {
     statusProjection.reset(events: [])
     livePublishTask?.cancel()
     livePublishTask = nil
-    historyTask?.cancel()
     eventResyncTask?.cancel()
     eventResyncTask = nil
     historyProjectionGeneration &+= 1
@@ -3288,17 +3287,28 @@ public final class ArkAppModel: ObservableObject {
     turnUsageProjection = ArkChatTurnUsageProjection.Accumulator()
     restoreConversationSurface(for: sessionID)
     chatPresentationDidChange.send()
-    historyTask = Task { [weak self] in
-      guard let self else { return }
-      let resetHistory = self.events.isEmpty
-      async let history: Void = self.refreshHistory(resetPaging: resetHistory)
-      async let feedback: Void = self.loadMessageFeedback(for: sessionID)
-      async let modelLabel: Void = self.refreshModelLabel(for: sessionID)
-      async let modelCatalog: Void = self.refreshModelCatalog(for: sessionID)
-      if self.selectedSession?.origin == "subagent" {
-        _ = try? await self.subagentAddress(for: sessionID)
+    replaceHistoryTask { model in
+      let resetHistory = model.events.isEmpty
+      async let history: Void = model.refreshHistory(resetPaging: resetHistory)
+      async let feedback: Void = model.loadMessageFeedback(for: sessionID)
+      async let modelLabel: Void = model.refreshModelLabel(for: sessionID)
+      async let modelCatalog: Void = model.refreshModelCatalog(for: sessionID)
+      if model.selectedSession?.origin == "subagent" {
+        _ = try? await model.subagentAddress(for: sessionID)
       }
       _ = await (history, feedback, modelLabel, modelCatalog)
+    }
+  }
+
+  func replaceHistoryTask(_ operation: @escaping @MainActor (ArkAppModel) async -> Void) {
+    let previous = historyTask
+    previous?.cancel()
+    historyTask = Task { [weak self] in
+      // A cancelled content transfer closes its Host handle asynchronously. Its
+      // replacement must not compete for the same bounded reader budget.
+      await previous?.value
+      guard !Task.isCancelled, let self else { return }
+      await operation(self)
     }
   }
 
@@ -6001,17 +6011,15 @@ public final class ArkAppModel: ObservableObject {
         events.removeAll { $0.id > lastSequence }
         pendingLiveEvents.removeAll { $0.id > lastSequence }
         seenEventIDs = Set(events.map(\.id)).union(pendingLiveEvents.map(\.id))
-        historyTask?.cancel()
-        historyTask = Task { [weak self] in
-          guard let self else { return }
+        replaceHistoryTask { model in
           // A running session can resubscribe before its newest turn is
           // durable in history. Preserve the already-rendered transcript in
           // that case; only an empty, first-time surface may replace itself
           // from an authoritative page.
-          let resetHistory = self.events.isEmpty
-          async let history: Void = self.refreshHistory(resetPaging: resetHistory)
-          async let feedback: Void = self.loadMessageFeedback(for: sessionID)
-          async let modelMetadata: Void = self.refreshSubscribedModelMetadata(for: sessionID)
+          let resetHistory = model.events.isEmpty
+          async let history: Void = model.refreshHistory(resetPaging: resetHistory)
+          async let feedback: Void = model.loadMessageFeedback(for: sessionID)
+          async let modelMetadata: Void = model.refreshSubscribedModelMetadata(for: sessionID)
           _ = await (history, feedback, modelMetadata)
         }
       }

@@ -718,10 +718,10 @@ func runArkChatPresentationContractChecks() {
         && appModel.contains("historyLoadState = .loaded")
         && appModel.contains("historyLoadState = .failed(error.localizedDescription)")
         && appModel.contains("if modelLabel != nextLabel")
-        && appModel.contains("let resetHistory = self.events.isEmpty")
-        && appModel.contains("async let history: Void = self.refreshHistory(resetPaging: resetHistory)")
-        && appModel.contains("async let modelLabel: Void = self.refreshModelLabel(for: sessionID)")
-        && appModel.contains("async let modelCatalog: Void = self.refreshModelCatalog(for: sessionID)")
+        && appModel.contains("let resetHistory = model.events.isEmpty")
+        && appModel.contains("async let history: Void = model.refreshHistory(resetPaging: resetHistory)")
+        && appModel.contains("async let modelLabel: Void = model.refreshModelLabel(for: sessionID)")
+        && appModel.contains("async let modelCatalog: Void = model.refreshModelCatalog(for: sessionID)")
         && appModel.contains("_ = await (history, feedback, modelLabel, modelCatalog)")
         && appModel.contains("struct ArkHistoryFold: Sendable")
         && appModel.contains("Task.detached(priority: .userInitiated)")
@@ -789,11 +789,11 @@ func runArkChatPresentationContractChecks() {
       "navigation refresh publishes only changed rows and owns no unused global busy pulse"
     )
     check(
-      subscribed?.contains("let resetHistory = self.events.isEmpty") == true
-        && subscribed?.contains("self.refreshHistory(resetPaging: resetHistory)") == true
-        && subscribed?.contains("self.refreshSubscribedModelMetadata(for: sessionID)") == true
+      subscribed?.contains("let resetHistory = model.events.isEmpty") == true
+        && subscribed?.contains("model.refreshHistory(resetPaging: resetHistory)") == true
+        && subscribed?.contains("model.refreshSubscribedModelMetadata(for: sessionID)") == true
         && subscribed?.contains("_ = await (history, feedback, modelMetadata)") == true
-        && subscribed?.contains("self.refreshHistory(resetPaging: true)") == false,
+        && subscribed?.contains("model.refreshHistory(resetPaging: true)") == false,
       "native session resubscribe preserves the transcript and rehydrates its model capability metadata"
     )
     check(

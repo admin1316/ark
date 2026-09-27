@@ -1743,13 +1743,18 @@ private struct NativeMainArea: View {
         } else {
           switch model.selectedTab {
           case .chat:
-            NativeChatView(
-              model: model,
-              transcriptFeed: chatTranscriptFeed,
-              projectionMemo: chatProjectionMemo,
-              rowCache: chatRowCache,
-              scrollController: chatScrollController
-            )
+            if chatTranscriptFeed.snapshot.context.sessionID == model.selectedSessionID {
+              NativeChatView(
+                model: model,
+                transcriptFeed: chatTranscriptFeed,
+                projectionMemo: chatProjectionMemo,
+                rowCache: chatRowCache,
+                scrollController: chatScrollController
+              )
+            } else {
+              ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
           case .trajectory: NativeTrajectoryParityView(model: model).equatable()
           case .wiki: NativeWikiView(model: model).equatable()
           }

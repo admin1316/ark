@@ -249,6 +249,29 @@ func runArkChatRefreshContractChecks() async {
   print("[chat-refresh][completion-backoff] observed=\(observedBackoff) elapsed=\(elapsed) installed=\(feed.containsAssistantText(completionText))")
   check(feed.containsAssistantText(completionText) && elapsed < 5,
         "an idle completion bypasses stale streaming backoff and publishes its final answer within five seconds")
+
+  var firstStarted = false
+  var firstCleaned = false
+  var secondStarted = false
+  var secondStartedBeforeCleanup = false
+  model.replaceHistoryTask { _ in
+    firstStarted = true
+    try? await Task.sleep(nanoseconds: 5_000_000_000)
+    await Task.detached { try? await Task.sleep(nanoseconds: 150_000_000) }.value
+    firstCleaned = true
+  }
+  let entered = await arkChatRefreshEventually { firstStarted }
+  check(entered, "the first history replacement task starts before a resubscription")
+  guard entered else { return }
+  model.replaceHistoryTask { _ in
+    secondStartedBeforeCleanup = !firstCleaned
+    secondStarted = true
+  }
+  try? await Task.sleep(nanoseconds: 40_000_000)
+  check(!secondStarted, "a resubscription does not start another history read during cancelled-transfer cleanup")
+  let replaced = await arkChatRefreshEventually { secondStarted }
+  check(replaced && firstCleaned && !secondStartedBeforeCleanup,
+        "the replacement history read starts after the cancelled transfer releases its reader")
 }
 
 @MainActor
