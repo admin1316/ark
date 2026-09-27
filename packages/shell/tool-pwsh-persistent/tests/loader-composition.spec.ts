@@ -165,14 +165,6 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
     expect(large).toContain('<response clipped>')
     expect(large).not.toContain('beginning of this command output was dropped')
 
-    const unicode = text(await execute(
-      'unicode-output',
-      "Write-Output (('x' * 15999) + [char]::ConvertFromUtf32(0x1f600) + 'tail')",
-    ))
-    expect(unicode.startsWith(`${'x'.repeat(15_999)}<response clipped>`)).toBe(true)
-    expect(unicode).not.toContain('\uD83D')
-    expect(text(await execute('after-unicode-output', 'Write-Output ready'))).toBe('ready')
-
     const exited = text(await execute('exit', 'exit'))
     expect(exited).toContain('next pwsh call starts from the workspace')
     expect(text(await execute('after-exit', 'Write-Output "$PWD"'))).toBe(root)

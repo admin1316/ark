@@ -497,6 +497,20 @@ describe('output truncation and spill', () => {
 })
 
 describe('OutputCollector', () => {
+  it('reports a failed optional spill without a plugin logger', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-spill-default-report-'))
+    rmdirSync(directory)
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      const collector = new OutputCollector(4, 100, 'default-report', directory)
+      expect(() => { collector.push(Buffer.from('abcdefgh')) }).not.toThrow()
+      expect(collector.finalize()).toEqual({ text: 'efgh', truncated: true })
+      expect(stderr).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('default-report spill failed'))
+    } finally {
+      stderr.mockRestore()
+    }
+  })
+
   it('preserves a pre-existing file when exclusive spill creation loses a collision', () => {
     const report = vi.fn()
     const collector = new OutputCollector(4, 100, 'collision', spillDir, report)
