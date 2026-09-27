@@ -61,7 +61,7 @@ Observation 不拥有任何 mutation 权限。其事件数组是不可变前缀�
 
 Projection 工作明确只有 `all | none` 两种模式。`all` 在 observation 的事件 cursor 上计算所有已注册 projection；`none` 完全不触碰 projection 状态。系统不存在按 key preparation 的状态、`projectionKeys` 模式或额外的 `viewedState`／`viewedValue` cache。发布方可以按 audience 筛选已完成的值，但底层 observation 不会处于只算完部分 projection 的状态。
 
-Host 的[语义历史读取器](../../../../packages/host/session-remote-operations/README.zh.md)从固定切点的 observation 派生数字记录位置。完整消息和依赖读取只物化一次 JSON，在返回分片前释放 observation。绑定的内容句柄持有剩余 JSON，直到读取完成、显式关闭、空闲过期或 Host 释放；续片通过来源元数据验证身份，无需重新构建 observation 或索引。这样减少重复读取工作，也避免跨请求固定 prepared Session。历史预设解析每份正文只执行一次，使用该切点以内的最新选择。领域 reducer 与完整持久化日志仍是权威；只包含时间边界的依赖包不能初始化严格实时流累加器。
+Host 的[语义历史读取器](../../../../packages/host/session-remote-operations/README.zh.md)从固定切点的 observation 派生数字记录位置。完整消息和依赖读取只物化一次 JSON，在返回分片前释放 observation。绑定的内容句柄持有剩余 JSON，直到读取完成、显式关闭、发起请求取消、空闲过期或 Host 释放；续片通过来源元数据验证身份，无需重新构建 observation 或索引。发起请求的取消信号会释放其句柄，即使响应未能将句柄交给客户端，已取消的会话加载也不会一直占用共享读取预算直至过期。这样减少重复读取工作，也避免跨请求固定 prepared Session。历史预设解析每份正文只执行一次，使用该切点以内的最新选择。领域 reducer 与完整持久化日志仍是权威；只包含时间边界的依赖包不能初始化严格实时流累加器。
 
 ### Projection 执行边界
 
