@@ -272,6 +272,31 @@ func runArkChatRefreshContractChecks() async {
   let replaced = await arkChatRefreshEventually { secondStarted }
   check(replaced && firstCleaned && !secondStartedBeforeCleanup,
         "the replacement history read starts after the cancelled transfer releases its reader")
+
+  var subscribedStarted = false
+  var subscribedFinished = false
+  var subscribedCancelled = false
+  var queuedStarted = false
+  var queuedStartedEarly = false
+  model.replaceHistoryTask { _ in
+    subscribedStarted = true
+    try? await Task.sleep(nanoseconds: 150_000_000)
+    subscribedCancelled = Task.isCancelled
+    subscribedFinished = true
+  }
+  let subscriptionEntered = await arkChatRefreshEventually { subscribedStarted }
+  check(subscriptionEntered, "the initial same-session history read starts before its baseline arrives")
+  guard subscriptionEntered else { return }
+  model.replaceHistoryTask(cancelPrevious: false) { _ in
+    queuedStartedEarly = !subscribedFinished
+    queuedStarted = true
+  }
+  try? await Task.sleep(nanoseconds: 40_000_000)
+  check(!queuedStarted && !subscribedCancelled,
+        "a same-session baseline waits without cancelling its in-flight content response")
+  let queued = await arkChatRefreshEventually { queuedStarted }
+  check(queued && subscribedFinished && !subscribedCancelled && !queuedStartedEarly,
+        "the queued baseline read starts only after the initial transfer has finished")
 }
 
 @MainActor

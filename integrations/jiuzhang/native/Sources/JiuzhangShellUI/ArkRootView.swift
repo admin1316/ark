@@ -4864,7 +4864,7 @@ private struct NativeChatTurnNavigationRail: View {
 
   var body: some View {
     ScrollView(.vertical, showsIndicators: false) {
-      VStack(alignment: .leading, spacing: 2) {
+      LazyVStack(alignment: .leading, spacing: 2) {
         ForEach(items) { item in
           Button {
             navigate(item.turn)

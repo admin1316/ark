@@ -3300,16 +3300,27 @@ public final class ArkAppModel: ObservableObject {
     }
   }
 
-  func replaceHistoryTask(_ operation: @escaping @MainActor (ArkAppModel) async -> Void) {
+  func replaceHistoryTask(
+    cancelPrevious: Bool = true,
+    _ operation: @escaping @MainActor (ArkAppModel) async -> Void
+  ) {
     let previous = historyTask
-    previous?.cancel()
+    if cancelPrevious { previous?.cancel() }
     historyTask = Task { [weak self] in
-      // A cancelled content transfer closes its Host handle asynchronously. Its
-      // replacement must not compete for the same bounded reader budget.
+      // A predecessor may still be closing a content handle, or resolving the
+      // first read of a fresh subscription. Never overlap its replacement.
       await previous?.value
       guard !Task.isCancelled, let self else { return }
       await operation(self)
     }
+  }
+
+  private func refreshSubscribedHistoryIfNeeded(sessionID: String, resetPaging: Bool) async {
+    // The initial read may already have reconciled this baseline while the
+    // queued subscription waited. A second read is only needed for a remaining
+    // gap or a failed/incomplete first load.
+    guard resyncTargetBySessionID[sessionID] != nil || historyLoadState != .loaded else { return }
+    await refreshHistory(resetPaging: resetPaging)
   }
 
   private func cacheCurrentConversationSurface() {
@@ -6011,13 +6022,18 @@ public final class ArkAppModel: ObservableObject {
         events.removeAll { $0.id > lastSequence }
         pendingLiveEvents.removeAll { $0.id > lastSequence }
         seenEventIDs = Set(events.map(\.id)).union(pendingLiveEvents.map(\.id))
-        replaceHistoryTask { model in
+        replaceHistoryTask(cancelPrevious: false) { model in
           // A running session can resubscribe before its newest turn is
           // durable in history. Preserve the already-rendered transcript in
           // that case; only an empty, first-time surface may replace itself
           // from an authoritative page.
           let resetHistory = model.events.isEmpty
-          async let history: Void = model.refreshHistory(resetPaging: resetHistory)
+          // The first read may still be resolving this baseline. Cancelling
+          // it can discard an initial response before its content handle
+          // reaches the client; the queued task checks whether a gap remains.
+          async let history: Void = model.refreshSubscribedHistoryIfNeeded(
+            sessionID: sessionID, resetPaging: resetHistory
+          )
           async let feedback: Void = model.loadMessageFeedback(for: sessionID)
           async let modelMetadata: Void = model.refreshSubscribedModelMetadata(for: sessionID)
           _ = await (history, feedback, modelMetadata)

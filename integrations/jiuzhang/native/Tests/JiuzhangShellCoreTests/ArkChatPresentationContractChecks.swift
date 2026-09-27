@@ -790,7 +790,9 @@ func runArkChatPresentationContractChecks() {
     )
     check(
       subscribed?.contains("let resetHistory = model.events.isEmpty") == true
-        && subscribed?.contains("model.refreshHistory(resetPaging: resetHistory)") == true
+        && subscribed?.contains("replaceHistoryTask(cancelPrevious: false)") == true
+        && subscribed?.contains("model.refreshSubscribedHistoryIfNeeded(") == true
+        && appModel.contains("await refreshHistory(resetPaging: resetPaging)")
         && subscribed?.contains("model.refreshSubscribedModelMetadata(for: sessionID)") == true
         && subscribed?.contains("_ = await (history, feedback, modelMetadata)") == true
         && subscribed?.contains("model.refreshHistory(resetPaging: true)") == false,
