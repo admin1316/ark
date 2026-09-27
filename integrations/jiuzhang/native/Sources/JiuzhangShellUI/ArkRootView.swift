@@ -3745,12 +3745,6 @@ private struct NativeChatView: View {
   @State private var expandedProcessGenerations = Set<String>()
   @State private var renderWindow = ArkChatRenderWindow()
   @State private var requestedHistoryAnchorID: String?
-  static let largeTranscriptEntryThreshold = 600
-  static let activeStreamingRenderWindowEntries = 24
-
-  private static func largeTranscriptRenderWindowEntries(forEntryCount count: Int) -> Int {
-    count >= 2000 ? 96 : 160
-  }
 
   init(
     model: ArkAppModel,
@@ -4060,17 +4054,13 @@ private struct NativeChatView: View {
   var body: some View {
     let projection = bodyProjection
     let allDisplayEntries = projection.displayEntries
-    let heavyTranscript = allDisplayEntries.count > Self.largeTranscriptEntryThreshold
-    // Every streamed delta invalidates the active answer's text layout. An eager
-    // transcript stack then recomputes spacing for every mounted row, even when
-    // those rows are outside the viewport. Keep roughly one to two screens mounted
-    // while streaming; restore the wider browsing window as soon as the turn
-    // finishes so completed conversations retain their existing scroll range.
-    let effectiveWindow = context.sessionRunning
-      ? Self.activeStreamingRenderWindowEntries
-      : (heavyTranscript
-        ? Self.largeTranscriptRenderWindowEntries(forEntryCount: allDisplayEntries.count)
-        : 400)
+    // A heavy follower keeps the same bounded tail before and after completion.
+    // Expanding it at turn/end prepends old rows during final Markdown reflow,
+    // producing a visible jump before AppKit can restore the bottom.
+    let effectiveWindow = renderWindow.visibleLimit(
+      entryCount: allDisplayEntries.count,
+      running: context.sessionRunning
+    )
     let displayIDs = allDisplayEntries.map(\.id)
     let visibleRange = renderWindow.range(in: displayIDs, limit: effectiveWindow)
     let hiddenEntryCount = visibleRange.lowerBound

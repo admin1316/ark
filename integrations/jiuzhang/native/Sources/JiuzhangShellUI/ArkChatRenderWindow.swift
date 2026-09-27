@@ -7,6 +7,17 @@ struct ArkChatRenderWindow: Equatable {
 
   var followsLatest: Bool { firstRowID == nil }
 
+  /// Keep a large transcript's mounted range stable when a stream completes.
+  /// Paging explicitly widens a reader's window; completion alone must not
+  /// prepend rows above a follower and move its viewport away from the tail.
+  func visibleLimit(entryCount: Int, running: Bool) -> Int {
+    if entryCount > 600 {
+      if followsLatest { return 24 }
+      return entryCount >= 2_000 ? 96 : 160
+    }
+    return running ? 24 : 400
+  }
+
   func range(in ids: [String], limit: Int) -> Range<Int> {
     guard limit > 0, !ids.isEmpty else { return 0..<0 }
     let start = firstRowID.flatMap { ids.firstIndex(of: $0) }

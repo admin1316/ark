@@ -31,6 +31,16 @@ private func approximatelyEqual(_ left: Double, _ right: Double, tolerance: Doub
 func runArkChatScrollContractChecks() {
   let renderIDs = (0..<6_001).map { "row-\($0)" }
   var readingWindow = ArkChatRenderWindow()
+  for count in [601, 4_444] {
+    check(readingWindow.visibleLimit(entryCount: count, running: true) == 24
+          && readingWindow.visibleLimit(entryCount: count, running: false) == 24,
+          "a heavy follower does not prepend rows when streaming completes")
+  }
+  readingWindow.reveal("row-2500", in: renderIDs, limit: 24)
+  check(readingWindow.visibleLimit(entryCount: 4_444, running: true) == 96
+        && readingWindow.visibleLimit(entryCount: 4_444, running: false) == 96,
+        "a heavy reader keeps the same mounted range across completion")
+  readingWindow.returnToLatest()
   var backwardCoverage = Set<String>()
   for _ in 0..<100 {
     let range = readingWindow.range(in: renderIDs, limit: 160)

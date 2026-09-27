@@ -1010,12 +1010,9 @@ func runArkChatPresentationContractChecks() {
         // The transcript renders the tail window of that one projection, not every entry:
         // a full-window rebuild is one AttributeGraph transaction (measured 2026-09-12).
         && chatView?.contains("ForEach(visibleEntries)") == true
-        && chatView?.contains("let effectiveWindow = context.sessionRunning") == true
-        && chatView?.contains("allDisplayEntries.count > Self.largeTranscriptEntryThreshold") == true
-        && chatView?.contains("context.sessionRunning") == true
-        && chatView?.contains("Self.activeStreamingRenderWindowEntries") == true
-        && chatView?.contains("Self.largeTranscriptRenderWindowEntries(forEntryCount: allDisplayEntries.count)") == true
-        && chatView?.contains("static let activeStreamingRenderWindowEntries = 24") == true
+        && chatView?.contains("let effectiveWindow = renderWindow.visibleLimit(") == true
+        && chatView?.contains("entryCount: allDisplayEntries.count") == true
+        && chatView?.contains("running: context.sessionRunning") == true
         && chatView?.contains("projection.turnAnchorByTurn[turn] == item.id") == true
         && chatView?.contains("ForEach(displayEntries)") == false
         && chatView?.contains("entries.first(where:") == false

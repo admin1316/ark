@@ -8,9 +8,13 @@ English | [中文](2026-09-27-native-chat-scroll-follow-single-flight.zh.md)
 
 Each accepted transcript height change moved a following AppKit chat synchronously to the new tail. Replacing that jump with a new animation for every streamed update would repeatedly restart the motion and could make the reader lose control of the viewport.
 
+In a large transcript, changing from the 24-row streaming window to a 96-row completed window prepended older rows during final-answer layout. A real 20,000-delta candidate run showed one frame of earlier turns just before the completed answer appeared.
+
 ## Decision
 
 `ArkChatScrollCoordinator` animates bottom-follow changes through AppKit for 160 ms. `ArkChatScrollFollowMotion` keeps one animation active; completion reads the current measured tail, rather than holding a second pending target. If an animation made no useful progress, it settles with one immediate correction instead of looping. Content shrink or an out-of-range viewport also corrects immediately. Scroll input freezes the current presentation position and invalidates the outstanding completion before AppKit handles the gesture. Reduced Motion, reader anchors, session changes, and explicit history positioning remain immediate.
+
+`ArkChatRenderWindow` keeps a large transcript's follower at 24 mounted rows both during streaming and after completion. Explicit older-history paging changes it to a reader window of 96 or 160 rows, which also stays stable across turn completion. This preserves the existing single owner of the mounted range and avoids a completion-triggered prepend above the viewport.
 
 ## Alternatives considered
 
@@ -20,9 +24,13 @@ Each accepted transcript height change moved a following AppKit chat synchronous
 
 **Add a separate SwiftUI scroll controller.** Rejected because the existing AppKit coordinator already owns per-session positions, user intent, and history anchors; a second owner could issue conflicting scrolls.
 
+**Widen every large transcript when the stream ends.** Rejected because the extra rows change measured content height during the final Markdown update, visibly moving a following viewport to older turns before AppKit settles it. Readers can widen the range explicitly.
+
 ## Testing
 
 The focused native `chat-scroll` contract group passes and covers one active animation, current-geometry handoff, no-progress settlement, shrink correction, user interruption, reduced-motion positioning, and the AppKit wiring. The stale-target, no-progress, and shrink regressions failed against the prior code and pass after correction. After removing a temporary focused-test selector, the full Jiuzhang native contract executable passed all 53 groups again. A scroll-only self-contained runtime pack verified 164 workspace packages and 315 physical package identities against its source; an older pack was formally rejected for plan drift. The scroll-only candidate `3.1.1` (`2026092703`) passed receipt, dependency-closure, build, and strict signature checks. Launch Services reported the running bundle at `~/ark-test/candidate/Ark.app`, with the expected isolated identifier and build number; production remained `3.1.0` (`2026092701`). A later Alpha2 audit added separate background-wakeup and queued-message fixes, so that candidate does not represent the final combined source.
+
+The mounted-range regression asserts the same 24-row follower limit on both sides of completion for 601 and 4,444 entries, and the same 96-row reader limit for a 4,444-entry transcript. The visual observation that motivated it used an isolated synthetic candidate and is not a post-fix visual pass; candidate retesting remains required before promotion.
 
 A loopback-only mock returned 180 numbered synthetic lines per response. Four OpenAI-compatible requests completed with 469 streamed chunks each; no real model credentials or external provider were used. In the candidate window, a live screenshot showed numbered lines arriving while following the bottom, and completion showed line 180. A native wheel event moved the reader to lines 96–112 during another active stream; the same range remained visible after completion, and `Return to Latest` revealed line 180. The trajectory page displayed the three synthetic turns; returning to chat retained the completed transcript. Five candidate-only screenshots and their checksums are at `~/ark-test/evidence/alpha2-scroll-20260927/`. The test placeholder was deleted from the candidate-specific Keychain service, and the dedicated data home was emptied after the candidate exited.
 
@@ -31,3 +39,5 @@ Saving a hand-declared custom provider through Settings failed with `provider do
 ## Consequences
 
 Live followers move toward new content without an abrupt synchronous jump, while user gestures and historical reading retain their existing ownership. A tail update can take up to 160 ms to settle; when content grows again during that interval, the coordinator waits for the current animation to finish before following the measured new position. Shrink and stalled animation cases settle immediately.
+
+Large transcripts show the latest 24 mounted rows until the reader explicitly pages older; this avoids automatic range growth at completion while keeping older turns available through the existing paging control.

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-27-native-chat-scroll-follow-single-flight.md
-2026-09-27-native-chat-scroll-follow-single-flight.md: 757b77301a1124dae8050e67f729af6a758bf439
-2026-09-27-native-chat-scroll-follow-single-flight.zh.md: 8b1ff173ad85414d77a4a8a285343c92f83eaa11
+2026-09-27-native-chat-scroll-follow-single-flight.md: 5cbc19c2bcdd9b71d1d0b9171012c693b5bb2a7b
+2026-09-27-native-chat-scroll-follow-single-flight.zh.md: 78036459e6c6469c60b81104400399c126c26438
