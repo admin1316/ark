@@ -9,6 +9,20 @@ import { auditAcceptance, canonicalEvidencePayload, currentProfileDigest, curren
 const HASH = 'a'.repeat(64)
 
 describe('acceptance audit', () => {
+  it('binds Rust source bytes into the source digest', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ark-rust-digest-'))
+    mkdirSync(join(root, 'rust/example'), { recursive: true })
+    writeFileSync(join(root, 'rust/example/main.rs'), 'fn main() {}\n')
+    execFileSync('git', ['init', '-q', root])
+    execFileSync('git', ['-C', root, 'config', 'user.email', 'test@example.invalid'])
+    execFileSync('git', ['-C', root, 'config', 'user.name', 'Acceptance Test'])
+    execFileSync('git', ['-C', root, 'add', '.'])
+    execFileSync('git', ['-C', root, 'commit', '-qm', 'fixture'])
+    const before = currentSourceDigest(root)
+    writeFileSync(join(root, 'rust/example/main.rs'), 'fn main() { println!("changed"); }\n')
+    expect(currentSourceDigest(root)).not.toBe(before)
+  })
+
   it('keeps final acceptance UNKNOWN when benchmark, security, or utility evidence is incomplete', () => {
     const root = mkdtempSync(join(tmpdir(), 'ark-acceptance-'))
     mkdirSync(join(root, 'docs/rust-migration'), { recursive: true })
@@ -39,6 +53,7 @@ describe('acceptance audit', () => {
     expect(audit.checks.sessionReplay.status).toBe('UNKNOWN')
     expect(audit.checks.knowledgeUtility.status).toBe('UNKNOWN')
     expect(audit.checks.githubCi.status).toBe('UNKNOWN')
+    expect(audit.artifactCompleteness.status).toBe('UNKNOWN')
   })
 
   it('ignores stale absolute-path evidence and a forged status field', () => {

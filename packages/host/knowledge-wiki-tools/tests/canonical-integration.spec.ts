@@ -6,6 +6,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { CallId, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import KnowledgeWikiService from '../../knowledge-wiki/src/index.ts'
 import * as tools from '../src/index.ts'
 import { verifierAuthority } from '../../knowledge-wiki/tests/verifier-authority-fixture.ts'
@@ -19,17 +21,22 @@ interface CanonicalServiceSurface {
 }
 
 const roots: string[] = []
+let calls = 0
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-function execute(ctx: Context, name: string, args: unknown): Promise<ToolExecutionResult> {
+function execute(ctx: Context, name: string, args: unknown, cwd = process.cwd()): Promise<ToolExecutionResult> {
+  const id = SessionId(`wiki-integration-${++calls}`)
+  const session = Session.create(id, [], { version: 0, id, createdAt: Date.now(), cwd })
+  const agent = { id, session } as unknown as Agent
   return ctx.tools.execute({
     signal: new AbortController().signal,
     callId: CallId(`wiki-integration-${name}`),
     name,
     arguments: args,
+    agent,
   })
 }
 
@@ -95,20 +102,20 @@ describe('canonical Knowledge Wiki and model tools', () => {
     await ctx.plugin(tools)
 
     try {
-      const queued = await execute(ctx, 'wiki_ingest', { input: 'raw/sources/source.md' })
+      const queued = await execute(ctx, 'wiki_ingest', { input: 'raw/sources/source.md' }, root)
       expect(queued.isError, JSON.stringify(queued)).not.toBe(true)
       await service.drainQueue()
       const review = (await service.reviews({ status: 'unresolved' }))
         .find(item => item.reviewKind === 'candidate' && item.targetPath === 'concepts/queue-owner.md')
       expect(review).toBeDefined()
 
-      const verified = await execute(ctx, 'wiki_verify_candidate', { reviewId: review!.id, action: 'Promote' })
+      const verified = await execute(ctx, 'wiki_verify_candidate', { reviewId: review!.id, action: 'Promote' }, root)
       expect(verified.value).toMatchObject({ ok: true, result: 'pass' })
       await expect(service.resolveReview({ reviewId: review!.id, action: 'Promote' })).resolves.toBe(true)
 
-      const listed = await execute(ctx, 'wiki_files', {})
+      const listed = await execute(ctx, 'wiki_files', {}, root)
       expect((listed.value as { files: string[] }).files).toContain('concepts/queue-owner.md')
-      const read = await execute(ctx, 'wiki_read', { path: 'concepts/queue-owner.md' })
+      const read = await execute(ctx, 'wiki_read', { path: 'concepts/queue-owner.md' }, root)
       expect(read.value).toMatchObject({ path: 'concepts/queue-owner.md', truncated: false })
     } finally {
       await ctx.fiber.dispose()

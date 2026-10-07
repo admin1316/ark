@@ -14,11 +14,22 @@ const MAX_PATH_BYTES: usize = 1024;
 const MAX_QUERY_BYTES: usize = 8192;
 const MAX_QUERY_TOKENS: usize = 256;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Input {
     #[serde(rename = "schemaVersion")]
     schema_version: u32,
+    #[serde(rename = "requestId")]
+    request_id: String,
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    generation: u64,
+    capability: String,
+    #[serde(rename = "deadlineMs")]
+    deadline_ms: u64,
+    budget: u64,
+    #[serde(rename = "cancellationToken")]
+    cancellation_token: String,
     pages: Vec<Page>,
     queries: Vec<String>,
 }
@@ -383,6 +394,22 @@ fn validate_input(input: &Input) -> Result<(), String> {
     if input.pages.len() > MAX_PAGES {
         return Err(format!("pages exceeds limit {MAX_PAGES}"));
     }
+    if input.request_id.is_empty() || input.request_id.len() > 256 {
+        return Err("requestId is empty or too long".into());
+    }
+    if input.session_id.is_empty() || input.session_id.len() > 256 {
+        return Err("sessionId is empty or too long".into());
+    }
+    if input.capability != "knowledge-search" {
+        return Err("capability is unsupported".into());
+    }
+    if input.generation == 0
+        || input.deadline_ms == 0
+        || input.budget == 0
+        || input.cancellation_token.is_empty()
+    {
+        return Err("deadline, budget, and cancellationToken are required".into());
+    }
     if input.queries.len() > MAX_QUERIES {
         return Err(format!("queries exceeds limit {MAX_QUERIES}"));
     }
@@ -578,6 +605,13 @@ mod tests {
         assert!(bm25(pages, "help").is_empty());
         let input = Input {
             schema_version: 1,
+            request_id: "test-request".into(),
+            session_id: "test-session".into(),
+            generation: 1,
+            capability: "knowledge-search".into(),
+            deadline_ms: 30_000,
+            budget: 1,
+            cancellation_token: "test-cancel".into(),
             pages: vec![Page {
                 path: "a".into(),
                 title: String::new(),
@@ -596,7 +630,7 @@ mod tests {
                     text: String::new(),
                 })
                 .collect(),
-            ..input
+            ..input.clone()
         };
         assert!(validate_input(&oversized).is_err());
         let oversized_query = Input {

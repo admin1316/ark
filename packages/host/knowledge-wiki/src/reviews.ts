@@ -23,7 +23,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { parseFrontmatterArray, parseFrontmatterField } from './frontmatter-utils.ts'
 import type { CandidateVerification, WikiReviewItem } from './types.ts'
 import { deduplicateCandidateAgainstCanonical, mergeCandidateIntoCanonical, replaceCanonicalWithCandidate } from './canonical-merge.ts'
@@ -47,6 +47,16 @@ import {
   type TrustedVerificationReceipt,
   type VerificationAuthoritySeal,
 } from './verifier.ts'
+import {
+  appendKnowledgeEvent,
+  createKnowledgeEvent,
+  createKnowledgeRecord,
+  detectKnowledgeConflicts,
+  knowledgeSha256,
+  knowledgeInjectionDecision,
+  readKnowledgeEventLog,
+  replayKnowledgeEvents,
+} from './knowledge-governance.ts'
 
 const REVIEW_OPENER_PREFIX_RE = /^---\s*REVIEW\s*:\s*/i
 const REVIEW_CLOSER_RE = /^---\s*END\s+REVIEW\s*---\s*$/i
@@ -200,6 +210,86 @@ export interface AdvisoryResolution {
 /** Replace the durable review array atomically after an in-memory batch update. */
 function writeReviewItemsAtomically(reviewFile: string, items: WikiReviewItem[]): void {
   atomicWriteFile(reviewFile, `${JSON.stringify(items, null, 2)}\n`)
+}
+
+function knowledgeEventPath(reviewFile: string): string {
+  return join(dirname(reviewFile), 'knowledge-events.jsonl')
+}
+
+/** Bind source provenance to bytes when the source is inside the project. */
+function sourceHashForCandidate(projectRoot: string, sourcePath: string | undefined): string {
+  if (sourcePath === undefined || sourcePath.trim() === '') return createHash('sha256').update('unknown-source').digest('hex')
+  const root = resolve(projectRoot)
+  const absolute = resolve(root, sourcePath)
+  const rel = relative(root, absolute)
+  try {
+    const stat = lstatSync(absolute)
+    if (rel !== '' && !rel.startsWith(`..${sep}`) && !rel.includes(`${sep}..${sep}`)
+      && stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1) {
+      return createHash('sha256').update(readRegularFileBounded(absolute, 100 * 1024 * 1024)).digest('hex')
+    }
+  } catch {
+    // URL, virtual research label, or absent source: bind its stable identity.
+  }
+  return createHash('sha256').update(sourcePath).digest('hex')
+}
+
+/** Append a lifecycle event after its owning review mutation has passed its hash checks. */
+function appendKnowledgeLifecycleEvent(
+  reviewFile: string,
+  type: Parameters<typeof createKnowledgeEvent>[0],
+  item: WikiReviewItem,
+  payload: Readonly<Record<string, unknown>> = {},
+  authority?: KnowledgeWikiVerifierAuthority,
+): void {
+  if (!item.candidatePath || !item.candidateHash) return
+  const scope = { projectId: dirname(dirname(reviewFile)), visibility: 'project' as const }
+  const id = `candidate:${item.id}`
+  const prior = readKnowledgeEventLog(knowledgeEventPath(reviewFile))
+  let eventPayload: Readonly<Record<string, unknown>> = {
+    ...payload,
+    candidatePath: item.candidatePath,
+    candidateHash: item.candidateHash,
+    source: item.sourcePath ?? item.candidatePath,
+  }
+  if (type === 'knowledge/verified') {
+    if (authority === undefined) throw new Error('knowledge verification event lacks authority')
+    const seal = authority.sealPromotion(canonicalJson({ type, knowledgeId: id, payload: eventPayload }))
+    eventPayload = { ...eventPayload, authorityId: authority.authorityId, authoritySeal: seal }
+  }
+  const event = createKnowledgeEvent(type, id, scope, eventPayload, {
+    seq: prior.length,
+    previousEventHash: prior.at(-1)?.eventHash ?? null,
+    sourceHash: item.sourceHash ?? knowledgeSha256(item.sourcePath ?? item.candidatePath),
+  })
+  appendKnowledgeEvent(knowledgeEventPath(reviewFile), event)
+}
+
+function appendKnowledgeReviewEvent(
+  reviewFile: string,
+  type: Parameters<typeof createKnowledgeEvent>[0],
+  reviewId: string,
+  candidateHash: string,
+  payload: Readonly<Record<string, unknown>> = {},
+  authority?: KnowledgeWikiVerifierAuthority,
+): void {
+  const path = knowledgeEventPath(reviewFile)
+  const prior = readKnowledgeEventLog(path)
+  if (prior.some(event => event.type === type && event.knowledgeId === `candidate:${reviewId}`
+    && event.payload.candidateHash === candidateHash)) return
+  const scope = { projectId: dirname(dirname(reviewFile)), visibility: 'project' as const }
+  let eventPayload: Readonly<Record<string, unknown>> = {
+    ...payload,
+    candidateHash,
+  }
+  if (type === 'knowledge/promoted') {
+    if (authority === undefined) throw new Error('knowledge promotion event lacks authority')
+    const id = `candidate:${reviewId}`
+    const seal = authority.sealPromotion(canonicalJson({ type, knowledgeId: id, payload: eventPayload }))
+    eventPayload = { ...eventPayload, authorityId: authority.authorityId, authoritySeal: seal }
+  }
+  const event = createKnowledgeEvent(type, `candidate:${reviewId}`, scope, eventPayload, { seq: prior.length, previousEventHash: prior.at(-1)?.eventHash ?? null })
+  appendKnowledgeEvent(path, event)
 }
 
 function isMissingPathError(error: unknown): boolean {
@@ -524,6 +614,15 @@ function commitPromotionJournal(
     }
     if (rollbackErrors.length === 0) {
       atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'rolled-back' }, null, 2)}\n`)
+      try {
+        appendKnowledgeReviewEvent(reviewFile, 'knowledge/rolled_back', journal.reviewId, journal.candidateHash, {
+          lifecycle: 'rolled_back',
+          transactionId: journal.id,
+        }, authority)
+      } catch {
+        // The promotion journal is the source of truth for recovery; an event
+        // append failure must not mask the original transaction error.
+      }
       throw error
     }
     throw new AggregateError([error, ...rollbackErrors], 'candidate review transaction failed and rollback was incomplete')
@@ -565,6 +664,17 @@ export function recoverCandidateReviewTransactions(
     for (const operation of journal.operations) assertPromotionOperationConfined(operation, reviewFile, wikiRoot, archiveRoot)
     for (const operation of journal.operations) applyPromotionOperation(operation)
     atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'committed' }, null, 2)}\n`)
+    if (journal.action === 'Promote' || journal.action === 'Merge' || journal.action === 'Replace' || journal.action === 'Deduplicate') {
+      try {
+        appendKnowledgeReviewEvent(reviewFile, 'knowledge/promoted', journal.reviewId, journal.candidateHash, {
+          action: journal.action,
+          lifecycle: 'canonical',
+          ...(journal.targetPath === null ? {} : { appliedPath: journal.targetPath }),
+        }, authority)
+      } catch {
+        // The committed promotion WAL remains the recovery authority.
+      }
+    }
     recovered += 1
   }
   return recovered
@@ -680,6 +790,7 @@ export function appendCandidateReviews(
 ): number {
   const existing = readReviewItems(reviewFile)
   const byId = new Map(existing.map(item => [item.id, item]))
+  const observed: Array<{ item: WikiReviewItem; content: string }> = []
   let changed = 0
   for (const writtenPath of writtenPaths) {
     const candidate = resolveCandidateReviewPath(join(projectRoot, 'wiki'), writtenPath.replace(/^wiki\//u, ''))
@@ -696,7 +807,7 @@ export function appendCandidateReviews(
     const targetPath = governance.targetPath
     const prior = byId.get(id)
     if (prior?.candidateHash === candidateHash && !prior.resolved) continue
-    byId.set(id, {
+    const nextItem: WikiReviewItem = {
       id,
       title,
       type: 'candidate-approval',
@@ -709,6 +820,7 @@ export function appendCandidateReviews(
       reviewKind: 'candidate',
       candidatePath,
       candidateHash,
+      sourceHash: sourceHashForCandidate(projectRoot, sourcePath),
       verification: {
         status: 'pending',
         candidateHash,
@@ -720,11 +832,45 @@ export function appendCandidateReviews(
         failureCount: 0,
       },
       ...(targetPath ? { targetPath } : {}),
-    })
+    }
+    byId.set(id, nextItem)
+    observed.push({ item: nextItem, content })
     changed += 1
   }
   if (changed > 0) {
     writeReviewItemsAtomically(reviewFile, [...byId.values()])
+    for (const { item, content } of observed) {
+      const record = createKnowledgeRecord({
+        id: `candidate:${item.id}`,
+        content,
+        claimKey: item.title.trim().toLocaleLowerCase(),
+        // Keep the durable item address in `source`; original provenance stays
+        // in the review/sourcePath and evidence refs.
+        source: item.candidatePath ?? item.id,
+        evidenceRefs: [item.sourcePath ?? item.candidatePath ?? item.id],
+        // `candidateHash` binds the mutable candidate bytes. `sourceHash`
+        // identifies provenance and intentionally hashes the source identity
+        // separately, so an edited candidate cannot masquerade as source data.
+        sourceHash: item.sourceHash ?? knowledgeSha256(item.sourcePath ?? item.candidatePath ?? item.id),
+        scope: { projectId: projectRoot, visibility: 'project' },
+        createdAt: new Date(item.createdAt ?? Date.now()).toISOString(),
+        expiresAt: new Date((item.createdAt ?? Date.now()) + 30 * 86_400_000).toISOString(),
+        lifecycle: 'candidate',
+      })
+      appendKnowledgeLifecycleEvent(reviewFile, 'knowledge/observed', item, { record })
+      appendKnowledgeLifecycleEvent(reviewFile, 'knowledge/candidate', item, { record })
+    }
+    // Once all new candidates are in the log, identify divergent claims in
+    // the same scope. Conflict events make both records non-injectable until
+    // an explicit review resolves the ambiguity.
+    const state = replayKnowledgeEvents(readKnowledgeEventLog(knowledgeEventPath(reviewFile)))
+    for (const record of state.records.values()) {
+      const conflicts = detectKnowledgeConflicts(record, state.records.values())
+      if (conflicts.length === 0) continue
+      const review = [...byId.values()].find(item => item.id === record.id.replace(/^candidate:/u, ''))
+      if (review === undefined || review.candidateHash === undefined) continue
+      appendKnowledgeReviewEvent(reviewFile, 'knowledge/conflict', review.id, review.candidateHash, { conflictIds: conflicts })
+    }
   }
   return changed
 }
@@ -758,6 +904,9 @@ export function recordCandidateVerification(
     .update(readRegularFileBounded(candidate.absolutePath, 5 * 1024 * 1024))
     .digest('hex')
   if (actualHash !== item.candidateHash) return false
+  const governedEvents = readKnowledgeEventLog(knowledgeEventPath(reviewFile))
+  const governed = replayKnowledgeEvents(governedEvents).records.get(`candidate:${item.id}`)
+  if (governed !== undefined && (governed.verificationStatus === 'expired' || governed.verificationStatus === 'conflict')) return false
   const trusted = readTrustedVerification(
     authority,
     reviewFile,
@@ -768,11 +917,36 @@ export function recordCandidateVerification(
   )
   if (trusted === undefined) return false
   const nextVerification = trusted.verification
+  // The independent verifier's bounded outcomes are the first limited trial;
+  // UI-side utility feedback cannot mint this state because the receipt is
+  // authority-bound and the derived hash is checked again at promotion.
+  const trialEvidence = trusted.receipt.result.outcomes.flatMap(outcome => outcome.evidence)
+  const successfulUses = trusted.receipt.result.outcomes.filter(outcome => outcome.result === 'pass').length
+  const userCorrections = trusted.receipt.result.outcomes.filter(outcome => outcome.result === 'fail').length
+  const trialBasis = {
+    candidateHash: actualHash,
+    receiptHash: trusted.receipt.receiptHash,
+    successfulUses,
+    userCorrections,
+    evidence: trialEvidence,
+  }
+  const trial = {
+    status: successfulUses > 0 && userCorrections === 0 ? 'passed' as const : 'failed' as const,
+    trialHash: sha256(canonicalJson(trialBasis)),
+    authorityId: nextVerification.authorityId ?? trusted.receipt.result.authorityId,
+    evidence: trialEvidence,
+    retrievalHits: trusted.receipt.result.outcomes.length,
+    successfulUses,
+    userCorrections,
+    utilityScore: Number(((successfulUses * 2 - userCorrections * 3) / Math.max(1, trusted.receipt.result.outcomes.length)).toFixed(4)),
+    startedAt: trusted.receipt.result.issuedAt,
+    endedAt: trusted.receipt.result.issuedAt,
+  }
   // readTrustedVerification only returns a passed verification, so the action
   // options always keep the requested action beside the Archive escape hatch.
   all[index] = {
     ...item,
-    verification: nextVerification,
+    verification: { ...nextVerification, trial },
     options: candidateActions(wikiRoot, item.targetPath)
       .filter(option => option.action === action || option.action === 'Archive'),
   }
@@ -795,7 +969,33 @@ export function recordCandidateVerification(
       gitCommit: receipt.gitCommit,
     })),
     confidence: nextVerification.confidence,
+    trial,
   })
+  const createdAt = new Date(item.createdAt ?? Date.now()).toISOString()
+  const fallbackRecord = createKnowledgeRecord({
+    id: `candidate:${item.id}`,
+    content: readRegularFileBounded(candidate.absolutePath, 5 * 1024 * 1024).toString('utf8'),
+    claimKey: item.title.trim().toLocaleLowerCase(),
+    source: item.candidatePath,
+    sourceHash: item.sourceHash ?? knowledgeSha256(item.sourcePath ?? item.candidatePath),
+    scope: { projectId: dirname(dirname(reviewFile)), visibility: 'project' },
+    evidenceRefs: [item.sourcePath ?? item.candidatePath],
+    verificationStatus: 'candidate',
+    confidence: 0,
+    createdAt,
+    expiresAt: new Date(Date.parse(createdAt) + 30 * 86_400_000).toISOString(),
+    lifecycle: 'candidate',
+  })
+  appendKnowledgeLifecycleEvent(reviewFile, 'knowledge/verified', item, {
+    record: fallbackRecord,
+    verificationStatus: 'verified',
+    trust: 'medium',
+    authority: nextVerification.authorityId ?? 'independent-verifier',
+    confidence: nextVerification.confidence,
+    lastVerifiedAt: nextVerification.lastVerifiedAt ?? new Date().toISOString(),
+    evidenceRefs: nextVerification.receipts.map(receipt => receipt.id),
+    trial,
+  }, authority)
   return true
 }
 
@@ -833,12 +1033,38 @@ export function applyCandidateReview(
   const actualHash = createHash('sha256').update(content).digest('hex')
   if (actualHash !== item.candidateHash) return false
 
+  // A passing receipt is necessary but not sufficient: an independently
+  // expired or conflicting knowledge record cannot be promoted from a stale
+  // review mirror. Legacy rows without an event projection remain governed by
+  // the existing hash-bound verifier contract.
+  const governedEvents = readKnowledgeEventLog(knowledgeEventPath(reviewFile))
+  const governed = replayKnowledgeEvents(governedEvents).records.get(`candidate:${item.id}`)
+  if (governed !== undefined) {
+    const decision = knowledgeInjectionDecision(governed, {
+      projectId: projectRoot,
+      workspaceId: projectRoot,
+    })
+    if (decision.reason === 'expired' || decision.reason === 'conflict' || decision.reason === 'scope-denied' || decision.reason === 'acl-denied') return false
+  }
+
   const canonicalActions = new Set(['Promote', 'Merge', 'Replace', 'Deduplicate'])
   let verifiedReceipt: TrustedVerificationReceipt | undefined
   if (canonicalActions.has(action)) {
     const verification = item.verification
     if (actor === 'governance-agent') return false
     if (!verification || verification.status !== 'passed' || verification.candidateHash !== actualHash) return false
+    if (verification.trial?.status !== 'passed'
+      || verification.trial.successfulUses < 1
+      || verification.trial.userCorrections > 0
+      || verification.trial.utilityScore <= 0) return false
+    const trialBasis = {
+      candidateHash: actualHash,
+      receiptHash: verification.receipts.length === 1 ? verification.receipts[0]?.receiptHash : undefined,
+      successfulUses: verification.trial.successfulUses,
+      userCorrections: verification.trial.userCorrections,
+      evidence: [...verification.trial.evidence],
+    }
+    if (verification.trial.trialHash !== sha256(canonicalJson(trialBasis))) return false
     if (verification.action !== action) return false
     const receiptId = verification.receipts.length === 1 ? verification.receipts[0]?.id : undefined
     if (receiptId === undefined) return false
@@ -853,6 +1079,19 @@ export function applyCandidateReview(
     if (trusted === undefined
       || trusted.verification.receipts[0]?.receiptHash !== verification.receipts[0]?.receiptHash) return false
     verifiedReceipt = trusted.receipt
+    const expectedSuccessfulUses = verifiedReceipt.result.outcomes.filter(outcome => outcome.result === 'pass').length
+    const expectedCorrections = verifiedReceipt.result.outcomes.filter(outcome => outcome.result === 'fail').length
+    const expectedEvidence = verifiedReceipt.result.outcomes.flatMap(outcome => outcome.evidence)
+    const expectedTrialHash = sha256(canonicalJson({
+      candidateHash: actualHash,
+      receiptHash: verifiedReceipt.receiptHash,
+      successfulUses: expectedSuccessfulUses,
+      userCorrections: expectedCorrections,
+      evidence: expectedEvidence,
+    }))
+    if (verification.trial.successfulUses !== expectedSuccessfulUses
+      || verification.trial.userCorrections !== expectedCorrections
+      || verification.trial.trialHash !== expectedTrialHash) return false
   }
 
   const now = new Date()
@@ -1027,6 +1266,14 @@ export function applyCandidateReview(
     state: 'prepared',
     seal,
   })
+  appendKnowledgeReviewEvent(
+    reviewFile,
+    canonicalActions.has(action) ? 'knowledge/promoted' : 'knowledge/rejected',
+    item.id,
+    actualHash,
+    { action, appliedPath, lifecycle: canonicalActions.has(action) ? 'canonical' : 'downgraded' },
+    authority,
+  )
   return true
 }
 

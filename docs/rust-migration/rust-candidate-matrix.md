@@ -1,12 +1,14 @@
 # Rust candidate matrix
 
+English | [中文](rust-candidate-matrix.zh.md)
+
 This reference records the Rust migration decision from the checked-out source tree. It is evidence for planning and review; it does not enable a Rust provider or change an existing wire contract.
 
 ## Source evidence
 
-The checked-out tree at `b8adf5a7ec9c22c3f1c7958821af825bd7821d7a` and GitHub `origin/main` at `d382723905742f2b87401ad444d02756f5cb229b` have no `Cargo.toml` or Rust source files (`*.rs`). Both trees were inspected with `git ls-tree` on 2026-10-07. The native implementation that is present is a small C11 Landlock launcher in [`native/landlock-run/packages/entry/src/main.c`](../../native/landlock-run/packages/entry/src/main.c), exposed through the TypeScript entry module [`native/landlock-run/packages/entry/src/index.ts`](../../native/landlock-run/packages/entry/src/index.ts). Its contract is a process launcher and filesystem confinement probe, so it is outside the Rust kernel candidates below.
+The source-truth baseline at `b8adf5a7ec9c22c3f1c7958821af825bd7821d7a` and GitHub `origin/main` at `d382723905742f2b87401ad444d02756f5cb229b` had no `Cargo.toml` or Rust source files (`*.rs`) when inspected with `git ls-tree` on 2026-10-07. The current working tree now contains an isolated, non-production shadow crate at [`rust/knowledge-search-shadow`](../../rust/knowledge-search-shadow), added after that baseline. The native implementation that is present is a small C11 Landlock launcher in [`native/landlock-run/packages/entry/src/main.c`](../../native/landlock-run/packages/entry/src/main.c), exposed through the TypeScript entry module [`native/landlock-run/packages/entry/src/index.ts`](../../native/landlock-run/packages/entry/src/index.ts). Its contract is a process launcher and filesystem confinement probe, so it is outside the Rust kernel candidates below.
 
-The knowledge kernels are in-process TypeScript. BM25, tokenization, and cosine similarity are implemented in [`packages/host/knowledge-wiki/src/search.ts`](../../packages/host/knowledge-wiki/src/search.ts); graph traversal and Louvain community detection are implemented in [`packages/host/knowledge-wiki/src/graph.ts`](../../packages/host/knowledge-wiki/src/graph.ts). There is no optimized TypeScript variant, Rust shadow implementation, N-API binding, or IPC protocol for these kernels in the source tree.
+The knowledge kernels remain in-process TypeScript. BM25, tokenization, and cosine similarity are implemented in [`packages/host/knowledge-wiki/src/search.ts`](../../packages/host/knowledge-wiki/src/search.ts); graph traversal and Louvain community detection are implemented in [`packages/host/knowledge-wiki/src/graph.ts`](../../packages/host/knowledge-wiki/src/graph.ts). The current working tree has a deterministic optimized TypeScript comparison in [`scripts/rust-migration/benchmark-knowledge-search.ts`](../../scripts/rust-migration/benchmark-knowledge-search.ts), an isolated Rust shadow replay in [`scripts/rust-migration/differential-replay.ts`](../../scripts/rust-migration/differential-replay.ts), and a default-disabled production candidate seam in [`packages/host/knowledge-wiki/src/rust-search-candidate.ts`](../../packages/host/knowledge-wiki/src/rust-search-candidate.ts). It still has no production N-API provider or enforced Rust owner for these kernels.
 
 Cancellation and child-process recovery remain owned by the existing TypeScript runtime. [`packages/subprocess/subprocess-local`](../../packages/subprocess/subprocess-local) terminates managed process groups through `AbortSignal`, and [`packages/jobs/jobs-local`](../../packages/jobs/jobs-local) owns task cancellation and teardown. The migration boundary must preserve those owners.
 
@@ -14,7 +16,7 @@ Cancellation and child-process recovery remain owned by the existing TypeScript 
 
 | Candidate | Current owner | Rust boundary | Evidence status | Decision |
 | --- | --- | --- | --- | --- |
-| Tokenization and BM25 scoring | `knowledge-wiki/search.ts` | Immutable UTF-8 request bytes and page records; deterministic result bytes | No optimized TypeScript or Rust implementation; no differential replay | **RETAIN_TS** |
+| Tokenization and BM25 scoring | `knowledge-wiki/search.ts` | Immutable UTF-8 request bytes and page records; deterministic result bytes | Optimized TypeScript and isolated Rust shadow match the deterministic corpus; no real boundary or end-to-end replay | **RETAIN_TS** |
 | Cosine similarity | `knowledge-wiki/search.ts` | Immutable numeric vectors; deterministic scores | No optimized TypeScript or Rust implementation; embedding calls dominate hybrid search when enabled | **RETAIN_TS** |
 | Wiki graph derivation and Louvain | `knowledge-wiki/graph.ts` | Immutable page/edge records; deterministic graph result | No optimized TypeScript or Rust implementation; filesystem traversal and graph semantics need a replay corpus | **RETAIN_TS** |
 | Incremental search or graph index | No separate index owner; search and graph rebuild from the Wiki tree | Versioned canonical index bytes with generation and checksum | No index format or rebuild/recovery contract exists | **DEFER** |
@@ -42,4 +44,4 @@ Rust inputs are limited to canonical bytes or immutable DTOs plus `requestId`, `
 
 ## Current conclusion
 
-No candidate has the required three-way evidence, so no Rust migration is justified by the current source tree. The safe runtime choice is to keep the existing TypeScript kernels and native C11 confinement provider, record benchmark evidence when a concrete candidate is proposed, and preserve TypeScript fallback until differential replay and end-to-end measurements establish a benefit.
+The knowledge-search shadow now matches the TypeScript result digest, but no candidate has the required three-way evidence. No Rust migration is justified for production yet. The safe runtime choice is to keep the existing TypeScript kernels and native C11 confinement provider, preserve TypeScript fallback, and collect the real N-API/IPC, end-to-end, cancellation, recovery, and cross-platform evidence before changing the runtime owner.

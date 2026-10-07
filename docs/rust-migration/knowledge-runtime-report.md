@@ -1,12 +1,14 @@
 # Phase 0 knowledge/runtime report
 
+English | [中文](knowledge-runtime-report.zh.md)
+
 **Baseline:** source findings and line references are pinned to `b8adf5a7ec` before Phase 1 edits; runtime artifact observations were made 2026-10-07.
 
 ## What the model can actually see
 
 The active source has no automatic Knowledge Wiki recall section. `tool-knowledge-wiki` adds a short system-prompt instruction to use `wiki_search`, `wiki_read`, `wiki_files`, `wiki_graph`, `wiki_reviews`, `wiki_verify_candidate`, and `wiki_ingest` ([`packages/host/knowledge-wiki-tools/src/index.ts:64-69`](../../packages/host/knowledge-wiki-tools/src/index.ts)). A model sees Wiki content only when it calls the registered tools; `wiki_search` returns ranked paths and `wiki_read` reads a requested path ([`index.ts:71-165`](../../packages/host/knowledge-wiki-tools/src/index.ts)). There is no `knowledge-wiki-recall` section, no profile/reflection selector, and no code that injects latest knowledge into each provider request in the audited package.
 
-The service's `search()` does record retrieval counters after the call ([`packages/host/knowledge-wiki/src/index.ts:681-695`](../../packages/host/knowledge-wiki/src/index.ts)), and `recordKnowledgeOutcome()` is an explicit Remote endpoint ([`index.ts:707-747`](../../packages/host/knowledge-wiki/src/index.ts)). These are application counters, not durable session events. A replay of a session event log cannot reconstruct which Wiki pages were returned or injected from the current implementation; the mission's replayability requirement is therefore **not met**.
+The service's governed model methods now require the real session `cwd`/project scope and verifier authority; `modelSearch()` and `modelPageContent()` increment retrieval utility only after the record gate passes ([`packages/host/knowledge-wiki/src/index.ts`](../../packages/host/knowledge-wiki/src/index.ts)). `recordKnowledgeOutcome()` updates utility and its event journal ([`index.ts:707-835`](../../packages/host/knowledge-wiki/src/index.ts)). Wiki tools append session-log `knowledge/retrieved` events with source hash, authority, trust, evidence, freshness, and conflict provenance, then append the exact final rendered `tools/result` content as `knowledge/injected` ([`packages/host/knowledge-wiki-tools/src/index.ts`](../../packages/host/knowledge-wiki-tools/src/index.ts), [`session-events.ts`](../../packages/host/knowledge-wiki-tools/src/session-events.ts)). Replay can therefore reconstruct the model-facing tool values and their governed source; generic unscoped per-step recall remains disabled.
 
 ## Write/verification path
 
@@ -17,8 +19,8 @@ The service's `search()` does record retrieval counters after the call ([`packag
 | Provenance / hash | Candidate reviews contain candidate hash; verifier types include source identity/build digest and review hash ([`packages/host/knowledge-wiki/src/types.ts:78-129`](../../packages/host/knowledge-wiki/src/types.ts)). | Present for candidate review lane. |
 | Independent verification | `verifyCandidate()` requires injected `knowledgeWikiVerifierAuthority`, persists a receipt, then binds it to the review ([`index.ts:1225-1257`](../../packages/host/knowledge-wiki/src/index.ts)). | No production authority provider found at baseline; explicit authority-unavailable blocker. |
 | Review / promotion | `resolveReview(s)` calls advisory resolution or `applyCandidateReview()` ([`index.ts:1264-1318`](../../packages/host/knowledge-wiki/src/index.ts)). | Explicit action; canonical changes are governed. |
-| Utility | Counters and weighted utility score in `.llm-wiki/knowledge-utility.json` ([`index.ts:604-635`](../../packages/host/knowledge-wiki/src/index.ts), [`:707-747`](../../packages/host/knowledge-wiki/src/index.ts)). | Present, but no decay/expiry/promotion threshold/rollback event. |
-| Expiry/conflict/rollback | No current service fields/events for expiresAt, conflicts, downgrade/expire/rollback, ACL, or scope. | **Missing.** |
+| Utility | Counters and weighted utility score in `.llm-wiki/knowledge-utility.json` ([`index.ts:604-635`](../../packages/host/knowledge-wiki/src/index.ts), [`:707-835`](../../packages/host/knowledge-wiki/src/index.ts)); retention helpers reject expired/rejected records without utility lift. | **Implemented with explicit retention evidence.** |
+| Expiry/conflict/rollback | `KnowledgeRecord` fields and `knowledge-governance.ts` transitions enforce expiry, scope, ACL, conflicts, downgrade, promotion, and rollback. | **Implemented with focused replay/gate tests.** |
 
 The old auto-sediment module contains reusable turn extraction/page builders, but the service does not register its advertised `agent/turn-stopping` listener. Its own comments say turn-level Markdown is disabled ([`packages/host/knowledge-wiki/src/auto-sediment.ts:1-14`](../../packages/host/knowledge-wiki/src/auto-sediment.ts), [`index.ts:291-300`](../../packages/host/knowledge-wiki/src/index.ts)). Unit tests exercise these pure helpers, which is not evidence of production registration.
 
@@ -37,7 +39,13 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 ## Drift and required follow-up
 
 - The old docs' claim that every turn creates conversation/profile/reflection entries and every model step receives recalled profiles/reflections is contradicted by source and runtime artifacts. Mark it **DRIFT: confirmed**.
-- Review is implemented and mounted, but the independent verifier authority is not provided by the baseline production composition (only tests provide it). The release profile has no verified promotion path until that owner is composed. It also does not expose a model tool for generic utility outcomes or emit the mission's required knowledge lifecycle events. Mark **PARTIAL / VERIFIER BLOCKED**.
+- Review is implemented and mounted, but the independent verifier authority is not provided by the baseline production composition (only tests provide it). The release profile has no verified promotion path until that owner is composed. Candidate lifecycle, project audit, and session retrieval/injection events are implemented; generic per-step recall is not enabled. Mark **PARTIAL / VERIFIER BLOCKED**.
 - Session durability is JSONL plus projection cache; SQLite query search is intentionally disabled. Mark **CONFIRMED** and do not benchmark SQLite search as active until `openAt` changes.
 - Model request evidence exists in synthetic provider logs and production projection counters, but no captured request payload currently demonstrates Wiki content injection. Mark **NOT VERIFIED** for “knowledge injected in every model step.”
-- Before Phase 1, add replayable `knowledge/retrieved` and `knowledge/injected` events (with scope/ACL and page hashes), explicit expiry/conflict/rollback records, and a test that reconstructs exactly what the model saw from session events. Keep candidates below canonical trust until independent verification and review complete.
+- Maintain the replay tests and run the learning evaluator on independently verified paired outcomes before claiming a utility or smartness lift. Keep candidates below canonical trust until independent verification and review complete.
+
+## Current Rust candidate seam
+
+The working tree now exposes an optional, default-disabled Rust search candidate in `KnowledgeWikiService`. Shadow mode is observational: it sends a bounded immutable page/query DTO to an isolated child process, checks the input and result digests plus canonical BM25 equality, and keeps the TypeScript result. Candidate failures, cancellation, timeout, or divergence fall back to TypeScript. Enforce mode is deliberately rejected until Rust covers the complete hybrid BM25-plus-embedding contract. This seam is testable in a candidate profile, but the active Ark profile remains TypeScript-only and the acceptance audit remains `UNKNOWN` without production-boundary receipts.
+
+The working tree also includes a launcher-owned external verifier adapter with signed child-process results and promotion seals. The profile exposes only the launcher-owned `knowledgeVerifierConfig` seam and the active value is empty; candidate verification therefore remains explicitly unavailable in the current product. An isolated service fixture proves the child-process binding path without claiming production acceptance.

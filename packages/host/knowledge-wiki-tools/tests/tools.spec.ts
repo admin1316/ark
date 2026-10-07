@@ -3,18 +3,50 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import * as plugin from '../src/index.ts'
 
 const contexts: Context[] = []
 const signal = new AbortController().signal
 let calls = 0
 
+type FakeHit = { path: string; score: number }
+type FakeEntry = { path: string; isDir?: boolean; children?: FakeEntry[] }
+type FakePage = { path: string; content: string }
+type FakeNode = {
+  id: string
+  label: string
+  type?: string
+  nodeType?: string
+  path?: string
+  linkCount: number
+  community?: number
+  cluster?: string | null
+}
+type FakeEdge = { source: string; target: string; weight: number }
+type FakeGraph = { nodes: FakeNode[]; edges: FakeEdge[] }
+type FakeReview = {
+  id: string
+  title: string
+  type: string
+  description?: string
+  resolved?: boolean
+  reviewKind?: string
+  candidatePath?: string
+}
+
 class FakeWiki extends Service {
-  readonly search = vi.fn().mockResolvedValue([])
-  readonly list = vi.fn().mockResolvedValue([])
-  readonly pageContent = vi.fn().mockResolvedValue({ path: '', content: '' })
-  readonly graph = vi.fn().mockResolvedValue({ nodes: [], edges: [] })
-  readonly reviews = vi.fn().mockResolvedValue([])
+  readonly search = vi.fn<(request: { query: string; topK?: number }) => Promise<FakeHit[]>>().mockResolvedValue([])
+  readonly list = vi.fn<() => Promise<FakeEntry[]>>().mockResolvedValue([])
+  readonly pageContent = vi.fn<(request: { path: string }) => Promise<FakePage>>().mockResolvedValue({ path: '', content: '' })
+  readonly graph = vi.fn<() => Promise<FakeGraph>>().mockResolvedValue({ nodes: [], edges: [] })
+  readonly reviews = vi.fn<(request: { status?: string; limit?: number }) => Promise<FakeReview[]>>().mockResolvedValue([])
+  readonly modelSearch = vi.fn((request: { query: string; topK?: number }) => this.search(request))
+  readonly modelList = vi.fn(() => this.list())
+  readonly modelPageContent = vi.fn((request: { path: string }) => this.pageContent(request))
+  readonly modelGraph = vi.fn(() => this.graph().then(graph => ({ ...graph, provenance: {} })))
+  readonly modelReviews = vi.fn((request: { status?: string; limit?: number }) => this.reviews(request))
   readonly ingestQueueAdd = vi.fn().mockResolvedValue({ tasks: [], running: false, cancelled: false })
   readonly verifyCandidate = vi.fn().mockResolvedValue({ ok: false, evidence: [], errorCode: 'review-not-found' })
 
@@ -43,7 +75,14 @@ async function setup(withService = true): Promise<{ ctx: Context; service?: Fake
 }
 
 function execute(ctx: Context, name: string, args: unknown): Promise<ToolExecutionResult> {
-  return ctx.tools.execute({ signal, callId: CallId(`wiki-${++calls}`), name, arguments: args })
+  const id = SessionId(`wiki-test-${++calls}`)
+  const session = Session.create(id, [], { version: 0, id, createdAt: Date.now(), cwd: process.cwd() })
+  const agent = { id, session } as unknown as Agent
+  return ctx.tools.execute({ signal, callId: CallId(`wiki-${calls}`), name, arguments: args, agent })
+}
+
+function executeForAgent(ctx: Context, agent: Agent, name: string, args: unknown): Promise<ToolExecutionResult> {
+  return ctx.tools.execute({ signal, callId: CallId(`wiki-${++calls}`), name, arguments: args, agent })
 }
 
 function text(result: ToolExecutionResult): string {
@@ -88,6 +127,26 @@ describe('Knowledge Wiki tool catalog', () => {
     const ranked = await execute(ctx, 'wiki_search', { query: 'match' })
     expect(text(ranked)).toContain('- entities/a.md (score 0.75)')
     expect(service?.search).toHaveBeenLastCalledWith({ query: 'match', topK: 8 })
+  })
+
+  it('records retrieved and injected Wiki values on the calling session', async () => {
+    const { ctx, service } = await setup()
+    service?.pageContent.mockResolvedValue({ path: 'entities/a.md', content: 'verified page' })
+    const id = SessionId('wiki-session')
+    const session = Session.create(id, [], { version: 0, id, createdAt: Date.now(), cwd: process.cwd() })
+    const agent = { id, session } as unknown as Agent
+    const result = await executeForAgent(ctx, agent, 'wiki_read', { path: 'entities/a.md' })
+    expect(result.isError).toBe(false)
+    expect(session.events.filter(event => event.type === 'knowledge/retrieved')).toHaveLength(1)
+    expect(session.events.filter(event => event.type === 'knowledge/injected')).toHaveLength(1)
+    const injected = session.events.find(event => event.type === 'knowledge/injected')
+    const data = injected?.data as Record<string, unknown> | undefined
+    expect(data?.path).toBe('entities/a.md')
+    expect(data?.tool).toBe('wiki_read')
+    expect(typeof data?.callId).toBe('string')
+    expect(data?.value).toEqual([{ type: 'text', text: '# entities/a.md\n\nverified page' }])
+    expect((data?.scope as { sessionId?: string; projectId?: string } | undefined)?.sessionId).toBe('wiki-session')
+    expect((data?.scope as { sessionId?: string; projectId?: string } | undefined)?.projectId).toBe(process.cwd())
   })
 
   it('lists at most sixty paths while reporting the full total', async () => {

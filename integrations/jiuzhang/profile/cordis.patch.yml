@@ -29,6 +29,8 @@
     wikiRoot: !!js process.env.ARK_WIKI_ROOT
     mainRoot: !!js process.env.ARK_MAIN_ROOT
     credential: DEEPSEEK_API_KEY
+    # Launcher-owned JSON only; empty keeps independent verification unavailable.
+    knowledgeVerifierConfig: !!js process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
     # Ark enables the owned-worker stage executor: without it every ingest task
     # fails with "stage executor unavailable" (the release ships no provider).
     ownedStageExecutor: true

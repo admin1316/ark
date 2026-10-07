@@ -75,10 +75,91 @@ export interface KnowledgeUtilityRecord {
   readonly lastOutcomeAt?: string
 }
 
+/** Trust assigned to a knowledge item by its provenance and verifier. */
+export type KnowledgeTrust = 'low' | 'medium' | 'high'
+
+/** Lifecycle/verification state for durable knowledge. */
+export type KnowledgeVerificationStatus =
+  | 'observed'
+  | 'candidate'
+  | 'verified'
+  | 'rejected'
+  | 'conflict'
+  | 'expired'
+
+/** Scope fence used for cross-session recall. Empty optional fields do not widen a fence. */
+export interface KnowledgeScope {
+  readonly projectId?: string
+  readonly workspaceId?: string
+  readonly sessionId?: string
+  readonly visibility?: 'session' | 'workspace' | 'project'
+}
+
+/** Optional actor ACL carried with a knowledge item. */
+export interface KnowledgeAcl {
+  readonly readers?: readonly string[]
+  readonly writers?: readonly string[]
+}
+
+/** Durable knowledge record. Every field is persisted so promotion and recall can be replayed. */
+export interface KnowledgeRecord {
+  readonly id: string
+  readonly content: string
+  readonly source: string
+  /** Stable claim identity; defaults to source when omitted by legacy records. */
+  readonly claimKey?: string
+  readonly sourceHash: string
+  readonly scope: KnowledgeScope
+  readonly trust: KnowledgeTrust
+  readonly authority: string
+  readonly evidenceRefs: readonly string[]
+  readonly verificationStatus: KnowledgeVerificationStatus
+  readonly confidence: number
+  readonly createdAt: string
+  readonly lastVerifiedAt: string | null
+  readonly expiresAt: string | null
+  readonly conflicts: readonly string[]
+  readonly retrievalHits: number
+  readonly successfulUses: number
+  readonly userCorrections: number
+  readonly utilityScore: number
+  readonly acl?: KnowledgeAcl
+  readonly lifecycle?: 'candidate' | 'canonical' | 'downgraded' | 'rolled_back'
+}
+
+/** Knowledge event names are intentionally explicit and replayable. */
+export type KnowledgeEventType =
+  | 'knowledge/observed'
+  | 'knowledge/candidate'
+  | 'knowledge/verified'
+  | 'knowledge/rejected'
+  | 'knowledge/retrieved'
+  | 'knowledge/injected'
+  | 'knowledge/conflict'
+  | 'knowledge/expired'
+  | 'knowledge/promoted'
+  | 'knowledge/rolled_back'
+
+/** Append-only knowledge event envelope. `eventHash` forms a tamper-evident chain. */
+export interface KnowledgeEvent {
+  readonly schemaVersion: 1
+  readonly type: KnowledgeEventType
+  readonly id: string
+  readonly seq: number
+  readonly timestamp: string
+  readonly knowledgeId: string
+  readonly scope: KnowledgeScope
+  readonly sourceHash?: string
+  readonly previousEventHash: string | null
+  readonly payload: Readonly<Record<string, unknown>>
+  readonly eventHash: string
+}
+
 /** Hash-bound verification evidence for one Candidate review. */
 export interface CandidateVerification {
   readonly status: 'pending' | 'passed' | 'failed'
   readonly candidateHash: string
+  readonly sourceHash?: string
   readonly action?: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' | 'Archive'
   readonly reviewHash?: string
   readonly sourceIdentity?: {
@@ -97,6 +178,22 @@ export interface CandidateVerification {
   readonly failureCount: number
   readonly verifiedBy?: 'human' | 'deterministic-executor'
   readonly lastVerifiedAt?: string
+  /** Bounded trial/utility observation required before canonical promotion. */
+  readonly trial?: CandidateTrial
+}
+
+/** Bounded candidate trial receipt used before a knowledge record is promoted. */
+export interface CandidateTrial {
+  readonly status: 'passed' | 'failed'
+  readonly trialHash: string
+  readonly authorityId: string
+  readonly evidence: readonly string[]
+  readonly retrievalHits: number
+  readonly successfulUses: number
+  readonly userCorrections: number
+  readonly utilityScore: number
+  readonly startedAt: string
+  readonly endedAt: string
 }
 
 /** Service result with explicit integration blockers. */
@@ -158,6 +255,8 @@ export interface WikiReviewItem {
   readonly candidatePath?: string
   /** SHA-256 of the candidate content at proposal time. */
   readonly candidateHash?: string
+  /** SHA-256 of the immutable source bytes/identity used to produce the candidate. */
+  readonly sourceHash?: string
   /** Verification is required before any action can modify Canonical knowledge. */
   readonly verification?: CandidateVerification
   /** Derived canonical target; absent candidates cannot be promoted automatically. */

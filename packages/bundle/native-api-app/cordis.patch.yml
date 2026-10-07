@@ -119,7 +119,10 @@
       config:
         wikiRoot: ''
         mainRoot: ''
-        apiKey: ''
+        credential: ''
+        # The launcher may provide a signed external verifier through an
+        # environment-bound JSON blob; empty remains fail-closed.
+        knowledgeVerifierConfig: !!js process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
         llmProvider: 'deepseek-official'
         llmModel: 'deepseek-v4-flash'
 

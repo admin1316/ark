@@ -26,9 +26,16 @@ English | [中文](README.zh.md)
 |---|---|
 | `wikiRoot` | Absolute path of the project wiki directory (contains concepts/, entities/, sources/, index.md, log.md). |
 | `mainRoot` | Main workspace root (fixed, non-removable); defaults to the wiki root's parent. |
-| `apiKey` | Semantic-embedding key; empty disables vector search (BM25 still works). |
+| `credential` | Credential reference for semantic embeddings and image descriptions; an empty value disables embedding calls. |
 | `llmProvider` | LLM provider id for ingest/research (default `deepseek-official`). |
-| `llmModel` | LLM model id for ingest/research (default `deepseek-v4-flash`). |
+| `llmModel` | LLM model id for ingest/research. |
+| `llmBaseUrl` | Chat-completions endpoint used by the owned stage executor (default `https://api.deepseek.com`). |
+| `llmCredential` | Credential reference for ingest/research; empty uses the selected provider's declared environment reference. |
+| `ownedStageExecutor` | Enables the bounded owned worker for ingest/research (default `false`). |
+| `knowledgeSearchCandidateMode` | Optional Rust search candidate mode: `disabled` (default), `shadow` (observe only), or `enforce` (fail closed until the full hybrid contract is verified). |
+| `knowledgeSearchCandidateBinary` | Absolute path to the isolated Rust candidate binary. It is unused while the mode is `disabled`. |
+| `knowledgeSearchCandidateTimeoutMs` | Per-query candidate timeout in milliseconds (default `30000`, bounded to `1..120000`). |
+| `knowledgeVerifierConfig` | Launcher-only JSON for the signed external verifier authority. The empty default keeps verification unavailable; Wiki files cannot provide this value. |
 
 ```yaml
 - id: knowledge-wiki
@@ -36,9 +43,13 @@ English | [中文](README.zh.md)
   config:
     wikiRoot: '/absolute/path/to/project/wiki'
     mainRoot: '/absolute/path/to/project'
-    apiKey: !!js process.env.DEEPSEEK_API_KEY
+    credential: DEEPSEEK_API_KEY
     llmProvider: 'deepseek-official'
     llmModel: 'deepseek-v4-flash'
+    ownedStageExecutor: true
+    knowledgeSearchCandidateMode: disabled
+    knowledgeSearchCandidateBinary: '/absolute/path/to/knowledge-search-shadow'
+    knowledgeSearchCandidateTimeoutMs: 30000
 ```
 
 ## Durable state (.llm-wiki/)
@@ -54,6 +65,10 @@ English | [中文](README.zh.md)
 - The summary page for a source is forced onto the deterministic slug contract (`12-ark-sessions--32-…--<fnv32 base36>.md`), matching the existing corpus.
 - Generated pages are sanitized, date-stamped, canonicalized (`sources` field), and merged with any existing page: pages owned only by this source are replaced whole; shared pages keep their body and union their `sources`.
 - Deterministic fallbacks run regardless of model output shape: index entry, log entry, source summary page, review items.
+
+### Rust search candidate
+
+The production search path remains TypeScript by default. In `shadow` mode the service sends the same canonical page corpus and query to the isolated Rust candidate, checks request/result digests and byte-exact BM25 output, logs the observation, and still returns the governed TypeScript result. Candidate processes receive a minimal environment, bounded input/output, and a deadline; failure, timeout, cancellation, or divergence falls back to TypeScript. The `enforce` mode is intentionally fail-closed and currently rejected by `modelSearch` because Rust has not yet implemented the complete hybrid BM25-plus-embedding result contract.
 
 ## Model Experience
 

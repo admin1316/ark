@@ -1,5 +1,7 @@
 # Phase 0 source-truth report
 
+English | [中文](source-truth-report.zh.md)
+
 **Baseline snapshot.** Findings and line references below describe the source at `b8adf5a7ec`, before this mission's subsequent Phase 1 edits. Later implementation changes must be evaluated as a separate snapshot, not treated as evidence that these baseline observations were false.
 
 **Audit target.** Repository `/Users/hui/ark/repo`, branch `codex/ark-upstream-reliability-20260927`, HEAD `b8adf5a7ec` (`fix(native): preserve history scroll anchor across page loads`), audited 2026-10-07. The referenced mission text was read from `/Users/hui/.codex/attachments/3a68ae30-3b77-4be2-96be-2c65920c5ec6/pasted-text-1.txt` before this audit.
@@ -38,3 +40,15 @@ The production Harness profile contains `knowledge-wiki` with `ARK_WIKI_ROOT`/`A
 ## Phase 0 disposition
 
 Treat `docs/knowledge-wiki.md` and its Chinese counterpart as stale evidence requiring a documentation change request. Use the source implementation and active profile as authority until a new contract is independently reviewed. Do not claim automatic per-turn learning or model-step memory injection. The current verifiable path is: session event log → session-disposal summary (when criteria/stage executor pass) → `_candidates` Markdown + review item → independent verifier receipt → explicit review action → canonical Wiki page; search reads canonical/candidate tree only according to the current service implementation.
+
+## Phase 1 reconciliation
+
+The working tree adds governed `KnowledgeRecord` fields, a hash-chained `knowledge-events.jsonl` lifecycle, scope/ACL/freshness/conflict gates, utility retention helpers, and session-log `knowledge/retrieved`/`knowledge/injected` events emitted by Wiki tools. Candidate events carry complete records; verification, promotion, rejection, expiry, and rollback remain explicit transitions. `docs/knowledge-wiki.md` now describes this active contract. The native API bundle row uses `credential: ''`, matching `KnowledgeWikiService.Config`; the Jiuzhang overlay continues to provide `credential: DEEPSEEK_API_KEY` and the owned executor.
+
+The current working tree also adds a default-disabled Rust knowledge-search candidate seam. Shadow mode sends immutable page/query DTOs through an isolated child process, validates request/result digests and byte-exact BM25 output, and always returns the governed TypeScript result. Enforce mode remains fail-closed because the Rust candidate does not yet cover the complete hybrid embedding contract. The active Jiuzhang profile does not enable this mode or provide a verifier authority; production behavior therefore remains TypeScript with explicit verifier-unavailable blockers.
+
+The tree now also contains a launcher-owned external verifier adapter. It accepts a fixed source identity, an Ed25519 key pair, and an absolute verifier executable only through the launcher-owned `knowledgeVerifierConfig` seam; Wiki content cannot provide it. The active profile still has no verifier config value, so this adapter is verified capability scaffolding and does not turn current runtime evidence into acceptance.
+
+## Automatic-run evidence
+
+The checked-out repository has no `project-manifest.json`, `progress.jsonl`, or `decision-log.md` at its root, so an automatic run cannot claim a loaded immutable goal/plan boundary or current benchmark/security evidence. `scripts/rust-migration/run-context.ts` now reports this as `missing-manifest` and refuses to invent state; creating and signing those project-owned artifacts is a remaining acceptance prerequisite.

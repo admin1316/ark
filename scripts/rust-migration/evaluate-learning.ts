@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /** Explicit opportunity counts; rates are never inferred from memory volume. */
-export const METRICS = {
+const METRICS = {
   repeatedErrorRate: 'lower',
   repeatedToolCallRate: 'lower',
   verifiedTaskSuccess: 'higher',
@@ -23,11 +23,11 @@ export const METRICS = {
 } as const
 
 type MetricName = keyof typeof METRICS
-export interface Count {
+interface Count {
   readonly numerator: number
   readonly denominator: number
 }
-export interface OutcomeRecord {
+interface OutcomeRecord {
   readonly pairId: string
   readonly variant: 'baseline' | 'candidate'
   readonly model: string

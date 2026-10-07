@@ -66,6 +66,24 @@ describe('Candidate verification gate', () => {
     expect(applyCandidateReview(undefined, item.reviewFile, item.root, item.wikiRoot, join(item.root, 'archive'), item.reviewId, 'Promote', 'human')).toBe(false)
   })
 
+  it('binds source provenance bytes separately from mutable Candidate bytes', async () => {
+    const item = fixture()
+    const source = join(item.root, 'raw', 'evidence', 'sha-test.json')
+    mkdirSync(dirname(source), { recursive: true })
+    writeFileSync(source, '{"source":true}', 'utf8')
+    const rows = JSON.parse(readFileSync(item.reviewFile, 'utf8')) as Array<Record<string, unknown>>
+    rows[0]!.sourcePath = 'raw/evidence/sha-test.json'
+    rows[0]!.sourceHash = sha256(readFileSync(source))
+    writeFileSync(item.reviewFile, JSON.stringify(rows, null, 2), 'utf8')
+    const authority = verifierAuthority()
+    await expect(verifyCandidate(authority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote', new AbortController().signal))
+      .resolves.toMatchObject({ ok: true })
+    rows[0]!.sourceHash = sha256('tampered-source')
+    writeFileSync(item.reviewFile, JSON.stringify(rows, null, 2), 'utf8')
+    await expect(verifyCandidate(authority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote', new AbortController().signal))
+      .resolves.toMatchObject({ ok: false, errorCode: 'candidate-invalid' })
+  })
+
   it('promotes only after an authority-bound independent verification', async () => {
     const item = fixture()
     const authority = verifierAuthority()

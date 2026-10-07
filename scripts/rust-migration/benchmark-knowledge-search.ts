@@ -1,0 +1,261 @@
+/** Three-way benchmark scaffold with real current/optimized TypeScript measurements. */
+
+import { createHash } from 'node:crypto'
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks'
+import { existsSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { bm25 } from '../../packages/host/knowledge-wiki/src/search.ts'
+import { isolatedChildEnvironment } from './process-isolation.ts'
+
+export interface Page {
+  readonly path: string
+  readonly title: string
+  readonly aliases: string[]
+  readonly text: string
+}
+
+interface PreparedPage {
+  readonly page: Page
+  readonly tokens: string[]
+  readonly frequencies: ReadonlyMap<string, number>
+  readonly titleTokens: ReadonlySet<string>
+}
+
+const STOP = new Set(['the', 'and', 'or', 'for', 'with', 'not', 'this', 'that', '知识', '文档', '项目', '使用'])
+const K1 = 1.5
+const B = 0.75
+
+function tokenize(text: string): string[] {
+  const out: string[] = []
+  const lower = text.toLowerCase()
+  for (const match of lower.matchAll(/[a-z0-9][a-z0-9._-]{1,}/g)) out.push(match[0])
+  for (const seg of lower.matchAll(/[\u4e00-\u9fff]+/g)) {
+    const value = seg[0]
+    if (value.length === 1) out.push(value)
+    else {
+      for (const character of value) out.push(character)
+      for (let index = 0; index + 1 < value.length; index += 1) out.push(value.slice(index, index + 2))
+    }
+  }
+  return out
+}
+
+function prepare(pages: readonly Page[]): {
+  readonly pages: PreparedPage[]
+  readonly docFreq: ReadonlyMap<string, number>
+  readonly avgLen: number
+} {
+  const prepared = pages.map((page) => {
+    const tokens = tokenize([page.title, ...page.aliases, page.text].join('\n'))
+    const frequencies = new Map<string, number>()
+    for (const token of tokens) frequencies.set(token, (frequencies.get(token) ?? 0) + 1)
+    return { page, tokens, frequencies, titleTokens: new Set(tokenize([page.title, ...page.aliases].join('\n'))) }
+  })
+  const docFreq = new Map<string, number>()
+  for (const item of prepared) for (const token of new Set(item.tokens)) docFreq.set(token, (docFreq.get(token) ?? 0) + 1)
+  return { pages: prepared, docFreq, avgLen: prepared.reduce((sum, item) => sum + item.tokens.length, 0) / Math.max(1, prepared.length) }
+}
+
+function optimizedBm25(index: ReturnType<typeof prepare>, query: string): Array<{ path: string; score: number }> {
+  const queryTokens = tokenize(query).filter(token => !STOP.has(token))
+  if (queryTokens.length === 0) return []
+  const scores = index.pages.map((item) => {
+    let score = 0
+    for (const queryToken of queryTokens) {
+      const df = index.docFreq.get(queryToken) ?? 0
+      if (df === 0) continue
+      const idf = Math.log(1 + (index.pages.length - df + 0.5) / (df + 0.5))
+      const tf = item.frequencies.get(queryToken) ?? 0
+      score += idf * ((tf * (K1 + 1)) / (tf + K1 * (1 - B + B * (item.tokens.length / index.avgLen))))
+    }
+    for (const queryToken of queryTokens) if (item.titleTokens.has(queryToken)) score *= 1.5
+    return { path: item.page.path, score }
+  })
+  return scores.filter(item => item.score > 0).sort((left, right) => right.score - left.score)
+}
+
+export function benchmarkCorpus(): { readonly pages: Page[]; readonly queries: string[]; readonly hash: string } {
+  const pages = Array.from({ length: 240 }, (_, index) => ({
+    path: `concepts/page-${index}.md`,
+    title: `Runtime knowledge ${index % 24}`,
+    aliases: [`运行时知识 ${index % 24}`, `search alias ${index % 12}`],
+    text: `The verified runtime candidate ${index} records cancellation recovery, scope boundaries, utility feedback, and deterministic replay. ${'知识治理与性能证据 '.repeat((index % 7) + 2)}`,
+  }))
+  const queries = ['verified runtime replay', '知识治理 性能证据', 'cancellation recovery scope', 'utility feedback', 'search alias']
+  return { pages, queries, hash: createHash('sha256').update(JSON.stringify({ pages, queries })).digest('hex') }
+}
+
+function percentile(values: readonly number[], fraction: number): number {
+  const sorted = [...values].sort((left, right) => left - right)
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] ?? 0
+}
+
+function measure(run: () => unknown, iterations: number): {
+  readonly p50: number
+  readonly p95: number
+  readonly p99: number
+  readonly cpuMicros: number
+  readonly rssDelta: number
+  readonly eventLoopDelayMeanMs: number
+  readonly eventLoopDelaySamples: number
+  readonly digest: string
+} {
+  const delay = monitorEventLoopDelay({ resolution: 10 })
+  delay.enable()
+  const cpuBefore = process.cpuUsage()
+  const rssBefore = process.memoryUsage().rss
+  const durations: number[] = []
+  const digests: string[] = []
+  for (let index = 0; index < iterations; index += 1) {
+    const start = performance.now()
+    digests.push(JSON.stringify(run()))
+    durations.push(performance.now() - start)
+  }
+  const cpu = process.cpuUsage(cpuBefore)
+  delay.disable()
+  return {
+    p50: percentile(durations, 0.5), p95: percentile(durations, 0.95), p99: percentile(durations, 0.99),
+    cpuMicros: cpu.user + cpu.system, rssDelta: process.memoryUsage().rss - rssBefore,
+    eventLoopDelayMeanMs: Number.isFinite(delay.mean) ? delay.mean / 1e6 : 0,
+    eventLoopDelaySamples: delay.count,
+    digest: createHash('sha256').update(digests.join('\n')).digest('hex'),
+  }
+}
+
+interface RustHit {
+  readonly path: string
+  readonly score: number
+}
+
+interface RustOutput {
+  readonly schemaVersion: number
+  readonly results: readonly (readonly RustHit[])[]
+  readonly digest: string
+  readonly inputDigest: string
+}
+
+interface RustRequest {
+  readonly schemaVersion: 1
+  readonly requestId: string
+  readonly sessionId: string
+  readonly generation: number
+  readonly capability: string
+  readonly deadlineMs: number
+  readonly budget: number
+  readonly cancellationToken: string
+  readonly pages: readonly Page[]
+  readonly queries: readonly string[]
+}
+
+function benchmarkRequest(input: ReturnType<typeof benchmarkCorpus>): RustRequest {
+  return {
+    schemaVersion: 1,
+    requestId: 'benchmark-request-1',
+    sessionId: 'benchmark-session-1',
+    generation: 1,
+    capability: 'knowledge-search',
+    deadlineMs: 30_000,
+    budget: 1,
+    cancellationToken: 'benchmark-cancellation-1',
+    pages: input.pages,
+    queries: input.queries,
+  }
+}
+
+function rustBinary(explicit: string | undefined): string | undefined {
+  if (explicit !== undefined) return explicit
+  const bundled = fileURLToPath(new URL('../../rust/knowledge-search-shadow/target/release/knowledge-search-shadow', import.meta.url))
+  return existsSync(bundled) ? bundled : undefined
+}
+
+function runRust(binary: string, input: RustRequest): RustOutput {
+  const request = JSON.stringify(input)
+  const result = spawnSync(binary, [], {
+    input: request,
+    encoding: 'utf8',
+    timeout: 30_000,
+    maxBuffer: 16 * 1024 * 1024,
+    env: isolatedChildEnvironment(),
+  })
+  if (result.error !== undefined) throw result.error
+  if (result.status !== 0) throw new Error(`Rust shadow exited ${String(result.status)}: ${result.stderr}`)
+  const output = JSON.parse(result.stdout) as RustOutput
+  const validSchema = output.schemaVersion === 1
+    && Array.isArray(output.results)
+    && /^[a-f0-9]{64}$/u.test(output.digest)
+    && /^[a-f0-9]{64}$/u.test(output.inputDigest)
+  if (!validSchema) {
+    throw new Error('Rust shadow output failed schema validation')
+  }
+  if (output.inputDigest !== createHash('sha256').update(request).digest('hex')) throw new Error('Rust shadow input digest mismatch')
+  if (output.digest !== createHash('sha256').update(JSON.stringify(output.results)).digest('hex')) throw new Error('Rust shadow result digest mismatch')
+  return output
+}
+
+function canonicalResults(results: readonly (readonly { readonly path: string; readonly score: number }[])[]): string {
+  return JSON.stringify(results)
+}
+
+/** Run deterministic current/optimized TypeScript and optional Rust shadow measurements. */
+export function runBenchmark(iterations = 30, explicitRustBinary?: string): Record<string, unknown> {
+  const input = benchmarkCorpus()
+  const index = prepare(input.pages)
+  const current = measure(() => input.queries.map(query => bm25(input.pages, query)), iterations)
+  const optimized = measure(() => input.queries.map(query => optimizedBm25(index, query)), iterations)
+  const currentResults = input.queries.map(query => bm25(input.pages, query))
+  const optimizedResults = input.queries.map(query => optimizedBm25(index, query))
+  const equal = canonicalResults(currentResults) === canonicalResults(optimizedResults)
+  const missingEvidence: string[] = []
+  let rust: Record<string, unknown> | null = null
+  let differentialReplay = equal ? 'current-and-optimized-ts-match' : 'typescript-mismatch'
+  const binary = rustBinary(explicitRustBinary)
+  if (binary === undefined) {
+    missingEvidence.push('Rust shadow implementation')
+  } else {
+    try {
+      const request = benchmarkRequest(input)
+      const shadow = runRust(binary, request)
+      const rustMatches = canonicalResults(currentResults) === canonicalResults(shadow.results)
+      differentialReplay = rustMatches && equal ? 'current-optimized-rust-match' : 'differential-mismatch'
+      const measured = measure(() => runRust(binary, request).results, iterations)
+      rust = {
+        ...measured,
+        transport: 'stdin/stdout process IPC',
+        cpuScope: 'node-parent',
+        rssScope: 'node-parent',
+        resultDigest: shadow.digest,
+        inputDigest: shadow.inputDigest,
+      }
+      if (!rustMatches) missingEvidence.push('Rust shadow differential replay')
+    } catch (error) {
+      missingEvidence.push(`Rust shadow execution: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  missingEvidence.push(
+    'production candidate profile exercise and authenticated enforcement receipt',
+    'cross-platform Rust measurements',
+    'child CPU/RSS accounting',
+    'cold-start versus warm-process measurements',
+    'end-to-end cancellation and crash-recovery measurements',
+  )
+  if (current.eventLoopDelaySamples === 0 || optimized.eventLoopDelaySamples === 0) missingEvidence.push('event-loop delay samples for the synchronous harness')
+  return {
+    schemaVersion: 1,
+    status: 'unknown',
+    candidate: 'knowledge-search-bm25',
+    implementation: { currentTypeScript: current, optimizedTypeScript: optimized, rust },
+    corpusHash: input.hash,
+    iterations,
+    differentialReplay,
+    missingEvidence,
+  }
+}
+
+if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
+  const result = runBenchmark(Number.parseInt(process.argv[2] ?? '30', 10))
+  const output = process.argv[3]
+  if (output !== undefined) writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`)
+  else process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+}

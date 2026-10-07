@@ -6,9 +6,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { readRunContext, type ImmutableBoundaries } from './run-context.ts'
 
-export type AcceptanceStatus = 'PASS' | 'UNKNOWN' | 'FAIL'
+type AcceptanceStatus = 'PASS' | 'UNKNOWN' | 'FAIL'
 
-export interface AcceptanceCheck {
+interface AcceptanceCheck {
   readonly status: AcceptanceStatus
   readonly evidence: readonly string[]
   readonly reason?: string
@@ -16,7 +16,9 @@ export interface AcceptanceCheck {
 
 export interface AcceptanceAudit {
   readonly overall: AcceptanceStatus
-  readonly checks: Readonly<Record<string, AcceptanceCheck>>
+  readonly checks: Readonly<Record<CheckName, AcceptanceCheck>>
+  /** Presence of the requested audit artifacts, reported separately from behavioral proof. */
+  readonly artifactCompleteness: AcceptanceCheck
 }
 
 /** A machine receipt is trusted only through a key supplied by the caller. */
@@ -54,6 +56,31 @@ const CHECK_NAMES = [
 ] as const
 
 type CheckName = typeof CHECK_NAMES[number]
+
+const REQUIRED_ARTIFACTS = [
+  'project-manifest.json',
+  'progress.jsonl',
+  'decision-log.md',
+  'security-report.md',
+  'rust-benchmark.json',
+  'scripts/rust-migration/launcher-verifier-smoke.json',
+  'scripts/rust-migration/native-knowledge-smoke.json',
+  'scripts/rust-migration/external-verifier-runtime.json',
+  'scripts/rust-migration/external-verifier-receipt.json',
+  'scripts/rust-migration/candidate-ark-20261008-smoke.json',
+  'scripts/rust-migration/official-stage-20261008.json',
+  'docs/rust-migration/source-truth-report.md',
+  'docs/rust-migration/profile-matrix.md',
+  'docs/rust-migration/knowledge-runtime-report.md',
+  'scripts/rust-migration/evaluate-learning.ts',
+  'scripts/rust-migration/benchmark-knowledge-search.ts',
+  'scripts/rust-migration/differential-replay.ts',
+  'scripts/rust-migration/rust-boundary.ts',
+  'scripts/rust-migration/process-isolation.ts',
+  'packages/host/knowledge-wiki/src/rust-search-candidate.ts',
+  'packages/host/knowledge-wiki/src/external-verifier-adapter.ts',
+  'rust/knowledge-search-shadow/Cargo.toml',
+] as const
 
 function check(status: AcceptanceStatus, evidence: string[], reason?: string): AcceptanceCheck {
   return { status, evidence, ...(reason === undefined ? {} : { reason }) }
@@ -101,7 +128,7 @@ function gitFiles(root: string): string[] {
 
 /** Hash source inputs while excluding generated evidence and report material. */
 export function currentSourceDigest(root: string): string | null {
-  const paths = gitFiles(root).filter(path => /^(packages|integrations|native|scripts)\//u.test(path)
+  const paths = gitFiles(root).filter(path => /^(packages|integrations|native|scripts|rust)\//u.test(path)
     && !path.startsWith('scripts/rust-migration/evidence/'))
   if (paths.length === 0) return null
   const digest = createHash('sha256')
@@ -135,6 +162,13 @@ function safeRelativePath(root: string, candidate: string): string {
   const rel = relative(root, absolute)
   if (rel === '' || rel.startsWith(`..${sep}`) || rel === '..' || isAbsolute(rel)) throw new Error('evidence path escapes repository')
   return rel
+}
+
+function artifactCompleteness(root: string): AcceptanceCheck {
+  const missing = REQUIRED_ARTIFACTS.filter(path => !existsSync(join(root, path)))
+  return missing.length === 0
+    ? check('PASS', [...REQUIRED_ARTIFACTS], 'required audit artifacts are present')
+    : check('UNKNOWN', [...REQUIRED_ARTIFACTS.filter(path => existsSync(join(root, path)))], `missing artifacts: ${missing.join(', ')}`)
 }
 
 function validImmutable(value: unknown): value is ImmutableBoundaries {
@@ -187,7 +221,7 @@ function readReceipt(root: string, path: string, trustedAuthorityKeys: Readonly<
 
 function derivedObservation(name: CheckName, raw: unknown): { status: AcceptanceStatus; reason: string } {
   const observation = object(raw, `observation.${name}`)
-  const bool = (key: string): boolean | undefined => typeof observation[key] === 'boolean' ? observation[key] as boolean : undefined
+  const bool = (key: string): boolean | undefined => typeof observation[key] === 'boolean' ? observation[key] : undefined
   const allBools = (keys: readonly string[]): { status: AcceptanceStatus; reason: string } => {
     const values = keys.map(key => bool(key))
     if (values.some(value => value === undefined)) return { status: 'UNKNOWN', reason: 'trusted behavioral receipt is absent or incomplete' }
@@ -202,7 +236,7 @@ function derivedObservation(name: CheckName, raw: unknown): { status: Acceptance
       ? { status: 'PASS', reason: 'signed zero-count probe' }
       : { status: 'FAIL', reason: `signed probe recorded ${String(value)} unsafe occurrences` }
   }
-  const number = (key: string): number | undefined => typeof observation[key] === 'number' && Number.isFinite(observation[key]) ? observation[key] as number : undefined
+  const number = (key: string): number | undefined => typeof observation[key] === 'number' && Number.isFinite(observation[key]) ? observation[key] : undefined
   const unknown = (): { status: AcceptanceStatus; reason: string } => ({ status: 'UNKNOWN', reason: 'trusted behavioral receipt is absent or incomplete' })
   switch (name) {
     case 'sourceTruth': return allBools(['docsMatchSource', 'profileMatchesSource', 'runtimeMatchesProfile'])
@@ -263,10 +297,10 @@ export function auditAcceptance(rootInput: string, options: AcceptanceAuditOptio
   const root = resolve(rootInput)
   let context
   try { context = readRunContext(root) } catch (error) {
-    const checks = Object.fromEntries(CHECK_NAMES.map(name => [name, check('UNKNOWN', [], `run context invalid: ${String(error)}`)])) as Record<string, AcceptanceCheck>
-    return { overall: 'UNKNOWN', checks }
+    const checks = Object.fromEntries(CHECK_NAMES.map(name => [name, check('UNKNOWN', [], `run context invalid: ${String(error)}`)])) as Record<CheckName, AcceptanceCheck>
+    return { overall: 'UNKNOWN', checks, artifactCompleteness: artifactCompleteness(root) }
   }
-  const checks: Record<string, AcceptanceCheck> = Object.fromEntries(CHECK_NAMES.map(name => [name, check('UNKNOWN', [], 'behavioral receipt not authenticated')]))
+  const checks = Object.fromEntries(CHECK_NAMES.map(name => [name, check('UNKNOWN', [], 'behavioral receipt not authenticated')])) as Record<CheckName, AcceptanceCheck>
   const trusted = options.trustedAuthorityKeys ?? {}
   const evidencePath = options.evidencePath ?? 'phase6-acceptance.json'
   const receipt = readReceipt(root, evidencePath, trusted)
@@ -284,7 +318,11 @@ export function auditAcceptance(rootInput: string, options: AcceptanceAuditOptio
     }
   }
   const statuses = Object.values(checks).map(item => item.status)
-  return { overall: statuses.includes('FAIL') ? 'FAIL' : statuses.includes('UNKNOWN') ? 'UNKNOWN' : 'PASS', checks }
+  return {
+    overall: statuses.includes('FAIL') ? 'FAIL' : statuses.includes('UNKNOWN') ? 'UNKNOWN' : 'PASS',
+    checks,
+    artifactCompleteness: artifactCompleteness(root),
+  }
 }
 
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {

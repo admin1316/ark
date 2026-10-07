@@ -11,7 +11,7 @@ import { MAX_WIKI_PAGE_BYTES, readRegularFileBounded } from './filesystem.ts'
 const FRONTMATTER_RE = /^---\n[\s\S]*?\n---\n?/
 
 /** One indexed page. */
-interface IndexedPage {
+export interface SearchPage {
   readonly path: string
   readonly title: string
   readonly aliases: string[]
@@ -24,9 +24,13 @@ function parseAliases(raw: string): string[] {
   return value.split(',').map(item => item.trim().replace(/^["']|["']$/gu, '')).filter(Boolean)
 }
 
-/** Collect all wiki pages with body text (frontmatter stripped). */
-function collectPages(wikiRoot: string): IndexedPage[] {
-  const pages: IndexedPage[] = []
+/**
+ * Collect all wiki pages with body text and frontmatter metadata stripped from the body.
+ * @param wikiRoot - Absolute wiki directory to traverse.
+ * @returns Search pages in traversal order.
+ */
+export function collectSearchPages(wikiRoot: string): SearchPage[] {
+  const pages: SearchPage[] = []
   visitWikiTree(wikiRoot, {
     onMarkdown: ({ name, path, fullPath }) => {
       const raw = readRegularFileBounded(fullPath, MAX_WIKI_PAGE_BYTES).toString('utf8')
@@ -74,17 +78,17 @@ const B = 0.75
  * @param query - The query input.
  * @returns The value produced by bm25.
  */
-export function bm25(pages: IndexedPage[], query: string): Array<{ path: string; score: number }> {
+export function bm25(pages: SearchPage[], query: string): Array<{ path: string; score: number }> {
   return scorePages(pages, query).map(({ page, score }) => ({ path: page.path, score }))
 }
 
 interface ScoredPage {
-  readonly page: IndexedPage
+  readonly page: SearchPage
   readonly score: number
 }
 
 /** Score pages while carrying each page with its derived tokens. */
-function scorePages(pages: IndexedPage[], query: string): ScoredPage[] {
+function scorePages(pages: SearchPage[], query: string): ScoredPage[] {
   const documents = pages.map(page => ({
     page,
     tokens: tokenize([page.title, ...page.aliases, page.text].join('\n')),
@@ -189,7 +193,7 @@ export async function hybridSearch(
   topK: number,
   unavailable?: (diagnostic: EmbeddingUnavailable) => void,
 ): Promise<Array<{ path: string; score: number }>> {
-  const pages = collectPages(wikiRoot)
+  const pages = collectSearchPages(wikiRoot)
   const scoredPages = scorePages(pages, query)
   const keyword = scoredPages.map(({ page, score }) => ({ path: page.path, score }))
   const topScoredPages = scoredPages.slice(0, 40)

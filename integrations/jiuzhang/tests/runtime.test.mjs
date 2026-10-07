@@ -326,6 +326,7 @@ test('launch environment is local, read-only, and telemetry-disabled by default'
     DEEPSEEK_API_KEY: 'must-not-leak',
     HTTP_PROXY: 'http://must-not-leak.invalid',
     NODE_OPTIONS: '--require=/tmp/must-not-load.cjs',
+    ARK_KNOWLEDGE_VERIFIER_CONFIG: '{"authorityId":"test"}',
   })
   assert.equal(env.DSH_HOME, '/tmp/jiuzhang-home')
   assert.equal(env.DSH_PERMISSION_MODE, 'read-only')
@@ -338,12 +339,15 @@ test('launch environment is local, read-only, and telemetry-disabled by default'
   assert.equal(env.HTTP_PROXY, undefined)
   assert.equal(env.NODE_OPTIONS, '--max-old-space-size=4096')
   assert.equal(env.NODE_OPTIONS.includes('--require'), false)
+  assert.equal(env.ARK_KNOWLEDGE_VERIFIER_CONFIG, '{"authorityId":"test"}')
 
   const native = createLaunchEnvironment('/tmp/jiuzhang-home', {
     PATH: '/usr/bin',
     DSH_API_TOKEN: 'native-launch-token',
+    ARK_KNOWLEDGE_VERIFIER_CONFIG: '{"authorityId":"native"}',
   })
   assert.equal(native.DSH_API_TOKEN, 'native-launch-token')
+  assert.equal(native.ARK_KNOWLEDGE_VERIFIER_CONFIG, '{"authorityId":"native"}')
 })
 
 test('the launcher resolves the dedicated built Ark native API runner', async () => {

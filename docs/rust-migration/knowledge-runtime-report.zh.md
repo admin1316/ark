@@ -1,0 +1,51 @@
+# Phase 0 knowledge/runtime report
+
+[English](knowledge-runtime-report.md) | 中文
+
+**Baseline:** source findings and line references are pinned to `b8adf5a7ec` before Phase 1 edits; runtime artifact observations were made 2026-10-07.
+
+## What the model can actually see
+
+The active source has no automatic Knowledge Wiki recall section. `tool-knowledge-wiki` adds a short system-prompt instruction to use `wiki_search`, `wiki_read`, `wiki_files`, `wiki_graph`, `wiki_reviews`, `wiki_verify_candidate`, and `wiki_ingest` ([`packages/host/knowledge-wiki-tools/src/index.ts:64-69`](../../packages/host/knowledge-wiki-tools/src/index.ts)). A model sees Wiki content only when it calls the registered tools; `wiki_search` returns ranked paths and `wiki_read` reads a requested path ([`index.ts:71-165`](../../packages/host/knowledge-wiki-tools/src/index.ts)). There is no `knowledge-wiki-recall` section, no profile/reflection selector, and no code that injects latest knowledge into each provider request in the audited package.
+
+服务的受治理 model 方法现在要求真实 session `cwd`/project scope 和 verifier authority；只有通过 record gate 后，`modelSearch()` 与 `modelPageContent()` 才会增加 retrieval utility（见 [`packages/host/knowledge-wiki/src/index.ts`](../../packages/host/knowledge-wiki/src/index.ts)）。`recordKnowledgeOutcome()` 更新 utility 及其事件日志（见 [`index.ts:707-835`](../../packages/host/knowledge-wiki/src/index.ts)）。Wiki 工具会先把 source hash、authority、trust、evidence、freshness、conflict provenance 写入 session 的 `knowledge/retrieved`，再把 `tools/result` 的最终渲染内容原样写入 `knowledge/injected`（见 [`packages/host/knowledge-wiki-tools/src/index.ts`](../../packages/host/knowledge-wiki-tools/src/index.ts)、[`session-events.ts`](../../packages/host/knowledge-wiki-tools/src/session-events.ts)）。因此回放既能重建模型看到的工具值，也能绑定其受治理来源；未受 scope 约束的逐步自动 recall 仍然关闭。
+
+## Write/verification path
+
+| Stage | Current evidence | Status |
+| --- | --- | --- |
+| Observe | `summarizeSession()` reads `sessionQuery.readSession(sessionId)` when `agent/disposed` fires ([`packages/host/knowledge-wiki/src/index.ts:296-323`](../../packages/host/knowledge-wiki/src/index.ts)). | Session-level only; no per-turn observer. |
+| Candidate | LLM summary writes `_candidates/{topics,reflections,incidents}` and appends `.llm-wiki/review.json` ([`index.ts:326-397`](../../packages/host/knowledge-wiki/src/index.ts)). | Enabled if stage executor and project target pass. |
+| Provenance / hash | Candidate reviews contain candidate hash; verifier types include source identity/build digest and review hash ([`packages/host/knowledge-wiki/src/types.ts:78-129`](../../packages/host/knowledge-wiki/src/types.ts)). | Present for candidate review lane. |
+| Independent verification | `verifyCandidate()` requires injected `knowledgeWikiVerifierAuthority`, persists a receipt, then binds it to the review ([`index.ts:1225-1257`](../../packages/host/knowledge-wiki/src/index.ts)). | No production authority provider found at baseline; explicit authority-unavailable blocker. |
+| Review / promotion | `resolveReview(s)` calls advisory resolution or `applyCandidateReview()` ([`index.ts:1264-1318`](../../packages/host/knowledge-wiki/src/index.ts)). | Explicit action; canonical changes are governed. |
+| Utility | Counters and weighted utility score in `.llm-wiki/knowledge-utility.json` ([`index.ts:604-635`](../../packages/host/knowledge-wiki/src/index.ts), [`:707-835`](../../packages/host/knowledge-wiki/src/index.ts)); retention helpers reject expired/rejected records without utility lift. | **Implemented with explicit retention evidence.** |
+| Expiry/conflict/rollback | `KnowledgeRecord` fields and `knowledge-governance.ts` transitions enforce expiry, scope, ACL, conflicts, downgrade, promotion, and rollback. | **Implemented with focused replay/gate tests.** |
+
+The old auto-sediment module contains reusable turn extraction/page builders, but the service does not register its advertised `agent/turn-stopping` listener. Its own comments say turn-level Markdown is disabled ([`packages/host/knowledge-wiki/src/auto-sediment.ts:1-14`](../../packages/host/knowledge-wiki/src/auto-sediment.ts), [`index.ts:291-300`](../../packages/host/knowledge-wiki/src/index.ts)). Unit tests exercise these pure helpers, which is not evidence of production registration.
+
+## Session persistence/query/cache runtime
+
+- JSONL is the active durable event authority. The base profile mounts it under `dshHomePath('sessions')` ([`packages/bundle/base/cordis.patch.yml:105-108`](../../packages/bundle/base/cordis.patch.yml)). The provider stores one append-only file per session with checksummed Zstandard frames by default and lossless packed delta rows ([`packages/session/session-persistence-jsonl/src/index.ts:1-6`](../../packages/session/session-persistence-jsonl/src/index.ts), [`:64-88`](../../packages/session/session-persistence-jsonl/src/index.ts)).
+- The SQLite query provider is mounted with `path: ':memory:'`, `openAt: never` in both base and Jiuzhang overlays ([`base/cordis.patch.yml:124-128`](../../packages/bundle/base/cordis.patch.yml), [`integrations/jiuzhang/profile/cordis.patch.yml:40-43`](../../integrations/jiuzhang/profile/cordis.patch.yml)). Its code explicitly leaves exact reads/filters/traces available while disabling full-text search and avoiding SQLite open/import ([`packages/session-query/session-query-sqlite/src/index.ts:85-103`](../../packages/session-query/session-query-sqlite/src/index.ts), [`:251-255`](../../packages/session-query/session-query-sqlite/src/index.ts)).
+- Native API mounts the projection cache with count/interval triggers 200 events/5000 ms ([`packages/bundle/native-api-app/cordis.patch.yml:96-100`](../../packages/bundle/native-api-app/cordis.patch.yml)). The cache is derived, fail-soft, identity-bound, and mandatory at session creation, `turn/end`, and disposal ([`packages/session/session-projection-cache/src/index.ts:1-16`](../../packages/session/session-projection-cache/src/index.ts), [`:41-75`](../../packages/session/session-projection-cache/src/index.ts), [`:220-270`](../../packages/session/session-projection-cache/src/index.ts)).
+
+## Runtime evidence inspected
+
+1. **Production Harness** `/Users/hui/Library/Application Support/Ark/Harness`: profile overlay and bundle list match the source; `settings.yaml` selects DeepSeek official/flash with max reasoning; 16 projection-cache rows exist under `storages/session_projcache/sessions/`. Rows include session stats, model selection, title, token usage, context pressure, goals, and seq watermarks; one example had seq `155930`, 3 turns, 153 steps, 158,460 output tokens and 26,989,696 cache-read tokens. These are metadata counters only; no message content is reproduced here. The sibling production `Knowledge` root contains only purpose/schema/index/log and a workspace registry, with no candidate pages or utility file.
+2. **Production session files:** the corresponding `Harness/sessions` tree currently has only `~locks`/`~delete` directories and no `session.jsonl.zstd` files. Thus current disk evidence proves projection-cache records existed but does not provide a replayable event log for those rows. This is a material recovery/replay gap to investigate, not proof that deletion is incorrect.
+3. **Isolated candidate runtime** `/Users/hui/ark-test/candidate-home-2026092701`: two synthetic JSONL/Zstandard logs exist (about 1.6 MiB and 48 KiB) and two projection rows exist; `Knowledge/wiki` contains only `index.md` and `log.md`, with no generated candidate pages. Provider logs in `/Users/hui/ark/releases/2026092701/evidence/provider-live-v3.jsonl` show a listening synthetic provider and streamed `ARK_SYNTH_BURST` requests; `/Users/hui/ark/releases/2026092701/REPORT.md` records 19,993-event/169-event synthetic session replay and the final UI/provider markers. These are synthetic reliability evidence, not proof of Knowledge Wiki writes or automatic recall.
+
+## Drift and required follow-up
+
+- The old docs' claim that every turn creates conversation/profile/reflection entries and every model step receives recalled profiles/reflections is contradicted by source and runtime artifacts. Mark it **DRIFT: confirmed**.
+- Review is implemented and mounted, but the independent verifier authority is not provided by the baseline production composition (only tests provide it). The release profile has no verified promotion path until that owner is composed. Candidate lifecycle, project audit, and session retrieval/injection events are implemented; generic per-step recall is not enabled. Mark **PARTIAL / VERIFIER BLOCKED**.
+- Session durability is JSONL plus projection cache; SQLite query search is intentionally disabled. Mark **CONFIRMED** and do not benchmark SQLite search as active until `openAt` changes.
+- Model request evidence exists in synthetic provider logs and production projection counters, but no captured request payload currently demonstrates Wiki content injection. Mark **NOT VERIFIED** for “knowledge injected in every model step.”
+- Maintain the replay tests and run the learning evaluator on independently verified paired outcomes before claiming a utility or smartness lift. Keep candidates below canonical trust until independent verification and review complete.
+
+## Current Rust candidate seam
+
+The working tree now exposes an optional, default-disabled Rust search candidate in `KnowledgeWikiService`. Shadow mode is observational: it sends a bounded immutable page/query DTO to an isolated child process, checks the input and result digests plus canonical BM25 equality, and keeps the TypeScript result. Candidate failures, cancellation, timeout, or divergence fall back to TypeScript. Enforce mode is deliberately rejected until Rust covers the complete hybrid BM25-plus-embedding contract. This seam is testable in a candidate profile, but the active Ark profile remains TypeScript-only and the acceptance audit remains `UNKNOWN` without production-boundary receipts.
+
+当前工作树还包含带有子进程签名结果和晋级 seal 的 launcher-owned external verifier adapter。profile 只暴露 launcher-owned 的 `knowledgeVerifierConfig` 接缝，活动值为空，因此当前产品的 candidate verification 仍明确不可用；隔离 service fixture 已证明子进程绑定路径，但不宣称 production acceptance。

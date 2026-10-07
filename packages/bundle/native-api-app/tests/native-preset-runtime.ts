@@ -42,7 +42,7 @@ export async function createNativePresetRuntime() {
       { id: 'credentials', config: { mode: 'file', path: join(home, 'credentials.yaml'), watch: false } },
       { id: 'storage-json', config: { root: join(home, 'storages') } },
       { id: 'knowledge-wiki', config: { wikiRoot: join(home, 'knowledge/wiki'), mainRoot: join(home, 'knowledge'),
-        apiKey: '', llmProvider: 'deepseek-official', llmModel: 'deepseek-v4-flash' } },
+        credential: '', llmProvider: 'deepseek-official', llmModel: 'deepseek-v4-flash' } },
       { id: 'agent-presets', config: { ...presetConfig,
         roots: [{ path: join(repoRoot, 'packages/boot/profile-runner/config/agent-presets'), trust: 'system' }], includeUserRoot: false } },
       { id: 'webserver', disabled: true },

@@ -1043,10 +1043,22 @@ export interface Config {
   readonly llmCredential: string
   /** Publish the fork's owned-worker stage executor when nothing else provides one. */
   readonly ownedStageExecutor: boolean
+  /** Optional Rust knowledge-search candidate mode; disabled unless explicitly enabled. */
+  readonly knowledgeSearchCandidateMode?: string
+  /** Absolute path to the isolated Rust knowledge-search candidate binary. */
+  readonly knowledgeSearchCandidateBinary?: string
+  /** Per-query Rust candidate deadline in milliseconds. */
+  readonly knowledgeSearchCandidateTimeoutMs?: number
+  /**
+   * Launcher-owned JSON configuration for the external verifier authority.
+   * Empty (the default) keeps verification unavailable; project files cannot
+   * enable this path because the value must be supplied by the launcher.
+   */
+  readonly knowledgeVerifierConfig?: string
 }
 ```
 
-Source: [`packages/host/knowledge-wiki/src/index.ts:117`](../packages/host/knowledge-wiki/src/index.ts)
+Source: [`packages/host/knowledge-wiki/src/index.ts:198`](../packages/host/knowledge-wiki/src/index.ts)
 
 <a id="deepseek-aidsh-llm"></a>
 
