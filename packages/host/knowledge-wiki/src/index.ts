@@ -240,13 +240,14 @@ function configuredVerifierAuthority(raw: string | undefined): KnowledgeWikiVeri
     throw new Error('knowledgeVerifierConfig must be an object')
   }
   const config = parsed as Partial<ExternalVerifierOptions>
+  const sourceIdentity: unknown = config.sourceIdentity
   if (typeof config.authorityId !== 'string'
     || typeof config.executable !== 'string'
     || typeof config.publicKey !== 'string'
     || typeof config.privateKey !== 'string'
-    || typeof config.sourceIdentity !== 'object'
-    || config.sourceIdentity === null
-    || Array.isArray(config.sourceIdentity)) {
+    || typeof sourceIdentity !== 'object'
+    || sourceIdentity === null
+    || Array.isArray(sourceIdentity)) {
     throw new Error('knowledgeVerifierConfig is missing launcher-owned verifier fields')
   }
   if (config.args !== undefined
@@ -258,7 +259,7 @@ function configuredVerifierAuthority(raw: string | undefined): KnowledgeWikiVeri
     executable: config.executable,
     publicKey: config.publicKey,
     privateKey: config.privateKey,
-    sourceIdentity: config.sourceIdentity as ExternalVerifierOptions['sourceIdentity'],
+    sourceIdentity: sourceIdentity as ExternalVerifierOptions['sourceIdentity'],
     ...(Array.isArray(config.args) ? { args: config.args } : {}),
     ...(typeof config.timeoutMs === 'number' ? { timeoutMs: config.timeoutMs } : {}),
   })

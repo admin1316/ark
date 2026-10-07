@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { asRecord, assertKeys, requireSha256, requireString } from './validation.ts'
 
 /** Explicit opportunity counts; rates are never inferred from memory volume. */
 const METRICS = {
@@ -55,68 +56,46 @@ export type MetricComparison = {
   readonly delta: number
 }
 
-function object(value: unknown, context: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${context} must be an object`)
-  return value as Record<string, unknown>
-}
-
-function keys(value: Record<string, unknown>, allowed: readonly string[], context: string): void {
-  for (const key of Object.keys(value)) {
-    if (!allowed.includes(key)) throw new Error(`${context} has unknown field ${key}`)
-  }
-}
-
-function string(value: unknown, context: string): string {
-  if (typeof value !== 'string' || value.trim() === '') throw new Error(`${context} must be a non-empty string`)
-  return value
-}
-
-function hash(value: unknown, context: string): string {
-  const result = string(value, context)
-  if (!/^[a-f0-9]{64}$/u.test(result)) throw new Error(`${context} must be a lowercase SHA-256`)
-  return result
-}
-
 /**
  * Parse the versioned JSON boundary and reject malformed counts or claimed self-verification.
  * @param value - JSON-decoded input.
  * @returns Validated records; source evidence still needs an independent evaluator.
  */
 export function parseEvaluationInput(value: unknown): EvaluationInput {
-  const input = object(value, 'input')
-  keys(input, ['schemaVersion', 'records'], 'input')
+  const input = asRecord(value, 'input')
+  assertKeys(input, ['schemaVersion', 'records'], 'input')
   if (input['schemaVersion'] !== 1 || !Array.isArray(input['records'])) throw new Error('input requires schemaVersion 1 and records')
   const records = input['records'].map((raw, index): OutcomeRecord => {
     const context = `records[${index}]`
-    const record = object(raw, context)
-    keys(record, ['pairId', 'variant', 'model', 'modelConfigHash', 'taskHash', 'goalHash', 'policyHash', 'producerId', 'evaluatorId', 'verificationStatus', 'evidenceRefs', 'counts'], context)
+    const record = asRecord(raw, context)
+    assertKeys(record, ['pairId', 'variant', 'model', 'modelConfigHash', 'taskHash', 'goalHash', 'policyHash', 'producerId', 'evaluatorId', 'verificationStatus', 'evidenceRefs', 'counts'], context)
     const variant = record['variant']
     const verificationStatus = record['verificationStatus']
     if (variant !== 'baseline' && variant !== 'candidate') throw new Error(`${context}.variant is invalid`)
     if (verificationStatus !== 'verified' && verificationStatus !== 'unknown' && verificationStatus !== 'rejected') throw new Error(`${context}.verificationStatus is invalid`)
-    const producerId = string(record['producerId'], `${context}.producerId`)
-    const evaluatorId = string(record['evaluatorId'], `${context}.evaluatorId`)
+    const producerId = requireString(record['producerId'], `${context}.producerId`)
+    const evaluatorId = requireString(record['evaluatorId'], `${context}.evaluatorId`)
     if (!Array.isArray(record['evidenceRefs'])) throw new Error(`${context}.evidenceRefs must be an array`)
-    const evidenceRefs = record['evidenceRefs'].map((ref, refIndex) => string(ref, `${context}.evidenceRefs[${refIndex}]`))
+    const evidenceRefs = record['evidenceRefs'].map((ref, refIndex) => requireString(ref, `${context}.evidenceRefs[${refIndex}]`))
     if (verificationStatus === 'verified' && (producerId === evaluatorId || evidenceRefs.length === 0)) throw new Error(`${context} verified outcomes require independent evidence`)
-    const rawCounts = object(record['counts'], `${context}.counts`)
-    keys(rawCounts, Object.keys(METRICS), `${context}.counts`)
+    const rawCounts = asRecord(record['counts'], `${context}.counts`)
+    assertKeys(rawCounts, Object.keys(METRICS), `${context}.counts`)
     const counts: Partial<Record<MetricName, Count>> = {}
     for (const [metric, rawCount] of Object.entries(rawCounts)) {
-      const count = object(rawCount, `${context}.counts.${metric}`)
-      keys(count, ['numerator', 'denominator'], `${context}.counts.${metric}`)
+      const count = asRecord(rawCount, `${context}.counts.${metric}`)
+      assertKeys(count, ['numerator', 'denominator'], `${context}.counts.${metric}`)
       const numerator = count['numerator']
       const denominator = count['denominator']
       if (typeof numerator !== 'number' || typeof denominator !== 'number' || !Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator) || numerator < 0 || denominator < numerator) throw new Error(`${context}.counts.${metric} requires non-negative safe counts with numerator <= denominator`)
       counts[metric as MetricName] = { numerator, denominator }
     }
     return {
-      pairId: string(record['pairId'], `${context}.pairId`), variant,
-      model: string(record['model'], `${context}.model`),
-      modelConfigHash: hash(record['modelConfigHash'], `${context}.modelConfigHash`),
-      taskHash: hash(record['taskHash'], `${context}.taskHash`),
-      goalHash: hash(record['goalHash'], `${context}.goalHash`),
-      policyHash: hash(record['policyHash'], `${context}.policyHash`),
+      pairId: requireString(record['pairId'], `${context}.pairId`), variant,
+      model: requireString(record['model'], `${context}.model`),
+      modelConfigHash: requireSha256(record['modelConfigHash'], `${context}.modelConfigHash`),
+      taskHash: requireSha256(record['taskHash'], `${context}.taskHash`),
+      goalHash: requireSha256(record['goalHash'], `${context}.goalHash`),
+      policyHash: requireSha256(record['policyHash'], `${context}.policyHash`),
       producerId, evaluatorId, verificationStatus, evidenceRefs, counts,
     }
   })

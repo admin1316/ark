@@ -72,14 +72,10 @@ describe('rust knowledge-search candidate boundary', () => {
       mode: 'disabled',
       binaryPath: join(root, 'does-not-exist'),
     })
-    expect(result).toEqual({
-      results: expected,
-      source: 'typescript',
-      observation: expect.objectContaining({
-        attempted: false,
-        status: 'disabled',
-      }),
-    })
+    expect(result.results).toEqual(expected)
+    expect(result.source).toBe('typescript')
+    expect(result.observation.attempted).toBe(false)
+    expect(result.observation.status).toBe('disabled')
   })
 
   it('matches in shadow mode while retaining the TypeScript source', async () => {

@@ -8,6 +8,23 @@ import { auditAcceptance, canonicalEvidencePayload, currentProfileDigest, curren
 
 const HASH = 'a'.repeat(64)
 
+function seedAcceptanceBaseline(root: string): void {
+  mkdirSync(join(root, 'docs/rust-migration'), { recursive: true })
+  for (const path of ['source-truth-report.md', 'profile-matrix.md', 'knowledge-runtime-report.md']) writeFileSync(join(root, 'docs/rust-migration', path), '# report\n')
+  writeFileSync(join(root, 'project-manifest.json'), JSON.stringify({ schemaVersion: 1, projectId: 'ark', profile: 'test', immutable: {
+    goalHash: HASH, planHash: HASH, scopeHash: HASH, permissionsHash: HASH, securityThresholdHash: HASH,
+    acceptanceHash: HASH, dataFormatHash: HASH, publishPolicyHash: HASH, stateVersion: 1,
+  } }))
+}
+
+function commitFixture(root: string): void {
+  execFileSync('git', ['init', '-q', root])
+  execFileSync('git', ['-C', root, 'config', 'user.email', 'test@example.invalid'])
+  execFileSync('git', ['-C', root, 'config', 'user.name', 'Acceptance Test'])
+  execFileSync('git', ['-C', root, 'add', '.'])
+  execFileSync('git', ['-C', root, 'commit', '-qm', 'fixture'])
+}
+
 describe('acceptance audit', () => {
   it('binds Rust source bytes into the source digest', () => {
     const root = mkdtempSync(join(tmpdir(), 'ark-rust-digest-'))
@@ -25,15 +42,10 @@ describe('acceptance audit', () => {
 
   it('keeps final acceptance UNKNOWN when benchmark, security, or utility evidence is incomplete', () => {
     const root = mkdtempSync(join(tmpdir(), 'ark-acceptance-'))
-    mkdirSync(join(root, 'docs/rust-migration'), { recursive: true })
+    seedAcceptanceBaseline(root)
     mkdirSync(join(root, 'packages/host/knowledge-wiki/src'), { recursive: true })
     mkdirSync(join(root, 'packages/host/knowledge-wiki-tools/src'), { recursive: true })
     mkdirSync(join(root, 'scripts/rust-migration'), { recursive: true })
-    for (const path of ['source-truth-report.md', 'profile-matrix.md', 'knowledge-runtime-report.md']) writeFileSync(join(root, 'docs/rust-migration', path), '# report\n')
-    writeFileSync(join(root, 'project-manifest.json'), JSON.stringify({ schemaVersion: 1, projectId: 'ark', profile: 'test', immutable: {
-      goalHash: HASH, planHash: HASH, scopeHash: HASH, permissionsHash: HASH, securityThresholdHash: HASH,
-      acceptanceHash: HASH, dataFormatHash: HASH, publishPolicyHash: HASH, stateVersion: 1,
-    } }))
     writeFileSync(join(root, 'progress.jsonl'), '{}\n')
     writeFileSync(join(root, 'decision-log.md'), '# decisions\n')
     writeFileSync(join(root, 'packages/host/knowledge-wiki/src/knowledge-governance.ts'), '')
@@ -58,12 +70,7 @@ describe('acceptance audit', () => {
 
   it('ignores stale absolute-path evidence and a forged status field', () => {
     const root = mkdtempSync(join(tmpdir(), 'ark-acceptance-'))
-    mkdirSync(join(root, 'docs/rust-migration'), { recursive: true })
-    for (const path of ['source-truth-report.md', 'profile-matrix.md', 'knowledge-runtime-report.md']) writeFileSync(join(root, 'docs/rust-migration', path), '# report\n')
-    writeFileSync(join(root, 'project-manifest.json'), JSON.stringify({ schemaVersion: 1, projectId: 'ark', profile: 'test', immutable: {
-      goalHash: HASH, planHash: HASH, scopeHash: HASH, permissionsHash: HASH, securityThresholdHash: HASH,
-      acceptanceHash: HASH, dataFormatHash: HASH, publishPolicyHash: HASH, stateVersion: 1,
-    } }))
+    seedAcceptanceBaseline(root)
     writeFileSync(join(root, 'phase6-acceptance.json'), JSON.stringify({
       schemaVersion: 1,
       kind: 'ark-phase6-acceptance',
@@ -108,11 +115,7 @@ describe('acceptance audit', () => {
       securityThresholdHash: HASH, acceptanceHash: HASH, dataFormatHash: HASH, publishPolicyHash: HASH, stateVersion: 1,
     }
     writeFileSync(join(root, 'project-manifest.json'), JSON.stringify({ schemaVersion: 1, projectId: 'ark', profile: 'test', immutable }))
-    execFileSync('git', ['init', '-q', root])
-    execFileSync('git', ['-C', root, 'config', 'user.email', 'test@example.invalid'])
-    execFileSync('git', ['-C', root, 'config', 'user.name', 'Acceptance Test'])
-    execFileSync('git', ['-C', root, 'add', '.'])
-    execFileSync('git', ['-C', root, 'commit', '-qm', 'fixture'])
+    commitFixture(root)
     mkdirSync(join(root, 'evidence'), { recursive: true })
     writeFileSync(join(root, 'evidence/probe.json'), '{"verified":true}\n')
     const artifactHash = createHash('sha256').update(readFileSync(join(root, 'evidence/probe.json'))).digest('hex')
