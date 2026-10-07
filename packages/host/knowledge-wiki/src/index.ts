@@ -296,7 +296,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   private readonly wikiRoot: string
   private readonly mainRoot: string
   private currentRoot: string
-  private readonly credential: CredentialRef
+  private readonly credential: CredentialRef | undefined
   private readonly llmProvider: string
   private readonly llmModel: string
   private readonly llmBaseUrl: string
@@ -326,7 +326,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const parent = dirname(this.wikiRoot)
     this.mainRoot = config.mainRoot.replace(/\/+$/u, '') || parent
     this.currentRoot = this.mainRoot
-    this.credential = credentialRef(config.credential)
+    this.credential = config.credential.trim() === '' ? undefined : credentialRef(config.credential)
     this.llmProvider = config.llmProvider
     this.llmModel = config.llmModel
     // The loader schema (KnowledgeWikiService.Config) fills every optional
@@ -352,6 +352,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
 
   /** Resolve on every operation so Keychain updates apply without a restart. */
   private async resolveApiKey(): Promise<string> {
+    if (this.credential === undefined) return ''
     return (await this.ctx.credentials.resolve(this.credential))?.value ?? ''
   }
 
