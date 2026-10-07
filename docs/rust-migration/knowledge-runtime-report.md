@@ -1,5 +1,7 @@
 # Phase 0 knowledge/runtime report
 
+**Baseline:** source findings and line references are pinned to `b8adf5a7ec` before Phase 1 edits; runtime artifact observations were made 2026-10-07.
+
 ## What the model can actually see
 
 The active source has no automatic Knowledge Wiki recall section. `tool-knowledge-wiki` adds a short system-prompt instruction to use `wiki_search`, `wiki_read`, `wiki_files`, `wiki_graph`, `wiki_reviews`, `wiki_verify_candidate`, and `wiki_ingest` ([`packages/host/knowledge-wiki-tools/src/index.ts:64-69`](../../packages/host/knowledge-wiki-tools/src/index.ts)). A model sees Wiki content only when it calls the registered tools; `wiki_search` returns ranked paths and `wiki_read` reads a requested path ([`index.ts:71-165`](../../packages/host/knowledge-wiki-tools/src/index.ts)). There is no `knowledge-wiki-recall` section, no profile/reflection selector, and no code that injects latest knowledge into each provider request in the audited package.
@@ -13,7 +15,7 @@ The service's `search()` does record retrieval counters after the call ([`packag
 | Observe | `summarizeSession()` reads `sessionQuery.readSession(sessionId)` when `agent/disposed` fires ([`packages/host/knowledge-wiki/src/index.ts:296-323`](../../packages/host/knowledge-wiki/src/index.ts)). | Session-level only; no per-turn observer. |
 | Candidate | LLM summary writes `_candidates/{topics,reflections,incidents}` and appends `.llm-wiki/review.json` ([`index.ts:326-397`](../../packages/host/knowledge-wiki/src/index.ts)). | Enabled if stage executor and project target pass. |
 | Provenance / hash | Candidate reviews contain candidate hash; verifier types include source identity/build digest and review hash ([`packages/host/knowledge-wiki/src/types.ts:78-129`](../../packages/host/knowledge-wiki/src/types.ts)). | Present for candidate review lane. |
-| Independent verification | `verifyCandidate()` requires injected `knowledgeWikiVerifierAuthority`, persists a receipt, then binds it to the review ([`index.ts:1225-1257`](../../packages/host/knowledge-wiki/src/index.ts)). | Enabled only when authority is composed; otherwise explicit blocker. |
+| Independent verification | `verifyCandidate()` requires injected `knowledgeWikiVerifierAuthority`, persists a receipt, then binds it to the review ([`index.ts:1225-1257`](../../packages/host/knowledge-wiki/src/index.ts)). | No production authority provider found at baseline; explicit authority-unavailable blocker. |
 | Review / promotion | `resolveReview(s)` calls advisory resolution or `applyCandidateReview()` ([`index.ts:1264-1318`](../../packages/host/knowledge-wiki/src/index.ts)). | Explicit action; canonical changes are governed. |
 | Utility | Counters and weighted utility score in `.llm-wiki/knowledge-utility.json` ([`index.ts:604-635`](../../packages/host/knowledge-wiki/src/index.ts), [`:707-747`](../../packages/host/knowledge-wiki/src/index.ts)). | Present, but no decay/expiry/promotion threshold/rollback event. |
 | Expiry/conflict/rollback | No current service fields/events for expiresAt, conflicts, downgrade/expire/rollback, ACL, or scope. | **Missing.** |
@@ -35,7 +37,7 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 ## Drift and required follow-up
 
 - The old docs' claim that every turn creates conversation/profile/reflection entries and every model step receives recalled profiles/reflections is contradicted by source and runtime artifacts. Mark it **DRIFT: confirmed**.
-- Verifier/review is active in source and profile composition, but the release profile does not expose a model tool for generic utility outcomes and does not emit the mission's required knowledge lifecycle events. Mark **PARTIAL**.
+- Review is implemented and mounted, but the independent verifier authority is not provided by the baseline production composition (only tests provide it). The release profile has no verified promotion path until that owner is composed. It also does not expose a model tool for generic utility outcomes or emit the mission's required knowledge lifecycle events. Mark **PARTIAL / VERIFIER BLOCKED**.
 - Session durability is JSONL plus projection cache; SQLite query search is intentionally disabled. Mark **CONFIRMED** and do not benchmark SQLite search as active until `openAt` changes.
 - Model request evidence exists in synthetic provider logs and production projection counters, but no captured request payload currently demonstrates Wiki content injection. Mark **NOT VERIFIED** for “knowledge injected in every model step.”
 - Before Phase 1, add replayable `knowledge/retrieved` and `knowledge/injected` events (with scope/ACL and page hashes), explicit expiry/conflict/rollback records, and a test that reconstructs exactly what the model saw from session events. Keep candidates below canonical trust until independent verification and review complete.

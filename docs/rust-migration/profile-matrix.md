@@ -2,6 +2,8 @@
 
 **Sources compared:** checked-out `integrations/jiuzhang/profile`, `packages/bundle/base/cordis.patch.yml`, `packages/bundle/native-api-app/cordis.patch.yml`, installed product `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang`, and packaged runtime `/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile`. Profile rows are loader patches; later rows replace a matched row's whole config.
 
+**Baseline:** source line references describe `b8adf5a7ec` before Phase 1 edits; install/artifact comparisons were read 2026-10-07.
+
 ## Profile rows and effective behavior
 
 | Capability | dsh-base | native-api-app | jiuzhang profile overlay (active product) | Effective result |
@@ -10,6 +12,7 @@
 | Session query | SQLite `path: ':memory:'`, `openAt: never` ([`base/cordis.patch.yml:116-128`](../../packages/bundle/base/cordis.patch.yml)) | inherited | same override `path: ':memory:'`, `openAt: never` ([`integrations/jiuzhang/profile/cordis.patch.yml:40-43`](../../integrations/jiuzhang/profile/cordis.patch.yml)) | **Mounted exact reads/filters/traces; full-text search disabled and SQLite never opened.** |
 | Projection cache | absent | `session-projection-cache`, `writeEveryEvents: 200`, `writeIntervalMs: 5000` ([`native-api-app/cordis.patch.yml:96-100`](../../packages/bundle/native-api-app/cordis.patch.yml)) | no override | **Enabled**; durable `session_projcache` JSON storage with mandatory create/turn-end/dispose writes. |
 | Knowledge Wiki owner | absent | inserts `knowledge-wiki` with empty `wikiRoot/mainRoot`, old `apiKey` key, v4-flash ([`native-api-app/cordis.patch.yml:117-124`](../../packages/bundle/native-api-app/cordis.patch.yml)) | replaces with env roots, `credential: DEEPSEEK_API_KEY`, `ownedStageExecutor: true` ([`jiuzhang/profile/cordis.patch.yml:27-34`](../../integrations/jiuzhang/profile/cordis.patch.yml)) | **Active product uses env-bound roots and owned worker.** The native bundle row alone is schema-drifted (`apiKey` is not current Config). |
+| Independent verifier | absent | absent | no `knowledgeWikiVerifierAuthority` provider row | **Unavailable at baseline**; candidate verification returns an explicit blocker. |
 | Knowledge tools | absent | absent | inserts `tool-knowledge-wiki` ([`jiuzhang/profile/cordis.patch.yml:36-38`](../../integrations/jiuzhang/profile/cordis.patch.yml)) | **Enabled** in Jiuzhang; unavailable in native bundle without this overlay. |
 | Telemetry | base mounts OTel disabled by default/config ([`base/cordis.patch.yml:136-169`](../../packages/bundle/base/cordis.patch.yml)) | inherited | explicitly `disabled: true` ([`jiuzhang/profile/cordis.patch.yml:45-46`](../../integrations/jiuzhang/profile/cordis.patch.yml)) | **Disabled.** |
 | Product roots | launcher sets `ARK_MAIN_ROOT` and `ARK_WIKI_ROOT` from product data locations ([`integrations/jiuzhang/native/Sources/JiuzhangShellCore/ShellContract.swift:232-260`](../../integrations/jiuzhang/native/Sources/JiuzhangShellCore/ShellContract.swift)) | no own root | overlay consumes those env vars | **Knowledge data is product-owned, outside source checkout.** |
