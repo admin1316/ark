@@ -599,6 +599,12 @@ mod tests {
             ..input
         };
         assert!(validate_input(&oversized).is_err());
+        let oversized_query = Input {
+            pages: vec![],
+            queries: vec!["aa ".repeat(MAX_QUERY_TOKENS + 1)],
+            ..input
+        };
+        assert!(validate_input(&oversized_query).is_err());
         let unknown: Result<Input, _> = serde_json::from_str(
             r#"{"schemaVersion":1,"pages":[],"queries":[],"unexpected":true}"#,
         );
