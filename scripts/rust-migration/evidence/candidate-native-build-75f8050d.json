@@ -124,8 +124,53 @@
       "storedEventsAtPrivateSnapshot": 29116,
       "turnRunningAtPrivateSnapshot": true,
       "userTaskContentsReported": false,
-      "modelRoute": "UNKNOWN pending actual stored request metadata",
-      "scope": "Distinct user task observed during pending manual invoice handoff; no task interruption, workspace change or acceptance inference"
+      "modelRoute": {
+        "evidence": "original stored request/header seq13",
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "reasoningEffort": "max",
+        "maxTokens": 256000,
+        "explicitModelSelectionEventAbsent": true
+      },
+      "scope": "Distinct user task observed during pending manual invoice handoff; no task interruption, workspace change or acceptance inference",
+      "originalStoredSnapshotSha256": "1b5f0e9773aa2c87a3099b7848c0b1140ad66367f8fee2c20bd4ac527d240038",
+      "usage": {
+        "distinctCompletedStepsWithUsage": 18,
+        "inputTokens": 18370,
+        "outputTokens": 29325,
+        "cacheReadTokens": 542336,
+        "reasoningTokens": 19344,
+        "scope": "once per completed original stored step; not provider-signed billing"
+      },
+      "coldReplay": {
+        "privateCopyOnly": true,
+        "syntheticClosers": [
+          {
+            "seq": 29116,
+            "type": "step/end",
+            "turn": 2,
+            "step": 18
+          },
+          {
+            "seq": 29117,
+            "type": "turn/end",
+            "turn": 2,
+            "reason": "interrupted"
+          }
+        ],
+        "actualTaskCompletionFromSyntheticClosers": false,
+        "originalSnapshotUnchanged": true,
+        "preliminaryStep19ProseCorrectedByCompanion": true
+      },
+      "auditor": {
+        "liveWrites": 0,
+        "apiRequests": 0,
+        "modelRequests": 0,
+        "credentialOperations": 0,
+        "apiTokenReads": 0,
+        "environmentReads": 0,
+        "taskInterruption": false
+      }
     }
   },
   "completeSourceCoverage": {
@@ -275,6 +320,24 @@
       "localPath": "/private/tmp/ark-current75-candidate-doc-sync.log",
       "sha256": "71f58a6fbcd5f9454995360766b9030e9ae63a4c3e06897f1d8615ecaed71458",
       "bytes": 2535,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-current75-ed4-session-inspect-bwpLkI/new-current75-session-metadata.json",
+      "sha256": "7a3dba04b79724f2ff2e81e2afbce509a53d8f25c377a07b8269d556805be682",
+      "bytes": 5760,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-current75-ed4-session-inspect-bwpLkI/stored-route-metadata.json",
+      "sha256": "99ac2f91c51753a2419471f8070e4a13322ab31499a853796b3993c133ad87bb",
+      "bytes": 1394,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-current75-ed4-session-inspect-bwpLkI/cold-recovery-event-types.json",
+      "sha256": "913f5b87df448932db0545dc21bb92a25e240989c132f23224e87ee5d2b81673",
+      "bytes": 1156,
       "distribution": "Local-only generated evidence; raw contents excluded from Git"
     }
   ],
