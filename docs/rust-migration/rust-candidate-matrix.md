@@ -16,7 +16,7 @@ Cancellation and child-process recovery remain owned by the existing TypeScript 
 
 ## Measured candidate evidence
 
-The 2026-10-08 local benchmark used the same deterministic corpus. The latest three-iteration envelope sample measured current TypeScript cold p50 **19.8 ms**, optimized TypeScript warm p50 **1.16 ms**, Rust cold stdin/stdout p50 **24.1 ms**, and Rust warm persistent-child p50 **32.3 ms**; all result digests matched (`current-optimized-rust-match`). The warm harness observed a SIGKILL followed by a successful restart, while cancellation, child CPU/RSS, cross-platform behavior, and production-boundary evidence remain missing. A separate candidate Ark model/tool smoke spawned the Rust wrapper from a real `wiki_search` call, returned the two governed hits, and reproduced the TypeScript BM25 digest with exit code `0`. The record remains **UNKNOWN** for acceptance because it lacks a production candidate profile, signed verifier receipt, and end-to-end cancellation/recovery evidence. These measurements support `RETAIN_TS`, not an enforce-mode migration.
+The [30-iteration search fixture](../../rust-benchmark.json), bound to source `45ea6452d11156d19568a2137ac43d57262dee38`, records current TS cold p50 **11.756 ms**, optimized TS cached p50 **0.513 ms**, Rust cold IPC p50 **21.189 ms**, and Rust warm persistent-child p50 **18.248 ms**, with equal result digests. Rust child reuse does not reuse the index, so these envelopes do not isolate language cost. The warm harness records SIGKILL/restart; cancellation, child CPU/RSS, cross-platform and current production-boundary evidence remain missing. An earlier scoped candidate model/tool smoke is historical evidence on an older source, not current-source acceptance. Decision: **RETAIN_TS**, with acceptance **UNKNOWN**.
 
 ## Candidate decisions
 
@@ -27,7 +27,7 @@ The 2026-10-08 local benchmark used the same deterministic corpus. The latest th
 | Wiki graph derivation and Louvain | `knowledge-wiki/graph.ts` | Immutable page/edge records; deterministic graph result | No optimized TypeScript or Rust implementation; filesystem traversal and graph semantics need a replay corpus | **RETAIN_TS** |
 | Incremental search or graph index | No separate index owner; search and graph rebuild from the Wiki tree | Versioned canonical index bytes with generation and checksum | No index format or rebuild/recovery contract exists | **DEFER** |
 | JSONL or compressed-frame scanning | Session persistence and query packages | Read-only byte ranges with a bounded sequence range | Existing persistence and SQLite/zstd paths are mature; no Rust comparison | **RETAIN_TS** |
-| Batch hashing or summaries | `packages/util/crypto` and knowledge ingestion | Canonical bytes and bounded batch size | No workload or end-to-end benchmark | **RETAIN_TS** |
+| Batch hashing or summaries | `node:crypto` callers and knowledge ingestion | Canonical bytes and bounded batch size | No workload or end-to-end benchmark | **RETAIN_TS** |
 | Long-running child process | Existing subprocess and jobs packages | Request ID, generation, deadline, budget, and cancellation token only | Process-group cancellation and teardown tests already exist; a Rust child would add a second supervisor | **RETAIN_TS** |
 
 `RETAIN_TS` means that no Rust implementation may be selected for production. `DEFER` means that an index contract and replay corpus must exist before implementation work starts. The C11 Landlock launcher remains the existing native confinement provider; this matrix does not classify it as a Rust candidate.

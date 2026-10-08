@@ -24,6 +24,12 @@ The metric names are `repeatedErrorRate`, `repeatedToolCallRate`, `verifiedTaskS
 
 审计还会单独输出 `artifactCompleteness`。其中的 `PASS` 只表示所需 manifest、报告、脚本、benchmark 和 shadow crate 都存在，不代表行为验收通过。
 
+## 功能级源码清单
+
+运行 `pnpm exec tsx scripts/rust-migration/inventory-language-fit.ts` 更新 `function-language-inventory.json`。它复用仓库发现与 catalog，列出带源码位置的 TS/JS 函数声明和注册点，保留排除代码的记录，并记录未执行环境表达式的 Jiuzhang/Native preset 组合。函数选择条件失效、必需范围为空或包发现不完整时拒绝生成。脚本只写审计证据，不加载 active 用户 profile，也不改变运行时语言选择。
+
+声明范围覆盖与部分语义审查、未确认的运行/性能证据分开记录。内部函数与重载不是用户功能。Swift/C/Rust/Python 文件被枚举，但未逐项解析函数；动态 MCP schema、用户插件、settings 和环境表达式继续作为运行证据缺口。见[语言核对](../../docs/rust-migration/full-runtime-language-matrix.zh.md)。
+
 ## Rust 之前的 TypeScript 基准
 
 `benchmark-knowledge-search.ts` 使用同一个确定性语料，运行当前 TypeScript BM25、预建索引的优化 TypeScript，以及通过 stdin/stdout 隔离运行的 Rust shadow，记录 p50/p95/p99 延迟、CPU 时间、RSS 增量、event-loop delay 和回放摘要。结果现在明确暴露四种 envelope：`typescriptCold` 每次重建索引，`typescriptWarm` 复用预建索引，`rustCold` 每次请求启动子进程，`rustWarm` 复用可选的持久 Rust 子进程（但当前 Rust 内核仍会为每个请求重建索引）。warm helper 还记录 harness 级别的 SIGKILL/重启探针；由于同步 benchmark 没有 in-flight `AbortSignal`，取消明确标记为 `not-measured`。这些只是测量辅助，不是生产 supervisor 或验收凭据。只有 Rust 路径接入生产边界并通过所需端到端检查后，记录才会离开 `UNKNOWN`。单独的 Rust 微基准更快，不足以改变迁移决策。
@@ -32,7 +38,7 @@ The metric names are `repeatedErrorRate`, `repeatedToolCallRate`, `verifiedTaskS
 
 服务包现在提供默认关闭的候选边界，可在 candidate profile 中运行同一 child-process 契约。该边界在 `shadow` 模式仍只做观测；活动 Ark profile 仍只使用 TypeScript，也没有任何候选凭证可以授权 `enforce`。
 
-`rust-benchmark.json.productionCandidate` 单独记录服务层 shadow 运行证据，不改变活动 profile 的决策。
+服务层模型/工具 smoke 需要单独绑定源码与 profile 的 receipt。三组 fixture 不是该 receipt，也不改变活动 profile 的决策。
 
 隔离请求包含 `requestId`、`sessionId`、`generation`、`capability`、`deadlineMs`、`budget` 和 `cancellationToken`；Rust 端拒绝未知字段及无效控制元数据。benchmark、回放和边界进程使用 `process-isolation.ts` 的最小 allowlist 环境；生产接入、长任务取消和崩溃恢复仍是独立证据门槛。
 

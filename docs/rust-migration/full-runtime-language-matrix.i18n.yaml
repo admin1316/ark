@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/rust-migration/full-runtime-language-matrix.md
+full-runtime-language-matrix.md: ae41641451d7d7c7f828c59b763084d3477ddab1
+full-runtime-language-matrix.zh.md: 6140576737f576043884cedc51e99e2926b640d6

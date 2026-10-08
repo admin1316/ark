@@ -2,7 +2,9 @@
 
 English | [中文](knowledge-runtime-report.zh.md)
 
-**Current snapshot:** source findings were refreshed against checkout commit `32bb727505bce1c403b362cb82fcefd40dffa6d7` on 2026-10-08. Runtime observations distinguish the isolated candidate Ark from the untouched official bundle. The earlier `02bf7ebc7f973b35e298bcd4121199f0ab81683c` and `b8adf5a7ec` references are historical only and do not identify the current source.
+**Audited snapshot:** source findings were refreshed against checkout commit `32bb727505bce1c403b362cb82fcefd40dffa6d7` on 2026-10-08. Runtime observations distinguish the isolated candidate Ark from the untouched official bundle. The earlier `02bf7ebc7f973b35e298bcd4121199f0ab81683c` and `b8adf5a7ec` references are historical only and do not identify the current source.
+
+The [current profile byte comparison](../../scripts/rust-migration/profile-byte-drift.json) records source/artifact drift. Runtime observations remain attributable to their recorded app/source version; they do not attest current-source Native behavior.
 
 ## What the model can actually see
 

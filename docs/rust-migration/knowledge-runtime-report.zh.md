@@ -2,7 +2,9 @@
 
 [English](knowledge-runtime-report.md) | 中文
 
-**当前快照：** 源码发现已按 checkout 提交 `32bb727505bce1c403b362cb82fcefd40dffa6d7`，审计日期为 2026-10-08。运行时观察区分隔离候选 Ark 与未修改的正式包；此前的 `02bf7ebc7f973b35e298bcd4121199f0ab81683c` 和 `b8adf5a7ec` 仅是历史证据，不能作为当前源码身份。
+**已审计快照：** 源码发现已按 checkout 提交 `32bb727505bce1c403b362cb82fcefd40dffa6d7`，审计日期为 2026-10-08。运行时观察区分隔离候选 Ark 与未修改的正式包；此前的 `02bf7ebc7f973b35e298bcd4121199f0ab81683c` 和 `b8adf5a7ec` 仅是历史证据，不能作为当前源码身份。
+
+[当前 profile 字节比较](../../scripts/rust-migration/profile-byte-drift.json) 记录了 source/artifact drift。运行观察只能归属其记录的 app/source 版本，不能作为当前源码 Native 行为的验收证据。
 
 ## What the model can actually see
 

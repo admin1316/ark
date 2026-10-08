@@ -2,7 +2,7 @@
 
 [English](source-truth-report.md) | 中文
 
-**当前源码快照。** 本报告已按 GitHub 派生 checkout 的当前提交 `32bb727505bce1c403b362cb82fcefd40dffa6d7`，审计日期为 2026-10-08。此前的 `02bf7ebc7f973b35e298bcd4121199f0ab81683c` benchmark 快照和 `b8adf5a7ec` Phase 0 文本只作为历史证据，不能再作为当前源码身份。
+**已审计源码快照。** 本报告已按 GitHub 派生 checkout 的当前提交 `32bb727505bce1c403b362cb82fcefd40dffa6d7`，审计日期为 2026-10-08。此前的 `02bf7ebc7f973b35e298bcd4121199f0ab81683c` benchmark 快照和 `b8adf5a7ec` Phase 0 文本只作为历史证据，不能再作为当前源码身份。
 
 **审计目标。** 仓库 `/Users/hui/ark-test/ark-github-main-20261008`，分支 `codex/ark-rust-knowledge-20261008`，远端 PR 为 `https://github.com/admin1316/ark/pull/39`。审计前已读取任务引用的 mission 文本 `/Users/hui/.codex/attachments/3a68ae30-3b77-4be2-96be-2c65920c5ec6/pasted-text-1.txt`。本次刷新没有修改正式 Ark；候选运行证据单独记录。
 
@@ -33,7 +33,7 @@ The checked-out source has a package-backed `KnowledgeWikiService` with a persis
 
 ## Runtime evidence
 
-The packaged Ark app embeds byte-identical copies of `integrations/jiuzhang/profile/package.json` and `cordis.patch.yml` (SHA-256 `7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e` and `b24765d09a0441e4fb489122ad2c5543f1fa9c9dbf21c16fa0343797599004ab`, respectively). The installed product Harness profile at `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang/` has the same bundle list and patch contents. The source checkout is newer than the packaged app: the app provenance records source commit `4ef63040883f497857cff71ab0e82fd07ac123fa` in `ArkProvenance/source-and-pack.json`, while the current checkout is `32bb727505bce1c403b362cb82fcefd40dffa6d7`; packaged-runtime behavior must therefore be attributed to the recorded app commit, not silently to the checkout.
+[只读 profile hash 观察](../../scripts/rust-migration/profile-byte-drift.json) 绑定 checkout `bce444b7ce343ce7e7ee3a55b6258a17c48ba075`：正式包与已安装产品 patch 相同，SHA-256 为 `b24765d09a0441e4fb489122ad2c5543f1fa9c9dbf21c16fa0343797599004ab`；源码 patch 为 `525559a9ca4e81cc1b2b6b06c83d1903c1e22f657baff099a04bb67294503182`，多了 launcher-owned verifier-config 绑定。三份 profile package manifest 均为 `7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e`。这属于 source/artifact drift，不证明已安装 Ark 使用当前源码的 verifier 或 Rust。此前运行观察属于历史证据；当前源码的 Native 行为仍需要独立 receipt。
 
 The production Harness profile contains `knowledge-wiki` with `ARK_WIKI_ROOT`/`ARK_MAIN_ROOT`, `credential: DEEPSEEK_API_KEY`, `ownedStageExecutor: true`; it overrides `session-query-sqlite` to `path: ':memory:'`, `openAt: never`, and disables OTel ([`integrations/jiuzhang/profile/cordis.patch.yml:27-46`](../../integrations/jiuzhang/profile/cordis.patch.yml)). The production Knowledge root `/Users/hui/Library/Application Support/Ark/Knowledge` contains `purpose.md`, `schema.md`, `wiki/index.md`, `wiki/log.md`, and `.llm-wiki/workspaces.json`; no `knowledge.jsonl`, `vectors.json`, or candidate pages were observed. The `knowledge-wiki-recall` identifier was absent from the audited source. This is a storage observation, not proof that a fresh future run cannot create candidates.
 

@@ -8,7 +8,7 @@ English | [中文](search-math-audit.zh.md)
 
 The current system uses sound, explainable classical formulas, but several surrounding choices are ad-hoc or mathematically inconsistent. Keep BM25 and cosine as compatibility baselines. The first replacement worth testing is **BM25F for structured fields plus reciprocal-rank fusion (RRF) for lexical/semantic results**. Do not replace the formulas in production until a judged query set proves a lift and the Rust candidate implements the same contract.
 
-The latest local measurements still show the optimized TypeScript path faster than the Rust process boundary (representative runs: optimized TypeScript about 0.5–0.8 ms p50; Rust stdin/stdout about 20.5–20.9 ms p50). Formula changes therefore target retrieval quality and stability, not an assumed Rust speedup.
+The [recorded 30-iteration search fixture](../../rust-benchmark.json) has optimized TS cached p50 **0.513 ms**, Rust cold IPC p50 **21.189 ms**, and Rust warm-child p50 **18.248 ms**. Rust still rebuilds its index; TS reuses it. This fixture supports retaining TS, not a language-only or whole-product speed claim. Formula changes target independently measured retrieval quality and stability.
 
 ## Formula inventory and findings
 
@@ -80,7 +80,7 @@ Keep it, with the current fixed-dimension, finite-value, and explicit zero-vecto
 
 ### 2.1 Benchmark caveats
 
-The optimized benchmark reuses a prepared TypeScript index while the current implementation rebuilds token frequencies and document frequencies for every query. The Rust measurement starts a new process, reparses JSON, and rebuilds its index for every call. Those are different execution envelopes. The old optimized benchmark used only 12 stop-word entries while production lists 257 entries (244 unique); the benchmark now shares the production `STOP_WORDS` set. Equal digests on the earlier synthetic corpus therefore do not establish full equivalence. The benchmark also has no warmup, uses few iterations, and cannot obtain event-loop delay samples during its synchronous loop.
+The optimized benchmark reuses a prepared TS index, while current TS and both Rust envelopes rebuild their indexes. Rust cold starts a child each call; warm reuses the child and reparses JSON. The benchmark shares the 244 unique production stop words and records 30 iterations, but has no warmup and obtains no event-loop delay samples from its synchronous loop. Equal fixture digests cannot establish production equivalence or retrieval-quality improvement.
 
 The benchmark now measures four envelopes separately: TypeScript cold/rebuild, TypeScript warm/cached index, Rust warm persistent child, and Rust cold process. The Rust warm lane reuses the child and pipes but still rebuilds the current Rust index for each request; it is not evidence for a persistent index. The helper records a harness-level crash/restart probe, while cancellation remains explicitly unmeasured in this synchronous harness. Before using a latency number for a migration decision, still report index-build, serialization/IPC, embedding, and search time separately, plus child CPU/RSS and production cancellation/recovery evidence. Expand the differential corpus with stop words, duplicate query terms, title/alias hits, Unicode and non-BMP text, missing terms, long pages, and byte-limit boundaries. Keep the current exact digest contract for the same formula; a new BM25F or RRF formula needs a versioned baseline rather than a relaxed comparison.
 

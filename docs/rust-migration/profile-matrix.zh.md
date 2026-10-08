@@ -4,9 +4,9 @@
 
 **Sources compared:** checked-out `integrations/jiuzhang/profile`, `packages/bundle/base/cordis.patch.yml`, `packages/bundle/native-api-app/cordis.patch.yml`, installed product `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang`, and packaged runtime `/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile`. Profile rows are loader patches; later rows replace a matched row's whole config.
 
-**当前快照：** 源码和 profile 对比已按 checkout 提交 `32bb727505bce1c403b362cb82fcefd40dffa6d7`，审计日期为 2026-10-08。此前的 `02bf7ebc7f973b35e298bcd4121199f0ab81683c` 和 `b8adf5a7ec` 仅作为历史证据；正式生产 profile 仍与候选 profile 分离，未启用 Rust 搜索候选或 verifier authority。
+**已审计快照：** 源码和 profile 对比已按 checkout 提交 `32bb727505bce1c403b362cb82fcefd40dffa6d7`，审计日期为 2026-10-08。此前的 `02bf7ebc7f973b35e298bcd4121199f0ab81683c` 和 `b8adf5a7ec` 仅作为历史证据；正式生产 profile 仍与候选 profile 分离，未启用 Rust 搜索候选或 verifier authority。
 
-## Profile rows and effective behavior
+## 源码 profile 配置与声明行为
 
 | Capability | dsh-base | native-api-app | jiuzhang profile overlay (active product) | Effective result |
 | --- | --- | --- | --- | --- |
@@ -22,7 +22,7 @@
 
 ## Source/profile/install consistency
 
-- `integrations/jiuzhang/profile/package.json` and `cordis.patch.yml` match the packaged app runtime copies byte-for-byte (SHA-256 above). This is a positive source-to-artifact check.
+- [当前只读 hash](../../scripts/rust-migration/profile-byte-drift.json) 显示三份 package manifest 相同，但源码 patch 与正式包及已安装产品 patch 不同：源码多了 verifier-config 绑定。不能把源码组合当成已安装产品行为。
 - The active product profile at `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang/` matches the source overlay and includes `@deepseek-ai/dsh-native-api-app`. The stale generic `/Users/hui/.dsh/profiles/jiuzhang/` currently contains only `@deepseek-ai/dsh-base` and an empty patch; it is not the product Harness home selected by the native launcher. Treat it as an unrelated/stale dev profile, not active Ark state.
 - `packages/host/knowledge-wiki/src/index.ts:144-155` validates `credential`; the native API bundle now supplies `credential: ''`, so its standalone composition uses the current Config vocabulary and disables optional embeddings until a credential is configured.
 - Product `settings.yaml` currently selects `deepseek-official/deepseek-flash` with `reasoningEffort: max`; this is user settings, not a Knowledge Wiki config. The profile overlay's Wiki LLM defaults remain `deepseek-reasoner` unless settings/provider resolution changes them.

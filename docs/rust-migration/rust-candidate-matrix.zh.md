@@ -16,7 +16,7 @@ Cancellation and child-process recovery remain owned by the existing TypeScript 
 
 ## 实测候选证据
 
-2026-10-08 的本地 benchmark 使用同一份确定性语料。最新三次迭代的 envelope 样本测得 current TypeScript cold p50 **19.8 ms**、优化 TypeScript warm p50 **1.16 ms**、Rust cold stdin/stdout p50 **24.1 ms**、Rust warm persistent-child p50 **32.3 ms**；所有结果摘要一致（`current-optimized-rust-match`）。warm harness 观察到 SIGKILL 后成功重启，但取消、子进程 CPU/RSS、跨平台行为和 production boundary 证据仍缺失。随后候选 Ark 的模型/工具 smoke 在真实 `wiki_search` 调用中 spawn 了 Rust wrapper，返回两条受治理命中，并以退出码 `0` 重现 TypeScript BM25 摘要。由于缺少 production candidate profile、签名 verifier receipt 以及端到端取消/恢复证据，验收状态仍是 **UNKNOWN**。这些数据支持 `RETAIN_TS`，不支持开启 enforce-mode 迁移。
+[30 次迭代的搜索 fixture](../../rust-benchmark.json) 绑定源码 `45ea6452d11156d19568a2137ac43d57262dee38`：current TS cold p50 **11.756 ms**、优化 TS 缓存 p50 **0.513 ms**、Rust cold IPC p50 **21.189 ms**、Rust warm persistent-child p50 **18.248 ms**，结果摘要相同。Rust 复用子进程但不复用索引，不能据这些边界分离语言成本。warm harness 记录 SIGKILL/restart；取消、子进程 CPU/RSS、跨平台及当前生产边界证据仍缺失。此前 scoped 候选模型/工具 smoke 只属于旧源码的历史证据，不是当前源码验收。决策为 **RETAIN_TS**，验收为 **UNKNOWN**。
 
 ## Candidate decisions
 
@@ -27,7 +27,7 @@ Cancellation and child-process recovery remain owned by the existing TypeScript 
 | Wiki graph derivation and Louvain | `knowledge-wiki/graph.ts` | Immutable page/edge records; deterministic graph result | No optimized TypeScript or Rust implementation; filesystem traversal and graph semantics need a replay corpus | **RETAIN_TS** |
 | Incremental search or graph index | No separate index owner; search and graph rebuild from the Wiki tree | Versioned canonical index bytes with generation and checksum | No index format or rebuild/recovery contract exists | **DEFER** |
 | JSONL or compressed-frame scanning | Session persistence and query packages | Read-only byte ranges with a bounded sequence range | Existing persistence and SQLite/zstd paths are mature; no Rust comparison | **RETAIN_TS** |
-| Batch hashing or summaries | `packages/util/crypto` and knowledge ingestion | Canonical bytes and bounded batch size | No workload or end-to-end benchmark | **RETAIN_TS** |
+| Batch hashing or summaries | `node:crypto` callers and knowledge ingestion | Canonical bytes and bounded batch size | No workload or end-to-end benchmark | **RETAIN_TS** |
 | Long-running child process | Existing subprocess and jobs packages | Request ID, generation, deadline, budget, and cancellation token only | Process-group cancellation and teardown tests already exist; a Rust child would add a second supervisor | **RETAIN_TS** |
 
 `RETAIN_TS` means that no Rust implementation may be selected for production. `DEFER` means that an index contract and replay corpus must exist before implementation work starts. The C11 Landlock launcher remains the existing native confinement provider; this matrix does not classify it as a Rust candidate.

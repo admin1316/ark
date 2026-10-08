@@ -1,63 +1,41 @@
-# ARK 全运行时 TS/Rust 适配矩阵
+# ARK 功能级 TypeScript/Rust 核对
 
-**快照：** `codex/ark-rust-knowledge-20261008`，提交 `8de9f3b9549f24563c04f4867301f74d0d6c53eb`，2026-10-08。本文把整个运行时按职责分类；它不启用 Rust，也不改变现有 wire contract。
+[English](full-runtime-language-matrix.md) | 中文
 
-## 判断原则
+## 范围与状态
 
-语言选择按端到端结果决定，而不是按“计算看起来复杂”决定：
+本参考区分源码覆盖、架构职责、运行验证和语言收益实测。[源码清单](../../scripts/rust-migration/function-language-inventory.json) 绑定 Git 快照、代码摘要、manifest hash、profile/preset hash 和声明位置。它覆盖 50 组、212 个 harness 包，以及声明 workspace 范围内的 vendor、应用/启动器、Swift、Python、C 和 Rust 源码。测试、工具和生成文件仍逐项列出，但不计入运行实现分析。
 
-1. 先冻结当前 TypeScript 的可观察契约，再做优化后的 TypeScript 对照。
-2. 只有纯计算、输入可封闭、输出可做 canonical digest 的模块，才进入 Rust 候选。
-3. Rust 必须通过真实 N-API/IPC 边界测量；只看 Rust 内部 microbenchmark 不算收益。
-4. 任何候选都要同时检查 p50/p95/p99、CPU、总 RSS、event-loop delay、序列化/IPC、冷启动、热运行、取消、崩溃恢复、CI、包体和跨平台失败率。
-5. 结果漂移、超时、取消失败或进程崩溃都保持 TypeScript fallback；没有端到端收益就保留 TypeScript。
+**声明范围的源码清点已完成；逐功能语义审查只完成一部分，全产品运行和性能验证仍为 UNKNOWN。** 函数或方法声明不等于用户功能；统计包含内部函数和重载。Swift/C/Python/Rust 文件已经列出，但 TS 扫描器没有逐个解析这些语言的函数或界面控件。动态 MCP schema、用户插件/预设、settings 和环境条件下的实际组合仍需要运行证据。
 
-## 全局矩阵
+现有工具 catalog 提供 74 条 schema 记录、59 个不同名称；源码的 literal 注册点补入 7 个 Wiki 工具名，共静态识别 66 个不同工具名。清单还记录了 102 个 Remote 装饰器声明点、5 个命令注册点和 83 个 Context 属性声明。这些数量不证明功能已经加载或调用。未执行环境表达式的 Jiuzhang patch 组合和 3 份 Native preset 源文件单独记录。
 
-| 子系统 | 当前权威实现 | 更适合的语言 | 决策 | 原因与必须验证的条件 |
-| --- | --- | --- | --- | --- |
-| Agent loop、Cordis、Goal、Session、ToolRuntime | `packages/core/**`、`packages/extensions/**`、`packages/goal/**` | TypeScript | **RETAIN_TS** | 包含可变上下文、事件顺序、权限和模型回调；跨语言会复制 authority，增加恢复和副作用风险。 |
-| LLM provider、SSE、重试、token meter | `packages/llm/**` | TypeScript | **RETAIN_TS** | 直接绑定 provider wire contract、credential 和取消；Rust 不能持有 credential、JS callback 或 provider 状态。 |
-| MCP、工具注册、权限、审批、凭据 | `packages/mcp/**`、`packages/core/tools/**`、`packages/credentials/**`、`packages/interaction/**` | TypeScript | **RETAIN_TS** | 这是安全边界和动态插件组合，不是封闭纯计算；正确性与可审计性优先于微优化。 |
-| Knowledge governance、verifier、review、utility、事件 authority | `packages/host/knowledge-wiki/src/{knowledge-governance,external-verifier-adapter,reviews,verifier}.ts` | TypeScript | **RETAIN_TS** | 需要签名、hash chain、scope/ACL、过期、冲突和回滚；Rust 不得成为知识晋级的第二 authority。 |
-| Wiki 分词、BM25 | `packages/host/knowledge-wiki/src/search.ts` | TypeScript 当前；Rust shadow | **SHADOW_ONLY** | 纯计算适合 Rust，但实测优化 TS 热 p50 约 `0.665 ms`，Rust 独立 IPC warm p50 约 `18.5 ms`；结果一致不等于更快。只有持久索引或 in-process 边界带来端到端收益才可迁移。 |
-| cosine、embedding、hybrid search | `packages/host/knowledge-wiki/src/search.ts` | TypeScript | **RETAIN_TS** | embedding 网络调用占主导；当前 hybrid 只在 lexical top-15 中补语义排序，Rust 不能解决候选集合和远端延迟问题。先修完整 semantic candidate DTO，再评估 ANN。 |
-| Wiki graph、Louvain | `packages/host/knowledge-wiki/src/graph.ts` | TypeScript | **DEFER** | 计算可封闭，但当前没有稳定的图索引格式、权重语义和回放语料；先修 edge weight/linkCount/cohesion 的语义，再比较 Rust。 |
-| 持久化 search/graph index、mmap/增量派生 | 当前无独立 owner | 未来可能 Rust | **DEFER_CANDIDATE** | 这是最有可能获得 Rust 收益的全局候选，但必须先定义版本、generation、checksum、重建、回滚和跨平台格式；在大语料端到端 benchmark 前不写实现。 |
-| JSONL/Zstd/SQLite 只读扫描 | `packages/session/**`、`packages/storage/**`、`packages/session-query/**` | 现有 native/TypeScript | **RETAIN_TS** | SQLite、zstd 和 ripgrep 已经是成熟 native kernel；当前 session-query-sqlite 在 active profile 还是 `:memory:`/disabled，不能为假想负载引入 Rust。 |
-| JSON canonicalization、hash、签名摘要 | `packages/util/crypto/**`、ingest/verifier | TypeScript/native crypto | **RETAIN_TS** | 调用系统 crypto 的边界成本低，且与 verifier receipt 已绑定；只有批量 hash 成为实测瓶颈才注册 Rust 候选。 |
-| compaction、上下文裁剪、token 预算 | `packages/compaction/**`、`packages/session/session-stats/**` | TypeScript | **RETAIN_TS** | 规则与 provider token 语义、目标和安全门槛耦合；错误会改变模型行为，不能只按字符串吞吐迁移。 |
-| subprocess/jobs、超时、取消、进程组恢复 | `packages/subprocess/**`、`packages/jobs/**` | TypeScript supervisor | **RETAIN_TS** | 现有 owner 已管理 `AbortSignal`、进程组和 teardown；再加 Rust supervisor 会产生双重生命周期和 orphan 风险。 |
-| filesystem、sandbox、Landlock、路径策略 | `packages/fs/**`、`packages/sandbox/**`、`native/landlock-run/**` | TypeScript + 现有 C11 native | **RETAIN_EXISTING** | 安全边界已有 native provider 和策略组合；Rust 重写必须证明同等平台覆盖和审计能力，当前没有理由替换。 |
-| API gateway、controllers、settings、profile loader | `packages/api/**`、`packages/settings/**`、`packages/boot/**` | TypeScript | **RETAIN_TS** | 动态配置、插件装配和错误诊断需要现有生态；跨语言收益无法抵消 wire/schema 维护成本。 |
-| 其他 I/O、协议和生命周期 surfaces | `attachment/**`、`workspace/**`、`shell/**`、`terminal/**`、`lsp/**`、`sdk/**`、`schedule/**`、`workflow/**`、`goal/**`、`plan/**`、`context/**`、`feedback/**`、`hooks/**`、`webhook/**`、`acp/**`、`subagent/**`、`experimental/**`、`e2b/**` | TypeScript + 现有 native | **RETAIN_EXISTING** | 这些模块由文件/终端/HTTP、动态协议、事件生命周期、sandbox 和模型语义主导；`attachment` 已使用 sharp/libvips native，Rust 重写不会自动带来收益。 |
-| Web、HTTP、搜索 provider | `packages/web/**`、`packages/llm/**` | TypeScript | **RETAIN_TS** | 网络等待远大于本地计算，且 provider contract/credential/取消仍由 TS authority 管理。 |
-| code runtime、Python、worker thread | `packages/code-runtime/**` | TypeScript + Python 子运行时 | **RETAIN_EXISTING** | 语言运行时本身不能用 Rust 替换；Rust 只可能作为隔离的纯 CPU 子任务，需单独证明。 |
-| session projection、title、telemetry | `packages/session/**` | TypeScript/native backend | **RETAIN_TS** | 投影和指标与事件 schema、持久化顺序绑定；迁移会扩大回放和兼容面。 |
-| UI、SwiftUI/AppKit/native API app | `packages/bundle/**`、native app | SwiftUI/AppKit + TypeScript bridge | **RETAIN_EXISTING** | 任务明确要求保持现有产品；Rust 不能改善 UI authority，反而增加桥接层。 |
-| benchmark、differential replay、learning evaluator | `scripts/rust-migration/**` | TypeScript | **RETAIN_TS** | 这些脚本的价值是复现整个契约和证据链；不能把 evaluator 本身迁移后削弱可审计性。 |
+## 决策含义
 
-## 目前真正值得继续研究的 Rust 候选
+`KEEP_TS_AUTHORITY` 表示保留当前权限、事件、回调或生命周期 owner，不代表已经证明 TS 更快，也不排除内部纯计算内核。`KEEP_EXISTING_NATIVE` 表示保留现有系统/库实现。内核标记为 `UNMEASURED` 只允许继续研究，不允许据此迁移。`KEEP_CURRENT_PENDING_REVIEW` 明确表示核对尚未完成，不会把它计为 TS 获胜。剩余声明全部保留在清单中供后续核对；未审查条目不计为已验证。
 
-按优先级只保留三类：
+## 已核对的函数边界
 
-1. **持久化不可变搜索索引**：先定义索引格式和 generation，再比较 TypeScript cached index、Rust persistent child 和可能的 N-API/in-process 实现。
-2. **大语料图派生索引**：先修权重语义并建立回放语料，再比较 Louvain/派生过程的总耗时和内存。
-3. **批量纯 CPU kernel**：只有当 profiling 证明 hash、摘要或其他 bounded batch 占据可观端到端时间，才做 Rust 候选。
+[函数核对记录](../../scripts/rust-migration/function-language-inventory.json) 保存源码选择条件、匹配后的声明行号、决策和原因；重新生成时若选择条件失效会报错。下表概括职责边界，不重复包 catalog。
 
-当前 BM25 Rust shadow 只证明了 **差分一致性和隔离可行性**；它没有证明速度提升，也没有授权 production enforce。当前候选 Ark 的 UI smoke 还发现了一个配置问题：新会话的默认模型必须由 profile 明确提供；旧候选缺失默认模型时会显示“当前模型不可用”。这类 profile/运行时问题应先修复，再谈语言迁移。
+| 函数或职责 | 当前 owner | 初步判断与所缺证据 |
+| --- | --- | --- |
+| 工具/Remote/命令分发与注册 | TS | 权威边界保留 TS。内部不可变计算另行测量；不得把 Context、凭据、回调或外部副作用移交 Rust。 |
+| 搜索分词、BM25 与评分 | TS，默认关闭的 Rust shadow | 保留 TS。已有 fixture 中缓存 TS 更快；这是组合搜索测试，不是逐函数或全 Ark 测速。 |
+| cosine 与 Wiki 图派生 | TS | 纯计算研究项，未测速。embedding/网络和知识治理过滤仍由 TS 负责；比较其他算法前先明确图应使用加权还是无权语义。 |
+| `scanZstdFrames` | TS | 只读字节内核研究项，未测速。保留范围、帧数限制、损坏帧错误和残缺尾帧结果；writer 与修复保持原 owner。 |
+| Zstd 压缩/解压 | TS 调用 Node native | 保留现有 native。提出替代实现前先测完整 scanner/decoder 边界。 |
+| token 估算 helper | TS | 纯计算研究项，未测速。保留 UTF-16 长度、block 递归和 framing 常量；公式改变与语言提速分开评估。 |
+| TokenMeter 会话 fold 与重建 | TS | 保留 replay owner：会话状态、provider 计价、seq 检查和来源事件重建应由同一个 owner 管理。 |
+| SessionProjectionRegistry | TS | 保留 TS。同步 JS fold、相同对象引用语义和一致性切点不允许直接换成异步 IPC。 |
+| 编辑器匹配偏移与行号扫描 | TS | 纯计算研究项，未测速。保留 UTF-16 偏移和匹配规则；授权与写文件仍由 filesystem/tool owner 负责。 |
+| UTF-8 输出截断 | TS | 纯计算研究项，未测速。测完整流处理成本；尾部扫描本身已经限制在一个 UTF-8 序列内。 |
+| UUID 与 base64 utility | TS/系统 crypto | UUID 使用平台随机字节；base64 可单独测量。该包不是项目 hash/签名的 authority。 |
+| 文件搜索、图片、SQLite 与沙盒隔离 | TS 加 ripgrep、sharp/libvips、SQLite、C/native 隔离 | 测量 adapter 与真实负载时保留现有组件；源码集成不能证明性能收益。 |
+| Native UI、模型/协议集成、学习规则及其他待审查函数 | 现有 Swift/TS/Python/native owner | 保持当前产品与权威契约；剩余函数逐项核对，不记录“某语言全面更好”的结论。 |
 
-## 迁移闸门
+## 实测与后续决策
 
-任何一行从 `RETAIN_TS`、`SHADOW_ONLY` 或 `DEFER` 变成 Rust owner，都必须附带：
+[30 次迭代的搜索 fixture](../../rust-benchmark.json) 绑定源码 `45ea6452d11156d19568a2137ac43d57262dee38`：current TS cold p50 为 11.756 ms，优化 TS 缓存 p50 为 0.513 ms，Rust cold IPC p50 为 21.189 ms，Rust warm child p50 为 18.248 ms。Rust 复用子进程但仍重建索引，优化 TS 则复用已构建索引。缓存 TS 实现在 benchmark 中，这些数字不证明正式 Ark 已经部署该优化。结果相同只支持该语料的差分回放；索引复用方式不同，不能据此分离语言成本、证明搜索质量提升或预测全 Ark 提速。决策为 `RETAIN_TS`，验收仍为 `UNKNOWN`。
 
-- 当前 TS、优化 TS、Rust 三路同一 corpus hash 和同一 request sequence；
-- canonical result/error digest 逐请求一致；
-- 候选 Ark profile 中的真实边界回放；
-- 取消、超时、SIGKILL 后恢复和无 orphan process 证据；
-- CPU/RSS/event-loop/IPC/包体/CI/跨平台报告；
-- Rust failure 时 TypeScript fallback 的回执；
-- verifier、knowledge event 和 session replay 不发生重复副作用；
-- 独立 review 后才允许逐步打开 candidate，再考虑 enforce。
-
-所以全局结论不是“把 TS 全部改成 Rust”，而是：**保留动态 authority 在 TypeScript，把有证据的封闭计算逐个候选化；目前只有持久索引方向值得继续投入，现有 BM25 shadow 仍停在 shadow。**
+对剩余每项函数，先核对实际 profile 可达性、任务调用频率，再测 CPU/RSS/event-loop 或生命周期成本。只有找到瓶颈或隔离需求才注册三组对照：current TS、优化 TS、真实边界的 Rust。保持相同算法与索引复用条件，检查结果/错误回放、序列化、冷热启动、取消、恢复、包体/CI/平台数据及已有 fallback。持久索引、扫描器和批处理内核在这些证据通过前都只是研究项。

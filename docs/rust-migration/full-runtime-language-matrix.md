@@ -1,42 +1,41 @@
-# ARK Full Runtime TypeScript/Rust Fit Matrix
+# ARK Function-Level TypeScript/Rust Review
 
-**Snapshot:** `codex/ark-rust-knowledge-20261008` at `8de9f3b9549f24563c04f4867301f74d0d6c53eb`, 2026-10-08. This document classifies the whole runtime by responsibility; it does not enable Rust or change an existing wire contract.
+English | [中文](full-runtime-language-matrix.zh.md)
 
-## Decision rule
+## Scope and status
 
-Language choice is based on end-to-end behavior, not on whether code looks computationally complex. Freeze the current TypeScript contract, compare an optimized TypeScript implementation, then invoke Rust through the real N-API or IPC boundary. A candidate must report latency, CPU, RSS, event-loop delay, serialization/IPC, cold and warm runs, cancellation, crash recovery, CI, package size, and platform failures. Any mismatch or lifecycle failure keeps the TypeScript fallback.
+This reference distinguishes source coverage, architectural ownership, runtime verification, and measured language benefit. The [source census](../../scripts/rust-migration/function-language-inventory.json) binds its Git snapshot, code digest, manifest hashes, profile/preset hashes, and declaration locations. It covers all 212 harness packages in 50 groups, plus vendored code, application/launcher code, Swift, Python, C, and Rust in the declared workspace areas. The census retains tests, tooling, and generated paths as explicit exclusions from runtime analysis.
 
-## Global matrix
+**Source census is complete for that declared scope; semantic review is partial, and whole-product runtime/performance verification is UNKNOWN.** A function or method declaration is not a user feature. Counts include internal functions and overloads. Swift/C/Python/Rust files are listed, but their individual functions and UI controls are not parsed by the TS scanner. Dynamic MCP schemas, user plugins/presets, settings, and environment-dependent composition still require runtime evidence.
 
-| Subsystem | Current owner | Fit | Decision | Reason / gate |
-| --- | --- | --- | --- | --- |
-| Agent loop, Cordis, Goal, Session, ToolRuntime | `packages/core/**`, `packages/extensions/**`, `packages/goal/**` | TypeScript | **RETAIN_TS** | Mutable context, ordered events, permissions, and model callbacks make a second authority unsafe. |
-| LLM providers, SSE, retries, token meter | `packages/llm/**` | TypeScript | **RETAIN_TS** | Provider wire contracts, credentials, and cancellation must stay with the existing owner. |
-| MCP, tools, permissions, approvals, credentials | `packages/mcp/**`, `packages/core/tools/**`, `packages/credentials/**`, `packages/interaction/**` | TypeScript | **RETAIN_TS** | This is a security and dynamic-composition boundary, not a closed computation. |
-| Knowledge governance, verifier, review, utility, authority events | `packages/host/knowledge-wiki/src/*.ts` | TypeScript | **RETAIN_TS** | Signatures, hash chains, scope/ACL, expiry, conflicts, and rollback must have one authority. |
-| Wiki tokenization and BM25 | `packages/host/knowledge-wiki/src/search.ts` | TS today; Rust shadow | **SHADOW_ONLY** | Optimized TS warm p50 is about 0.665 ms, while isolated Rust IPC warm p50 is about 18.5 ms. Equal results do not imply a speedup. |
-| Cosine, embeddings, hybrid search | `packages/host/knowledge-wiki/src/search.ts` | TypeScript | **RETAIN_TS** | Network embedding latency dominates; the current hybrid candidate set is still lexical top-15. |
-| Wiki graph and Louvain | `packages/host/knowledge-wiki/src/graph.ts` | TypeScript | **DEFER** | Define edge-weight semantics and a replay corpus before considering Rust. |
-| Persistent search/graph index | No separate owner today | Future Rust candidate | **DEFER_CANDIDATE** | Most promising direction, but it first needs a versioned immutable format, generation, checksum, rebuild, rollback, and cross-platform contract. |
-| JSONL/Zstd/SQLite read-only scans | `packages/session/**`, `packages/storage/**`, `packages/session-query/**` | Existing native/TS | **RETAIN_TS** | Mature SQLite, zstd, and ripgrep paths already exist; the active profile does not justify a new Rust scanner. |
-| Canonicalization, hashes, signatures | `packages/util/crypto/**` and verifier/ingest | TS/native crypto | **RETAIN_TS** | Low-cost system crypto is already bound to verifier receipts. |
-| Compaction, context trimming, token budgets | `packages/compaction/**` | TypeScript | **RETAIN_TS** | These rules change model behavior and provider token semantics. |
-| Subprocess/jobs, timeout, cancellation, recovery | `packages/subprocess/**`, `packages/jobs/**` | TS supervisor | **RETAIN_TS** | Existing process-group and AbortSignal ownership avoids a second supervisor and orphan risk. |
-| Filesystem, sandbox, Landlock, path policy | `packages/fs/**`, `packages/sandbox/**`, `native/landlock-run/**` | TS + existing C11 native | **RETAIN_EXISTING** | The current native confinement provider is already the security boundary. |
-| APIs, controllers, settings, profile loader | `packages/api/**`, `packages/settings/**`, `packages/boot/**` | TypeScript | **RETAIN_TS** | Dynamic configuration and plugin composition outweigh any local compute gain. |
-| Other I/O, protocol, and lifecycle surfaces | `attachment/**`, `workspace/**`, `shell/**`, `terminal/**`, `lsp/**`, `sdk/**`, `schedule/**`, `workflow/**`, `goal/**`, `plan/**`, `context/**`, `feedback/**`, `hooks/**`, `webhook/**`, `acp/**`, `subagent/**`, `experimental/**`, `e2b/**` | TypeScript + existing native | **RETAIN_EXISTING** | These are dominated by files, terminals, HTTP, dynamic protocols, event lifecycles, sandboxing, and model semantics; attachments already use sharp/libvips native. |
-| Web and HTTP search providers | `packages/web/**`, `packages/llm/**` | TypeScript | **RETAIN_TS** | Network wait and provider contracts dominate. |
-| Code runtime, Python, worker threads | `packages/code-runtime/**` | Existing runtimes | **RETAIN_EXISTING** | Rust cannot replace another language runtime; only isolated pure CPU work can be considered separately. |
-| Session projection, title, telemetry | `packages/session/**` | TypeScript/native backend | **RETAIN_TS** | Event schema and persistence order are compatibility surfaces. |
-| UI and native API app | `packages/bundle/**`, native app | SwiftUI/AppKit + TS bridge | **RETAIN_EXISTING** | The product boundary must remain unchanged. |
-| Benchmarks, differential replay, learning evaluator | `scripts/rust-migration/**` | TypeScript | **RETAIN_TS** | The evaluator must preserve the auditable evidence contract. |
+The existing tool catalog supplies 74 schema records with 59 distinct names. Literal source registrations add the seven Wiki tool names, giving 66 statically identified distinct names. The census also records 102 Remote decorator sites, five command registration sites, and 83 Context property declarations. These counts do not prove that a tool, Remote, or service is loaded or exercised. The inert Jiuzhang patch composition and three Native preset source files are recorded separately.
 
-## Rust work worth pursuing
+## Decision meanings
 
-Keep only three candidate classes: a persistent immutable search index, a large-corpus graph derivation index after edge semantics are fixed, and a bounded batch CPU kernel only if profiling proves it is an end-to-end bottleneck. The current BM25 shadow proves differential equality and isolation, not speed or production authorization. Candidate Ark UI smoke also exposed a profile issue: a fresh session needs an explicit default model or the UI reports that no model is available.
+`KEEP_TS_AUTHORITY` preserves the current permission, event, callback, or lifecycle owner; it does not establish a TypeScript speed advantage or rule out an internal pure kernel. `KEEP_EXISTING_NATIVE` retains an existing system/library implementation. A kernel marked `UNMEASURED` is eligible for investigation, not migration. `KEEP_CURRENT_PENDING_REVIEW` explicitly names unfinished review, rather than treating it as a TS win. Every remaining declaration is present in the census for follow-up; unreviewed entries are not counted as verified.
 
-## Promotion gates
+## Reviewed function boundaries
 
-Moving any row to a Rust owner requires the same corpus and request sequence for current TS, optimized TS, and Rust; canonical result/error equality; candidate-profile replay; cancellation, timeout, SIGKILL recovery, and no orphan process; CPU/RSS/event-loop/IPC/package/CI/platform data; a TypeScript fallback receipt; no duplicate knowledge or session side effects; and independent review before candidate and then enforce mode.
+The [function assessments](../../scripts/rust-migration/function-language-inventory.json) carry source selectors, resolved declaration lines, decisions, and reasons; regeneration rejects a vanished selector. The table summarizes those boundaries without restating the package catalog.
 
-The global conclusion is therefore: **keep dynamic authority in TypeScript and candidate only proven closed computations. The persistent-index direction is the next Rust investigation; the existing BM25 shadow remains shadow-only.**
+| Function or responsibility | Existing owner | Assessment and required evidence |
+| --- | --- | --- |
+| Tool/Remote/command dispatch and registration | TS | Keep the authority in TS. Profile an internal immutable computation separately; do not transfer Context, credentials, callbacks, or external effects. |
+| Search tokenization, BM25 and scoring | TS, default-disabled Rust shadow | Keep TS. The recorded fixture favors cached TS; this is one assembled search comparison, not a benchmark of each function or all Ark features. |
+| Cosine and Wiki graph derivation | TS | Pure-kernel investigation, unmeasured. Keep embedding/network work and governed filtering in TS; fix the intended weighted/unweighted graph contract before comparing a different algorithm. |
+| `scanZstdFrames` | TS | Read-only byte-kernel investigation, unmeasured. Preserve ranges, frame limits, corrupt-frame errors, and torn-tail results; writers and repair retain their owner. |
+| Zstd compression/decompression | Node native through TS | Keep existing native. Measure the complete scanner/decoder boundary before proposing another implementation. |
+| Token-estimation helpers | TS | Pure-kernel investigation, unmeasured. Preserve UTF-16 length, block recursion, and framing constants; do not confuse a new formula with a language speedup. |
+| TokenMeter session folds and reconstruction | TS | Keep the replay owner: session state, provider pricing, seq checks, and source-event reconstruction belong together. |
+| SessionProjectionRegistry | TS | Keep TS. Its synchronous JS folds, same-reference semantics, and consistency cut exclude a drop-in asynchronous IPC replacement. |
+| Editor match-offset and line-number scans | TS | Pure-kernel investigation, unmeasured. Preserve UTF-16 offsets and match rules; authorization and writes remain with the filesystem/tool owner. |
+| UTF-8 output truncation | TS | Pure-kernel investigation, unmeasured. Measure whole-stream costs; the trailing scan already examines at most one UTF-8 sequence. |
+| UUID and base64 utility | TS/system crypto | UUID uses platform random bytes; base64 can be profiled separately. This package does not own project hash/signature authority. |
+| File search, images, SQLite and sandbox confinement | TS plus ripgrep, sharp/libvips, SQLite and C/native confinement | Retain existing components while profiling their adapters and workloads. Source integration alone does not prove performance. |
+| Native UI, model/protocol integration, learning policy and other unreviewed functions | Existing Swift/TS/Python/native owners | Preserve the current product and authority contracts. Review remaining functions individually; no blanket best-language conclusion is recorded. |
+
+## Measured result and next decisions
+
+The [30-iteration search fixture](../../rust-benchmark.json), bound to source `45ea6452d11156d19568a2137ac43d57262dee38`, records current TS cold p50 11.756 ms, optimized TS cached p50 0.513 ms, Rust cold IPC p50 21.189 ms, and Rust warm child p50 18.248 ms. Rust reuses its child but rebuilds its index; optimized TS reuses its prepared index. The cached TS implementation lives in the benchmark; these numbers do not prove it is deployed in official Ark. Equal results support differential replay of this corpus. These unequal index envelopes do not isolate language cost, establish search-quality improvement, or predict whole-Ark speed. Decision: `RETAIN_TS`; acceptance remains `UNKNOWN`.
+
+For each remaining function, first establish actual profile reachability and task frequency, then CPU/RSS/event-loop or lifecycle cost. Register a three-way comparison only for a demonstrated bottleneck or isolation need. Compare current TS, optimized TS, and Rust at the real boundary with equivalent algorithm and index reuse, result/error replay, serialization, cold/warm startup, cancellation, recovery, package/CI/platform data, and an owned fallback. A persistent index, scanner, or batch kernel remains an investigation until that evidence passes.

@@ -24,6 +24,12 @@ The metric names are `repeatedErrorRate`, `repeatedToolCallRate`, `verifiedTaskS
 
 The audit also reports `artifactCompleteness` separately. A `PASS` there means the requested manifests, reports, scripts, benchmark, and shadow crate are present; it is not a behavioral acceptance result.
 
+## Function-level source census
+
+Run `pnpm exec tsx scripts/rust-migration/inventory-language-fit.ts` to refresh `function-language-inventory.json`. It reuses repository discovery and catalogs, lists source-located TS/JS callable declarations and registration sites, preserves excluded code paths, and records inert Jiuzhang/Native preset composition. Missing function selectors, empty required areas, or incomplete package discovery reject generation. The script writes audit evidence without loading the active user profile or changing runtime language selection.
+
+Declared-scope source coverage is separate from partial semantic review and unconfirmed runtime/performance evidence. Internal functions and overloads are not user features. Swift/C/Rust/Python files are enumerated without parsing individual functions; dynamic MCP schemas, user plugins, settings, and environment expressions remain runtime gaps. See the [language review](../../docs/rust-migration/full-runtime-language-matrix.md).
+
 ## TypeScript baseline before Rust
 
 `benchmark-knowledge-search.ts` runs the same deterministic corpus through the current TypeScript BM25 implementation, a pre-indexed optimized TypeScript implementation, and an optional isolated Rust shadow over stdin/stdout. It records p50/p95/p99 latency, CPU time, RSS delta, event-loop delay, and replay digests. The result now exposes four explicit envelopes: `typescriptCold` rebuilds the index, `typescriptWarm` reuses its prepared index, `rustCold` starts a child for every request, and `rustWarm` reuses an opt-in persistent Rust child while still rebuilding the current Rust index per request. The warm helper also records a harness-level SIGKILL/restart probe; cancellation remains explicitly `not-measured` because the synchronous benchmark has no in-flight `AbortSignal`. These are measurement aids, not a production supervisor or acceptance receipt. The record remains `UNKNOWN` until the Rust path is integrated at the production boundary and passes the required end-to-end checks. A faster Rust-only microbenchmark is not sufficient evidence to change the migration decision.
@@ -32,7 +38,7 @@ The audit also reports `artifactCompleteness` separately. A `PASS` there means t
 
 The service package now has a default-disabled candidate seam that can exercise the same child-process contract in a candidate profile. This seam is still observational in `shadow` mode; the active Ark profile remains TypeScript-only, and no candidate receipt authorizes `enforce`.
 
-`rust-benchmark.json.productionCandidate` records a service-level shadow exercise separately from the three-way benchmark; it does not change the active profile decision.
+A service-level model/tool smoke requires a separate receipt bound to its source and profile. The three-way fixture is not that receipt and does not change the active profile decision.
 
 The isolated request carries `requestId`, `sessionId`, `generation`, `capability`, `deadlineMs`, `budget`, and `cancellationToken`; the Rust side rejects unknown fields and invalid control metadata. Benchmark, replay, and boundary processes use the minimal allowlisted environment in `process-isolation.ts`; production integration, long-task cancellation, and crash recovery remain separate evidence gates.
 
