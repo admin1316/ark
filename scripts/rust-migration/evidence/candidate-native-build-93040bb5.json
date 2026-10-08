@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-08T12:44:00.073467+00:00",
+  "sourceCommit": "93040bb55cac3a0cfa1c928fb17bad351ed20a97",
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "status": "HIDDEN_LOCAL_ADHOC_ARTIFACT_VERIFIED_NOT_LAUNCHED",
+  "app": "/Users/hui/ark-test/.candidate-stage-recall-20261008-v315/Ark.app",
+  "version": "3.1.5",
+  "build": "2026100822",
+  "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.6125d540cec9babe",
+  "candidateDataHome": "/Users/hui/ark-test/candidate-home-recall-20261008-v315",
+  "homeEmptyAtVerification": true,
+  "builderActualExitCode": 0,
+  "allThreeIndependentVerifierActualExitCodes": [
+    0,
+    0,
+    0
+  ],
+  "finalTreeEntries": 20922,
+  "finalMachOCount": 9,
+  "finalTreeSha256": "85bb613f99374688b1863102c4b13c56d556a95c5ef6b4f11dba3c3c41a3e10c",
+  "packReceiptSha256": "a75743fe67acddca9cdf7b9fffbeaf09c9e5cf5243e6dfdde0909eafbfeb8daa",
+  "swiftPinCount": 5,
+  "swiftPinsAndCleanDiffsVerified": true,
+  "receipt": {
+    "path": "/private/tmp/ark-stage-recall-20261008-v315-logs/independent-stage-verification-receipt.json",
+    "sha256": "7aa6a93c1a8a4118f95ce1a0e440f852ba7e6a01aa0dcb9826b05d885b6fa43e",
+    "bytes": 7073
+  },
+  "nativeBuilderStatus": {
+    "path": "/private/tmp/ark-stage-recall-20261008-v315-logs/native-stage-execution-result.json",
+    "sha256": "e70daafcc491b4a322d471b90144e977771c8ddab941d8dab9adfd4b47a25ce3",
+    "bytes": 556
+  },
+  "existingAppsEightNamedFilesUnchanged": true,
+  "formalAppReplaced": false,
+  "visibleCandidateReplaced": false,
+  "modelProvisioned": false,
+  "uiAcceptance": "UNKNOWN",
+  "rollbackBehavior": "UNKNOWN",
+  "sourceBoundCI": "UNKNOWN",
+  "knowledgeLearning": "UNKNOWN",
+  "newRustEnforcement": false
+}

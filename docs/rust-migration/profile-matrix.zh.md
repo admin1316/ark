@@ -4,7 +4,7 @@
 
 **Sources compared:** checked-out `integrations/jiuzhang/profile`, `packages/bundle/base/cordis.patch.yml`, `packages/bundle/native-api-app/cordis.patch.yml`, installed product `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang`, and packaged runtime `/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile`. Profile rows are loader patches; later rows replace a matched row's whole config.
 
-**已审计快照：** 源码与干净候选 profile 绑定提交 `75f8050d503f836bba1104c3972845f68f192e79`，审计日期为 2026-10-08。正式与隔离候选 home 保持分离；两份 profile 均未启用 Rust 搜索或独立 verifier authority。后续源码修改不会改变已签名候选身份；candidate 正文召回修复尚未安装到此 app。
+**已审计快照：** 源码 patch、正在运行的干净75候选 profile 和隐藏的干净930候选产物于2026-10-08接受审计。[隐藏315](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) 的隔离 home 为空，尚未安装 runtime 或配置模型。正式与活动候选 home 保持分离；两份活动 profile 均未启用 Rust 搜索或独立 verifier authority。正在运行的75 app 不包含隐藏315中的召回修复。
 
 ## 源码 profile 配置与声明行为
 

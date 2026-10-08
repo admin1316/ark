@@ -2,7 +2,7 @@
 
 [English](source-truth-report.md) | 中文
 
-**已审计源码快照。** 源码修复和隔离 Native 构建绑定干净提交 `75f8050d503f836bba1104c3972845f68f192e79`，审计日期为 2026-10-08。构建后的源码修改不会改变包内签名身份；candidate 正文召回修复需要重新构建隔离 app 后才能进行 Native 验收。以下 Phase 0 事实和 drift 表保留历史基线；Phase 1 reconciliation 描述修复后的源码。
+**已审计源码快照。** candidate 正文召回修复与隐藏 Native3.1.5/build2026100822 绑定干净提交 `93040bb55cac3a0cfa1c928fb17bad351ed20a97`，审计日期为2026-10-08。[隐藏产物证据](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) 核验构建、源码和签名关系；该产物尚未启动。正在运行的隔离 app 仍为干净75。历史 Phase0 事实和 drift 保留；当前实现与真实任务证据各自标注明确的源码绑定。
 
 **审计目标。** 仓库 `/Users/hui/ark-test/ark-github-main-20261008`，分支 `codex/ark-rust-knowledge-20261008`。观察到的草稿 [PR39](https://github.com/admin1316/ark/pull/39) 属于另一分支，head 为 `8de9f3b9549f24563c04f4867301f74d0d6c53eb`，其检查不能认证此候选。审计前已读取引用的 mission 文本。[源码绑定的候选证据](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) 记录本地构建、凭据复用和历史真实任务失败；当前源码的学习、界面对照、回滚行为和 CI 验收仍未完成。
 

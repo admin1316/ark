@@ -16,7 +16,7 @@ Cancellation and child-process recovery remain owned by the existing TypeScript 
 
 ## 实测候选证据
 
-[30 次迭代的搜索 fixture](../../rust-benchmark.json) 绑定源码 `45ea6452d11156d19568a2137ac43d57262dee38`：current TS cold p50 **11.756 ms**、优化 TS 缓存 p50 **0.513 ms**、Rust cold IPC p50 **21.189 ms**、Rust warm persistent-child p50 **18.248 ms**，结果摘要相同。Rust 复用子进程但不复用索引，不能据这些边界分离语言成本。warm harness 记录 SIGKILL/restart；取消、子进程 CPU/RSS、跨平台及当前生产边界证据仍缺失。此前 scoped 候选模型/工具 smoke 只属于旧源码的历史证据，不是当前源码验收。决策为 **RETAIN_TS**，验收为 **UNKNOWN**。
+[30 次迭代搜索 fixture](../../rust-benchmark.json) 绑定源码 `45ea6452d11156d19568a2137ac43d57262dee38`，记录240个合成页面上**五查询批次**的 p50：current TS cold **11.756 ms**、优化 TS 缓存 **0.513 ms**、Rust cold IPC **21.189 ms**、Rust warm persistent-child **18.248 ms**，结果摘要相同。优化 TS 缓存仅存在于 harness，准备过程未计时，尚未部署到 Ark。Rust 每次查询都重建索引，warm 计时不包含请求序列化。因此这些数字不能分离语言成本，或证明单查询和产品收益。[当前 service pilot](../../scripts/rust-migration/evidence/current930-validation-20261008.json) 保留正确性证据，但与构建重叠的计时不能用于选择优化。取消、子进程 CPU/RSS、跨平台及当前生产边界对照仍缺失。决策为 **RETAIN_TS**，验收为 **UNKNOWN**。
 
 ## Candidate decisions
 

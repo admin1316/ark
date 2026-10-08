@@ -8,7 +8,7 @@
 
 当前系统使用的是可解释的经典公式，但周边的字段处理、混合融合和图权重存在人为规则或实现漂移。BM25 与 cosine 应继续作为兼容基线。最值得优先验证的替代方案是：**结构化字段 BM25F，加上 lexical/semantic 结果的 reciprocal-rank fusion（RRF）**。在有标注查询集证明收益、且 Rust 实现同一契约前，不应改生产公式。
 
-[已记录的 30 次迭代搜索 fixture](../../rust-benchmark.json) 中，优化 TS 缓存 p50 **0.513 ms**、Rust cold IPC p50 **21.189 ms**、Rust warm child p50 **18.248 ms**。Rust 仍重建索引，TS 复用索引。该 fixture 支持保留 TS，不支持仅归因于语言或声称全产品提速。公式改变以独立测量的检索质量和稳定性为目标。
+[已记录搜索 fixture](../../rust-benchmark.json) 测量240个合成页面上的**五查询批次**：优化 TS 缓存 p50 **0.513 ms**、Rust cold IPC **21.189 ms**、Rust warm child **18.248 ms**。TS 缓存准备未计时，且仅存在于 harness；Rust 每次查询重建索引，warm 计时不包含请求序列化。这些数值不能证明单查询、已部署缓存、仅归因于语言或全产品收益。[当前 service pilot](../../scripts/rust-migration/evidence/current930-validation-20261008.json) 保留源码与正确性检查，但与构建重叠的计时不能证明优化。有效对照完成前保留 TS；公式改变需要独立测量检索质量和稳定性。
 
 ## 公式清单与发现
 

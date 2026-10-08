@@ -8,7 +8,7 @@ English | [中文](search-math-audit.zh.md)
 
 The current system uses sound, explainable classical formulas, but several surrounding choices are ad-hoc or mathematically inconsistent. Keep BM25 and cosine as compatibility baselines. The first replacement worth testing is **BM25F for structured fields plus reciprocal-rank fusion (RRF) for lexical/semantic results**. Do not replace the formulas in production until a judged query set proves a lift and the Rust candidate implements the same contract.
 
-The [recorded 30-iteration search fixture](../../rust-benchmark.json) has optimized TS cached p50 **0.513 ms**, Rust cold IPC p50 **21.189 ms**, and Rust warm-child p50 **18.248 ms**. Rust still rebuilds its index; TS reuses it. This fixture supports retaining TS, not a language-only or whole-product speed claim. Formula changes target independently measured retrieval quality and stability.
+The [recorded search fixture](../../rust-benchmark.json) measures **five-query batches** on 240 synthetic pages: optimized TS cached p50 **0.513 ms**, Rust cold IPC **21.189 ms**, and Rust warm-child **18.248 ms**. TS cache preparation is untimed and harness-only; Rust rebuilds its index for each query, while warm timing excludes request serialization. These values establish no single-query, deployed-cache, language-only, or whole-product gain. The [current service pilot](../../scripts/rust-migration/evidence/current930-validation-20261008.json) retains source and correctness checks, but build-overlapped timing cannot prove an optimization. Retain TS pending valid comparisons; formula changes require independently measured retrieval quality and stability.
 
 ## Formula inventory and findings
 

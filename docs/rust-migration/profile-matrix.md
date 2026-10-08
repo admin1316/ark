@@ -4,7 +4,7 @@ English | [中文](profile-matrix.zh.md)
 
 **Sources compared:** checked-out `integrations/jiuzhang/profile`, `packages/bundle/base/cordis.patch.yml`, `packages/bundle/native-api-app/cordis.patch.yml`, installed product `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang`, and packaged runtime `/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile`. Profile rows are loader patches; later rows replace a matched row's whole config.
 
-**Audited snapshot:** source and clean candidate profile are bound to commit `75f8050d503f836bba1104c3972845f68f192e79` on 2026-10-08. Formal and isolated candidate homes remain separate; neither profile enables Rust search or an independent verifier authority. Later source changes do not change the signed candidate's identity; the candidate-content recall repair has not been installed in this app.
+**Audited snapshot:** The source patch, running clean75 candidate profile and hidden clean930 candidate artifact are audited on 2026-10-08. [Hidden315](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) has an empty isolated home and no installed or model-provisioned runtime. Formal and live candidate homes remain separate; neither active profile enables Rust search or independent verifier authority. The running75 app lacks the recall repair present in hidden315.
 
 ## Source profile rows and declared behavior
 

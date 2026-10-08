@@ -2,7 +2,7 @@
 
 English | [中文](source-truth-report.zh.md)
 
-**Audited source snapshot.** Source repairs and the isolated Native build are bound to clean commit `75f8050d503f836bba1104c3972845f68f192e79`, audited 2026-10-08. Source work after that build does not change its signed identity; the candidate-content recall repair requires a new isolated app build before Native acceptance. The Phase 0 facts and drift table below retain the historical baseline; Phase 1 reconciliation describes the repaired source.
+**Audited source snapshot.** The candidate-content recall repair and hidden Native 3.1.5/build 2026100822 are bound to clean commit `93040bb55cac3a0cfa1c928fb17bad351ed20a97`, audited 2026-10-08. The [hidden artifact evidence](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) verifies build/source/signature relations; it has not been launched. The running isolated app remains clean75. Historical Phase 0 facts and drift are retained; current implementation and real-task evidence have their exact source bindings.
 
 **Audit target.** Repository `/Users/hui/ark-test/ark-github-main-20261008`, branch `codex/ark-rust-knowledge-20261008`. Observed draft [PR39](https://github.com/admin1316/ark/pull/39) has another branch and head `8de9f3b9549f24563c04f4867301f74d0d6c53eb`; its checks do not attest this candidate. The referenced mission text was read before this audit. The [source-bound candidate evidence](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) records local build/provisioning and the historical real-task failure; current-source learning, UI parity, rollback behavior, and CI acceptance remain unresolved.
 
