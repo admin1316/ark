@@ -2,7 +2,7 @@
 
 English | [中文](knowledge-runtime-report.zh.md)
 
-**Baseline:** source findings and line references are pinned to `b8adf5a7ec` before Phase 1 edits; runtime artifact observations were made 2026-10-07.
+**Current snapshot:** source findings were refreshed against checkout commit `2d8923344bf5f0101f3eb76a056434b5a78aef3e` on 2026-10-08. Runtime observations distinguish the isolated candidate Ark from the untouched official bundle. The earlier `b8adf5a7ec` references are historical only and do not identify the current source.
 
 ## What the model can actually see
 
@@ -35,6 +35,7 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 1. **Production Harness** `/Users/hui/Library/Application Support/Ark/Harness`: profile overlay and bundle list match the source; `settings.yaml` selects DeepSeek official/flash with max reasoning; 16 projection-cache rows exist under `storages/session_projcache/sessions/`. Rows include session stats, model selection, title, token usage, context pressure, goals, and seq watermarks; one example had seq `155930`, 3 turns, 153 steps, 158,460 output tokens and 26,989,696 cache-read tokens. These are metadata counters only; no message content is reproduced here. The sibling production `Knowledge` root contains only purpose/schema/index/log and a workspace registry, with no candidate pages or utility file.
 2. **Production session files:** the corresponding `Harness/sessions` tree currently has only `~locks`/`~delete` directories and no `session.jsonl.zstd` files. Thus current disk evidence proves projection-cache records existed but does not provide a replayable event log for those rows. This is a material recovery/replay gap to investigate, not proof that deletion is incorrect.
 3. **Isolated candidate runtime** `/Users/hui/ark-test/candidate-home-2026092701`: two synthetic JSONL/Zstandard logs exist (about 1.6 MiB and 48 KiB) and two projection rows exist; `Knowledge/wiki` contains only `index.md` and `log.md`, with no generated candidate pages. Provider logs in `/Users/hui/ark/releases/2026092701/evidence/provider-live-v3.jsonl` show a listening synthetic provider and streamed `ARK_SYNTH_BURST` requests; `/Users/hui/ark/releases/2026092701/REPORT.md` records 19,993-event/169-event synthetic session replay and the final UI/provider markers. These are synthetic reliability evidence, not proof of Knowledge Wiki writes or automatic recall.
+4. **Candidate Ark live smoke (2026-10-08)** `/Users/hui/ark-test/candidate-20261008/Ark.app` ran with isolated home `/Users/hui/ark-test/candidate-home-20261008`. An authenticated loopback `knowledgeWiki/search` call returned the seeded candidate pages and the carrier/domain result was healthy. This is evidence that the candidate Ark's native TypeScript route is usable with isolated data. The receipt records `mode: typescript-authoritative` and `rustShadowInvoked: false`: the native route does not exercise the model/tool Rust seam, and this candidate home has no configured model. It is therefore not a Rust performance or production-acceptance result. The receipt is `/Users/hui/ark-test/candidate-ark-20261008-live-baseline.json`.
 
 ## Drift and required follow-up
 

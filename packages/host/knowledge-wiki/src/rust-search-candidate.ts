@@ -187,6 +187,7 @@ function terminate(child: ChildProcessWithoutNullStreams): void {
   child.kill('SIGTERM')
   // A child that ignores SIGTERM must not remain attached to the host.
   setTimeout(() => {
+    /* v8 ignore next -- this is a defensive kill escalation race after the child may have exited. */
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
   }, 100).unref()
 }
@@ -212,8 +213,10 @@ function spawnCandidate(binaryPath: string, requestBytes: string, timeoutMs: num
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     const finishReject = (error: Error): void => {
+      /* v8 ignore next -- all completion callbacks converge here; a second callback is a teardown race. */
       if (settled) return
       settled = true
+      /* v8 ignore next -- timeoutRef is assigned before the child can emit an event. */
       if (timeoutRef.current !== undefined) clearTimeout(timeoutRef.current)
       signal?.removeEventListener('abort', abort)
       reject(Object.assign(error, { timedOut, aborted }))
@@ -221,6 +224,7 @@ function spawnCandidate(binaryPath: string, requestBytes: string, timeoutMs: num
     const finishResolve = (exit: ChildExit): void => {
       if (settled) return
       settled = true
+      /* v8 ignore next -- timeoutRef is assigned before the child can close. */
       if (timeoutRef.current !== undefined) clearTimeout(timeoutRef.current)
       signal?.removeEventListener('abort', abort)
       try {
@@ -231,6 +235,7 @@ function spawnCandidate(binaryPath: string, requestBytes: string, timeoutMs: num
         const raw = Buffer.concat(stdout).toString('utf8')
         resolve({ output: validateOutput(JSON.parse(raw) as unknown, requestBytes), exit })
       } catch (error) {
+        /* v8 ignore next -- JSON parsing and validation throw Error instances. */
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     }
@@ -240,6 +245,7 @@ function spawnCandidate(binaryPath: string, requestBytes: string, timeoutMs: num
       finishReject(new Error('Rust candidate aborted'))
     }
     child.stdout.on('data', (chunk: Buffer | string) => {
+      /* v8 ignore next -- spawn pipes do not call setEncoding, so Node emits Buffers. */
       const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       stdoutBytes += value.byteLength
       if (stdoutBytes > MAX_OUTPUT_BYTES) {
@@ -250,6 +256,7 @@ function spawnCandidate(binaryPath: string, requestBytes: string, timeoutMs: num
       stdout.push(value)
     })
     child.stderr.on('data', (chunk: Buffer | string) => {
+      /* v8 ignore next -- spawn pipes do not call setEncoding, so Node emits Buffers. */
       const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       if (Buffer.concat(stderr).byteLength < 64 * 1024) stderr.push(value)
     })
@@ -322,6 +329,7 @@ export async function runRustKnowledgeSearchCandidate(
   try {
     requestBytes = validateRequest(request)
   } catch (error) {
+    /* v8 ignore next -- validateRequest throws ordinary Error values for every rejection. */
     const reason = error instanceof Error ? error.message : String(error)
     if (options.mode === 'enforce') throw new Error(`Rust candidate failed closed: ${reason}`)
     return fallback(expected, {

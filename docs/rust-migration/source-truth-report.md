@@ -2,9 +2,9 @@
 
 English | [中文](source-truth-report.zh.md)
 
-**Baseline snapshot.** Findings and line references below describe the source at `b8adf5a7ec`, before this mission's subsequent Phase 1 edits. Later implementation changes must be evaluated as a separate snapshot, not treated as evidence that these baseline observations were false.
+**Current source snapshot.** This report was refreshed against the GitHub-derived checkout at commit `2d8923344bf5f0101f3eb76a056434b5a78aef3e` (`fix: allow knowledge wiki without a credential`), audited 2026-10-08. The earlier `b8adf5a7ec` text is retained in Git history as the historical Phase 0 baseline; it must not be used as the current source identity.
 
-**Audit target.** Repository `/Users/hui/ark/repo`, branch `codex/ark-upstream-reliability-20260927`, HEAD `b8adf5a7ec` (`fix(native): preserve history scroll anchor across page loads`), audited 2026-10-07. The referenced mission text was read from `/Users/hui/.codex/attachments/3a68ae30-3b77-4be2-96be-2c65920c5ec6/pasted-text-1.txt` before this audit.
+**Audit target.** Repository `/Users/hui/ark-test/ark-github-main-20261008`, branch `codex/ark-rust-knowledge-20261008`, remote PR `https://github.com/admin1316/ark/pull/39`. The referenced mission text was read from `/Users/hui/.codex/attachments/3a68ae30-3b77-4be2-96be-2c65920c5ec6/pasted-text-1.txt` before this audit. The official Ark bundle was not modified during this refresh; candidate runtime evidence is recorded separately.
 
 ## Three-layer conclusion
 
@@ -33,7 +33,7 @@ The checked-out source has a package-backed `KnowledgeWikiService` with a persis
 
 ## Runtime evidence
 
-The packaged Ark app embeds byte-identical copies of `integrations/jiuzhang/profile/package.json` and `cordis.patch.yml` (SHA-256 `7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e` and `b24765d09a0441e4fb489122ad2c5543f1fa9c9dbf21c16fa0343797599004ab`, respectively). The installed product Harness profile at `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang/` has the same bundle list and patch contents. The source checkout is newer than the packaged app: the app provenance records source commit `4ef63040883f497857cff71ab0e82fd07ac123fa` in `ArkProvenance/source-and-pack.json`, while the checkout is `b8adf5a7ec`; packaged-runtime behavior must therefore be attributed to the recorded app commit, not silently to HEAD.
+The packaged Ark app embeds byte-identical copies of `integrations/jiuzhang/profile/package.json` and `cordis.patch.yml` (SHA-256 `7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e` and `b24765d09a0441e4fb489122ad2c5543f1fa9c9dbf21c16fa0343797599004ab`, respectively). The installed product Harness profile at `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang/` has the same bundle list and patch contents. The source checkout is newer than the packaged app: the app provenance records source commit `4ef63040883f497857cff71ab0e82fd07ac123fa` in `ArkProvenance/source-and-pack.json`, while the current checkout is `2d8923344bf5f0101f3eb76a056434b5a78aef3e`; packaged-runtime behavior must therefore be attributed to the recorded app commit, not silently to the checkout.
 
 The production Harness profile contains `knowledge-wiki` with `ARK_WIKI_ROOT`/`ARK_MAIN_ROOT`, `credential: DEEPSEEK_API_KEY`, `ownedStageExecutor: true`; it overrides `session-query-sqlite` to `path: ':memory:'`, `openAt: never`, and disables OTel ([`integrations/jiuzhang/profile/cordis.patch.yml:27-46`](../../integrations/jiuzhang/profile/cordis.patch.yml)). The production Knowledge root `/Users/hui/Library/Application Support/Ark/Knowledge` contains `purpose.md`, `schema.md`, `wiki/index.md`, `wiki/log.md`, and `.llm-wiki/workspaces.json`; no `knowledge.jsonl`, `vectors.json`, or candidate pages were observed. The `knowledge-wiki-recall` identifier was absent from the audited source. This is a storage observation, not proof that a fresh future run cannot create candidates.
 
