@@ -316,5 +316,102 @@
       "bytes": 1431
     },
     "privacyGateChanged": false
+  },
+  "additionalSourceReadBoundaryRegression": {
+    "sourceHeadBeforeTest": "fe3df292948658a360997113e05804328f0a8afc",
+    "testFile": {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+      "sha256": "092d36113832929a09da9b472c6ce253a74d0f6a8de1fc58932c784c163d32e7",
+      "bytes": 11765
+    },
+    "unchangedProductionSource": {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/src/index.ts",
+      "sha256": "a0e84f0dfc26d01dfc1f027e34727cfe12e5ff508e7070a480d28de6945a3731",
+      "bytes": 25179
+    },
+    "behavior": {
+      "setup": "Existing seedHistoricalCanonicalKnowledge owner admits one nested page and one original page later changed; third unsigned page has no event admission. Keys are existing isolated test fixture authority, not provider credentials.",
+      "actualConsumer": "Real KnowledgeWikiService + real ToolRuntime + Wiki tools with scoped actual Session; file listing never calls LlmRuntime.",
+      "exactOutput": {
+        "files": [
+          "concepts/admitted.md"
+        ],
+        "total": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "1 files total. First 1:\n- concepts/admitted.md"
+          }
+        ]
+      },
+      "sessionOracle": "Exact2retrieved+1injected payloads and exactly3knowledge events; asserted IDs/path/callId/session-project-workspace scope, allowed/reason, native SHA256s of original governed source label/page bytes and exact JSON values, trust/authority/evidence/status/expiry/conflicts. Injection value/hash/byte count is actual rendered ToolRuntime result, not pre-render service value.",
+      "governanceOracle": "Authenticated event-file Buffer bytes are unchanged by listing. No current promotion, trial or utility credit is manufactured."
+    },
+    "acceptedChecks": [
+      {
+        "name": "focused real Wiki service + ToolRuntime regression suite",
+        "outcome": "PASS",
+        "exitCode": 0,
+        "command": "node node_modules/vitest/vitest.mjs run packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts --maxWorkers=1",
+        "result": "1 file / 2 tests passed;233ms tests,1.69s total",
+        "plane": "source services through actual vitest tsconfig paths",
+        "log": {
+          "path": "/private/tmp/ark-wiki-files-provenance-focused.log",
+          "sha256": "280e3096698d15ce593687e2244dc4ad6f968a7eb1194d95ab394b36f52a8747",
+          "bytes": 914
+        }
+      },
+      {
+        "name": "scoped typed lint",
+        "outcome": "PASS",
+        "exitCode": 0,
+        "command": "DSH_OXLINT_THREADS=2 NODE_OPTIONS=--max-old-space-size=4096 node node_modules/tsx/dist/cli.mjs scripts/run-oxlint.ts packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+        "result": "No diagnostics; unchanged .oxlintrc.json typeAware=true",
+        "plane": "source static typed lint",
+        "log": {
+          "path": "/private/tmp/ark-wiki-files-provenance-lint.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        }
+      },
+      {
+        "name": "strict compiler check of actual changed test file",
+        "outcome": "PASS",
+        "exitCode": 0,
+        "command": "NODE_OPTIONS=--max-old-space-size=4096 node node_modules/typescript/bin/tsc -p /private/tmp/ark-wiki-files-provenance-tsconfig.json",
+        "result": "No diagnostics. Temp config extends actual tsconfig.host.json, retains all absolute Host project references, includes the changed checkout test, uses actual installed node_modules/@types; no test copy or source fixture substitution. Base strict/noUncheckedIndexedAccess/exactOptionalPropertyTypes retained.",
+        "plane": "actual source test against current built Host project declarations",
+        "config": {
+          "path": "/private/tmp/ark-wiki-files-provenance-tsconfig.json",
+          "sha256": "2e857623102df708aaf0808a6abfc45a189a6396e722421f54b2db1230a81934",
+          "bytes": 23788
+        },
+        "log": {
+          "path": "/private/tmp/ark-wiki-files-provenance-typecheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        }
+      },
+      {
+        "name": "owned diff whitespace",
+        "outcome": "PASS",
+        "exitCode": 0,
+        "command": "git diff --check",
+        "result": "No diagnostics"
+      }
+    ],
+    "receipt": {
+      "path": "/private/tmp/ark-wiki-files-provenance-final-receipt.json",
+      "sha256": "30d239c392b56a1287c4a8ba85eb6d2032cf6f500c83791c3e241169e5ee75a3",
+      "bytes": 7630
+    },
+    "measuredLearningAcceptance": "UNKNOWN",
+    "limits": [
+      "Source-plane composed test; no shipped Loader/profile/native app, artifact runtime, provider credential, model request, measured learning lift or performance claim.",
+      "Only owned test file changed; no production cleanup, policy, format, authority fixture, existing safety guard or snapshot goldens changed.",
+      "No git stage/commit/push/merge was performed by this agent.",
+      "Coverage classification is read-only and separate; no counters were rerun or inferred from passing focused tests.",
+      "Tool/read boundary and in-memory Session event proof only; no model-request consumption or durable Session replay proven by this regression."
+    ]
   }
 }

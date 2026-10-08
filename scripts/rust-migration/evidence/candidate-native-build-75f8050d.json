@@ -193,7 +193,37 @@
     },
     "uncoveredLines": 59,
     "thresholdErrors": 17,
-    "all32ReportedSourceFilesAndPolicyMatch75": true
+    "all32ReportedSourceFilesAndPolicyMatch75": true,
+    "followupClassification": {
+      "receipt": {
+        "path": "/private/tmp/ark-knowledge-coverage-75-readonly-classification.json",
+        "sha256": "9ca9cb23fe31e974d41f0d02ba37fc57c98fcbdeb392b98a613760298c312290",
+        "bytes": 17391
+      },
+      "unchangedProductionSources": {
+        "packages/host/knowledge-wiki-tools/src/index.ts": "a0e84f0dfc26d01dfc1f027e34727cfe12e5ff508e7070a480d28de6945a3731",
+        "packages/host/knowledge-wiki/src/external-verifier-adapter.ts": "bc8d9aa0e2503e0bdf5efbd177921978e9670a0a2dc5e99e45fb0e8ae065d134",
+        "packages/host/knowledge-wiki/src/index.ts": "f60620221d5b93d0df51397cce645823d90e13ba7c9b757b4e5a8369fa715cd6",
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts": "f5834a0049eacec3a64940ec2caedb8b0e9bf7d386d446d41caeb3bb58590751",
+        "packages/host/knowledge-wiki/src/reviews.ts": "72cf615dce6eff1ae79a76885a6dd1f9c109632c7ba40777a6116bfb9c928b9a",
+        "packages/host/knowledge-wiki/src/verifier.ts": "4e850327f67cb67c21b6453b745f66d8a87b82a4094ca3dfc39596993bb14aa4"
+      },
+      "reachableGaps": [
+        "Actual governed file list provenance",
+        "Durable governance I/O errors",
+        "Existing action-specific lifecycle denials"
+      ],
+      "intrinsicallyDenied": "Current canonical forward mutation and canonical WAL recovery have no independently measured trial owner; do not invent successful trial fixtures.",
+      "dominatedExamples": [
+        "modelList child recursion has no flat-inventory producer",
+        "Private verifier timeout fallback already normalized by factory",
+        "Empty source fallback already excluded by candidatePath guard"
+      ],
+      "newNarrowTestPassed": true,
+      "coverageRemeasured": false,
+      "latestMeasuredGateResult": "FAIL",
+      "currentPerFileCoveragePassEstablished": false
+    }
   },
   "historicalRealTask": {
     "sourceCommit": "b8adf5a7ec9c22c3f1c7958821af825bd7821d7a",
@@ -338,6 +368,18 @@
       "localPath": "/private/tmp/ark-current75-ed4-session-inspect-bwpLkI/cold-recovery-event-types.json",
       "sha256": "913f5b87df448932db0545dc21bb92a25e240989c132f23224e87ee5d2b81673",
       "bytes": 1156,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-wiki-files-provenance-final-receipt.json",
+      "sha256": "30d239c392b56a1287c4a8ba85eb6d2032cf6f500c83791c3e241169e5ee75a3",
+      "bytes": 7630,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-knowledge-coverage-75-readonly-classification.json",
+      "sha256": "9ca9cb23fe31e974d41f0d02ba37fc57c98fcbdeb392b98a613760298c312290",
+      "bytes": 17391,
       "distribution": "Local-only generated evidence; raw contents excluded from Git"
     }
   ],

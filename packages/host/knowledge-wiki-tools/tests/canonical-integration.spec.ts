@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -13,6 +14,7 @@ import * as tools from '../src/index.ts'
 import { verifierAuthority } from '../../knowledge-wiki/tests/verifier-authority-fixture.ts'
 import { stageExecutorFor } from '../../knowledge-wiki/tests/stage-executor-fixture.ts'
 import { wikiTestConfig } from '../../knowledge-wiki/tests/config-fixture.ts'
+import { seedHistoricalCanonicalKnowledge } from '../../knowledge-wiki/tests/historical-governed-fixture.ts'
 
 interface CanonicalServiceSurface {
   drainQueue(): Promise<void>
@@ -48,6 +50,74 @@ function execute(ctx: Context, name: string, args: unknown, cwd = process.cwd())
 }
 
 describe('canonical Knowledge Wiki and model tools', () => {
+  it('logs admitted file provenance against the rendered result and excludes unsigned or changed pages', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'wiki-tools-files-provenance-'))
+    roots.push(root)
+    const wikiRoot = join(root, 'wiki')
+    const path = 'concepts/admitted.md'
+    const content = '---\ntype: concept\nstatus: canonical\ntitle: Admitted contract\n---\n\nHistorical fixture for the file read boundary.\n'
+    const authority = verifierAuthority()
+    const admitted = seedHistoricalCanonicalKnowledge({ projectRoot: root, wikiRoot, path, content, authority })
+    seedHistoricalCanonicalKnowledge({
+      projectRoot: root, wikiRoot, path: 'concepts/changed.md', content, authority,
+    })
+    writeFileSync(join(wikiRoot, 'concepts/changed.md'), `${content}\nCHANGED_PAGE_CANARY\n`)
+    writeFileSync(join(wikiRoot, 'concepts/unsigned.md'), `${content}\nUNSIGNED_PAGE_CANARY\n`)
+    const governanceBefore = readFileSync(admitted.eventPath)
+    const ctx = new Context()
+    ctx.provide('llm', { stream: () => { throw new Error('file listing must not invoke a model') } } as unknown as LlmRuntime)
+    ctx.provide('credentials', { resolve: async () => undefined })
+    ctx.provide('timer', { interval: () => () => {} })
+    ctx.provide('knowledgeWikiVerifierAuthority', authority)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(KnowledgeWikiService, wikiTestConfig({ wikiRoot, mainRoot: root, credential: '' }))
+    await ctx.plugin(tools)
+    const id = SessionId('wiki-files-provenance')
+    const session = Session.create(id, [], { version: 0, id, createdAt: Date.now(), cwd: root })
+    const agent = { id, session } as unknown as Agent
+    const callId = CallId('wiki-files-provenance-call')
+    const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
+    const scope = { sessionId: String(id), projectId: root, workspaceId: root }
+    const provenance = {
+      sourceHash: hash(path), sourceContentHash: hash(content), trust: 'medium', authority: authority.authorityId,
+      evidenceRefs: ['historical-fixture-only:no-measured-trial-claim'], verificationStatus: 'verified',
+      expiresAt: null, conflicts: [],
+    }
+    try {
+      const result = await ctx.tools.execute({
+        signal: new AbortController().signal, callId, name: 'wiki_files', arguments: {}, agent,
+      })
+      expect(result.isError).toBe(false)
+      expect(result.value).toEqual({ files: [path], total: 1 })
+      expect(result.content).toEqual([{ type: 'text', text: `1 files total. First 1:\n- ${path}` }])
+      const retrieved = session.events.filter(event => event.type === 'knowledge/retrieved')
+      expect(retrieved.map(event => event.data)).toEqual([
+        {
+          knowledgeId: `wiki:${path}`, path, resultHash: hash(JSON.stringify({ path })),
+          contentHash: hash(JSON.stringify({ path })), tool: 'wiki_files', callId: String(callId), scope,
+          value: { path }, ...provenance, kind: 'files', allowed: true, reason: 'ok',
+        },
+        {
+          knowledgeId: 'wiki:files', path: 'files', resultHash: hash(JSON.stringify(result.value)),
+          contentHash: hash(JSON.stringify(result.value)), tool: 'wiki_files', callId: String(callId), scope,
+          value: result.value, kind: 'files', allowed: true, reason: 'ok',
+        },
+      ])
+      const injected = session.events.filter(event => event.type === 'knowledge/injected')
+      expect(injected.map(event => event.data)).toEqual([{
+        knowledgeId: admitted.knowledgeId, path: 'tool:wiki_files', resultHash: hash(JSON.stringify(result.content)),
+        contentHash: hash(JSON.stringify(result.content)), tool: 'wiki_files', callId: String(callId), scope,
+        value: result.content, kind: 'files', contentBytes: Buffer.byteLength(JSON.stringify(result.content), 'utf8'),
+        ...provenance,
+      }])
+      expect(session.events.filter(event => event.type.startsWith('knowledge/'))).toHaveLength(3)
+      expect(readFileSync(admitted.eventPath)).toEqual(governanceBefore)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('queues and verifies through model tools while denying canonical promotion without a real usage trial', async () => {
     const root = mkdtempSync(join(tmpdir(), 'wiki-tools-canonical-'))
     roots.push(root)
