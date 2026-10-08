@@ -83,7 +83,7 @@ const B = 0.75
  * @param query - The query input.
  * @returns The value produced by bm25.
  */
-export function bm25(pages: SearchPage[], query: string): Array<{ path: string; score: number }> {
+export function bm25(pages: readonly SearchPage[], query: string): Array<{ path: string; score: number }> {
   return scorePages(pages, query).map(({ page, score }) => ({ path: page.path, score }))
 }
 
@@ -93,7 +93,7 @@ interface ScoredPage {
 }
 
 /** Score pages while carrying each page with its derived tokens. */
-function scorePages(pages: SearchPage[], query: string): ScoredPage[] {
+function scorePages(pages: readonly SearchPage[], query: string): ScoredPage[] {
   const documents = pages.map(page => ({
     page,
     tokens: tokenize([page.title, ...page.aliases, page.text].join('\n')),
