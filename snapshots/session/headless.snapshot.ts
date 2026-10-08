@@ -41,6 +41,7 @@ import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import { seedWikiSnapshot, assertWikiWorld } from '../../examples/headless-agent/tests/fixtures/knowledge-wiki/support.ts'
 import { seedArchiveRollbackSnapshot, assertArchiveRollbackWorld } from '../../examples/headless-agent/tests/fixtures/knowledge-wiki/archive-rollback-conflict.ts'
+import { seedSourceIdentitySnapshot, assertSourceIdentityWorld } from '../../examples/headless-agent/tests/fixtures/knowledge-wiki/source-identity.ts'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const snapshotsRoot = fileURLToPath(new URL('./', import.meta.url))
@@ -362,6 +363,7 @@ async function seedWorkspace(scenario: HeadlessScenario, cwd: string): Promise<v
 const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
   async 'wiki-governance'(cwd) { seedWikiSnapshot(cwd) },
   async 'wiki-archive-rollback-conflict'(cwd) { seedArchiveRollbackSnapshot(cwd) },
+  async 'wiki-source-identity'(cwd) { seedSourceIdentitySnapshot(cwd) },
   async 'editing-cordis-skill'(cwd) {
     const target = join(cwd, '.dsh', 'skills', 'editing-cordis-compositions', 'SKILL.md')
     await mkdir(dirname(target), { recursive: true })
@@ -615,7 +617,8 @@ describe('headless recorded-session snapshots', () => {
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
       const spillRoot = snapshotSpillRoot(join(scenario.dir, 'session.jsonl'))
       const archiveRollbackConflict = scenario.manifest.workspace?.setup === 'wiki-archive-rollback-conflict'
-      const ownedWikiWorld = scenario.manifest.workspace?.setup === 'wiki-governance' || archiveRollbackConflict
+      const sourceIdentity = scenario.manifest.workspace?.setup === 'wiki-source-identity'
+      const ownedWikiWorld = scenario.manifest.workspace?.setup === 'wiki-governance' || archiveRollbackConflict || sourceIdentity
       await rm(spillRoot, { recursive: true, force: true })
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
       try {
@@ -670,7 +673,8 @@ describe('headless recorded-session snapshots', () => {
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
             if (ownedWikiWorld) {
-              const assertWorld = archiveRollbackConflict ? assertArchiveRollbackWorld : assertWikiWorld
+              const assertWorld = archiveRollbackConflict ? assertArchiveRollbackWorld
+                : sourceIdentity ? assertSourceIdentityWorld : assertWikiWorld
               assertWorld(cwd)
               const coldPatch = materializeProfilePatch(
                 join(composition.dir, 'cold.cordis.yml'), cwd, join(cwd, patchRoot), patches.length, dshBin,
@@ -696,6 +700,12 @@ describe('headless recorded-session snapshots', () => {
               if (archiveRollbackConflict) {
                 expect(cold.stderr).toContain('dsh: plugin tree failed to load: failed to apply loader entry knowledge-wiki (@deepseek-ai/dsh-knowledge-wiki):')
                 expect(cold.stderr).toContain(`promotion journal divergent state at ${join(await realpath(cwd), 'wiki/_candidates/ingest/concepts/archive-rollback-conflict.md')}`)
+              } else if (sourceIdentity) {
+                expect(cold.stderr).toBe('')
+                expect(JSON.parse(await readFile(join(cwd, '.dsh/wiki-source-identity-cold.json'), 'utf8'))).toEqual({
+                  actualColdResume: true, durablePrefixEqual: true, modelMessagesEqual: true, deniedTools: 5,
+                  retrievalCount: 0, injectionCount: 0, successfulUses: 0, utilityScore: 0,
+                })
               } else {
                 expect(cold.stderr).toBe('')
                 expect(JSON.parse(await readFile(join(cwd, '.dsh/wiki-snapshot-cold.json'), 'utf8'))).toMatchObject({
@@ -794,6 +804,7 @@ describe('headless recorded-session snapshots', () => {
       }
     }, scenario.manifest.workspace?.setup === 'wiki-governance'
       || scenario.manifest.workspace?.setup === 'wiki-archive-rollback-conflict'
+      || scenario.manifest.workspace?.setup === 'wiki-source-identity'
       ? 2 * LOADER_SMOKE_TEST_TIMEOUT_MS : LOADER_SMOKE_TEST_TIMEOUT_MS)
   }
 })

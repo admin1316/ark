@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { appendCandidateReviews, applyCandidateReview, recordCandidateVerification } from '../src/reviews.ts'
+import { prepareCanonicalTarget } from '../src/canonical-merge.ts'
 import { readKnowledgeEventLog, replayKnowledgeEvents } from '../src/knowledge-governance.ts'
 import { canonicalJson, readTrustedReceipt, sha256 } from '../src/verifier.ts'
 import type { CandidateTrial, WikiReviewItem } from '../src/types.ts'
@@ -33,7 +34,7 @@ function fixture(action: typeof actions[number]) {
   if (action !== 'Promote') {
     const target = join(wikiRoot, 'concepts', 'semantic-check.md')
     mkdirSync(dirname(target), { recursive: true })
-    writeFileSync(target, '# Existing canonical bytes\n')
+    writeFileSync(target, '---\ntitle: Existing\nstatus: canonical\n---\n\nA passing check does not measure useful reuse.\n')
   }
   appendCandidateReviews(reviewFile, root, 'fixture:semantic-check-only', [`wiki/${candidatePath}`])
   const row = (JSON.parse(readFileSync(reviewFile, 'utf8')) as WikiReviewItem[])[0]!
@@ -66,6 +67,15 @@ describe('semantic verification cannot create measured trial evidence', () => {
       verificationStatus: 'verified', lifecycle: 'candidate', retrievalHits: 0, successfulUses: 0, utilityScore: 0,
     })
     const before = files(item.root)
+    const prepared = prepareCanonicalTarget({
+      action, candidateContent: readFileSync(join(item.wikiRoot, item.row.candidatePath!), 'utf8'),
+      targetPath: item.row.targetPath!,
+      targetBefore: action === 'Promote' ? undefined : readFileSync(join(item.wikiRoot, item.row.targetPath!), 'utf8'),
+      reviewedAt: '2026-10-08T16:17:18.123Z', actor: 'human',
+    })
+    expect(typeof prepared).toBe('string')
+    expect(prepared).toContain('approved_by: human')
+    expect(files(item.root)).toEqual(before)
     expect(applyCandidateReview(authority, item.reviewFile, item.root, item.wikiRoot,
       join(item.root, 'archive'), row.id, action)).toBe(false)
     expect(files(item.root)).toEqual(before)

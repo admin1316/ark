@@ -25,7 +25,7 @@ import { createHash } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { parseFrontmatterArray, parseFrontmatterField } from './frontmatter-utils.ts'
 import type { CandidateVerification, WikiReviewItem } from './types.ts'
-import { deduplicateCandidateAgainstCanonical, mergeCandidateIntoCanonical, replaceCanonicalWithCandidate } from './canonical-merge.ts'
+import { prepareCanonicalTarget } from './canonical-merge.ts'
 import { decideCandidateGovernance, governancePolicyVersion, resolveGovernedWikiPath } from './governance-policy.ts'
 import {
   assertAbsolutePathInside,
@@ -1131,7 +1131,8 @@ export function applyCandidateReview(
   if (canonicalActions.has(action)) return false
 
   const now = new Date()
-  const today = now.toISOString().slice(0, 10)
+  const reviewedAt = now.toISOString()
+  const today = reviewedAt.slice(0, 10)
   const resolvedAt = now.getTime()
   let appliedPath = ''
   let previousCanonicalHash = ''
@@ -1147,12 +1148,6 @@ export function applyCandidateReview(
     const target = resolveCanonicalReviewPath(wikiRoot, item.targetPath as string, false)
     if (target === undefined) return false
     const canonicalBefore = readRegularFileBounded(target.absolutePath, 5 * 1024 * 1024).toString('utf8')
-    const approvedAt = new Date().toISOString()
-    const next = action === 'Merge'
-      ? mergeCandidateIntoCanonical(canonicalBefore, content, approvedAt)
-      : action === 'Deduplicate'
-        ? deduplicateCandidateAgainstCanonical(canonicalBefore, content, approvedAt, actor)
-        : replaceCanonicalWithCandidate(canonicalBefore, content, approvedAt)
     const canonicalHash = createHash('sha256').update(canonicalBefore).digest('hex')
     previousCanonicalHash = canonicalHash
     archivedCanonicalContent = canonicalBefore
@@ -1166,18 +1161,20 @@ export function applyCandidateReview(
       target.relativePath,
     )
     targetBefore = canonicalBefore
-    targetAfter = target.relativePath.startsWith('_evidence/')
-      ? stampEvidence(next.content, today, actor)
-      : next.content
+    targetAfter = prepareCanonicalTarget({
+      action, candidateContent: content, targetPath: target.relativePath,
+      targetBefore: canonicalBefore, reviewedAt, actor,
+    })
     targetAbsolutePath = target.absolutePath
     targetPath = target.relativePath
     appliedPath = target.relativePath
   } else if (action === 'Promote') {
     const target = resolveCanonicalReviewPath(wikiRoot, item.targetPath as string, true)
     if (target === undefined || pathEntryExists(target.absolutePath)) return false
-    targetAfter = target.relativePath.startsWith('_evidence/')
-      ? stampEvidence(content, today, actor)
-      : stampCanonical(content, today, actor)
+    targetAfter = prepareCanonicalTarget({
+      action, candidateContent: content, targetPath: target.relativePath,
+      targetBefore: undefined, reviewedAt, actor,
+    })
     targetAbsolutePath = target.absolutePath
     targetPath = target.relativePath
     appliedPath = target.relativePath
@@ -1203,7 +1200,7 @@ export function applyCandidateReview(
     resolvedAt,
   }
   const governanceEntry = {
-    timestamp: now.toISOString(),
+    timestamp: reviewedAt,
     policyVersion: governancePolicyVersion(),
     reviewId: reviewIdValue,
     action,
@@ -1286,7 +1283,7 @@ export function applyCandidateReview(
     id: transactionId,
     reviewId: reviewIdValue,
     candidateHash: actualHash,
-    createdAt: now.toISOString(),
+    createdAt: reviewedAt,
     action: canonicalActions.has(action) ? action : 'Archive',
     targetPath: item.targetPath ?? null,
     reviewHash: verifiedReceipt?.request.reviewHash ?? null,
@@ -1324,19 +1321,6 @@ function canonicalTarget(candidatePath: string): string | undefined {
     if (/^(concepts|entities|findings|research|methodology)\//u.test(rel)) return rel
   }
   return undefined
-}
-
-function stampCanonical(content: string, today: string, approvedBy: string): string {
-  let output = content
-  if (/^status:\s*/mu.test(output)) output = output.replace(/^status:\s*.*$/mu, 'status: canonical')
-  else output = output.replace(/^---\n/u, '---\nstatus: canonical\n')
-  output = output.replace(/^approved_at:\s*.*\n?/mu, '')
-  output = output.replace(/^approved_by:\s*.*\n?/mu, '')
-  return output.replace(/^---\n/u, `---\napproved_at: ${today}\napproved_by: ${approvedBy}\n`)
-}
-
-function stampEvidence(content: string, today: string, approvedBy: string): string {
-  return stampCanonical(content, today, approvedBy).replace(/^status:\s*canonical$/mu, 'status: evidence')
 }
 
 function appendGovernanceLog(reviewFile: string, entry: Record<string, unknown>): void {

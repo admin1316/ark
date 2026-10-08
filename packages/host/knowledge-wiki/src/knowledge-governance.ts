@@ -74,6 +74,22 @@ export interface KnowledgeState {
   readonly lastEventHash: string | null
 }
 
+/**
+ * Index authenticated source identities without choosing between competing owners.
+ * Terminal records retain ownership; this lookup does not normalize paths or grant access.
+ * @param records - Complete replayed records, including retired identities.
+ * @returns The unique record for each exact source string.
+ * @throws When two records claim the same source, before any projection or mutation.
+ */
+export function indexKnowledgeRecordsBySource(records: Iterable<KnowledgeRecord>): Map<string, KnowledgeRecord> {
+  const result = new Map<string, KnowledgeRecord>()
+  for (const record of records) {
+    if (result.has(record.source)) throw new Error('ambiguous knowledge source ownership')
+    result.set(record.source, record)
+  }
+  return result
+}
+
 /** Optional trusted verifier seam used to authenticate verified-event seals. */
 export interface KnowledgeEventAuthority {
   readonly authorityId: string

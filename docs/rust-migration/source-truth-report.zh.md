@@ -4,6 +4,8 @@
 
 **已审计源码快照。** candidate 正文召回修复与隐藏 Native3.1.5/build2026100822 绑定干净提交 `93040bb55cac3a0cfa1c928fb17bad351ed20a97`，审计日期为2026-10-08。[隐藏产物证据](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) 核验构建、源码和签名关系；该产物尚未启动。正在运行的隔离 app 仍为干净75。历史 Phase0 事实和 drift 保留；当前实现与真实任务证据各自标注明确的源码绑定。
 
+[后续源码证据](../../scripts/rust-migration/evidence/knowledge-source-identity-and-service-20261008.json) 将精确 source 归属拒绝、异步搜索后的重新校验和确定性的 canonical 字节预备绑定到父提交 `eb766d51eabdcc3bb62d358b4513c286dd454076` 及当前文件 hash。源码测试和组合 CLI 回放验证这些合约，不更新两个 Native 产物，也不授予 trial authority。独立服务测量使用修改前的干净父提交，不能认证这些改动的性能。用户可见能力与学习结论仍需真实 Ark 对话结果和独立配对评估。
+
 [局部补丁记录](../../scripts/rust-migration/evidence/candidate-progress-e2910207-20261008.json) 将后续 Archive 删除回滚检查和作用域内空 review 提示绑定到父提交 `e29102076f71099fbba4019aeb9a91b35c377c03` 及精确文件 hash。正在运行的75和隐藏315均不包含该补丁。候选 settings/profile 准备与只读空闲基线属于独立观察，不能证明 app 已启用、当前仍然空闲、界面验收或实测学习效果。
 
 **审计目标。** 仓库 `/Users/hui/ark-test/ark-github-main-20261008`，分支 `codex/ark-rust-knowledge-20261008`。观察到的草稿 [PR39](https://github.com/admin1316/ark/pull/39) 属于另一分支，head 为 `8de9f3b9549f24563c04f4867301f74d0d6c53eb`，其检查不能认证此候选。审计前已读取引用的 mission 文本。[源码绑定的候选证据](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) 记录本地构建、凭据复用和历史真实任务失败；当前源码的学习、界面对照、回滚行为和 CI 验收仍未完成。

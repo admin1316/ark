@@ -12,9 +12,11 @@ active Ark 源码已经保存 Wiki candidate、评审、verifier receipt 与 uti
 
 知识记录显式保存 provenance、trust、authority、evidence、verification、scope、ACL、过期时间、冲突和 utility 字段。hash 链项目日志记录 observation、candidate、verification、rejection、retrieval、injection、conflict、expiry、promotion 和 rollback。candidate 生命周期事件携带完整记录；晋级需要独立验证、评审和独立实测的 trial 证据。模型可见 Wiki 工具追加 `knowledge/retrieved` 和 `knowledge/injected` session 事件，事件包含调用身份、scope、结果 hash 和可回放 JSON 值。未验证、过期、冲突、越界、ACL 拒绝或低置信度记录会 fail closed。
 
-未签名的接纳不能替换已有 identity，也不能赋予 verified trust。验证使用经过认证的完整记录，拒绝被改写的先前接纳。普通模型正文要求 canonical 生命周期；语义验证通过的 candidate 不能在缺少授权 trial 时进入页面召回。经过认证的 candidate 评审元数据继续使用语义 receipt 和实际字节校验，使评审可用而不向普通召回开放正文。Native 预览和 Archive 保留原有规则。历史 canonical 接纳绑定最终 content hash；模型投影在搜索、embedding、图谱派生、列表或页面读取前检查实际文件字节。检索和 utility 回放把路径解析为同一个受治理 identity，修改展示投影不能重置治理计数。这些绑定防止未签名 hash 链或新算出的文件 hash 冒充验证。
+未签名的接纳不能替换已有 identity，也不能赋予 verified trust。验证使用经过认证的完整记录，拒绝被改写的先前接纳。普通模型正文要求 canonical 生命周期；语义验证通过的 candidate 不能在缺少授权 trial 时进入页面召回。经过认证的 candidate 评审元数据继续使用语义 receipt 和实际字节校验，使评审可用而不向普通召回开放正文。Native 预览和 Archive 保留原有规则。历史 canonical 接纳绑定最终 content hash；模型投影在搜索、embedding、图谱派生、列表或页面读取前检查实际文件字节。完整回放中的精确 source 字符串必须只有一个经过认证的 identity，terminal 记录也参与检查。竞争 identity 会拒绝模型投影、Native 搜索与页面读取，以及受治理的 utility 或 outcome 更新；插入顺序和旧展示计数不能选择 owner。Source 字符串保留原有 URI 语义，不做文件系统别名规范化。搜索在异步工作后重新回放当前治理状态，模型搜索在记录检索前重新检查受路径约束的当前字节。这些绑定防止未签名 hash 链或新算出的文件 hash 冒充验证。
 
 语义验证检查不代表成功 trial。当前 receipt 合约无法认证实测 trial 收益，因此 Promote、Merge、Replace 和 Deduplicate 在修改前拒绝；prepared canonical WAL 恢复同样拒绝，包括标记为 Archive 的 canonical 操作。正向 UI 反馈与声称来自 evaluator 的标签保留为观察，不能增加受治理的 successful-use 计数或维持保留。纠正保留负向 utility 效果。Archive、Skip、advisory resolution 和 rollback 保留现有 authority 与事务要求。
+
+Canonical 目标预备一次性捕获 candidate 正文、已解析目标路径、精确原始状态或显式不存在、评审时间和 actor。同一纯转换保留已有的各操作时间戳与原始日期戳语义。规范化正文比较用于选择保留内容，不证明字节相同或验证通过。预备不认证这些输入，也不授予 canonical 资格；apply 与 recovery 的拒绝规则保持不变。
 
 Candidate identity 包含路径和内容 hash。字节变化会创建独立的评审 revision；再次观察相同字节不能重开已解决的评审，也不能覆盖已经认证的 identity。
 
@@ -37,6 +39,8 @@ checkout 包含隔离的 [knowledge-search shadow crate](../../../../rust/knowle
 Wiki 事件日志可审计、可回放。prepared canonical journal 会阻止初始化或项目切换并保留证据，不会在缺少实测 trial authority 时继续提交。Archive 恢复认证操作身份并只记录一次终态 rejection；单独的 committed 标记不能认证文件状态已提交。历史接纳 fixture 用于检查读取边界，不会启用当前晋级。新增 session event 不改变 session format version。没有 calling session 的工具调用仍可服务非 Agent caller，但模型可见的 Agent 调用不能绕过 session event 记录。Rust enforce 保持 deferred，直到具体候选登记 corpus、边界和三组证据。
 
 无需密钥的 headless 场景通过普通 runtime 子进程运行完整 Wiki 工具组合与冷 session 回放。源码 service 通过 tsconfig paths 解析，构建后的 service 通过 package exports 解析。源码拥有的 Archive、seed 和 verifier fixture producer 与这些 service 分开。稳定 transcript 捕获与受认证的可变 Wiki 状态断言分开；fixture seal 不授权当前 canonical 晋级。`examples` 作为已声明的 workspace，使构建后的依赖通过普通安装解析，不使用临时 resolver link。
+
+Source 归属回归覆盖真实 Loader 工具、完整 Wiki 文件状态不变、冷 session 回放，以及异步搜索期间的纠正。它们不覆盖文件系统别名、外部并发写入、Native 原始 graph/list 投影，或撤回已经发送给 provider 的内容。冻结输入预备测试建立精确字节的确定性，不启用 canonical 操作。
 
 测试 authority 只验证确定性的认证与拒绝行为。独立评估者密钥分离、原生配置、实际 trial 收益与真实 provider 的配对学习证据仍未验证；验证结果通过和 UI 反馈不能证明修复规则被正确复用。
 

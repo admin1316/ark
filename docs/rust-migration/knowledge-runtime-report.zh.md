@@ -4,6 +4,8 @@
 
 **已审计快照：** 召回修复与隐藏 Native 3.1.5/build 2026100822 绑定干净提交 `93040bb55cac3a0cfa1c928fb17bad351ed20a97`，日期为 2026-10-08。[产物检查](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) 已通过，该 app 尚未启动。正在运行的 app 仍为干净75；其[真实发票任务](../../scripts/rust-migration/evidence/current75-real-task-20261008.json) 算术正确，但只返回 JSON 的要求失败。构建、任务和学习证据各自保留源码身份。
 
+[源码与服务记录](../../scripts/rust-migration/evidence/knowledge-source-identity-and-service-20261008.json) 区分两项后续观察。当前源码拒绝同一精确 source 的竞争认证 owner，在异步搜索后重新检查治理状态，并冻结 canonical 预备输入，同时不启用 canonical 写入。独立的干净父提交服务运行在四个新建源码进程中完成172次调用；追加1,000条 neutral 日志事件后，24页与240页的描述性 p50 分别增加118.688 ms和150.467 ms。顺序进程运行、oracle 读取的预热与缺少组件分析限制了归因。这些观察不证明 Rust 收益、Ark 对话能力或学习提升。
+
 [正式 profile 字节比较](../../scripts/rust-migration/profile-byte-drift.json) 记录源码与正式产物的 drift。[75候选构建证据](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) 将隔离 home 的安装 profile 绑定到源码。产物相同与凭据复用不能认证完整 Native 行为或学习效果。
 
 ## What the model can actually see

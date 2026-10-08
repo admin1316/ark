@@ -75,9 +75,9 @@ kind: "package-reference"
 
 ### 受治理的页面读取
 
-模型 Wiki 投影要求已登记的项目、调用 session 和已配置的 verifier authority。未签名的 observation 与 candidate 保持低信任；verified 事件认证完整记录，包括正文、来源、scope、ACL 和过期时间。普通模型页面召回要求 canonical 生命周期和经过认证的实际字节；语义验证通过不能单独开放 candidate 正文。经过 receipt 和当前字节校验的 candidate 评审元数据仍可查看，Native 预览与 Archive 保留原有规则。历史 canonical 接纳用 SHA-256 绑定实际页面字节。搜索与图谱在派生结果或发送 embedding 输入前检查可读字节；被修改或未绑定的页面会 fail closed。检索和结果事件使用已接纳的知识 ID，受治理的 utility 计数由日志回放得到。正面 UI 反馈仍被记录，但不增加成功使用次数或保留收益；纠正反馈降低 utility 并拒绝复用。
+模型 Wiki 投影要求已登记的项目、调用 session 和已配置的 verifier authority。未签名的 observation 与 candidate 保持低信任；verified 事件认证完整记录，包括正文、来源、scope、ACL 和过期时间。普通模型页面召回要求 canonical 生命周期和经过认证的实际字节；语义验证通过不能单独开放 candidate 正文。经过 receipt 和当前字节校验的 candidate 评审元数据仍可查看，Native 预览与 Archive 保留原有规则。历史 canonical 接纳用 SHA-256 绑定实际页面字节。搜索与图谱在派生结果或发送 embedding 输入前检查可读字节；被修改或未绑定的页面会 fail closed。每个受治理的 source 投影要求精确 source 字符串只有一个经过认证的 owner，terminal 记录也参与检查；竞争 identity 会 fail closed，不能回退到旧展示计数。检索和结果事件使用已接纳的知识 ID，受治理的 utility 计数由日志回放得到。搜索在异步工作后重新检查当前治理状态，模型搜索还会在返回前重新检查受路径约束的页面字节。正面 UI 反馈仍被记录，但不增加成功使用次数或保留收益；纠正反馈降低 utility 并拒绝复用。
 
-语义验证保留经过认证的检查结果，不生成 trial。当前 receipt 契约无法认证实测 trial 收益，因此 Promote、Merge、Replace 与 Deduplicate 在写入前拒绝；对应的 prepared WAL 也拒绝前向恢复。prepared canonical WAL 因而会阻止初始化或项目切换恢复，同时保留证据且不认证完成。Archive、Skip 与 rollback 保留原有规则。
+语义验证保留经过认证的检查结果，不生成 trial。当前 receipt 契约无法认证实测 trial 收益，因此 Promote、Merge、Replace 与 Deduplicate 在写入前拒绝；对应的 prepared WAL 也拒绝前向恢复。prepared canonical WAL 因而会阻止初始化或项目切换恢复，同时保留证据且不认证完成。Archive、Skip 与 rollback 保留原有规则。Canonical 目标预备是纯转换，输入为已捕获的 candidate 正文、已解析目标路径、精确目标原始状态或显式不存在、评审时间和 actor。相同输入生成相同字节；预备不授予 trial 或晋级 authority，也不写入文件或日志。
 
 Archive 恢复在修改前校验签名操作的角色、candidate/review/governance 路径、归档字节、已解决的 review 和 staging 身份。恢复会将原始 Archive 或 Skip 处理结果记为一条 rejected 生命周期事件，包括已记录 committed 标记但尚未追加事件的情况。缺失事件的修复要求文件与已提交的 poststate 字节完全一致；状态偏离或追加失败时保留 WAL，供审查恢复或重试。重复恢复不会重复生命周期事件。
 

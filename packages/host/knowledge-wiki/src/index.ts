@@ -49,6 +49,7 @@ import {
   knowledgeSha256,
   readKnowledgeEventLog,
   replayKnowledgeEvents,
+  indexKnowledgeRecordsBySource,
   updateKnowledgeUtility,
 } from './knowledge-governance.ts'
 import { htmlToMarkdown } from './html-clip.ts'
@@ -805,7 +806,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   private modelRecords(projectRoot: string): Map<string, KnowledgeRecord> {
     if (this.verifierAuthority === undefined) throw new Error('knowledge verifier authority is unavailable')
     const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(projectRoot), this.verifierAuthority))
-    return new Map([...state.records.values()].map(record => [record.source, record]))
+    return indexKnowledgeRecordsBySource(state.records.values())
   }
 
   private modelRecordAllowed(record: KnowledgeRecord | undefined, scope: KnowledgeAccessContext): boolean {
@@ -893,11 +894,18 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         this.ctx.logger.warn(`[knowledge-wiki] Rust search candidate shadow failed: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
-    this.recordKnowledgeRetrieval(allowed.map(hit => hit.path), project.projectRoot)
-    return allowed.map(hit => ({
+    const currentRecords = this.modelRecords(project.projectRoot)
+    const currentHits = allowed.filter((hit) => {
+      const record = currentRecords.get(hit.path)
+      if (!this.modelRecallAllowed(record, scope)) return false
+      const safe = resolveSafePath(project.wikiRoot, hit.path, false)
+      return this.modelPageAllowed(record, scope, readPage(project.wikiRoot, safe.relativePath))
+    })
+    this.recordKnowledgeRetrieval(currentHits.map(hit => hit.path), project.projectRoot)
+    return currentHits.map(hit => ({
       path: hit.path,
       score: hit.score,
-      provenance: this.modelProvenance(records.get(hit.path) as KnowledgeRecord),
+      provenance: this.modelProvenance(currentRecords.get(hit.path) as KnowledgeRecord),
     }))
   }
 
@@ -1020,7 +1028,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   private recordKnowledgeRetrieval(paths: string[], projectRoot = this.currentRoot): void {
     if (paths.length === 0) return
     const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(projectRoot), this.verifierAuthority))
-    const governedByPath = new Map([...state.records.values()].map(record => [record.source, record]))
+    const governedByPath = indexKnowledgeRecordsBySource(state.records.values())
     const records = this.readUtility(projectRoot)
     const now = new Date().toISOString()
     for (const path of [...new Set(paths)]) {
@@ -1096,6 +1104,13 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   async search(request: { query: string; topK?: number }): Promise<WikiSearchHit[]> {
     const context = this.captureProjectContext()
     const topK = request.topK ?? 8
+    try {
+      const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(context.projectRoot), this.verifierAuthority))
+      indexKnowledgeRecordsBySource(state.records.values())
+    } catch (error) {
+      this.ctx.logger.warn(`[knowledge-wiki] knowledge replay rejected search: ${error instanceof Error ? error.message : String(error)}`)
+      return []
+    }
     const rawHits = await this.snapshots.get(context.wikiRoot, `search:${topK}:${request.query}`, async () =>
       hybridSearch(context.wikiRoot, request.query, await this.resolveApiKey(), topK, (diagnostic) => {
         // Semantic search is optional. Report the degradation once, then keep serving
@@ -1104,10 +1119,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         this.embeddingWarningLogged = true
         this.ctx.logger.warn(`[knowledge-wiki] semantic search unavailable, using keyword results: ${diagnostic.reason}`)
       }))
-    let hits = rawHits
+    let hits: WikiSearchHit[]
     try {
       const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(context.projectRoot), this.verifierAuthority))
-      const governedByPath = new Map([...state.records.values()].map(record => [record.source, record]))
+      const governedByPath = indexKnowledgeRecordsBySource(state.records.values())
       hits = rawHits.filter((hit) => {
         const governed = governedByPath.get(hit.path)
         return governed === undefined || knowledgeInjectionDecision(governed, {
@@ -1117,7 +1132,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       })
     } catch (error) {
       this.ctx.logger.warn(`[knowledge-wiki] knowledge replay rejected search: ${error instanceof Error ? error.message : String(error)}`)
-      hits = []
+      return []
     }
     this.recordKnowledgeRetrieval(hits.map(hit => hit.path), context.projectRoot)
     return hits.map(hit => ({ path: hit.path, score: hit.score }))
@@ -1131,7 +1146,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   knowledgeUtility(): Promise<KnowledgeUtilityRecord[]> {
     return promiseFromSync(() => {
       const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(), this.verifierAuthority))
-      const governedByPath = new Map([...state.records.values()].map(record => [record.source, record]))
+      const governedByPath = indexKnowledgeRecordsBySource(state.records.values())
       return Object.values(this.readUtility()).map((record) => {
         const governed = governedByPath.get(record.path)
         return governed === undefined ? record : {
@@ -1158,7 +1173,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   }): Promise<number> {
     return promiseFromSync(() => {
       const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(), this.verifierAuthority))
-      const governedByPath = new Map([...state.records.values()].map(record => [record.source, record]))
+      const governedByPath = indexKnowledgeRecordsBySource(state.records.values())
       const records = this.readUtility()
       const now = new Date().toISOString()
       let updated = 0
@@ -1248,7 +1263,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         let governed: KnowledgeRecord | undefined
         try {
           const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(), this.verifierAuthority))
-          governed = [...state.records.values()].find(record => record.source === safe)
+          governed = indexKnowledgeRecordsBySource(state.records.values()).get(safe)
           if (governed !== undefined && !knowledgeInjectionDecision(governed, {
             projectId: this.currentRoot,
             workspaceId: this.currentRoot,

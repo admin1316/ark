@@ -15,7 +15,7 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -268,6 +268,63 @@ describe('Knowledge Wiki real keyless YAML Loader composition', () => {
     expect(durable.events.filter(event => event.type === 'knowledge/injected' && event.data.tool === 'wiki_read'))
       .toHaveLength(3)
     expect(calls).toEqual({ verifier: 1, credentials: 0, llm: 0 })
+  }, 30_000)
+
+  it.each([false, true])('denies competing source owners through real composed tools and restart (reverse=%s)', async (reverse) => {
+    root = await mkdtemp(join(tmpdir(), 'wiki-loader-source-identity-'))
+    const projectRoot = root
+    const wikiRoot = join(projectRoot, 'wiki')
+    for (const knowledgeId of reverse ? ['second-owner', 'first-owner'] : ['first-owner', 'second-owner']) {
+      seedHistoricalCanonicalKnowledge({
+        projectRoot, wikiRoot, path: HISTORICAL_READ_PATH, content: HISTORICAL_READ_BYTES, knowledgeId,
+      })
+    }
+    const calls: ExternalBoundaryCalls = { verifier: 0, credentials: 0, llm: 0 }
+    let ctx = await boot(projectRoot, calls)
+    let owner = await ctx.agents.create({
+      sessionId: SessionId('loader-source-identity-owner'), meta: { cwd: projectRoot },
+    })
+    owner.agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Check that competing knowledge owners cannot supply a tool result.' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    const retainedState = () => ['wiki', '.llm-wiki', 'jiuzhang-tarballs'].map((name) => {
+      const directory = join(projectRoot, name)
+      return {
+        name, exists: existsSync(directory),
+        entries: existsSync(directory) ? readdirSync(directory, { recursive: true, withFileTypes: true }).map((entry) => {
+          const path = join(entry.parentPath, entry.name)
+          return { path: relative(directory, path), directory: entry.isDirectory(),
+            content: entry.isFile() ? readFileSync(path) : undefined }
+        }).sort((left, right) => left.path.localeCompare(right.path)) : [],
+      }
+    })
+    const before = retainedState()
+    for (let pass = 0; pass < 2; pass++) {
+      for (const [name, args] of [
+        ['wiki_read', { path: HISTORICAL_READ_PATH }],
+        ['wiki_search', { query: 'Historical Loader retention' }],
+        ['wiki_files', {}], ['wiki_graph', {}], ['wiki_reviews', {}],
+      ] as const) {
+        const result = await execute(ctx, owner.agent, name, args, `ambiguous-${pass}-${name}`)
+        expect(result.isError).toBe(true)
+        expect(JSON.stringify(result.content)).toContain('ambiguous knowledge source ownership')
+        expect(JSON.stringify(result.content)).not.toContain(HISTORICAL_READ_BYTES)
+      }
+      expect(owner.agent.session.events.filter(event => event.type === 'knowledge/retrieved'
+        || event.type === 'knowledge/injected')).toEqual([])
+      expect(retainedState()).toEqual(before)
+      await ctx.sessions.flush(owner.agent.session)
+      expect((await ctx.sessionPersistence.load(owner.agent.id)).events).toEqual(owner.agent.session.events)
+      if (pass === 0) {
+        const resumeSessionId = owner.agent.id
+        await ctx.fiber.dispose()
+        ctx = await boot(projectRoot, calls)
+        owner = await ctx.agents.resume({ resumeSessionId, agentOptions: {} })
+      }
+    }
+    expect(retainedState()).toEqual(before)
+    expect(calls).toEqual({ verifier: 0, credentials: 0, llm: 0 })
   }, 30_000)
 
   it('preserves a recreated candidate when composed Archive rollback and cold recovery reject divergence', async () => {
