@@ -59,7 +59,7 @@ This has three correctness problems:
 
 - A semantic hit outside the lexical top 15 can never enter the result.
 - Per-query max normalization is unstable and makes scores from different queries incomparable.
-- Negative, non-finite, or mismatched embedding vectors are not fully rejected at the API boundary; a negative cosine can be suppressed by the `max` initialized to zero.
+- The embedding boundary now rejects empty, missing, mismatched-dimension, and non-finite vectors. The remaining ranking issue is that a negative cosine is clamped to zero and the `max`-normalized blend still cannot introduce a page outside the lexical candidate list.
 
 **Recommended replacement to test:** over-fetch independent lexical and vector lists, then fuse ranks rather than raw scores:
 
@@ -76,7 +76,7 @@ Cosine itself is standard:
 cos(a,b) = (a · b) / (||a||₂ ||b||₂)
 ```
 
-Keep it, but require fixed dimension, finite values, and explicit zero-vector handling. Pre-normalized vectors can use a dot product. A persistent vector index or an ANN structure is needed before semantic retrieval can contribute new candidates; HNSW is a possible later choice for a large corpus, not a reason to add Rust now.
+Keep it, with the current fixed-dimension, finite-value, and explicit zero-vector checks. Pre-normalized vectors can use a dot product. A persistent vector index or an ANN structure is needed before semantic retrieval can contribute new candidates; HNSW is a possible later choice for a large corpus, not a reason to add Rust now.
 
 ### 2.1 Benchmark caveats
 
@@ -121,7 +121,7 @@ Keep the hard safety gates, independent evidence, and conflict rejection. If lab
 
 | Priority | Change | Why | Gate |
 | --- | --- | --- | --- |
-| P0 | Validate vector dimensions/finite values; record semantic candidate hits; define a complete hybrid candidate DTO | Correctness and observability | malformed/negative/NaN/empty vector tests plus differential replay |
+| P0 | Record semantic candidate hits and define a complete hybrid candidate DTO | Correctness and observability after vector-boundary validation | semantic-candidate and malformed-vector regression tests plus differential replay |
 | P1 | BM25F shadow with title/alias/body fields | Removes `1.5^m` and field-length coupling | Recall@K, MRR, nDCG@K, no regression on exact aliases |
 | P1 | RRF shadow over independent lexical/vector over-fetch | Avoids unstable score normalization and lexical-only recall | judged queries, per-language and per-query-type slices |
 | P1 | Repair graph weights, linkCount, and cohesion | Fixes contract drift before changing community math | graph fixture invariants and deterministic replay |
@@ -133,6 +133,8 @@ The Rust shadow should first implement the agreed BM25F/RRF contract only after 
 ## Required experiment
 
 Build a versioned judged set from real candidate Ark queries: at least 50 queries spanning Chinese, English, aliases, exact identifiers, long explanations, empty/stop-word queries, and cross-language queries. Each query needs independently reviewed relevance labels and a query type. Compare current BM25, BM25F, BM25+, current hybrid, and RRF using Recall@5/10, MRR, nDCG@5/10, empty-result rate, stale/false recall, p50/p95 latency, embedding calls, and memory. Keep a frozen corpus hash and replay all candidates through the same governance filters. A formula may move from shadow to candidate Ark only when it improves the target slices without violating safety or latency gates.
+
+An offline smoke scaffold is available at `scripts/rust-migration/search-formula-experiment.ts` with tests in `search-formula-experiment.spec.ts`. Run `pnpm exec tsx scripts/rust-migration/search-formula-experiment.ts` to replay one frozen, network-free fixture through current BM25, BM25F, BM25+, and RRF and obtain Recall@5, MRR, nDCG@5, and empty-result rate plus the corpus hash. The fixture is only a reproducibility and plumbing check; its perfect Recall@5 does not justify a production formula change. Replace it with the independently reviewed 50-query Ark judged set before comparing quality or promoting a candidate.
 
 ## References
 

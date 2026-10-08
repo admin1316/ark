@@ -59,7 +59,7 @@ S(d) = 0.7 · BM25(d) / max(BM25) +
 
 - lexical 前 15 之外的 semantic hit 永远不能进入结果。
 - 每个 query 的 max normalization 不稳定，跨 query 分数不可比。
-- 向量维度、有限值和负 cosine 没有完整的边界约束；负相似度可能被从 0 开始的 max 处理吞掉。
+- 现在 embedding 边界会拒绝空向量、缺失向量、维度不一致和非有限值。剩下的排序问题是负 cosine 会被截断为 0，而且 max 归一化混合仍不能让 lexical 候选集合之外的页面进入结果。
 
 **建议验证：** lexical 与 vector 各自 over-fetch，再按排名融合：
 
@@ -76,7 +76,7 @@ Cosine 本身是标准公式：
 cos(a,b) = (a · b) / (||a||₂ ||b||₂)
 ```
 
-保留它，但要求固定维度、每个值 finite，并显式处理零向量。向量预归一化后可以使用 dot product。只有在有持久向量索引或 ANN 时，semantic 才能真正贡献 lexical 候选之外的新页面；HNSW 可以作为大语料的后续选择，现在没有理由为它引入 Rust。
+保留它，当前已经有固定维度、finite 值和零向量检查。向量预归一化后可以使用 dot product。只有在有持久向量索引或 ANN 时，semantic 才能真正贡献 lexical 候选之外的新页面；HNSW 可以作为大语料的后续选择，现在没有理由为它引入 Rust。
 
 ### 2.1 benchmark 方法学限制
 
@@ -121,7 +121,7 @@ U = (2 · successfulUses - 3 · userCorrections) /
 
 | 优先级 | 变更 | 原因 | 门禁 |
 | --- | --- | --- | --- |
-| P0 | 校验向量维度/finite 值；记录 semantic candidate hits；定义完整 hybrid DTO | 先修正确性和可观测性 | malformed/negative/NaN/empty vector 测试与 differential replay |
+| P0 | 记录 semantic candidate hits；定义完整 hybrid DTO | 向量边界已经校验，接着补可观测性 | semantic-candidate 与 malformed-vector 回归测试，以及 differential replay |
 | P1 | BM25F shadow：title/alias/body 分字段 | 去掉 `1.5^m` 和字段长度耦合 | Recall@K、MRR、nDCG@K、exact alias 不回退 |
 | P1 | 独立 lexical/vector over-fetch 后做 RRF shadow | 避免不稳定分数归一化和 lexical-only recall | judged queries，按语言和 query 类型切片 |
 | P1 | 修复 graph weight、linkCount、cohesion | 先消除契约漂移 | graph fixture invariant 与 deterministic replay |
@@ -133,6 +133,8 @@ Rust shadow 应在 TypeScript shadow 稳定后，才实现约定好的 BM25F/RRF
 ## 必须做的实验
 
 从真实候选 Ark query 建立带版本的 judged set：至少 50 条，覆盖中英文、别名、精确标识符、长解释、空/stop-word query 和跨语言 query；每条有独立 relevance label 与 query 类型。比较 current BM25、BM25F、BM25+、current hybrid、RRF，指标包括 Recall@5/10、MRR、nDCG@5/10、空结果率、stale/false recall、p50/p95 延迟、embedding 调用次数和内存。固定 corpus hash，并让所有候选通过同一治理过滤。只有在目标切片提升且不违反安全/延迟门禁时，公式才可从 shadow 进入候选 Ark。
+
+离线 smoke scaffold 位于 `scripts/rust-migration/search-formula-experiment.ts`，测试位于 `search-formula-experiment.spec.ts`。运行 `pnpm exec tsx scripts/rust-migration/search-formula-experiment.ts`，即可在无网络条件下用一个固定 fixture 重放 current BM25、BM25F、BM25+ 和 RRF，并输出 Recall@5、MRR、nDCG@5、空结果率以及 corpus hash。这个 fixture 只用于确认可复现性和管线连通，Recall@5 全部为 1 不足以支持生产公式替换；在比较质量或晋级候选前，必须替换为独立审阅的 50 条 Ark judged set。
 
 ## 参考
 
