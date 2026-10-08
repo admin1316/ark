@@ -80,7 +80,7 @@ process.stdin.on('end', () => {
 }
 
 function alteredRequest(patch: Record<string, unknown>): ReturnType<typeof request> {
-  return { ...request(), ...patch } as ReturnType<typeof request>
+  return { ...request(), ...patch }
 }
 
 describe('rust knowledge-search candidate boundary', () => {
@@ -340,7 +340,7 @@ process.stdin.on('end', () => process.stdout.write('x'.repeat(16 * 1024 * 1024 +
     const pending = runRustKnowledgeSearchCandidate(request(), expected, {
       mode: 'shadow', binaryPath: hanging, timeoutMs: 5000,
     }, controller.signal)
-    setTimeout(() => controller.abort(), 50)
+    setTimeout(() => { controller.abort() }, 50)
     const result = await pending
     expect(result.observation).toMatchObject({ status: 'fallback', aborted: true, timedOut: false })
   })
