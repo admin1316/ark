@@ -2,7 +2,7 @@
 
 [English](source-truth-report.md) | 中文
 
-**当前源码快照。** 本报告已按 GitHub 派生 checkout 的当前提交 `c26c3a49fd75d5a2f438fed0b278b9a8a37c3377`（`docs: record Ark model shadow smoke`）刷新，审计日期为 2026-10-08。早期 `b8adf5a7ec` 内容仍可在 Git 历史中作为历史 Phase 0 基线查阅，但不能再作为当前源码身份。
+**当前源码快照。** 本报告已按 GitHub 派生 checkout 的当前提交 `70977b3124e008838b3e22b9b04e824ffa82f574`（`fix: harden hybrid embedding boundaries`）刷新，审计日期为 2026-10-08。早期 `b8adf5a7ec` 内容仍可在 Git 历史中作为历史 Phase 0 基线查阅，但不能再作为当前源码身份。
 
 **审计目标。** 仓库 `/Users/hui/ark-test/ark-github-main-20261008`，分支 `codex/ark-rust-knowledge-20261008`，远端 PR 为 `https://github.com/admin1316/ark/pull/39`。审计前已读取任务引用的 mission 文本 `/Users/hui/.codex/attachments/3a68ae30-3b77-4be2-96be-2c65920c5ec6/pasted-text-1.txt`。本次刷新没有修改正式 Ark；候选运行证据单独记录。
 
@@ -33,7 +33,7 @@ The checked-out source has a package-backed `KnowledgeWikiService` with a persis
 
 ## Runtime evidence
 
-The packaged Ark app embeds byte-identical copies of `integrations/jiuzhang/profile/package.json` and `cordis.patch.yml` (SHA-256 `7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e` and `b24765d09a0441e4fb489122ad2c5543f1fa9c9dbf21c16fa0343797599004ab`, respectively). The installed product Harness profile at `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang/` has the same bundle list and patch contents. The source checkout is newer than the packaged app: the app provenance records source commit `4ef63040883f497857cff71ab0e82fd07ac123fa` in `ArkProvenance/source-and-pack.json`, while the current checkout is `c26c3a49fd75d5a2f438fed0b278b9a8a37c3377`; packaged-runtime behavior must therefore be attributed to the recorded app commit, not silently to the checkout.
+The packaged Ark app embeds byte-identical copies of `integrations/jiuzhang/profile/package.json` and `cordis.patch.yml` (SHA-256 `7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e` and `b24765d09a0441e4fb489122ad2c5543f1fa9c9dbf21c16fa0343797599004ab`, respectively). The installed product Harness profile at `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang/` has the same bundle list and patch contents. The source checkout is newer than the packaged app: the app provenance records source commit `4ef63040883f497857cff71ab0e82fd07ac123fa` in `ArkProvenance/source-and-pack.json`, while the current checkout is `70977b3124e008838b3e22b9b04e824ffa82f574`; packaged-runtime behavior must therefore be attributed to the recorded app commit, not silently to the checkout.
 
 The production Harness profile contains `knowledge-wiki` with `ARK_WIKI_ROOT`/`ARK_MAIN_ROOT`, `credential: DEEPSEEK_API_KEY`, `ownedStageExecutor: true`; it overrides `session-query-sqlite` to `path: ':memory:'`, `openAt: never`, and disables OTel ([`integrations/jiuzhang/profile/cordis.patch.yml:27-46`](../../integrations/jiuzhang/profile/cordis.patch.yml)). The production Knowledge root `/Users/hui/Library/Application Support/Ark/Knowledge` contains `purpose.md`, `schema.md`, `wiki/index.md`, `wiki/log.md`, and `.llm-wiki/workspaces.json`; no `knowledge.jsonl`, `vectors.json`, or candidate pages were observed. The `knowledge-wiki-recall` identifier was absent from the audited source. This is a storage observation, not proof that a fresh future run cannot create candidates.
 

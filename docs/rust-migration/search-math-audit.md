@@ -2,7 +2,7 @@
 
 English | [中文](search-math-audit.zh.md)
 
-**Snapshot.** This audit describes checkout `c7f8e82f` on 2026-10-08. It is a design and verification record; it does not change the production formula or enable Rust enforcement.
+**Snapshot.** This audit describes source code at `70977b31` on 2026-10-08. It is a design and verification record; it does not change the production formula or enable Rust enforcement.
 
 ## Verdict
 

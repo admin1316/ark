@@ -4,11 +4,11 @@
 
 This reference records the Rust migration decision from the checked-out source tree. It is evidence for planning and review; it does not enable a Rust provider or change an existing wire contract.
 
-**当前快照：** 矩阵已按 checkout 提交 `c26c3a49fd75d5a2f438fed0b278b9a8a37c3377` 于 2026-10-08 刷新。正式 Ark 包未修改，活动生产 profile 仍只使用 TypeScript。
+**当前快照：** 矩阵已按 checkout 提交 `70977b3124e008838b3e22b9b04e824ffa82f574` 于 2026-10-08 刷新。正式 Ark 包未修改，活动生产 profile 仍只使用 TypeScript。
 
 ## Source evidence
 
-2026-10-07 用 `git ls-tree` 检查时，历史 source-truth 基线 `b8adf5a7ec9c22c3f1c7958821af825bd7821d7a` 和 GitHub `origin/main` 的 `d382723905742f2b87401ad444d02756f5cb229b` 都没有 `Cargo.toml` 或 Rust 源文件（`*.rs`）。当前 checkout `c26c3a49fd75d5a2f438fed0b278b9a8a37c3377` 在这次基线之后新增了一个隔离且不用于生产的 shadow crate：[`rust/knowledge-search-shadow`](../../rust/knowledge-search-shadow)。现有 native 实现是 C11 Landlock launcher，位于 [`native/landlock-run/packages/entry/src/main.c`](../../native/landlock-run/packages/entry/src/main.c)，通过 TypeScript 入口模块 [`native/landlock-run/packages/entry/src/index.ts`](../../native/landlock-run/packages/entry/src/index.ts) 暴露；它是进程启动与文件系统隔离探针，不属于下面的 Rust 内核候选。
+2026-10-07 用 `git ls-tree` 检查时，历史 source-truth 基线 `b8adf5a7ec9c22c3f1c7958821af825bd7821d7a` 和 GitHub `origin/main` 的 `d382723905742f2b87401ad444d02756f5cb229b` 都没有 `Cargo.toml` 或 Rust 源文件（`*.rs`）。当前 checkout `70977b3124e008838b3e22b9b04e824ffa82f574` 在这次基线之后新增了一个隔离且不用于生产的 shadow crate：[`rust/knowledge-search-shadow`](../../rust/knowledge-search-shadow)。现有 native 实现是 C11 Landlock launcher，位于 [`native/landlock-run/packages/entry/src/main.c`](../../native/landlock-run/packages/entry/src/main.c)，通过 TypeScript 入口模块 [`native/landlock-run/packages/entry/src/index.ts`](../../native/landlock-run/packages/entry/src/index.ts) 暴露；它是进程启动与文件系统隔离探针，不属于下面的 Rust 内核候选。
 
 知识内核仍然由进程内 TypeScript 持有。BM25、分词和余弦相似度在 [`packages/host/knowledge-wiki/src/search.ts`](../../packages/host/knowledge-wiki/src/search.ts)；图遍历和 Louvain 社区发现位于 [`packages/host/knowledge-wiki/src/graph.ts`](../../packages/host/knowledge-wiki/src/graph.ts)。当前工作树已经有确定性的优化 TypeScript 对照实现 [`scripts/rust-migration/benchmark-knowledge-search.ts`](../../scripts/rust-migration/benchmark-knowledge-search.ts)、隔离 Rust shadow 回放 [`scripts/rust-migration/differential-replay.ts`](../../scripts/rust-migration/differential-replay.ts) 和默认关闭的生产候选边界 [`packages/host/knowledge-wiki/src/rust-search-candidate.ts`](../../packages/host/knowledge-wiki/src/rust-search-candidate.ts)，但仍没有这些内核的生产 N-API provider 或 enforced Rust owner。
 
