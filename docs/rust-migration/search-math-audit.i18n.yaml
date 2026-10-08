@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/rust-migration/search-math-audit.md
-search-math-audit.md: 06a0eda1935a50a91a6cd976148fd210511458f5
-search-math-audit.zh.md: 4ccde99c8452a1c2425120d4a69fcbac36ba5ed9
+search-math-audit.md: c20bb75fcbf1141f87b6807276b162af6c67e9cb
+search-math-audit.zh.md: affc717a2500f0ed2e71929d36fa3ce065cb06ad
