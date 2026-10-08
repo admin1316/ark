@@ -43,6 +43,28 @@ ctx.other.register({ name: 'unrelated' })
     ])
   })
 
+  it('retains scoped Remote endpoints, aliases, namespace access and unresolved scope/name expressions', () => {
+    const surfaces = declaredSurfaces('index.ts', `
+import { RemoteScope as Scoped } from '@deepseek-ai/dsh-typert-protocol'
+// @RemoteScope('ghost', 'missing')
+class Goal {
+  @Scoped('agent', 'create') remoteExportCreate() {}
+  @RemoteScope('agent') inspect() {}
+  @api.RemoteScope('session', 'read') history() {}
+  @Scoped(config.scope, config.operation) dynamic() {}
+  helper() {}
+}
+`)
+    expect(surfaces.filter(surface => surface.kind === 'remote').map(({ name, contextScope, resolution }) => ({
+      name, contextScope, resolution,
+    }))).toEqual([
+      { name: 'Goal.create', contextScope: 'agent', resolution: 'literal' },
+      { name: 'Goal.inspect', contextScope: 'agent', resolution: 'literal' },
+      { name: 'Goal.read', contextScope: 'session', resolution: 'literal' },
+      { name: 'Goal.config.operation', contextScope: 'config.scope', resolution: 'expression' },
+    ])
+  })
+
   it('enumerates nested callable implementations without pretending each is a user feature', () => {
     const surfaces = declaredSurfaces('index.mjs', `
 export function outer() { function inner() {} }

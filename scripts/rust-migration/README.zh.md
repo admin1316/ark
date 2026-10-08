@@ -30,6 +30,8 @@ The metric names are `repeatedErrorRate`, `repeatedToolCallRate`, `verifiedTaskS
 
 声明范围覆盖与部分语义审查、未确认的运行/性能证据分开记录。内部函数与重载不是用户功能。Swift/C/Rust/Python 文件被枚举，但未逐项解析函数；动态 MCP schema、用户插件、settings 和环境表达式继续作为运行证据缺口。见[语言核对](../../docs/rust-migration/full-runtime-language-matrix.zh.md)。
 
+`feature-language-review.json` 保存清单包集合的人工源码操作核对、逐项已审查或待核对的工具/Remote/命令位置、候选声明选择条件、引用文件 hash 与覆盖限制。其 census hash 标识核对快照；重新生成清单不会重新进行人工审查。记录集合完整只表示没有遗漏清单内的包或检测到的入口，不证明全部内部函数、实际功能、provider 路径或语言收益已验证。
+
 ## Rust 之前的 TypeScript 基准
 
 `benchmark-knowledge-search.ts` 使用同一个确定性语料，运行当前 TypeScript BM25、预建索引的优化 TypeScript，以及通过 stdin/stdout 隔离运行的 Rust shadow，记录 p50/p95/p99 延迟、CPU 时间、RSS 增量、event-loop delay 和回放摘要。结果现在明确暴露四种 envelope：`typescriptCold` 每次重建索引，`typescriptWarm` 复用预建索引，`rustCold` 每次请求启动子进程，`rustWarm` 复用可选的持久 Rust 子进程（但当前 Rust 内核仍会为每个请求重建索引）。warm helper 还记录 harness 级别的 SIGKILL/重启探针；由于同步 benchmark 没有 in-flight `AbortSignal`，取消明确标记为 `not-measured`。这些只是测量辅助，不是生产 supervisor 或验收凭据。只有 Rust 路径接入生产边界并通过所需端到端检查后，记录才会离开 `UNKNOWN`。单独的 Rust 微基准更快，不足以改变迁移决策。
@@ -44,4 +46,4 @@ The metric names are `repeatedErrorRate`, `repeatedToolCallRate`, `verifiedTaskS
 
 ## 隔离运行时证据
 
-`launcher-verifier-smoke.json` 记录了通过真实 Jiuzhang source launcher 启动临时 Harness，并把 launcher-only verifier 配置传入专用 Native API runner。`native-knowledge-smoke.json` 更进一步：它用显式候选数据根启动 runner，通过 loopback 调用带认证的 `knowledgeWiki/search` Remote，记录返回页面以及生成的 utility 和 `knowledge/retrieved` 事件摘要。这些是隔离运行时 fixture，不授权生产 Ark profile，也不能替代签名的 Phase 6 acceptance receipt。
+`launcher-verifier-smoke.json` 记录了通过真实 Jiuzhang source launcher 启动临时 Harness，并把 launcher-only verifier 配置传入 dummy child；它没有运行 Native API 服务。所要求的 `native-knowledge-smoke.json` receipt 尚不存在。该 receipt 需要真实 runner、显式候选数据根、带认证的 loopback `knowledgeWiki/search` 调用，以及返回页面、生成的 utility 和 `knowledge/retrieved` 事件摘要。隔离 fixture 不授权生产 Ark profile，也不能替代签名的 Phase 6 acceptance receipt。

@@ -16,6 +16,7 @@ interface Surface {
   name: string
   line: number
   resolution: 'literal' | 'expression'
+  contextScope?: string
 }
 
 const assessments = [
@@ -96,6 +97,7 @@ export function declaredSurfaces(file: string, source: string): Surface[] {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
   const surfaces: Surface[] = []
   const remotes = new Set(['Remote'])
+  const scopedRemotes = new Set(['RemoteScope'])
   const tools = new Set(['defineTool'])
   for (const stmt of sf.statements) {
     if (!ts.isImportDeclaration(stmt)) continue
@@ -104,11 +106,18 @@ export function declaredSurfaces(file: string, source: string): Surface[] {
     for (const binding of bindings.elements) {
       const original = binding.propertyName?.text ?? binding.name.text
       if (original === 'Remote') remotes.add(binding.name.text)
+      if (original === 'RemoteScope') scopedRemotes.add(binding.name.text)
       if (original === 'defineTool') tools.add(binding.name.text)
     }
   }
-  const add = (node: ts.Node, kind: Surface['kind'], name: string, resolution: Surface['resolution'] = 'literal'): void => {
-    surfaces.push({ kind, name, line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, resolution })
+  const add = (
+    node: ts.Node, kind: Surface['kind'], name: string,
+    resolution: Surface['resolution'] = 'literal', contextScope?: string,
+  ): void => {
+    surfaces.push({
+      kind, name, line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, resolution,
+      ...contextScope === undefined ? {} : { contextScope },
+    })
   }
   const walk = (node: ts.Node): void => {
     if (ts.isFunctionDeclaration(node)) add(node, 'function', propertyName(node.name, sf))
@@ -125,9 +134,17 @@ export function declaredSurfaces(file: string, source: string): Surface[] {
       for (const decorator of ts.getDecorators(node) ?? []) {
         const expression = decorator.expression
         const callee = ts.isCallExpression(expression) ? expression.expression : expression
-        if (!(ts.isIdentifier(callee) && remotes.has(callee.text)) && memberName(callee) !== 'Remote') continue
-        const arg = ts.isCallExpression(expression) ? expression.arguments[0] : undefined
-        add(node, 'remote', `${owner}.${arg !== undefined && ts.isStringLiteralLike(arg) ? arg.text : name}`)
+        const scoped = ts.isCallExpression(expression)
+          && ((ts.isIdentifier(callee) && scopedRemotes.has(callee.text)) || memberName(callee) === 'RemoteScope')
+        if (!scoped && !(ts.isIdentifier(callee) && remotes.has(callee.text)) && memberName(callee) !== 'Remote') continue
+        const arg = ts.isCallExpression(expression) ? expression.arguments[scoped ? 1 : 0] : undefined
+        const scope = scoped ? expression.arguments[0] : undefined
+        const exported = arg !== undefined && ts.isStringLiteralLike(arg) ? arg.text
+          : scoped && arg !== undefined ? arg.getText(sf) : name
+        const dynamic = scoped && (scope === undefined || !ts.isStringLiteralLike(scope)
+          || (arg !== undefined && !ts.isStringLiteralLike(arg)))
+        add(node, 'remote', `${owner}.${exported}`, dynamic ? 'expression' : 'literal',
+          scope === undefined ? undefined : ts.isStringLiteralLike(scope) ? scope.text : scope.getText(sf))
       }
     }
     if (ts.isCallExpression(node)) {

@@ -8,11 +8,19 @@ This reference distinguishes source coverage, architectural ownership, runtime v
 
 **Source census is complete for that declared scope; semantic review is partial, and whole-product runtime/performance verification is UNKNOWN.** A function or method declaration is not a user feature. Counts include internal functions and overloads. Swift/C/Python/Rust files are listed, but their individual functions and UI controls are not parsed by the TS scanner. Dynamic MCP schemas, user plugins/presets, settings, and environment-dependent composition still require runtime evidence.
 
-The existing tool catalog supplies 74 schema records with 59 distinct names. Literal source registrations add the seven Wiki tool names, giving 66 statically identified distinct names. The census also records 102 Remote decorator sites, five command registration sites, and 83 Context property declarations. These counts do not prove that a tool, Remote, or service is loaded or exercised. The inert Jiuzhang patch composition and three Native preset source files are recorded separately.
+The existing tool catalog supplies 74 schema records with 59 distinct names. Literal source registrations add the seven Wiki tool names, giving 66 statically identified distinct names. The census also records 108 Remote decorator sites, including the six scoped Goal operations, five command registration sites, and 83 Context property declarations. These counts do not prove that a tool, Remote, or service is loaded or exercised. The inert Jiuzhang patch composition and three Native preset source files are recorded separately.
 
 ## Decision meanings
 
 `KEEP_TS_AUTHORITY` preserves the current permission, event, callback, or lifecycle owner; it does not establish a TypeScript speed advantage or rule out an internal pure kernel. `KEEP_EXISTING_NATIVE` retains an existing system/library implementation. A kernel marked `UNMEASURED` is eligible for investigation, not migration. `KEEP_CURRENT_PENDING_REVIEW` explicitly names unfinished review, rather than treating it as a TS win. Every remaining declaration is present in the census for follow-up; unreviewed entries are not counted as verified.
+
+## Feature-operation review
+
+The [operation review](../../scripts/rust-migration/feature-language-review.json) records responsibilities, cited file hashes, candidate selectors, and explicit limits for every package in the census. Its exact package and detected-entrypoint sets were checked against the census. Of 256 declaration/registration sites, 243 have local-body review and 13 remain pending; a definition and its registration can describe the same handler. Complete package records do not mean every feature, internal function, transitive provider, or lifecycle branch is reviewed. Native, Python, C, Rust, and CLI carriers have separate partial records; dynamic deployment and runtime evidence remain unknown.
+
+The review identifies 31 inner-computation hypotheses, including file-reference ranking, text edits/diffs, bounded UTF-8/JSON accounting, token estimates, task-graph checks, and read-only log scanning. A stateful decoder, retainer, projection, or service method needs an explicitly isolated immutable-data contract before a Rust comparison; the named method is not itself authorized for migration. Existing components include both native engines and TS/JS libraries. No candidate list or source-body review establishes a language-performance winner.
+
+The large-log finding distinguishes scanning from materialization: the JSONL backend reads compressed bytes and retains the decoded event prefix, while a ranged caller can fall back to reading the whole log and slicing. Replacing only the scanner leaves that memory cost. A revision-bound range/index design must first be consumed by the read-only query or pagination path while preserving validation; live Session restoration retains its separate authority requirements. This is a source finding, not a current OOM reproduction or measured speedup.
 
 ## Reviewed function boundaries
 

@@ -12,7 +12,7 @@ Status: implemented
 
 [语言清单](../../../../scripts/rust-migration/inventory-language-fit.ts) 复用包发现、Cordis 扫描、不执行表达式的 YAML parser、patch 组合与工具 harvest。Git 在 workspace 派生范围及 integration、Python、Rust 范围内枚举 tracked 与非 ignored 代码。排除的代码仍保留记录。必需范围为空或包发现不完整时拒绝生成。hash 绑定代码、manifest 与配置；AST 声明保留源码位置，动态名称继续标为未解析。
 
-覆盖、语义审查、运行验证和语言收益具有独立状态。函数核对拒绝失效的源码选择条件；内核资格不授权迁移。[治理决策](../architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md) 和[工具 catalog 决策](2026-07-02-tool-schema-catalog.zh.md) 继续独立负责晋级与实际 schema harvest；清单没有取代两者。
+覆盖、语义审查、运行验证和语言收益具有独立状态。直接 `Remote` 与带 scope 的 `RemoteScope` 声明保留导出名称及 scope；检查导入 alias 和限定名访问时不执行 decorator。[人工操作记录](../../../../scripts/rust-migration/feature-language-review.json) 绑定引用文件及清单快照，将局部函数体审查与未审查的 provider/helper 分开，明确保留待核对项。记录完整性前核对包集合及检测到的入口集合。函数核对拒绝失效的源码选择条件；内核资格不授权迁移。[治理决策](../architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md) 和[工具 catalog 决策](2026-07-02-tool-schema-catalog.zh.md) 继续独立负责晋级与实际 schema harvest；清单没有取代两者。
 
 ## Alternatives considered
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-10-08-function-language-census.md
-2026-10-08-function-language-census.md: 0cf175b5e6df87d86f17e0827b964e9c1072a6a0
-2026-10-08-function-language-census.zh.md: 96e566283736d9e352e27300de7fd5c298e9aa61
+2026-10-08-function-language-census.md: a2c8b08796fa4b483a444526e1376c3763d1f869
+2026-10-08-function-language-census.zh.md: 2cecc14fc6bb65a79bac5999787dcae2d3a2f334
