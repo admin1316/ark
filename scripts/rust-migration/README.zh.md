@@ -8,6 +8,8 @@ Run it with `pnpm exec tsx scripts/rust-migration/evaluate-learning.ts outcomes.
 
 `verificationStatus: "verified"` requires at least one evidence reference and different producer and evaluator IDs. Each count is `{ "numerator": number, "denominator": number }` with safe non-negative integers and numerator no greater than denominator. A metric may be omitted when there were no opportunities; the reducer reports `UNKNOWN` when a complete paired comparison cannot be made.
 
+证据引用可以是可移植的不透明 ID、相对 artifact 路径或网络 URL。解析器会拒绝控制字符、主机绝对路径（包括 `file:` 和 UNC 形式）、路径穿越、首尾空白和重复引用，并对每条引用列表排序以保证回放确定性。完整的 verified pair 还要求两个 variant 的 producer 身份集合与 evaluator 身份集合完全不相交；任一 variant 的生产者不能成为任一 variant 的验收者。
+
 The reducer pairs records by `pairId` and rejects duplicate variants or differences in model, model configuration, task, goal, or policy hashes. It aggregates counts before calculating rates, so a large task cannot be hidden by averaging per-task percentages. Every pair must have independently verified records for a metric to be comparable.
 
 The output reports each required metric as `IMPROVED`, `REGRESSED`, `UNCHANGED`, or `UNKNOWN`, includes evidence references, and emits a conservative `smartnessClaim` of `SUPPORTED`, `NOT_SUPPORTED`, or `UNKNOWN`. Support requires verified-task success and knowledge utility improvement, lower repeated-error rate, zero stale recall, cross-session leakage, memory privilege escalation, memory poisoning, and false completion, plus complete repair reuse, conflict escalation, and replay explainability evidence.

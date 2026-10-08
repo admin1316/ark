@@ -64,6 +64,23 @@ describe('learning evaluation', () => {
     })] })).toThrow(/independent evidence/)
   })
 
+  it('rejects unsafe or duplicate evidence references and normalizes safe refs', () => {
+    for (const evidenceRefs of [['../outside.json'], ['/tmp/outcome.json'], ['\\\\server\\share\\outcome.json'], ['file:///tmp/outcome.json'], ['evidence/ok\nspoof'], ['evidence/ok', 'evidence/ok']]) {
+      expect(() => parseEvaluationInput({ schemaVersion: 1, records: [record('baseline', { evidenceRefs })] })).toThrow(/evidenceRefs/)
+    }
+    const parsed = parseEvaluationInput({ schemaVersion: 1, records: [record('baseline', {
+      evidenceRefs: ['https://example.test/z', 'evidence/a.json', 'https://example.test/a'],
+    })] })
+    expect(parsed.records[0]?.evidenceRefs).toEqual(['evidence/a.json', 'https://example.test/a', 'https://example.test/z'])
+  })
+
+  it('rejects a verified pair whose producer and evaluator identities cross', () => {
+    expect(() => evaluateLearning(parseEvaluationInput({ schemaVersion: 1, records: [
+      record('baseline', { producerId: 'baseline-producer', evaluatorId: 'independent-evaluator' }),
+      record('candidate', { producerId: 'candidate-producer', evaluatorId: 'baseline-producer' }),
+    ] }))).toThrow(/reuses a producer identity as an evaluator/)
+  })
+
   it('returns UNKNOWN when a metric has no opportunities', () => {
     const noOpportunity = { numerator: 0, denominator: 0 }
     const result = evaluateLearning(parseEvaluationInput({ schemaVersion: 1, records: [

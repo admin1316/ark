@@ -42,6 +42,24 @@ interface OutcomeRecord {
   readonly evidenceRefs: readonly string[]
   readonly counts: Partial<Record<MetricName, Count>>
 }
+
+/**
+ * Evidence references are opaque identifiers, paths, or URLs, but they must
+ * remain safe to print, persist, and replay.  In particular, an absolute path
+ * or traversal segment would let an outcome smuggle a host-local location
+ * into an otherwise portable evidence record.
+ */
+function requireEvidenceRef(value: unknown, context: string): string {
+  const ref = requireString(value, context)
+  if (ref !== ref.trim()) throw new Error(`${context} must not have surrounding whitespace`)
+  if (/[\u0000-\u001f\u007f]/u.test(ref)) throw new Error(`${context} contains control characters`)
+  if (ref.startsWith('/') || ref.startsWith('\\') || /^[A-Za-z]:(?:\/|\\)/u.test(ref) || /^file:/iu.test(ref)) {
+    throw new Error(`${context} must be relative or a URL`)
+  }
+  const pathPart = ref.split(/[?#]/u, 1)[0] ?? ref
+  if (pathPart.split(/(?:\/|\\)/u).some(segment => segment === '..')) throw new Error(`${context} must not contain path traversal`)
+  return ref
+}
 export interface EvaluationInput {
   readonly schemaVersion: 1
   readonly records: readonly OutcomeRecord[]
@@ -76,7 +94,9 @@ export function parseEvaluationInput(value: unknown): EvaluationInput {
     const producerId = requireString(record['producerId'], `${context}.producerId`)
     const evaluatorId = requireString(record['evaluatorId'], `${context}.evaluatorId`)
     if (!Array.isArray(record['evidenceRefs'])) throw new Error(`${context}.evidenceRefs must be an array`)
-    const evidenceRefs = record['evidenceRefs'].map((ref, refIndex) => requireString(ref, `${context}.evidenceRefs[${refIndex}]`))
+    const parsedEvidenceRefs = record['evidenceRefs'].map((ref, refIndex) => requireEvidenceRef(ref, `${context}.evidenceRefs[${refIndex}]`))
+    if (new Set(parsedEvidenceRefs).size !== parsedEvidenceRefs.length) throw new Error(`${context}.evidenceRefs must not contain duplicates`)
+    const evidenceRefs = [...parsedEvidenceRefs].sort((left, right) => left < right ? -1 : left > right ? 1 : 0)
     if (verificationStatus === 'verified' && (producerId === evaluatorId || evidenceRefs.length === 0)) throw new Error(`${context} verified outcomes require independent evidence`)
     const rawCounts = asRecord(record['counts'], `${context}.counts`)
     assertKeys(rawCounts, Object.keys(METRICS), `${context}.counts`)
@@ -132,6 +152,16 @@ export function evaluateLearning(input: EvaluationInput): {
     return pair
   })
   const verified = pairs.filter(pair => pair.baseline?.verificationStatus === 'verified' && pair.candidate?.verificationStatus === 'verified')
+  for (const pair of verified) {
+    const baseline = pair.baseline
+    const candidate = pair.candidate
+    if (baseline === undefined || candidate === undefined) throw new Error('verified pair is incomplete')
+    const producers = new Set([baseline.producerId, candidate.producerId])
+    const evaluators = new Set([baseline.evaluatorId, candidate.evaluatorId])
+    if ([...producers].some(id => evaluators.has(id))) {
+      throw new Error(`pair ${baseline.pairId} reuses a producer identity as an evaluator`)
+    }
+  }
   const metrics = Object.fromEntries(Object.entries(METRICS).map(([name, direction]) => {
     const metric = name as MetricName
     if (verified.length === 0 || verified.length !== pairs.length) return [metric, { status: 'UNKNOWN', reason: 'complete independently verified pairs are required' }]
