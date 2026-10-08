@@ -2,17 +2,17 @@
 
 [English](source-truth-report.md) | 中文
 
-**已审计源码快照。** 本报告已按 GitHub 派生 checkout 的当前提交 `32bb727505bce1c403b362cb82fcefd40dffa6d7`，审计日期为 2026-10-08。此前的 `02bf7ebc7f973b35e298bcd4121199f0ab81683c` benchmark 快照和 `b8adf5a7ec` Phase 0 文本只作为历史证据，不能再作为当前源码身份。
+**已审计源码快照。** 源码修复和隔离 Native 构建绑定干净提交 `75f8050d503f836bba1104c3972845f68f192e79`，审计日期为 2026-10-08。构建后的测试和依赖修改不会改变包内签名身份。以下 Phase 0 事实和 drift 表保留历史基线；Phase 1 reconciliation 描述修复后的源码。
 
-**审计目标。** 仓库 `/Users/hui/ark-test/ark-github-main-20261008`，分支 `codex/ark-rust-knowledge-20261008`，远端 PR 为 `https://github.com/admin1316/ark/pull/39`。审计前已读取任务引用的 mission 文本 `/Users/hui/.codex/attachments/3a68ae30-3b77-4be2-96be-2c65920c5ec6/pasted-text-1.txt`。本次刷新没有修改正式 Ark；候选运行证据单独记录。
+**审计目标。** 仓库 `/Users/hui/ark-test/ark-github-main-20261008`，分支 `codex/ark-rust-knowledge-20261008`。观察到的草稿 [PR39](https://github.com/admin1316/ark/pull/39) 属于另一分支，head 为 `8de9f3b9549f24563c04f4867301f74d0d6c53eb`，其检查不能认证此候选。审计前已读取引用的 mission 文本。[源码绑定的候选证据](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) 记录本地构建、凭据复用和历史真实任务失败；当前源码的学习、界面对照、回滚行为和 CI 验收仍未完成。
 
-## Three-layer conclusion
+## Historical Phase 0 three-layer conclusion
 
-The current source tree, packaged Ark profile, and observed storage artifacts describe a governed Markdown Wiki plus ordinary session persistence. `docs/knowledge-wiki.md` is from an older runtime contract and is materially stale. It claims a dynamic `kgraph-1` plugin, `.dsh-knowledge-wiki/knowledge.jsonl`, persisted vectors, three artifacts per turn, and a `knowledge-wiki-recall` system-prompt section injected into every model step ([`docs/knowledge-wiki.md:5-18`](../knowledge-wiki.zh.md), [`:45-54`](../knowledge-wiki.zh.md), [`:71-83`](../knowledge-wiki.zh.md)). None of those names or the per-turn auto-write path is the active implementation described below.
+历史源码、打包 profile 和存储审计显示 Markdown Wiki 与普通 session 持久化。当时 `docs/knowledge-wiki.md` 宣称动态 `kgraph-1` 插件、`.dsh-knowledge-wiki/knowledge.jsonl`、持久化向量、每轮三个产物和逐步 `knowledge-wiki-recall`，与基线实现矛盾。该文档现已描述对齐后的合约；以下基线发现保留原始 drift 证据。
 
 The checked-out source has a package-backed `KnowledgeWikiService` with a persisted ingest queue, Markdown `_candidates` and review state, verifier authority, and optional online embeddings. Its init path scans `raw/sources` every 60 seconds and listens only to `agent/disposed` for session summarization ([`packages/host/knowledge-wiki/src/index.ts:264-300`](../../packages/host/knowledge-wiki/src/index.ts)). The service comments explicitly say turn-level Markdown is disabled ([`index.ts:291-295`](../../packages/host/knowledge-wiki/src/index.ts)). Session summarization reads the entire session through `sessionQuery.readSession`, requires at least 200 characters, calls an owned stage executor, then writes a candidate and review item ([`index.ts:311-397`](../../packages/host/knowledge-wiki/src/index.ts)).
 
-## Knowledge implementation facts
+## Historical baseline implementation facts
 
 - Deployment config is `wikiRoot`, `mainRoot`, `credential`, LLM provider/model/base URL/credential, and `ownedStageExecutor`; there is no `apiKey`, entry `kind`, or vector-store path in the TypeScript config ([`packages/host/knowledge-wiki/src/index.ts:116-155`](../../packages/host/knowledge-wiki/src/index.ts)).
 - Durable Wiki state is project-local `.llm-wiki/ingest-queue.json`, `.llm-wiki/ingest-cache.json`, `.llm-wiki/review.json`, `.llm-wiki/knowledge-utility.json`, and workspace registry state; queue restoration and atomic queue writes are implemented at [`index.ts:409-467`](../../packages/host/knowledge-wiki/src/index.ts), and utility read/write at [`index.ts:604-635`](../../packages/host/knowledge-wiki/src/index.ts).
@@ -21,7 +21,7 @@ The checked-out source has a package-backed `KnowledgeWikiService` with a persis
 - Candidate governance is implemented but no production `knowledgeWikiVerifierAuthority` provider is composed at this baseline (`git grep` outside tests/lib finds only endpoint metadata and the optional getter in `index.ts:83,231`). Verification therefore returns the explicit authority-unavailable blocker unless a trusted provider is injected. This is separate from the old “memory entry” schema: `CandidateVerification` binds a content hash, review hash, source identity, receipts, methods, confidence, and verification result ([`packages/host/knowledge-wiki/src/types.ts:78-129`](../../packages/host/knowledge-wiki/src/types.ts)); `verifyCandidate()` persists/records a trusted receipt before review application ([`index.ts:1217-1257`](../../packages/host/knowledge-wiki/src/index.ts)). `resolveReview()`/`resolveReviews()` apply advisory or candidate actions only through the review layer ([`index.ts:1264-1318`](../../packages/host/knowledge-wiki/src/index.ts)).
 - Utility does not provide expiry, conflict resolution, rollback events, scope/ACL fields, or the mission-required 18-field knowledge record. Candidate frontmatter has epistemic status/evidence counts for session summaries (`hypothesis` or incident `verified`), but promotion remains review/verifier controlled ([`packages/host/knowledge-wiki/src/auto-sediment.ts:457-520`](../../packages/host/knowledge-wiki/src/auto-sediment.ts)).
 
-## Documentation drift register
+## Historical documentation drift register
 
 | Drift | Evidence | Impact |
 | --- | --- | --- |
@@ -33,13 +33,15 @@ The checked-out source has a package-backed `KnowledgeWikiService` with a persis
 
 ## Runtime evidence
 
+干净75候选及其安装到隔离 home 的 profile 与源码 patch SHA-256 `525559a9ca4e81cc1b2b6b06c83d1903c1e22f657baff099a04bb67294503182` 相同。正式安装 profile 保留不同的 `b24765d0…` patch。[本地构建和凭据复用证据](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) 证明此产物关系，不能由此推出 verifier authority、知识成功复用或完整 Native UI 验收。
+
 [只读 profile hash 观察](../../scripts/rust-migration/profile-byte-drift.json) 绑定 checkout `bce444b7ce343ce7e7ee3a55b6258a17c48ba075`：正式包与已安装产品 patch 相同，SHA-256 为 `b24765d09a0441e4fb489122ad2c5543f1fa9c9dbf21c16fa0343797599004ab`；源码 patch 为 `525559a9ca4e81cc1b2b6b06c83d1903c1e22f657baff099a04bb67294503182`，多了 launcher-owned verifier-config 绑定。三份 profile package manifest 均为 `7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e`。这属于 source/artifact drift，不证明已安装 Ark 使用当前源码的 verifier 或 Rust。此前运行观察属于历史证据；当前源码的 Native 行为仍需要独立 receipt。
 
 The production Harness profile contains `knowledge-wiki` with `ARK_WIKI_ROOT`/`ARK_MAIN_ROOT`, `credential: DEEPSEEK_API_KEY`, `ownedStageExecutor: true`; it overrides `session-query-sqlite` to `path: ':memory:'`, `openAt: never`, and disables OTel ([`integrations/jiuzhang/profile/cordis.patch.yml:27-46`](../../integrations/jiuzhang/profile/cordis.patch.yml)). The production Knowledge root `/Users/hui/Library/Application Support/Ark/Knowledge` contains `purpose.md`, `schema.md`, `wiki/index.md`, `wiki/log.md`, and `.llm-wiki/workspaces.json`; no `knowledge.jsonl`, `vectors.json`, or candidate pages were observed. The `knowledge-wiki-recall` identifier was absent from the audited source. This is a storage observation, not proof that a fresh future run cannot create candidates.
 
 ## Phase 0 disposition
 
-Treat `docs/knowledge-wiki.md` and its Chinese counterpart as stale evidence requiring a documentation change request. Use the source implementation and active profile as authority until a new contract is independently reviewed. Do not claim automatic per-turn learning or model-step memory injection. The current verifiable path is: session event log → session-disposal summary (when criteria/stage executor pass) → `_candidates` Markdown + review item → independent verifier receipt → explicit review action → canonical Wiki page; search reads canonical/candidate tree only according to the current service implementation.
+历史文档 drift 要求在 `docs/knowledge-wiki.md` 及中文版对齐合约。源码和活动 profile 证据保持权威；自动逐轮学习和逐步记忆注入未启用。session 释放后的摘要可以创建 candidate 和 review，但当前 canonical forward 操作在缺少独立实测 trial 证据时拒绝。语义 verifier 检查通过不能完成此流程。
 
 ## Phase 1 reconciliation
 

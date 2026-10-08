@@ -1,0 +1,11 @@
+version: 1
+scenario: wiki-governance
+profile: headless
+composition: wiki-governance
+recording: authored
+header:
+  class: wiki-governance
+  pin: true
+workspace:
+  setup: wiki-governance
+  final: true

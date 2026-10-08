@@ -4,7 +4,7 @@ English | [中文](profile-matrix.zh.md)
 
 **Sources compared:** checked-out `integrations/jiuzhang/profile`, `packages/bundle/base/cordis.patch.yml`, `packages/bundle/native-api-app/cordis.patch.yml`, installed product `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang`, and packaged runtime `/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile`. Profile rows are loader patches; later rows replace a matched row's whole config.
 
-**Audited snapshot:** source/profile comparisons were refreshed against checkout commit `32bb727505bce1c403b362cb82fcefd40dffa6d7` on 2026-10-08. The earlier `02bf7ebc7f973b35e298bcd4121199f0ab81683c` and `b8adf5a7ec` references are historical only. The active production profile remains separate from the candidate profile and does not enable the Rust search candidate or verifier authority.
+**Audited snapshot:** source and clean candidate profile are bound to commit `75f8050d503f836bba1104c3972845f68f192e79` on 2026-10-08. Formal and isolated candidate homes remain separate; neither profile enables Rust search or an independent verifier authority. Later test/dependency changes do not change the signed candidate's identity.
 
 ## Source profile rows and declared behavior
 
@@ -23,7 +23,8 @@ English | [中文](profile-matrix.zh.md)
 ## Source/profile/install consistency
 
 - [Current read-only hashes](../../scripts/rust-migration/profile-byte-drift.json) show all three package manifests matching, but the source patch differs from packaged and installed product patches: source adds the verifier-config binding. Do not equate source composition with installed behavior.
-- The active product profile at `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang/` matches the source overlay and includes `@deepseek-ai/dsh-native-api-app`. The stale generic `/Users/hui/.dsh/profiles/jiuzhang/` currently contains only `@deepseek-ai/dsh-base` and an empty patch; it is not the product Harness home selected by the native launcher. Treat it as an unrelated/stale dev profile, not active Ark state.
+- The formal product profile includes `@deepseek-ai/dsh-native-api-app` but its patch differs from source. The stale generic `/Users/hui/.dsh/profiles/jiuzhang/` contains only `@deepseek-ai/dsh-base` and an empty patch; it is not the product Harness home selected by the native launcher.
+- The [clean75 candidate evidence](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) binds `/Users/hui/ark-test/candidate-home-75f8050d/profiles/jiuzhang/` to the bundled source patch `525559a9…`, separate from the formal `b24765d0…` patch. Reusing the user's selected old-candidate credential preserves `deepseek-official / deepseek-flash / max` and its full paired configuration; it does not provision verifier authority or establish real-task success.
 - `packages/host/knowledge-wiki/src/index.ts:144-155` validates `credential`; the native API bundle now supplies `credential: ''`, so its standalone composition uses the current Config vocabulary and disables optional embeddings until a credential is configured.
 - Product `settings.yaml` currently selects `deepseek-official/deepseek-flash` with `reasoningEffort: max`; this is user settings, not a Knowledge Wiki config. The profile overlay's Wiki LLM defaults remain `deepseek-reasoner` unless settings/provider resolution changes them.
 

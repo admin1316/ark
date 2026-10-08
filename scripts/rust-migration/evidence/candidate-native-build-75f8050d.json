@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Source-bound local75 candidate build, isolated credential reuse, and explicitly historical real-task evidence; no final acceptance",
+  "sourceCommit": "75f8050d503f836bba1104c3972845f68f192e79",
+  "sourceWasCleanAtBuild": true,
+  "observedAt": "2026-10-08T10:50:12.336505+00:00",
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "candidateBuild": {
+    "buildExitCode": 0,
+    "version": "3.1.4",
+    "build": "2026100821",
+    "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.bfc91e3e6252e4f7",
+    "candidateDataHome": "/Users/hui/ark-test/candidate-home-75f8050d",
+    "sourceOnlyCompilerDigest": "2ba6ca132989de19a78de569dd728072839adcfacaf5e40aceca0d67aba5d021",
+    "sourceSnapshotSha256": "bd4d1cab940815567f296006c23f8fae0ab06525baec22a2ecd9cc9302d4e08b",
+    "packReceiptSha256": "9c6b8ed10e9969b7153a1b4de7afeadb044d5f3bde513e46c3139e5fd4d9a5b2",
+    "receiptSha256": "20e0dd510d7b4e1d3968ec99f2c90566f4895c52fe73320a86a6cd9cbb554b05",
+    "provenanceFileSha256": "0af468f83c4b60c55dfacd782042ce068e6c0eb7a57b37aa38e2326c3aef9690",
+    "finalTreeSha256": "21422f38b47d7323f2356fd09f29116b3636985c4953307de24cb02dd1f390b5",
+    "finalTreeEntries": 20922,
+    "finalMachOCount": 9,
+    "codesignDeepStrict": "passed independently",
+    "candidatePathAndRpaths": "passed owner check",
+    "signedNodeSmoke": "embedded-node-ok",
+    "signing": {
+      "adHocTestOnly": true,
+      "identity": "-",
+      "mode": "ad-hoc-test-only",
+      "notary": null,
+      "notaryStatus": "not-requested",
+      "spctl": null,
+      "spctlStatus": "not-run-ad-hoc",
+      "teamId": null
+    },
+    "criticalAppHashes": {
+      "infoPlistSha256": "90dfde101462edbab8a4bdb4f6c134d517b12defba0a053c58cf3dd3f19751d9",
+      "nativeExecutableSha256": "416b924665f503767399f683b146264ea9352dcb9aaf1bca17bc0a9b4ae6ddda",
+      "embeddedNodeSha256": "2a6444e63caa2908909180832c28d33b4a27c53674ea4a7a39d11d79cefb353c",
+      "startMjsSha256": "08bba2948fab353ddb70286bbadc66a1e1573820245d741752d414415d69d287",
+      "runtimeMjsSha256": "c5f3451cd2a298892234f868bb33c4205b8064c9372c2052d2f9cc6b9ea81365",
+      "profileSha256": "525559a9ca4e81cc1b2b6b06c83d1903c1e22f657baff099a04bb67294503182",
+      "signedSourceAndPackSha256": "0cf07fcdd3e33a2194ea1f7d9e3ecf6606ae213e329d2b2980b06646bae7902d"
+    }
+  },
+  "candidateSlot": {
+    "result": "PASS",
+    "app": "/Users/hui/ark-test/candidate/Ark.app",
+    "operation": "atomic-test-candidate-slot-swap",
+    "oldSource": "b8adf5a7ec9c22c3f1c7958821af825bd7821d7a",
+    "oldOwnedProcessesGone": true,
+    "oldListenerReleased": true,
+    "rollbackRetained": true,
+    "formalAppMutated": false,
+    "rollbackBehaviorAcceptance": "NOT RUN"
+  },
+  "credentialReuse": {
+    "result": "PASS",
+    "source": "User-entered selected old candidate credential; formal credential not read",
+    "selection": {
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "reasoningEffort": "max"
+    },
+    "effectiveModelConfigHash": "6a043c6bde73c4347d2f44912e356f0671e4b1b4a8b1ac0ec6d81b23163c2b2a",
+    "publicConditionalWrite": true,
+    "selectedCredentialEqualInMemory": true,
+    "targetState": {
+      "configured": true,
+      "source": "keychain",
+      "writable": true
+    },
+    "targetCredentialDocumentAbsentAfter": true,
+    "modelRequests": 0,
+    "fetchAttempts": 0,
+    "secretValuesOrDigestsReported": false,
+    "scope": "Equivalent existing selected-provider access in isolated candidate only; not independent evaluator authority or model execution",
+    "supervision": {
+      "exitCode": 0,
+      "deadlineExceeded": false,
+      "elapsedSeconds": 5.919,
+      "ownedProcessesRemaining": [],
+      "automaticRetry": false
+    }
+  },
+  "nativeUi": {
+    "launch": "New75 application observed running; user confirmed normal and idle",
+    "automatedInteraction": "BLOCKED",
+    "reason": "CUA inventory sees new bfc91 bundle but path lookup resolves retained old a844 bundle; new bundle lookup returns Invalid app",
+    "sameStateScreenshotParity": "NOT VERIFIED",
+    "manualCurrentTask": "Invoice acceptance pending. A distinct user task is present in Default Workspace; it does not match the registered invoice prompt and was not interrupted or treated as paired acceptance.",
+    "restartLineage": "PASS: exact Native -> embedded launcher -> embedded backend and backend-only loopback listener; read-only pid/ppid/start/executable inspection",
+    "historicalReplayInNewRuntime": {
+      "events": 1858,
+      "historicalPrefixEvents": 1857,
+      "historicalPrefixExact": true,
+      "soleAppend": "session/end-seed; predates post-provisioning restart",
+      "newTaskTurnOrUsageBeyondHistoricalPrefix": false,
+      "compressedBytesUnchanged": false
+    },
+    "currentTaskPreregistration": {
+      "fullWorldFiles": 6,
+      "worldDirectories": 6,
+      "postRegistrationFilesExact": true,
+      "separateTypesModesSupplement": true,
+      "userCreatedDraftConfirmed": true,
+      "taskTextExactSha256": "1fc8a1860a0097714708006d9f13a23b16b8b256a7f55c0c74d877f9166e5986",
+      "newPersistedSessionId": "NOT YET BOUND TO THE REGISTERED INVOICE TASK",
+      "invoiceTaskExecution": "UNKNOWN; newly observed distinct task cannot close this preregistration"
+    },
+    "separateObservedUserTask": {
+      "sessionId": "ed4f9665-55ed-4a8c-bb1a-c41c1cf18499",
+      "cwd": "/Users/hui/ark-test/candidate-home-75f8050d/Default Workspace",
+      "registeredInvoicePromptMatched": false,
+      "storedEventsAtPrivateSnapshot": 29116,
+      "turnRunningAtPrivateSnapshot": true,
+      "userTaskContentsReported": false,
+      "modelRoute": "UNKNOWN pending actual stored request metadata",
+      "scope": "Distinct user task observed during pending manual invoice handoff; no task interruption, workspace change or acceptance inference"
+    }
+  },
+  "completeSourceCoverage": {
+    "testFiles": 83,
+    "tests": 793,
+    "testsPassed": 793,
+    "workerErrors": 0,
+    "coverageGate": "FAIL",
+    "exitCode": 1,
+    "perFileThresholdPercent": 100,
+    "runtimeFilesBelowThreshold": 6,
+    "uncoveredLocations": 245,
+    "firstIncompleteRunRetained": true,
+    "scope": "Both Wiki packages at75; first run failed two worker starts, serial retry completed all tests but coverage thresholds still failed",
+    "percentages": {
+      "statements": 97.88,
+      "branches": 95.83,
+      "functions": 98.96,
+      "lines": 98.38
+    },
+    "uncoveredLines": 59,
+    "thresholdErrors": 17,
+    "all32ReportedSourceFilesAndPolicyMatch75": true
+  },
+  "historicalRealTask": {
+    "sourceCommit": "b8adf5a7ec9c22c3f1c7958821af825bd7821d7a",
+    "sessionId": "732a4896-c8da-4f58-9884-1daea4bc7a36",
+    "compressedLogSha256": "17a674540052b6a75719927696921521bdb07a0b86746381e3e9c567d804416b",
+    "taskSha256": "1fc8a1860a0097714708006d9f13a23b16b8b256a7f55c0c74d877f9166e5986",
+    "model": {
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "reasoningEffort": "max"
+    },
+    "modelSteps": 5,
+    "uniqueStepUsage": {
+      "inputTokens": 11876,
+      "outputTokens": 1962,
+      "cacheReadTokens": 47360,
+      "reasoningTokens": 726
+    },
+    "toolCallCount": 7,
+    "rawTaskVerdict": "FAIL_FORMAT",
+    "failure": "Whole-answer Markdown JSON fence violates requested JSON-only output",
+    "semanticArithmetic": "PASS only after separately labeled extraction; raw verdict remains FAIL_FORMAT",
+    "coldReplay": "PASS; exact1857-event snapshot and task verified",
+    "worldSetupLimitation": "Initial preregistration listed only two CSV files; four exact installed project scaffolds existed before task. No whole-world unchanged claim or model-write attribution",
+    "toolOutcomeLimitation": "Seven carrier isError:false results; one heredoc arithmetic command failed at the OS sandbox before retry, so transport success is not seven successful effects",
+    "independentProviderRequestSignature": "NOT AVAILABLE",
+    "knowledgeLearning": "UNKNOWN"
+  },
+  "github": {
+    "observedPullRequest": "https://github.com/admin1316/ark/pull/39",
+    "head": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "branch": "codex/ark-upstream-reliability-20260927",
+    "draft": true,
+    "currentCandidateSourceCi": "UNKNOWN; observed PR head is a different branch/source",
+    "failedChecks": [
+      "sandbox e2e (seatbelt, macos-latest)",
+      "node 24 / coverage",
+      "node 24 / snapshots and artifacts",
+      "windows node 24 / native complete",
+      "all checks passed"
+    ],
+    "pushOrMergePerformed": false
+  },
+  "limitations": [
+    "Build signing is local ad-hoc only; no release notarization or Gatekeeper acceptance.",
+    "Current75 real-model task, independent learning/repair reuse, complete Native UI parity, rollback behavior and source-bound GitHub CI remain unverified.",
+    "No new formal Rust replacement or performance benefit proved; decision remains RETAIN_TS.",
+    "Test/dependency/documentation work after75 does not change the signed75 source identity."
+  ],
+  "localOnlyEvidence": [
+    {
+      "localPath": "/private/tmp/ark-stage-75f8050d-logs/final-stage-verification.json",
+      "sha256": "71c69810f89a702269c5d05a4fcd72930e3cbc13d8d4fbec857bc15f3a77fb64",
+      "bytes": 5607,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-candidate-slot-swap-75f8050d.json",
+      "sha256": "fd9aa124677a9921f5fe914753de35a7ea0b863225e32438d37d0f6499e5e279",
+      "bytes": 607,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-offline-bridge-executed-75f8050d-49d93a514aef.json",
+      "sha256": "225139137719d9607fa595be08b8f60ab7e1e8818720881ed76c2c29a0944399",
+      "bytes": 10086,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-invoice-cold-replay-BlMwzP/independent-task-verification.json",
+      "sha256": "b5a649eb7ff760c6dd38e871b4c623a4282ab51660c838a88539debc331b4c47",
+      "bytes": 7759,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-pr39-status-20261008-current.json",
+      "sha256": "b3f8000c50dc27bd0c59846cc876dfc31729907551c41053c817468c3d4f6cc9",
+      "bytes": 9138,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-historical-ui-render75-vnBC3c/historical-render-receipt.json",
+      "sha256": "5ea0c3c64eeb9d78e1cccccdceb5e4ae14d95e7a39773cff5e6c997b52859577",
+      "bytes": 5644,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-current75-invoice-post-registration-world.json",
+      "sha256": "813da22896c098a0fd137cd880f45d61689e9825b4d3ed8d38a5caae5284e0b1",
+      "bytes": 1963,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-knowledge-coverage-75f8050d-serial-audit-mq_0wfyo/summary.json",
+      "sha256": "336a746ca630672e4fd72a7278e4ce708e77e5e59d13f35c7f654fe4c51ba244",
+      "bytes": 136985,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-current75-restart-readonly-zJJ39X/current-restart-metadata-receipt.json",
+      "sha256": "ceeb7dcf95903556106196cdeb163ab2c04ee1ea712ded022df84bd94142fdbe",
+      "bytes": 8426,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-offline-bridge-supervision-75f8050d-49d93a514aef.json",
+      "sha256": "269f935bfbaa7de7302ade9df8ad2db5771f6876d0269fd3ecac9bedea5f125f",
+      "bytes": 1764,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-current75-invoice-preparation.json",
+      "sha256": "e0add9eb8994197d639937dc403d9f4f887071fb7ed4a425d7f4aba5e7fc6d9e",
+      "bytes": 1948,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-current75-invoice-preprompt-mode-supplement.json",
+      "sha256": "e3fafd0cf4c9ccd5e06f83e08645c95fb8e051949e06e91214021e4d003427cf",
+      "bytes": 2616,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    },
+    {
+      "localPath": "/private/tmp/ark-current75-candidate-doc-sync.log",
+      "sha256": "71f58a6fbcd5f9454995360766b9030e9ae63a4c3e06897f1d8615ecaed71458",
+      "bytes": 2535,
+      "distribution": "Local-only generated evidence; raw contents excluded from Git"
+    }
+  ],
+  "documentationChecks": {
+    "result": "PASS",
+    "passed": 30,
+    "failed": 0,
+    "skipped": 0,
+    "elapsedSeconds": 95.33,
+    "scope": "Three source/profile/runtime report pairs, Agent Note and current evidence; final fixture assertion-only changes do not modify those documents"
+  },
+  "requiredRunnableExample": {
+    "result": "PASS_LOCAL_FOCUSED",
+    "evidenceRef": "scripts/rust-migration/evidence/keyless-wiki-runnable-snapshot-20261008.json",
+    "sourceCasesPassed": 5,
+    "artifactCasesPassed": 1,
+    "corpusInvariantTestsPassed": 2,
+    "measuredLearningAcceptance": "UNKNOWN"
+  }
+}

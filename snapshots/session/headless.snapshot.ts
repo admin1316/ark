@@ -36,9 +36,10 @@ import {
   type SnapshotManifest,
   type WorkspaceSnapshotEntry,
 } from '@deepseek-ai/dsh-session-snapshot'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke, resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import { seedWikiSnapshot, assertWikiWorld } from '../../examples/headless-agent/tests/fixtures/knowledge-wiki/support.ts'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const snapshotsRoot = fileURLToPath(new URL('./', import.meta.url))
@@ -358,6 +359,7 @@ async function seedWorkspace(scenario: HeadlessScenario, cwd: string): Promise<v
 }
 
 const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
+  async 'wiki-governance'(cwd) { seedWikiSnapshot(cwd) },
   async 'editing-cordis-skill'(cwd) {
     const target = join(cwd, '.dsh', 'skills', 'editing-cordis-compositions', 'SKILL.md')
     await mkdir(dirname(target), { recursive: true })
@@ -655,13 +657,48 @@ describe('headless recorded-session snapshots', () => {
             })
             await seedWorkspace(scenario, cwd)
             initialWorkspace = await captureWorkspaceSnapshot(cwd, {
-              ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
+              // Raw Wiki-owned state is authenticated by its named lifecycle oracle.
+              ignoredRootEntries: scenario.manifest.workspace?.setup === 'wiki-governance'
+                ? [...RUNTIME_WORKSPACE_ENTRIES, '.llm-wiki', 'jiuzhang-tarballs', 'wiki']
+                : RUNTIME_WORKSPACE_ENTRIES,
             })
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (scenario.manifest.workspace?.setup === 'wiki-governance') {
+              assertWikiWorld(cwd)
+              const coldPatch = materializeProfilePatch(
+                join(composition.dir, 'cold.cordis.yml'), cwd, join(cwd, patchRoot), patches.length, dshBin,
+              )
+              const coldLaunch = resolveExampleLaunch({
+                srcBin: dshBin, tsconfigPath,
+                configArgs: ['--profile', 'headless', ...patches.flatMap(file => ['--patch', file]), '--patch', coldPatch, task],
+                env: {
+                  DSH_HOME: join(cwd, '.dsh'), DSH_AGENTS_HOME: join(cwd, '.agents'),
+                  DSH_SNAPSHOT: 'replay', DSH_SNAPSHOT_PROVIDER: model.provider, DSH_SNAPSHOT_MODEL: model.model,
+                  DSH_SNAPSHOT_FILE: join(scenario.dir, 'session.jsonl'), DSH_TELEMETRY_DISABLED: '1',
+                  NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+                },
+              })
+              const cold = spawnSync(coldLaunch.command, coldLaunch.args, {
+                cwd, env: { ...process.env, ...coldLaunch.env }, timeout: 30_000, encoding: 'utf8',
+              })
+              expect(cold.error, `wiki-governance cold process: ${cold.stderr}`).toBeUndefined()
+              expect(cold.signal, `wiki-governance cold process: ${cold.stderr}`).toBeNull()
+              expect(cold.status, `wiki-governance cold process: ${cold.stderr}`).toBe(0)
+              expect(cold.stdout).toBe('')
+              expect(cold.stderr).toBe('')
+              assertWikiWorld(cwd)
+              expect(JSON.parse(await readFile(join(cwd, '.dsh/wiki-snapshot-cold.json'), 'utf8'))).toMatchObject({
+                actualColdResume: true, durablePrefixEqual: true, modelMessagesEqual: true,
+                injectionCount: 1, archiveTerminalEvents: 1, successfulUses: 0, utilityScore: 0,
+              })
+            }
             finalWorkspace = await captureWorkspaceSnapshot(cwd, {
-              ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
+              // Raw Wiki-owned state is authenticated by its named lifecycle oracle.
+              ignoredRootEntries: scenario.manifest.workspace?.setup === 'wiki-governance'
+                ? [...RUNTIME_WORKSPACE_ENTRIES, '.llm-wiki', 'jiuzhang-tarballs', 'wiki']
+                : RUNTIME_WORKSPACE_ENTRIES,
             })
             if (scenario.name === 'subprocess-spill-open-failure') {
               const diagnostics = JSON.parse(await readFile(join(cwd, '.dsh', 'spill-diagnostics.json'), 'utf8')) as JsonObject[]
@@ -727,6 +764,7 @@ describe('headless recorded-session snapshots', () => {
       } else {
         expect(finalWorkspace, `${scenario.name}: a changed workspace requires workspace.final`).toEqual(initialWorkspace)
       }
-    }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+    }, scenario.manifest.workspace?.setup === 'wiki-governance'
+      ? 2 * LOADER_SMOKE_TEST_TIMEOUT_MS : LOADER_SMOKE_TEST_TIMEOUT_MS)
   }
 })

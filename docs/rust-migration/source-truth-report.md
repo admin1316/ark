@@ -2,17 +2,17 @@
 
 English | [中文](source-truth-report.zh.md)
 
-**Audited source snapshot.** This report was refreshed against the GitHub-derived checkout at commit `32bb727505bce1c403b362cb82fcefd40dffa6d7`, audited 2026-10-08. The earlier `02bf7ebc7f973b35e298bcd4121199f0ab81683c` benchmark snapshot and `b8adf5a7ec` Phase 0 text are historical evidence only; neither is the current source identity.
+**Audited source snapshot.** Source repairs and the isolated Native build are bound to clean commit `75f8050d503f836bba1104c3972845f68f192e79`, audited 2026-10-08. Test/dependency work after that build does not change its signed identity. The Phase 0 facts and drift table below retain the historical baseline; Phase 1 reconciliation describes the repaired source.
 
-**Audit target.** Repository `/Users/hui/ark-test/ark-github-main-20261008`, branch `codex/ark-rust-knowledge-20261008`, remote PR `https://github.com/admin1316/ark/pull/39`. The referenced mission text was read from `/Users/hui/.codex/attachments/3a68ae30-3b77-4be2-96be-2c65920c5ec6/pasted-text-1.txt` before this audit. The official Ark bundle was not modified during this refresh; candidate runtime evidence is recorded separately.
+**Audit target.** Repository `/Users/hui/ark-test/ark-github-main-20261008`, branch `codex/ark-rust-knowledge-20261008`. Observed draft [PR39](https://github.com/admin1316/ark/pull/39) has another branch and head `8de9f3b9549f24563c04f4867301f74d0d6c53eb`; its checks do not attest this candidate. The referenced mission text was read before this audit. The [source-bound candidate evidence](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) records local build/provisioning and the historical real-task failure; current-source learning, UI parity, rollback behavior, and CI acceptance remain unresolved.
 
-## Three-layer conclusion
+## Historical Phase 0 three-layer conclusion
 
-The current source tree, packaged Ark profile, and observed storage artifacts describe a governed Markdown Wiki plus ordinary session persistence. `docs/knowledge-wiki.md` is from an older runtime contract and is materially stale. It claims a dynamic `kgraph-1` plugin, `.dsh-knowledge-wiki/knowledge.jsonl`, persisted vectors, three artifacts per turn, and a `knowledge-wiki-recall` system-prompt section injected into every model step ([`docs/knowledge-wiki.md:5-18`](../knowledge-wiki.md), [`:45-54`](../knowledge-wiki.md), [`:71-83`](../knowledge-wiki.md)). None of those names or the per-turn auto-write path is the active implementation described below.
+The historical source, packaged profile, and storage audit described a Markdown Wiki plus ordinary session persistence. At that audit, `docs/knowledge-wiki.md` claimed a dynamic `kgraph-1` plugin, `.dsh-knowledge-wiki/knowledge.jsonl`, persisted vectors, three artifacts per turn, and per-step `knowledge-wiki-recall`. Those claims contradicted the baseline implementation. The document now owns the reconciled contract; the following baseline findings preserve the original drift evidence.
 
 The checked-out source has a package-backed `KnowledgeWikiService` with a persisted ingest queue, Markdown `_candidates` and review state, verifier authority, and optional online embeddings. Its init path scans `raw/sources` every 60 seconds and listens only to `agent/disposed` for session summarization ([`packages/host/knowledge-wiki/src/index.ts:264-300`](../../packages/host/knowledge-wiki/src/index.ts)). The service comments explicitly say turn-level Markdown is disabled ([`index.ts:291-295`](../../packages/host/knowledge-wiki/src/index.ts)). Session summarization reads the entire session through `sessionQuery.readSession`, requires at least 200 characters, calls an owned stage executor, then writes a candidate and review item ([`index.ts:311-397`](../../packages/host/knowledge-wiki/src/index.ts)).
 
-## Knowledge implementation facts
+## Historical baseline implementation facts
 
 - Deployment config is `wikiRoot`, `mainRoot`, `credential`, LLM provider/model/base URL/credential, and `ownedStageExecutor`; there is no `apiKey`, entry `kind`, or vector-store path in the TypeScript config ([`packages/host/knowledge-wiki/src/index.ts:116-155`](../../packages/host/knowledge-wiki/src/index.ts)).
 - Durable Wiki state is project-local `.llm-wiki/ingest-queue.json`, `.llm-wiki/ingest-cache.json`, `.llm-wiki/review.json`, `.llm-wiki/knowledge-utility.json`, and workspace registry state; queue restoration and atomic queue writes are implemented at [`index.ts:409-467`](../../packages/host/knowledge-wiki/src/index.ts), and utility read/write at [`index.ts:604-635`](../../packages/host/knowledge-wiki/src/index.ts).
@@ -21,7 +21,7 @@ The checked-out source has a package-backed `KnowledgeWikiService` with a persis
 - Candidate governance is implemented but no production `knowledgeWikiVerifierAuthority` provider is composed at this baseline (`git grep` outside tests/lib finds only endpoint metadata and the optional getter in `index.ts:83,231`). Verification therefore returns the explicit authority-unavailable blocker unless a trusted provider is injected. This is separate from the old “memory entry” schema: `CandidateVerification` binds a content hash, review hash, source identity, receipts, methods, confidence, and verification result ([`packages/host/knowledge-wiki/src/types.ts:78-129`](../../packages/host/knowledge-wiki/src/types.ts)); `verifyCandidate()` persists/records a trusted receipt before review application ([`index.ts:1217-1257`](../../packages/host/knowledge-wiki/src/index.ts)). `resolveReview()`/`resolveReviews()` apply advisory or candidate actions only through the review layer ([`index.ts:1264-1318`](../../packages/host/knowledge-wiki/src/index.ts)).
 - Utility does not provide expiry, conflict resolution, rollback events, scope/ACL fields, or the mission-required 18-field knowledge record. Candidate frontmatter has epistemic status/evidence counts for session summaries (`hypothesis` or incident `verified`), but promotion remains review/verifier controlled ([`packages/host/knowledge-wiki/src/auto-sediment.ts:457-520`](../../packages/host/knowledge-wiki/src/auto-sediment.ts)).
 
-## Documentation drift register
+## Historical documentation drift register
 
 | Drift | Evidence | Impact |
 | --- | --- | --- |
@@ -33,13 +33,15 @@ The checked-out source has a package-backed `KnowledgeWikiService` with a persis
 
 ## Runtime evidence
 
+The clean75 candidate and its installed isolated profile match source patch SHA-256 `525559a9ca4e81cc1b2b6b06c83d1903c1e22f657baff099a04bb67294503182`. The formal installed profile retains the different `b24765d0…` patch. [Local build and provisioning evidence](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) proves that artifact relationship, without implying verifier authority, successful knowledge reuse, or complete Native UI acceptance.
+
 The [read-only profile hash observation](../../scripts/rust-migration/profile-byte-drift.json) binds checkout `bce444b7ce343ce7e7ee3a55b6258a17c48ba075`: packaged and installed product patches match each other at SHA-256 `b24765d09a0441e4fb489122ad2c5543f1fa9c9dbf21c16fa0343797599004ab`, while the source patch is `525559a9ca4e81cc1b2b6b06c83d1903c1e22f657baff099a04bb67294503182`. Source adds the launcher-owned verifier-config binding. All three profile package manifests match at `7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e`. This is source/artifact drift, not proof that installed Ark exercises current-source verification or Rust. Earlier runtime observations are historical; current-source Native behavior still needs its own receipt.
 
 The production Harness profile contains `knowledge-wiki` with `ARK_WIKI_ROOT`/`ARK_MAIN_ROOT`, `credential: DEEPSEEK_API_KEY`, `ownedStageExecutor: true`; it overrides `session-query-sqlite` to `path: ':memory:'`, `openAt: never`, and disables OTel ([`integrations/jiuzhang/profile/cordis.patch.yml:27-46`](../../integrations/jiuzhang/profile/cordis.patch.yml)). The production Knowledge root `/Users/hui/Library/Application Support/Ark/Knowledge` contains `purpose.md`, `schema.md`, `wiki/index.md`, `wiki/log.md`, and `.llm-wiki/workspaces.json`; no `knowledge.jsonl`, `vectors.json`, or candidate pages were observed. The `knowledge-wiki-recall` identifier was absent from the audited source. This is a storage observation, not proof that a fresh future run cannot create candidates.
 
 ## Phase 0 disposition
 
-Treat `docs/knowledge-wiki.md` and its Chinese counterpart as stale evidence requiring a documentation change request. Use the source implementation and active profile as authority until a new contract is independently reviewed. Do not claim automatic per-turn learning or model-step memory injection. The current verifiable path is: session event log → session-disposal summary (when criteria/stage executor pass) → `_candidates` Markdown + review item → independent verifier receipt → explicit review action → canonical Wiki page; search reads canonical/candidate tree only according to the current service implementation.
+The historical documentation drift required contract reconciliation in `docs/knowledge-wiki.md` and its Chinese counterpart. Source and active-profile evidence remain authoritative; automatic per-turn learning and per-step memory injection are not enabled. Session-disposal summaries can create candidates and reviews, but current canonical forward actions deny without independently measured trial evidence. A passing semantic verifier check cannot complete that path.
 
 ## Phase 1 reconciliation
 

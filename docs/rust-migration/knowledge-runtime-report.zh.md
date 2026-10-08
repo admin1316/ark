@@ -2,9 +2,9 @@
 
 [English](knowledge-runtime-report.md) | 中文
 
-**已审计快照：** 源码发现包含基于 checkout 提交 `2268abeb0f2e3a74fae6ad434e04fd88e5b30498` 的受影响节点修复，审计日期为 2026-10-08。运行时观察注明确切源码快照，并区分隔离候选 Ark 与未修改的正式包；此前的 `02bf7ebc7f973b35e298bcd4121199f0ab81683c` 和 `b8adf5a7ec` 仅是历史证据，不能作为当前源码身份。
+**已审计快照：** 修复后的源码和干净 Native 构建绑定提交 `75f8050d503f836bba1104c3972845f68f192e79`，审计日期为 2026-10-08。运行观察注明确切源码，并区分隔离候选与正式包。构建后的测试和依赖修改单独记录；旧 app 版本保留为历史证据。
 
-[当前 profile 字节比较](../../scripts/rust-migration/profile-byte-drift.json) 记录了 source/artifact drift。运行观察只能归属其记录的 app/source 版本，不能作为当前源码 Native 行为的验收证据。
+[正式 profile 字节比较](../../scripts/rust-migration/profile-byte-drift.json) 记录源码与正式产物的 drift。[75候选构建证据](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) 将隔离 home 的安装 profile 绑定到源码。产物相同与凭据复用不能认证完整 Native 行为或学习效果。
 
 ## What the model can actually see
 
@@ -40,6 +40,9 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 4. **候选 Ark 实时 smoke（2026-10-08）** `/Users/hui/ark-test/candidate-20261008/Ark.app` 使用隔离 home `/Users/hui/ark-test/candidate-home-20261008` 运行。带认证的 loopback `knowledgeWiki/search` 返回了预置候选页面，carrier/domain 结果正常。这证明候选 Ark 的原生 TypeScript 路径在隔离数据下可用。记录明确标注 `mode: typescript-authoritative`、`rustShadowInvoked: false`：原生路由不会调用模型/工具 Rust seam，而且该候选 home 没有配置模型。因此它不是 Rust 性能或正式验收结果。凭据为 `/Users/hui/ark-test/candidate-ark-20261008-live-baseline.json`。
 5. **候选 Ark 模型/工具 shadow smoke（2026-10-08）** 同一个候选 app 使用本地 DeepSeek 兼容 mock SSE provider 和独立隔离 home 运行，治理 event log 使用了匹配的项目路径。真实 `wiki_search` 工具调用触发了 Rust wrapper；wrapper 以 `0` 退出，返回两条预置命中，请求摘要一致，Rust 结果摘要也与独立 TypeScript BM25 摘要完全一致。修正版凭据为 `/Users/hui/ark-test/candidate-ark-20261008-rust-model-shadow-smoke-scoped.json`，源码提交为 `9563cbe8801c847ac51a376929bc8cdc149d37ac`，Rust 二进制 SHA-256 为 `6c35da217bb5f5b207e10a38f1d8cdbe805ab43746b06500c25791bd94bd81fa`。该 smoke 证明候选功能调用和字节一致，不证明提速或正式验收。
 6. **绑定 `2268abeb` 源码的构建和 Native API smoke**：[脱敏证据](../../scripts/rust-migration/evidence/candidate-native-build-2268abeb.json) 记录了 clean-source macOS ARM64 候选构建、严格本地签名与路径检查，以及实际 launcher/Native API runner。两次认证后的预置页面搜索得到相同结果和两条持久 retrieval 事件；API utility 与磁盘一致，successful uses 保持为零，所持有进程和 loopback listener 均退出。首个被拒绝的请求 fixture 已保留。同一源码的测试通过 765/765，但逐文件 100% 覆盖门槛在六个 runtime 文件失败。这个历史构建早于正向 utility 限制和 Archive 生命周期恢复修复，不能证明这些修复的 Native UI 行为、学习收益或提速。
+
+7. **干净75固定槽位候选** [脱敏证据](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) 记录 macOS ARM64 构建、严格 ad-hoc 签名检查、候选槽位原子替换、代码回滚保留，以及有条件复用用户在旧候选输入的选定凭据。模型选择为 `deepseek-official / deepseek-flash / max`，凭据复用期间未调用模型。用户确认窗口正常且空闲。CUA 仍解析为旧 bundle 身份，自动界面操作受阻；相同状态截图和当前任务验收未完成。完整串行 coverage 运行的793项 Wiki 测试通过，但六个文件仍未达到每文件100%门槛；先前 worker 启动失败记录保留。
+8. **`b8adf5a7ec` 的历史可见真实任务** 回放的1857个 session event 记录五个真实 provider step 和七个工具 carrier。仅在单独提取 Markdown JSON 围栏内容后，精确有理数对账通过；原始 JSON-only 要求以 `FAIL_FORMAT` 失败。项目脚手架在任务前已存在，但初始两文件预登记未包含它，因此不能宣称完整 world 未变。一条 shell 尝试在只读沙箱中失败后重试。此任务不能证明知识学习、当前75或 Rust 性能收益。
 
 ## Drift and required follow-up
 

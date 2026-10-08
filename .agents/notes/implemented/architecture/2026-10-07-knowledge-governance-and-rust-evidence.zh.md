@@ -34,4 +34,6 @@ checkout 包含隔离的 [knowledge-search shadow crate](../../../../rust/knowle
 
 Wiki 事件日志可审计、可回放。prepared canonical journal 会阻止初始化或项目切换并保留证据，不会在缺少实测 trial authority 时继续提交。Archive 恢复认证操作身份并只记录一次终态 rejection；单独的 committed 标记不能认证文件状态已提交。历史接纳 fixture 用于检查读取边界，不会启用当前晋级。新增 session event 不改变 session format version。没有 calling session 的工具调用仍可服务非 Agent caller，但模型可见的 Agent 调用不能绕过 session event 记录。Rust enforce 保持 deferred，直到具体候选登记 corpus、边界和三组证据。
 
+无需密钥的 headless 场景通过普通 runtime 子进程运行完整 Wiki 工具组合与冷 session 回放。源码 service 通过 tsconfig paths 解析，构建后的 service 通过 package exports 解析。源码拥有的 Archive、seed 和 verifier fixture producer 与这些 service 分开。稳定 transcript 捕获与受认证的可变 Wiki 状态断言分开；fixture seal 不授权当前 canonical 晋级。`examples` 作为已声明的 workspace，使构建后的依赖通过普通安装解析，不使用临时 resolver link。
+
 测试 authority 只验证确定性的认证与拒绝行为。独立评估者密钥分离、原生配置、实际 trial 收益与真实 provider 的配对学习证据仍未验证；验证结果通过和 UI 反馈不能证明修复规则被正确复用。
