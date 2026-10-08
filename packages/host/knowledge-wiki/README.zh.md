@@ -83,6 +83,8 @@ kind: "package-reference"
 
 Archive 恢复在修改前校验签名操作的角色、candidate/review/governance 路径、归档字节、已解决的 review 和 staging 身份。恢复会将原始 Archive 或 Skip 处理结果记为一条 rejected 生命周期事件，包括已记录 committed 标记但尚未追加事件的情况。缺失事件的修复要求文件与已提交的 poststate 字节完全一致；状态偏离或追加失败时保留 WAL，供审查恢复或重试。重复恢复不会重复生命周期事件。
 
+launcher 配置的语义验证器使用产品已挂载的 `subprocess` service。`createExternalVerifierAuthority(options, subprocess)` 在整棵进程树终止并静止后才返回结果或错误；service 销毁也会终止尚未结束的工作。缺少进程 owner 时，非空 launcher 配置会被拒绝。原有 schema1 `verifyCandidate` 子请求和 semantic v2 签名保持不变，终止宽限为100 ms，stdout 上限为256 KiB，诊断前缀也有界。显式删除环境变量使 provider 的 proxy overlay 不能扩展验证器的允许列表。该进程生命周期不配置独立评估者，也不启用实测 trial。
+
 在 POSIX 上，共享文件系统写入会同步文件字节和受影响的目录项，包括创建目录时的祖先目录项。评审事务在将改名、删除或恢复操作计为完成前逐项同步；重试看到相同状态时也会重新执行必要的同步。事件追加会同步文件及其父目录。同步失败可能留下可见的新字节或标记：操作仍然失败，保留恢复证据，不能从可见性推断持久性。旧版 win32 对目录 fsync `EPERM` 的例外仅保留可见性行为。这些检查验证操作系统同步请求的顺序和进程崩溃恢复，不证明物理断电持久性、独立评估者的密钥保管或对外部并发写入者的排他控制。
 
 <a id="read-only-learning-evidence"></a>

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { afterEach, describe, expect, it } from 'vitest'
 import KnowledgeWikiService from '../src/index.ts'
 import { wikiTestConfig } from './config-fixture.ts'
@@ -25,17 +26,21 @@ afterEach(async () => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-function service(raw: string): KnowledgeWikiService {
+function service(raw: string, managedProcesses = true): KnowledgeWikiService {
   const root = mkdtempSync(join(tmpdir(), 'wiki-launcher-config-'))
   roots.push(root)
   const ctx = new Context()
   contexts.push(ctx)
+  if (managedProcesses) new LocalSubprocessRuntime(ctx)
   return new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot: join(root, 'wiki'), mainRoot: root, knowledgeVerifierConfig: raw,
   }))
 }
 
 describe('launcher-owned verifier configuration boundary', () => {
+  it('refuses configured execution when the product process owner is absent', () => {
+    expect(() => service(JSON.stringify(config), false)).toThrow('requires the product subprocess service')
+  })
   it.each(['{broken', 'null', '[]', '"verifier"'])('fails load for malformed JSON authority: %s', (raw) => {
     expect(() => service(raw)).toThrow(/knowledgeVerifierConfig must be/u)
   })

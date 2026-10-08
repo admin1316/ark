@@ -8,6 +8,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { generateKeyPairSync, sign } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -17,6 +18,7 @@ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -24,7 +26,8 @@ import * as WikiTools from '@deepseek-ai/dsh-tool-knowledge-wiki'
 import KnowledgeWikiService from '../src/index.ts'
 import { readKnowledgeEventLog, replayKnowledgeEvents, shouldRetainKnowledge } from '../src/knowledge-governance.ts'
 import { appendCandidateReviews } from '../src/reviews.ts'
-import { sha256, validateLearningReceiptChain, type KnowledgeWikiVerifierAuthority } from '../src/verifier.ts'
+import type { WikiReviewItem } from '../src/types.ts'
+import { buildVerificationRequest, canonicalJson, sha256, validateLearningReceiptChain, type KnowledgeWikiVerifierAuthority } from '../src/verifier.ts'
 import { seedHistoricalCanonicalKnowledge } from './historical-governed-fixture.ts'
 import { verifierAuthority } from './verifier-authority-fixture.ts'
 import { externalBoundariesFixture, type ExternalBoundaryCalls } from './fixtures/loader-external-boundaries.ts'
@@ -81,6 +84,7 @@ async function boot(
   projectRoot: string,
   calls: ExternalBoundaryCalls,
   authority: KnowledgeWikiVerifierAuthority = verifierAuthority(),
+  configuredVerifier?: string,
 ): Promise<Context> {
   const configPath = join(projectRoot, 'cordis.yml')
   await writeFile(configPath, [
@@ -92,6 +96,7 @@ async function boot(
     `    root: ${JSON.stringify(join(projectRoot, 'session-logs'))}`,
     '    compression: none',
     '    packChunks: false',
+    ...(configuredVerifier === undefined ? [] : ["- name: '@deepseek-ai/dsh-subprocess-local'"]),
     "- name: '@deepseek-ai/dsh-agent'",
     "- name: '@deepseek-ai/dsh-system-prompt'",
     "- name: '@deepseek-ai/dsh-tools'",
@@ -103,6 +108,7 @@ async function boot(
     `    mainRoot: ${JSON.stringify(projectRoot)}`,
     `    wikiRoot: ${JSON.stringify(join(projectRoot, 'wiki'))}`,
     "    credential: ''",
+    ...(configuredVerifier === undefined ? [] : [`    knowledgeVerifierConfig: ${JSON.stringify(configuredVerifier)}`]),
     "- name: '@deepseek-ai/dsh-tool-knowledge-wiki'",
     '',
   ].join('\n'))
@@ -116,6 +122,7 @@ async function boot(
     ['fixture:knowledge-wiki-external-boundaries', externalBoundariesFixture(authority, calls)],
     ['@deepseek-ai/cordis-plugin-timer', Timer],
     ['@deepseek-ai/dsh-session', SessionStore],
+    ['@deepseek-ai/dsh-subprocess-local', LocalSubprocessRuntime],
     ['@deepseek-ai/dsh-session-persistence-jsonl', JsonlSessionPersistence],
     ['@deepseek-ai/dsh-agent', AgentRegistry],
     ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
@@ -188,6 +195,46 @@ no task is measured and no trial success or counterfactual advantage is asserted
 `
 
 describe('Knowledge Wiki real keyless YAML Loader composition', () => {
+  it('uses the configured managed child through the real Wiki service and retains check-only denial', async () => {
+    root = await mkdtemp(join(tmpdir(), 'wiki-loader-managed-verifier-'))
+    const wikiRoot = join(root, 'wiki')
+    const candidatePath = '_candidates/ingest/concepts/loader-managed-verifier.md'
+    const reviewFile = join(root, '.llm-wiki', 'review.json')
+    const candidateFile = join(wikiRoot, candidatePath)
+    mkdirSync(dirname(candidateFile), { recursive: true })
+    writeFileSync(candidateFile, CANDIDATE_BYTES)
+    expect(appendCandidateReviews(reviewFile, root, 'fixture:managed-child', [`wiki/${candidatePath}`])).toBe(1)
+    const review = (JSON.parse(readFileSync(reviewFile, 'utf8')) as WikiReviewItem[])[0]!
+    const sourceOwner = verifierAuthority()
+    const request = buildVerificationRequest(sourceOwner, wikiRoot, review, 'Promote')!
+    expect(request).toBeDefined()
+    const keys = generateKeyPairSync('ed25519')
+    const unsigned = {
+      authorityId: 'fixture-managed-child', requestHash: sha256(canonicalJson(request)), result: 'pass',
+      methods: ['integration_test'], outcomes: [{ name: 'managed-source-check', result: 'pass', evidence: ['fixture source check only'] }],
+      issuedAt: new Date().toISOString(),
+    }
+    const result = { ...unsigned, proof: sign(null, Buffer.from(canonicalJson(unsigned)), keys.privateKey).toString('base64') }
+    const script = join(root, 'verifier.mjs')
+    writeFileSync(script, `process.stdin.resume(); process.stdin.on('end', () => process.stdout.write(${JSON.stringify(JSON.stringify(result))}));\n`)
+    const config = JSON.stringify({
+      authorityId: unsigned.authorityId, executable: process.execPath, args: [script], timeoutMs: 5000,
+      sourceIdentity: sourceOwner.sourceIdentity(),
+      publicKey: keys.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    })
+    const calls: ExternalBoundaryCalls = { verifier: 0, credentials: 0, llm: 0 }
+    const ctx = await boot(root, calls, sourceOwner, config)
+    const service = ctx.get('knowledgeWiki') as KnowledgeWikiService
+    expect(ctx.get('subprocess')).toBeInstanceOf(LocalSubprocessRuntime)
+    await expect(service.verifyCandidate({ reviewId: review.id, action: 'Promote' }, new AbortController().signal))
+      .resolves.toMatchObject({ ok: true, result: 'pass' })
+    await expect(service.resolveReview({ reviewId: review.id, action: 'Promote' })).resolves.toBe(false)
+    expect(existsSync(join(wikiRoot, 'concepts/loader-managed-verifier.md'))).toBe(false)
+    expect(calls).toEqual({ verifier: 0, credentials: 0, llm: 0 })
+    console.info('COMPOSED_MANAGED_VERIFIER_TRANSCRIPT', 'configured child accepted; injected verifier/model/credential untouched; measured-trial/canonical denied')
+  })
+
   it.skipIf(process.platform === 'win32')('denies post-rename flush failure and completes Archive through cold composed recovery without duplicate events', async () => {
     root = await mkdtemp(join(tmpdir(), 'wiki-loader-directory-durability-'))
     const projectRoot = root

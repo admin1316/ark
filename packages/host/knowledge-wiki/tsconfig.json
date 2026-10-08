@@ -40,6 +40,12 @@
     },
     {
       "path": "../../../vendor/timer"
+    },
+    {
+      "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../util/http-proxy"
     }
   ]
 }

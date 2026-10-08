@@ -1,7 +1,8 @@
 /** Launcher-owned external verifier adapter for governed Wiki candidates. */
 
 import { createPrivateKey, createPublicKey, KeyObject, sign, verify } from 'node:crypto'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { proxyEnvironmentForChild } from '@deepseek-ai/dsh-http-proxy'
 import { isAbsolute } from 'node:path'
 import type {
   IndependentVerificationRequest,
@@ -112,98 +113,106 @@ function verifyResult(
   return verify(null, Buffer.from(signedPayload(unsigned), 'utf8'), publicKey, Buffer.from(proof, 'base64'))
 }
 
-function terminate(child: ChildProcessWithoutNullStreams): void {
-  child.kill('SIGTERM')
-  setTimeout(() => {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-  }, 100).unref()
-}
-
 async function runVerifier(
   options: ExternalVerifierOptions,
+  subprocess: SubprocessRuntime,
   request: IndependentVerificationRequest,
   publicKey: ReturnType<typeof createPublicKey>,
   signal: AbortSignal,
 ): Promise<IndependentVerificationResult> {
+  if (signal.aborted) throw new Error('external verifier aborted')
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const payload = `${canonicalJson({ schemaVersion: 1, operation: 'verifyCandidate', request })}\n`
-  return new Promise((resolvePromise, reject) => {
-    if (signal.aborted) {
-      reject(new Error('external verifier aborted'))
+  const controller = new AbortController()
+  let failure: Error | undefined
+  const stop = (error: Error): void => {
+    failure ??= error
+    controller.abort()
+  }
+  const abort = (): void => { stop(new Error('external verifier aborted')) }
+  signal.addEventListener('abort', abort, { once: true })
+  const timer = setTimeout(() => { stop(new Error(`external verifier timed out after ${timeoutMs}ms`)) }, timeoutMs)
+  const stdout: Buffer[] = []
+  const stderr: Buffer[] = []
+  let outputBytes = 0
+  let stderrBytes = 0
+  // The subprocess provider merges onto its scrubbed ambient environment. Remove
+  // every other name explicitly to retain this adapter's stricter allowlist.
+  const env: NodeJS.ProcessEnv = Object.fromEntries(
+    [...Object.keys(process.env), ...Object.keys(proxyEnvironmentForChild())].map(key => [key, undefined]),
+  )
+  Object.assign(env, safeEnvironment())
+  let child: SubprocessHandle | undefined
+  const readOutput = (chunk: Buffer | string): void => {
+    if (failure !== undefined) return
+    const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    outputBytes += value.byteLength
+    if (outputBytes > MAX_OUTPUT_BYTES) {
+      stop(new Error('external verifier output exceeds 256 KiB'))
       return
     }
-    let settled = false
-    let outputBytes = 0
-    const stdout: Buffer[] = []
-    const stderr: Buffer[] = []
-    const child = spawn(options.executable, [...(options.args ?? [])], {
-      shell: false,
-      env: safeEnvironment(),
-      stdio: ['pipe', 'pipe', 'pipe'],
+    stdout.push(value)
+  }
+  const readDiagnostic = (chunk: Buffer | string): void => {
+    const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    const retained = value.subarray(0, Math.max(0, 16 * 1024 - stderrBytes))
+    if (retained.byteLength > 0) stderr.push(retained)
+    stderrBytes += retained.byteLength
+  }
+  try {
+    child = subprocess.spawn({
+      argv: [options.executable, ...(options.args ?? [])], cwd: process.cwd(),
+      env, signal: controller.signal, graceMs: 100,
+      stdio: { stdin: { data: payload }, stdout: 'pipe', stderr: 'pipe' },
     })
-    const timerRef: { value?: NodeJS.Timeout } = {}
-    const cleanup = (): void => {
-      if (timerRef.value !== undefined) clearTimeout(timerRef.value)
+    if (child.stdout === undefined || child.stderr === undefined) throw new Error('external verifier requires piped output')
+    child.stdout.on('data', readOutput)
+    child.stderr.on('data', readDiagnostic)
+    child.stdout.on('error', stop)
+    child.stderr.on('error', stop)
+    const outcome = await child.done
+    // A settled leader can leave descendants holding inherited pipes or doing
+    // work. Teardown and await tree quiescence before consuming even a signed result.
+    child.terminate()
+    await child.waitForExit()
+    if (failure !== undefined) throw failure
+    if (outcome.exitCode !== 0) {
+      const detail = Buffer.concat(stderr).toString('utf8').slice(0, 1000)
+      throw new Error(`external verifier exited ${String(outcome.exitCode)}${outcome.signal === null ? '' : ` (${outcome.signal})`}${detail === '' ? '' : `: ${detail}`}`)
+    }
+    const parsed = JSON.parse(Buffer.concat(stdout).toString('utf8')) as IndependentVerificationResult
+    if (!verifyResult(options.authorityId, publicKey, request, parsed)) throw new Error('external verifier result signature or request binding is invalid')
+    return parsed
+  } catch (error) {
+    throw failure ?? error
+  } finally {
+    try {
+      // A spawn or stream failure also retains ownership until its tree is gone.
+      child?.terminate()
+      await child?.waitForExit()
+    } finally {
+      clearTimeout(timer)
       signal.removeEventListener('abort', abort)
+      child?.stdout?.off('data', readOutput)
+      child?.stderr?.off('data', readDiagnostic)
+      child?.stdout?.off('error', stop)
+      child?.stderr?.off('error', stop)
+      child?.stdout?.destroy()
+      child?.stderr?.destroy()
     }
-    const fail = (error: Error): void => {
-      if (settled) return
-      settled = true
-      cleanup()
-      reject(error)
-    }
-    const abort = (): void => {
-      terminate(child)
-      fail(new Error('external verifier aborted'))
-    }
-    child.stdout.on('data', (chunk: Buffer | string) => {
-      const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-      outputBytes += value.byteLength
-      if (outputBytes > MAX_OUTPUT_BYTES) {
-        terminate(child)
-        fail(new Error('external verifier output exceeds 256 KiB'))
-        return
-      }
-      stdout.push(value)
-    })
-    child.stderr.on('data', (chunk: Buffer | string) => {
-      if (Buffer.concat(stderr).byteLength < 16 * 1024) stderr.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-    })
-    child.once('error', (error) => { fail(error) })
-    child.once('close', (code, childSignal) => {
-      if (settled) return
-      if (code !== 0) {
-        const detail = Buffer.concat(stderr).toString('utf8').slice(0, 1000)
-        fail(new Error(`external verifier exited ${String(code)}${childSignal === null ? '' : ` (${childSignal})`}${detail === '' ? '' : `: ${detail}`}`))
-        return
-      }
-      try {
-        const parsed = JSON.parse(Buffer.concat(stdout).toString('utf8')) as IndependentVerificationResult
-        if (!verifyResult(options.authorityId, publicKey, request, parsed)) throw new Error('external verifier result signature or request binding is invalid')
-        settled = true
-        cleanup()
-        resolvePromise(parsed)
-      } catch (error) {
-        fail(error instanceof Error ? error : new Error(String(error)))
-      }
-    })
-    signal.addEventListener('abort', abort, { once: true })
-    const timer = setTimeout(() => {
-      terminate(child)
-      fail(new Error(`external verifier timed out after ${timeoutMs}ms`))
-    }, timeoutMs)
-    timerRef.value = timer
-    timer.unref()
-    child.stdin.end(payload)
-  })
+  }
 }
 
 /**
  * Create a launcher-owned, signed external verifier authority.
  * @param options - Fixed launcher-owned command, source identity, keys, and deadline.
+ * @param subprocess - Product-owned process service retaining children through teardown and host disposal.
  * @returns An authority that can be injected into KnowledgeWikiService.
  */
-export function createExternalVerifierAuthority(options: ExternalVerifierOptions): KnowledgeWikiVerifierAuthority {
+export function createExternalVerifierAuthority(
+  options: ExternalVerifierOptions,
+  subprocess: SubprocessRuntime,
+): KnowledgeWikiVerifierAuthority {
   if (!AUTHORITY_RE.test(options.authorityId)) throw new Error('external verifier authorityId is invalid')
   if (!isAbsolute(options.executable)) throw new Error('external verifier executable must be absolute')
   if (!validSourceIdentity(options.sourceIdentity)) throw new Error('external verifier source identity is invalid')
@@ -218,7 +227,7 @@ export function createExternalVerifierAuthority(options: ExternalVerifierOptions
   return {
     authorityId: options.authorityId,
     sourceIdentity: () => sourceIdentity,
-    verifyCandidate: (request, signal) => runVerifier({ ...options, timeoutMs }, request, publicKey, signal),
+    verifyCandidate: (request, signal) => runVerifier({ ...options, timeoutMs }, subprocess, request, publicKey, signal),
     validateCandidateResult: (request, result) => verifyResult(options.authorityId, publicKey, request, result),
     sealPromotion(payload: string): VerificationAuthoritySeal {
       return { authorityId: options.authorityId, proof: sign(null, Buffer.from(payload, 'utf8'), privateKey).toString('base64') }

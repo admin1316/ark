@@ -229,7 +229,7 @@ export interface Config {
 }
 
 /** Parse launcher-owned verifier configuration without accepting project data. */
-function configuredVerifierAuthority(raw: string | undefined): KnowledgeWikiVerifierAuthority | undefined {
+function configuredVerifierAuthority(ctx: Context, raw: string | undefined): KnowledgeWikiVerifierAuthority | undefined {
   const value = raw?.trim() ?? ''
   if (value === '') return undefined
   let parsed: unknown
@@ -256,6 +256,8 @@ function configuredVerifierAuthority(raw: string | undefined): KnowledgeWikiVeri
     && (!Array.isArray(config.args) || config.args.some(argument => typeof argument !== 'string'))) {
     throw new Error('knowledgeVerifierConfig.args must be an array of strings')
   }
+  const subprocess = ctx.get('subprocess')
+  if (subprocess === undefined) throw new Error('knowledgeVerifierConfig requires the product subprocess service')
   return createExternalVerifierAuthority({
     authorityId: config.authorityId,
     executable: config.executable,
@@ -264,7 +266,7 @@ function configuredVerifierAuthority(raw: string | undefined): KnowledgeWikiVeri
     sourceIdentity: sourceIdentity as ExternalVerifierOptions['sourceIdentity'],
     ...(Array.isArray(config.args) ? { args: config.args } : {}),
     ...(typeof config.timeoutMs === 'number' ? { timeoutMs: config.timeoutMs } : {}),
-  })
+  }, subprocess)
 }
 
 /**
@@ -346,7 +348,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       && candidateTimeoutMs > 0
       ? candidateTimeoutMs
       : 30_000
-    this.configuredVerifier = configuredVerifierAuthority(config.knowledgeVerifierConfig)
+    this.configuredVerifier = configuredVerifierAuthority(ctx, config.knowledgeVerifierConfig)
     this.ownedStageExecutor = config.ownedStageExecutor
       ? createOwnedStageExecutor({ resolveConnection: () => this.resolveStageConnection() })
       : undefined

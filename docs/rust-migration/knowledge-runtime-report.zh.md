@@ -75,6 +75,8 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 
 这个仅在源码中接入的 consumer 不授予 trial 访问权、successful-use 信用或 canonical 写入权限。Native 与发布的 profile 尚未组合它。实际 evaluator enrollment、受保护 journal 的保管、最终 provider 请求观察及独立测量的配对任务仍未提供；当前 Wiki 字节、目标不存在及独占 writer/CAS 安全不属于其只读证明范围。两个既有 Native 产物都不包含这份源码。真实对话、跨 session 修复复用、utility 提升及当前源码 CI/Native 回滚验收仍未验证。
 
+[验证器进程证据](../../scripts/rust-migration/evidence/verifier-process-quiescence-20261009.json) 把后续执行生命周期修复绑定到父提交 `dd8c1ac21ff0a42e609daf39da686e1ec03c1564` 和精确文件 pin。四项实际进程测试复现提前结算或辅助进程存活；修复后的 semantic adapter 使用产品 subprocess owner，并等待整棵进程树静止。真实 YAML Loader 通过 Wiki service 运行配置的 child，同时 canonical 晋级仍被拒绝。这是本地进程与兼容性证据，没有运行 Native 任务，也没有独立注册、v2 持久化 writer、最终 provider observer 或真实配对学习结果。
+
 ## Current Rust candidate seam
 
 The working tree now exposes an optional, default-disabled Rust search candidate in `KnowledgeWikiService`. Shadow mode is observational: it sends a bounded immutable page/query DTO to an isolated child process, checks the input and result digests plus canonical BM25 equality, and keeps the TypeScript result. Candidate failures, cancellation, timeout, or divergence fall back to TypeScript. Enforce mode is deliberately rejected until Rust covers the complete hybrid BM25-plus-embedding contract. This seam is testable in a candidate profile, but the active Ark profile remains TypeScript-only and the acceptance audit remains `UNKNOWN` without production-boundary receipts.

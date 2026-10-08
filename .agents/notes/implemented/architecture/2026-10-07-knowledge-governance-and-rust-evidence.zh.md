@@ -38,6 +38,8 @@ checkout 包含隔离的 [knowledge-search shadow crate](../../../../rust/knowle
 - **优先迁移 Rust：** 拒绝，因为 shadow crate 和相同结果 digest 不证明端到端收益，且现有 TypeScript/native owner 已提供取消和恢复。
 - **合并成一个总分：** 拒绝，因为每项 rate 与零泄漏要求必须独立检查。
 
+外部语义检查 adapter 把进程创建与销毁交给已挂载的 subprocess owner。取消、截止时间、输出超限及 leader 完成，都要在整棵进程树终止并静止后才结算，并保留最先发生的失败原因。adapter 保持显式 child 环境允许列表和有界诊断前缀。它不再单独启动不等待结果的 kill timer，尚未结束的检查也参与产品 service 销毁；原有语义请求和结果签名前像不变。缺少进程 service 时拒绝已配置的执行，不创建失管 child。
+
 ## Consequences
 
 Wiki 事件日志可审计、可回放。prepared canonical journal 会阻止初始化或项目切换并保留证据，不会在缺少实测 trial authority 时继续提交。Archive 恢复认证操作身份并只记录一次终态 rejection；单独的 committed 标记不能认证文件状态已提交。历史接纳 fixture 用于检查读取边界，不会启用当前晋级。新增 session event 不改变 session format version。没有 calling session 的工具调用仍可服务非 Agent caller，但模型可见的 Agent 调用不能绕过 session event 记录。Rust enforce 保持 deferred，直到具体候选登记 corpus、边界和三组证据。

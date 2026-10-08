@@ -1,10 +1,13 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { generateKeyPairSync, sign } from 'node:crypto'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { setTimeout as delay } from 'node:timers/promises'
 import { afterEach, describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import {
-  createExternalVerifierAuthority,
+  createExternalVerifierAuthority as createAuthority,
   type ExternalVerifierOptions,
 } from '../src/external-verifier-adapter.ts'
 import {
@@ -15,10 +18,42 @@ import {
 } from '../src/verifier.ts'
 
 const roots: string[] = []
+const ownedPids = new Set<number>()
+const contexts: Context[] = []
 
-afterEach(() => {
+afterEach(async () => {
+  for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
+  for (const pid of ownedPids) {
+    try { process.kill(pid, 'SIGKILL') } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    }
+  }
+  await waitUntil(() => [...ownedPids].every(pid => !pidAlive(pid)))
+  ownedPids.clear()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
+
+function createExternalVerifierAuthority(options: ExternalVerifierOptions) {
+  const ctx = new Context()
+  contexts.push(ctx)
+  const subprocess = new LocalSubprocessRuntime(ctx)
+  return createAuthority(options, subprocess)
+}
+
+function pidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false
+    throw error
+  }
+}
+
+async function waitUntil(ready: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5000
+  while (!ready()) {
+    if (Date.now() >= deadline) throw new Error('owned verifier fixture did not reach its expected state')
+    await delay(10)
+  }
+}
 
 const sourceIdentity = {
   commit: 'a'.repeat(40),
@@ -86,6 +121,66 @@ function authorityOptions(
 }
 
 describe('external verifier adapter', () => {
+  it('keeps an ordinary unlisted ambient value out of the managed verifier child', async () => {
+    const fixture = authorityFixture()
+    const name = 'ARK_VERIFIER_TEST_UNLISTED'
+    const previous = process.env[name]
+    process.env[name] = 'fixture-must-not-cross'
+    try {
+      const script = verifierScript(fixture.result, `
+if (process.env.${name} !== undefined) process.exit(88)
+`)
+      const authority = createExternalVerifierAuthority(authorityOptions(fixture, { args: [script] }))
+      await expect(authority.verifyCandidate(request, new AbortController().signal)).resolves.toEqual(fixture.result)
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(process.env, name)
+      else process.env[name] = previous
+    }
+  })
+
+  it.skipIf(process.platform === 'win32').each(['abort', 'timeout', 'overflow', 'success', 'dispose'] as const)(
+    'joins the owned leader and TERM-trapping helper before settling %s',
+    async (mode) => {
+      const fixture = authorityFixture()
+      const root = roots.at(-1)!
+      const pidFile = join(root, 'owned-pids.json')
+      const executable = join(root, 'owned-tree.mjs')
+      const helper = 'process.on(\'SIGTERM\', () => {}); process.send(process.pid); setInterval(() => {}, 1000)'
+      writeFileSync(executable, `
+import { spawn } from 'node:child_process'
+import { renameSync, writeFileSync } from 'node:fs'
+process.on('SIGTERM', () => {})
+process.stdin.resume()
+const helper = spawn(process.execPath, ['-e', ${JSON.stringify(helper)}], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
+helper.once('message', pid => {
+  writeFileSync(${JSON.stringify(pidFile + '.tmp')}, JSON.stringify([process.pid, pid]))
+  renameSync(${JSON.stringify(pidFile + '.tmp')}, ${JSON.stringify(pidFile)})
+  process.stdout.write(${JSON.stringify(JSON.stringify(fixture.result))})
+  ${mode === 'overflow' ? 'process.stdout.write(\'x\'.repeat(2 * 1024 * 1024))' : ''}
+  ${mode === 'success' ? 'process.exit(0)' : 'setInterval(() => {}, 1000)'}
+})
+`)
+      const controller = new AbortController()
+      const authority = createExternalVerifierAuthority(authorityOptions(fixture, {
+        args: [executable], timeoutMs: mode === 'timeout' ? 1000 : 5000,
+      }))
+      const pending = authority.verifyCandidate(request, controller.signal)
+      // Observe every settlement immediately, including output overflow before the readiness poll.
+      const outcome = pending.then(value => ({ value }), (error: unknown) => ({ error }))
+      await waitUntil(() => existsSync(pidFile))
+      const pids = JSON.parse(readFileSync(pidFile, 'utf8')) as number[]
+      for (const pid of pids) ownedPids.add(pid)
+      if (mode === 'abort') controller.abort()
+      if (mode === 'dispose') await contexts.at(-1)!.fiber.dispose()
+      const result = await outcome
+      if (mode === 'success') expect(result).toEqual({ value: fixture.result })
+      else expect('error' in result && result.error instanceof Error && result.error.message).toMatch(
+        mode === 'abort' ? /aborted/u : mode === 'timeout' ? /timed out/u : mode === 'dispose' ? /exited/u : /output exceeds/u,
+      )
+      expect(pids.map(pidAlive)).toEqual([false, false])
+    },
+  )
+
   it('verifies signed results and promotion seals from a launcher-owned child', async () => {
     const fixture = authorityFixture()
     const authority = createExternalVerifierAuthority({
