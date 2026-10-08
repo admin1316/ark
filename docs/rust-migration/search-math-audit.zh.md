@@ -80,7 +80,7 @@ cos(a,b) = (a · b) / (||a||₂ ||b||₂)
 
 ### 2.1 benchmark 方法学限制
 
-优化 benchmark 复用了预构建的 TypeScript index，而 current 实现每个 query 都重建 token frequency 和 document frequency。Rust 测量每次都新建进程、解析 JSON 并重建 index，三者执行边界不同。benchmark 的 optimized stop-word 只有 12 项，正式搜索有 257 项，因此合成语料上的 digest 一致不能证明完整等价。benchmark 也没有 warmup，迭代次数较少，并且同步循环无法取得 event-loop delay 样本。
+优化 benchmark 复用了预构建的 TypeScript index，而 current 实现每个 query 都重建 token frequency 和 document frequency。Rust 测量每次都新建进程、解析 JSON 并重建 index，三者执行边界不同。旧 optimized benchmark 只有 12 个 stop-word，正式搜索列出 257 个（去重后 244 个）；现在 benchmark 已复用正式 `STOP_WORDS` 集。此前合成语料上的 digest 一致因此不能证明完整等价。benchmark 也没有 warmup，迭代次数较少，并且同步循环无法取得 event-loop delay 样本。
 
 在用延迟数字做决策前，应分开测四种边界：TypeScript cold/rebuild、TypeScript warm/cached index、Rust warm persistent child、Rust cold process；同时报告 index build、序列化/IPC、embedding 和 search 的耗时。差分语料要加入 stop words、重复 query token、title/alias 命中、Unicode 与非 BMP 文本、缺失词、长页面和 byte-limit 边界。同一公式继续使用当前 exact digest contract；换 BM25F 或 RRF 必须建立版本化 baseline，不能放宽比较条件。
 

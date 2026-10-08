@@ -6,7 +6,7 @@ import { existsSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bm25 } from '../../packages/host/knowledge-wiki/src/search.ts'
+import { bm25, STOP_WORDS, tokenize } from '../../packages/host/knowledge-wiki/src/search.ts'
 import { isolatedChildEnvironment } from './process-isolation.ts'
 
 export interface Page {
@@ -23,24 +23,8 @@ interface PreparedPage {
   readonly titleTokens: ReadonlySet<string>
 }
 
-const STOP = new Set(['the', 'and', 'or', 'for', 'with', 'not', 'this', 'that', '知识', '文档', '项目', '使用'])
 const K1 = 1.5
 const B = 0.75
-
-function tokenize(text: string): string[] {
-  const out: string[] = []
-  const lower = text.toLowerCase()
-  for (const match of lower.matchAll(/[a-z0-9][a-z0-9._-]{1,}/g)) out.push(match[0])
-  for (const seg of lower.matchAll(/[\u4e00-\u9fff]+/g)) {
-    const value = seg[0]
-    if (value.length === 1) out.push(value)
-    else {
-      for (const character of value) out.push(character)
-      for (let index = 0; index + 1 < value.length; index += 1) out.push(value.slice(index, index + 2))
-    }
-  }
-  return out
-}
 
 function prepare(pages: readonly Page[]): {
   readonly pages: PreparedPage[]
@@ -59,7 +43,7 @@ function prepare(pages: readonly Page[]): {
 }
 
 function optimizedBm25(index: ReturnType<typeof prepare>, query: string): Array<{ path: string; score: number }> {
-  const queryTokens = tokenize(query).filter(token => !STOP.has(token))
+  const queryTokens = tokenize(query).filter(token => !STOP_WORDS.has(token))
   if (queryTokens.length === 0) return []
   const scores = index.pages.map((item) => {
     let score = 0
@@ -247,6 +231,7 @@ export function runBenchmark(iterations = 30, explicitRustBinary?: string): Reco
     candidate: 'knowledge-search-bm25',
     implementation: { currentTypeScript: current, optimizedTypeScript: optimized, rust },
     corpusHash: input.hash,
+    stopWordCount: STOP_WORDS.size,
     iterations,
     differentialReplay,
     missingEvidence,
