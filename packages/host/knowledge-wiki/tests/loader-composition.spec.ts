@@ -85,6 +85,7 @@ async function boot(
   calls: ExternalBoundaryCalls,
   authority: KnowledgeWikiVerifierAuthority = verifierAuthority(),
   configuredVerifier?: string,
+  exposeGovernedTools?: boolean,
 ): Promise<Context> {
   const configPath = join(projectRoot, 'cordis.yml')
   await writeFile(configPath, [
@@ -110,6 +111,7 @@ async function boot(
     "    credential: ''",
     ...(configuredVerifier === undefined ? [] : [`    knowledgeVerifierConfig: ${JSON.stringify(configuredVerifier)}`]),
     "- name: '@deepseek-ai/dsh-tool-knowledge-wiki'",
+    ...(exposeGovernedTools === undefined ? [] : ['  config:', `    exposeGovernedTools: ${exposeGovernedTools}`]),
     '',
   ].join('\n'))
 
@@ -195,6 +197,34 @@ no task is measured and no trial success or counterfactual advantage is asserted
 `
 
 describe('Knowledge Wiki real keyless YAML Loader composition', () => {
+  it('assembles an ingestion-only catalog through YAML while retaining the Wiki service', async () => {
+    root = await mkdtemp(join(tmpdir(), 'wiki-loader-ingestion-only-'))
+    const calls: ExternalBoundaryCalls = { verifier: 0, credentials: 0, llm: 0 }
+    const ctx = await boot(root, calls, verifierAuthority(), undefined, false)
+    expect(ctx.get('knowledgeWiki')).toBeInstanceOf(KnowledgeWikiService)
+    const owner = await ctx.agents.create({
+      sessionId: SessionId('wiki-loader-ingestion-only'),
+      meta: { cwd: root },
+    })
+    expect(ctx.tools.schemas().map(schema => schema.name).filter(name => name.startsWith('wiki_')))
+      .toEqual(['wiki_ingest'])
+    const section = (await ctx.systemPrompt.assemble()).sections.find(item => item.name === 'tool:knowledge-wiki')
+    expect(section?.text).toBe('Use wiki_ingest to enqueue source work.')
+    for (const [name, args] of [
+      ['wiki_search', { query: 'q' }], ['wiki_files', {}],
+      ['wiki_read', { path: 'concepts/a.md' }], ['wiki_graph', {}], ['wiki_reviews', {}],
+      ['wiki_verify_candidate', { reviewId: 'candidate-1', action: 'Promote' }],
+    ] as const) {
+      const result = await execute(ctx, owner.agent, name, args, `ingestion-only-${name}`)
+      expect(result.isError).toBe(true)
+      expect(result.content.filter(block => block.type === 'text').map(block => block.text).join(''))
+        .toContain(`unknown tool "${name}"`)
+    }
+    expect(owner.agent.session.events.filter(event => event.type === 'knowledge/retrieved'
+      || event.type === 'knowledge/injected')).toEqual([])
+    expect(calls).toEqual({ verifier: 0, credentials: 0, llm: 0 })
+  })
+
   it('uses the configured managed child through the real Wiki service and retains check-only denial', async () => {
     root = await mkdtemp(join(tmpdir(), 'wiki-loader-managed-verifier-'))
     const wikiRoot = join(root, 'wiki')

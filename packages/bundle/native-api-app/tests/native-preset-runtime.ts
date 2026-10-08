@@ -1,4 +1,7 @@
-/** Real Native preset composition shared by behavior tests and keyless snapshots. */
+/**
+ * Real Native preset composition shared by behavior tests and keyless snapshots.
+ * The Node Loader imports published package exports; run the Host build first.
+ */
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,17 +16,22 @@ const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 export async function createNativePresetRuntime() {
   const home = await mkdtemp(join(tmpdir(), 'dsh-native-code-preset-'))
   const previousHome = process.env.DSH_HOME
+  const previousVerifierConfig = process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
   let context: Context | undefined
   const dispose = async () => {
     try { await context?.fiber.dispose() }
     finally {
       if (previousHome === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previousHome
+      if (previousVerifierConfig === undefined) delete process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
+      else process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG = previousVerifierConfig
       await rm(home, { recursive: true, force: true })
     }
   }
   try {
     process.env.DSH_HOME = home
+    // This fixture supplies no verifier; the real profile must observe the same absence.
+    delete process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
     healProfilesModuleFallback(join(repoRoot, 'packages/boot/native-api-runner/package.json'), home)
     const profileDir = join(home, 'profiles', 'native-code')
     await mkdir(profileDir, { recursive: true })

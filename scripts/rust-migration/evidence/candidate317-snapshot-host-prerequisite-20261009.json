@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "status": "HOST02_PREREQUISITE_ATTACHED_TO_IMMUTABLE_SCOPED_SNAPSHOT_RECEIPT",
+  "consolidatedReceipt": {
+    "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/consolidated-snapshot-receipt.json",
+    "bytes": 15626,
+    "sha256": "8cc30861b5e87e1389fbb899deba79d12f52546b3e99c16a71c5511d7748a32c"
+  },
+  "rootHost02ExecutionReceipt": {
+    "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-host-build-final-02-execution.json",
+    "bytes": 1515,
+    "sha256": "30380c2510ef54cd73dbcd73ffd5e2560f8f5ddd54cbf0751ba025e9c28c02d9",
+    "actualExitCode": 0,
+    "status": "ACTUAL_HOST_BUILD_PASS_NOT_NATIVE_APP_BUILD",
+    "actualExitObservedFromExecSession": 45113,
+    "sourceVersion": "HEAD2104 plus separately pinned source edits; no new source commit yet"
+  },
+  "rootHost02LogMetadataFromExecutionReceipt": {
+    "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-host-build-final-02.log",
+    "sha256": "9cf68245d1544ffe73a3fe5b141afd1131c30b840e9712ef3ca07739a275a52b",
+    "bytes": 179419
+  },
+  "finalBuiltDoubleReplayExecutionReceipt": {
+    "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/final-built-execution-receipt.json",
+    "bytes": 17574,
+    "sha256": "3f5e029585b61b845a07dc1aa4d2c8d4d204e5f58633d355f2f8775d1334ecd2",
+    "actualExitCode": 0,
+    "status": "PASS",
+    "executedTests": 2,
+    "passedTests": 2,
+    "skippedTests": 81,
+    "sourceScopeStable": true
+  },
+  "matchingRecordedSourceAndRuntimePins": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/src/index.ts",
+      "sha256": "3b055d85f5c82712fe7353904034d7e9cf5fc65e8df8a0f8640ac1fcad364d2d",
+      "matchesFinalReplayRecordedPin": true
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/lib/index.js",
+      "sha256": "db0eee0f521255e0cb59fa102969ab867538fd0377e9486138388bad9e971ebd",
+      "matchesFinalReplayRecordedPin": true
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/lib/index.js",
+      "sha256": "a8f47161e5f9be7a0f9c6f0c35efcdd6ba4856d8818a4fe0e16fccf6945276eb",
+      "matchesFinalReplayRecordedPin": true
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/apps/cli/lib/bin.js",
+      "sha256": "5d4bc43dccde4d9af361ac1763125d09b0737ae477e3970d18853e7063cf3e5a",
+      "matchesFinalReplayRecordedPin": true
+    }
+  ],
+  "phaseDistinction": {
+    "sourceAndNormalReplay": "Separate source launch receipts remain in consolidated executions",
+    "earlyLibReplay": "built-replay-01 remains explicitly nonGating and before final Host02 binding",
+    "finalLibReplay": "final-built-double-replay ran after root-reported Host02 completion and its recorded source/runtime pins match the actual root Host02 receipt"
+  },
+  "proofLimits": [
+    "Scripted external model boundary, no real model reasoning or speed measurement",
+    "No Code preset SDK transcript; Native real-Loader SDK assembly is separately root-owned",
+    "No frozen 316 app mutation, no rebuilt Ark candidate/native UI acceptance in this child task",
+    "No learning permission activation, knowledge reuse, promotion, release or GitHub merge"
+  ],
+  "preservation": {
+    "consolidatedOriginalUnchanged": true,
+    "sourceAndCurrentLibNotRead": true,
+    "sourceNotChanged": true,
+    "activeAppHomeAndCredentialsNotTouched": true
+  },
+  "logVerificationScope": "Parent log path/bytes/SHA copied from its completed fixed execution receipt; no live log or runtime files read in this attachment task"
+}

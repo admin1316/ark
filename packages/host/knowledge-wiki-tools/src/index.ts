@@ -1,7 +1,7 @@
 /**
  * Model-facing knowledge-base tools over the knowledgeWiki service: the
- * agent in 对话 can search, read, and query the 万相织鉴 knowledge graph
- * natively — no MCP bridge, no desktop app. Tools register through the
+ * deployment chooses governed reads and verification or ingestion only.
+ * No MCP bridge or desktop app is added. Tools register through the
  * harness tool system; every call resolves the knowledgeWiki service
  * lazily so the plugin loads even when the service is absent.
  * @module @deepseek-ai/dsh-tool-knowledge-wiki
@@ -76,6 +76,27 @@ export const name = 'tool-knowledge-wiki'
 
 /** Required services: the tool registry and the prompt section owner. */
 export const inject = ['tools', 'systemPrompt']
+
+/** Deployment selection for the governed tool catalog. */
+export interface Config {
+  /**
+   * Expose governed reads and Candidate verification. Defaults to true;
+   * false retains only wiki_ingest. Exposure does not grant service authority.
+   */
+  readonly exposeGovernedTools?: boolean
+}
+
+/** Resolve the load-time catalog choice without coercing configuration values. */
+function resolveGovernedToolExposure(config: unknown): boolean {
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+    throw new TypeError('tool-knowledge-wiki config must be an object')
+  }
+  const exposure = (config as { readonly exposeGovernedTools?: unknown }).exposeGovernedTools
+  if (exposure !== undefined && typeof exposure !== 'boolean') {
+    throw new TypeError('exposeGovernedTools must be a boolean')
+  }
+  return exposure ?? true
+}
 
 /** Cap on returned hits / listed files / read characters. */
 const SEARCH_MAX_RESULTS = 8
@@ -229,16 +250,24 @@ function wikiRootRelativePath(input: string): string {
 /**
  * Register the knowledge-base tools.
  * @param ctx - plugin context.
+ * @param config - load-time tool exposure; invalid boolean values reject before registration.
  */
-export function apply(ctx: Context): void {
-  ctx.on('tools/result', (exec, result) => {
-    recordRenderedKnowledgeResult(exec, result)
-    return undefined
-  })
+export function apply(ctx: Context, config: Config = {}): void {
+  const exposeGovernedTools = resolveGovernedToolExposure(config)
   ctx.systemPrompt.section({
     name: 'tool:knowledge-wiki',
     order: 120,
-    text: 'Use wiki_search to find knowledge-base pages, wiki_read to read one Wiki-root-relative page, wiki_files to list canonical pages, wiki_graph to inspect the graph, wiki_reviews to inspect governance, wiki_verify_candidate to run the trusted verifier, and wiki_ingest to enqueue source work. Cite pages by their Wiki-root-relative path.',
+    text: exposeGovernedTools
+      ? 'Use wiki_search to find knowledge-base pages, wiki_read to read one Wiki-root-relative page, wiki_files to list canonical pages, wiki_graph to inspect the graph, wiki_reviews to inspect governance, wiki_verify_candidate to run the trusted verifier, and wiki_ingest to enqueue source work. Cite pages by their Wiki-root-relative path.'
+      : 'Use wiki_ingest to enqueue source work.',
+  })
+  if (!exposeGovernedTools) {
+    registerIngestTool(ctx)
+    return
+  }
+  ctx.on('tools/result', (exec, result) => {
+    recordRenderedKnowledgeResult(exec, result)
+    return undefined
   })
 
   ctx.tools.register(defineTool({
@@ -526,6 +555,52 @@ export function apply(ctx: Context): void {
     },
   }))
 
+  registerIngestTool(ctx)
+
+  ctx.tools.register(defineTool({
+    name: 'wiki_verify_candidate',
+    description: 'Run the canonical deterministic verifier for one Candidate review. The caller cannot provide pass/fail metadata or receipt hashes.',
+    parameters: {
+      reviewId: { type: 'string', required: true, description: 'Candidate review id returned by wiki_reviews.' },
+      action: {
+        type: 'string',
+        required: true,
+        enum: ['Promote', 'Merge', 'Replace', 'Deduplicate', 'Archive'],
+        description: 'Exact governance action the independent result must bind.',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          receiptId: { type: 'string' },
+          result: { type: 'string' },
+          evidence: { type: 'array', required: true, items: { type: 'string' } },
+          errorCode: { type: 'string' },
+        },
+      },
+      render: (_args, value) => textBlock(value.ok
+        ? `Candidate verified by the trusted owner (${value.receiptId}).`
+        : `Candidate verification failed${value.errorCode ? `: ${value.errorCode}` : '.'}`),
+    },
+    async execute(
+      args: {
+        reviewId: string
+        action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' | 'Archive'
+      },
+      exec,
+    ) {
+      const service = wikiService(ctx)
+      if (service === undefined) throw new Error('knowledgeWiki service unavailable')
+      return service.verifyCandidate({ reviewId: args.reviewId, action: args.action }, exec.signal)
+    },
+  }))
+}
+
+/** Register the durable ingestion consumer shared by both catalogs. */
+function registerIngestTool(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'wiki_ingest',
     description: 'Queue one raw source path or http(s) URL for the canonical Knowledge Wiki ingest owner. Returns the durable task state; it does not run a second direct ingest path.',
@@ -568,47 +643,6 @@ export function apply(ctx: Context): void {
         tasks: snapshot.tasks.map(task => ({ id: task.id, input: task.input, status: task.status })),
         running: snapshot.running,
       }
-    },
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'wiki_verify_candidate',
-    description: 'Run the canonical deterministic verifier for one Candidate review. The caller cannot provide pass/fail metadata or receipt hashes.',
-    parameters: {
-      reviewId: { type: 'string', required: true, description: 'Candidate review id returned by wiki_reviews.' },
-      action: {
-        type: 'string',
-        required: true,
-        enum: ['Promote', 'Merge', 'Replace', 'Deduplicate', 'Archive'],
-        description: 'Exact governance action the independent result must bind.',
-      },
-    },
-    output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          ok: { type: 'boolean', required: true },
-          receiptId: { type: 'string' },
-          result: { type: 'string' },
-          evidence: { type: 'array', required: true, items: { type: 'string' } },
-          errorCode: { type: 'string' },
-        },
-      },
-      render: (_args, value) => textBlock(value.ok
-        ? `Candidate verified by the trusted owner (${value.receiptId}).`
-        : `Candidate verification failed${value.errorCode ? `: ${value.errorCode}` : '.'}`),
-    },
-    async execute(
-      args: {
-        reviewId: string
-        action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' | 'Archive'
-      },
-      exec,
-    ) {
-      const service = wikiService(ctx)
-      if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      return service.verifyCandidate({ reviewId: args.reviewId, action: args.action }, exec.signal)
     },
   }))
 }

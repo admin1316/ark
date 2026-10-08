@@ -62,7 +62,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-async function setup(withService = true): Promise<{ ctx: Context; service?: FakeWiki }> {
+async function setup(withService = true, config: plugin.Config = {}): Promise<{ ctx: Context; service?: FakeWiki }> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(SystemPrompt)
@@ -72,7 +72,7 @@ async function setup(withService = true): Promise<{ ctx: Context; service?: Fake
     await ctx.plugin(FakeWiki)
     service = ctx.get('knowledgeWiki') as FakeWiki
   }
-  await ctx.plugin(plugin)
+  await ctx.plugin(plugin, config)
   return service === undefined ? { ctx } : { ctx, service }
 }
 
@@ -100,6 +100,81 @@ describe('Knowledge Wiki tool catalog', () => {
       .toEqual(['wiki_files', 'wiki_graph', 'wiki_ingest', 'wiki_read', 'wiki_reviews', 'wiki_search', 'wiki_verify_candidate'])
     const section = (await ctx.systemPrompt.assemble()).sections.find(item => item.name === 'tool:knowledge-wiki')
     expect(section?.text).toContain('wiki_search')
+  })
+
+  it('exposes the full catalog when explicitly enabled without changing service denial', async () => {
+    const { ctx } = await setup(false, { exposeGovernedTools: true })
+    expect(ctx.tools.schemas().map(schema => schema.name).filter(name => name.startsWith('wiki_')))
+      .toHaveLength(7)
+    const result = await execute(ctx, 'wiki_search', { query: 'q' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('knowledgeWiki service unavailable')
+  })
+
+  it('omits governed calls while preserving ingestion and its queue owner', async () => {
+    const { ctx, service } = await setup(true, { exposeGovernedTools: false })
+    expect(ctx.tools.schemas().map(schema => schema.name).filter(name => name.startsWith('wiki_')))
+      .toEqual(['wiki_ingest'])
+    const section = (await ctx.systemPrompt.assemble()).sections.find(item => item.name === 'tool:knowledge-wiki')
+    expect(section?.text).toBe('Use wiki_ingest to enqueue source work.')
+    for (const [name, args] of [
+      ['wiki_search', { query: 'q' }], ['wiki_files', {}],
+      ['wiki_read', { path: 'entities/a.md' }], ['wiki_graph', {}], ['wiki_reviews', {}],
+      ['wiki_verify_candidate', { reviewId: 'candidate-1', action: 'Promote' }],
+    ] as const) {
+      const result = await execute(ctx, name, args)
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain(`unknown tool "${name}"`)
+    }
+    expect(service?.modelSearch).not.toHaveBeenCalled()
+    expect(service?.modelList).not.toHaveBeenCalled()
+    expect(service?.modelPageContent).not.toHaveBeenCalled()
+    expect(service?.modelGraph).not.toHaveBeenCalled()
+    expect(service?.modelReviews).not.toHaveBeenCalled()
+    expect(service?.verifyCandidate).not.toHaveBeenCalled()
+    service?.ingestQueueAdd.mockResolvedValue({
+      tasks: [{ id: 7, input: 'raw/a.md', status: 'pending' }], running: true,
+    })
+    const ingested = await execute(ctx, 'wiki_ingest', { input: 'raw/a.md' })
+    expect(ingested.isError).toBe(false)
+    expect(ingested.value).toEqual({ tasks: [{ id: 7, input: 'raw/a.md', status: 'pending' }], running: true })
+    expect(service?.ingestQueueAdd).toHaveBeenCalledExactlyOnceWith({ inputs: ['raw/a.md'] })
+  })
+
+  it.each([null, 'false', 'true', 0, 1, [], {}])('rejects non-boolean exposure before registering, value=%j', async (value) => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    expect(() => { plugin.apply(ctx, { exposeGovernedTools: value } as unknown as plugin.Config) })
+      .toThrow('exposeGovernedTools must be a boolean')
+    expect(ctx.tools.schemas()).toEqual([])
+    expect((await ctx.systemPrompt.assemble()).sections.find(item => item.name === 'tool:knowledge-wiki'))
+      .toBeUndefined()
+  })
+
+  it.each([null, false, 'false', []])('rejects a non-object plugin config before registering, config=%j', async (value) => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    expect(() => { plugin.apply(ctx, value as unknown as plugin.Config) })
+      .toThrow('tool-knowledge-wiki config must be an object')
+    expect(ctx.tools.schemas()).toEqual([])
+  })
+
+  it.each([false, true])('releases the selected catalog and guidance on unload, exposure=%s', async (exposeGovernedTools) => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    const fiber = await ctx.plugin(plugin, { exposeGovernedTools })
+    expect(ctx.tools.schemas().filter(schema => schema.name.startsWith('wiki_')))
+      .toHaveLength(exposeGovernedTools ? 7 : 1)
+    await fiber.dispose()
+    expect(ctx.tools.schemas()).toEqual([])
+    expect((await ctx.systemPrompt.assemble()).sections.find(item => item.name === 'tool:knowledge-wiki'))
+      .toBeUndefined()
   })
 
   it('fails every operation clearly when the service is unavailable', async () => {

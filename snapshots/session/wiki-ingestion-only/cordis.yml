@@ -1,0 +1,25 @@
+# No trusted verifier is configured. Only the durable ingestion consumer is exposed.
+
+- id: headless-runner
+  inject: [headlessStartup, knowledgeWikiIngestionOnlyReady]
+  config:
+    task: !!js ctx.headlessStartup.task
+
+- insert:
+    - id: knowledge-wiki
+      name: '@deepseek-ai/dsh-knowledge-wiki'
+      config:
+        mainRoot: !!js process.cwd()
+        wikiRoot: !!js process.cwd() + '/wiki'
+        credential: ''
+        ownedStageExecutor: false
+        knowledgeSearchCandidateMode: disabled
+        knowledgeVerifierConfig: ''
+
+    - id: tool-knowledge-wiki
+      name: '@deepseek-ai/dsh-tool-knowledge-wiki'
+      config:
+        exposeGovernedTools: false
+
+    - id: wiki-ingestion-only-gate
+      name: '../../../examples/headless-agent/tests/fixtures/knowledge-wiki/ingestion-only.ts'

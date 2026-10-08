@@ -1,0 +1,499 @@
+{
+  "schemaVersion": 1,
+  "status": "SCOPED_SOURCE_AND_BUILT_CATALOG_FIX_PASS_NEW_NATIVE_CANDIDATE_PENDING",
+  "recordedAt": "2026-10-08T23:27:02.552211+00:00",
+  "sourceParentCommit": "2104fb2dfd6700dc5cd78ca89e5110ef3558a9e9",
+  "sourceStateAtChecks": "parent2104 plus pinned edits; not yet committed",
+  "problem": "The Ark deployment advertised six governed Wiki tools without verifier configuration; first real Native task had two missing-authority failures.",
+  "change": "Strict optional consumer boolean retains default true and every service check. False exposes the unchanged durable wiki_ingest and matching guide. Ark selects catalog from its existing trimmed launcher verifier input; exposure supplies no authority.",
+  "authorityChecksChanged": false,
+  "modelRouteChanged": false,
+  "rustEnabledByThisChange": false,
+  "frozen316ContainsThisFix": false,
+  "checks": [
+    {
+      "name": "final focused source and Native built-loader tests",
+      "actualExitCode": 0,
+      "actualRootExecSessionWhenRecorded": 9607,
+      "passedTestOrGateCount": 52,
+      "log": {
+        "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-final-focused-tests-02.log",
+        "sha256": "230e1bf2482fd881e24cce8a5a4531fe541d6691be5ba6b436e2cbb49e16e536",
+        "bytes": 1224
+      }
+    },
+    {
+      "name": "Ark profile tests",
+      "actualExitCode": 0,
+      "actualRootExecSessionWhenRecorded": null,
+      "passedTestOrGateCount": 8,
+      "log": {
+        "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-profile-tests.log",
+        "sha256": "54609304c8bf0badf4a42f1a9e701cbd4dca5182f9393ff5b9453df298f2d262",
+        "bytes": 827
+      }
+    },
+    {
+      "name": "contract lint",
+      "actualExitCode": 0,
+      "actualRootExecSessionWhenRecorded": 89106,
+      "passedTestOrGateCount": null,
+      "log": {
+        "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-contract-lint-final-02.log",
+        "sha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5",
+        "bytes": 30
+      }
+    },
+    {
+      "name": "Host build02",
+      "actualExitCode": 0,
+      "actualRootExecSessionWhenRecorded": 45113,
+      "passedTestOrGateCount": null,
+      "log": {
+        "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-host-build-final-02.log",
+        "sha256": "9cf68245d1544ffe73a3fe5b141afd1131c30b840e9712ef3ca07739a275a52b",
+        "bytes": 179419
+      }
+    },
+    {
+      "name": "doc-sync final02",
+      "actualExitCode": 0,
+      "actualRootExecSessionWhenRecorded": 56744,
+      "passedTestOrGateCount": 30,
+      "log": {
+        "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-doc-sync-final-02.log",
+        "sha256": "3e3aaa3893ec605c545fdc950c0e88e60b98fdf95113cf2bddd56f4b75ad5f3d",
+        "bytes": 2534
+      }
+    }
+  ],
+  "rootBuildReceipt": {
+    "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-host-build-final-02-execution.json",
+    "sha256": "30380c2510ef54cd73dbcd73ffd5e2560f8f5ddd54cbf0751ba025e9c28c02d9",
+    "bytes": 1515
+  },
+  "rootDocReceipt": {
+    "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-doc-sync-final-02-execution.json",
+    "sha256": "7265374a5eae047578d271b6d5153cb12865b667bd51fbd6c9f8e6b54417146d",
+    "bytes": 1131
+  },
+  "snapshotReceipt": {
+    "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/consolidated-snapshot-receipt.json",
+    "sha256": "8cc30861b5e87e1389fbb899deba79d12f52546b3e99c16a71c5511d7748a32c",
+    "bytes": 15626
+  },
+  "hostPrerequisiteAttachment": {
+    "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/host02-prerequisite-attachment.json",
+    "sha256": "ddc6517388ecdeeff8f07595b1c3ffa795c494733f01d779ca4c76e0ee14e4e5",
+    "bytes": 3665
+  },
+  "independentAppliedReview": {
+    "path": "/private/tmp/ark316-governed-tool-exposure-applied-independent-review-20261009.json",
+    "sha256": "b254d6701c8c6407ea54507a6fd1faf1652881233ee0c54d24363857fdab443a",
+    "bytes": 17249
+  },
+  "independentReadmeFinalSupplement": {
+    "path": "/private/tmp/ark316-governed-tool-exposure-readme-final-supplement-20261009.json",
+    "sha256": "52dd94c5443891a21eb22dbf4e505d5149f7e7abc83e19c028c1a00ef71a92b3",
+    "bytes": 11703
+  },
+  "snapshotCopyPins": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/candidate317-ingestion-only-snapshot-20261009.json",
+      "sha256": "8cc30861b5e87e1389fbb899deba79d12f52546b3e99c16a71c5511d7748a32c",
+      "bytes": 15626
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/candidate317-snapshot-host-prerequisite-20261009.json",
+      "sha256": "ddc6517388ecdeeff8f07595b1c3ffa795c494733f01d779ca4c76e0ee14e4e5",
+      "bytes": 3665
+    }
+  ],
+  "postDocRebuildSnapshotSourceAndBuiltPinsMatch": true,
+  "snapshotScope": {
+    "finalBuiltActualExitCode": 0,
+    "passedTests": 2,
+    "skippedTests": 81,
+    "retainedToolObjectsByteIdentical": 27,
+    "removedGovernedTools": 6,
+    "realIngestionDurableQueueChecked": true,
+    "unverifiedCandidateAdmissionDenied": true,
+    "modelBoundary": "scripted/keyless",
+    "CodeSDKProof": "separate Native built-Loader assertions; no Code SDK transcript claim"
+  },
+  "earlierFailuresPreserved": [
+    {
+      "name": "initial mixed focused tests",
+      "actualExitCode": 1,
+      "reason": "49 pass/2 Native Loader fail on old published lib; repaired after explicit Host build",
+      "log": {
+        "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-focused-source-tests.log",
+        "sha256": "d189b2c81a56027342340c618e5ed91cb390dda229f2f357ba6deec4b6f554fc",
+        "bytes": 46269
+      }
+    },
+    {
+      "name": "initial lint",
+      "actualExitCode": 1,
+      "reason": "typed null guard; parser boundary repaired to unknown",
+      "log": {
+        "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-contract-lint-01.log",
+        "sha256": "14931d7bd61be59c105120a94e466645e6b68bd00ed74d3a32666e24dde0c943",
+        "bytes": 257
+      }
+    },
+    {
+      "name": "initial doc-sync",
+      "actualExitCode": 1,
+      "reason": "default heap Host rebuild OOM and README heading structure; repaired final02",
+      "log": {
+        "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-doc-sync-01.log",
+        "sha256": "1dbd50638cc5247553c91ff89a6c7ef562e61ad0161dc572df86cc415f3a3a7a",
+        "bytes": 12113
+      }
+    },
+    {
+      "name": "pairing command syntax",
+      "actualExitCode": 2,
+      "reason": "extra separator rejected; corrected actual0 command preserved",
+      "log": {
+        "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-translation-pairing-write.log",
+        "sha256": "49cac22d2ae15d059a3505725ae0df39b34a51686522481ab832aeb1f54e808b",
+        "bytes": 408
+      }
+    }
+  ],
+  "protectedFilePins": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/project-manifest.json",
+      "sha256": "d1a4175f1fac86f8998196b6a217bd88e9b4ea4b59dc154c9db0ca980c265e10",
+      "bytes": 862
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/learning-protocol-baseline-20261008.json",
+      "sha256": "305d231bc5ca12903c4dbacccf0d34ded1ec48d00d0f8d081bee492ad4cc2e52",
+      "bytes": 439052
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/rust-benchmark.json",
+      "sha256": "30b1c938f9a88d890a4001dceae73e4a2039b3a821249b73300c64d121349331",
+      "bytes": 5452
+    }
+  ],
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "changedFilePinsBeforeThisReportAndSeq42": [
+    {
+      "repositoryRelativePath": ".agents/notes/proposed/bug-fix/2026-10-09-governed-wiki-tool-exposure.i18n.yaml",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/proposed/bug-fix/2026-10-09-governed-wiki-tool-exposure.i18n.yaml",
+      "sha256": "25d0b69a22b562b317d4eb23b275980bccf14f98c76d7ae9e1b828555fbe90e0",
+      "bytes": 536
+    },
+    {
+      "repositoryRelativePath": ".agents/notes/proposed/bug-fix/2026-10-09-governed-wiki-tool-exposure.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/proposed/bug-fix/2026-10-09-governed-wiki-tool-exposure.md",
+      "sha256": "a5d06b1eb8acdb128f2e79ff00868e7ccbd6afef298149ff9133543c5d9b2e6a",
+      "bytes": 3173
+    },
+    {
+      "repositoryRelativePath": ".agents/notes/proposed/bug-fix/2026-10-09-governed-wiki-tool-exposure.zh.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/proposed/bug-fix/2026-10-09-governed-wiki-tool-exposure.zh.md",
+      "sha256": "016d853e7f7e5ee8dd4afad5d728127b6a7ea1d7d5f4e716f3278d16014d7989",
+      "bytes": 2845
+    },
+    {
+      "repositoryRelativePath": "decision-log.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/decision-log.md",
+      "sha256": "7a9c60401b25f13076977dd754d040302a47b26d4535429b1d6713b00ca51501",
+      "bytes": 12505
+    },
+    {
+      "repositoryRelativePath": "docs/config-catalog.i18n.yaml",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/docs/config-catalog.i18n.yaml",
+      "sha256": "f3e5fa95bd0dd6850d711288d599ed7c09e4e0d644d5b9b4ee2659d27b217688",
+      "bytes": 438
+    },
+    {
+      "repositoryRelativePath": "docs/config-catalog.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/docs/config-catalog.md",
+      "sha256": "45d76f0d39f46b5c58e1134d51467adea8405bff84b785e104b7f949a83d29c1",
+      "bytes": 154263
+    },
+    {
+      "repositoryRelativePath": "docs/config-catalog.zh.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/docs/config-catalog.zh.md",
+      "sha256": "99bedfdf008ee206c1f82d82f026ebaa6f36659432fa35b41c5e9b67eccd521c",
+      "bytes": 154588
+    },
+    {
+      "repositoryRelativePath": "docs/rust-migration/knowledge-runtime-report.i18n.yaml",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/docs/rust-migration/knowledge-runtime-report.i18n.yaml",
+      "sha256": "f6e26ec9cdee6db15750dea17fec98ffe62bf77cea063d1a45364a467fcf86e7",
+      "bytes": 483
+    },
+    {
+      "repositoryRelativePath": "docs/rust-migration/knowledge-runtime-report.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/docs/rust-migration/knowledge-runtime-report.md",
+      "sha256": "0979cd7153b6582d816a7e66486132eb17664ccc4d3499548be723a803f7ba0a",
+      "bytes": 24593
+    },
+    {
+      "repositoryRelativePath": "docs/rust-migration/knowledge-runtime-report.zh.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/docs/rust-migration/knowledge-runtime-report.zh.md",
+      "sha256": "8f47168bb2c0a53ed921a05f47c0d03a2cfd939fe75981678cd5a59e93a3fb48",
+      "bytes": 23006
+    },
+    {
+      "repositoryRelativePath": "docs/rust-migration/profile-matrix.i18n.yaml",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/docs/rust-migration/profile-matrix.i18n.yaml",
+      "sha256": "12ce89442012bed578585270823990b2d81f4d88518c7f686f790f4f82e69ec4",
+      "bytes": 453
+    },
+    {
+      "repositoryRelativePath": "docs/rust-migration/profile-matrix.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/docs/rust-migration/profile-matrix.md",
+      "sha256": "a244d96f4a33e315993fdc104dad837a7fc623103dfb34da1189d615d7a09d3c",
+      "bytes": 7172
+    },
+    {
+      "repositoryRelativePath": "docs/rust-migration/profile-matrix.zh.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/docs/rust-migration/profile-matrix.zh.md",
+      "sha256": "eac4f9aee93bb4e85367002aa0fd5c77149db86021141f3fe40aa2437063f058",
+      "bytes": 7020
+    },
+    {
+      "repositoryRelativePath": "examples/headless-agent/tests/fixtures/knowledge-wiki/ingestion-only.ts",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/examples/headless-agent/tests/fixtures/knowledge-wiki/ingestion-only.ts",
+      "sha256": "b5727974f40c835724c470eeae88fadf5dc27a6e41fb5fb0a211a498f55d9f31",
+      "bytes": 8730
+    },
+    {
+      "repositoryRelativePath": "integrations/jiuzhang/README.i18n.yaml",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/README.i18n.yaml",
+      "sha256": "ba6568522ed22bbeba70e48f2e90918dd3cf65e40af60e3a4aa327497ee59886",
+      "bytes": 431
+    },
+    {
+      "repositoryRelativePath": "integrations/jiuzhang/README.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/README.md",
+      "sha256": "6cb2c167bb37708a6507b4dd749af0170e4c1cea28742c82c916e7940fc27209",
+      "bytes": 2991
+    },
+    {
+      "repositoryRelativePath": "integrations/jiuzhang/README.zh.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/README.zh.md",
+      "sha256": "ba34823c054dd0ee8edd4b8e01a9b847a6c0e717e722451ece2c9dfe4203aced",
+      "bytes": 2640
+    },
+    {
+      "repositoryRelativePath": "integrations/jiuzhang/profile/cordis.patch.yml",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/profile/cordis.patch.yml",
+      "sha256": "796d9f9c8cd65581656ae237ad13ac5bbabbebc217da9e594539a8162a1986fd",
+      "bytes": 2429
+    },
+    {
+      "repositoryRelativePath": "integrations/jiuzhang/tests/profile.test.mjs",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/tests/profile.test.mjs",
+      "sha256": "59df9f9b36aea332b2de09603ca61c9f609b1f962ea16e5bfa1ac244aa085b39",
+      "bytes": 7545
+    },
+    {
+      "repositoryRelativePath": "packages/bundle/native-api-app/tests/__snapshots__/native-preset-recovery.spec.ts.snap",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/bundle/native-api-app/tests/__snapshots__/native-preset-recovery.spec.ts.snap",
+      "sha256": "a6b1d358a384efcb5dd8978546a91b52e11d455946f458a53b4da0333ebda235",
+      "bytes": 1860
+    },
+    {
+      "repositoryRelativePath": "packages/bundle/native-api-app/tests/native-code-preset.spec.ts",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/bundle/native-api-app/tests/native-code-preset.spec.ts",
+      "sha256": "b52baa5b55dda77175b62609d94e96be6ea7912968b39543a8da91eb7784e678",
+      "bytes": 7312
+    },
+    {
+      "repositoryRelativePath": "packages/bundle/native-api-app/tests/native-preset-runtime.ts",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/bundle/native-api-app/tests/native-preset-runtime.ts",
+      "sha256": "6f6b9b45399fafe0c206a1daa7d44b4c405c6a32612ba6cdf067be2fdb829e92",
+      "bytes": 3736
+    },
+    {
+      "repositoryRelativePath": "packages/host/knowledge-wiki-tools/README.i18n.yaml",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/README.i18n.yaml",
+      "sha256": "7e366c2bef8ed414d67d2d80ed0b76113f3bb9d72c8108eda644b89b133935ae",
+      "bytes": 444
+    },
+    {
+      "repositoryRelativePath": "packages/host/knowledge-wiki-tools/README.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/README.md",
+      "sha256": "04ccbb155fd6ee9aee9d03a02457d7a491be7bc6146d009d55ae4b6de30810b4",
+      "bytes": 3437
+    },
+    {
+      "repositoryRelativePath": "packages/host/knowledge-wiki-tools/README.zh.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/README.zh.md",
+      "sha256": "69e4c5c9ccf5f101cc4533b314607da258abc76d4231fde15da561b418c5d1c6",
+      "bytes": 3361
+    },
+    {
+      "repositoryRelativePath": "packages/host/knowledge-wiki-tools/src/index.ts",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/src/index.ts",
+      "sha256": "3b055d85f5c82712fe7353904034d7e9cf5fc65e8df8a0f8640ac1fcad364d2d",
+      "bytes": 26534
+    },
+    {
+      "repositoryRelativePath": "packages/host/knowledge-wiki-tools/tests/tools.spec.ts",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/tests/tools.spec.ts",
+      "sha256": "1aadb983a7bbe1b947972d60faf512422927a39bdc6cd2153f84945802730355",
+      "bytes": 21244
+    },
+    {
+      "repositoryRelativePath": "packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+      "sha256": "ed398c6a33e82951243cec302794bd78a6dfa783ff46673b448c41d3439d9d40",
+      "bytes": 34030
+    },
+    {
+      "repositoryRelativePath": "progress.jsonl",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/progress.jsonl",
+      "sha256": "ecc5aab33c50a60a41417af663fddfe271dda8b5fd93e4dc677ac536e2025c3b",
+      "bytes": 39296
+    },
+    {
+      "repositoryRelativePath": "scripts/rust-migration/evidence/candidate316-three-window-root-review-20261009.json",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/candidate316-three-window-root-review-20261009.json",
+      "sha256": "2722c70a2e57739295597d4b04d888be6755cab2fbf16a0d4fce5f703cf3a3eb",
+      "bytes": 881
+    },
+    {
+      "repositoryRelativePath": "scripts/rust-migration/evidence/candidate316-three-window-task-20261009.json",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/candidate316-three-window-task-20261009.json",
+      "sha256": "0e09f6dc7af6a8e29b2ef1856a8be2059c721cef8e9cdc3a28e6a29b1791b4bd",
+      "bytes": 108450
+    },
+    {
+      "repositoryRelativePath": "scripts/rust-migration/evidence/candidate317-ingestion-only-snapshot-20261009.json",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/candidate317-ingestion-only-snapshot-20261009.json",
+      "sha256": "8cc30861b5e87e1389fbb899deba79d12f52546b3e99c16a71c5511d7748a32c",
+      "bytes": 15626
+    },
+    {
+      "repositoryRelativePath": "scripts/rust-migration/evidence/candidate317-snapshot-host-prerequisite-20261009.json",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/candidate317-snapshot-host-prerequisite-20261009.json",
+      "sha256": "ddc6517388ecdeeff8f07595b1c3ffa795c494733f01d779ca4c76e0ee14e4e5",
+      "bytes": 3665
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/headless.snapshot.ts",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/headless.snapshot.ts",
+      "sha256": "639d691af41f4518594a17eb0fd8d380cfbd28c78b9629ca9434f066b4218397",
+      "bytes": 39407
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/.gitignore",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/.gitignore",
+      "sha256": "0599affdee8cc5f9b5f5e05aa09a74db4a7e4d1ba45b152d328015667f140d16",
+      "bytes": 57
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/cordis.snapshot.yml",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/cordis.snapshot.yml",
+      "sha256": "5ac4969d8c6a59ddc677b9123909457d5aaebc0e98ab87e00c3165e9783340b5",
+      "bytes": 1814
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/cordis.yml",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/cordis.yml",
+      "sha256": "6db2645e8861cd30d448152b956a237a4a43e8e93ffcdae1415d09fa668248f9",
+      "bytes": 801
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/session.jsonl",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/session.jsonl",
+      "sha256": "81c4f15f73951592353bf00a8c9c26ec58773f2afa37a689bc28a3ea29e83c31",
+      "bytes": 5684
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/snapshot.yml",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/snapshot.yml",
+      "sha256": "b65315ba6f5017212fc976bd5d87f660ab1125b09a00a869a8d7e3be64e71542",
+      "bytes": 215
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/system-prompt.expected.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/system-prompt.expected.md",
+      "sha256": "c8cd549b74b3a62eb50f33fb721cecd4fe46088d795d8b66da399b255a4ecb21",
+      "bytes": 4753
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/tool-schemas.expected.json",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/tool-schemas.expected.json",
+      "sha256": "a5e1fddedee4231f0eb14d4b2c0007a81dea13baf408bcc6f9cd52ae1b6608ca",
+      "bytes": 36372
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/workspace.expected/raw/evidence/ingestion-only.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace.expected/raw/evidence/ingestion-only.md",
+      "sha256": "5f2d2919cfee9d35bc4ceac11804e4a77bf274c6bd3718075778f042fbf6c564",
+      "bytes": 93
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/workspace.expected/raw/sources/ingestion-only.png",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace.expected/raw/sources/ingestion-only.png",
+      "sha256": "fe40783151454df01eecf74d701759220ba5d4a0eeb80d102ecd326d0d255ed0",
+      "bytes": 68
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/workspace/raw/evidence/ingestion-only.md",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace/raw/evidence/ingestion-only.md",
+      "sha256": "5f2d2919cfee9d35bc4ceac11804e4a77bf274c6bd3718075778f042fbf6c564",
+      "bytes": 93
+    },
+    {
+      "repositoryRelativePath": "snapshots/session/wiki-ingestion-only/workspace/raw/sources/ingestion-only.png",
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace/raw/sources/ingestion-only.png",
+      "sha256": "fe40783151454df01eecf74d701759220ba5d4a0eeb80d102ecd326d0d255ed0",
+      "bytes": 68
+    }
+  ],
+  "appPlistObservations": [
+    {
+      "path": "/Users/hui/ark/Ark.app",
+      "version": "3.1.0",
+      "build": "2026092701",
+      "sourceCommit": "4ef63040883f497857cff71ab0e82fd07ac123fa",
+      "plist": {
+        "path": "/Users/hui/ark/Ark.app/Contents/Info.plist",
+        "sha256": "fc758356f9d4f4f3c1483c09d1dce6b7f28aa9a6ca43c765e93859ac902bf9be",
+        "bytes": 2101
+      }
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate/Ark.app",
+      "version": "3.1.6",
+      "build": "2026100901",
+      "sourceCommit": "2104fb2dfd6700dc5cd78ca89e5110ef3558a9e9",
+      "plist": {
+        "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Info.plist",
+        "sha256": "90cf77976ad63827c28a07fa3b0e1870614e51d8cc8784f05501352b4591478a",
+        "bytes": 2295
+      }
+    }
+  ],
+  "appHomeOrCredentialMutationActions": [],
+  "newNativeAppBuilt": false,
+  "verifiedKnowledgeReuse": "UNPROVEN",
+  "persistentRepairReuse": "UNPROVEN",
+  "wholeArkAbilityOrSpeedImprovement": "UNKNOWN",
+  "currentCoverageAndCI": "UNKNOWN",
+  "formalPromotion": "HOLD",
+  "GitHubWrites": 0,
+  "nextStep": "Fix local source checkpoint; build fresh hidden Native candidate with fresh home; independently verify complete artifact; real Native dialogue task. Source checks do not satisfy Native acceptance."
+}

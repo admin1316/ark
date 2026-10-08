@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/bug-fix/2026-10-09-governed-wiki-tool-exposure.md
+2026-10-09-governed-wiki-tool-exposure.md: cd96a981e75e5220d43fab88938d62ed9d39ced2
+2026-10-09-governed-wiki-tool-exposure.zh.md: 69cac7bf7f5693fbae0ad64d700ef2229a736129

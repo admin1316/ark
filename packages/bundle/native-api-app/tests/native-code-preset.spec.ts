@@ -66,6 +66,11 @@ describe('Native Code preset composition', () => {
     try {
       const assembly = await context.systemPrompt.assemble({ scope: handle.agent })
       expect(assembly.tools.map(tool => tool.name)).toEqual(['run_code'])
+      const sdk = assembly.sections.find(section => section.name === 'tools:sdk')?.text
+      expect(sdk).toContain('wiki_ingest')
+      for (const hidden of ['wiki_search', 'wiki_files', 'wiki_read', 'wiki_graph', 'wiki_reviews', 'wiki_verify_candidate']) {
+        expect(sdk).not.toContain(hidden)
+      }
       const result = await context.tools.execute({
         signal: new AbortController().signal,
         callId: CallId('native-code-run-1'),
@@ -100,6 +105,8 @@ describe('Native Code preset composition', () => {
     const code = await mount('native-code-preset', 'code')
     expect(new Set(standard).size).toBe(standard.length)
     expect(new Set(minimal).size).toBe(minimal.length)
+    expect(standard.filter(name => name.startsWith('wiki_'))).toEqual(['wiki_ingest'])
+    expect(minimal.filter(name => name.startsWith('wiki_'))).toEqual(['wiki_ingest'])
     expect(standard).toEqual(expect.arrayContaining([
       'get_goal',
       'create_goal',
