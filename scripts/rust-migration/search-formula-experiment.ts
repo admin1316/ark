@@ -14,7 +14,7 @@ import { bm25, STOP_WORDS, tokenize, type SearchPage } from '../../packages/host
 export interface FormulaExperimentPage extends SearchPage {}
 
 /** A query and its independently supplied relevance judgments. */
-export interface JudgedSearchQuery {
+interface JudgedSearchQuery {
   /** Stable identifier for the judged query. */
   readonly id: string
   /** Query text replayed through every formula. */
@@ -46,7 +46,7 @@ export interface FormulaRankedHit {
 }
 
 /** Aggregate quality metrics for one formula. */
-export interface FormulaMetrics {
+interface FormulaMetrics {
   /** Mean recall over queries with at least one judged relevant page. */
   readonly recallAt5: number
   /** Mean reciprocal rank of the first relevant page. */
@@ -58,7 +58,7 @@ export interface FormulaMetrics {
 }
 
 /** Per-formula experiment output. */
-export interface FormulaExperimentResult {
+interface FormulaExperimentResult {
   /** Formula identifier. */
   readonly formula: 'bm25' | 'bm25f' | 'bm25+' | 'rrf'
   /** Formula parameters used by this run. */
