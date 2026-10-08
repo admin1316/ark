@@ -27,9 +27,16 @@ kind: "package-reference"
 |---|---|
 | `wikiRoot` | 项目 wiki 目录的绝对路径（包含 concepts/、entities/、sources/、index.md、log.md）。 |
 | `mainRoot` | 主工作区根目录（固定、不可删除）；缺省为 wiki 目录的父目录。 |
-| `apiKey` | 语义向量 key；为空时禁用向量检索（BM25 仍可用）。 |
+| `credential` | 语义向量与图片说明使用的凭据引用；为空时不调用向量服务。 |
 | `llmProvider` | 摄取/研究的 LLM provider id（默认 `deepseek-official`）。 |
-| `llmModel` | 摄取/研究的 LLM model id（默认 `deepseek-v4-flash`）。 |
+| `llmModel` | 摄取/研究的 LLM model id。 |
+| `llmBaseUrl` | owned stage executor 使用的 chat-completions 地址（默认 `https://api.deepseek.com`）。 |
+| `llmCredential` | 摄取/研究使用的凭据引用；为空时使用所选 provider 声明的环境变量。 |
+| `ownedStageExecutor` | 启用受限的摄取/研究 owned worker（默认 `false`）。 |
+| `knowledgeSearchCandidateMode` | 可选 Rust 检索候选模式：`disabled`（默认）、`shadow`（仅观测）或 `enforce`（完整混合契约验证前 fail-closed）。 |
+| `knowledgeSearchCandidateBinary` | 隔离 Rust 候选二进制的绝对路径；模式为 `disabled` 时不使用。 |
+| `knowledgeSearchCandidateTimeoutMs` | 每次查询的候选超时毫秒数（默认 `30000`，范围 `1..120000`）。 |
+| `knowledgeVerifierConfig` | 仅由 launcher 提供的签名外部验证器 JSON；空值默认保持验证不可用，Wiki 文件不能提供此配置。 |
 
 ```yaml
 - id: knowledge-wiki
@@ -37,9 +44,13 @@ kind: "package-reference"
   config:
     wikiRoot: '/absolute/path/to/project/wiki'
     mainRoot: '/absolute/path/to/project'
-    apiKey: !!js process.env.DEEPSEEK_API_KEY
+    credential: DEEPSEEK_API_KEY
     llmProvider: 'deepseek-official'
     llmModel: 'deepseek-v4-flash'
+    ownedStageExecutor: true
+    knowledgeSearchCandidateMode: disabled
+    knowledgeSearchCandidateBinary: '/absolute/path/to/knowledge-search-shadow'
+    knowledgeSearchCandidateTimeoutMs: 30000
 ```
 
 <a id="durable-state-llm-wiki"></a>
@@ -57,6 +68,10 @@ kind: "package-reference"
 - 源文件摘要页强制落到确定性 slug 契约（`12-ark-sessions--32-…--<fnv32 base36>.md`），与存量语料一致。
 - 生成页面经 sanitize、日期戳、`sources` 字段规范化后与既有页面合并：仅本源独占的页面整体替换；共享页面保留正文并并集 `sources`。
 - 无论模型输出形态如何，确定性兜底照常执行：index 条目、log 条目、源摘要页、评审项。
+
+### Rust 检索候选
+
+生产检索路径默认仍由 TypeScript 执行。启用 `shadow` 后，服务把同一份规范页面语料与查询发送给隔离的 Rust 候选，校验请求/结果摘要和字节级一致的 BM25 结果，记录观测，同时仍返回经过治理的 TypeScript 结果。候选进程只获得最小环境，并受输入/输出上限和截止时间约束；失败、超时、取消或结果漂移都会回退到 TypeScript。`enforce` 模式刻意 fail-closed；由于 Rust 尚未实现完整的 BM25 加 embedding 混合结果契约，当前 `modelSearch` 会拒绝该模式。
 
 <a id="model-experience"></a>
 ## 模型体验

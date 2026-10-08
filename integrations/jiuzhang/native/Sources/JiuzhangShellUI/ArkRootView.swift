@@ -1743,13 +1743,18 @@ private struct NativeMainArea: View {
         } else {
           switch model.selectedTab {
           case .chat:
-            NativeChatView(
-              model: model,
-              transcriptFeed: chatTranscriptFeed,
-              projectionMemo: chatProjectionMemo,
-              rowCache: chatRowCache,
-              scrollController: chatScrollController
-            )
+            if chatTranscriptFeed.snapshot.context.sessionID == model.selectedSessionID {
+              NativeChatView(
+                model: model,
+                transcriptFeed: chatTranscriptFeed,
+                projectionMemo: chatProjectionMemo,
+                rowCache: chatRowCache,
+                scrollController: chatScrollController
+              )
+            } else {
+              ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
           case .trajectory: NativeTrajectoryParityView(model: model).equatable()
           case .wiki: NativeWikiView(model: model).equatable()
           }
@@ -3745,12 +3750,9 @@ private struct NativeChatView: View {
   @State private var expandedProcessGenerations = Set<String>()
   @State private var renderWindow = ArkChatRenderWindow()
   @State private var requestedHistoryAnchorID: String?
-  static let largeTranscriptEntryThreshold = 600
-  static let activeStreamingRenderWindowEntries = 24
-
-  private static func largeTranscriptRenderWindowEntries(forEntryCount count: Int) -> Int {
-    count >= 2000 ? 96 : 160
-  }
+  @State private var requestedHistoryAnchorAtTop = false
+  @State private var pendingTranscriptPrependAnchor: ArkChatScrollPrependAnchor?
+  @State private var transcriptPrependRestoreToken = 0
 
   init(
     model: ArkAppModel,
@@ -4060,17 +4062,13 @@ private struct NativeChatView: View {
   var body: some View {
     let projection = bodyProjection
     let allDisplayEntries = projection.displayEntries
-    let heavyTranscript = allDisplayEntries.count > Self.largeTranscriptEntryThreshold
-    // Every streamed delta invalidates the active answer's text layout. An eager
-    // transcript stack then recomputes spacing for every mounted row, even when
-    // those rows are outside the viewport. Keep roughly one to two screens mounted
-    // while streaming; restore the wider browsing window as soon as the turn
-    // finishes so completed conversations retain their existing scroll range.
-    let effectiveWindow = context.sessionRunning
-      ? Self.activeStreamingRenderWindowEntries
-      : (heavyTranscript
-        ? Self.largeTranscriptRenderWindowEntries(forEntryCount: allDisplayEntries.count)
-        : 400)
+    // A heavy follower keeps the same bounded tail before and after completion.
+    // Expanding it at turn/end prepends old rows during final Markdown reflow,
+    // producing a visible jump before AppKit can restore the bottom.
+    let effectiveWindow = renderWindow.visibleLimit(
+      entryCount: allDisplayEntries.count,
+      running: context.sessionRunning
+    )
     let displayIDs = allDisplayEntries.map(\.id)
     let visibleRange = renderWindow.range(in: displayIDs, limit: effectiveWindow)
     let hiddenEntryCount = visibleRange.lowerBound
@@ -4140,6 +4138,7 @@ private struct NativeChatView: View {
                   if context.hasOlderHistory && hiddenEntryCount == 0 {
                     Button {
                       requestedHistoryAnchorID = displayIDs.first
+                      requestedHistoryAnchorAtTop = false
                       Task { await model.loadOlderHistory() }
                     } label: {
                       HStack(spacing: 7) {
@@ -4156,8 +4155,16 @@ private struct NativeChatView: View {
                   }
                   if hiddenEntryCount > 0 {
                     Button {
-                      renderWindow.earlier(in: displayIDs, limit: effectiveWindow)
-                      let range = renderWindow.range(in: displayIDs, limit: effectiveWindow)
+                      renderWindow.revealEarlier(
+                        in: displayIDs,
+                        entryCount: allDisplayEntries.count,
+                        running: context.sessionRunning
+                      )
+                      let expandedLimit = renderWindow.visibleLimit(
+                        entryCount: allDisplayEntries.count,
+                        running: context.sessionRunning
+                      )
+                      let range = renderWindow.range(in: displayIDs, limit: expandedLimit)
                       if let id = displayIDs[range].first {
                         DispatchQueue.main.async { proxy.scrollTo(id, anchor: .top) }
                       }
@@ -4239,7 +4246,48 @@ private struct NativeChatView: View {
                 // not compete with transcript measurement and scroll following.
                 .transaction { transaction in transaction.animation = nil }
               }
-              ArkChatScrollAttachment(controller: scrollController)
+              ArkChatScrollAttachment(
+                controller: scrollController,
+                onUserReachedTop: {
+                  guard !context.loadingOlderHistory else { return }
+                  if hiddenEntryCount > 0 {
+                    guard pendingTranscriptPrependAnchor == nil,
+                      let anchor = scrollController.capturePrependAnchor()
+                    else { return }
+                    pendingTranscriptPrependAnchor = anchor
+                    renderWindow.revealEarlier(
+                      in: displayIDs,
+                      entryCount: allDisplayEntries.count,
+                      running: context.sessionRunning
+                    )
+                    transcriptPrependRestoreToken &+= 1
+                  } else if context.hasOlderHistory, let anchor = displayIDs.first {
+                    guard pendingTranscriptPrependAnchor == nil,
+                      requestedHistoryAnchorID == nil,
+                      let sessionID = context.sessionID
+                    else { return }
+                    let previousFirstRecordID = model.historyReadingSnapshot?.records.first?.id
+                    pendingTranscriptPrependAnchor = scrollController.capturePrependAnchor()
+                    requestedHistoryAnchorID = anchor
+                    requestedHistoryAnchorAtTop = true
+                    Task {
+                      await model.loadOlderHistory()
+                      guard model.selectedSessionID == sessionID else { return }
+                      let nextFirstRecordID = model.historyReadingSnapshot?.records.first?.id
+                      guard nextFirstRecordID != nil,
+                        nextFirstRecordID != previousFirstRecordID
+                      else {
+                        guard requestedHistoryAnchorID == anchor else { return }
+                        requestedHistoryAnchorID = nil
+                        requestedHistoryAnchorAtTop = false
+                        pendingTranscriptPrependAnchor = nil
+                        return
+                      }
+                      // The model finishes before the coalesced transcript feed publishes its page.
+                    }
+                  }
+                }
+              )
                 .frame(width: 0, height: 0)
             }
             .overlay(alignment: .bottomTrailing) {
@@ -4293,6 +4341,8 @@ private struct NativeChatView: View {
             // than the fresh one needs.
             renderWindow.returnToLatest()
             requestedHistoryAnchorID = nil
+            requestedHistoryAnchorAtTop = false
+            pendingTranscriptPrependAnchor = nil
             guard let sessionID else { return }
             scrollController.beginSessionTransition(to: sessionID)
             DispatchQueue.main.async {
@@ -4306,7 +4356,15 @@ private struct NativeChatView: View {
                let index = ids.firstIndex(of: anchor), index > 0 {
               renderWindow.reveal(anchor, in: ids, limit: effectiveWindow)
               requestedHistoryAnchorID = nil
-              DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .center) }
+              let alignment: UnitPoint = requestedHistoryAnchorAtTop ? .top : .center
+              let restorePrepend = requestedHistoryAnchorAtTop
+                && pendingTranscriptPrependAnchor != nil
+              requestedHistoryAnchorAtTop = false
+              if restorePrepend {
+                transcriptPrependRestoreToken &+= 1
+              } else {
+                DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: alignment) }
+              }
             }
             let running = context.sessionRunning
             DispatchQueue.main.async {
@@ -4324,13 +4382,12 @@ private struct NativeChatView: View {
               scrollController.settleStreamingCompletion()
             }
           }
-          .onChange(of: context.loadingOlderHistory) { loading in
-            guard !loading, let anchor = requestedHistoryAnchorID else { return }
-            // Failed loads and page eviction leave no prepend anchor to restore.
-            // Successful overlapping pages are positioned by contentRevision.
-            let ids = bodyProjection.displayEntries.map(\.id)
-            if ids.firstIndex(of: anchor).map({ $0 > 0 }) != true {
-              requestedHistoryAnchorID = nil
+          .onChange(of: transcriptPrependRestoreToken) { _ in
+            guard let anchor = pendingTranscriptPrependAnchor else { return }
+            pendingTranscriptPrependAnchor = nil
+            DispatchQueue.main.async {
+              scrollController.contentDidChange()
+              scrollController.restoreAfterPrepend(anchor)
             }
           }
         }
@@ -4344,7 +4401,10 @@ private struct NativeChatView: View {
           .frame(maxWidth: .infinity)
         NativeSessionStatsBar(model: model)
           .frame(height: ChatLayoutMetrics.statsBarHeight)
-          .frame(maxWidth: transcriptWidth)
+          .frame(maxWidth: ArkChatLayoutResolver.composerWidth(
+            maximumWidth: ChatLayoutMetrics.composerMaxWidth,
+            transcriptWidth: transcriptWidth
+          ))
           .padding(.horizontal, 20)
           .padding(.bottom, ChatLayoutMetrics.statsBarBottomInset)
           .frame(maxWidth: .infinity)
@@ -4866,7 +4926,7 @@ private struct NativeChatTurnNavigationRail: View {
 
   var body: some View {
     ScrollView(.vertical, showsIndicators: false) {
-      VStack(alignment: .leading, spacing: 2) {
+      LazyVStack(alignment: .leading, spacing: 2) {
         ForEach(items) { item in
           Button {
             navigate(item.turn)
@@ -7972,11 +8032,10 @@ private struct NativeQueueDock: View {
                 .frame(minHeight: 36)
                 if editingItemID == item.id {
                   HStack(spacing: 7) {
-                    TextField(
-                      ArkL10n.text(.queueEditPlaceholder, model.languagePreference),
-                      text: $editDraft
-                    )
-                      .textFieldStyle(.roundedBorder)
+                    TextEditor(text: $editDraft)
+                      .frame(minHeight: 68, maxHeight: 96)
+                      .overlay(RoundedRectangle(cornerRadius: 5).stroke(ArkPalette.border))
+                      .accessibilityLabel(ArkL10n.text(.queueEditPlaceholder, model.languagePreference))
                       .accessibilityIdentifier("ark.queue.editor.\(item.id)")
                     Button(ArkL10n.text(.commonCancel, model.languagePreference)) {
                       editingItemID = nil
@@ -8077,14 +8136,15 @@ private struct NativeSessionStatsBar: View {
   var body: some View {
     if !line.isEmpty {
       Text(line)
-      .font(.system(size: 9, design: .monospaced))
-      .foregroundStyle(ArkPalette.secondary)
-      .lineLimit(1)
-      .truncationMode(.tail)
-      .help(line)
-      .padding(.horizontal, 12)
-      .padding(.top, 6)
-      .frame(maxWidth: .infinity, alignment: .leading)
+        .font(.system(size: 12))
+        .foregroundStyle(ArkPalette.secondary)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .help(line)
+        .accessibilityLabel(line)
+        .accessibilityIdentifier("ark.chat.sessionStats")
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
   }
 

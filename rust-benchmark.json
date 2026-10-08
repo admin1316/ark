@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "status": "unknown",
+  "candidate": "knowledge-search-bm25",
+  "implementation": {
+    "currentTypeScript": {
+      "p50": 13.202249999999992,
+      "p95": 18.404333,
+      "p99": 18.404333,
+      "cpuMicros": 155812,
+      "rssDelta": 29442048,
+      "eventLoopDelayMeanMs": 0,
+      "eventLoopDelaySamples": 0,
+      "digest": "3063dd3aa8d8223efe367c1c27c70f8f3b51dcb85607695e4643804368561b98"
+    },
+    "optimizedTypeScript": {
+      "p50": 0.6647079999999903,
+      "p95": 2.0250000000000057,
+      "p99": 2.0250000000000057,
+      "cpuMicros": 11140,
+      "rssDelta": -557056,
+      "eventLoopDelayMeanMs": 0,
+      "eventLoopDelaySamples": 0,
+      "digest": "3063dd3aa8d8223efe367c1c27c70f8f3b51dcb85607695e4643804368561b98"
+    },
+    "rust": {
+      "cold": {
+        "p50": 20.894041999999956,
+        "p95": 24.569999999999993,
+        "p99": 24.569999999999993,
+        "cpuMicros": 13862,
+        "rssDelta": 2506752,
+        "eventLoopDelayMeanMs": 0,
+        "eventLoopDelaySamples": 0,
+        "digest": "3063dd3aa8d8223efe367c1c27c70f8f3b51dcb85607695e4643804368561b98",
+        "startupIncluded": true,
+        "processReuse": false,
+        "indexReuse": false
+      },
+      "warm": {
+        "p50": 18.457084,
+        "p95": 19.846125,
+        "p99": 19.846125,
+        "sampleCount": 10,
+        "cpuMicros": null,
+        "rssDelta": null,
+        "eventLoopDelayMeanMs": null,
+        "eventLoopDelaySamples": 0,
+        "digest": "3063dd3aa8d8223efe367c1c27c70f8f3b51dcb85607695e4643804368561b98",
+        "startupMs": 2.254167,
+        "startupIncludedInFirstSample": false,
+        "processReuse": true,
+        "indexReuse": false,
+        "resultDigest": "72d7c01802afdf43aae01b262fc59d1af5d3b01ba446220a12b3f1522de7570d"
+      },
+      "recovery": {
+        "status": "observed",
+        "crashSignal": "SIGKILL",
+        "restartRequestMs": 20.078208,
+        "restartStartupMs": 0.497875,
+        "resultDigest": "72d7c01802afdf43aae01b262fc59d1af5d3b01ba446220a12b3f1522de7570d",
+        "elapsedMs": 42.438917
+      },
+      "cancellation": {
+        "status": "not-measured",
+        "reason": "The synchronous benchmark has no in-flight AbortSignal; cancellation remains owned by the TypeScript candidate boundary."
+      },
+      "p50": 20.894041999999956,
+      "p95": 24.569999999999993,
+      "p99": 24.569999999999993,
+      "cpuMicros": 13862,
+      "rssDelta": 2506752,
+      "eventLoopDelayMeanMs": 0,
+      "eventLoopDelaySamples": 0,
+      "digest": "3063dd3aa8d8223efe367c1c27c70f8f3b51dcb85607695e4643804368561b98",
+      "transport": "stdin/stdout process IPC",
+      "cpuScope": "node-parent",
+      "rssScope": "node-parent",
+      "resultDigest": "72d7c01802afdf43aae01b262fc59d1af5d3b01ba446220a12b3f1522de7570d",
+      "inputDigest": "5ef5590527a440ab02fa6a72090e16323a8d6e3e4153d6a0835828939acaa171"
+    }
+  },
+  "envelopes": {
+    "typescriptCold": {
+      "p50": 13.202249999999992,
+      "p95": 18.404333,
+      "p99": 18.404333,
+      "cpuMicros": 155812,
+      "rssDelta": 29442048,
+      "eventLoopDelayMeanMs": 0,
+      "eventLoopDelaySamples": 0,
+      "digest": "3063dd3aa8d8223efe367c1c27c70f8f3b51dcb85607695e4643804368561b98",
+      "name": "typescript-cold-rebuild",
+      "indexReuse": false,
+      "processReuse": true
+    },
+    "typescriptWarm": {
+      "p50": 0.6647079999999903,
+      "p95": 2.0250000000000057,
+      "p99": 2.0250000000000057,
+      "cpuMicros": 11140,
+      "rssDelta": -557056,
+      "eventLoopDelayMeanMs": 0,
+      "eventLoopDelaySamples": 0,
+      "digest": "3063dd3aa8d8223efe367c1c27c70f8f3b51dcb85607695e4643804368561b98",
+      "name": "typescript-warm-cached-index",
+      "indexReuse": true,
+      "processReuse": true
+    },
+    "rustCold": {
+      "p50": 20.894041999999956,
+      "p95": 24.569999999999993,
+      "p99": 24.569999999999993,
+      "cpuMicros": 13862,
+      "rssDelta": 2506752,
+      "eventLoopDelayMeanMs": 0,
+      "eventLoopDelaySamples": 0,
+      "digest": "3063dd3aa8d8223efe367c1c27c70f8f3b51dcb85607695e4643804368561b98",
+      "startupIncluded": true,
+      "processReuse": false,
+      "indexReuse": false
+    },
+    "rustWarm": {
+      "p50": 18.457084,
+      "p95": 19.846125,
+      "p99": 19.846125,
+      "sampleCount": 10,
+      "cpuMicros": null,
+      "rssDelta": null,
+      "eventLoopDelayMeanMs": null,
+      "eventLoopDelaySamples": 0,
+      "digest": "3063dd3aa8d8223efe367c1c27c70f8f3b51dcb85607695e4643804368561b98",
+      "startupMs": 2.254167,
+      "startupIncludedInFirstSample": false,
+      "processReuse": true,
+      "indexReuse": false,
+      "resultDigest": "72d7c01802afdf43aae01b262fc59d1af5d3b01ba446220a12b3f1522de7570d"
+    }
+  },
+  "corpusHash": "3fd46f421c08f8cc89afe2eddda6809a7012477817987092d3c18b2015ccaf91",
+  "stopWordCount": 244,
+  "iterations": 10,
+  "differentialReplay": "current-optimized-rust-match",
+  "missingEvidence": [
+    "production candidate profile exercise and authenticated enforcement receipt",
+    "cross-platform Rust measurements",
+    "child CPU/RSS accounting",
+    "end-to-end production cancellation and crash-recovery measurements",
+    "benchmark cancellation latency (AbortSignal is owned by the TypeScript boundary)",
+    "event-loop delay samples for the synchronous harness"
+  ],
+  "gitSha": "522f3cfeee12b452a9629633d693b5d535cff140",
+  "workingTreeDirty": false,
+  "profile": "jiuzhang"
+}

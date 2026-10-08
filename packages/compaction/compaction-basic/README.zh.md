@@ -43,12 +43,12 @@ kind: "package-reference"
 <a id="config-basiccompactionconfig"></a>
 ## 配置（`BasicCompactionConfig`）
 
-所有设置都可选。顶层策略字段是每个已路由模型的默认值；`modelPolicies` 对精确提供方／模型对应用部分覆盖。出现压力时，compaction-basic 会请求所属 LLM（大语言模型）适配器提供该路由的上下文容量，并解析绝对预算。无法识别的配置键、重复目标、互斥保留形式，以及合并后的 `retainRatio` 不低于 `thresholdRatio`，都会使插件加载失败。不低于缩放后阈值的绝对 `retainTokens` 预算会在首次解析出目标时导致失败，因为该比较需要模型容量。
+所有设置都可选。顶层策略字段是每个已路由模型的默认值；`modelPolicies` 对精确提供方／模型对应用部分覆盖。出现压力时，compaction-basic 会请求所属 LLM（大语言模型）适配器提供该路由的上下文容量，并解析绝对预算。最新持久请求的 `maxTokens` 用于预留输出空间；未声明时使用适配器的请求默认上限，两者都未声明时按零计算。窗口为 `W`、输出预留为 `O` 时，消息预算为 `W − O`；预算非正数会抛出目标特定配置错误。无法识别的配置键、重复目标、互斥保留形式，以及合并后的 `retainRatio` 不低于 `thresholdRatio`，都会使插件加载失败。不低于缩放后阈值的绝对 `retainTokens` 预算会在首次解析出目标时导致失败，因为该比较需要模型容量。
 
 | Key | 必填 | 含义 |
 |---|---|---|
-| `thresholdRatio` | 否（默认 `0.8`） | 在 `floor(routedContextWindow × ratio)` 处压缩。 |
-| `retainRatio` | 否（默认 `0.16`） | 以已路由上下文窗口的一部分表示逐字保留的近期表层预算；与 `retainTokens` 互斥。 |
+| `thresholdRatio` | 否（默认 `0.8`） | 在 `floor(min(W × ratio, W − O))` 处压缩。 |
+| `retainRatio` | 否（默认 `0.16`） | 以 `W − O` 的一部分表示逐字保留的近期表层预算；与 `retainTokens` 互斥。 |
 | `retainTokens` | 否 | 逐字保留的近期表层绝对预算；与 `retainRatio` 互斥，并且必须低于已解析阈值。 |
 | `summarizationProvider` | 否（默认 `''`） | 与 `summarizationModel` 一起设置；空对会解析为最新已记录请求目标，再回退到 `AgentOptions` 对。 |
 | `summarizationModel` | 否（默认 `''`） | 与 `summarizationProvider` 一起设置；空对会解析为最新已记录请求目标，再回退到 `AgentOptions` 对。 |

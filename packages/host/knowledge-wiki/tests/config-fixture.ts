@@ -19,4 +19,8 @@ function isResolvedConfig(value: unknown): value is Config {
     && typeof Reflect.get(value, 'llmBaseUrl') === 'string'
     && typeof Reflect.get(value, 'llmCredential') === 'string'
     && typeof Reflect.get(value, 'ownedStageExecutor') === 'boolean'
+    && typeof Reflect.get(value, 'knowledgeSearchCandidateMode') === 'string'
+    && typeof Reflect.get(value, 'knowledgeSearchCandidateBinary') === 'string'
+    && typeof Reflect.get(value, 'knowledgeSearchCandidateTimeoutMs') === 'number'
+    && typeof Reflect.get(value, 'knowledgeVerifierConfig') === 'string'
 }

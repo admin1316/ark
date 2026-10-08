@@ -19,6 +19,10 @@ public enum ArkScrollAnchor: Sendable {
 public final class ArkChatScrollController: ObservableObject {
   @Published public private(set) var isAtBottom = true
 
+  var onUserReachedTop: (@MainActor () -> Void)? {
+    didSet { coordinator?.onUserReachedTop = onUserReachedTop }
+  }
+
   /// Vertical anchor this surface keeps across content and viewport geometry changes.
   public let anchor: ArkScrollAnchor
 
@@ -46,6 +50,7 @@ public final class ArkChatScrollController: ObservableObject {
     coordinator.onFollowingBottomChange = { [weak self] followsBottom in
       self?.setAtBottom(followsBottom)
     }
+    coordinator.onUserReachedTop = onUserReachedTop
     self.coordinator = coordinator
     if let requestedSessionID { coordinator.activate(sessionID: requestedSessionID) }
     synchronizeFromCoordinator()
@@ -128,6 +133,7 @@ public final class ArkChatScrollController: ObservableObject {
     }
     retainedStateMachine = coordinator.stateMachine
     coordinator.onFollowingBottomChange = nil
+    coordinator.onUserReachedTop = nil
     coordinator.invalidate()
     self.coordinator = nil
     attachedScrollView = nil
@@ -167,19 +173,32 @@ public final class ArkChatScrollController: ObservableObject {
 /// as a ZStack overlay. It has no drawing, hit-testing, or accessibility face.
 public struct ArkChatScrollAttachment: NSViewRepresentable {
   private let controller: ArkChatScrollController
+  private let onUserReachedTop: (@MainActor () -> Void)?
 
   public init(controller: ArkChatScrollController) {
     self.controller = controller
+    onUserReachedTop = nil
+  }
+
+  init(
+    controller: ArkChatScrollController,
+    onUserReachedTop: @escaping @MainActor () -> Void
+  ) {
+    self.controller = controller
+    self.onUserReachedTop = onUserReachedTop
   }
 
   public func makeNSView(context: Context) -> NSView {
     let view = ArkChatScrollAttachmentView()
-    view.update(controller: controller)
+    view.update(controller: controller, onUserReachedTop: onUserReachedTop)
     return view
   }
 
   public func updateNSView(_ nsView: NSView, context: Context) {
-    (nsView as? ArkChatScrollAttachmentView)?.update(controller: controller)
+    (nsView as? ArkChatScrollAttachmentView)?.update(
+      controller: controller,
+      onUserReachedTop: onUserReachedTop
+    )
   }
 
   public static func dismantleNSView(_ nsView: NSView, coordinator: Void) {
@@ -216,16 +235,22 @@ private final class ArkChatScrollAttachmentView: NSView {
     if attachedScrollView == nil { scheduleAttachment() }
   }
 
-  func update(controller: ArkChatScrollController) {
+  func update(
+    controller: ArkChatScrollController,
+    onUserReachedTop: (@MainActor () -> Void)?
+  ) {
     if self.controller !== controller {
+      self.controller?.onUserReachedTop = nil
       self.controller?.detach(from: attachedScrollView)
       attachedScrollView = nil
       self.controller = controller
     }
+    controller.onUserReachedTop = onUserReachedTop
     scheduleAttachment()
   }
 
   func dismantle() {
+    controller?.onUserReachedTop = nil
     controller?.detach(from: attachedScrollView)
     attachedScrollView = nil
     controller = nil

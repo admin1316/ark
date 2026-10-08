@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto'
 import { lstatSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { atomicWriteFile, readRegularFileBounded } from './filesystem.ts'
 import { decideCandidateGovernance, governancePolicyVersion, resolveGovernedWikiPath } from './governance-policy.ts'
 import type { CandidateVerification, CandidateVerificationResult, VerificationReceiptReference, WikiReviewItem } from './types.ts'
@@ -43,6 +43,7 @@ export interface IndependentVerificationRequest {
   readonly reviewHash: string
   readonly candidatePath: string
   readonly candidateHash: string
+  readonly sourceHash: string
   readonly targetPath: string | null
   readonly governanceAction: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' | 'Archive'
   readonly governanceDecision: {
@@ -162,6 +163,7 @@ export function immutableReviewRow(item: WikiReviewItem): Readonly<Record<string
     reviewKind: item.reviewKind ?? null,
     candidatePath: item.candidatePath ?? null,
     candidateHash: item.candidateHash ?? null,
+    ...(item.sourceHash === undefined ? {} : { sourceHash: item.sourceHash }),
     targetPath: item.targetPath ?? null,
   })
 }
@@ -216,6 +218,23 @@ function actionIsCompatible(
   return action === 'Promote' ? !targetExists : targetExists
 }
 
+function sourceHashForReview(wikiRoot: string, item: WikiReviewItem): string {
+  const source = item.sourcePath ?? item.candidatePath ?? ''
+  const projectRoot = resolve(dirname(wikiRoot))
+  const absolute = resolve(projectRoot, source)
+  const rel = relative(projectRoot, absolute)
+  try {
+    const stat = lstatSync(absolute)
+    if (source !== '' && rel !== '' && !rel.startsWith(`..${sep}`) && !rel.includes(`${sep}..${sep}`)
+      && stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1) {
+      return sha256(readRegularFileBounded(absolute, 100 * 1024 * 1024))
+    }
+  } catch {
+    // URL, virtual research label, or missing source: bind the stable label.
+  }
+  return sha256(source)
+}
+
 /**
  * Construct the exact request; the external authority, never Candidate text, decides pass/fail.
  * @param authority - Trusted owner supplying the source/build identity; no verification is run here.
@@ -243,6 +262,7 @@ export function buildVerificationRequest(
     ? undefined
     : resolveGovernedWikiPath(wikiRoot, item.targetPath, true)
   if (item.targetPath !== undefined && target === undefined) return undefined
+  if (item.sourceHash !== undefined && item.sourceHash !== sourceHashForReview(wikiRoot, item)) return undefined
   let targetExists = false
   if (target !== undefined) {
     try {
@@ -265,6 +285,7 @@ export function buildVerificationRequest(
     reviewHash: sha256(canonicalJson(review)),
     candidatePath: item.candidatePath,
     candidateHash: item.candidateHash,
+    sourceHash: item.sourceHash ?? sha256(item.sourcePath ?? item.candidatePath),
     targetPath: item.targetPath ?? null,
     governanceAction: action,
     governanceDecision: Object.freeze({
@@ -435,6 +456,7 @@ export function readTrustedVerification(
     verification: {
       status: 'passed',
       candidateHash: request.candidateHash,
+      sourceHash: request.sourceHash,
       action: expectedAction,
       reviewHash: request.reviewHash,
       sourceIdentity: request.sourceIdentity,

@@ -3277,7 +3277,6 @@ public final class ArkAppModel: ObservableObject {
     statusProjection.reset(events: [])
     livePublishTask?.cancel()
     livePublishTask = nil
-    historyTask?.cancel()
     eventResyncTask?.cancel()
     eventResyncTask = nil
     historyProjectionGeneration &+= 1
@@ -3288,18 +3287,51 @@ public final class ArkAppModel: ObservableObject {
     turnUsageProjection = ArkChatTurnUsageProjection.Accumulator()
     restoreConversationSurface(for: sessionID)
     chatPresentationDidChange.send()
-    historyTask = Task { [weak self] in
-      guard let self else { return }
-      let resetHistory = self.events.isEmpty
-      async let history: Void = self.refreshHistory(resetPaging: resetHistory)
-      async let feedback: Void = self.loadMessageFeedback(for: sessionID)
-      async let modelLabel: Void = self.refreshModelLabel(for: sessionID)
-      async let modelCatalog: Void = self.refreshModelCatalog(for: sessionID)
-      if self.selectedSession?.origin == "subagent" {
-        _ = try? await self.subagentAddress(for: sessionID)
+    replaceHistoryTask { model in
+      let resetHistory = model.events.isEmpty
+      // Model metadata may resume a cold session on the Host. Finish the
+      // immutable history read before that changes its source identity.
+      await model.refreshHistory(resetPaging: resetHistory)
+      guard model.selectedSessionID == sessionID, !Task.isCancelled else { return }
+      async let feedback: Void = model.loadMessageFeedback(for: sessionID)
+      async let modelLabel: Void = model.refreshModelLabel(for: sessionID)
+      async let modelCatalog: Void = model.refreshModelCatalog(for: sessionID)
+      if model.selectedSession?.origin == "subagent" {
+        _ = try? await model.subagentAddress(for: sessionID)
       }
-      _ = await (history, feedback, modelLabel, modelCatalog)
+      _ = await (feedback, modelLabel, modelCatalog)
     }
+  }
+
+  @discardableResult
+  func replaceHistoryTask(
+    cancelPrevious: Bool = true,
+    _ operation: @escaping @MainActor (ArkAppModel) async -> Void
+  ) -> Task<Void, Never> {
+    let previous = historyTask
+    if cancelPrevious { previous?.cancel() }
+    let task = Task { [weak self] in
+      // A predecessor may still be closing a content handle, or resolving the
+      // first read of a fresh subscription. Never overlap its replacement;
+      // cancellation of a queued successor must reach the active ancestor.
+      await withTaskCancellationHandler {
+        await previous?.value
+      } onCancel: {
+        previous?.cancel()
+      }
+      guard !Task.isCancelled, let self else { return }
+      await operation(self)
+    }
+    historyTask = task
+    return task
+  }
+
+  private func refreshSubscribedHistoryIfNeeded(sessionID: String, resetPaging: Bool) async {
+    // The initial read may already have reconciled this baseline while the
+    // queued subscription waited. A second read is only needed for a remaining
+    // gap or a failed/incomplete first load.
+    guard resyncTargetBySessionID[sessionID] != nil || historyLoadState != .loaded else { return }
+    await refreshHistory(resetPaging: resetPaging)
   }
 
   private func cacheCurrentConversationSurface() {
@@ -4871,9 +4903,9 @@ public final class ArkAppModel: ObservableObject {
       if sourceChanged {
         // One fresh transaction catches events committed while the replaced
         // source was being recovered, without trusting old pending identities.
-        Task { [weak self] in
-          guard let self, self.selectedSessionID == sessionID else { return }
-          await self.refreshHistory()
+        replaceHistoryTask(cancelPrevious: false) { model in
+          guard model.selectedSessionID == sessionID else { return }
+          await model.refreshHistory()
         }
       }
     } catch {
@@ -6001,17 +6033,20 @@ public final class ArkAppModel: ObservableObject {
         events.removeAll { $0.id > lastSequence }
         pendingLiveEvents.removeAll { $0.id > lastSequence }
         seenEventIDs = Set(events.map(\.id)).union(pendingLiveEvents.map(\.id))
-        historyTask?.cancel()
-        historyTask = Task { [weak self] in
-          guard let self else { return }
+        replaceHistoryTask(cancelPrevious: false) { model in
           // A running session can resubscribe before its newest turn is
           // durable in history. Preserve the already-rendered transcript in
           // that case; only an empty, first-time surface may replace itself
           // from an authoritative page.
-          let resetHistory = self.events.isEmpty
-          async let history: Void = self.refreshHistory(resetPaging: resetHistory)
-          async let feedback: Void = self.loadMessageFeedback(for: sessionID)
-          async let modelMetadata: Void = self.refreshSubscribedModelMetadata(for: sessionID)
+          let resetHistory = model.events.isEmpty
+          // The first read may still be resolving this baseline. Cancelling
+          // it can discard an initial response before its content handle
+          // reaches the client; the queued task checks whether a gap remains.
+          async let history: Void = model.refreshSubscribedHistoryIfNeeded(
+            sessionID: sessionID, resetPaging: resetHistory
+          )
+          async let feedback: Void = model.loadMessageFeedback(for: sessionID)
+          async let modelMetadata: Void = model.refreshSubscribedModelMetadata(for: sessionID)
           _ = await (history, feedback, modelMetadata)
         }
       }
@@ -6253,7 +6288,11 @@ public final class ArkAppModel: ObservableObject {
       // The walk keeps the installed tail as its anchor and stops at the reported target, so the
       // page it pulls is exactly the missing range. Resetting the page would discard the tail and
       // move the head backwards below the stream.
-      await self.refreshHistory()
+      let queued = self.replaceHistoryTask(cancelPrevious: false) { model in
+        guard model.selectedSessionID == sessionID else { return }
+        await model.refreshHistory()
+      }
+      await queued.value
     }
   }
 

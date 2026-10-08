@@ -7,12 +7,13 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import KnowledgeWikiService from '../src/index.ts'
 import type { WikiGraphResult, WikiReviewItem } from '../src/types.ts'
 import { wikiTestConfig } from './config-fixture.ts'
+import { verifierAuthority } from './verifier-authority-fixture.ts'
 
 interface Surface {
   snapshots: { invalidate(root: string): void; dispose(): void }
@@ -31,6 +32,14 @@ interface Surface {
   resolveReviews(request: { ids: string[]; action?: string }): Promise<number>
   graphInsights(): Promise<Record<string, unknown[]>>
   computeGraph(): Promise<WikiGraphResult>
+  modelPageContent(
+    request: { path: string },
+    scope: { projectId: string; workspaceId?: string; sessionId: string },
+  ): Promise<{ path: string; content: string }>
+  modelSearch(
+    request: { query: string; topK?: number },
+    scope: { projectId: string; workspaceId?: string; sessionId: string },
+  ): Promise<Array<{ path: string; score: number }>>
   lint(): Promise<{ brokenLinks: Array<{ from: string; target: string }>; emptyPages: string[]; totalPages: number }>
   exportProject(): Promise<{ path: string; error?: string }>
   importProject(request: { path: string }): Promise<{ ok: boolean; error?: string; entries?: string[] }>
@@ -137,6 +146,67 @@ alpha reusable method and validation
     isolated.snapshots.dispose()
     await isolatedContext.fiber.dispose()
   })
+
+  it('fails closed for model reads without a verifier or a governed record', async () => {
+    writeFileSync(join(wikiRoot, 'concepts', 'alpha.md'), '# Alpha', 'utf8')
+    await expect(service.modelPageContent({ path: 'concepts/alpha.md' }, {
+      projectId: root,
+      workspaceId: root,
+      sessionId: 'session-a',
+    })).rejects.toThrow('knowledge verifier authority is unavailable')
+    await expect(service.modelSearch({ query: 'alpha' }, {
+      projectId: root,
+      workspaceId: root,
+      sessionId: 'session-a',
+    })).rejects.toThrow('knowledge verifier authority is unavailable')
+  })
+
+  it.skipIf(!existsSync(resolve('rust/knowledge-search-shadow/target/release/knowledge-search-shadow')))(
+    'exercises the service Rust shadow seam with the real release binary',
+    async () => {
+      const candidateRoot = mkdtempSync(join(tmpdir(), 'wiki-service-rust-candidate-'))
+      const candidateWiki = join(candidateRoot, 'wiki')
+      mkdirSync(candidateWiki, { recursive: true })
+      const candidateCtx = new Context()
+      const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
+      Object.defineProperty(candidateCtx, 'logger', { configurable: true, value: logger })
+      Object.defineProperty(candidateCtx, 'credentials', {
+        configurable: true,
+        value: { resolve: vi.fn().mockResolvedValue(undefined) },
+      })
+      Object.defineProperty(candidateCtx, 'llm', {
+        configurable: true,
+        value: { stream: vi.fn() },
+      })
+      Object.defineProperty(candidateCtx, 'timer', {
+        configurable: true,
+        value: { interval: () => () => {} },
+      })
+      candidateCtx.provide('knowledgeWikiVerifierAuthority', verifierAuthority())
+      const candidate = new KnowledgeWikiService(candidateCtx, wikiTestConfig({
+        wikiRoot: candidateWiki,
+        mainRoot: candidateRoot,
+        credential: 'VISION_API_KEY',
+        llmProvider: 'p',
+        llmModel: 'm',
+        knowledgeSearchCandidateMode: 'shadow',
+        knowledgeSearchCandidateBinary: resolve('rust/knowledge-search-shadow/target/release/knowledge-search-shadow'),
+        knowledgeSearchCandidateTimeoutMs: 5000,
+      }))
+      try {
+        await expect(candidate.modelSearch({ query: 'runtime' }, {
+          projectId: candidateRoot,
+          workspaceId: candidateRoot,
+          sessionId: 'service-rust-candidate-session',
+        })).resolves.toEqual([])
+        expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Rust search candidate shadow matched'))
+      } finally {
+        (candidate as unknown as Surface).snapshots.dispose()
+        await candidateCtx.fiber.dispose()
+        rmSync(candidateRoot, { recursive: true, force: true })
+      }
+    },
+  )
 })
 
 describe('page read/write CAS surface', () => {

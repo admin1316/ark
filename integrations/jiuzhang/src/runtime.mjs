@@ -152,6 +152,9 @@ const inheritedEnvironmentKeys = [
   'TERM',
   'COLORTERM',
   'NO_COLOR',
+  // Launcher-owned verifier configuration. It is never read from Wiki data;
+  // an empty value keeps the service fail-closed by default.
+  'ARK_KNOWLEDGE_VERIFIER_CONFIG',
 ]
 
 /** Return the default isolated Harness home for the Jiuzhang desktop product. */
