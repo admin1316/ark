@@ -4,19 +4,25 @@
 
 This reference records the Rust migration decision from the checked-out source tree. It is evidence for planning and review; it does not enable a Rust provider or change an existing wire contract.
 
+**当前快照：** 矩阵已按 checkout 提交 `2d8923344bf5f0101f3eb76a056434b5a78aef3e` 于 2026-10-08 刷新。正式 Ark 包未修改，活动生产 profile 仍只使用 TypeScript。
+
 ## Source evidence
 
-2026-10-07 用 `git ls-tree` 检查时，source-truth 基线 `b8adf5a7ec9c22c3f1c7958821af825bd7821d7a` 和 GitHub `origin/main` 的 `d382723905742f2b87401ad444d02756f5cb229b` 都没有 `Cargo.toml` 或 Rust 源文件（`*.rs`）。当前工作树在这次基线之后新增了一个隔离且不用于生产的 shadow crate：[`rust/knowledge-search-shadow`](../../rust/knowledge-search-shadow)。现有 native 实现是 C11 Landlock launcher，位于 [`native/landlock-run/packages/entry/src/main.c`](../../native/landlock-run/packages/entry/src/main.c)，通过 TypeScript 入口模块 [`native/landlock-run/packages/entry/src/index.ts`](../../native/landlock-run/packages/entry/src/index.ts) 暴露；它是进程启动与文件系统隔离探针，不属于下面的 Rust 内核候选。
+2026-10-07 用 `git ls-tree` 检查时，历史 source-truth 基线 `b8adf5a7ec9c22c3f1c7958821af825bd7821d7a` 和 GitHub `origin/main` 的 `d382723905742f2b87401ad444d02756f5cb229b` 都没有 `Cargo.toml` 或 Rust 源文件（`*.rs`）。当前 checkout `2d8923344bf5f0101f3eb76a056434b5a78aef3e` 在这次基线之后新增了一个隔离且不用于生产的 shadow crate：[`rust/knowledge-search-shadow`](../../rust/knowledge-search-shadow)。现有 native 实现是 C11 Landlock launcher，位于 [`native/landlock-run/packages/entry/src/main.c`](../../native/landlock-run/packages/entry/src/main.c)，通过 TypeScript 入口模块 [`native/landlock-run/packages/entry/src/index.ts`](../../native/landlock-run/packages/entry/src/index.ts) 暴露；它是进程启动与文件系统隔离探针，不属于下面的 Rust 内核候选。
 
 知识内核仍然由进程内 TypeScript 持有。BM25、分词和余弦相似度在 [`packages/host/knowledge-wiki/src/search.ts`](../../packages/host/knowledge-wiki/src/search.ts)；图遍历和 Louvain 社区发现位于 [`packages/host/knowledge-wiki/src/graph.ts`](../../packages/host/knowledge-wiki/src/graph.ts)。当前工作树已经有确定性的优化 TypeScript 对照实现 [`scripts/rust-migration/benchmark-knowledge-search.ts`](../../scripts/rust-migration/benchmark-knowledge-search.ts)、隔离 Rust shadow 回放 [`scripts/rust-migration/differential-replay.ts`](../../scripts/rust-migration/differential-replay.ts) 和默认关闭的生产候选边界 [`packages/host/knowledge-wiki/src/rust-search-candidate.ts`](../../packages/host/knowledge-wiki/src/rust-search-candidate.ts)，但仍没有这些内核的生产 N-API provider 或 enforced Rust owner。
 
 Cancellation and child-process recovery remain owned by the existing TypeScript runtime. [`packages/subprocess/subprocess-local`](../../packages/subprocess/subprocess-local) terminates managed process groups through `AbortSignal`, and [`packages/jobs/jobs-local`](../../packages/jobs/jobs-local) owns task cancellation and teardown. The migration boundary must preserve those owners.
 
+## 实测候选证据
+
+2026-10-08 的本地 benchmark 使用同一份确定性语料，current TypeScript p50 为 **12.519 ms**，优化 TypeScript p50 为 **0.500 ms**，Rust stdin/stdout IPC p50 为 **20.536 ms**；三者结果摘要一致（`current-optimized-rust-match`）。由于缺少 production candidate profile、签名 verifier receipt、cold/warm 与跨平台数据、子进程 CPU/RSS、取消和崩溃恢复证据，验收状态仍是 **UNKNOWN**。隔离候选 Ark 的 smoke 只确认了 TypeScript 原生路径；凭据标注 `rustShadowInvoked: false`，因为模型/工具路径没有配置模型。这些数据支持 `RETAIN_TS`，不支持开启 enforce-mode 迁移。
+
 ## Candidate decisions
 
 | Candidate | Current owner | Rust boundary | Evidence status | Decision |
 | --- | --- | --- | --- | --- |
-| Tokenization and BM25 scoring | `knowledge-wiki/search.ts` | Immutable UTF-8 request bytes and page records; deterministic result bytes | 优化 TypeScript 与隔离 Rust shadow 在确定性语料上结果一致；没有真实边界或端到端回放 | **RETAIN_TS** |
+| Tokenization and BM25 scoring | `knowledge-wiki/search.ts` | Immutable UTF-8 request bytes and page records; deterministic result bytes | 优化 TypeScript 与隔离 Rust shadow 在确定性语料上结果一致；真实 IPC 测量慢于优化 TypeScript，Ark 原生 smoke 也没有调用 Rust | **RETAIN_TS** |
 | Cosine similarity | `knowledge-wiki/search.ts` | Immutable numeric vectors; deterministic scores | No optimized TypeScript or Rust implementation; embedding calls dominate hybrid search when enabled | **RETAIN_TS** |
 | Wiki graph derivation and Louvain | `knowledge-wiki/graph.ts` | Immutable page/edge records; deterministic graph result | No optimized TypeScript or Rust implementation; filesystem traversal and graph semantics need a replay corpus | **RETAIN_TS** |
 | Incremental search or graph index | No separate index owner; search and graph rebuild from the Wiki tree | Versioned canonical index bytes with generation and checksum | No index format or rebuild/recovery contract exists | **DEFER** |
