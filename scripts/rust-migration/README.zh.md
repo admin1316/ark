@@ -26,7 +26,7 @@ The metric names are `repeatedErrorRate`, `repeatedToolCallRate`, `verifiedTaskS
 
 ## Rust 之前的 TypeScript 基准
 
-`benchmark-knowledge-search.ts` 使用同一个确定性语料，运行当前 TypeScript BM25、预建索引的优化 TypeScript，以及通过 stdin/stdout 隔离运行的 Rust shadow，记录 p50/p95/p99 延迟、CPU 时间、RSS 增量、event-loop delay 和回放摘要。只有 Rust 路径接入生产边界并通过所需端到端检查后，记录才会离开 `UNKNOWN`。单独的 Rust 微基准更快，不足以改变迁移决策。
+`benchmark-knowledge-search.ts` 使用同一个确定性语料，运行当前 TypeScript BM25、预建索引的优化 TypeScript，以及通过 stdin/stdout 隔离运行的 Rust shadow，记录 p50/p95/p99 延迟、CPU 时间、RSS 增量、event-loop delay 和回放摘要。结果现在明确暴露四种 envelope：`typescriptCold` 每次重建索引，`typescriptWarm` 复用预建索引，`rustCold` 每次请求启动子进程，`rustWarm` 复用可选的持久 Rust 子进程（但当前 Rust 内核仍会为每个请求重建索引）。warm helper 还记录 harness 级别的 SIGKILL/重启探针；由于同步 benchmark 没有 in-flight `AbortSignal`，取消明确标记为 `not-measured`。这些只是测量辅助，不是生产 supervisor 或验收凭据。只有 Rust 路径接入生产边界并通过所需端到端检查后，记录才会离开 `UNKNOWN`。单独的 Rust 微基准更快，不足以改变迁移决策。
 
 `differential-replay.ts` 将同一份规范语料传给 TypeScript 和隔离的 [`rust/knowledge-search-shadow`](../../rust/knowledge-search-shadow) binary。摘要一致只证明 shadow contract，不授权生产 enforce。任何构建、超时、进程或结果不一致都必须保持 `UNKNOWN` 并回退。
 

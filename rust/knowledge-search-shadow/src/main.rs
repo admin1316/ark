@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
-use std::io::{self, Read};
+use std::io::{self, BufRead, Read, Write};
 
 const K1: f64 = 1.5;
 const B: f64 = 0.75;
@@ -530,11 +530,7 @@ fn bm25(pages: Vec<Page>, query: &str) -> Vec<Hit> {
     hits
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut input_bytes = Vec::new();
-    io::stdin()
-        .take((MAX_REQUEST_BYTES + 1) as u64)
-        .read_to_end(&mut input_bytes)?;
+fn process_request(input_bytes: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
     if input_bytes.len() > MAX_REQUEST_BYTES {
         return Err(format!("request exceeds limit {MAX_REQUEST_BYTES} bytes").into());
     }
@@ -552,7 +548,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         digest: sha256_hex(&result_bytes),
         input_digest: sha256_hex(&input_bytes),
     };
-    println!("{}", serde_json::to_string(&output)?);
+    Ok(serde_json::to_string(&output)?)
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::args().any(|argument| argument == "--persistent") {
+        // The production candidate sends one request and closes stdin. This
+        // opt-in newline-delimited mode is only for a benchmark warm envelope:
+        // each line is still an independent, bounded request and response.
+        let stdin = io::stdin();
+        let mut stdout = io::BufWriter::new(io::stdout().lock());
+        for line in stdin.lock().lines() {
+            let line = line?;
+            let output = process_request(line.trim_end_matches('\r').as_bytes())?;
+            writeln!(stdout, "{output}")?;
+            stdout.flush()?;
+        }
+        return Ok(());
+    }
+
+    let mut input_bytes = Vec::new();
+    io::stdin()
+        .take((MAX_REQUEST_BYTES + 1) as u64)
+        .read_to_end(&mut input_bytes)?;
+    let output = process_request(&input_bytes)?;
+    println!("{output}");
     Ok(())
 }
 

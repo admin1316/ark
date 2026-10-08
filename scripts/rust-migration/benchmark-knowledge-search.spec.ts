@@ -11,15 +11,26 @@ describe('knowledge search benchmark scaffold', () => {
       differentialReplay: string
       stopWordCount: number
       implementation: { rust: unknown }
+      envelopes: {
+        typescriptCold: { indexReuse: boolean }
+        typescriptWarm: { indexReuse: boolean }
+        rustCold: unknown
+        rustWarm: unknown
+      }
     }
     expect(result.status).toBe('unknown')
     expect(result.stopWordCount).toBeGreaterThan(200)
+    expect(result.envelopes.typescriptCold.indexReuse).toBe(false)
+    expect(result.envelopes.typescriptWarm.indexReuse).toBe(true)
     if (existsSync(binary)) {
       expect(result.differentialReplay).toBe('current-optimized-rust-match')
       expect(result.implementation.rust).not.toBeNull()
+      expect(result.envelopes.rustWarm).toEqual(expect.objectContaining({ processReuse: true }))
     } else {
       expect(result.differentialReplay).toBe('current-and-optimized-ts-match')
       expect(result.implementation.rust).toBeNull()
+      expect(result.envelopes.rustCold).toBeNull()
+      expect(result.envelopes.rustWarm).toBeNull()
     }
   })
 })

@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto'
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks'
 import { existsSync, writeFileSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bm25, STOP_WORDS, tokenize } from '../../packages/host/knowledge-wiki/src/search.ts'
@@ -108,6 +108,20 @@ function measure(run: () => unknown, iterations: number): {
   }
 }
 
+function summarizeSamples(samples: readonly number[], digest: string): Record<string, unknown> {
+  return {
+    p50: percentile(samples, 0.5),
+    p95: percentile(samples, 0.95),
+    p99: percentile(samples, 0.99),
+    sampleCount: samples.length,
+    cpuMicros: null,
+    rssDelta: null,
+    eventLoopDelayMeanMs: null,
+    eventLoopDelaySamples: 0,
+    digest,
+  }
+}
+
 interface RustHit {
   readonly path: string
   readonly score: number
@@ -182,6 +196,54 @@ function canonicalResults(results: readonly (readonly { readonly path: string; r
   return JSON.stringify(results)
 }
 
+function measureRustPersistent(binary: string, input: ReturnType<typeof benchmarkCorpus>, iterations: number): {
+  readonly metrics: Record<string, unknown>
+  readonly recovery: Record<string, unknown>
+  readonly cancellation: Record<string, unknown>
+  readonly resultDigest: string
+  readonly inputDigest: string
+} {
+  const helper = fileURLToPath(new URL('./measure-rust-persistent.mjs', import.meta.url))
+  const raw = execFileSync(process.execPath, [helper], {
+    input: JSON.stringify({ binary, request: benchmarkRequest(input), iterations, timeoutMs: 30_000 }),
+    encoding: 'utf8',
+    timeout: Math.max(30_000, (iterations + 3) * 30_000),
+    maxBuffer: 4 * 1024 * 1024,
+    env: isolatedChildEnvironment(),
+  })
+  const result = JSON.parse(raw) as {
+    readonly schemaVersion: number
+    readonly startupMs: number
+    readonly samplesMs: readonly number[]
+    readonly measurementDigest: string
+    readonly resultDigest: string
+    readonly inputDigest: string
+    readonly recovery: Record<string, unknown>
+    readonly cancellation: Record<string, unknown>
+  }
+  if (result.schemaVersion !== 1 || !Array.isArray(result.samplesMs) || result.samplesMs.length !== iterations
+    || !/^[a-f0-9]{64}$/u.test(result.measurementDigest)
+    || !/^[a-f0-9]{64}$/u.test(result.resultDigest) || !/^[a-f0-9]{64}$/u.test(result.inputDigest)) {
+    throw new Error('Rust persistent benchmark output failed schema validation')
+  }
+  return {
+    metrics: {
+      ...summarizeSamples(result.samplesMs, result.measurementDigest),
+      startupMs: result.startupMs,
+      startupIncludedInFirstSample: false,
+      processReuse: true,
+      // The persistent child reuses its process and pipes, but the current
+      // Rust kernel still rebuilds its document index for each request.
+      indexReuse: false,
+      resultDigest: result.resultDigest,
+    },
+    recovery: result.recovery,
+    cancellation: result.cancellation,
+    resultDigest: result.resultDigest,
+    inputDigest: result.inputDigest,
+  }
+}
+
 /** Run deterministic current/optimized TypeScript and optional Rust shadow measurements. */
 export function runBenchmark(iterations = 30, explicitRustBinary?: string): Record<string, unknown> {
   const input = benchmarkCorpus()
@@ -204,7 +266,27 @@ export function runBenchmark(iterations = 30, explicitRustBinary?: string): Reco
       const rustMatches = canonicalResults(currentResults) === canonicalResults(shadow.results)
       differentialReplay = rustMatches && equal ? 'current-optimized-rust-match' : 'differential-mismatch'
       const measured = measure(() => runRust(binary, request).results, iterations)
+      let warm: Record<string, unknown> | null = null
+      let recovery: Record<string, unknown> | null = null
+      let cancellation: Record<string, unknown> | null = null
+      try {
+        const persistent = measureRustPersistent(binary, input, iterations)
+        warm = persistent.metrics
+        recovery = persistent.recovery
+        cancellation = persistent.cancellation
+      } catch (error) {
+        missingEvidence.push(`Rust warm persistent measurement: ${error instanceof Error ? error.message : String(error)}`)
+      }
       rust = {
+        cold: {
+          ...measured,
+          startupIncluded: true,
+          processReuse: false,
+          indexReuse: false,
+        },
+        warm,
+        recovery,
+        cancellation,
         ...measured,
         transport: 'stdin/stdout process IPC',
         cpuScope: 'node-parent',
@@ -221,15 +303,27 @@ export function runBenchmark(iterations = 30, explicitRustBinary?: string): Reco
     'production candidate profile exercise and authenticated enforcement receipt',
     'cross-platform Rust measurements',
     'child CPU/RSS accounting',
-    'cold-start versus warm-process measurements',
-    'end-to-end cancellation and crash-recovery measurements',
+    'end-to-end production cancellation and crash-recovery measurements',
   )
+  if (rust === null) missingEvidence.push('Rust cold and warm envelope measurements')
+  else if (rust.warm === null) missingEvidence.push('Rust warm persistent envelope measurement')
+  const cancellationStatus = rust !== null && typeof rust.cancellation === 'object' && rust.cancellation !== null
+    ? (rust.cancellation as Record<string, unknown>).status
+    : undefined
+  if (cancellationStatus === 'not-measured') missingEvidence.push('benchmark cancellation latency (AbortSignal is owned by the TypeScript boundary)')
   if (current.eventLoopDelaySamples === 0 || optimized.eventLoopDelaySamples === 0) missingEvidence.push('event-loop delay samples for the synchronous harness')
+  const implementation = { currentTypeScript: current, optimizedTypeScript: optimized, rust }
   return {
     schemaVersion: 1,
     status: 'unknown',
     candidate: 'knowledge-search-bm25',
-    implementation: { currentTypeScript: current, optimizedTypeScript: optimized, rust },
+    implementation,
+    envelopes: {
+      typescriptCold: { ...current, name: 'typescript-cold-rebuild', indexReuse: false, processReuse: true },
+      typescriptWarm: { ...optimized, name: 'typescript-warm-cached-index', indexReuse: true, processReuse: true },
+      rustCold: rust?.cold ?? null,
+      rustWarm: rust?.warm ?? null,
+    },
     corpusHash: input.hash,
     stopWordCount: STOP_WORDS.size,
     iterations,
