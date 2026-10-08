@@ -2,7 +2,7 @@
 
 [English](knowledge-runtime-report.md) | 中文
 
-**已审计快照：** 召回修复与隐藏 Native 3.1.5/build 2026100822 绑定干净提交 `93040bb55cac3a0cfa1c928fb17bad351ed20a97`，日期为 2026-10-08。[产物检查](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) 已通过，该 app 尚未启动。正在运行的 app 仍为干净75；其[真实发票任务](../../scripts/rust-migration/evidence/current75-real-task-20261008.json) 算术正确，但只返回 JSON 的要求失败。构建、任务和学习证据各自保留源码身份。
+**历史 Native 快照：** 召回修复与隐藏 Native 3.1.5/build 2026100822 绑定干净提交 `93040bb55cac3a0cfa1c928fb17bad351ed20a97`，日期为 2026-10-08。[产物检查](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) 已通过，该 app 尚未启动。正在运行的 app 仍为干净75；其[真实发票任务](../../scripts/rust-migration/evidence/current75-real-task-20261008.json) 算术正确，但只返回 JSON 的要求失败。构建、任务和学习证据各自保留源码身份。
 
 [源码与服务记录](../../scripts/rust-migration/evidence/knowledge-source-identity-and-service-20261008.json) 区分两项后续观察。当前源码拒绝同一精确 source 的竞争认证 owner，在异步搜索后重新检查治理状态，并冻结 canonical 预备输入，同时不启用 canonical 写入。独立的干净父提交服务运行在四个新建源码进程中完成172次调用；追加1,000条 neutral 日志事件后，24页与240页的描述性 p50 分别增加118.688 ms和150.467 ms。顺序进程运行、oracle 读取的预热与缺少组件分析限制了归因。这些观察不证明 Rust 收益、Ark 对话能力或学习提升。
 
@@ -22,7 +22,7 @@ The active source has no automatic Knowledge Wiki recall section. `tool-knowledg
 | Candidate | LLM summary writes `_candidates/{topics,reflections,incidents}` and appends `.llm-wiki/review.json` ([`index.ts:326-397`](../../packages/host/knowledge-wiki/src/index.ts)). | Enabled if stage executor and project target pass. |
 | Provenance / hash | Candidate reviews contain candidate hash; verifier types include source identity/build digest and review hash ([`packages/host/knowledge-wiki/src/types.ts:78-129`](../../packages/host/knowledge-wiki/src/types.ts)). | Present for candidate review lane. |
 | Independent verification | `verifyCandidate()` requires injected `knowledgeWikiVerifierAuthority`, persists a receipt, then binds it to the review ([`index.ts:1225-1257`](../../packages/host/knowledge-wiki/src/index.ts)). | No production authority provider found at baseline; explicit authority-unavailable blocker. |
-| Review / promotion | `resolveReview(s)` 调用 advisory resolution 或 `applyCandidateReview()`（见 [service](../../packages/host/knowledge-wiki/src/index.ts)）。 | receipt 无法认证实测 trial 收益，因此四种 canonical 正向操作拒绝；Archive、Skip、advisory resolution 和 rollback 保留现有规则。 |
+| Review / promotion | `resolveReview(s)` 调用 advisory resolution 或 `applyCandidateReview()`（见 [service](../../packages/host/knowledge-wiki/src/index.ts)）。 | semantic receipt 无法认证实测 trial 收益，且 measured-trial authority 尚未配置，因此四种 canonical 正向操作拒绝；Archive、Skip、advisory resolution 和 rollback 保留现有规则。 |
 | Utility | 受治理的 retrieval/outcome 计数解析为已接纳的知识 ID，并由日志回放；`.llm-wiki/knowledge-utility.json` 是展示投影（见 [service](../../packages/host/knowledge-wiki/src/index.ts)）。 | 源码行为已测试；UI 反馈和 verifier 检查通过不证明独立 trial 收益或 utility lift。 |
 | Expiry/conflict/rollback | `KnowledgeRecord` fields and `knowledge-governance.ts` transitions enforce expiry, scope, ACL, conflicts, downgrade, promotion, and rollback. | **Implemented with focused replay/gate tests.** |
 
@@ -46,7 +46,7 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 7. **干净75固定槽位候选** [脱敏证据](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) 记录 macOS ARM64 构建、严格 ad-hoc 签名检查、候选槽位原子替换、代码回滚保留，以及有条件复用用户在旧候选输入的选定凭据。模型选择为 `deepseek-official / deepseek-flash / max`，凭据复用期间未调用模型。用户确认窗口正常且空闲。CUA 仍解析为旧 bundle 身份，自动界面操作受阻；相同状态截图和当前任务验收未完成。完整串行 coverage 运行的793项 Wiki 测试通过，但六个文件仍未达到每文件100%门槛；先前 worker 启动失败记录保留。
 8. **`b8adf5a7ec` 的历史可见真实任务** 回放的1857个 session event 记录五个真实 provider step 和七个工具 carrier。仅在单独提取 Markdown JSON 围栏内容后，精确有理数对账通过；原始 JSON-only 要求以 `FAIL_FORMAT` 失败。项目脚手架在任务前已存在，但初始两文件预登记未包含它，因此不能宣称完整 world 未变。一条 shell 尝试在只读沙箱中失败后重试。此任务不能证明知识学习、当前75或 Rust 性能收益。
 
-9. **当前干净930验证与隐藏构建** [验证记录](../../scripts/rust-migration/evidence/current930-validation-20261008.json) 保留83个 Wiki 测试文件的800项测试通过，以及 coverage 实际退出码1：六个源码文件仍未达到不变的每文件100%门槛。[隐藏315构建](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) 的源码、打包、Swift、Mach-O、签名和已签名目录树检查通过；其 receipt 记录产物核验时 home 为空。独立的[准备证据](../../scripts/rust-migration/evidence/candidate-progress-e2910207-20261008.json) 绑定不含密钥的 settings 与已签名 profile 副本；凭据复用和启用尚未执行。当前界面、模型任务、学习、回滚和 CI 验收未完成。
+9. **历史干净930验证与隐藏构建** [验证记录](../../scripts/rust-migration/evidence/current930-validation-20261008.json) 保留83个 Wiki 测试文件的800项测试通过，以及 coverage 实际退出码1：六个源码文件仍未达到不变的每文件100%门槛。[隐藏315构建](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) 的源码、打包、Swift、Mach-O、签名和已签名目录树检查通过；其 receipt 记录产物核验时 home 为空。独立的[准备证据](../../scripts/rust-migration/evidence/candidate-progress-e2910207-20261008.json) 绑定不含密钥的 settings 与已签名 profile 副本；凭据复用和启用尚未执行。当前界面、模型任务、学习、回滚和 CI 验收未完成。
 10. **干净75真实发票基线** [预登记的真实任务](../../scripts/rust-migration/evidence/current75-real-task-20261008.json) 通过活动 Native Session API 提交一次，沿用 `deepseek-official / deepseek-flash / max`。四个模型步骤、七次成功工具调用产生1,862个无缺口事件，并保留原始已完成 turn。独立冷回放匹配持久化事件和最终答复，六个文件和六个目录均未改变。精确算术与 oracle 相同，但原始答复包含 Markdown JSON 围栏和额外文字，因此整份答复仍为 **FAIL_FORMAT**。提取 JSON 仅用于诊断。当前界面视口未核验；该任务未运行隐藏315，也不能证明学习或 Rust 收益。
 
 ## Drift and required follow-up
@@ -57,7 +57,7 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 
 源码已限制没有依据的正向 utility：普通检查通过只保留语义验证，不创建 trial；受治理反馈不能产生 successful-use 收益；canonical 操作和 prepared canonical WAL 恢复在缺少实测 trial 证据时拒绝。真实 Loader/AgentLoop/tool/session 组合测试覆盖这些行为，包括重启后的保留判断和伪造展示计数。这些测试使用测试 authority，不能证明评估者独立持有密钥或正确复用了修复规则。
 
-评估者独立性仍未证明：adapter 让 launcher 接收匹配的私钥，receipt 合约无法认证独立实测的使用结果。尽管 JS launcher 会转发，Native parent 没有配置 `ARK_KNOWLEDGE_VERIFIER_CONFIG`；acceptance CLI 也没有外部配置的 trusted key。这些都是未解决的验收条件，本地测试密钥或 synthetic provider 运行不能把它们变成已验证的学习证据。
+评估者独立性仍未证明：旧 semantic adapter 让 launcher 接收匹配的私钥，其 semantic receipt 无法认证独立实测的使用结果。尽管 JS launcher 会转发，Native parent 没有配置 `ARK_KNOWLEDGE_VERIFIER_CONFIG`；acceptance CLI 也没有外部配置的 trusted key。这些都是未解决的验收条件，本地测试密钥或 synthetic provider 运行不能把它们变成已验证的学习证据。
 
 - The old docs' claim that every turn creates conversation/profile/reflection entries and every model step receives recalled profiles/reflections is contradicted by source and runtime artifacts. Mark it **DRIFT: confirmed**.
 - Review is implemented and mounted, but the independent verifier authority is not provided by the baseline production composition (only tests provide it). The release profile has no verified promotion path until that owner is composed. Candidate lifecycle, project audit, and session retrieval/injection events are implemented; generic per-step recall is not enabled. Mark **PARTIAL / VERIFIER BLOCKED**.
@@ -65,11 +65,15 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 - Model request evidence exists in synthetic provider logs and production projection counters, but no captured request payload currently demonstrates Wiki content injection. Mark **NOT VERIFIED** for “knowledge injected in every model step.”
 - Maintain the replay tests and run the learning evaluator on independently verified paired outcomes before claiming a utility or smartness lift. Keep candidates below canonical trust until independent verification and review complete.
 
-用户已明确批准候选内学习协议扩展；[当前记录](../../scripts/rust-migration/evidence/current930-validation-20261008.json) 绑定审批与私有草案。扩展尚未实现或配置，草案中的 stateVersion 2 尚未采用，原始项目 manifest 保持不变。用户可见能力需要真实 Ark 会话的结果与界面确认；知识收益还需要独立评估的同模型、同任务对照和正确修复复用，reflection 文本与编译通过均不能代替验收。
+用户已明确批准候选内学习协议扩展；[当前记录](../../scripts/rust-migration/evidence/current930-validation-20261008.json) 绑定审批与私有草案。源码包含[只读学习校验器](../../packages/host/knowledge-wiki/README.zh.md#read-only-learning-evidence)；运行时 trial authority 仍未配置，草案中的 stateVersion 2 尚未采用，原始项目 manifest 保持不变。用户可见能力需要真实 Ark 会话的结果与界面确认；知识收益还需要独立评估的同模型、同任务对照和正确修复复用，reflection 文本与编译通过均不能代替验收。
 
 [后续补丁与草案审阅](../../scripts/rust-migration/evidence/candidate-progress-e2910207-20261008.json) 记录精确的 Archive 回滚限制和作用域内 review 输出。重新创建的不同字节保持不变，未完成的回滚保留 journal，冷恢复拒绝 divergent 状态。模型收到空 review 结果只表示该会话看不到未解决项目。[已批准的候选内部 baseline](../../scripts/rust-migration/evidence/learning-protocol-baseline-20261008.json) 记录经过复核的目标 identity/计数归属、分离的 evaluator/journal 角色、精确 source 策略、完整学习证据链要求和启用依赖。精确产物映射保留原始规范字节；原 manifest 与全局 stateVersion 1 均不改变。记录规范不代表已经实现或配置 trial authority、请求观察、独立测量或 canonical 晋级。
 
 [数值与目录同步证据](../../scripts/rust-migration/evidence/learning-numerics-and-directory-sync-20261008.json) 将不改变格式的修复绑定到父提交 `3a125dc0cc8669974418e675676b89fd9a9718eb` 及精确源码文件。计数比例使用精确整数比较；显示的比例是近似值，数值大小关系不能证明统计显著性。共享 POSIX 文件系统与事件 owner 要求目录同步，保留发布之后的错误，并在恢复时重新同步。模拟数值、系统调用故障、Loader 组合测试与 CLI 回放仍然不同于实际 Ark 对话、独立实测 utility、Windows 持久性和物理断电证明。
+
+[只读学习证据图记录](../../scripts/rust-migration/evidence/learning-readonly-graph-20261008.json) 将有预算的 artifact、角色证明及完整原始请求 consumer 绑定到父提交 `15cf20d4ea40e88a9f634d00510ad4b0e2da7f51` 和最终文件的精确 pin。合成图测试通过 86 项；既有 verifier/Loader/归约器检查通过 102 项，完整源码与构建后的 Wiki 回放各通过两项。无关请求绑定错误、独立使用记录的任务组替换、重复遍历耗尽预算、Node 启动失败及 fixture 编译失败均保留在证据中。独立源码复审在其记录的范围内没有未关闭的发现。
+
+这个仅在源码中接入的 consumer 不授予 trial 访问权、successful-use 信用或 canonical 写入权限。Native 与发布的 profile 尚未组合它。实际 evaluator enrollment、受保护 journal 的保管、最终 provider 请求观察及独立测量的配对任务仍未提供；当前 Wiki 字节、目标不存在及独占 writer/CAS 安全不属于其只读证明范围。两个既有 Native 产物都不包含这份源码。真实对话、跨 session 修复复用、utility 提升及当前源码 CI/Native 回滚验收仍未验证。
 
 ## Current Rust candidate seam
 

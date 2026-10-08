@@ -24,7 +24,7 @@ import * as WikiTools from '@deepseek-ai/dsh-tool-knowledge-wiki'
 import KnowledgeWikiService from '../src/index.ts'
 import { readKnowledgeEventLog, replayKnowledgeEvents, shouldRetainKnowledge } from '../src/knowledge-governance.ts'
 import { appendCandidateReviews } from '../src/reviews.ts'
-import { sha256, type KnowledgeWikiVerifierAuthority } from '../src/verifier.ts'
+import { sha256, validateLearningReceiptChain, type KnowledgeWikiVerifierAuthority } from '../src/verifier.ts'
 import { seedHistoricalCanonicalKnowledge } from './historical-governed-fixture.ts'
 import { verifierAuthority } from './verifier-authority-fixture.ts'
 import { externalBoundariesFixture, type ExternalBoundaryCalls } from './fixtures/loader-external-boundaries.ts'
@@ -268,6 +268,13 @@ describe('Knowledge Wiki real keyless YAML Loader composition', () => {
       sessionId: SessionId('loader-knowledge-owner'), meta: { cwd: projectRoot },
     })
     expect(ctx.sessions.get(owner.agent.id)).toBe(owner.agent.session)
+    // This real YAML path has only the existing semantic authority. It must
+    // report learning unavailable before resolving a purported trial artifact.
+    const semanticAuthority = ctx.get('knowledgeWikiVerifierAuthority') as KnowledgeWikiVerifierAuthority | undefined
+    expect(validateLearningReceiptChain(semanticAuthority, {
+      algorithm: 'sha256', digest: sha256('absent measured trial'), bytes: 0, mediaType: 'application/json',
+    })).toEqual({ status: 'unavailable', errorCode: 'learning-owner-unavailable' })
+    expect(calls).toEqual({ verifier: 0, credentials: 0, llm: 0 })
 
     // World setup uses the actual candidate writer and review producer, with
     // explicit source evidence. It does not claim an LLM ingest task occurred.

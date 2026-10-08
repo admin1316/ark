@@ -16,7 +16,9 @@ import {
   buildVerificationRequest,
   immutableReviewRow,
   readTrustedReceipt,
+  readTrustedVerification,
   sha256,
+  validateSemanticReceipt,
   verifyCandidate,
   type IndependentVerificationRequest,
   type IndependentVerificationResult,
@@ -332,6 +334,31 @@ describe('independent verdict authentication', () => {
 })
 
 describe('stored receipt authentication', () => {
+  it('authenticates retained semantic bytes after Candidate removal while denying live Candidate admission', async () => {
+    const item = fixture()
+    const authority = verifierAuthority()
+    const result = await verifyCandidate(
+      authority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote', new AbortController().signal,
+    )
+    expect(result).toMatchObject({ ok: true, result: 'pass' })
+    if (result.receiptId === undefined) throw new Error('missing retained semantic receipt')
+    const row = readItems(item.reviewFile)[0]!
+    const receipt = readTrustedReceipt(authority, item.reviewFile, result.receiptId)!
+    expect(readTrustedVerification(authority, item.reviewFile, item.wikiRoot, row, result.receiptId, 'Promote'))
+      .toMatchObject({ receipt })
+    rmSync(item.candidateFull)
+    expect(validateSemanticReceipt(authority, structuredClone(receipt))).toEqual(receipt)
+    expect(readTrustedReceipt(authority, item.reviewFile, result.receiptId)).toEqual(receipt)
+    expect(readTrustedVerification(authority, item.reviewFile, item.wikiRoot, row, result.receiptId, 'Promote'))
+      .toBeUndefined()
+    expect(validateSemanticReceipt(undefined, receipt)).toBeUndefined()
+    expect(validateSemanticReceipt({
+      ...authority, sourceIdentity: () => ({ ...authority.sourceIdentity(), buildDigest: sha256('different current build') }),
+    }, receipt)).toBeUndefined()
+    expect(validateSemanticReceipt(authority, { ...receipt, request: { ...receipt.request, candidateHash: sha256('different retained bytes') } }))
+      .toBeUndefined()
+  })
+
   it('rejects unreadable, mislabelled, and incoherent stored receipts', () => {
     const item = fixture()
     const authority = verifierAuthority()

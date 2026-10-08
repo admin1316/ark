@@ -5,6 +5,9 @@ import { lstatSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { atomicWriteFile, readRegularFileBounded } from './filesystem.ts'
 import { decideCandidateGovernance, governancePolicyVersion, resolveGovernedWikiPath } from './governance-policy.ts'
+import { getLearningGraphOwner } from './external-verifier-adapter.ts'
+import type { ArtifactRef } from './learning-artifacts.ts'
+import { validateLearningGraph, type LearningGraphValidation } from './learning-graph.ts'
 import type { CandidateVerification, CandidateVerificationResult, VerificationReceiptReference, WikiReviewItem } from './types.ts'
 
 export type { CandidateVerificationResult } from './types.ts'
@@ -406,15 +409,55 @@ export function readTrustedReceipt(
   } catch {
     return undefined
   }
+  if (typeof raw !== 'object' || raw === null || Reflect.get(raw, 'schemaVersion') !== RECEIPT_SCHEMA
+    || Reflect.get(raw, 'id') !== receiptId) return undefined
+  return validateSemanticReceipt(authority, raw)
+}
+
+/**
+ * Revalidate an exact decoded semantic receipt without rebuilding live Candidate paths.
+ * Retained semantic v2 hash/signature preimages and current source/environment checks stay unchanged.
+ * @param authority - Selected evaluator owner; absence returns undefined.
+ * @param raw - Decoded original receipt bytes supplied through a bounded owner read.
+ * @returns Original authenticated pass or fail receipt, or undefined on rejection.
+ * @throws On the same later structure accesses or authority callbacks as readTrustedReceipt.
+ */
+export function validateSemanticReceipt(
+  authority: KnowledgeWikiVerifierAuthority | undefined,
+  raw: unknown,
+): TrustedVerificationReceipt | undefined {
+  if (authority === undefined) return undefined
   if (typeof raw !== 'object' || raw === null || Reflect.get(raw, 'schemaVersion') !== RECEIPT_SCHEMA) return undefined
   const receipt = raw as TrustedVerificationReceipt
-  if (receipt.id !== receiptId) return undefined
+  if (typeof receipt.id !== 'string' || !ID_RE.test(receipt.id)) return undefined
   const { receiptHash, id: _id, ...unsigned } = receipt
   if (receiptHash !== sha256(canonicalJson(unsigned))
     || !resultIsCoherent(authority, receipt.request, receipt.result)
     || canonicalJson(receipt.request.sourceIdentity) !== canonicalJson(authority.sourceIdentity())
     || canonicalJson(receipt.request.environment) !== canonicalJson(environment())) return undefined
   return receipt
+}
+
+/**
+ * Validate a complete learning graph through the privately associated read-only authority owner.
+ * Every call captures current state and a fresh bounded traversal; no successful-use credit is committed.
+ * @param authority - Existing injected authority, with graph ownership installed only by the read-only factory.
+ * @param trialRef - Exact measured-trial envelope to consume.
+ * @returns Complete graph validation, or unavailable when the selected owner cannot supply current inputs.
+ */
+export function validateLearningReceiptChain(
+  authority: KnowledgeWikiVerifierAuthority | undefined,
+  trialRef: ArtifactRef,
+): LearningGraphValidation {
+  if (authority === undefined) return { status: 'unavailable', errorCode: 'learning-owner-unavailable' }
+  let owner: ReturnType<typeof getLearningGraphOwner>
+  try {
+    owner = getLearningGraphOwner(authority)
+  } catch {
+    // Owner capture failures cannot substitute stale context or expose private paths in a result.
+    return { status: 'unavailable', errorCode: 'learning-owner-unavailable' }
+  }
+  return validateLearningGraph(trialRef, owner)
 }
 
 /**

@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 `evaluate-learning.ts` reduces explicit, independently verified baseline/candidate outcome records. It does not read session files, infer success from memory volume, or promote a runtime policy.
 
+The CLI parser calls the pure [package evaluator](../../packages/host/knowledge-wiki/src/learning-evaluation.ts), which is also used by the source-only [read-only learning validator](../../packages/host/knowledge-wiki/README.md#read-only-learning-evidence). Sharing the reducer preserves one numerical interpretation; it does not authenticate the CLI's input records or establish independent evaluator custody.
+
 Run it with `pnpm exec tsx scripts/rust-migration/evaluate-learning.ts outcomes.json`. The input must be a JSON object with `schemaVersion: 1` and a `records` array. Each record has `pairId`, `variant` (`baseline` or `candidate`), `model`, SHA-256 strings for `modelConfigHash`, `taskHash`, `goalHash`, and `policyHash`, `producerId`, `evaluatorId`, `verificationStatus`, `evidenceRefs`, and `counts`.
 
 `verificationStatus: "verified"` requires at least one evidence reference and different producer and evaluator IDs. Each count is `{ "numerator": number, "denominator": number }` with safe non-negative integers and numerator no greater than denominator. A metric may be omitted when there were no opportunities; the reducer reports `UNKNOWN` when a complete paired comparison cannot be made.

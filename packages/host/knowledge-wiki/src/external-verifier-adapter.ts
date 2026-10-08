@@ -11,7 +11,11 @@ import type {
   PromotionCheckpoint,
   VerificationAuthoritySeal,
 } from './verifier.ts'
-import { canonicalJson, sha256 } from './verifier.ts'
+import { canonicalJson, sha256, validateSemanticReceipt } from './verifier.ts'
+import { createLearningArtifactOwner } from './learning-artifacts.ts'
+import { evaluateLearning } from './learning-evaluation.ts'
+import type { LearningGraphOwner } from './learning-graph-context.ts'
+import { descriptor as learningDescriptorSchema } from './learning-graph-schema.ts'
 
 const MAX_OUTPUT_BYTES = 256 * 1024
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -22,6 +26,29 @@ const SAFE_ENV_KEYS = [
 const SHA256_RE = /^[a-f0-9]{64}$/u
 const COMMIT_RE = /^[a-f0-9]{40}$/u
 const AUTHORITY_RE = /^[A-Za-z0-9._:-]{1,160}$/u
+
+/** Fresh state captured by an actual selected owner, outside project-writable artifacts. */
+export type LearningValidationContext = Pick<LearningGraphOwner,
+  'now' | 'projectId' | 'currentJournal' | 'sessionContexts' | 'wikiRoot' | 'reviewFile' | 'archiveRoot'>
+
+/** Explicit inputs for read-only graph verification; no runtime defaults or signing credentials. */
+export interface ReadOnlyLearningVerifierOptions {
+  readonly descriptor: unknown
+  readonly captureContext: () => LearningValidationContext | undefined
+  readonly reducerSourceHash: string
+}
+
+const learningOwners = new WeakMap<KnowledgeWikiVerifierAuthority, () => LearningGraphOwner | undefined>()
+
+/**
+ * Capture a fresh graph owner associated only by this module's read-only factory.
+ * @param authority - Existing injected authority identity.
+ * @returns Current source-owned inputs and a fresh traversal, or undefined when absent.
+ * @throws If the selected owner cannot capture its current state.
+ */
+export function getLearningGraphOwner(authority: KnowledgeWikiVerifierAuthority): LearningGraphOwner | undefined {
+  return learningOwners.get(authority)?.()
+}
 
 /** Configuration owned by the launcher/build owner, never by Wiki content. */
 export interface ExternalVerifierOptions {
@@ -202,4 +229,89 @@ export function createExternalVerifierAuthority(options: ExternalVerifierOptions
     },
     checkpointPromotion(_payload: string, _checkpoint: PromotionCheckpoint): void {},
   }
+}
+
+/**
+ * Bind public role verification and complete read-only learning evidence to the existing authority seam.
+ * Descriptor selection and current-state custody belong to the caller's actual product owner;
+ * parsing descriptor text and resolving its artifacts do not establish that custody.
+ * This factory executes no checks, signs no WAL, and enables no trial or canonical writer.
+ * @param options - Strict descriptor, fresh protected-state capture and selected reducer identity.
+ * @returns An injected authority with frozen semantic validation and private graph-owner association.
+ * @throws On invalid descriptor, role/public-key separation, budgets, or reducer identity.
+ */
+export function createReadOnlyLearningVerifier(options: ReadOnlyLearningVerifierOptions): KnowledgeWikiVerifierAuthority {
+  let descriptor: ReturnType<typeof learningDescriptorSchema.parse>
+  try {
+    descriptor = learningDescriptorSchema.parse(options.descriptor)
+    if (typeof options.captureContext !== 'function' || !SHA256_RE.test(options.reducerSourceHash)) {
+      throw new Error('invalid owner input')
+    }
+    if (!isAbsolute(descriptor.evaluator.executable) || !isAbsolute(descriptor.evaluator.artifactRoot)
+      || !isAbsolute(descriptor.journal.protectedHeadRoot)) throw new Error('invalid owner root')
+  } catch {
+    throw new Error('read-only learning authority configuration is invalid')
+  }
+  const artifactOwner = createLearningArtifactOwner({
+    artifactRoot: descriptor.evaluator.artifactRoot,
+    limits: {
+      maxArtifactBytes: descriptor.maxArtifactBytes,
+      maxArtifactsPerReceipt: descriptor.maxArtifactsPerReceipt,
+      maxTotalArtifactBytes: descriptor.maxTotalArtifactBytes,
+      maxArtifactGraphDepth: descriptor.maxArtifactGraphDepth,
+      maxChildRequestBytes: descriptor.maxChildRequestBytes,
+      maxChildResponseBytes: descriptor.maxChildResponseBytes,
+      timeoutMs: descriptor.timeoutMs,
+    },
+    evaluator: {
+      authorityId: descriptor.evaluator.authorityId,
+      keyId: descriptor.evaluator.keyId,
+      keyFingerprint: descriptor.evaluator.keyFingerprint,
+      publicKeySpkiPem: descriptor.evaluator.publicKeySpkiPem,
+    },
+    journal: {
+      signerId: descriptor.journal.signerId,
+      keyId: descriptor.journal.keyId,
+      keyFingerprint: descriptor.journal.keyFingerprint,
+      publicKeySpkiPem: descriptor.journal.publicKeySpkiPem,
+      projectIdentityHash: descriptor.journal.projectIdentityHash,
+    },
+  })
+  const publicKey = keyObject(descriptor.evaluator.publicKeySpkiPem, 'public')
+  const sourceIdentity = Object.freeze({ ...descriptor.sourceIdentity })
+  const capture = options.captureContext
+  const reducerSourceHash = options.reducerSourceHash
+  const authority: KnowledgeWikiVerifierAuthority = {
+    authorityId: descriptor.evaluator.authorityId,
+    sourceIdentity: () => sourceIdentity,
+    verifyCandidate(): Promise<IndependentVerificationResult> {
+      return Promise.reject(new Error('read-only learning authority cannot execute checks'))
+    },
+    validateCandidateResult: (request, result) => verifyResult(descriptor.evaluator.authorityId, publicKey, request, result),
+    sealPromotion(): VerificationAuthoritySeal {
+      throw new Error('read-only learning authority cannot sign a journal')
+    },
+    validatePromotion: () => false,
+  }
+  learningOwners.set(authority, () => {
+    const current = capture()
+    if (current === undefined) return undefined
+    if (current.currentJournal.protectedHead.epoch !== descriptor.journal.epoch) {
+      throw new Error('read-only learning authority journal epoch is unavailable')
+    }
+    return {
+      ...current,
+      artifacts: artifactOwner.createTraversal(),
+      proofs: artifactOwner.proofs,
+      source: sourceIdentity,
+      profile: descriptor.profile,
+      profileDigest: descriptor.profileDigest,
+      mission: descriptor.mission,
+      allowedDefinitions: descriptor.evaluator.allowedDefinitions,
+      allowedInitiationCapabilities: descriptor.evaluator.allowedInitiationCapabilities,
+      reducer: { sourceHash: reducerSourceHash, evaluate: evaluateLearning },
+      validateSemanticReceipt: raw => validateSemanticReceipt(authority, raw),
+    }
+  })
+  return authority
 }

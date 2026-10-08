@@ -333,7 +333,17 @@ interface PromotionOperation {
   readonly tombstonePath?: string
 }
 
-function promotionOperation(
+/**
+ * Derive the existing sibling staging/tombstone names for one transaction operation.
+ * @param transactionId - Fixed transaction identity.
+ * @param index - Operation's zero-based tuple position.
+ * @param role - Existing operation path role.
+ * @param path - Exact final operation path.
+ * @param before - Captured previous bytes, or absence.
+ * @param after - Captured resulting bytes, or deletion.
+ * @returns Original v1 operation shape with its deterministic auxiliary path.
+ */
+export function promotionOperation(
   transactionId: string,
   index: number,
   role: PromotionPathRole,
@@ -381,7 +391,15 @@ function promotionJournalPath(reviewFile: string, id: string): string {
   return join(promotionJournalDirectory(reviewFile), `${id}.json`)
 }
 
-function assertPromotionOperationConfined(
+/**
+ * Check an operation's existing role root and sibling auxiliary parents.
+ * @param operation - Operation to check without mutation.
+ * @param reviewFile - Owned review file selecting metadata's root.
+ * @param wikiRoot - Owned Wiki root for candidate and canonical operations.
+ * @param archiveRoot - Owned archive root for archive operations.
+ * @throws On a path outside its role root or an auxiliary with a different parent.
+ */
+export function assertPromotionOperationConfined(
   operation: PromotionOperation,
   reviewFile: string,
   wikiRoot: string,
@@ -398,6 +416,41 @@ function assertPromotionOperationConfined(
     if (auxiliary === undefined) continue
     if (dirname(auxiliary) !== dirname(operation.path)) throw new Error('promotion auxiliary path changed parent')
   }
+}
+
+/**
+ * Derive the archive path shared by existing review production and historical proof checks.
+ * @param archiveRoot - Actual archive owner root.
+ * @param projectRoot - Actual project root whose basename appears in the path.
+ * @param createdAt - Fixed transaction audit time; only its UTC day is used.
+ * @param contentHash - Exact archived content hash.
+ * @param relativePath - Confined candidate or canonical path relative to the Wiki root.
+ * @param kind - Candidate archive or the existing canonical pre-update subdirectory.
+ * @returns The original archive path formula, without creating a directory or file.
+ */
+export function governanceArchivePath(
+  archiveRoot: string,
+  projectRoot: string,
+  createdAt: string,
+  contentHash: string,
+  relativePath: string,
+  kind: 'candidate' | 'canonical-before-update',
+): string {
+  return join(
+    archiveRoot, 'wiki-governance', createdAt.slice(0, 10), basename(projectRoot), contentHash.slice(0, 12),
+    ...(kind === 'canonical-before-update' ? ['canonical-before-update'] : []), relativePath,
+  )
+}
+
+/**
+ * Derive the existing immutable transaction ID from review, candidate and audit time.
+ * @param reviewId - Original review identity.
+ * @param candidateHash - Exact original candidate byte hash.
+ * @param createdAt - Fixed transaction audit timestamp.
+ * @returns Original promotion ID; it supplies no proof or write authority.
+ */
+export function promotionTransactionId(reviewId: string, candidateHash: string, createdAt: string): string {
+  return `promotion-${createHash('sha256').update(`${reviewId}\0${candidateHash}\0${Date.parse(createdAt)}`).digest('hex').slice(0, 24)}`
 }
 
 function writePromotionStage(path: string, content: string): void {
@@ -1167,7 +1220,6 @@ export function applyCandidateReview(
 
   const now = new Date()
   const reviewedAt = now.toISOString()
-  const today = reviewedAt.slice(0, 10)
   const resolvedAt = now.getTime()
   let appliedPath = ''
   let previousCanonicalHash = ''
@@ -1186,14 +1238,8 @@ export function applyCandidateReview(
     const canonicalHash = createHash('sha256').update(canonicalBefore).digest('hex')
     previousCanonicalHash = canonicalHash
     archivedCanonicalContent = canonicalBefore
-    archivedCanonical = join(
-      archiveRoot,
-      'wiki-governance',
-      today,
-      basename(projectRoot),
-      canonicalHash.slice(0, 12),
-      'canonical-before-update',
-      target.relativePath,
+    archivedCanonical = governanceArchivePath(
+      archiveRoot, projectRoot, reviewedAt, canonicalHash, target.relativePath, 'canonical-before-update',
     )
     targetBefore = canonicalBefore
     targetAfter = prepareCanonicalTarget({
@@ -1217,14 +1263,7 @@ export function applyCandidateReview(
     return false
   }
 
-  const archived = join(
-    archiveRoot,
-    'wiki-governance',
-    today,
-    basename(projectRoot),
-    actualHash.slice(0, 12),
-    candidate.relativePath,
-  )
+  const archived = governanceArchivePath(archiveRoot, projectRoot, reviewedAt, actualHash, candidate.relativePath, 'candidate')
   if (!appliedPath) appliedPath = archived
   const resolvedItems = [...all]
   resolvedItems[index] = {
@@ -1284,10 +1323,7 @@ export function applyCandidateReview(
     throw new Error(`canonical archive already exists: ${archivedCanonical}`)
   }
 
-  const transactionId = `promotion-${createHash('sha256')
-    .update(`${reviewIdValue}\0${actualHash}\0${resolvedAt}`)
-    .digest('hex')
-    .slice(0, 24)}`
+  const transactionId = promotionTransactionId(reviewIdValue, actualHash, reviewedAt)
   const operations: PromotionOperation[] = []
   if (archivedCanonical !== '') {
     operations.push(promotionOperation(

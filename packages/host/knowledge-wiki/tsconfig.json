@@ -30,6 +30,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../core/session"
+    },
+    {
       "path": "../../web/web"
     },
     {

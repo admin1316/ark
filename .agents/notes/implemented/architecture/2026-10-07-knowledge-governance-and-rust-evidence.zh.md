@@ -14,7 +14,9 @@ active Ark 源码已经保存 Wiki candidate、评审、verifier receipt 与 uti
 
 未签名的接纳不能替换已有 identity，也不能赋予 verified trust。验证使用经过认证的完整记录，拒绝被改写的先前接纳。普通模型正文要求 canonical 生命周期；语义验证通过的 candidate 不能在缺少授权 trial 时进入页面召回。经过认证的 candidate 评审元数据继续使用语义 receipt 和实际字节校验，使评审可用而不向普通召回开放正文。Native 预览和 Archive 保留原有规则。历史 canonical 接纳绑定最终 content hash；模型投影在搜索、embedding、图谱派生、列表或页面读取前检查实际文件字节。完整回放中的精确 source 字符串必须只有一个经过认证的 identity，terminal 记录也参与检查。竞争 identity 会拒绝模型投影、Native 搜索与页面读取，以及受治理的 utility 或 outcome 更新；插入顺序和旧展示计数不能选择 owner。Source 字符串保留原有 URI 语义，不做文件系统别名规范化。搜索在异步工作后重新回放当前治理状态，模型搜索在记录检索前重新检查受路径约束的当前字节。这些绑定防止未签名 hash 链或新算出的文件 hash 冒充验证。
 
-语义验证检查不代表成功 trial。当前 receipt 合约无法认证实测 trial 收益，因此 Promote、Merge、Replace 和 Deduplicate 在修改前拒绝；prepared canonical WAL 恢复同样拒绝，包括标记为 Archive 的 canonical 操作。正向 UI 反馈与声称来自 evaluator 的标签保留为观察，不能增加受治理的 successful-use 计数或维持保留。纠正保留负向 utility 效果。Archive、Skip、advisory resolution 和 rollback 保留现有 authority 与事务要求。
+语义验证检查不代表成功 trial。Semantic receipt 无法认证实测 trial 收益，canonical 操作的 owner 也未配置实测 trial authority。Promote、Merge、Replace 和 Deduplicate 在修改前拒绝；prepared canonical WAL 恢复同样拒绝，包括标记为 Archive 的 canonical 操作。正向 UI 反馈与声称来自 evaluator 的标签保留为观察，不能增加受治理的 successful-use 计数或维持保留。纠正保留负向 utility 效果。Archive、Skip、advisory resolution 和 rollback 保留现有 authority 与事务要求。
+
+仅在源码中接入的[只读学习校验器](../../../../packages/host/knowledge-wiki/README.zh.md#read-only-learning-evidence)将有预算的 artifact 校验和公开角色验证绑定到现有 authority owner，不接受调用者声称成功的标志。它消费保留的请求和捕获的任务/journal 关系，从每个已登记的签名 use 重建共用归约器的输入。已知失败任务仍保留在分母中；未知结果仍为未知。图关系有效或数值收益不能授予访问权，也不能提交 successful-use 信用。将该 consumer 与激活分开，使实际 evaluator 密钥保管和 provider 观察尚未配置时，canonical 拒绝规则仍然成立。
 
 Canonical 目标预备一次性捕获 candidate 正文、已解析目标路径、精确原始状态或显式不存在、评审时间和 actor。同一纯转换保留已有的各操作时间戳与原始日期戳语义。规范化正文比较用于选择保留内容，不证明字节相同或验证通过。预备不认证这些输入，也不授予 canonical 资格；apply 与 recovery 的拒绝规则保持不变。
 
@@ -26,7 +28,7 @@ Candidate identity 包含路径和内容 hash。字节变化会创建独立的�
 
 checkout 包含隔离的 [knowledge-search shadow crate](../../../../rust/knowledge-search-shadow/README.zh.md) 与默认关闭的 TypeScript child boundary。搜索 authority、图谱派生、session 持久化和 subprocess 管理继续由 TypeScript 或已有 native owner 负责；没有 receipt 授权 Rust enforce。Rust candidate matrix 要求三组对照、差分回放、取消、恢复、打包和平台证据通过后才允许 enforce。[源码清点](../process/2026-10-08-function-language-census.zh.md) 区分声明覆盖与功能、性能验证。
 
-学习结论使用相同 model、配置、task、goal 和 policy hash 的 baseline/candidate 配对结果。缺少机会或独立验证时返回 `UNKNOWN`；知识条数、模型调用次数或 Rust 行数不能证明改进。[评估归约器](../../../../scripts/rust-migration/README.zh.md) 使用精确整数交叉乘积比较汇总计数的比例，即使显示的浮点比例相同，也能保留真实大小关系。数值改善不能证明统计显著性，也不能认证输入证据。
+学习结论使用相同 model、配置、task、goal 和 policy hash 的 baseline/candidate 配对结果。缺少机会或独立验证时返回 `UNKNOWN`；知识条数、模型调用次数或 Rust 行数不能证明改进。CLI 与只读 graph consumer 共用一个[评估归约器](../../../../scripts/rust-migration/README.zh.md)，使用精确整数交叉乘积比较汇总计数的比例，即使显示的浮点比例相同，也能保留真实大小关系。数值改善不能证明统计显著性，也不能认证输入证据。
 
 ## Alternatives considered
 
