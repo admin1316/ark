@@ -14,7 +14,6 @@ import {
   constants,
   fsyncSync,
   lstatSync,
-  mkdirSync,
   openSync,
   readdirSync,
   renameSync,
@@ -31,10 +30,13 @@ import {
   assertAbsolutePathInside,
   atomicWriteFile,
   durableUnlinkFile,
+  ensureAbsoluteDirectory,
   ensureConfinedDirectory,
   isMissingPathError as isMissingFileError,
   readOptionalText,
   readRegularFileBounded,
+  syncDirectory,
+  syncRegularFile,
 } from './filesystem.ts'
 import {
   canonicalJson,
@@ -275,7 +277,11 @@ function appendKnowledgeReviewEvent(
   const path = knowledgeEventPath(reviewFile)
   const prior = readKnowledgeEventLog(path)
   if (prior.some(event => event.type === type && event.knowledgeId === `candidate:${reviewId}`
-    && event.payload.candidateHash === candidateHash)) return
+    && event.payload.candidateHash === candidateHash)) {
+    syncRegularFile(path)
+    syncDirectory(dirname(path))
+    return
+  }
   const scope = { projectId: dirname(dirname(reviewFile)), visibility: 'project' as const }
   let eventPayload: Readonly<Record<string, unknown>> = {
     ...payload,
@@ -397,9 +403,11 @@ function assertPromotionOperationConfined(
 function writePromotionStage(path: string, content: string): void {
   if (pathEntryExists(path)) {
     if (readOptionalText(path, 8 * 1024 * 1024) !== content) throw new Error(`promotion stage conflict at ${path}`)
+    syncRegularFile(path)
+    syncDirectory(dirname(path))
     return
   }
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  ensureAbsoluteDirectory(dirname(path))
   const descriptor = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
   try {
     writeFileSync(descriptor, content)
@@ -407,14 +415,7 @@ function writePromotionStage(path: string, content: string): void {
   } finally {
     closeSync(descriptor)
   }
-  const directory = openSync(dirname(path), constants.O_RDONLY)
-  try {
-    fsyncSync(directory)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
-  } finally {
-    closeSync(directory)
-  }
+  syncDirectory(dirname(path))
 }
 
 function applyPromotionOperation(
@@ -427,24 +428,34 @@ function applyPromotionOperation(
     if (tombstone === undefined) throw new Error('promotion delete lacks a tombstone path')
     if (current === undefined) {
       const moved = readOptionalText(tombstone, 8 * 1024 * 1024)
-      if (moved === undefined) return
+      if (moved === undefined) {
+        syncDirectory(dirname(operation.path))
+        return
+      }
       if (moved !== operation.before) throw new Error(`promotion tombstone conflict at ${tombstone}`)
       unlinkSync(tombstone)
       checkpoint?.('tombstone-unlinked')
+      syncDirectory(dirname(operation.path))
       return
     }
     if (current !== operation.before) throw new Error(`promotion recovery conflict at ${operation.path}`)
     if (pathEntryExists(tombstone)) throw new Error(`promotion tombstone already exists: ${tombstone}`)
     renameSync(operation.path, tombstone)
     checkpoint?.('entry-renamed')
+    syncDirectory(dirname(operation.path))
     if (readOptionalText(tombstone, 8 * 1024 * 1024) !== operation.before) {
       throw new Error(`promotion tombstone identity changed: ${tombstone}`)
     }
     unlinkSync(tombstone)
     checkpoint?.('tombstone-unlinked')
+    syncDirectory(dirname(operation.path))
     return
   }
-  if (current === operation.after) return
+  if (current === operation.after) {
+    syncRegularFile(operation.path)
+    syncDirectory(dirname(operation.path))
+    return
+  }
   if (current !== operation.before) throw new Error(`promotion recovery conflict at ${operation.path}`)
   const staging = operation.stagingPath
   if (staging === undefined) throw new Error('promotion write lacks a staging path')
@@ -454,6 +465,7 @@ function applyPromotionOperation(
   if (revalidated !== operation.before) throw new Error(`promotion target changed before rename: ${operation.path}`)
   renameSync(staging, operation.path)
   checkpoint?.('entry-renamed')
+  syncDirectory(dirname(operation.path))
 }
 
 function rollbackPromotionOperation(operation: PromotionOperation): void {
@@ -464,6 +476,7 @@ function rollbackPromotionOperation(operation: PromotionOperation): void {
         throw new Error(`promotion rollback tombstone conflict at ${operation.tombstonePath}`)
       }
       renameSync(operation.tombstonePath, operation.path)
+      syncDirectory(dirname(operation.path))
     }
   }
   const current = readOptionalText(operation.path, 8 * 1024 * 1024)
@@ -472,6 +485,7 @@ function rollbackPromotionOperation(operation: PromotionOperation): void {
   if (operation.before === undefined) {
     if (current === undefined) {
       durableUnlinkFile(operation.stagingPath as string)
+      syncDirectory(dirname(operation.path))
       return
     }
     if (operation.after !== undefined && current !== operation.after) {
@@ -483,6 +497,8 @@ function rollbackPromotionOperation(operation: PromotionOperation): void {
   }
   if (current === operation.before) {
     if (operation.stagingPath !== undefined) durableUnlinkFile(operation.stagingPath)
+    syncRegularFile(operation.path)
+    syncDirectory(dirname(operation.path))
     return
   }
   if (current !== operation.after) {
@@ -672,7 +688,11 @@ function commitPromotionJournal(
       try { rollbackPromotionOperation(operation) } catch (rollbackError) { rollbackErrors.push(rollbackError) }
     }
     if (rollbackErrors.length === 0) {
-      atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'rolled-back' }, null, 2)}\n`)
+      try {
+        atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'rolled-back' }, null, 2)}\n`)
+      } catch (markerError) {
+        throw new AggregateError([error, markerError], 'candidate review transaction failed and rollback marker was not durable')
+      }
       try {
         appendKnowledgeReviewEvent(reviewFile, 'knowledge/rolled_back', journal.reviewId, journal.candidateHash, {
           lifecycle: 'rolled_back',
@@ -721,9 +741,20 @@ export function recoverCandidateReviewTransactions(
     const journal = raw as PromotionJournal
     if (!/^[A-Za-z0-9._:-]+$/u.test(journal.id) || !Array.isArray(journal.operations)) continue
     if (journal.state === 'committed' && journal.action === 'Archive') {
-      const events = readKnowledgeEventLog(knowledgeEventPath(reviewFile))
+      const eventPath = knowledgeEventPath(reviewFile)
+      const events = readKnowledgeEventLog(eventPath)
       if (events.some(event => event.type === 'knowledge/rejected' && event.knowledgeId === `candidate:${journal.reviewId}`
-        && event.payload.candidateHash === journal.candidateHash)) continue
+        && event.payload.candidateHash === journal.candidateHash)) {
+        syncRegularFile(path)
+        syncDirectory(dirname(path))
+        syncRegularFile(eventPath)
+        syncDirectory(dirname(eventPath))
+        continue
+      }
+    } else if (journal.state === 'rolled-back') {
+      syncRegularFile(path)
+      syncDirectory(dirname(path))
+      continue
     } else if (journal.state !== 'prepared') continue
     revalidateJournalBeforeMutation(authority, reviewFile, wikiRoot, journal)
     for (const operation of journal.operations) assertPromotionOperationConfined(operation, reviewFile, wikiRoot, archiveRoot)
@@ -736,7 +767,11 @@ export function recoverCandidateReviewTransactions(
       if (readOptionalText(operation.path, 8 * 1024 * 1024) !== operation.after) {
         throw new Error(`promotion post-commit mismatch at ${operation.path}`)
       }
+      if (operation.after !== undefined) syncRegularFile(operation.path)
+      syncDirectory(dirname(operation.path))
     }
+    syncRegularFile(path)
+    syncDirectory(dirname(path))
     if (journal.state === 'prepared') {
       atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'committed' }, null, 2)}\n`)
       recovered += 1

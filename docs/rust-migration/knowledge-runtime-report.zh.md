@@ -67,7 +67,9 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 
 用户已明确批准候选内学习协议扩展；[当前记录](../../scripts/rust-migration/evidence/current930-validation-20261008.json) 绑定审批与私有草案。扩展尚未实现或配置，草案中的 stateVersion 2 尚未采用，原始项目 manifest 保持不变。用户可见能力需要真实 Ark 会话的结果与界面确认；知识收益还需要独立评估的同模型、同任务对照和正确修复复用，reflection 文本与编译通过均不能代替验收。
 
-[后续补丁与草案审阅](../../scripts/rust-migration/evidence/candidate-progress-e2910207-20261008.json) 记录精确的 Archive 回滚限制和作用域内 review 输出。重新创建的不同字节保持不变，未完成的回滚保留 journal，冷恢复拒绝 divergent 状态。模型收到空 review 结果只表示该会话看不到未解决项目。修订后的私有学习草案保持全局 stateVersion 1，目标 record 策略、signer/旧版集成、目录持久性和外部评估者输入仍未解决；它不安装 successor baseline，也不启用实测 trial。
+[后续补丁与草案审阅](../../scripts/rust-migration/evidence/candidate-progress-e2910207-20261008.json) 记录精确的 Archive 回滚限制和作用域内 review 输出。重新创建的不同字节保持不变，未完成的回滚保留 journal，冷恢复拒绝 divergent 状态。模型收到空 review 结果只表示该会话看不到未解决项目。[已批准的候选内部 baseline](../../scripts/rust-migration/evidence/learning-protocol-baseline-20261008.json) 记录经过复核的目标 identity/计数归属、分离的 evaluator/journal 角色、精确 source 策略、完整学习证据链要求和启用依赖。精确产物映射保留原始规范字节；原 manifest 与全局 stateVersion 1 均不改变。记录规范不代表已经实现或配置 trial authority、请求观察、独立测量或 canonical 晋级。
+
+[数值与目录同步证据](../../scripts/rust-migration/evidence/learning-numerics-and-directory-sync-20261008.json) 将不改变格式的修复绑定到父提交 `3a125dc0cc8669974418e675676b89fd9a9718eb` 及精确源码文件。计数比例使用精确整数比较；显示的比例是近似值，数值大小关系不能证明统计显著性。共享 POSIX 文件系统与事件 owner 要求目录同步，保留发布之后的错误，并在恢复时重新同步。模拟数值、系统调用故障、Loader 组合测试与 CLI 回放仍然不同于实际 Ark 对话、独立实测 utility、Windows 持久性和物理断电证明。
 
 ## Current Rust candidate seam
 

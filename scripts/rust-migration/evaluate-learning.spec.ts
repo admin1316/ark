@@ -89,4 +89,53 @@ describe('learning evaluation', () => {
     ] }))
     expect(result.metrics.staleRecallRate.status).toBe('UNKNOWN')
   })
+
+  it.each([
+    ['knowledgeUtility', false, 'IMPROVED'],
+    ['knowledgeUtility', true, 'REGRESSED'],
+    ['repeatedErrorRate', false, 'REGRESSED'],
+    ['repeatedErrorRate', true, 'IMPROVED'],
+  ] as const)('compares distinct large fractions exactly for %s (reverse=%s)', (metric, reverse, status) => {
+    const d = Number.MAX_SAFE_INTEGER
+    const lower = { numerator: d - 2, denominator: d - 1 }
+    const higher = { numerator: d - 1, denominator: d }
+    const result = evaluateLearning(parseEvaluationInput({ schemaVersion: 1, records: [
+      record('baseline', { counts: { ...counts(0), [metric]: reverse ? higher : lower } }),
+      record('candidate', { counts: { ...counts(0), [metric]: reverse ? lower : higher } }),
+    ] }))
+    const comparison = result.metrics[metric]
+    expect(comparison.status).toBe(status)
+    if (comparison.status === 'UNKNOWN') throw new Error('comparison unexpectedly lacks opportunities')
+    expect(comparison.baseline.rate).toBe(comparison.candidate.rate)
+    // These adjacent fractions differ by exactly 1 / (d * (d - 1)).
+    expect(comparison.delta).toBe((reverse ? -1 : 1) / (d * (d - 1)))
+  })
+
+  it('keeps equivalent large fractions unchanged', () => {
+    const d = Number.MAX_SAFE_INTEGER - 1
+    const result = evaluateLearning(parseEvaluationInput({ schemaVersion: 1, records: [
+      record('baseline', { counts: { ...counts(0), knowledgeUtility: { numerator: d / 2 - 1, denominator: d / 2 } } }),
+      record('candidate', { counts: { ...counts(0), knowledgeUtility: { numerator: d - 2, denominator: d } } }),
+    ] }))
+    expect(result.metrics.knowledgeUtility).toMatchObject({ status: 'UNCHANGED', delta: 0 })
+  })
+
+  it('accepts the safe aggregate boundary and rejects overflow', () => {
+    const d = Number.MAX_SAFE_INTEGER
+    const records = [
+      record('baseline', { counts: counts(d - 2, d - 1) }),
+      record('candidate', { counts: counts(d - 2, d - 1) }),
+      record('baseline', { pairId: 'pair-2', counts: counts(1) }),
+      record('candidate', { pairId: 'pair-2', counts: counts(1) }),
+    ]
+    const result = evaluateLearning(parseEvaluationInput({ schemaVersion: 1, records }))
+    expect(result.metrics.knowledgeUtility).toMatchObject({
+      status: 'UNCHANGED', baseline: { numerator: d - 1, denominator: d }, candidate: { numerator: d - 1, denominator: d }, delta: 0,
+    })
+    expect(() => evaluateLearning(parseEvaluationInput({ schemaVersion: 1, records: [
+      ...records,
+      record('baseline', { pairId: 'pair-3', counts: counts(0) }),
+      record('candidate', { pairId: 'pair-3', counts: counts(0) }),
+    ] }))).toThrow(/aggregate exceeds safe integer counts/)
+  })
 })

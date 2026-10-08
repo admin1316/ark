@@ -8,10 +8,10 @@
  * stream back into the same state for replay and audit.
  */
 
-import { closeSync, constants, fsyncSync, lstatSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
+import { closeSync, constants, fsyncSync, lstatSync, openSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { readRegularFileBounded } from './filesystem.ts'
+import { ensureAbsoluteDirectory, readRegularFileBounded, syncDirectory } from './filesystem.ts'
 import type {
   KnowledgeAcl,
   KnowledgeEvent,
@@ -615,6 +615,7 @@ export function readKnowledgeEventLog(path: string, authority?: KnowledgeEventAu
 /** Append one event after checking its sequence/hash against the existing log.
  * @param path - Event-log path.
  * @param event - Event whose chain position is checked.
+ * @throws On invalid sequence, unsafe log, or I/O failure; sync failures may leave the event visible.
  */
 export function appendKnowledgeEvent(path: string, event: KnowledgeEvent): void {
   const prior = readKnowledgeEventLog(path)
@@ -627,7 +628,7 @@ export function appendKnowledgeEvent(path: string, event: KnowledgeEvent): void 
   }
   const expected = createKnowledgeEvent(event.type, event.knowledgeId, event.scope, event.payload, expectedOptions)
   if (expected.eventHash !== event.eventHash) throw new Error('knowledge event hash/sequence mismatch')
-  mkdirSync(dirname(path), { recursive: true })
+  ensureAbsoluteDirectory(dirname(path))
   try {
     const stat = lstatSync(path)
     if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new Error('unsafe knowledge event log')
@@ -640,6 +641,7 @@ export function appendKnowledgeEvent(path: string, event: KnowledgeEvent): void 
     writeFileSync(descriptor, `${JSON.stringify(event)}\n`)
     fsyncSync(descriptor)
   } finally { closeSync(descriptor) }
+  syncDirectory(dirname(path))
 }
 
 /** Record utility feedback in a pure, replayable way.

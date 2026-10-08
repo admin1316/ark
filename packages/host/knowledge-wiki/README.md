@@ -78,6 +78,8 @@ Semantic verification preserves authenticated check results without creating a t
 
 Archive recovery validates signed operation roles, candidate/review/governance paths, archive bytes, resolved review, and staging identities before mutation. It records the original Archive or Skip disposition as one rejected lifecycle event, including recovery after a committed marker but before event append. Missing-event repair requires exact committed file poststates; divergence or append failure preserves the WAL for reviewed recovery or retry. Repeated recovery does not duplicate the lifecycle event.
 
+On POSIX, shared filesystem writes flush file bytes and affected directory entries, including provisioned ancestor entries. Review transactions flush each rename, unlink, and restoration before counting it complete; matching-state retries repeat the required barriers. Event appends flush the file and parent. Sync failure may leave new bytes or a marker visible: the operation fails, retains recovery evidence, and cannot infer durability from visibility. The legacy win32 directory-fsync `EPERM` exception preserves visibility behavior only. These checks establish requested OS flush ordering and process-crash recovery, without proving physical power-loss durability, independent evaluator custody, or exclusion of external concurrent writers.
+
 ## Model Experience
 
 ### Two-stage source ingest

@@ -1,0 +1,857 @@
+{
+  "kind": "ark.learning.numerics-and-directory-sync.source-validation",
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-08T15:04:16.030368+00:00",
+  "sourceParent": "3a125dc0cc8669974418e675676b89fd9a9718eb",
+  "branch": "codex/ark-rust-knowledge-20261008",
+  "status": "SOURCE_CHECKS_PASS_NATIVE_AND_LEARNING_ACCEPTANCE_INCOMPLETE",
+  "manifest": {
+    "path": "/Users/hui/ark-test/ark-github-main-20261008/project-manifest.json",
+    "bytes": 862,
+    "sha256": "d1a4175f1fac86f8998196b6a217bd88e9b4ea4b59dc154c9db0ca980c265e10"
+  },
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "approvedCandidateBaseline": {
+    "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/learning-protocol-baseline-20261008.json",
+    "bytes": 439052,
+    "sha256": "305d231bc5ca12903c4dbacccf0d34ded1ec48d00d0f8d081bee492ad4cc2e52"
+  },
+  "approvedBaselineStatus": "RECORDED_APPROVED_CANDIDATE_INTERNAL_BASELINE_NOT_ACTIVATED",
+  "sourcePins": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evaluate-learning.ts",
+      "bytes": 12590,
+      "sha256": "efd92ee0bd94d3f34fc5d5154fe9e375a7b66dd83c748666d9f4e8e7f08af997"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evaluate-learning.spec.ts",
+      "bytes": 7878,
+      "sha256": "9f26ad72676995826858d34151c8cf2ee4e1ba6fffea1cf4ec2e01b4086c25ab"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/src/filesystem.ts",
+      "bytes": 18818,
+      "sha256": "db70165d76d6c64fd0dc6d15f9988d656b11b39e338aca3a858c2a53869ed0d1"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/src/reviews.ts",
+      "bytes": 59343,
+      "sha256": "b8762cafe2747b83b644bb22f902d94c3c020cc1252e2bb0e06c320e5ff66207"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/src/knowledge-governance.ts",
+      "bytes": 32021,
+      "sha256": "5ddafc768db4f5fee488856b9e8844cf686d297b1c5f850beb3794803680c546"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/knowledge-journal-durability.spec.ts",
+      "bytes": 2876,
+      "sha256": "6a48511400177322cf832bfbb1d58dbdee30624fd71960943af065947c3edf7e"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/knowledge-governance.spec.ts",
+      "bytes": 5335,
+      "sha256": "686c37fd96f6dbbb4f970f5ed4dfca6dbd2aadcac90c8abd41c79229661367f3"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+      "bytes": 6675,
+      "sha256": "d427f008fdd9008eee60d0da2e04837284091a718401603cc1daebba66f13257"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+      "bytes": 14030,
+      "sha256": "9b0a254e5a099f41bd98d1b873093b8756d6fdefbee241da53f95ecdee1747cc"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+      "bytes": 45684,
+      "sha256": "27eba420a3912aed8e147ab2a9b2d3d9d2228408900b7c66a9a4a3a9962d7e90"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+      "bytes": 28200,
+      "sha256": "45989c05d5603b3ccb81f6ae6df069c868beadbb781387cef4772baa859f1c01"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/canonical-trial-denial.spec.ts",
+      "bytes": 6395,
+      "sha256": "6e380990b99990597194ad518a8e2596949905dc8cfef9f4c430ccfa182d6ebe"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/filesystem.spec.ts",
+      "bytes": 7417,
+      "sha256": "94d1c34abf4445c0d557ec95cbbbcdb7b24d42ba9eeb95dc22ac99e74e0178ab"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/filesystem-races.spec.ts",
+      "bytes": 9202,
+      "sha256": "fd6b1d2269640bb080d13448126c279f2650cdfb350dcce8a4904650045ca04d"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/reviews-transaction-errors.spec.ts",
+      "bytes": 27730,
+      "sha256": "7b343469559618d3e0697edf40ad58afa69d233fb3648b1a47784b02cec40728"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/promotion-crash-phases.spec.ts",
+      "bytes": 11540,
+      "sha256": "a3df9c6740288b6048b2f3217c5c10eb9e728b4f6ca5918ada9374b0c936986d"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/headless.snapshot.ts",
+      "bytes": 37408,
+      "sha256": "596f422e93ecc282347c0595316f33df2d759c7d2d63b52770c72c03a55dd696"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/test-support/loader-smoke/src/index.ts",
+      "bytes": 10459,
+      "sha256": "d6614e4df350e7d05c442f4278f8f423ff9155dae8ecc201dd4fd421f0028812"
+    }
+  ],
+  "builtArtifactPins": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/lib/index.js",
+      "bytes": 340925,
+      "sha256": "16689b450a2dfcb9669427c657052e1c232f08f43c544595bb7ed558c007511c"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/lib/invariant.js",
+      "bytes": 1067,
+      "sha256": "b3d56f20454c993d46517727d838025aff398f28f646faba60b8f76fd4f268dc"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/lib/typert.host.js",
+      "bytes": 37927,
+      "sha256": "fc1320a0396e5e8a9b63549969dd4887f383602f46ac59f3bcf23d681ca04190"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/lib/types/filesystem.js",
+      "bytes": 19669,
+      "sha256": "72e36e797dc7b537e7268e8068d6cdf2e491ec928664fcddc1eb131fd63a3ba2"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/lib/types/reviews.js",
+      "bytes": 59355,
+      "sha256": "b7c1ae73fbbb1ff2143f8a7335908b6fadecd6003b42938601b6ae80a17d50cb"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/lib/types/knowledge-governance.js",
+      "bytes": 30503,
+      "sha256": "c6fefecfcfdb3d97202a1209a335711ff3b8f96d5de51921659dee4d2d062769"
+    }
+  ],
+  "rootRuns": [
+    {
+      "name": "numeric-red",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "scripts/rust-migration/evaluate-learning.spec.ts"
+      ],
+      "exitCode": 1,
+      "testSummary": "4 failed | 9 passed (13)",
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/red.log",
+        "bytes": 3324,
+        "sha256": "f03c092b54d804aa6dab2f109d82d4af97f515eee42c426911f59227f73bc371"
+      }
+    },
+    {
+      "name": "numeric-green-before-style",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "scripts/rust-migration/evaluate-learning.spec.ts"
+      ],
+      "exitCode": 0,
+      "testSummary": "13 passed (13)",
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/green.log",
+        "bytes": 914,
+        "sha256": "295a41262253735504175df279900517056338a0d6d8ddc29b770671406ae726"
+      }
+    },
+    {
+      "name": "event-parent-red",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/host/knowledge-wiki/tests/knowledge-journal-durability.spec.ts"
+      ],
+      "exitCode": 1,
+      "testSummary": "2 failed (2)",
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/journal-red.log",
+        "bytes": 2317,
+        "sha256": "f25dafdeba497160f7a98ed1b12ec636c0ec653a4e812e6aafb5ed3be8d65cfe"
+      }
+    },
+    {
+      "name": "event-parent-green",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/host/knowledge-wiki/tests/knowledge-journal-durability.spec.ts",
+        "packages/host/knowledge-wiki/tests/knowledge-governance.spec.ts"
+      ],
+      "exitCode": 0,
+      "testSummary": "6 passed (6)",
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/journal-green.log",
+        "bytes": 912,
+        "sha256": "1358e3ad04711851d257d6a2d681a95b3b0c4f6da8d7cd75dd62e391e21b1359"
+      }
+    },
+    {
+      "name": "final-numerics-and-event-parent",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "scripts/rust-migration/evaluate-learning.spec.ts",
+        "packages/host/knowledge-wiki/tests/knowledge-journal-durability.spec.ts",
+        "packages/host/knowledge-wiki/tests/knowledge-governance.spec.ts"
+      ],
+      "exitCode": 0,
+      "testSummary": "19 passed (19)",
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/root-focused-final.log",
+        "bytes": 916,
+        "sha256": "b0f0e551caf7d4a9c658deb76a82e3145d99ef08b32f65d2010fe427dac326d6"
+      }
+    },
+    {
+      "name": "source-governance-archive-replay",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--config",
+        "vitest.snapshot.config.ts",
+        "snapshots/session/headless.snapshot.ts",
+        "-t",
+        "wiki-(governance|archive-rollback-conflict)"
+      ],
+      "exitCode": 0,
+      "testSummary": "2 passed | 80 skipped (82)",
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/source-headless.log",
+        "bytes": 472,
+        "sha256": "7555190609c6d61ac6b7d99fae4d59efebdd394082e8ce6d1a4622100f7754d1"
+      },
+      "environment": {
+        "DSH_EXAMPLE_MODE": "src",
+        "DSH_SNAPSHOT": "replay (default)"
+      }
+    },
+    {
+      "name": "built-governance-archive-replay",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--config",
+        "vitest.snapshot.config.ts",
+        "snapshots/session/headless.snapshot.ts",
+        "-t",
+        "wiki-(governance|archive-rollback-conflict)"
+      ],
+      "exitCode": 0,
+      "testSummary": "2 passed | 80 skipped (82)",
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/built-headless.log",
+        "bytes": 472,
+        "sha256": "f92b605fdc5b5aabe9a893d9002c863ecf67009defef2513ac1b5df8735a64ea"
+      },
+      "environment": {
+        "DSH_EXAMPLE_MODE": "lib",
+        "DSH_SNAPSHOT": "replay (default)"
+      }
+    },
+    {
+      "name": "full-lint-initial",
+      "command": [
+        "pnpm",
+        "run",
+        "lint"
+      ],
+      "environment": {
+        "NODE_OPTIONS": "--max-old-space-size=8192"
+      },
+      "exitCode": 1,
+      "hostBuildExitCode": 0,
+      "reason": "Build completed and subsequent lint rejected one long expression and two shorthand void arrows; failures retained.",
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/full-lint.log",
+        "bytes": 144265,
+        "sha256": "e2dd48de3027d48262f219ec62ce16f10380ac5c01fd02468b6f135a4233732f"
+      }
+    },
+    {
+      "name": "lint-final",
+      "command": [
+        "pnpm",
+        "run",
+        "lint:contracts-ready"
+      ],
+      "exitCode": 0,
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/lint-contracts-final.log",
+        "bytes": 30,
+        "sha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5"
+      }
+    },
+    {
+      "name": "pairing-initial-write",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/verify-translation-pairing.ts",
+        "--write",
+        "scripts/rust-migration/README",
+        "packages/host/knowledge-wiki/README",
+        ".agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence",
+        "docs/rust-migration/source-truth-report",
+        "docs/rust-migration/knowledge-runtime-report"
+      ],
+      "exitCode": 0,
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/pairing-write.log",
+        "bytes": 561,
+        "sha256": "f31a830b9a2aacb96b6f82527cea5d5f11a0ec2931a68e78f1da802dc9d45462"
+      }
+    },
+    {
+      "name": "pairing-anchor-final-write",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/verify-translation-pairing.ts",
+        "--write",
+        "packages/host/knowledge-wiki/README"
+      ],
+      "exitCode": 0,
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/pairing-anchor-final.log",
+        "bytes": 169,
+        "sha256": "3f33eab3fdd3a5e39463ac39cec93d374fa14b06e09eb5f770eb7b1c8ae1c278"
+      }
+    },
+    {
+      "name": "doc-sync-final",
+      "command": [
+        "pnpm",
+        "run",
+        "doc-sync"
+      ],
+      "exitCode": 0,
+      "gates": {
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/doc-sync-final.log",
+        "bytes": 2534,
+        "sha256": "96c02c07f08408b3238a9353b1dd0f3c8dda1c650bd3ac1e1aa35f32c93f5943"
+      }
+    },
+    {
+      "name": "final-diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "output": "empty"
+    }
+  ],
+  "childSummary": {
+    "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/summary.json",
+    "bytes": 16501,
+    "sha256": "f7d22d9588412ab474c546be9e44f6432eb3ac4ae0eea713ad478599ed75c198"
+  },
+  "childRuns": [
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+        "-t",
+        "denies post-rename flush failure",
+        "--maxWorkers=1",
+        "--silent=false",
+        "--disableConsoleIntercept",
+        "--reporter=verbose"
+      ],
+      "exitCode": 0,
+      "seconds": 2.752258062362671,
+      "log": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/composed-transcript-1.log",
+      "receipt": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/composed-transcript-1.receipt.json",
+        "sha256": "7dd0649b59f47f125035e88b5ff8e1aed27a5c4669ba51e96d703f0b679acc96",
+        "bytes": 451
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/composed-transcript-1.log",
+        "sha256": "83b59145036adb7c02476d6dde0d49f78c1bbd44825ccdb39dc6f270672b9a93",
+        "bytes": 2378
+      },
+      "testSummary": "1 passed | 4 skipped (5)"
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "--maxWorkers=1",
+        "--reporter=verbose"
+      ],
+      "exitCode": 0,
+      "seconds": 2.5728838443756104,
+      "log": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/final-barrier-order.log",
+      "receipt": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/final-barrier-order.receipt.json",
+        "sha256": "bffe3317c5fbf63d205a2ad99244105e22e8d91e3ed75a5ce245841728c7681d",
+        "bytes": 355
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/final-barrier-order.log",
+        "sha256": "b62a1ae65b8cb9e50dc50c1353633783e4a9b430b8355be64c8d196ce0351a94",
+        "bytes": 4546
+      },
+      "testSummary": "16 passed (16)"
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "--maxWorkers=1"
+      ],
+      "exitCode": 1,
+      "seconds": 5.550670623779297,
+      "log": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/green-attempt-1.log",
+      "receipt": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/green-attempt-1.receipt.json",
+        "sha256": "4d52b696b00364bbc55e3c1e243c76366a250ecadda249b7962fe488f47c84be",
+        "bytes": 460
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/green-attempt-1.log",
+        "sha256": "5271ca8b7195924635133f9c2f3f6760d77adde343473685400ba107f57d2b4a",
+        "bytes": 3058
+      },
+      "testSummary": "2 failed | 62 passed (64)"
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "packages/host/knowledge-wiki/tests/filesystem.spec.ts",
+        "packages/host/knowledge-wiki/tests/filesystem-races.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-transaction-errors.spec.ts",
+        "packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+        "packages/host/knowledge-wiki/tests/promotion-crash-phases.spec.ts",
+        "--maxWorkers=1"
+      ],
+      "exitCode": 0,
+      "seconds": 12.508485794067383,
+      "log": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/green-attempt-2.log",
+      "receipt": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/green-attempt-2.receipt.json",
+        "sha256": "b5cd619646ddb6a6f0d358cffdd71b757b90a0b23b9c93ce7affcc2ed67dda1f",
+        "bytes": 808
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/green-attempt-2.log",
+        "sha256": "1885a5b7d935adbbeae7863c680acb37c7748833db4d1ee603c1c99344f360f8",
+        "bytes": 919
+      },
+      "testSummary": "146 passed (146)"
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "packages/host/knowledge-wiki/tests/canonical-trial-denial.spec.ts",
+        "packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+        "--maxWorkers=1",
+        "--silent=false",
+        "--disableConsoleIntercept",
+        "--reporter=verbose"
+      ],
+      "exitCode": 0,
+      "seconds": 8.121283054351807,
+      "log": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/green-final.log",
+      "receipt": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/green-final.receipt.json",
+        "sha256": "5847dd2c8f16743f5c53b8112ca3cac45103a0d4111d324b0a87b04fa819debc",
+        "bytes": 679
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/green-final.log",
+        "sha256": "87d82c5412174e57d527ba97e8db3efe9b4bd607619de185c81e5bdee923027c",
+        "bytes": 18066
+      },
+      "testSummary": "82 passed (82)"
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "packages/host/knowledge-wiki/src/filesystem.ts",
+        "packages/host/knowledge-wiki/src/reviews.ts",
+        "packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "packages/host/knowledge-wiki/tests/loader-composition.spec.ts"
+      ],
+      "exitCode": 1,
+      "seconds": 0.4600801467895508,
+      "log": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-1.log",
+      "receipt": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-1.receipt.json",
+        "sha256": "bb05f2653fecfdc204d493e10a50aaf4802b53d521f3bf633b57879a65f7e8f2",
+        "bytes": 599
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-1.log",
+        "sha256": "354e6906aab93a247df71b89de6e724615a1afee370796a63264054ea389c83a",
+        "bytes": 108
+      }
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/run-oxlint.ts",
+        "packages/host/knowledge-wiki/src/filesystem.ts",
+        "packages/host/knowledge-wiki/src/reviews.ts",
+        "packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "packages/host/knowledge-wiki/tests/loader-composition.spec.ts"
+      ],
+      "exitCode": 1,
+      "seconds": 2.4556539058685303,
+      "log": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-2.log",
+      "receipt": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-2.receipt.json",
+        "sha256": "af22016417ae78fd2f44b487faefd45991d09baa5af58a7d2911a4111f75531d",
+        "bytes": 625
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-2.log",
+        "sha256": "01d3a603b65909aff7ac4edbaaf909ed7bc8f59222ab2f83a7c20ae49e3eb320",
+        "bytes": 4627
+      }
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/run-oxlint.ts",
+        "packages/host/knowledge-wiki/src/filesystem.ts",
+        "packages/host/knowledge-wiki/src/reviews.ts",
+        "packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "packages/host/knowledge-wiki/tests/loader-composition.spec.ts"
+      ],
+      "exitCode": 0,
+      "seconds": 2.2845940589904785,
+      "log": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-final.log",
+      "receipt": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-final.receipt.json",
+        "sha256": "e38d5d026ac27713805a557e78c62d9eb7e731cdf4dfb2fec2a6f6caee676b49",
+        "bytes": 629
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-final.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/run-oxlint.ts",
+        "--fix",
+        "packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts"
+      ],
+      "exitCode": 0,
+      "seconds": 1.5035359859466553,
+      "log": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-fix.log",
+      "receipt": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-fix.receipt.json",
+        "sha256": "6bd12be1106e59d92469f4068c057b726b67d65733de7c66cd1bf90df661ccf0",
+        "bytes": 400
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/lint-owned-fix.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "--maxWorkers=1"
+      ],
+      "exitCode": 1,
+      "seconds": 4.257742166519165,
+      "log": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/red-1.log",
+      "receipt": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/red-1.receipt.json",
+        "sha256": "6724135601bf09c5a0624232263c414694bed5f33e2ada93e134c608c05bbd1a",
+        "bytes": 450
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-directory-durability-implementation-3a125dc0-wuepp6uu/red-1.log",
+        "sha256": "2ac39d818f3f52caecb3cbd495ee5274f15f9cc734398d7dd96b9c4d9a5d1911",
+        "bytes": 14631
+      },
+      "testSummary": "17 failed | 47 passed (64)"
+    }
+  ],
+  "initialNumericExecutionReceipt": {
+    "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/execution-receipt.json",
+    "bytes": 3396,
+    "sha256": "ae79b9cfa40f83c713796a3bb42a0f92777bd85fcdd469097620c0824514cf46"
+  },
+  "numericReceiptContext": "The historical receipt retains the pre-format implementation pin. The final numeric source has only a line-wrap change and is separately pinned and covered by the final 19-test run. No old receipt is relabeled as a final-source receipt.",
+  "syntheticCliWitness": {
+    "input": {
+      "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/cli-input.json",
+      "bytes": 4820,
+      "sha256": "acfd08b8ce7c51d0cc354ed19e20d3982ba655b7433f571d72e10a06316a4c54"
+    },
+    "output": {
+      "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/cli-output.json",
+      "bytes": 5818,
+      "sha256": "6bd0163f55429245d16a64e9d668e8e1b5599d57d7b31818652c49c3d596a88b"
+    },
+    "exitCode": 0,
+    "authority": "SYNTHETIC_ARITHMETIC_FIXTURE_ONLY",
+    "roundedRatesEqual": true,
+    "knowledgeUtilityStatus": "IMPROVED",
+    "exactDifferenceSign": 1,
+    "approximateDelta": 1.2325951644078315e-32,
+    "smartnessClaim": "NOT_SUPPORTED"
+  },
+  "changes": [
+    "Aggregate validated safe-integer counts first; compare rate order with an exact BigInt cross product while retaining Number display rates and approximate rational delta. Wire schema and thresholds stay unchanged.",
+    "Shared POSIX file/directory barriers cover namespace publication, created ancestor entries, exact-state retries, restore/delete, existing private files and event append. Visible bytes after a failed flush remain failed with recovery evidence retained.",
+    "Completed matching-event and rolled-back recovery repeat local WAL/event barriers without changing historical authority semantics or manufacturing an outcome; canonical apply/recovery denial remains.",
+    "The human-approved candidate-only protocol baseline is recorded with exact preimages; no runtime descriptor, evaluator, journal writer, restricted trial or provider observer is activated."
+  ],
+  "retainedFailures": [
+    "red-1 actual1:17 failed/47 passed before production edits. Includes one pre-existing unsafe rollback test expectation and an incorrect tombstone test hook; both were corrected without weakening guards.",
+    "green-attempt-1 actual1:2 failed/62 passed from macOS /var realpath fault-selector mismatch and inadvertently removed fixture local; repaired as test-only issues.",
+    "lint-owned-1 actual1:eslint is not installed. Retried using repository run-oxlint owner; lint-owned-2 actual1 test arrow/style rules; narrow fix and lint-owned-final actual0. All raw failures retained.",
+    "Numeric red run exits1 with 4 failures before exact ordering; event-parent red run exits1 with 2 failures before append parent barrier.",
+    "Full lint exits1 after successful Host build due to style rules; narrow formatting fixes precede the final current-source lint exit0. Original failed command is not converted to PASS.",
+    "Historical actual Native75 invoice raw answer remains FAIL_FORMAT; correct extracted arithmetic and completed tools do not satisfy its output contract."
+  ],
+  "limits": [
+    "Repeated tests overlap; test counts are not added into a unique total. Broader 146-test run precedes final shortcut/coverage additions; final focused 82/16-test receipts and exact final pins carry the current slice.",
+    "No provider, key, live profile, visible app, Rust enforcement, GitHub push/merge or formal release operation occurred.",
+    "The two retained Native artifacts predate this patch. No final current-candidate task, cross-session reuse, Phase6 signed receipt or current-source GitHub CI result is available.",
+    "An exact arithmetic improvement direction is not statistical significance or a verified learning benefit. Synthetic CLI smartness remains NOT_SUPPORTED."
+  ],
+  "nativeAcceptance": "UNKNOWN",
+  "independentLearningAcceptance": "UNKNOWN",
+  "finalMissionAcceptance": "UNKNOWN",
+  "rustSelection": "RETAIN_TS",
+  "rustBenchmark": {
+    "path": "/Users/hui/ark-test/ark-github-main-20261008/rust-benchmark.json",
+    "bytes": 5452,
+    "sha256": "30b1c938f9a88d890a4001dceae73e4a2039b3a821249b73300c64d121349331"
+  },
+  "runContext": {
+    "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/run-context.json",
+    "bytes": 4182,
+    "sha256": "07c368f6a4b105ef7e76e06e1f0aba60b33ec144b91ae8b4476e2e603cde825e"
+  },
+  "performed": {
+    "sourceEdits": true,
+    "faultTests": true,
+    "hostBuild": true,
+    "sourceAndBuiltHeadlessReplay": true,
+    "providerCall": false,
+    "credentialOperation": false,
+    "nativeAppBuild": false,
+    "nativeDialogueTest": false,
+    "publish": false
+  },
+  "finalIndependentSourceReview": {
+    "path": "/private/tmp/ark-wiki-directory-durability-final-review-3a125dc0-20261008.xuh0xxka/final-independent-review.json",
+    "bytes": 21931,
+    "sha256": "a0490ce93f44a247bb33fb09bd039058e23fbc9df868a60cffbece44fcd4a954",
+    "verdict": "No new blocking code defect identified. Matching-event four-barrier coverage and rolled-back WAL retry gap are closed in final source/tests. Existing historical/authentication and platform/concurrency limits remain explicit.",
+    "sourceTestPins": [
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/src/filesystem.ts",
+        "relativePath": "packages/host/knowledge-wiki/src/filesystem.ts",
+        "snapshotPath": "/private/tmp/ark-wiki-directory-durability-final-review-3a125dc0-20261008.xuh0xxka/reviewed-final-files/packages/host/knowledge-wiki/src/filesystem.ts",
+        "bytes": 18818,
+        "sha256": "db70165d76d6c64fd0dc6d15f9988d656b11b39e338aca3a858c2a53869ed0d1"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/src/reviews.ts",
+        "relativePath": "packages/host/knowledge-wiki/src/reviews.ts",
+        "snapshotPath": "/private/tmp/ark-wiki-directory-durability-final-review-3a125dc0-20261008.xuh0xxka/reviewed-final-files/packages/host/knowledge-wiki/src/reviews.ts",
+        "bytes": 59343,
+        "sha256": "b8762cafe2747b83b644bb22f902d94c3c020cc1252e2bb0e06c320e5ff66207"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/src/knowledge-governance.ts",
+        "relativePath": "packages/host/knowledge-wiki/src/knowledge-governance.ts",
+        "snapshotPath": "/private/tmp/ark-wiki-directory-durability-final-review-3a125dc0-20261008.xuh0xxka/reviewed-final-files/packages/host/knowledge-wiki/src/knowledge-governance.ts",
+        "bytes": 32021,
+        "sha256": "5ddafc768db4f5fee488856b9e8844cf686d297b1c5f850beb3794803680c546"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "relativePath": "packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "snapshotPath": "/private/tmp/ark-wiki-directory-durability-final-review-3a125dc0-20261008.xuh0xxka/reviewed-final-files/packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+        "bytes": 6675,
+        "sha256": "d427f008fdd9008eee60d0da2e04837284091a718401603cc1daebba66f13257"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "relativePath": "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "snapshotPath": "/private/tmp/ark-wiki-directory-durability-final-review-3a125dc0-20261008.xuh0xxka/reviewed-final-files/packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+        "bytes": 14030,
+        "sha256": "9b0a254e5a099f41bd98d1b873093b8756d6fdefbee241da53f95ecdee1747cc"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/knowledge-journal-durability.spec.ts",
+        "relativePath": "packages/host/knowledge-wiki/tests/knowledge-journal-durability.spec.ts",
+        "snapshotPath": "/private/tmp/ark-wiki-directory-durability-final-review-3a125dc0-20261008.xuh0xxka/reviewed-final-files/packages/host/knowledge-wiki/tests/knowledge-journal-durability.spec.ts",
+        "bytes": 2876,
+        "sha256": "6a48511400177322cf832bfbb1d58dbdee30624fd71960943af065947c3edf7e"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "relativePath": "packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "snapshotPath": "/private/tmp/ark-wiki-directory-durability-final-review-3a125dc0-20261008.xuh0xxka/reviewed-final-files/packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "bytes": 45684,
+        "sha256": "27eba420a3912aed8e147ab2a9b2d3d9d2228408900b7c66a9a4a3a9962d7e90"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+        "relativePath": "packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+        "snapshotPath": "/private/tmp/ark-wiki-directory-durability-final-review-3a125dc0-20261008.xuh0xxka/reviewed-final-files/packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+        "bytes": 28200,
+        "sha256": "45989c05d5603b3ccb81f6ae6df069c868beadbb781387cef4772baa859f1c01"
+      }
+    ],
+    "remainingLimits": [
+      "No physical sudden-power-loss, hardware cache, filesystem/device, macOS F_FULLFSYNC or Native acceptance claim.",
+      "Injected process.platform win32 test is branch coverage, not Windows runner/native durability evidence; future positive measured-learning activation still requires supported durable capability.",
+      "Completed matching-event and rolled-back flush-only branches intentionally preserve old authority/history semantics and do not certify historical poststates or measured-trial eligibility.",
+      "Absolute directory provisioning preserves existing ancestor aliases; helper identity checks do not supply arbitrary external-writer exclusion, filesystem case/Unicode alias proof or atomic expected-byte CAS.",
+      "Generic unlink tombstones can remain after namespace failure; byte retention is not a new authenticated ownership/discovery/cleanup protocol.",
+      "Fixture seals, real local file I/O and keyless Loader composition prove their exercised plumbing/containment relations only, not production authority or positive learning."
+    ],
+    "scope": {
+      "checkoutEdits": false,
+      "buildsRun": false,
+      "testsRunByReviewer": false,
+      "providerModelCalls": false,
+      "translationReviewed": false,
+      "NativeAcceptance": false,
+      "physicalPowerLossAcceptance": false,
+      "WindowsAcceptance": false,
+      "learningAcceptance": false
+    },
+    "metadataCorrection": {
+      "path": "/private/tmp/ark-wiki-directory-durability-final-review-3a125dc0-20261008.xuh0xxka/review-metadata-correction.json",
+      "bytes": 1677,
+      "sha256": "a5673873bb993b84c52e3396b91a89406289373f8c3ad89c9f4094509576d65e"
+    }
+  },
+  "childScopeLimits": [
+    "No physical sudden-power-loss proof; actual host is Darwin, POSIX syscall ordering/error injection and process SIGKILL coverage only.",
+    "Win32 compatibility branch test is an injected platform branch, not a Windows runner or native durable publication receipt. Positive v2 preflight/activation remains root-owned and unimplemented in these files.",
+    "Completed matching-event and rolled-back scanner branches intentionally preserve prior authority/history semantics; these new flushes neither authenticate a new disposition nor certify historical poststates or measured-trial eligibility.",
+    "No arbitrary external writer exclusion or filesystem case/Unicode alias proof. Existing confinement, ordinary-file identity and exact-byte conflict guards retained.",
+    "No broad suite, full build, native app or provider/model/key/remote operations performed. Root owns unified build/lint/docs/evidence.",
+    "These runs prove source paths, injected OS flush ordering and deterministic source/built replay. They do not prove real Ark dialogue capability, independent evaluator custody, measured paired knowledge benefit, Windows or physical power-loss durability, or arbitrary concurrent-writer exclusion."
+  ],
+  "acceptanceAudit": {
+    "command": [
+      "pnpm",
+      "exec",
+      "tsx",
+      "scripts/rust-migration/audit-acceptance.ts"
+    ],
+    "exitCode": 0,
+    "output": {
+      "path": "/private/tmp/ark-learning-rate-validation-3a125dc0-dVXrRI/acceptance-current.json",
+      "bytes": 3437,
+      "sha256": "16bed2f4b96fd2887354cc61e2f80af0ab324e22c8b024f6a8d493035a894309"
+    },
+    "overall": "UNKNOWN",
+    "trustKeysSupplied": false,
+    "claim": "No authenticated current acceptance receipt supplied; component test passes do not substitute for signed Phase6 evidence."
+  },
+  "documentationGateContext": "The 30-gate run covers the five final bilingual pairs and all evidence links. Subsequent security-report wording changes only qualify the earlier checkpoint build/lint as historical; no link, code block or structural input changes."
+}

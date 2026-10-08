@@ -73,6 +73,8 @@ kind: "package-reference"
 
 生产检索路径默认仍由 TypeScript 执行。启用 `shadow` 后，服务把同一份规范页面语料与查询发送给隔离的 Rust 候选，校验请求/结果摘要和字节级一致的 BM25 结果，记录观测，同时仍返回经过治理的 TypeScript 结果。候选进程只获得最小环境，并受输入/输出上限和截止时间约束；失败、超时、取消或结果漂移都会回退到 TypeScript。`enforce` 模式刻意 fail-closed；由于 Rust 尚未实现完整的 BM25 加 embedding 混合结果契约，当前 `modelSearch` 会拒绝该模式。
 
+<a id="governed-page-reads"></a>
+
 ### 受治理的页面读取
 
 模型 Wiki 投影要求已登记的项目、调用 session 和已配置的 verifier authority。未签名的 observation 与 candidate 保持低信任；verified 事件认证完整记录，包括正文、来源、scope、ACL 和过期时间。普通模型页面召回要求 canonical 生命周期和经过认证的实际字节；语义验证通过不能单独开放 candidate 正文。经过 receipt 和当前字节校验的 candidate 评审元数据仍可查看，Native 预览与 Archive 保留原有规则。历史 canonical 接纳用 SHA-256 绑定实际页面字节。搜索与图谱在派生结果或发送 embedding 输入前检查可读字节；被修改或未绑定的页面会 fail closed。每个受治理的 source 投影要求精确 source 字符串只有一个经过认证的 owner，terminal 记录也参与检查；竞争 identity 会 fail closed，不能回退到旧展示计数。检索和结果事件使用已接纳的知识 ID，受治理的 utility 计数由日志回放得到。搜索在异步工作后重新检查当前治理状态，模型搜索还会在返回前重新检查受路径约束的页面字节。正面 UI 反馈仍被记录，但不增加成功使用次数或保留收益；纠正反馈降低 utility 并拒绝复用。
@@ -80,6 +82,8 @@ kind: "package-reference"
 语义验证保留经过认证的检查结果，不生成 trial。当前 receipt 契约无法认证实测 trial 收益，因此 Promote、Merge、Replace 与 Deduplicate 在写入前拒绝；对应的 prepared WAL 也拒绝前向恢复。prepared canonical WAL 因而会阻止初始化或项目切换恢复，同时保留证据且不认证完成。Archive、Skip 与 rollback 保留原有规则。Canonical 目标预备是纯转换，输入为已捕获的 candidate 正文、已解析目标路径、精确目标原始状态或显式不存在、评审时间和 actor。相同输入生成相同字节；预备不授予 trial 或晋级 authority，也不写入文件或日志。
 
 Archive 恢复在修改前校验签名操作的角色、candidate/review/governance 路径、归档字节、已解决的 review 和 staging 身份。恢复会将原始 Archive 或 Skip 处理结果记为一条 rejected 生命周期事件，包括已记录 committed 标记但尚未追加事件的情况。缺失事件的修复要求文件与已提交的 poststate 字节完全一致；状态偏离或追加失败时保留 WAL，供审查恢复或重试。重复恢复不会重复生命周期事件。
+
+在 POSIX 上，共享文件系统写入会同步文件字节和受影响的目录项，包括创建目录时的祖先目录项。评审事务在将改名、删除或恢复操作计为完成前逐项同步；重试看到相同状态时也会重新执行必要的同步。事件追加会同步文件及其父目录。同步失败可能留下可见的新字节或标记：操作仍然失败，保留恢复证据，不能从可见性推断持久性。旧版 win32 对目录 fsync `EPERM` 的例外仅保留可见性行为。这些检查验证操作系统同步请求的顺序和进程崩溃恢复，不证明物理断电持久性、独立评估者的密钥保管或对外部并发写入者的排他控制。
 
 <a id="model-experience"></a>
 ## 模型体验

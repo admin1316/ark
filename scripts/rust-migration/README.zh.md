@@ -10,7 +10,7 @@ Run it with `pnpm exec tsx scripts/rust-migration/evaluate-learning.ts outcomes.
 
 证据引用可以是可移植的不透明 ID、相对 artifact 路径或网络 URL。解析器会拒绝控制字符、主机绝对路径（包括 `file:` 和 UNC 形式）、路径穿越、首尾空白和重复引用，并对每条引用列表排序以保证回放确定性。完整的 verified pair 还要求两个 variant 的 producer 身份集合与 evaluator 身份集合完全不相交；任一 variant 的生产者不能成为任一 variant 的验收者。
 
-The reducer pairs records by `pairId` and rejects duplicate variants or differences in model, model configuration, task, goal, or policy hashes. It aggregates counts before calculating rates, so a large task cannot be hidden by averaging per-task percentages. Every pair must have independently verified records for a metric to be comparable.
+归约器按 `pairId` 配对，拒绝重复 variant 或模型、模型配置、任务、目标、策略 hash 不一致的记录。它先汇总计数再计算比例，不能用逐任务百分比的平均值掩盖大任务的权重。每一对记录都必须经过独立验证，指标才可比较。汇总计数必须保持为安全整数。比例是否相等、改善方向由精确整数交叉乘积判定；显示的比例与 `delta` 是有理数的近似值。分别舍入的比例可能相同，而 `delta` 仍非零。这种比较只确定数值大小，不证明统计显著性。
 
 The output reports each required metric as `IMPROVED`, `REGRESSED`, `UNCHANGED`, or `UNKNOWN`, includes evidence references, and emits a conservative `smartnessClaim` of `SUPPORTED`, `NOT_SUPPORTED`, or `UNKNOWN`. Support requires verified-task success and knowledge utility improvement, lower repeated-error rate, zero stale recall, cross-session leakage, memory privilege escalation, memory poisoning, and false completion, plus complete repair reuse, conflict escalation, and replay explainability evidence.
 

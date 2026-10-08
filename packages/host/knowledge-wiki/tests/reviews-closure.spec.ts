@@ -29,9 +29,7 @@ import {
 import type { WikiReviewItem } from '../src/types.ts'
 import { issueTestReceipt, verifierAuthority } from './verifier-authority-fixture.ts'
 
-// Directory-fsync fault injection: a real Windows runner cannot fsync directory
-// handles (EPERM), and a damaged one can fail with other errno codes. The fault
-// is inert unless a test activates it.
+// Inject only directory-fsync failures; ordinary file I/O stays real.
 const fsFault = vi.hoisted(() => ({ mode: 'none' as 'none' | 'eperm' | 'eio' }))
 const directoryFds = vi.hoisted(() => new Set<number>())
 vi.mock('node:fs', async (importOriginal) => {
@@ -659,14 +657,16 @@ describe('prepared journal revalidation', () => {
     expect(review.before).toBeDefined()
   })
 
-  it('completes Archive recovery when the directory fsync fails with EPERM like windows', () => {
+  it.skipIf(process.platform === 'win32')('denies Archive recovery when POSIX directory fsync fails with EPERM', () => {
     const item = fixture()
     verify(item)
     interruptAtJournalPersistence(item)
     fsFault.mode = 'eperm'
     try {
-      expect(() => recoverCandidateReviewTransactions(authority, item.reviewFile, item.wikiRoot, item.archiveRoot)).not.toThrow()
-      expect(readItems(item.reviewFile)[0]?.resolved).toBe(true)
+      expect(() => recoverCandidateReviewTransactions(authority, item.reviewFile, item.wikiRoot, item.archiveRoot))
+        .toThrow('EPERM: fsync fault')
+      expect(readItems(item.reviewFile)[0]?.resolved).toBe(false)
+      expect(readJournal(item).state).toBe('prepared')
     } finally { fsFault.mode = 'none' }
   })
 
@@ -1011,21 +1011,24 @@ describe('promotion transaction interference', () => {
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('restores the candidate when its bytes diverge before the delete', () => {
+  it('preserves divergent candidate bytes and retains the incomplete rollback WAL', () => {
     const item = fixture()
     verify(item)
-    const candidateBefore = readFileSync(item.candidateFull, 'utf8')
     const mutating = checkpointAuthority((core, checkpoint) => {
       if (checkpoint.phase !== 'operation-applied'
         || checkpoint.operationIndex !== core.operations.findIndex(operation => operation.role === 'governance')) return
       writeFileSync(operationOf(core, 'candidate').path, 'tampered candidate bytes', 'utf8')
     })
 
-    expect(() => apply(item, mutating)).toThrow(/promotion recovery conflict at /u)
-    expect(readFileSync(item.candidateFull, 'utf8')).toBe(candidateBefore)
+    const failure = captureFailure(() => { apply(item, mutating) })
+    expect(aggregateMessages(failure)).toEqual([
+      expect.stringMatching(/promotion recovery conflict at /u),
+      expect.stringMatching(/promotion rollback conflict at /u),
+    ])
+    expect(readFileSync(item.candidateFull, 'utf8')).toBe('tampered candidate bytes')
     expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
     expect(existsSync(join(item.wikiRoot, 'concepts', 'closure.md'))).toBe(false)
-    expect(readJournal(item).state).toBe('rolled-back')
+    expect(readJournal(item).state).toBe('prepared')
     expect(walLeftovers(item.root)).toEqual([])
   })
 })

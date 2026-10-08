@@ -22,9 +22,11 @@ Candidate identity 包含路径和内容 hash。字节变化会创建独立的�
 
 删除回滚只在路径仍不存在时恢复原候选，或接受已经恢复的精确原始状态。其他写入重新创建的不同字节会触发冲突，prepared journal 保留供检查；回滚不能覆盖其他写入者的内容。恢复在修改前验证同一 before/after 关系。
 
+共享文件系统 owner 为评审事务和事件追加提供[文件与目录同步](../../../../packages/host/knowledge-wiki/README.zh.md#governed-page-reads)。POSIX 同步错误始终视为失败，包括发布字节已可见之后的错误；相同状态的重试会重新同步，不能将可见字节当作持久性证明。回滚标记失败会同时保留原始错误和标记错误。已完成的历史 journal 快速分支会重新执行本地同步，不改变原有 authority，也不认证新的结果。旧版 win32 例外只提供可见性。
+
 checkout 包含隔离的 [knowledge-search shadow crate](../../../../rust/knowledge-search-shadow/README.zh.md) 与默认关闭的 TypeScript child boundary。搜索 authority、图谱派生、session 持久化和 subprocess 管理继续由 TypeScript 或已有 native owner 负责；没有 receipt 授权 Rust enforce。Rust candidate matrix 要求三组对照、差分回放、取消、恢复、打包和平台证据通过后才允许 enforce。[源码清点](../process/2026-10-08-function-language-census.zh.md) 区分声明覆盖与功能、性能验证。
 
-学习结论使用相同 model、配置、task、goal 和 policy hash 的 baseline/candidate 配对结果。缺少机会或独立验证时返回 `UNKNOWN`；知识条数、模型调用次数或 Rust 行数不能证明改进。
+学习结论使用相同 model、配置、task、goal 和 policy hash 的 baseline/candidate 配对结果。缺少机会或独立验证时返回 `UNKNOWN`；知识条数、模型调用次数或 Rust 行数不能证明改进。[评估归约器](../../../../scripts/rust-migration/README.zh.md) 使用精确整数交叉乘积比较汇总计数的比例，即使显示的浮点比例相同，也能保留真实大小关系。数值改善不能证明统计显著性，也不能认证输入证据。
 
 ## Alternatives considered
 

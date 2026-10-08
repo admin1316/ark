@@ -8,7 +8,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
@@ -29,10 +29,48 @@ import { seedHistoricalCanonicalKnowledge } from './historical-governed-fixture.
 import { verifierAuthority } from './verifier-authority-fixture.ts'
 import { externalBoundariesFixture, type ExternalBoundaryCalls } from './fixtures/loader-external-boundaries.ts'
 
+const durabilityIO = vi.hoisted(() => ({
+  descriptors: new Map<number, string>(),
+  failingParent: '',
+  failAfterRejectedFileSync: false,
+  trace: [] as string[],
+}))
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    openSync: (...args: Parameters<typeof actual.openSync>) => {
+      const descriptor = actual.openSync(...args)
+      durabilityIO.descriptors.set(descriptor, String(args[0]))
+      return descriptor
+    },
+    closeSync: (descriptor: number) => {
+      durabilityIO.descriptors.delete(descriptor)
+      actual.closeSync(descriptor)
+    },
+    fsyncSync: (descriptor: number) => {
+      const path = durabilityIO.descriptors.get(descriptor)!
+      if (path === durabilityIO.failingParent) {
+        durabilityIO.trace.push('directory-fsync-denied')
+        throw Object.assign(new Error('fixture composed directory fsync failure'), { code: 'EIO' })
+      }
+      actual.fsyncSync(descriptor)
+      if (durabilityIO.failAfterRejectedFileSync && path.endsWith('knowledge-events.jsonl')
+        && actual.readFileSync(path, 'utf8').includes('"knowledge/rejected"')) {
+        durabilityIO.failingParent = dirname(path)
+      }
+    },
+  }
+})
+
 let root: string | undefined
 const contexts: Context[] = []
 
 afterEach(async () => {
+  durabilityIO.failingParent = ''
+  durabilityIO.failAfterRejectedFileSync = false
+  durabilityIO.trace = []
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
   if (root !== undefined) await rm(root, { recursive: true, force: true })
   root = undefined
@@ -150,6 +188,68 @@ no task is measured and no trial success or counterfactual advantage is asserted
 `
 
 describe('Knowledge Wiki real keyless YAML Loader composition', () => {
+  it.skipIf(process.platform === 'win32')('denies post-rename flush failure and completes Archive through cold composed recovery without duplicate events', async () => {
+    root = await mkdtemp(join(tmpdir(), 'wiki-loader-directory-durability-'))
+    const projectRoot = root
+    const wikiRoot = join(projectRoot, 'wiki')
+    const reviewFile = join(projectRoot, '.llm-wiki', 'review.json')
+    const eventPath = join(projectRoot, '.llm-wiki', 'knowledge-events.jsonl')
+    const candidatePath = '_candidates/ingest/concepts/loader-durability.md'
+    const candidateFile = join(wikiRoot, candidatePath)
+    const calls: ExternalBoundaryCalls = { verifier: 0, credentials: 0, llm: 0 }
+    const authority: KnowledgeWikiVerifierAuthority = {
+      ...verifierAuthority(),
+      checkpointPromotion(_payload, checkpoint) {
+        if (checkpoint.phase === 'entry-renamed' && checkpoint.operationIndex === 3) {
+          durabilityIO.failingParent = dirname(candidateFile)
+        }
+      },
+    }
+    mkdirSync(wikiRoot, { recursive: true })
+    let ctx = await boot(projectRoot, calls, authority)
+    let service = ctx.get('knowledgeWiki') as KnowledgeWikiService
+    expect(await service.writePage({ path: candidatePath, content: CANDIDATE_BYTES })).toMatchObject({ ok: true })
+    expect(appendCandidateReviews(reviewFile, projectRoot, 'fixture:durability', [`wiki/${candidatePath}`])).toBe(1)
+    const review = (await service.reviews({ status: 'unresolved' })).find(item => item.candidatePath === candidatePath)!
+    const before = readFileSync(reviewFile, 'utf8')
+    await expect(service.resolveReview({ reviewId: review.id, action: 'Archive' })).rejects.toThrow('rollback was incomplete')
+    expect(readFileSync(reviewFile, 'utf8')).toBe(before)
+    expect(readFileSync(candidateFile, 'utf8')).toBe(CANDIDATE_BYTES)
+    const directory = join(dirname(reviewFile), 'promotion-journal')
+    const wal = join(directory, readdirSync(directory).find(name => name.endsWith('.json'))!)
+    expect(JSON.parse(readFileSync(wal, 'utf8'))).toMatchObject({ state: 'prepared' })
+    expect(readKnowledgeEventLog(eventPath).filter(event =>
+      event.type === 'knowledge/rejected' || event.type === 'knowledge/rolled_back')).toEqual([])
+    durabilityIO.trace.push('resolve-denied-prepared-wal-retained')
+    durabilityIO.failingParent = ''
+    await ctx.fiber.dispose()
+
+    // Recovery reaches the terminal append, whose bytes become visible before
+    // its parent flush fails. A second cold attempt must repeat that barrier.
+    durabilityIO.failAfterRejectedFileSync = true
+    await expect(boot(projectRoot, calls)).rejects.toThrow('fixture composed directory fsync failure')
+    expect(JSON.parse(readFileSync(wal, 'utf8'))).toMatchObject({ state: 'committed' })
+    expect(readKnowledgeEventLog(eventPath).filter(event => event.type === 'knowledge/rejected')).toHaveLength(1)
+    await expect(boot(projectRoot, calls)).rejects.toThrow('fixture composed directory fsync failure')
+    durabilityIO.trace.push('visible-terminal-event-retry-denied')
+    const eventBytes = readFileSync(eventPath)
+    durabilityIO.failingParent = ''
+    durabilityIO.failAfterRejectedFileSync = false
+    await ctx.fiber.dispose()
+    ctx = await boot(projectRoot, calls)
+    service = ctx.get('knowledgeWiki') as KnowledgeWikiService
+    expect(await service.reviews({ status: 'unresolved' })).toEqual([])
+    expect(readFileSync(eventPath)).toEqual(eventBytes)
+    expect(existsSync(candidateFile)).toBe(false)
+    expect(existsSync(join(wikiRoot, 'concepts/loader-durability.md'))).toBe(false)
+    const resolved = (await service.reviews({ status: 'resolved' })).find(item => item.id === review.id)!
+    expect(resolved).toMatchObject({ resolved: true, resolvedAction: 'Archive' })
+    expect(readFileSync(resolved.appliedPath!, 'utf8')).toBe(CANDIDATE_BYTES)
+    expect(calls).toEqual({ verifier: 0, credentials: 0, llm: 0 })
+    durabilityIO.trace.push('cold-recovery-one-archive-no-canonical-no-external-calls')
+    console.info('COMPOSED_DIRECTORY_DURABILITY_TRANSCRIPT', JSON.stringify(durabilityIO.trace))
+  }, 30_000)
+
   it('denies check-only promotion and keeps durable user feedback observational across composed restarts', async () => {
     root = await mkdtemp(join(tmpdir(), 'wiki-loader-composition-'))
     const projectRoot = root
