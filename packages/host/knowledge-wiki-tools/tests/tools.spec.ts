@@ -239,7 +239,7 @@ describe('Knowledge Wiki tool catalog', () => {
       { id: '1', title: 'Conflict', type: 'contradiction', description: 'd'.repeat(150) },
       { id: '2', title: 'Missing', type: 'missing' },
     ])
-    expect(text(await execute(ctx, 'wiki_reviews', {}))).toBe('No unresolved review items.')
+    expect(text(await execute(ctx, 'wiki_reviews', {}))).toBe('No unresolved review items are visible to this session.')
     const result = await execute(ctx, 'wiki_reviews', {})
     expect(result.value).toEqual({ reviews: [
       { id: '1', title: 'Conflict', type: 'contradiction', description: 'd'.repeat(150) },

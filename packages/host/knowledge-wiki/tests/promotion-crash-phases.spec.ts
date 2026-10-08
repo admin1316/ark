@@ -46,7 +46,7 @@ function fixture() {
   return { root, wikiRoot, candidate, reviewFile, archiveRoot, reviewId: row.id }
 }
 
-function runWorker(item: ReturnType<typeof fixture>, checkpoint: string, action = 'Archive') {
+function runWorker(item: ReturnType<typeof fixture>, checkpoint: string, action = 'Archive', recreatedCandidate?: string) {
   return spawnSync(process.execPath, ['--import', 'tsx/esm', worker], {
     cwd: process.cwd(),
     env: {
@@ -58,6 +58,7 @@ function runWorker(item: ReturnType<typeof fixture>, checkpoint: string, action 
       WIKI_ARCHIVE_ROOT: item.archiveRoot,
       WIKI_REVIEW_ID: item.reviewId,
       WIKI_REVIEW_ACTION: action,
+      WIKI_RECREATED_CANDIDATE: recreatedCandidate,
     },
     encoding: 'utf8',
     timeout: 10_000,
@@ -202,5 +203,30 @@ describe('Archive WAL real crash phases', () => {
     expect(recoverCandidateReviewTransactions(
       verifierAuthority(), item.reviewFile, item.wikiRoot, item.archiveRoot,
     )).toBe(0)
+  }, 20_000)
+
+  it('preserves a recreated candidate when interrupted Archive rollback and recovery reject divergence', () => {
+    const item = fixture()
+    const recreated = 'Third-party candidate bytes written after the Archive deletion.\n'
+    const result = runWorker(item, 'rollback:tombstone-unlinked:3', 'Archive', recreated)
+    expect(result.error).toBeUndefined()
+    expect(result.status).toBe(1)
+    expect(readFileSync(item.candidate, 'utf8')).toBe(recreated)
+    expect(result.stderr).toContain('rollback was incomplete')
+    expect(result.stderr).toContain('promotion rollback conflict')
+    const directory = join(dirname(item.reviewFile), 'promotion-journal')
+    const journalPath = join(directory, readdirSync(directory)[0]!)
+    expect(JSON.parse(readFileSync(journalPath, 'utf8')) as { state: string; action: string })
+      .toMatchObject({ state: 'prepared', action: 'Archive' })
+    const eventPath = join(dirname(item.reviewFile), 'knowledge-events.jsonl')
+    expect(readKnowledgeEventLog(eventPath).filter(event =>
+      event.type === 'knowledge/rejected' || event.type === 'knowledge/rolled_back'))
+      .toHaveLength(0)
+    const paths = [item.candidate, item.reviewFile, journalPath, eventPath]
+    const beforeRecovery = paths.map(path => readFileSync(path))
+    expect(() => recoverCandidateReviewTransactions(
+      verifierAuthority(), item.reviewFile, item.wikiRoot, item.archiveRoot,
+    )).toThrow('promotion journal divergent state')
+    expect(paths.map(path => readFileSync(path))).toEqual(beforeRecovery)
   }, 20_000)
 })

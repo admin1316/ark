@@ -485,7 +485,7 @@ function rollbackPromotionOperation(operation: PromotionOperation): void {
     if (operation.stagingPath !== undefined) durableUnlinkFile(operation.stagingPath)
     return
   }
-  if (operation.after !== undefined && current !== operation.after) {
+  if (current !== operation.after) {
     throw new Error(`promotion rollback conflict at ${operation.path}`)
   }
   atomicWriteFile(operation.path, operation.before)

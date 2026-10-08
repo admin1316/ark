@@ -491,7 +491,7 @@ export function apply(ctx: Context): void {
       },
       render: (_args, value) => {
         const reviews = value.reviews as Array<{ title: string; type: string; description?: string }>
-        if (reviews.length === 0) return textBlock('No unresolved review items.')
+        if (reviews.length === 0) return textBlock('No unresolved review items are visible to this session.')
         return textBlock(reviews.map(review => `- [${review.type}] ${review.title}${review.description ? ` — ${review.description.slice(0, 140)}` : ''}`).join('\n'))
       },
     },

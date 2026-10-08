@@ -44,7 +44,7 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 7. **干净75固定槽位候选** [脱敏证据](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) 记录 macOS ARM64 构建、严格 ad-hoc 签名检查、候选槽位原子替换、代码回滚保留，以及有条件复用用户在旧候选输入的选定凭据。模型选择为 `deepseek-official / deepseek-flash / max`，凭据复用期间未调用模型。用户确认窗口正常且空闲。CUA 仍解析为旧 bundle 身份，自动界面操作受阻；相同状态截图和当前任务验收未完成。完整串行 coverage 运行的793项 Wiki 测试通过，但六个文件仍未达到每文件100%门槛；先前 worker 启动失败记录保留。
 8. **`b8adf5a7ec` 的历史可见真实任务** 回放的1857个 session event 记录五个真实 provider step 和七个工具 carrier。仅在单独提取 Markdown JSON 围栏内容后，精确有理数对账通过；原始 JSON-only 要求以 `FAIL_FORMAT` 失败。项目脚手架在任务前已存在，但初始两文件预登记未包含它，因此不能宣称完整 world 未变。一条 shell 尝试在只读沙箱中失败后重试。此任务不能证明知识学习、当前75或 Rust 性能收益。
 
-9. **当前干净930验证与隐藏构建** [验证记录](../../scripts/rust-migration/evidence/current930-validation-20261008.json) 保留83个 Wiki 测试文件的800项测试通过，以及 coverage 实际退出码1：六个源码文件仍未达到不变的每文件100%门槛。[隐藏315构建](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) 的源码、打包、Swift、Mach-O、签名和已签名目录树检查通过。其隔离 home 仍为空；当前界面、模型任务、学习、回滚和 CI 验收未完成。
+9. **当前干净930验证与隐藏构建** [验证记录](../../scripts/rust-migration/evidence/current930-validation-20261008.json) 保留83个 Wiki 测试文件的800项测试通过，以及 coverage 实际退出码1：六个源码文件仍未达到不变的每文件100%门槛。[隐藏315构建](../../scripts/rust-migration/evidence/candidate-native-build-93040bb5.json) 的源码、打包、Swift、Mach-O、签名和已签名目录树检查通过；其 receipt 记录产物核验时 home 为空。独立的[准备证据](../../scripts/rust-migration/evidence/candidate-progress-e2910207-20261008.json) 绑定不含密钥的 settings 与已签名 profile 副本；凭据复用和启用尚未执行。当前界面、模型任务、学习、回滚和 CI 验收未完成。
 10. **干净75真实发票基线** [预登记的真实任务](../../scripts/rust-migration/evidence/current75-real-task-20261008.json) 通过活动 Native Session API 提交一次，沿用 `deepseek-official / deepseek-flash / max`。四个模型步骤、七次成功工具调用产生1,862个无缺口事件，并保留原始已完成 turn。独立冷回放匹配持久化事件和最终答复，六个文件和六个目录均未改变。精确算术与 oracle 相同，但原始答复包含 Markdown JSON 围栏和额外文字，因此整份答复仍为 **FAIL_FORMAT**。提取 JSON 仅用于诊断。当前界面视口未核验；该任务未运行隐藏315，也不能证明学习或 Rust 收益。
 
 ## Drift and required follow-up
@@ -64,6 +64,8 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 - Maintain the replay tests and run the learning evaluator on independently verified paired outcomes before claiming a utility or smartness lift. Keep candidates below canonical trust until independent verification and review complete.
 
 用户已明确批准候选内学习协议扩展；[当前记录](../../scripts/rust-migration/evidence/current930-validation-20261008.json) 绑定审批与私有草案。扩展尚未实现或配置，草案中的 stateVersion 2 尚未采用，原始项目 manifest 保持不变。用户可见能力需要真实 Ark 会话的结果与界面确认；知识收益还需要独立评估的同模型、同任务对照和正确修复复用，reflection 文本与编译通过均不能代替验收。
+
+[后续补丁与草案审阅](../../scripts/rust-migration/evidence/candidate-progress-e2910207-20261008.json) 记录精确的 Archive 回滚限制和作用域内 review 输出。重新创建的不同字节保持不变，未完成的回滚保留 journal，冷恢复拒绝 divergent 状态。模型收到空 review 结果只表示该会话看不到未解决项目。修订后的私有学习草案保持全局 stateVersion 1，目标 record 策略、signer/旧版集成、目录持久性和外部评估者输入仍未解决；它不安装 successor baseline，也不启用实测 trial。
 
 ## Current Rust candidate seam
 

@@ -3,10 +3,10 @@
  * External checks are fixture-signed, and the historical admission below is
  * solely a read-boundary fixture: neither is a measured usage trial or model task.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -24,7 +24,7 @@ import * as WikiTools from '@deepseek-ai/dsh-tool-knowledge-wiki'
 import KnowledgeWikiService from '../src/index.ts'
 import { readKnowledgeEventLog, replayKnowledgeEvents, shouldRetainKnowledge } from '../src/knowledge-governance.ts'
 import { appendCandidateReviews } from '../src/reviews.ts'
-import { sha256 } from '../src/verifier.ts'
+import { sha256, type KnowledgeWikiVerifierAuthority } from '../src/verifier.ts'
 import { seedHistoricalCanonicalKnowledge } from './historical-governed-fixture.ts'
 import { verifierAuthority } from './verifier-authority-fixture.ts'
 import { externalBoundariesFixture, type ExternalBoundaryCalls } from './fixtures/loader-external-boundaries.ts'
@@ -39,7 +39,11 @@ afterEach(async () => {
 })
 
 /** Load every production owner through actual YAML, resolving source modules. */
-async function boot(projectRoot: string, calls: ExternalBoundaryCalls): Promise<Context> {
+async function boot(
+  projectRoot: string,
+  calls: ExternalBoundaryCalls,
+  authority: KnowledgeWikiVerifierAuthority = verifierAuthority(),
+): Promise<Context> {
   const configPath = join(projectRoot, 'cordis.yml')
   await writeFile(configPath, [
     "- name: 'fixture:knowledge-wiki-external-boundaries'",
@@ -71,7 +75,7 @@ async function boot(projectRoot: string, calls: ExternalBoundaryCalls): Promise<
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
-    ['fixture:knowledge-wiki-external-boundaries', externalBoundariesFixture(verifierAuthority(), calls)],
+    ['fixture:knowledge-wiki-external-boundaries', externalBoundariesFixture(authority, calls)],
     ['@deepseek-ai/cordis-plugin-timer', Timer],
     ['@deepseek-ai/dsh-session', SessionStore],
     ['@deepseek-ai/dsh-session-persistence-jsonl', JsonlSessionPersistence],
@@ -264,5 +268,94 @@ describe('Knowledge Wiki real keyless YAML Loader composition', () => {
     expect(durable.events.filter(event => event.type === 'knowledge/injected' && event.data.tool === 'wiki_read'))
       .toHaveLength(3)
     expect(calls).toEqual({ verifier: 1, credentials: 0, llm: 0 })
+  }, 30_000)
+
+  it('preserves a recreated candidate when composed Archive rollback and cold recovery reject divergence', async () => {
+    root = await mkdtemp(join(tmpdir(), 'wiki-loader-archive-conflict-'))
+    const projectRoot = root
+    const wikiRoot = join(projectRoot, 'wiki')
+    const reviewFile = join(projectRoot, '.llm-wiki', 'review.json')
+    const eventPath = join(projectRoot, '.llm-wiki', 'knowledge-events.jsonl')
+    const archiveRoot = join(projectRoot, 'jiuzhang-tarballs', 'archive')
+    const candidatePath = '_candidates/ingest/concepts/loader-archive-conflict.md'
+    const candidateFile = join(wikiRoot, candidatePath)
+    const recreated = 'Third-party candidate bytes written after the Archive deletion.\n'
+    const calls: ExternalBoundaryCalls = { verifier: 0, credentials: 0, llm: 0 }
+    let checkpoints = 0
+    const authority: KnowledgeWikiVerifierAuthority = {
+      ...verifierAuthority(),
+      checkpointPromotion(payload, checkpoint) {
+        if (checkpoint.phase !== 'tombstone-unlinked' || checkpoint.operationIndex !== 3) return
+        const journal = JSON.parse(payload) as { operations: Array<{ role: string; path: string }> }
+        const candidate = journal.operations.find(operation => operation.role === 'candidate')
+        expect(candidate?.path).toBe(candidateFile)
+        writeFileSync(candidateFile, recreated, { flag: 'wx' })
+        checkpoints++
+        throw new Error('fixture Archive checkpoint failure')
+      },
+    }
+    mkdirSync(wikiRoot, { recursive: true })
+    const ctx = await boot(projectRoot, calls, authority)
+    const service = ctx.get('knowledgeWiki') as KnowledgeWikiService
+    const sourcePath = 'raw/evidence/loader-generic-check.md'
+    mkdirSync(dirname(join(projectRoot, sourcePath)), { recursive: true })
+    writeFileSync(join(projectRoot, sourcePath), 'Fixture source for an Archive rollback conflict.\n')
+    expect(await service.writePage({ path: candidatePath, content: CANDIDATE_BYTES })).toMatchObject({ ok: true })
+    expect(appendCandidateReviews(reviewFile, projectRoot, sourcePath, [`wiki/${candidatePath}`])).toBe(1)
+    const review = (await service.reviews({ status: 'unresolved' })).find(item => item.candidatePath === candidatePath)!
+    expect(review).toBeDefined()
+    const reviewBefore = readFileSync(reviewFile)
+    const eventsBefore = readFileSync(eventPath)
+    const governanceFile = join(projectRoot, '.llm-wiki', 'governance.jsonl')
+    expect(existsSync(governanceFile)).toBe(false)
+
+    const resolution = service.resolveReview({ reviewId: review.id, action: 'Archive' })
+    await expect(resolution).rejects.toThrow('rollback was incomplete')
+    await expect(resolution).rejects.toMatchObject({
+      errors: [
+        { message: 'fixture Archive checkpoint failure' },
+        { message: `promotion rollback conflict at ${candidateFile}` },
+      ],
+    })
+    expect(checkpoints).toBe(1)
+    expect(readFileSync(candidateFile, 'utf8')).toBe(recreated)
+    expect(readFileSync(reviewFile)).toEqual(reviewBefore)
+    expect(readFileSync(eventPath)).toEqual(eventsBefore)
+    expect(existsSync(governanceFile)).toBe(false)
+    const journalDirectory = join(projectRoot, '.llm-wiki', 'promotion-journal')
+    const journals = readdirSync(journalDirectory)
+    expect(journals).toHaveLength(1)
+    const journal = JSON.parse(readFileSync(join(journalDirectory, journals[0]!), 'utf8')) as {
+      state: string
+      action: string
+      operations: Array<{ role: string; path: string }>
+    }
+    expect(journal).toMatchObject({ state: 'prepared', action: 'Archive' })
+    const archived = journal.operations.find(operation => operation.role === 'candidate-archive')!
+    expect(archived).toBeDefined()
+    expect(existsSync(archived.path)).toBe(false)
+    expect(readKnowledgeEventLog(eventPath, verifierAuthority()).filter(event =>
+      event.type === 'knowledge/rejected' || event.type === 'knowledge/rolled_back'))
+      .toHaveLength(0)
+
+    const retainedState = () => [wikiRoot, dirname(reviewFile), archiveRoot].map(directory => ({
+      directory,
+      entries: readdirSync(directory, { recursive: true, withFileTypes: true }).map((entry) => {
+        const path = join(entry.parentPath, entry.name)
+        return {
+          path: relative(directory, path), directory: entry.isDirectory(),
+          content: entry.isFile() ? readFileSync(path) : undefined,
+        }
+      }).sort((left, right) => left.path.localeCompare(right.path)),
+    }))
+    expect(retainedState()[2]!.entries.every(entry => entry.directory)).toBe(true)
+    await ctx.fiber.dispose()
+    const beforeCold = retainedState()
+    const coldBoot = boot(projectRoot, calls)
+    await expect(coldBoot).rejects.toThrow('failed to apply loader entry')
+    await expect(coldBoot).rejects.toThrow('@deepseek-ai/dsh-knowledge-wiki')
+    await expect(coldBoot).rejects.toThrow('promotion journal divergent state')
+    expect(retainedState()).toEqual(beforeCold)
+    expect(calls).toEqual({ verifier: 0, credentials: 0, llm: 0 })
   }, 30_000)
 })

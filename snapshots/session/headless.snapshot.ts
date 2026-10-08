@@ -40,6 +40,7 @@ import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke, resolveExampleLaunch } fr
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import { seedWikiSnapshot, assertWikiWorld } from '../../examples/headless-agent/tests/fixtures/knowledge-wiki/support.ts'
+import { seedArchiveRollbackSnapshot, assertArchiveRollbackWorld } from '../../examples/headless-agent/tests/fixtures/knowledge-wiki/archive-rollback-conflict.ts'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const snapshotsRoot = fileURLToPath(new URL('./', import.meta.url))
@@ -360,6 +361,7 @@ async function seedWorkspace(scenario: HeadlessScenario, cwd: string): Promise<v
 
 const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
   async 'wiki-governance'(cwd) { seedWikiSnapshot(cwd) },
+  async 'wiki-archive-rollback-conflict'(cwd) { seedArchiveRollbackSnapshot(cwd) },
   async 'editing-cordis-skill'(cwd) {
     const target = join(cwd, '.dsh', 'skills', 'editing-cordis-compositions', 'SKILL.md')
     await mkdir(dirname(target), { recursive: true })
@@ -612,6 +614,8 @@ describe('headless recorded-session snapshots', () => {
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
       const spillRoot = snapshotSpillRoot(join(scenario.dir, 'session.jsonl'))
+      const archiveRollbackConflict = scenario.manifest.workspace?.setup === 'wiki-archive-rollback-conflict'
+      const ownedWikiWorld = scenario.manifest.workspace?.setup === 'wiki-governance' || archiveRollbackConflict
       await rm(spillRoot, { recursive: true, force: true })
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
       try {
@@ -658,15 +662,16 @@ describe('headless recorded-session snapshots', () => {
             await seedWorkspace(scenario, cwd)
             initialWorkspace = await captureWorkspaceSnapshot(cwd, {
               // Raw Wiki-owned state is authenticated by its named lifecycle oracle.
-              ignoredRootEntries: scenario.manifest.workspace?.setup === 'wiki-governance'
+              ignoredRootEntries: ownedWikiWorld
                 ? [...RUNTIME_WORKSPACE_ENTRIES, '.llm-wiki', 'jiuzhang-tarballs', 'wiki']
                 : RUNTIME_WORKSPACE_ENTRIES,
             })
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
-            if (scenario.manifest.workspace?.setup === 'wiki-governance') {
-              assertWikiWorld(cwd)
+            if (ownedWikiWorld) {
+              const assertWorld = archiveRollbackConflict ? assertArchiveRollbackWorld : assertWikiWorld
+              assertWorld(cwd)
               const coldPatch = materializeProfilePatch(
                 join(composition.dir, 'cold.cordis.yml'), cwd, join(cwd, patchRoot), patches.length, dshBin,
               )
@@ -683,20 +688,25 @@ describe('headless recorded-session snapshots', () => {
               const cold = spawnSync(coldLaunch.command, coldLaunch.args, {
                 cwd, env: { ...process.env, ...coldLaunch.env }, timeout: 30_000, encoding: 'utf8',
               })
-              expect(cold.error, `wiki-governance cold process: ${cold.stderr}`).toBeUndefined()
-              expect(cold.signal, `wiki-governance cold process: ${cold.stderr}`).toBeNull()
-              expect(cold.status, `wiki-governance cold process: ${cold.stderr}`).toBe(0)
+              expect(cold.error, `${scenario.name} cold process: ${cold.stderr}`).toBeUndefined()
+              expect(cold.signal, `${scenario.name} cold process: ${cold.stderr}`).toBeNull()
+              expect(cold.status, `${scenario.name} cold process: ${cold.stderr}`).toBe(archiveRollbackConflict ? 1 : 0)
               expect(cold.stdout).toBe('')
-              expect(cold.stderr).toBe('')
-              assertWikiWorld(cwd)
-              expect(JSON.parse(await readFile(join(cwd, '.dsh/wiki-snapshot-cold.json'), 'utf8'))).toMatchObject({
-                actualColdResume: true, durablePrefixEqual: true, modelMessagesEqual: true,
-                injectionCount: 1, archiveTerminalEvents: 1, successfulUses: 0, utilityScore: 0,
-              })
+              assertWorld(cwd)
+              if (archiveRollbackConflict) {
+                expect(cold.stderr).toContain('dsh: plugin tree failed to load: failed to apply loader entry knowledge-wiki (@deepseek-ai/dsh-knowledge-wiki):')
+                expect(cold.stderr).toContain(`promotion journal divergent state at ${join(await realpath(cwd), 'wiki/_candidates/ingest/concepts/archive-rollback-conflict.md')}`)
+              } else {
+                expect(cold.stderr).toBe('')
+                expect(JSON.parse(await readFile(join(cwd, '.dsh/wiki-snapshot-cold.json'), 'utf8'))).toMatchObject({
+                  actualColdResume: true, durablePrefixEqual: true, modelMessagesEqual: true,
+                  injectionCount: 1, archiveTerminalEvents: 1, successfulUses: 0, utilityScore: 0,
+                })
+              }
             }
             finalWorkspace = await captureWorkspaceSnapshot(cwd, {
               // Raw Wiki-owned state is authenticated by its named lifecycle oracle.
-              ignoredRootEntries: scenario.manifest.workspace?.setup === 'wiki-governance'
+              ignoredRootEntries: ownedWikiWorld
                 ? [...RUNTIME_WORKSPACE_ENTRIES, '.llm-wiki', 'jiuzhang-tarballs', 'wiki']
                 : RUNTIME_WORKSPACE_ENTRIES,
             })
@@ -731,6 +741,24 @@ describe('headless recorded-session snapshots', () => {
       expect(result.stderr).toBe(expectedStderr)
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
       const actualContext = contextOf(actualLogs.map(log => log.content))
+      if (archiveRollbackConflict) {
+        const durable = parseSessionLog(actualLogs[0]!.content)
+        const results = durable.filter(event => event.type === 'tool/result')
+          .flatMap(event => event.data.message.content).filter(block => block.type === 'tool-result')
+        expect(results.map(result => [result.isError, result.content])).toEqual([
+          [false, [{ type: 'text', text: 'No unresolved review items are visible to this session.' }]],
+          [true, [{ type: 'text', text: 'Error: knowledge page is not verified for this scope' }]],
+        ])
+        const retrieved = durable.filter(event => event.type === 'knowledge/retrieved')
+        const injected = durable.filter(event => event.type === 'knowledge/injected')
+        expect(retrieved.map(event => [event.data.tool, event.data.callId, event.data.path, event.data.value])).toEqual([
+          ['wiki_reviews', 'call_wiki_reviews_1', 'reviews', { reviews: [] }],
+        ])
+        expect(injected.map(event => [event.data.tool, event.data.callId, event.data.path, event.data.value])).toEqual([
+          ['wiki_reviews', 'call_wiki_reviews_1', 'tool:wiki_reviews', results[0]!.content],
+        ])
+        expect(JSON.stringify(results)).not.toContain('Third-party candidate bytes written after the Archive deletion.')
+      }
       if (scenario.name === 'tool-output-unicode' || scenario.name === 'subprocess-spill-open-failure') {
         const results = parseSessionLog(actualLogs[0]!.content)
           .filter(event => event.type === 'tool/result')
@@ -765,6 +793,7 @@ describe('headless recorded-session snapshots', () => {
         expect(finalWorkspace, `${scenario.name}: a changed workspace requires workspace.final`).toEqual(initialWorkspace)
       }
     }, scenario.manifest.workspace?.setup === 'wiki-governance'
+      || scenario.manifest.workspace?.setup === 'wiki-archive-rollback-conflict'
       ? 2 * LOADER_SMOKE_TEST_TIMEOUT_MS : LOADER_SMOKE_TEST_TIMEOUT_MS)
   }
 })

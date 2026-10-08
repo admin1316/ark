@@ -18,6 +18,8 @@ active Ark 源码已经保存 Wiki candidate、评审、verifier receipt 与 uti
 
 Candidate identity 包含路径和内容 hash。字节变化会创建独立的评审 revision；再次观察相同字节不能重开已解决的评审，也不能覆盖已经认证的 identity。
 
+删除回滚只在路径仍不存在时恢复原候选，或接受已经恢复的精确原始状态。其他写入重新创建的不同字节会触发冲突，prepared journal 保留供检查；回滚不能覆盖其他写入者的内容。恢复在修改前验证同一 before/after 关系。
+
 checkout 包含隔离的 [knowledge-search shadow crate](../../../../rust/knowledge-search-shadow/README.zh.md) 与默认关闭的 TypeScript child boundary。搜索 authority、图谱派生、session 持久化和 subprocess 管理继续由 TypeScript 或已有 native owner 负责；没有 receipt 授权 Rust enforce。Rust candidate matrix 要求三组对照、差分回放、取消、恢复、打包和平台证据通过后才允许 enforce。[源码清点](../process/2026-10-08-function-language-census.zh.md) 区分声明覆盖与功能、性能验证。
 
 学习结论使用相同 model、配置、task、goal 和 policy hash 的 baseline/candidate 配对结果。缺少机会或独立验证时返回 `UNKNOWN`；知识条数、模型调用次数或 Rust 行数不能证明改进。
@@ -37,3 +39,5 @@ Wiki 事件日志可审计、可回放。prepared canonical journal 会阻止初
 无需密钥的 headless 场景通过普通 runtime 子进程运行完整 Wiki 工具组合与冷 session 回放。源码 service 通过 tsconfig paths 解析，构建后的 service 通过 package exports 解析。源码拥有的 Archive、seed 和 verifier fixture producer 与这些 service 分开。稳定 transcript 捕获与受认证的可变 Wiki 状态断言分开；fixture seal 不授权当前 canonical 晋级。`examples` 作为已声明的 workspace，使构建后的依赖通过普通安装解析，不使用临时 resolver link。
 
 测试 authority 只验证确定性的认证与拒绝行为。独立评估者密钥分离、原生配置、实际 trial 收益与真实 provider 的配对学习证据仍未验证；验证结果通过和 UI 反馈不能证明修复规则被正确复用。
+
+真实 Archive 子进程与 YAML Loader 回归在删除后重新创建候选并中断事务，验证被拒绝的回滚和后续恢复保留这些字节及 prepared journal，不产生完成事件。完整 headless transcript 记录作用域内的空 review 结果和被拒绝的页面读取；冷 CLI 进程带着实际的 divergent-state 错误退出。这些检查覆盖进程中断，不证明 rename 或 unlink 在断电时的持久性。

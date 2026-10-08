@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-基于已组合的 `knowledgeWiki` 服务提供面向模型的知识库工具。本插件通过共享工具注册表注册 `wiki_search`、`wiki_files`、`wiki_read`、`wiki_graph`、`wiki_reviews` 和 `wiki_ingest`，并延迟解析该服务，因此知识库 provider 尚未出现时插件也可以加载。本包不增加 MCP bridge 或桌面 UI。
+基于已组合的 `knowledgeWiki` 服务提供面向模型的知识库工具。本插件通过共享工具注册表注册 `wiki_search`、`wiki_files`、`wiki_read`、`wiki_graph`、`wiki_reviews`、`wiki_verify_candidate` 和 `wiki_ingest`，并延迟解析该服务，因此知识库 provider 尚未出现时插件也可以加载。本包不增加 MCP bridge 或桌面 UI。
 
 ## 目录
 
@@ -24,12 +24,12 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-模型会看到六类工具面：搜索、文件列表、页面读取、图谱检查、未解决审查项列表和来源摄取。本包还安装以下 prompt guidance：
+模型会看到七类工具面：搜索、文件列表、页面读取、图谱检查、未解决审查项列表、候选验证和来源摄取。审查结果仅包含调用 session 可见的元数据。空结果显示 `No unresolved review items are visible to this session.`，不能据此认证项目的所有审查项均已解决。候选验证报告 verifier 结果，不晋级知识，也不证明任务中的成功使用。本包还安装以下 prompt guidance：
 
 ##### Knowledge Wiki prompt guidance
 
 ```markdown
-Use wiki_search to find knowledge-base pages, wiki_read to read one page, wiki_files to list pages, wiki_graph to inspect the knowledge graph, and wiki_reviews to check pending review items. Cite pages by their wiki path.
+Use wiki_search to find knowledge-base pages, wiki_read to read one Wiki-root-relative page, wiki_files to list canonical pages, wiki_graph to inspect the graph, wiki_reviews to inspect governance, wiki_verify_candidate to run the trusted verifier, and wiki_ingest to enqueue source work. Cite pages by their Wiki-root-relative path.
 ```
 
 #### Token 影响
@@ -44,7 +44,7 @@ Use wiki_search to find knowledge-base pages, wiki_read to read one page, wiki_f
 ## 已知限制与暂缓事项
 
 - 组合中没有 `knowledgeWiki` 服务时，调用会以 `knowledgeWiki service unavailable` 失败；本插件不会创建备用存储。
-- `wiki_ingest` 接受项目相对来源路径或 `http(s)` URL，并已注册到工具面，但当前安装的 prompt guidance 只点名了其他五个工具。
+- 候选验证要求已组合的 trusted verifier authority；缺少该 authority 时返回明确的不可用结果。
 
 <a id="dev-note"></a>
 ### 开发备注

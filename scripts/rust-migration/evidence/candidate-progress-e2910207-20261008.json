@@ -1,0 +1,291 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-08T13:30:51.924472+00:00",
+  "status": "SOURCE_CONTRACT_VERIFIED_CANDIDATE_ACTIVATION_AND_LEARNING_UNKNOWN",
+  "sourceSnapshot": {
+    "parentGitSha": "e29102076f71099fbba4019aeb9a91b35c377c03",
+    "dirty": true,
+    "fileHashes": {
+      "packages/host/knowledge-wiki/src/reviews.ts": "ff349006d1a56690b9abc5884f59866213bbe5422be2f54f5c4d9d1711b5739f",
+      "packages/host/knowledge-wiki-tools/src/index.ts": "02de5417c67d40cb750679eb8ff0769ebdcb3272b78dbc5ac9504c692da2fd4e",
+      "packages/host/knowledge-wiki/tests/fixtures/promotion-crash-worker.ts": "a08b8a7bc2c21d1d4cfb93a669f8555416de44f2e67313d9cfbf897648e72638",
+      "packages/host/knowledge-wiki/tests/promotion-crash-phases.spec.ts": "a3df9c6740288b6048b2f3217c5c10eb9e728b4f6ca5918ada9374b0c936986d",
+      "packages/host/knowledge-wiki/tests/loader-composition.spec.ts": "4192c78f477703452d15ae9a6270ee28abd6498f4566580d0aef298a434ee154",
+      "packages/host/knowledge-wiki-tools/tests/tools.spec.ts": "5b964fc253e960534d4bf3bb00a5eb90ac80abc633bc363e508ab1434ba44522",
+      "examples/headless-agent/tests/fixtures/knowledge-wiki/authority.ts": "e7e0cdd5917e7a46eb137c2ed583ee982d2d3e38c867ccb2dae0172520179922",
+      "examples/headless-agent/tests/fixtures/knowledge-wiki/archive-rollback-conflict.ts": "af96183eb1776e251c0c3559dbfe824b585c39922dc8fddd1f7bc430cd4530bf",
+      "snapshots/session/headless.snapshot.ts": "3a8c60f595eb58e6e1423c82edfc640994746db27ba49a211b7f2087976156f6"
+    }
+  },
+  "profile": "jiuzhang",
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "repairedRelations": [
+    "After exact before-state acceptance, rollback requires exact operation.after even for deletion; divergent recreated candidate bytes cannot be overwritten.",
+    "Incomplete Archive rollback leaves a prepared authenticated journal and no rejection/rollback completion event; cold recovery rejects divergent state without changing the complete owned Wiki world.",
+    "Empty wiki_reviews output describes only metadata visible to the calling session; ordinary page reads retain scope and verification denial."
+  ],
+  "relatedRegressionExecution": {
+    "path": "/private/tmp/ark-rollback-divergence-e2910207-20261008.Rp1Nbc/execution-receipt.json",
+    "sha256": "aeae618a8db49d81849fe8367ac63641d805e88dc515f79078c619562b090b91",
+    "bytes": 4012
+  },
+  "relatedRegressionResult": {
+    "baselineActualExitCode": 1,
+    "fourFilesActualExitCode": 0,
+    "fourFilesTestsPassed": 92,
+    "laterAmbientFixtureActualExitCode": 0,
+    "laterAmbientFixtureTestsPassed": 18,
+    "evidenceClass": "Historical tool-output excerpts and one serialized actual response; not original raw process logs."
+  },
+  "rootToolsRegression": {
+    "command": "pnpm exec vitest run packages/host/knowledge-wiki-tools/tests/tools.spec.ts",
+    "actualExitCode": 0,
+    "filesPassed": 1,
+    "testsPassed": 16,
+    "execSessionId": 27986,
+    "finalChunkId": "1fd8a3",
+    "evidenceClass": "Root actual tool response; no raw process log file claimed."
+  },
+  "assembledSourceExecution": {
+    "path": "/private/tmp/wiki-archive-rollback-source-evidence-v3-20261008.json",
+    "sha256": "cc1d8e9458e8e14ed9ddb973d9ce84a39d69306e0ff27f8e108e91f0de64dc58",
+    "bytes": 7262
+  },
+  "assembledSourceResults": {
+    "refreshActualExitCode": 0,
+    "refreshCasesPassed": 1,
+    "replayActualExitCode": 0,
+    "replayCasesPassed": 4,
+    "loaderFinalActualExitCode": 0,
+    "loaderFinalTestsPassed": 2,
+    "modelProviderCalls": 0,
+    "fixtureAuthority": "Deterministic test authority and canned assistant replay only; no independently measured use or utility."
+  },
+  "hostBuildAndFullLint": {
+    "command": "pnpm run lint",
+    "actualExitCode": 0,
+    "log": {
+      "path": "/private/tmp/ark-rollback-validation-e2910207-20261008-566m8lvi/lint-after-fixture-contract-style-fix.log",
+      "sha256": "bb5e6362eba5e5cb06b5604701af64a0857b26ec604495705382c876b9efc350",
+      "bytes": 143636
+    },
+    "repository": "/Users/hui/ark-test/ark-github-main-20261008",
+    "reason": "fixture contract/style issues repaired after actual host-build-pass/lint-exit1"
+  },
+  "retainedRootLintFailures": [
+    {
+      "command": "pnpm run lint",
+      "actualExitCode": 2,
+      "log": {
+        "path": "/private/tmp/ark-rollback-validation-e2910207-20261008-566m8lvi/lint.log",
+        "sha256": "760f73add8eb091218f584206a87837a424945eed63e8665e268068d9111faec",
+        "bytes": 510
+      },
+      "repository": "/Users/hui/ark-test/ark-github-main-20261008"
+    },
+    {
+      "command": "pnpm run lint",
+      "actualExitCode": 1,
+      "log": {
+        "path": "/private/tmp/ark-rollback-validation-e2910207-20261008-566m8lvi/lint-after-fixture-type-fix.log",
+        "sha256": "233444a88ef7a9ae19abd01693f243910d15175667a2d37c6bdd492076d09e4d",
+        "bytes": 146595
+      },
+      "repository": "/Users/hui/ark-test/ark-github-main-20261008",
+      "reason": "new fixture callback contextual types repaired after actual exit2"
+    }
+  ],
+  "assembledBuiltResults": {
+    "command": "DSH_EXAMPLE_MODE=lib pnpm exec vitest run --config vitest.snapshot.config.ts snapshots/session/headless.snapshot.ts -t 'wiki-(governance|archive-rollback-conflict)|gives every composition|stores session-owned'",
+    "actualExitCode": 0,
+    "casesPassed": 4,
+    "casesSkipped": 77,
+    "log": {
+      "path": "/private/tmp/wiki-archive-rollback-built-replay-20261008.log",
+      "sha256": "2de59c12cc5db997635d182376362487b51032bd5825c134c5e9d5777c83daf2",
+      "bytes": 472
+    },
+    "modelProviderCalls": 0,
+    "registryRemovalIndependentlyAsserted": false,
+    "scope": "Actual built package exports, two headless Wiki lanes, transcript metadata/redaction and cold processes; fixture authors do not certify learning."
+  },
+  "candidate315Preparation": {
+    "secretFreeHomeReceipt": {
+      "path": "/private/tmp/ark-candidate315-secret-free-home-preparation-b89b8637ff7c.json",
+      "sha256": "93df238c6bc89e8fe7952c687d8d9ae57e3cf292142c352b565e5e7cdfe8a1cf",
+      "bytes": 1397
+    },
+    "staticBridgeReview": {
+      "path": "/private/tmp/ark-candidate315-offline-stage-static-review-20261008.json",
+      "sha256": "d554ae4cc83fab44b4d3b5fd41e746e4e011de21b1e1d306aadb4f2c22ef2959",
+      "bytes": 13790
+    },
+    "staticBridgeActualExitCode": 0,
+    "staticBridgeExecSessionId": 34386,
+    "credentialReads": 0,
+    "credentialWrites": 0,
+    "modelCalls": 0,
+    "appLaunches": 0,
+    "signedTargetSourceCommit": "93040bb55cac3a0cfa1c928fb17bad351ed20a97",
+    "selectedModel": {
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "reasoningEffort": "max"
+    },
+    "effectiveModelConfigHash": "6a043c6bde73c4347d2f44912e356f0671e4b1b4a8b1ac0ec6d81b23163c2b2a",
+    "actualBridgeExecution": false,
+    "slotSwapPerformed": false,
+    "targetLaunched": false,
+    "requiresUserNormalQuitAction": true,
+    "userQuitCompletionReceived": false,
+    "draftFlushVerified": false
+  },
+  "oldCandidateReadOnlyBaseline": {
+    "receipt": {
+      "path": "/private/tmp/ark-current75-queue-baseline-before-315-20261008.json",
+      "sha256": "8b650a08cce5e7c03aa4cc6d0d259588ffb6de88c30d9bdd86940a2d915fcea7",
+      "bytes": 5151
+    },
+    "actualExitCode": 0,
+    "execSessionId": 58277,
+    "observedAt": "2026-10-08T13:03:42.613622+00:00",
+    "originalCompletedAtRead": true,
+    "readyForNormalShutdownAtRead": true,
+    "continuousObservation": false,
+    "streamsClosedAfterCompleteBaseline": true,
+    "currentReadinessClaimed": false,
+    "detachedDurableInboxInspected": false,
+    "apiWrites": 0,
+    "providerKeyReads": 0
+  },
+  "revisedLearningProtocol": {
+    "index": {
+      "path": "/private/tmp/ark-learning-protocol-reviewed-e2910207-20261008.dfvdp83c/index.json",
+      "sha256": "b334ea53bbfcb3c70bd71985346f613ffb157289d1986075c72cf78ea3b6c53e",
+      "bytes": 1910
+    },
+    "rootReview": {
+      "path": "/private/tmp/ark-learning-protocol-root-review-e2910207-wcfydf9g.json",
+      "sha256": "f086ac513e61fd3b83ede720cf1cee8f0cc68909fd6e6aeadeb41fd187145419",
+      "bytes": 2380
+    },
+    "globalStateVersion": 1,
+    "originalDraftRetained": true,
+    "originalManifestRetained": true,
+    "successorBaselineInstalled": false,
+    "implemented": false,
+    "unresolvedPolicyIds": [
+      "target-record-policy",
+      "local-role-archive-v1-bridge",
+      "post-publication-directory-durability"
+    ],
+    "externalEvaluatorCustody": "UNAVAILABLE",
+    "actualTrialGrant": "UNAVAILABLE"
+  },
+  "documentationValidation": {
+    "status": "PASS",
+    "gatesPassed": 30,
+    "gatesFailed": 0,
+    "gatesSkipped": 0,
+    "command": "pnpm run doc-sync",
+    "actualExitCode": 0,
+    "log": {
+      "path": "/private/tmp/ark-rollback-validation-e2910207-20261008-566m8lvi/doc-sync.log",
+      "sha256": "ee2dee607094053b470720b5bf2a954929ab9b10e122d84fb11180351b758b5c",
+      "bytes": 2535
+    },
+    "repository": "/Users/hui/ark-test/ark-github-main-20261008"
+  },
+  "limits": {
+    "latestWholeRepositoryCoverage": "NOT_RUN",
+    "historical930WikiCoverageGate": "FAIL_RETAINED",
+    "live75ContainsThisPatch": false,
+    "hidden315ContainsThisPatch": false,
+    "actual315Task": "NOT_RUN",
+    "nativeUIParity": "UNKNOWN",
+    "candidateRollbackBehavior": "UNKNOWN",
+    "independentRepairReuseAndUtilityLift": "UNKNOWN",
+    "currentSourceBoundGithubCI": "UNKNOWN",
+    "powerLossDurability": "UNKNOWN_KNOWN_DIRECTORY_FSYNC_GAP",
+    "formalAppReplaced": false,
+    "newRustEnforcement": false,
+    "runtimeDecision": "RETAIN_TS",
+    "publicationPerformed": false
+  },
+  "assembledFinalExecution": {
+    "path": "/private/tmp/wiki-archive-rollback-final-evidence-20261008.json",
+    "sha256": "1283dc988bdfa8cb8a050ce73df6bfe18261d39516eaa05b7ce49edad67c40af",
+    "bytes": 11998
+  },
+  "sourceBuiltOwnerPins": [
+    {
+      "owner": "rollback-product-source",
+      "path": "packages/host/knowledge-wiki/src/reviews.ts",
+      "sha256": "ff349006d1a56690b9abc5884f59866213bbe5422be2f54f5c4d9d1711b5739f",
+      "bytes": 59245
+    },
+    {
+      "owner": "review-text-product-source",
+      "path": "packages/host/knowledge-wiki-tools/src/index.ts",
+      "sha256": "02de5417c67d40cb750679eb8ff0769ebdcb3272b78dbc5ac9504c692da2fd4e",
+      "bytes": 25207
+    },
+    {
+      "owner": "shipped-built-cli",
+      "path": "apps/cli/lib/bin.js",
+      "sha256": "5d4bc43dccde4d9af361ac1763125d09b0737ae477e3970d18853e7063cf3e5a",
+      "bytes": 7675
+    },
+    {
+      "owner": "built-Wiki-service",
+      "path": "packages/host/knowledge-wiki/lib/index.js",
+      "sha256": "7b51aa7c17dc301dc687969b1987abcfc29e4c96d20b6e34defb1d2878b6cc1d",
+      "bytes": 334459
+    },
+    {
+      "owner": "built-Wiki-tools",
+      "path": "packages/host/knowledge-wiki-tools/lib/index.js",
+      "sha256": "960fb3571f50944cd6e48d8140be267745458fa68f131cb9895403d509a9cb38",
+      "bytes": 20270
+    },
+    {
+      "owner": "built-keyless-replay-provider",
+      "path": "packages/test-support/llm-replay/lib/index.js",
+      "sha256": "5190fa3b46a1e396da0c33137619b6edd48ebfb2b6fa3821846bea41e0fb2db0",
+      "bytes": 28922
+    }
+  ],
+  "metadataCorrection": {
+    "field": "assembledBuiltResults.command",
+    "draftLabel": "DSH_EXAMPLE_MODE=built",
+    "actualExecutedMode": "DSH_EXAMPLE_MODE=lib",
+    "reason": "Initial root metadata inferred mode label; final actual agent execution receipt supplies the exact command. No command with the draft label is claimed executed."
+  },
+  "restoredUnrelatedFixtureCount": 63,
+  "latestNativeUIObservation": {
+    "observedAt": "2026-10-08T13:34:04.228220+00:00",
+    "evidenceClass": "Actual root CUA and process tool responses; no raw screenshot or process-log file claimed.",
+    "inventoryIdentifiesRunningBundle": "cn.jiuzhangtianmu.industrybrain.candidate.bfc91e3e6252e4f7",
+    "getAppByActualBundle": "Invalid app",
+    "getAppByFixedSlotPath": "Running application not found: cn.jiuzhangtianmu.industrybrain.candidate.a844276f149a3b5a",
+    "actualOwnedProcessIds": [
+      83252,
+      83253,
+      83274
+    ],
+    "processArgumentsRead": false,
+    "uiInputPerformed": false,
+    "nativeViewportVerified": false,
+    "normalQuitCompletionVerified": false
+  }
+}

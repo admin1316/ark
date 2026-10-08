@@ -43,8 +43,15 @@ const rollbackCheckpoint = checkpointId.startsWith('rollback:') ? checkpointId.s
 const authority: KnowledgeWikiVerifierAuthority = {
   ...verifierAuthority('pass', checkpointId),
   ...(rollbackCheckpoint === undefined ? {} : {
-    checkpointPromotion(_payload, checkpoint) {
+    checkpointPromotion(payload, checkpoint) {
       if (`${checkpoint.phase}:${checkpoint.operationIndex}` === rollbackCheckpoint) {
+        const recreatedCandidate = process.env.WIKI_RECREATED_CANDIDATE
+        if (recreatedCandidate !== undefined) {
+          const journal = JSON.parse(payload) as { operations: Array<{ role: string; path: string }> }
+          const candidate = journal.operations.find(operation => operation.role === 'candidate')
+          if (candidate === undefined) throw new Error('fixture journal lacks candidate operation')
+          fs.writeFileSync(candidate.path, recreatedCandidate, { flag: 'wx' })
+        }
         throw new Error('fixture Archive checkpoint failure')
       }
     },

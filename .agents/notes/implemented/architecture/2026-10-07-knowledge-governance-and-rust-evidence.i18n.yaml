@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.md
-2026-10-07-knowledge-governance-and-rust-evidence.md: 20b895836a23fe69223c96bc6aa69aee65d9c696
-2026-10-07-knowledge-governance-and-rust-evidence.zh.md: c08dedbb2be3d32c32352c5d66b6351f009f8d5b
+2026-10-07-knowledge-governance-and-rust-evidence.md: ae988dc88e77514f93f164d9bd33856d63e6df48
+2026-10-07-knowledge-governance-and-rust-evidence.zh.md: 2528b00950a19dc6fefb616472d2a1977529ece6
