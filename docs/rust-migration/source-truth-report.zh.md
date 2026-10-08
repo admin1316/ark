@@ -51,4 +51,4 @@ The current working tree also adds a default-disabled Rust knowledge-search cand
 
 ## Automatic-run evidence
 
-The checked-out repository has no `project-manifest.json`, `progress.jsonl`, or `decision-log.md` at its root, so an automatic run cannot claim a loaded immutable goal/plan boundary or current benchmark/security evidence. `scripts/rust-migration/run-context.ts` now reports this as `missing-manifest` and refuses to invent state; creating and signing those project-owned artifacts is a remaining acceptance prerequisite.
+当前 checkout 已包含 `project-manifest.json`、`progress.jsonl`、`decision-log.md`、`security-report.md` 和 `rust-benchmark.json`。`scripts/rust-migration/run-context.ts` 会加载 `jiuzhang` profile、当前 Git SHA、immutable hashes 和已有证据，并明确列出缺少的 external verifier/native/candidate 凭据以及 active-profile utility 文件。manifest 只建立 immutable boundary，不会把缺失的行为证据变成 PASS；在可信签名 receipt 绑定当前源码、profile 和运行结果前，验收仍是 `UNKNOWN`。

@@ -51,4 +51,4 @@ The tree now also contains a launcher-owned external verifier adapter. It accept
 
 ## Automatic-run evidence
 
-The checked-out repository has no `project-manifest.json`, `progress.jsonl`, or `decision-log.md` at its root, so an automatic run cannot claim a loaded immutable goal/plan boundary or current benchmark/security evidence. `scripts/rust-migration/run-context.ts` now reports this as `missing-manifest` and refuses to invent state; creating and signing those project-owned artifacts is a remaining acceptance prerequisite.
+The checkout now contains a current `project-manifest.json`, `progress.jsonl`, `decision-log.md`, `security-report.md`, and `rust-benchmark.json`. `scripts/rust-migration/run-context.ts` loads the `jiuzhang` profile, current Git SHA, immutable hashes, and the available evidence, while explicitly listing the missing external verifier/native/candidate receipts and active-profile utility file. The manifest establishes the immutable boundary; it does not turn missing behavioral evidence into a pass, and the acceptance audit remains `UNKNOWN` until a trusted signed receipt binds current source, profile, and runtime outcomes.
