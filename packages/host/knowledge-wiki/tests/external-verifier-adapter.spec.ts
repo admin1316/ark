@@ -148,7 +148,7 @@ describe('external verifier adapter', () => {
     ]
     for (const [label, patch] of invalidIdentities) {
       expect(() => createExternalVerifierAuthority(authorityOptions(fixture, {
-        sourceIdentity: { ...sourceIdentity, ...patch } as typeof sourceIdentity,
+        sourceIdentity: { ...sourceIdentity, ...patch },
       })), label).toThrow('source identity')
     }
 
@@ -256,7 +256,7 @@ setInterval(() => {}, 1000)
     }))
     const controller = new AbortController()
     const pending = authority.verifyCandidate(request, controller.signal)
-    setTimeout(() => controller.abort(), 25)
+    setTimeout(() => { controller.abort() }, 25)
     await expect(pending).rejects.toThrow('aborted')
 
     const ignoresTerm = verifierScript(fixture.result, `
