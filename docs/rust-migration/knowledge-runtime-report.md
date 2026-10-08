@@ -2,7 +2,7 @@
 
 English | [中文](knowledge-runtime-report.zh.md)
 
-**Audited snapshot:** the repaired source and clean Native build are bound to commit `75f8050d503f836bba1104c3972845f68f192e79` on 2026-10-08. Runtime observations identify their exact source and distinguish the isolated candidate from the formal bundle. Test/dependency changes after the build are separate; earlier app versions remain historical evidence.
+**Audited snapshot:** the repaired source and clean Native build are bound to commit `75f8050d503f836bba1104c3972845f68f192e79` on 2026-10-08. Runtime observations identify their exact source and distinguish the isolated candidate from the formal bundle. Source changes after the build are separate evidence; the signed75 app does not include the subsequent candidate-content recall repair. Earlier app versions remain historical evidence.
 
 The [formal profile byte comparison](../../scripts/rust-migration/profile-byte-drift.json) records source/formal-artifact drift. The [75 candidate build evidence](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) binds the isolated installed profile to source. Artifact equality and credential provisioning do not attest complete Native behavior or learning.
 
@@ -45,6 +45,8 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 8. **Historical visible real task at `b8adf5a7ec`** A replayed1857-event session records five real provider steps and seven tool carriers. Exact-rational reconciliation passed only after separately extracting a Markdown JSON fence; the original JSON-only requirement failed as `FAIL_FORMAT`. Project scaffolding existed before the task but was absent from the initial two-file preregistration, so the evidence cannot claim a complete unchanged world. One shell attempt failed under the read-only sandbox before retry. This task establishes no knowledge-learning, current75, or Rust-performance benefit.
 
 ## Drift and required follow-up
+
+A reproduced verified-candidate path passed the generic semantic admission decision before review or trial. The ordinary model page methods now require canonical lifecycle and authenticated bytes; candidate review metadata remains separately authenticated. This source repair does not provision trial access, create measured utility, or change the signed75 Native app.
 
 The focused admission audit identified unsigned verified bootstrap, unsigned prior-record substitution under a later seal, missing canonical byte binding, and page-ID/candidate-ID counter divergence. The source fixes enforce conservative admission, authenticated complete-record identity, exact-byte model projections, and journal-based governed utility. Deterministic regression fixtures cover these defects; they do not replace current-source Native UI or independent learning acceptance. The [governance decision](../../.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.md) owns those mechanisms.
 

@@ -813,8 +813,12 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     return knowledgeInjectionDecision(record, scope).allowed
   }
 
+  private modelRecallAllowed(record: KnowledgeRecord | undefined, scope: KnowledgeAccessContext): boolean {
+    return record?.lifecycle === 'canonical' && this.modelRecordAllowed(record, scope)
+  }
+
   private modelPageAllowed(record: KnowledgeRecord | undefined, scope: KnowledgeAccessContext, content: string): boolean {
-    return this.modelRecordAllowed(record, scope) && record?.contentHash === knowledgeSha256(content)
+    return this.modelRecallAllowed(record, scope) && record?.contentHash === knowledgeSha256(content)
   }
 
   private modelProvenance(record: KnowledgeRecord): KnowledgeModelProvenance {
@@ -898,7 +902,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   }
 
   /**
-   * Read one governed wiki page for a model request; unknown or unverified pages fail closed.
+   * Read authenticated canonical wiki bytes for a model request; other lifecycle states fail closed.
    * @param request - Wiki-relative page path to read.
    * @param scope - Session, project, and workspace scope used for access checks.
    * @returns Page content with the source provenance required by model consumers.
@@ -913,7 +917,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const safe = resolveSafePath(project.wikiRoot, request.path, false)
     const records = this.modelRecords(project.projectRoot)
     const record = records.get(safe.relativePath)
-    if (!this.modelRecordAllowed(record, scope)) throw new Error('knowledge page is not verified for this scope')
+    if (!this.modelRecallAllowed(record, scope)) throw new Error('knowledge page is not verified for this scope')
     const content = readPage(project.wikiRoot, safe.relativePath)
     if (content === '') throw new Error('knowledge page not found')
     if (!this.modelPageAllowed(record, scope, content)) throw new Error('knowledge page bytes do not match verified content')
@@ -996,7 +1000,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       if (readTrustedVerification(this.verifierAuthority, this.reviewFile(project.projectRoot), project.wikiRoot,
         item, receiptId, verification.action) === undefined) return false
       const safe = resolveSafePath(project.wikiRoot, item.candidatePath, false)
-      return this.modelPageAllowed(record, scope, readPage(project.wikiRoot, safe.relativePath))
+      return record?.contentHash === knowledgeSha256(readPage(project.wikiRoot, safe.relativePath))
     }).slice(0, request.limit ?? 100)
     return filtered.map((item) => {
       if (item.reviewKind !== 'candidate') return item

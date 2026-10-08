@@ -194,6 +194,24 @@ describe('canonical Knowledge Wiki and model tools', () => {
       if (checked.candidatePath === undefined) throw new Error('queued candidate path missing')
       const candidateBefore = readFileSync(join(wikiRoot, checked.candidatePath), 'utf8')
       const reviewBefore = readFileSync(join(root, '.llm-wiki', 'review.json'), 'utf8')
+      const eventPath = join(root, '.llm-wiki', 'knowledge-events.jsonl')
+      const governanceBefore = readFileSync(eventPath)
+      const id = SessionId('wiki-verified-candidate-denied')
+      const session = Session.create(id, [], { version: 0, id, createdAt: Date.now(), cwd: root })
+      const candidateRead = await ctx.tools.execute({
+        signal: new AbortController().signal,
+        callId: CallId('wiki-verified-candidate-read'),
+        name: 'wiki_read',
+        arguments: { path: checked.candidatePath },
+        agent: { id, session } as unknown as Agent,
+      })
+      expect(candidateRead.isError).toBe(true)
+      expect(candidateRead.content).toEqual([{ type: 'text', text: 'Error: knowledge page is not verified for this scope' }])
+      expect(JSON.stringify(candidateRead)).not.toContain(candidateBefore)
+      expect(session.events.filter(event => event.type === 'knowledge/retrieved' || event.type === 'knowledge/injected')).toEqual([])
+      expect(readFileSync(eventPath)).toEqual(governanceBefore)
+      expect(readFileSync(join(wikiRoot, checked.candidatePath), 'utf8')).toBe(candidateBefore)
+      expect(readFileSync(join(root, '.llm-wiki', 'review.json'), 'utf8')).toBe(reviewBefore)
       await expect(service.resolveReview({ reviewId: review!.id, action: 'Promote' })).resolves.toBe(false)
       expect((await service.reviews({ status: 'unresolved' })).find(item => item.id === review!.id))
         .toMatchObject({ resolved: false })

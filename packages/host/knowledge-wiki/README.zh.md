@@ -75,7 +75,7 @@ kind: "package-reference"
 
 ### 受治理的页面读取
 
-模型 Wiki 投影要求已登记的项目、调用 session 和已配置的 verifier authority。未签名的 observation 与 candidate 保持低信任；verified 事件认证完整记录，包括正文、来源、scope、ACL 和过期时间。历史 canonical 接纳用 SHA-256 绑定实际页面字节。搜索与图谱在派生结果或发送 embedding 输入前检查可读字节；被修改或未绑定的页面会 fail closed。检索和结果事件使用已接纳的知识 ID，受治理的 utility 计数由日志回放得到。正面 UI 反馈仍被记录，但不增加成功使用次数或保留收益；纠正反馈降低 utility 并拒绝复用。
+模型 Wiki 投影要求已登记的项目、调用 session 和已配置的 verifier authority。未签名的 observation 与 candidate 保持低信任；verified 事件认证完整记录，包括正文、来源、scope、ACL 和过期时间。普通模型页面召回要求 canonical 生命周期和经过认证的实际字节；语义验证通过不能单独开放 candidate 正文。经过 receipt 和当前字节校验的 candidate 评审元数据仍可查看，Native 预览与 Archive 保留原有规则。历史 canonical 接纳用 SHA-256 绑定实际页面字节。搜索与图谱在派生结果或发送 embedding 输入前检查可读字节；被修改或未绑定的页面会 fail closed。检索和结果事件使用已接纳的知识 ID，受治理的 utility 计数由日志回放得到。正面 UI 反馈仍被记录，但不增加成功使用次数或保留收益；纠正反馈降低 utility 并拒绝复用。
 
 语义验证保留经过认证的检查结果，不生成 trial。当前 receipt 契约无法认证实测 trial 收益，因此 Promote、Merge、Replace 与 Deduplicate 在写入前拒绝；对应的 prepared WAL 也拒绝前向恢复。prepared canonical WAL 因而会阻止初始化或项目切换恢复，同时保留证据且不认证完成。Archive、Skip 与 rollback 保留原有规则。
 

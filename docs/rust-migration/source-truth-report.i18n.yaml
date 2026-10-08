@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/rust-migration/source-truth-report.md
-source-truth-report.md: 9b572cc0f3a3a78387efcb58d23e7da6ae886329
-source-truth-report.zh.md: 9e4e2d84fe5b477e902d44c37fe5f36f5d810f60
+source-truth-report.md: e64963f898182ab3374d443ddc43440ec82b76cc
+source-truth-report.zh.md: 2173de232f86a7bca78bde9bf59ee18947097732

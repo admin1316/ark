@@ -2,7 +2,7 @@
 
 [English](knowledge-runtime-report.md) | 中文
 
-**已审计快照：** 修复后的源码和干净 Native 构建绑定提交 `75f8050d503f836bba1104c3972845f68f192e79`，审计日期为 2026-10-08。运行观察注明确切源码，并区分隔离候选与正式包。构建后的测试和依赖修改单独记录；旧 app 版本保留为历史证据。
+**已审计快照：** 修复后的源码和干净 Native 构建绑定提交 `75f8050d503f836bba1104c3972845f68f192e79`，审计日期为 2026-10-08。运行观察注明确切源码，并区分隔离候选与正式包。构建后的源码修改单独记录；已签名75 app 不包含后续 candidate 正文召回修复。旧 app 版本保留为历史证据。
 
 [正式 profile 字节比较](../../scripts/rust-migration/profile-byte-drift.json) 记录源码与正式产物的 drift。[75候选构建证据](../../scripts/rust-migration/evidence/candidate-native-build-75f8050d.json) 将隔离 home 的安装 profile 绑定到源码。产物相同与凭据复用不能认证完整 Native 行为或学习效果。
 
@@ -45,6 +45,8 @@ The old auto-sediment module contains reusable turn extraction/page builders, bu
 8. **`b8adf5a7ec` 的历史可见真实任务** 回放的1857个 session event 记录五个真实 provider step 和七个工具 carrier。仅在单独提取 Markdown JSON 围栏内容后，精确有理数对账通过；原始 JSON-only 要求以 `FAIL_FORMAT` 失败。项目脚手架在任务前已存在，但初始两文件预登记未包含它，因此不能宣称完整 world 未变。一条 shell 尝试在只读沙箱中失败后重试。此任务不能证明知识学习、当前75或 Rust 性能收益。
 
 ## Drift and required follow-up
+
+已复现的 verified candidate 路径在 review 和 trial 前通过了普通语义接纳判断。普通模型页面方法要求 canonical 生命周期和经过认证的字节；candidate 评审元数据单独认证。此源码修复不配置 trial 访问、不产生实测 utility，也不改变已签名75 Native app。
 
 接纳专项审计发现未签名内容可以直接成为 verified、后续 seal 会替先前未签名记录背书、canonical 字节没有绑定，以及 page-ID/candidate-ID 计数分离。源码修复强制保守接纳、认证完整记录 identity、检查模型投影实际字节，并从日志派生受治理 utility。确定性回归 fixture 覆盖这些缺陷，但不能替代当前源码 Native UI 或独立学习验收；机制由 [governance 决策](../../.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md) 负责。
 

@@ -4,7 +4,7 @@
 
 **Sources compared:** checked-out `integrations/jiuzhang/profile`, `packages/bundle/base/cordis.patch.yml`, `packages/bundle/native-api-app/cordis.patch.yml`, installed product `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang`, and packaged runtime `/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile`. Profile rows are loader patches; later rows replace a matched row's whole config.
 
-**已审计快照：** 源码与干净候选 profile 绑定提交 `75f8050d503f836bba1104c3972845f68f192e79`，审计日期为 2026-10-08。正式与隔离候选 home 保持分离；两份 profile 均未启用 Rust 搜索或独立 verifier authority。后续测试和依赖修改不会改变已签名候选身份。
+**已审计快照：** 源码与干净候选 profile 绑定提交 `75f8050d503f836bba1104c3972845f68f192e79`，审计日期为 2026-10-08。正式与隔离候选 home 保持分离；两份 profile 均未启用 Rust 搜索或独立 verifier authority。后续源码修改不会改变已签名候选身份；candidate 正文召回修复尚未安装到此 app。
 
 ## 源码 profile 配置与声明行为
 

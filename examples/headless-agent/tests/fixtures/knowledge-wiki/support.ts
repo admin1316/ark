@@ -238,6 +238,14 @@ async function prepareChecks(ctx: Context): Promise<void> {
   assert.equal(checked.verification?.status, 'passed')
   assert.equal(checked.verification?.trial, undefined)
   assert.deepEqual(checked.options?.map(option => option.action), ['Archive'])
+  const modelReviews = await wiki.modelReviews({}, {
+    projectId: root, workspaceId: root, sessionId: 'wiki-snapshot-review-inspection',
+  })
+  assert.equal(modelReviews.length, 1)
+  assert.equal(modelReviews[0]!.id, generic.id)
+  assert.equal(modelReviews[0]!.verification?.status, 'passed')
+  assert.equal(modelReviews[0]!.verification?.trial, undefined)
+  assert.equal(modelReviews[0]!.resolved, false)
   const before = readFileSync(join(root, '.llm-wiki/review.json'), 'utf8')
   const eventBefore = readFileSync(join(root, EVENT_REL), 'utf8')
   assert.equal(await wiki.resolveReview({ reviewId: generic.id, action }), false)
@@ -273,11 +281,19 @@ async function cold(ctx: Context): Promise<void> {
     assert.equal(injection[0]!.data.sourceContentHash, sha256(BYTES))
     assert.equal(injection[0]!.data.scope.sessionId, header.id)
     assert.equal(injection[0]!.data.scope.projectId, root)
+    const retrieved = durable.filter(event => event.type === 'knowledge/retrieved')
+    assert.equal(retrieved.length, 1)
+    assert.equal(retrieved[0]!.data.path, PATH)
+    assert.ok([...retrieved, ...injection].every(event => event.data.callId !== 'call_wiki_read_3'))
     const tool = durable.filter(event => event.type === 'tool/result')
-    assert.equal(tool.length, 2)
+    assert.equal(tool.length, 3)
     assert.equal(tool[0]!.data.message.content[0].type, 'tool-result')
     assert.equal(tool[0]!.data.message.content[0].isError, false)
     assert.equal(tool[1]!.data.message.content[0].isError, true)
+    assert.equal(tool[2]!.data.message.source.callId, 'call_wiki_read_3')
+    assert.equal(tool[2]!.data.message.content[0].isError, true)
+    assert.deepEqual(tool[2]!.data.message.content[0].content, [{ type: 'text', text: 'Error: knowledge page is not verified for this scope' }])
+    assert.equal(JSON.stringify(tool[2]!.data.message).includes(CANDIDATE_BYTES), false)
     assert.deepEqual(injection[0]!.data.value, tool[0]!.data.message.content[0].content)
     const wiki = ctx.get('knowledgeWiki') as KnowledgeWikiService
     const utility = (await wiki.knowledgeUtility()).find(item => item.path === PATH)!
@@ -294,7 +310,7 @@ async function cold(ctx: Context): Promise<void> {
   } finally {
     await handle.dispose()
   }
-  write(root, '.dsh/wiki-snapshot-cold.json', JSON.stringify({ actualColdResume: true, durablePrefixEqual: true, modelMessagesEqual: true, injectionCount: 1, sourceContentHash: sha256(BYTES), archiveTerminalEvents: 1, successfulUses: 0, utilityScore: 0 }))
+  write(root, '.dsh/wiki-snapshot-cold.json', JSON.stringify({ actualColdResume: true, durablePrefixEqual: true, modelMessagesEqual: true, injectionCount: 1, deniedCandidateBodyReads: 1, sourceContentHash: sha256(BYTES), archiveTerminalEvents: 1, successfulUses: 0, utilityScore: 0 }))
   ctx.get('appExit')!(0)
 }
 

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import KnowledgeWikiService from '../src/index.ts'
 import {
   appendKnowledgeEvent, createKnowledgeEvent, createKnowledgeRecord,
-  readKnowledgeEventLog, replayKnowledgeEvents,
+  knowledgeInjectionDecision, readKnowledgeEventLog, replayKnowledgeEvents,
 } from '../src/knowledge-governance.ts'
 import {
   appendCandidateReviews, recordCandidateVerification,
@@ -77,6 +77,61 @@ function historicalCanonical(item: ReturnType<typeof fixture>) {
 }
 
 describe('authenticated canonical content', () => {
+  it('keeps semantically verified candidate metadata visible while denying ordinary candidate body reads', async () => {
+    const item = fixture()
+    const authority = await verify(item)
+    const eventPath = join(item.root, '.llm-wiki/knowledge-events.jsonl')
+    const record = replayKnowledgeEvents(readKnowledgeEventLog(eventPath, authority)).records.get(`candidate:${item.item.id}`)!
+    expect(record).toMatchObject({ lifecycle: 'candidate', verificationStatus: 'verified', contentHash: sha256(item.content) })
+    expect(knowledgeInjectionDecision(record, scope(item))).toEqual({ allowed: true, reason: 'ok' })
+    const wiki = service(item, authority)
+    await expect(wiki.modelReviews({}, scope(item))).resolves.toMatchObject([
+      { id: item.item.id, resolved: false, verification: { status: 'passed' } },
+    ])
+    const row = (JSON.parse(readFileSync(item.reviewFile, 'utf8')) as WikiReviewItem[])[0]!
+    expect(row.verification?.trial).toBeUndefined()
+    const before = [eventPath, item.reviewFile, item.candidateFull].map(path => readFileSync(path))
+    await expect(wiki.modelPageContent({ path: item.candidatePath }, scope(item)))
+      .rejects.toThrow('knowledge page is not verified for this scope')
+    await expect(wiki.modelSearch({ query: 'repair' }, scope(item))).resolves.toEqual([])
+    await expect(wiki.modelList(scope(item))).resolves.toEqual([])
+    await expect(wiki.modelGraph(scope(item))).resolves.toEqual({ nodes: [], edges: [], communities: [], provenance: {} })
+    expect([eventPath, item.reviewFile, item.candidateFull].map(path => readFileSync(path))).toEqual(before)
+    await expect(wiki.pageContent({ path: item.candidatePath })).resolves.toMatchObject({ content: item.content })
+  })
+
+  it.each([undefined, 'candidate', 'downgraded', 'rolled_back', 'unexpected'])(
+    'denies %s lifecycle even at a canonical-looking path with exact authenticated bytes', async (lifecycle) => {
+      const item = fixture()
+      const authority = verifierAuthority()
+      mkdirSync(dirname(join(item.wikiRoot, pagePath)), { recursive: true })
+      writeFileSync(join(item.wikiRoot, pagePath), item.content)
+      const record = {
+        ...createKnowledgeRecord({ id: 'lifecycle-fixture', source: pagePath, content: item.content,
+          contentHash: sha256(item.content), scope: { projectId: item.root, visibility: 'project' } }),
+        ...(lifecycle === undefined ? {} : { lifecycle }),
+      }
+      const payload = { record, authority: authority.authorityId, confidence: 1, evidenceRefs: ['read-boundary-fixture-only'] }
+      const seal = authority.sealPromotion(canonicalJson({ type: 'knowledge/verified', knowledgeId: record.id, payload }))
+      const eventPath = join(item.root, '.llm-wiki/knowledge-events.jsonl')
+      const prior = readKnowledgeEventLog(eventPath, authority)
+      appendKnowledgeEvent(eventPath, createKnowledgeEvent('knowledge/verified', record.id, record.scope,
+        { ...payload, authorityId: authority.authorityId, authoritySeal: seal },
+        { seq: prior.length, previousEventHash: prior.at(-1)?.eventHash ?? null }))
+      const admitted = replayKnowledgeEvents(readKnowledgeEventLog(eventPath, authority)).records.get(record.id)!
+      expect(knowledgeInjectionDecision(admitted, scope(item))).toEqual({ allowed: true, reason: 'ok' })
+      expect(admitted.contentHash).toBe(sha256(readFileSync(join(item.wikiRoot, pagePath), 'utf8')))
+      const wiki = service(item, authority)
+      const before = readFileSync(eventPath)
+      await expect(wiki.modelPageContent({ path: pagePath }, scope(item)))
+        .rejects.toThrow('knowledge page is not verified for this scope')
+      await expect(wiki.modelSearch({ query: 'repair' }, scope(item))).resolves.toEqual([])
+      await expect(wiki.modelList(scope(item))).resolves.toEqual([])
+      await expect(wiki.modelGraph(scope(item))).resolves.toEqual({ nodes: [], edges: [], communities: [], provenance: {} })
+      expect(readFileSync(eventPath)).toEqual(before)
+    },
+  )
+
   it('binds historical fixture-signed canonical bytes and rejects later replacements at model reads', async () => {
     const item = fixture()
     const { authority, canonical } = historicalCanonical(item)
@@ -132,10 +187,11 @@ describe('authenticated canonical content', () => {
       const content = `---\ntype: concept\nstatus: canonical\ntitle: ${name}\n---\n\nRepair ${name}.\n`
       writeFileSync(join(item.wikiRoot, path), content)
       const boundRecord = createKnowledgeRecord({ id: `fixture:${name}`, source: path, content,
-        contentHash: sha256(content), scope: { projectId: item.root, visibility: 'project' }, ...fields })
+        contentHash: sha256(content), scope: { projectId: item.root, visibility: 'project' }, lifecycle: 'canonical', ...fields })
       const { contentHash: _contentHash, ...unboundRecord } = boundRecord
       const record = omitContentHash ? unboundRecord : boundRecord
-      const payload = { record, authority: authority.authorityId, confidence: 1, evidenceRefs: ['unit-fixture-only'] }
+      const payload = { record, authority: authority.authorityId, confidence: 1, evidenceRefs: ['unit-fixture-only'],
+        fixturePurpose: 'historical-admission-for-read-boundary-only' }
       const seal = authority.sealPromotion(canonicalJson({ type: 'knowledge/verified', knowledgeId: record.id, payload }))
       const prior = readKnowledgeEventLog(eventPath, authority)
       appendKnowledgeEvent(eventPath, createKnowledgeEvent('knowledge/verified', record.id, record.scope,
@@ -145,6 +201,14 @@ describe('authenticated canonical content', () => {
     addSignedRecord('ACL_CANARY', { acl: { readers: ['different-actor'] } })
     addSignedRecord('UNBOUND_CANARY', {}, true)
     addSignedRecord('CHANGED_CANARY', {})
+    const records = replayKnowledgeEvents(readKnowledgeEventLog(eventPath, authority)).records
+    for (const name of ['ACL_CANARY', 'UNBOUND_CANARY', 'CHANGED_CANARY']) expect(records.get(`fixture:${name}`)?.lifecycle).toBe('canonical')
+    expect(knowledgeInjectionDecision(records.get('fixture:ACL_CANARY')!, scope(item))).toEqual({ allowed: false, reason: 'acl-denied' })
+    expect(knowledgeInjectionDecision(records.get('fixture:ACL_CANARY')!, { ...scope(item), actor: 'different-actor' })).toEqual({ allowed: true, reason: 'ok' })
+    for (const name of ['UNBOUND_CANARY', 'CHANGED_CANARY']) {
+      expect(knowledgeInjectionDecision(records.get(`fixture:${name}`)!, scope(item))).toEqual({ allowed: true, reason: 'ok' })
+    }
+    expect(records.get('fixture:UNBOUND_CANARY')?.contentHash).toBeUndefined()
     writeFileSync(join(item.wikiRoot, 'concepts/CHANGED_CANARY.md'), '---\ntitle: CHANGED_CANARY\n---\nRepair changed bytes.')
     writeFileSync(join(item.wikiRoot, 'concepts/UNKNOWN_CANARY.md'), '---\ntitle: UNKNOWN_CANARY\n---\nRepair unknown bytes.')
     const embeddingInputs: string[][] = []

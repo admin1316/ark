@@ -12,7 +12,7 @@ active Ark 源码已经保存 Wiki candidate、评审、verifier receipt 与 uti
 
 知识记录显式保存 provenance、trust、authority、evidence、verification、scope、ACL、过期时间、冲突和 utility 字段。hash 链项目日志记录 observation、candidate、verification、rejection、retrieval、injection、conflict、expiry、promotion 和 rollback。candidate 生命周期事件携带完整记录；晋级需要独立验证、评审和独立实测的 trial 证据。模型可见 Wiki 工具追加 `knowledge/retrieved` 和 `knowledge/injected` session 事件，事件包含调用身份、scope、结果 hash 和可回放 JSON 值。未验证、过期、冲突、越界、ACL 拒绝或低置信度记录会 fail closed。
 
-未签名的接纳不能替换已有 identity，也不能赋予 verified trust。验证使用经过认证的完整记录，拒绝被改写的先前接纳。历史 canonical 接纳绑定最终 content hash；模型投影在搜索、embedding、图谱派生、列表或页面读取前检查实际文件字节。检索和 utility 回放把路径解析为同一个受治理 identity，修改展示投影不能重置治理计数。这些绑定防止未签名 hash 链或新算出的文件 hash 冒充验证。
+未签名的接纳不能替换已有 identity，也不能赋予 verified trust。验证使用经过认证的完整记录，拒绝被改写的先前接纳。普通模型正文要求 canonical 生命周期；语义验证通过的 candidate 不能在缺少授权 trial 时进入页面召回。经过认证的 candidate 评审元数据继续使用语义 receipt 和实际字节校验，使评审可用而不向普通召回开放正文。Native 预览和 Archive 保留原有规则。历史 canonical 接纳绑定最终 content hash；模型投影在搜索、embedding、图谱派生、列表或页面读取前检查实际文件字节。检索和 utility 回放把路径解析为同一个受治理 identity，修改展示投影不能重置治理计数。这些绑定防止未签名 hash 链或新算出的文件 hash 冒充验证。
 
 语义验证检查不代表成功 trial。当前 receipt 合约无法认证实测 trial 收益，因此 Promote、Merge、Replace 和 Deduplicate 在修改前拒绝；prepared canonical WAL 恢复同样拒绝，包括标记为 Archive 的 canonical 操作。正向 UI 反馈与声称来自 evaluator 的标签保留为观察，不能增加受治理的 successful-use 计数或维持保留。纠正保留负向 utility 效果。Archive、Skip、advisory resolution 和 rollback 保留现有 authority 与事务要求。
 

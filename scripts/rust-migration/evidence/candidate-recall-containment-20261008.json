@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "status": "SCOPED_SOURCE_CONTAINMENT_VERIFIED_FINAL_ACCEPTANCE_INCOMPLETE",
+  "sourceCommit": "1973dc4fb45b20ed1ee90796ac5f7bcefdcb3b5e",
+  "workingTreeSourcePatch": true,
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "drift": "Semantically verified candidate content could pass ordinary direct model page read before review or limited trial.",
+  "affectedNode": [
+    "KnowledgeWikiService.modelRecallAllowed",
+    "KnowledgeWikiService.modelPageAllowed",
+    "KnowledgeWikiService.modelPageContent",
+    "KnowledgeWikiService.modelReviews"
+  ],
+  "implementation": "Require canonical lifecycle for ordinary page content; preserve authenticated exact-byte candidate review metadata. Generic semantic decision, Native preview, Archive and public wire shape remain unchanged.",
+  "sameContractPlan": {
+    "path": "/private/tmp/ark-candidate-recall-same-contract-plan-1973dc4f.json",
+    "sha256": "be610165821cb5ce485201d43f4654b90a7d0ba7bbc3683a0e4e5e6b6ae6e413"
+  },
+  "counterexample": {
+    "path": "/private/tmp/ark-candidate-access-proof-1973dc4f/result.json",
+    "sha256": "bcad42cccb33b79b6260b0b65e5379c071eb1817708e9274fb9fa64adca43bed"
+  },
+  "implementationReceipt": {
+    "path": "/private/tmp/ark-candidate-recall-containment-1973dc4f/receipt.json",
+    "sha256": "eb9e71d9628223766ea224dc3886b944f46061d3db7a197739b031f5a709263a"
+  },
+  "sourcePins": [
+    {
+      "path": "packages/host/knowledge-wiki/src/index.ts",
+      "sha256": "39271f857a430b4b457e5fab548d1dfe313eb733da6b4527292148cd245f41c1"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/canonical-content-binding.spec.ts",
+      "sha256": "64910c7fb5c493388d19ecdf34ab6e210cd3b646248fe81fd8c335ca3aea779c"
+    },
+    {
+      "path": "packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+      "sha256": "a4996e7f1ba9ad64c41d442a4593ec4b8280003ca6037728fb68af8a16781bac"
+    },
+    {
+      "path": "examples/headless-agent/tests/fixtures/knowledge-wiki/support.ts",
+      "sha256": "e8c91de9261a694bb400404b543be8ef192acc0f830ae47fea6acbe348ad1b7b"
+    },
+    {
+      "path": "snapshots/session/wiki-governance/session.jsonl",
+      "sha256": "0e2f748253f6569f1023b215e4b090a7d88884951ccb8e0f906b528d0b49e30c"
+    }
+  ],
+  "checks": [
+    {
+      "command": "pnpm exec vitest run packages/host/knowledge-wiki/tests/canonical-content-binding.spec.ts packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+      "log": "initial-focused.log",
+      "exitCode": 1,
+      "result": "PRESERVED_INITIAL_REGRESSION_FAILURE",
+      "testFilesFailed": 2,
+      "testsFailed": 7,
+      "testsPassed": 5
+    },
+    {
+      "command": "pnpm exec vitest run packages/host/knowledge-wiki/tests/canonical-content-binding.spec.ts packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+      "log": "focused-after.log",
+      "exitCode": 0,
+      "testsPassed": 12
+    },
+    {
+      "command": "pnpm exec vitest run --config vitest.snapshot.config.ts snapshots/session/headless.snapshot.ts -t \"replays wiki-governance through dsh --profile headless\"",
+      "log": "source-snapshot-initial.log",
+      "exitCode": 0,
+      "result": "source CLI warm replay and cold resume PASS"
+    },
+    {
+      "command": "pnpm exec tsx scripts/run-oxlint.ts packages/host/knowledge-wiki/src/index.ts packages/host/knowledge-wiki/tests/canonical-content-binding.spec.ts packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts examples/headless-agent/tests/fixtures/knowledge-wiki/support.ts",
+      "log": "scoped-lint-initial.log",
+      "exitCode": 1,
+      "result": "PRESERVED_INITIAL_LINT_FAILURE",
+      "reason": "new test indentation and nested any-valued Vitest matcher"
+    },
+    {
+      "command": "pnpm exec tsx scripts/run-oxlint.ts packages/host/knowledge-wiki/src/index.ts packages/host/knowledge-wiki/tests/canonical-content-binding.spec.ts packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts examples/headless-agent/tests/fixtures/knowledge-wiki/support.ts",
+      "log": "scoped-lint-after.log",
+      "exitCode": 0
+    },
+    {
+      "command": "NODE_OPTIONS=--max-old-space-size=4096 pnpm run build:lib:host",
+      "log": "build-initial.log",
+      "exitCode": 0,
+      "result": "Host tsc / verified reflection / current-source bundles PASS"
+    },
+    {
+      "command": "DSH_SNAPSHOT=replay DSH_EXAMPLE_MODE=lib DSH_SNAPSHOT_MAX_CONCURRENCY=1 pnpm exec vitest run --config vitest.snapshot.config.ts snapshots/session/headless.snapshot.ts -t wiki-governance",
+      "log": "built-snapshot-initial.log",
+      "exitCode": 0,
+      "result": "built CLI warm replay and cold resume PASS"
+    },
+    {
+      "command": "pnpm exec vitest run packages/host/knowledge-wiki/tests/canonical-content-binding.spec.ts packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts packages/host/knowledge-wiki/tests/canonical-visibility.spec.ts packages/host/knowledge-wiki/tests/loader-composition.spec.ts packages/host/knowledge-wiki/tests/knowledge-utility-identity.spec.ts packages/host/knowledge-wiki/tests/canonical-trial-denial.spec.ts",
+      "log": "affected-focused-initial.log",
+      "exitCode": 0,
+      "testFilesPassed": 6,
+      "testsPassed": 28
+    },
+    {
+      "command": "pnpm exec tsc -b tsconfig.host.json --stopBuildOnErrors",
+      "log": "typecheck-current.log",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    }
+  ],
+  "rootIndependentPinValidation": {
+    "pinsCompared": 17,
+    "mismatches": 0
+  },
+  "documentationCheck": {
+    "command": "pnpm run doc-sync",
+    "result": "PASS",
+    "passed": 30,
+    "failed": 0,
+    "skipped": 0,
+    "elapsedSeconds": 70.73,
+    "path": "/private/tmp/ark-k7-candidate-recall-doc-sync.log",
+    "sha256": "fab7b05fa4b64f534420d692203b92231b40c1ee50467fb073d4b086411a168e"
+  },
+  "independentLearningChangeRequest": {
+    "path": "/private/tmp/ark-independent-learning-contract-change-request-1973dc4f.json",
+    "sha256": "2a2293e11e8d476166cfbfcbe59b8af28dc1e8bf76dc3093422b61d1a6e93bfe"
+  },
+  "currentNativeInvoiceBinding": {
+    "result": "NOT_BOUND_IN_INSPECTED_SNAPSHOTS",
+    "receipt": {
+      "path": "/private/tmp/ark-current75-invoice-binding-0hvh6f5p/invoice-session-binding-pinned-receipt.json",
+      "sha256": "63ef0ee7f05b46390dfd74eb248f63094d05334411d4c640bcbb0afebb08dd5e"
+    },
+    "frozenVerification": {
+      "path": "/private/tmp/ark-current75-invoice-binding-0hvh6f5p/final-frozen-verification.json",
+      "sha256": "468dcd7c8aca95617ecc2d5b85803a236a0809ce2a053189743b69866322ede9"
+    },
+    "observedChildSessions": 2,
+    "bothChildrenOfDistinctTask": true,
+    "exactInvoicePromptMatches": 0,
+    "unknownTaskContentsReported": false,
+    "modelOrApiCallsByAuditor": 0,
+    "liveWrites": 0
+  },
+  "limits": [
+    "Current signed Native app remains clean75 and does not include this source repair.",
+    "No independently measured repair reuse, trial utility lift or full learning claim.",
+    "Latest complete per-file coverage remains measured FAIL; no new full coverage measurement.",
+    "Current-source GitHub CI, Native parity and actual code rollback remain UNKNOWN.",
+    "No new Rust enforcement or language performance win; RETAIN_TS unchanged.",
+    "Whole-product function/provider semantic and performance review remains partial; source census was not refreshed in this patch.",
+    "The versioned learning change request is design only; no data format or authority provisioning authorized or changed."
+  ],
+  "release": {
+    "formalAppChanged": false,
+    "candidateAppChanged": false,
+    "pushed": false,
+    "merged": false
+  },
+  "recordedAt": "2026-10-08T11:51:45.725178+00:00",
+  "rootMetadataUpdateInitialFailure": {
+    "path": "/private/tmp/ark-k7-root-evidence-write-initial-failure.json",
+    "sha256": "fff3a6cd3b421f3f1f57b4eff79d8888cc12fa005fdca65a3a2d51d42baf82a4"
+  },
+  "fullLintCheck": {
+    "command": "pnpm run lint",
+    "exitCode": 0,
+    "path": "/private/tmp/ark-k7-candidate-recall-full-lint.log",
+    "sha256": "0953764d47f99646db0b1431220ff72ed31de0e582fc4cb73e79d601588b3f1c"
+  },
+  "independentSourceReview": {
+    "path": "/Users/hui/ark-test/evidence/k7-candidate-recall-independent-review-20261008.json",
+    "sha256": "40c408c1278ff5a873715a36d5b192f98dfa93477a625c2492b290fe69dc52a2",
+    "result": "NO_BLOCKING_FINDINGS_SOURCE_REVIEW_ONLY",
+    "nonblockingLimit": "Raw multiline exclusion check is weak under JSON serialization; exact error and absence of candidate knowledge events remain substantive witnesses."
+  },
+  "learningApprovalSummary": {
+    "path": "/Users/hui/ark-test/evidence/knowledge-learning-protocol-change-request.zh.txt",
+    "sha256": "4b98c119cae5d32a7b32574746dee57d901ff0675d9cda7bac9f96d45ca61b09",
+    "authorization": "PENDING_USER_APPROVAL"
+  },
+  "approvalSummaryInitialFailure": {
+    "path": "/private/tmp/ark-k7-root-approval-summary-initial-failure.json",
+    "sha256": "abe7c979f12101836b846b873428cbb0218dbe098f8da537b798e6922a63ff09"
+  }
+}

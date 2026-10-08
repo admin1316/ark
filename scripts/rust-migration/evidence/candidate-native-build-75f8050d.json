@@ -115,7 +115,17 @@
       "userCreatedDraftConfirmed": true,
       "taskTextExactSha256": "1fc8a1860a0097714708006d9f13a23b16b8b256a7f55c0c74d877f9166e5986",
       "newPersistedSessionId": "NOT YET BOUND TO THE REGISTERED INVOICE TASK",
-      "invoiceTaskExecution": "UNKNOWN; newly observed distinct task cannot close this preregistration"
+      "invoiceTaskExecution": "UNKNOWN; newly observed distinct task cannot close this preregistration",
+      "followupReadOnlyBindingAudit": {
+        "result": "NOT_BOUND_IN_INSPECTED_SNAPSHOTS",
+        "observedChildSessions": 2,
+        "bothChildrenOfDistinctTask": true,
+        "exactInvoicePromptMatches": 0,
+        "unknownTaskContentsReported": false,
+        "modelOrApiCallsByAuditor": 0,
+        "liveWrites": 0,
+        "evidence": "scripts/rust-migration/evidence/candidate-recall-containment-20261008.json"
+      }
     },
     "separateObservedUserTask": {
       "sessionId": "ed4f9665-55ed-4a8c-bb1a-c41c1cf18499",
@@ -271,7 +281,8 @@
     "Build signing is local ad-hoc only; no release notarization or Gatekeeper acceptance.",
     "Current75 real-model task, independent learning/repair reuse, complete Native UI parity, rollback behavior and source-bound GitHub CI remain unverified.",
     "No new formal Rust replacement or performance benefit proved; decision remains RETAIN_TS.",
-    "Test/dependency/documentation work after75 does not change the signed75 source identity."
+    "Test/dependency/documentation work after75 does not change the signed75 source identity.",
+    "Subsequent candidate-content recall source repair passed focused source/built checks but is absent from this signed75 app; see candidate-recall-containment-20261008.json. A new isolated Native build and behavioral acceptance are required."
   ],
   "localOnlyEvidence": [
     {
