@@ -6,7 +6,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createRustKnowledgeSearchRequest,
   runRustKnowledgeSearchCandidate,
@@ -184,6 +184,21 @@ describe('rust knowledge-search candidate boundary', () => {
     })
     expect(result.observation.status).toBe('matched')
     expect(result.source).toBe('typescript')
+  })
+
+  it('launches a Node candidate script through the Node executable on Windows', async () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    try {
+      const result = await runRustKnowledgeSearchCandidate(request(), expected, {
+        mode: 'shadow',
+        binaryPath: validOutputScript(),
+        timeoutMs: 5000,
+      })
+      expect(result.observation.status).toBe('matched')
+      expect(result.source).toBe('typescript')
+    } finally {
+      platform.mockRestore()
+    }
   })
 
   it('rejects invalid hits and both digest bindings', async () => {
