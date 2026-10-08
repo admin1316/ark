@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 function candidateScript(body: string): string {
-  const path = join(root, 'candidate')
+  const path = join(root, process.platform === 'win32' ? 'candidate.cjs' : 'candidate')
   writeFileSync(path, `#!/usr/bin/env node\n${body}\n`, 'utf8')
   chmodSync(path, 0o755)
   return path
@@ -173,6 +173,17 @@ describe('rust knowledge-search candidate boundary', () => {
       mode: 'shadow', binaryPath: validOutputScript(),
     })
     expect(defaultDeadline.observation.status).toBe('matched')
+  })
+
+  it('supports an explicit executable with script arguments', async () => {
+    const result = await runRustKnowledgeSearchCandidate(request(), expected, {
+      mode: 'shadow',
+      binaryPath: process.execPath,
+      binaryArgs: [validOutputScript()],
+      timeoutMs: 5000,
+    })
+    expect(result.observation.status).toBe('matched')
+    expect(result.source).toBe('typescript')
   })
 
   it('rejects invalid hits and both digest bindings', async () => {

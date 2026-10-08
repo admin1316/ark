@@ -37,6 +37,8 @@ export type RustKnowledgeSearchMode = 'disabled' | 'shadow' | 'enforce'
 export interface RustKnowledgeSearchOptions {
   readonly mode: RustKnowledgeSearchMode
   readonly binaryPath: string
+  /** Optional launcher arguments used by test harnesses and packaged wrappers. */
+  readonly binaryArgs?: readonly string[]
   readonly timeoutMs?: number
 }
 
@@ -192,7 +194,13 @@ function terminate(child: ChildProcessWithoutNullStreams): void {
   }, 100).unref()
 }
 
-function spawnCandidate(binaryPath: string, requestBytes: string, timeoutMs: number, signal?: AbortSignal): Promise<{
+function spawnCandidate(
+  binaryPath: string,
+  binaryArgs: readonly string[],
+  requestBytes: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<{
   readonly output: RustOutput
   readonly exit: ChildExit
 }> {
@@ -208,7 +216,14 @@ function spawnCandidate(binaryPath: string, requestBytes: string, timeoutMs: num
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
     const timeoutRef: { current?: NodeJS.Timeout } = {}
-    const child = spawn(binaryPath, [], {
+    // Windows cannot spawn a bare script file as an executable. The test and
+    // packaged wrapper lanes may provide a Node script; execute that through
+    // the current Node binary without enabling a shell. Native Rust `.exe`
+    // paths continue to use the direct spawn path.
+    const nodeScript = process.platform === 'win32' && /\.(?:c?js)$/iu.test(binaryPath)
+    const command = nodeScript ? process.execPath : binaryPath
+    const args = nodeScript ? [binaryPath, ...binaryArgs] : binaryArgs
+    const child = spawn(command, args, {
       env: isolatedEnvironment(),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -378,7 +393,7 @@ export async function runRustKnowledgeSearchCandidate(
     })
   }
   try {
-    const processResult = await spawnCandidate(options.binaryPath, requestBytes, timeoutMs, signal)
+    const processResult = await spawnCandidate(options.binaryPath, options.binaryArgs ?? [], requestBytes, timeoutMs, signal)
     const expectedCanonical = canonicalResults(expected)
     const actualCanonical = canonicalResults(processResult.output.results)
     const matched = expectedCanonical === actualCanonical
