@@ -109,6 +109,8 @@ export interface KnowledgeRecord {
   /** Stable claim identity; defaults to source when omitted by legacy records. */
   readonly claimKey?: string
   readonly sourceHash: string
+  /** SHA-256 of the exact page bytes authenticated by verification or promotion. */
+  readonly contentHash?: string
   readonly scope: KnowledgeScope
   readonly trust: KnowledgeTrust
   readonly authority: string
@@ -126,6 +128,9 @@ export interface KnowledgeRecord {
   readonly acl?: KnowledgeAcl
   readonly lifecycle?: 'candidate' | 'canonical' | 'downgraded' | 'rolled_back'
 }
+
+/** Admit the exact source text before it contributes to a model projection. */
+export type WikiPageAdmission = (path: string, content: string) => boolean
 
 /** Knowledge event names are intentionally explicit and replayable. */
 export type KnowledgeEventType =

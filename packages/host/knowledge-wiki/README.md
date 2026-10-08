@@ -70,6 +70,10 @@ English | [中文](README.zh.md)
 
 The production search path remains TypeScript by default. In `shadow` mode the service sends the same canonical page corpus and query to the isolated Rust candidate, checks request/result digests and byte-exact BM25 output, logs the observation, and still returns the governed TypeScript result. Candidate processes receive a minimal environment, bounded input/output, and a deadline; failure, timeout, cancellation, or divergence falls back to TypeScript. The `enforce` mode is intentionally fail-closed and currently rejected by `modelSearch` because Rust has not yet implemented the complete hybrid BM25-plus-embedding result contract.
 
+### Governed page reads
+
+Model Wiki projections require a registered project, the calling session, and a configured verifier authority. Unsigned observations and candidates remain low-trust; a verified event authenticates the complete record, including content, provenance, scope, ACL, and expiry. Promotion binds the final page bytes with SHA-256. Search and graph admit exact readable bytes before deriving results or sending embedding input; modified or unbound pages fail closed. Retrieval and outcome events use the admitted knowledge ID, and governed utility counters are replayed from the journal. UI feedback is an observation, not independent evidence of successful reuse or learning improvement.
+
 ## Model Experience
 
 ### Two-stage source ingest
@@ -121,6 +125,7 @@ Independent request per image.
 - **Stage-2 review blocks only** — review items are parsed from the generation output; there is no standalone review-suggestion LLM stage.
 - **Online embeddings only** — vector search calls the embedding API per query; there is no persisted vector store.
 - **Polling watch** — `raw/sources` is scanned every 60 seconds; there is no filesystem watcher.
+- **Verifier provisioning and learning evidence** — native launch does not provision an independent evaluator. Passing verifier checks and UI utility feedback do not establish measured trial benefit; independent paired provider runs and replay evidence are required for learning claims.
 - **Out of scope** — Web Clipper, MCP server, and a desktop UI are not provided; the knowledgeWiki Remote contract and the tool-knowledge-wiki consumer cover the UI surface.
 
 ### Dev Note

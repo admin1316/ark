@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Local deterministic source regression evidence; not independent learning or Phase 6 acceptance",
+  "sourceSnapshot": {
+    "parentGitSha": "a08e377654738a11b4988e7a0eecc4cc5c8561de",
+    "dirty": true,
+    "fileHashes": {
+      "packages/host/knowledge-wiki/src/knowledge-governance.ts": "0e2fcb97e620b360c36af8a8db935fda410026e546d7ba3fd4bf7435ca391169",
+      "packages/host/knowledge-wiki/src/types.ts": "a2772cc2412bfc0a13ccd2774411eaa05d32796dc49fcbfdd1efc748674b5f42",
+      "packages/host/knowledge-wiki/src/reviews.ts": "944d0f7bda589faae7421bca19889cac0c9fe5452be571d8f7daf925b88047aa",
+      "packages/host/knowledge-wiki/src/index.ts": "845f53fbd1ba694e728bad38957addf3b406ece9cb0bcd4815ca97fe41c5ac01",
+      "packages/host/knowledge-wiki/src/search.ts": "5184dd7fb31248904e6901d343ee2b77d275b056b217b5ee368658a2daf95e99",
+      "packages/host/knowledge-wiki/src/graph.ts": "9efd48ef6492e4544e04c81e62656ff4b656006db7bdb3acb51f9a1c77145fa6",
+      "packages/host/knowledge-wiki/tests/governance-authentication.spec.ts": "3beeb336cb4f48e679b317e2f7fa2a20ce334291d698fa878eb61d0e2d0db5b9",
+      "packages/host/knowledge-wiki/tests/canonical-content-binding.spec.ts": "25bff87ead2950ec65e6bcb1aa5ee320f3f1c80ba4982e4896de24e1356fadb0",
+      "packages/host/knowledge-wiki/tests/knowledge-utility-identity.spec.ts": "e33ff0b3220df465b80fc6a12a779c7626bb69023b44a183b2c9c7f78388e4ff",
+      "packages/host/knowledge-wiki/tests/reviews-lifecycle-edges.spec.ts": "b625d49cbeaca1105db5befa190a452a78ccda598457d8ce76e04ec1b5036ef2"
+    }
+  },
+  "profile": "jiuzhang",
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "checks": {
+    "relatedPackages": {
+      "result": "PASS",
+      "files": 81,
+      "tests": 765,
+      "command": "pnpm exec vitest run packages/host/knowledge-wiki/tests packages/host/knowledge-wiki-tools/tests"
+    },
+    "hostTypecheck": {
+      "result": "PASS",
+      "command": "pnpm exec tsc -b tsconfig.host.json --pretty false"
+    },
+    "lint": {
+      "result": "PASS",
+      "command": "pnpm run lint",
+      "scope": "Full source before the final four-counter preservation delta; final changed files also passed scoped run-oxlint"
+    },
+    "documentation": {
+      "result": "PASS",
+      "passed": 30,
+      "failed": 0,
+      "command": "pnpm run doc-sync"
+    },
+    "independentReadOnlyFixReview": {
+      "result": "PASS within K1/K2 source scope",
+      "tests": 20
+    }
+  },
+  "repairedSourceRelations": [
+    "Unsigned observed/candidate admission cannot mint verified trust or overwrite a transitioned identity.",
+    "Verification authenticates the complete record and rejects changed prior content/provenance/scope/ACL/expiry.",
+    "Repeated verification preserves journal counters; retired/conflicted/expired knowledge cannot be restored by old verification.",
+    "Canonical bytes are sealed at promotion/recovery and admitted before model search/embedding/graph/list/read derivation.",
+    "Candidate revisions bind path and content hash; unchanged resolved reviews remain resolved.",
+    "Governed retrieval/outcome events use the admitted ID and display counters replay from the authenticated journal."
+  ],
+  "limits": {
+    "independentEvaluatorKeySeparation": "UNRESOLVED",
+    "authenticatedPerUseOutcomes": "UNRESOLVED",
+    "actualTrialBenefitRatherThanGenericCheckPasses": "UNRESOLVED",
+    "nativeVerifierProvisioning": "UNRESOLVED",
+    "currentSourceNativeUiAcceptance": "UNKNOWN",
+    "realProviderPairedLearningBenefit": "UNKNOWN",
+    "githubCiOnCurrentSource": "UNKNOWN",
+    "rustFormalNewReplacements": 0,
+    "productionTouched": false
+  },
+  "evidenceRefs": [
+    "scripts/rust-migration/evidence/independent-learning-audit-a08e3776.json"
+  ],
+  "localOnlyEvidence": [
+    {
+      "path": "scripts/rust-migration/evidence/knowledge-safety-tests-20261008.log",
+      "sha256": "5235dffb7a51fa2a4994af5c5441eceedcd23c32e5da9d6f1607146ac3afadc5",
+      "bytes": 1230,
+      "distribution": "Local generated log; excluded from Git by repository policy"
+    },
+    {
+      "path": "scripts/rust-migration/evidence/knowledge-safety-doc-sync-20261008.log",
+      "sha256": "83f143728db62a4fda6ab4a2c1dcf9d8296f2d0c46a5280bab25e02c7a32d324",
+      "bytes": 2534,
+      "distribution": "Local generated log; excluded from Git by repository policy"
+    }
+  ]
+}

@@ -666,9 +666,12 @@ export function recoverCandidateReviewTransactions(
     atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'committed' }, null, 2)}\n`)
     if (journal.action === 'Promote' || journal.action === 'Merge' || journal.action === 'Replace' || journal.action === 'Deduplicate') {
       try {
+        const canonical = journal.operations.find(operation => operation.role === 'canonical')
+        if (canonical?.after === undefined) throw new Error('promotion journal lacks canonical bytes')
         appendKnowledgeReviewEvent(reviewFile, 'knowledge/promoted', journal.reviewId, journal.candidateHash, {
           action: journal.action,
           lifecycle: 'canonical',
+          contentHash: sha256(canonical.after),
           ...(journal.targetPath === null ? {} : { appliedPath: journal.targetPath }),
         }, authority)
       } catch {
@@ -775,7 +778,7 @@ export function appendReviews(reviewFile: string, sourcePath: string, reviews: P
 }
 
 /**
- * Register written candidate pages as real, hash-bound approval items.
+ * Register each candidate path/content revision once, retaining earlier review decisions.
  * @param reviewFile - The review file input.
  * @param projectRoot - The project root input.
  * @param sourcePath - The source path input.
@@ -798,15 +801,15 @@ export function appendCandidateReviews(
     const candidatePath = candidate.relativePath
     const content = readRegularFileBounded(candidate.absolutePath, 5 * 1024 * 1024).toString('utf8')
     const candidateHash = createHash('sha256').update(content).digest('hex')
-    const id = `candidate-${createHash('sha256').update(candidatePath).digest('hex').slice(0, 16)}`
+    if ([...byId.values()].some(item => item.reviewKind === 'candidate'
+      && item.candidatePath === candidatePath && item.candidateHash === candidateHash)) continue
+    const id = `candidate-${sha256(`${candidatePath}\0${candidateHash}`)}`
     const title = (/^title:\s*(.+)$/mu.exec(content)?.[1] ?? basename(candidatePath, '.md'))
       .trim()
       .replace(/^["']|["']$/gu, '')
     const suggestedTarget = canonicalTarget(candidatePath)
     const governance = decideCandidateGovernance(join(projectRoot, 'wiki'), candidatePath, content, suggestedTarget)
     const targetPath = governance.targetPath
-    const prior = byId.get(id)
-    if (prior?.candidateHash === candidateHash && !prior.resolved) continue
     const nextItem: WikiReviewItem = {
       id,
       title,
@@ -978,6 +981,7 @@ export function recordCandidateVerification(
     claimKey: item.title.trim().toLocaleLowerCase(),
     source: item.candidatePath,
     sourceHash: item.sourceHash ?? knowledgeSha256(item.sourcePath ?? item.candidatePath),
+    contentHash: actualHash,
     scope: { projectId: dirname(dirname(reviewFile)), visibility: 'project' },
     evidenceRefs: [item.sourcePath ?? item.candidatePath],
     verificationStatus: 'candidate',
@@ -1271,7 +1275,10 @@ export function applyCandidateReview(
     canonicalActions.has(action) ? 'knowledge/promoted' : 'knowledge/rejected',
     item.id,
     actualHash,
-    { action, appliedPath, lifecycle: canonicalActions.has(action) ? 'canonical' : 'downgraded' },
+    {
+      action, appliedPath, lifecycle: canonicalActions.has(action) ? 'canonical' : 'downgraded',
+      ...(targetAfter === undefined ? {} : { contentHash: sha256(targetAfter) }),
+    },
     authority,
   )
   return true

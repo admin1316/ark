@@ -8,6 +8,7 @@
 import { visitWikiTree } from './graph.ts'
 import { parseFrontmatterField } from './frontmatter-utils.ts'
 import { MAX_WIKI_PAGE_BYTES, readRegularFileBounded } from './filesystem.ts'
+import type { WikiPageAdmission } from './types.ts'
 const FRONTMATTER_RE = /^---\n[\s\S]*?\n---\n?/
 
 /** One indexed page. */
@@ -27,13 +28,15 @@ function parseAliases(raw: string): string[] {
 /**
  * Collect all wiki pages with body text and frontmatter metadata stripped from the body.
  * @param wikiRoot - Absolute wiki directory to traverse.
+ * @param admit - Optional gate over the exact bytes used for scoring and embedding.
  * @returns Search pages in traversal order.
  */
-export function collectSearchPages(wikiRoot: string): SearchPage[] {
+export function collectSearchPages(wikiRoot: string, admit?: WikiPageAdmission): SearchPage[] {
   const pages: SearchPage[] = []
   visitWikiTree(wikiRoot, {
     onMarkdown: ({ name, path, fullPath }) => {
       const raw = readRegularFileBounded(fullPath, MAX_WIKI_PAGE_BYTES).toString('utf8')
+      if (admit !== undefined && !admit(path, raw)) return
       let title = name.replace(/\.md$/u, '')
       for (const line of raw.split('\n')) {
         const field = parseFrontmatterField(line)
@@ -198,6 +201,7 @@ export function cosine(a: number[], b: number[]): number {
  * @param apiKey - The api key input.
  * @param topK - The top k input.
  * @param unavailable - optional notification when embedding throws before falling back to keyword results.
+ * @param admit - Optional gate over source bytes before scoring or sending text to embeddings.
  * @returns The value produced by hybrid search.
  */
 export async function hybridSearch(
@@ -206,8 +210,9 @@ export async function hybridSearch(
   apiKey: string,
   topK: number,
   unavailable?: (diagnostic: EmbeddingUnavailable) => void,
+  admit?: WikiPageAdmission,
 ): Promise<Array<{ path: string; score: number }>> {
-  const pages = collectSearchPages(wikiRoot)
+  const pages = collectSearchPages(wikiRoot, admit)
   const scoredPages = scorePages(pages, query)
   const keyword = scoredPages.map(({ page, score }) => ({ path: page.path, score }))
   const topScoredPages = scoredPages.slice(0, 40)

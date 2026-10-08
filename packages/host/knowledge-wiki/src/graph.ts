@@ -10,7 +10,7 @@
 import { lstatSync, readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { parseFrontmatterArray, parseFrontmatterBlock, parseFrontmatterField } from './frontmatter-utils.ts'
-import type { CommunityInfo, GraphEdge, GraphNode, WikiGraphResult } from './types.ts'
+import type { CommunityInfo, GraphEdge, GraphNode, WikiGraphResult, WikiPageAdmission } from './types.ts'
 import { isMissingPathError, MAX_WIKI_PAGE_BYTES, readRegularFileBounded } from './filesystem.ts'
 
 /** One parsed wiki page. */
@@ -145,11 +145,12 @@ export function visitWikiTree(
 }
 
 /** Recursively collect wiki pages under a root directory. */
-function collectPages(wikiRoot: string): WikiPage[] {
+function collectPages(wikiRoot: string, admit?: WikiPageAdmission): WikiPage[] {
   const pages: WikiPage[] = []
   visitWikiTree(wikiRoot, {
     onMarkdown: ({ name, path, fullPath }) => {
       const raw = readRegularFileBounded(fullPath, MAX_WIKI_PAGE_BYTES).toString('utf8')
+      if (admit !== undefined && !admit(path, raw)) return
       const parsed = parsePageContent(raw)
       pages.push({
         path,
@@ -284,10 +285,11 @@ function louvain(nodes: GraphPageState[]): void {
 /**
  * Build the concept graph from the wiki page tree.
  * @param wikiRoot - absolute path of the project wiki directory.
+ * @param admit - Optional gate over the exact bytes used to derive nodes, links, and communities.
  * @returns the graph (nodes + wikilink edges, Louvain clusters).
  */
-export function buildGraph(wikiRoot: string): WikiGraphResult {
-  const pages = collectPages(wikiRoot)
+export function buildGraph(wikiRoot: string, admit?: WikiPageAdmission): WikiGraphResult {
+  const pages = collectPages(wikiRoot, admit)
   const states = pages.map((page, index): GraphPageState => {
     const community = { degree: 0 }
     return { page, neighbors: new Map(), degree: 0, incoming: 0, community, communityId: index }
@@ -366,9 +368,10 @@ export function buildGraph(wikiRoot: string): WikiGraphResult {
 /**
  * List wiki pages (recursive tree, heavyweight dirs skipped).
  * @param wikiRoot - The wiki root input.
+ * @param admit - Optional gate over page bytes before exposing file metadata.
  * @returns The value produced by list pages.
  */
-export function listPages(wikiRoot: string): Array<{
+export function listPages(wikiRoot: string, admit?: WikiPageAdmission): Array<{
   name: string
   path: string
   isDir: boolean
@@ -378,7 +381,10 @@ export function listPages(wikiRoot: string): Array<{
   const out: Array<{ name: string; path: string; isDir: boolean; size: number | null; children?: unknown[] }> = []
   visitWikiTree(wikiRoot, {
     onDirectory: ({ name, path }) => out.push({ name, path, isDir: true, size: null }),
-    onMarkdown: ({ name, path, size }) => out.push({ name, path, isDir: false, size }),
+    onMarkdown: ({ name, path, fullPath, size }) => {
+      if (admit !== undefined && !admit(path, readRegularFileBounded(fullPath, MAX_WIKI_PAGE_BYTES).toString('utf8'))) return
+      out.push({ name, path, isDir: false, size })
+    },
   })
   // Drop empty directories: a leaf directory with no pages is noise in the
   // tree and leads to a dead-end click in the viewer.

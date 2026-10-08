@@ -149,6 +149,7 @@ export function validateKnowledgeRecord(record: unknown): KnowledgeValidationRes
   if (!nonEmpty(value.content)) errors.push('content is required')
   if (!nonEmpty(value.source)) errors.push('source is required')
   if (!nonEmpty(value.sourceHash) || !SHA256_RE.test(value.sourceHash)) errors.push('sourceHash must be sha256')
+  if (value.contentHash !== undefined && (typeof value.contentHash !== 'string' || !SHA256_RE.test(value.contentHash))) errors.push('contentHash must be sha256')
   if (!validScope(value.scope)) errors.push('scope is invalid')
   if (!['low', 'medium', 'high'].includes(value.trust as string)) errors.push('trust is invalid')
   if (!nonEmpty(value.authority)) errors.push('authority is required')
@@ -179,6 +180,7 @@ export function createKnowledgeRecord(input: {
   readonly source: string
   readonly claimKey?: string
   readonly sourceHash?: string
+  readonly contentHash?: string
   readonly scope: KnowledgeScope
   readonly trust?: KnowledgeTrust
   readonly authority?: string
@@ -205,6 +207,7 @@ export function createKnowledgeRecord(input: {
     // Bind provenance identity by default; candidate content is separately
     // hash-bound by review.candidateHash and must not masquerade as source.
     sourceHash: input.sourceHash ?? knowledgeSha256(input.source),
+    ...(input.contentHash === undefined ? {} : { contentHash: input.contentHash }),
     scope: { ...input.scope },
     trust: input.trust ?? 'low',
     authority: input.authority ?? 'untrusted-observation',
@@ -381,9 +384,23 @@ function cloneRecord(record: KnowledgeRecord): KnowledgeRecord {
   }
 }
 
-/** Apply one event to state. Invalid or stale transitions are rejected.
+function admissionIdentity(record: KnowledgeRecord): string {
+  return canonicalKnowledgeJson({
+    id: record.id,
+    content: record.content,
+    source: record.source,
+    sourceHash: record.sourceHash,
+    claimKey: record.claimKey,
+    scope: record.scope,
+    acl: record.acl,
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt,
+  })
+}
+
+/** Apply one event to state. Unsigned admission stays low-trust; verification binds its complete record.
  * @param state - Current replay state.
- * @param event - Next hash-bound event.
+ * @param event - Next hash-bound event; callers authenticate seals with readKnowledgeEventLog before folding trusted state.
  * @returns Updated replay state.
  */
 export function applyKnowledgeEvent(state: KnowledgeState, event: KnowledgeEvent): KnowledgeState {
@@ -395,21 +412,36 @@ export function applyKnowledgeEvent(state: KnowledgeState, event: KnowledgeEvent
   const payload = event.payload
   const item = payload.record as KnowledgeRecord | undefined
   if (event.type === 'knowledge/observed' || event.type === 'knowledge/candidate') {
-    if (item === undefined || !validateKnowledgeRecord(item).ok) throw new Error('knowledge event record is invalid')
-    records.set(event.knowledgeId, cloneRecord({ ...item, verificationStatus: event.type === 'knowledge/candidate' ? 'candidate' : item.verificationStatus }))
+    if (item === undefined || !validateKnowledgeRecord(item).ok || item.id !== event.knowledgeId
+      || canonicalKnowledgeJson(item.scope) !== canonicalKnowledgeJson(event.scope)) throw new Error('knowledge event record is invalid')
+    if (current !== undefined && (event.type !== 'knowledge/candidate' || current.verificationStatus !== 'observed'
+      || admissionIdentity(current) !== admissionIdentity(item))) throw new Error('unsigned knowledge admission cannot replace an existing record')
+    records.set(event.knowledgeId, cloneRecord({
+      ...item,
+      verificationStatus: event.type === 'knowledge/candidate' ? 'candidate' : 'observed',
+      trust: 'low',
+      authority: 'untrusted-observation',
+      confidence: 0,
+      lastVerifiedAt: null,
+      retrievalHits: current?.retrievalHits ?? 0,
+      successfulUses: 0,
+      userCorrections: current?.userCorrections ?? 0,
+      utilityScore: 0,
+      lifecycle: 'candidate',
+    }))
   } else {
-    const fallback = event.type === 'knowledge/verified'
-      && item !== undefined
-      && validateKnowledgeRecord(item).ok
-      ? item
-      : undefined
-    if (current === undefined && fallback === undefined) {
+    let base = current
+    if (event.type === 'knowledge/verified') {
+      if (item === undefined || !validateKnowledgeRecord(item).ok || item.id !== event.knowledgeId
+        || canonicalKnowledgeJson(item.scope) !== canonicalKnowledgeJson(event.scope)) throw new Error('knowledge verification record is invalid')
+      // Verification authenticates its full record, never an unsigned earlier projection.
+      base = item
+    }
+    if (base === undefined) {
       // Retrieval/injection events are useful audit facts even when their
       // page was never admitted as governed knowledge.
       return { records, lastSeq: event.seq, lastEventHash: event.eventHash }
     }
-    const base = current ?? fallback
-    if (base === undefined) throw new Error('knowledge transition lacks a record')
     const next = { ...cloneRecord(base) }
     switch (event.type) {
       case 'knowledge/verified':
@@ -421,6 +453,15 @@ export function applyKnowledgeEvent(state: KnowledgeState, event: KnowledgeEvent
           || !nonEmpty(Reflect.get(seal, 'proof'))
           || !Array.isArray(payload.evidenceRefs) || !payload.evidenceRefs.some(nonEmpty)) {
           throw new Error('knowledge verification lacks independent authority/evidence')
+        }
+        if (current !== undefined && (admissionIdentity(current) !== admissionIdentity(next)
+          || current.verificationStatus === 'expired' || current.verificationStatus === 'conflict'
+          || current.verificationStatus === 'rejected' || current.lifecycle === 'rolled_back')) throw new Error('knowledge verification conflicts with prior admission')
+        if (current !== undefined) {
+          next.retrievalHits = current.retrievalHits
+          next.successfulUses = current.successfulUses
+          next.userCorrections = current.userCorrections
+          next.utilityScore = current.utilityScore
         }
         next.verificationStatus = 'verified'
         next.trust = (payload.trust as KnowledgeTrust | undefined) ?? 'medium'
@@ -450,7 +491,9 @@ export function applyKnowledgeEvent(state: KnowledgeState, event: KnowledgeEvent
           throw new Error('knowledge promotion lacks authority seal')
         }
         if (next.verificationStatus !== 'verified' || next.evidenceRefs.length === 0 || next.conflicts.length > 0) throw new Error('knowledge promotion requires conflict-free verification evidence')
+        if (typeof payload.contentHash !== 'string' || !SHA256_RE.test(payload.contentHash)) throw new Error('knowledge promotion lacks authenticated content hash')
         next.lifecycle = 'canonical'
+        next.contentHash = payload.contentHash
         if (typeof payload.appliedPath === 'string' && payload.appliedPath !== '') next.source = payload.appliedPath
         break
       case 'knowledge/rolled_back': next.lifecycle = 'rolled_back'; next.verificationStatus = 'candidate'; break

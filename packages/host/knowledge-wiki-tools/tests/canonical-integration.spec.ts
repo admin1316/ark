@@ -117,6 +117,21 @@ describe('canonical Knowledge Wiki and model tools', () => {
       expect((listed.value as { files: string[] }).files).toContain('concepts/queue-owner.md')
       const read = await execute(ctx, 'wiki_read', { path: 'concepts/queue-owner.md' }, root)
       expect(read.value).toMatchObject({ path: 'concepts/queue-owner.md', truncated: false })
+
+      const searched = await execute(ctx, 'wiki_search', { query: 'queue lifecycle' }, root)
+      expect(searched.isError).toBe(false)
+      expect(searched.value).toMatchObject({ hits: [expect.objectContaining({ path: 'concepts/queue-owner.md' })] })
+      const graph = await execute(ctx, 'wiki_graph', {}, root)
+      expect(graph.isError).toBe(false)
+      expect(graph.value).toMatchObject({ nodes: [expect.objectContaining({ path: 'concepts/queue-owner.md' })] })
+      const reviews = await execute(ctx, 'wiki_reviews', {}, root)
+      expect(reviews.isError).toBe(false)
+      expect(reviews.value).toEqual({ reviews: [] })
+
+      const foreign = await execute(ctx, 'wiki_read', { path: 'concepts/queue-owner.md' }, join(root, 'unregistered'))
+      expect(foreign.isError).toBe(true)
+      expect(foreign.content.filter(block => block.type === 'text').map(block => block.text).join(''))
+        .toContain('knowledge scope is unavailable')
     } finally {
       await ctx.fiber.dispose()
     }

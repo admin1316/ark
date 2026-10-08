@@ -210,7 +210,7 @@ describe('review parsing and advisory persistence edges', () => {
 })
 
 describe('candidate review registration', () => {
-  it('classifies candidate namespaces, skips missing/non-candidates, and refreshes resolved rows', () => {
+  it('classifies candidates and retains resolved revisions without reopening unchanged content', () => {
     const projectRoot = root()
     const wikiRoot = join(projectRoot, 'wiki')
     const reviewFile = join(projectRoot, '.llm-wiki', 'review.json')
@@ -243,8 +243,23 @@ describe('candidate review registration', () => {
     expect(items[4]?.title).toBe('topic')
     expect(appendCandidateReviews(reviewFile, projectRoot, '/source', paths.map(path => `wiki/${path}`))).toBe(0)
 
-    writeItems(reviewFile, items.map((item, index) => index === 0 ? { ...item, resolved: true } : item))
+    const resolvedItems = items.map((item, index) => index === 0 ? { ...item, resolved: true } : item)
+    writeItems(reviewFile, resolvedItems)
+    const eventFile = join(projectRoot, '.llm-wiki', 'knowledge-events.jsonl')
+    const eventsBefore = readFileSync(eventFile, 'utf8')
+    expect(appendCandidateReviews(reviewFile, projectRoot, '/source', [`wiki/${paths[0]}`])).toBe(0)
+    expect(readItems(reviewFile)).toEqual(resolvedItems)
+    expect(readFileSync(eventFile, 'utf8')).toBe(eventsBefore)
+
+    writeFileSync(join(wikiRoot, paths[0]!), candidate('C0', 'Updated validation evidence for this revision.'), 'utf8')
     expect(appendCandidateReviews(reviewFile, projectRoot, '/source', [`wiki/${paths[0]}`])).toBe(1)
+    const revisions = readItems(reviewFile)
+    expect(revisions.slice(0, items.length)).toEqual(resolvedItems)
+    expect(revisions.at(-1)).toMatchObject({ candidatePath: paths[0], resolved: false })
+    expect(revisions.at(-1)?.id).not.toBe(items[0]?.id)
+    expect(revisions.at(-1)?.id).toMatch(/^candidate-[0-9a-f]{64}$/u)
+    expect(revisions.at(-1)?.candidateHash).not.toBe(items[0]?.candidateHash)
+    expect(appendCandidateReviews(reviewFile, projectRoot, '/source', [`wiki/${paths[0]}`])).toBe(0)
   })
 
   it('does not replace malformed or non-array review state with an empty array', () => {

@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { appendCandidateReviews, recordCandidateVerification } from '../src/reviews.ts'
 import {
   canonicalJson,
+  buildVerificationRequest,
   immutableReviewRow,
   readTrustedReceipt,
   sha256,
@@ -216,6 +217,19 @@ describe('verification review loading', () => {
 })
 
 describe('verification request eligibility', () => {
+  it('binds a source-less Archive proposal to its candidate bytes and an explicit null target', () => {
+    const item = fixture('_candidates/topics/disposable.md')
+    const row = { ...readItems(item.reviewFile)[0]! }
+    Reflect.deleteProperty(row, 'sourcePath')
+    Reflect.deleteProperty(row, 'sourceHash')
+    const request = buildVerificationRequest(verifierAuthority(), item.wikiRoot, row, 'Archive')
+    expect(request).toMatchObject({
+      targetPath: null, governanceAction: 'Archive',
+      sourceHash: sha256(item.candidatePath),
+    })
+    expect(request?.candidateHash).toBe(sha256(readFileSync(item.candidateFull)))
+  })
+
   it('refuses an ineligible row or an action its durable target cannot support', async () => {
     const item = fixture()
     const authority = verifierAuthority()

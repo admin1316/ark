@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { generateKeyPairSync, sign } from 'node:crypto'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -47,7 +47,6 @@ function verifierScript(result: IndependentVerificationResult, suffix = ''): str
   roots.push(root)
   const path = join(root, 'verifier.mjs')
   writeFileSync(path, `#!/usr/bin/env node\nprocess.stdin.resume(); process.stdin.on('end', () => process.stdout.write(${JSON.stringify(JSON.stringify(result))}));${suffix}\n`)
-  chmodSync(path, 0o755)
   return path
 }
 
@@ -67,8 +66,8 @@ function authorityFixture() {
     ...unsigned,
     proof: sign(null, Buffer.from(canonicalJson(unsigned)), keys.privateKey).toString('base64'),
   }
-  const executable = verifierScript(result)
-  return { keys, result, executable, publicKey, privateKey }
+  const script = verifierScript(result)
+  return { keys, result, executable: process.execPath, args: [script], publicKey, privateKey }
 }
 
 function authorityOptions(
@@ -79,6 +78,7 @@ function authorityOptions(
     authorityId: 'launcher-verifier',
     sourceIdentity,
     executable: fixture.executable,
+    args: fixture.args,
     publicKey: fixture.publicKey,
     privateKey: fixture.privateKey,
     ...overrides,
@@ -90,7 +90,7 @@ describe('external verifier adapter', () => {
     const fixture = authorityFixture()
     const authority = createExternalVerifierAuthority({
       authorityId: 'launcher-verifier', sourceIdentity, executable: fixture.executable,
-      publicKey: fixture.publicKey, privateKey: fixture.privateKey, timeoutMs: 5000,
+      args: fixture.args, publicKey: fixture.publicKey, privateKey: fixture.privateKey, timeoutMs: 5000,
     })
     expect(Object.isFrozen(authority.sourceIdentity())).toBe(true)
     await expect(authority.verifyCandidate(request, new AbortController().signal)).resolves.toEqual(fixture.result)
@@ -103,7 +103,7 @@ describe('external verifier adapter', () => {
     // hook is part of the authority surface even when it has no side effect.
     const objectAuthority = createExternalVerifierAuthority({
       authorityId: 'launcher-verifier', sourceIdentity, executable: fixture.executable,
-      publicKey: fixture.keys.publicKey, privateKey: fixture.keys.privateKey,
+      args: fixture.args, publicKey: fixture.keys.publicKey, privateKey: fixture.keys.privateKey,
     })
     objectAuthority.checkpointPromotion?.('promotion-payload', {
       phase: 'journal-persisted', operationIndex: -1,
@@ -114,19 +114,19 @@ describe('external verifier adapter', () => {
     const fixture = authorityFixture()
     const authority = createExternalVerifierAuthority({
       authorityId: 'launcher-verifier', sourceIdentity, executable: fixture.executable,
-      publicKey: fixture.publicKey, privateKey: fixture.privateKey,
+      args: fixture.args, publicKey: fixture.publicKey, privateKey: fixture.privateKey,
     })
     const bad = { ...fixture.result, proof: Buffer.from('bad').toString('base64') }
     const badExecutable = verifierScript(bad)
     const badAuthority = createExternalVerifierAuthority({
-      authorityId: 'launcher-verifier', sourceIdentity, executable: badExecutable,
+      authorityId: 'launcher-verifier', sourceIdentity, executable: process.execPath, args: [badExecutable],
       publicKey: fixture.publicKey, privateKey: fixture.privateKey,
     })
     await expect(badAuthority.verifyCandidate(request, new AbortController().signal)).rejects.toThrow('signature')
 
     const slow = verifierScript(fixture.result, 'setTimeout(() => {}, 5000)')
     const slowAuthority = createExternalVerifierAuthority({
-      authorityId: 'launcher-verifier', sourceIdentity, executable: slow,
+      authorityId: 'launcher-verifier', sourceIdentity, executable: process.execPath, args: [slow],
       publicKey: fixture.publicKey, privateKey: fixture.privateKey, timeoutMs: 20,
     })
     await expect(slowAuthority.verifyCandidate(request, new AbortController().signal)).rejects.toThrow('timed out')
@@ -189,7 +189,7 @@ setTimeout(() => {
   process.exit(7)
 }, 100)
 `)
-    const failingAuthority = createExternalVerifierAuthority(authorityOptions(fixture, { executable: failing }))
+    const failingAuthority = createExternalVerifierAuthority(authorityOptions(fixture, { args: [failing] }))
     await expect(failingAuthority.verifyCandidate(request, new AbortController().signal))
       .rejects.toThrow(/external verifier exited 7: x+/u)
 
@@ -197,7 +197,7 @@ setTimeout(() => {
 process.kill(process.pid, 'SIGTERM')
 `)
     const signalledAuthority = createExternalVerifierAuthority(authorityOptions(fixture, {
-      executable: signalled,
+      args: [signalled],
     }))
     await expect(signalledAuthority.verifyCandidate(request, new AbortController().signal))
       .rejects.toThrow(/external verifier exited null \(SIGTERM\)/u)
@@ -209,15 +209,15 @@ process.kill(process.pid, 'SIGTERM')
 process.stdout.write('not-json')
 `)
     const invalidJsonAuthority = createExternalVerifierAuthority(authorityOptions(fixture, {
-      executable: invalidJson,
+      args: [invalidJson],
     }))
     await expect(invalidJsonAuthority.verifyCandidate(request, new AbortController().signal))
       .rejects.toThrow(/JSON/u)
 
     const noisy = verifierScript(fixture.result, `
-process.stdout.write('x'.repeat(256 * 1024 + 1))
+process.stdout.write('x'.repeat(2 * 1024 * 1024))
 `)
-    const noisyAuthority = createExternalVerifierAuthority(authorityOptions(fixture, { executable: noisy }))
+    const noisyAuthority = createExternalVerifierAuthority(authorityOptions(fixture, { args: [noisy] }))
     await expect(noisyAuthority.verifyCandidate(request, new AbortController().signal))
       .rejects.toThrow('output exceeds 256 KiB')
   })
@@ -234,7 +234,7 @@ process.stdout.write('x'.repeat(256 * 1024 + 1))
     ]
     for (const [label, patch] of fields) {
       const executable = verifierScript({ ...fixture.result, ...patch })
-      const authority = createExternalVerifierAuthority(authorityOptions(fixture, { executable }))
+      const authority = createExternalVerifierAuthority(authorityOptions(fixture, { args: [executable] }))
       await expect(authority.verifyCandidate(request, new AbortController().signal), label)
         .rejects.toThrow('signature or request binding')
     }
@@ -251,7 +251,7 @@ process.stdout.write('x'.repeat(256 * 1024 + 1))
 setInterval(() => {}, 1000)
 `)
     const authority = createExternalVerifierAuthority(authorityOptions(fixture, {
-      executable: hanging,
+      args: [hanging],
       timeoutMs: 5_000,
     }))
     const controller = new AbortController()
@@ -264,8 +264,8 @@ process.on('SIGTERM', () => {})
 setInterval(() => {}, 1000)
 `)
     const timeoutAuthority = createExternalVerifierAuthority(authorityOptions(fixture, {
-      executable: ignoresTerm,
-      timeoutMs: 20,
+      args: [ignoresTerm],
+      timeoutMs: 1000,
     }))
     await expect(timeoutAuthority.verifyCandidate(request, new AbortController().signal))
       .rejects.toThrow('timed out')

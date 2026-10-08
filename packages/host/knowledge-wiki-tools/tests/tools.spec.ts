@@ -5,6 +5,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { KnowledgeModelProvenance } from '../../knowledge-wiki/src/index.ts'
 import * as plugin from '../src/index.ts'
 
 const contexts: Context[] = []
@@ -34,6 +35,7 @@ type FakeReview = {
   resolved?: boolean
   reviewKind?: string
   candidatePath?: string
+  provenance?: KnowledgeModelProvenance
 }
 
 class FakeWiki extends Service {
@@ -115,6 +117,27 @@ describe('Knowledge Wiki tool catalog', () => {
       expect(result.isError).toBe(true)
       expect(text(result)).toContain('knowledgeWiki service unavailable')
     }
+  })
+
+  it('denies every model read without an authoritative session working directory', async () => {
+    const { ctx, service } = await setup()
+    const id = SessionId('wiki-no-working-directory')
+    const session = Session.create(id, [], { version: 0, id, createdAt: Date.now() })
+    const agent = { id, session } as unknown as Agent
+    for (const [name, args] of [
+      ['wiki_search', { query: 'claim' }], ['wiki_files', {}],
+      ['wiki_read', { path: 'concepts/claim.md' }], ['wiki_graph', {}], ['wiki_reviews', {}],
+    ] as const) {
+      const result = await executeForAgent(ctx, agent, name, args)
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('knowledge scope unavailable')
+    }
+    expect(service?.modelSearch).not.toHaveBeenCalled()
+    expect(service?.modelList).not.toHaveBeenCalled()
+    expect(service?.modelPageContent).not.toHaveBeenCalled()
+    expect(service?.modelGraph).not.toHaveBeenCalled()
+    expect(service?.modelReviews).not.toHaveBeenCalled()
+    expect(session.events.filter(event => event.type.startsWith('knowledge/'))).toEqual([])
   })
 
   it('searches and renders both empty and ranked results', async () => {
@@ -224,6 +247,45 @@ describe('Knowledge Wiki tool catalog', () => {
     ] })
     expect(text(result)).toContain('[contradiction] Conflict — ' + 'd'.repeat(140))
     expect(service?.reviews).toHaveBeenLastCalledWith({ status: 'unresolved', limit: 30 })
+  })
+
+  it('logs graph and review provenance against the exact rendered output and deduplicates one knowledge identity', async () => {
+    const { ctx, service } = await setup()
+    const id = SessionId('wiki-provenance-projection')
+    const session = Session.create(id, [], { version: 0, id, createdAt: Date.now(), cwd: process.cwd() })
+    const agent = { id, session } as unknown as Agent
+    const provenance: KnowledgeModelProvenance = {
+      knowledgeId: 'independently-verified-claim', sourceHash: 'a'.repeat(64),
+      contentHash: 'b'.repeat(64), scope: { projectId: process.cwd(), visibility: 'project' },
+      trust: 'medium', authority: 'trusted-verifier', evidenceRefs: ['receipt'],
+      verificationStatus: 'verified', expiresAt: null, conflicts: [],
+    }
+    service?.modelGraph.mockResolvedValue({
+      nodes: [
+        { id: 'one', label: 'First', path: 'concepts/first.md', linkCount: 1, type: 'concept' },
+        { id: 'two', label: 'Second', path: 'concepts/second.md', linkCount: 1, type: 'concept' },
+      ],
+      edges: [{ source: 'one', target: 'two', weight: 1 }],
+      provenance: { one: provenance, two: provenance },
+    })
+    const graph = await executeForAgent(ctx, agent, 'wiki_graph', {})
+    expect(graph.isError).toBe(false)
+    const graphInjected = session.events.filter(event => event.type === 'knowledge/injected')
+    expect(graphInjected).toHaveLength(1)
+    expect(graphInjected[0]?.data).toMatchObject({
+      knowledgeId: provenance.knowledgeId, sourceHash: provenance.sourceHash,
+      sourceContentHash: provenance.contentHash, value: graph.content,
+      evidenceRefs: ['receipt'], verificationStatus: 'verified',
+    })
+
+    service?.reviews.mockResolvedValue([{ id: 'review', title: 'Evidence review', type: 'suggestion', provenance }])
+    const reviews = await executeForAgent(ctx, agent, 'wiki_reviews', {})
+    expect(reviews.isError).toBe(false)
+    const reviewInjected = session.events.filter(event => event.type === 'knowledge/injected').at(-1)
+    expect(reviewInjected?.data).toMatchObject({
+      knowledgeId: provenance.knowledgeId, sourceHash: provenance.sourceHash, value: reviews.content,
+    })
+    expect(session.events.filter(event => event.type === 'knowledge/retrieved')).toHaveLength(5)
   })
 
   it('routes all ingestion through the durable queue owner', async () => {

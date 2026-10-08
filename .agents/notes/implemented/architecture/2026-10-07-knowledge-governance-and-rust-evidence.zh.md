@@ -12,6 +12,10 @@ active Ark 源码已经保存 Wiki candidate、评审、verifier receipt 与 uti
 
 知识记录显式保存 provenance、trust、authority、evidence、verification、scope、ACL、过期时间、冲突和 utility 字段。hash 链项目日志记录 observation、candidate、verification、rejection、retrieval、injection、conflict、expiry、promotion 和 rollback。candidate 生命周期事件携带完整记录；晋级需要现有独立 verifier 与评审事务。模型可见 Wiki 工具追加 `knowledge/retrieved` 和 `knowledge/injected` session 事件，事件包含调用身份、scope、结果 hash 和可回放 JSON 值。未验证、过期、冲突、越界、ACL 拒绝或低置信度记录会 fail closed。
 
+未签名的接纳不能替换已有 identity，也不能赋予 verified trust。验证使用经过认证的完整记录，拒绝被改写的先前接纳。晋级会对最终 canonical content hash 签名，WAL 恢复也采用同一绑定；模型投影在搜索、embedding、图谱派生、列表或页面读取前检查实际文件字节。检索和 utility 回放把路径解析为同一个受治理 identity，修改展示投影不能重置治理计数。这些绑定防止未签名 hash 链或新算出的文件 hash 冒充验证。
+
+Candidate identity 包含路径和内容 hash。字节变化会创建独立的评审 revision；再次观察相同字节不能重开已解决的评审，也不能覆盖已经认证的 identity。
+
 checkout 包含隔离的 [knowledge-search shadow crate](../../../../rust/knowledge-search-shadow/README.zh.md) 与默认关闭的 TypeScript child boundary。搜索 authority、图谱派生、session 持久化和 subprocess 管理继续由 TypeScript 或已有 native owner 负责；没有 receipt 授权 Rust enforce。Rust candidate matrix 要求三组对照、差分回放、取消、恢复、打包和平台证据通过后才允许 enforce。[源码清点](../process/2026-10-08-function-language-census.zh.md) 区分声明覆盖与功能、性能验证。
 
 学习结论使用相同 model、配置、task、goal 和 policy hash 的 baseline/candidate 配对结果。缺少机会或独立验证时返回 `UNKNOWN`；知识条数、模型调用次数或 Rust 行数不能证明改进。
@@ -26,3 +30,5 @@ checkout 包含隔离的 [knowledge-search shadow crate](../../../../rust/knowle
 ## Consequences
 
 Wiki 事件日志可审计、可回放，canonical 文件继续由现有评审与 verifier WAL 保护。新增 session event 不改变 session format version。没有 calling session 的工具调用仍可服务非 Agent caller，但模型可见的 Agent 调用不能绕过 session event 记录。Rust enforce 保持 deferred，直到具体候选登记 corpus、边界和三组证据。
+
+测试 authority 只验证确定性的认证与拒绝行为。独立评估者密钥分离、原生配置、实际 trial 收益与真实 provider 的配对学习证据仍未验证；验证结果通过和 UI 反馈不能证明修复规则被正确复用。

@@ -1058,7 +1058,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/knowledge-wiki/src/index.ts:198`](../packages/host/knowledge-wiki/src/index.ts)
+Source: [`packages/host/knowledge-wiki/src/index.ts:199`](../packages/host/knowledge-wiki/src/index.ts)
 
 <a id="deepseek-aidsh-llm"></a>
 

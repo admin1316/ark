@@ -34,6 +34,7 @@ import {
   resolveAdvisoryReviewBatch,
 } from './reviews.ts'
 import {
+  readTrustedVerification,
   verifyCandidate,
   type KnowledgeWikiVerifierAuthority,
 } from './verifier.ts'
@@ -812,10 +813,14 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     return knowledgeInjectionDecision(record, scope).allowed
   }
 
-  private modelProvenance(record: KnowledgeRecord, contentHash?: string): KnowledgeModelProvenance {
+  private modelPageAllowed(record: KnowledgeRecord | undefined, scope: KnowledgeAccessContext, content: string): boolean {
+    return this.modelRecordAllowed(record, scope) && record?.contentHash === knowledgeSha256(content)
+  }
+
+  private modelProvenance(record: KnowledgeRecord): KnowledgeModelProvenance {
     return {
       knowledgeId: record.id,
-      ...(contentHash === undefined ? {} : { contentHash }),
+      ...(record.contentHash === undefined ? {} : { contentHash: record.contentHash }),
       sourceHash: record.sourceHash,
       scope: record.scope,
       trust: record.trust,
@@ -841,9 +846,9 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   ): Promise<WikiSearchHit[]> {
     const project = this.modelProject(scope)
     if (project === undefined || scope.sessionId === undefined) throw new Error('knowledge scope is unavailable')
-    const raw = await hybridSearch(project.wikiRoot, request.query, await this.resolveApiKey(), request.topK ?? 8)
     const records = this.modelRecords(project.projectRoot)
-    const allowed = raw.filter(hit => this.modelRecordAllowed(records.get(hit.path), scope))
+    const admit = (path: string, content: string): boolean => this.modelPageAllowed(records.get(path), scope, content)
+    const allowed = await hybridSearch(project.wikiRoot, request.query, await this.resolveApiKey(), request.topK ?? 8, undefined, admit)
     if (this.knowledgeSearchCandidateMode === 'enforce') {
       // The production model contract is hybrid (BM25 plus optional vectors),
       // while the current Rust candidate implements BM25 only. Enforce mode
@@ -853,7 +858,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     }
     if (this.knowledgeSearchCandidateMode === 'shadow') {
       try {
-        const pages = collectSearchPages(project.wikiRoot)
+        const pages = collectSearchPages(project.wikiRoot, admit)
         const expected = [bm25(pages, request.query)]
         const candidateRequest = createRustKnowledgeSearchRequest({
           sessionId: scope.sessionId,
@@ -911,8 +916,9 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     if (!this.modelRecordAllowed(record, scope)) throw new Error('knowledge page is not verified for this scope')
     const content = readPage(project.wikiRoot, safe.relativePath)
     if (content === '') throw new Error('knowledge page not found')
+    if (!this.modelPageAllowed(record, scope, content)) throw new Error('knowledge page bytes do not match verified content')
     this.recordKnowledgeRetrieval([safe.relativePath], project.projectRoot)
-    const provenance = this.modelProvenance(record as KnowledgeRecord, knowledgeSha256(content))
+    const provenance = this.modelProvenance(record as KnowledgeRecord)
     return Promise.resolve({ path: safe.relativePath, content, provenance })
   }
 
@@ -926,7 +932,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const project = this.modelProject(scope)
     if (project === undefined || scope.sessionId === undefined) throw new Error('knowledge scope is unavailable')
     const records = this.modelRecords(project.projectRoot)
-    const entries = listPages(project.wikiRoot) as WikiFileEntry[]
+    const entries = listPages(project.wikiRoot,
+      (path, content) => this.modelPageAllowed(records.get(path), scope, content)) as WikiFileEntry[]
     const visit = (entry: WikiFileEntry): KnowledgeModelFileEntry | undefined => {
       if (!entry.isDir) {
         const record = records.get(entry.path)
@@ -952,14 +959,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const project = this.modelProject(scope)
     if (project === undefined || scope.sessionId === undefined) throw new Error('knowledge scope is unavailable')
     const records = this.modelRecords(project.projectRoot)
-    const graph = buildGraph(project.wikiRoot)
-    const allowed = new Set(graph.nodes.filter(node => this.modelRecordAllowed(records.get(node.path), scope)).map(node => node.id))
+    const graph = buildGraph(project.wikiRoot, (path, content) => this.modelPageAllowed(records.get(path), scope, content))
     return {
       ...graph,
-      nodes: graph.nodes.filter(node => allowed.has(node.id)),
-      edges: graph.edges.filter(edge => allowed.has(edge.source) && allowed.has(edge.target)),
       provenance: Object.fromEntries(graph.nodes
-        .filter(node => allowed.has(node.id))
         .map(node => [node.id, this.modelProvenance(records.get(node.path) as KnowledgeRecord)])),
     }
   }
@@ -985,7 +988,15 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       if (status !== 'all' && status === 'resolved' && !item.resolved) return false
       if (status !== 'all' && status !== 'resolved' && item.resolved) return false
       if (item.reviewKind !== 'candidate') return true
-      return this.modelRecordAllowed(records.get(item.candidatePath ?? ''), scope)
+      const record = records.get(item.candidatePath ?? '')
+      if (!this.modelRecordAllowed(record, scope) || item.candidatePath === undefined) return false
+      const verification = item.verification
+      const receiptId = verification?.receipts.length === 1 ? verification.receipts[0]?.id : undefined
+      if (receiptId === undefined || verification?.action === undefined) return false
+      if (readTrustedVerification(this.verifierAuthority, this.reviewFile(project.projectRoot), project.wikiRoot,
+        item, receiptId, verification.action) === undefined) return false
+      const safe = resolveSafePath(project.wikiRoot, item.candidatePath, false)
+      return this.modelPageAllowed(record, scope, readPage(project.wikiRoot, safe.relativePath))
     }).slice(0, request.limit ?? 100)
     return filtered.map((item) => {
       if (item.reviewKind !== 'candidate') return item
@@ -1004,6 +1015,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
 
   private recordKnowledgeRetrieval(paths: string[], projectRoot = this.currentRoot): void {
     if (paths.length === 0) return
+    const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(projectRoot), this.verifierAuthority))
+    const governedByPath = new Map([...state.records.values()].map(record => [record.source, record]))
     const records = this.readUtility(projectRoot)
     const now = new Date().toISOString()
     for (const path of [...new Set(paths)]) {
@@ -1014,8 +1027,16 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         userCorrections: 0,
         utilityScore: 0,
       }
-      records[path] = { ...current, retrievalHits: current.retrievalHits + 1, lastRetrievedAt: now }
-      this.appendKnowledgeEvent('knowledge/retrieved', `page:${path}`, {
+      const governed = governedByPath.get(path)
+      records[path] = {
+        ...current,
+        retrievalHits: (governed?.retrievalHits ?? current.retrievalHits) + 1,
+        successfulUses: governed?.successfulUses ?? current.successfulUses,
+        userCorrections: governed?.userCorrections ?? current.userCorrections,
+        utilityScore: governed?.utilityScore ?? current.utilityScore,
+        lastRetrievedAt: now,
+      }
+      this.appendKnowledgeEvent('knowledge/retrieved', governed?.id ?? `page:${path}`, {
         path,
         retrievalAt: now,
       }, projectRoot)
@@ -1104,8 +1125,20 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    */
   @Remote('knowledgeUtility')
   knowledgeUtility(): Promise<KnowledgeUtilityRecord[]> {
-    return promiseFromSync(() =>
-      Object.values(this.readUtility()).sort((left, right) => right.utilityScore - left.utilityScore))
+    return promiseFromSync(() => {
+      const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(), this.verifierAuthority))
+      const governedByPath = new Map([...state.records.values()].map(record => [record.source, record]))
+      return Object.values(this.readUtility()).map((record) => {
+        const governed = governedByPath.get(record.path)
+        return governed === undefined ? record : {
+          ...record,
+          retrievalHits: governed.retrievalHits,
+          successfulUses: governed.successfulUses,
+          userCorrections: governed.userCorrections,
+          utilityScore: governed.utilityScore,
+        }
+      }).sort((left, right) => right.utilityScore - left.utilityScore)
+    })
   }
 
   /**
@@ -1119,6 +1152,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     outcome: 'successful' | 'corrected' | 'neutral'
   }): Promise<number> {
     return promiseFromSync(() => {
+      const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(), this.verifierAuthority))
+      const governedByPath = new Map([...state.records.values()].map(record => [record.source, record]))
       const records = this.readUtility()
       const now = new Date().toISOString()
       let updated = 0
@@ -1136,20 +1171,22 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         }
         // Outcome feedback must follow a durable retrieval/injection fact;
         // callers cannot improve utility by posting arbitrary UI-only paths.
-        if (request.outcome !== 'neutral' && current.retrievalHits < 1) continue
-        const updatedRecord = updateKnowledgeUtility({
-          id: `page:${safe}`,
+        const governed = governedByPath.get(safe)
+        if (request.outcome !== 'neutral' && (governed?.retrievalHits ?? current.retrievalHits) < 1) continue
+        const knowledgeId = governed?.id ?? `page:${safe}`
+        const updatedRecord = updateKnowledgeUtility(governed ?? {
+          id: knowledgeId,
           content: safe,
           source: safe,
           sourceHash: knowledgeSha256(safe),
           scope: { projectId: this.currentRoot, visibility: 'project' },
-          trust: 'high',
-          authority: 'wiki-runtime',
-          evidenceRefs: [safe],
-          verificationStatus: 'verified',
-          confidence: 1,
+          trust: 'low',
+          authority: 'untrusted-observation',
+          evidenceRefs: [],
+          verificationStatus: 'observed',
+          confidence: 0,
           createdAt: now,
-          lastVerifiedAt: now,
+          lastVerifiedAt: null,
           expiresAt: null,
           conflicts: [],
           retrievalHits: current.retrievalHits,
@@ -1159,26 +1196,24 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         }, request.outcome)
         records[safe] = {
           ...current,
+          retrievalHits: updatedRecord.retrievalHits,
           successfulUses: updatedRecord.successfulUses,
           userCorrections: updatedRecord.userCorrections,
           utilityScore: updatedRecord.utilityScore,
           lastOutcomeAt: now,
         }
-        this.appendKnowledgeEvent('knowledge/injected', `page:${safe}`, {
+        this.appendKnowledgeEvent('knowledge/injected', knowledgeId, {
           path: safe,
           outcome: request.outcome,
+          outcomeSource: 'user-feedback',
           utilityScore: updatedRecord.utilityScore,
         })
-        if (request.outcome === 'corrected') {
-          const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(), this.verifierAuthority))
-          const governed = [...state.records.values()].find(record => record.source === safe)
-          if (governed !== undefined) {
-            this.appendKnowledgeEvent('knowledge/rejected', governed.id, {
-              path: safe,
-              repairRule: 'do-not-reuse-until-independent-review',
-              repairRuleHash: knowledgeSha256(`do-not-reuse-until-independent-review:${safe}`),
-            })
-          }
+        if (request.outcome === 'corrected' && governed !== undefined) {
+          this.appendKnowledgeEvent('knowledge/rejected', governed.id, {
+            path: safe,
+            repairRule: 'do-not-reuse-until-independent-review',
+            repairRuleHash: knowledgeSha256(`do-not-reuse-until-independent-review:${safe}`),
+          })
         }
         updated += 1
       }
@@ -1203,9 +1238,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         )
         if (lstatSync(resolved).isDirectory()) return { path: request.path, content: '' }
         const content = readPage(this.activeWikiRoot, safe)
+        let governed: KnowledgeRecord | undefined
         try {
           const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(), this.verifierAuthority))
-          const governed = [...state.records.values()].find(record => record.source === safe)
+          governed = [...state.records.values()].find(record => record.source === safe)
           if (governed !== undefined && !knowledgeInjectionDecision(governed, {
             projectId: this.currentRoot,
             workspaceId: this.currentRoot,
@@ -1216,7 +1252,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           this.ctx.logger.warn(`[knowledge-wiki] knowledge replay rejected page read: ${error instanceof Error ? error.message : String(error)}`)
           return { path: request.path, content: '' }
         }
-        this.appendKnowledgeEvent('knowledge/injected', `page:${safe}`, {
+        this.appendKnowledgeEvent('knowledge/injected', governed?.id ?? `page:${safe}`, {
           path: safe,
           contentHash: knowledgeSha256(content),
         })
