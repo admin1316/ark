@@ -2,7 +2,7 @@
 
 English | [中文](knowledge-runtime-report.zh.md)
 
-**Current snapshot:** source findings were refreshed against checkout commit `70977b3124e008838b3e22b9b04e824ffa82f574` on 2026-10-08. Runtime observations distinguish the isolated candidate Ark from the untouched official bundle. The earlier `b8adf5a7ec` references are historical only and do not identify the current source.
+**Current snapshot:** source findings were refreshed against checkout commit `02bf7ebc7f973b35e298bcd4121199f0ab81683c` on 2026-10-08. Runtime observations distinguish the isolated candidate Ark from the untouched official bundle. The earlier `b8adf5a7ec` references are historical only and do not identify the current source.
 
 ## What the model can actually see
 

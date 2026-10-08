@@ -2,7 +2,7 @@
 
 [English](knowledge-runtime-report.md) | 中文
 
-**当前快照：** 源码发现已按 checkout 提交 `70977b3124e008838b3e22b9b04e824ffa82f574` 于 2026-10-08 刷新。运行时观察区分隔离候选 Ark 与未修改的正式包；早期 `b8adf5a7ec` 仅是历史基线，不能作为当前源码身份。
+**当前快照：** 源码发现已按 checkout 提交 `02bf7ebc7f973b35e298bcd4121199f0ab81683c` 于 2026-10-08 刷新。运行时观察区分隔离候选 Ark 与未修改的正式包；早期 `b8adf5a7ec` 仅是历史基线，不能作为当前源码身份。
 
 ## What the model can actually see
 
