@@ -75,7 +75,11 @@ kind: "package-reference"
 
 ### 受治理的页面读取
 
-模型 Wiki 投影要求已登记的项目、调用 session 和已配置的 verifier authority。未签名的 observation 与 candidate 保持低信任；verified 事件认证完整记录，包括正文、来源、scope、ACL 和过期时间。晋级用 SHA-256 绑定最终页面字节。搜索与图谱在派生结果或发送 embedding 输入前先检查实际可读字节；被修改或未绑定的页面会 fail closed。检索和结果事件使用已接纳的知识 ID，受治理的 utility 计数由日志回放得到。UI 反馈是观察，不是正确复用或学习改进的独立证据。
+模型 Wiki 投影要求已登记的项目、调用 session 和已配置的 verifier authority。未签名的 observation 与 candidate 保持低信任；verified 事件认证完整记录，包括正文、来源、scope、ACL 和过期时间。历史 canonical 接纳用 SHA-256 绑定实际页面字节。搜索与图谱在派生结果或发送 embedding 输入前检查可读字节；被修改或未绑定的页面会 fail closed。检索和结果事件使用已接纳的知识 ID，受治理的 utility 计数由日志回放得到。正面 UI 反馈仍被记录，但不增加成功使用次数或保留收益；纠正反馈降低 utility 并拒绝复用。
+
+语义验证保留经过认证的检查结果，不生成 trial。当前 receipt 契约无法认证实测 trial 收益，因此 Promote、Merge、Replace 与 Deduplicate 在写入前拒绝；对应的 prepared WAL 也拒绝前向恢复。prepared canonical WAL 因而会阻止初始化或项目切换恢复，同时保留证据且不认证完成。Archive、Skip 与 rollback 保留原有规则。
+
+Archive 恢复在修改前校验签名操作的角色、candidate/review/governance 路径、归档字节、已解决的 review 和 staging 身份。恢复会将原始 Archive 或 Skip 处理结果记为一条 rejected 生命周期事件，包括已记录 committed 标记但尚未追加事件的情况。缺失事件的修复要求文件与已提交的 poststate 字节完全一致；状态偏离或追加失败时保留 WAL，供审查恢复或重试。重复恢复不会重复生命周期事件。
 
 <a id="model-experience"></a>
 ## 模型体验
@@ -130,7 +134,7 @@ kind: "package-reference"
 - **仅阶段二 REVIEW 块** —— 评审项从生成输出中解析，没有独立的评审建议 LLM 阶段。
 - **仅在线向量** —— 向量检索按查询调用 embedding API，无持久向量库。
 - **轮询监视** —— `raw/sources` 每 60 秒扫描，无文件系统 watcher。
-- **Verifier 配置与学习证据** —— 原生启动没有配置独立评估者。verifier 检查通过和 UI utility 反馈都不证明实测 trial 收益；学习结论要求独立的真实 provider 配对运行与回放证据。
+- **Verifier 配置与学习证据** —— 原生启动没有配置独立评估者，canonical 前向操作也缺少经过认证的实测 trial 契约。学习结论仍要求独立的真实 provider 配对运行与回放证据。
 - **范围外** —— 不提供 Web Clipper、MCP server 与桌面 UI；UI 面由 knowledgeWiki Remote 契约与 tool-knowledge-wiki 消费者覆盖。
 
 <a id="dev-note"></a>

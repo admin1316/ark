@@ -474,9 +474,10 @@ export function applyKnowledgeEvent(state: KnowledgeState, event: KnowledgeEvent
       case 'knowledge/retrieved': next.retrievalHits += 1; break
       case 'knowledge/injected': {
         const outcome = payload.outcome
-        if (outcome === 'successful') next.successfulUses += 1
-        if (outcome === 'corrected') next.userCorrections += 1
-        if (outcome === 'successful' || outcome === 'corrected') {
+        // Injection outcomes carry no authenticated actual-use receipt.
+        // Positive feedback remains observable, including legacy events.
+        if (outcome === 'corrected') {
+          next.userCorrections += 1
           next.utilityScore = Number(((next.successfulUses * 2 - next.userCorrections * 3) / Math.max(1, next.retrievalHits)).toFixed(4))
         }
         break

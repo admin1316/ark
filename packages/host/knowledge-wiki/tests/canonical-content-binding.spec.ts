@@ -9,13 +9,13 @@ import {
   readKnowledgeEventLog, replayKnowledgeEvents,
 } from '../src/knowledge-governance.ts'
 import {
-  appendCandidateReviews, applyCandidateReview, recordCandidateVerification,
-  recoverCandidateReviewTransactions,
+  appendCandidateReviews, recordCandidateVerification,
 } from '../src/reviews.ts'
 import { canonicalJson, sha256, verifyCandidate, type KnowledgeWikiVerifierAuthority } from '../src/verifier.ts'
 import type { KnowledgeRecord, WikiReviewItem } from '../src/types.ts'
 import { wikiTestConfig } from './config-fixture.ts'
 import { verifierAuthority } from './verifier-authority-fixture.ts'
+import { seedHistoricalCanonicalKnowledge } from './historical-governed-fixture.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -27,7 +27,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-function fixture(action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' = 'Promote') {
+function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'wiki-content-binding-'))
   roots.push(root)
   const wikiRoot = join(root, 'wiki')
@@ -39,21 +39,17 @@ function fixture(action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' = 'Prom
   writeFileSync(candidateFull, content)
   mkdirSync(join(root, 'raw/sources'), { recursive: true })
   writeFileSync(join(root, 'raw/sources/evidence.md'), 'Source evidence for the isolated contract test.')
-  if (action !== 'Promote') {
-    mkdirSync(dirname(join(wikiRoot, pagePath)), { recursive: true })
-    writeFileSync(join(wikiRoot, pagePath), '---\ntype: concept\nstatus: canonical\ntitle: Repair contract\n---\n\n# Repair contract\n\nPreserve exact input paths and validate successful repair artifacts.\n')
-  }
   appendCandidateReviews(reviewFile, root, 'raw/sources/evidence.md', [`wiki/${candidatePath}`])
   const item = (JSON.parse(readFileSync(reviewFile, 'utf8')) as WikiReviewItem[])[0]!
-  return { root, wikiRoot, candidatePath, candidateFull, reviewFile, item, content, action }
+  return { root, wikiRoot, candidatePath, candidateFull, reviewFile, item, content }
 }
 
 async function verify(item: ReturnType<typeof fixture>, authority = verifierAuthority()) {
   const result = await verifyCandidate(authority, item.reviewFile, item.wikiRoot, item.item.id,
-    item.action, new AbortController().signal)
+    'Promote', new AbortController().signal)
   expect(result.ok).toBe(true)
   expect(recordCandidateVerification(authority, item.reviewFile, item.wikiRoot, item.item.id,
-    result.receiptId!, item.action)).toBe(true)
+    result.receiptId!, 'Promote')).toBe(true)
   return authority
 }
 
@@ -71,13 +67,19 @@ function scope(item: ReturnType<typeof fixture>) {
   return { projectId: item.root, workspaceId: item.root, sessionId: 'model-session', actor: 'reader' }
 }
 
+function historicalCanonical(item: ReturnType<typeof fixture>) {
+  const canonical = item.content.replace('status: candidate', 'status: canonical')
+  const { authority } = seedHistoricalCanonicalKnowledge({
+    projectRoot: item.root, wikiRoot: item.wikiRoot, path: pagePath, content: canonical,
+    knowledgeId: `candidate:${item.item.id}`,
+  })
+  return { authority, canonical }
+}
+
 describe('authenticated canonical content', () => {
-  it.each(['Promote', 'Merge', 'Replace', 'Deduplicate'] as const)('binds final %s bytes and rejects later replacements at model reads', async (action) => {
-    const item = fixture(action)
-    const authority = await verify(item)
-    expect(applyCandidateReview(authority, item.reviewFile, item.root, item.wikiRoot,
-      join(item.root, 'archive'), item.item.id, action)).toBe(true)
-    const canonical = readFileSync(join(item.wikiRoot, pagePath), 'utf8')
+  it('binds historical fixture-signed canonical bytes and rejects later replacements at model reads', async () => {
+    const item = fixture()
+    const { authority, canonical } = historicalCanonical(item)
     const events = readKnowledgeEventLog(join(item.root, '.llm-wiki/knowledge-events.jsonl'), authority)
     const promoted = events.find(event => event.type === 'knowledge/promoted')!
     expect(promoted.payload.contentHash).toBe(sha256(canonical))
@@ -95,19 +97,12 @@ describe('authenticated canonical content', () => {
     await expect(wiki.modelGraph(scope(item))).resolves.toEqual({ nodes: [], edges: [], communities: [], provenance: {} })
   })
 
-  it('binds recovered canonical bytes from the authenticated promotion journal', async () => {
+  it('restores exact historical fixture-signed canonical bytes from durable admission after a service restart', async () => {
     const item = fixture()
-    const authority = await verify(item)
-    const interrupted: KnowledgeWikiVerifierAuthority = {
-      ...authority,
-      checkpointPromotion(_payload, checkpoint) {
-        if (checkpoint.phase === 'journal-persisted') throw new Error('test interruption')
-      },
-    }
-    expect(() => applyCandidateReview(interrupted, item.reviewFile, item.root, item.wikiRoot,
-      join(item.root, 'archive'), item.item.id, 'Promote')).toThrow('test interruption')
-    expect(recoverCandidateReviewTransactions(authority, item.reviewFile, item.wikiRoot, join(item.root, 'archive'))).toBe(1)
-    const canonical = readFileSync(join(item.wikiRoot, pagePath), 'utf8')
+    const { authority, canonical } = historicalCanonical(item)
+    await expect(service(item, authority).modelPageContent({ path: pagePath }, scope(item)))
+      .resolves.toMatchObject({ content: canonical })
+    await contexts.at(-1)!.fiber.dispose()
     const events = readKnowledgeEventLog(join(item.root, '.llm-wiki/knowledge-events.jsonl'), authority)
     expect(events.find(event => event.type === 'knowledge/promoted')?.payload.contentHash).toBe(sha256(canonical))
     await expect(service(item, authority).modelPageContent({ path: pagePath }, scope(item)))
@@ -130,9 +125,7 @@ describe('authenticated canonical content', () => {
 
   it('excludes unknown, ACL-denied, unbound, and changed bytes before embedding and graph derivation', async () => {
     const item = fixture()
-    const authority = await verify(item)
-    expect(applyCandidateReview(authority, item.reviewFile, item.root, item.wikiRoot,
-      join(item.root, 'archive'), item.item.id, 'Promote')).toBe(true)
+    const { authority } = historicalCanonical(item)
     const eventPath = join(item.root, '.llm-wiki/knowledge-events.jsonl')
     const addSignedRecord = (name: string, fields: Partial<KnowledgeRecord>, omitContentHash = false): void => {
       const path = `concepts/${name}.md`

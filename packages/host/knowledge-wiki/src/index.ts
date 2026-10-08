@@ -1142,7 +1142,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   }
 
   /**
-   * Record whether retrieved knowledge helped or required a user correction.
+   * Record user feedback after retrieval. Governed positive feedback is observational;
+   * corrections reduce utility and reject further governed reuse.
    * @param request - The request input.
    * @returns The value produced by record knowledge outcome.
    */
@@ -1174,26 +1175,28 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         const governed = governedByPath.get(safe)
         if (request.outcome !== 'neutral' && (governed?.retrievalHits ?? current.retrievalHits) < 1) continue
         const knowledgeId = governed?.id ?? `page:${safe}`
-        const updatedRecord = updateKnowledgeUtility(governed ?? {
-          id: knowledgeId,
-          content: safe,
-          source: safe,
-          sourceHash: knowledgeSha256(safe),
-          scope: { projectId: this.currentRoot, visibility: 'project' },
-          trust: 'low',
-          authority: 'untrusted-observation',
-          evidenceRefs: [],
-          verificationStatus: 'observed',
-          confidence: 0,
-          createdAt: now,
-          lastVerifiedAt: null,
-          expiresAt: null,
-          conflicts: [],
-          retrievalHits: current.retrievalHits,
-          successfulUses: current.successfulUses,
-          userCorrections: current.userCorrections,
-          utilityScore: current.utilityScore,
-        }, request.outcome)
+        const updatedRecord = governed !== undefined && request.outcome !== 'corrected'
+          ? governed
+          : updateKnowledgeUtility(governed ?? {
+            id: knowledgeId,
+            content: safe,
+            source: safe,
+            sourceHash: knowledgeSha256(safe),
+            scope: { projectId: this.currentRoot, visibility: 'project' },
+            trust: 'low',
+            authority: 'untrusted-observation',
+            evidenceRefs: [],
+            verificationStatus: 'observed',
+            confidence: 0,
+            createdAt: now,
+            lastVerifiedAt: null,
+            expiresAt: null,
+            conflicts: [],
+            retrievalHits: current.retrievalHits,
+            successfulUses: current.successfulUses,
+            userCorrections: current.userCorrections,
+            utilityScore: current.utilityScore,
+          }, request.outcome)
         records[safe] = {
           ...current,
           retrievalHits: updatedRecord.retrievalHits,

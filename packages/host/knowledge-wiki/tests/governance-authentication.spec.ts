@@ -131,6 +131,48 @@ describe('authenticated knowledge admission', () => {
     expect(knowledgeInjectionDecision(replayed, scope)).toEqual({ allowed: false, reason: 'low-confidence' })
   })
 
+  it.each([
+    {},
+    { outcomeSource: 'user-feedback' },
+    { outcomeSource: 'independent-verifier', authoritySeal: { authorityId: authority.authorityId, proof: 'claimed-use-proof' } },
+  ])('cannot certify successful reuse from injected outcome metadata: %j', (metadata) => {
+    const item = record()
+    const events = [verified(item)]
+    for (let index = 0; index < 3; index += 1) {
+      let prior = events.at(-1)!
+      events.push(createKnowledgeEvent('knowledge/retrieved', item.id, item.scope, {}, {
+        seq: prior.seq + 1, previousEventHash: prior.eventHash,
+      }))
+      prior = events.at(-1)!
+      events.push(createKnowledgeEvent('knowledge/injected', item.id, item.scope, {
+        outcome: 'successful', successfulUses: 99, utilityScore: 99, ...metadata,
+      }, { seq: prior.seq + 1, previousEventHash: prior.eventHash }))
+    }
+    const path = writeJournal(events)
+    const first = replayKnowledgeEvents(readKnowledgeEventLog(path, authority)).records.get(item.id)!
+    const restarted = replayKnowledgeEvents(readKnowledgeEventLog(path, authority)).records.get(item.id)!
+    expect(first).toMatchObject({ retrievalHits: 3, successfulUses: 0, utilityScore: 0 })
+    expect(restarted).toEqual(first)
+    expect(knowledgeInjectionDecision(restarted, scope)).toEqual({ allowed: false, reason: 'low-confidence' })
+  })
+
+  it('retains conservative correction accounting without a later successful observation reviving utility', () => {
+    const item = record()
+    const events = [verified(item)]
+    for (const [type, payload] of [
+      ['knowledge/retrieved', {}],
+      ['knowledge/injected', { outcome: 'corrected', outcomeSource: 'user-feedback' }],
+      ['knowledge/injected', { outcome: 'successful', outcomeSource: 'user-feedback' }],
+    ] as const) {
+      const prior = events.at(-1)!
+      events.push(createKnowledgeEvent(type, item.id, item.scope, payload, {
+        seq: prior.seq + 1, previousEventHash: prior.eventHash,
+      }))
+    }
+    const replayed = replayKnowledgeEvents(readKnowledgeEventLog(writeJournal(events), authority)).records.get(item.id)!
+    expect(replayed).toMatchObject({ retrievalHits: 1, successfulUses: 0, userCorrections: 1, utilityScore: -3 })
+  })
+
   it.each(['knowledge/conflict', 'knowledge/expired', 'knowledge/rejected', 'knowledge/rolled_back'] as const)(
     'cannot restore retired knowledge after %s with a previously valid verification', (type) => {
       const item = record()

@@ -12,7 +12,6 @@
 import {
   closeSync,
   constants,
-  existsSync,
   fsyncSync,
   lstatSync,
   mkdirSync,
@@ -506,9 +505,34 @@ function validatePromotionJournalAuthority(
   return authority.validatePromotion(canonicalJson(promotionJournalCore(journal)), journal.seal)
 }
 
+/** Recover the original Archive/Skip disposition from the sealed append operation. */
+function archiveReviewEventPayload(journal: PromotionJournalCore): {
+  readonly action: 'Archive' | 'Skip'
+  readonly appliedPath: string
+  readonly lifecycle: 'downgraded'
+} {
+  const governance = journal.operations.find(operation => operation.role === 'governance')
+  const archived = journal.operations.find(operation => operation.role === 'candidate-archive')
+  const before = governance?.before ?? ''
+  if (governance?.after === undefined || !governance.after.startsWith(before) || archived === undefined) {
+    throw new Error('Archive journal lifecycle binding failed')
+  }
+  const entry: unknown = JSON.parse(governance.after.slice(before.length))
+  if (typeof entry !== 'object' || entry === null
+    || (Reflect.get(entry, 'action') !== 'Archive' && Reflect.get(entry, 'action') !== 'Skip')
+    || Reflect.get(entry, 'reviewId') !== journal.reviewId
+    || Reflect.get(entry, 'candidateHash') !== journal.candidateHash
+    || Reflect.get(entry, 'outcome') !== 'applied'
+    || Reflect.get(entry, 'appliedPath') !== archived.path) {
+    throw new Error('Archive journal lifecycle binding failed')
+  }
+  return { action: Reflect.get(entry, 'action') as 'Archive' | 'Skip', appliedPath: archived.path, lifecycle: 'downgraded' }
+}
+
 function revalidateJournalBeforeMutation(
   authority: KnowledgeWikiVerifierAuthority | undefined,
   reviewFile: string,
+  wikiRoot: string,
   journal: PromotionJournal,
 ): void {
   if (!validatePromotionJournalAuthority(authority, journal)) throw new Error('promotion journal authority validation failed')
@@ -543,8 +567,43 @@ function revalidateJournalBeforeMutation(
       || item.targetPath !== journal.targetPath) {
       throw new Error('promotion journal verified receipt binding failed')
     }
+    throw new Error('canonical promotion requires independently measured trial evidence')
   }
-  for (const operation of journal.operations) {
+  if (journal.operations.some(operation => operation.role === 'canonical' || operation.role === 'canonical-archive')) {
+    throw new Error('canonical promotion requires independently measured trial evidence')
+  }
+  const roles: PromotionPathRole[] = ['candidate-archive', 'review', 'governance', 'candidate']
+  const archived = journal.operations[0]
+  const governance = journal.operations[2]
+  const candidate = typeof item.candidatePath === 'string' ? resolveGovernedWikiPath(wikiRoot, item.candidatePath, true) : undefined
+  if (journal.operations.length !== roles.length || journal.operations.some((operation, index) => operation.role !== roles[index])
+    || candidate === undefined || !candidate.relativePath.startsWith('_candidates/')
+    || candidateOperation.path !== candidate.absolutePath || candidateOperation.after !== undefined
+    || reviewOperation.path !== reviewFile || reviewOperation.after === undefined
+    || governance?.path !== join(dirname(reviewFile), 'governance.jsonl')
+    || archived?.before !== undefined || archived?.after !== candidateOperation.before
+    || new Set(journal.operations.map(operation => resolve(operation.path))).size !== roles.length) {
+    throw new Error('Archive journal operation identity mismatch')
+  }
+  const disposition = archiveReviewEventPayload(journal)
+  const expectedReviews = reviews.map((value: unknown) => value === item ? {
+    ...item, resolved: true, resolvedAction: 'Archive', appliedPath: disposition.appliedPath, resolvedAt: Date.parse(journal.createdAt),
+  } : value)
+  if (canonicalJson(JSON.parse(reviewOperation.after) as unknown) !== canonicalJson(expectedReviews)) {
+    throw new Error('Archive journal resolved review binding failed')
+  }
+  for (const [index, operation] of journal.operations.entries()) {
+    if (operation.after === undefined && operation.tombstonePath === undefined) throw new Error('promotion delete lacks a tombstone path')
+    if (operation.after !== undefined && operation.stagingPath === undefined) throw new Error('promotion write lacks a staging path')
+    for (const auxiliary of [operation.stagingPath, operation.tombstonePath]) {
+      if (auxiliary !== undefined && dirname(auxiliary) !== dirname(operation.path)) {
+        throw new Error('promotion auxiliary path changed parent')
+      }
+    }
+    const expected = promotionOperation(journal.id, index, operation.role, operation.path, operation.before, operation.after)
+    if (operation.stagingPath !== expected.stagingPath || operation.tombstonePath !== expected.tombstonePath) {
+      throw new Error('Archive journal auxiliary identity mismatch')
+    }
     const current = readOptionalText(operation.path, 8 * 1024 * 1024)
     if (current !== operation.before && current !== operation.after) {
       throw new Error(`promotion journal divergent state at ${operation.path}`)
@@ -571,7 +630,7 @@ function commitPromotionJournal(
   archiveRoot: string,
   journal: PromotionJournal,
 ): void {
-  revalidateJournalBeforeMutation(authority, reviewFile, journal)
+  revalidateJournalBeforeMutation(authority, reviewFile, wikiRoot, journal)
   for (const operation of journal.operations) assertPromotionOperationConfined(operation, reviewFile, wikiRoot, archiveRoot)
   ensureConfinedDirectory(dirname(reviewFile), 'promotion-journal')
   const path = promotionJournalPath(reviewFile, journal.id)
@@ -630,7 +689,8 @@ function commitPromotionJournal(
 }
 
 /**
- * Finish prepared promotions after a crash, or fail closed on divergent bytes.
+ * Finish prepared Archive transactions and repair missing committed Archive lifecycle events after a crash.
+ * Canonical actions lack measured-trial authority.
  * @param authority - Trusted verifier that revalidates the journal before mutation.
  * @param reviewFile - Review file whose sibling directory owns promotion journals.
  * @param wikiRoot - Canonical Wiki root used to confine Candidate and target paths.
@@ -659,11 +719,33 @@ export function recoverCandidateReviewTransactions(
     const raw: unknown = JSON.parse(readRegularFileBounded(path, 8 * 1024 * 1024).toString('utf8'))
     if (typeof raw !== 'object' || raw === null || Reflect.get(raw, 'schemaVersion') !== 1) continue
     const journal = raw as PromotionJournal
-    if (!/^[A-Za-z0-9._:-]+$/u.test(journal.id) || journal.state !== 'prepared' || !Array.isArray(journal.operations)) continue
-    revalidateJournalBeforeMutation(authority, reviewFile, journal)
+    if (!/^[A-Za-z0-9._:-]+$/u.test(journal.id) || !Array.isArray(journal.operations)) continue
+    if (journal.state === 'committed' && journal.action === 'Archive') {
+      const events = readKnowledgeEventLog(knowledgeEventPath(reviewFile))
+      if (events.some(event => event.type === 'knowledge/rejected' && event.knowledgeId === `candidate:${journal.reviewId}`
+        && event.payload.candidateHash === journal.candidateHash)) continue
+    } else if (journal.state !== 'prepared') continue
+    revalidateJournalBeforeMutation(authority, reviewFile, wikiRoot, journal)
     for (const operation of journal.operations) assertPromotionOperationConfined(operation, reviewFile, wikiRoot, archiveRoot)
-    for (const operation of journal.operations) applyPromotionOperation(operation)
-    atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'committed' }, null, 2)}\n`)
+    if (journal.state === 'prepared') {
+      for (const operation of journal.operations) applyPromotionOperation(operation)
+    }
+    // Journal state is not sealed. A committed marker alone cannot attest that
+    // every operation reached its post-state before a terminal event is emitted.
+    for (const operation of journal.operations) {
+      if (readOptionalText(operation.path, 8 * 1024 * 1024) !== operation.after) {
+        throw new Error(`promotion post-commit mismatch at ${operation.path}`)
+      }
+    }
+    if (journal.state === 'prepared') {
+      atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'committed' }, null, 2)}\n`)
+      recovered += 1
+    }
+    if (journal.action === 'Archive') {
+      appendKnowledgeReviewEvent(
+        reviewFile, 'knowledge/rejected', journal.reviewId, journal.candidateHash, archiveReviewEventPayload(journal), authority,
+      )
+    }
     if (journal.action === 'Promote' || journal.action === 'Merge' || journal.action === 'Replace' || journal.action === 'Deduplicate') {
       try {
         const canonical = journal.operations.find(operation => operation.role === 'canonical')
@@ -678,7 +760,6 @@ export function recoverCandidateReviewTransactions(
         // The committed promotion WAL remains the recovery authority.
       }
     }
-    recovered += 1
   }
   return recovered
 }
@@ -920,38 +1001,12 @@ export function recordCandidateVerification(
   )
   if (trusted === undefined) return false
   const nextVerification = trusted.verification
-  // The independent verifier's bounded outcomes are the first limited trial;
-  // UI-side utility feedback cannot mint this state because the receipt is
-  // authority-bound and the derived hash is checked again at promotion.
-  const trialEvidence = trusted.receipt.result.outcomes.flatMap(outcome => outcome.evidence)
-  const successfulUses = trusted.receipt.result.outcomes.filter(outcome => outcome.result === 'pass').length
-  const userCorrections = trusted.receipt.result.outcomes.filter(outcome => outcome.result === 'fail').length
-  const trialBasis = {
-    candidateHash: actualHash,
-    receiptHash: trusted.receipt.receiptHash,
-    successfulUses,
-    userCorrections,
-    evidence: trialEvidence,
-  }
-  const trial = {
-    status: successfulUses > 0 && userCorrections === 0 ? 'passed' as const : 'failed' as const,
-    trialHash: sha256(canonicalJson(trialBasis)),
-    authorityId: nextVerification.authorityId ?? trusted.receipt.result.authorityId,
-    evidence: trialEvidence,
-    retrievalHits: trusted.receipt.result.outcomes.length,
-    successfulUses,
-    userCorrections,
-    utilityScore: Number(((successfulUses * 2 - userCorrections * 3) / Math.max(1, trusted.receipt.result.outcomes.length)).toFixed(4)),
-    startedAt: trusted.receipt.result.issuedAt,
-    endedAt: trusted.receipt.result.issuedAt,
-  }
-  // readTrustedVerification only returns a passed verification, so the action
-  // options always keep the requested action beside the Archive escape hatch.
+  // Semantic checks do not measure actual reuse or utility. A passing receipt
+  // cannot authorize a canonical action until independent trial evidence exists.
   all[index] = {
     ...item,
-    verification: { ...nextVerification, trial },
-    options: candidateActions(wikiRoot, item.targetPath)
-      .filter(option => option.action === action || option.action === 'Archive'),
+    verification: nextVerification,
+    options: [{ action: 'Archive', label: '归档候选' }],
   }
   writeReviewItemsAtomically(reviewFile, all)
   appendGovernanceLog(reviewFile, {
@@ -972,7 +1027,6 @@ export function recordCandidateVerification(
       gitCommit: receipt.gitCommit,
     })),
     confidence: nextVerification.confidence,
-    trial,
   })
   const createdAt = new Date(item.createdAt ?? Date.now()).toISOString()
   const fallbackRecord = createKnowledgeRecord({
@@ -998,13 +1052,13 @@ export function recordCandidateVerification(
     confidence: nextVerification.confidence,
     lastVerifiedAt: nextVerification.lastVerifiedAt ?? new Date().toISOString(),
     evidenceRefs: nextVerification.receipts.map(receipt => receipt.id),
-    trial,
   }, authority)
   return true
 }
 
 /**
- * Apply a hash-bound candidate decision. Null means this is an advisory item.
+ * Apply Archive or Skip to a hash-bound candidate; canonical actions require unavailable measured-trial evidence.
+ * Null means this is an advisory item.
  * @param authority - Trusted verifier that authenticates the bound receipt and promotion journal.
  * @param reviewFile - The review file input.
  * @param projectRoot - The project root input.
@@ -1057,18 +1111,6 @@ export function applyCandidateReview(
     const verification = item.verification
     if (actor === 'governance-agent') return false
     if (!verification || verification.status !== 'passed' || verification.candidateHash !== actualHash) return false
-    if (verification.trial?.status !== 'passed'
-      || verification.trial.successfulUses < 1
-      || verification.trial.userCorrections > 0
-      || verification.trial.utilityScore <= 0) return false
-    const trialBasis = {
-      candidateHash: actualHash,
-      receiptHash: verification.receipts.length === 1 ? verification.receipts[0]?.receiptHash : undefined,
-      successfulUses: verification.trial.successfulUses,
-      userCorrections: verification.trial.userCorrections,
-      evidence: [...verification.trial.evidence],
-    }
-    if (verification.trial.trialHash !== sha256(canonicalJson(trialBasis))) return false
     if (verification.action !== action) return false
     const receiptId = verification.receipts.length === 1 ? verification.receipts[0]?.id : undefined
     if (receiptId === undefined) return false
@@ -1083,20 +1125,10 @@ export function applyCandidateReview(
     if (trusted === undefined
       || trusted.verification.receipts[0]?.receiptHash !== verification.receipts[0]?.receiptHash) return false
     verifiedReceipt = trusted.receipt
-    const expectedSuccessfulUses = verifiedReceipt.result.outcomes.filter(outcome => outcome.result === 'pass').length
-    const expectedCorrections = verifiedReceipt.result.outcomes.filter(outcome => outcome.result === 'fail').length
-    const expectedEvidence = verifiedReceipt.result.outcomes.flatMap(outcome => outcome.evidence)
-    const expectedTrialHash = sha256(canonicalJson({
-      candidateHash: actualHash,
-      receiptHash: verifiedReceipt.receiptHash,
-      successfulUses: expectedSuccessfulUses,
-      userCorrections: expectedCorrections,
-      evidence: expectedEvidence,
-    }))
-    if (verification.trial.successfulUses !== expectedSuccessfulUses
-      || verification.trial.userCorrections !== expectedCorrections
-      || verification.trial.trialHash !== expectedTrialHash) return false
   }
+  // The current receipt authenticates semantic checks, not a measured trial.
+  // Legacy trial mirrors cannot authorize any canonical write.
+  if (canonicalActions.has(action)) return false
 
   const now = new Date()
   const today = now.toISOString().slice(0, 10)
@@ -1275,10 +1307,10 @@ export function applyCandidateReview(
     canonicalActions.has(action) ? 'knowledge/promoted' : 'knowledge/rejected',
     item.id,
     actualHash,
-    {
+    canonicalActions.has(action) ? {
       action, appliedPath, lifecycle: canonicalActions.has(action) ? 'canonical' : 'downgraded',
       ...(targetAfter === undefined ? {} : { contentHash: sha256(targetAfter) }),
-    },
+    } : archiveReviewEventPayload(core),
     authority,
   )
   return true
@@ -1292,21 +1324,6 @@ function canonicalTarget(candidatePath: string): string | undefined {
     if (/^(concepts|entities|findings|research|methodology)\//u.test(rel)) return rel
   }
   return undefined
-}
-
-function candidateActions(wikiRoot: string, targetPath?: string): ReadonlyArray<{ action: string; label: string }> {
-  if (!targetPath) return [{ action: 'Archive', label: '归档候选' }]
-  const target = resolveCanonicalReviewPath(wikiRoot, targetPath, true)
-  if (target === undefined) return [{ action: 'Archive', label: '归档候选' }]
-  if (existsSync(target.absolutePath)) {
-    return [
-      { action: 'Deduplicate', label: '保留正式页并去重' },
-      { action: 'Merge', label: '合并更完整版本' },
-      { action: 'Replace', label: '用候选替换' },
-      { action: 'Archive', label: '归档候选' },
-    ]
-  }
-  return [{ action: 'Promote', label: '批准入库' }, { action: 'Archive', label: '归档候选' }]
 }
 
 function stampCanonical(content: string, today: string, approvedBy: string): string {

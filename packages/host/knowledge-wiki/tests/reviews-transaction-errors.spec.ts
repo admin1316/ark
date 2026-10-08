@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import {
   existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -326,7 +325,7 @@ function candidateArchivePath(item: Fixture): string {
 }
 
 describe('candidate review transaction rollback', () => {
-  it('restores Promote when the governance-log commit fails', () => {
+  it('restores Archive when the governance-log commit fails', () => {
     const item = fixture('_candidates/sessions/candidate.md')
     expect(verifyFixture(item)).toBe(true)
     const target = readItems(item.reviewFile)[0]!.targetPath!
@@ -336,7 +335,7 @@ describe('candidate review transaction rollback', () => {
     faults.failRenameCount = 1
 
     expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toThrow(/injected rename failure/u)
     expect(existsSync(join(item.wikiRoot, target))).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
@@ -344,7 +343,7 @@ describe('candidate review transaction rollback', () => {
     expect(readFileSync(governanceLog(item), 'utf8')).toBe(logBefore)
   })
 
-  it('restores canonical, archive, candidate, review, and log after a failed post-commit check', () => {
+  it('rolls back Archive after a failed log commit without changing canonical bytes', () => {
     const canonicalBefore = candidate('Canonical', 'stable canonical body')
     const item = fixture('_candidates/ingest/concepts/candidate.md', candidate('Candidate', 'replacement body'))
     const target = readItems(item.reviewFile)[0]!.targetPath!
@@ -367,7 +366,7 @@ describe('candidate review transaction rollback', () => {
     faults.failRenameCount = 1
 
     expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Replace', 'human',
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toThrow(/injected rename failure/u)
     expect(readFileSync(targetFull, 'utf8')).toBe(canonicalBefore)
     expect(existsSync(archivedCanonical)).toBe(false)
@@ -376,7 +375,7 @@ describe('candidate review transaction rollback', () => {
     expect(readFileSync(governanceLog(item), 'utf8')).toBe(logBefore)
   })
 
-  it('restores the verifier governance log while rolling back Promote', () => {
+  it('restores the verifier governance log while rolling back Archive', () => {
     const item = fixture('_candidates/sessions/candidate.md')
     expect(verifyFixture(item)).toBe(true)
     const row = readItems(item.reviewFile)[0]!
@@ -388,7 +387,7 @@ describe('candidate review transaction rollback', () => {
     faults.failRenameCount = 1
 
     expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toThrow(/injected rename failure/u)
     expect(readFileSync(governanceLog(item), 'utf8')).toBe(logBefore)
     expect(existsSync(join(item.wikiRoot, target))).toBe(false)
@@ -404,7 +403,7 @@ describe('candidate review transaction rollback', () => {
     faults.failSecondaryRenameCount = 1
 
     expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toThrow(/injected rename failure/u)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
@@ -431,7 +430,7 @@ describe('candidate review transaction rollback', () => {
     expect(existsSync(item.candidateFull)).toBe(false)
   })
 
-  it('rejects a canonical target whose resolved identity changes during staging', () => {
+  it('denies promotion when the candidate root resolves differently', () => {
     const item = fixture('_candidates/sessions/candidate.md')
     expect(verifyFixture(item)).toBe(true)
     const target = readItems(item.reviewFile)[0]!.targetPath!
@@ -445,7 +444,7 @@ describe('candidate review transaction rollback', () => {
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('rejects a canonical target that becomes a symlink during staging', () => {
+  it('denies promotion with a changed canonical symlink', () => {
     const item = fixture('_candidates/sessions/candidate.md')
     expect(verifyFixture(item)).toBe(true)
     const targetDirectory = join(item.wikiRoot, 'concepts')
@@ -458,7 +457,7 @@ describe('candidate review transaction rollback', () => {
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('rejects a canonical target that appears while the transaction is staging', () => {
+  it('denies promotion after a canonical target appeared', () => {
     const item = fixture('_candidates/sessions/candidate.md')
     expect(verifyFixture(item)).toBe(true)
     const target = readItems(item.reviewFile)[0]!.targetPath!
@@ -473,7 +472,7 @@ describe('candidate review transaction rollback', () => {
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('binds the current canonical bytes into the authority-sealed operation set', () => {
+  it('keeps changed canonical bytes untouched when measured trial evidence is absent', () => {
     const item = fixture()
     const target = readItems(item.reviewFile)[0]!.targetPath!
     const targetFull = join(item.wikiRoot, target)
@@ -483,8 +482,9 @@ describe('candidate review transaction rollback', () => {
     writeFileSync(targetFull, candidate('Changed canonical'), 'utf8')
     expect(applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Replace', 'human',
-    )).toBe(true)
-    expect(existsSync(item.candidateFull)).toBe(false)
+    )).toBe(false)
+    expect(existsSync(item.candidateFull)).toBe(true)
+    expect(readFileSync(targetFull, 'utf8')).toBe(candidate('Changed canonical'))
   })
 
   it('rejects a candidate whose resolved identity changes during staging', () => {
@@ -498,7 +498,7 @@ describe('candidate review transaction rollback', () => {
     faults.resolveOverrideAt = 1
 
     expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toThrow(/candidate path changed/u)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
@@ -511,7 +511,7 @@ describe('candidate review transaction rollback', () => {
     faults.lstatSymlinkAt = 2
 
     expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toThrow(/unique ordinary file/u)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
@@ -543,13 +543,13 @@ describe('candidate review transaction rollback', () => {
     expect(verifyFixture(item)).toBe(true)
     writeFileSync(governanceLog(item), 'external audit line\n', 'utf8')
     expect(applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toBe(true)
     expect(readFileSync(governanceLog(item), 'utf8')).toContain('external audit line')
   })
 })
 describe('concurrent mutation guards during a review transaction', () => {
-  it('refuses a canonical target whose resolved identity changes during staging', () => {
+  it('denies canonical promotion before a staged symlink can be introduced', () => {
     const item = fixture('_candidates/sessions/candidate.md')
     expect(verifyFixture(item)).toBe(true)
     const target = readItems(item.reviewFile)[0]!.targetPath!
@@ -565,16 +565,17 @@ describe('concurrent mutation guards during a review transaction', () => {
     faults.armOnOpenTarget = targetFull
     faults.armOnOpenContent = join(item.root, 'outside-canonical.md')
 
-    expect(() => applyCandidateReview(
+    expect(applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/canonical target changed during review transaction/u)
-    expect(lstatSync(targetFull).isSymbolicLink()).toBe(true)
+    )).toBe(false)
+    expect(existsSync(targetFull)).toBe(false)
+    expect(faults.armOnOpenFired).toBe(false)
     expect(existsSync(faults.armOnOpenContent)).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
     expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
   })
 
-  it('refuses a canonical target that appears during staging', () => {
+  it('denies canonical promotion before a concurrent target-creation checkpoint', () => {
     const item = fixture('_candidates/sessions/candidate.md')
     expect(verifyFixture(item)).toBe(true)
     const target = readItems(item.reviewFile)[0]!.targetPath!
@@ -587,15 +588,16 @@ describe('concurrent mutation guards during a review transaction', () => {
     faults.armOnOpenTarget = targetFull
     faults.armOnOpenContent = 'concurrent target'
 
-    expect(() => applyCandidateReview(
+    expect(applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/canonical target appeared during review transaction/u)
-    expect(readFileSync(targetFull, 'utf8')).toBe('concurrent target')
+    )).toBe(false)
+    expect(existsSync(targetFull)).toBe(false)
+    expect(faults.armOnOpenFired).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
     expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
   })
 
-  it('refuses an existing canonical target whose bytes change during staging', () => {
+  it('denies replacement before a canonical staging read', () => {
     const item = fixture()
     const target = readItems(item.reviewFile)[0]!.targetPath!
     const targetFull = join(item.wikiRoot, target)
@@ -608,10 +610,11 @@ describe('concurrent mutation guards during a review transaction', () => {
     faults.tamperReadAt = 3
     faults.tamperReadValue = 'canonical bytes replaced by a concurrent writer'
 
-    expect(() => applyCandidateReview(
+    expect(applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Replace', 'human',
-    )).toThrow(/canonical target changed during review transaction/u)
+    )).toBe(false)
     expect(readFileSync(targetFull, 'utf8')).toBe(targetBefore)
+    expect(faults.tamperReadFired).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
@@ -621,11 +624,11 @@ describe('concurrent mutation guards during a review transaction', () => {
     const candidateBefore = readFileSync(item.candidateFull, 'utf8')
     resetOperationCounters()
     faults.tamperReadPath = item.candidateFull
-    faults.tamperReadAt = 3
+    faults.tamperReadAt = 2
     faults.tamperReadValue = 'candidate bytes replaced by a concurrent writer'
 
     expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toThrow(/candidate content changed during review transaction/u)
     expect(readFileSync(item.candidateFull, 'utf8')).toBe(candidateBefore)
     expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
@@ -641,7 +644,7 @@ describe('concurrent mutation guards during a review transaction', () => {
     faults.tamperReadValue = 'review bytes replaced by a concurrent writer'
 
     expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toThrow('review state changed during review transaction')
     expect(existsSync(item.candidateFull)).toBe(true)
     expect(existsSync(join(item.wikiRoot, 'concepts', 'candidate.md'))).toBe(false)
@@ -656,7 +659,7 @@ describe('concurrent mutation guards during a review transaction', () => {
     faults.tamperReadValue = 'governance bytes replaced by a concurrent writer\n'
 
     expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toThrow('governance log changed during review transaction')
     expect(existsSync(item.candidateFull)).toBe(true)
     expect(existsSync(join(item.wikiRoot, 'concepts', 'candidate.md'))).toBe(false)

@@ -72,7 +72,11 @@ The production search path remains TypeScript by default. In `shadow` mode the s
 
 ### Governed page reads
 
-Model Wiki projections require a registered project, the calling session, and a configured verifier authority. Unsigned observations and candidates remain low-trust; a verified event authenticates the complete record, including content, provenance, scope, ACL, and expiry. Promotion binds the final page bytes with SHA-256. Search and graph admit exact readable bytes before deriving results or sending embedding input; modified or unbound pages fail closed. Retrieval and outcome events use the admitted knowledge ID, and governed utility counters are replayed from the journal. UI feedback is an observation, not independent evidence of successful reuse or learning improvement.
+Model Wiki projections require a registered project, the calling session, and a configured verifier authority. Unsigned observations and candidates remain low-trust; a verified event authenticates the complete record, including content, provenance, scope, ACL, and expiry. Historical canonical admission binds exact page bytes with SHA-256. Search and graph admit readable bytes before deriving results or sending embedding input; modified or unbound pages fail closed. Retrieval and outcome events use the admitted knowledge ID, and governed utility counters replay from the journal. Positive UI feedback remains observable without granting successful-use or retention credit; corrections reduce utility and reject reuse.
+
+Semantic verification preserves authenticated check results without creating a trial. The current receipt contract cannot authenticate measured trial benefit, so Promote, Merge, Replace, and Deduplicate deny before writes; their prepared WALs also deny roll-forward. A prepared canonical WAL therefore blocks initialization or project-switch recovery without deleting evidence or certifying completion. Archive, Skip, and rollback retain their existing rules.
+
+Archive recovery validates signed operation roles, candidate/review/governance paths, archive bytes, resolved review, and staging identities before mutation. It records the original Archive or Skip disposition as one rejected lifecycle event, including recovery after a committed marker but before event append. Missing-event repair requires exact committed file poststates; divergence or append failure preserves the WAL for reviewed recovery or retry. Repeated recovery does not duplicate the lifecycle event.
 
 ## Model Experience
 
@@ -125,7 +129,7 @@ Independent request per image.
 - **Stage-2 review blocks only** — review items are parsed from the generation output; there is no standalone review-suggestion LLM stage.
 - **Online embeddings only** — vector search calls the embedding API per query; there is no persisted vector store.
 - **Polling watch** — `raw/sources` is scanned every 60 seconds; there is no filesystem watcher.
-- **Verifier provisioning and learning evidence** — native launch does not provision an independent evaluator. Passing verifier checks and UI utility feedback do not establish measured trial benefit; independent paired provider runs and replay evidence are required for learning claims.
+- **Verifier provisioning and learning evidence** — native launch does not provision an independent evaluator, and canonical forward actions lack an authenticated measured-trial contract. Independent paired provider runs and replay evidence remain required for learning claims.
 - **Out of scope** — Web Clipper, MCP server, and a desktop UI are not provided; the knowledgeWiki Remote contract and the tool-knowledge-wiki consumer cover the UI surface.
 
 ### Dev Note

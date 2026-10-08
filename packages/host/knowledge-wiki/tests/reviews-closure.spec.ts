@@ -146,7 +146,7 @@ function verify(item: Fixture, action: 'Promote' | 'Merge' = 'Promote'): void {
 function apply(
   item: Fixture,
   acting: KnowledgeWikiVerifierAuthority = authority,
-  action = 'Promote',
+  action = 'Archive',
   actor = 'human',
 ): boolean | null {
   return applyCandidateReviewWithAuthority(
@@ -216,7 +216,7 @@ function operationOf(journal: { readonly operations: readonly JournalOperation[]
   return operation
 }
 
-/** Run one real promotion until its journal is durable, then leave it prepared. */
+/** Run an authorized Archive until its journal is durable, then leave it prepared. */
 function interruptAtJournalPersistence(item: Fixture): JournalRecord {
   const stopping = checkpointAuthority((_core, checkpoint) => {
     if (checkpoint.phase === 'journal-persisted') throw STOP_AFTER_JOURNAL
@@ -276,46 +276,15 @@ function aggregateMessages(error: unknown): string[] {
 }
 
 describe('canonical stamping and durable target selection', () => {
-  it('stamps canonical frontmatter onto a candidate that carries no status field', () => {
-    const withoutStatus = [
-      '---',
-      'type: concept',
-      'origin: ingest',
-      'title: Closure stamping',
-      'sources: ["repo:ark/docs/architecture.md"]',
-      'related: ["concepts/closure"]',
-      '---',
-      '',
-      '# Closure stamping',
-      '',
-      '## 原则',
-      '',
-      'Canonical pages carry an explicit status and an approval stamp on admission.',
-      '',
-      '## 适用条件',
-      '',
-      'Use this when a candidate is admitted without an explicit status field.',
-      '',
-      '## 验证证据',
-      '',
-      'Independent verification supplies the admission evidence and the rollback point.',
-      '',
-    ].join('\n')
-    const item = fixture('_candidates/sessions/closure.md', withoutStatus)
+  it('does not stamp canonical frontmatter from a passing semantic check', () => {
+    const item = fixture('_candidates/sessions/closure.md', candidate().replace('status: candidate\n', ''))
     verify(item)
-
-    expect(apply(item)).toBe(true)
-
-    const target = readItems(item.reviewFile)[0]!.targetPath
-    if (target === undefined) throw new Error('promotion recorded no canonical target')
-    const promoted = readFileSync(join(item.wikiRoot, target), 'utf8')
-    expect(promoted.startsWith('---\napproved_at: ')).toBe(true)
-    expect(promoted).toContain(`approved_at: ${new Date().toISOString().slice(0, 10)}`)
-    expect(promoted).toContain('approved_by: human')
-    expect(promoted).toContain('status: canonical')
-    expect(promoted).not.toContain('status: candidate')
-    expect(promoted).toContain('title: Closure stamping')
-    expect(existsSync(item.candidateFull)).toBe(false)
+    const before = readFileSync(item.candidateFull, 'utf8')
+    const reviewBefore = readFileSync(item.reviewFile, 'utf8')
+    expect(apply(item, authority, 'Promote')).toBe(false)
+    expect(readFileSync(item.candidateFull, 'utf8')).toBe(before)
+    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
+    expect(existsSync(join(item.wikiRoot, 'concepts', 'closure.md'))).toBe(false)
   })
 
   it('archives a verified candidate whose durable target resolves inside the candidate namespace', () => {
@@ -355,7 +324,7 @@ describe('canonical stamping and durable target selection', () => {
     verify(promote, 'Promote')
     const promoteReviewBefore = readFileSync(promote.reviewFile, 'utf8')
 
-    expect(apply(promote)).toBe(false)
+    expect(apply(promote, authority, 'Promote')).toBe(false)
     expect(readFileSync(promote.reviewFile, 'utf8')).toBe(promoteReviewBefore)
     expect(existsSync(promote.candidateFull)).toBe(true)
     expect(existsSync(join(promote.wikiRoot, 'concepts', 'closure.md'))).toBe(false)
@@ -501,15 +470,118 @@ describe('promotion journal recovery boundaries', () => {
 })
 
 describe('prepared journal revalidation', () => {
+  it.each([
+    ['archive-bytes', 'Archive journal operation identity mismatch'],
+    ['lifecycle-action', 'Archive journal lifecycle binding failed'],
+    ['resolved-review', 'Archive journal resolved review binding failed'],
+    ['auxiliary-alias', 'Archive journal auxiliary identity mismatch'],
+  ])('refuses an inconsistent signed Archive disposition: %s', (mutation, reason) => {
+    const item = fixture()
+    const journal = interruptAtJournalPersistence(item)
+    const reviewBefore = readFileSync(item.reviewFile, 'utf8')
+    const candidateBefore = readFileSync(item.candidateFull, 'utf8')
+    const eventPath = join(dirname(item.reviewFile), 'knowledge-events.jsonl')
+    const eventBefore = readFileSync(eventPath, 'utf8')
+    resealJournal(item, journal, (core) => {
+      core.operations = core.operations.map((operation) => {
+        if (mutation === 'archive-bytes' && operation.role === 'candidate-archive') return { ...operation, after: 'substituted archive' }
+        if (mutation === 'resolved-review' && operation.role === 'review') return { ...operation, after: reviewBefore }
+        if (mutation === 'auxiliary-alias' && operation.role === 'review') return { ...operation, stagingPath: item.reviewFile }
+        if (mutation === 'lifecycle-action' && operation.role === 'governance') {
+          const before = operation.before ?? ''
+          const entry = JSON.parse(operation.after!.slice(before.length)) as Record<string, unknown>
+          return { ...operation, after: `${before}${JSON.stringify({ ...entry, action: 'Promote' })}\n` }
+        }
+        return operation
+      })
+    })
+    const journalBefore = readJournal(item)
+    expect(() => recoverCandidateReviewTransactions(authority, item.reviewFile, item.wikiRoot, item.archiveRoot)).toThrow(reason)
+    expect(readJournal(item)).toEqual(journalBefore)
+    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
+    expect(readFileSync(item.candidateFull, 'utf8')).toBe(candidateBefore)
+    expect(readFileSync(eventPath, 'utf8')).toBe(eventBefore)
+    expect(existsSync(operationOf(journal, 'candidate-archive').path)).toBe(false)
+  })
+
+  it.each(['extra-candidate', 'rebound-candidate', 'duplicate-candidate', 'rebound-review', 'rebound-governance'])(
+    'refuses a sealed Archive operation identity mismatch: %s', (mutation) => {
+      const item = fixture()
+      const journal = interruptAtJournalPersistence(item)
+      const reviewBefore = readFileSync(item.reviewFile, 'utf8')
+      const candidateBefore = readFileSync(item.candidateFull, 'utf8')
+      const target = mutation === 'rebound-review' || mutation === 'rebound-governance'
+        ? join(dirname(item.reviewFile), 'protected.json') : join(item.wikiRoot, 'concepts', 'protected.md')
+      const protectedBefore = mutation === 'rebound-candidate' ? candidateBefore
+        : mutation === 'rebound-review' ? reviewBefore : 'existing canonical bytes'
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, protectedBefore)
+      // Fixture-signed malformed history must not expand the Archive owner's write set.
+      resealJournal(item, journal, (core) => {
+        if (mutation === 'extra-candidate') {
+          core.operations.push({
+            role: 'candidate', path: target, before: protectedBefore, after: 'unauthorized canonical overwrite',
+            stagingPath: join(dirname(target), '.protected.md.ark-wal-stage-fixture'),
+          })
+        } else if (mutation === 'duplicate-candidate') {
+          core.operations.push({ ...operationOf(core, 'candidate') })
+        } else {
+          const role = mutation.slice('rebound-'.length)
+          core.operations = core.operations.map(operation => operation.role !== role ? operation : {
+            ...operation,
+            path: target,
+            ...(role === 'governance' ? {
+              before: protectedBefore, after: `${protectedBefore}${operation.after?.slice(operation.before?.length ?? 0) ?? ''}`,
+            } : {}),
+            ...(role === 'candidate' ? { tombstonePath: join(dirname(target), '.protected.md.ark-wal-delete-fixture') }
+              : { stagingPath: join(dirname(target), '.protected.md.ark-wal-stage-fixture') }),
+          })
+        }
+      })
+      const journalBefore = readJournal(item)
+      expect(() => recoverCandidateReviewTransactions(authority, item.reviewFile, item.wikiRoot, item.archiveRoot))
+        .toThrow('Archive journal operation identity mismatch')
+      expect(readJournal(item)).toEqual(journalBefore)
+      expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
+      expect(readFileSync(item.candidateFull, 'utf8')).toBe(candidateBefore)
+      expect(readFileSync(target, 'utf8')).toBe(protectedBefore)
+      expect(existsSync(operationOf(journal, 'candidate-archive').path)).toBe(false)
+    },
+  )
+
+  it.each(['canonical', 'canonical-archive'])('refuses a sealed Archive journal containing a %s operation', (role) => {
+    const item = fixture()
+    verify(item)
+    const journal = interruptAtJournalPersistence(item)
+    const reviewBefore = readFileSync(item.reviewFile, 'utf8')
+    const candidateBefore = readFileSync(item.candidateFull, 'utf8')
+    const target = join(item.wikiRoot, 'concepts', 'closure.md')
+    // Fixture authority models a historical inconsistent WAL, not trial evidence.
+    resealJournal(item, journal, (core) => {
+      core.operations = core.operations.map(operation => operation.role !== 'candidate-archive' ? operation : {
+        ...operation,
+        role,
+        ...(role === 'canonical' ? { path: target, stagingPath: join(dirname(target), '.ark-wal-stage-fixture') } : {}),
+      })
+    })
+    const sealedBefore = readJournal(item)
+    expect(() => recoverCandidateReviewTransactions(authority, item.reviewFile, item.wikiRoot, item.archiveRoot))
+      .toThrow('canonical promotion requires independently measured trial evidence')
+    expect(readJournal(item)).toEqual(sealedBefore)
+    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
+    expect(readFileSync(item.candidateFull, 'utf8')).toBe(candidateBefore)
+    expect(existsSync(target)).toBe(false)
+  })
+
   it('fails closed when a prepared journal file diverged from its recorded state', () => {
     const item = fixture()
     verify(item)
     const journal = interruptAtJournalPersistence(item)
-    const target = operationOf(journal, 'canonical')
+    const target = operationOf(journal, 'candidate-archive')
     const reviewBefore = readFileSync(item.reviewFile, 'utf8')
     const candidateBefore = readFileSync(item.candidateFull, 'utf8')
     mkdirSync(dirname(target.path), { recursive: true })
-    writeFileSync(target.path, 'divergent canonical bytes', 'utf8')
+    writeFileSync(target.path, 'divergent archive bytes', 'utf8')
 
     expect(() => recoverCandidateReviewTransactions(
       authority, item.reviewFile, item.wikiRoot, item.archiveRoot,
@@ -587,7 +659,7 @@ describe('prepared journal revalidation', () => {
     expect(review.before).toBeDefined()
   })
 
-  it('completes the promotion when the directory fsync fails with EPERM like windows', () => {
+  it('completes Archive recovery when the directory fsync fails with EPERM like windows', () => {
     const item = fixture()
     verify(item)
     interruptAtJournalPersistence(item)
@@ -598,7 +670,7 @@ describe('prepared journal revalidation', () => {
     } finally { fsFault.mode = 'none' }
   })
 
-  it('surfaces a non-EPERM directory fsync failure instead of completing the promotion', () => {
+  it('surfaces a non-EPERM directory fsync failure instead of completing Archive recovery', () => {
     const item = fixture()
     verify(item)
     interruptAtJournalPersistence(item)
@@ -653,6 +725,7 @@ describe('prepared journal revalidation', () => {
     verify(unbound)
     const unboundJournal = interruptAtJournalPersistence(unbound)
     resealJournal(unbound, unboundJournal, (core) => {
+      core.action = 'Promote'
       core.receiptId = null
     })
     expect(() => recoverCandidateReviewTransactions(
@@ -676,7 +749,7 @@ describe('prepared journal revalidation', () => {
     verify(item)
     const journal = interruptAtJournalPersistence(item)
     resealJournal(item, journal, (core) => {
-      core.operations = core.operations.map(operation => operation.role === 'canonical'
+      core.operations = core.operations.map(operation => operation.role === 'candidate-archive'
         ? { ...operation, stagingPath: join(item.wikiRoot, '.ark-wal-stage-elsewhere') }
         : operation)
     })
@@ -702,7 +775,7 @@ describe('prepared journal revalidation', () => {
         ...(candidate.after === undefined ? {} : { after: candidate.after }),
         ...(candidate.stagingPath === undefined ? {} : { stagingPath: candidate.stagingPath }),
       }
-      core.operations = [withoutTombstone, ...core.operations.filter(operation => operation.role !== 'candidate')]
+      core.operations = core.operations.map(operation => operation.role === 'candidate' ? withoutTombstone : operation)
     })
 
     expect(() => recoverCandidateReviewTransactions(
@@ -727,7 +800,7 @@ describe('prepared journal revalidation', () => {
         ...(review.after === undefined ? {} : { after: review.after }),
         ...(review.tombstonePath === undefined ? {} : { tombstonePath: review.tombstonePath }),
       }
-      core.operations = [withoutStage, ...core.operations.filter(operation => operation.role !== 'review')]
+      core.operations = core.operations.map(operation => operation.role === 'review' ? withoutStage : operation)
     })
 
     expect(() => recoverCandidateReviewTransactions(
@@ -864,14 +937,14 @@ describe('promotion transaction interference', () => {
     expect(walLeftovers(item.root)).toEqual([])
   })
 
-  it('fails closed when the canonical target diverges during the operation set', () => {
+  it('fails closed when the candidate archive diverges during the operation set', () => {
     const item = fixture()
     verify(item)
     const mutating = checkpointAuthority((core, checkpoint) => {
       if (checkpoint.phase !== 'journal-persisted') return
-      const target = operationOf(core, 'canonical')
+      const target = operationOf(core, 'candidate-archive')
       mkdirSync(dirname(target.path), { recursive: true })
-      writeFileSync(target.path, 'divergent canonical bytes', 'utf8')
+      writeFileSync(target.path, 'divergent archive bytes', 'utf8')
     })
 
     const failure = captureFailure(() => { apply(item, mutating) })
@@ -907,7 +980,7 @@ describe('promotion transaction interference', () => {
     const mutating = checkpointAuthority((core, checkpoint) => {
       if (checkpoint.phase !== 'stage-written') return
       const operation = core.operations[checkpoint.operationIndex]
-      if (operation?.role !== 'canonical' || operation.stagingPath === undefined) return
+      if (operation?.role !== 'candidate-archive' || operation.stagingPath === undefined) return
       unlinkSync(operation.stagingPath)
     })
 
