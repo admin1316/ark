@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/rust-migration/rust-candidate-matrix.md
-rust-candidate-matrix.md: 27b82a5504c89c1ef75ee4873b5a33893423bff8
-rust-candidate-matrix.zh.md: b9926ef5c9bffe8b362d7d63eb34b69349d25f8b
+rust-candidate-matrix.md: 7ccf24a1463b9fa113d7579e81435c5ab3714655
+rust-candidate-matrix.zh.md: ab504ed3da0d47bf0485f22af7fad73d31afda76

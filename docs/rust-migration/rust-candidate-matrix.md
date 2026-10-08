@@ -16,7 +16,7 @@ Cancellation and child-process recovery remain owned by the existing TypeScript 
 
 ## Measured candidate evidence
 
-The 2026-10-08 local benchmark used the same deterministic corpus and reported current TypeScript p50 **12.519 ms**, optimized TypeScript p50 **0.500 ms**, and Rust stdin/stdout IPC p50 **20.536 ms**. All three result digests matched (`current-optimized-rust-match`). The record remains **UNKNOWN** for acceptance because it does not include a production candidate profile, signed verifier receipt, cold/warm and cross-platform measurements, child CPU/RSS, or cancellation/crash-recovery evidence. The isolated candidate Ark smoke independently confirmed only the TypeScript native route; its receipt says `rustShadowInvoked: false` because the model/tool path had no configured model. These measurements support `RETAIN_TS`, not an enforce-mode migration.
+The 2026-10-08 local benchmark used the same deterministic corpus and reported current TypeScript p50 **12.519 ms**, optimized TypeScript p50 **0.500 ms**, and Rust stdin/stdout IPC p50 **20.536 ms**. All three result digests matched (`current-optimized-rust-match`). A separate candidate Ark model/tool smoke then spawned the Rust wrapper from a real `wiki_search` call and reproduced the TypeScript BM25 digest with exit code `0`; its tool fixture had an ACL path mismatch, so it is functional shadow evidence rather than a user-visible result or latency run. The record remains **UNKNOWN** for acceptance because it does not include a production candidate profile, signed verifier receipt, cold/warm and cross-platform measurements, child CPU/RSS, or cancellation/crash-recovery evidence. These measurements support `RETAIN_TS`, not an enforce-mode migration.
 
 ## Candidate decisions
 
