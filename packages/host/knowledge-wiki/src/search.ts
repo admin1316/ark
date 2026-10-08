@@ -48,7 +48,11 @@ export function collectSearchPages(wikiRoot: string): SearchPage[] {
   return pages
 }
 
-/** Tokenize text into lowercase word/bigram tokens (Chinese-aware). */
+/**
+ * Tokenize text into lowercase word/bigram tokens (Chinese-aware).
+ * @param text - Text to tokenize.
+ * @returns Lowercase ASCII and CJK tokens.
+ */
 export function tokenize(text: string): string[] {
   const out: string[] = []
   const lower = text.toLowerCase()
@@ -64,6 +68,7 @@ export function tokenize(text: string): string[] {
   return out
 }
 
+/** Stable English/Chinese query stop words shared by search and benchmarks. */
 export const STOP_WORDS: ReadonlySet<string> = new Set([
   'the', 'and', 'or', 'for', 'with', 'not', 'all', 'one', 'can', 'will', 'when', 'what', 'your', 'our', 'you', 'this', 'that', 'are', 'was', 'have', 'has', 'had', 'from', 'into', 'about', 'which', 'would', 'could', 'should', 'there', 'their', 'they', 'them', 'then', 'than', 'just', 'but', 'use', 'used', 'using', 'make', 'made', 'get', 'got', 'like', 'want', 'need', 'please', 'help', 'how', 'why', 'where', 'who', 'also', 'very', 'more', 'most', 'some', 'any', 'each', 'only', 'other', 'such', 'well', 'back', 'down', 'over', 'under', 'again', 'still', 'even', 'ever', 'never', 'now', 'here', 'let', 'new', 'old', 'own', 'same', 'too', 'way', 'thing', 'things', 'something', 'anything', 'everything', 'nothing', 'someone', 'anyone', 'everyone', 'sure', 'right', 'good', 'bad', 'great', 'really', 'actually', 'maybe', 'yes', 'no', 'ok', 'okay', 'hi', 'hello',
   '知识', '文档', '文件', '这个', '什么', '怎么', '一个', '可以', '需要', '进行', '使用', '现在', '我们', '项目', '工作', '所有', '内容', '这样', '那个', '不是', '没有', '如果', '因为', '所以', '但是', '然后', '继续', '开始', '完成', '请问', '相关', '目前', '一下', '还有', '应该', '已经', '问题', '东西', '方面', '以及', '或者', '就是', '还是', '时候', '之后', '之前', '里面', '上面', '下面', '一些', '很多', '全部', '部分', '主要', '重要', '不同', '一样', '比较', '非常', '特别', '直接', '其实', '不过', '而且', '并且', '虽然', '但是', '由于', '因此', '同时', '另外', '此外', '其他', '其它', '通过', '根据', '按照', '对于', '关于', '包括', '包含', '属于', '来自', '作为', '成为', '变成', '产生', '出现', '存在', '提供', '支持', '帮助', '处理', '解决', '完成', '进行', '实现', '设计', '开发', '使用', '利用', '采用', '选择', '考虑', '需要', '要求', '希望', '想要', '可以', '能够', '可能', '应该', '必须', '一定', '因为', '所以', '结果', '效果', '影响', '情况', '状态', '方式', '方法', '过程', '阶段', '部分', '方面', '内容', '信息', '数据', '系统', '功能', '问题', '原因', '结论', '建议', '意见', '看法', '感觉', '知道', '看到', '听到', '想到', '觉得', '认为', '说明', '表示', '显示', '告诉', '询问', '回答', '回复',
