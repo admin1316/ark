@@ -16,7 +16,7 @@ Cancellation and child-process recovery remain owned by the existing TypeScript 
 
 ## 实测候选证据
 
-2026-10-08 的本地 benchmark 使用同一份确定性语料，current TypeScript p50 为 **12.519 ms**，优化 TypeScript p50 为 **0.500 ms**，Rust stdin/stdout IPC p50 为 **20.536 ms**；三者结果摘要一致（`current-optimized-rust-match`）。随后候选 Ark 的模型/工具 smoke 在真实 `wiki_search` 调用中 spawn 了 Rust wrapper，返回两条受治理命中，并以退出码 `0` 重现 TypeScript BM25 摘要。由于缺少 production candidate profile、签名 verifier receipt、cold/warm 与跨平台数据、子进程 CPU/RSS、取消和崩溃恢复证据，验收状态仍是 **UNKNOWN**。这些数据支持 `RETAIN_TS`，不支持开启 enforce-mode 迁移。
+2026-10-08 的本地 benchmark 使用同一份确定性语料。最新三次迭代的 envelope 样本测得 current TypeScript cold p50 **19.8 ms**、优化 TypeScript warm p50 **1.16 ms**、Rust cold stdin/stdout p50 **24.1 ms**、Rust warm persistent-child p50 **32.3 ms**；所有结果摘要一致（`current-optimized-rust-match`）。warm harness 观察到 SIGKILL 后成功重启，但取消、子进程 CPU/RSS、跨平台行为和 production boundary 证据仍缺失。随后候选 Ark 的模型/工具 smoke 在真实 `wiki_search` 调用中 spawn 了 Rust wrapper，返回两条受治理命中，并以退出码 `0` 重现 TypeScript BM25 摘要。由于缺少 production candidate profile、签名 verifier receipt 以及端到端取消/恢复证据，验收状态仍是 **UNKNOWN**。这些数据支持 `RETAIN_TS`，不支持开启 enforce-mode 迁移。
 
 ## Candidate decisions
 
