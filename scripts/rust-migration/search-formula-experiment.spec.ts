@@ -29,7 +29,7 @@ describe('offline search formula experiment', () => {
     const first = runFormulaExperiment()
     const second = runFormulaExperiment()
     expect(first.mode).toBe('offline-deterministic')
-    expect(first.corpusHash).toMatch(/^[a-f0-9]{64}$/u)
+    expect(first.corpusHash).toBe('16014ce2b1c30bab15899efb090b63d6e9b5c0984373312d35a2179def341010')
     expect(first.results.map(result => result.formula)).toEqual(['bm25', 'bm25f', 'bm25+', 'rrf'])
     expect(first).toEqual(second)
     for (const result of first.results) {

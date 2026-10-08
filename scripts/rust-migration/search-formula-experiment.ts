@@ -155,6 +155,10 @@ function queryTerms(query: string): string[] {
   return [...new Set(tokenize(query).filter(token => !STOP_WORDS.has(token)))]
 }
 
+function fixtureHash(pages: readonly FormulaExperimentPage[], queries: readonly JudgedSearchQuery[]): string {
+  return createHash('sha256').update(JSON.stringify({ pages, queries })).digest('hex')
+}
+
 function idf(documents: number, documentFrequency: number): number {
   return Math.log(1 + (documents - documentFrequency + 0.5) / (documentFrequency + 0.5))
 }
@@ -279,12 +283,15 @@ export function formulaExperimentFixture(): FormulaExperimentFixture {
     { id: 'q-vector', query: 'semantic vector dimension', type: 'semantic', relevance: { 'concepts/semantic-boundary.md': 3 }, vectorOrder: ['concepts/semantic-boundary.md', 'concepts/rust-runtime.md'] },
     { id: 'q-empty', query: 'please show', type: 'stop-word-only', relevance: {} },
   ]
-  const hash = createHash('sha256').update(JSON.stringify({ pages, queries })).digest('hex')
+  const hash = fixtureHash(pages, queries)
   return { pages, queries, corpusHash: hash }
 }
 
 /** Run all formula shadows over one frozen fixture without network access. */
 export function runFormulaExperiment(fixture = formulaExperimentFixture()): FormulaExperimentReport {
+  if (fixtureHash(fixture.pages, fixture.queries) !== fixture.corpusHash) {
+    throw new Error('formula experiment corpus hash does not match pages and queries')
+  }
   const lexical = (query: JudgedSearchQuery): FormulaRankedHit[] => bm25(fixture.pages, query.query)
   return {
     schemaVersion: 1,
