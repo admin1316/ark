@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/rust-migration/knowledge-runtime-report.md
-knowledge-runtime-report.md: ffcb0fddb67e2490297bd89a5f14397e5b3c2994
-knowledge-runtime-report.zh.md: 0fd0a1771a192d162858d516572a30ab5b8f023a
+knowledge-runtime-report.md: ca84ee7974ccd7cab1883b41f476df43f551423d
+knowledge-runtime-report.zh.md: e83cceff2e1f25e50ae2625adfbb9e75a56ce320

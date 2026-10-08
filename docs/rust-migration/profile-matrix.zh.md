@@ -4,7 +4,7 @@
 
 **Sources compared:** checked-out `integrations/jiuzhang/profile`, `packages/bundle/base/cordis.patch.yml`, `packages/bundle/native-api-app/cordis.patch.yml`, installed product `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang`, and packaged runtime `/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile`. Profile rows are loader patches; later rows replace a matched row's whole config.
 
-**当前快照：** 源码和 profile 对比已按 checkout 提交 `2d8923344bf5f0101f3eb76a056434b5a78aef3e` 于 2026-10-08 刷新。早期 `b8adf5a7ec` 仅作为历史基线；正式生产 profile 仍与候选 profile 分离，未启用 Rust 搜索候选或 verifier authority。
+**当前快照：** 源码和 profile 对比已按 checkout 提交 `c26c3a49fd75d5a2f438fed0b278b9a8a37c3377` 于 2026-10-08 刷新。早期 `b8adf5a7ec` 仅作为历史基线；正式生产 profile 仍与候选 profile 分离，未启用 Rust 搜索候选或 verifier authority。
 
 ## Profile rows and effective behavior
 
