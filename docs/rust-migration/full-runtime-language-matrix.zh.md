@@ -30,6 +30,7 @@
 | subprocess/jobs、超时、取消、进程组恢复 | `packages/subprocess/**`、`packages/jobs/**` | TypeScript supervisor | **RETAIN_TS** | 现有 owner 已管理 `AbortSignal`、进程组和 teardown；再加 Rust supervisor 会产生双重生命周期和 orphan 风险。 |
 | filesystem、sandbox、Landlock、路径策略 | `packages/fs/**`、`packages/sandbox/**`、`native/landlock-run/**` | TypeScript + 现有 C11 native | **RETAIN_EXISTING** | 安全边界已有 native provider 和策略组合；Rust 重写必须证明同等平台覆盖和审计能力，当前没有理由替换。 |
 | API gateway、controllers、settings、profile loader | `packages/api/**`、`packages/settings/**`、`packages/boot/**` | TypeScript | **RETAIN_TS** | 动态配置、插件装配和错误诊断需要现有生态；跨语言收益无法抵消 wire/schema 维护成本。 |
+| 其他 I/O、协议和生命周期 surfaces | `attachment/**`、`workspace/**`、`shell/**`、`terminal/**`、`lsp/**`、`sdk/**`、`schedule/**`、`workflow/**`、`goal/**`、`plan/**`、`context/**`、`feedback/**`、`hooks/**`、`webhook/**`、`acp/**`、`subagent/**`、`experimental/**`、`e2b/**` | TypeScript + 现有 native | **RETAIN_EXISTING** | 这些模块由文件/终端/HTTP、动态协议、事件生命周期、sandbox 和模型语义主导；`attachment` 已使用 sharp/libvips native，Rust 重写不会自动带来收益。 |
 | Web、HTTP、搜索 provider | `packages/web/**`、`packages/llm/**` | TypeScript | **RETAIN_TS** | 网络等待远大于本地计算，且 provider contract/credential/取消仍由 TS authority 管理。 |
 | code runtime、Python、worker thread | `packages/code-runtime/**` | TypeScript + Python 子运行时 | **RETAIN_EXISTING** | 语言运行时本身不能用 Rust 替换；Rust 只可能作为隔离的纯 CPU 子任务，需单独证明。 |
 | session projection、title、telemetry | `packages/session/**` | TypeScript/native backend | **RETAIN_TS** | 投影和指标与事件 schema、持久化顺序绑定；迁移会扩大回放和兼容面。 |

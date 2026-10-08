@@ -2,7 +2,7 @@
 
 [English](search-math-audit.md) | 中文
 
-**快照。** 本审计描述 2026-10-08 的源码 `02bf7ebc`。它是设计与验证记录，不修改正式公式，也不启用 Rust enforce。
+**快照。** 本审计描述 2026-10-08 的源码 `32bb7275`；此前的 `02bf7ebc` benchmark 只作为历史证据。它是设计与验证记录，不修改正式公式，也不启用 Rust enforce。
 
 ## 结论
 

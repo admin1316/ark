@@ -2,7 +2,7 @@
 
 English | [中文](search-math-audit.zh.md)
 
-**Snapshot.** This audit describes source code at `02bf7ebc` on 2026-10-08. It is a design and verification record; it does not change the production formula or enable Rust enforcement.
+**Snapshot.** This audit describes source code at `32bb7275` on 2026-10-08. The earlier `02bf7ebc` benchmark is historical evidence. It is a design and verification record; it does not change the production formula or enable Rust enforcement.
 
 ## Verdict
 

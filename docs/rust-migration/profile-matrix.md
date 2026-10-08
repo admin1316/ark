@@ -4,7 +4,7 @@ English | [中文](profile-matrix.zh.md)
 
 **Sources compared:** checked-out `integrations/jiuzhang/profile`, `packages/bundle/base/cordis.patch.yml`, `packages/bundle/native-api-app/cordis.patch.yml`, installed product `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang`, and packaged runtime `/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile`. Profile rows are loader patches; later rows replace a matched row's whole config.
 
-**Current snapshot:** source/profile comparisons were refreshed against checkout commit `02bf7ebc7f973b35e298bcd4121199f0ab81683c` on 2026-10-08. The earlier `b8adf5a7ec` references are historical only. The active production profile remains separate from the candidate profile and does not enable the Rust search candidate or verifier authority.
+**Current snapshot:** source/profile comparisons were refreshed against checkout commit `32bb727505bce1c403b362cb82fcefd40dffa6d7` on 2026-10-08. The earlier `02bf7ebc7f973b35e298bcd4121199f0ab81683c` and `b8adf5a7ec` references are historical only. The active production profile remains separate from the candidate profile and does not enable the Rust search candidate or verifier authority.
 
 ## Profile rows and effective behavior
 
