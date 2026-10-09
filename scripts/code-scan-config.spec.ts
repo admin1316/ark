@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, globSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, matchesGlob, relative, resolve } from 'node:path'
+import { dirname, join, matchesGlob, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { isCordisGroupEntry, loadCordisYaml } from './cordis-yaml.ts'
 
@@ -33,7 +33,7 @@ function localPlugins(value: unknown, file: string): string[] {
   const paths: string[] = []
   if (typeof row.name === 'string' && row.name.startsWith('.') && /\.[cm]?tsx?$/.test(row.name)) {
     const target = resolve(dirname(file), row.name)
-    if (existsSync(target)) paths.push(relative(root, target))
+    if (existsSync(target)) paths.push(relative(root, target).split(sep).join('/'))
   }
   if (isCordisGroupEntry(row)) paths.push(...localPlugins(row.config, file))
   if (Array.isArray(row.insert)) paths.push(...localPlugins(row.insert, file))
@@ -44,7 +44,8 @@ describe('source analysis boundaries', () => {
   it('includes every live package source and test without treating generated lib as source', () => {
     const sources = globSync('packages/*/*/{src,tests}/**/*.{ts,tsx}', { cwd: root })
     expect(sources.length).toBeGreaterThan(500)
-    for (const source of sources) {
+    for (const rawSource of sources) {
+      const source = rawSource.split(sep).join('/')
       const owner = source.split('/').slice(0, 3).join('/')
       const config = workspaceScan(owner)
       expect(config.project, owner).toBeDefined()
@@ -108,7 +109,7 @@ describe('source analysis boundaries', () => {
       write('packages/group/two/src/copy.ts')
       const duplicate = run()
       expect(duplicate.status, String(duplicate.stdout) + String(duplicate.stderr)).toBe(1)
-      expect(String(duplicate.stdout)).toContain('src/copy.ts')
+      expect(String(duplicate.stdout).split(sep).join('/')).toContain('src/copy.ts')
       rmSync(join(fixture, 'packages/group/two/src/copy.ts'))
       write('scripts/lib/hand-owned.ts')
       const script = run()

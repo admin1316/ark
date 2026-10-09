@@ -9,7 +9,7 @@ vi.mock('../src/filesystem.ts', async (importOriginal) => {
   return {
     ...actual,
     atomicWriteFile: (path: string, content: string | Buffer, mode?: number) => {
-      if (path.includes('/wiki/_')) throw 'atomic string failure'
+      if (path.replaceAll('\\', '/').includes('/wiki/_')) throw 'atomic string failure'
       actual.atomicWriteFile(path, content, mode)
     },
   }

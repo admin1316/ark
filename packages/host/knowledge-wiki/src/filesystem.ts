@@ -24,13 +24,30 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 /** Default maximum for one Wiki Markdown page. */
 export const MAX_WIKI_PAGE_BYTES = 5 * 1024 * 1024
 
+function missingPathHasOrdinaryParent(path: string): boolean {
+  let cursor = dirname(resolve(path))
+  while (true) {
+    try {
+      const stat = lstatSync(cursor)
+      return stat.isDirectory() && !stat.isSymbolicLink()
+    } catch (error) {
+      if (typeof error !== 'object' || error === null || Reflect.get(error, 'code') !== 'ENOENT') return false
+      const parent = dirname(cursor)
+      if (parent === cursor) return false
+      cursor = parent
+    }
+  }
+}
+
 /**
  * Distinguish an absent optional file from corruption or unsafe I/O.
  * @param error - Caught value to inspect for Node's missing-path error code.
- * @returns True only for a non-null object whose code property is ENOENT.
+ * @param path - Optional path whose existing ancestors distinguish Windows ENOENT-under-file from absence.
+ * @returns True only for ENOENT and, when a path is supplied, an ordinary existing parent directory.
  */
-export function isMissingPathError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT'
+export function isMissingPathError(error: unknown, path?: string): boolean {
+  if (typeof error !== 'object' || error === null || Reflect.get(error, 'code') !== 'ENOENT') return false
+  return path === undefined || missingPathHasOrdinaryParent(path)
 }
 
 /**
@@ -77,7 +94,7 @@ export function resolveConfinedPath(root: string, input: string, allowMissingLea
         throw new Error(`non-directory path ancestor: ${cursor}`)
       }
     } catch (error) {
-      if (!isMissingPathError(error) || !allowMissingLeaf) throw error
+      if (!isMissingPathError(error, cursor) || !allowMissingLeaf) throw error
       break
     }
   }
@@ -116,7 +133,7 @@ export function ensureConfinedDirectory(root: string, input: string): string {
       const stat = lstatSync(cursor)
       if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`unsafe directory path: ${cursor}`)
     } catch (error) {
-      if (!isMissingPathError(error)) throw error
+      if (!isMissingPathError(error, cursor)) throw error
       mkdirSync(cursor, { mode: 0o700 })
       const created = lstatSync(cursor)
       if (!created.isDirectory() || created.isSymbolicLink()) throw new Error(`unsafe created directory: ${cursor}`)
@@ -153,7 +170,7 @@ function assertOrdinaryDestination(path: string): void {
       throw new Error(`unsafe file destination: ${path}`)
     }
   } catch (error) {
-    if (!isMissingPathError(error)) throw error
+    if (!isMissingPathError(error, path)) throw error
   }
 }
 
@@ -348,7 +365,7 @@ export function durableUnlinkFile(path: string): void {
   try {
     stat = lstatSync(path)
   } catch (error) {
-    if (isMissingPathError(error)) {
+    if (isMissingPathError(error, path)) {
       if (existsSync(dirname(path))) syncDirectory(dirname(path))
       return
     }
@@ -362,7 +379,7 @@ export function durableUnlinkFile(path: string): void {
   try {
     descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
   } catch (error) {
-    if (isMissingPathError(error)) {
+    if (isMissingPathError(error, path)) {
       syncDirectory(dirname(path))
       return
     }
@@ -402,7 +419,7 @@ export function readOptionalText(path: string, maxBytes = MAX_WIKI_PAGE_BYTES): 
   try {
     return readRegularFileBounded(path, maxBytes).toString('utf8')
   } catch (error) {
-    if (isMissingPathError(error)) return undefined
+    if (isMissingPathError(error, path)) return undefined
     throw error
   }
 }
@@ -418,7 +435,7 @@ export function readOptionalJson<T>(path: string, fallback: T): T {
   try {
     return JSON.parse(readRegularFileBounded(path, MAX_WIKI_PAGE_BYTES).toString('utf8')) as T
   } catch (error) {
-    if (isMissingPathError(error)) return fallback
+    if (isMissingPathError(error, path)) return fallback
     throw error
   }
 }

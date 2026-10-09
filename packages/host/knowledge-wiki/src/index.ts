@@ -612,7 +612,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       }
       this.restoredQueueRoots.add(projectRoot)
     } catch (error) {
-      if (!isMissingPathError(error)) throw error
+      if (!isMissingPathError(error, this.queueFile(projectRoot))) throw error
       this.restoredQueueRoots.add(projectRoot)
     }
   }
@@ -721,7 +721,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     try {
       rootStat = lstatSync(root)
     } catch (error) {
-      if (isMissingPathError(error)) return out
+      if (isMissingPathError(error, root)) return out
       throw error
     }
     if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('raw source root is not an ordinary directory')
@@ -1244,7 +1244,9 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   @Remote('pageContent')
   pageContent(request: { path: string }): Promise<WikiPageContent> {
     return promiseFromSync(() => {
+      let candidatePath: string | undefined
       try {
+        candidatePath = resolve(this.activeWikiRoot, normalizeWikiRelativePath(request.path))
         const { relativePath: safe, absolutePath: resolved } = resolveSafePath(
           this.activeWikiRoot,
           request.path,
@@ -1272,7 +1274,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         })
         return { path: request.path, content }
       } catch (error) {
-        if (!isMissingPathError(error) && !(error instanceof Error && error.message === 'path does not exist')) throw error
+        if (!isMissingPathError(error, candidatePath) && !(error instanceof Error && error.message === 'path does not exist')) throw error
         return { path: request.path, content: '' }
       }
     })
@@ -2378,7 +2380,7 @@ function readFileIfExists(path: string): string {
   try {
     return readRegularFileBounded(path, 5 * 1024 * 1024).toString('utf8')
   } catch (error) {
-    if (!isMissingPathError(error)) throw error
+    if (!isMissingPathError(error, path)) throw error
     return ''
   }
 }

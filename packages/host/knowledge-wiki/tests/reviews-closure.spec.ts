@@ -8,7 +8,6 @@ import {
   symlinkSync,
   unlinkSync,
   writeFileSync,
-  chmodSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -30,12 +29,18 @@ import type { WikiReviewItem } from '../src/types.ts'
 import { issueTestReceipt, verifierAuthority } from './verifier-authority-fixture.ts'
 
 // Inject only directory-fsync failures; ordinary file I/O stays real.
-const fsFault = vi.hoisted(() => ({ mode: 'none' as 'none' | 'eperm' | 'eio' }))
+const fsFault = vi.hoisted(() => ({ mode: 'none' as 'none' | 'eperm' | 'eio', readdirFailurePath: '' }))
 const directoryFds = vi.hoisted(() => new Set<number>())
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
+    readdirSync: (...args: Parameters<typeof actual.readdirSync>) => {
+      if (fsFault.readdirFailurePath !== '' && String(args[0]) === fsFault.readdirFailurePath) {
+        throw Object.assign(new Error('EACCES: synthetic directory-read failure'), { code: 'EACCES' })
+      }
+      return actual.readdirSync(...args)
+    },
     openSync: (...args: Parameters<typeof actual.openSync>) => {
       const fd = actual.openSync(...args)
       try { if (actual.statSync(String(args[0])).isDirectory()) directoryFds.add(fd) } catch { /* not stat-able */ }
@@ -430,15 +435,13 @@ describe('promotion journal recovery boundaries', () => {
   it('propagates a journal directory failure that is not a missing path', () => {
     const item = fixture()
     mkdirSync(journalDirectory(item), { recursive: true })
-    chmodSync(journalDirectory(item), 0o000)
     try {
+      fsFault.readdirFailurePath = journalDirectory(item)
       const failure = captureFailure(() => recoverCandidateReviewTransactions(
         authority, item.reviewFile, item.wikiRoot, item.archiveRoot,
       ))
       expect(failure).toMatchObject({ code: 'EACCES' })
-    } finally {
-      chmodSync(journalDirectory(item), 0o700)
-    }
+    } finally { fsFault.readdirFailurePath = '' }
   })
 
   it('skips journal records that are not prepared schema-version 1 transactions', () => {

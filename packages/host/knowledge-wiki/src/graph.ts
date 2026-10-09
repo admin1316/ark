@@ -107,7 +107,7 @@ export function visitWikiTree(
   try {
     rootStat = lstatSync(wikiRoot)
   } catch (error) {
-    if (isMissingPathError(error)) return
+    if (isMissingPathError(error, wikiRoot)) return
     throw error
   }
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('Wiki root is not an ordinary directory')

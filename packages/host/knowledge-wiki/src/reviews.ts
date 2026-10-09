@@ -180,7 +180,7 @@ function loadReviewItems(reviewFile: string): WikiReviewItem[] | undefined {
     if (!Array.isArray(parsed) || !parsed.every(isReviewItem)) throw new Error('invalid knowledge review state')
     return parsed
   } catch (error) {
-    if (isMissingPathError(error)) return undefined
+    if (isMissingFileError(error, reviewFile)) return undefined
     throw error
   }
 }
@@ -282,16 +282,12 @@ function appendKnowledgeReviewEvent(
   appendKnowledgeEvent(path, event)
 }
 
-function isMissingPathError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT'
-}
-
 function pathEntryExists(path: string): boolean {
   try {
     lstatSync(path)
     return true
   } catch (error) {
-    if (isMissingPathError(error)) return false
+    if (isMissingFileError(error, path)) return false
     throw error
   }
 }
@@ -302,7 +298,7 @@ function readOptionalRegularFile(path: string): string | undefined {
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`unsafe review transaction file: ${path}`)
     return readRegularFileBounded(path, 8 * 1024 * 1024).toString('utf8')
   } catch (error) {
-    if (isMissingPathError(error)) return undefined
+    if (isMissingFileError(error, path)) return undefined
     throw error
   }
 }
@@ -879,7 +875,7 @@ function readReviewItems(reviewFile: string): WikiReviewItem[] {
     if (!Array.isArray(parsed) || !parsed.every(isReviewItem)) throw new Error('invalid knowledge review state')
     return parsed
   } catch (error) {
-    if (!isMissingPathError(error)) throw error
+    if (!isMissingFileError(error, reviewFile)) throw error
     return []
   }
 }

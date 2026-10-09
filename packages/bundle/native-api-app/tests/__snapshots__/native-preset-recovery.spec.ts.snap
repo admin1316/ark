@@ -7,13 +7,13 @@ exports[`projects the shipped Native roster, scoped capabilities and a real run_
       "run_code",
     ],
     "minimal": [
-      "bash",
+      "local-shell",
       "str_replace_editor",
       "wiki_ingest",
     ],
     "standard": [
       "ask_user_question",
-      "bash",
+      "local-shell",
       "create_goal",
       "edit",
       "exit_plan_mode",

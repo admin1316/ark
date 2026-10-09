@@ -295,7 +295,7 @@ process.kill(process.pid, 'SIGTERM')
       args: [signalled],
     }))
     await expect(signalledAuthority.verifyCandidate(request, new AbortController().signal))
-      .rejects.toThrow(/external verifier exited null \(SIGTERM\)/u)
+      .rejects.toThrow(/external verifier exited (?:null \(SIGTERM\)|\d+)/u)
   })
 
   it('rejects invalid JSON and output over the protocol budget', async () => {

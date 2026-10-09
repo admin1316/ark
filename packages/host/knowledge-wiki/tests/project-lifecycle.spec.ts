@@ -87,7 +87,7 @@ describe('knowledge project lifecycle', () => {
 
     const registry = join(root, '.llm-wiki', 'workspaces.json')
     expect(JSON.parse(readFileSync(registry, 'utf8'))).toEqual({ workspaces: [] })
-    expect(statSync(registry).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect(statSync(registry).mode & 0o777).toBe(0o600)
     expect(readdirSync(join(root, '.llm-wiki')).some(name => name.includes('.ark-save-'))).toBe(false)
   })
 

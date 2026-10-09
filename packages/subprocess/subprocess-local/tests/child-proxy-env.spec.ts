@@ -31,7 +31,7 @@ describe('child process proxy environment', () => {
     expect(env['NODE_USE_ENV_PROXY']).toBeUndefined()
   })
 
-  it('removes a proxy name the user never exported instead of handing the child this process\'s published one', async () => {
+  it.skipIf(process.platform === 'win32')('removes a proxy name the user never exported instead of handing the child this process\'s published one', async () => {
     // The user named the scheme in one casing only. The install publishes both
     // casings into THIS process's environment, so the child environment would
     // inherit a derivation the user never wrote unless the tombstone removes it.
