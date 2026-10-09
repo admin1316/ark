@@ -1,12 +1,25 @@
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { auditAcceptance, canonicalEvidencePayload, currentProfileDigest, currentSourceDigest } from './audit-acceptance.ts'
 
 const HASH = 'a'.repeat(64)
+
+function runAuditCli(...args: string[]) {
+  return spawnSync(process.execPath, ['--import', 'tsx/esm', join(import.meta.dirname, 'audit-acceptance.ts'), ...args], {
+    cwd: resolve(import.meta.dirname, '../..'), encoding: 'utf8', timeout: 15_000,
+  })
+}
+
+function cliAudit(...args: string[]) {
+  const result = runAuditCli(...args)
+  expect(result.error).toBeUndefined()
+  expect(result.status, result.stderr).toBe(0)
+  return JSON.parse(result.stdout) as ReturnType<typeof auditAcceptance>
+}
 
 function seedAcceptanceBaseline(root: string): void {
   mkdirSync(join(root, 'docs/rust-migration'), { recursive: true })
@@ -158,5 +171,91 @@ describe('acceptance audit', () => {
     expect(audit.overall).toBe('PASS')
     expect(audit.checks.rustPerformance.status).toBe('PASS')
     expect(audit.checks.crossSessionLeakage.status).toBe('PASS')
+
+    // These keys and observations belong only to this temporary fixture.
+    const keyPath = join(root, 'caller-trust.json')
+    writeFileSync(keyPath, JSON.stringify({ 'independent-authority': publicKey.export({ type: 'spki', format: 'pem' }).toString() }))
+    expect(cliAudit(root, 'evidence/receipt.json').overall).toBe('UNKNOWN')
+    const trustedArgs = [root, 'evidence/receipt.json', '--trusted-authority-keys', keyPath]
+    const cli = cliAudit(...trustedArgs)
+    expect(cli).toEqual(audit)
+    expect(Object.keys(cli.checks)).toHaveLength(16)
+
+    const { publicKey: wrongKey } = generateKeyPairSync('ed25519')
+    writeFileSync(keyPath, JSON.stringify({ 'independent-authority': wrongKey.export({ type: 'spki', format: 'pem' }).toString() }))
+    expect(cliAudit(...trustedArgs).overall).toBe('UNKNOWN')
+    writeFileSync(keyPath, '{}')
+    expect(cliAudit(...trustedArgs).overall).toBe('UNKNOWN')
+    writeFileSync(keyPath, JSON.stringify({ 'independent-authority': publicKey.export({ type: 'spki', format: 'pem' }).toString() }))
+
+    for (const path of ['packages/example/source.ts', profileFiles[1]!, 'project-manifest.json']) {
+      const before = readFileSync(join(root, path))
+      writeFileSync(join(root, path), Buffer.concat([before, Buffer.from(' ')]))
+      expect(cliAudit(...trustedArgs).overall).toBe('UNKNOWN')
+      writeFileSync(join(root, path), before)
+    }
+    const suppliedReceipt = JSON.parse(readFileSync(join(root, 'evidence/receipt.json'), 'utf8')) as Record<string, unknown>
+    suppliedReceipt.trustedAuthorityKeys = JSON.parse(readFileSync(keyPath, 'utf8')) as unknown
+    writeFileSync(join(root, 'evidence/receipt.json'), JSON.stringify(suppliedReceipt))
+    expect(cliAudit(root, 'evidence/receipt.json').overall).toBe('UNKNOWN')
+    const receiptAsTrust = runAuditCli(root, '--trusted-authority-keys', join(root, 'evidence/receipt.json'))
+    expect(receiptAsTrust.status).toBe(1)
+    expect(receiptAsTrust.stdout).toBe('')
+    for (const trust of [
+      { 'bad authority': publicKey.export({ type: 'spki', format: 'pem' }).toString() },
+      { 'independent-authority': privateKey.export({ type: 'pkcs8', format: 'pem' }).toString() },
+    ]) {
+      writeFileSync(keyPath, JSON.stringify(trust))
+      const rejected = runAuditCli(...trustedArgs)
+      expect(rejected.status).toBe(1)
+      expect(rejected.stdout).toBe('')
+    }
+  })
+
+  it.each([
+    ['invalid JSON', '{'],
+    ['array', '[]'],
+    ['non-key field', '{"authority":true}'],
+    ['invalid PEM', '{"authority":"not-a-key"}'],
+    ['oversized file', ' '.repeat(64 * 1024 + 1)],
+    ['too many authorities', JSON.stringify(Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`authority-${index}`, 'key'])))],
+    ['oversized key', JSON.stringify({ authority: 'a'.repeat(8193) })],
+  ])('rejects %s trust configuration before emitting an audit', (_name, content) => {
+    const root = mkdtempSync(join(tmpdir(), 'ark-acceptance-cli-'))
+    const keyPath = join(root, 'caller-trust.json')
+    writeFileSync(keyPath, content)
+    const result = runAuditCli(root, '--trusted-authority-keys', keyPath)
+    expect(result.error).toBeUndefined()
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('acceptance audit configuration failed:')
+  })
+
+  it('rejects missing explicit trust files, non-files, and malformed CLI arguments', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ark-acceptance-cli-'))
+    for (const args of [
+      [root, '--trusted-authority-keys', join(root, 'missing.json')],
+      [root, '--trusted-authority-keys', root],
+      [root, '--trusted-authority-keys'],
+      [root, '--unknown-option'],
+      [root, 'receipt.json', 'unexpected'],
+    ]) {
+      const result = runAuditCli(...args)
+      expect(result.error).toBeUndefined()
+      expect(result.status).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('acceptance audit configuration failed:')
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('rejects a trust file reached through a final-component symbolic link', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ark-acceptance-cli-'))
+    const keyPath = join(root, 'caller-trust.json')
+    writeFileSync(keyPath, '{}')
+    const linked = join(root, 'linked-trust.json')
+    symlinkSync(keyPath, linked)
+    const result = runAuditCli(root, '--trusted-authority-keys', linked)
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
   })
 })

@@ -30,6 +30,8 @@ The checkout contains the isolated [knowledge-search shadow crate](../../../../r
 
 Learning claims use paired baseline/candidate outcome records with the same model, configuration, task, goal, and policy hashes. Missing opportunities or independent verification produce `UNKNOWN`; memory volume, model-call count, or Rust line count cannot establish improvement. The CLI and read-only graph consumer share one [evaluation reducer](../../../../scripts/rust-migration/README.md), which compares aggregated count ratios through exact integer cross-products, preserving their order when displayed floating-point rates coincide. Numerical improvement does not establish statistical significance or authenticate the input evidence.
 
+The [Phase 6 audit CLI](../../../../scripts/rust-migration/README.md) passes an explicitly selected, bounded public-key map to the existing audit owner. Trust selection belongs to the caller; repository evidence cannot select its own authority. Missing configuration preserves `UNKNOWN`, while malformed explicit configuration fails before reduction. This connects receipt authentication without changing the checks or provisioning evaluator custody. Real CLI subprocess tests use temporary signed fixtures and exercise rejected keys and changed bindings; they do not establish runtime acceptance.
+
 ## Alternatives considered
 
 - **Unlogged Wiki recall:** rejected because model-visible input must be reconstructable from the session event log.

@@ -24,6 +24,10 @@ The metric names are `repeatedErrorRate`, `repeatedToolCallRate`, `verifiedTaskS
 
 `audit-acceptance.ts` reduces the current evidence to per-requirement `PASS`, `UNKNOWN`, or `FAIL` and keeps the overall result `UNKNOWN` whenever required runtime evidence is absent. It is deliberately conservative: a green unit suite cannot promote missing production utility, leakage, verifier, or three-way benchmark evidence.
 
+Run `pnpm exec tsx scripts/rust-migration/audit-acceptance.ts <repo-root> [receipt-path] --trusted-authority-keys <caller-file>` to authenticate a receipt with explicitly selected public keys. The trust file is a JSON object mapping authority IDs to SPKI PEM public-key strings. Relative trust paths resolve from the caller's working directory; receipt paths remain relative to the audited repository. The caller owns authority selection and protection of this file. The CLI does not discover keys, accept keys embedded in receipts, or establish independent evaluator custody. Omitting the option or supplying `{}` keeps unauthenticated checks `UNKNOWN`; a valid but incorrect key also leaves them `UNKNOWN`.
+
+Trust configuration is limited to a regular file of 64 KiB, 64 authorities, 256 characters per non-whitespace authority ID, and 8 KiB per public key. Final-component symbolic links, malformed configuration, missing explicit files, and invalid CLI arguments fail with a nonzero exit and no audit JSON. Configuration loads before audit reduction. The CLI preserves all 16 checks and their source, profile, manifest, goal, and artifact bindings; its JSON `overall` field carries the acceptance result. A signed test fixture proves authentication behavior only.
+
 The audit also reports `artifactCompleteness` separately. A `PASS` there means the requested manifests, reports, scripts, benchmark, and shadow crate are present; it is not a behavioral acceptance result.
 
 ## Function-level source census

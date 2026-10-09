@@ -30,6 +30,8 @@ checkout 包含隔离的 [knowledge-search shadow crate](../../../../rust/knowle
 
 学习结论使用相同 model、配置、task、goal 和 policy hash 的 baseline/candidate 配对结果。缺少机会或独立验证时返回 `UNKNOWN`；知识条数、模型调用次数或 Rust 行数不能证明改进。CLI 与只读 graph consumer 共用一个[评估归约器](../../../../scripts/rust-migration/README.zh.md)，使用精确整数交叉乘积比较汇总计数的比例，即使显示的浮点比例相同，也能保留真实大小关系。数值改善不能证明统计显著性，也不能认证输入证据。
 
+[Phase 6 审计 CLI](../../../../scripts/rust-migration/README.zh.md)将显式选择、有大小限制的公钥映射传给现有审计 owner。信任选择属于调用方；仓库证据不能选择自己的 authority。缺少配置时保持 `UNKNOWN`，显式配置畸形时在归约前失败。这接通了 receipt 认证，不改变检查项，也不配置评估者的密钥保管关系。真实 CLI 子进程测试使用临时签名 fixture，覆盖公钥拒绝与绑定变化；它们不证明运行时验收。
+
 ## Alternatives considered
 
 - **不记录 Wiki recall：** 拒绝，因为模型可见输入必须能由 session event log 重建。

@@ -2,8 +2,9 @@
 
 import { createHash, createPublicKey, verify as verifySignature } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, readSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { parseArgs } from 'node:util'
 import { readRunContext, type ImmutableBoundaries } from './run-context.ts'
 import { asRecord, requireSha256, requireString } from './validation.ts'
 
@@ -309,7 +310,57 @@ export function auditAcceptance(rootInput: string, options: AcceptanceAuditOptio
   }
 }
 
+/** Read only the caller-selected trust map; evidence cannot supply its own authority. */
+function readTrustedAuthorityKeys(path: string): Readonly<Record<string, string>> {
+  const maxBytes = 64 * 1024
+  const before = lstatSync(path)
+  if (!before.isFile()) throw new Error('trusted authority configuration must be a regular file')
+  const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  let raw: string
+  try {
+    const stat = fstatSync(descriptor)
+    if (!stat.isFile() || stat.dev !== before.dev || stat.ino !== before.ino || stat.size > maxBytes) {
+      throw new Error('trusted authority configuration must be an unchanged regular file of at most 64 KiB')
+    }
+    const bytes = Buffer.alloc(maxBytes + 1)
+    let length = 0
+    while (length < bytes.length) {
+      const count = readSync(descriptor, bytes, length, bytes.length - length, null)
+      if (count === 0) break
+      length += count
+    }
+    if (length > maxBytes) throw new Error('trusted authority configuration exceeds 64 KiB')
+    raw = bytes.subarray(0, length).toString('utf8')
+  } finally { closeSync(descriptor) }
+  const entries = Object.entries(asRecord(JSON.parse(raw) as unknown, 'trusted authority configuration'))
+  if (entries.length > 64) throw new Error('trusted authority configuration exceeds 64 authorities')
+  const keys: Record<string, string> = Object.create(null) as Record<string, string>
+  for (const [authorityId, value] of entries) {
+    if (authorityId.length === 0 || authorityId.length > 256 || /\s|[\u0000-\u001f\u007f]/u.test(authorityId)
+      || typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > 8192
+      || !/^-----BEGIN PUBLIC KEY-----\r?\n[A-Za-z0-9+/=\r\n]+\r?\n-----END PUBLIC KEY-----\s*$/u.test(value)) {
+      throw new Error('trusted authority configuration requires authority IDs mapped to SPKI PEM public keys')
+    }
+    keys[authorityId] = createPublicKey(value).export({ type: 'spki', format: 'pem' }).toString()
+  }
+  return keys
+}
+
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
-  const evidencePath = process.argv[3]
-  process.stdout.write(`${JSON.stringify(auditAcceptance(process.argv[2] ?? process.cwd(), evidencePath === undefined ? {} : { evidencePath }), null, 2)}\n`)
+  try {
+    const { values, positionals } = parseArgs({
+      options: { 'trusted-authority-keys': { type: 'string' } }, allowPositionals: true,
+    })
+    if (positionals.length > 2) throw new Error('usage: audit-acceptance.ts [repo-root] [receipt-path] [--trusted-authority-keys caller-file]')
+    const evidencePath = positionals[1]
+    const keyPath = values['trusted-authority-keys']
+    const result = auditAcceptance(positionals[0] ?? process.cwd(), {
+      ...(evidencePath === undefined ? {} : { evidencePath }),
+      ...(keyPath === undefined ? {} : { trustedAuthorityKeys: readTrustedAuthorityKeys(keyPath) }),
+    })
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+  } catch (error) {
+    process.stderr.write(`acceptance audit configuration failed: ${String(error)}\n`)
+    process.exitCode = 1
+  }
 }

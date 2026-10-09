@@ -24,6 +24,10 @@ The metric names are `repeatedErrorRate`, `repeatedToolCallRate`, `verifiedTaskS
 
 `audit-acceptance.ts` 把当前证据归约为每项要求的 `PASS`、`UNKNOWN` 或 `FAIL`；只要缺少必要的运行时证据，总结果就保持 `UNKNOWN`。它保持保守：单测全绿不能把缺失的生产 utility、泄漏、verifier 或三路 benchmark 证据晋级为通过。
 
+运行 `pnpm exec tsx scripts/rust-migration/audit-acceptance.ts <repo-root> [receipt-path] --trusted-authority-keys <caller-file>`，使用显式选择的公钥认证 receipt。信任文件是将 authority ID 映射到 SPKI PEM 公钥字符串的 JSON 对象。相对信任文件路径从调用方工作目录解析；receipt 路径仍相对于被审计仓库。调用方负责选择 authority 并保护该文件。CLI 不发现密钥、不接受 receipt 内嵌密钥，也不证明独立评估者的密钥保管关系。省略选项或提供 `{}` 会使未认证检查保持 `UNKNOWN`；有效但错误的公钥同样使检查保持 `UNKNOWN`。
+
+信任配置限于 64 KiB 的普通文件、64 个 authority、每个不含空白的 authority ID 256 个字符，以及每个公钥 8 KiB。最终路径分量为符号链接、配置畸形、显式文件缺失或 CLI 参数无效时，程序非零退出且不输出审计 JSON。配置在审计归约前加载。CLI 保留全部 16 项检查及其源码、profile、manifest、目标和产物绑定；JSON 的 `overall` 字段承载验收结果。签名测试 fixture 只证明认证行为。
+
 审计还会单独输出 `artifactCompleteness`。其中的 `PASS` 只表示所需 manifest、报告、脚本、benchmark 和 shadow crate 都存在，不代表行为验收通过。
 
 ## 功能级源码清单
