@@ -75,13 +75,13 @@ function bashDescription(backgroundEnabled: boolean, escalationModes: readonly S
     + 'Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — '
     + 'pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. '
     + `Current harness environment facts are exposed through managed \`$${DSH_ENV_PREFIX}*\` variables; inspect them when needed. `
-    + 'Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a bug in the command; do not retry another way. '
+    + 'Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — the denied access remains forbidden; do not bypass it. '
     + 'Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. '
     + background
   if (escalationModes.length === 0) return base
   return base + ' Attempting a command the sandbox may deny is safe and expected: run it and read the '
-    + 'marker rather than assuming the denial. When a command is denied and a wider mode would let it '
-    + 'succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry '
+    + 'marker rather than assuming the denial. When the task requires the denied access and a wider mode '
+    + 'would permit it, request approval in the same turn — the one sanctioned exception to a denial: retry '
     + 'the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) '
     + 'plus a one-sentence `justification`. Do not detour through chat to ask permission first — the '
     + 'approval prompt raised by that retry is how the user consents. If the session states approval '
@@ -236,7 +236,13 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.systemPrompt.section({
     name: 'tool:bash',
     order: FIRST_PARTY_SECTION_ORDER.TOOL_BASH,
-    text: 'Check the [exit code: N] marker on every bash result; investigate failures before moving on.',
+    text: 'Check the [exit code: N] marker on every bash result; investigate failures before moving on. '
+      + 'When the current sandbox policy is read-only, here-documents, here-strings and temporary script files '
+      + 'can require writes even for a read-only task; use correctly quoted inline interpreter arguments such '
+      + 'as `python3 -c` or `node -e` for reads and computation. If an incidental temporary-file write is '
+      + 'denied, reformulate the permitted task without that write while keeping the same sandbox. '
+      + 'Never use an alternate method to obtain a denied read or write; escalate only when the task '
+      + 'requires the denied access.',
   })
 
   ctx.tools.register(defineTool({

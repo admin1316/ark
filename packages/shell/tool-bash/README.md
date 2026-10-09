@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-bash` gives the agent a `bash` tool that runs commands through the mounted shell executor and returns stdout, stderr, and exit markers. Each call runs in a fresh shell — no cwd, variables, or functions survive — and `run_in_background` turns long-running commands into background jobs the agent collects with `job_output` and stops with `job_kill`. Every call runs with the managed `DSH_*` environment from `dsh-shell-env`, and under a sandboxing executor a denied command may be retried once with a wider `sandbox_permissions` mode plus a `justification` through user approval. Non-zero exits are reported, not failed, so the agent decides how to react. Mount it together with an executor provider such as `dsh-bash-local` or `dsh-bash-sandbox` and the `dsh-shell-env` plugin.
+`dsh-tool-bash` gives the agent a `bash` tool that runs commands through the mounted shell executor and returns stdout, stderr, and exit markers. Each call runs in a fresh shell — no cwd, variables, or functions survive — and `run_in_background` turns long-running commands into background jobs the agent collects with `job_output` and stops with `job_kill`. Every call runs with the managed `DSH_*` environment from `dsh-shell-env`. Under a sandboxing executor, approval can permit one retry with a wider `sandbox_permissions` mode and a `justification` when the task requires the denied access. Non-zero exits are reported, not failed, so the agent decides how to react. Mount it together with an executor provider such as `dsh-bash-local` or `dsh-bash-sandbox` and the `dsh-shell-env` plugin.
 
 ## Table of Contents
 
@@ -59,7 +59,9 @@ Passing `run_in_background: true` returns a job id immediately and no timeout ap
 
 ### Sandboxed execution and escalation
 
-When the mounted executor confines commands (for example `dsh-bash-sandbox`), a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a command failure. The model may then retry the exact same command once in the same turn with `sandbox_permissions` (the narrowest wider mode that suffices) and a one-sentence `justification`; the approval prompt raised by that retry is how the user consents. Escalation is never speculative: a request with no real prior denial, or one that is not strictly wider than the current mode, fails closed without running anything, and a rejected escalation is final for that command.
+When the mounted executor confines commands (for example `dsh-bash-sandbox`), a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a command failure. Only when the task requires the denied access and a wider mode would permit it may the model retry the exact same command once in the same turn with `sandbox_permissions` (the narrowest wider mode that suffices) and a one-sentence `justification`; the approval prompt raised by that retry is how the user consents. A result's escalation hint describes that approval path, not an unconditional requirement to use it. Escalation is never speculative: ground it in a real denial, including a denial of the same access already observed in this session. Non-widening requests fail closed without running anything; a rejected escalation is final for that command. When approval prompts are disabled, the denial is final and the model must not set `sandbox_permissions`.
+
+Here-documents, here-strings, and temporary script files can require filesystem writes even when the task only reads files or computes a result. Under a read-only policy, use correctly quoted inline interpreter arguments such as `python3 -c` or `node -e` when they can perform the permitted task without that incidental write, keeping the same sandbox. This does not authorize an alternate route to a denied read or write: the denied access stays forbidden, and the executor still confines every command. The [read-only inline scripts Agent Note](../../../.agents/notes/implemented/bug-fix/2026-10-09-read-only-bash-inline-scripts.md) records the choice and its limits.
 
 ### What can go wrong
 
@@ -131,7 +133,7 @@ Every request in this plugin's registration scope contains the bash guidance bel
 ##### Bash guidance
 
 ```markdown
-Check the [exit code: N] marker on every bash result; investigate failures before moving on.
+Check the [exit code: N] marker on every bash result; investigate failures before moving on. When the current sandbox policy is read-only, here-documents, here-strings and temporary script files can require writes even for a read-only task; use correctly quoted inline interpreter arguments such as `python3 -c` or `node -e` for reads and computation. If an incidental temporary-file write is denied, reformulate the permitted task without that write while keeping the same sandbox. Never use an alternate method to obtain a denied read or write; escalate only when the task requires the denied access.
 ```
 
 #### Token effect

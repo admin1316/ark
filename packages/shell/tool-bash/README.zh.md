@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tool-bash` 为 agent 提供 `bash` 工具，通过已挂载的 shell 执行器运行命令并返回 stdout、stderr 与退出标记。每次调用都运行在全新 shell 中——cwd、变量或函数都不会保留——而 `run_in_background` 把长时间运行的命令变成后台任务，agent 用 `job_output` 收集、用 `job_kill` 停止。每次调用都运行在来自 `dsh-shell-env` 的受管 `DSH_*` 环境中；在沙箱执行器下，被拒绝的命令可以携带更宽的 `sandbox_permissions` 模式和一句 `justification`，经用户审批后在同一轮次内重试一次。非零退出只会被报告、不会失败，因此由 agent 决定如何应对。请与 `dsh-bash-local` 或 `dsh-bash-sandbox` 等执行器提供方以及 `dsh-shell-env` 插件一起挂载。
+`dsh-tool-bash` 为 agent 提供 `bash` 工具，通过已挂载的 shell 执行器运行命令并返回 stdout、stderr 与退出标记。每次调用都运行在全新 shell 中——cwd、变量或函数都不会保留——而 `run_in_background` 把长时间运行的命令变成后台任务，agent 用 `job_output` 收集、用 `job_kill` 停止。每次调用都运行在来自 `dsh-shell-env` 的受管 `DSH_*` 环境中。在沙箱执行器下，任务确实需要被拒绝的访问时，可以经审批后携带更宽的 `sandbox_permissions` 模式和一句 `justification` 重试一次。非零退出只会被报告、不会失败，因此由 agent 决定如何应对。请与 `dsh-bash-local` 或 `dsh-bash-sandbox` 等执行器提供方以及 `dsh-shell-env` 插件一起挂载。
 
 ## 目录
 
@@ -59,7 +59,9 @@ kind: "package-reference"
 
 ### 沙箱执行与升权
 
-当已挂载的执行器约束命令（例如 `dsh-bash-sandbox`）时，被阻止的文件操作会报告为 `[sandbox: file access denied under <mode> mode]`——这是策略拒绝，不是命令失败。模型随后可以在同一轮次中用 `sandbox_permissions`（满足需要的最窄更宽模式）与一句 `justification` 重试完全相同的命令一次；该重试引发的审批提示就是用户同意的方式。升权绝不能预先推测：没有真实拒绝依据的请求，或没有严格宽于当前模式的请求，会在不运行任何东西的情况下失败关闭，被拒绝的升权对该命令即为最终结果。
+当已挂载的执行器约束命令（例如 `dsh-bash-sandbox`）时，被阻止的文件操作会报告为 `[sandbox: file access denied under <mode> mode]`——这是策略拒绝，不是命令失败。只有任务确实需要被拒绝的访问、且更宽的模式可以允许该访问时，模型才能在同一轮次中用 `sandbox_permissions`（满足需要的最窄更宽模式）与一句 `justification` 重试完全相同的命令一次；该重试引发的审批提示就是用户同意的方式。结果中的升权提示说明这条审批路径，并不要求无条件使用。升权绝不能预先推测：依据必须是真实拒绝，也可以是本会话已经观察到的同一访问的拒绝。不严格宽于当前模式的请求会在不运行任何东西的情况下失败关闭；被拒绝的升权对该命令即为最终结果。审批提示被禁用时，拒绝即为最终结果，模型不得设置 `sandbox_permissions`。
+
+here-document、here-string 和临时脚本文件可能需要写入文件系统，即使任务只读取文件或计算结果。在只读策略下，如果正确引用的 `python3 -c` 或 `node -e` 等解释器内联参数可以在不进行这次附带写入的情况下完成允许的任务，就使用这种形式，并保持同一个沙箱。这并不授权模型通过另一条路径获取被拒绝的读取或写入：被拒绝的访问仍被禁止，执行器仍约束每条命令。[只读内联脚本 Agent Note](../../../.agents/notes/implemented/bug-fix/2026-10-09-read-only-bash-inline-scripts.zh.md) 记录了这一选择及其限制。
 
 ### 可能出什么问题
 
@@ -131,7 +133,7 @@ kind: "package-reference"
 ##### Bash 指引
 
 ```markdown
-Check the [exit code: N] marker on every bash result; investigate failures before moving on.
+Check the [exit code: N] marker on every bash result; investigate failures before moving on. When the current sandbox policy is read-only, here-documents, here-strings and temporary script files can require writes even for a read-only task; use correctly quoted inline interpreter arguments such as `python3 -c` or `node -e` for reads and computation. If an incidental temporary-file write is denied, reformulate the permitted task without that write while keeping the same sandbox. Never use an alternate method to obtain a denied read or write; escalate only when the task requires the denied access.
 ```
 
 #### Token 影响
