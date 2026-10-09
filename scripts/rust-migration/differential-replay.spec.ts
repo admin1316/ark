@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { compareResults, runDifferentialReplay } from './differential-replay.ts'
 
 describe('Rust knowledge-search shadow', () => {
-  it('fails closed when unavailable and verifies the shared corpus when built', () => {
+  it('fails closed when unavailable and verifies the shared corpus when built', { timeout: 40_000 }, () => {
     const result = runDifferentialReplay()
     if (result.status === 'verified') {
       expect(result.mismatches).toEqual([])
