@@ -5,13 +5,17 @@ import { textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { createTeamRuntime } from '../../agent-team/tests/runtime.ts'
 import { SessionRemoteOperationsService } from '../../../host/session-remote-operations/src/index.ts'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 async function remoteFailureCode(operation: Promise<unknown>): Promise<string | undefined> {
   try {
     await operation
     return undefined
   } catch (error) {
-    const failure = typeof error === 'object' && error !== null ? Reflect.get(error, 'failure') : undefined
-    const code = typeof failure === 'object' && failure !== null ? Reflect.get(failure, 'code') : undefined
+    const failure = isRecord(error) ? error.failure : undefined
+    const code = isRecord(failure) ? failure.code : undefined
     return typeof code === 'string' ? code : undefined
   }
 }

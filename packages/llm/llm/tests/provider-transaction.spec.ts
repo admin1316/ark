@@ -13,6 +13,10 @@ const OLD_KEY = 'synthetic-old-value'
 const NEW_KEY = 'synthetic-new-value'
 const JOURNAL = credentialKey('llm-remote', 'alpha')
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -996,10 +1000,9 @@ it('drains claimed recovery on shutdown and records persisted-but-not-live inste
   } finally { release.resolve(undefined) }
   const settled = await outcome
   if (!('error' in settled)) throw new Error('claimed recovery unexpectedly resolved during shutdown')
-  const failure = typeof settled.error === 'object' && settled.error !== null
-    ? Reflect.get(settled.error, 'failure') : undefined
-  const failureCode = typeof failure === 'object' && failure !== null ? Reflect.get(failure, 'code') : undefined
-  const failureMessage = typeof failure === 'object' && failure !== null ? Reflect.get(failure, 'message') : undefined
+  const failure = isRecord(settled.error) ? settled.error.failure : undefined
+  const failureCode = isRecord(failure) ? failure.code : undefined
+  const failureMessage = isRecord(failure) ? failure.message : undefined
   expect(failureCode, typeof failureMessage === 'string' ? failureMessage : 'provider recovery failed without a typed message')
     .toBe('settings-rejected')
   await retiring
