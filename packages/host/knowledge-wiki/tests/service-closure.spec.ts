@@ -483,12 +483,13 @@ describe('raw source tree safety', () => {
   })
 
   it('propagates a non-missing stat failure for the source root', async () => {
-    // raw/ is a file, so lstatSync('raw/sources') fails with ENOTDIR, which is
-    // not a missing-path error: the scanner must not pretend the tree is empty.
+    // raw/ is a file, so lstatSync('raw/sources') fails with ENOTDIR on POSIX
+    // and ENOENT on Windows. Neither is an absent-root lookup: the scanner must
+    // not pretend the tree is empty.
     rmSync(join(root, 'raw'), { recursive: true, force: true })
     writeFileSync(join(root, 'raw'), 'blocks the source root', 'utf8')
 
-    await expect(service.scanSources()).rejects.toThrow(/ENOTDIR/u)
+    await expect(service.scanSources()).rejects.toThrow(process.platform === 'win32' ? /ENOENT/u : /ENOTDIR/u)
     expect((await service.ingestQueueStatus()).tasks).toEqual([])
   })
 

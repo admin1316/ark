@@ -30,7 +30,7 @@ function files(value: Fixture) {
 function operation(core: ObjectValue, index: number): ObjectValue { return (core['operations'] as ObjectValue[])[index]! }
 function rehashOperations(core: ObjectValue) { core['operationSetHash'] = sha256(canonicalJson(core['operations'])) }
 
-describe('complete historical canonical authority in a synthetic update graph', { timeout: 30_000 }, () => {
+describe('complete historical canonical authority in a synthetic update graph', { timeout: 120_000 }, () => {
   it('validates an update only after the entire historical Promote proof, immutable WAL, and projection', () => {
     const value = fixture()
     const before = files(value)

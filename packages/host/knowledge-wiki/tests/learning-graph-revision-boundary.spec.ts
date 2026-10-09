@@ -161,7 +161,7 @@ function replaceHistory(value: Historical, tamper?: 'archive-before' | 'archive-
   return { successor, canonical, currentCandidate, wal }
 }
 
-describe('stable canonical identity across a complete historical Replace', () => {
+describe('stable canonical identity across a complete historical Replace', { timeout: 120_000 }, () => {
   it('validates the original canonical archive and absorbed candidate before accepting the fresh successor graph', () => {
     const original = createExtendedHistoricalUpdateFixture()
     fixtures.push(original)

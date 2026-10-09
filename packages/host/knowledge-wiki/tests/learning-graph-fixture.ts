@@ -598,7 +598,9 @@ export function createLearningGraphFixture(changes: LearningFixtureChanges = {},
         allowedDefinitions: { ...setup.allowedDefinitions, [String(definitionPayload['definitionId'])]: definition }, allowedInitiationCapabilities: [...setup.allowedInitiationCapabilities ?? [], capability] },
       journal: { signerId: signers.journalId, ...signers.journalPublic, privateKeyHandle: 'synthetic-writer-unavailable', protectedHeadRoot: artifacts.root, epoch: journal.epoch, rotationPolicy: 'no-automatic-rotation', legacyArchiveRecovery: null },
       sourceIdentity: FIXTURE_SOURCE, profile: run['profile'], profileDigest: run['profileDigest'], mission,
-      timeoutMs: 10_000, maxArtifactBytes: 10_000_000, maxArtifactsPerReceipt: 10_000, maxTotalArtifactBytes: 100_000_000,
+      // The full signed history can visit hundreds of real files under Windows
+      // coverage; keep it bounded while avoiding a platform-dependent timeout.
+      timeoutMs: 60_000, maxArtifactBytes: 10_000_000, maxArtifactsPerReceipt: 10_000, maxTotalArtifactBytes: 100_000_000,
       maxArtifactGraphDepth: 64, maxChildRequestBytes: 1_000_000, maxChildResponseBytes: 1_000_000,
     }
     const wikiRoot = join(artifacts.root, 'isolated-project', 'wiki')

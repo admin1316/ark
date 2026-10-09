@@ -29,7 +29,8 @@ it('projects the shipped Native roster, scoped capabilities and a real run_code 
     expect(catalogs.minimal).toContain(expectedShell)
     expect(catalogs.standard).toContain(expectedShell)
     const snapshotCatalogs = Object.fromEntries(Object.entries(catalogs).map(([preset, tools]) => [
-      preset, tools.map(tool => tool === 'bash' || tool === 'pwsh' ? 'local-shell' : tool),
+      preset, tools.map(tool => tool === 'bash' || tool === 'pwsh' ? 'bash' : tool).sort()
+        .map(tool => tool === 'bash' ? 'local-shell' : tool),
     ]))
     expect({ roster, catalogs: snapshotCatalogs, forkDescription, codeResult }).toMatchSnapshot()
   } finally { await runtime.dispose() }

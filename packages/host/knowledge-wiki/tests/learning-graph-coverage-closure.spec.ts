@@ -111,7 +111,7 @@ describe('independent typed learning edges consume their original leaves', () =>
   })
 })
 
-describe('read-only journal observation and feedback replay', () => {
+describe('read-only journal observation and feedback replay', { timeout: 120_000 }, () => {
   it('keeps observed/candidate transitions low trust and only correction feedback downgrades them', () => {
     const value = fixture()
     const raw = { ...value.semantic.verifiedRecord }

@@ -10,7 +10,7 @@ Windows can report `ENOENT` when a path traverses an ordinary file, where POSIX 
 
 ## Decision
 
-When a filesystem fallback has the affected path, the shared missing-path check walks upward from its parent until it finds an existing entry. It treats `ENOENT` as absence only when that entry is an ordinary directory; a file, symbolic link, or other inspection error keeps the original failure visible. Callers without path context retain the error-code-only check. Wiki filesystem and governance callers pass their concrete target paths, and tests exercise both a child below a file and a missing child below an ordinary directory.
+When a filesystem fallback has the affected path, the shared missing-path check walks upward from its parent until it finds an existing entry. It treats `ENOENT` as absence only when that entry is an ordinary directory; a file, symbolic link, or other inspection error keeps the original failure visible. Callers without path context retain the error-code-only check. Wiki filesystem and governance callers pass their concrete target paths, and tests exercise both a child below a file and a missing child below an ordinary directory. A child path blocked by a file must surface the host's native error (`ENOTDIR` on POSIX or `ENOENT` on Windows); it is never treated as an absent Wiki root.
 
 ## Alternatives considered
 
