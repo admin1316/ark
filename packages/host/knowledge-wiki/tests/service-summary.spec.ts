@@ -154,7 +154,10 @@ describe('session summary admission', () => {
 
     await service.summarizeSession('session-second')
     expect(readFileSync(page, 'utf8')).toBe(merged)
-    expect(existsSync(join(externalRoot, '.llm-wiki', 'review.json'))).toBe(true)
+    const reviewFile = join(externalRoot, '.llm-wiki', 'review.json')
+    const warnings = vi.mocked(ctx.logger.warn).mock.calls.flat().map(value =>
+      value instanceof Error ? `${value.name}: ${value.message}` : String(value))
+    expect(existsSync(reviewFile), warnings.join('\n')).toBe(true)
 
     output = decision({ topic_key: '', issue_key: 42, related: 'not-an-array' })
     await service.summarizeSession('session-title-fallback')

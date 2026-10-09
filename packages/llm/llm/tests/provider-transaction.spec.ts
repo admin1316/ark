@@ -994,7 +994,14 @@ it('drains claimed recovery on shutdown and records persisted-but-not-live inste
     })
     expect(disposed).toBe(false)
   } finally { release.resolve(undefined) }
-  expect(await outcome).toMatchObject({ error: { failure: { code: 'settings-rejected' } } })
+  const settled = await outcome
+  if (!('error' in settled)) throw new Error('claimed recovery unexpectedly resolved during shutdown')
+  const failure = typeof settled.error === 'object' && settled.error !== null
+    ? Reflect.get(settled.error, 'failure') : undefined
+  const failureCode = typeof failure === 'object' && failure !== null ? Reflect.get(failure, 'code') : undefined
+  const failureMessage = typeof failure === 'object' && failure !== null ? Reflect.get(failure, 'message') : undefined
+  expect(failureCode, typeof failureMessage === 'string' ? failureMessage : 'provider recovery failed without a typed message')
+    .toBe('settings-rejected')
   await retiring
   expect(disposed).toBe(true)
   expect(await run.ctx.credentials.readRecord(JOURNAL)).toMatchObject({ payload: { phase: 'done', outcome: 'committed-not-live' } })

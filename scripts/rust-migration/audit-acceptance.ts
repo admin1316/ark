@@ -178,7 +178,10 @@ function readReceipt(root: string, path: string, trustedAuthorityKeys: Readonly<
     const artifactRefs: ArtifactRef[] = []
     for (const [index, value] of artifactRefsRaw.entries()) {
       const item = asRecord(value, `receipt.artifactRefs[${index}]`)
-      artifactRefs.push({ path: safeRelativePath(root, requireString(item.path, 'artifact path')), sha256: requireSha256(item.sha256, 'artifact sha256') })
+      const artifactPath = requireString(item.path, 'artifact path')
+      const artifactDigest = requireSha256(item.sha256, 'artifact sha256')
+      safeRelativePath(root, artifactPath)
+      artifactRefs.push({ path: artifactPath, sha256: artifactDigest })
     }
     const observations = asRecord(raw.observations, 'receipt.observations')
     for (const name of CHECK_NAMES) {
@@ -186,9 +189,10 @@ function readReceipt(root: string, path: string, trustedAuthorityKeys: Readonly<
       if ('status' in observation || 'pass' in observation || 'result' in observation) return null
       if (!Array.isArray(observation.evidenceRefs) || observation.evidenceRefs.length === 0) return null
       for (const ref of observation.evidenceRefs) {
-        const relRef = safeRelativePath(root, requireString(ref, 'observation evidenceRef'))
-        const artifact = artifactRefs.find(item => item.path === relRef)
-        if (artifact === undefined || sha256(readFileSync(join(root, relRef))) !== artifact.sha256) return null
+        const evidencePath = requireString(ref, 'observation evidenceRef')
+        const relativeEvidencePath = safeRelativePath(root, evidencePath)
+        const artifact = artifactRefs.find(item => item.path === evidencePath)
+        if (artifact === undefined || sha256(readFileSync(join(root, relativeEvidencePath))) !== artifact.sha256) return null
       }
     }
     const unsigned = {

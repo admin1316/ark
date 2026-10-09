@@ -153,6 +153,10 @@ it('reports a provisioning conflict when the durable member vanished before sett
   try {
     const teams = run.ctx.agentTeams
     const startResult = Promise.withResolvers<never>()
+    // Windows can schedule the rejection before spawnTeammate reaches its await.
+    // Keep the deliberate fixture rejection observed without changing the
+    // original promise that the operation under test must propagate.
+    void startResult.promise.catch(() => undefined)
     vi.spyOn(run.ctx.subagents, 'startContinuable').mockImplementation(() => startResult.promise)
     // Simulate a durable journal that lost the provisioning member (e.g. a
     // compacted or replaced root log): the settle must refuse instead of

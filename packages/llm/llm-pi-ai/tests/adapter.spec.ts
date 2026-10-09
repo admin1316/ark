@@ -414,7 +414,18 @@ describe('PiAiAdapter provider routing', () => {
   })
 
   it('stops the SDK request when the adapter idle watchdog expires', async () => {
-    const server = await mockServer([{ events: textEvents, delayMs: 200 }])
+    // Keep the scripted stream open well beyond the close bound. Otherwise a
+    // request that ignores AbortSignal can finish naturally before a loaded
+    // Windows runner gets to observe the close event.
+    const progress = Array.from({ length: 16 }, (_, index) => JSON.stringify({
+      choices: [{ delta: index === 0 ? { role: 'assistant', content: '' } : { content: 'x' }, index: 0, finish_reason: null }],
+    }))
+    const server = await mockServer([{
+      events: [...progress,
+        JSON.stringify({ choices: [{ delta: {}, index: 0, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 16 } }),
+        '[DONE]'],
+      delayMs: 200,
+    }])
     const ctx = await harness(server.url, { streamIdleTimeoutMs: 20 })
 
     const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
