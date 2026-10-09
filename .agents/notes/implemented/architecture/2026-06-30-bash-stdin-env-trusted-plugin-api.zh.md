@@ -12,6 +12,8 @@ Status: implemented
 
 ## 决策
 
+[字面量 stdin 决策](../bug-fix/2026-10-09-bash-literal-stdin.zh.md) 取代了不向模型暴露 stdin 以及仅依赖内联脚本提示的选择，并保留本文的 shell 执行和环境变量归属。
+
 在 `ShellExecRequest`（模型/插件侧请求）和 `ShellExecSpec`（`run`/`start` 所作用的已解析 spec）上**同时**添加 `stdin?: string` 与 `env?: Record<string, string>`，并在 `dsh-bash-local` 中贯穿它们：`resolve()` 原样传递，`run()`/`start()` 将其传给 `runBash`，后者把字节写入子进程的 stdin 并合并额外 env。
 
 三个有意为之的选择：

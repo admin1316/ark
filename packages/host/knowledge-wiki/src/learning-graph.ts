@@ -13,7 +13,7 @@ import { indexKnowledgeRecordsBySource } from './knowledge-governance.ts'
 import { assertPromotionOperationConfined, governanceArchivePath, promotionOperation, promotionTransactionId } from './reviews.ts'
 import { immutableReviewRow } from './verifier.ts'
 import type { KnowledgeRecord, WikiReviewItem } from './types.ts'
-import type { EvaluationInput, OutcomeRecord, evaluateLearning } from './learning-evaluation.ts'
+import type { EvaluationInput, MetricComparison, OutcomeRecord, evaluateLearning } from './learning-evaluation.ts'
 
 export type { LearningGraphOwner } from './learning-graph-context.ts'
 export { measuredUseFacts } from './learning-graph-context.ts'
@@ -80,13 +80,15 @@ export function learningEvaluationRecord(use: S.MeasuredUse, ref: ArtifactRef, p
 function scopedResult(evaluation: ReturnType<typeof evaluateLearning>): 'pass' | 'fail' | 'unknown' {
   if (requiredMetrics.some(name => evaluation.metrics[name].status === 'UNKNOWN')) return 'unknown'
   if (improvements.some(name => evaluation.metrics[name].status !== 'IMPROVED')) return 'fail'
+  // The complete required-metric gate above excludes UNKNOWN for both groups.
+  type KnownMetric = Exclude<MetricComparison, { readonly status: 'UNKNOWN' }>
   for (const name of zero) {
-    const metric = evaluation.metrics[name]
-    if (metric.status === 'UNKNOWN' || metric.candidate.numerator !== 0) return 'fail'
+    const metric = evaluation.metrics[name] as KnownMetric
+    if (metric.candidate.numerator !== 0) return 'fail'
   }
   for (const name of complete) {
-    const metric = evaluation.metrics[name]
-    if (metric.status === 'UNKNOWN' || metric.candidate.numerator !== metric.candidate.denominator) return 'fail'
+    const metric = evaluation.metrics[name] as KnownMetric
+    if (metric.candidate.numerator !== metric.candidate.denominator) return 'fail'
   }
   return 'pass'
 }
@@ -216,10 +218,11 @@ class LearningGraph {
           requireRelation(currentCandidate !== undefined && equal(admissionFor(currentCandidate),
             proposal.governedCandidate.admissionIdentity))
           const currentSources = indexKnowledgeRecordsBySource(state.records.values())
+          // Authenticated replay retains the existing target's canonical source through every subsequent transition.
+          const currentTarget = currentSources.get(proposal.targetPath) as KnowledgeRecord
           requireRelation(proposal.targetGovernance.kind === 'verified-absence'
             ? !currentSources.has(proposal.targetPath)
-            : equal(admissionFor(currentSources.get(proposal.targetPath) ?? prepared.candidate),
-              proposal.targetGovernance.governed.admissionIdentity))
+            : equal(admissionFor(currentTarget), proposal.targetGovernance.governed.admissionIdentity))
           const uses: S.MeasuredUse[] = []
           const records: OutcomeRecord[] = []
           const useIds = new Set<string>()
@@ -326,7 +329,7 @@ class LearningGraph {
       && payload.projection.revisionId === digest({ kind: 'ark.knowledge.canonical-revision', canonicalKnowledgeId: event.knowledgeId,
         proposalHash: payload.proposal.digest, targetAfterHash: p.targetAfter.digest })
       && equal(payload.projection.newlyCreditedUseIds, chain.result.uniqueCandidateUseIds))
-    this.validateWal(payload.wal, chain, event)
+    this.validateWal(payload.wal, chain, event, payload.trial)
     const candidate = state.records.get(p.knowledgeId)
     const base = state.records.get(event.knowledgeId)
     requireRelation(candidate !== undefined && base !== undefined)
@@ -360,11 +363,10 @@ class LearningGraph {
     return records
   }
 
-  private validateWal(ref: ArtifactRef, chain: Chain, event: S.JournalEvent): void {
+  private validateWal(ref: ArtifactRef, chain: Chain, event: S.JournalEvent, actualTrial: ArtifactRef): void {
     this.ctx.json(ref, S.wal, (wal) => {
       const p = chain.prepared.value
-      requireRelation(equal(wal.proposal, chain.prepared.ref) && equal(wal.measuredTrial,
-        event.payload.type === 'knowledge/promoted' ? event.payload.trial : null)
+      requireRelation(equal(wal.proposal, chain.prepared.ref) && equal(wal.measuredTrial, actualTrial)
         && equal(wal.semanticReceipt, p.semanticReceipt) && wal.action === p.decision.action
         && wal.createdAt <= event.timestamp && wal.createdAt >= chain.trial.endedAt
         && wal.id === promotionTransactionId(p.decision.reviewId, p.candidateHash, wal.createdAt)

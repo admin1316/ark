@@ -1,0 +1,529 @@
+{
+  "schemaVersion": 1,
+  "status": "CANDIDATE_3110_PACKAGED_FIVE_ACTUAL_NATIVE_TASKS_FINISHED_FOUR_PASS_ONE_FAIL_FORMAL_HELD",
+  "recordedAt": "2026-10-09T08:31:40.332488+00:00",
+  "candidate": {
+    "version": "3.1.10",
+    "build": "2026100905",
+    "sourceHead": "32abce1992863c4f5a96fabf9cbb145f519122dd",
+    "sourceClean": true,
+    "app": "/Users/hui/ark-test/candidate/Ark.app",
+    "home": "/Users/hui/ark-test/candidate-home-current-source-20261009-v3110",
+    "builtPlatform": "macOS arm64"
+  },
+  "immutableManifest": {
+    "path": "/Users/hui/ark-test/ark-github-main-20261008/project-manifest.json",
+    "bytes": 862,
+    "sha256": "d1a4175f1fac86f8998196b6a217bd88e9b4ea4b59dc154c9db0ca980c265e10"
+  },
+  "artifactProof": {
+    "path": "/private/tmp/ark-stage-current-source-20261009-v3110-logs/final-stage-verification.json",
+    "bytes": 12941,
+    "sha256": "cb18a04652dc7cbb78dbd2a471310a76331e5ec1832a57fd2c63a0dddb5aedad"
+  },
+  "sixActualBuildPhaseExecutions": [
+    {
+      "phase": "runtime-pack",
+      "actualExitCode": 0,
+      "execution": {
+        "path": "/private/tmp/ark-stage-current-source-20261009-v3110-logs/runtime-pack-execution.json",
+        "bytes": 1199,
+        "sha256": "3211d20508c67e52e9dab8cd4f11d138e3b7323c0093e3658cf9eb9ef1eba2ba"
+      }
+    },
+    {
+      "phase": "independent-pack-verification",
+      "actualExitCode": 0,
+      "execution": {
+        "path": "/private/tmp/ark-stage-current-source-20261009-v3110-logs/independent-pack-verification-execution.json",
+        "bytes": 1663,
+        "sha256": "9af1772811fe041dd02c90a81988a7de54e133d83ce30c1379596e3c62335c5a"
+      }
+    },
+    {
+      "phase": "native-stage",
+      "actualExitCode": 0,
+      "execution": {
+        "path": "/private/tmp/ark-stage-current-source-20261009-v3110-logs/native-stage-execution.json",
+        "bytes": 1515,
+        "sha256": "58508dec061065beb4f439bd1ad0e80d041f047f72442689402c1e96c902baf9"
+      }
+    },
+    {
+      "phase": "independent-swift-verification",
+      "actualExitCode": 0,
+      "execution": {
+        "path": "/private/tmp/ark-stage-current-source-20261009-v3110-logs/independent-swift-verification-execution.json",
+        "bytes": 1774,
+        "sha256": "6819e229aa01b67a42157c90b0379b079f1f678db906e818c13192616a125b90"
+      }
+    },
+    {
+      "phase": "independent-macho-verification",
+      "actualExitCode": 0,
+      "execution": {
+        "path": "/private/tmp/ark-stage-current-source-20261009-v3110-logs/independent-macho-verification-execution.json",
+        "bytes": 1632,
+        "sha256": "bcb3686749fc5a5838c0909fea4a74353537a86a5c0b1308655d59a46b3d500e"
+      }
+    },
+    {
+      "phase": "independent-final-verification",
+      "actualExitCode": 0,
+      "execution": {
+        "path": "/private/tmp/ark-stage-current-source-20261009-v3110-logs/independent-final-verification-execution.json",
+        "bytes": 2046,
+        "sha256": "be86eeb9ddd4c63c6457a4649bab8b96bc43d882fb7cb0eeb4c837e5e033c122"
+      }
+    }
+  ],
+  "relocation": {
+    "path": "/private/tmp/ark3110-relocation-32abce19-20261009-root.json",
+    "bytes": 12418,
+    "sha256": "6be4174b108e1da8832498a7e2ade70ec5fcbebff9aa13b3c9de00efc9302425"
+  },
+  "preregistration": {
+    "path": "/private/tmp/ark3110-native-preregister-20261009/preregistration.json",
+    "bytes": 6917,
+    "sha256": "776998e57d278096cacb1ed27d0627f43b98237317a09822a0f46d689213f5b8"
+  },
+  "independentFinalReview": {
+    "path": "/private/tmp/ark3110-independent-result-review-20261009/five-task-final-independent-review-v2.json",
+    "bytes": 14727,
+    "sha256": "44674795523c5840c6977e528fadbe1f31b55f304b93c3d232904d8f86c8fa96"
+  },
+  "actualOriginalTaskResults": [
+    {
+      "runId": "native3110-01",
+      "task": "invoice",
+      "sessionId": "71531c13-5a37-446a-8118-9acf8d7f65b3",
+      "readyBinding": {
+        "path": "/private/tmp/ark3110-native-root-20261009/native3110-01.READY.json",
+        "sha256": "9620d3076761690684e7a4134c4d1e7b6485b4685096e6ee03f3de55e258796b"
+      },
+      "independentReview": {
+        "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-01-review-v2.json",
+        "sha256": "c8cdbab3dadf74654f76e15615716dea800d796897f89737b1e8de7801013c79"
+      },
+      "independentNativeReview": {
+        "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-01-native-supplement.json",
+        "sha256": "119e1458eda9a68b89c5602944e610039d0c1ad9feb83079fe2be2698e30107e"
+      },
+      "verdict": "PASS",
+      "independentArithmeticMatchesOracle": true,
+      "wholeOrdinaryOutputPass": true,
+      "ordinaryUtf8Bytes": 181,
+      "wholeOrdinarySha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895",
+      "coldPersistencePass": true,
+      "nativeLiteralPass": true,
+      "allActualHeadersAndRoutesIndependentlyMatch": true,
+      "toolCallCount": 3,
+      "toolBusinessFailures": 0,
+      "knowledgeSessionEventCount": 0,
+      "measuredTurnElapsedSeconds": 10.78,
+      "latencyInterpretation": "One observed model turn only; not comparable performance evidence or a Rust speed measurement.",
+      "sourceCommit": "32abce1992863c4f5a96fabf9cbb145f519122dd",
+      "rawAudit": {
+        "path": "/private/tmp/ark3110-ui-raw-audit-native3110-01-71531c13-root/raw-audit-report.json",
+        "bytes": 26040,
+        "sha256": "c82edef720e5fe0739467c5e074d004c4c6fc232f517ce6b767d8b09f9876db0"
+      },
+      "coldReplay": {
+        "path": "/private/tmp/ark3110-ui-cold-native3110-01-71531c13-root/cold-replay-receipt.json",
+        "bytes": 35160,
+        "sha256": "7f7a0648d58896b74583c13898895c6606ded6792543bc75b0fa67a77988a9c9"
+      },
+      "nativeLiteralVerdict": {
+        "path": "/private/tmp/ark3110-native-root-20261009/native3110-01-literal-verdict.json",
+        "bytes": 986,
+        "sha256": "774b51f196fda169e6a6af1212341c64c532df34c4e708165215f9b67c01f7cd"
+      },
+      "capture": {
+        "path": "/private/tmp/ark3110-ui-history-capture-native3110-01-71531c13-root/capture-report.json",
+        "bytes": 8289,
+        "sha256": "b62fb87a358113019b73a8023f7c36b4c047a3b0323241f4da8f7162deda816f"
+      },
+      "wholeOrdinary": {
+        "path": "/private/tmp/ark3110-ui-raw-audit-native3110-01-71531c13-root/whole-turn-answer.txt",
+        "bytes": 181,
+        "sha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895"
+      },
+      "originalSubmittedPrompt": {
+        "path": "/private/tmp/ark319-native-preregister-private-KGLLB6/private-control/submitted-prompts/invoice.zh.txt",
+        "sha256": "a774ab74be7afb692b4beeafb48ce155889d5b67c50c5d6644dd36bf8a316145"
+      },
+      "expectedRoute": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "reasoningEffort": "max"
+      }
+    },
+    {
+      "runId": "native3110-02",
+      "task": "invoice",
+      "sessionId": "05d14e4e-5386-4422-934d-ae3d4747c908",
+      "readyBinding": {
+        "path": "/private/tmp/ark3110-native-root-20261009/native3110-02.READY.json",
+        "sha256": "a5b09ca7b51fa3f9621a84cf2a072ffc893e9cc927101528f243d34e9fa548d3"
+      },
+      "independentReview": {
+        "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-02-review-v2.json",
+        "sha256": "cc1d7914bf274c3190d5302b208790716bcd0ce8f3e1ccebb847a3d06d82e2f8"
+      },
+      "independentNativeReview": {
+        "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-02-native-supplement.json",
+        "sha256": "8d84ed9fdaf1bb3f15885cfafed28c5405dee23ea440c6ee6031b61c116ff630"
+      },
+      "verdict": "PASS",
+      "independentArithmeticMatchesOracle": true,
+      "wholeOrdinaryOutputPass": true,
+      "ordinaryUtf8Bytes": 181,
+      "wholeOrdinarySha256": "a987c131c55365367568fb29ed838bccb21c38e92e251b4a00dfda71fd13803c",
+      "coldPersistencePass": true,
+      "nativeLiteralPass": true,
+      "allActualHeadersAndRoutesIndependentlyMatch": true,
+      "toolCallCount": 5,
+      "toolBusinessFailures": 0,
+      "knowledgeSessionEventCount": 0,
+      "measuredTurnElapsedSeconds": 9.907,
+      "latencyInterpretation": "One observed model turn only; not comparable performance evidence or a Rust speed measurement.",
+      "sourceCommit": "32abce1992863c4f5a96fabf9cbb145f519122dd",
+      "rawAudit": {
+        "path": "/private/tmp/ark3110-ui-raw-audit-native3110-02-05d14e4e-root/raw-audit-report.json",
+        "bytes": 31427,
+        "sha256": "72749d15d9fe3d236059184ce6080215f3892ec1c84512cccd6e1d57bd5af938"
+      },
+      "coldReplay": {
+        "path": "/private/tmp/ark3110-ui-cold-native3110-02-05d14e4e-root/cold-replay-receipt.json",
+        "bytes": 39934,
+        "sha256": "3926492ea56c816064e9313c395903c5cfc631356c8b521cbf250368b8b631fa"
+      },
+      "nativeLiteralVerdict": {
+        "path": "/private/tmp/ark3110-native-root-20261009/native3110-02-literal-verdict.json",
+        "bytes": 1033,
+        "sha256": "369f01cac35dfdd569b33b9793e4f5dccfe0b6a89bfdcd5bad10f62f6fd3cbc7"
+      },
+      "capture": {
+        "path": "/private/tmp/ark3110-ui-history-capture-native3110-02-05d14e4e-root/capture-report.json",
+        "bytes": 8375,
+        "sha256": "f9510e00b3af7c5a2813c4723c8240cb306df40b82e89556fc29051272d667a1"
+      },
+      "wholeOrdinary": {
+        "path": "/private/tmp/ark3110-ui-raw-audit-native3110-02-05d14e4e-root/whole-turn-answer.txt",
+        "bytes": 181,
+        "sha256": "a987c131c55365367568fb29ed838bccb21c38e92e251b4a00dfda71fd13803c"
+      },
+      "originalSubmittedPrompt": {
+        "path": "/private/tmp/ark319-native-preregister-private-KGLLB6/private-control/submitted-prompts/invoice.zh.txt",
+        "sha256": "a774ab74be7afb692b4beeafb48ce155889d5b67c50c5d6644dd36bf8a316145"
+      },
+      "expectedRoute": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "reasoningEffort": "max"
+      }
+    },
+    {
+      "runId": "native3110-03",
+      "task": "invoice",
+      "sessionId": "4ac3058c-5564-4942-9a2e-72231367d89a",
+      "readyBinding": {
+        "path": "/private/tmp/ark3110-native-root-20261009/native3110-03.READY.json",
+        "sha256": "db80dd49cd067a0319c9d3a2f61438c97d5ce75133975c11e7fcdf39dc89b99f"
+      },
+      "independentReview": {
+        "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-03-review-v2.json",
+        "sha256": "f97a359ca374dca5bfb9385ae545e0fb6af959ba8c521727d384256a09687bc2"
+      },
+      "independentNativeReview": {
+        "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-03-native-supplement.json",
+        "sha256": "4831dba02f2dc516e493f59ed9cd26274d04040c889760ddc477cf59113a53d7"
+      },
+      "verdict": "PASS",
+      "independentArithmeticMatchesOracle": true,
+      "wholeOrdinaryOutputPass": true,
+      "ordinaryUtf8Bytes": 198,
+      "wholeOrdinarySha256": "abeefe27a84e6dbcffe1f42f62c6d22952db04848461a5ee478210be784f6ced",
+      "coldPersistencePass": true,
+      "nativeLiteralPass": true,
+      "allActualHeadersAndRoutesIndependentlyMatch": true,
+      "toolCallCount": 7,
+      "toolBusinessFailures": 0,
+      "knowledgeSessionEventCount": 0,
+      "measuredTurnElapsedSeconds": 9.743,
+      "latencyInterpretation": "One observed model turn only; not comparable performance evidence or a Rust speed measurement.",
+      "sourceCommit": "32abce1992863c4f5a96fabf9cbb145f519122dd",
+      "rawAudit": {
+        "path": "/private/tmp/ark3110-ui-raw-audit-native3110-03-4ac3058c-root/raw-audit-report.json",
+        "bytes": 34186,
+        "sha256": "8950068f971b6cadc6c151f7a2f2f85ba265eb24a3c987f5f453ddebb85e2a22"
+      },
+      "coldReplay": {
+        "path": "/private/tmp/ark3110-ui-cold-native3110-03-4ac3058c-root/cold-replay-receipt.json",
+        "bytes": 42481,
+        "sha256": "75078c8a529faed1a0dd9346e6f3799383e2c39a733ed22c08a49c4d4233a604"
+      },
+      "nativeLiteralVerdict": {
+        "path": "/private/tmp/ark3110-native-root-20261009/native3110-03-literal-verdict.json",
+        "bytes": 1033,
+        "sha256": "05fe55ffd09cb67cd1ff312ffeab446dfeeab88d14f7523098c299e2164480a4"
+      },
+      "capture": {
+        "path": "/private/tmp/ark3110-ui-history-capture-native3110-03-4ac3058c-root/capture-report.json",
+        "bytes": 8453,
+        "sha256": "b98ec300ad21c547ef21ac4baff41718fbefa9b28e8e900866dfa53c421957e6"
+      },
+      "wholeOrdinary": {
+        "path": "/private/tmp/ark3110-ui-raw-audit-native3110-03-4ac3058c-root/whole-turn-answer.txt",
+        "bytes": 198,
+        "sha256": "abeefe27a84e6dbcffe1f42f62c6d22952db04848461a5ee478210be784f6ced"
+      },
+      "originalSubmittedPrompt": {
+        "path": "/private/tmp/ark319-native-preregister-private-KGLLB6/private-control/submitted-prompts/invoice.zh.txt",
+        "sha256": "a774ab74be7afb692b4beeafb48ce155889d5b67c50c5d6644dd36bf8a316145"
+      },
+      "expectedRoute": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "reasoningEffort": "max"
+      }
+    },
+    {
+      "runId": "native3110-04",
+      "task": "rational",
+      "sessionId": "b4ba9be9-f43c-48a8-a3e0-e589757f5f64",
+      "readyBinding": {
+        "path": "/private/tmp/ark3110-native-root-20261009/native3110-04.READY.json",
+        "sha256": "4937f8e0fd911914ea68509feadb144f9b408c88f0d4993351fb9232bbc026fc"
+      },
+      "independentReview": {
+        "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-04-review-v2.json",
+        "sha256": "6ccf8f0aaedd6d3ce1059ca34d05f114550120186eca4cf45be7f066d48c2dda"
+      },
+      "independentNativeReview": {
+        "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-04-native-supplement-v2.json",
+        "sha256": "823e4c03842a66a8b3160ec25fbb3340211af1247b6612386061a709cc6c5cb4"
+      },
+      "verdict": "FAIL_TOOL_EXECUTION",
+      "independentArithmeticMatchesOracle": true,
+      "wholeOrdinaryOutputPass": true,
+      "ordinaryUtf8Bytes": 239,
+      "wholeOrdinarySha256": "b49371df8fe54f12a1882ab32cfa3302632b73711913dfd0bafeb44ca1574f5f",
+      "coldPersistencePass": true,
+      "nativeLiteralPass": true,
+      "allActualHeadersAndRoutesIndependentlyMatch": true,
+      "toolCallCount": 4,
+      "toolBusinessFailures": 1,
+      "knowledgeSessionEventCount": 0,
+      "measuredTurnElapsedSeconds": 7.054,
+      "latencyInterpretation": "One observed model turn only; not comparable performance evidence or a Rust speed measurement.",
+      "sourceCommit": "32abce1992863c4f5a96fabf9cbb145f519122dd",
+      "rawAudit": {
+        "path": "/private/tmp/ark3110-ui-raw-audit-native3110-04-b4ba9be9-root/raw-audit-report.json",
+        "bytes": 25803,
+        "sha256": "1ecb231871c4331c567ad5327ba34164dc56db9b1b92e573608fdd0aa16127ec"
+      },
+      "coldReplay": {
+        "path": "/private/tmp/ark3110-ui-cold-native3110-04-b4ba9be9-root/cold-replay-receipt.json",
+        "bytes": 35268,
+        "sha256": "73f9bcc4b4a6f0471e0d195baf966ada9a7cebce10cd53a5cdf7760bed2b8a9d"
+      },
+      "nativeLiteralVerdict": {
+        "path": "/private/tmp/ark3110-native-root-20261009/native3110-04-literal-verdict.json",
+        "bytes": 1033,
+        "sha256": "3fb8633dd3e3905cbbf04736ed2b06c1d795a007cdeb8be344b7656a3acc7727"
+      },
+      "capture": {
+        "path": "/private/tmp/ark3110-ui-history-capture-native3110-04-b4ba9be9-root/capture-report.json",
+        "bytes": 8278,
+        "sha256": "88c0053c0791f99904434e2c244908b3bab7cb6d33bf4625953a99dbca76857a"
+      },
+      "wholeOrdinary": {
+        "path": "/private/tmp/ark3110-ui-raw-audit-native3110-04-b4ba9be9-root/whole-turn-answer.txt",
+        "bytes": 239,
+        "sha256": "b49371df8fe54f12a1882ab32cfa3302632b73711913dfd0bafeb44ca1574f5f"
+      },
+      "originalSubmittedPrompt": {
+        "path": "/private/tmp/ark319-native-preregister-private-KGLLB6/private-control/submitted-prompts/rational.zh.txt",
+        "sha256": "2aa713f99bb1a94bfa0314bc5b7133e7a9995c965664a3d2a202eab429fd6008"
+      },
+      "expectedRoute": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "reasoningEffort": "max"
+      }
+    },
+    {
+      "runId": "native3110-05",
+      "task": "single-line",
+      "sessionId": "0d8dfbc5-9df1-4b46-8939-c8faa49e083f",
+      "readyBinding": {
+        "path": "/private/tmp/ark3110-native-root-20261009/native3110-05.READY-validated-alias-v2.json",
+        "sha256": "0e9e63a0069af1f0ef1401ee7334f69ba2e0d80cf5d1ac07732540b92d4cd4ad"
+      },
+      "independentReview": {
+        "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-05-review-v2.json",
+        "sha256": "94896e103678ce227d3f5a3dc440ccb5438055e828dd4110d889f97b75e71fb7"
+      },
+      "independentNativeReview": {
+        "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-05-native-supplement.json",
+        "sha256": "b107e1f8f6632aaf3db5edc2981e28e0d75d09e70ec83f8cbbfcf93c841b00a3"
+      },
+      "verdict": "PASS",
+      "independentArithmeticMatchesOracle": true,
+      "wholeOrdinaryOutputPass": true,
+      "ordinaryUtf8Bytes": 6,
+      "wholeOrdinarySha256": "987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "coldPersistencePass": true,
+      "nativeLiteralPass": true,
+      "allActualHeadersAndRoutesIndependentlyMatch": true,
+      "toolCallCount": 2,
+      "toolBusinessFailures": 0,
+      "knowledgeSessionEventCount": 0,
+      "measuredTurnElapsedSeconds": 2.921,
+      "latencyInterpretation": "One observed model turn only; not comparable performance evidence or a Rust speed measurement.",
+      "sourceCommit": "32abce1992863c4f5a96fabf9cbb145f519122dd",
+      "rawAudit": {
+        "path": "/private/tmp/ark3110-ui-raw-audit-native3110-05-0d8dfbc5-root-alias-v2/raw-audit-report.json",
+        "bytes": 17487,
+        "sha256": "531075e10b46e049191f945adc106017469f496ce75080e4d841bf7c9660e1dd"
+      },
+      "coldReplay": {
+        "path": "/private/tmp/ark3110-ui-cold-native3110-05-0d8dfbc5-root-alias-v2/cold-replay-receipt.json",
+        "bytes": 32473,
+        "sha256": "70466706ce8343e861cac75aca13eb5bd9d410760b11178b49057e5d69f53e26"
+      },
+      "nativeLiteralVerdict": {
+        "path": "/private/tmp/ark3110-native-root-20261009/native3110-05-literal-verdict.json",
+        "bytes": 1015,
+        "sha256": "5ed0bf13c093b445168f7a5cb0921874d49751b1736bbc59dae8d2dbc8921410"
+      },
+      "capture": {
+        "path": "/private/tmp/ark3110-ui-history-capture-native3110-05-0d8dfbc5-root-alias-v2/capture-report.json",
+        "bytes": 8237,
+        "sha256": "186bcdbd54a228ef34a3a9653399726735483872d38ed03db846dbfc60a69d59"
+      },
+      "wholeOrdinary": {
+        "path": "/private/tmp/ark3110-ui-raw-audit-native3110-05-0d8dfbc5-root-alias-v2/whole-turn-answer.txt",
+        "bytes": 6,
+        "sha256": "987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c"
+      },
+      "originalSubmittedPrompt": {
+        "path": "/private/tmp/ark319-native-preregister-private-KGLLB6/private-control/submitted-prompts/single-line.zh.txt",
+        "sha256": "c0e20953a5229b18ca7d616dda129e52d5fccc228d691625cc83fd25a0aa5849"
+      },
+      "expectedRoute": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "reasoningEffort": "max"
+      }
+    }
+  ],
+  "counts": {
+    "fixedOriginalAttempts": 5,
+    "distinctFreshSessionIds": 5,
+    "taskPass": 4,
+    "taskProductFail": 1,
+    "numericCorrect": 5,
+    "wholeOrdinaryFormatPass": 5,
+    "coldPersistencePass": 5,
+    "nativeLiteralPass": 5,
+    "toolBusinessFailures": 1,
+    "knowledgeSessionEvents": 0
+  },
+  "failure": {
+    "runId": "native3110-04",
+    "callSeq": 184,
+    "resultSeq": 185,
+    "kind": "HEREDOC_READONLY_TEMPFILE_CREATION_DENIED",
+    "actualRenderedExitCode": 1,
+    "transportIsError": false,
+    "laterRecoveredCorrectMathErasesFailure": false,
+    "scope": "Actual failed shell execution retained; correct JSON and display are separate gates."
+  },
+  "comparison": {
+    "oldFixedFiveReport": {
+      "path": "/Users/hui/ark-test/evidence/candidate319-five-native-final-review-20261009.json",
+      "sha256": "b482a550e9c34ca4764d9e743e7a97fa7413c37c7efcfdf69f81d850b8ff8715"
+    },
+    "oldFixedFiveCounts": {
+      "attempts": 5,
+      "localTaskGatePass": 3,
+      "productWholeOutputFailure": 1,
+      "environmentHeld": 1,
+      "wholeOrdinaryOutputAndMathPass": 4,
+      "numericAnswersCorrect": 5,
+      "interpretation": "Five fixed examples only; not an ability improvement percentage or general reliability estimate."
+    },
+    "newFixedFiveCounts": {
+      "localTaskGatePass": 4,
+      "productToolExecutionFailure": 1,
+      "environmentHeld": 0,
+      "wholeOrdinaryOutputAndMathPass": 5,
+      "numericAnswersCorrect": 5
+    },
+    "interpretation": "Counts of these fixed local examples only; samples are small and harness/world setup differs. Not a controlled formal-versus-candidate capability or speed A/B.",
+    "verifiedChange": "Native ASCII JSON punctuation displayed exactly; current rational239B raw equals239B AX. Old supplementary auto06 reported raw239B transformed punctuation display.",
+    "knownUnresolvedIssue": "Readonly heredoc tempfile error that occurred in old auto06 recurred in current04 despite guidance.",
+    "mathematicalCapabilityChange": "UNMEASURED; both old and current original5 numeric answers are5/5correct.",
+    "globalUpliftPercentage": "UNKNOWN"
+  },
+  "rootHarnessAliasCorrectionRetained": {
+    "status": "ROOT_HARNESS_ALIAS_ONLY_CORRECTION_REVIEWED",
+    "original": {
+      "path": "/private/tmp/ark3110-native-root-20261009/native3110-05.READY.json",
+      "sha256": "57ea34d44a9b9b000e49cc727fd6204846b387d05d0297194b2a0dc59120c986"
+    },
+    "corrected": {
+      "path": "/private/tmp/ark3110-native-root-20261009/native3110-05.READY-validated-alias-v2.json",
+      "sha256": "0e9e63a0069af1f0ef1401ee7334f69ba2e0d80cf5d1ac07732540b92d4cd4ad"
+    },
+    "changedFields": [
+      "captureRoot",
+      "coldRoot",
+      "rawAuditRoot",
+      "validatorTask"
+    ],
+    "sameCollectedRawEventContainerExactly": true,
+    "sameRawEventCount": 166,
+    "sameSessionId": true,
+    "sameSessionStorage": true,
+    "originalRawInitializationExitCode": 1,
+    "productTaskResubmitted": false,
+    "originalFailureAndOutputsRetained": true,
+    "oracleGraderPromptSourceWorldHomeThresholdChanges": 0,
+    "rootRepairReceipt": {
+      "path": "/private/tmp/ark3110-native-root-20261009/native3110-05-observation-alias-repair.json",
+      "sha256": "80faf5103d71190bd89faa111ade4b96835b42b0674ff32d4cb00b13f3f00798"
+    }
+  },
+  "reviewerDiagnosticRetained": {
+    "path": "/private/tmp/ark3110-independent-result-review-20261009/native3110-01-review-v1-correction.json",
+    "sha256": "bac7875bbb5603bac688bc126bf1237bf2c2f8db87b7fb26cc06a2f58f40f415"
+  },
+  "nativeScreenshot": {
+    "path": "/Users/hui/ark-test/evidence/candidate3110-native-single-line-20261009.png",
+    "bytes": 304651,
+    "sha256": "1b98c54ff6cfae37a159ec403031283b7addc18783ca96116455984c9e395b95"
+  },
+  "presentationScope": "Final ordinary message AX bytes match raw ordinary bytes for all5. Actual screenshot shows a separate English reasoning panel; raw ordinary grading excludes reasoning as frozen in preregistration. Not a claim of a one-line-only whole window, all-English suppression, full pixel/layout parity, or all-feature validation.",
+  "worldObservationScope": "Cold public owner pinned before/after inventories and neutral journal unchanged during collection. Root separately recorded post-AX observations; no invented01postAXinventory. Later02baseline exact earlier journal prefix plus one later neutral index selection verified independently.",
+  "knowledgeReuse": "UNPROVEN_ZERO_GOVERNED_TASK_EVENTS",
+  "mathematicalCapabilityLift": "UNMEASURED_OLD_AND_NEW_FIXED5_NUMERIC_CORRECT_5_OF_5",
+  "rustOrEndToEndSpeedLift": "UNKNOWN_NOT_TESTED_BY_THIS_SCHEDULE",
+  "allFivePassPreregisteredGate": false,
+  "releaseDecision": {
+    "formalPromotion": "HOLD_ONE_FIXED_TASK_PRODUCT_FAIL_AND_WIDER_GATES_OPEN",
+    "githubPublication": "USER_DECISION_AFTER_REPORT",
+    "publicationCommandsInThisRun": 0,
+    "formalAppReplacementCommandsInThisRun": 0,
+    "recommendationZh": "先修复只读 heredoc 执行的根因并复测，不建议将3.1.10直接晋级正式。"
+  },
+  "remainingAcceptance": [
+    "Robust read-only shell execution without heredoc tempfile failure",
+    "Verified fresh-conversation governed knowledge retrieval/reuse",
+    "Exact-source CI and wider strict coverage",
+    "Behavioral rollback and wider UI/platform acceptance"
+  ],
+  "writesInClosure": "Append-only local report and exact-candidate screenshot outside frozen source; no source/app/home/world modifications by report producer."
+}

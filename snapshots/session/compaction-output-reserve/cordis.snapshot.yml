@@ -1,4 +1,5 @@
-# Keyless proactive compaction; 128000 - 119573 = 8427 input tokens.
+# Keyless proactive compaction; 128000 - 119487 = 8513 input tokens.
+# Preserve the input margin after the shared Bash stdin header grew by 86 tokens.
 
 - id: llm-deepseek
   name: '@deepseek-ai/dsh-llm-deepseek'
@@ -27,4 +28,4 @@
             models:
               - id: deepseek-v4-flash
                 contextWindow: 128000
-                defaultMaxTokens: 119573
+                defaultMaxTokens: 119487

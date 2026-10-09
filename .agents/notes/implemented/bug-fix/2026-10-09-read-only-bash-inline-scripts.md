@@ -10,6 +10,8 @@ A read-only computation can fail before its interpreter starts because the shell
 
 ## Decision
 
+The [literal stdin decision](2026-10-09-bash-literal-stdin.md) supersedes the omission of model-facing stdin and the reliance on inline-script guidance. It preserves the shell execution and environment ownership described here.
+
 The [bash tool](../../../../packages/shell/tool-bash/README.md#model-experience) supplies fixed cross-call guidance in its system-prompt section: here-documents, here-strings, and temporary script files can require writes; correctly quoted `python3 -c` or `node -e` arguments can perform permitted reads and computation without that temporary-file write. The model keeps the same sandbox and investigates the reported exit status. This is conditional advice, not a claim that every shell always uses a temporary file or that every inline script is read-only.
 
 The tool description permits escalation only when the task requires the denied access and a wider mode would permit it. A denied read or write remains forbidden through any alternate route. The existing approval sequence, executor, command argv, managed environment, result markers, and wire format keep their contracts. The shared escalation hint reports the available approval path; it does not decide whether the task requires that access.

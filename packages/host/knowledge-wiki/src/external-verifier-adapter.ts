@@ -114,14 +114,14 @@ function verifyResult(
 }
 
 async function runVerifier(
-  options: ExternalVerifierOptions,
+  options: ExternalVerifierOptions & { readonly timeoutMs: number },
   subprocess: SubprocessRuntime,
   request: IndependentVerificationRequest,
   publicKey: ReturnType<typeof createPublicKey>,
   signal: AbortSignal,
 ): Promise<IndependentVerificationResult> {
   if (signal.aborted) throw new Error('external verifier aborted')
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const timeoutMs = options.timeoutMs
   const payload = `${canonicalJson({ schemaVersion: 1, operation: 'verifyCandidate', request })}\n`
   const controller = new AbortController()
   let failure: Error | undefined

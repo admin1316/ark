@@ -103,6 +103,8 @@ interface KnowledgeModelProvenance {
 export type { KnowledgeModelProvenance }
 
 type KnowledgeModelFileEntry = WikiFileEntry & { readonly provenance?: KnowledgeModelProvenance }
+/** Records whose exact content bytes passed the model projection's hash check. */
+type KnowledgeContentRecord = KnowledgeRecord & { readonly contentHash: string }
 type KnowledgeModelGraphResult = WikiGraphResult & {
   readonly provenance: Readonly<Record<string, KnowledgeModelProvenance>>
 }
@@ -824,10 +826,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     return this.modelRecallAllowed(record, scope) && record?.contentHash === knowledgeSha256(content)
   }
 
-  private modelProvenance(record: KnowledgeRecord): KnowledgeModelProvenance {
+  private modelProvenance(record: KnowledgeContentRecord): KnowledgeModelProvenance {
     return {
       knowledgeId: record.id,
-      ...(record.contentHash === undefined ? {} : { contentHash: record.contentHash }),
+      contentHash: record.contentHash,
       sourceHash: record.sourceHash,
       scope: record.scope,
       trust: record.trust,
@@ -907,7 +909,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     return currentHits.map(hit => ({
       path: hit.path,
       score: hit.score,
-      provenance: this.modelProvenance(currentRecords.get(hit.path) as KnowledgeRecord),
+      provenance: this.modelProvenance(currentRecords.get(hit.path) as KnowledgeContentRecord),
     }))
   }
 
@@ -932,7 +934,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     if (content === '') throw new Error('knowledge page not found')
     if (!this.modelPageAllowed(record, scope, content)) throw new Error('knowledge page bytes do not match verified content')
     this.recordKnowledgeRetrieval([safe.relativePath], project.projectRoot)
-    const provenance = this.modelProvenance(record as KnowledgeRecord)
+    const provenance = this.modelProvenance(record as KnowledgeContentRecord)
     return Promise.resolve({ path: safe.relativePath, content, provenance })
   }
 
@@ -948,19 +950,11 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const records = this.modelRecords(project.projectRoot)
     const entries = listPages(project.wikiRoot,
       (path, content) => this.modelPageAllowed(records.get(path), scope, content)) as WikiFileEntry[]
-    const visit = (entry: WikiFileEntry): KnowledgeModelFileEntry | undefined => {
-      if (!entry.isDir) {
-        const record = records.get(entry.path)
-        return this.modelRecordAllowed(record, scope)
-          ? { ...entry, provenance: this.modelProvenance(record as KnowledgeRecord) }
-          : undefined
-      }
-      const children = (entry.children ?? [])
-        .map(child => visit(child))
-        .filter((child): child is KnowledgeModelFileEntry => child !== undefined)
-      return children.length === 0 ? undefined : { ...entry, children }
-    }
-    return entries.map(visit).filter((entry): entry is KnowledgeModelFileEntry => entry !== undefined)
+    // listPages owns a flat projection; its admission callback already checked every leaf.
+    return entries.filter(entry => !entry.isDir).map(entry => ({
+      ...entry,
+      provenance: this.modelProvenance(records.get(entry.path) as KnowledgeContentRecord),
+    }))
   }
 
   /**
@@ -977,7 +971,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     return {
       ...graph,
       provenance: Object.fromEntries(graph.nodes
-        .map(node => [node.id, this.modelProvenance(records.get(node.path) as KnowledgeRecord)])),
+        .map(node => [node.id, this.modelProvenance(records.get(node.path) as KnowledgeContentRecord)])),
     }
   }
 
@@ -998,25 +992,21 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     if (!Array.isArray(all)) throw new Error('invalid knowledge review state')
     const records = this.modelRecords(project.projectRoot)
     const status = request.status ?? 'unresolved'
-    const filtered = all.filter((item) => {
-      if (status !== 'all' && status === 'resolved' && !item.resolved) return false
-      if (status !== 'all' && status !== 'resolved' && item.resolved) return false
-      if (item.reviewKind !== 'candidate') return true
+    return all.flatMap((item) => {
+      if (status !== 'all' && status === 'resolved' && !item.resolved) return []
+      if (status !== 'all' && status !== 'resolved' && item.resolved) return []
+      if (item.reviewKind !== 'candidate') return [item]
       const record = records.get(item.candidatePath ?? '')
-      if (!this.modelRecordAllowed(record, scope) || item.candidatePath === undefined) return false
+      if (!this.modelRecordAllowed(record, scope) || item.candidatePath === undefined) return []
       const verification = item.verification
       const receiptId = verification?.receipts.length === 1 ? verification.receipts[0]?.id : undefined
-      if (receiptId === undefined || verification?.action === undefined) return false
+      if (receiptId === undefined || verification?.action === undefined) return []
       if (readTrustedVerification(this.verifierAuthority, this.reviewFile(project.projectRoot), project.wikiRoot,
-        item, receiptId, verification.action) === undefined) return false
+        item, receiptId, verification.action) === undefined) return []
       const safe = resolveSafePath(project.wikiRoot, item.candidatePath, false)
-      return record?.contentHash === knowledgeSha256(readPage(project.wikiRoot, safe.relativePath))
+      if (record?.contentHash !== knowledgeSha256(readPage(project.wikiRoot, safe.relativePath))) return []
+      return [{ ...item, provenance: this.modelProvenance(record as KnowledgeContentRecord) }]
     }).slice(0, request.limit ?? 100)
-    return filtered.map((item) => {
-      if (item.reviewKind !== 'candidate') return item
-      const record = records.get(item.candidatePath ?? '')
-      return record === undefined ? item : { ...item, provenance: this.modelProvenance(record) }
-    })
   }
 
   private readUtility(projectRoot = this.currentRoot): Record<string, KnowledgeUtilityRecord> {

@@ -196,6 +196,10 @@ ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类�
       "type": "string",
       "description": "The bash command to execute."
     },
+    "stdin": {
+      "type": "string",
+      "description": "Literal UTF-8 input written to the command's stdin, then closed; at most 1048576 bytes. Use with python3 - or node for multiline scripts without a temporary file. Shell expansions are not applied. Omitted leaves stdin empty."
+    },
     "description": {
       "type": "string",
       "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"npm install\" → \"Install package dependencies\"."

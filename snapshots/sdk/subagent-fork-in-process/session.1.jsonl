@@ -19,7 +19,7 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":1,"block":{"type":"text","text":"OK"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":2885,"outputTokens":25,"cacheReadTokens":0,"reasoningTokens":23}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"The user wants me to remember the codeword \"MARMALADE\" and reply with just \"OK\"."},{"type":"text","text":"OK"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:3}}"},"usage":{"inputTokens":2885,"outputTokens":25,"cacheReadTokens":0,"reasoningTokens":23}},"sourceEventSeqs":[12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"The user wants me to remember the codeword \"MARMALADE\" and reply with just \"OK\"."},{"type":"text","text":"OK"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:3}}"},"usage":{"inputTokens":2885,"outputTokens":25,"cacheReadTokens":0,"reasoningTokens":23}},"sourceEventSeqs":[[12,41]],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":1}}
 {"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}
 {"type":"session/end-seed","data":{}}
@@ -41,6 +41,6 @@
 {"type":"assistant/chunk","data":{"turn":2,"step":1,"chunk":{"type":"block-end","index":1,"block":{"type":"text","text":"MARMALADE"}}}}
 {"type":"assistant/chunk","data":{"turn":2,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":97,"outputTokens":39,"cacheReadTokens":2816,"reasoningTokens":34}}}}
 {"type":"assistant/chunk","data":{"turn":2,"step":1,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
-{"type":"assistant/message","data":{"turn":2,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"The user asked me to remember the project codeword \"MARMALADE\" and now they're asking what it is. I should just reply with that word."},{"type":"text","text":"MARMALADE"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:10}}"},"usage":{"inputTokens":97,"outputTokens":39,"cacheReadTokens":2816,"reasoningTokens":34}},"sourceEventSeqs":[56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":2,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"The user asked me to remember the project codeword \"MARMALADE\" and now they're asking what it is. I should just reply with that word."},{"type":"text","text":"MARMALADE"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:10}}"},"usage":{"inputTokens":97,"outputTokens":39,"cacheReadTokens":2816,"reasoningTokens":34}},"sourceEventSeqs":[[56,99]],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":2,"step":1}}
 {"type":"turn/end","data":{"turn":2,"reason":{"kind":"completed"}}}

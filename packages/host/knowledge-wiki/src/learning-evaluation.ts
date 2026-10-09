@@ -90,11 +90,11 @@ export function evaluateLearning(input: EvaluationInput): {
     }
     return pair
   })
-  const verified = pairs.filter(pair => pair.baseline?.verificationStatus === 'verified' && pair.candidate?.verificationStatus === 'verified')
+  const verified = pairs.filter((pair): pair is Record<OutcomeRecord['variant'], OutcomeRecord> =>
+    pair.baseline?.verificationStatus === 'verified' && pair.candidate?.verificationStatus === 'verified')
   for (const pair of verified) {
     const baseline = pair.baseline
     const candidate = pair.candidate
-    if (baseline === undefined || candidate === undefined) throw new Error('verified pair is incomplete')
     const producers = new Set([baseline.producerId, candidate.producerId])
     const evaluators = new Set([baseline.evaluatorId, candidate.evaluatorId])
     if ([...producers].some(id => evaluators.has(id))) {
@@ -107,8 +107,8 @@ export function evaluateLearning(input: EvaluationInput): {
     const baseline = { numerator: 0, denominator: 0 }
     const candidate = { numerator: 0, denominator: 0 }
     for (const pair of verified) {
-      const a = pair.baseline?.counts[metric]
-      const b = pair.candidate?.counts[metric]
+      const a = pair.baseline.counts[metric]
+      const b = pair.candidate.counts[metric]
       if (a === undefined || b === undefined || a.denominator === 0 || b.denominator === 0) return [metric, { status: 'UNKNOWN', reason: `missing ${metric} opportunities in a pair` }]
       baseline.numerator += a.numerator
       baseline.denominator += a.denominator
@@ -150,7 +150,7 @@ export function evaluateLearning(input: EvaluationInput): {
   return {
     schemaVersion: 1, totalPairs: pairs.length, verifiedPairs: verified.length,
     evidenceRefs: [...new Set(verified.flatMap(pair => [
-      ...(pair.baseline?.evidenceRefs ?? []), ...(pair.candidate?.evidenceRefs ?? []),
+      ...pair.baseline.evidenceRefs, ...pair.candidate.evidenceRefs,
     ]))].sort(),
     metrics, knowledgeUtilityLift: metrics.knowledgeUtility,
     smartnessClaim: { status: unknown ? 'UNKNOWN' : reasons.length === 0 ? 'SUPPORTED' : 'NOT_SUPPORTED', reasons },

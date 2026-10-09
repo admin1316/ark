@@ -29,3 +29,44 @@ commits = ["95dc1aa63c6602b45c338fb22b0abe3363eea435", "a9bd3d364532c69937b6f7e0
 paths = ['''^\.agents/skills/media-production-studio/modules/media-use/scripts/lib/telemetry\.mjs$''']
 regexTarget = "secret"
 regexes = ['''^phc_[A-Za-z0-9]+$''']
+
+# These exact public constants are independently bound to source bytes or retained contract prose.
+[[allowlists]]
+description = "Exact public source SHA256 metadata in scripts/rust-migration/evidence/knowledge-safety-regressions-20261008.json"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^scripts/rust\-migration/evidence/knowledge\-safety\-regressions\-20261008\.json$''']
+regexTarget = "secret"
+regexes = ['''^3beeb336cb4f48e679b317e2f7fa2a20ce334291d698fa878eb61d0e2d0db5b9$''']
+
+[[allowlists]]
+description = "Exact public source SHA256 metadata in scripts/rust-migration/feature-language-review.json"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^scripts/rust\-migration/feature\-language\-review\.json$''']
+regexTarget = "secret"
+regexes = ['''^b20e7b4745158d00cdf8d71bffafae6e7b0c044c4d662d83f9d02413cbf39242$''']
+
+[[allowlists]]
+description = "Exact public source SHA256 metadata in scripts/rust-migration/feature-language-review.json"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^scripts/rust\-migration/feature\-language\-review\.json$''']
+regexTarget = "secret"
+regexes = ['''^f409a9fbd344c1f6a3179eef2c422ec34933f2f3865bf065506bdba88212455e$''']
+
+[[allowlists]]
+description = "Exact public source SHA256 metadata in scripts/rust-migration/feature-language-review.json"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^scripts/rust\-migration/feature\-language\-review\.json$''']
+regexTarget = "secret"
+regexes = ['''^300dec6812ad634ccbd1d65a168cdd6e529eb6df6f620d84abf4e6062c7af038$''']
+
+[[allowlists]]
+description = "Exact public validation-topic contract prose literal in scripts/rust-migration/evidence/learning-protocol-baseline-20261008.json"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^scripts/rust\-migration/evidence/learning\-protocol\-baseline\-20261008\.json$''']
+regexTarget = "secret"
+regexes = ['''^unsigned/legacy$''']

@@ -24,7 +24,6 @@ import { createHash } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { parseFrontmatterArray, parseFrontmatterField } from './frontmatter-utils.ts'
 import type { CandidateVerification, WikiReviewItem } from './types.ts'
-import { prepareCanonicalTarget } from './canonical-merge.ts'
 import { decideCandidateGovernance, governancePolicyVersion, resolveGovernedWikiPath } from './governance-policy.ts'
 import {
   assertAbsolutePathInside,
@@ -45,7 +44,6 @@ import {
   readTrustedVerification,
   sha256,
   type KnowledgeWikiVerifierAuthority,
-  type TrustedVerificationReceipt,
   type VerificationAuthoritySeal,
 } from './verifier.ts'
 import {
@@ -157,18 +155,12 @@ interface LoadedReviewItem {
   readonly item: WikiReviewItem
 }
 
+type BoundCandidateReview = WikiReviewItem & { readonly candidatePath: string; readonly candidateHash: string }
+type ObservedCandidateReview = BoundCandidateReview & { readonly sourceHash: string; readonly createdAt: number }
+
 function resolveCandidateReviewPath(root: string, input: string): ReturnType<typeof resolveGovernedWikiPath> {
   const governed = resolveGovernedWikiPath(root, input, false)
   return governed?.relativePath.startsWith('_candidates/') === true ? governed : undefined
-}
-
-function resolveCanonicalReviewPath(
-  root: string,
-  input: string,
-  allowMissing: boolean,
-): ReturnType<typeof resolveGovernedWikiPath> {
-  const governed = resolveGovernedWikiPath(root, input, allowMissing)
-  return governed?.relativePath.startsWith('_candidates/') === true ? undefined : governed
 }
 
 /** Narrow one durable review row before its fields can direct a mutation. */
@@ -239,11 +231,10 @@ function sourceHashForCandidate(projectRoot: string, sourcePath: string | undefi
 function appendKnowledgeLifecycleEvent(
   reviewFile: string,
   type: Parameters<typeof createKnowledgeEvent>[0],
-  item: WikiReviewItem,
+  item: BoundCandidateReview,
   payload: Readonly<Record<string, unknown>> = {},
   authority?: KnowledgeWikiVerifierAuthority,
 ): void {
-  if (!item.candidatePath || !item.candidateHash) return
   const scope = { projectId: dirname(dirname(reviewFile)), visibility: 'project' as const }
   const id = `candidate:${item.id}`
   const prior = readKnowledgeEventLog(knowledgeEventPath(reviewFile))
@@ -254,9 +245,10 @@ function appendKnowledgeLifecycleEvent(
     source: item.sourcePath ?? item.candidatePath,
   }
   if (type === 'knowledge/verified') {
-    if (authority === undefined) throw new Error('knowledge verification event lacks authority')
-    const seal = authority.sealPromotion(canonicalJson({ type, knowledgeId: id, payload: eventPayload }))
-    eventPayload = { ...eventPayload, authorityId: authority.authorityId, authoritySeal: seal }
+    // The sole verified caller has already authenticated a receipt through this owner.
+    const verifiedAuthority = authority as KnowledgeWikiVerifierAuthority
+    const seal = verifiedAuthority.sealPromotion(canonicalJson({ type, knowledgeId: id, payload: eventPayload }))
+    eventPayload = { ...eventPayload, authorityId: verifiedAuthority.authorityId, authoritySeal: seal }
   }
   const event = createKnowledgeEvent(type, id, scope, eventPayload, {
     seq: prior.length,
@@ -268,11 +260,10 @@ function appendKnowledgeLifecycleEvent(
 
 function appendKnowledgeReviewEvent(
   reviewFile: string,
-  type: Parameters<typeof createKnowledgeEvent>[0],
+  type: 'knowledge/rejected' | 'knowledge/rolled_back' | 'knowledge/conflict',
   reviewId: string,
   candidateHash: string,
   payload: Readonly<Record<string, unknown>> = {},
-  authority?: KnowledgeWikiVerifierAuthority,
 ): void {
   const path = knowledgeEventPath(reviewFile)
   const prior = readKnowledgeEventLog(path)
@@ -283,15 +274,9 @@ function appendKnowledgeReviewEvent(
     return
   }
   const scope = { projectId: dirname(dirname(reviewFile)), visibility: 'project' as const }
-  let eventPayload: Readonly<Record<string, unknown>> = {
+  const eventPayload: Readonly<Record<string, unknown>> = {
     ...payload,
     candidateHash,
-  }
-  if (type === 'knowledge/promoted') {
-    if (authority === undefined) throw new Error('knowledge promotion event lacks authority')
-    const id = `candidate:${reviewId}`
-    const seal = authority.sealPromotion(canonicalJson({ type, knowledgeId: id, payload: eventPayload }))
-    eventPayload = { ...eventPayload, authorityId: authority.authorityId, authoritySeal: seal }
   }
   const event = createKnowledgeEvent(type, `candidate:${reviewId}`, scope, eventPayload, { seq: prior.length, previousEventHash: prior.at(-1)?.eventHash ?? null })
   appendKnowledgeEvent(path, event)
@@ -332,6 +317,11 @@ interface PromotionOperation {
   readonly stagingPath?: string
   readonly tombstonePath?: string
 }
+
+type ValidatedPromotionOperation = PromotionOperation & (
+  { readonly after?: undefined; readonly tombstonePath: string }
+  | { readonly after: string; readonly stagingPath: string }
+)
 
 /**
  * Derive the existing sibling staging/tombstone names for one transaction operation.
@@ -381,6 +371,10 @@ interface PromotionJournalCore {
 interface PromotionJournal extends PromotionJournalCore {
   readonly state: 'prepared' | 'committed' | 'rolled-back'
   readonly seal: VerificationAuthoritySeal
+}
+
+interface ValidatedPromotionJournal extends PromotionJournal {
+  readonly operations: ValidatedPromotionOperation[]
 }
 
 function promotionJournalDirectory(reviewFile: string): string {
@@ -472,13 +466,12 @@ function writePromotionStage(path: string, content: string): void {
 }
 
 function applyPromotionOperation(
-  operation: PromotionOperation,
+  operation: ValidatedPromotionOperation,
   checkpoint?: (phase: 'stage-written' | 'entry-renamed' | 'tombstone-unlinked') => void,
 ): void {
   const current = readOptionalText(operation.path, 8 * 1024 * 1024)
   if (operation.after === undefined) {
     const tombstone = operation.tombstonePath
-    if (tombstone === undefined) throw new Error('promotion delete lacks a tombstone path')
     if (current === undefined) {
       const moved = readOptionalText(tombstone, 8 * 1024 * 1024)
       if (moved === undefined) {
@@ -511,7 +504,6 @@ function applyPromotionOperation(
   }
   if (current !== operation.before) throw new Error(`promotion recovery conflict at ${operation.path}`)
   const staging = operation.stagingPath
-  if (staging === undefined) throw new Error('promotion write lacks a staging path')
   writePromotionStage(staging, operation.after)
   checkpoint?.('stage-written')
   const revalidated = readOptionalText(operation.path, 8 * 1024 * 1024)
@@ -581,9 +573,10 @@ function archiveReviewEventPayload(journal: PromotionJournalCore): {
   readonly lifecycle: 'downgraded'
 } {
   const governance = journal.operations.find(operation => operation.role === 'governance')
-  const archived = journal.operations.find(operation => operation.role === 'candidate-archive')
+  // Every caller has constructed or validated the fixed Archive operation layout.
+  const archived = journal.operations.find(operation => operation.role === 'candidate-archive') as PromotionOperation
   const before = governance?.before ?? ''
-  if (governance?.after === undefined || !governance.after.startsWith(before) || archived === undefined) {
+  if (governance?.after === undefined || !governance.after.startsWith(before)) {
     throw new Error('Archive journal lifecycle binding failed')
   }
   const entry: unknown = JSON.parse(governance.after.slice(before.length))
@@ -603,7 +596,7 @@ function revalidateJournalBeforeMutation(
   reviewFile: string,
   wikiRoot: string,
   journal: PromotionJournal,
-): void {
+): asserts journal is ValidatedPromotionJournal {
   if (!validatePromotionJournalAuthority(authority, journal)) throw new Error('promotion journal authority validation failed')
   const reviewOperation = journal.operations.find(operation => operation.role === 'review')
   const candidateOperation = journal.operations.find(operation => operation.role === 'candidate')
@@ -750,7 +743,7 @@ function commitPromotionJournal(
         appendKnowledgeReviewEvent(reviewFile, 'knowledge/rolled_back', journal.reviewId, journal.candidateHash, {
           lifecycle: 'rolled_back',
           transactionId: journal.id,
-        }, authority)
+        })
       } catch {
         // The promotion journal is the source of truth for recovery; an event
         // append failure must not mask the original transaction error.
@@ -829,25 +822,9 @@ export function recoverCandidateReviewTransactions(
       atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'committed' }, null, 2)}\n`)
       recovered += 1
     }
-    if (journal.action === 'Archive') {
-      appendKnowledgeReviewEvent(
-        reviewFile, 'knowledge/rejected', journal.reviewId, journal.candidateHash, archiveReviewEventPayload(journal), authority,
-      )
-    }
-    if (journal.action === 'Promote' || journal.action === 'Merge' || journal.action === 'Replace' || journal.action === 'Deduplicate') {
-      try {
-        const canonical = journal.operations.find(operation => operation.role === 'canonical')
-        if (canonical?.after === undefined) throw new Error('promotion journal lacks canonical bytes')
-        appendKnowledgeReviewEvent(reviewFile, 'knowledge/promoted', journal.reviewId, journal.candidateHash, {
-          action: journal.action,
-          lifecycle: 'canonical',
-          contentHash: sha256(canonical.after),
-          ...(journal.targetPath === null ? {} : { appliedPath: journal.targetPath }),
-        }, authority)
-      } catch {
-        // The committed promotion WAL remains the recovery authority.
-      }
-    }
+    appendKnowledgeReviewEvent(
+      reviewFile, 'knowledge/rejected', journal.reviewId, journal.candidateHash, archiveReviewEventPayload(journal),
+    )
   }
   return recovered
 }
@@ -962,7 +939,7 @@ export function appendCandidateReviews(
 ): number {
   const existing = readReviewItems(reviewFile)
   const byId = new Map(existing.map(item => [item.id, item]))
-  const observed: Array<{ item: WikiReviewItem; content: string }> = []
+  const observed: Array<{ item: ObservedCandidateReview; content: string }> = []
   let changed = 0
   for (const writtenPath of writtenPaths) {
     const candidate = resolveCandidateReviewPath(join(projectRoot, 'wiki'), writtenPath.replace(/^wiki\//u, ''))
@@ -979,7 +956,7 @@ export function appendCandidateReviews(
     const suggestedTarget = canonicalTarget(candidatePath)
     const governance = decideCandidateGovernance(join(projectRoot, 'wiki'), candidatePath, content, suggestedTarget)
     const targetPath = governance.targetPath
-    const nextItem: WikiReviewItem = {
+    const nextItem: ObservedCandidateReview = {
       id,
       title,
       type: 'candidate-approval',
@@ -1018,15 +995,15 @@ export function appendCandidateReviews(
         claimKey: item.title.trim().toLocaleLowerCase(),
         // Keep the durable item address in `source`; original provenance stays
         // in the review/sourcePath and evidence refs.
-        source: item.candidatePath ?? item.id,
-        evidenceRefs: [item.sourcePath ?? item.candidatePath ?? item.id],
+        source: item.candidatePath,
+        evidenceRefs: [sourcePath],
         // `candidateHash` binds the mutable candidate bytes. `sourceHash`
         // identifies provenance and intentionally hashes the source identity
         // separately, so an edited candidate cannot masquerade as source data.
-        sourceHash: item.sourceHash ?? knowledgeSha256(item.sourcePath ?? item.candidatePath ?? item.id),
+        sourceHash: item.sourceHash,
         scope: { projectId: projectRoot, visibility: 'project' },
-        createdAt: new Date(item.createdAt ?? Date.now()).toISOString(),
-        expiresAt: new Date((item.createdAt ?? Date.now()) + 30 * 86_400_000).toISOString(),
+        createdAt: new Date(item.createdAt).toISOString(),
+        expiresAt: new Date(item.createdAt + 30 * 86_400_000).toISOString(),
         lifecycle: 'candidate',
       })
       appendKnowledgeLifecycleEvent(reviewFile, 'knowledge/observed', item, { record })
@@ -1132,13 +1109,15 @@ export function recordCandidateVerification(
     expiresAt: new Date(Date.parse(createdAt) + 30 * 86_400_000).toISOString(),
     lifecycle: 'candidate',
   })
-  appendKnowledgeLifecycleEvent(reviewFile, 'knowledge/verified', item, {
+  appendKnowledgeLifecycleEvent(reviewFile, 'knowledge/verified', {
+    ...item, candidatePath: item.candidatePath, candidateHash: item.candidateHash,
+  }, {
     record: fallbackRecord,
     verificationStatus: 'verified',
     trust: 'medium',
-    authority: nextVerification.authorityId ?? 'independent-verifier',
+    authority: trusted.receipt.result.authorityId,
     confidence: nextVerification.confidence,
-    lastVerifiedAt: nextVerification.lastVerifiedAt ?? new Date().toISOString(),
+    lastVerifiedAt: trusted.receipt.result.issuedAt,
     evidenceRefs: nextVerification.receipts.map(receipt => receipt.id),
   }, authority)
   return true
@@ -1194,7 +1173,6 @@ export function applyCandidateReview(
   }
 
   const canonicalActions = new Set(['Promote', 'Merge', 'Replace', 'Deduplicate'])
-  let verifiedReceipt: TrustedVerificationReceipt | undefined
   if (canonicalActions.has(action)) {
     const verification = item.verification
     if (actor === 'governance-agent') return false
@@ -1212,7 +1190,6 @@ export function applyCandidateReview(
     )
     if (trusted === undefined
       || trusted.verification.receipts[0]?.receiptHash !== verification.receipts[0]?.receiptHash) return false
-    verifiedReceipt = trusted.receipt
   }
   // The current receipt authenticates semantic checks, not a measured trial.
   // Legacy trial mirrors cannot authorize any canonical write.
@@ -1221,55 +1198,15 @@ export function applyCandidateReview(
   const now = new Date()
   const reviewedAt = now.toISOString()
   const resolvedAt = now.getTime()
-  let appliedPath = ''
-  let previousCanonicalHash = ''
-  let targetPath = ''
-  let targetAbsolutePath = ''
-  let targetBefore: string | undefined
-  let targetAfter: string | undefined
-  let archivedCanonical = ''
-  let archivedCanonicalContent = ''
-  if (action === 'Merge' || action === 'Replace' || action === 'Deduplicate') {
-    // actionIsCompatible already rejected these actions without a target before
-    // the verification could pass, so the target path is present here.
-    const target = resolveCanonicalReviewPath(wikiRoot, item.targetPath as string, false)
-    if (target === undefined) return false
-    const canonicalBefore = readRegularFileBounded(target.absolutePath, 5 * 1024 * 1024).toString('utf8')
-    const canonicalHash = createHash('sha256').update(canonicalBefore).digest('hex')
-    previousCanonicalHash = canonicalHash
-    archivedCanonicalContent = canonicalBefore
-    archivedCanonical = governanceArchivePath(
-      archiveRoot, projectRoot, reviewedAt, canonicalHash, target.relativePath, 'canonical-before-update',
-    )
-    targetBefore = canonicalBefore
-    targetAfter = prepareCanonicalTarget({
-      action, candidateContent: content, targetPath: target.relativePath,
-      targetBefore: canonicalBefore, reviewedAt, actor,
-    })
-    targetAbsolutePath = target.absolutePath
-    targetPath = target.relativePath
-    appliedPath = target.relativePath
-  } else if (action === 'Promote') {
-    const target = resolveCanonicalReviewPath(wikiRoot, item.targetPath as string, true)
-    if (target === undefined || pathEntryExists(target.absolutePath)) return false
-    targetAfter = prepareCanonicalTarget({
-      action, candidateContent: content, targetPath: target.relativePath,
-      targetBefore: undefined, reviewedAt, actor,
-    })
-    targetAbsolutePath = target.absolutePath
-    targetPath = target.relativePath
-    appliedPath = target.relativePath
-  } else if (action !== 'Archive' && action !== 'Skip') {
-    return false
-  }
+  if (action !== 'Archive' && action !== 'Skip') return false
 
   const archived = governanceArchivePath(archiveRoot, projectRoot, reviewedAt, actualHash, candidate.relativePath, 'candidate')
-  if (!appliedPath) appliedPath = archived
+  const appliedPath = archived
   const resolvedItems = [...all]
   resolvedItems[index] = {
     ...item,
     resolved: true,
-    resolvedAction: action === 'Promote' || action === 'Merge' || action === 'Replace' || action === 'Deduplicate' ? action : 'Archive',
+    resolvedAction: 'Archive',
     appliedPath,
     resolvedAt,
   }
@@ -1281,7 +1218,7 @@ export function applyCandidateReview(
     actor,
     outcome: 'applied',
     candidateHash: actualHash,
-    previousCanonicalHash,
+    previousCanonicalHash: '',
     targetPath: item.targetPath ?? '',
     appliedPath,
   }
@@ -1291,19 +1228,6 @@ export function applyCandidateReview(
   const governanceLogBefore = readOptionalRegularFile(governanceLog)
   const reviewAfter = JSON.stringify(resolvedItems, null, 2)
   const governanceLogAfter = `${governanceLogBefore ?? ''}${JSON.stringify(governanceEntry)}\n`
-  if (targetAfter !== undefined) {
-    const revalidatedTarget = resolveCanonicalReviewPath(wikiRoot, targetPath, targetBefore === undefined)
-    if (revalidatedTarget === undefined || revalidatedTarget.absolutePath !== targetAbsolutePath) {
-      throw new Error(`canonical target changed during review transaction: ${targetPath}`)
-    }
-    if (targetBefore === undefined) {
-      if (pathEntryExists(targetAbsolutePath)) {
-        throw new Error(`canonical target appeared during review transaction: ${targetPath}`)
-      }
-    } else if (readRegularFileBounded(targetAbsolutePath, 5 * 1024 * 1024).toString('utf8') !== targetBefore) {
-      throw new Error(`canonical target changed during review transaction: ${targetPath}`)
-    }
-  }
   const revalidatedCandidate = resolveCandidateReviewPath(wikiRoot, item.candidatePath)
   if (revalidatedCandidate === undefined || revalidatedCandidate.absolutePath !== candidate.absolutePath) {
     throw new Error(`candidate path changed during review transaction: ${item.candidatePath}`)
@@ -1319,25 +1243,12 @@ export function applyCandidateReview(
     throw new Error('governance log changed during review transaction')
   }
   if (pathEntryExists(archived)) throw new Error(`candidate archive already exists: ${archived}`)
-  if (archivedCanonical !== '' && pathEntryExists(archivedCanonical)) {
-    throw new Error(`canonical archive already exists: ${archivedCanonical}`)
-  }
 
   const transactionId = promotionTransactionId(reviewIdValue, actualHash, reviewedAt)
   const operations: PromotionOperation[] = []
-  if (archivedCanonical !== '') {
-    operations.push(promotionOperation(
-      transactionId, operations.length, 'canonical-archive', archivedCanonical, undefined, archivedCanonicalContent,
-    ))
-  }
   operations.push(promotionOperation(
     transactionId, operations.length, 'candidate-archive', archived, undefined, currentCandidate,
   ))
-  if (targetAfter !== undefined) {
-    operations.push(promotionOperation(
-      transactionId, operations.length, 'canonical', targetAbsolutePath, targetBefore, targetAfter,
-    ))
-  }
   operations.push(
     promotionOperation(
       transactionId, operations.length, 'review', reviewFile, reviewBefore, reviewAfter,
@@ -1355,11 +1266,11 @@ export function applyCandidateReview(
     reviewId: reviewIdValue,
     candidateHash: actualHash,
     createdAt: reviewedAt,
-    action: canonicalActions.has(action) ? action : 'Archive',
+    action: 'Archive',
     targetPath: item.targetPath ?? null,
-    reviewHash: verifiedReceipt?.request.reviewHash ?? null,
-    receiptId: verifiedReceipt?.id ?? null,
-    receiptHash: verifiedReceipt?.receiptHash ?? null,
+    reviewHash: null,
+    receiptId: null,
+    receiptHash: null,
     operationSetHash: sha256(canonicalJson(operations)),
     operations,
   }
@@ -1372,14 +1283,10 @@ export function applyCandidateReview(
   })
   appendKnowledgeReviewEvent(
     reviewFile,
-    canonicalActions.has(action) ? 'knowledge/promoted' : 'knowledge/rejected',
+    'knowledge/rejected',
     item.id,
     actualHash,
-    canonicalActions.has(action) ? {
-      action, appliedPath, lifecycle: canonicalActions.has(action) ? 'canonical' : 'downgraded',
-      ...(targetAfter === undefined ? {} : { contentHash: sha256(targetAfter) }),
-    } : archiveReviewEventPayload(core),
-    authority,
+    archiveReviewEventPayload(core),
   )
   return true
 }

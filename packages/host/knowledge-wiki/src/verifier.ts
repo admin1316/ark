@@ -221,8 +221,8 @@ function actionIsCompatible(
   return action === 'Promote' ? !targetExists : targetExists
 }
 
-function sourceHashForReview(wikiRoot: string, item: WikiReviewItem): string {
-  const source = item.sourcePath ?? item.candidatePath ?? ''
+function sourceHashForReview(wikiRoot: string, item: WikiReviewItem, candidatePath: string): string {
+  const source = item.sourcePath ?? candidatePath
   const projectRoot = resolve(dirname(wikiRoot))
   const absolute = resolve(projectRoot, source)
   const rel = relative(projectRoot, absolute)
@@ -265,7 +265,7 @@ export function buildVerificationRequest(
     ? undefined
     : resolveGovernedWikiPath(wikiRoot, item.targetPath, true)
   if (item.targetPath !== undefined && target === undefined) return undefined
-  if (item.sourceHash !== undefined && item.sourceHash !== sourceHashForReview(wikiRoot, item)) return undefined
+  if (item.sourceHash !== undefined && item.sourceHash !== sourceHashForReview(wikiRoot, item, item.candidatePath)) return undefined
   let targetExists = false
   if (target !== undefined) {
     try {

@@ -98,6 +98,33 @@ describe.skipIf(!seatbeltUsable)('bash-sandbox: real Seatbelt confinement throug
     },
   )
 
+  it.skipIf(!pythonAvailable)('literal multiline stdin computes without temporary files and still cannot write', async () => {
+    const workdir = await tempDir(homedir())
+    const input = 'numerator,denominator\n1,3\n1,6\n-1,4\n'
+    await writeFile(join(workdir, 'values.csv'), input)
+    const bash = await sandboxedBash(workdir, 'read-only')
+    const script = [
+      'import csv,json',
+      'from fractions import Fraction',
+      'with open("values.csv", newline="") as source:',
+      '    total=sum((Fraction(int(row["numerator"]),int(row["denominator"])) for row in csv.DictReader(source)), Fraction(0))',
+      'print(json.dumps({"numerator":total.numerator,"denominator":total.denominator}))',
+      '# 中文 $literal `tick` O\'Reilly\n'.repeat(12_000),
+    ].join('\n')
+    const result = await bash.run(bash.resolve({ command: 'python3 -', stdin: script }))
+    expect(result.exitCode, result.stderr.text).toBe(0)
+    expect(result.stderr.text).toBe('')
+    expect(result.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })
+    expect(JSON.parse(result.stdout.text)).toEqual({ numerator: 1, denominator: 4 })
+
+    const denied = await bash.run(bash.resolve({ command: 'python3 -', stdin: 'open("denied.txt", "w").write("forbidden")\n' }))
+    expect(denied.exitCode).not.toBe(0)
+    expect(denied.sandbox).toEqual({ mode: 'read-only', denied: true, enforcement: 'full' })
+    expect(existsSync(join(workdir, 'denied.txt'))).toBe(false)
+    expect(readFileSync(join(workdir, 'values.csv'), 'utf8')).toBe(input)
+    expect(readdirSync(workdir)).toEqual(['values.csv'])
+  })
+
   it('workspace-write lands a write inside the workspace root and still denies one beside it', async () => {
     // HOME-based dirs on purpose: workspace-write grants /tmp and the
     // per-user temp dir wholesale, so only paths outside both prove the

@@ -41,17 +41,20 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-tool-jobs'
 ```
 
-唯一的配置字段用于开关后台支持。
+配置控制后台支持和字面量输入上限。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `enableRunInBackground` | `true` | 暴露 `run_in_background`；为 `false` 时拒绝强制后台调用 |
+| `maxStdinBytes` | `1048576` | 单次 `stdin` 输入的 UTF-8 字节上限；超限会在沙箱升权审批或执行前拒绝 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-bash)是每个受支持字段及其 JSDoc 的穷尽式真源；生成的[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-bash)携带完整参数 schema。
 
 ### 运行命令
 
 工具执行 `bash -c <command>` 并返回合并后的输出。命令每次调用都运行在全新 shell 中，因此状态从不保留——请传 `workdir` 而不是 `cd`。非零退出以 `[exit code: N]` 报告给 agent 解读，而不是作为工具错误抛出。主动语态的 `description`（5–10 个词）在 UI 中标注该调用；`timeoutMs` 覆盖执行器的默认值与上限。超出执行器流上限的输出会被截断为尾部，完整输出保存到 spill 文件并报告其路径。
+
+可选的 `stdin` 是原样发送给命令的 UTF-8 文本，发送后关闭输入管道；不会进行 shell 展开，也不会创建临时脚本文件。省略时输入为空，空字符串也是有效输入。命令和输入都保存在同一次工具调用日志中；带 stdin 的调用使用通用执行卡片显示两者。输入超出 `maxStdinBytes` 时整次调用被拒绝，不截断或另存文件。
 
 ### 后台运行长时间命令
 
@@ -61,7 +64,7 @@ kind: "package-reference"
 
 当已挂载的执行器约束命令（例如 `dsh-bash-sandbox`）时，被阻止的文件操作会报告为 `[sandbox: file access denied under <mode> mode]`——这是策略拒绝，不是命令失败。只有任务确实需要被拒绝的访问、且更宽的模式可以允许该访问时，模型才能在同一轮次中用 `sandbox_permissions`（满足需要的最窄更宽模式）与一句 `justification` 重试完全相同的命令一次；该重试引发的审批提示就是用户同意的方式。结果中的升权提示说明这条审批路径，并不要求无条件使用。升权绝不能预先推测：依据必须是真实拒绝，也可以是本会话已经观察到的同一访问的拒绝。不严格宽于当前模式的请求会在不运行任何东西的情况下失败关闭；被拒绝的升权对该命令即为最终结果。审批提示被禁用时，拒绝即为最终结果，模型不得设置 `sandbox_permissions`。
 
-here-document、here-string 和临时脚本文件可能需要写入文件系统，即使任务只读取文件或计算结果。在只读策略下，如果正确引用的 `python3 -c` 或 `node -e` 等解释器内联参数可以在不进行这次附带写入的情况下完成允许的任务，就使用这种形式，并保持同一个沙箱。这并不授权模型通过另一条路径获取被拒绝的读取或写入：被拒绝的访问仍被禁止，执行器仍约束每条命令。[只读内联脚本 Agent Note](../../../.agents/notes/implemented/bug-fix/2026-10-09-read-only-bash-inline-scripts.zh.md) 记录了这一选择及其限制。
+here-document、here-string 和临时脚本文件可能需要写入文件系统，即使任务只读取文件或计算结果。在只读策略下，多行脚本使用 `command: "python3 -"` 或 `command: "node"`，把脚本文本放在 `stdin` 中；正确引用的 `python3 -c` 也可用于简短脚本，并保持同一个沙箱。这并不授权模型通过另一条路径获取被拒绝的读取或写入：被拒绝的访问仍被禁止，执行器仍约束每条命令。[Bash 字面量 stdin Agent Note](../../../.agents/notes/implemented/bug-fix/2026-10-09-bash-literal-stdin.zh.md) 记录了这一选择及其限制。
 
 ### 可能出什么问题
 
@@ -80,7 +83,7 @@ here-document、here-string 和临时脚本文件可能需要写入文件系统�
 ### 设计理念
 
 - **shell seam 的模型侧消费方。** 本工具是 bash 能力的 Consumer 角色：它注册 `bash` schema、渲染结果并解析每次调用的策略，进程机制归执行器 seam 所有。
-- **请求只来自命名参数。** 工具从不暴露 `stdin`、`env` 或 `stdoutMaxBytes`；它只用命令／workdir／超时／信号字段加上注册表收集的 `dshEnv` 构建每个请求，因此模型提供的键无法替换受管值（[bash stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.zh.md)）。
+- **请求只来自命名参数。** 工具从不暴露 `env` 或 `stdoutMaxBytes`；它只用命令／stdin／workdir／超时／信号字段加上注册表收集的 `dshEnv` 构建每个请求，因此模型提供的键无法替换受管值（[bash stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.zh.md)）。
 - **非零退出只报告、不失败。** 只有基础设施故障（spawn 错误、中止）才会作为工具错误暴露；模型解读退出码与标记。
 - **后台工作归任务运行时。** 后台调用把进程句柄注册到 `ctx.jobs`；job id、所有权、完成通知与释放都是运行时的职责，本工具只把 bash 退出与沙箱事实映射为任务输出。
 
@@ -114,7 +117,7 @@ here-document、here-string 和临时脚本文件可能需要写入文件系统�
 - [Bash 执行器子系统](../../../docs/subsystems/shell.zh.md)——请求／spec 词汇、结果与后台进程。
 - [shell-env](../shell-env/README.zh.md)——每次调用都会收到的受管 `DSH_*` 环境。
 - [tool-jobs](../../jobs/tool-jobs/README.zh.md)——后台运行的 `job_output`、`job_list` 与 `job_kill` 控制。
-- [bash stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.zh.md)——为什么工具不暴露 stdin 或 env。
+- [bash stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.zh.md)——进程内 stdin/env 输入与环境变量保护。
 - [沙箱 Agent Note](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.zh.md)——升权与模式切换的理由。
 - [生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-bash)——`bash` 参数 schema 的确切内容。
 - [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-bash)——每个受支持配置字段及其源声明。
@@ -133,7 +136,7 @@ here-document、here-string 和临时脚本文件可能需要写入文件系统�
 ##### Bash 指引
 
 ```markdown
-Check the [exit code: N] marker on every bash result; investigate failures before moving on. When the current sandbox policy is read-only, here-documents, here-strings and temporary script files can require writes even for a read-only task; use correctly quoted inline interpreter arguments such as `python3 -c` or `node -e` for reads and computation. If an incidental temporary-file write is denied, reformulate the permitted task without that write while keeping the same sandbox. Never use an alternate method to obtain a denied read or write; escalate only when the task requires the denied access.
+Check the [exit code: N] marker on every bash result; investigate failures before moving on. For multiline scripts, use `command: "python3 -"` or `command: "node"` with the script in `stdin`; stdin is literal input, with no shell expansion or temporary script file. Here-documents and here-strings can require temporary-file writes and fail under a read-only sandbox. Correctly quoted inline arguments such as `python3 -c` also work. If an incidental temporary-file write is denied, reformulate the permitted task without that write while keeping the same sandbox. Never use an alternate method to obtain a denied read or write; escalate only when the task requires the denied access.
 ```
 
 #### Token 影响

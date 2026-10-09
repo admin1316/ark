@@ -1058,7 +1058,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/knowledge-wiki/src/index.ts:200`](../packages/host/knowledge-wiki/src/index.ts)
+Source: [`packages/host/knowledge-wiki/src/index.ts:202`](../packages/host/knowledge-wiki/src/index.ts)
 
 <a id="deepseek-aidsh-llm"></a>
 
@@ -2800,10 +2800,12 @@ Requires: `tools` · `shell` · `systemPrompt` · `shellEnv`
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
+  /** Maximum UTF-8 bytes accepted in one model-supplied stdin payload. */
+  maxStdinBytes?: number
 }
 ```
 
-Source: [`packages/shell/tool-bash/src/index.ts:34`](../packages/shell/tool-bash/src/index.ts)
+Source: [`packages/shell/tool-bash/src/index.ts:36`](../packages/shell/tool-bash/src/index.ts)
 
 <a id="deepseek-aidsh-tool-bash-persistent"></a>
 

@@ -12,6 +12,8 @@ The hooks subsystem runs external hook commands the way Claude Code and Codex do
 
 ## Decision
 
+The [literal stdin decision](../bug-fix/2026-10-09-bash-literal-stdin.md) supersedes the omission of model-facing stdin and the reliance on inline-script guidance. It preserves the shell execution and environment ownership described here.
+
 Add `stdin?: string` and `env?: Record<string, string>` to **both** `ShellExecRequest` (the model-/plugin-facing request) and `ShellExecSpec` (the resolved spec `run`/`start` act on), and thread them through `dsh-bash-local`: `resolve()` carries them verbatim, `run()`/`start()` pass them to `runBash`, which writes the bytes to the child's stdin and merges the extra env.
 
 Three deliberate choices:

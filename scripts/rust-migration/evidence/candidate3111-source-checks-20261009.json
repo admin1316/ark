@@ -1,0 +1,688 @@
+{
+  "schemaVersion": 1,
+  "status": "CODE_AND_DOC_CHECKS_PASS_PUBLICATION_SCAN_BUILD_NATIVE_AND_FORMAL_PENDING",
+  "parentCommit": "32abce1992863c4f5a96fabf9cbb145f519122dd",
+  "sourceBinding": "Actual frozen dirty working-tree files, not a future commit. Build will bind its actual clean post-fix commit separately.",
+  "sourceAndTestHashes": [
+    {
+      "path": "packages/host/knowledge-wiki/src/archive.ts",
+      "sha256": "0fc490d422eac729e18ed54f6ac3413c37e48e7dfd329368bfdabea2d4143c9f"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/auto-sediment.ts",
+      "sha256": "1ac881488b070224d17943a8cb5a600561e4f8a3d2f9d4b7c5aad76e610fa80b"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/canonical-merge.ts",
+      "sha256": "b723fc9677a23f9f47b1b20171ad530330d237f718c722a6a1650e88b1852f66"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/external-verifier-adapter.ts",
+      "sha256": "734205a3b11427a4762670805063a3b6fbc95c0f34e6685c75b5c790b2d3738f"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/fallback-summary.ts",
+      "sha256": "6d4febc5d373b8758bbe66aa77c821bdb60423deeecee847687fd2f7dc233d2b"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/file-extract.ts",
+      "sha256": "ee129bdf5a14571584d6bf67dc4ee663619d6eb3f154fd15b879909dfda49a43"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/filesystem.ts",
+      "sha256": "db70165d76d6c64fd0dc6d15f9988d656b11b39e338aca3a858c2a53869ed0d1"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/frontmatter-utils.ts",
+      "sha256": "ada1273f47c5a47d8b3504805472efefa60f67ffdc6e02f1179ad2235a563dc9"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/governance-policy.ts",
+      "sha256": "7c62a2678b6092794d43774c3dc2be8043eac568a0d36c33a08a24f75bd8aa4e"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/graph.ts",
+      "sha256": "9efd48ef6492e4544e04c81e62656ff4b656006db7bdb3acb51f9a1c77145fa6"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/html-clip.ts",
+      "sha256": "6048dd41feba4a9305f54cf1175ad1c7f5838f2aca6fcad96fab96571c053821"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/index-writer.ts",
+      "sha256": "75964c7abd70942a73c96586c6ad5f37666bb6c5fb6b9c48a95ecdd13dd529ef"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/index.ts",
+      "sha256": "2bc18908c9a023f6998c91eff9bd9e0fff63144268336a5da69cdfd4fd8458fc"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/ingest.ts",
+      "sha256": "c6ed1b47ea0116edf16b23068b19653bc7b4c1b548a3bf0a6f3f7c90509abe57"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/invariant.ts",
+      "sha256": "4816659b1ebddaa5cfce2575731310c23084d20bd318d0ba6c59a5288c4b6dc6"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/knowledge-governance.ts",
+      "sha256": "5ddafc768db4f5fee488856b9e8844cf686d297b1c5f850beb3794803680c546"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-artifacts.ts",
+      "sha256": "5c9a0e2c327e5d680f08449144947b6bd09a47acb10b73c9b2b969c735a36e56"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-evaluation.ts",
+      "sha256": "da73a73fc4609b528f7d5262c59a2485884d63d60718956736fba208387485cb"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph-context.ts",
+      "sha256": "c6a77fb54a6b842f07e77f524b93bfff099756592db839e95fe3944b0a40c9a3"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph-edges.ts",
+      "sha256": "9ec6412ff25cdeedfcde53036f69dd95810a1d1a85a34963cb72cd1b90bb37ef"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph-journal.ts",
+      "sha256": "ebd5c0ef9b65d0e8179f7c068ab77472bc2d77eb0d3ba1bdb717db209af0e9e9"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph-schema.ts",
+      "sha256": "a29da598251a43362640dedbe6c735bad6087199d81090a1993800a556748114"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph-session.ts",
+      "sha256": "e1049b30e530dcd28ffc4f4e49cb000e2c1eced9e92de27a10829eb06475a20e"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph.ts",
+      "sha256": "cae801bdad86624d51d7304986bb3acd7b0970988874cab2adf12aec53880ca9"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/merge-page.ts",
+      "sha256": "c39c324f50df902316ad6877fb892b5f14ab918225f0d648261e19ef514f37f6"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/owned-stage-executor.ts",
+      "sha256": "c1ddf31228c808870e9c64c3c0470605f7417affc11103c02740510d51ecf814"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/project-context.ts",
+      "sha256": "bde3d39202bc371b885d9756d4fdc0efa8f21e4088cbadc92ddaf2bdbd2c5fda"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/research.ts",
+      "sha256": "a1790ab2b92af150200865213d492c07f28f669560dcfd763098b34078cd5fee"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/reviews.ts",
+      "sha256": "eeb6f13f60b2174c2594fdee1351cf22f810acc77cc4cb92cd398ac95be1b5b4"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/rust-search-candidate.ts",
+      "sha256": "e7394a622a8bd615bac2744970fdc601bd372073c11d9777af0dcdd9a8470e59"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/sanitize.ts",
+      "sha256": "ebeb88f33f24dc6d8e23501ffbd67bf8905bfc33bc714cac0e8daeb31c59f773"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/search.ts",
+      "sha256": "5184dd7fb31248904e6901d343ee2b77d275b056b217b5ee368658a2daf95e99"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/snapshot-store.ts",
+      "sha256": "03947c73b7c9ca66725eb46c7bdd69cd384c370593744ebd2efb2c413b3e74de"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/source-slug.ts",
+      "sha256": "14a152f6ba2320da4704df440c90e910dcf8a8701bbe7a591b9d120cfaa13bd4"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/stage-executor.ts",
+      "sha256": "3110d9427581189fda1673026cd7d60c1a3a60b2dcb862e3a4b6c72b612ec8c2"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/types.ts",
+      "sha256": "a2772cc2412bfc0a13ccd2774411eaa05d32796dc49fcbfdd1efc748674b5f42"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/verifier.ts",
+      "sha256": "113765b066ed465f03e6355bfabbe8890172261427b136dee51d9bdc9dbd6eda"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/vision.ts",
+      "sha256": "9888b7d42c111fee276896f60b2c00674ef0f05f235c866c31c936d1f6f72be4"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/acceptance-boundaries.spec.ts",
+      "sha256": "56aa517dd6d7c0aee14a26da18552f73fee9e4027f17dcaecfcdfa9f63440ae8"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/archive.spec.ts",
+      "sha256": "138479276461d0765ba071c81d371ad9ed472f7a0d741cf70df9c1629132c7fc"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/auto-sediment-edges.spec.ts",
+      "sha256": "d7e2c6464dd037d0a0e406d43d604976aa0ee9ec2388bb27e7606ca295ca58c2"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/auto-sediment-fs-error.spec.ts",
+      "sha256": "6cbb1ad924e2ea8cbb5d28379461fe01a9585f946b2dec2aacea28ae35fd511f"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/canonical-content-binding.spec.ts",
+      "sha256": "64910c7fb5c493388d19ecdf34ab6e210cd3b646248fe81fd8c335ca3aea779c"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/canonical-content-preparation.spec.ts",
+      "sha256": "34436c4e77078833de0994a5cecdd3045b9c17b2b4e5c25d82240d41962f163b"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/canonical-merge.spec.ts",
+      "sha256": "a3d83b456c74f79b612dff670709b0e48c5cdbb69f8de7caebc3a051d2780d16"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/canonical-trial-denial.spec.ts",
+      "sha256": "6e380990b99990597194ad518a8e2596949905dc8cfef9f4c430ccfa182d6ebe"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/canonical-visibility.spec.ts",
+      "sha256": "e4c8a26d13221f99b1d89afb52cbd590b6e4c9a3c8914439595de1df20ffbced"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/credential.spec.ts",
+      "sha256": "973a9ca5e3c4d02b066f2cdbf9e2af10bba44365b3c7aed36b30113fe654d4b0"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+      "sha256": "d427f008fdd9008eee60d0da2e04837284091a718401603cc1daebba66f13257"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/endpoint-metadata.spec.ts",
+      "sha256": "6d205aa528660b82f4db75561bfb1886a7d05158957f26d3ddd971cc3db0fe68"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts",
+      "sha256": "9754cd84b23531b7b67e9725b26fcef8ff0da418e4ba00b1dda349a056a01dc2"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/external-verifier-coverage-closure.spec.ts",
+      "sha256": "d1d4b5dfdc60e0b3d01fce9005147c721af1edacf4e791740a2517f539de52d7"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/fallback-summary.spec.ts",
+      "sha256": "daa1171ce1ac0e2054ad3a0dbd7dd1c1e8577fcba8b6742dbb017b1d6ff62d45"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/file-extract-invalid.spec.ts",
+      "sha256": "ef65510632a32f19ba0fdf65a7ed185d025c757bbfadb074eead4c33af1dec58"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/file-extract.spec.ts",
+      "sha256": "397ef1c881b1bb260467f6aeade76f01463b1774ad919288a6d8333d93ec256d"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/filesystem-races.spec.ts",
+      "sha256": "fd6b1d2269640bb080d13448126c279f2650cdfb350dcce8a4904650045ca04d"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/filesystem.spec.ts",
+      "sha256": "94d1c34abf4445c0d557ec95cbbbcdb7b24d42ba9eeb95dc22ac99e74e0178ab"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/frontmatter-utils.spec.ts",
+      "sha256": "a8d36c6f615dbfdb8afcadf26a34bdbb3f572e51e4cbb5d2577b7d60d9846613"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/governance-authentication.spec.ts",
+      "sha256": "ee7f1cc152fd2e7d618857c0622384bd6f13b035c1fc9efb741f7e089673f89b"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/governance-filesystem-coverage-closure.spec.ts",
+      "sha256": "bf540ae391c7fc21c8dc77883b5086e7956846456de212a7eef93fa6be217df0"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/governance-policy-edges.spec.ts",
+      "sha256": "abdd03526bb7c377b8c2a809b22269d66a57221b00153b60838839bd955f740d"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/governance-policy.spec.ts",
+      "sha256": "6d2591c89cb2e9184f0689c68a4d8dc61a31e88187fac6dab467e100f6dc1282"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/graph-edges.spec.ts",
+      "sha256": "a7172d7bec41727dc8ab5fe94ad8828ab4b6380e1af65bd36a8e715ed07b6acf"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/graph-io-errors.spec.ts",
+      "sha256": "fb926c37d4230758685801039867477d39a238f4d62a3e32c7cb9c07c8d85458"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/graph.spec.ts",
+      "sha256": "038efa5598ebc625e3d36ee03b72add1a50abf1be77cb8c411fa86ef6b76b5c7"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/html-clip.spec.ts",
+      "sha256": "e842b1e9851313d43c49ac72a91cbb30a472d3db1aa17143ee5f86ab7aa8d7b4"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/index-writer.spec.ts",
+      "sha256": "9b7dea446cfbd8854ece70b67fa678ad787470a4fc3082b8c1fe04d6749cbbb4"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/ingest-fallback-non-error.spec.ts",
+      "sha256": "d33f995a4524bbaa2310596729f440793855178aed4253419bdff70cf6f59541"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/ingest-lifecycle-edges.spec.ts",
+      "sha256": "17adb35913e558875bdc285a686741892120a6aa8993c285915ed2bdf813ccc1"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/ingest-non-error.spec.ts",
+      "sha256": "7f31ce315cfd40b3c356f4ed8d2d2cf3e9ec92a36d30f24537ad48a330219ac9"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/ingest-review-errors.spec.ts",
+      "sha256": "6e6efa87900b47d21984af4fb13609015802a4a5630f3eeb2fc630c6bbf2ec34"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/ingest.spec.ts",
+      "sha256": "de16a64695039b3a015b4840108f1741dc26ec0a0eb67d1ecec335890dc24c21"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/knowledge-governance.spec.ts",
+      "sha256": "686c37fd96f6dbbb4f970f5ed4dfca6dbd2aadcac90c8abd41c79229661367f3"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/knowledge-journal-durability.spec.ts",
+      "sha256": "6a48511400177322cf832bfbb1d58dbdee30624fd71960943af065947c3edf7e"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/knowledge-source-identity.spec.ts",
+      "sha256": "22d2928242f76146d6eb75659652cf43fccaf836458f60d69d69745775f5d3d7"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/knowledge-utility-identity.spec.ts",
+      "sha256": "77879b15a0ec70e1b779c92b60f4da6a4b38d3a0bff4d9c9c826bd3a59d09ff5"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/launcher-config-boundaries.spec.ts",
+      "sha256": "eb4176903aa675b7ded988d1d65a0d0eca7151ed0a552d704655e3697b9a3061"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-artifact-evaluation-coverage-closure.spec.ts",
+      "sha256": "c4a1b8630249b4f6282e62f18645ad15d132ebf8b256c631c8ec3590c7b7fb74"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-artifacts.spec.ts",
+      "sha256": "8eeb862d38f1b7c761d74720800e4e4dd4b1b7a0af0453480f149c6d15a52788"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-graph-coverage-closure.spec.ts",
+      "sha256": "281956ce998a37d288c39313ba82eb93af5e1e61363d51f952477145757c70b2"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-graph-history.spec.ts",
+      "sha256": "9cbeaa51fa4398da18368337e86f588698dba7f3101c6fd6b917ab5097b938c0"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-graph-revision-boundary.spec.ts",
+      "sha256": "3ce38d8766eafdb15174fc911e2b84c0b3e97e103298fdb450dd4a551bee03c6"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-graph-session-boundary.spec.ts",
+      "sha256": "73463f1190c6d8e3628a8e9866ac8ce023b74c166e40c92d5f0283ccd114f8ae"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-graph.spec.ts",
+      "sha256": "870c467ffa4c10d92556246c8afbfba02f0b35e2d5d242c7f8c123781453cd34"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+      "sha256": "ed398c6a33e82951243cec302794bd78a6dfa783ff46673b448c41d3439d9d40"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/merge-page.spec.ts",
+      "sha256": "c5819e4d8cd67a32078d499b8771b1a943306863b31b2b59dab8ecefec3d4a09"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/owned-stage-executor.spec.ts",
+      "sha256": "d0038af6991eace3c5887a7c79bd4a39d9952636a6a279a0fc7c4ba71e7315c9"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/pinned-tls.spec.ts",
+      "sha256": "9e2d2ee1116a0665673d333d74941d8d5b976539870496058e20a7e312f71da9"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/project-context.spec.ts",
+      "sha256": "f9aec84c5e924d4e90ef40c8c3974a86696a9e78f162d997ed1ad2eeb976cc9a"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/project-lifecycle.spec.ts",
+      "sha256": "ca189424ad105a9a07b984f3109c95529db14abec64d57623a604024d693050c"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/promotion-crash-phases.spec.ts",
+      "sha256": "a3df9c6740288b6048b2f3217c5c10eb9e728b4f6ca5918ada9374b0c936986d"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/queue.spec.ts",
+      "sha256": "5c835fe7bf4b4d5ecd6798e02500595341acf5980f58ad7034845112bda8d8b3"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/receipt-primitive-outcome.spec.ts",
+      "sha256": "5b484683095b38980f796784e6fefc7b1fda12addac40dcb256c1aeb9bfa4892"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/research-boundary.spec.ts",
+      "sha256": "f7d45442c1fab52c6495de9e0210a57295d70596f8ea646b65f2df1d33713296"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/research-executor.spec.ts",
+      "sha256": "cd10ba02efeb8d87f2a5af29c066fcbff595f9c3023fb2851b21c6fc656c6a89"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/research.spec.ts",
+      "sha256": "3ee2cc28b628da9449ad7b3e7b80cdd74dcd465bba97b50a05143e3504b3bca0"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+      "sha256": "27eba420a3912aed8e147ab2a9b2d3d9d2228408900b7c66a9a4a3a9962d7e90"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/reviews-coverage-closure.spec.ts",
+      "sha256": "c3d42d97b5f97a428bce60bbea233eed99af48c6949dad3f7333b636fc492060"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/reviews-directory-durability.spec.ts",
+      "sha256": "9b0a254e5a099f41bd98d1b873093b8756d6fdefbee241da53f95ecdee1747cc"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/reviews-lifecycle-edges.spec.ts",
+      "sha256": "b60ca8a036bf522b0326ec13fc36f1e184c538c4c7f5c45c5a10acaa1de62ef1"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/reviews-transaction-errors.spec.ts",
+      "sha256": "7b343469559618d3e0697edf40ad58afa69d233fb3648b1a47784b02cec40728"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/reviews.spec.ts",
+      "sha256": "c7393ad5b33f143c15a7a3c9970383a02d15e1b350dcd76b667960e37a740ea9"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/runtime-coverage-closure.spec.ts",
+      "sha256": "1f4913ba7e1ab6b073d9e67369fdae15e4d72fb8f43329e013c252928857ff88"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/rust-search-candidate.spec.ts",
+      "sha256": "f3d40776f170fccf226e39e3b609f35beb0420d20ecb017808c04c6fb1d2bdd5"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/safe-traversal.spec.ts",
+      "sha256": "9b29f993c208b0b14d09591f62144739c2f851d6ea1d7a69b3f5b34328a9ee92"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/sanitize.spec.ts",
+      "sha256": "71c1c5f960c6505f74c45c5bbc8844e429cce1ab1597d2541d1959c6a793e71e"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/search-edges.spec.ts",
+      "sha256": "fa454374de74bae517a9eb02514269e73f2f0b519d696e628cca74aafcfe2bd4"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/search-fallback.spec.ts",
+      "sha256": "c47a15db9ab69e5f2d89d29fda4ff74147e63ebe433ccb3154180e9b612bd8c2"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/search-io-error.spec.ts",
+      "sha256": "ec6957448b8bc0383c1876d30ab6bec912f0ffd3a3f836ac41e6e44ab751754a"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/search.spec.ts",
+      "sha256": "58fd2ea3087de76341114c2a80de1188c96c6e6f23848a2630e311db1c63c890"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/security-boundaries.spec.ts",
+      "sha256": "ff96dcf93184c3941196709c29426b877382d8124aff9d52362860ae18423096"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/sediment-extract.spec.ts",
+      "sha256": "577d540398dcaf18f86d7b6088af4625662fad11972ac43fa549075d86218ebb"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/sediment-kind.spec.ts",
+      "sha256": "ae2b6a968c48564dfc65772ecde62da32ded114c6722e349282c02bdffaacbba"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/sediment-summary.spec.ts",
+      "sha256": "fa453704a25921120955b67c19f3d8c69ee310ef8235d6d3fa041395d1acec67"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/sediment-target.spec.ts",
+      "sha256": "dad6cab563b70ce93a06a475fb6a8ca28a442dd49bacaface40a3145a372cb06"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/service-archive-non-error.spec.ts",
+      "sha256": "7c34d18e505771054fc44fcc3be9460ffd8d0a42187d39076a87aa88ddfffb02"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/service-closure.spec.ts",
+      "sha256": "f3f6b145a5aabcb0788f0d92d96fbcc43814a2087f8f236aff5cf924a5adbfb2"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/service-ingest-primitive-failure.spec.ts",
+      "sha256": "7a0dec22ba11a4482870b8418032738f7fc8f1e38574411223014642fc64d9dd"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/service-ingest.spec.ts",
+      "sha256": "d6bf396bce0b02c99332dca8a3749c74ec173dfe7d09604c46a9b0bcc941f650"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/service-init-queue-edges.spec.ts",
+      "sha256": "605c819715d764722aaf8a9351e49c52da968ecda50056bf5836f9754453f7ab"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/service-mocked-errors.spec.ts",
+      "sha256": "1d037cbe21cf80fab7e9616dcb023829443ede5f8c003a6ad1a636613f20d028"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/service-network.spec.ts",
+      "sha256": "d6d06c4dd78ad1a0d1e9138e581482738b6f4ce094e23403367118d573e45061"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/service-project-edges.spec.ts",
+      "sha256": "01a20d10c89a92c8bd5290f796c8e6a534b647668e479755cca56a797bfa8bde"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/service-summary.spec.ts",
+      "sha256": "92ed1e0b7d3608dc5bb017bd11d15656cafa179812dbd1e5ee493c3454c6bc48"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/service-surface.spec.ts",
+      "sha256": "b1c9a24a768530577f97cfafa92ae677365106aaa9afb9e34bf337aff3e99018"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/snapshot-store-edges.spec.ts",
+      "sha256": "7a73ffaff46897fd13b29682845d548b64e813cc431c6a279829ea061c5a296c"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/snapshot-store.spec.ts",
+      "sha256": "9f2b42ae0e75b00bd3d145a7e9746fd298d3fd6bf98d3fe130475e042a5bfbf5"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/source-slug.spec.ts",
+      "sha256": "59f4ebb70986c7a092c756f727bf1ae0b0771f9f4e76712db7617db7e0a08721"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/stage-executor.spec.ts",
+      "sha256": "77e3d946387fa9bc25c031f70637b4eda9d12d9d17fbb45cda501c8b1512a7b3"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/stage-null-text.spec.ts",
+      "sha256": "453460d02b34965d8a0d7aa15923fbab1d66cb3a7fa160154c31ab5cf79d56a2"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/utility-edges.spec.ts",
+      "sha256": "a4ef73e692148a096ad7da7c7c8009e0f016f52bda3b1e074fb7d990c2da6bc2"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/verification-coverage-closure.spec.ts",
+      "sha256": "d4ad04ed09fd21a1b4a30e76ef7bd1bd82431039597a7b67ff44baf5b3de49be"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/verification.spec.ts",
+      "sha256": "06e7b82262f9d7bfe985a63b77063377ea50e2c54c6ca4d4ca85ebf15f2c41a6"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/verifier-closure.spec.ts",
+      "sha256": "c0cf200a739f3f631669ac9746b860b3a9218c2872bab5d7b5d5d5febb933425"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/vision.spec.ts",
+      "sha256": "4a6524c20317feb961ee8847822fe0a39584d2e1939151765e82aab9f2a5865c"
+    }
+  ],
+  "checks": {
+    "wikiFinal": {
+      "exitCode": 0,
+      "testFiles": 97,
+      "passedTests": 1140,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "sourceFilesInventoried": 38,
+      "runtimeFilesMeasured": 37,
+      "coverage": {
+        "lines": {
+          "total": 4558,
+          "covered": 4558,
+          "skipped": 0,
+          "pct": 100
+        },
+        "statements": {
+          "total": 5358,
+          "covered": 5358,
+          "skipped": 0,
+          "pct": 100
+        },
+        "functions": {
+          "total": 813,
+          "covered": 813,
+          "skipped": 0,
+          "pct": 100
+        },
+        "branches": {
+          "total": 4321,
+          "covered": 4321,
+          "skipped": 0,
+          "pct": 100
+        },
+        "branchesTrue": {
+          "total": 0,
+          "covered": 0,
+          "skipped": 0,
+          "pct": "Unknown"
+        }
+      },
+      "stableSourceAndTests": true,
+      "receipts": [
+        {
+          "path": "/private/tmp/ark3111-root-package-final-coverage-02/receipt.json",
+          "sha256": "6f8853e0a116b834154c3b9c2700dc353da2a7197061ff92a3aecd85ec436d6b"
+        },
+        {
+          "path": "/private/tmp/ark3111-root-package-final-coverage-02/vitest-results.json",
+          "sha256": "59a44bf87c801852ef93b14d1e358ed4ae76d8c3105bcbf5d117a7517fc40bcb"
+        },
+        {
+          "path": "/private/tmp/ark3111-root-package-final-coverage-02/coverage/coverage-summary.json",
+          "sha256": "7ce8398191abfda582cfa47e8e1e24340beb0707fce5bccbcc12463ca63e2923"
+        },
+        {
+          "path": "/private/tmp/ark3111-root-package-final-coverage-02.log",
+          "sha256": "606d743ee6c9fb0aa45d866ad16ed3745bab95c57b8df795b4e3da847cd2ced3"
+        }
+      ]
+    },
+    "repositoryLint": {
+      "command": "NODE_OPTIONS=--max-old-space-size=8192 pnpm run lint",
+      "exitCode": 0,
+      "log": {
+        "path": "/private/tmp/ark3111-root-final-lint-01.log",
+        "sha256": "6b43d9c036c4e205544c3c7bb20fd70f96db86b8f36b683268db5e933d303841"
+      },
+      "timing": "Before the final extra test-only event-log rejection case; that file also passes the final targeted default lint."
+    },
+    "documentation": {
+      "command": "NODE_OPTIONS=--max-old-space-size=8192 pnpm run doc-sync",
+      "exitCode": 0,
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "log": {
+        "path": "/private/tmp/ark3111-source-privacy-final-doc-sync-03.log",
+        "sha256": "5b6863f1b4f0a94cb476de82915c536dfedfb6335853875942f6411b9af3f411"
+      }
+    },
+    "latestTestOnlyDelta": {
+      "passedTests": 21,
+      "exitCode": 0,
+      "testResults": {
+        "path": "/private/tmp/ark3111-root-fs-governance-focused-05.json",
+        "sha256": "f3b821eb462540ad31566958296f06c9086ce3940962bd6603e0b5c1f2e63715"
+      },
+      "defaultLintExitCode": 0,
+      "lintLog": {
+        "path": "/private/tmp/ark3111-root-fs-governance-lint-05.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "stdinOwner": {
+      "path": "/private/tmp/ark3111-readonly-stdin-handoff-20261009.json",
+      "sha256": "d0d0d64a1d14166d11789f5679ff11321f0ac72297f5e89df59a819f2ede0224"
+    },
+    "wikiFourOwner": {
+      "path": "/private/tmp/ark3111-wiki-four-owner-handoff-20261009.json",
+      "sha256": "e79351f8411dc5e489a8559bebe692c6f60d910585acfdade8f3bd7820966a88"
+    },
+    "wikiFourOwnerRepair": {
+      "path": "/private/tmp/ark3111-wiki-four-owner-repair-01.json",
+      "sha256": "2ad0cb92a348b9a15d4ffca23502113fe9d3a6d9abaf715d1bfe2ea4faf1102a"
+    },
+    "artifactEvaluation": {
+      "path": "/private/tmp/ark3111-wiki-artifact-evaluation-handoff-20261009.json",
+      "sha256": "8855e3791d5a5ae143c125ff10ef69ccbd3405ae92ccdd510079b99a6bba8c6b"
+    },
+    "learningGraph": {
+      "path": "/private/tmp/ark3111-learning-graph-coverage-closure-20261009/final-learning-graph-handoff.json",
+      "sha256": "e0e8b8e6d6e8903bffd0197a2f8f61ce8a79db8cdac961d004354a2923a94263"
+    },
+    "independentWikiReview": {
+      "path": "/private/tmp/ark3111-final-wiki-source-audit-20261009T100848Z/audit-report.json",
+      "sha256": "bc135acaa1db9fdc4f2fea32f723dc12b72ff55b8b5ac0fd19eb084b95bd08e7"
+    },
+    "publicationScannerControls": {
+      "executedScans": 69,
+      "audit": {
+        "path": "/private/tmp/ark3111-source-privacy-exact-path-audit/audit.json",
+        "sha256": "490d3348f0cf32a6987eb89a8f3c891d55e8050c734d2b2117422abdac768333"
+      },
+      "defaultRulesRetained": true,
+      "exactRootRelativePaths": true,
+      "actualFinalScan": "PENDING"
+    }
+  },
+  "retainedFailures": [
+    "Wiki initial 990 tests pass but 14 runtime files below configured 100 percent; all initial receipts retained.",
+    "First combined final 1139 tests pass but one real event-log error branch uncovered; second final adds a real hardlink rejection and passes all configured metrics.",
+    "First doc-sync 28 pass, 2 fail: exact optional-property fixture typing and config catalog source-location drift; both repaired and full 30 checks rerun.",
+    "Initial source-privacy scanner reports five public constants; independently classified and constrained by five exact-path/literal exclusions. A later scan reports two public file digests in this new report; the map representation is changed to path/sha256 records without changing any digest. All original scan receipts remain retained; final scan follows."
+  ],
+  "nativeAcceptance": "NOT_EXECUTED_ON_3.1.11",
+  "githubPublication": "NOT_EXECUTED",
+  "formalPromotion": "NOT_EXECUTED",
+  "verifiedLearning": "UNKNOWN",
+  "rustSelection": "RETAIN_TS; experimental Rust remains disabled"
+}
