@@ -26,6 +26,18 @@ export interface CanonicalMergeResult {
   mode: 'duplicate' | 'canonical-superset' | 'candidate-superset' | 'replace'
 }
 
+/** Frozen inputs for preparing exact canonical bytes without granting mutation authority. */
+export interface CanonicalPreparationInput {
+  readonly action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate'
+  readonly candidateContent: string
+  /** Already resolved wiki-relative target; this function does not resolve or read paths. */
+  readonly targetPath: string
+  /** Exact captured target bytes, or explicit absence for Promote. */
+  readonly targetBefore: string | undefined
+  readonly reviewedAt: string
+  readonly actor: string
+}
+
 const CANDIDATE_ONLY_FIELDS = new Set([
   'candidate_id',
   'candidate_kind',
@@ -40,12 +52,14 @@ const CANDIDATE_ONLY_FIELDS = new Set([
  * @param canonicalContent - The canonical content input.
  * @param candidateContent - The candidate content input.
  * @param approvedAt - The approved at input.
+ * @param approvedBy - The review actor; existing callers default to governance-agent.
  * @returns The value produced by merge candidate into canonical.
  */
 export function mergeCandidateIntoCanonical(
   canonicalContent: string,
   candidateContent: string,
   approvedAt: string,
+  approvedBy = 'governance-agent',
 ): CanonicalMergeResult {
   const canonical = parsePage(canonicalContent)
   const candidate = parsePage(candidateContent)
@@ -69,7 +83,7 @@ export function mergeCandidateIntoCanonical(
   }
 
   return {
-    content: renderCanonical(preferred, canonical, candidate, approvedAt),
+    content: renderCanonical(preferred, canonical, candidate, approvedAt, approvedBy),
     mode,
   }
 }
@@ -79,12 +93,14 @@ export function mergeCandidateIntoCanonical(
  * @param canonicalContent - The canonical content input.
  * @param candidateContent - The candidate content input.
  * @param approvedAt - The approved at input.
+ * @param approvedBy - The review actor; existing callers default to governance-agent.
  * @returns The value produced by replace canonical with candidate.
  */
 export function replaceCanonicalWithCandidate(
   canonicalContent: string,
   candidateContent: string,
   approvedAt: string,
+  approvedBy = 'governance-agent',
 ): CanonicalMergeResult {
   const canonical = parsePage(canonicalContent)
   const candidate = parsePage(candidateContent)
@@ -92,7 +108,7 @@ export function replaceCanonicalWithCandidate(
     throw new Error('candidate replacement refused: empty knowledge body')
   }
   return {
-    content: renderCanonical(candidate, canonical, candidate, approvedAt, 'governance-agent'),
+    content: renderCanonical(candidate, canonical, candidate, approvedAt, approvedBy),
     mode: 'replace',
   }
 }
@@ -117,6 +133,57 @@ export function deduplicateCandidateAgainstCanonical(
     content: renderCanonical(canonical, canonical, candidate, approvedAt, approvedBy),
     mode: 'duplicate',
   }
+}
+
+/**
+ * Prepare exact target bytes from captured inputs. Promote retains its day stamp;
+ * updates retain their full timestamp except evidence pages, which retain the day restamp.
+ * The result grants no review, trial, filesystem, journal, or promotion authority.
+ * @param input - Frozen action, content, target prestate, timestamp, and actor.
+ * @returns Exact targetAfter bytes for the existing action-specific transform.
+ */
+export function prepareCanonicalTarget(input: CanonicalPreparationInput): string {
+  const { action, candidateContent, targetPath, targetBefore, reviewedAt, actor } = input
+  const today = reviewedAt.slice(0, 10)
+  if (action === 'Promote') {
+    if (targetBefore !== undefined) throw new Error('canonical preparation requires an absent Promote target')
+    return targetPath.startsWith('_evidence/')
+      ? stampEvidence(candidateContent, today, actor)
+      : stampCanonical(candidateContent, today, actor)
+  }
+  if (targetBefore === undefined) throw new Error('canonical preparation requires existing target bytes for an update')
+  let next: CanonicalMergeResult
+  switch (action) {
+    case 'Merge':
+      next = mergeCandidateIntoCanonical(targetBefore, candidateContent, reviewedAt, actor)
+      break
+    case 'Replace':
+      next = replaceCanonicalWithCandidate(targetBefore, candidateContent, reviewedAt, actor)
+      break
+    case 'Deduplicate':
+      next = deduplicateCandidateAgainstCanonical(targetBefore, candidateContent, reviewedAt, actor)
+      break
+    default:
+      return assertNever(action)
+  }
+  return targetPath.startsWith('_evidence/') ? stampEvidence(next.content, today, actor) : next.content
+}
+
+function assertNever(action: never): never {
+  throw new Error(`unsupported canonical preparation action: ${String(action)}`)
+}
+
+function stampCanonical(content: string, today: string, approvedBy: string): string {
+  let output = content
+  if (/^status:\s*/mu.test(output)) output = output.replace(/^status:\s*.*$/mu, 'status: canonical')
+  else output = output.replace(/^---\n/u, '---\nstatus: canonical\n')
+  output = output.replace(/^approved_at:\s*.*\n?/mu, '')
+  output = output.replace(/^approved_by:\s*.*\n?/mu, '')
+  return output.replace(/^---\n/u, `---\napproved_at: ${today}\napproved_by: ${approvedBy}\n`)
+}
+
+function stampEvidence(content: string, today: string, approvedBy: string): string {
+  return stampCanonical(content, today, approvedBy).replace(/^status:\s*canonical$/mu, 'status: evidence')
 }
 
 function parsePage(content: string): ParsedPage {

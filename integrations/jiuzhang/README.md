@@ -7,6 +7,7 @@ This directory carries the Ark product profile, launcher pair, native macOS appl
 ## Product surface
 
 - **Agent presets**: Ark defaults to the shipped `standard` preset and exposes preset selection and authoring through its native settings. The managed profile disables the preset service's generic built-in root, so the launcher's Native roots own the roster. Each session receives the tools and prompt owned by its selected preset; generic CLI presets remain available to their own deployments.
+- **Knowledge tools**: without a nonempty launcher-supplied verifier configuration, Ark offers source ingestion while governed reads and candidate verification stay unavailable. A configured catalog still relies on the knowledge service to authorize each operation.
 - **Honest boundaries**: Ark works only with what you explicitly provide in the current session. It does not claim to have collected, learned, trained on, or access data you have not provided, and says so when there is no evidence.
 - **Local data**: settings, credentials, attachments, and JSONL session records live in `~/Library/Application Support/Ark/Harness` (override with `JIUZHANG_DSH_HOME`). A default launch copies a present `~/Library/Application Support/九章天幕行业大脑/Harness` home once, refuses conflicting destination files, and retains the source as a rollback copy.
 - **Safe defaults**: the launcher falls back to a read-only permission mode and disables telemetry. You may deliberately raise permissions or switch the default preset in settings; saved choices are preserved on launch.

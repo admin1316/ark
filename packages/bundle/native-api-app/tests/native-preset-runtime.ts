@@ -1,4 +1,7 @@
-/** Real Native preset composition shared by behavior tests and keyless snapshots. */
+/**
+ * Real Native preset composition shared by behavior tests and keyless snapshots.
+ * The Node Loader imports published package exports; run the Host build first.
+ */
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,20 +13,25 @@ import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 
 const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 
-export async function createNativePresetRuntime() {
+export async function createNativePresetRuntime(extraPatches: readonly PatchOptions[] = []) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-native-code-preset-'))
   const previousHome = process.env.DSH_HOME
+  const previousVerifierConfig = process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
   let context: Context | undefined
   const dispose = async () => {
     try { await context?.fiber.dispose() }
     finally {
       if (previousHome === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previousHome
+      if (previousVerifierConfig === undefined) delete process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
+      else process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG = previousVerifierConfig
       await rm(home, { recursive: true, force: true })
     }
   }
   try {
     process.env.DSH_HOME = home
+    // This fixture supplies no verifier; the real profile must observe the same absence.
+    delete process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
     healProfilesModuleFallback(join(repoRoot, 'packages/boot/native-api-runner/package.json'), home)
     const profileDir = join(home, 'profiles', 'native-code')
     await mkdir(profileDir, { recursive: true })
@@ -42,7 +50,7 @@ export async function createNativePresetRuntime() {
       { id: 'credentials', config: { mode: 'file', path: join(home, 'credentials.yaml'), watch: false } },
       { id: 'storage-json', config: { root: join(home, 'storages') } },
       { id: 'knowledge-wiki', config: { wikiRoot: join(home, 'knowledge/wiki'), mainRoot: join(home, 'knowledge'),
-        apiKey: '', llmProvider: 'deepseek-official', llmModel: 'deepseek-v4-flash' } },
+        credential: '', llmProvider: 'deepseek-official', llmModel: 'deepseek-v4-flash' } },
       { id: 'agent-presets', config: { ...presetConfig,
         roots: [{ path: join(repoRoot, 'packages/boot/profile-runner/config/agent-presets'), trust: 'system' }], includeUserRoot: false } },
       { id: 'webserver', disabled: true },
@@ -50,10 +58,11 @@ export async function createNativePresetRuntime() {
       { id: 'host-connection', disabled: true },
       { id: 'native-events', disabled: true },
       { id: 'session-telemetry-otel', disabled: true },
+      ...extraPatches,
     ]
     context = await boot('dsh-native-test', rootConfig, patches, (ctx) => {
       provideCmdline(ctx, { args: ['--port', '0'], exit: () => {} })
     })
-    return { context, dispose }
+    return { context, dispose, home }
   } catch (error) { await dispose(); throw error }
 }

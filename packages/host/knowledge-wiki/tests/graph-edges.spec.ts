@@ -35,10 +35,10 @@ describe('Wiki tree and graph edge contracts', () => {
     const file = join(root, 'ordinary-file')
     writeFileSync(file, 'keep')
     expect(() => { visitWikiTree(file, {}) }).toThrow('Wiki root is not an ordinary directory')
-    // A path beneath an ordinary file: POSIX reports ENOTDIR, Windows
-    // reports ENOENT, which the missing-root guard treats as an absent wiki.
+    // A path beneath an ordinary file is not an absent Wiki root: POSIX reports
+    // ENOTDIR and Windows reports ENOENT, but both must surface the bad parent.
     if (process.platform === 'win32') {
-      expect(() => { visitWikiTree(join(file, 'child'), {}) }).not.toThrow()
+      expect(() => { visitWikiTree(join(file, 'child'), {}) }).toThrow('ENOENT')
     } else {
       expect(() => { visitWikiTree(join(file, 'child'), {}) }).toThrow('ENOTDIR')
     }

@@ -1,0 +1,5 @@
+# Restore the shipping provider rather than the default snapshot passthrough.
+# The inline computation must run with the actual read-only file policy.
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+  config: {}

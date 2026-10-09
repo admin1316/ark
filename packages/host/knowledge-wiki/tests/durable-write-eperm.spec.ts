@@ -1,28 +1,34 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const faultFsync = vi.hoisted(() => ({ active: false, code: 'EPERM' }))
-const directoryFds = vi.hoisted(() => new Set<number>())
+const faultFsync = vi.hoisted(() => ({ active: false, code: 'EPERM', path: '', filePath: '' }))
+const directoryFds = vi.hoisted(() => new Map<number, string>())
+const fileFds = vi.hoisted(() => new Map<number, string>())
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
-  // Only directory-handle fsyncs fail with EPERM — the exact windows contract.
   return {
     ...actual,
     openSync: (...args: Parameters<typeof actual.openSync>) => {
       const fd = actual.openSync(...args)
-      try { if (actual.statSync(String(args[0])).isDirectory()) directoryFds.add(fd) } catch { /* not a stat-able path */ }
+      if (actual.fstatSync(fd).isDirectory()) directoryFds.set(fd, String(args[0]))
+      else fileFds.set(fd, String(args[0]))
       return fd
     },
     closeSync: (fd: number) => {
       directoryFds.delete(fd)
+      fileFds.delete(fd)
       actual.closeSync(fd)
     },
     fsyncSync: (descriptor: number) => {
-      if (faultFsync.active && directoryFds.has(descriptor)) {
-        throw Object.assign(new Error(`${faultFsync.code}: operation not permitted, fsync`), { code: faultFsync.code })
+      if (faultFsync.filePath !== '' && fileFds.get(descriptor) === faultFsync.filePath) {
+        throw new Error('injected private-file fsync failure')
+      }
+      const path = directoryFds.get(descriptor)
+      if (faultFsync.active && path !== undefined && (faultFsync.path === '' || faultFsync.path === path)) {
+        throw Object.assign(new Error(`${faultFsync.code}: directory fsync failed`), { code: faultFsync.code })
       }
       actual.fsyncSync(descriptor)
     },
@@ -30,68 +36,114 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 import {
-  atomicWriteFile,
-  createPrivateFileIfMissing,
-  durableUnlinkFile,
+  atomicWriteFile, createPrivateFileIfMissing, durableUnlinkFile, ensureConfinedDirectory,
 } from '../src/filesystem.ts'
 
 const roots: string[] = []
+function fixture(): string {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'wiki-directory-sync-')))
+  roots.push(root)
+  return root
+}
+
 afterEach(() => {
   faultFsync.active = false
   faultFsync.code = 'EPERM'
+  faultFsync.path = ''
+  faultFsync.filePath = ''
   directoryFds.clear()
+  fileFds.clear()
+  vi.unstubAllGlobals()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-// Windows cannot fsync directory handles (EPERM); the durable-write helpers
-// must tolerate that specific failure and still publish the bytes, because
-// NTFS journals its own metadata. Every helper runs under the injected fault.
-describe('durable writes tolerate EPERM directory fsync', () => {
-  it('atomicWriteFile publishes the replacement without the directory fsync', () => {
-    const root = mkdtempSync(join(tmpdir(), 'wiki-eperm-'))
-    roots.push(root)
-    const page = join(root, 'concepts', 'a.md')
-    faultFsync.active = true
-    atomicWriteFile(page, 'first body')
-    faultFsync.active = false
-    expect(readFileSync(page, 'utf8')).toBe('first body')
-    atomicWriteFile(page, 'second body')
-    expect(readFileSync(page, 'utf8')).toBe('second body')
-    expect(existsSync(join(root, 'concepts'))).toBe(true)
+describe('Wiki namespace durability failures', () => {
+  it('re-syncs an exclusive-create retry without replacing the retained private bytes', () => {
+    const root = fixture()
+    const path = join(root, 'private.json')
+    faultFsync.filePath = path
+    expect(() => createPrivateFileIfMissing(path, Buffer.from('original private bytes')))
+      .toThrow('injected private-file fsync failure')
+    expect(readFileSync(path, 'utf8')).toBe('original private bytes')
+    expect(() => createPrivateFileIfMissing(path, Buffer.from('must not replace')))
+      .toThrow('injected private-file fsync failure')
+    faultFsync.filePath = ''
+    expect(createPrivateFileIfMissing(path, Buffer.from('must not replace'))).toBe(false)
+    expect(readFileSync(path, 'utf8')).toBe('original private bytes')
   })
 
-  it('rethrows non-EPERM fsync failures instead of swallowing them', () => {
-    const root = mkdtempSync(join(tmpdir(), 'wiki-eperm-'))
-    roots.push(root)
-    const page = join(root, 'concepts', 'eio.md')
+  it.skipIf(process.platform === 'win32').each(['EPERM', 'EIO', 'ENOSPC'])('rejects POSIX directory fsync %s', (code) => {
+    const root = fixture()
     faultFsync.active = true
+    faultFsync.code = code
+    expect(() => { atomicWriteFile(join(root, 'page.md'), 'bytes') }).toThrow(`${code}: directory fsync failed`)
+    expect(() => createPrivateFileIfMissing(join(root, 'private.json'), Buffer.from('bytes')))
+      .toThrow(`${code}: directory fsync failed`)
+    const removable = join(root, 'delete.md')
+    writeFileSync(removable, 'before')
+    expect(() => { durableUnlinkFile(removable) }).toThrow(`${code}: directory fsync failed`)
+    expect(directoryFds.size).toBe(0)
+  })
+
+  it('preserves the explicitly legacy win32 visibility behavior for EPERM only', () => {
+    const root = fixture()
+    vi.stubGlobal('process', { ...process, platform: 'win32' })
+    faultFsync.active = true
+    atomicWriteFile(join(root, 'page.md'), 'visible bytes')
+    expect(createPrivateFileIfMissing(join(root, 'private.json'), Buffer.from('private'))).toBe(true)
+    durableUnlinkFile(join(root, 'private.json'))
+    expect(readFileSync(join(root, 'page.md'), 'utf8')).toBe('visible bytes')
+    expect(existsSync(join(root, 'private.json'))).toBe(false)
     faultFsync.code = 'EIO'
-    expect(() => {
-      atomicWriteFile(page, 'body')
-    }).toThrow('EIO: operation not permitted, fsync')
-    // The other two durable helpers surface the same non-EPERM failure.
-    const ledger = join(root, '_governance', 'log.md')
-    expect(() => createPrivateFileIfMissing(ledger, Buffer.from('entry')))
-      .toThrow('EIO: operation not permitted, fsync')
-    expect(() => {
-      durableUnlinkFile(ledger)
-    }).toThrow('EIO: operation not permitted, fsync')
-    faultFsync.code = 'EPERM'
-    faultFsync.code = 'EPERM'
-    atomicWriteFile(page, 'body')
-    faultFsync.active = false
-    expect(readFileSync(page, 'utf8')).toBe('body')
+    expect(() => { atomicWriteFile(join(root, 'other.md'), 'other') }).toThrow('EIO: directory fsync failed')
   })
 
-  it('createPrivateFileIfMissing and durableUnlinkFile tolerate the EPERM fsync', () => {
-    const root = mkdtempSync(join(tmpdir(), 'wiki-eperm-'))
-    roots.push(root)
-    const ledger = join(root, '_governance', 'log.md')
+  it.skipIf(process.platform === 'win32')('retries a visible directory creation barrier before proceeding to its child', () => {
+    const root = fixture()
     faultFsync.active = true
-    expect(createPrivateFileIfMissing(ledger, Buffer.from('entry'))).toBe(true)
-    expect(existsSync(ledger)).toBe(true)
-    durableUnlinkFile(ledger)
-    expect(existsSync(ledger)).toBe(false)
+    faultFsync.path = root
+    expect(() => ensureConfinedDirectory(root, 'new/child')).toThrow('EPERM: directory fsync failed')
+    expect(existsSync(join(root, 'new'))).toBe(true)
+    expect(existsSync(join(root, 'new/child'))).toBe(false)
+    expect(() => ensureConfinedDirectory(root, 'new/child')).toThrow('EPERM: directory fsync failed')
     faultFsync.active = false
+    expect(ensureConfinedDirectory(root, 'new/child')).toBe(join(root, 'new/child'))
+  })
+
+  it.skipIf(process.platform === 'win32')('does not publish into an unflushed newly created absolute directory chain on retry', () => {
+    const root = fixture()
+    const page = join(root, 'new', 'child', 'page.md')
+    faultFsync.active = true
+    faultFsync.path = root
+    expect(() => { atomicWriteFile(page, 'bytes') }).toThrow('EPERM: directory fsync failed')
+    expect(existsSync(page)).toBe(false)
+    expect(() => { atomicWriteFile(page, 'bytes') }).toThrow('EPERM: directory fsync failed')
+    expect(existsSync(page)).toBe(false)
+    faultFsync.active = false
+    atomicWriteFile(page, 'bytes')
+    expect(readFileSync(page, 'utf8')).toBe('bytes')
+  })
+
+  it.skipIf(process.platform === 'win32')('retains the renamed tombstone when its first namespace barrier fails', () => {
+    const root = fixture()
+    const page = join(root, 'page.md')
+    writeFileSync(page, 'recoverable bytes')
+    faultFsync.active = true
+    faultFsync.path = root
+    expect(() => { durableUnlinkFile(page) }).toThrow('EPERM: directory fsync failed')
+    const tombstones = readdirSync(root).filter(name => name.includes('.ark-unlink-'))
+    expect(tombstones).toHaveLength(1)
+    expect(readFileSync(join(root, tombstones[0]!), 'utf8')).toBe('recoverable bytes')
+    expect(existsSync(page)).toBe(false)
+  })
+
+  it.skipIf(process.platform === 'win32')('re-syncs an already absent entry instead of certifying only visibility', () => {
+    const root = fixture()
+    const page = join(root, 'absent.md')
+    faultFsync.active = true
+    faultFsync.path = root
+    expect(() => { durableUnlinkFile(page) }).toThrow('EPERM: directory fsync failed')
+    faultFsync.active = false
+    expect(() => { durableUnlinkFile(page) }).not.toThrow()
   })
 })

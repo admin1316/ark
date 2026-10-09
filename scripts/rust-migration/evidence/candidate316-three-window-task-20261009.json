@@ -1,0 +1,2374 @@
+{
+  "schemaVersion": 1,
+  "status": "PRIVATE_CONSOLIDATED_AUDIT_DRAFT_WITH_ROOT_ACTUAL_EXIT_LEDGER_BOUND",
+  "generatedAt": "2026-10-08T23:12:07.413781+00:00",
+  "scope": "Readonly audit of existing three Native-window captures and cold copies; no API/model/build/helper execution and no source/app/home/public evidence mutation.",
+  "auditScript": {
+    "path": "/private/tmp/ark316-three-window-private-audit-qgj5lfr0/audit-three-window-existing-evidence.py",
+    "bytes": 19317,
+    "sha256": "9e2ba1db375b543361b352e457082af02205fb4d2be12e186713dd7e72afd93f"
+  },
+  "sourceCommit": "2104fb2dfd6700dc5cd78ca89e5110ef3558a9e9",
+  "version": "3.1.6",
+  "build": "2026100901",
+  "rootExecutionLedger": {
+    "path": "/private/tmp/ark-stage-current-source-20261009-v316-logs/three-window-task-independent-executions-root.json",
+    "bytes": 3507,
+    "sha256": "29267e4c822caf606fad451fdde7473fdeb9c750e4154bc012a31c6c5f6cc104"
+  },
+  "allNineActualExitLedgerReceiptHashesChecked": true,
+  "rounds": [
+    {
+      "name": "first",
+      "sessionId": "9903975d-1893-4d16-bfcf-5b0f62a1b8ba",
+      "targetTurn": 1,
+      "captureDirectory": "/private/tmp/ark316-ui-history-capture-current316-first",
+      "coldDirectory": "/private/tmp/ark316-ui-cold-current316-first",
+      "captureReport": {
+        "path": "/private/tmp/ark316-ui-history-capture-current316-first/capture-report.json",
+        "bytes": 6888,
+        "sha256": "9f1c17fd281d3859fe55ed9a21f66a8f7dceb1fbe500b093b7e23f20168ea5be"
+      },
+      "rawEvents": {
+        "path": "/private/tmp/ark316-ui-history-capture-current316-first/raw-events.json",
+        "bytes": 1313835,
+        "sha256": "5552c000a515c4ec05a578d61b2a44b075b1c2bc3f51ec0dde5d4231a4fcdce5"
+      },
+      "rawPages": [
+        {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-first/raw-page-000.json",
+          "bytes": 835290,
+          "sha256": "ba4b82aadab00855985cbc24e771b7411afce3b08df7ebf73bd6c464bae8b7fe"
+        },
+        {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-first/raw-page-001.json",
+          "bytes": 692361,
+          "sha256": "613dcc04ff3dd2137df1b16abf4697a2f96644df15bc7c8cbf853d9e6341e3f7"
+        }
+      ],
+      "sourceRevision": "live-f118f45b-df3f-4be1-8037-18f556a67328:3719",
+      "seqRange": [
+        0,
+        3719
+      ],
+      "gapFreeAndPagesEqualRaw": true,
+      "prompt": {
+        "sourceFile": {
+          "path": "/Users/hui/ark-test/evidence/window-test-20261009-task-v2.zh.txt",
+          "bytes": 1240,
+          "sha256": "0d6e0e2fece23b47e1f7281748cd8043fa04c202e862ec441a34117edf763f20"
+        },
+        "eventSeq": 7,
+        "queuedSeq": 3,
+        "source": {
+          "kind": "user",
+          "invocationId": "ark-native:d109dbb9beeead009ae0d6b59f3d4e79ec905bbab28c1ee42f573c1ad3d1ab0d",
+          "promptDigest": "v1:2514d32797cc83eb3a54f6bedd86a125c7be3bb3ab45ffb7006a529204729ac5",
+          "clientTimeZone": "Asia/Shanghai"
+        },
+        "admission": "file_without_single_terminal_LF",
+        "admittedSha256": "a774ab74be7afb692b4beeafb48ce155889d5b67c50c5d6644dd36bf8a316145",
+        "admittedBytes": 1239,
+        "actualText": "请使用实际文件工具读取当前项目的 invoices.csv 和 rates.csv，完成发票核对，不要修改任何文件。\n\n只转换 approved 行。汇率必须严格按 usd_numerator/usd_denominator 美元/货币单位计算。若币种没有汇率，或金额的小数位数超过该币种的 minor_units，就拒绝该 approved 行，不参与转换或求和。负数是有效退款。pending 行只计数，不验证也不转换。\n\n每个有效 approved 行分别用精确数值转换为美元分，再舍入到最近的整数，恰好一半时向远离零的方向舍入。最后只汇总这些逐行舍入后的有效行。\n\n整个回答只能是一个纯 JSON 对象，不能有 Markdown 代码围栏、前言或说明，且只能包含这五个键：\napproved_invoice_count：整数，只计未被拒绝且参与转换和汇总的有效 approved 行，不包括被拒绝行。\npending_invoice_count：整数，pending 行数。\nrejected_row_ids：被拒绝的 approved 行 ID 数组，按字典序排列。\nusd_total_cents：整数，所有有效行分别舍入后美元分的总和。\nusd_cents_by_currency：对象，只列出具有有效 approved 行的币种，值为该币种有效行分别舍入后的美元分之和。",
+        "queuedAndConsumedExactlyEqual": true,
+        "windowSubmissionOwner": "root human confirmation plus durable ark-native provenance; viewport not independently inspected by this audit"
+      },
+      "turnTime": {
+        "startSeq": 4,
+        "endSeq": 3719,
+        "startEpochMs": 1791499155955,
+        "endEpochMs": 1791499174784,
+        "startUTC": "2026-10-08T22:39:15.955+00:00",
+        "endUTC": "2026-10-08T22:39:34.784+00:00",
+        "startAsiaShanghai": "2026-10-09T06:39:15.955+08:00",
+        "endAsiaShanghai": "2026-10-09T06:39:34.784+08:00",
+        "durationSeconds": 18.829,
+        "scope": "turn/start to turn/end; excludes human/UI waits and capture overhead; descriptive only"
+      },
+      "assistant": {
+        "messages": [
+          {
+            "seq": 242,
+            "text": "I'll start by locating and reading the two CSV files.",
+            "sha256": "95e0e7f4346f1c5c9ece79fd476f81061154dbb54fb733a762360168552fa917",
+            "utf8Bytes": 53,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 396,
+            "text": "",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "utf8Bytes": 0,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 1849,
+            "text": "I have both files. Let me compute exactly with rational arithmetic and check the project wiki for any relevant conventions.",
+            "sha256": "367f1c017db2f82321a2e407b0cdf2276f0627d1cdb503deb84122e990ab46a9",
+            "utf8Bytes": 123,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 2593,
+            "text": "The heredoc needs a temp file, which the read-only sandbox denies. I'll use `python3 -c` (no temp file) instead.",
+            "sha256": "a5d621e52f6fdfd80e36900e50c1dd032ff5977580c6b16ee4c8a163ba61d83b",
+            "utf8Bytes": 112,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 3571,
+            "text": "Both the exact-fraction computation and my hand derivation agree. Let me run one independent cross-check with a different method (`awk` + `Decimal`).",
+            "sha256": "b82901b59391e3b22692c70ea4e793848875952e7d24200e86831200b6c235c4",
+            "utf8Bytes": 149,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 3717,
+            "text": "{\"approved_invoice_count\":6,\"pending_invoice_count\":1,\"rejected_row_ids\":[\"I007\",\"I008\"],\"usd_total_cents\":26598,\"usd_cents_by_currency\":{\"USD\":9750,\"EUR\":8834,\"JPY\":8000,\"CNY\":14}}",
+            "sha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895",
+            "utf8Bytes": 181,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          }
+        ],
+        "messageCount": 6,
+        "textMessageCount": 5,
+        "extraTextMessageSeqs": [
+          242,
+          1849,
+          2593,
+          3571
+        ],
+        "allStreamingChunksCoveredByDurableMessages": true,
+        "reasoningExcluded": true,
+        "wholeTextWithoutTrimOrFences": "I'll start by locating and reading the two CSV files.I have both files. Let me compute exactly with rational arithmetic and check the project wiki for any relevant conventions.The heredoc needs a temp file, which the read-only sandbox denies. I'll use `python3 -c` (no temp file) instead.Both the exact-fraction computation and my hand derivation agree. Let me run one independent cross-check with a different method (`awk` + `Decimal`).{\"approved_invoice_count\":6,\"pending_invoice_count\":1,\"rejected_row_ids\":[\"I007\",\"I008\"],\"usd_total_cents\":26598,\"usd_cents_by_currency\":{\"USD\":9750,\"EUR\":8834,\"JPY\":8000,\"CNY\":14}}",
+        "wholeTextSha256": "ef86e2287f2e9a7706583ce811774d1d580ce742dd91ea8e75d82d53f58459b7",
+        "wholeOutputContract": "FAIL_FORMAT",
+        "finalAnswer": {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-first/final-answer.txt",
+          "bytes": 181,
+          "sha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895"
+        },
+        "finalAnswerExactRowMathCorrect": true
+      },
+      "toolCalls": [
+        {
+          "callSeq": 243,
+          "resultSeq": 244,
+          "tool": "glob",
+          "arguments": {
+            "pattern": "**/*.csv"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "invoices.csv\nrates.csv",
+          "resultTextSha256": "a1e5078c77b2adff9ba30e733227bffe7b489f7762466522a89ed609662128e0"
+        },
+        {
+          "callSeq": 245,
+          "resultSeq": 246,
+          "tool": "bash",
+          "arguments": {
+            "command": "pwd && ls -la",
+            "description": "List working directory contents"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009\ntotal 32\ndrwx------   9 hui  staff   288 Oct  9 06:38 .\ndrwxr-xr-x@ 58 hui  staff  1856 Oct  9 06:34 ..\ndrwx------   3 hui  staff    96 Oct  9 06:38 .llm-wiki\n-rw-------   1 hui  staff   250 Oct  9 06:04 invoices.csv\n-rw-------   1 hui  staff    81 Oct  9 06:04 purpose.md\n-rw-------   1 hui  staff    95 Oct  9 06:04 rates.csv\ndrwx------   3 hui  staff    96 Oct  9 06:04 raw\n-rw-------   1 hui  staff   233 Oct  9 06:04 schema.md\ndrwx------   7 hui  staff   224 Oct  9 06:04 wiki\n",
+          "resultTextSha256": "9661aea702d6d03f04f37bc1e0453974e88f1c44b29e2f6ce8fb2519511d7ef1"
+        },
+        {
+          "callSeq": 397,
+          "resultSeq": 401,
+          "tool": "read",
+          "arguments": {
+            "file_path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/invoices.csv"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "<path>/Users/hui/ark-test/invoice-reconciliation-current316-20261009/invoices.csv</path>\n<type>file</type>\n<content>\n1: invoice_id,status,currency,amount\n2: I001,approved,USD,100.00\n3: I002,approved,EUR,80.25\n4: I003,pending,USD,999.99\n5: I004,approved,JPY,12000\n6: I005,approved,EUR,0.05\n7: I006,approved,USD,-2.50\n8: I007,approved,XYZ,10.00\n9: I008,approved,USD,12.345\n10: I009,approved,CNY,1.00\n\n(End of file - total 10 lines)\n</content>",
+          "resultTextSha256": "4bf791daea7418e90d67464c7b4fc351e5ca0119c5d26f379b963787fef1f98e"
+        },
+        {
+          "callSeq": 398,
+          "resultSeq": 402,
+          "tool": "read",
+          "arguments": {
+            "file_path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/rates.csv"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "<path>/Users/hui/ark-test/invoice-reconciliation-current316-20261009/rates.csv</path>\n<type>file</type>\n<content>\n1: currency,minor_units,usd_numerator,usd_denominator\n2: USD,2,1,1\n3: EUR,2,11,10\n4: JPY,0,1,150\n5: CNY,2,1,7\n\n(End of file - total 5 lines)\n</content>",
+          "resultTextSha256": "eb58489a60815dc1368d6a53e6878bfcc8ee48e1f75555ed52bacc26830b2a37"
+        },
+        {
+          "callSeq": 399,
+          "resultSeq": 403,
+          "tool": "read",
+          "arguments": {
+            "file_path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/schema.md"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "<path>/Users/hui/ark-test/invoice-reconciliation-current316-20261009/schema.md</path>\n<type>file</type>\n<content>\n1: # Wiki Schema\n2: \n3: ## Page Types\n4: \n5: | Type | Directory | Purpose |\n6: |------|-----------|---------|\n7: | entity | wiki/entities/ | Named things |\n8: | concept | wiki/concepts/ | Ideas and techniques |\n9: | source | wiki/sources/ | Source materials |\n\n(End of file - total 9 lines)\n</content>",
+          "resultTextSha256": "5d2e8f4497998719c537d157635cbcbb5cca34571b12f907a74ffe6c4f79e058"
+        },
+        {
+          "callSeq": 400,
+          "resultSeq": 404,
+          "tool": "read",
+          "arguments": {
+            "file_path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/purpose.md"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "<path>/Users/hui/ark-test/invoice-reconciliation-current316-20261009/purpose.md</path>\n<type>file</type>\n<content>\n1: # 项目目的 — invoice-reconciliation-20261008\n2: \n3: ## 核心问题\n4: \n5: > 待补充\n\n(End of file - total 5 lines)\n</content>",
+          "resultTextSha256": "5abbe192e799373b7a82158e483a3197512ac0f87c0727bf27264ff8bfa607a7"
+        },
+        {
+          "callSeq": 1850,
+          "resultSeq": 1851,
+          "tool": "bash",
+          "arguments": {
+            "command": "python3 - <<'PY'\nimport csv\nfrom fractions import Fraction\nfrom decimal import Decimal\n\ndef decimals(s):\n    if '.' in s:\n        d = s.split('.')[1]\n        return len(d.rstrip('0')) if d.strip('0') else 0\n    return 0\n\nrates = {}\nwith open('rates.csv', newline='') as f:\n    for r in csv.DictReader(f):\n        rates[r['currency']] = (int(r['minor_units']), int(r['usd_numerator']), int(r['usd_denominator']))\n\ndef half_away(fr: Fraction):\n    # round to nearest int, ties away from zero\n    n, d = fr.numerator, fr.denominator\n    sign = -1 if n < 0 else 1\n    n = abs(n)\n    q, rem = divmod(n, d)\n    if 2*rem >= d:\n        q += 1\n    return sign * q\n\napproved_valid = 0\npending = 0\nrejected = []\ntotal = 0\nby_ccy = {}\nfor row in csv.DictReader(open('invoices.csv', newline='')):\n    st = row['status']; ccy = row['currency']; amt = row['amount']\n    if st == 'pending':\n        pending += 1\n        continue\n    if st != 'approved':\n        continue\n    mu, num, den = rates.get(ccy, (None, None, None))\n    if mu is None or decimals(amt) > mu:\n        rejected.append(row['invoice_id'])\n        continue\n    # exact cents: amount * num/den * 100\n    cents = Fraction(Decimal(amt)) * num / den * 100\n    r = half_away(cents)\n    approved_valid += 1\n    total += r\n    by_ccy[ccy] = by_ccy.get(ccy, 0) + r\n    print(row['invoice_id'], ccy, amt, 'exact_cents=', cents, 'rounded=', r)\n\nprint('approved_valid', approved_valid)\nprint('pending', pending)\nprint('rejected', sorted(rejected))\nprint('total', total)\nprint('by_ccy', by_ccy)\nPY",
+            "description": "Compute reconciliation with exact fractions"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [
+            1
+          ],
+          "businessFailure": true,
+          "resultText": "[stderr]\nbash: cannot create temp file for here document: Operation not permitted\n[sandbox: file access denied under read-only mode]\n[sandbox: escalation available — retry this exact command once with sandbox_permissions (the narrowest wider mode that suffices) + justification; the approval prompt asks the user]\n[exit code: 1]",
+          "resultTextSha256": "49ef9541e9fe4e4b6c2d15dfd6315d86969a4f48585c08a5f3346fbfb019ca6e"
+        },
+        {
+          "callSeq": 1852,
+          "resultSeq": 1853,
+          "tool": "wiki_search",
+          "arguments": {
+            "query": "invoice reconciliation rounding minor_units rejected rows"
+          },
+          "transportIsError": true,
+          "renderedExitCodes": [],
+          "businessFailure": true,
+          "resultText": "Error: knowledge verifier authority is unavailable",
+          "resultTextSha256": "e4446c59ebf15cc38f4dc90810944ec24b857768bd80c81127c86bbe503d18f8"
+        },
+        {
+          "callSeq": 2594,
+          "resultSeq": 2595,
+          "tool": "bash",
+          "arguments": {
+            "command": "python3 -c '\nimport csv\nfrom fractions import Fraction\nfrom decimal import Decimal\n\ndef decimals(s):\n    s = s.strip()\n    if \".\" in s:\n        d = s.split(\".\")[1]\n        t = d.rstrip(\"0\")\n        return len(t) if t else 0\n    return 0\n\nrates = {}\nfor r in csv.DictReader(open(\"rates.csv\", newline=\"\")):\n    rates[r[\"currency\"]] = (int(r[\"minor_units\"]), int(r[\"usd_numerator\"]), int(r[\"usd_denominator\"]))\n\ndef half_away(fr):\n    n, d = fr.numerator, fr.denominator\n    sign = -1 if n < 0 else 1\n    n = abs(n)\n    q, rem = divmod(n, d)\n    if 2*rem >= d:\n        q += 1\n    return sign*q\n\napproved_valid = 0; pending = 0; rejected = []; total = 0; by_ccy = {}\nfor row in csv.DictReader(open(\"invoices.csv\", newline=\"\")):\n    st = row[\"status\"]; ccy = row[\"currency\"]; amt = row[\"amount\"].strip()\n    if st == \"pending\":\n        pending += 1\n        continue\n    if st != \"approved\":\n        continue\n    info = rates.get(ccy)\n    if info is None or decimals(amt) > info[0]:\n        rejected.append(row[\"invoice_id\"])\n        continue\n    mu, num, den = info\n    cents = Fraction(Decimal(amt)) * num / den * 100\n    r = half_away(cents)\n    approved_valid += 1\n    total += r\n    by_ccy[ccy] = by_ccy.get(ccy, 0) + r\n    print(row[\"invoice_id\"], ccy, amt, \"exact_cents=\", cents, \"->\", r)\n\nprint(\"approved_valid =\", approved_valid)\nprint(\"pending =\", pending)\nprint(\"rejected =\", sorted(rejected))\nprint(\"total =\", total)\nprint(\"by_ccy =\", by_ccy)\n'",
+            "description": "Compute reconciliation with exact fractions"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "I001 USD 100.00 exact_cents= 10000 -> 10000\nI002 EUR 80.25 exact_cents= 17655/2 -> 8828\nI004 JPY 12000 exact_cents= 8000 -> 8000\nI005 EUR 0.05 exact_cents= 11/2 -> 6\nI006 USD -2.50 exact_cents= -250 -> -250\nI009 CNY 1.00 exact_cents= 100/7 -> 14\napproved_valid = 6\npending = 1\nrejected = ['I007', 'I008']\ntotal = 26598\nby_ccy = {'USD': 9750, 'EUR': 8834, 'JPY': 8000, 'CNY': 14}\n",
+          "resultTextSha256": "f679b7729d85550f4d99d67e81512f203b3e0da47173e6fbb2ada4256c4da31f"
+        },
+        {
+          "callSeq": 2596,
+          "resultSeq": 2597,
+          "tool": "wiki_files",
+          "arguments": {},
+          "transportIsError": true,
+          "renderedExitCodes": [],
+          "businessFailure": true,
+          "resultText": "Error: knowledge verifier authority is unavailable",
+          "resultTextSha256": "e4446c59ebf15cc38f4dc90810944ec24b857768bd80c81127c86bbe503d18f8"
+        },
+        {
+          "callSeq": 3572,
+          "resultSeq": 3573,
+          "tool": "bash",
+          "arguments": {
+            "command": "awk -F, 'NR>1 && $2==\"pending\"{p++} END{print \"pending=\"p}' invoices.csv && python3 -c '\nfrom decimal import Decimal, ROUND_HALF_UP\n# independent re-implementation\nrates={}\nfor line in open(\"rates.csv\").read().splitlines()[1:]:\n    c,mu,n,d=line.split(\",\"); rates[c]=(int(mu),Decimal(n)/Decimal(d))\nok=0;tot=0;by={};rej=[]\nfor line in open(\"invoices.csv\").read().splitlines()[1:]:\n    i,st,c,a=line.split(\",\")\n    if st==\"pending\": continue\n    mu,rate=rates.get(c,(None,None))\n    dp=len(a.split(\".\")[1]) if \".\" in a and a.split(\".\")[1].strip(\"0\") else 0\n    if rate is None or dp>mu: rej.append(i); continue\n    cents=(Decimal(a)*rate*100).quantize(Decimal(1),rounding=ROUND_HALF_UP)\n    ok+=1; tot+=int(cents); by[c]=by.get(c,0)+int(cents)\nprint(\"ok\",ok,\"total\",tot,\"by\",by,\"rej\",sorted(rej))\n'",
+            "description": "Cross-check totals with Decimal rounding"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "pending=1\nok 6 total 26598 by {'USD': 9750, 'EUR': 8834, 'JPY': 8000, 'CNY': 14} rej ['I007', 'I008']\n",
+          "resultTextSha256": "9662d5b2b72b647237a5c1900f361036b554234371fb6bab9cd7ed09b102f57e"
+        }
+      ],
+      "toolCallCount": 11,
+      "businessFailureCount": 3,
+      "transportIsErrorCount": 2,
+      "businessFailureDefinition": "isError OR nonzero rendered bash [exit code:N]; complete raw result text retained",
+      "csvReads": [
+        {
+          "path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/invoices.csv",
+          "callSeq": 397,
+          "resultSeq": 401,
+          "offset": 1,
+          "totalLines": 10,
+          "rawLines": [
+            {
+              "number": 1,
+              "text": "invoice_id,status,currency,amount"
+            },
+            {
+              "number": 2,
+              "text": "I001,approved,USD,100.00"
+            },
+            {
+              "number": 3,
+              "text": "I002,approved,EUR,80.25"
+            },
+            {
+              "number": 4,
+              "text": "I003,pending,USD,999.99"
+            },
+            {
+              "number": 5,
+              "text": "I004,approved,JPY,12000"
+            },
+            {
+              "number": 6,
+              "text": "I005,approved,EUR,0.05"
+            },
+            {
+              "number": 7,
+              "text": "I006,approved,USD,-2.50"
+            },
+            {
+              "number": 8,
+              "text": "I007,approved,XYZ,10.00"
+            },
+            {
+              "number": 9,
+              "text": "I008,approved,USD,12.345"
+            },
+            {
+              "number": 10,
+              "text": "I009,approved,CNY,1.00"
+            }
+          ],
+          "bytes": 250,
+          "sha256": "8afd7cca50954df366d1bc12ab4e37779cf744f767d6961a6780a85ff9ec957d",
+          "exactPreregisteredBytesReconstructed": true,
+          "everyRenderedLineAndEOFVerified": true
+        },
+        {
+          "path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/rates.csv",
+          "callSeq": 398,
+          "resultSeq": 402,
+          "offset": 1,
+          "totalLines": 5,
+          "rawLines": [
+            {
+              "number": 1,
+              "text": "currency,minor_units,usd_numerator,usd_denominator"
+            },
+            {
+              "number": 2,
+              "text": "USD,2,1,1"
+            },
+            {
+              "number": 3,
+              "text": "EUR,2,11,10"
+            },
+            {
+              "number": 4,
+              "text": "JPY,0,1,150"
+            },
+            {
+              "number": 5,
+              "text": "CNY,2,1,7"
+            }
+          ],
+          "bytes": 95,
+          "sha256": "caf38d482d8ff52903721a04744d038337e11513d90bbfa5c9a2afdd90c934af",
+          "exactPreregisteredBytesReconstructed": true,
+          "everyRenderedLineAndEOFVerified": true
+        }
+      ],
+      "exactRowMath": [
+        {
+          "id": "I001",
+          "currency": "USD",
+          "exactCentsNumerator": 10000,
+          "exactCentsDenominator": 1,
+          "roundedCents": 10000
+        },
+        {
+          "id": "I002",
+          "currency": "EUR",
+          "exactCentsNumerator": 17655,
+          "exactCentsDenominator": 2,
+          "roundedCents": 8828
+        },
+        {
+          "id": "I003",
+          "status": "pending_count_only"
+        },
+        {
+          "id": "I004",
+          "currency": "JPY",
+          "exactCentsNumerator": 8000,
+          "exactCentsDenominator": 1,
+          "roundedCents": 8000
+        },
+        {
+          "id": "I005",
+          "currency": "EUR",
+          "exactCentsNumerator": 11,
+          "exactCentsDenominator": 2,
+          "roundedCents": 6
+        },
+        {
+          "id": "I006",
+          "currency": "USD",
+          "exactCentsNumerator": -250,
+          "exactCentsDenominator": 1,
+          "roundedCents": -250
+        },
+        {
+          "id": "I007",
+          "status": "rejected",
+          "reason": "missing_rate"
+        },
+        {
+          "id": "I008",
+          "status": "rejected",
+          "reason": "literal_decimal_precision_exceeded"
+        },
+        {
+          "id": "I009",
+          "currency": "CNY",
+          "exactCentsNumerator": 100,
+          "exactCentsDenominator": 7,
+          "roundedCents": 14
+        }
+      ],
+      "expectedAnswer": {
+        "approved_invoice_count": 6,
+        "pending_invoice_count": 1,
+        "rejected_row_ids": [
+          "I007",
+          "I008"
+        ],
+        "usd_total_cents": 26598,
+        "usd_cents_by_currency": {
+          "USD": 9750,
+          "EUR": 8834,
+          "JPY": 8000,
+          "CNY": 14
+        }
+      },
+      "existingOracle": {
+        "receipt": {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-first/exact-oracle-final-answer.json",
+          "bytes": 1594,
+          "sha256": "22e9bf2625cda632837f6751d96952bf824ffe52e4692bcce5f1605f2ba92473"
+        },
+        "historicalEnglishTaskSha256": "1fc8a1860a0097714708006d9f13a23b16b8b256a7f55c0c74d877f9166e5986",
+        "v2OrCorrectionChinesePromptBoundSeparately": true,
+        "scope": "last answer and CSV math only"
+      },
+      "modelRoute": {
+        "initialHeaderSeq": 11,
+        "config": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max",
+          "maxTokens": 256000
+        },
+        "adapterDefaults": {
+          "maxTokens": true
+        },
+        "headerSeqsWithinTargetTurn": [
+          11
+        ],
+        "assistantModelSources": [
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          }
+        ],
+        "originalCollectorAllLoggedRequestRoutesMatchExpected": true,
+        "effectiveMaxAtRequestBuildSupportedByGapFreeHeaderFold": true,
+        "headerSourceProof": [
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/agent-loop/src/agent.ts",
+            "bytes": 34338,
+            "sha256": "dd17608807441467e8188dfcc6a856ff0ccbf4df5f53337373354477fa501ba2",
+            "relevantLines": {
+              "811": "    const persistedHeader = session.requestHeader()",
+              "823": "        ? requestProposal(persistedHeader!)",
+              "850": "    const header = canonicalHeader({",
+              "857": "    if (!this.requestHeaderLogged) {",
+              "861": "      this.session.append('request/header', { header, reason: 'change' })",
+              "879": "      ...header.config,"
+            }
+          },
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/session/src/index.ts",
+            "bytes": 45735,
+            "sha256": "0274e86ea1f30ce4e8e9fe959f870b66b5cf099954088c6b3d5390779ce5eefd",
+            "relevantLines": {
+              "453": "  /**",
+              "461": "  requestHeader(): EpochHeader | undefined {",
+              "467": "      this.headerFold = deepFreeze(foldRequestHeader(this.log.slice(this.headerFoldSeq), this.headerFold))"
+            }
+          },
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/session/src/request-header.ts",
+            "bytes": 2899,
+            "sha256": "2003c7c30ee8a660686c6deb01a844d95416ecad182acaf3beba6360fec1e9b8",
+            "relevantLines": {
+              "44": "export function headerEquals(a: EpochHeader, b: EpochHeader): boolean {",
+              "46": "    !callConfigEquals(a.config, b.config)",
+              "47": "    || a.adapterDefaults?.reasoningEffort !== b.adapterDefaults?.reasoningEffort"
+            }
+          },
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/llm/llm/src/call-config.ts",
+            "bytes": 2932,
+            "sha256": "8c3463f1778a3590d86fa02f757c36bba41ecc6bc108a3018969b1b368d00a8b",
+            "relevantLines": {
+              "49": "export function callConfigEquals(a: LlmCallConfig, b: LlmCallConfig): boolean {",
+              "53": "    || a.reasoningEffort !== b.reasoningEffort"
+            }
+          }
+        ],
+        "wirePayloadIndependentlyObserved": false,
+        "providerHonoringMaxIndependentlyObserved": false,
+        "correctionEmptyHeaderListIsNotRouteMismatch": false
+      },
+      "coldPersistence": {
+        "receipt": {
+          "path": "/private/tmp/ark316-ui-cold-current316-first/cold-replay-receipt.json",
+          "bytes": 15344,
+          "sha256": "8f6f4ada2a69513524633a75cd6d57872bd623e654c15e4433b3348480183f61"
+        },
+        "recordedPassed": true,
+        "loadedFile": {
+          "path": "/private/tmp/ark316-ui-cold-current316-first/cold-loaded-session.json",
+          "bytes": 1304865,
+          "sha256": "05969655c4772557acea8ec6c4a1f2322d4ba12e9e80bcedfca24ccd378398b0"
+        },
+        "allStoredEventsExactlyEqualCapture": true,
+        "compressedCopy": {
+          "path": "/private/tmp/ark316-ui-cold-current316-first/cold-working-sessions/--Users-hui-ark-test-invoice-reconciliation-current316-20261009--/9903975d-1893-4d16-bfcf-5b0f62a1b8ba/session.jsonl.zstd",
+          "bytes": 63960,
+          "sha256": "255a411ffbbcc52a4855e1ac564ca6935f1b4c1c27cd3f98c1590a1d3fdc31fe"
+        },
+        "rawFinalBytesEqualCapture": true,
+        "actualPromptBytesEqualCapture": true,
+        "profileBinding": {
+          "sourceCommit": "2104fb2dfd6700dc5cd78ca89e5110ef3558a9e9",
+          "home": "/Users/hui/ark-test/candidate-home-current-source-20261009-v316",
+          "version": "3.1.6",
+          "build": "2026100901",
+          "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.f3861f8811f104f0",
+          "packReceiptSha256": "f566063096413d9785192d048448de4f15082fd09f388f273282a0680e25205c",
+          "profileSha256": "525559a9ca4e81cc1b2b6b06c83d1903c1e22f657baff099a04bb67294503182",
+          "preregistrationSha256": "fa5f937d565f83a7310f1324474b6788b0fb4a5720735106ef252ed5f77f49cd"
+        },
+        "rootActualExecutions": [
+          {
+            "kind": "complete history collection",
+            "actualExitCode": 0,
+            "receiptPath": "/private/tmp/ark316-ui-history-capture-current316-first/capture-report.json",
+            "receiptSha256": "9f1c17fd281d3859fe55ed9a21f66a8f7dceb1fbe500b093b7e23f20168ea5be",
+            "receiptHashIndependentlyChecked": true,
+            "actualExitOwner": "root terminal/tool observation ledger, not receipt verdict inference"
+          },
+          {
+            "kind": "independent exact Fraction oracle",
+            "actualExitCode": 0,
+            "receiptPath": "/private/tmp/ark316-ui-history-capture-current316-first/exact-oracle-final-answer.json",
+            "receiptSha256": "22e9bf2625cda632837f6751d96952bf824ffe52e4692bcce5f1605f2ba92473",
+            "receiptHashIndependentlyChecked": true,
+            "actualExitOwner": "root terminal/tool observation ledger, not receipt verdict inference"
+          },
+          {
+            "kind": "signed app public persistence cold replay",
+            "actualExitCode": 0,
+            "receiptPath": "/private/tmp/ark316-ui-cold-current316-first/cold-replay-receipt.json",
+            "receiptSha256": "8f6f4ada2a69513524633a75cd6d57872bd623e654c15e4433b3348480183f61",
+            "receiptHashIndependentlyChecked": true,
+            "actualExitOwner": "root terminal/tool observation ledger, not receipt verdict inference"
+          }
+        ],
+        "liveSourceHomeNotReadByAudit": true
+      },
+      "freshness": {
+        "coldMeta": {
+          "version": 0,
+          "id": "9903975d-1893-4d16-bfcf-5b0f62a1b8ba",
+          "createdAt": 1791499155782,
+          "cwd": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009",
+          "delegationDepth": 0,
+          "agentPreset": "standard"
+        },
+        "hasParentOriginSeedMeta": false,
+        "seedCompactionForkEvents": [],
+        "beforePromptDialogueEvents": [],
+        "humanMessageSeqs": [
+          7
+        ],
+        "scope": "durable conversation history only; normal runtime-policy and skill-catalog context still present"
+      },
+      "knowledge": {
+        "sessionEventSeqs": [],
+        "projectJournalSnapshot": {
+          "path": "/private/tmp/ark316-ui-cold-current316-first/project-governance-journal-snapshot.jsonl",
+          "bytes": 510,
+          "sha256": "99c45a82a368d744cb4cb0653cdb74268ab7dfaa7e1371cf6d8561ff5273cd66"
+        },
+        "projectJournalEvents": [
+          {
+            "schemaVersion": 1,
+            "type": "knowledge/injected",
+            "id": "knowledge-event-78b3211e-af89-4453-b443-e6547b5d347c",
+            "seq": 0,
+            "timestamp": "2026-10-08T22:38:41.430Z",
+            "knowledgeId": "page:index.md",
+            "scope": {
+              "projectId": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009",
+              "visibility": "project"
+            },
+            "previousEventHash": null,
+            "payload": {
+              "path": "index.md",
+              "contentHash": "7535bd097b7fbdbd1891931f746a4ded8d66f64624d1fa23d5ac48886a44311c"
+            },
+            "eventHash": "9e0d004959124a3e15cf2613f755d3671a41aae17e5c89ba20ad0b80409ce9e2"
+          }
+        ],
+        "journalBeforePromptMs": 34551,
+        "journalEquivalentToModelSessionInjection": false,
+        "actualJournalRpcCallerIndependentlyObserved": false,
+        "verifiedRepairReuse": "UNPROVEN"
+      },
+      "fixedCut": {
+        "sessionAfter": {
+          "sessionId": "9903975d-1893-4d16-bfcf-5b0f62a1b8ba",
+          "cwd": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009",
+          "running": false,
+          "blank": false,
+          "agentPreset": "standard"
+        },
+        "freshTail": {
+          "sourceRevision": "live-f118f45b-df3f-4be1-8037-18f556a67328:3719",
+          "asOfThroughSeq": 3719,
+          "sameThrough": true
+        },
+        "queueProjection": {
+          "status": "FOLDED_DURABLE_SPLICES_AT_FIXED_CUT",
+          "counts": {
+            "next-turn": 0,
+            "next-step": 0
+          },
+          "messageIds": {
+            "next-turn": [],
+            "next-step": []
+          },
+          "spliceEventSeqs": [
+            3,
+            5
+          ],
+          "isEmptyAtFixedCut": true,
+          "liveOutstandingJobsAndApprovals": "UNKNOWN_NOT_EXPOSED_BY_THESE_READS"
+        },
+        "atomic": false,
+        "globalJobsApprovals": "UNKNOWN"
+      },
+      "viewportIndependentlyObserved": false
+    },
+    {
+      "name": "correction-first",
+      "sessionId": "9903975d-1893-4d16-bfcf-5b0f62a1b8ba",
+      "targetTurn": 2,
+      "captureDirectory": "/private/tmp/ark316-ui-history-capture-current316-correction-first",
+      "coldDirectory": "/private/tmp/ark316-ui-cold-current316-correction-v2",
+      "captureReport": {
+        "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/capture-report.json",
+        "bytes": 6855,
+        "sha256": "b11f76debf76603fb02fbf0bc0c8f539e6b6fbf4fb7dd1920762c1ca03d3ecb2"
+      },
+      "rawEvents": {
+        "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/raw-events.json",
+        "bytes": 1592678,
+        "sha256": "6899f27d2e30faffac2ecd33afcc1c002394421f772cfae00badccbec41246f2"
+      },
+      "rawPages": [
+        {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/raw-page-000.json",
+          "bytes": 836933,
+          "sha256": "f12ec453be5769f35400975d74f86b02b2242998e1b83691655b4c3db2d1ba14"
+        },
+        {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/raw-page-001.json",
+          "bytes": 790795,
+          "sha256": "774e735f1415dac09bd36bdefbe58481c342810846570685189f08e457936c88"
+        },
+        {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/raw-page-002.json",
+          "bytes": 225724,
+          "sha256": "928811af9c878bc192f3455e197f4b0592eb77ca48c1370d7efef17c8f868c5e"
+        }
+      ],
+      "sourceRevision": "live-f118f45b-df3f-4be1-8037-18f556a67328:4469",
+      "seqRange": [
+        0,
+        4469
+      ],
+      "gapFreeAndPagesEqualRaw": true,
+      "prompt": {
+        "sourceFile": {
+          "path": "/Users/hui/ark-test/evidence/candidate316-window-correction-v2.zh.txt",
+          "bytes": 656,
+          "sha256": "06cbb976de94025f0945b970b5601b64f7ace55cf328822c8e359905961ad66f"
+        },
+        "eventSeq": 3724,
+        "queuedSeq": 3720,
+        "source": {
+          "kind": "user",
+          "invocationId": "ark-native:25848acba3be88c97a17bad921dc1bfd85f5d298e2f696b63ae35d6e2ed97ab1",
+          "promptDigest": "v1:877f8415e65a8bba19cf4380777636a5ea0665855132d7f3dc7b7d10fbb0d0b5",
+          "clientTimeZone": "Asia/Shanghai"
+        },
+        "admission": "file_without_single_terminal_LF",
+        "admittedSha256": "ee4d28a593c75a5fae7a2c1f9a8ace794e82b196a309be901465eb81e26d4e44",
+        "admittedBytes": 655,
+        "actualText": "上一轮最后的 JSON 数值正确，但你在工具前后输出了多段英文说明，违反了“整个回答只能是一个纯 JSON 对象、不能有前言或说明”的要求。\n\n请重新执行我上一条发票核对任务，使用实际工具重新读取 invoices.csv 和 rates.csv；原来的计算规则、五个输出键和不修改文件的要求全部保持。\n\n从本条消息开始，所有可见的 assistant 文字合起来只能是最终那个唯一 JSON 对象：工具前后都不要输出计划、进度、解释或确认句，不要使用 Markdown 围栏。工具调用可以正常进行。请严格完成后直接输出结果。",
+        "queuedAndConsumedExactlyEqual": true,
+        "windowSubmissionOwner": "root human confirmation plus durable ark-native provenance; viewport not independently inspected by this audit"
+      },
+      "turnTime": {
+        "startSeq": 3721,
+        "endSeq": 4469,
+        "startEpochMs": 1791500041112,
+        "endEpochMs": 1791500047324,
+        "startUTC": "2026-10-08T22:54:01.112+00:00",
+        "endUTC": "2026-10-08T22:54:07.324+00:00",
+        "startAsiaShanghai": "2026-10-09T06:54:01.112+08:00",
+        "endAsiaShanghai": "2026-10-09T06:54:07.324+08:00",
+        "durationSeconds": 6.212,
+        "scope": "turn/start to turn/end; excludes human/UI waits and capture overhead; descriptive only"
+      },
+      "assistant": {
+        "messages": [
+          {
+            "seq": 3888,
+            "text": "",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "utf8Bytes": 0,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 4392,
+            "text": "",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "utf8Bytes": 0,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 4467,
+            "text": "{\"approved_invoice_count\":6,\"pending_invoice_count\":1,\"rejected_row_ids\":[\"I007\",\"I008\"],\"usd_total_cents\":26598,\"usd_cents_by_currency\":{\"USD\":9750,\"EUR\":8834,\"JPY\":8000,\"CNY\":14}}",
+            "sha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895",
+            "utf8Bytes": 181,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          }
+        ],
+        "messageCount": 3,
+        "textMessageCount": 1,
+        "extraTextMessageSeqs": [],
+        "allStreamingChunksCoveredByDurableMessages": true,
+        "reasoningExcluded": true,
+        "wholeTextWithoutTrimOrFences": "{\"approved_invoice_count\":6,\"pending_invoice_count\":1,\"rejected_row_ids\":[\"I007\",\"I008\"],\"usd_total_cents\":26598,\"usd_cents_by_currency\":{\"USD\":9750,\"EUR\":8834,\"JPY\":8000,\"CNY\":14}}",
+        "wholeTextSha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895",
+        "wholeOutputContract": "PASS_FORMAT",
+        "finalAnswer": {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/final-answer.txt",
+          "bytes": 181,
+          "sha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895"
+        },
+        "finalAnswerExactRowMathCorrect": true
+      },
+      "toolCalls": [
+        {
+          "callSeq": 3889,
+          "resultSeq": 3891,
+          "tool": "read",
+          "arguments": {
+            "file_path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/invoices.csv"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "<path>/Users/hui/ark-test/invoice-reconciliation-current316-20261009/invoices.csv</path>\n<type>file</type>\n<content>\n1: invoice_id,status,currency,amount\n2: I001,approved,USD,100.00\n3: I002,approved,EUR,80.25\n4: I003,pending,USD,999.99\n5: I004,approved,JPY,12000\n6: I005,approved,EUR,0.05\n7: I006,approved,USD,-2.50\n8: I007,approved,XYZ,10.00\n9: I008,approved,USD,12.345\n10: I009,approved,CNY,1.00\n\n(End of file - total 10 lines)\n</content>",
+          "resultTextSha256": "4bf791daea7418e90d67464c7b4fc351e5ca0119c5d26f379b963787fef1f98e"
+        },
+        {
+          "callSeq": 3890,
+          "resultSeq": 3892,
+          "tool": "read",
+          "arguments": {
+            "file_path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/rates.csv"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "<path>/Users/hui/ark-test/invoice-reconciliation-current316-20261009/rates.csv</path>\n<type>file</type>\n<content>\n1: currency,minor_units,usd_numerator,usd_denominator\n2: USD,2,1,1\n3: EUR,2,11,10\n4: JPY,0,1,150\n5: CNY,2,1,7\n\n(End of file - total 5 lines)\n</content>",
+          "resultTextSha256": "eb58489a60815dc1368d6a53e6878bfcc8ee48e1f75555ed52bacc26830b2a37"
+        },
+        {
+          "callSeq": 4393,
+          "resultSeq": 4394,
+          "tool": "bash",
+          "arguments": {
+            "command": "python3 -c '\nimport csv\nfrom fractions import Fraction\nfrom decimal import Decimal\n\ndef decimals(s):\n    s = s.strip()\n    if \".\" in s:\n        t = s.split(\".\")[1].rstrip(\"0\")\n        return len(t) if t else 0\n    return 0\n\nrates = {}\nfor r in csv.DictReader(open(\"rates.csv\", newline=\"\")):\n    rates[r[\"currency\"]] = (int(r[\"minor_units\"]), int(r[\"usd_numerator\"]), int(r[\"usd_denominator\"]))\n\ndef half_away(fr):\n    n, d = fr.numerator, fr.denominator\n    sign = -1 if n < 0 else 1\n    n = abs(n)\n    q, rem = divmod(n, d)\n    if 2*rem >= d:\n        q += 1\n    return sign*q\n\napproved_valid = 0; pending = 0; rejected = []; total = 0; by_ccy = {}\nfor row in csv.DictReader(open(\"invoices.csv\", newline=\"\")):\n    st = row[\"status\"]; ccy = row[\"currency\"]; amt = row[\"amount\"].strip()\n    if st == \"pending\":\n        pending += 1\n        continue\n    if st != \"approved\":\n        continue\n    info = rates.get(ccy)\n    if info is None or decimals(amt) > info[0]:\n        rejected.append(row[\"invoice_id\"])\n        continue\n    mu, num, den = info\n    cents = Fraction(Decimal(amt)) * num / den * 100\n    r = half_away(cents)\n    approved_valid += 1\n    total += r\n    by_ccy[ccy] = by_ccy.get(ccy, 0) + r\n    print(row[\"invoice_id\"], ccy, amt, \"exact_cents=\", cents, \"->\", r)\n\nprint(\"approved_valid =\", approved_valid)\nprint(\"pending =\", pending)\nprint(\"rejected =\", sorted(rejected))\nprint(\"total =\", total)\nprint(\"by_ccy =\", by_ccy)\n'",
+            "description": "Recompute reconciliation with exact fractions"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "I001 USD 100.00 exact_cents= 10000 -> 10000\nI002 EUR 80.25 exact_cents= 17655/2 -> 8828\nI004 JPY 12000 exact_cents= 8000 -> 8000\nI005 EUR 0.05 exact_cents= 11/2 -> 6\nI006 USD -2.50 exact_cents= -250 -> -250\nI009 CNY 1.00 exact_cents= 100/7 -> 14\napproved_valid = 6\npending = 1\nrejected = ['I007', 'I008']\ntotal = 26598\nby_ccy = {'USD': 9750, 'EUR': 8834, 'JPY': 8000, 'CNY': 14}\n",
+          "resultTextSha256": "f679b7729d85550f4d99d67e81512f203b3e0da47173e6fbb2ada4256c4da31f"
+        }
+      ],
+      "toolCallCount": 3,
+      "businessFailureCount": 0,
+      "transportIsErrorCount": 0,
+      "businessFailureDefinition": "isError OR nonzero rendered bash [exit code:N]; complete raw result text retained",
+      "csvReads": [
+        {
+          "path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/invoices.csv",
+          "callSeq": 3889,
+          "resultSeq": 3891,
+          "offset": 1,
+          "totalLines": 10,
+          "rawLines": [
+            {
+              "number": 1,
+              "text": "invoice_id,status,currency,amount"
+            },
+            {
+              "number": 2,
+              "text": "I001,approved,USD,100.00"
+            },
+            {
+              "number": 3,
+              "text": "I002,approved,EUR,80.25"
+            },
+            {
+              "number": 4,
+              "text": "I003,pending,USD,999.99"
+            },
+            {
+              "number": 5,
+              "text": "I004,approved,JPY,12000"
+            },
+            {
+              "number": 6,
+              "text": "I005,approved,EUR,0.05"
+            },
+            {
+              "number": 7,
+              "text": "I006,approved,USD,-2.50"
+            },
+            {
+              "number": 8,
+              "text": "I007,approved,XYZ,10.00"
+            },
+            {
+              "number": 9,
+              "text": "I008,approved,USD,12.345"
+            },
+            {
+              "number": 10,
+              "text": "I009,approved,CNY,1.00"
+            }
+          ],
+          "bytes": 250,
+          "sha256": "8afd7cca50954df366d1bc12ab4e37779cf744f767d6961a6780a85ff9ec957d",
+          "exactPreregisteredBytesReconstructed": true,
+          "everyRenderedLineAndEOFVerified": true
+        },
+        {
+          "path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/rates.csv",
+          "callSeq": 3890,
+          "resultSeq": 3892,
+          "offset": 1,
+          "totalLines": 5,
+          "rawLines": [
+            {
+              "number": 1,
+              "text": "currency,minor_units,usd_numerator,usd_denominator"
+            },
+            {
+              "number": 2,
+              "text": "USD,2,1,1"
+            },
+            {
+              "number": 3,
+              "text": "EUR,2,11,10"
+            },
+            {
+              "number": 4,
+              "text": "JPY,0,1,150"
+            },
+            {
+              "number": 5,
+              "text": "CNY,2,1,7"
+            }
+          ],
+          "bytes": 95,
+          "sha256": "caf38d482d8ff52903721a04744d038337e11513d90bbfa5c9a2afdd90c934af",
+          "exactPreregisteredBytesReconstructed": true,
+          "everyRenderedLineAndEOFVerified": true
+        }
+      ],
+      "exactRowMath": [
+        {
+          "id": "I001",
+          "currency": "USD",
+          "exactCentsNumerator": 10000,
+          "exactCentsDenominator": 1,
+          "roundedCents": 10000
+        },
+        {
+          "id": "I002",
+          "currency": "EUR",
+          "exactCentsNumerator": 17655,
+          "exactCentsDenominator": 2,
+          "roundedCents": 8828
+        },
+        {
+          "id": "I003",
+          "status": "pending_count_only"
+        },
+        {
+          "id": "I004",
+          "currency": "JPY",
+          "exactCentsNumerator": 8000,
+          "exactCentsDenominator": 1,
+          "roundedCents": 8000
+        },
+        {
+          "id": "I005",
+          "currency": "EUR",
+          "exactCentsNumerator": 11,
+          "exactCentsDenominator": 2,
+          "roundedCents": 6
+        },
+        {
+          "id": "I006",
+          "currency": "USD",
+          "exactCentsNumerator": -250,
+          "exactCentsDenominator": 1,
+          "roundedCents": -250
+        },
+        {
+          "id": "I007",
+          "status": "rejected",
+          "reason": "missing_rate"
+        },
+        {
+          "id": "I008",
+          "status": "rejected",
+          "reason": "literal_decimal_precision_exceeded"
+        },
+        {
+          "id": "I009",
+          "currency": "CNY",
+          "exactCentsNumerator": 100,
+          "exactCentsDenominator": 7,
+          "roundedCents": 14
+        }
+      ],
+      "expectedAnswer": {
+        "approved_invoice_count": 6,
+        "pending_invoice_count": 1,
+        "rejected_row_ids": [
+          "I007",
+          "I008"
+        ],
+        "usd_total_cents": 26598,
+        "usd_cents_by_currency": {
+          "USD": 9750,
+          "EUR": 8834,
+          "JPY": 8000,
+          "CNY": 14
+        }
+      },
+      "existingOracle": {
+        "receipt": {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/exact-oracle-final-answer.json",
+          "bytes": 1594,
+          "sha256": "22e9bf2625cda632837f6751d96952bf824ffe52e4692bcce5f1605f2ba92473"
+        },
+        "historicalEnglishTaskSha256": "1fc8a1860a0097714708006d9f13a23b16b8b256a7f55c0c74d877f9166e5986",
+        "v2OrCorrectionChinesePromptBoundSeparately": true,
+        "scope": "last answer and CSV math only"
+      },
+      "modelRoute": {
+        "initialHeaderSeq": 11,
+        "config": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max",
+          "maxTokens": 256000
+        },
+        "adapterDefaults": {
+          "maxTokens": true
+        },
+        "headerSeqsWithinTargetTurn": [],
+        "assistantModelSources": [
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          }
+        ],
+        "originalCollectorAllLoggedRequestRoutesMatchExpected": false,
+        "effectiveMaxAtRequestBuildSupportedByGapFreeHeaderFold": true,
+        "headerSourceProof": [
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/agent-loop/src/agent.ts",
+            "bytes": 34338,
+            "sha256": "dd17608807441467e8188dfcc6a856ff0ccbf4df5f53337373354477fa501ba2",
+            "relevantLines": {
+              "811": "    const persistedHeader = session.requestHeader()",
+              "823": "        ? requestProposal(persistedHeader!)",
+              "850": "    const header = canonicalHeader({",
+              "857": "    if (!this.requestHeaderLogged) {",
+              "861": "      this.session.append('request/header', { header, reason: 'change' })",
+              "879": "      ...header.config,"
+            }
+          },
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/session/src/index.ts",
+            "bytes": 45735,
+            "sha256": "0274e86ea1f30ce4e8e9fe959f870b66b5cf099954088c6b3d5390779ce5eefd",
+            "relevantLines": {
+              "453": "  /**",
+              "461": "  requestHeader(): EpochHeader | undefined {",
+              "467": "      this.headerFold = deepFreeze(foldRequestHeader(this.log.slice(this.headerFoldSeq), this.headerFold))"
+            }
+          },
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/session/src/request-header.ts",
+            "bytes": 2899,
+            "sha256": "2003c7c30ee8a660686c6deb01a844d95416ecad182acaf3beba6360fec1e9b8",
+            "relevantLines": {
+              "44": "export function headerEquals(a: EpochHeader, b: EpochHeader): boolean {",
+              "46": "    !callConfigEquals(a.config, b.config)",
+              "47": "    || a.adapterDefaults?.reasoningEffort !== b.adapterDefaults?.reasoningEffort"
+            }
+          },
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/llm/llm/src/call-config.ts",
+            "bytes": 2932,
+            "sha256": "8c3463f1778a3590d86fa02f757c36bba41ecc6bc108a3018969b1b368d00a8b",
+            "relevantLines": {
+              "49": "export function callConfigEquals(a: LlmCallConfig, b: LlmCallConfig): boolean {",
+              "53": "    || a.reasoningEffort !== b.reasoningEffort"
+            }
+          }
+        ],
+        "wirePayloadIndependentlyObserved": false,
+        "providerHonoringMaxIndependentlyObserved": false,
+        "correctionEmptyHeaderListIsNotRouteMismatch": true
+      },
+      "coldPersistence": {
+        "receipt": {
+          "path": "/private/tmp/ark316-ui-cold-current316-correction-v2/cold-replay-receipt.json",
+          "bytes": 14642,
+          "sha256": "91dc0b6398321099f394475d29cacfd628dfb24c395798f5fdf4efa31dfa2160"
+        },
+        "recordedPassed": true,
+        "loadedFile": {
+          "path": "/private/tmp/ark316-ui-cold-current316-correction-v2/cold-loaded-session.json",
+          "bytes": 1582523,
+          "sha256": "f474a9f2810610c8e1c3dfccea006e9afb15d1d33ae62310f7ab11896c0cc266"
+        },
+        "allStoredEventsExactlyEqualCapture": true,
+        "compressedCopy": {
+          "path": "/private/tmp/ark316-ui-cold-current316-correction-v2/cold-working-sessions/--Users-hui-ark-test-invoice-reconciliation-current316-20261009--/9903975d-1893-4d16-bfcf-5b0f62a1b8ba/session.jsonl.zstd",
+          "bytes": 75680,
+          "sha256": "225db876196f5a2245e4a4733e732ae5ab96e4081d6835b9bfef609d52c8933d"
+        },
+        "rawFinalBytesEqualCapture": true,
+        "actualPromptBytesEqualCapture": true,
+        "profileBinding": {
+          "sourceCommit": "2104fb2dfd6700dc5cd78ca89e5110ef3558a9e9",
+          "home": "/Users/hui/ark-test/candidate-home-current-source-20261009-v316",
+          "version": "3.1.6",
+          "build": "2026100901",
+          "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.f3861f8811f104f0",
+          "packReceiptSha256": "f566063096413d9785192d048448de4f15082fd09f388f273282a0680e25205c",
+          "profileSha256": "525559a9ca4e81cc1b2b6b06c83d1903c1e22f657baff099a04bb67294503182",
+          "preregistrationSha256": "fa5f937d565f83a7310f1324474b6788b0fb4a5720735106ef252ed5f77f49cd"
+        },
+        "rootActualExecutions": [
+          {
+            "kind": "complete history collection",
+            "actualExitCode": 0,
+            "receiptPath": "/private/tmp/ark316-ui-history-capture-current316-correction-first/capture-report.json",
+            "receiptSha256": "b11f76debf76603fb02fbf0bc0c8f539e6b6fbf4fb7dd1920762c1ca03d3ecb2",
+            "receiptHashIndependentlyChecked": true,
+            "actualExitOwner": "root terminal/tool observation ledger, not receipt verdict inference"
+          },
+          {
+            "kind": "independent exact Fraction oracle",
+            "actualExitCode": 0,
+            "receiptPath": "/private/tmp/ark316-ui-history-capture-current316-correction-first/exact-oracle-final-answer.json",
+            "receiptSha256": "22e9bf2625cda632837f6751d96952bf824ffe52e4692bcce5f1605f2ba92473",
+            "receiptHashIndependentlyChecked": true,
+            "actualExitOwner": "root terminal/tool observation ledger, not receipt verdict inference"
+          },
+          {
+            "kind": "signed app public persistence cold replay",
+            "actualExitCode": 0,
+            "receiptPath": "/private/tmp/ark316-ui-cold-current316-correction-v2/cold-replay-receipt.json",
+            "receiptSha256": "91dc0b6398321099f394475d29cacfd628dfb24c395798f5fdf4efa31dfa2160",
+            "receiptHashIndependentlyChecked": true,
+            "actualExitOwner": "root terminal/tool observation ledger, not receipt verdict inference"
+          }
+        ],
+        "liveSourceHomeNotReadByAudit": true
+      },
+      "freshness": {
+        "coldMeta": {
+          "version": 0,
+          "id": "9903975d-1893-4d16-bfcf-5b0f62a1b8ba",
+          "createdAt": 1791499155782,
+          "cwd": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009",
+          "delegationDepth": 0,
+          "agentPreset": "standard"
+        },
+        "hasParentOriginSeedMeta": false,
+        "seedCompactionForkEvents": [],
+        "beforePromptDialogueEvents": [
+          {
+            "seq": 7,
+            "type": "user/message"
+          },
+          {
+            "seq": 8,
+            "type": "user/message"
+          },
+          {
+            "seq": 9,
+            "type": "user/message"
+          },
+          {
+            "seq": 242,
+            "type": "assistant/message"
+          },
+          {
+            "seq": 243,
+            "type": "tool/call"
+          },
+          {
+            "seq": 244,
+            "type": "tool/result"
+          },
+          {
+            "seq": 245,
+            "type": "tool/call"
+          },
+          {
+            "seq": 246,
+            "type": "tool/result"
+          },
+          {
+            "seq": 396,
+            "type": "assistant/message"
+          },
+          {
+            "seq": 397,
+            "type": "tool/call"
+          },
+          {
+            "seq": 398,
+            "type": "tool/call"
+          },
+          {
+            "seq": 399,
+            "type": "tool/call"
+          },
+          {
+            "seq": 400,
+            "type": "tool/call"
+          },
+          {
+            "seq": 401,
+            "type": "tool/result"
+          },
+          {
+            "seq": 402,
+            "type": "tool/result"
+          },
+          {
+            "seq": 403,
+            "type": "tool/result"
+          },
+          {
+            "seq": 404,
+            "type": "tool/result"
+          },
+          {
+            "seq": 1849,
+            "type": "assistant/message"
+          },
+          {
+            "seq": 1850,
+            "type": "tool/call"
+          },
+          {
+            "seq": 1851,
+            "type": "tool/result"
+          },
+          {
+            "seq": 1852,
+            "type": "tool/call"
+          },
+          {
+            "seq": 1853,
+            "type": "tool/result"
+          },
+          {
+            "seq": 2593,
+            "type": "assistant/message"
+          },
+          {
+            "seq": 2594,
+            "type": "tool/call"
+          },
+          {
+            "seq": 2595,
+            "type": "tool/result"
+          },
+          {
+            "seq": 2596,
+            "type": "tool/call"
+          },
+          {
+            "seq": 2597,
+            "type": "tool/result"
+          },
+          {
+            "seq": 3571,
+            "type": "assistant/message"
+          },
+          {
+            "seq": 3572,
+            "type": "tool/call"
+          },
+          {
+            "seq": 3573,
+            "type": "tool/result"
+          },
+          {
+            "seq": 3717,
+            "type": "assistant/message"
+          },
+          {
+            "seq": 3719,
+            "type": "turn/end"
+          }
+        ],
+        "humanMessageSeqs": [
+          7,
+          3724
+        ],
+        "scope": "durable conversation history only; normal runtime-policy and skill-catalog context still present"
+      },
+      "knowledge": {
+        "sessionEventSeqs": [],
+        "projectJournalSnapshot": {
+          "path": "/private/tmp/ark316-ui-cold-current316-correction-v2/project-governance-journal-snapshot.jsonl",
+          "bytes": 510,
+          "sha256": "99c45a82a368d744cb4cb0653cdb74268ab7dfaa7e1371cf6d8561ff5273cd66"
+        },
+        "projectJournalEvents": [
+          {
+            "schemaVersion": 1,
+            "type": "knowledge/injected",
+            "id": "knowledge-event-78b3211e-af89-4453-b443-e6547b5d347c",
+            "seq": 0,
+            "timestamp": "2026-10-08T22:38:41.430Z",
+            "knowledgeId": "page:index.md",
+            "scope": {
+              "projectId": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009",
+              "visibility": "project"
+            },
+            "previousEventHash": null,
+            "payload": {
+              "path": "index.md",
+              "contentHash": "7535bd097b7fbdbd1891931f746a4ded8d66f64624d1fa23d5ac48886a44311c"
+            },
+            "eventHash": "9e0d004959124a3e15cf2613f755d3671a41aae17e5c89ba20ad0b80409ce9e2"
+          }
+        ],
+        "journalBeforePromptMs": 919710,
+        "journalEquivalentToModelSessionInjection": false,
+        "actualJournalRpcCallerIndependentlyObserved": false,
+        "verifiedRepairReuse": "UNPROVEN"
+      },
+      "fixedCut": {
+        "sessionAfter": {
+          "sessionId": "9903975d-1893-4d16-bfcf-5b0f62a1b8ba",
+          "cwd": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009",
+          "running": false,
+          "blank": false,
+          "agentPreset": "standard"
+        },
+        "freshTail": {
+          "sourceRevision": "live-f118f45b-df3f-4be1-8037-18f556a67328:4469",
+          "asOfThroughSeq": 4469,
+          "sameThrough": true
+        },
+        "queueProjection": {
+          "status": "FOLDED_DURABLE_SPLICES_AT_FIXED_CUT",
+          "counts": {
+            "next-turn": 0,
+            "next-step": 0
+          },
+          "messageIds": {
+            "next-turn": [],
+            "next-step": []
+          },
+          "spliceEventSeqs": [
+            3,
+            5,
+            3720,
+            3722
+          ],
+          "isEmptyAtFixedCut": true,
+          "liveOutstandingJobsAndApprovals": "UNKNOWN_NOT_EXPOSED_BY_THESE_READS"
+        },
+        "atomic": false,
+        "globalJobsApprovals": "UNKNOWN"
+      },
+      "viewportIndependentlyObserved": false
+    },
+    {
+      "name": "fresh-original-first",
+      "sessionId": "f0010052-a1f1-47dc-8af8-1abbae40c593",
+      "targetTurn": 1,
+      "captureDirectory": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first",
+      "coldDirectory": "/private/tmp/ark316-ui-cold-current316-fresh-original-first",
+      "captureReport": {
+        "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/capture-report.json",
+        "bytes": 6873,
+        "sha256": "9c846c96f6987475a3447e1ea434af0281f0dae5d5f578add952fcae92dbb193"
+      },
+      "rawEvents": {
+        "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/raw-events.json",
+        "bytes": 825058,
+        "sha256": "da8c68bc82282f7f252e641525dcbddf3980a2282203b31d884dbf460f0d3b38"
+      },
+      "rawPages": [
+        {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/raw-page-000.json",
+          "bytes": 819051,
+          "sha256": "b2ece0edd41e07e03bdd7d7c7c7591f3042566ab62ef4b6a1a980955be8955ae"
+        },
+        {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/raw-page-001.json",
+          "bytes": 137067,
+          "sha256": "886e5b9694fd3479a980c702d710cbdff23d44cb60da41ef19268f84bfe7a924"
+        }
+      ],
+      "sourceRevision": "live-50d509ca-d899-4943-b525-20c52bae7d0a:2185",
+      "seqRange": [
+        0,
+        2185
+      ],
+      "gapFreeAndPagesEqualRaw": true,
+      "prompt": {
+        "sourceFile": {
+          "path": "/Users/hui/ark-test/evidence/window-test-20261009-task-v2.zh.txt",
+          "bytes": 1240,
+          "sha256": "0d6e0e2fece23b47e1f7281748cd8043fa04c202e862ec441a34117edf763f20"
+        },
+        "eventSeq": 7,
+        "queuedSeq": 3,
+        "source": {
+          "kind": "user",
+          "invocationId": "ark-native:c556832a6c6fafff26ce5823a6ba12445c877bd03321c1bfd21ed8e08fdf141d",
+          "promptDigest": "v1:2514d32797cc83eb3a54f6bedd86a125c7be3bb3ab45ffb7006a529204729ac5",
+          "clientTimeZone": "Asia/Shanghai"
+        },
+        "admission": "file_without_single_terminal_LF",
+        "admittedSha256": "a774ab74be7afb692b4beeafb48ce155889d5b67c50c5d6644dd36bf8a316145",
+        "admittedBytes": 1239,
+        "actualText": "请使用实际文件工具读取当前项目的 invoices.csv 和 rates.csv，完成发票核对，不要修改任何文件。\n\n只转换 approved 行。汇率必须严格按 usd_numerator/usd_denominator 美元/货币单位计算。若币种没有汇率，或金额的小数位数超过该币种的 minor_units，就拒绝该 approved 行，不参与转换或求和。负数是有效退款。pending 行只计数，不验证也不转换。\n\n每个有效 approved 行分别用精确数值转换为美元分，再舍入到最近的整数，恰好一半时向远离零的方向舍入。最后只汇总这些逐行舍入后的有效行。\n\n整个回答只能是一个纯 JSON 对象，不能有 Markdown 代码围栏、前言或说明，且只能包含这五个键：\napproved_invoice_count：整数，只计未被拒绝且参与转换和汇总的有效 approved 行，不包括被拒绝行。\npending_invoice_count：整数，pending 行数。\nrejected_row_ids：被拒绝的 approved 行 ID 数组，按字典序排列。\nusd_total_cents：整数，所有有效行分别舍入后美元分的总和。\nusd_cents_by_currency：对象，只列出具有有效 approved 行的币种，值为该币种有效行分别舍入后的美元分之和。",
+        "queuedAndConsumedExactlyEqual": true,
+        "windowSubmissionOwner": "root human confirmation plus durable ark-native provenance; viewport not independently inspected by this audit"
+      },
+      "turnTime": {
+        "startSeq": 4,
+        "endSeq": 2185,
+        "startEpochMs": 1791500257921,
+        "endEpochMs": 1791500269351,
+        "startUTC": "2026-10-08T22:57:37.921+00:00",
+        "endUTC": "2026-10-08T22:57:49.351+00:00",
+        "startAsiaShanghai": "2026-10-09T06:57:37.921+08:00",
+        "endAsiaShanghai": "2026-10-09T06:57:49.351+08:00",
+        "durationSeconds": 11.43,
+        "scope": "turn/start to turn/end; excludes human/UI waits and capture overhead; descriptive only"
+      },
+      "assistant": {
+        "messages": [
+          {
+            "seq": 134,
+            "text": "",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "utf8Bytes": 0,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 271,
+            "text": "",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "utf8Bytes": 0,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 1567,
+            "text": "",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "utf8Bytes": 0,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 2017,
+            "text": "",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "utf8Bytes": 0,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          },
+          {
+            "seq": 2183,
+            "text": "{\"approved_invoice_count\": 6, \"pending_invoice_count\": 1, \"rejected_row_ids\": [\"I007\", \"I008\"], \"usd_total_cents\": 26598, \"usd_cents_by_currency\": {\"CNY\": 14, \"EUR\": 8834, \"JPY\": 8000, \"USD\": 9750}}",
+            "sha256": "57982625615f0cdddec354b093e6b35cda45ae2b7d12762dc9d3e9f701c07d23",
+            "utf8Bytes": 198,
+            "modelSource": {
+              "kind": "model",
+              "provider": "deepseek-official",
+              "model": "deepseek-flash"
+            }
+          }
+        ],
+        "messageCount": 5,
+        "textMessageCount": 1,
+        "extraTextMessageSeqs": [],
+        "allStreamingChunksCoveredByDurableMessages": true,
+        "reasoningExcluded": true,
+        "wholeTextWithoutTrimOrFences": "{\"approved_invoice_count\": 6, \"pending_invoice_count\": 1, \"rejected_row_ids\": [\"I007\", \"I008\"], \"usd_total_cents\": 26598, \"usd_cents_by_currency\": {\"CNY\": 14, \"EUR\": 8834, \"JPY\": 8000, \"USD\": 9750}}",
+        "wholeTextSha256": "57982625615f0cdddec354b093e6b35cda45ae2b7d12762dc9d3e9f701c07d23",
+        "wholeOutputContract": "PASS_FORMAT",
+        "finalAnswer": {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/final-answer.txt",
+          "bytes": 198,
+          "sha256": "57982625615f0cdddec354b093e6b35cda45ae2b7d12762dc9d3e9f701c07d23"
+        },
+        "finalAnswerExactRowMathCorrect": true
+      },
+      "toolCalls": [
+        {
+          "callSeq": 135,
+          "resultSeq": 136,
+          "tool": "glob",
+          "arguments": {
+            "pattern": "**/*.csv"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "invoices.csv\nrates.csv",
+          "resultTextSha256": "a1e5078c77b2adff9ba30e733227bffe7b489f7762466522a89ed609662128e0"
+        },
+        {
+          "callSeq": 137,
+          "resultSeq": 138,
+          "tool": "bash",
+          "arguments": {
+            "command": "pwd && ls -la",
+            "description": "List working directory contents"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009\ntotal 32\ndrwx------   9 hui  staff   288 Oct  9 06:38 .\ndrwxr-xr-x@ 58 hui  staff  1856 Oct  9 06:34 ..\ndrwx------   3 hui  staff    96 Oct  9 06:38 .llm-wiki\n-rw-------   1 hui  staff   250 Oct  9 06:04 invoices.csv\n-rw-------   1 hui  staff    81 Oct  9 06:04 purpose.md\n-rw-------   1 hui  staff    95 Oct  9 06:04 rates.csv\ndrwx------   3 hui  staff    96 Oct  9 06:04 raw\n-rw-------   1 hui  staff   233 Oct  9 06:04 schema.md\ndrwx------   7 hui  staff   224 Oct  9 06:04 wiki\n",
+          "resultTextSha256": "9661aea702d6d03f04f37bc1e0453974e88f1c44b29e2f6ce8fb2519511d7ef1"
+        },
+        {
+          "callSeq": 272,
+          "resultSeq": 276,
+          "tool": "read",
+          "arguments": {
+            "file_path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/invoices.csv"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "<path>/Users/hui/ark-test/invoice-reconciliation-current316-20261009/invoices.csv</path>\n<type>file</type>\n<content>\n1: invoice_id,status,currency,amount\n2: I001,approved,USD,100.00\n3: I002,approved,EUR,80.25\n4: I003,pending,USD,999.99\n5: I004,approved,JPY,12000\n6: I005,approved,EUR,0.05\n7: I006,approved,USD,-2.50\n8: I007,approved,XYZ,10.00\n9: I008,approved,USD,12.345\n10: I009,approved,CNY,1.00\n\n(End of file - total 10 lines)\n</content>",
+          "resultTextSha256": "4bf791daea7418e90d67464c7b4fc351e5ca0119c5d26f379b963787fef1f98e"
+        },
+        {
+          "callSeq": 273,
+          "resultSeq": 277,
+          "tool": "read",
+          "arguments": {
+            "file_path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/rates.csv"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "<path>/Users/hui/ark-test/invoice-reconciliation-current316-20261009/rates.csv</path>\n<type>file</type>\n<content>\n1: currency,minor_units,usd_numerator,usd_denominator\n2: USD,2,1,1\n3: EUR,2,11,10\n4: JPY,0,1,150\n5: CNY,2,1,7\n\n(End of file - total 5 lines)\n</content>",
+          "resultTextSha256": "eb58489a60815dc1368d6a53e6878bfcc8ee48e1f75555ed52bacc26830b2a37"
+        },
+        {
+          "callSeq": 274,
+          "resultSeq": 278,
+          "tool": "read",
+          "arguments": {
+            "file_path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/schema.md"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "<path>/Users/hui/ark-test/invoice-reconciliation-current316-20261009/schema.md</path>\n<type>file</type>\n<content>\n1: # Wiki Schema\n2: \n3: ## Page Types\n4: \n5: | Type | Directory | Purpose |\n6: |------|-----------|---------|\n7: | entity | wiki/entities/ | Named things |\n8: | concept | wiki/concepts/ | Ideas and techniques |\n9: | source | wiki/sources/ | Source materials |\n\n(End of file - total 9 lines)\n</content>",
+          "resultTextSha256": "5d2e8f4497998719c537d157635cbcbb5cca34571b12f907a74ffe6c4f79e058"
+        },
+        {
+          "callSeq": 275,
+          "resultSeq": 279,
+          "tool": "read",
+          "arguments": {
+            "file_path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/purpose.md"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "<path>/Users/hui/ark-test/invoice-reconciliation-current316-20261009/purpose.md</path>\n<type>file</type>\n<content>\n1: # 项目目的 — invoice-reconciliation-20261008\n2: \n3: ## 核心问题\n4: \n5: > 待补充\n\n(End of file - total 5 lines)\n</content>",
+          "resultTextSha256": "5abbe192e799373b7a82158e483a3197512ac0f87c0727bf27264ff8bfa607a7"
+        },
+        {
+          "callSeq": 1568,
+          "resultSeq": 1569,
+          "tool": "bash",
+          "arguments": {
+            "command": "python3 - <<'EOF'\nimport csv\nfrom fractions import Fraction\n\ndef parse_amount(s):\n    neg = s.startswith('-')\n    s2 = s.lstrip('+-')\n    if '.' in s2:\n        w, f = s2.split('.')\n        dec = len(f)\n    else:\n        w, f, dec = s2, '', 0\n    val = Fraction(int(w + f) * (-1 if neg else 1), 10**dec)\n    return val, dec\n\nrates = {}\nwith open('rates.csv') as fh:\n    for r in csv.DictReader(fh):\n        rates[r['currency']] = (int(r['minor_units']), int(r['usd_numerator']), int(r['usd_denominator']))\n\napproved_total = 0\npending = 0\nrejected = []\nby_cur = {}\nvalid = 0\n\ndef round_half_away(fr):\n    # fr: Fraction of cents\n    sign = 1 if fr >= 0 else -1\n    a = abs(fr)\n    q, rem = divmod(a.numerator, a.denominator)\n    if 2*rem >= a.denominator:\n        q += 1\n    return sign*q\n\nwith open('invoices.csv') as fh:\n    for row in csv.DictReader(fh):\n        st = row['status']; cur = row['currency']\n        if st == 'pending':\n            pending += 1\n            continue\n        if st != 'approved':\n            continue\n        amt, dec = parse_amount(row['amount'])\n        if cur not in rates:\n            rejected.append(row['invoice_id']); continue\n        mu, num, den = rates[cur]\n        if dec > mu:\n            rejected.append(row['invoice_id']); continue\n        usd_cents = amt * Fraction(num, den) * 100\n        r = round_half_away(usd_cents)\n        valid += 1\n        approved_total += r\n        by_cur[cur] = by_cur.get(cur, 0) + r\n\nprint('approved_invoice_count:', valid)\nprint('pending:', pending)\nprint('rejected:', sorted(rejected))\nprint('total:', approved_total)\nprint('by_cur:', {k: by_cur[k] for k in sorted(by_cur)})\nEOF",
+            "description": "Compute reconciliation with exact fractions"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [
+            1
+          ],
+          "businessFailure": true,
+          "resultText": "[stderr]\nbash: cannot create temp file for here document: Operation not permitted\n[sandbox: file access denied under read-only mode]\n[sandbox: escalation available — retry this exact command once with sandbox_permissions (the narrowest wider mode that suffices) + justification; the approval prompt asks the user]\n[exit code: 1]",
+          "resultTextSha256": "49ef9541e9fe4e4b6c2d15dfd6315d86969a4f48585c08a5f3346fbfb019ca6e"
+        },
+        {
+          "callSeq": 2018,
+          "resultSeq": 2019,
+          "tool": "bash",
+          "arguments": {
+            "command": "python3 -c \"\nimport csv\nfrom fractions import Fraction\ndef parse_amount(s):\n    neg = s.startswith('-'); s2 = s.lstrip('+-')\n    if '.' in s2: w,f = s2.split('.'); dec = len(f)\n    else: w,f,dec = s2,'',0\n    return Fraction(int(w+f)*(-1 if neg else 1), 10**dec), dec\nrates={}\nfor r in csv.DictReader(open('rates.csv')):\n    rates[r['currency']]=(int(r['minor_units']),int(r['usd_numerator']),int(r['usd_denominator']))\ndef rha(fr):\n    s = 1 if fr>=0 else -1; a=abs(fr); q,rem = divmod(a.numerator,a.denominator)\n    return s*(q+1 if 2*rem>=a.denominator else q)\ntot=0; pend=0; rej=[]; byc={}; valid=0\nfor row in csv.DictReader(open('invoices.csv')):\n    if row['status']=='pending': pend+=1; continue\n    if row['status']!='approved': continue\n    amt,dec = parse_amount(row['amount']); cur=row['currency']\n    if cur not in rates or dec>rates[cur][0]: rej.append(row['invoice_id']); continue\n    mu,num,den = rates[cur]\n    r = rha(amt*Fraction(num,den)*100)\n    valid+=1; tot+=r; byc[cur]=byc.get(cur,0)+r\nprint(valid, pend, sorted(rej), tot, dict(sorted(byc.items())))\n\"",
+            "description": "Verify computation with exact rational arithmetic"
+          },
+          "transportIsError": false,
+          "renderedExitCodes": [],
+          "businessFailure": false,
+          "resultText": "6 1 ['I007', 'I008'] 26598 {'CNY': 14, 'EUR': 8834, 'JPY': 8000, 'USD': 9750}\n",
+          "resultTextSha256": "ffd3f79a441bf39f9fb548b72d375f141e0680b2c44cc4275a26c746ab6961b7"
+        }
+      ],
+      "toolCallCount": 8,
+      "businessFailureCount": 1,
+      "transportIsErrorCount": 0,
+      "businessFailureDefinition": "isError OR nonzero rendered bash [exit code:N]; complete raw result text retained",
+      "csvReads": [
+        {
+          "path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/invoices.csv",
+          "callSeq": 272,
+          "resultSeq": 276,
+          "offset": 1,
+          "totalLines": 10,
+          "rawLines": [
+            {
+              "number": 1,
+              "text": "invoice_id,status,currency,amount"
+            },
+            {
+              "number": 2,
+              "text": "I001,approved,USD,100.00"
+            },
+            {
+              "number": 3,
+              "text": "I002,approved,EUR,80.25"
+            },
+            {
+              "number": 4,
+              "text": "I003,pending,USD,999.99"
+            },
+            {
+              "number": 5,
+              "text": "I004,approved,JPY,12000"
+            },
+            {
+              "number": 6,
+              "text": "I005,approved,EUR,0.05"
+            },
+            {
+              "number": 7,
+              "text": "I006,approved,USD,-2.50"
+            },
+            {
+              "number": 8,
+              "text": "I007,approved,XYZ,10.00"
+            },
+            {
+              "number": 9,
+              "text": "I008,approved,USD,12.345"
+            },
+            {
+              "number": 10,
+              "text": "I009,approved,CNY,1.00"
+            }
+          ],
+          "bytes": 250,
+          "sha256": "8afd7cca50954df366d1bc12ab4e37779cf744f767d6961a6780a85ff9ec957d",
+          "exactPreregisteredBytesReconstructed": true,
+          "everyRenderedLineAndEOFVerified": true
+        },
+        {
+          "path": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009/rates.csv",
+          "callSeq": 273,
+          "resultSeq": 277,
+          "offset": 1,
+          "totalLines": 5,
+          "rawLines": [
+            {
+              "number": 1,
+              "text": "currency,minor_units,usd_numerator,usd_denominator"
+            },
+            {
+              "number": 2,
+              "text": "USD,2,1,1"
+            },
+            {
+              "number": 3,
+              "text": "EUR,2,11,10"
+            },
+            {
+              "number": 4,
+              "text": "JPY,0,1,150"
+            },
+            {
+              "number": 5,
+              "text": "CNY,2,1,7"
+            }
+          ],
+          "bytes": 95,
+          "sha256": "caf38d482d8ff52903721a04744d038337e11513d90bbfa5c9a2afdd90c934af",
+          "exactPreregisteredBytesReconstructed": true,
+          "everyRenderedLineAndEOFVerified": true
+        }
+      ],
+      "exactRowMath": [
+        {
+          "id": "I001",
+          "currency": "USD",
+          "exactCentsNumerator": 10000,
+          "exactCentsDenominator": 1,
+          "roundedCents": 10000
+        },
+        {
+          "id": "I002",
+          "currency": "EUR",
+          "exactCentsNumerator": 17655,
+          "exactCentsDenominator": 2,
+          "roundedCents": 8828
+        },
+        {
+          "id": "I003",
+          "status": "pending_count_only"
+        },
+        {
+          "id": "I004",
+          "currency": "JPY",
+          "exactCentsNumerator": 8000,
+          "exactCentsDenominator": 1,
+          "roundedCents": 8000
+        },
+        {
+          "id": "I005",
+          "currency": "EUR",
+          "exactCentsNumerator": 11,
+          "exactCentsDenominator": 2,
+          "roundedCents": 6
+        },
+        {
+          "id": "I006",
+          "currency": "USD",
+          "exactCentsNumerator": -250,
+          "exactCentsDenominator": 1,
+          "roundedCents": -250
+        },
+        {
+          "id": "I007",
+          "status": "rejected",
+          "reason": "missing_rate"
+        },
+        {
+          "id": "I008",
+          "status": "rejected",
+          "reason": "literal_decimal_precision_exceeded"
+        },
+        {
+          "id": "I009",
+          "currency": "CNY",
+          "exactCentsNumerator": 100,
+          "exactCentsDenominator": 7,
+          "roundedCents": 14
+        }
+      ],
+      "expectedAnswer": {
+        "approved_invoice_count": 6,
+        "pending_invoice_count": 1,
+        "rejected_row_ids": [
+          "I007",
+          "I008"
+        ],
+        "usd_total_cents": 26598,
+        "usd_cents_by_currency": {
+          "USD": 9750,
+          "EUR": 8834,
+          "JPY": 8000,
+          "CNY": 14
+        }
+      },
+      "existingOracle": {
+        "receipt": {
+          "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/exact-oracle-final-answer.json",
+          "bytes": 1594,
+          "sha256": "cce7a0818ddbb158cb3d935c60b6813038bebd75e1050da9858af15bd09342ae"
+        },
+        "historicalEnglishTaskSha256": "1fc8a1860a0097714708006d9f13a23b16b8b256a7f55c0c74d877f9166e5986",
+        "v2OrCorrectionChinesePromptBoundSeparately": true,
+        "scope": "last answer and CSV math only"
+      },
+      "modelRoute": {
+        "initialHeaderSeq": 11,
+        "config": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max",
+          "maxTokens": 256000
+        },
+        "adapterDefaults": {
+          "maxTokens": true
+        },
+        "headerSeqsWithinTargetTurn": [
+          11
+        ],
+        "assistantModelSources": [
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          }
+        ],
+        "originalCollectorAllLoggedRequestRoutesMatchExpected": true,
+        "effectiveMaxAtRequestBuildSupportedByGapFreeHeaderFold": true,
+        "headerSourceProof": [
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/agent-loop/src/agent.ts",
+            "bytes": 34338,
+            "sha256": "dd17608807441467e8188dfcc6a856ff0ccbf4df5f53337373354477fa501ba2",
+            "relevantLines": {
+              "811": "    const persistedHeader = session.requestHeader()",
+              "823": "        ? requestProposal(persistedHeader!)",
+              "850": "    const header = canonicalHeader({",
+              "857": "    if (!this.requestHeaderLogged) {",
+              "861": "      this.session.append('request/header', { header, reason: 'change' })",
+              "879": "      ...header.config,"
+            }
+          },
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/session/src/index.ts",
+            "bytes": 45735,
+            "sha256": "0274e86ea1f30ce4e8e9fe959f870b66b5cf099954088c6b3d5390779ce5eefd",
+            "relevantLines": {
+              "453": "  /**",
+              "461": "  requestHeader(): EpochHeader | undefined {",
+              "467": "      this.headerFold = deepFreeze(foldRequestHeader(this.log.slice(this.headerFoldSeq), this.headerFold))"
+            }
+          },
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/session/src/request-header.ts",
+            "bytes": 2899,
+            "sha256": "2003c7c30ee8a660686c6deb01a844d95416ecad182acaf3beba6360fec1e9b8",
+            "relevantLines": {
+              "44": "export function headerEquals(a: EpochHeader, b: EpochHeader): boolean {",
+              "46": "    !callConfigEquals(a.config, b.config)",
+              "47": "    || a.adapterDefaults?.reasoningEffort !== b.adapterDefaults?.reasoningEffort"
+            }
+          },
+          {
+            "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/llm/llm/src/call-config.ts",
+            "bytes": 2932,
+            "sha256": "8c3463f1778a3590d86fa02f757c36bba41ecc6bc108a3018969b1b368d00a8b",
+            "relevantLines": {
+              "49": "export function callConfigEquals(a: LlmCallConfig, b: LlmCallConfig): boolean {",
+              "53": "    || a.reasoningEffort !== b.reasoningEffort"
+            }
+          }
+        ],
+        "wirePayloadIndependentlyObserved": false,
+        "providerHonoringMaxIndependentlyObserved": false,
+        "correctionEmptyHeaderListIsNotRouteMismatch": false
+      },
+      "coldPersistence": {
+        "receipt": {
+          "path": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/cold-replay-receipt.json",
+          "bytes": 13347,
+          "sha256": "af3d22659a67bede14f37268dc256552d8491aea812215d5585c33027e7d7afa"
+        },
+        "recordedPassed": true,
+        "loadedFile": {
+          "path": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/cold-loaded-session.json",
+          "bytes": 817063,
+          "sha256": "549e84c96e1c57e59fcfc8f3d0a8b62b0aa0c40df41eb6e58a52acae222d8052"
+        },
+        "allStoredEventsExactlyEqualCapture": true,
+        "compressedCopy": {
+          "path": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/cold-working-sessions/--Users-hui-ark-test-invoice-reconciliation-current316-20261009--/f0010052-a1f1-47dc-8af8-1abbae40c593/session.jsonl.zstd",
+          "bytes": 46355,
+          "sha256": "fa9e3b6188ffcdb59dfa903479352a55103ab60e06309b52a66cc905b307119b"
+        },
+        "rawFinalBytesEqualCapture": true,
+        "actualPromptBytesEqualCapture": true,
+        "profileBinding": {
+          "sourceCommit": "2104fb2dfd6700dc5cd78ca89e5110ef3558a9e9",
+          "home": "/Users/hui/ark-test/candidate-home-current-source-20261009-v316",
+          "version": "3.1.6",
+          "build": "2026100901",
+          "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.f3861f8811f104f0",
+          "packReceiptSha256": "f566063096413d9785192d048448de4f15082fd09f388f273282a0680e25205c",
+          "profileSha256": "525559a9ca4e81cc1b2b6b06c83d1903c1e22f657baff099a04bb67294503182",
+          "preregistrationSha256": "fa5f937d565f83a7310f1324474b6788b0fb4a5720735106ef252ed5f77f49cd"
+        },
+        "rootActualExecutions": [
+          {
+            "kind": "complete history collection",
+            "actualExitCode": 0,
+            "receiptPath": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/capture-report.json",
+            "receiptSha256": "9c846c96f6987475a3447e1ea434af0281f0dae5d5f578add952fcae92dbb193",
+            "receiptHashIndependentlyChecked": true,
+            "actualExitOwner": "root terminal/tool observation ledger, not receipt verdict inference"
+          },
+          {
+            "kind": "independent exact Fraction oracle",
+            "actualExitCode": 0,
+            "receiptPath": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/exact-oracle-final-answer.json",
+            "receiptSha256": "cce7a0818ddbb158cb3d935c60b6813038bebd75e1050da9858af15bd09342ae",
+            "receiptHashIndependentlyChecked": true,
+            "actualExitOwner": "root terminal/tool observation ledger, not receipt verdict inference"
+          },
+          {
+            "kind": "signed app public persistence cold replay",
+            "actualExitCode": 0,
+            "receiptPath": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/cold-replay-receipt.json",
+            "receiptSha256": "af3d22659a67bede14f37268dc256552d8491aea812215d5585c33027e7d7afa",
+            "receiptHashIndependentlyChecked": true,
+            "actualExitOwner": "root terminal/tool observation ledger, not receipt verdict inference"
+          }
+        ],
+        "liveSourceHomeNotReadByAudit": true
+      },
+      "freshness": {
+        "coldMeta": {
+          "version": 0,
+          "id": "f0010052-a1f1-47dc-8af8-1abbae40c593",
+          "createdAt": 1791500255821,
+          "cwd": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009",
+          "delegationDepth": 0,
+          "agentPreset": "standard"
+        },
+        "hasParentOriginSeedMeta": false,
+        "seedCompactionForkEvents": [],
+        "beforePromptDialogueEvents": [],
+        "humanMessageSeqs": [
+          7
+        ],
+        "scope": "durable conversation history only; normal runtime-policy and skill-catalog context still present"
+      },
+      "knowledge": {
+        "sessionEventSeqs": [],
+        "projectJournalSnapshot": {
+          "path": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/project-governance-journal-snapshot.jsonl",
+          "bytes": 510,
+          "sha256": "99c45a82a368d744cb4cb0653cdb74268ab7dfaa7e1371cf6d8561ff5273cd66"
+        },
+        "projectJournalEvents": [
+          {
+            "schemaVersion": 1,
+            "type": "knowledge/injected",
+            "id": "knowledge-event-78b3211e-af89-4453-b443-e6547b5d347c",
+            "seq": 0,
+            "timestamp": "2026-10-08T22:38:41.430Z",
+            "knowledgeId": "page:index.md",
+            "scope": {
+              "projectId": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009",
+              "visibility": "project"
+            },
+            "previousEventHash": null,
+            "payload": {
+              "path": "index.md",
+              "contentHash": "7535bd097b7fbdbd1891931f746a4ded8d66f64624d1fa23d5ac48886a44311c"
+            },
+            "eventHash": "9e0d004959124a3e15cf2613f755d3671a41aae17e5c89ba20ad0b80409ce9e2"
+          }
+        ],
+        "journalBeforePromptMs": 1136500,
+        "journalEquivalentToModelSessionInjection": false,
+        "actualJournalRpcCallerIndependentlyObserved": false,
+        "verifiedRepairReuse": "UNPROVEN"
+      },
+      "fixedCut": {
+        "sessionAfter": {
+          "sessionId": "f0010052-a1f1-47dc-8af8-1abbae40c593",
+          "cwd": "/Users/hui/ark-test/invoice-reconciliation-current316-20261009",
+          "running": false,
+          "blank": false,
+          "agentPreset": "standard"
+        },
+        "freshTail": {
+          "sourceRevision": "live-50d509ca-d899-4943-b525-20c52bae7d0a:2185",
+          "asOfThroughSeq": 2185,
+          "sameThrough": true
+        },
+        "queueProjection": {
+          "status": "FOLDED_DURABLE_SPLICES_AT_FIXED_CUT",
+          "counts": {
+            "next-turn": 0,
+            "next-step": 0
+          },
+          "messageIds": {
+            "next-turn": [],
+            "next-step": []
+          },
+          "spliceEventSeqs": [
+            3,
+            5
+          ],
+          "isEmptyAtFixedCut": true,
+          "liveOutstandingJobsAndApprovals": "UNKNOWN_NOT_EXPOSED_BY_THESE_READS"
+        },
+        "atomic": false,
+        "globalJobsApprovals": "UNKNOWN"
+      },
+      "viewportIndependentlyObserved": false
+    }
+  ],
+  "crossRound": {
+    "correctionFirst3720EventsExactlyPreserved": true,
+    "freshSessionHasNoOldConversationOrSeedInDurableHistory": true,
+    "sourceAppProfileRecordedModelConfigurationSame": true,
+    "freshOriginalRetestN": 1,
+    "durationDifferenceCannotBeLabeledCodeOrOverallCapabilityLift": true,
+    "runtimeSpeedImprovement": "UNKNOWN",
+    "overallAbilityLift": "UNKNOWN",
+    "verifiedKnowledgeReuse": "UNPROVEN",
+    "automaticPersistentRepair": "UNPROVEN: heredoc error recurred on fresh original task after initial recovery",
+    "visualViewportAcceptance": "NOT_OBSERVED_BY_THIS_AUDIT"
+  },
+  "inputWorld": {
+    "preregistration": {
+      "path": "/Users/hui/ark-test/evidence/candidate316-window-task-preregistration-20261009.json",
+      "bytes": 2818,
+      "sha256": "fa5f937d565f83a7310f1324474b6788b0fb4a5720735106ef252ed5f77f49cd"
+    },
+    "postInputBinding": {
+      "path": "/private/tmp/ark-stage-current-source-20261009-v316-logs/ui-task-world-post-input-binding.json",
+      "bytes": 3454,
+      "sha256": "d3d4cf986bcbbb98d6d397fe7afd2bdb1b0b29954becc0e320e0c97d24540acb"
+    },
+    "sixOriginalFilesExactRecorded": true,
+    "twoCsvBytesIndependentlyReconstructedFromEveryTurnRawRead": true,
+    "addedFiles": [
+      ".llm-wiki/knowledge-events.jsonl"
+    ],
+    "wholeWorldUnchanged": false,
+    "journalPrecedesFirstPrompt": true,
+    "journalAttribution": "compatible with knowledgeWiki/pageContent and Native preview; actual RPC caller not observed"
+  },
+  "limitations": [
+    "Root actual exit observations are bound separately from receipt passed fields.",
+    "Ordinary assistant text excludes reasoning and de-duplicates streamed chunks to durable owners.",
+    "Cold persistence equality is not learning or live liveness proof.",
+    "Idle/queue/fresh-tail observations are non-atomic; global jobs/approvals UNKNOWN.",
+    "Historical English oracle task hash is not Chinese prompt identity.",
+    "No reliable capability/speed percentage, verified repair reuse, cross-task generalization or promotion eligibility is established."
+  ],
+  "inputFileBindings": [
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate316-window-task-preregistration-20261009.json",
+      "bytes": 2818,
+      "sha256": "fa5f937d565f83a7310f1324474b6788b0fb4a5720735106ef252ed5f77f49cd"
+    },
+    {
+      "path": "/private/tmp/ark-stage-current-source-20261009-v316-logs/ui-task-world-post-input-binding.json",
+      "bytes": 3454,
+      "sha256": "d3d4cf986bcbbb98d6d397fe7afd2bdb1b0b29954becc0e320e0c97d24540acb"
+    },
+    {
+      "path": "/private/tmp/ark-stage-current-source-20261009-v316-logs/three-window-task-independent-executions-root.json",
+      "bytes": 3507,
+      "sha256": "29267e4c822caf606fad451fdde7473fdeb9c750e4154bc012a31c6c5f6cc104"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/agent-loop/src/agent.ts",
+      "bytes": 34338,
+      "sha256": "dd17608807441467e8188dfcc6a856ff0ccbf4df5f53337373354477fa501ba2"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/session/src/index.ts",
+      "bytes": 45735,
+      "sha256": "0274e86ea1f30ce4e8e9fe959f870b66b5cf099954088c6b3d5390779ce5eefd"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/session/src/request-header.ts",
+      "bytes": 2899,
+      "sha256": "2003c7c30ee8a660686c6deb01a844d95416ecad182acaf3beba6360fec1e9b8"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/llm/llm/src/call-config.ts",
+      "bytes": 2932,
+      "sha256": "8c3463f1778a3590d86fa02f757c36bba41ecc6bc108a3018969b1b368d00a8b"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-first/capture-report.json",
+      "bytes": 6888,
+      "sha256": "9f1c17fd281d3859fe55ed9a21f66a8f7dceb1fbe500b093b7e23f20168ea5be"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-first/raw-events.json",
+      "bytes": 1313835,
+      "sha256": "5552c000a515c4ec05a578d61b2a44b075b1c2bc3f51ec0dde5d4231a4fcdce5"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-first/raw-page-000.json",
+      "bytes": 835290,
+      "sha256": "ba4b82aadab00855985cbc24e771b7411afce3b08df7ebf73bd6c464bae8b7fe"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-first/raw-page-001.json",
+      "bytes": 692361,
+      "sha256": "613dcc04ff3dd2137df1b16abf4697a2f96644df15bc7c8cbf853d9e6341e3f7"
+    },
+    {
+      "path": "/private/tmp/ark-stage-current-source-20261009-v316-logs/final-stage-verification.json",
+      "bytes": 11744,
+      "sha256": "51a200ab8c7d311f0a98150d7b1b824051fcf185d2fa9d039cb31413038f6c21"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/window-test-20261009-task-v2.zh.txt",
+      "bytes": 1240,
+      "sha256": "0d6e0e2fece23b47e1f7281748cd8043fa04c202e862ec441a34117edf763f20"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-first/final-answer.txt",
+      "bytes": 181,
+      "sha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-first/exact-oracle-final-answer.json",
+      "bytes": 1594,
+      "sha256": "22e9bf2625cda632837f6751d96952bf824ffe52e4692bcce5f1605f2ba92473"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-first/cold-replay-receipt.json",
+      "bytes": 15344,
+      "sha256": "8f6f4ada2a69513524633a75cd6d57872bd623e654c15e4433b3348480183f61"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-first/cold-loaded-session.json",
+      "bytes": 1304865,
+      "sha256": "05969655c4772557acea8ec6c4a1f2322d4ba12e9e80bcedfca24ccd378398b0"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-first/final-answer.txt",
+      "bytes": 181,
+      "sha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-first/actual-user-prompt.txt",
+      "bytes": 1239,
+      "sha256": "a774ab74be7afb692b4beeafb48ce155889d5b67c50c5d6644dd36bf8a316145"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-first/cold-working-sessions/--Users-hui-ark-test-invoice-reconciliation-current316-20261009--/9903975d-1893-4d16-bfcf-5b0f62a1b8ba/session.jsonl.zstd",
+      "bytes": 63960,
+      "sha256": "255a411ffbbcc52a4855e1ac564ca6935f1b4c1c27cd3f98c1590a1d3fdc31fe"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-first/project-governance-journal-snapshot.jsonl",
+      "bytes": 510,
+      "sha256": "99c45a82a368d744cb4cb0653cdb74268ab7dfaa7e1371cf6d8561ff5273cd66"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/capture-report.json",
+      "bytes": 6855,
+      "sha256": "b11f76debf76603fb02fbf0bc0c8f539e6b6fbf4fb7dd1920762c1ca03d3ecb2"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/raw-events.json",
+      "bytes": 1592678,
+      "sha256": "6899f27d2e30faffac2ecd33afcc1c002394421f772cfae00badccbec41246f2"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/raw-page-000.json",
+      "bytes": 836933,
+      "sha256": "f12ec453be5769f35400975d74f86b02b2242998e1b83691655b4c3db2d1ba14"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/raw-page-001.json",
+      "bytes": 790795,
+      "sha256": "774e735f1415dac09bd36bdefbe58481c342810846570685189f08e457936c88"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/raw-page-002.json",
+      "bytes": 225724,
+      "sha256": "928811af9c878bc192f3455e197f4b0592eb77ca48c1370d7efef17c8f868c5e"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate316-window-correction-v2.zh.txt",
+      "bytes": 656,
+      "sha256": "06cbb976de94025f0945b970b5601b64f7ace55cf328822c8e359905961ad66f"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/final-answer.txt",
+      "bytes": 181,
+      "sha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-correction-first/exact-oracle-final-answer.json",
+      "bytes": 1594,
+      "sha256": "22e9bf2625cda632837f6751d96952bf824ffe52e4692bcce5f1605f2ba92473"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-correction-v2/cold-replay-receipt.json",
+      "bytes": 14642,
+      "sha256": "91dc0b6398321099f394475d29cacfd628dfb24c395798f5fdf4efa31dfa2160"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-correction-v2/cold-loaded-session.json",
+      "bytes": 1582523,
+      "sha256": "f474a9f2810610c8e1c3dfccea006e9afb15d1d33ae62310f7ab11896c0cc266"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-correction-v2/final-answer.txt",
+      "bytes": 181,
+      "sha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-correction-v2/actual-user-prompt.txt",
+      "bytes": 655,
+      "sha256": "ee4d28a593c75a5fae7a2c1f9a8ace794e82b196a309be901465eb81e26d4e44"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-correction-v2/cold-working-sessions/--Users-hui-ark-test-invoice-reconciliation-current316-20261009--/9903975d-1893-4d16-bfcf-5b0f62a1b8ba/session.jsonl.zstd",
+      "bytes": 75680,
+      "sha256": "225db876196f5a2245e4a4733e732ae5ab96e4081d6835b9bfef609d52c8933d"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-correction-v2/project-governance-journal-snapshot.jsonl",
+      "bytes": 510,
+      "sha256": "99c45a82a368d744cb4cb0653cdb74268ab7dfaa7e1371cf6d8561ff5273cd66"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/capture-report.json",
+      "bytes": 6873,
+      "sha256": "9c846c96f6987475a3447e1ea434af0281f0dae5d5f578add952fcae92dbb193"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/raw-events.json",
+      "bytes": 825058,
+      "sha256": "da8c68bc82282f7f252e641525dcbddf3980a2282203b31d884dbf460f0d3b38"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/raw-page-000.json",
+      "bytes": 819051,
+      "sha256": "b2ece0edd41e07e03bdd7d7c7c7591f3042566ab62ef4b6a1a980955be8955ae"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/raw-page-001.json",
+      "bytes": 137067,
+      "sha256": "886e5b9694fd3479a980c702d710cbdff23d44cb60da41ef19268f84bfe7a924"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/final-answer.txt",
+      "bytes": 198,
+      "sha256": "57982625615f0cdddec354b093e6b35cda45ae2b7d12762dc9d3e9f701c07d23"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-history-capture-current316-fresh-original-first/exact-oracle-final-answer.json",
+      "bytes": 1594,
+      "sha256": "cce7a0818ddbb158cb3d935c60b6813038bebd75e1050da9858af15bd09342ae"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/cold-replay-receipt.json",
+      "bytes": 13347,
+      "sha256": "af3d22659a67bede14f37268dc256552d8491aea812215d5585c33027e7d7afa"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/cold-loaded-session.json",
+      "bytes": 817063,
+      "sha256": "549e84c96e1c57e59fcfc8f3d0a8b62b0aa0c40df41eb6e58a52acae222d8052"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/final-answer.txt",
+      "bytes": 198,
+      "sha256": "57982625615f0cdddec354b093e6b35cda45ae2b7d12762dc9d3e9f701c07d23"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/actual-user-prompt.txt",
+      "bytes": 1239,
+      "sha256": "a774ab74be7afb692b4beeafb48ce155889d5b67c50c5d6644dd36bf8a316145"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/cold-working-sessions/--Users-hui-ark-test-invoice-reconciliation-current316-20261009--/f0010052-a1f1-47dc-8af8-1abbae40c593/session.jsonl.zstd",
+      "bytes": 46355,
+      "sha256": "fa9e3b6188ffcdb59dfa903479352a55103ab60e06309b52a66cc905b307119b"
+    },
+    {
+      "path": "/private/tmp/ark316-ui-cold-current316-fresh-original-first/project-governance-journal-snapshot.jsonl",
+      "bytes": 510,
+      "sha256": "99c45a82a368d744cb4cb0653cdb74268ab7dfaa7e1371cf6d8561ff5273cd66"
+    },
+    {
+      "path": "/private/tmp/ark316-three-window-private-audit-qgj5lfr0/audit-three-window-existing-evidence.py",
+      "bytes": 19317,
+      "sha256": "9e2ba1db375b543361b352e457082af02205fb4d2be12e186713dd7e72afd93f"
+    }
+  ]
+}

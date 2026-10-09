@@ -1,0 +1,14 @@
+version: 1
+scenario: read-only-inline-calculation
+profile: headless
+composition: read-only-inline
+recording: authored
+header:
+  class: read-only-inline
+  pin: true
+  systemPromptSource: text-turn
+  toolSchemasSource: text-turn
+platform: posix
+permission: read-only
+workspace:
+  final: true

@@ -656,7 +656,11 @@ export class ProviderTransactions {
         await advance('settings-applied')
       }
       const committed = settings.describe().find(entry => entry.ns === namespace)
-      if (committed === undefined) return fail('provider-transaction-in-doubt', 'provider settings disappeared after persistence')
+      if (committed === undefined) {
+        const failure = this.settingsFailure(request.settingsNs, new Error('provider settings owner disappeared after persistence'))
+        await finish('committed-not-live', failure)
+        throw new TypertRemoteFailure(failure)
+      }
       if (!satisfied(committed.user, plan.ops)) return fail('provider-transaction-in-doubt', 'provider settings no longer match the committed plan')
       let accepted: boolean
       try { accepted = await settings.settle(namespace, committed.revision) }

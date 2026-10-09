@@ -60,7 +60,12 @@
         "jsonrpc-agent/tests/fixtures/subagent/subagent-dsh-sdk/child-mock-llm.ts",
         "jsonrpc-agent/tests/fixtures/subagent/subagent-dsh-sdk/mock-delegating-llm.ts",
         "*/tests/**/*.e2e.ts",
-        "*/tests/**/*.snapshot.ts"
+        "*/tests/**/*.snapshot.ts",
+        "headless-agent/tests/fixtures/knowledge-wiki/authority.ts",
+        "headless-agent/tests/fixtures/knowledge-wiki/archive-rollback-conflict.ts",
+        "headless-agent/tests/fixtures/knowledge-wiki/ingestion-only.ts",
+        "headless-agent/tests/fixtures/knowledge-wiki/source-identity.ts",
+        "headless-agent/tests/fixtures/knowledge-wiki/support.ts"
       ],
       "project": [
         "**/*.ts"

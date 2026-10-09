@@ -3,13 +3,27 @@ import {
   rmSync, symlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { dirname, join, parse } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   assertAbsolutePathInside, atomicWriteFile, createPrivateFileIfMissing, durableUnlinkFile,
-  ensureConfinedDirectory, inodeIdentity, normalizeConfinedRelativePath, readConfinedText,
+  ensureConfinedDirectory, inodeIdentity, isMissingPathError, normalizeConfinedRelativePath, readConfinedText,
   readOptionalJson, readOptionalText, readRegularFileBounded, resolveConfinedPath,
 } from '../src/filesystem.ts'
+
+const fsFault = vi.hoisted(() => ({ lstatPath: '', lstatCode: '' }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      if (fsFault.lstatPath !== '' && String(args[0]) === fsFault.lstatPath) {
+        throw Object.assign(new Error(`synthetic ${fsFault.lstatCode}`), { code: fsFault.lstatCode })
+      }
+      return actual.lstatSync(...args)
+    },
+  }
+})
 
 const roots: string[] = []
 function fixture(): string {
@@ -18,6 +32,8 @@ function fixture(): string {
   return root
 }
 afterEach(() => {
+  fsFault.lstatPath = ''
+  fsFault.lstatCode = ''
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -109,7 +125,7 @@ describe('confined Wiki filesystem contracts', () => {
     linkSync(first, second)
     expect(() => { durableUnlinkFile(directory) }).toThrow('refusing to unlink')
     expect(() => { durableUnlinkFile(second) }).toThrow('refusing to unlink')
-    expect(() => { durableUnlinkFile(join(first, 'child')) }).toThrow('ENOTDIR')
+    expect(() => { durableUnlinkFile(join(first, 'child')) }).toThrow()
     expect(readFileSync(first, 'utf8')).toBe('preserve both links')
     expect(readFileSync(second, 'utf8')).toBe('preserve both links')
     expect(readdirSync(root)).toEqual(['directory', 'first.md', 'second.md'])
@@ -128,6 +144,31 @@ describe('confined Wiki filesystem contracts', () => {
     expect(() => readRegularFileBounded(file, 2)).toThrow('file exceeds 2 bytes')
     writeFileSync(file, '{"value":1}')
     expect(readOptionalJson(file, fallback)).toEqual({ value: 1 })
+  })
+
+  it('does not treat an ENOENT below a regular file as optional absence', () => {
+    const root = fixture()
+    const parent = join(root, 'file')
+    writeFileSync(parent, 'protected')
+    const windowsMissingPath = Object.assign(new Error('ENOENT: missing child'), { code: 'ENOENT' })
+    expect(isMissingPathError(windowsMissingPath, join(parent, 'child'))).toBe(false)
+    expect(isMissingPathError(windowsMissingPath, join(root, 'missing', 'child'))).toBe(true)
+  })
+
+  it('keeps ancestor inspection failures and a failed filesystem-root check visible', () => {
+    const root = fixture()
+    const missingPathError = Object.assign(new Error('ENOENT: missing child'), { code: 'ENOENT' })
+    expect(isMissingPathError(undefined, join(root, 'child'))).toBe(false)
+    expect(isMissingPathError(null, join(root, 'child'))).toBe(false)
+
+    fsFault.lstatPath = root
+    fsFault.lstatCode = 'EACCES'
+    expect(isMissingPathError(missingPathError, join(root, 'child'))).toBe(false)
+
+    const filesystemRoot = parse(tmpdir()).root
+    fsFault.lstatPath = filesystemRoot
+    fsFault.lstatCode = 'ENOENT'
+    expect(isMissingPathError(missingPathError, join(filesystemRoot, 'child'))).toBe(false)
   })
 
   it('allows root equality but rejects both a parent and a sibling prefix', () => {

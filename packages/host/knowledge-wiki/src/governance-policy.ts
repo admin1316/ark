@@ -2,9 +2,9 @@
 
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readdirSync } from 'node:fs'
-import { basename, join, posix, relative, resolve, win32 } from 'node:path'
+import { basename, join, posix, relative, resolve, sep, win32 } from 'node:path'
 import { mergeCandidateIntoCanonical } from './canonical-merge.ts'
-import { readRegularFileBounded } from './filesystem.ts'
+import { isMissingPathError, readRegularFileBounded } from './filesystem.ts'
 
 /**
  * Defines the governance action type used by this package.
@@ -61,16 +61,12 @@ export function resolveGovernedWikiPath(
     try {
       if (lstatSync(cursor).isSymbolicLink()) return undefined
     } catch (error) {
-      if (!isMissingPathError(error)) throw error
+      if (!isMissingPathError(error, cursor)) throw error
       if (allowMissing) break
       return undefined
     }
   }
   return { relativePath, absolutePath }
-}
-
-function isMissingPathError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT'
 }
 
 /**
@@ -269,7 +265,7 @@ function findCanonicalMatch(wikiRoot: string, candidateTitle: string, candidateB
       const bodyScore = bodySimilarity(candidateBody, extractBody(content))
       const similarity = Math.max(bodyScore, titleScore * 0.45 + bodyScore * 0.55)
       if (best === undefined || similarity > best.similarity) {
-        best = { path: relative(wikiRoot, full), similarity }
+        best = { path: relative(wikiRoot, full).split(sep).join('/'), similarity }
       }
     }
   }

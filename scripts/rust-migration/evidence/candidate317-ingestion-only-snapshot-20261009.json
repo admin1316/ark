@@ -1,0 +1,378 @@
+{
+  "schemaVersion": 1,
+  "status": "SCOPED_KEYLESS_SNAPSHOT_PASS",
+  "sourceHead": "2104fb2dfd6700dc5cd78ca89e5110ef3558a9e9",
+  "sourceAndBuiltScopeStableDuringFinalReplay": true,
+  "scopeAfterFinalHostBuild": {
+    "head": "2104fb2dfd6700dc5cd78ca89e5110ef3558a9e9",
+    "sourceScope": [
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/headless.snapshot.ts",
+        "bytes": 39407,
+        "sha256": "639d691af41f4518594a17eb0fd8d380cfbd28c78b9629ca9434f066b4218397"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/examples/headless-agent/tests/fixtures/knowledge-wiki/ingestion-only.ts",
+        "bytes": 8730,
+        "sha256": "b5727974f40c835724c470eeae88fadf5dc27a6e41fb5fb0a211a498f55d9f31"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/src/index.ts",
+        "bytes": 26534,
+        "sha256": "3b055d85f5c82712fe7353904034d7e9cf5fc65e8df8a0f8640ac1fcad364d2d"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/src/index.ts",
+        "bytes": 113773,
+        "sha256": "18840138a96f0f2a5111901b299207c4c7eb342e5ea90c138e94f1e1ee25ab2c"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/profile/cordis.patch.yml",
+        "bytes": 2429,
+        "sha256": "796d9f9c8cd65581656ae237ad13ac5bbabbebc217da9e594539a8162a1986fd"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/.gitignore",
+        "bytes": 57,
+        "sha256": "0599affdee8cc5f9b5f5e05aa09a74db4a7e4d1ba45b152d328015667f140d16"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/cordis.snapshot.yml",
+        "bytes": 1814,
+        "sha256": "5ac4969d8c6a59ddc677b9123909457d5aaebc0e98ab87e00c3165e9783340b5"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/cordis.yml",
+        "bytes": 801,
+        "sha256": "6db2645e8861cd30d448152b956a237a4a43e8e93ffcdae1415d09fa668248f9"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/session.jsonl",
+        "bytes": 5684,
+        "sha256": "81c4f15f73951592353bf00a8c9c26ec58773f2afa37a689bc28a3ea29e83c31"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/snapshot.yml",
+        "bytes": 215,
+        "sha256": "b65315ba6f5017212fc976bd5d87f660ab1125b09a00a869a8d7e3be64e71542"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/system-prompt.expected.md",
+        "bytes": 4753,
+        "sha256": "c8cd549b74b3a62eb50f33fb721cecd4fe46088d795d8b66da399b255a4ecb21"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/tool-schemas.expected.json",
+        "bytes": 36372,
+        "sha256": "a5e1fddedee4231f0eb14d4b2c0007a81dea13baf408bcc6f9cd52ae1b6608ca"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace/raw/evidence/ingestion-only.md",
+        "bytes": 93,
+        "sha256": "5f2d2919cfee9d35bc4ceac11804e4a77bf274c6bd3718075778f042fbf6c564"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace/raw/sources/ingestion-only.png",
+        "bytes": 68,
+        "sha256": "fe40783151454df01eecf74d701759220ba5d4a0eeb80d102ecd326d0d255ed0"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace.expected/raw/evidence/ingestion-only.md",
+        "bytes": 93,
+        "sha256": "5f2d2919cfee9d35bc4ceac11804e4a77bf274c6bd3718075778f042fbf6c564"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace.expected/raw/sources/ingestion-only.png",
+        "bytes": 68,
+        "sha256": "fe40783151454df01eecf74d701759220ba5d4a0eeb80d102ecd326d0d255ed0"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/cold.cordis.yml",
+        "bytes": 128,
+        "sha256": "39bdbbd8a334493daa4c6ed27f31dc6c035f9647942394ad79f9dba5c9743ac7"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/cordis.snapshot.yml",
+        "bytes": 1789,
+        "sha256": "8bf26ed3edc44fdd217adde84e15bdfc10f68b4e13b3f261cdd706c4f070e32d"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/cordis.yml",
+        "bytes": 833,
+        "sha256": "6779e167a9582fd7bc6952c69bad2249ca8e5bbf81fb2d6c84cda781dd2f7f6f"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/session.jsonl",
+        "bytes": 12068,
+        "sha256": "0e2f748253f6569f1023b215e4b090a7d88884951ccb8e0f906b528d0b49e30c"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/snapshot.yml",
+        "bytes": 199,
+        "sha256": "b18e4ae413a580671047924fc402fad4c3b0a7b03bddc3360309cfa5ec6e4832"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/system-prompt.expected.md",
+        "bytes": 5047,
+        "sha256": "caeb3739430941856ddb465028c0706ffff08fceb5e70c68b4849a5dbe24cce0"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/tool-schemas.expected.json",
+        "bytes": 39279,
+        "sha256": "f2882d21b35d86fa063d91c0a5428a50806152c504b899e8f7cf7a5fd982726b"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/wiki-pages.expected/_candidates/ingest/concepts/snapshot-check.md",
+        "bytes": 534,
+        "sha256": "27968a80da2382b6a8f70029eb5c77eb9d50ff6ce916453aa10d0b17b95d8b2d"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/wiki-pages.expected/concepts/historical-snapshot.md",
+        "bytes": 217,
+        "sha256": "116db29cd1b2c4ed5beb5955d2561cc9a064461c91226e31147e0ea6c52d35d5"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/wiki-pages.expected/concepts/unsigned-snapshot.md",
+        "bytes": 19,
+        "sha256": "21e124623f416288a2cce3faab2944300bc38040981f6172dfdaf0f242ff2fae"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-governance/workspace.expected/raw/evidence/snapshot-check.md",
+        "bytes": 59,
+        "sha256": "bf94274921d99f74d57f4e3472651c3312ca28a156d82e4fab3454058269bae6"
+      }
+    ],
+    "builtScope": [
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/lib/index.js",
+        "bytes": 21172,
+        "sha256": "db0eee0f521255e0cb59fa102969ab867538fd0377e9486138388bad9e971ebd"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/lib/index.js",
+        "bytes": 364293,
+        "sha256": "a8f47161e5f9be7a0f9c6f0c35efcdd6ba4856d8818a4fe0e16fccf6945276eb"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/apps/cli/lib/bin.js",
+        "bytes": 7675,
+        "sha256": "5d4bc43dccde4d9af361ac1763125d09b0737ae477e3970d18853e7063cf3e5a"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/apps/cli/lib/dump-config-CwsLpUI0.js",
+        "bytes": 2060,
+        "sha256": "2b757a0cbd7b0f1715aae0da3f97aa0ee65a067fdff4ee8c0e54936dfba99377"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/apps/cli/lib/installation-C2WHY-2K.js",
+        "bytes": 509,
+        "sha256": "5899a7c177e66be5ce6f3f673477158647d1ab35d2a77d99c107ba00d2136227"
+      },
+      {
+        "path": "/Users/hui/ark-test/ark-github-main-20261008/apps/cli/lib/plugin-gf7dapNU.js",
+        "bytes": 5962,
+        "sha256": "5739423f7f6233d7910de3bd846ffb9d084f2a3c52f6a6e493aa7178e4d0fa29"
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/source-execution-receipt-v2.json",
+      "bytes": 7807,
+      "sha256": "e5b8cde0ea5f60a5d9fe3268fc6a82ad8c81f91a4e4ed838bb08917d11b4017b"
+    },
+    {
+      "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/final-built-execution-receipt.json",
+      "bytes": 17574,
+      "sha256": "3f5e029585b61b845a07dc1aa4d2c8d4d204e5f58633d355f2f8775d1334ecd2"
+    },
+    {
+      "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/artifact-manifest.json",
+      "bytes": 3023,
+      "sha256": "b6af3676e4b991baf446e7bc69c55242e6d274f7abeaac76e7ba40de9eb526d1"
+    },
+    {
+      "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/prompt-comparison.diff",
+      "bytes": 670,
+      "sha256": "f34fac0bb1dde1bf73335eb2c6fe625618fe0d32727aba8f7795e7315af31fd9"
+    },
+    {
+      "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/header-comparison.json",
+      "bytes": 5261,
+      "sha256": "8f3a918f8550a54f5a0f9d5764b0bb99f7857fa7326d7a68b14019427946455d"
+    },
+    {
+      "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/run-final-built-replay.py",
+      "bytes": 3401,
+      "sha256": "7c38a2ab94ae47e6631d918675c1168c54e2b35c8d2fb4bc17925b2bcbee9e04"
+    }
+  ],
+  "executions": [
+    {
+      "name": "source-refresh-03",
+      "actualExitCode": 0,
+      "launchMode": "src",
+      "snapshotMode": "refresh",
+      "passedTests": 1,
+      "skippedTests": 82,
+      "nonGating": false,
+      "log": {
+        "path": "/private/tmp/ark316-wiki-ingestion-only-source-refresh-03.log",
+        "bytes": 472,
+        "sha256": "4766e384a0bb343c1f0b809d520f45235835763d1742e843b41d2eec93c87a5b"
+      },
+      "failedTests": 0
+    },
+    {
+      "name": "source-replay-01",
+      "actualExitCode": 0,
+      "launchMode": "src",
+      "snapshotMode": "replay",
+      "passedTests": 1,
+      "skippedTests": 82,
+      "nonGating": false,
+      "log": {
+        "path": "/private/tmp/ark316-wiki-ingestion-only-source-replay-01.log",
+        "bytes": 472,
+        "sha256": "05a9ba0486179c0629abbbeda80e05d65660e0ba0b872d7148a13fb0ee340644"
+      },
+      "failedTests": 0
+    },
+    {
+      "name": "normal-replay-01",
+      "actualExitCode": 0,
+      "launchMode": "unset; default src",
+      "snapshotMode": "replay",
+      "passedTests": 1,
+      "skippedTests": 82,
+      "nonGating": false,
+      "log": {
+        "path": "/private/tmp/ark316-wiki-ingestion-only-normal-replay-01.log",
+        "bytes": 472,
+        "sha256": "d56b0333d3651cd7501e0dcae8895b01a93d0939b972c69fc4591dd89281cd07"
+      },
+      "failedTests": 0
+    },
+    {
+      "name": "built-replay-01",
+      "actualExitCode": 0,
+      "launchMode": "lib",
+      "snapshotMode": "replay",
+      "passedTests": 1,
+      "skippedTests": 82,
+      "nonGating": true,
+      "log": {
+        "path": "/private/tmp/ark316-wiki-ingestion-only-built-replay-01.log",
+        "bytes": 472,
+        "sha256": "7cc0214b8a1de69580161c0354ad3398a282cf80d56e8b13b2d43786d360b22f"
+      },
+      "failedTests": 0
+    },
+    {
+      "name": "source-refresh-01",
+      "actualExitCode": 0,
+      "launchMode": "src",
+      "snapshotMode": "refresh",
+      "passedTests": 0,
+      "skippedTests": 83,
+      "nonGating": true,
+      "log": {
+        "path": "/private/tmp/ark316-wiki-ingestion-only-source-refresh-01.log",
+        "bytes": 460,
+        "sha256": "52daaad5304087b1c13ef03f9ccd02db2c2abbb4c087f64e80a5b7a7b33c2770"
+      },
+      "failedTests": 0
+    },
+    {
+      "name": "source-refresh-02",
+      "actualExitCode": 1,
+      "launchMode": "src",
+      "snapshotMode": "refresh",
+      "passedTests": 0,
+      "skippedTests": 82,
+      "nonGating": true,
+      "log": {
+        "path": "/private/tmp/ark316-wiki-ingestion-only-source-refresh-02.log",
+        "bytes": 5399,
+        "sha256": "778767de1758cd49232003b4fdb06c4ba3ab4f723daa575e05134f41a4623969"
+      },
+      "failedTests": 1
+    },
+    {
+      "name": "corpus-01",
+      "actualExitCode": 0,
+      "launchMode": "source Vitest; corpus checks only",
+      "snapshotMode": "replay",
+      "passedTests": 2,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "nonGating": false,
+      "log": {
+        "path": "/private/tmp/ark316-wiki-ingestion-only-corpus-01.log",
+        "bytes": 458,
+        "sha256": "2a2995d5211012af1ec48d7414bc91e4a72b34bedfe667904176f984a51ebeae"
+      }
+    },
+    {
+      "name": "source-and-governance-replay-01",
+      "actualExitCode": 0,
+      "launchMode": "src",
+      "snapshotMode": "replay",
+      "passedTests": 2,
+      "failedTests": 0,
+      "skippedTests": 81,
+      "nonGating": false,
+      "log": {
+        "path": "/private/tmp/ark316-wiki-ingestion-only-source-and-governance-replay-01.log",
+        "bytes": 474,
+        "sha256": "4beb7b6c0a5f58d8bc6e32328b53cc2f2ebff19d454af94c9c11c4602e0cdea5"
+      }
+    },
+    {
+      "name": "final-built-double-replay",
+      "actualExitCode": 0,
+      "executedTests": 2,
+      "passedTests": 2,
+      "skippedTests": 81,
+      "launchMode": "lib",
+      "snapshotMode": "replay",
+      "receipt": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/final-built-execution-receipt.json",
+      "log": {
+        "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/final-built-double-replay.log",
+        "bytes": 472,
+        "sha256": "5cc93d7b5342924617f7b5bb7f18d1713f6516a56d89ac1ef8a4596327430f64"
+      },
+      "nonGating": false
+    }
+  ],
+  "headerReview": {
+    "promptDiff": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/prompt-comparison.diff",
+    "toolComparison": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/header-comparison.json",
+    "removedGovernedTools": 6,
+    "retainedRawToolObjectsByteIdentical": 27
+  },
+  "worldOracle": {
+    "realCLI": "shipped dsh --profile headless through existing source/lib launcher",
+    "realTool": "wiki_ingest",
+    "independentSourceAndGoldenPNG": true,
+    "durableQueueTerminal": "done",
+    "copiedMediaBytesAndCacheHashChecked": true,
+    "lowTrustRecord": "independently seeded via production appendCandidateReviews; not generated by image ingest",
+    "verificationPromotionAndUseCredit": "absent; original review/event bytes unchanged; trust low/unverified/confidence0/retrievalHits0/successfulUses0/utilityScore0"
+  },
+  "proofLimits": [
+    "Scripted external model boundary, no real model reasoning or speed measurement",
+    "No Code preset SDK transcript; Native real-Loader SDK assembly is separately root-owned",
+    "No frozen 316 app mutation, no rebuilt Ark candidate/native UI acceptance in this child task",
+    "No learning permission activation, knowledge reuse, promotion, release or GitHub merge"
+  ],
+  "parentHostPrerequisite": {
+    "rootReported": "HOST_BUILD_02_FINISHED",
+    "actualExitCodeReportedByRoot": 0,
+    "receiptPath": null,
+    "reason": "Awaiting exact root-owned build receipt path"
+  },
+  "activeAppUserHomeOrCredentialMutations": false,
+  "isolatedFixtureWrites": true,
+  "replayExpectedFilesManuallyFabricated": false
+}

@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-08T12:44:00.073467+00:00",
+  "sourceCommit": "93040bb55cac3a0cfa1c928fb17bad351ed20a97",
+  "coverage": {
+    "summary": {
+      "path": "/private/tmp/ark-knowledge-coverage-k7-current-pqhi71oy/summary.json",
+      "sha256": "26302e3c9894c93d453f87129d4a3d6b9a87b4035ecbc5b79d16f2e17deac0b4",
+      "bytes": 228400
+    },
+    "testFilesPassed": 83,
+    "testsPassed": 800,
+    "testFailures": 0,
+    "runnerActualExitCode": 1,
+    "failingSourceFiles": 6,
+    "thresholdErrors": 15,
+    "coverageThresholdChanged": false,
+    "sourcePinsUnchanged": 2249,
+    "perFileCoverageGate": "FAIL",
+    "measuredPackages": [
+      "packages/host/knowledge-wiki",
+      "packages/host/knowledge-wiki-tools"
+    ],
+    "wholeRepositoryCoverageRun": false
+  },
+  "searchAudit": {
+    "report": {
+      "path": "/Users/hui/ark-test/evidence/fair-knowledge-search-runtime-audit-93040bb5-20261008.txt",
+      "sha256": "281cc774315f8584e6743b284dde33c39bd6429bb56c58f29dbd2ad0f22fb778",
+      "bytes": 31772
+    },
+    "currentServicePilotSummary": {
+      "path": "/Users/hui/ark-test/evidence/knowledge-search-pilot-93040-20261008/summary.json",
+      "sha256": "bbf93b4848512561980427444a8f89448e32a7e19e1db9d51457a2da1be377ab",
+      "bytes": 10668
+    },
+    "pilotIndex": {
+      "path": "/Users/hui/ark-test/evidence/knowledge-search-pilot-93040-20261008/artifact-sha256.json",
+      "sha256": "8893ae9dac0f12ba4c3746cde3ea59561bf4e95b5ae2556358f1e19d7d2c67e3",
+      "bytes": 255136
+    },
+    "primaryCalls": 144,
+    "primaryCallsPerCell": 36,
+    "allActualCalls": 172,
+    "operationFailures": 0,
+    "sourceAndToolOracles": "PASS",
+    "timingHostLoad": "POTENTIALLY_CONTAMINATED_NATIVE_BUILD_OVERLAP",
+    "productionTimingOrLanguageAcceptance": "UNKNOWN",
+    "exactComponentBottleneck": "UNKNOWN",
+    "quiescentReplicationRun": false,
+    "oldBenchmarkTimeUnit": "one batch of five queries",
+    "optimizedTSCacheDeployed": false,
+    "oldBenchmarkRewritten": false,
+    "decision": "RETAIN_TS"
+  },
+  "learningProtocolApproval": {
+    "record": {
+      "path": "/private/tmp/ark-learning-protocol-approval-20261008.json",
+      "sha256": "ba31a62c7dc80630a0b1bf3ba2ece3fe3a35d11075c8ce52016a563885004f4b",
+      "bytes": 971
+    },
+    "scope": "explicit user approval of reviewed candidate-only measured-learning protocol extension; existing core wire, permissions, thresholds and publication policy preserved",
+    "implemented": false,
+    "successorBaselineInstalled": false,
+    "independentEvaluatorCustodyProvisioned": false,
+    "privateDraftIndex": {
+      "path": "/private/tmp/ark-approved-learning-protocol-93040bb5-20261008/index.json",
+      "sha256": "a23790579b8223bbcf4a565102ff5919a63fee9a9e945234d83691928d817a95",
+      "bytes": 683
+    },
+    "privateDraftNeedsRootReview": true,
+    "draftStateVersion2Adopted": false
+  },
+  "limits": [
+    "800 passing tests do not close the unchanged per-file coverage gate",
+    "hidden source-bound artifact verification does not establish live UI behavior or utility",
+    "real-task failure remains FAIL even though arithmetic and tool carriers passed",
+    "private protocol draft is not an independent evaluator or deployed positive learning"
+  ],
+  "protocolBaselineReview": {
+    "path": "/private/tmp/ark-approved-learning-baseline-root-review-20261008.json",
+    "sha256": "e235f02d17306d30e4ad4ab33e6ce94934be178d7610afbdae60a285c3cf2ef0",
+    "bytes": 1161,
+    "status": "SCOPED_PREIMAGE_BOOKKEEPING_REVIEWED_NOT_INSTALLED",
+    "draftGlobalStateVersion2Rejected": true
+  },
+  "metadataDocumentationValidation": {
+    "docSyncActualExitCode": 0,
+    "gatesPassed": 30,
+    "failed": 0,
+    "skipped": 0,
+    "log": {
+      "path": "/private/tmp/ark-root-current930-doc-sync-20261008-real-task.log",
+      "sha256": "7c844f2287b30c29bdb778cac1504818e85385b5c377a9edf88b5f6476d460e8",
+      "bytes": 2535
+    },
+    "runtimeSourceChangedForDocumentation": false
+  }
+}

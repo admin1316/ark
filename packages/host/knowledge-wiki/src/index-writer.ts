@@ -67,7 +67,7 @@ function readIndexLines(indexPath: string): string[] {
     const text = readRegularFileBounded(indexPath, 5 * 1024 * 1024).toString('utf8')
     return text.length === 0 ? ['# Wiki Index', ''] : text.split('\n')
   } catch (error) {
-    if (!isMissingPathError(error)) throw error
+    if (!isMissingPathError(error, indexPath)) throw error
     return ['# Wiki Index', '']
   }
 }
@@ -115,7 +115,7 @@ function pageTitle(indexPath: string, wikiRelativePath: string): string {
       if (field?.key === 'title' && field.value.trim() !== '') return field.value.trim()
     }
   } catch (error) {
-    if (!isMissingPathError(error)) throw error
+    if (!isMissingPathError(error, full)) throw error
   }
   return basename(wikiRelativePath).replace(/\.md$/u, '')
 }

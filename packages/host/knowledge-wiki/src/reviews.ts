@@ -12,10 +12,8 @@
 import {
   closeSync,
   constants,
-  existsSync,
   fsyncSync,
   lstatSync,
-  mkdirSync,
   openSync,
   readdirSync,
   renameSync,
@@ -23,19 +21,21 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { parseFrontmatterArray, parseFrontmatterField } from './frontmatter-utils.ts'
 import type { CandidateVerification, WikiReviewItem } from './types.ts'
-import { deduplicateCandidateAgainstCanonical, mergeCandidateIntoCanonical, replaceCanonicalWithCandidate } from './canonical-merge.ts'
 import { decideCandidateGovernance, governancePolicyVersion, resolveGovernedWikiPath } from './governance-policy.ts'
 import {
   assertAbsolutePathInside,
   atomicWriteFile,
   durableUnlinkFile,
+  ensureAbsoluteDirectory,
   ensureConfinedDirectory,
   isMissingPathError as isMissingFileError,
   readOptionalText,
   readRegularFileBounded,
+  syncDirectory,
+  syncRegularFile,
 } from './filesystem.ts'
 import {
   canonicalJson,
@@ -44,9 +44,18 @@ import {
   readTrustedVerification,
   sha256,
   type KnowledgeWikiVerifierAuthority,
-  type TrustedVerificationReceipt,
   type VerificationAuthoritySeal,
 } from './verifier.ts'
+import {
+  appendKnowledgeEvent,
+  createKnowledgeEvent,
+  createKnowledgeRecord,
+  detectKnowledgeConflicts,
+  knowledgeSha256,
+  knowledgeInjectionDecision,
+  readKnowledgeEventLog,
+  replayKnowledgeEvents,
+} from './knowledge-governance.ts'
 
 const REVIEW_OPENER_PREFIX_RE = /^---\s*REVIEW\s*:\s*/i
 const REVIEW_CLOSER_RE = /^---\s*END\s+REVIEW\s*---\s*$/i
@@ -146,18 +155,12 @@ interface LoadedReviewItem {
   readonly item: WikiReviewItem
 }
 
+type BoundCandidateReview = WikiReviewItem & { readonly candidatePath: string; readonly candidateHash: string }
+type ObservedCandidateReview = BoundCandidateReview & { readonly sourceHash: string; readonly createdAt: number }
+
 function resolveCandidateReviewPath(root: string, input: string): ReturnType<typeof resolveGovernedWikiPath> {
   const governed = resolveGovernedWikiPath(root, input, false)
   return governed?.relativePath.startsWith('_candidates/') === true ? governed : undefined
-}
-
-function resolveCanonicalReviewPath(
-  root: string,
-  input: string,
-  allowMissing: boolean,
-): ReturnType<typeof resolveGovernedWikiPath> {
-  const governed = resolveGovernedWikiPath(root, input, allowMissing)
-  return governed?.relativePath.startsWith('_candidates/') === true ? undefined : governed
 }
 
 /** Narrow one durable review row before its fields can direct a mutation. */
@@ -177,7 +180,7 @@ function loadReviewItems(reviewFile: string): WikiReviewItem[] | undefined {
     if (!Array.isArray(parsed) || !parsed.every(isReviewItem)) throw new Error('invalid knowledge review state')
     return parsed
   } catch (error) {
-    if (isMissingPathError(error)) return undefined
+    if (isMissingFileError(error, reviewFile)) return undefined
     throw error
   }
 }
@@ -202,8 +205,81 @@ function writeReviewItemsAtomically(reviewFile: string, items: WikiReviewItem[])
   atomicWriteFile(reviewFile, `${JSON.stringify(items, null, 2)}\n`)
 }
 
-function isMissingPathError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT'
+function knowledgeEventPath(reviewFile: string): string {
+  return join(dirname(reviewFile), 'knowledge-events.jsonl')
+}
+
+/** Bind source provenance to bytes when the source is inside the project. */
+function sourceHashForCandidate(projectRoot: string, sourcePath: string | undefined): string {
+  if (sourcePath === undefined || sourcePath.trim() === '') return createHash('sha256').update('unknown-source').digest('hex')
+  const root = resolve(projectRoot)
+  const absolute = resolve(root, sourcePath)
+  const rel = relative(root, absolute)
+  try {
+    const stat = lstatSync(absolute)
+    if (rel !== '' && !rel.startsWith(`..${sep}`) && !rel.includes(`${sep}..${sep}`)
+      && stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1) {
+      return createHash('sha256').update(readRegularFileBounded(absolute, 100 * 1024 * 1024)).digest('hex')
+    }
+  } catch {
+    // URL, virtual research label, or absent source: bind its stable identity.
+  }
+  return createHash('sha256').update(sourcePath).digest('hex')
+}
+
+/** Append a lifecycle event after its owning review mutation has passed its hash checks. */
+function appendKnowledgeLifecycleEvent(
+  reviewFile: string,
+  type: Parameters<typeof createKnowledgeEvent>[0],
+  item: BoundCandidateReview,
+  payload: Readonly<Record<string, unknown>> = {},
+  authority?: KnowledgeWikiVerifierAuthority,
+): void {
+  const scope = { projectId: dirname(dirname(reviewFile)), visibility: 'project' as const }
+  const id = `candidate:${item.id}`
+  const prior = readKnowledgeEventLog(knowledgeEventPath(reviewFile))
+  let eventPayload: Readonly<Record<string, unknown>> = {
+    ...payload,
+    candidatePath: item.candidatePath,
+    candidateHash: item.candidateHash,
+    source: item.sourcePath ?? item.candidatePath,
+  }
+  if (type === 'knowledge/verified') {
+    // The sole verified caller has already authenticated a receipt through this owner.
+    const verifiedAuthority = authority as KnowledgeWikiVerifierAuthority
+    const seal = verifiedAuthority.sealPromotion(canonicalJson({ type, knowledgeId: id, payload: eventPayload }))
+    eventPayload = { ...eventPayload, authorityId: verifiedAuthority.authorityId, authoritySeal: seal }
+  }
+  const event = createKnowledgeEvent(type, id, scope, eventPayload, {
+    seq: prior.length,
+    previousEventHash: prior.at(-1)?.eventHash ?? null,
+    sourceHash: item.sourceHash ?? knowledgeSha256(item.sourcePath ?? item.candidatePath),
+  })
+  appendKnowledgeEvent(knowledgeEventPath(reviewFile), event)
+}
+
+function appendKnowledgeReviewEvent(
+  reviewFile: string,
+  type: 'knowledge/rejected' | 'knowledge/rolled_back' | 'knowledge/conflict',
+  reviewId: string,
+  candidateHash: string,
+  payload: Readonly<Record<string, unknown>> = {},
+): void {
+  const path = knowledgeEventPath(reviewFile)
+  const prior = readKnowledgeEventLog(path)
+  if (prior.some(event => event.type === type && event.knowledgeId === `candidate:${reviewId}`
+    && event.payload.candidateHash === candidateHash)) {
+    syncRegularFile(path)
+    syncDirectory(dirname(path))
+    return
+  }
+  const scope = { projectId: dirname(dirname(reviewFile)), visibility: 'project' as const }
+  const eventPayload: Readonly<Record<string, unknown>> = {
+    ...payload,
+    candidateHash,
+  }
+  const event = createKnowledgeEvent(type, `candidate:${reviewId}`, scope, eventPayload, { seq: prior.length, previousEventHash: prior.at(-1)?.eventHash ?? null })
+  appendKnowledgeEvent(path, event)
 }
 
 function pathEntryExists(path: string): boolean {
@@ -211,7 +287,7 @@ function pathEntryExists(path: string): boolean {
     lstatSync(path)
     return true
   } catch (error) {
-    if (isMissingPathError(error)) return false
+    if (isMissingFileError(error, path)) return false
     throw error
   }
 }
@@ -222,7 +298,7 @@ function readOptionalRegularFile(path: string): string | undefined {
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`unsafe review transaction file: ${path}`)
     return readRegularFileBounded(path, 8 * 1024 * 1024).toString('utf8')
   } catch (error) {
-    if (isMissingPathError(error)) return undefined
+    if (isMissingFileError(error, path)) return undefined
     throw error
   }
 }
@@ -238,7 +314,22 @@ interface PromotionOperation {
   readonly tombstonePath?: string
 }
 
-function promotionOperation(
+type ValidatedPromotionOperation = PromotionOperation & (
+  { readonly after?: undefined; readonly tombstonePath: string }
+  | { readonly after: string; readonly stagingPath: string }
+)
+
+/**
+ * Derive the existing sibling staging/tombstone names for one transaction operation.
+ * @param transactionId - Fixed transaction identity.
+ * @param index - Operation's zero-based tuple position.
+ * @param role - Existing operation path role.
+ * @param path - Exact final operation path.
+ * @param before - Captured previous bytes, or absence.
+ * @param after - Captured resulting bytes, or deletion.
+ * @returns Original v1 operation shape with its deterministic auxiliary path.
+ */
+export function promotionOperation(
   transactionId: string,
   index: number,
   role: PromotionPathRole,
@@ -278,6 +369,10 @@ interface PromotionJournal extends PromotionJournalCore {
   readonly seal: VerificationAuthoritySeal
 }
 
+interface ValidatedPromotionJournal extends PromotionJournal {
+  readonly operations: ValidatedPromotionOperation[]
+}
+
 function promotionJournalDirectory(reviewFile: string): string {
   return join(dirname(reviewFile), 'promotion-journal')
 }
@@ -286,7 +381,15 @@ function promotionJournalPath(reviewFile: string, id: string): string {
   return join(promotionJournalDirectory(reviewFile), `${id}.json`)
 }
 
-function assertPromotionOperationConfined(
+/**
+ * Check an operation's existing role root and sibling auxiliary parents.
+ * @param operation - Operation to check without mutation.
+ * @param reviewFile - Owned review file selecting metadata's root.
+ * @param wikiRoot - Owned Wiki root for candidate and canonical operations.
+ * @param archiveRoot - Owned archive root for archive operations.
+ * @throws On a path outside its role root or an auxiliary with a different parent.
+ */
+export function assertPromotionOperationConfined(
   operation: PromotionOperation,
   reviewFile: string,
   wikiRoot: string,
@@ -305,12 +408,49 @@ function assertPromotionOperationConfined(
   }
 }
 
+/**
+ * Derive the archive path shared by existing review production and historical proof checks.
+ * @param archiveRoot - Actual archive owner root.
+ * @param projectRoot - Actual project root whose basename appears in the path.
+ * @param createdAt - Fixed transaction audit time; only its UTC day is used.
+ * @param contentHash - Exact archived content hash.
+ * @param relativePath - Confined candidate or canonical path relative to the Wiki root.
+ * @param kind - Candidate archive or the existing canonical pre-update subdirectory.
+ * @returns The original archive path formula, without creating a directory or file.
+ */
+export function governanceArchivePath(
+  archiveRoot: string,
+  projectRoot: string,
+  createdAt: string,
+  contentHash: string,
+  relativePath: string,
+  kind: 'candidate' | 'canonical-before-update',
+): string {
+  return join(
+    archiveRoot, 'wiki-governance', createdAt.slice(0, 10), basename(projectRoot), contentHash.slice(0, 12),
+    ...(kind === 'canonical-before-update' ? ['canonical-before-update'] : []), relativePath,
+  )
+}
+
+/**
+ * Derive the existing immutable transaction ID from review, candidate and audit time.
+ * @param reviewId - Original review identity.
+ * @param candidateHash - Exact original candidate byte hash.
+ * @param createdAt - Fixed transaction audit timestamp.
+ * @returns Original promotion ID; it supplies no proof or write authority.
+ */
+export function promotionTransactionId(reviewId: string, candidateHash: string, createdAt: string): string {
+  return `promotion-${createHash('sha256').update(`${reviewId}\0${candidateHash}\0${Date.parse(createdAt)}`).digest('hex').slice(0, 24)}`
+}
+
 function writePromotionStage(path: string, content: string): void {
   if (pathEntryExists(path)) {
     if (readOptionalText(path, 8 * 1024 * 1024) !== content) throw new Error(`promotion stage conflict at ${path}`)
+    syncRegularFile(path)
+    syncDirectory(dirname(path))
     return
   }
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  ensureAbsoluteDirectory(dirname(path))
   const descriptor = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
   try {
     writeFileSync(descriptor, content)
@@ -318,53 +458,55 @@ function writePromotionStage(path: string, content: string): void {
   } finally {
     closeSync(descriptor)
   }
-  const directory = openSync(dirname(path), constants.O_RDONLY)
-  try {
-    fsyncSync(directory)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
-  } finally {
-    closeSync(directory)
-  }
+  syncDirectory(dirname(path))
 }
 
 function applyPromotionOperation(
-  operation: PromotionOperation,
+  operation: ValidatedPromotionOperation,
   checkpoint?: (phase: 'stage-written' | 'entry-renamed' | 'tombstone-unlinked') => void,
 ): void {
   const current = readOptionalText(operation.path, 8 * 1024 * 1024)
   if (operation.after === undefined) {
     const tombstone = operation.tombstonePath
-    if (tombstone === undefined) throw new Error('promotion delete lacks a tombstone path')
     if (current === undefined) {
       const moved = readOptionalText(tombstone, 8 * 1024 * 1024)
-      if (moved === undefined) return
+      if (moved === undefined) {
+        syncDirectory(dirname(operation.path))
+        return
+      }
       if (moved !== operation.before) throw new Error(`promotion tombstone conflict at ${tombstone}`)
       unlinkSync(tombstone)
       checkpoint?.('tombstone-unlinked')
+      syncDirectory(dirname(operation.path))
       return
     }
     if (current !== operation.before) throw new Error(`promotion recovery conflict at ${operation.path}`)
     if (pathEntryExists(tombstone)) throw new Error(`promotion tombstone already exists: ${tombstone}`)
     renameSync(operation.path, tombstone)
     checkpoint?.('entry-renamed')
+    syncDirectory(dirname(operation.path))
     if (readOptionalText(tombstone, 8 * 1024 * 1024) !== operation.before) {
       throw new Error(`promotion tombstone identity changed: ${tombstone}`)
     }
     unlinkSync(tombstone)
     checkpoint?.('tombstone-unlinked')
+    syncDirectory(dirname(operation.path))
     return
   }
-  if (current === operation.after) return
+  if (current === operation.after) {
+    syncRegularFile(operation.path)
+    syncDirectory(dirname(operation.path))
+    return
+  }
   if (current !== operation.before) throw new Error(`promotion recovery conflict at ${operation.path}`)
   const staging = operation.stagingPath
-  if (staging === undefined) throw new Error('promotion write lacks a staging path')
   writePromotionStage(staging, operation.after)
   checkpoint?.('stage-written')
   const revalidated = readOptionalText(operation.path, 8 * 1024 * 1024)
   if (revalidated !== operation.before) throw new Error(`promotion target changed before rename: ${operation.path}`)
   renameSync(staging, operation.path)
   checkpoint?.('entry-renamed')
+  syncDirectory(dirname(operation.path))
 }
 
 function rollbackPromotionOperation(operation: PromotionOperation): void {
@@ -375,6 +517,7 @@ function rollbackPromotionOperation(operation: PromotionOperation): void {
         throw new Error(`promotion rollback tombstone conflict at ${operation.tombstonePath}`)
       }
       renameSync(operation.tombstonePath, operation.path)
+      syncDirectory(dirname(operation.path))
     }
   }
   const current = readOptionalText(operation.path, 8 * 1024 * 1024)
@@ -383,6 +526,7 @@ function rollbackPromotionOperation(operation: PromotionOperation): void {
   if (operation.before === undefined) {
     if (current === undefined) {
       durableUnlinkFile(operation.stagingPath as string)
+      syncDirectory(dirname(operation.path))
       return
     }
     if (operation.after !== undefined && current !== operation.after) {
@@ -394,9 +538,11 @@ function rollbackPromotionOperation(operation: PromotionOperation): void {
   }
   if (current === operation.before) {
     if (operation.stagingPath !== undefined) durableUnlinkFile(operation.stagingPath)
+    syncRegularFile(operation.path)
+    syncDirectory(dirname(operation.path))
     return
   }
-  if (operation.after !== undefined && current !== operation.after) {
+  if (current !== operation.after) {
     throw new Error(`promotion rollback conflict at ${operation.path}`)
   }
   atomicWriteFile(operation.path, operation.before)
@@ -416,11 +562,37 @@ function validatePromotionJournalAuthority(
   return authority.validatePromotion(canonicalJson(promotionJournalCore(journal)), journal.seal)
 }
 
+/** Recover the original Archive/Skip disposition from the sealed append operation. */
+function archiveReviewEventPayload(journal: PromotionJournalCore): {
+  readonly action: 'Archive' | 'Skip'
+  readonly appliedPath: string
+  readonly lifecycle: 'downgraded'
+} {
+  const governance = journal.operations.find(operation => operation.role === 'governance')
+  // Every caller has constructed or validated the fixed Archive operation layout.
+  const archived = journal.operations.find(operation => operation.role === 'candidate-archive') as PromotionOperation
+  const before = governance?.before ?? ''
+  if (governance?.after === undefined || !governance.after.startsWith(before)) {
+    throw new Error('Archive journal lifecycle binding failed')
+  }
+  const entry: unknown = JSON.parse(governance.after.slice(before.length))
+  if (typeof entry !== 'object' || entry === null
+    || (Reflect.get(entry, 'action') !== 'Archive' && Reflect.get(entry, 'action') !== 'Skip')
+    || Reflect.get(entry, 'reviewId') !== journal.reviewId
+    || Reflect.get(entry, 'candidateHash') !== journal.candidateHash
+    || Reflect.get(entry, 'outcome') !== 'applied'
+    || Reflect.get(entry, 'appliedPath') !== archived.path) {
+    throw new Error('Archive journal lifecycle binding failed')
+  }
+  return { action: Reflect.get(entry, 'action') as 'Archive' | 'Skip', appliedPath: archived.path, lifecycle: 'downgraded' }
+}
+
 function revalidateJournalBeforeMutation(
   authority: KnowledgeWikiVerifierAuthority | undefined,
   reviewFile: string,
+  wikiRoot: string,
   journal: PromotionJournal,
-): void {
+): asserts journal is ValidatedPromotionJournal {
   if (!validatePromotionJournalAuthority(authority, journal)) throw new Error('promotion journal authority validation failed')
   const reviewOperation = journal.operations.find(operation => operation.role === 'review')
   const candidateOperation = journal.operations.find(operation => operation.role === 'candidate')
@@ -453,8 +625,43 @@ function revalidateJournalBeforeMutation(
       || item.targetPath !== journal.targetPath) {
       throw new Error('promotion journal verified receipt binding failed')
     }
+    throw new Error('canonical promotion requires independently measured trial evidence')
   }
-  for (const operation of journal.operations) {
+  if (journal.operations.some(operation => operation.role === 'canonical' || operation.role === 'canonical-archive')) {
+    throw new Error('canonical promotion requires independently measured trial evidence')
+  }
+  const roles: PromotionPathRole[] = ['candidate-archive', 'review', 'governance', 'candidate']
+  const archived = journal.operations[0]
+  const governance = journal.operations[2]
+  const candidate = typeof item.candidatePath === 'string' ? resolveGovernedWikiPath(wikiRoot, item.candidatePath, true) : undefined
+  if (journal.operations.length !== roles.length || journal.operations.some((operation, index) => operation.role !== roles[index])
+    || candidate === undefined || !candidate.relativePath.startsWith('_candidates/')
+    || candidateOperation.path !== candidate.absolutePath || candidateOperation.after !== undefined
+    || reviewOperation.path !== reviewFile || reviewOperation.after === undefined
+    || governance?.path !== join(dirname(reviewFile), 'governance.jsonl')
+    || archived?.before !== undefined || archived?.after !== candidateOperation.before
+    || new Set(journal.operations.map(operation => resolve(operation.path))).size !== roles.length) {
+    throw new Error('Archive journal operation identity mismatch')
+  }
+  const disposition = archiveReviewEventPayload(journal)
+  const expectedReviews = reviews.map((value: unknown) => value === item ? {
+    ...item, resolved: true, resolvedAction: 'Archive', appliedPath: disposition.appliedPath, resolvedAt: Date.parse(journal.createdAt),
+  } : value)
+  if (canonicalJson(JSON.parse(reviewOperation.after) as unknown) !== canonicalJson(expectedReviews)) {
+    throw new Error('Archive journal resolved review binding failed')
+  }
+  for (const [index, operation] of journal.operations.entries()) {
+    if (operation.after === undefined && operation.tombstonePath === undefined) throw new Error('promotion delete lacks a tombstone path')
+    if (operation.after !== undefined && operation.stagingPath === undefined) throw new Error('promotion write lacks a staging path')
+    for (const auxiliary of [operation.stagingPath, operation.tombstonePath]) {
+      if (auxiliary !== undefined && dirname(auxiliary) !== dirname(operation.path)) {
+        throw new Error('promotion auxiliary path changed parent')
+      }
+    }
+    const expected = promotionOperation(journal.id, index, operation.role, operation.path, operation.before, operation.after)
+    if (operation.stagingPath !== expected.stagingPath || operation.tombstonePath !== expected.tombstonePath) {
+      throw new Error('Archive journal auxiliary identity mismatch')
+    }
     const current = readOptionalText(operation.path, 8 * 1024 * 1024)
     if (current !== operation.before && current !== operation.after) {
       throw new Error(`promotion journal divergent state at ${operation.path}`)
@@ -481,7 +688,7 @@ function commitPromotionJournal(
   archiveRoot: string,
   journal: PromotionJournal,
 ): void {
-  revalidateJournalBeforeMutation(authority, reviewFile, journal)
+  revalidateJournalBeforeMutation(authority, reviewFile, wikiRoot, journal)
   for (const operation of journal.operations) assertPromotionOperationConfined(operation, reviewFile, wikiRoot, archiveRoot)
   ensureConfinedDirectory(dirname(reviewFile), 'promotion-journal')
   const path = promotionJournalPath(reviewFile, journal.id)
@@ -523,7 +730,20 @@ function commitPromotionJournal(
       try { rollbackPromotionOperation(operation) } catch (rollbackError) { rollbackErrors.push(rollbackError) }
     }
     if (rollbackErrors.length === 0) {
-      atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'rolled-back' }, null, 2)}\n`)
+      try {
+        atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'rolled-back' }, null, 2)}\n`)
+      } catch (markerError) {
+        throw new AggregateError([error, markerError], 'candidate review transaction failed and rollback marker was not durable')
+      }
+      try {
+        appendKnowledgeReviewEvent(reviewFile, 'knowledge/rolled_back', journal.reviewId, journal.candidateHash, {
+          lifecycle: 'rolled_back',
+          transactionId: journal.id,
+        })
+      } catch {
+        // The promotion journal is the source of truth for recovery; an event
+        // append failure must not mask the original transaction error.
+      }
       throw error
     }
     throw new AggregateError([error, ...rollbackErrors], 'candidate review transaction failed and rollback was incomplete')
@@ -531,7 +751,8 @@ function commitPromotionJournal(
 }
 
 /**
- * Finish prepared promotions after a crash, or fail closed on divergent bytes.
+ * Finish prepared Archive transactions and repair missing committed Archive lifecycle events after a crash.
+ * Canonical actions lack measured-trial authority.
  * @param authority - Trusted verifier that revalidates the journal before mutation.
  * @param reviewFile - Review file whose sibling directory owns promotion journals.
  * @param wikiRoot - Canonical Wiki root used to confine Candidate and target paths.
@@ -560,12 +781,46 @@ export function recoverCandidateReviewTransactions(
     const raw: unknown = JSON.parse(readRegularFileBounded(path, 8 * 1024 * 1024).toString('utf8'))
     if (typeof raw !== 'object' || raw === null || Reflect.get(raw, 'schemaVersion') !== 1) continue
     const journal = raw as PromotionJournal
-    if (!/^[A-Za-z0-9._:-]+$/u.test(journal.id) || journal.state !== 'prepared' || !Array.isArray(journal.operations)) continue
-    revalidateJournalBeforeMutation(authority, reviewFile, journal)
+    if (!/^[A-Za-z0-9._:-]+$/u.test(journal.id) || !Array.isArray(journal.operations)) continue
+    if (journal.state === 'committed' && journal.action === 'Archive') {
+      const eventPath = knowledgeEventPath(reviewFile)
+      const events = readKnowledgeEventLog(eventPath)
+      if (events.some(event => event.type === 'knowledge/rejected' && event.knowledgeId === `candidate:${journal.reviewId}`
+        && event.payload.candidateHash === journal.candidateHash)) {
+        syncRegularFile(path)
+        syncDirectory(dirname(path))
+        syncRegularFile(eventPath)
+        syncDirectory(dirname(eventPath))
+        continue
+      }
+    } else if (journal.state === 'rolled-back') {
+      syncRegularFile(path)
+      syncDirectory(dirname(path))
+      continue
+    } else if (journal.state !== 'prepared') continue
+    revalidateJournalBeforeMutation(authority, reviewFile, wikiRoot, journal)
     for (const operation of journal.operations) assertPromotionOperationConfined(operation, reviewFile, wikiRoot, archiveRoot)
-    for (const operation of journal.operations) applyPromotionOperation(operation)
-    atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'committed' }, null, 2)}\n`)
-    recovered += 1
+    if (journal.state === 'prepared') {
+      for (const operation of journal.operations) applyPromotionOperation(operation)
+    }
+    // Journal state is not sealed. A committed marker alone cannot attest that
+    // every operation reached its post-state before a terminal event is emitted.
+    for (const operation of journal.operations) {
+      if (readOptionalText(operation.path, 8 * 1024 * 1024) !== operation.after) {
+        throw new Error(`promotion post-commit mismatch at ${operation.path}`)
+      }
+      if (operation.after !== undefined) syncRegularFile(operation.path)
+      syncDirectory(dirname(operation.path))
+    }
+    syncRegularFile(path)
+    syncDirectory(dirname(path))
+    if (journal.state === 'prepared') {
+      atomicWriteFile(path, `${JSON.stringify({ ...journal, state: 'committed' }, null, 2)}\n`)
+      recovered += 1
+    }
+    appendKnowledgeReviewEvent(
+      reviewFile, 'knowledge/rejected', journal.reviewId, journal.candidateHash, archiveReviewEventPayload(journal),
+    )
   }
   return recovered
 }
@@ -620,7 +875,7 @@ function readReviewItems(reviewFile: string): WikiReviewItem[] {
     if (!Array.isArray(parsed) || !parsed.every(isReviewItem)) throw new Error('invalid knowledge review state')
     return parsed
   } catch (error) {
-    if (!isMissingPathError(error)) throw error
+    if (!isMissingFileError(error, reviewFile)) throw error
     return []
   }
 }
@@ -665,7 +920,7 @@ export function appendReviews(reviewFile: string, sourcePath: string, reviews: P
 }
 
 /**
- * Register written candidate pages as real, hash-bound approval items.
+ * Register each candidate path/content revision once, retaining earlier review decisions.
  * @param reviewFile - The review file input.
  * @param projectRoot - The project root input.
  * @param sourcePath - The source path input.
@@ -680,6 +935,7 @@ export function appendCandidateReviews(
 ): number {
   const existing = readReviewItems(reviewFile)
   const byId = new Map(existing.map(item => [item.id, item]))
+  const observed: Array<{ item: ObservedCandidateReview; content: string }> = []
   let changed = 0
   for (const writtenPath of writtenPaths) {
     const candidate = resolveCandidateReviewPath(join(projectRoot, 'wiki'), writtenPath.replace(/^wiki\//u, ''))
@@ -687,16 +943,16 @@ export function appendCandidateReviews(
     const candidatePath = candidate.relativePath
     const content = readRegularFileBounded(candidate.absolutePath, 5 * 1024 * 1024).toString('utf8')
     const candidateHash = createHash('sha256').update(content).digest('hex')
-    const id = `candidate-${createHash('sha256').update(candidatePath).digest('hex').slice(0, 16)}`
+    if ([...byId.values()].some(item => item.reviewKind === 'candidate'
+      && item.candidatePath === candidatePath && item.candidateHash === candidateHash)) continue
+    const id = `candidate-${sha256(`${candidatePath}\0${candidateHash}`)}`
     const title = (/^title:\s*(.+)$/mu.exec(content)?.[1] ?? basename(candidatePath, '.md'))
       .trim()
       .replace(/^["']|["']$/gu, '')
     const suggestedTarget = canonicalTarget(candidatePath)
     const governance = decideCandidateGovernance(join(projectRoot, 'wiki'), candidatePath, content, suggestedTarget)
     const targetPath = governance.targetPath
-    const prior = byId.get(id)
-    if (prior?.candidateHash === candidateHash && !prior.resolved) continue
-    byId.set(id, {
+    const nextItem: ObservedCandidateReview = {
       id,
       title,
       type: 'candidate-approval',
@@ -709,6 +965,7 @@ export function appendCandidateReviews(
       reviewKind: 'candidate',
       candidatePath,
       candidateHash,
+      sourceHash: sourceHashForCandidate(projectRoot, sourcePath),
       verification: {
         status: 'pending',
         candidateHash,
@@ -720,11 +977,45 @@ export function appendCandidateReviews(
         failureCount: 0,
       },
       ...(targetPath ? { targetPath } : {}),
-    })
+    }
+    byId.set(id, nextItem)
+    observed.push({ item: nextItem, content })
     changed += 1
   }
   if (changed > 0) {
     writeReviewItemsAtomically(reviewFile, [...byId.values()])
+    for (const { item, content } of observed) {
+      const record = createKnowledgeRecord({
+        id: `candidate:${item.id}`,
+        content,
+        claimKey: item.title.trim().toLocaleLowerCase(),
+        // Keep the durable item address in `source`; original provenance stays
+        // in the review/sourcePath and evidence refs.
+        source: item.candidatePath,
+        evidenceRefs: [sourcePath],
+        // `candidateHash` binds the mutable candidate bytes. `sourceHash`
+        // identifies provenance and intentionally hashes the source identity
+        // separately, so an edited candidate cannot masquerade as source data.
+        sourceHash: item.sourceHash,
+        scope: { projectId: projectRoot, visibility: 'project' },
+        createdAt: new Date(item.createdAt).toISOString(),
+        expiresAt: new Date(item.createdAt + 30 * 86_400_000).toISOString(),
+        lifecycle: 'candidate',
+      })
+      appendKnowledgeLifecycleEvent(reviewFile, 'knowledge/observed', item, { record })
+      appendKnowledgeLifecycleEvent(reviewFile, 'knowledge/candidate', item, { record })
+    }
+    // Once all new candidates are in the log, identify divergent claims in
+    // the same scope. Conflict events make both records non-injectable until
+    // an explicit review resolves the ambiguity.
+    const state = replayKnowledgeEvents(readKnowledgeEventLog(knowledgeEventPath(reviewFile)))
+    for (const record of state.records.values()) {
+      const conflicts = detectKnowledgeConflicts(record, state.records.values())
+      if (conflicts.length === 0) continue
+      const review = [...byId.values()].find(item => item.id === record.id.replace(/^candidate:/u, ''))
+      if (review === undefined || review.candidateHash === undefined) continue
+      appendKnowledgeReviewEvent(reviewFile, 'knowledge/conflict', review.id, review.candidateHash, { conflictIds: conflicts })
+    }
   }
   return changed
 }
@@ -758,6 +1049,9 @@ export function recordCandidateVerification(
     .update(readRegularFileBounded(candidate.absolutePath, 5 * 1024 * 1024))
     .digest('hex')
   if (actualHash !== item.candidateHash) return false
+  const governedEvents = readKnowledgeEventLog(knowledgeEventPath(reviewFile))
+  const governed = replayKnowledgeEvents(governedEvents).records.get(`candidate:${item.id}`)
+  if (governed !== undefined && (governed.verificationStatus === 'expired' || governed.verificationStatus === 'conflict')) return false
   const trusted = readTrustedVerification(
     authority,
     reviewFile,
@@ -768,13 +1062,12 @@ export function recordCandidateVerification(
   )
   if (trusted === undefined) return false
   const nextVerification = trusted.verification
-  // readTrustedVerification only returns a passed verification, so the action
-  // options always keep the requested action beside the Archive escape hatch.
+  // Semantic checks do not measure actual reuse or utility. A passing receipt
+  // cannot authorize a canonical action until independent trial evidence exists.
   all[index] = {
     ...item,
     verification: nextVerification,
-    options: candidateActions(wikiRoot, item.targetPath)
-      .filter(option => option.action === action || option.action === 'Archive'),
+    options: [{ action: 'Archive', label: '归档候选' }],
   }
   writeReviewItemsAtomically(reviewFile, all)
   appendGovernanceLog(reviewFile, {
@@ -796,11 +1089,39 @@ export function recordCandidateVerification(
     })),
     confidence: nextVerification.confidence,
   })
+  const createdAt = new Date(item.createdAt ?? Date.now()).toISOString()
+  const fallbackRecord = createKnowledgeRecord({
+    id: `candidate:${item.id}`,
+    content: readRegularFileBounded(candidate.absolutePath, 5 * 1024 * 1024).toString('utf8'),
+    claimKey: item.title.trim().toLocaleLowerCase(),
+    source: item.candidatePath,
+    sourceHash: item.sourceHash ?? knowledgeSha256(item.sourcePath ?? item.candidatePath),
+    contentHash: actualHash,
+    scope: { projectId: dirname(dirname(reviewFile)), visibility: 'project' },
+    evidenceRefs: [item.sourcePath ?? item.candidatePath],
+    verificationStatus: 'candidate',
+    confidence: 0,
+    createdAt,
+    expiresAt: new Date(Date.parse(createdAt) + 30 * 86_400_000).toISOString(),
+    lifecycle: 'candidate',
+  })
+  appendKnowledgeLifecycleEvent(reviewFile, 'knowledge/verified', {
+    ...item, candidatePath: item.candidatePath, candidateHash: item.candidateHash,
+  }, {
+    record: fallbackRecord,
+    verificationStatus: 'verified',
+    trust: 'medium',
+    authority: trusted.receipt.result.authorityId,
+    confidence: nextVerification.confidence,
+    lastVerifiedAt: trusted.receipt.result.issuedAt,
+    evidenceRefs: nextVerification.receipts.map(receipt => receipt.id),
+  }, authority)
   return true
 }
 
 /**
- * Apply a hash-bound candidate decision. Null means this is an advisory item.
+ * Apply Archive or Skip to a hash-bound candidate; canonical actions require unavailable measured-trial evidence.
+ * Null means this is an advisory item.
  * @param authority - Trusted verifier that authenticates the bound receipt and promotion journal.
  * @param reviewFile - The review file input.
  * @param projectRoot - The project root input.
@@ -833,8 +1154,21 @@ export function applyCandidateReview(
   const actualHash = createHash('sha256').update(content).digest('hex')
   if (actualHash !== item.candidateHash) return false
 
+  // A passing receipt is necessary but not sufficient: an independently
+  // expired or conflicting knowledge record cannot be promoted from a stale
+  // review mirror. Legacy rows without an event projection remain governed by
+  // the existing hash-bound verifier contract.
+  const governedEvents = readKnowledgeEventLog(knowledgeEventPath(reviewFile))
+  const governed = replayKnowledgeEvents(governedEvents).records.get(`candidate:${item.id}`)
+  if (governed !== undefined) {
+    const decision = knowledgeInjectionDecision(governed, {
+      projectId: projectRoot,
+      workspaceId: projectRoot,
+    })
+    if (decision.reason === 'expired' || decision.reason === 'conflict' || decision.reason === 'scope-denied' || decision.reason === 'acl-denied') return false
+  }
+
   const canonicalActions = new Set(['Promote', 'Merge', 'Replace', 'Deduplicate'])
-  let verifiedReceipt: TrustedVerificationReceipt | undefined
   if (canonicalActions.has(action)) {
     const verification = item.verification
     if (actor === 'governance-agent') return false
@@ -852,90 +1186,35 @@ export function applyCandidateReview(
     )
     if (trusted === undefined
       || trusted.verification.receipts[0]?.receiptHash !== verification.receipts[0]?.receiptHash) return false
-    verifiedReceipt = trusted.receipt
   }
+  // The current receipt authenticates semantic checks, not a measured trial.
+  // Legacy trial mirrors cannot authorize any canonical write.
+  if (canonicalActions.has(action)) return false
 
   const now = new Date()
-  const today = now.toISOString().slice(0, 10)
+  const reviewedAt = now.toISOString()
   const resolvedAt = now.getTime()
-  let appliedPath = ''
-  let previousCanonicalHash = ''
-  let targetPath = ''
-  let targetAbsolutePath = ''
-  let targetBefore: string | undefined
-  let targetAfter: string | undefined
-  let archivedCanonical = ''
-  let archivedCanonicalContent = ''
-  if (action === 'Merge' || action === 'Replace' || action === 'Deduplicate') {
-    // actionIsCompatible already rejected these actions without a target before
-    // the verification could pass, so the target path is present here.
-    const target = resolveCanonicalReviewPath(wikiRoot, item.targetPath as string, false)
-    if (target === undefined) return false
-    const canonicalBefore = readRegularFileBounded(target.absolutePath, 5 * 1024 * 1024).toString('utf8')
-    const approvedAt = new Date().toISOString()
-    const next = action === 'Merge'
-      ? mergeCandidateIntoCanonical(canonicalBefore, content, approvedAt)
-      : action === 'Deduplicate'
-        ? deduplicateCandidateAgainstCanonical(canonicalBefore, content, approvedAt, actor)
-        : replaceCanonicalWithCandidate(canonicalBefore, content, approvedAt)
-    const canonicalHash = createHash('sha256').update(canonicalBefore).digest('hex')
-    previousCanonicalHash = canonicalHash
-    archivedCanonicalContent = canonicalBefore
-    archivedCanonical = join(
-      archiveRoot,
-      'wiki-governance',
-      today,
-      basename(projectRoot),
-      canonicalHash.slice(0, 12),
-      'canonical-before-update',
-      target.relativePath,
-    )
-    targetBefore = canonicalBefore
-    targetAfter = target.relativePath.startsWith('_evidence/')
-      ? stampEvidence(next.content, today, actor)
-      : next.content
-    targetAbsolutePath = target.absolutePath
-    targetPath = target.relativePath
-    appliedPath = target.relativePath
-  } else if (action === 'Promote') {
-    const target = resolveCanonicalReviewPath(wikiRoot, item.targetPath as string, true)
-    if (target === undefined || pathEntryExists(target.absolutePath)) return false
-    targetAfter = target.relativePath.startsWith('_evidence/')
-      ? stampEvidence(content, today, actor)
-      : stampCanonical(content, today, actor)
-    targetAbsolutePath = target.absolutePath
-    targetPath = target.relativePath
-    appliedPath = target.relativePath
-  } else if (action !== 'Archive' && action !== 'Skip') {
-    return false
-  }
+  if (action !== 'Archive' && action !== 'Skip') return false
 
-  const archived = join(
-    archiveRoot,
-    'wiki-governance',
-    today,
-    basename(projectRoot),
-    actualHash.slice(0, 12),
-    candidate.relativePath,
-  )
-  if (!appliedPath) appliedPath = archived
+  const archived = governanceArchivePath(archiveRoot, projectRoot, reviewedAt, actualHash, candidate.relativePath, 'candidate')
+  const appliedPath = archived
   const resolvedItems = [...all]
   resolvedItems[index] = {
     ...item,
     resolved: true,
-    resolvedAction: action === 'Promote' || action === 'Merge' || action === 'Replace' || action === 'Deduplicate' ? action : 'Archive',
+    resolvedAction: 'Archive',
     appliedPath,
     resolvedAt,
   }
   const governanceEntry = {
-    timestamp: now.toISOString(),
+    timestamp: reviewedAt,
     policyVersion: governancePolicyVersion(),
     reviewId: reviewIdValue,
     action,
     actor,
     outcome: 'applied',
     candidateHash: actualHash,
-    previousCanonicalHash,
+    previousCanonicalHash: '',
     targetPath: item.targetPath ?? '',
     appliedPath,
   }
@@ -945,19 +1224,6 @@ export function applyCandidateReview(
   const governanceLogBefore = readOptionalRegularFile(governanceLog)
   const reviewAfter = JSON.stringify(resolvedItems, null, 2)
   const governanceLogAfter = `${governanceLogBefore ?? ''}${JSON.stringify(governanceEntry)}\n`
-  if (targetAfter !== undefined) {
-    const revalidatedTarget = resolveCanonicalReviewPath(wikiRoot, targetPath, targetBefore === undefined)
-    if (revalidatedTarget === undefined || revalidatedTarget.absolutePath !== targetAbsolutePath) {
-      throw new Error(`canonical target changed during review transaction: ${targetPath}`)
-    }
-    if (targetBefore === undefined) {
-      if (pathEntryExists(targetAbsolutePath)) {
-        throw new Error(`canonical target appeared during review transaction: ${targetPath}`)
-      }
-    } else if (readRegularFileBounded(targetAbsolutePath, 5 * 1024 * 1024).toString('utf8') !== targetBefore) {
-      throw new Error(`canonical target changed during review transaction: ${targetPath}`)
-    }
-  }
   const revalidatedCandidate = resolveCandidateReviewPath(wikiRoot, item.candidatePath)
   if (revalidatedCandidate === undefined || revalidatedCandidate.absolutePath !== candidate.absolutePath) {
     throw new Error(`candidate path changed during review transaction: ${item.candidatePath}`)
@@ -973,28 +1239,12 @@ export function applyCandidateReview(
     throw new Error('governance log changed during review transaction')
   }
   if (pathEntryExists(archived)) throw new Error(`candidate archive already exists: ${archived}`)
-  if (archivedCanonical !== '' && pathEntryExists(archivedCanonical)) {
-    throw new Error(`canonical archive already exists: ${archivedCanonical}`)
-  }
 
-  const transactionId = `promotion-${createHash('sha256')
-    .update(`${reviewIdValue}\0${actualHash}\0${resolvedAt}`)
-    .digest('hex')
-    .slice(0, 24)}`
+  const transactionId = promotionTransactionId(reviewIdValue, actualHash, reviewedAt)
   const operations: PromotionOperation[] = []
-  if (archivedCanonical !== '') {
-    operations.push(promotionOperation(
-      transactionId, operations.length, 'canonical-archive', archivedCanonical, undefined, archivedCanonicalContent,
-    ))
-  }
   operations.push(promotionOperation(
     transactionId, operations.length, 'candidate-archive', archived, undefined, currentCandidate,
   ))
-  if (targetAfter !== undefined) {
-    operations.push(promotionOperation(
-      transactionId, operations.length, 'canonical', targetAbsolutePath, targetBefore, targetAfter,
-    ))
-  }
   operations.push(
     promotionOperation(
       transactionId, operations.length, 'review', reviewFile, reviewBefore, reviewAfter,
@@ -1011,12 +1261,12 @@ export function applyCandidateReview(
     id: transactionId,
     reviewId: reviewIdValue,
     candidateHash: actualHash,
-    createdAt: now.toISOString(),
-    action: canonicalActions.has(action) ? action : 'Archive',
+    createdAt: reviewedAt,
+    action: 'Archive',
     targetPath: item.targetPath ?? null,
-    reviewHash: verifiedReceipt?.request.reviewHash ?? null,
-    receiptId: verifiedReceipt?.id ?? null,
-    receiptHash: verifiedReceipt?.receiptHash ?? null,
+    reviewHash: null,
+    receiptId: null,
+    receiptHash: null,
     operationSetHash: sha256(canonicalJson(operations)),
     operations,
   }
@@ -1027,6 +1277,13 @@ export function applyCandidateReview(
     state: 'prepared',
     seal,
   })
+  appendKnowledgeReviewEvent(
+    reviewFile,
+    'knowledge/rejected',
+    item.id,
+    actualHash,
+    archiveReviewEventPayload(core),
+  )
   return true
 }
 
@@ -1038,34 +1295,6 @@ function canonicalTarget(candidatePath: string): string | undefined {
     if (/^(concepts|entities|findings|research|methodology)\//u.test(rel)) return rel
   }
   return undefined
-}
-
-function candidateActions(wikiRoot: string, targetPath?: string): ReadonlyArray<{ action: string; label: string }> {
-  if (!targetPath) return [{ action: 'Archive', label: '归档候选' }]
-  const target = resolveCanonicalReviewPath(wikiRoot, targetPath, true)
-  if (target === undefined) return [{ action: 'Archive', label: '归档候选' }]
-  if (existsSync(target.absolutePath)) {
-    return [
-      { action: 'Deduplicate', label: '保留正式页并去重' },
-      { action: 'Merge', label: '合并更完整版本' },
-      { action: 'Replace', label: '用候选替换' },
-      { action: 'Archive', label: '归档候选' },
-    ]
-  }
-  return [{ action: 'Promote', label: '批准入库' }, { action: 'Archive', label: '归档候选' }]
-}
-
-function stampCanonical(content: string, today: string, approvedBy: string): string {
-  let output = content
-  if (/^status:\s*/mu.test(output)) output = output.replace(/^status:\s*.*$/mu, 'status: canonical')
-  else output = output.replace(/^---\n/u, '---\nstatus: canonical\n')
-  output = output.replace(/^approved_at:\s*.*\n?/mu, '')
-  output = output.replace(/^approved_by:\s*.*\n?/mu, '')
-  return output.replace(/^---\n/u, `---\napproved_at: ${today}\napproved_by: ${approvedBy}\n`)
-}
-
-function stampEvidence(content: string, today: string, approvedBy: string): string {
-  return stampCanonical(content, today, approvedBy).replace(/^status:\s*canonical$/mu, 'status: evidence')
 }
 
 function appendGovernanceLog(reviewFile: string, entry: Record<string, unknown>): void {

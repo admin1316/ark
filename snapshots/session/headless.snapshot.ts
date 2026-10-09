@@ -1,6 +1,6 @@
 /** Recorded-session replay through the shipped headless `dsh` profile. */
 
-import { cp, copyFile, mkdir, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { cp, copyFile, mkdir, readFile, readdir, realpath, rm, utimes, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
@@ -36,9 +36,13 @@ import {
   type SnapshotManifest,
   type WorkspaceSnapshotEntry,
 } from '@deepseek-ai/dsh-session-snapshot'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke, resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import { seedWikiSnapshot, assertWikiWorld } from '../../examples/headless-agent/tests/fixtures/knowledge-wiki/support.ts'
+import { seedArchiveRollbackSnapshot, assertArchiveRollbackWorld } from '../../examples/headless-agent/tests/fixtures/knowledge-wiki/archive-rollback-conflict.ts'
+import { seedSourceIdentitySnapshot, assertSourceIdentityWorld } from '../../examples/headless-agent/tests/fixtures/knowledge-wiki/source-identity.ts'
+import { seedIngestionOnlySnapshot, assertIngestionOnlyWorld } from '../../examples/headless-agent/tests/fixtures/knowledge-wiki/ingestion-only.ts'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const snapshotsRoot = fileURLToPath(new URL('./', import.meta.url))
@@ -358,6 +362,10 @@ async function seedWorkspace(scenario: HeadlessScenario, cwd: string): Promise<v
 }
 
 const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
+  async 'wiki-governance'(cwd) { seedWikiSnapshot(cwd) },
+  async 'wiki-archive-rollback-conflict'(cwd) { seedArchiveRollbackSnapshot(cwd) },
+  async 'wiki-source-identity'(cwd) { seedSourceIdentitySnapshot(cwd) },
+  async 'wiki-ingestion-only'(cwd) { seedIngestionOnlySnapshot(cwd) },
   async 'editing-cordis-skill'(cwd) {
     const target = join(cwd, '.dsh', 'skills', 'editing-cordis-compositions', 'SKILL.md')
     await mkdir(dirname(target), { recursive: true })
@@ -610,6 +618,11 @@ describe('headless recorded-session snapshots', () => {
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
       const spillRoot = snapshotSpillRoot(join(scenario.dir, 'session.jsonl'))
+      const archiveRollbackConflict = scenario.manifest.workspace?.setup === 'wiki-archive-rollback-conflict'
+      const sourceIdentity = scenario.manifest.workspace?.setup === 'wiki-source-identity'
+      const ownedWikiWorld = scenario.manifest.workspace?.setup === 'wiki-governance' || archiveRollbackConflict || sourceIdentity
+      const ingestionOnly = scenario.manifest.workspace?.setup === 'wiki-ingestion-only'
+      const rawWikiWorld = ownedWikiWorld || ingestionOnly
       await rm(spillRoot, { recursive: true, force: true })
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
       try {
@@ -655,14 +668,76 @@ describe('headless recorded-session snapshots', () => {
             })
             await seedWorkspace(scenario, cwd)
             initialWorkspace = await captureWorkspaceSnapshot(cwd, {
-              ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
+              // Raw Wiki-owned state is authenticated by its named lifecycle oracle.
+              ignoredRootEntries: rawWikiWorld
+                ? [...RUNTIME_WORKSPACE_ENTRIES, '.llm-wiki', 'jiuzhang-tarballs', 'wiki', ...ingestionOnly ? ['raw'] : []]
+                : RUNTIME_WORKSPACE_ENTRIES,
             })
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (ingestionOnly) assertIngestionOnlyWorld(cwd)
+            if (ownedWikiWorld) {
+              const assertWorld = archiveRollbackConflict ? assertArchiveRollbackWorld
+                : sourceIdentity ? assertSourceIdentityWorld : assertWikiWorld
+              assertWorld(cwd)
+              const coldPatch = materializeProfilePatch(
+                join(composition.dir, 'cold.cordis.yml'), cwd, join(cwd, patchRoot), patches.length, dshBin,
+              )
+              const coldLaunch = resolveExampleLaunch({
+                srcBin: dshBin, tsconfigPath,
+                configArgs: ['--profile', 'headless', ...patches.flatMap(file => ['--patch', file]), '--patch', coldPatch, task],
+                env: {
+                  DSH_HOME: join(cwd, '.dsh'), DSH_AGENTS_HOME: join(cwd, '.agents'),
+                  DSH_SNAPSHOT: 'replay', DSH_SNAPSHOT_PROVIDER: model.provider, DSH_SNAPSHOT_MODEL: model.model,
+                  DSH_SNAPSHOT_FILE: join(scenario.dir, 'session.jsonl'), DSH_TELEMETRY_DISABLED: '1',
+                  NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+                },
+              })
+              const cold = spawnSync(coldLaunch.command, coldLaunch.args, {
+                cwd, env: { ...process.env, ...coldLaunch.env }, timeout: 30_000, encoding: 'utf8',
+              })
+              expect(cold.error, `${scenario.name} cold process: ${cold.stderr}`).toBeUndefined()
+              expect(cold.signal, `${scenario.name} cold process: ${cold.stderr}`).toBeNull()
+              expect(cold.status, `${scenario.name} cold process: ${cold.stderr}`).toBe(archiveRollbackConflict ? 1 : 0)
+              expect(cold.stdout).toBe('')
+              assertWorld(cwd)
+              if (archiveRollbackConflict) {
+                expect(cold.stderr).toContain('dsh: plugin tree failed to load: failed to apply loader entry knowledge-wiki (@deepseek-ai/dsh-knowledge-wiki):')
+                expect(cold.stderr).toContain(`promotion journal divergent state at ${join(await realpath(cwd), 'wiki/_candidates/ingest/concepts/archive-rollback-conflict.md')}`)
+              } else if (sourceIdentity) {
+                expect(cold.stderr).toBe('')
+                expect(JSON.parse(await readFile(join(cwd, '.dsh/wiki-source-identity-cold.json'), 'utf8'))).toEqual({
+                  actualColdResume: true, durablePrefixEqual: true, modelMessagesEqual: true, deniedTools: 5,
+                  retrievalCount: 0, injectionCount: 0, successfulUses: 0, utilityScore: 0,
+                })
+              } else {
+                expect(cold.stderr).toBe('')
+                expect(JSON.parse(await readFile(join(cwd, '.dsh/wiki-snapshot-cold.json'), 'utf8'))).toMatchObject({
+                  actualColdResume: true, durablePrefixEqual: true, modelMessagesEqual: true,
+                  injectionCount: 1, archiveTerminalEvents: 1, successfulUses: 0, utilityScore: 0,
+                })
+              }
+            }
             finalWorkspace = await captureWorkspaceSnapshot(cwd, {
-              ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
+              // Raw Wiki-owned state is authenticated by its named lifecycle oracle.
+              ignoredRootEntries: rawWikiWorld
+                ? [...RUNTIME_WORKSPACE_ENTRIES, '.llm-wiki', 'jiuzhang-tarballs', 'wiki', ...ingestionOnly ? ['raw'] : []]
+                : RUNTIME_WORKSPACE_ENTRIES,
             })
+            if (scenario.name === 'subprocess-spill-open-failure') {
+              const diagnostics = JSON.parse(await readFile(join(cwd, '.dsh', 'spill-diagnostics.json'), 'utf8')) as JsonObject[]
+              expect(diagnostics).toEqual([{
+                type: 'error',
+                message: 'subprocess-local: stdout spill failed; only the in-memory tail is retained.',
+                code: 'ENOENT',
+                syscall: 'open',
+                path: expect.any(String),
+              }])
+              const path = diagnostics[0]?.path as string
+              expect(dirname(path)).toBe(join(await realpath(cwd), '.dsh', 'unavailable-spill'))
+              expect(basename(path)).toMatch(/^dsh-subprocess-\d+-\d+-[a-f0-9]{12}-stdout\.log$/)
+            }
           },
         })
       } finally {
@@ -681,6 +756,66 @@ describe('headless recorded-session snapshots', () => {
       expect(result.stderr).toBe(expectedStderr)
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
       const actualContext = contextOf(actualLogs.map(log => log.content))
+      if (ingestionOnly) {
+        const log = actualLogs[0]!.content
+        const durable = parseSessionLog(log)
+        const calls = durable.filter(event => event.type === 'tool/call')
+        expect(calls.map(event => [event.data.name, event.data.arguments])).toEqual([
+          ['wiki_ingest', JSON.stringify({ input: 'raw/sources/ingestion-only.png' })],
+        ])
+        const results = durable.filter(event => event.type === 'tool/result')
+        expect(results).toHaveLength(1)
+        expect(results[0]!.data.message.source.callId).toBe(calls[0]!.data.callId)
+        expect(results[0]!.data.message.content).toEqual([{
+          type: 'tool-result', toolCallId: calls[0]!.data.callId, isError: false,
+          content: [{ type: 'text', text: '- #1 running: ingestion-only.png' }],
+        }])
+        expect(durable.filter(event => event.type === 'knowledge/retrieved' || event.type === 'knowledge/injected')).toEqual([])
+        for (const header of normalizedHeaders(log, actualContext)) {
+          const tools = (header as { tools: Array<{ name: string }> }).tools
+          expect(tools.filter(tool => tool.name.startsWith('wiki_')).map(tool => tool.name)).toEqual(['wiki_ingest'])
+        }
+        for (const prompt of normalizedSystemPrompts(log, actualContext)) {
+          expect(prompt).toContain('Use wiki_ingest to enqueue source work.')
+          for (const name of ['wiki_search', 'wiki_files', 'wiki_read', 'wiki_graph', 'wiki_reviews', 'wiki_verify_candidate']) {
+            expect(prompt).not.toContain(name)
+          }
+        }
+      }
+      if (archiveRollbackConflict) {
+        const durable = parseSessionLog(actualLogs[0]!.content)
+        const results = durable.filter(event => event.type === 'tool/result')
+          .flatMap(event => event.data.message.content).filter(block => block.type === 'tool-result')
+        expect(results.map(result => [result.isError, result.content])).toEqual([
+          [false, [{ type: 'text', text: 'No unresolved review items are visible to this session.' }]],
+          [true, [{ type: 'text', text: 'Error: knowledge page is not verified for this scope' }]],
+        ])
+        const retrieved = durable.filter(event => event.type === 'knowledge/retrieved')
+        const injected = durable.filter(event => event.type === 'knowledge/injected')
+        expect(retrieved.map(event => [event.data.tool, event.data.callId, event.data.path, event.data.value])).toEqual([
+          ['wiki_reviews', 'call_wiki_reviews_1', 'reviews', { reviews: [] }],
+        ])
+        expect(injected.map(event => [event.data.tool, event.data.callId, event.data.path, event.data.value])).toEqual([
+          ['wiki_reviews', 'call_wiki_reviews_1', 'tool:wiki_reviews', results[0]!.content],
+        ])
+        expect(JSON.stringify(results)).not.toContain('Third-party candidate bytes written after the Archive deletion.')
+      }
+      if (scenario.name === 'tool-output-unicode' || scenario.name === 'subprocess-spill-open-failure') {
+        const results = parseSessionLog(actualLogs[0]!.content)
+          .filter(event => event.type === 'tool/result')
+          .flatMap(event => event.data.message.content)
+          .filter(block => block.type === 'tool-result')
+        expect(results).toHaveLength(2)
+        expect(results.map(result => result.isError)).toEqual([false, false])
+        const output = results.map(result => result.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(''))
+        expect(output[1]).toBe('READY')
+        if (scenario.name === 'tool-output-unicode') {
+          expect(output[0]?.startsWith(`${'x'.repeat(15_999)}<response clipped>`)).toBe(true)
+          expect(output[0]).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
+        } else {
+          expect(output[0]).toBe('xxxxxxxxxTAIL_OK\n[output truncated; full output: (unavailable)]')
+        }
+      }
       const fixtureContext = contextOf(fixtures)
       const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
       const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext)
@@ -698,6 +833,9 @@ describe('headless recorded-session snapshots', () => {
       } else {
         expect(finalWorkspace, `${scenario.name}: a changed workspace requires workspace.final`).toEqual(initialWorkspace)
       }
-    }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+    }, scenario.manifest.workspace?.setup === 'wiki-governance'
+      || scenario.manifest.workspace?.setup === 'wiki-archive-rollback-conflict'
+      || scenario.manifest.workspace?.setup === 'wiki-source-identity'
+      ? 2 * LOADER_SMOKE_TEST_TIMEOUT_MS : LOADER_SMOKE_TEST_TIMEOUT_MS)
   }
 })

@@ -1,0 +1,11 @@
+version: 1
+scenario: wiki-ingestion-only
+profile: headless
+composition: wiki-ingestion-only
+recording: authored
+header:
+  class: wiki-ingestion-only
+  pin: true
+workspace:
+  setup: wiki-ingestion-only
+  final: true

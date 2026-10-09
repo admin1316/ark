@@ -1,0 +1,1009 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-08T16:52:32.706963+00:00",
+  "status": "READ_ONLY_SOURCE_VALIDATION_PASSED_RUNTIME_NOT_ACTIVATED",
+  "sourceParent": "15cf20d4ea40e88a9f634d00510ad4b0e2da7f51",
+  "sourceFilePins": [
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-artifacts.ts",
+      "bytes": 19760,
+      "sha256": "5c9a0e2c327e5d680f08449144947b6bd09a47acb10b73c9b2b969c735a36e56"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-evaluation.ts",
+      "bytes": 7878,
+      "sha256": "8fe3eba433c244d72b1950f353421c7aa3c10fb09eba1ebb381fb78749b3588a"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph-context.ts",
+      "bytes": 16500,
+      "sha256": "c6a77fb54a6b842f07e77f524b93bfff099756592db839e95fe3944b0a40c9a3"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph-edges.ts",
+      "bytes": 9564,
+      "sha256": "9ec6412ff25cdeedfcde53036f69dd95810a1d1a85a34963cb72cd1b90bb37ef"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph-journal.ts",
+      "bytes": 18773,
+      "sha256": "ebd5c0ef9b65d0e8179f7c068ab77472bc2d77eb0d3ba1bdb717db209af0e9e9"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph-schema.ts",
+      "bytes": 20404,
+      "sha256": "a29da598251a43362640dedbe6c735bad6087199d81090a1993800a556748114"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph-session.ts",
+      "bytes": 14169,
+      "sha256": "e1049b30e530dcd28ffc4f4e49cb000e2c1eced9e92de27a10829eb06475a20e"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/learning-graph.ts",
+      "bytes": 31884,
+      "sha256": "5f58cda40169e971378a2b66d8339c211684a6162d205f80847ec3586cd9a91c"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-artifacts.spec.ts",
+      "bytes": 20147,
+      "sha256": "8eeb862d38f1b7c761d74720800e4e4dd4b1b7a0af0453480f149c6d15a52788"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-graph-fixture.ts",
+      "bytes": 53254,
+      "sha256": "348b2c84ea9b5dbe8598fb7204437103fb5104fbf34104ad7a3e993414023bf0"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-graph-history.spec.ts",
+      "bytes": 9206,
+      "sha256": "9cbeaa51fa4398da18368337e86f588698dba7f3101c6fd6b917ab5097b938c0"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/learning-graph.spec.ts",
+      "bytes": 31338,
+      "sha256": "870c467ffa4c10d92556246c8afbfba02f0b35e2d5d242c7f8c123781453cd34"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/verifier.ts",
+      "bytes": 23592,
+      "sha256": "bf6f37e386451581f63b8d61e95128f953d74d6c357bb999b0e3272487d38bbe"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/external-verifier-adapter.ts",
+      "bytes": 14298,
+      "sha256": "56cbe885071ce47e5e471d07ed523c2b35e3eb5a1c33536b25c7b27f2269e5ef"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/src/reviews.ts",
+      "bytes": 61727,
+      "sha256": "acbbf503ee0c025347166245bfb031d184c0890c041e3837a7ab06abb205a780"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/verifier-closure.spec.ts",
+      "bytes": 17035,
+      "sha256": "c0cf200a739f3f631669ac9746b860b3a9218c2872bab5d7b5d5d5febb933425"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+      "bytes": 28826,
+      "sha256": "4b5c31c32092e46749a5e5f175c85c09db860aa4963ec5596030a982d8fa91e8"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/package.json",
+      "bytes": 2498,
+      "sha256": "66b91c41871768925ae25c72f4333470c05468c0a5d9ff7ca92be5c831ca01d9"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tsconfig.json",
+      "bytes": 750,
+      "sha256": "06b4a1c85ecac2ef36bc8240a62a3a7fd7b28faa227bb0721c77cc0437a16116"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "bytes": 648211,
+      "sha256": "a93efe279b9b2014c0bd0ce8683fbe9e76819f62f29b5ac4a4d595f621fad11f"
+    },
+    {
+      "path": "scripts/rust-migration/evaluate-learning.ts",
+      "bytes": 5635,
+      "sha256": "b789a037dbd7824badb9336ef5f0b170c29cf2119e4765e12d9f0bc3221580c3"
+    },
+    {
+      "path": "project-manifest.json",
+      "bytes": 862,
+      "sha256": "d1a4175f1fac86f8998196b6a217bd88e9b4ea4b59dc154c9db0ca980c265e10"
+    },
+    {
+      "path": "scripts/rust-migration/evidence/learning-protocol-baseline-20261008.json",
+      "bytes": 439052,
+      "sha256": "305d231bc5ca12903c4dbacccf0d34ded1ec48d00d0f8d081bee492ad4cc2e52"
+    }
+  ],
+  "builtArtifactPins": [
+    {
+      "path": "packages/host/knowledge-wiki/lib/index.js",
+      "bytes": 363536,
+      "sha256": "57d069afb9e315f2c31d55075b99da864213879beb293141059dcf99e011faff"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/lib/types/learning-artifacts.js",
+      "bytes": 17165,
+      "sha256": "e79102a799641b1579472acc17e3053555fb5e3d97f3a8149a607e9e61e13230"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/lib/types/learning-evaluation.js",
+      "bytes": 6366,
+      "sha256": "8900119504b1df7ce1d61339c8bb8fa8175926f7239ffd00de9b16cfc6aaf05a"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/lib/types/learning-graph-context.js",
+      "bytes": 15017,
+      "sha256": "79516dab12395edb8f1775f66e9930b04fac9c4ecad143e4c08b71475d746fd5"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/lib/types/learning-graph.js",
+      "bytes": 32475,
+      "sha256": "b741ea020065b50a3b3d6572227e24b4dfbd075dc182d98ba60a88c874a999ae"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/lib/types/verifier.js",
+      "bytes": 19133,
+      "sha256": "85fa7b067048d4fbf94cdb31207206f0b4b0b6f3aafcd8c7ce7bce61aa44ce2b"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/lib/types/external-verifier-adapter.js",
+      "bytes": 12648,
+      "sha256": "d39333ba9a79e494170ef94f0b9a814a75d8520cade6ee8fe5438fa864abdc06"
+    },
+    {
+      "path": "packages/core/session/lib/index.js",
+      "bytes": 93772,
+      "sha256": "b6634e8c8673883cf32226d9f4562c628f00569ff91512e2f190fa6d9d823490"
+    }
+  ],
+  "scope": "Approved candidate-only bounded ArtifactRef/public-role/complete original learning-request graph validation in existing verifier/review owners; shared unchanged paired-count reducer.",
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "unchangedArtifactPins": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/project-manifest.json",
+      "bytes": 862,
+      "sha256": "d1a4175f1fac86f8998196b6a217bd88e9b4ea4b59dc154c9db0ca980c265e10"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/learning-protocol-baseline-20261008.json",
+      "bytes": 439052,
+      "sha256": "305d231bc5ca12903c4dbacccf0d34ded1ec48d00d0f8d081bee492ad4cc2e52"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/rust-benchmark.json",
+      "bytes": 5452,
+      "sha256": "30b1c938f9a88d890a4001dceae73e4a2039b3a821249b73300c64d121349331"
+    }
+  ],
+  "githubSourceHead": {
+    "observation": {
+      "name": "github-source-head-observation",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "git",
+        "ls-remote",
+        "--symref",
+        "origin",
+        "HEAD"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/github-source-head-observation.receipt.json",
+        "bytes": 9144,
+        "sha256": "caafe555acd77ba9154df436d1e440cc51b97784e2a537fe33eac6abf5abbda0"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/github-source-head-observation.raw.log",
+        "sha256": "96e189cd8b76918434fe8de55002ff9a265db9ba7bf754cba8150ba6edac4eaa",
+        "bytes": 72
+      }
+    },
+    "defaultBranch": "main",
+    "sha": "d382723905742f2b87401ad444d02756f5cb229b",
+    "matchesLocalOriginMain": true
+  },
+  "leafValidation": {
+    "tests": 56,
+    "sourceAndTestUnchanged": true,
+    "summary": {
+      "path": "/private/tmp/ark-learning-artifacts-15cf20d4-vnxkfjfv/summary.json",
+      "bytes": 12741,
+      "sha256": "51bbf8c1bfb6fee214bf1ac2923d17809b138aae85a140e0316d425261806d67"
+    },
+    "classification": "Retained owning leaf checks on unchanged leaf bytes; not a real learning run."
+  },
+  "graphValidation": {
+    "tests": 86,
+    "currentCases": 63,
+    "historicalCases": 23,
+    "execution": {
+      "path": "/private/tmp/ark-learning-graph-bindings-15cf20d4-bb2wk37d/full-bindings-final-attempt-2-receipt.json",
+      "bytes": 6698,
+      "sha256": "ead065d71730cdaf12137a6a1c5993f2405e4f20ed7dfbcca45d63757f6f5814",
+      "actualExit": 0,
+      "argv": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/host/knowledge-wiki/tests/learning-graph.spec.ts",
+        "packages/host/knowledge-wiki/tests/learning-graph-history.spec.ts",
+        "--config",
+        "vitest.config.ts"
+      ],
+      "environmentDelta": {
+        "DSH_LEARNING_GRAPH_TEST_EVIDENCE_ROOT": "/private/tmp/ark-learning-graph-bindings-15cf20d4-bb2wk37d/full-bindings-final-attempt-2-fixture"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-bindings-15cf20d4-bb2wk37d/full-bindings-final-attempt-2.raw.log",
+        "bytes": 919,
+        "sha256": "fdecd4ddb23d994ef605f10a963d68b74c11f5817b9ed9c343787fd12b87feec"
+      },
+      "testSummary": "86 passed (86)",
+      "pinsChangedDuringExecution": [],
+      "evidenceKind": "independent subprocess receipt"
+    },
+    "owningLint": {
+      "path": "/private/tmp/ark-learning-graph-bindings-15cf20d4-bb2wk37d/owning-lint-standalone-final-receipt.json",
+      "bytes": 6610,
+      "sha256": "6c59908469765c5656d8b43ef3e80ffd6b0d6141c5a4be0019cc05ab91b96647",
+      "actualExit": 0,
+      "argv": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/run-oxlint.ts",
+        "--type-aware",
+        "packages/host/knowledge-wiki/tests/learning-graph-fixture.ts",
+        "packages/host/knowledge-wiki/tests/learning-graph.spec.ts",
+        "packages/host/knowledge-wiki/tests/learning-graph-history.spec.ts"
+      ],
+      "environmentDelta": {},
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-bindings-15cf20d4-bb2wk37d/owning-lint-standalone-final.raw.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "testSummary": null,
+      "pinsChangedDuringExecution": [],
+      "evidenceKind": "independent subprocess receipt"
+    },
+    "summary": {
+      "path": "/private/tmp/ark-learning-graph-bindings-15cf20d4-bb2wk37d/additive-final-summary-v4.json",
+      "bytes": 18629,
+      "sha256": "4bd0bc55422cda0397cbb7332543595a076f9b6650b74052951fcd1ca4facc34"
+    },
+    "separateSeal": {
+      "path": "/private/tmp/ark-learning-graph-bindings-15cf20d4-bb2wk37d/additive-seal-index-v4.json",
+      "bytes": 2256526,
+      "sha256": "85b58bc2c033f72a6730f774bd467476b5e43d02e57558923179b47d1608edf2"
+    },
+    "rootSealVerification": {
+      "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/final-child-additive-seal-verification.json",
+      "bytes": 172,
+      "sha256": "45230e1cd71459de6572674fd7955cb2f9b46d45f365416cba9c6f1156bdca6c"
+    },
+    "sealedFiles": 8518,
+    "sealedFilesMismatch": 0,
+    "rawArtifactWorldFiles": 8248,
+    "completeSyntheticStores": 62,
+    "exactArtifactRefsVerified": 8060,
+    "transitiveImportPinLimit": "Supplementary imports captured after execution; primary source/test pins are the before/after execution proof."
+  },
+  "sourceAudit": {
+    "path": "/private/tmp/ark-learning-fixed86-source-audit-15cf20d4-touid2ht/fixed86-source-audit.json",
+    "bytes": 11095,
+    "sha256": "085991d277e0d3bdadb50d4981364361e14f5c9325746763839b648be8cb448a"
+  },
+  "rootChecks": [
+    {
+      "name": "host-build-final-standalone-arm",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "pnpm",
+        "run",
+        "build:lib:host"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/host-build-final-standalone-arm.receipt.json",
+        "bytes": 9125,
+        "sha256": "703fea7775a405fff19ce4d886b2446b142e6f203586b9a908e11374272f8e0e"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/host-build-final-standalone-arm.raw.log",
+        "sha256": "26c37ca94ac9c5089971e68118ad503233203e2cbcb22e9e9686551d3537691d",
+        "bytes": 143439
+      }
+    },
+    {
+      "name": "legacy-and-reducer-final-standalone-arm",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/host/knowledge-wiki/tests/verifier-closure.spec.ts",
+        "packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts",
+        "packages/host/knowledge-wiki/tests/verification.spec.ts",
+        "packages/host/knowledge-wiki/tests/canonical-trial-denial.spec.ts",
+        "packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+        "packages/host/knowledge-wiki/tests/loader-composition.spec.ts",
+        "scripts/rust-migration/evaluate-learning.spec.ts"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/legacy-and-reducer-final-standalone-arm.receipt.json",
+        "bytes": 9612,
+        "sha256": "494229aa45a4f357d2e8c7dc3eb23ea66743b756a342a44c9097504832dadc67"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/legacy-and-reducer-final-standalone-arm.raw.log",
+        "sha256": "52222c77b18df6b980db773a7ce97e0f59c3c6df91ae096449a83f322f4d952b",
+        "bytes": 922
+      }
+    },
+    {
+      "name": "source-headless-final-standalone-arm",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--config",
+        "vitest.snapshot.config.ts",
+        "snapshots/session/headless.snapshot.ts",
+        "-t",
+        "wiki-(governance|archive-rollback-conflict)"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/source-headless-final-standalone-arm.receipt.json",
+        "bytes": 9292,
+        "sha256": "d7305c8d7bfedacc25e5216a5fae3b1f34bc7f4c2f5b569e14afe5eceb752620"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/source-headless-final-standalone-arm.raw.log",
+        "sha256": "169e571f2a74e961e629564f7ffa01cbeecaf96779a40ce8238775e8a3534c2a",
+        "bytes": 473
+      }
+    },
+    {
+      "name": "built-headless-final-standalone-arm",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--config",
+        "vitest.snapshot.config.ts",
+        "snapshots/session/headless.snapshot.ts",
+        "-t",
+        "wiki-(governance|archive-rollback-conflict)"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/built-headless-final-standalone-arm.receipt.json",
+        "bytes": 9289,
+        "sha256": "871e90d542594f445797f84e97b3320829c27a82092570446e14cef8b242a710"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/built-headless-final-standalone-arm.raw.log",
+        "sha256": "42cd180cca39ca5b32811c92402150a0bc3b9ce03ec0c240ed5a5ce5530ec214",
+        "bytes": 472
+      }
+    },
+    {
+      "name": "full-lint-final-standalone-arm",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "pnpm",
+        "run",
+        "lint:contracts-ready"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/full-lint-final-standalone-arm.receipt.json",
+        "bytes": 9125,
+        "sha256": "4570ac2ec70a25e906bfedd771273f1d1d3131f7e9ebc995b2325ae1894e29aa"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/full-lint-final-standalone-arm.raw.log",
+        "sha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5",
+        "bytes": 30
+      }
+    },
+    {
+      "name": "export-jsdoc-final-standalone-arm",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "pnpm",
+        "run",
+        "verify-export-jsdoc"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/export-jsdoc-final-standalone-arm.receipt.json",
+        "bytes": 9130,
+        "sha256": "754301e28fb52ab362d0a91ad19c19c30e99f558be8fa085f1f5acb2ff81d29c"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/export-jsdoc-final-standalone-arm.raw.log",
+        "sha256": "34c3189bb05208432b51c80e9941df04ac432c6f79279e01c6008b6c09b8526f",
+        "bytes": 113
+      }
+    },
+    {
+      "name": "github-source-head-observation",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "git",
+        "ls-remote",
+        "--symref",
+        "origin",
+        "HEAD"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/github-source-head-observation.receipt.json",
+        "bytes": 9144,
+        "sha256": "caafe555acd77ba9154df436d1e440cc51b97784e2a537fe33eac6abf5abbda0"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/github-source-head-observation.raw.log",
+        "sha256": "96e189cd8b76918434fe8de55002ff9a265db9ba7bf754cba8150ba6edac4eaa",
+        "bytes": 72
+      }
+    },
+    {
+      "name": "final-child-seal-verification",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "python3",
+        "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/verify-additive-seal.py"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/final-child-seal-verification.receipt.json",
+        "bytes": 9175,
+        "sha256": "0bf8209b3c4105cdde533fb4c470d39093ebc000f4cefe4cddae888cf282f205"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/final-child-seal-verification.raw.log",
+        "sha256": "91014423e24d10c1b2c6f6a2d2eaaf276cad8ac602257286b074d3186a1227f4",
+        "bytes": 162
+      }
+    },
+    {
+      "name": "doc-sync-final-readonly-v2",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "pnpm",
+        "run",
+        "doc-sync"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/doc-sync-final-readonly-v2.receipt.json",
+        "bytes": 9108,
+        "sha256": "143926fe4b633f2287557dde58f942336afa977321854b8839513c16969e1c85"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/doc-sync-final-readonly-v2.raw.log",
+        "sha256": "138e2b255df7518405a8adc1290928c349a9a335d50a9c22a100d469ee5e15d7",
+        "bytes": 2534
+      }
+    },
+    {
+      "name": "acceptance-final-readonly",
+      "actualExit": 0,
+      "sourcePinsStable": true,
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/rust-migration/audit-acceptance.ts",
+        "/Users/hui/ark-test/ark-github-main-20261008"
+      ],
+      "receipt": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/acceptance-final-readonly.receipt.json",
+        "bytes": 9204,
+        "sha256": "2929c9cbd9cc39c6fb99baf5f232c00e5b8f32171e71032f7f28588d261fdf12"
+      },
+      "rawLog": {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/acceptance-final-readonly.raw.log",
+        "sha256": "16bed2f4b96fd2887354cc61e2f80af0ab324e22c8b024f6a8d493035a894309",
+        "bytes": 3437
+      }
+    }
+  ],
+  "documentationReview": {
+    "method": "Independent read-only review of public checkpoint and owning bilingual documentation; narrow confirmation after historical snapshot labels and legacy semantic receipt qualification were corrected.",
+    "finding": "No remaining claim mismatch in reviewed scope.",
+    "limits": "No new real task, app inspection, custody attestation, behavioral test or broader mission acceptance is implied."
+  },
+  "compatibilityAndReducerTests": 102,
+  "assembledKeylessReplay": {
+    "sourceCases": 2,
+    "builtCases": 2,
+    "mode": "Replay; no real provider request."
+  },
+  "retainedDefects": [
+    "Initial graph fixture rejected valid shared DAGs; intermediate red, correction and source pins retained.",
+    "Missing unrelated typed request edges and wrong child operation were reproduced before global binding fixes.",
+    "Repeated descendant rediscovery exceeded the signed5000 budget; private complete-reference then semantic phases retain one traversal without a reset or budget increase.",
+    "Nine malformed unrelated original-request binding cases incorrectly validated after complete valid two-trial controls; red5/red9 and intermediate85 retained.",
+    "Standalone measured-use imported outside its grant arm incorrectly validated without a measured-trial envelope; separate guarded red retained.",
+    "Ordinary Node24 import rejected three new parameter properties, causing real headless Archive worker startup failure; explicit fields fix it.",
+    "Host compiler rejected readonly fixture clock assignment; fresh immutable capture replaced mutation."
+  ],
+  "retentionExceptions": [
+    "Source-owner initial incorrect ESLint invocation log was overwritten before retention; its tool transcript records failure, original raw log bytes unavailable.",
+    "Earlier combined tsc/lint invocation did not retain the first command exit; later explicit standalone checks and final root Host build establish compiler success.",
+    "Root initial generated-document pairing check and initial child seal index iteration failure are retained as decoded tool observations, not original separately captured subprocess byte streams.",
+    "Private additive indexer failures are metadata failures retained separately; v4 seal verified without source edits or behavioral reruns."
+  ],
+  "privateRootEvidence": {
+    "directory": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f",
+    "retainedCommandReceipts": [
+      {
+        "name": "acceptance-final-readonly",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/acceptance-final-readonly.receipt.json",
+          "bytes": 9204,
+          "sha256": "2929c9cbd9cc39c6fb99baf5f232c00e5b8f32171e71032f7f28588d261fdf12"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/acceptance-final-readonly.raw.log",
+          "sha256": "16bed2f4b96fd2887354cc61e2f80af0ab324e22c8b024f6a8d493035a894309",
+          "bytes": 3437
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "built-headless-final-standalone-arm",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/built-headless-final-standalone-arm.receipt.json",
+          "bytes": 9289,
+          "sha256": "871e90d542594f445797f84e97b3320829c27a82092570446e14cef8b242a710"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/built-headless-final-standalone-arm.raw.log",
+          "sha256": "42cd180cca39ca5b32811c92402150a0bc3b9ce03ec0c240ed5a5ce5530ec214",
+          "bytes": 472
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "consolidate-readonly-initial",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/consolidate-readonly-initial.receipt.json",
+          "bytes": 9173,
+          "sha256": "8d0664fcd8e1ceb5780ab4cd9d6ce46ed2677c6b100667fdf75c194e5163a5a3"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/consolidate-readonly-initial.raw.log",
+          "sha256": "3035cecb574d6f049687281594894af607fe90a4d7d3260bc34ca1dc9992182b",
+          "bytes": 228
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "doc-sync-final-readonly-v2",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/doc-sync-final-readonly-v2.receipt.json",
+          "bytes": 9108,
+          "sha256": "143926fe4b633f2287557dde58f942336afa977321854b8839513c16969e1c85"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/doc-sync-final-readonly-v2.raw.log",
+          "sha256": "138e2b255df7518405a8adc1290928c349a9a335d50a9c22a100d469ee5e15d7",
+          "bytes": 2534
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "doc-sync-final-readonly",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/doc-sync-final-readonly.receipt.json",
+          "bytes": 9100,
+          "sha256": "e40c722f6a7845f58887fcfc849e23a49065909425f5875be971748cff61bdf1"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/doc-sync-final-readonly.raw.log",
+          "sha256": "24b7ac7fa67b17f8c2c2fffff8d53260986e81902dab5d577b9a0d1bf2fe1814",
+          "bytes": 2534
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "export-jsdoc-final-standalone-arm",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/export-jsdoc-final-standalone-arm.receipt.json",
+          "bytes": 9130,
+          "sha256": "754301e28fb52ab362d0a91ad19c19c30e99f558be8fa085f1f5acb2ff81d29c"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/export-jsdoc-final-standalone-arm.raw.log",
+          "sha256": "34c3189bb05208432b51c80e9941df04ac432c6f79279e01c6008b6c09b8526f",
+          "bytes": 113
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "export-jsdoc-final",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/export-jsdoc-final.receipt.json",
+          "bytes": 9100,
+          "sha256": "3e240e11c187edacaf9fa94d9e7f71d4e3276b8c30ecfeef7a16674d05027c28"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/export-jsdoc-final.raw.log",
+          "sha256": "34c3189bb05208432b51c80e9941df04ac432c6f79279e01c6008b6c09b8526f",
+          "bytes": 113
+        },
+        "allAfterPinsMatchFinalSource": false
+      },
+      {
+        "name": "final-child-seal-verification",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/final-child-seal-verification.receipt.json",
+          "bytes": 9175,
+          "sha256": "0bf8209b3c4105cdde533fb4c470d39093ebc000f4cefe4cddae888cf282f205"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/final-child-seal-verification.raw.log",
+          "sha256": "91014423e24d10c1b2c6f6a2d2eaaf276cad8ac602257286b074d3186a1227f4",
+          "bytes": 162
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "full-lint-final-standalone-arm",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/full-lint-final-standalone-arm.receipt.json",
+          "bytes": 9125,
+          "sha256": "4570ac2ec70a25e906bfedd771273f1d1d3131f7e9ebc995b2325ae1894e29aa"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/full-lint-final-standalone-arm.raw.log",
+          "sha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5",
+          "bytes": 30
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "full-lint-final",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/full-lint-final.receipt.json",
+          "bytes": 9093,
+          "sha256": "c07516f7c0fb669adf4ea2962c804e99aba8626b50e9435ca517b6ac81236414"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/full-lint-final.raw.log",
+          "sha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5",
+          "bytes": 30
+        },
+        "allAfterPinsMatchFinalSource": false
+      },
+      {
+        "name": "github-source-head-observation",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/github-source-head-observation.receipt.json",
+          "bytes": 9144,
+          "sha256": "caafe555acd77ba9154df436d1e440cc51b97784e2a537fe33eac6abf5abbda0"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/github-source-head-observation.raw.log",
+          "sha256": "96e189cd8b76918434fe8de55002ff9a265db9ba7bf754cba8150ba6edac4eaa",
+          "bytes": 72
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "host-build-after-binding-fix",
+        "actualExit": 2,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/host-build-after-binding-fix.receipt.json",
+          "bytes": 9116,
+          "sha256": "e4e581f465dcf4ba19678285d83d7ec32e1b3bed2fd6edd9573d6e26fddb321d"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/host-build-after-binding-fix.raw.log",
+          "sha256": "a9e0ab644f50f3d224f6019b68c893231d1ae02eeb8e3dac508cea891de52ba3",
+          "bytes": 259
+        },
+        "allAfterPinsMatchFinalSource": false
+      },
+      {
+        "name": "host-build-final-standalone-arm",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/host-build-final-standalone-arm.receipt.json",
+          "bytes": 9125,
+          "sha256": "703fea7775a405fff19ce4d886b2446b142e6f203586b9a908e11374272f8e0e"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/host-build-final-standalone-arm.raw.log",
+          "sha256": "26c37ca94ac9c5089971e68118ad503233203e2cbcb22e9e9686551d3537691d",
+          "bytes": 143439
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "host-build-final",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/host-build-final.receipt.json",
+          "bytes": 9095,
+          "sha256": "b05cc9aff35773e0bbf36b819ffc1b0454635965fcc9ab2958b7180a41e74b3f"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/host-build-final.raw.log",
+          "sha256": "5f05bbfdbab2ff88f441deef3269ce189eeb3cd13a419a4071f2276e354ef34b",
+          "bytes": 143614
+        },
+        "allAfterPinsMatchFinalSource": false
+      },
+      {
+        "name": "legacy-and-reducer-final-standalone-arm",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/legacy-and-reducer-final-standalone-arm.receipt.json",
+          "bytes": 9612,
+          "sha256": "494229aa45a4f357d2e8c7dc3eb23ea66743b756a342a44c9097504832dadc67"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/legacy-and-reducer-final-standalone-arm.raw.log",
+          "sha256": "52222c77b18df6b980db773a7ce97e0f59c3c6df91ae096449a83f322f4d952b",
+          "bytes": 922
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "legacy-and-reducer-final",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/legacy-and-reducer-final.receipt.json",
+          "bytes": 9582,
+          "sha256": "2a1527a761e2c9dc17c7502bb11fa8bb54e16ad0cf17f3a9cde54b4a15de3bec"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/legacy-and-reducer-final.raw.log",
+          "sha256": "bafcabfff74cb9f7401def12c6673ca679158d16ac365cb92d4822b5c318be68",
+          "bytes": 919
+        },
+        "allAfterPinsMatchFinalSource": false
+      },
+      {
+        "name": "module-graph-generate",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/module-graph-generate.receipt.json",
+          "bytes": 9105,
+          "sha256": "e6c3fecd93764c536769ddde095e8665e93b56dd7ad3f5fa29db35a0de0146de"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/module-graph-generate.raw.log",
+          "sha256": "67c240adf0faf10771d5340bb6fad1710fce345bc9fa4b37c6d876923b8a9ed7",
+          "bytes": 110
+        },
+        "allAfterPinsMatchFinalSource": false
+      },
+      {
+        "name": "module-graph-pairing-record",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/module-graph-pairing-record.receipt.json",
+          "bytes": 9169,
+          "sha256": "c62f0c60e0140a41fc1ec6efe5c6005ca9ddad909bba81f0fec809db9cb6c097"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/module-graph-pairing-record.raw.log",
+          "sha256": "3f104d426518e7df3ecf2bc26f30105ff63d7a2eabf4bac021f14ea7378bbe3f",
+          "bytes": 224
+        },
+        "allAfterPinsMatchFinalSource": false
+      },
+      {
+        "name": "plain-node-source-import-after-binding-fix",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/plain-node-source-import-after-binding-fix.receipt.json",
+          "bytes": 9216,
+          "sha256": "d988deaf34295a5c4a3ff4e520d45552a4faf2c6c9777ec4b3c876111b786193"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/plain-node-source-import-after-binding-fix.raw.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        "allAfterPinsMatchFinalSource": false
+      },
+      {
+        "name": "source-headless-after-binding-fix",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/source-headless-after-binding-fix.receipt.json",
+          "bytes": 9284,
+          "sha256": "374d616152a18df9cc8a282c07453444816a2a2a344e06ec5574de5239004673"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/source-headless-after-binding-fix.raw.log",
+          "sha256": "1aebd327afd208871c1d54a6f9e6df0da1f855cc165264b70de6e3001a53d0f2",
+          "bytes": 472
+        },
+        "allAfterPinsMatchFinalSource": false
+      },
+      {
+        "name": "source-headless-final-standalone-arm",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/source-headless-final-standalone-arm.receipt.json",
+          "bytes": 9292,
+          "sha256": "d7305c8d7bfedacc25e5216a5fae3b1f34bc7f4c2f5b569e14afe5eceb752620"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/source-headless-final-standalone-arm.raw.log",
+          "sha256": "169e571f2a74e961e629564f7ffa01cbeecaf96779a40ce8238775e8a3534c2a",
+          "bytes": 473
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "source-headless-final",
+        "actualExit": 1,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/source-headless-final.receipt.json",
+          "bytes": 9263,
+          "sha256": "637ad7df1a1777356c672f81ddce27b4f8992a2cea2eda8a135abb442657c9d7"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/source-headless-final.raw.log",
+          "sha256": "70ce52fed88d2daf194a286610d9bd5d7c332e8f8cc5801ebffab63f25650a72",
+          "bytes": 1778
+        },
+        "allAfterPinsMatchFinalSource": false
+      },
+      {
+        "name": "translation-pairing-final-readonly",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/translation-pairing-final-readonly.receipt.json",
+          "bytes": 9395,
+          "sha256": "b6a5d5e13fb08bf94b938f4d362f70d610e8a1f079bac7c997d2a67f68a428d6"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/translation-pairing-final-readonly.raw.log",
+          "sha256": "ad7b21530ac715281c9cc3c81199c244b55fd2123ffe5c00150ae1084d2ee394",
+          "bytes": 661
+        },
+        "allAfterPinsMatchFinalSource": true
+      },
+      {
+        "name": "translation-pairing-snapshot-final-readonly",
+        "actualExit": 0,
+        "sourcePinsStable": true,
+        "receipt": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/translation-pairing-snapshot-final-readonly.receipt.json",
+          "bytes": 9228,
+          "sha256": "1db944afe15a80d4267e1e1dd000a759323ba23afbeb6064df02e6b52604b7ab"
+        },
+        "rawLog": {
+          "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/translation-pairing-snapshot-final-readonly.raw.log",
+          "sha256": "69350a084deed47430449e36c06e938c563be3fc13418e0538f83d38d1a749e8",
+          "bytes": 278
+        },
+        "allAfterPinsMatchFinalSource": true
+      }
+    ],
+    "nativeUiAttempt": {
+      "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/native-ui-attempt.json",
+      "bytes": 682,
+      "sha256": "7901c75727151d1bcd4490840280a677b623c6a212390c9b1fb847314983c1b0"
+    },
+    "continuationRunContext": {
+      "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/continuation-run-context-20261009.json",
+      "bytes": 4183,
+      "sha256": "b8747ffec0cfb3d7763dbe7d7ec56a99f358babadb5e00b23a2ce617c747ba5d"
+    },
+    "metadataFailureObservations": [
+      {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/module-graph-pairing-initial-tool-observation.json",
+        "bytes": 500,
+        "sha256": "74d9b2b9f93822601f381b8a94f3e662aca26d1ee0f9d1c2015056633bf72ff3"
+      },
+      {
+        "path": "/private/tmp/ark-learning-graph-root-15cf20d4-yb8f5r8f/child-seal-verification-initial-tool-observation.json",
+        "bytes": 724,
+        "sha256": "16d5e48264278fe81e7890d954346dc7844ef2f61a2172bee96f5a25bc35abad"
+      }
+    ]
+  },
+  "runtimeAcceptance": {
+    "realCurrentCandidateTask": "NOT_RUN",
+    "currentCandidateContainsThisSource": false,
+    "existingNative75Invoice": "FAIL_FORMAT",
+    "independentLearning": "UNKNOWN",
+    "pairedUtilityLift": "UNKNOWN",
+    "correctCrossSessionRepairReuse": "UNKNOWN",
+    "currentSourceNativeRollback": "UNKNOWN",
+    "currentSourceGitHubCi": "UNKNOWN",
+    "phase6": "UNKNOWN",
+    "physicalWikiBytesAbsenceAndCasProven": false,
+    "externalWriterExclusionProven": false,
+    "physicalPowerLossAndWindowsDurabilityProven": false,
+    "sourceCoverageAcceptance": "NOT_ESTABLISHED_BY_THIS_SLICE"
+  },
+  "missingActualOwners": [
+    "Native-selected protected descriptor reference and trusted independent evaluator principal/channel/custody attestation.",
+    "Protected current head, genuinely selected separate local journal handle and exclusive durable writer.",
+    "Registered Session/final-provider-byte observer, durable per-attempt/read reservations and independent actual outcomes.",
+    "Real preregistered definition/oracle/corpus/paired sessions/initiation capability; live target/source CAS before any activation."
+  ],
+  "operations": {
+    "realModelCalls": 0,
+    "productionCredentialAccess": 0,
+    "nativeAppsChanged": false,
+    "profileChanged": false,
+    "productionAuthorityProvisioned": false,
+    "creditCommitted": false,
+    "activationAllowed": false,
+    "newRustEnforcement": false,
+    "rustSelection": "RETAIN_TS",
+    "remoteWrites": false
+  }
+}

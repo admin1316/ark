@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/knowledge-wiki.md
-knowledge-wiki.md: 0a803836e8d0743acbcb4b2ae9390c486f6b2ecd
-knowledge-wiki.zh.md: 30d4ad8236e8f5a1a29d63f93b07cd3c70b6b7d1
+knowledge-wiki.md: 15b001f4bb86773a059a903c26142a640259dbee
+knowledge-wiki.zh.md: 4d97e768a179c9620953a683c23fa0fbf0d16374

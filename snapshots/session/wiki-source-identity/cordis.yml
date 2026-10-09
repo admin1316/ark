@@ -1,0 +1,27 @@
+# Wiki opt-in over the shared shipped headless profile.
+
+- id: headless-runner
+  inject: [headlessStartup, knowledgeWikiSnapshotReady]
+  config:
+    task: !!js ctx.headlessStartup.task
+
+- insert:
+    - id: wiki-snapshot-authority
+      name: '../../../examples/headless-agent/tests/fixtures/knowledge-wiki/authority.ts'
+
+    - id: knowledge-wiki
+      name: '@deepseek-ai/dsh-knowledge-wiki'
+      config:
+        mainRoot: !!js process.cwd()
+        wikiRoot: !!js process.cwd() + '/wiki'
+        credential: ''
+        ownedStageExecutor: false
+        knowledgeSearchCandidateMode: disabled
+
+    - id: tool-knowledge-wiki
+      name: '@deepseek-ai/dsh-tool-knowledge-wiki'
+
+    - id: wiki-snapshot-lifecycle
+      name: '../../../examples/headless-agent/tests/fixtures/knowledge-wiki/source-identity.ts'
+      config:
+        cold: false

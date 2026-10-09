@@ -90,4 +90,13 @@ describe('candidate to canonical merge policy', () => {
     expect(humanDedup.content).toContain('approved_by: human-reviewer')
     expect(humanDedup.content).toContain('sources: []')
   })
+
+  it.each([mergeCandidateIntoCanonical, replaceCanonicalWithCandidate])(
+    'preserves the legacy actor default and accepts an explicit review actor', (transform) => {
+      const canonical = page('same body')
+      const candidate = page('same body')
+      expect(transform(canonical, candidate, '2026-08-31').content).toContain('approved_by: governance-agent')
+      expect(transform(canonical, candidate, '2026-08-31', 'reviewer:alice').content).toContain('approved_by: reviewer:alice')
+    },
+  )
 })

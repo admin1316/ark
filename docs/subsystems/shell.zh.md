@@ -38,10 +38,8 @@ interface ShellExecRequest {
   signal?: AbortSignal | undefined
   /**
    * Bytes to write to the command's stdin, then close it. Absent leaves stdin
-   * closed/empty (the default for model-driven tool calls). Set by in-process
-   * plugins (e.g. the hooks bridges, which write a hook command's JSON payload
-   * to its stdin); the model-facing bash tool does not expose it as a parameter
-   * (a model that needs stdin uses shell syntax like a heredoc or a pipe).
+   * closed/empty. The model-facing bash tool and in-process plugins (e.g. hook
+   * bridges) supply literal input without shell expansion or temporary files.
    */
   stdin?: string | undefined
   /**
@@ -98,7 +96,7 @@ interface ShellExecSpec {
 }
 ```
 
-`stdin` 和 `env` 是受信任的进程内插件输入，不由 `dsh-tool-bash` 暴露。本地执行器会先清除环境中的凭据，再合并调用方显式提供的 env。见 [bash-stdin-env Agent Note](../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.zh.md)。
+`dsh-tool-bash` 暴露可选的字面量 `stdin` 输入，并在执行前检查其 UTF-8 字节上限。`env` 仍仅供受信任的进程内插件使用。本地执行器会先清除环境中的凭据，再合并调用方显式提供的 env。见 [bash-stdin-env Agent Note](../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.zh.md)。
 
 `stdoutMaxBytes` 同样仅供受信任插件使用。它让前台消费方能在有界解析预算内请求完整 stdout，而不会改变 stderr、后台任务或面向模型的 bash 工具的常规输出上限。
 

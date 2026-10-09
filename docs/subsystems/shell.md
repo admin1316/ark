@@ -38,10 +38,8 @@ interface ShellExecRequest {
   signal?: AbortSignal | undefined
   /**
    * Bytes to write to the command's stdin, then close it. Absent leaves stdin
-   * closed/empty (the default for model-driven tool calls). Set by in-process
-   * plugins (e.g. the hooks bridges, which write a hook command's JSON payload
-   * to its stdin); the model-facing bash tool does not expose it as a parameter
-   * (a model that needs stdin uses shell syntax like a heredoc or a pipe).
+   * closed/empty. The model-facing bash tool and in-process plugins (e.g. hook
+   * bridges) supply literal input without shell expansion or temporary files.
    */
   stdin?: string | undefined
   /**
@@ -98,7 +96,7 @@ interface ShellExecSpec {
 }
 ```
 
-`stdin` and `env` are trusted in-process plugin inputs and are not exposed by `dsh-tool-bash`. The local executor scrubs ambient credentials before merging explicit caller-supplied env. See [the bash-stdin-env Agent Note](../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md).
+`dsh-tool-bash` exposes optional literal `stdin` and checks its UTF-8 byte limit before execution. `env` remains a trusted in-process plugin input. The local executor scrubs ambient credentials before merging explicit caller-supplied env. See [the bash-stdin-env Agent Note](../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md).
 
 `stdoutMaxBytes` is also trusted-plugin-only. It lets a foreground consumer request complete stdout up to a bounded parser budget without changing stderr, background jobs, or the model-facing bash tool's ordinary output cap.
 

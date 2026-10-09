@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-08T07:39:21.013Z",
+  "gitSha": "bce444b7ce343ce7e7ee3a55b6258a17c48ba075",
+  "roots": {
+    "source": "integrations/jiuzhang/profile",
+    "packaged": "/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile",
+    "installed": "/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang"
+  },
+  "hashes": {
+    "source": {
+      "package.json": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e",
+      "cordis.patch.yml": "525559a9ca4e81cc1b2b6b06c83d1903c1e22f657baff099a04bb67294503182"
+    },
+    "packaged": {
+      "package.json": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e",
+      "cordis.patch.yml": "b24765d09a0441e4fb489122ad2c5543f1fa9c9dbf21c16fa0343797599004ab"
+    },
+    "installed": {
+      "package.json": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e",
+      "cordis.patch.yml": "b24765d09a0441e4fb489122ad2c5543f1fa9c9dbf21c16fa0343797599004ab"
+    }
+  },
+  "sourceToPackagedManifest": "MATCH",
+  "sourceToPackagedPatch": "DRIFT",
+  "installedToPackagedPatch": "MATCH",
+  "difference": "Source adds the launcher-owned ARK_KNOWLEDGE_VERIFIER_CONFIG binding and its comment; packaged and installed patches omit it.",
+  "runtimeVerification": "UNKNOWN",
+  "productionTouched": false
+}

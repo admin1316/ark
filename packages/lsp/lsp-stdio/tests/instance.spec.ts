@@ -170,19 +170,21 @@ describe('LspInstance query and abort', () => {
   it('resolves the cancel grace when the server honors $/cancelRequest', async () => {
     // A server that answers $/cancelRequest by settling the pending request lets the grace race
     // resolve via the request rather than the timeout, so the instance is NOT force-terminated.
+    const marker = join(root, 'definition-request.log')
     const script = 'let b=Buffer.alloc(0),reqId=null;'
       + 'const fr=(o)=>{const x=Buffer.from(JSON.stringify({jsonrpc:"2.0",...o}));return Buffer.concat([Buffer.from(`Content-Length: ${x.length}\\r\\n\\r\\n`),x]);};'
       + 'process.stdin.on("data",c=>{b=Buffer.concat([b,c]);for(;;){const s=b.indexOf("\\r\\n\\r\\n");if(s<0)break;const len=Number(/(\\d+)/.exec(b.toString("ascii",0,s))[1]);if(b.length<s+4+len)break;const m=JSON.parse(b.toString("utf8",s+4,s+4+len));b=b.subarray(s+4+len);'
       + 'if(m.method==="initialize")process.stdout.write(fr({id:m.id,result:{capabilities:{positionEncoding:"utf-16",textDocumentSync:1,definitionProvider:true}}}));'
-      + 'else if(m.method==="textDocument/definition")reqId=m.id;'
+      + 'else if(m.method==="textDocument/definition"){require("node:fs").writeFileSync(process.env.LSP_DEFINITION_MARKER,"seen");reqId=m.id;}'
       + 'else if(m.method==="$/cancelRequest"&&reqId!==null)process.stdout.write(fr({id:reqId,error:{code:-32800,message:"request cancelled"}}));'
       + 'else if(m.method==="shutdown")process.stdout.write(fr({id:m.id,result:null}));'
       + 'else if(m.method==="exit")process.exit(0);'
       + '}});'
-    const instance = scriptInstance(script, { killGraceMs: 2_000 })
+    const instance = scriptInstance(script, { killGraceMs: 2_000,
+      env: { ...scrubbedParentEnv(), LSP_DEFINITION_MARKER: marker } })
     const controller = new AbortController()
     const pending = run(instance, 'goToDefinition', controller.signal)
-    await new Promise<void>(resolve => setTimeout(resolve, 300))
+    await waitForFile(marker)
     controller.abort(new Error('mid-flight'))
     await expect(pending).rejects.toThrow(/mid-flight/)
     // The server acknowledged cancellation within grace, so the instance was not force-killed.

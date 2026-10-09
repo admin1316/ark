@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-08T12:44:00.073467+00:00",
+  "role": "actual-live-Native-baseline-only",
+  "sourceCommit": "75f8050d503f836bba1104c3972845f68f192e79",
+  "sessionId": "session-1d504664-7018-4fd6-ab09-fdcefc4369e1",
+  "sessionTitle": "\u9a8c\u6536\u57fa\u7ebf\uff1a\u53d1\u7968\u7cbe\u786e\u6838\u5bf9",
+  "entry": "existing authenticated Native Session Remote; same prompt admission used by SwiftUI",
+  "model": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "reasoningEffort": "max"
+  },
+  "actualOwnTaskSubmittedOnce": true,
+  "taskVerdict": "FAIL_FORMAT",
+  "rawFailure": "Markdown JSON fence and additional explanation violate the original ONLY one JSON object requirement",
+  "separateArithmeticCorrect": true,
+  "separateDiagnosticCountsForAcceptance": false,
+  "usdTotalCents": 26598,
+  "worldFiles": 6,
+  "worldDirectories": 6,
+  "fullWorldUnchanged": true,
+  "modelSteps": 4,
+  "toolCalls": 7,
+  "successfulToolCalls": 7,
+  "exactCsvToolReads": true,
+  "accountedUsageOncePerAssistantStep": {
+    "inputTokens": 11649,
+    "outputTokens": 1957,
+    "cacheReadTokens": 34432,
+    "reasoningTokens": 982
+  },
+  "actualDurableEvents": 1862,
+  "actualCompletedTurnEndSeq": 1861,
+  "exactKnownUserPromptCount": 1,
+  "coldReplayExactApiAndStoredEvents": true,
+  "syntheticClosingEvents": 0,
+  "references": [
+    {
+      "path": "/private/tmp/ark-current75-real-invoice-acceptance-preregistration-20261008.json",
+      "sha256": "006bd657ef12303e70d7ea87b3431d2f803f559743c6293f918cc8f3b9c842df",
+      "bytes": 1598
+    },
+    {
+      "path": "/private/tmp/ark-current75-actual-invoice-20261008-1238/execution-plan.json",
+      "sha256": "ae4ec14cf934eea0c4f0890bfc9c298ae1d5d376c0f6865d39b1f0cc0d6b8368",
+      "bytes": 1032
+    },
+    {
+      "path": "/private/tmp/ark-current75-actual-invoice-20261008-1238/execution-result.json",
+      "sha256": "6043525cf84f416ba9d03ff4e0652bf3e48ae41349fa061308c321bcabac8dc4",
+      "bytes": 2183
+    },
+    {
+      "path": "/private/tmp/ark-current75-actual-invoice-20261008-1238/raw-answer-oracle-verdict.json",
+      "sha256": "7ebfedc3be8f7dba0bb083046ef2f1b21c36104ce487b78db9432d004e6ae99e",
+      "bytes": 983
+    },
+    {
+      "path": "/private/tmp/ark-current75-actual-invoice-20261008-1238/cold-verification-receipt.json",
+      "sha256": "38a84eaa3651951638745c99bd0ce28a23fcff631760c2b088a26a068195c39b",
+      "bytes": 6062
+    },
+    {
+      "path": "/private/tmp/ark-current75-actual-invoice-20261008-1238/final-assistant-raw.txt",
+      "sha256": "51546854bb56c966a64d86564056137da618397d64c2bd599723a50d483789c8",
+      "bytes": 695
+    },
+    {
+      "path": "/private/tmp/ark-current75-actual-invoice-20261008-1238/immutable-original-session.jsonl.zstd",
+      "sha256": "dd52e2f0dc864f18cd27b760349ded76f3dea6088544691b327bf9429c23f822",
+      "bytes": 38446
+    },
+    {
+      "path": "/private/tmp/ark-current75-actual-invoice-20261008-1238/pre-world.json",
+      "sha256": "c66e7069c41ea36280e616144a7acbba046439cda9976e724ffad0683310a53b",
+      "bytes": 1281
+    },
+    {
+      "path": "/private/tmp/ark-current75-actual-invoice-20261008-1238/post-world.json",
+      "sha256": "c66e7069c41ea36280e616144a7acbba046439cda9976e724ffad0683310a53b",
+      "bytes": 1281
+    }
+  ],
+  "priorAgentReadonlyPreflightFailure": {
+    "path": "/private/tmp/ark-native-api-readonly-preflight-failure-18bt9ycx.json",
+    "sha256": "a7b4ed33ebf89e9374e5b3959715a4dde0198a6969baea9654320db442c87135",
+    "bytes": 218
+  },
+  "rootReadonlyPreflightPass": {
+    "path": "/private/tmp/ark-root-current75-api-preflight-20261008.json",
+    "sha256": "8ebe5d005df2721ad4f0052a21e7f7b1d64057943effe4b36b1d336f52bfdf0b",
+    "bytes": 2375
+  },
+  "tokenValuesOrDigestsReported": false,
+  "providerKeyReadsByDriver": false,
+  "new315Exercise": false,
+  "dialogueViewportVerified": false,
+  "sameStateUIParity": "UNKNOWN",
+  "knowledgeLearningVerdict": "UNKNOWN",
+  "noKnowledgeReuseOpportunity": true,
+  "noPerformanceClaim": true,
+  "noOutcomeCredit": true,
+  "taskRetry": false
+}

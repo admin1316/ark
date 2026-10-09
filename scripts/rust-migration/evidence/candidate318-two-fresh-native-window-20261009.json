@@ -1,0 +1,524 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-09T02:34:30.608604+00:00",
+  "status": "TWO_FRESH_NATIVE_CASES_FORMAT_STABILITY_FAILED_FORMAL_HOLD",
+  "draftProvenance": {
+    "operation": "Read immutable case1/case2 reports and fixed snapshots; private draft writes only.",
+    "apiModelGuiCalls": 0,
+    "repoAppHomePublicWrites": 0,
+    "priorCase1OrBuildHistoryRewritten": false
+  },
+  "candidate": {
+    "version": "3.1.8",
+    "build": "2026100903",
+    "sourceCommit": "be867e95fc794a6eef6be405b468817e7b45943e",
+    "signedArtifactProof": {
+      "path": "/private/tmp/ark-stage-current-source-20261009-v318-logs/final-stage-verification.json",
+      "bytes": 11744,
+      "sha256": "ee171a7706e4ac94015b3343c8c41873103f814d6cc4a282995c5bcaa396dbef"
+    },
+    "slot": "/Users/hui/ark-test/candidate/Ark.app",
+    "home": "/Users/hui/ark-test/candidate-home-current-source-20261009-v318"
+  },
+  "world": "/Users/hui/ark-test/invoice-reconciliation-current318-20261009",
+  "actualRoute": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "reasoningEffort": "max"
+  },
+  "case1": {
+    "draft": {
+      "path": "/var/folders/tj/zym7f5k919375cmql460k5yw0000gn/T/ark318-case1-task-evidence-draft-private-1z9dszyy/candidate318-window-original-v2-task-20261009.json",
+      "bytes": 23653,
+      "sha256": "151d98d4ea5c33825462fd237e7e30102704e450e94f76db4b5b0c2ee4560ec8"
+    },
+    "sessionId": "c89249a9-1896-419e-b9db-8be71802b4d7",
+    "history": {
+      "path": "/private/tmp/ark318-ui-history-capture-current318-first/capture-report.json",
+      "bytes": 8666,
+      "sha256": "2aaf671b497c93c854d579823fa4898f658bc6a3a87ceea38758dda7a51325ef"
+    },
+    "cold": {
+      "path": "/private/tmp/ark318-ui-cold-current318-first/cold-replay-receipt.json",
+      "bytes": 24537,
+      "sha256": "31f639c62bbdbef566f3a9988d7e2f4b5d2ccd939b0da414d1516a85a5dfae06"
+    },
+    "rawAudit": {
+      "path": "/private/tmp/ark318-ui-raw-audit-current318-first/raw-audit-report.json",
+      "bytes": 21644,
+      "sha256": "60846c70b1247a66361b56a626adbbbb1a9d823a7f32d10ead50431e9a64a5fe"
+    },
+    "independentReview": {
+      "path": "/private/tmp/ark318-native-task-full-raw-independent-review-vrvne7eg/actual318-full-raw-independent-review.json",
+      "bytes": 18081,
+      "sha256": "314f5b6458e3c146e611a90dcf3a1c800ce975d369da7659ff726ba311f2f242"
+    },
+    "firstCutSeq": 2089,
+    "events": 2090,
+    "wholeOrdinaryBytes": 181,
+    "ordinaryMessageSeqs": [
+      2087
+    ],
+    "format": "PASS",
+    "finalTypeExactExpected": "PASS",
+    "toolCalls": 10,
+    "bashCalls": 3,
+    "businessFailures": 0,
+    "heredocFailure": 0,
+    "modelSessionKnowledgeEvents": 0,
+    "seconds": 13.352,
+    "fiveRootActualExits": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fullWorldSupplement": "SCOPED_REVIEW_COMPLETE",
+    "scope": "First-cut fixed copies only; case2 events and later journal changes excluded.",
+    "appendOnlyIndependentClosure": {
+      "status": "FIRST_CASE_SCOPED_CONTENT_KIND_INVENTORY_JOURNAL_AND_FULL_PUBLIC_EXPORT_REVIEW_COMPLETE",
+      "finalIndex": {
+        "path": "/private/tmp/ark318-native-task-full-raw-independent-review-vrvne7eg/two-native318-independent-review-final-index.json",
+        "bytes": 4910,
+        "sha256": "00539bd2a076c568982a8507765f37e64759caac48cb3e14b47e777994584389"
+      },
+      "worldJournalSupplement": {
+        "path": "/private/tmp/ark318-native-task-full-raw-independent-review-vrvne7eg/first318-frozen-world-journal-independent-supplement.json",
+        "bytes": 4954,
+        "sha256": "3611669f2835d6c463d2dea01717dc498ed42c9e0d5b3c3f055109a9354878e6"
+      },
+      "publicPackedExportReview": {
+        "path": "/private/tmp/ark318-independent-public-export-final-s44gq66w/independent-packed-public-export-firstcold-review.json",
+        "bytes": 11816,
+        "sha256": "995128c78ca6345b6652cece4968fa7eeec42b9c9957ae794d65aa84721d5383"
+      },
+      "firstReviewExecutionReceipt": {
+        "path": "/private/tmp/ark318-native-task-full-raw-independent-review-vrvne7eg/independent-local-review-execution.json",
+        "bytes": 1179,
+        "sha256": "a69ccbbb10f55c468da077e71fe3a72e2919c7255d32d509050a4241ea689501"
+      },
+      "firstIndependentLocalReviewActualExitCode": 0,
+      "indexAndPackedReviewStandaloneExecutionExit": "NOT_CLAIMED_NO_SEPARATE_EXIT_RECEIPT",
+      "historicalOriginalReviewWorldPendingField": "Preserved in immutable original report; append-only supplementary reports resolve requested scoped review.",
+      "contentAndKinds": {
+        "initialEntries": 12,
+        "firstColdEntries": 14,
+        "addedEntries": [
+          ".llm-wiki",
+          ".llm-wiki/knowledge-events.jsonl"
+        ],
+        "removedInitialEntries": [],
+        "sixOriginalBytesHashesEqual": true,
+        "originalTwelveKindsEqual": true
+      },
+      "journal": {
+        "firstFixedSnapshotOnly": true,
+        "oneEvent": true,
+        "millisecondsBeforePrompt": 3376,
+        "afterTaskLearnedRepair": false,
+        "modelSessionKnowledgeEvents": 0,
+        "actualRpcCallerIndependentlyObserved": false,
+        "verifiedRepairReuse": "UNPROVEN"
+      },
+      "fullPublicExport": {
+        "storageRows": 157,
+        "expandedEvents": 2090,
+        "gapFreeRange": [
+          0,
+          2089
+        ],
+        "decodedAllFieldsAndBlocksEqualToLoadedAndInspectedHistory": true,
+        "rawApiPagesEnvelopeUnwrappedUniqueSeqSortedEqualsPrefix": true,
+        "physicalSourceAndFixedCopyHashEqual": true,
+        "rootPublicOwnerActualExitCode": 0,
+        "reviewerHelperBodyExecutions": 0,
+        "independentAuthorshipClaimed": false,
+        "twoWrapperAndOrderReviewAssumptionFailuresPreserved": [
+          {
+            "actualExitCode": 1,
+            "reason": "First reviewer attempt assumed raw API page entries were events, while actual entries are {event:...} envelopes."
+          },
+          {
+            "actualExitCode": 1,
+            "reason": "Second attempt unwrapped events but still assumed API raw page order was seq order; actual collector explicitly sorts unique seq. Final review verifies uniqueness/gap-free range before sorting."
+          }
+        ]
+      },
+      "metadataLimit": "All twelve cold JS Number mtimeNs projections round original exact Python integer nanoseconds. Content/kind/path/hash acceptance passes; exact nanosecond metadata equality is not claimed.",
+      "productLimit": "Scoped first review closure is distinct from second Native whole-output contract failure, Native viewport acceptance, learned repair, global product and formal promotion."
+    }
+  },
+  "case2": {
+    "sessionId": "edc6d30e-dd0a-4bf8-9c76-44fae534cbbb",
+    "humanAcknowledgedSent": true,
+    "consumedOriginalPromptAdmission": {
+      "representation": "file_without_single_terminal_LF",
+      "actualUtf8Sha256": "a774ab74be7afb692b4beeafb48ce155889d5b67c50c5d6644dd36bf8a316145",
+      "fileSha256": "0d6e0e2fece23b47e1f7281748cd8043fa04c202e862ec441a34117edf763f20",
+      "exactFileBytes": false,
+      "terminalLFOnlyDifference": true,
+      "generalTrimUsed": false
+    },
+    "history": {
+      "path": "/private/tmp/ark318-ui-history-capture-current318-repeat2/capture-report.json",
+      "bytes": 8313,
+      "sha256": "7d1fa92b4705a5d79255ed6488642c2285a160e7b8aba4d6b56032e0640f3e98"
+    },
+    "raw": {
+      "path": "/private/tmp/ark318-ui-history-capture-current318-repeat2/raw-events.json",
+      "bytes": 695988,
+      "sha256": "d92774d5a39fa7bf227d7c07a418bf2b7916ae7858cfef2a5d9aa3bc5a8fcb0b"
+    },
+    "cold": {
+      "path": "/private/tmp/ark318-ui-cold-current318-repeat2/cold-replay-receipt.json",
+      "bytes": 20613,
+      "sha256": "3114097771ce9e907581b826bdee61307afd714b77fee279d839b6510e8912ac"
+    },
+    "rawAudit": {
+      "path": "/private/tmp/ark318-ui-raw-audit-current318-repeat2/raw-audit-report.json",
+      "bytes": 10754,
+      "sha256": "65dc5ec2d52416283a2da0d96b04a902f796a08a5f362ebab7c2d73c9759779d"
+    },
+    "frozenSessionCopy": {
+      "path": "/private/tmp/ark318-ui-cold-current318-repeat2/cold-working-sessions/--Users-hui-ark-test-invoice-reconciliation-current318-20261009--/edc6d30e-dd0a-4bf8-9c76-44fae534cbbb/session.jsonl.zstd",
+      "bytes": 38911,
+      "sha256": "012ad34d7c8cfafb49268d51672b458003fe4e0a1e1e9a42ddb642ce84695025"
+    },
+    "cutSeq": 1972,
+    "events": 1973,
+    "completed": true,
+    "gapFreeAndColdPersistencePass": true,
+    "ordinaryMessages": [
+      {
+        "seq": 97,
+        "text": "I'll start by reading the two CSV files to understand the data.",
+        "bytes": 63,
+        "sha256": "d834fad769b03b13c8d21e0c99614635220d36521725cf952748ad0d69f1eac7"
+      },
+      {
+        "seq": 1970,
+        "text": "{\"approved_invoice_count\": 6, \"pending_invoice_count\": 1, \"rejected_row_ids\": [\"I007\", \"I008\"], \"usd_total_cents\": 26598, \"usd_cents_by_currency\": {\"USD\": 9750, \"EUR\": 8834, \"JPY\": 8000, \"CNY\": 14}}",
+        "bytes": 198,
+        "sha256": "abeefe27a84e6dbcffe1f42f62c6d22952db04848461a5ee478210be784f6ced"
+      }
+    ],
+    "wholeOrdinary": {
+      "bytes": 261,
+      "sha256": "40d32cfcdd13f002d5dd05d443080ca6a1e420284ea14f8a8c41c2ee2f6af887",
+      "nonemptyMessageSeqs": [
+        97,
+        1970
+      ],
+      "strictFormatAndExpectedObject": {
+        "strictPureJSONObject": false,
+        "exactExpectedObject": false,
+        "parseErrorType": "JSONDecodeError"
+      },
+      "allStreamingChunksCoveredByDurableOwners": true,
+      "noTrimNoFenceRemoval": true
+    },
+    "lastMessage": {
+      "seq": 1970,
+      "bytes": 198,
+      "duplicateNonfiniteTypeExactExpected": true
+    },
+    "format": "FAIL_EXTRA_ORDINARY_PREFACE",
+    "toolCalls": 3,
+    "tools": {
+      "read": 2,
+      "bash": 1
+    },
+    "businessFailures": 0,
+    "heredocFailure": 0,
+    "guideAndDescriptionLogged": true,
+    "headerAudits": [
+      {
+        "seq": 11,
+        "carriedBeforeTurn": false,
+        "loggedRoute": {
+          "provider": "deepseek-official",
+          "model": "deepseek-flash",
+          "reasoningEffort": "max"
+        },
+        "routeMatchesExpected": true,
+        "guideExactOccurrenceCount": 1,
+        "bashDescriptionMatchesFrozen318": true,
+        "systemUtf8Sha256": "112f827cc711a25a06f73f0cb125579b16f8be09387e380cce4506b30375428b",
+        "bashDescriptionUtf8Sha256": "5d5e336270909b5d7c093fca7b836d967e8c7c439562d7030ca66a4b47f424b4",
+        "actualWikiToolNames": [
+          "wiki_ingest"
+        ]
+      }
+    ],
+    "modelSessionKnowledgeEvents": 0,
+    "sixOriginalInputsMatchPreparation": true,
+    "seconds": 10.089,
+    "fiveRootActualExits": [
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    "rootExecutionReceipts": [
+      {
+        "phase": "readonlyNativeList",
+        "receipt": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/root-execution.json",
+          "bytes": 1013,
+          "sha256": "0932cfa254831de1b89659a26331f818944e1c64607c90a9b358ad55329ba569"
+        },
+        "actualExitCode": 0,
+        "startedAt": "2026-10-09T02:18:59.955812+00:00",
+        "endedAt": "2026-10-09T02:19:01.550376+00:00",
+        "helper": {
+          "path": "/private/tmp/ark-current318-readonly-api-preparation-private-0g7am9md/readonly-api-client318.py",
+          "bytes": 13156,
+          "sha256": "c96bf54da6795c35c6fb47062a462e86e8ddb7b9b6461f08d2d9e956d171ad08"
+        },
+        "log": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/observer.log",
+          "bytes": 863,
+          "sha256": "508a72ad4d8b5b566d713bf69b2c7a4dbacea66aaff2ab6dfb10f34ea833afab"
+        },
+        "report": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/current318-repeat2-after-human-send-readonly-api.json",
+          "bytes": 2887,
+          "sha256": "1d4b278dd874364edb9f6f2822a39698659f9ac1ffbfcddf3f206f483ec82052"
+        }
+      },
+      {
+        "phase": "readonlyModelMetadata",
+        "receipt": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/root-session-model-execution.json",
+          "bytes": 1374,
+          "sha256": "9f42c1d3c98ee3c154f418a4543e965c5ad47bbb6011473ddaba88c922d8715f"
+        },
+        "actualExitCode": 0,
+        "startedAt": "2026-10-09T02:20:30.724514+00:00",
+        "endedAt": "2026-10-09T02:20:32.320240+00:00",
+        "helper": {
+          "path": "/private/tmp/ark-current318-readonly-api-preparation-private-0g7am9md/readonly-api-client318.py",
+          "bytes": 13156,
+          "sha256": "c96bf54da6795c35c6fb47062a462e86e8ddb7b9b6461f08d2d9e956d171ad08"
+        },
+        "log": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/session-model.log",
+          "bytes": 852,
+          "sha256": "7a704816f9d677329e202e50d46ea3b446aace90402625e0f2358d572603146f"
+        },
+        "report": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/current318-repeat2-model-readonly-api.json",
+          "bytes": 3232,
+          "sha256": "61396dcfd7e5c9f230f54ad356c371c873f5e5ce22adfeb8c6a6d20d96a0c276"
+        }
+      },
+      {
+        "phase": "completeHistoryCollector",
+        "receipt": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/root-full-history-collector-execution.json",
+          "bytes": 1336,
+          "sha256": "e5180bd11dabb4aacde1d41cd9b911d3831322ec103b152c4c2c5882c79acab3"
+        },
+        "actualExitCode": 0,
+        "startedAt": "2026-10-09T02:20:32.321216+00:00",
+        "endedAt": "2026-10-09T02:20:33.935515+00:00",
+        "helper": {
+          "path": "/private/tmp/ark318-full-history-readonly-preparation-0yox79a2/readonly-native-history-collector318.py",
+          "bytes": 28850,
+          "sha256": "12c902ad50bdd0bbb946eb4ba0dd5011635ac541d02cc9396b0549aaa9636a0e"
+        },
+        "log": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/full-history-collector.log",
+          "bytes": 330,
+          "sha256": "d7bb26d03c7cf478a4e92fc6b6e913a7595b8a2cf6775804a4b722e8225a6663"
+        },
+        "report": {
+          "path": "/private/tmp/ark318-ui-history-capture-current318-repeat2/capture-report.json",
+          "bytes": 8313,
+          "sha256": "7d1fa92b4705a5d79255ed6488642c2285a160e7b8aba4d6b56032e0640f3e98"
+        }
+      },
+      {
+        "phase": "publicOwnerColdReplay",
+        "receipt": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/root-cold-replay-execution.json",
+          "bytes": 1538,
+          "sha256": "613bd8290401545690741b5ca549a8c6e063d4c1b0749b1b3c197ed07e8ff4f9"
+        },
+        "actualExitCode": 0,
+        "startedAt": "2026-10-09T02:21:31.980496+00:00",
+        "endedAt": "2026-10-09T02:21:34.831995+00:00",
+        "helper": {
+          "path": "/private/tmp/ark318-cold-readonly-preparation-v3-et7dxzwa/cold-public-owner-current318.mjs",
+          "bytes": 29234,
+          "sha256": "eedaf2bf90a1c4447da554a00a61c26c9cc730fd92a62a3a805825f0eb217987"
+        },
+        "log": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/cold-replay.log",
+          "bytes": 398,
+          "sha256": "e70c58f7d42810679db9312eb53508e3d53a8f36e64b1ab83f4896aa4e36414d"
+        },
+        "report": {
+          "path": "/private/tmp/ark318-ui-cold-current318-repeat2/cold-replay-receipt.json",
+          "bytes": 20613,
+          "sha256": "3114097771ce9e907581b826bdee61307afd714b77fee279d839b6510e8912ac"
+        }
+      },
+      {
+        "phase": "offlineRawGuidanceAudit",
+        "receipt": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/root-offline-raw-audit-execution.json",
+          "bytes": 1632,
+          "sha256": "f636746f993b3c6a39e30535cc6502b9a5ddc3c307fcadf21ac22bdda14df587"
+        },
+        "actualExitCode": 1,
+        "startedAt": "2026-10-09T02:21:34.833374+00:00",
+        "endedAt": "2026-10-09T02:21:34.886157+00:00",
+        "helper": {
+          "path": "/private/tmp/ark318-full-history-readonly-preparation-0yox79a2/readonly-raw-audit-current318.py",
+          "bytes": 16362,
+          "sha256": "a9c4202d356c67ddfc4303376b8e53d823bd221e234e65c01a798b2d8ba7b764"
+        },
+        "log": {
+          "path": "/private/tmp/ark-current318-repeat2-readonly-root-vfc_c4nm/offline-raw-audit.log",
+          "bytes": 232,
+          "sha256": "808be6ca09174d1a73340d9e415355dbfbb06aef34d2220399c35a0393b4d706"
+        },
+        "report": {
+          "path": "/private/tmp/ark318-ui-raw-audit-current318-repeat2/raw-audit-report.json",
+          "bytes": 10754,
+          "sha256": "65dc5ec2d52416283a2da0d96b04a902f796a08a5f362ebab7c2d73c9759779d"
+        }
+      }
+    ],
+    "inlineCommand": {
+      "callSeq": 1740,
+      "sha256": "394790688aa3760cc8e2d7e856609ba8bb302f13d4e64254fd175f0e1c6eb417",
+      "argvPrefix": [
+        "python3",
+        "-c"
+      ],
+      "astParsedNoBodyExecution": true,
+      "decimalPrecision": 50,
+      "mathematicalLimit": "Finite precision Decimal approximates 1/7. This fixture final result exactly matches both rational/integer oracles; no wrong-answer claim. General exact-rational correctness on other amounts is unproven."
+    },
+    "fixedProjectJournal": {
+      "snapshot": {
+        "path": "/private/tmp/ark318-ui-cold-current318-repeat2/project-governance-journal-snapshot.jsonl",
+        "bytes": 510,
+        "sha256": "bf66d2fc35a9042e94090aa16f8203ab28c3d43d8c67159557f52dbfe570a35d"
+      },
+      "eventCount": 1,
+      "sameShaAsFirstFrozenJournal": true,
+      "equivalentToModelSessionKnowledgeInjection": false,
+      "actualCallerIndependentlyObserved": false
+    },
+    "independentViewportVerified": false,
+    "independentReview": {
+      "report": {
+        "path": "/private/tmp/ark318-second-native-contract-independent-review-my3ubq5r/second318-full-ordinary-and-decimal-independent-review.json",
+        "bytes": 6287,
+        "sha256": "94a6f6305233820fd02b1b7d32ce0dfcaebe990f04abbdabbad19c10715cb347"
+      },
+      "status": "SECOND318_REAL_FORMAT_FAILURE_INDEPENDENTLY_CONFIRMED",
+      "wholePureJsonContract": "FAIL",
+      "final198ByteJsonExactOracle": true,
+      "prefaceIsGenuineModelTextNotReasoning": true,
+      "blockingFindings": [
+        {
+          "surface": "whole ordinary output contract",
+          "seq": 97,
+          "detail": "63B genuine model English preface precedes198B valid final JSON; entire261B response fails JSON-only original task in a fresh dialogue."
+        }
+      ],
+      "standaloneReviewActualExitCode": "NOT_CLAIMED_NO_SEPARATE_EXIT_RECEIPT",
+      "reviewExecutionCounters": {
+        "apiCalls": 0,
+        "guiCalls": 0,
+        "modelCalls": 0,
+        "coldOwnerImportOrExecution": 0,
+        "appHomeWorldSourceWrites": 0,
+        "privateWritesOnly": true
+      }
+    }
+  },
+  "comparison": {
+    "nativeFreshConversationsObserved": 2,
+    "sameOriginalTaskAndWorld": true,
+    "strictWholeOrdinaryPassCount": 1,
+    "strictWholeOrdinaryFailureCount": 1,
+    "correctFinalObjectCount": 2,
+    "knownHeredocFailuresAcrossBoth": 0,
+    "stableWholeOrdinaryFormatEstablished": false,
+    "reliabilityPercentClaimed": false,
+    "speedUpliftClaimed": false,
+    "abilityPercentClaimed": false,
+    "limitations": "Two samples are an observed count, not a statistical success rate or causal benchmark. Different command/tool paths; no durable learned repair evidence."
+  },
+  "conclusion": {
+    "wholeTurnContractStability": "FAIL",
+    "heredocFailureAbsentInBothObservedTasks": "PASS_SCOPED_TWO_TASKS",
+    "answerAccuracyOnFixture": "PASS_BOTH",
+    "verifiedRepairLearning": "UNPROVEN",
+    "overallAbilityLift": "UNKNOWN",
+    "globalProductAcceptance": "HOLD",
+    "formalPromotion": "HOLD",
+    "remainingWork": [
+      "Preserve the real case2 preface failure and determine root cause before another candidate.",
+      "Verify repeat original tasks and wider feature acceptance; no formal promotion from these samples.",
+      "Independent first requested review is complete with fixed-cut and nanosecond limitations; stable output and broader product acceptance remain open."
+    ]
+  },
+  "publication": {
+    "formalAppModifiedByDraft": false,
+    "githubWrites": false,
+    "rustSearchDefaultEnabled": false,
+    "rustPolicy": "RETAIN_TS",
+    "oldBuildAndCase1HistoryRewritten": false
+  },
+  "finalIndependentReviewIndex": {
+    "report": {
+      "path": "/private/tmp/ark318-native-task-full-raw-independent-review-vrvne7eg/two-native318-independent-review-final-index.json",
+      "bytes": 4910,
+      "sha256": "00539bd2a076c568982a8507765f37e64759caac48cb3e14b47e777994584389"
+    },
+    "status": "FIRST318_SCOPED_PASS_SECOND_FRESH318_FORMAT_FAIL_BOTH_PRESERVED",
+    "firstRequestedReviewCompleted": true,
+    "nativeStabilityBlockingFindings": [
+      {
+        "round": "second318 fresh",
+        "surface": "whole-response JSON-only contract",
+        "seq": 97,
+        "detail": "63B genuine model text before198B correct JSON makes261B whole ordinary output fail."
+      }
+    ],
+    "actualExitProvenance": {
+      "firstIndependentLocalReviewActual0": {
+        "path": "/private/tmp/ark318-native-task-full-raw-independent-review-vrvne7eg/independent-local-review-execution.json",
+        "bytes": 1179,
+        "sha256": "a69ccbbb10f55c468da077e71fe3a72e2919c7255d32d509050a4241ea689501"
+      },
+      "case2RootVerifierExits": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "indexAndSecondReviewStandaloneActualExit": "NOT_CLAIMED",
+      "reviewCompletionVersusProductAcceptance": "Completed artifact review and first local review actual0 do not change second Native format FAIL or case2 root offline actual1."
+    }
+  },
+  "amendment": {
+    "preparedAt": "2026-10-09T02:34:30.608604+00:00",
+    "originalPrivateSummary": {
+      "path": "/private/tmp/ark318-two-case-native-summary-private-9jxtfe67/candidate318-two-fresh-native-cases-summary-20261009.json",
+      "bytes": 15540,
+      "sha256": "87d44a1abeb361223d07b539297692680ff07e461233eb34de1c536633db3451"
+    },
+    "changeScope": "Bind second independent report and final index; close first requested scoped review by append-only reports, preserve second product format failure and existing execution receipts.",
+    "originalDraftAndOriginalReviewsPreserved": true
+  }
+}

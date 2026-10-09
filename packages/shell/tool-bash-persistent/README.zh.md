@@ -45,7 +45,7 @@ kind: "package-reference"
 |---|---|---|
 | `backendType` | `shell` | 用于每个 agent shell 的已注册 PTY 后端 |
 | `timeoutMs` | `300,000` | 单条命令的墙钟上限；超时关闭 shell |
-| `maxOutputChars` | `16,000` | 保留的命令输出字符上限；固定诊断信息在其后追加 |
+| `maxOutputChars` | `16,000` | 保留的命令输出 UTF-16 码元上限；截断保留完整代理对，固定诊断信息在其后追加 |
 | `description` | `Run commands in a persistent bash shell. State, including the current directory and exported environment variables, persists across calls for this agent.` | 面向模型的环境约定；部署方可描述自己的环境 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-bash-persistent)是每个受支持字段及其 JSDoc 的穷尽式真源。

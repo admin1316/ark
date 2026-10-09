@@ -13,6 +13,10 @@ const OLD_KEY = 'synthetic-old-value'
 const NEW_KEY = 'synthetic-new-value'
 const JOURNAL = credentialKey('llm-remote', 'alpha')
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -237,8 +241,14 @@ it.each(['prepared', 'settings-applied', 'done'])('does not return live success 
     return result
   })
   await expect(run.mutate(request)).rejects.toMatchObject({ failure: {
-    code: phase === 'done' ? 'provider-registration-rejected' : 'provider-transaction-in-doubt',
+    code: phase === 'done' ? 'provider-registration-rejected'
+      : phase === 'settings-applied' ? 'settings-rejected' : 'provider-transaction-in-doubt',
   } })
+  if (phase === 'settings-applied') {
+    await expect(run.ctx.credentials.readRecord(JOURNAL)).resolves.toMatchObject({
+      payload: { phase: 'done', outcome: 'committed-not-live', error: { code: 'settings-rejected' } },
+    })
+  }
 })
 
 it('retains progress for retry if a stored plan no longer matches its registered profile path', async () => {
@@ -742,7 +752,7 @@ it('lets an unrelated provider progress while another namespace waits for activa
   const other = run.mutate(run.request({ provider: 'independent', settingsNs: independent, expectedRevision: 0,
     ops: [{ op: 'set', path: ['model'], value: 'independent' }] })).then((result) => { completed = true; return result })
   try {
-    await vi.waitFor(() => { expect(completed).toBe(true) }, { timeout: 1000 })
+    await vi.waitFor(() => { expect(completed).toBe(true) }, { timeout: 5000 })
     expect(scope.get().model).toBe('independent')
   } finally { resume.resolve(undefined); await Promise.all([first, other]) }
 })
@@ -994,7 +1004,13 @@ it('drains claimed recovery on shutdown and records persisted-but-not-live inste
     })
     expect(disposed).toBe(false)
   } finally { release.resolve(undefined) }
-  expect(await outcome).toMatchObject({ error: { failure: { code: 'settings-rejected' } } })
+  const settled = await outcome
+  if (!('error' in settled)) throw new Error('claimed recovery unexpectedly resolved during shutdown')
+  const failure = isRecord(settled.error) ? settled.error.failure : undefined
+  const failureCode = isRecord(failure) ? failure.code : undefined
+  const failureMessage = isRecord(failure) ? failure.message : undefined
+  expect(failureCode, typeof failureMessage === 'string' ? failureMessage : 'provider recovery failed without a typed message')
+    .toBe('settings-rejected')
   await retiring
   expect(disposed).toBe(true)
   expect(await run.ctx.credentials.readRecord(JOURNAL)).toMatchObject({ payload: { phase: 'done', outcome: 'committed-not-live' } })

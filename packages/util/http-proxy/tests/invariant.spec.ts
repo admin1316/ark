@@ -79,7 +79,7 @@ describe('the proxy invariant companion', () => {
         const spy = vi.spyOn(installation, 'proxyEnvironmentForChild')
           .mockImplementation(() => ({ ...readEnvironment(), NODE_USE_ENV_PROXY: '1' }))
         try {
-          await expect(companion.apply(ctx)).rejects.toThrow(/unsupported HTTP_PROXY/)
+          await expect(companion.apply(ctx)).rejects.toThrow(/unsupported HTTP_PROXY/i)
           await expect(companion.apply(ctx)).rejects.not.toThrow(/private-user|private-pass/)
         } finally {
           spy.mockRestore()

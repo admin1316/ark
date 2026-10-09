@@ -1,0 +1,712 @@
+{
+  "schemaVersion": 1,
+  "classification": "CANDIDATE318_SCOPED_READ_ONLY_BASH_SOURCE_CHECKS_NATIVE_PENDING",
+  "recordedAt": "2026-10-09T01:15:59.764415+00:00",
+  "repository": "/Users/hui/ark-test/ark-github-main-20261008",
+  "preCommitBase": "fd5bf83f3ec08f2f0d7015cf88b0506cb50ab9cb",
+  "newFrozenCommit": null,
+  "problemEvidence": {
+    "path": "/Users/hui/ark-test/evidence/candidate317-window-original-v2-task-20261009.json",
+    "bytes": 18631,
+    "sha256": "e281180176986592eb330a55e76d9df7d37c4812d8739ac0ecf753b39ce67b4b"
+  },
+  "scope": {
+    "productionSourceFiles": [
+      "packages/shell/tool-bash/src/index.ts"
+    ],
+    "behavior": "Fixed bash guidance distinguishes incidental shell temporary-file writes from task-required access; correctly quoted inline scripts keep permitted computation inside the same sandbox.",
+    "unchangedOwners": [
+      "sandbox executors",
+      "permission/approval decisions",
+      "result rendering and shared escalation hints",
+      "agent loop",
+      "provider/model/credentials",
+      "session/protocol",
+      "Rust kernels",
+      "production compaction"
+    ]
+  },
+  "actualChecks": [
+    {
+      "receipt": {
+        "path": "/private/tmp/ark318-source-checks-1vkmpqas/focused-tool-tests-execution.json",
+        "bytes": 577,
+        "sha256": "f7afda6dc9d909117dcaec6c9e726055f1f99c4d71c85b30cc5d7303bc92a45e"
+      },
+      "execution": {
+        "command": [
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "packages/shell/tool-bash/tests/tools.spec.ts",
+          "packages/shell/tool-bash/tests/hmr-safety.spec.ts",
+          "packages/sandbox/sandbox/tests/escalation.spec.ts",
+          "--retry=0"
+        ],
+        "actualExitCode": 0,
+        "startedAt": "2026-10-09T00:59:48.297772+00:00",
+        "finishedAt": "2026-10-09T00:59:51.514267+00:00",
+        "log": "/private/tmp/ark318-source-checks-1vkmpqas/focused-tool-tests.log",
+        "logSha256": "a4df9f14b22eece6c1a99b73ee009d650a758dcf6c4024a6c3112b406be829fd",
+        "credentialValuesPrinted": false
+      }
+    },
+    {
+      "receipt": {
+        "path": "/private/tmp/ark318-source-checks-1vkmpqas/host-build-execution.json",
+        "bytes": 382,
+        "sha256": "db0e51fec835ba3b5c35512f2e1707804484460003fa7488f64af073c3459cb5"
+      },
+      "execution": {
+        "command": [
+          "pnpm",
+          "run",
+          "build:lib:host"
+        ],
+        "actualExitCode": 0,
+        "startedAt": "2026-10-09T01:01:07.822825+00:00",
+        "finishedAt": "2026-10-09T01:01:20.024508+00:00",
+        "log": "/private/tmp/ark318-source-checks-1vkmpqas/host-build.log",
+        "logSha256": "86cd1d2da40db78fa4860d1f416df0eda284994bffdfd493119c039d08db10c4",
+        "credentialValuesPrinted": false
+      }
+    },
+    {
+      "receipt": {
+        "path": "/private/tmp/ark318-source-checks-1vkmpqas/gen-tool-catalog-execution.json",
+        "bytes": 354,
+        "sha256": "0a9ae76e16113763ef564619e70421072b3f9e0452fd83f24da8b67035a06dfb"
+      },
+      "execution": {
+        "command": [
+          "pnpm",
+          "run",
+          "gen-tool-catalog"
+        ],
+        "actualExitCode": 0,
+        "startedAt": "2026-10-09T01:02:26.544236+00:00",
+        "finishedAt": "2026-10-09T01:02:27.835071+00:00",
+        "log": "/private/tmp/ark318-source-checks-1vkmpqas/gen-tool-catalog.log",
+        "logSha256": "5b961b0d1264f60a5ba89fb0c768aac045a714a9c10af8ce5c99385986a29f2b"
+      }
+    },
+    {
+      "receipt": {
+        "path": "/private/tmp/ark318-source-checks-1vkmpqas/lint-contracts-execution.json",
+        "bytes": 357,
+        "sha256": "88b77fce48b47b28aeadde3d5dc3f5b0d1c1d962289e36091a1a20edef0429ac"
+      },
+      "execution": {
+        "command": [
+          "pnpm",
+          "run",
+          "lint:contracts-ready"
+        ],
+        "actualExitCode": 0,
+        "startedAt": "2026-10-09T01:03:43.092954+00:00",
+        "finishedAt": "2026-10-09T01:06:07.454719+00:00",
+        "log": "/private/tmp/ark318-source-checks-1vkmpqas/lint-contracts.log",
+        "logSha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5"
+      }
+    },
+    {
+      "receipt": {
+        "path": "/private/tmp/ark318-source-checks-1vkmpqas/doc-sync-execution.json",
+        "bytes": 339,
+        "sha256": "fb297eaafb9c04ddef9c52cccf1171cb2094b7396828e93cc5a47fcdd0e07716"
+      },
+      "execution": {
+        "command": [
+          "pnpm",
+          "run",
+          "doc-sync"
+        ],
+        "actualExitCode": 0,
+        "startedAt": "2026-10-09T01:03:43.092954+00:00",
+        "finishedAt": "2026-10-09T01:06:50.635391+00:00",
+        "log": "/private/tmp/ark318-source-checks-1vkmpqas/doc-sync.log",
+        "logSha256": "1f9e222d7620a59c1a208f8ff3859fe2537af1ad8486129a46c6f154670fdc2b"
+      }
+    },
+    {
+      "receipt": {
+        "path": "/private/tmp/ark318-source-checks-1vkmpqas/compaction-output-reserve-replay-execution.json",
+        "bytes": 1284,
+        "sha256": "8e745a61db9b889e105961344ef9cbb720bfe4641648c8a85ff4d152851e21c9"
+      },
+      "execution": {
+        "command": [
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "--config",
+          "vitest.snapshot.config.ts",
+          "snapshots/session/headless.snapshot.ts",
+          "-t",
+          "replays compaction-output-reserve through dsh --profile headless"
+        ],
+        "environment": {
+          "DSH_EXAMPLE_MODE": "lib",
+          "DSH_SNAPSHOT": "replay",
+          "DSH_SNAPSHOT_MAX_CONCURRENCY": "1"
+        },
+        "actualRootToolSessionId": 74617,
+        "actualExitCode": 0,
+        "exitObservedAt": "2026-10-09T01:14:23.609967+00:00",
+        "vitestReportedStartLocal": "2026-10-09 09:13:41 Asia/Shanghai",
+        "passed": 1,
+        "failed": 0,
+        "filteredSkipped": 83,
+        "log": "/private/tmp/ark318-source-checks-1vkmpqas/compaction-output-reserve-replay.log",
+        "logSha256": "0bda9c5699df277e0369de0353468e6ee83a3d5f18c1f5a707e5f91da3f0be73",
+        "productionCompactionChanged": false,
+        "fixtureCalibration": {
+          "oldOutputReservation": 119700,
+          "newOutputReservation": 119573,
+          "oldInputBudget": 8300,
+          "newInputBudget": 8427,
+          "measuredHeaderDelta": 127,
+          "ownerThresholdFormula": "floor(min(contextWindow * thresholdRatio, contextWindow - reservedCompletionTokens))",
+          "thresholdRatio": 0.99,
+          "retainTokens": 20,
+          "summaryMaxTokens": 32,
+          "authoredModelCalls": 3,
+          "mainSteps": 2,
+          "summaryCalls": 1
+        }
+      }
+    }
+  ],
+  "focusedToolTestCount": 97,
+  "focusedToolFilesActuallyExecuted": 2,
+  "nonexistentHmrFilterIsNotAnExecutedFile": true,
+  "realSeatbeltCheck": {
+    "receipt": {
+      "path": "/private/tmp/ark317-heredoc-root-cause-seatbelt-m6667wif/execution.json",
+      "bytes": 850,
+      "sha256": "4db34dd51eea54fc275da8f9e5a4b0c746cd00e44e690533123edd63ad02ab86"
+    },
+    "execution": {
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--config",
+        "vitest.e2e.config.ts",
+        "--retry",
+        "0",
+        "packages/shell/bash-sandbox/tests/seatbelt.e2e.ts"
+      ],
+      "cwd": "/Users/hui/ark-test/ark-github-main-20261008",
+      "actualExitCode": 0,
+      "signal": null,
+      "elapsedSeconds": 2.228944778442383,
+      "testFileSha256Before": "1948e73ba252eb79aa6c23a99f9015794a21d8b9bc63fc2eb91081ce67535d87",
+      "testFileSha256After": "1948e73ba252eb79aa6c23a99f9015794a21d8b9bc63fc2eb91081ce67535d87",
+      "log": "/private/tmp/ark317-heredoc-root-cause-seatbelt-m6667wif/seatbelt-e2e.log",
+      "logSha256": "862f92969d470aaf4a3274faaa6236ee601367ca508080b0263665b3647c6f27",
+      "noDotEnvAtStart": true,
+      "scope": "real product Seatbelt provider and Bash executor, isolated test workspaces; no model, native app or keychain operations"
+    },
+    "passed": 6,
+    "skipped": 0,
+    "bash": "3.2.57",
+    "result": "Heredoc temporary file denied; quoted inline Fraction calculation succeeds with same read-only/full policy, quote literals and CSV/world bytes unchanged."
+  },
+  "affectedRegisteredReplay": {
+    "priorFixedScopeReport": {
+      "path": "/private/tmp/ark318-heredoc-snapshot-owner-logs/snapshot-owner-final-fixed-scope-review.json",
+      "bytes": 92700,
+      "sha256": "c694f0436de49d2e453b006e9594549cd362e18dbc7e278082942e252949a2c6"
+    },
+    "priorPassedDistinctCases": 97,
+    "priorRemainingFailure": "compaction-output-reserve",
+    "finalRemainingCaseReceipt": {
+      "path": "/private/tmp/ark318-source-checks-1vkmpqas/compaction-output-reserve-replay-execution.json",
+      "bytes": 1284,
+      "sha256": "8e745a61db9b889e105961344ef9cbb720bfe4641648c8a85ff4d152851e21c9"
+    },
+    "passedDistinctCases": 98,
+    "failedRemainingCases": 0,
+    "filteredSkipsAreNotPassed": true,
+    "authoredReplayIsNotLiveModelProof": true,
+    "originalFailureLogPreserved": "/private/tmp/ark318-heredoc-snapshot-owner-logs/affected-registered-replay.log"
+  },
+  "compactionBoundary": {
+    "independentReview": {
+      "path": "/private/tmp/ark318-compaction-boundary-audit-ne_f8j3_/independent-boundary-review.json",
+      "bytes": 4111,
+      "sha256": "1f116ea02102673f768ab8b0c1dfb5af107b7523e679113886609a19483cd679"
+    },
+    "pressureAndOrder": {
+      "path": "/private/tmp/ark318-compaction-boundary-audit-ne_f8j3_/actual-pressure-and-order.json",
+      "bytes": 7311,
+      "sha256": "497d794db2f0db117af4b5fd1a9df22745609b4fbe8abf18167cd9bd0fa45115"
+    },
+    "fixedDeltaTokens": 127,
+    "fixtureOnlyChangedFiles": [
+      "snapshots/session/compaction-output-reserve/cordis.snapshot.yml",
+      "snapshots/session/compaction-output-reserve/session.jsonl"
+    ],
+    "reservation": {
+      "before": 119700,
+      "after": 119573
+    },
+    "inputBudget": {
+      "before": 8300,
+      "after": 8427
+    },
+    "thresholdOwner": "floor(min(contextWindow * thresholdRatio, contextWindow - reservedCompletionTokens))",
+    "preserved": {
+      "contextWindow": 128000,
+      "thresholdRatio": 0.99,
+      "retainTokens": 20,
+      "summaryMaxTokens": 32,
+      "scriptEntries": 3,
+      "mainSteps": 2,
+      "summaryCalls": 1
+    },
+    "originalFailureAndNewPrivateReproductionAreSeparate": true
+  },
+  "finalPreRecordModifiedFilePins": [
+    {
+      "path": ".agents/notes/implemented/bug-fix/2026-10-09-read-only-bash-inline-scripts.i18n.yaml",
+      "bytes": 545,
+      "sha256": "b5cf1b97e66b62bc629a18dab6f0bd7ffea9c989c61e3e5fdb3f7c513eb1a7d6"
+    },
+    {
+      "path": ".agents/notes/implemented/bug-fix/2026-10-09-read-only-bash-inline-scripts.md",
+      "bytes": 2820,
+      "sha256": "2ccda7e3a1ce18db33a38eb060c37d4494b9a5693ef7f59a5f563fb4990799f9"
+    },
+    {
+      "path": ".agents/notes/implemented/bug-fix/2026-10-09-read-only-bash-inline-scripts.zh.md",
+      "bytes": 2444,
+      "sha256": "8d179c714d7e351930cf78799debdc599b5eac883753115c75bb2e82a9ad3826"
+    },
+    {
+      "path": "docs/tool-catalog.i18n.yaml",
+      "bytes": 432,
+      "sha256": "2b083c5bab76cb7152b43badcc8dcf482357b126555f056c7e0c5e816027a58f"
+    },
+    {
+      "path": "docs/tool-catalog.md",
+      "bytes": 99395,
+      "sha256": "da0c98f4deb51131b77ecf83bbc512489a75a64ab1ef40a245d75e0a38b4a0b0"
+    },
+    {
+      "path": "docs/tool-catalog.zh.md",
+      "bytes": 99005,
+      "sha256": "473e64601e9951d1455a5396057b66676a0be89b88602f6750308545a35d27f9"
+    },
+    {
+      "path": "packages/shell/bash-sandbox/tests/seatbelt.e2e.ts",
+      "bytes": 8546,
+      "sha256": "1948e73ba252eb79aa6c23a99f9015794a21d8b9bc63fc2eb91081ce67535d87"
+    },
+    {
+      "path": "packages/shell/tool-bash/README.i18n.yaml",
+      "bytes": 434,
+      "sha256": "4c74898f7e90b7993b443cf134342780ff7ffda8e5c67db20e37414a99800cbf"
+    },
+    {
+      "path": "packages/shell/tool-bash/README.md",
+      "bytes": 16004,
+      "sha256": "5ae33973cf807fafd27a7b3a49ef2f4ea1214660e831dd6788ea0db2ca3b1cdd"
+    },
+    {
+      "path": "packages/shell/tool-bash/README.zh.md",
+      "bytes": 15068,
+      "sha256": "28e17b0e10e1e4d198eca1f6ade4d1be2babb979386ef194b6c8e6db75de6e57"
+    },
+    {
+      "path": "packages/shell/tool-bash/src/index.ts",
+      "bytes": 19142,
+      "sha256": "6b26913efb2b16337cde8076556db1452d8d8de5ff482b95ed9b8315312ed4dc"
+    },
+    {
+      "path": "snapshots/sdk/bash-tool/system-prompt.expected.md",
+      "bytes": 4657,
+      "sha256": "1ade67a2240e7c3a20d5eae10c2c67a492390a75a02f6ea6522428dadc8e8211"
+    },
+    {
+      "path": "snapshots/sdk/bash-tool/tool-schemas.expected.json",
+      "bytes": 35531,
+      "sha256": "a55bd9f7c8654e20b3a7b4462edec0e82b7f772d286d8fed535ebfa6af36c6a9"
+    },
+    {
+      "path": "snapshots/sdk/subagent-continuable-inheritance/system-prompt.1.expected.md",
+      "bytes": 5641,
+      "sha256": "42d15b865234d5fb8d001408783ed90675598b64335087d85bf9ee036cad0bb0"
+    },
+    {
+      "path": "snapshots/sdk/subagent-continuable-inheritance/tool-schemas.1.expected.json",
+      "bytes": 36769,
+      "sha256": "e2c7ef3a794aa0036fde06578ed5af81d176d57cf365634ffec7122ef758d272"
+    },
+    {
+      "path": "snapshots/sdk/subagent-continuable/system-prompt.1.expected.md",
+      "bytes": 5641,
+      "sha256": "42d15b865234d5fb8d001408783ed90675598b64335087d85bf9ee036cad0bb0"
+    },
+    {
+      "path": "snapshots/sdk/subagent-continuable/tool-schemas.1.expected.json",
+      "bytes": 36769,
+      "sha256": "e2c7ef3a794aa0036fde06578ed5af81d176d57cf365634ffec7122ef758d272"
+    },
+    {
+      "path": "snapshots/sdk/subagent-dsh-sdk-diagnostic/system-prompt.expected.md",
+      "bytes": 5017,
+      "sha256": "1133c9c3e0e73ea8fb09d0a529e36c03b8c086213fe3eb3456b25b93dd26f191"
+    },
+    {
+      "path": "snapshots/sdk/subagent-dsh-sdk-diagnostic/tool-schemas.expected.json",
+      "bytes": 38925,
+      "sha256": "96a424b4af573c8347df81279f1752abb6656c17336d747671d157501f651a1d"
+    },
+    {
+      "path": "snapshots/sdk/subagent-dsh-sdk-dynamic-route/system-prompt.1.expected.md",
+      "bytes": 4939,
+      "sha256": "4deafad30a90e6d7794c8ecd21f2a5300a155c35a17ee4a10da939853e2f19b6"
+    },
+    {
+      "path": "snapshots/sdk/subagent-dsh-sdk-dynamic-route/system-prompt.expected.md",
+      "bytes": 4653,
+      "sha256": "1de72a58b603f528e0d084cf2c425b56869acb00f18548daa8e20df2d72a658a"
+    },
+    {
+      "path": "snapshots/sdk/subagent-dsh-sdk-dynamic-route/tool-schemas.1.expected.json",
+      "bytes": 36170,
+      "sha256": "127e8f10559e2ef737b24c541cc562406fdeb4f88be61abc449a514b3dcd19d8"
+    },
+    {
+      "path": "snapshots/sdk/subagent-dsh-sdk-dynamic-route/tool-schemas.expected.json",
+      "bytes": 37537,
+      "sha256": "349a6c811f5b2413dcbc2087b9f4211aac16fb4699f565115fe71570c525da89"
+    },
+    {
+      "path": "snapshots/sdk/subagent-list-agents/system-prompt.1.expected.md",
+      "bytes": 5641,
+      "sha256": "42d15b865234d5fb8d001408783ed90675598b64335087d85bf9ee036cad0bb0"
+    },
+    {
+      "path": "snapshots/sdk/subagent-list-agents/tool-schemas.1.expected.json",
+      "bytes": 36769,
+      "sha256": "e2c7ef3a794aa0036fde06578ed5af81d176d57cf365634ffec7122ef758d272"
+    },
+    {
+      "path": "snapshots/sdk/subagent-report/system-prompt.1.expected.md",
+      "bytes": 5641,
+      "sha256": "42d15b865234d5fb8d001408783ed90675598b64335087d85bf9ee036cad0bb0"
+    },
+    {
+      "path": "snapshots/sdk/subagent-report/tool-schemas.1.expected.json",
+      "bytes": 36769,
+      "sha256": "e2c7ef3a794aa0036fde06578ed5af81d176d57cf365634ffec7122ef758d272"
+    },
+    {
+      "path": "snapshots/sdk/text-turn/system-prompt.expected.md",
+      "bytes": 4657,
+      "sha256": "1ade67a2240e7c3a20d5eae10c2c67a492390a75a02f6ea6522428dadc8e8211"
+    },
+    {
+      "path": "snapshots/sdk/text-turn/tool-schemas.expected.json",
+      "bytes": 35531,
+      "sha256": "a55bd9f7c8654e20b3a7b4462edec0e82b7f772d286d8fed535ebfa6af36c6a9"
+    },
+    {
+      "path": "snapshots/session/agent-instructions/system-prompt.expected.md",
+      "bytes": 5102,
+      "sha256": "ce58f2f3f643b8f83cdec2989c55d0483bf2ece9d95d035536c24f778ba2f0d6"
+    },
+    {
+      "path": "snapshots/session/agent-instructions/tool-schemas.expected.json",
+      "bytes": 35856,
+      "sha256": "25757e07ef79ce5fc48ecfc854f68a4f52329f13430fa836dfb8dcbd6cc62514"
+    },
+    {
+      "path": "snapshots/session/both-mode-turn/system-prompt.expected.md",
+      "bytes": 36760,
+      "sha256": "f02415c6c22d67d93bbeb68346c642629e2a531b963d3e58687778161ca28caa"
+    },
+    {
+      "path": "snapshots/session/both-mode-turn/tool-schemas.expected.json",
+      "bytes": 37012,
+      "sha256": "bd05a144d03e3818cdc7fbc30ffa5d8c46b383c5362ec76b3c9221089818d43b"
+    },
+    {
+      "path": "snapshots/session/compaction-output-reserve/cordis.snapshot.yml",
+      "bytes": 750,
+      "sha256": "b6931c9a5857db452f0d86346b80431e93c28418cf886850ae14ca1bf56cef48"
+    },
+    {
+      "path": "snapshots/session/compaction-output-reserve/session.jsonl",
+      "bytes": 8706,
+      "sha256": "c07a780d6d3cc2d5cf3004f03e93fe932116e38a80f736f69f551dd6c3e012a4"
+    },
+    {
+      "path": "snapshots/session/compaction-recovery/system-prompt.expected.md",
+      "bytes": 5222,
+      "sha256": "01ec737b15ffefbd21de57470500cff22334ecec36e8cc2b5e5b109ea4a5c041"
+    },
+    {
+      "path": "snapshots/session/compaction-recovery/tool-schemas.expected.json",
+      "bytes": 35856,
+      "sha256": "25757e07ef79ce5fc48ecfc854f68a4f52329f13430fa836dfb8dcbd6cc62514"
+    },
+    {
+      "path": "snapshots/session/cordis-inspect-jsdoc/system-prompt.expected.md",
+      "bytes": 45171,
+      "sha256": "0dfc7992bf56a0e4f43a78d44438a85c18a9a5f2d7b55883fc051c8e2768f2c1"
+    },
+    {
+      "path": "snapshots/session/cordis-inspect-jsdoc/tool-schemas.expected.json",
+      "bytes": 45771,
+      "sha256": "83f0632b19ffec827f4290145da498b427e9459f6775d45d6217bd29cdb2ceba"
+    },
+    {
+      "path": "snapshots/session/fs-glob-sampling/system-prompt.expected.md",
+      "bytes": 3890,
+      "sha256": "8cd408ececc86b44486d58a9ec2aad3a5055c8b1444a119311c576c467e78338"
+    },
+    {
+      "path": "snapshots/session/fs-glob-sampling/tool-schemas.expected.json",
+      "bytes": 30399,
+      "sha256": "6154bd6014d898dbef134a9ea6a3fabf31c5f536d40d100dd9c3b825e154afba"
+    },
+    {
+      "path": "snapshots/session/lsp-definition/system-prompt.expected.md",
+      "bytes": 5547,
+      "sha256": "a8ba980404f675015aa07f98491715b906cb4a913042ecd84593bd7f1d866f3d"
+    },
+    {
+      "path": "snapshots/session/lsp-definition/tool-schemas.expected.json",
+      "bytes": 37093,
+      "sha256": "409a3336731e00389bbfd27b80a2718f65846c75a6d9da05ff779fd5f80f8094"
+    },
+    {
+      "path": "snapshots/session/product-subagent-both/tool-schemas.expected.json",
+      "bytes": 41374,
+      "sha256": "76616c5db420aafb486b94e85c74d4705175fb9307da2e47e33175368ab0b5cd"
+    },
+    {
+      "path": "snapshots/session/product-subagent-codex/system-prompt.expected.md",
+      "bytes": 5220,
+      "sha256": "2fa4f9305a81a727c4d01f6e90f334e22907f2f56c0489cc2222ead2560a95ba"
+    },
+    {
+      "path": "snapshots/session/product-subagent-codex/tool-schemas.expected.json",
+      "bytes": 38614,
+      "sha256": "52c619b28d0583aa7cded351c9cc37969a54400e157321ae198bc2c81aaa502e"
+    },
+    {
+      "path": "snapshots/session/product-subagent-result-diagnostic/tool-schemas.expected.json",
+      "bytes": 37226,
+      "sha256": "9d3e15a7496a83ee42382f9aaca22bc3767769f84e04d2caa82cc0a99b7d2b80"
+    },
+    {
+      "path": "snapshots/session/ptc-read-image/system-prompt.expected.md",
+      "bytes": 36932,
+      "sha256": "c6e20695ec94110e8d0a7ceb95ae5e0d5ee7e828a7aac6ae00f08cc1048b60a1"
+    },
+    {
+      "path": "snapshots/session/ptc-turn/system-prompt.expected.md",
+      "bytes": 36921,
+      "sha256": "aed3ac762a114f0c3e70477da1ef686db684aa993c9079a729f7dd7e9aa2273f"
+    },
+    {
+      "path": "snapshots/session/pty-tools-sandbox-backend/system-prompt.expected.md",
+      "bytes": 5530,
+      "sha256": "b09546a263873a2f96e7cb486037f975547fc951070fc47be592f18e9d81c7d6"
+    },
+    {
+      "path": "snapshots/session/pty-tools-sandbox-backend/tool-schemas.expected.json",
+      "bytes": 39886,
+      "sha256": "8d89c31b27c589fd788b9a35058b176fdb05dd5a4bf106b924e81f5d84ae9e26"
+    },
+    {
+      "path": "snapshots/session/ralph-loop/system-prompt.1.expected.md",
+      "bytes": 5451,
+      "sha256": "3746d4b60aac81996f2a16585ed18b58cac1a8621003d4a99052140c1533ff5c"
+    },
+    {
+      "path": "snapshots/session/ralph-loop/system-prompt.2.expected.md",
+      "bytes": 5451,
+      "sha256": "3746d4b60aac81996f2a16585ed18b58cac1a8621003d4a99052140c1533ff5c"
+    },
+    {
+      "path": "snapshots/session/ralph-loop/tool-schemas.1.expected.json",
+      "bytes": 36925,
+      "sha256": "7daddf68fd76827c6dcfeaccaecfdad306615f6a489d74b01d096632a8e8fdd7"
+    },
+    {
+      "path": "snapshots/session/ralph-loop/tool-schemas.2.expected.json",
+      "bytes": 36925,
+      "sha256": "7daddf68fd76827c6dcfeaccaecfdad306615f6a489d74b01d096632a8e8fdd7"
+    },
+    {
+      "path": "snapshots/session/read-image/system-prompt.expected.md",
+      "bytes": 5233,
+      "sha256": "c43f6d4431585fa15f5278dfc5454ac5e0ab692d63f82c1bd9ed26064498bc83"
+    },
+    {
+      "path": "snapshots/session/read-only-inline-calculation/cordis.snapshot.yml",
+      "bytes": 820,
+      "sha256": "e46cdd23b309bc0dea98314565e521025e595230f6aafcf8af18eda4a5d88750"
+    },
+    {
+      "path": "snapshots/session/read-only-inline-calculation/cordis.yml",
+      "bytes": 219,
+      "sha256": "e9032f55184c33bd232c93d2190b28397c3d70e8b66c46db9cee72ec920301ac"
+    },
+    {
+      "path": "snapshots/session/read-only-inline-calculation/session.jsonl",
+      "bytes": 7116,
+      "sha256": "0bccd65e5a836dc137e44ba6699f65386b149acfeb6776f0ad5d696e2b4065f1"
+    },
+    {
+      "path": "snapshots/session/read-only-inline-calculation/snapshot.yml",
+      "bytes": 290,
+      "sha256": "7eba1458b6900d96810c81b16465152a9dfe83b413bc84efdb9a3ebc5f934a7b"
+    },
+    {
+      "path": "snapshots/session/read-only-inline-calculation/workspace.expected/amounts.csv",
+      "bytes": 23,
+      "sha256": "4311dd833e8cdd10bbbbb7360445c4d48acf3412caf9466182815e22d9ffeaa3"
+    },
+    {
+      "path": "snapshots/session/read-only-inline-calculation/workspace/amounts.csv",
+      "bytes": 23,
+      "sha256": "4311dd833e8cdd10bbbbb7360445c4d48acf3412caf9466182815e22d9ffeaa3"
+    },
+    {
+      "path": "snapshots/session/session-query-spill/system-prompt.expected.md",
+      "bytes": 5539,
+      "sha256": "288d649895b23004c09276b081f18690a854ec0d2b2ab0025bcc2c8cf68d805c"
+    },
+    {
+      "path": "snapshots/session/session-query-spill/tool-schemas.expected.json",
+      "bytes": 42265,
+      "sha256": "9a3d43d257ceaafa06d65a0cb30889cb27f99d9eb1aae729891dd8aa9a2f3304"
+    },
+    {
+      "path": "snapshots/session/subagent-acp-diagnostic/tool-schemas.expected.json",
+      "bytes": 37224,
+      "sha256": "e2509fd7ed98f04eaa81b8a8c5f090c6ff7cf7abe4ea4dd64bb6b46b08005935"
+    },
+    {
+      "path": "snapshots/session/subagent-child-question-rejection/tool-schemas.expected.json",
+      "bytes": 38262,
+      "sha256": "138916ee05b648217e23456396160998f4c67707604dbf76c1711a9cf43155be"
+    },
+    {
+      "path": "snapshots/session/text-turn/system-prompt.expected.md",
+      "bytes": 5222,
+      "sha256": "01ec737b15ffefbd21de57470500cff22334ecec36e8cc2b5e5b109ea4a5c041"
+    },
+    {
+      "path": "snapshots/session/text-turn/tool-schemas.expected.json",
+      "bytes": 35856,
+      "sha256": "25757e07ef79ce5fc48ecfc854f68a4f52329f13430fa836dfb8dcbd6cc62514"
+    },
+    {
+      "path": "snapshots/session/web-fetch/system-prompt.expected.md",
+      "bytes": 4789,
+      "sha256": "44cb8cd866b1482e8d2d13bda0c846652285cd2f13bcac19f68645e8153ae725"
+    },
+    {
+      "path": "snapshots/session/web-fetch/tool-schemas.expected.json",
+      "bytes": 35260,
+      "sha256": "2c36a9a02cac2ae4881d65ac9dca3cd77212c2700c3ec4c5275c46746e12e06b"
+    },
+    {
+      "path": "snapshots/session/wiki-governance/system-prompt.expected.md",
+      "bytes": 5557,
+      "sha256": "6f4658a5ce6f6444e45f88501b426071de14180c98364ab3e5861764bfa39c5f"
+    },
+    {
+      "path": "snapshots/session/wiki-governance/tool-schemas.expected.json",
+      "bytes": 39272,
+      "sha256": "0f6d69493bcbaf97b7a5f186d3809d801a66643e960bd8a361794afb3b7ffb22"
+    },
+    {
+      "path": "snapshots/session/wiki-ingestion-only/system-prompt.expected.md",
+      "bytes": 5263,
+      "sha256": "c935d003ab9ee1a73624c82b6770b32cc74060b1a9242c59e37743217117ae7b"
+    },
+    {
+      "path": "snapshots/session/wiki-ingestion-only/tool-schemas.expected.json",
+      "bytes": 36365,
+      "sha256": "778a6c3e454f0762119bdd52027a061367f934f3bd407f1d8ca9c3bd54f28499"
+    },
+    {
+      "path": "snapshots/web/cordis-tool-round/system-prompt.expected.md",
+      "bytes": 17537,
+      "sha256": "3b3ef546c7723bb5d1b7ef76e95858bed84d99878a6710d9c63576255b7d0cd8"
+    },
+    {
+      "path": "snapshots/web/cordis-tool-round/tool-schemas.expected.json",
+      "bytes": 44420,
+      "sha256": "440879da4dfb19c2e35b612f210b18a9cb4193aa6e15d92bc8cda0d169acef21"
+    },
+    {
+      "path": "snapshots/web/fresh-round-trip/system-prompt.expected.md",
+      "bytes": 7328,
+      "sha256": "2c202f6eeb6c27ee40f760b1305126805498d9d5a8d03a62b7de6e9efd622995"
+    },
+    {
+      "path": "snapshots/web/fresh-round-trip/tool-schemas.expected.json",
+      "bytes": 34519,
+      "sha256": "22e11b0a8ac8183cdf6235aba85fd878d3fd2fdc126c85e48346f18575a0f723"
+    },
+    {
+      "path": "snapshots/web/ptc-round/system-prompt.expected.md",
+      "bytes": 38359,
+      "sha256": "98f2b5c379b9cedb11b24156c32b442b7bf266a31a358ab5104819de4893cfa1"
+    }
+  ],
+  "immutablePins": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/project-manifest.json",
+      "bytes": 862,
+      "sha256": "d1a4175f1fac86f8998196b6a217bd88e9b4ea4b59dc154c9db0ca980c265e10"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/rust-benchmark.json",
+      "bytes": 5452,
+      "sha256": "30b1c938f9a88d890a4001dceae73e4a2039b3a821249b73300c64d121349331"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/profile/cordis.patch.yml",
+      "bytes": 2429,
+      "sha256": "796d9f9c8cd65581656ae237ad13ac5bbabbebc217da9e594539a8162a1986fd"
+    }
+  ],
+  "documentation": {
+    "actualDocSyncPassed": 30,
+    "failed": 0,
+    "skipped": 0,
+    "guidanceReadmesCatalogsNotesAndPairingsWrittenBeforeThisExecution": true,
+    "subsequentChangesOnlySnapshotProjectionsAndBudget": true
+  },
+  "acceptance": {
+    "native318Built": false,
+    "native318ActualWindowTask": false,
+    "realModelAvoidsHeredoc": "UNKNOWN",
+    "verifiedCrossConversationLearning": "UNKNOWN",
+    "speedBenefit": "UNKNOWN",
+    "rustDecision": "RETAIN_TS",
+    "rustEnablement": false,
+    "formalPromotion": "HOLD",
+    "githubPublication": false,
+    "overallGoalComplete": false
+  },
+  "limitations": [
+    "Keyless models emit authored outputs and do not prove real model selection.",
+    "Real bash execution validates confinement and computation for the tested commands only.",
+    "A single future Native task will not establish broad learning, utility, cross-platform or visual parity."
+  ]
+}

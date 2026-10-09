@@ -30,6 +30,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../core/session"
+    },
+    {
       "path": "../../web/web"
     },
     {
@@ -37,6 +40,12 @@
     },
     {
       "path": "../../../vendor/timer"
+    },
+    {
+      "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../util/http-proxy"
     }
   ]
 }

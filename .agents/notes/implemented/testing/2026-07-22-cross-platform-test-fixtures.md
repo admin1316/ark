@@ -18,6 +18,10 @@ Transport-failure tests inject the connection's message writer and deliver the s
 
 Language-server teardown targets the whole descendant tree through a negative process-group id on POSIX and synchronous `taskkill /T /F` on Windows. Windows suppresses only taskkill's already-absent-tree status; command, permission, and other tree-kill failures remain teardown failures. A read-only provider query retries once only when its selected pooled transport fails before or during that query; errors from a still-live server are not replayed. Terminal tests wait for their observable rendered output instead of assuming one event-loop turn is sufficient.
 
+Protocol-cancellation tests wait for a fixture server to write a request-arrival marker before aborting; elapsed sleeps do not prove that the request reached the server. Line-oriented shell output assertions normalize the host's CRLF or LF representation, and cross-platform snapshots map host-selected shell names to one token before preserving the canonical tool order.
+
+Large synthetic knowledge-graph fixtures declare a generous but finite traversal deadline for the number of real files they validate under coverage; the focused artifact tests retain deterministic deadline-boundary assertions.
+
 Tests for a genuinely POSIX-only primitive use a narrow Windows exclusion on that case. Adjacent cross-platform cases continue to pin non-regular file rejection, unavailable command rejection, and inaccessible working-directory rejection. Supported Windows paths remain inside the per-file coverage gate rather than being excluded with their test files.
 
 ## Alternatives considered

@@ -29,6 +29,8 @@
     wikiRoot: !!js process.env.ARK_WIKI_ROOT
     mainRoot: !!js process.env.ARK_MAIN_ROOT
     credential: DEEPSEEK_API_KEY
+    # Launcher-owned JSON only; empty keeps independent verification unavailable.
+    knowledgeVerifierConfig: !!js process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
     # Ark enables the owned-worker stage executor: without it every ingest task
     # fails with "stage executor unavailable" (the release ships no provider).
     ownedStageExecutor: true
@@ -36,6 +38,9 @@
 - insert:
     - id: tool-knowledge-wiki
       name: '@deepseek-ai/dsh-tool-knowledge-wiki'
+      config:
+        # Catalog exposure follows the same launcher input; service authority still decides access.
+        exposeGovernedTools: !!js "(process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG ?? '').trim() !== ''"
 
 - id: session-query-sqlite
   config:

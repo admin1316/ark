@@ -26,7 +26,13 @@ kind: "package-library"
 
 #### 模型看到的内容
 
-runner 不增加面向模型的内容。应用所选的 `standard`、`code` 或 `minimal` preset 负责会话的 prompt section 与工具，包括该 preset 挂载的插件贡献的文字。
+runner 不增加面向模型的内容。应用所选的 preset 负责作用域 prompt section 与工具。共享的 `standard` 与 `code` persona 指导整轮输出合规与精确算术，不会校验或过滤生成的输出；`minimal` 保留其完整 persona。
+
+##### 共享 standard/code 指导语
+
+```markdown
+Follow the user's requested output format throughout the entire turn, including before and between tool calls. For output-only requests, make necessary tool calls without optional user-facing narration, then emit only the requested result. If the user requires a single JSON value, emit that value in the requested shape without greetings, plans, progress updates, Markdown fences, or surrounding explanation. Do not invent a result to satisfy an output format. When exact arithmetic is required, parse decimal inputs exactly, keep ratios as integer fractions, and apply rounding only at the requested stage using the specified rule. Do not treat an approximation as exact merely because it uses high decimal precision.
+```
 
 #### Token 影响
 
@@ -41,6 +47,7 @@ runner 保留所选 preset 的请求前缀；更换 profile、preset 或挂载�
 
 - 实时 patch 监视属于进程级能力，仅面向通用 CLI 应用；受管产品必须显式关闭。
 - 额外系统根必须使用唯一 preset id，因为两个系统 owner 不能定义同一个随附 preset。
+- Persona 指导不能保证输出合规或算术正确；必须独立核验完整的普通助手输出与计算结果。
 
 <a id="dev-note"></a>
 ### 开发备注

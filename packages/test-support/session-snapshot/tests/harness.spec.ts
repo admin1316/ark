@@ -1057,11 +1057,11 @@ describe('runScenario', () => {
         steps: [
           ...boot,
           { op: 'promptAndCancel', text: 'hang' },
-          { op: 'waitForTitleAfterTurnEnd', timeoutMs: 20 },
+          { op: 'waitForTitleAfterTurnEnd', timeoutMs: 1_000 },
         ],
       },
       { agent: AGENT, mode: 'replay', fixtureFile },
-    )).rejects.toThrow(/did not persist session\/title after turn\/end within 20ms/)
+    )).rejects.toThrow(/did not persist session\/title after turn\/end within 1000ms/)
   })
 
   it('waitForEventAfterTurnEnd holds the app for a typed post-boundary record and times out otherwise', { timeout: 20_000 }, async () => {

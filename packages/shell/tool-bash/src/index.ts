@@ -30,20 +30,26 @@ import { parseExitStatus, renderProcessRead, renderResult } from './render.ts'
 export const name = 'tool-bash'
 export const inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']
 
+const DEFAULT_MAX_STDIN_BYTES = 1_048_576
+
 /** Configuration for the bash tool. */
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
+  /** Maximum UTF-8 bytes accepted in one model-supplied stdin payload. */
+  maxStdinBytes?: number
 }
 
 /** Runtime configuration schema for the bash tool plugin. */
 export const Config: z<Config> = z.object({
   enableRunInBackground: z.boolean().default(true),
+  maxStdinBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_STDIN_BYTES),
 })
 
 /** Parsed tool args; execute validates value constraints absent from ParameterSchemaSpec. */
 interface BashToolArgs {
   command: string
+  stdin?: string
   description: string
   timeoutMs?: number
   workdir?: string
@@ -52,12 +58,15 @@ interface BashToolArgs {
   justification?: string
 }
 
-function validateBashArgs(args: BashToolArgs): void {
+function validateBashArgs(args: BashToolArgs, maxStdinBytes: number): void {
   if (args.command.trim().length === 0) {
     throw new Error('invalid command: expected a non-empty string')
   }
   if (args.description.trim().length === 0) {
     throw new Error('invalid description: expected a non-empty string')
+  }
+  if (args.stdin !== undefined && Buffer.byteLength(args.stdin, 'utf8') > maxStdinBytes) {
+    throw new Error(`invalid stdin: exceeds ${maxStdinBytes} UTF-8 bytes`)
   }
   if (args.timeoutMs !== undefined && (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0)) {
     throw new Error(`invalid timeoutMs: expected a positive number, got ${JSON.stringify(args.timeoutMs)}`)
@@ -75,13 +84,13 @@ function bashDescription(backgroundEnabled: boolean, escalationModes: readonly S
     + 'Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — '
     + 'pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. '
     + `Current harness environment facts are exposed through managed \`$${DSH_ENV_PREFIX}*\` variables; inspect them when needed. `
-    + 'Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a bug in the command; do not retry another way. '
+    + 'Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — the denied access remains forbidden; do not bypass it. '
     + 'Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. '
     + background
   if (escalationModes.length === 0) return base
   return base + ' Attempting a command the sandbox may deny is safe and expected: run it and read the '
-    + 'marker rather than assuming the denial. When a command is denied and a wider mode would let it '
-    + 'succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry '
+    + 'marker rather than assuming the denial. When the task requires the denied access and a wider mode '
+    + 'would permit it, request approval in the same turn — the one sanctioned exception to a denial: retry '
     + 'the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) '
     + 'plus a one-sentence `justification`. Do not detour through chat to ask permission first — the '
     + 'approval prompt raised by that retry is how the user consents. If the session states approval '
@@ -93,19 +102,19 @@ function bashDescription(backgroundEnabled: boolean, escalationModes: readonly S
 }
 
 /**
- * Present foreground calls as terminals and background starts as generic cards.
- * The command remains the title on both paths; foreground cwd is passed through
- * for the bridge to resolve, while background descriptions remain card content.
+ * Present command-only foreground calls as terminals. Input-bearing calls use
+ * generic cards so their exact command and stdin remain inspectable together.
+ * Background starts also use generic cards; every title remains the command.
  */
-type BashCallArgs = { command: string; description: string; workdir?: string; run_in_background?: boolean }
+type BashCallArgs = { command: string; stdin?: string; description: string; workdir?: string; run_in_background?: boolean }
 
 function presentBashCall(args: BashCallArgs): GenericCallView | TerminalCallView {
-  if (args.run_in_background === true) {
+  if (args.run_in_background === true || args.stdin !== undefined) {
     return {
       card: 'generic',
       title: args.command,
       kind: 'execute',
-      rawInput: args.command,
+      rawInput: args.stdin === undefined ? args.command : { command: args.command, stdin: args.stdin },
       content: [{ type: 'text', text: args.description }],
     }
   }
@@ -189,6 +198,10 @@ const BACKGROUND_OUTPUT_PROPERTIES = {
 
 export function apply(ctx: Context, config: Config = {}): void {
   const backgroundEnabled = config.enableRunInBackground ?? true
+  const maxStdinBytes = config.maxStdinBytes ?? DEFAULT_MAX_STDIN_BYTES
+  if (!Number.isSafeInteger(maxStdinBytes) || maxStdinBytes <= 0) {
+    throw new Error('tool-bash: maxStdinBytes must be a positive safe integer')
+  }
   const defaultMode = ctx.shell.sandboxMode
   const escalationModes: readonly SandboxMode[] = defaultMode === undefined ? [] : ESCALATION_TARGETS
   const sandboxPolicy: SandboxPolicyService | undefined = defaultMode === undefined ? undefined : ctx.get('sandboxPolicy')
@@ -236,7 +249,14 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.systemPrompt.section({
     name: 'tool:bash',
     order: FIRST_PARTY_SECTION_ORDER.TOOL_BASH,
-    text: 'Check the [exit code: N] marker on every bash result; investigate failures before moving on.',
+    text: 'Check the [exit code: N] marker on every bash result; investigate failures before moving on. '
+      + 'For multiline scripts, use `command: "python3 -"` or `command: "node"` with the script in `stdin`; '
+      + 'stdin is literal input, with no shell expansion or temporary script file. Here-documents and '
+      + 'here-strings can require temporary-file writes and fail under a read-only sandbox. '
+      + 'Correctly quoted inline arguments such as `python3 -c` also work. If an incidental temporary-file write is '
+      + 'denied, reformulate the permitted task without that write while keeping the same sandbox. '
+      + 'Never use an alternate method to obtain a denied read or write; escalate only when the task '
+      + 'requires the denied access.',
   })
 
   ctx.tools.register(defineTool({
@@ -244,6 +264,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     description: bashDescription(backgroundEnabled, escalationModes),
     parameters: {
       command: { type: 'string', required: true, description: 'The bash command to execute.' },
+      stdin: { type: 'string', description: `Literal UTF-8 input written to the command's stdin, then closed; at most ${maxStdinBytes} bytes. Use with python3 - or node for multiline scripts without a temporary file. Shell expansions are not applied. Omitted leaves stdin empty.` },
       description: {
         type: 'string',
         required: true,
@@ -328,7 +349,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       }],
     },
     async execute(args: BashToolArgs, exec) {
-      validateBashArgs(args)
+      validateBashArgs(args, maxStdinBytes)
       // Description is display metadata; workdir defaults to the caller's session.
       const standingPolicy = resolveSandboxPolicy(exec)
       const approvedMode = args.sandbox_permissions !== undefined && args.justification !== undefined
@@ -341,6 +362,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const dshEnv = ctx.shellEnv.collect(exec)
       const request = {
         command: args.command,
+        ...args.stdin !== undefined ? { stdin: args.stdin } : {},
         ...workdir !== undefined ? { workdir } : {},
         ...args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {},
         dshEnv,

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-bash` gives the agent a `bash` tool that runs commands through the mounted shell executor and returns stdout, stderr, and exit markers. Each call runs in a fresh shell — no cwd, variables, or functions survive — and `run_in_background` turns long-running commands into background jobs the agent collects with `job_output` and stops with `job_kill`. Every call runs with the managed `DSH_*` environment from `dsh-shell-env`, and under a sandboxing executor a denied command may be retried once with a wider `sandbox_permissions` mode plus a `justification` through user approval. Non-zero exits are reported, not failed, so the agent decides how to react. Mount it together with an executor provider such as `dsh-bash-local` or `dsh-bash-sandbox` and the `dsh-shell-env` plugin.
+`dsh-tool-bash` gives the agent a `bash` tool that runs commands through the mounted shell executor and returns stdout, stderr, and exit markers. Each call runs in a fresh shell — no cwd, variables, or functions survive — and `run_in_background` turns long-running commands into background jobs the agent collects with `job_output` and stops with `job_kill`. Every call runs with the managed `DSH_*` environment from `dsh-shell-env`. Under a sandboxing executor, approval can permit one retry with a wider `sandbox_permissions` mode and a `justification` when the task requires the denied access. Non-zero exits are reported, not failed, so the agent decides how to react. Mount it together with an executor provider such as `dsh-bash-local` or `dsh-bash-sandbox` and the `dsh-shell-env` plugin.
 
 ## Table of Contents
 
@@ -41,11 +41,12 @@ The common path is an executor provider, the environment registry, and this tool
 - name: '@deepseek-ai/dsh-tool-jobs'
 ```
 
-The single config field toggles background support.
+Configuration controls background support and the literal-input limit.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `enableRunInBackground` | `true` | Expose `run_in_background`; when `false`, forced background calls are rejected |
+| `maxStdinBytes` | `1048576` | Maximum UTF-8 bytes in one `stdin` payload; larger input is rejected before sandbox escalation approval or execution |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-bash) is the exhaustive source for every accepted field and its JSDoc; the generated [tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-bash) carries the full argument schema.
 
@@ -53,13 +54,17 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 The tool executes `bash -c <command>` and returns the combined output. Commands run in a fresh shell every call, so state never persists — pass `workdir` instead of `cd`. A non-zero exit is reported as `[exit code: N]` for the agent to interpret, not surfaced as a tool error. A `description` in active voice (5–10 words) labels the call in the UI; `timeoutMs` overrides the executor's default and cap. Output beyond the executor's stream caps is truncated to its tail, with the full output saved to a spill file whose path is reported.
 
+Optional `stdin` supplies literal UTF-8 text to the command and closes the input pipe afterward, without shell expansion or a temporary script file. Omission leaves input empty; an empty string is also valid. The command and input are stored in the same tool-call log, and calls with stdin show both in a generic execute card. Input over `maxStdinBytes` rejects the entire call rather than truncating or spilling it.
+
 ### Running long commands in the background
 
 Passing `run_in_background: true` returns a job id immediately and no timeout applies; the command keeps running while the agent works on something else. The agent reads its output with `job_output` (non-blocking unless `wait: true`), lists jobs with `job_list`, and stops it with `job_kill`; a finished job notifies the owning agent in-session. Background support needs the generic job runtime (`dsh-jobs-local`) and its control tools (`dsh-tool-jobs`) mounted.
 
 ### Sandboxed execution and escalation
 
-When the mounted executor confines commands (for example `dsh-bash-sandbox`), a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a command failure. The model may then retry the exact same command once in the same turn with `sandbox_permissions` (the narrowest wider mode that suffices) and a one-sentence `justification`; the approval prompt raised by that retry is how the user consents. Escalation is never speculative: a request with no real prior denial, or one that is not strictly wider than the current mode, fails closed without running anything, and a rejected escalation is final for that command.
+When the mounted executor confines commands (for example `dsh-bash-sandbox`), a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a command failure. Only when the task requires the denied access and a wider mode would permit it may the model retry the exact same command once in the same turn with `sandbox_permissions` (the narrowest wider mode that suffices) and a one-sentence `justification`; the approval prompt raised by that retry is how the user consents. A result's escalation hint describes that approval path, not an unconditional requirement to use it. Escalation is never speculative: ground it in a real denial, including a denial of the same access already observed in this session. Non-widening requests fail closed without running anything; a rejected escalation is final for that command. When approval prompts are disabled, the denial is final and the model must not set `sandbox_permissions`.
+
+Here-documents, here-strings, and temporary script files can require filesystem writes even when the task only reads files or computes a result. Under a read-only policy, use `command: "python3 -"` or `command: "node"` with the multiline script in `stdin`; correctly quoted `python3 -c` also works for short scripts, keeping the same sandbox. This does not authorize an alternate route to a denied read or write: the denied access stays forbidden, and the executor still confines every command. The [literal bash stdin Agent Note](../../../.agents/notes/implemented/bug-fix/2026-10-09-bash-literal-stdin.md) records the choice and its limits.
 
 ### What can go wrong
 
@@ -78,7 +83,7 @@ This section explains the design decisions behind the tool and points at the cod
 ### Design philosophy
 
 - **Model-facing consumer of the shell seam.** The tool is the Consumer role of the bash capability: it registers the `bash` schema, renders results, and resolves per-call policy, while the executor seam owns process mechanics.
-- **Request from named args only.** The tool never exposes `stdin`, `env`, or `stdoutMaxBytes`; it builds each request from command/workdir/timeout/signal fields plus the registry-collected `dshEnv`, so model-supplied keys cannot replace managed values ([bash stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md)).
+- **Request from named args only.** The tool never exposes `env` or `stdoutMaxBytes`; it builds each request from command/stdin/workdir/timeout/signal fields plus the registry-collected `dshEnv`, so model-supplied keys cannot replace managed values ([bash stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md)).
 - **Non-zero exits are reported, not errored.** Only infrastructure failures (spawn errors, aborts) surface as tool errors; the model interprets exit codes and markers.
 - **Background work belongs to the job runtime.** A background call registers a process handle with `ctx.jobs`; ids, ownership, completion notices, and disposal are the runtime's, and this tool only maps bash exit and sandbox facts into job output.
 
@@ -112,7 +117,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [Bash executor subsystem](../../../docs/subsystems/shell.md) — request/spec vocabulary, results, and background processes.
 - [shell-env](../shell-env/README.md) — the managed `DSH_*` environment every call receives.
 - [tool-jobs](../../jobs/tool-jobs/README.md) — `job_output`, `job_list`, and `job_kill` controls for background runs.
-- [bash stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md) — why the tool exposes no stdin or env.
+- [bash stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md) — in-process stdin/env inputs and environment protection.
 - [sandbox Agent Note](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.md) — escalation and mode-switching rationale.
 - [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-bash) — the exact `bash` argument schema.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-bash) — every accepted config field and its source declaration.
@@ -131,7 +136,7 @@ Every request in this plugin's registration scope contains the bash guidance bel
 ##### Bash guidance
 
 ```markdown
-Check the [exit code: N] marker on every bash result; investigate failures before moving on.
+Check the [exit code: N] marker on every bash result; investigate failures before moving on. For multiline scripts, use `command: "python3 -"` or `command: "node"` with the script in `stdin`; stdin is literal input, with no shell expansion or temporary script file. Here-documents and here-strings can require temporary-file writes and fail under a read-only sandbox. Correctly quoted inline arguments such as `python3 -c` also work. If an incidental temporary-file write is denied, reformulate the permitted task without that write while keeping the same sandbox. Never use an alternate method to obtain a denied read or write; escalate only when the task requires the denied access.
 ```
 
 #### Token effect

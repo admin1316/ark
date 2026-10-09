@@ -85,7 +85,10 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
           '',
         ].join('\n\n'))
       }
-      setTimeout(write, 60)
+      // Start transport activity with the response, before the short watchdog
+      // can include an artificial first-byte delay. Later comments still span
+      // 180ms before data, longer than the fixture's unchanged 150ms deadline.
+      write()
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -459,18 +462,26 @@ describe('headless stream-json snapshots', () => {
       })
 
       expect(result.stderr).toBe('')
-      expect(server.requests).toHaveLength(1)
-      expect(server.requests[0]?.max_tokens).toBe(256_000)
-      expect(server.requests[0]?.reasoning_effort).toBe('low')
-      const header = (parseJsonl(result.stdout)
+      const records = parseJsonl(result.stdout)
+      const events = records
         .map(record => record.event)
-        .find((event): event is JsonObject => (
+        .filter((event): event is JsonObject => (
           event !== null
           && typeof event === 'object'
           && !Array.isArray(event)
           && 'type' in event
-          && event.type === 'request/header'
-        ))?.data as JsonObject | undefined)?.header as JsonObject | undefined
+        ))
+      expect(events.filter(event => event.type === 'llm/retry')).toEqual([])
+      expect(records.at(-1)).toMatchObject({
+        type: 'result',
+        output: 'DEFAULTS_OK',
+        usage: { inputTokens: 3, outputTokens: 1 },
+      })
+      expect(server.requests).toHaveLength(1)
+      expect(server.requests[0]?.max_tokens).toBe(256_000)
+      expect(server.requests[0]?.reasoning_effort).toBe('low')
+      const header = (events.find(event => event.type === 'request/header')
+        ?.data as JsonObject | undefined)?.header as JsonObject | undefined
       expect(header?.config).toMatchInlineSnapshot(`
         {
           "maxTokens": 256000,

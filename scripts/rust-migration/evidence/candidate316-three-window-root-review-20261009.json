@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "status": "ROOT_REVIEWED_COMPLETE_TASK_RECORDS_NOT_RELEASE_ACCEPTANCE",
+  "reviewedAt": "2026-10-08T23:14:21.740479+00:00",
+  "artifactPath": "/Users/hui/ark-test/evidence/candidate316-three-window-task-20261009.json",
+  "artifactSha256": "0e09f6dc7af6a8e29b2ef1856a8be2059c721cef8e9cdc3a28e6a29b1791b4bd",
+  "sourceCommit": "2104fb2dfd6700dc5cd78ca89e5110ef3558a9e9",
+  "artifactVersion": "3.1.6",
+  "artifactBuild": "2026100901",
+  "rootVerified": {
+    "originalAndCorrectionPromptsSeparate": true,
+    "criticalRoundCountsFormatsMathCsvBytesColdEquality": true,
+    "all48InputBindingsCurrentlyMatch": true,
+    "allNineActualTerminalExitsBound": true,
+    "fullViewportDirectlyObserved": false
+  },
+  "frozenAppIncludesSubsequentSourceCatalogFix": false,
+  "promotion": "HOLD",
+  "globalAbilityLift": "UNKNOWN",
+  "verifiedRepairReuse": "UNPROVEN"
+}

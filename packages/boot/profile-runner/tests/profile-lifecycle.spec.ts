@@ -167,7 +167,7 @@ describe('profile runner lifecycle', () => {
       2, 'dsh', 'managed', '/app/package.json', undefined, { userLayer: false },
     )
     expect(defaults.write).toHaveBeenCalledWith(
-      '/profiles/sdk/cordis.yml',
+      join('/profiles/sdk', 'cordis.yml'),
       expect.stringContaining('dsh profile root'),
     )
   })

@@ -96,6 +96,25 @@ test('the jiuzhang profile disables telemetry and persistent sqlite', async () =
   )
 })
 
+test('governed Wiki tool exposure follows the launcher verifier input without disabling ingestion', async () => {
+  const rows = load(await readFile(join(profileRoot, 'cordis.patch.yml'), 'utf8'), { schema: loaderYAML })
+  const service = rows.find(row => row.id === 'knowledge-wiki')
+  const tools = rows.flatMap(row => row.insert ?? []).find(row => row.id === 'tool-knowledge-wiki')
+  assert.equal(tools?.name, '@deepseek-ai/dsh-tool-knowledge-wiki')
+  assert.notEqual(tools?.disabled, true)
+  assert.equal(service?.config?.ownedStageExecutor, true)
+  assert.equal(service?.config?.knowledgeVerifierConfig?.__jsExpr, 'process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG')
+  const expression = tools?.config?.exposeGovernedTools?.__jsExpr
+  assert.equal(expression, "(process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG ?? '').trim() !== ''")
+  const evaluate = Function('process', `"use strict"; return (${expression})`)
+  for (const [input, exposed] of [
+    [undefined, false], ['', false], ['  \t', false], ['{}', true], ['invalid-json', true],
+  ]) {
+    const env = input === undefined ? {} : { ARK_KNOWLEDGE_VERIFIER_CONFIG: input }
+    assert.equal(evaluate({ env }), exposed)
+  }
+})
+
 test('the profile provides the Ark persona and safety rules outside any preset', async () => {
   const rows = load(
     await readFile(join(profileRoot, 'cordis.patch.yml'), 'utf8'),

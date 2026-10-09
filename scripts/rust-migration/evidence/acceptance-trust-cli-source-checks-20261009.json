@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-09T07:03:35.179433+00:00",
+  "status": "SCOPED_EXPLICIT_ACCEPTANCE_TRUST_CLI_SOURCE_AND15_KEYLESS_TESTS_PASS_REAL_AUTHORITY_UNKNOWN",
+  "sourceParentCommit": "05c3831d38632e59f18e42b7dec110d15ff7c174",
+  "testedCliBaseCommit": "57956170fdbadcaa3975d15f7121851eff1e5bdb",
+  "sourceCheckpointCommit": "NOT_YET_FROZEN",
+  "productionChange": "Phase6 audit CLI accepts an explicitly caller-selected bounded authority-ID to SPKI public-key JSON file and forwards it to the existing audit reducer. No discovery, receipt-owned trust, default acceptance or core/runtime API change.",
+  "sourceAssets": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/audit-acceptance.ts",
+      "bytes": 19952,
+      "sha256": "0d2a1f4c8e19ce2a81d58255bf8fd8c220d202803bf71550b7aa01198706521f"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/audit-acceptance.spec.ts",
+      "bytes": 15132,
+      "sha256": "a257e2f8cd202986a6fa546a9c3ea9d9d36cf43ba6e80cda9dbd0d60c480b305"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/README.md",
+      "bytes": 10810,
+      "sha256": "097986a06ee1653ff990dbad7894dfba636ee9f0d142d8a38b9f4d73e2cc6238"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/README.zh.md",
+      "bytes": 9845,
+      "sha256": "4b66d07624165067f299b6bf621403e50524ec993a1a56cede45d1212bf08b40"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/README.i18n.yaml",
+      "bytes": 432,
+      "sha256": "cba46b490c58c9c59a408b87fed27dc370f9819243ff959f7583d75b944999a4"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.md",
+      "bytes": 11544,
+      "sha256": "7490c6d778900266a4579efb685bcc4d5b282dbe431e15c6ca9e30dc26d73538"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md",
+      "bytes": 10243,
+      "sha256": "e0663c48afd0c444a4f021732b1190fe2aacaf62db22d4faf47aa05019a4be2e"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.i18n.yaml",
+      "bytes": 577,
+      "sha256": "9f6ed0e720c914c5f778b30de9f245897b23d44793071d7ddd2db24188e60399"
+    }
+  ],
+  "actualKeylessExecution": {
+    "path": "/private/tmp/ark319-learning-owner-review-sgzyq4go/execution-receipt.json",
+    "bytes": 2761,
+    "sha256": "910df8f948b229823384296a8c6bd5df92da29b006b46a186efe3ea54e37f375"
+  },
+  "focusedTestOutput": {
+    "path": "/private/tmp/ark319-learning-owner-review-sgzyq4go/focused-tests.tool-output.log",
+    "bytes": 914,
+    "sha256": "0c336e7e6c7afd592006c343219fed750a9a799899ef2f1607e9112d10c12795"
+  },
+  "docSyncOutput": {
+    "path": "/private/tmp/ark319-learning-owner-review-sgzyq4go/doc-sync.tool-output.log",
+    "bytes": 2534,
+    "sha256": "23c2565c168028965149e1c59b7e1d5846567d7a2850ca2a380d69ce99b264e3"
+  },
+  "keylessScope": "15 tests across audit and run-context; correctly trusted temporary signed fixture matches direct audit, with unchanged16checks. Missing/empty/wrong trust and changed source/profile/manifest stay UNKNOWN; malformed/bounded/non-file/link config fails nonzero. Fixture keys establish no product or independent evaluator custody.",
+  "independentReviews": [
+    {
+      "path": "/private/tmp/ark-phase6-cli-independent-fxjgdkbb/review.json",
+      "bytes": 13653,
+      "sha256": "3b8da8a5e6856745afbddf27e48677beb10ac5395b132e4d0af8b57eccd3d2c1"
+    },
+    {
+      "path": "/private/tmp/ark-phase6-cli-independent-fxjgdkbb/execution-and-docs-appendix.json",
+      "bytes": 5994,
+      "sha256": "232a01f20352a296598100ee909a20783d56050bd633f21ecfd62917e7b55948"
+    }
+  ],
+  "actualCurrentRepositoryAudit": {
+    "path": "/private/tmp/ark320-local-source-checkpoint-logs/current-keyless-acceptance-execution.json",
+    "bytes": 643,
+    "sha256": "8f34fe92f4083667b5f3be6c45a64318f71b8ec69b23d9d0e0378f45de8cbe97"
+  },
+  "actualCurrentRepositoryOverall": "UNKNOWN",
+  "actualCurrentRepository16Checks": {
+    "sourceTruth": "UNKNOWN",
+    "immutableRunContext": "UNKNOWN",
+    "knowledgeGovernance": "UNKNOWN",
+    "sessionReplay": "UNKNOWN",
+    "runtimeRecovery": "UNKNOWN",
+    "smartnessMetrics": "UNKNOWN",
+    "knowledgeUtility": "UNKNOWN",
+    "crossSessionLeakage": "UNKNOWN",
+    "privilegeEscalation": "UNKNOWN",
+    "rustDifferential": "UNKNOWN",
+    "rustPerformance": "UNKNOWN",
+    "orphanProcesses": "UNKNOWN",
+    "sideEffectSafety": "UNKNOWN",
+    "highRiskUnknown": "UNKNOWN",
+    "githubCi": "UNKNOWN",
+    "candidateBuildRollback": "UNKNOWN"
+  },
+  "realEvaluatorKeysCreated": false,
+  "realSignedPassReceiptCreated": false,
+  "runtimeAuthorityOrCanonicalWriterEnabled": false,
+  "currentInstalledCandidateChanged": false,
+  "realCrossSessionReuse": "UNPROVEN",
+  "realUtilityLift": "UNKNOWN",
+  "windowsLinuxExecution": "UNKNOWN",
+  "githubPublication": "HOLD",
+  "formalPromotion": "HOLD",
+  "nextOwner": "Protected local journal writer and full final-provider-request observation, followed by actually measured bounded trials with independently selected evaluator authority; CLI input alone does not establish those owners."
+}

@@ -13,9 +13,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { appendCandidateReviews, recordCandidateVerification } from '../src/reviews.ts'
 import {
   canonicalJson,
+  buildVerificationRequest,
   immutableReviewRow,
   readTrustedReceipt,
+  readTrustedVerification,
   sha256,
+  validateSemanticReceipt,
   verifyCandidate,
   type IndependentVerificationRequest,
   type IndependentVerificationResult,
@@ -216,6 +219,19 @@ describe('verification review loading', () => {
 })
 
 describe('verification request eligibility', () => {
+  it('binds a source-less Archive proposal to its candidate bytes and an explicit null target', () => {
+    const item = fixture('_candidates/topics/disposable.md')
+    const row = { ...readItems(item.reviewFile)[0]! }
+    Reflect.deleteProperty(row, 'sourcePath')
+    Reflect.deleteProperty(row, 'sourceHash')
+    const request = buildVerificationRequest(verifierAuthority(), item.wikiRoot, row, 'Archive')
+    expect(request).toMatchObject({
+      targetPath: null, governanceAction: 'Archive',
+      sourceHash: sha256(item.candidatePath),
+    })
+    expect(request?.candidateHash).toBe(sha256(readFileSync(item.candidateFull)))
+  })
+
   it('refuses an ineligible row or an action its durable target cannot support', async () => {
     const item = fixture()
     const authority = verifierAuthority()
@@ -318,6 +334,31 @@ describe('independent verdict authentication', () => {
 })
 
 describe('stored receipt authentication', () => {
+  it('authenticates retained semantic bytes after Candidate removal while denying live Candidate admission', async () => {
+    const item = fixture()
+    const authority = verifierAuthority()
+    const result = await verifyCandidate(
+      authority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote', new AbortController().signal,
+    )
+    expect(result).toMatchObject({ ok: true, result: 'pass' })
+    if (result.receiptId === undefined) throw new Error('missing retained semantic receipt')
+    const row = readItems(item.reviewFile)[0]!
+    const receipt = readTrustedReceipt(authority, item.reviewFile, result.receiptId)!
+    expect(readTrustedVerification(authority, item.reviewFile, item.wikiRoot, row, result.receiptId, 'Promote'))
+      .toMatchObject({ receipt })
+    rmSync(item.candidateFull)
+    expect(validateSemanticReceipt(authority, structuredClone(receipt))).toEqual(receipt)
+    expect(readTrustedReceipt(authority, item.reviewFile, result.receiptId)).toEqual(receipt)
+    expect(readTrustedVerification(authority, item.reviewFile, item.wikiRoot, row, result.receiptId, 'Promote'))
+      .toBeUndefined()
+    expect(validateSemanticReceipt(undefined, receipt)).toBeUndefined()
+    expect(validateSemanticReceipt({
+      ...authority, sourceIdentity: () => ({ ...authority.sourceIdentity(), buildDigest: sha256('different current build') }),
+    }, receipt)).toBeUndefined()
+    expect(validateSemanticReceipt(authority, { ...receipt, request: { ...receipt.request, candidateHash: sha256('different retained bytes') } }))
+      .toBeUndefined()
+  })
+
   it('rejects unreadable, mislabelled, and incoherent stored receipts', () => {
     const item = fixture()
     const authority = verifierAuthority()

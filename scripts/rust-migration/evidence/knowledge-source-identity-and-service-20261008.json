@@ -1,0 +1,511 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-08T14:28:39.877696+00:00",
+  "status": "SOURCE_CONTRACT_VERIFIED_NATIVE_DIALOGUE_AND_LEARNING_UNVERIFIED",
+  "sourceSnapshot": {
+    "parentGitSha": "eb766d51eabdcc3bb62d358b4513c286dd454076",
+    "dirty": true,
+    "fileHashes": {
+      "packages/host/knowledge-wiki/src/index.ts": "c0e1db6c1ef63dbef8822660ee72d02092f976580ded1145a99097ce7ba832af",
+      "packages/host/knowledge-wiki/src/knowledge-governance.ts": "6b105fa97656399b34b15da0ae800e41e9cc45d1121023c72f773b8783b2a226",
+      "packages/host/knowledge-wiki/src/reviews.ts": "275b6e65f3fbf7c0e73a62c0c40655df19e593edc8b766a927fb7f8a1f212aa6",
+      "packages/host/knowledge-wiki/src/canonical-merge.ts": "b723fc9677a23f9f47b1b20171ad530330d237f718c722a6a1650e88b1852f66",
+      "packages/host/knowledge-wiki/tests/knowledge-source-identity.spec.ts": "22d2928242f76146d6eb75659652cf43fccaf836458f60d69d69745775f5d3d7",
+      "packages/host/knowledge-wiki/tests/loader-composition.spec.ts": "453ec43603e99e32fa61597c509375e4506fe88931f20b83b3f78482b257f0cf",
+      "packages/host/knowledge-wiki/tests/canonical-content-preparation.spec.ts": "34436c4e77078833de0994a5cecdd3045b9c17b2b4e5c25d82240d41962f163b",
+      "packages/host/knowledge-wiki/tests/canonical-merge.spec.ts": "a3d83b456c74f79b612dff670709b0e48c5cdbb69f8de7caebc3a051d2780d16",
+      "packages/host/knowledge-wiki/tests/canonical-trial-denial.spec.ts": "6e380990b99990597194ad518a8e2596949905dc8cfef9f4c430ccfa182d6ebe",
+      "snapshots/session/headless.snapshot.ts": "596f422e93ecc282347c0595316f33df2d759c7d2d63b52770c72c03a55dd696",
+      "examples/headless-agent/tests/fixtures/knowledge-wiki/source-identity.ts": "67a58af988ecfa3eb759b7d7239931c0ba06b4a7952cdd249c8bfaf46118f43a"
+    }
+  },
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "sourceRelations": [
+    "Every exact authenticated source string has one owner across the complete replay, including terminal identities; duplicate owners deny before projection or mutation, without legacy utility fallback.",
+    "Native search checks duplicates before awaiting credentials, then replays current governance after hybrid work; model search replays governance and confined page hashes after async/shadow work before recording retrieval.",
+    "A correction arriving during a Native or model search blocks stale results and extra retrieval writes.",
+    "Canonical target preparation consumes frozen candidate/target/time/actor inputs through the existing pure transform; canonical apply and prepared recovery remain denied."
+  ],
+  "currentTargetedTests": {
+    "receipt": {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/confined-final-receipt.json",
+      "sha256": "16924e816fcda4d7a1138be23bdf16eb1e4d8bfb30a1ed22a2326e637b21c88e",
+      "bytes": 1688
+    },
+    "actualExitCode": 0,
+    "filesPassed": 2,
+    "testsPassed": 12,
+    "credentialCallsForAmbiguousOwners": 0,
+    "providerNetwork": "No live provider enabled; fixture-only credential reference returns undefined."
+  },
+  "canonicalPreparationTests": {
+    "summary": {
+      "path": "/private/tmp/ark-canonical-preparation-eb766d51-20261008.ro8k98u9/summary.json",
+      "sha256": "eea9051c0a304969b90cd56970ee6a2acc2ff1d992d4412a729d912d88001e20",
+      "bytes": 3501
+    },
+    "actualExitCode": 0,
+    "filesPassed": 3,
+    "testsPassed": 31,
+    "initialExpectationFailureRetained": true,
+    "authority": "Test fixtures only; no current promotion or measured use."
+  },
+  "priorWiderRegression": {
+    "receipt": {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/final-targeted-receipt.json",
+      "sha256": "35371ef996d4250e949755f94e85739a1b452bcea613fbb01d15a350e465e255",
+      "bytes": 1354
+    },
+    "actualExitCode": 1,
+    "testsPassed": 59,
+    "testsFailed": 2,
+    "reason": "Two new Loader fixtures omitted the required surfaceOp marker. Both subsequently pass; the later confinement/test instrumentation source changes are bound to the separate 12-test final receipt."
+  },
+  "retainedFailureReceipts": [
+    {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/red-receipt.json",
+      "sha256": "6e1a07d61e0a6bbc9d58fb08311c13f901d2f7e11cb3e144934624e5d6b25246",
+      "bytes": 1245
+    },
+    {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/race-red-receipt.json",
+      "sha256": "b7f70012cba794c128018531479be2d1f6c5cdd366dc3427184e1eed369dfb02",
+      "bytes": 559
+    },
+    {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/composed-receipt.json",
+      "sha256": "1e358cd2b9f85f406dc96b8514c0a9d8fa5ca49c89f002670397bd1c88ebbc88",
+      "bytes": 969
+    },
+    {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/final-targeted-receipt.json",
+      "sha256": "35371ef996d4250e949755f94e85739a1b452bcea613fbb01d15a350e465e255",
+      "bytes": 1354
+    },
+    {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/lint-receipt.json",
+      "sha256": "6b8247ee51f20c98f29c91412f6b33beae748199504b8cfaef578b82c2c35967",
+      "bytes": 1965
+    }
+  ],
+  "hostBuildAndFullLint": {
+    "receipt": {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/lint-heap8192-receipt.json",
+      "sha256": "916f86c81fd22e705efc1b6812507f22756e00c2f67002f19ef6c2a0865addf4",
+      "bytes": 2063
+    },
+    "actualExitCode": 0,
+    "environmentOverrides": {
+      "NODE_OPTIONS": "--max-old-space-size=8192"
+    },
+    "initialFailure": "Actual exit1: TypeScript compiler SIGABRT after approximately2GiB JS heap exhaustion; original logs preserved. Retry adjusts only compiler process heap, not source or checks."
+  },
+  "assembledReplay": {
+    "status": "SOURCE_AND_BUILT_CONTRACT_PASS",
+    "receipt": {
+      "path": "/Users/hui/ark-test/source-identity-evidence/final-execution-receipt.v2.json",
+      "sha256": "cdde620ffa8d0f994bd887df8afd8d5d69b830545de61cad17b5176d16ac7edb",
+      "bytes": 15295
+    },
+    "metadataCorrection": {
+      "path": "/Users/hui/ark-test/source-identity-evidence/receipt-metadata-correction.json",
+      "sha256": "e33c57c9b1c205e2d70046d0834297fcfd57220e6f2ec68619b87f7a1737e760",
+      "bytes": 919
+    },
+    "originalReceiptPreserved": {
+      "path": "/Users/hui/ark-test/source-identity-evidence/final-execution-receipt.json",
+      "sha256": "663ae8cb3177da8afe11f62163f21c58c987ec7dad114d3ac3249f98e13651ff",
+      "bytes": 15382
+    },
+    "sidecar": {
+      "path": "/Users/hui/ark-test/source-identity-evidence/final-execution-receipt.v2.sha256",
+      "sha256": "907e1bdecbdec634313a1d1b718de5a9c5c89d989f0ffec7571b276d6cd638d6",
+      "bytes": 98
+    },
+    "sealIndex": {
+      "path": "/Users/hui/ark-test/source-identity-evidence/receipt-seal-index.v2.json",
+      "sha256": "ae559d96d64c5a61343c74e9e1d5aa51123caf552a339c2d4b812fc31bfd2789",
+      "bytes": 801
+    },
+    "actualFinalSourceExitCode": 0,
+    "sourceCasesPassed": 1,
+    "actualBuiltExitCode": 0,
+    "builtCasesPassed": 1,
+    "existingBuiltGovernanceAndArchiveCasesPassed": 2,
+    "existingBuiltActualExitCode": 0,
+    "corpusCasesPassed": 2,
+    "corpusActualExitCode": 0,
+    "currentSourceBuiltFixturePinsRootChecked": 31,
+    "rawLogsRootChecked": 9,
+    "builtOwnerResolution": {
+      "@deepseek-ai/dsh-knowledge-wiki": "file:///Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/lib/index.js",
+      "@deepseek-ai/dsh-tool-knowledge-wiki": "file:///Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/lib/index.js",
+      "@deepseek-ai/dsh-session": "file:///Users/hui/ark-test/ark-github-main-20261008/packages/core/session/lib/index.js",
+      "@deepseek-ai/dsh-llm-replay": "file:///Users/hui/ark-test/ark-github-main-20261008/packages/test-support/llm-replay/lib/index.js",
+      "@deepseek-ai/dsh-tools": "file:///Users/hui/ark-test/ark-github-main-20261008/packages/core/tools/lib/index.js",
+      "@deepseek-ai/dsh-agent": "file:///Users/hui/ark-test/ark-github-main-20261008/packages/core/agent/lib/index.js"
+    },
+    "sourceBuiltOwnerPins": [
+      {
+        "path": "apps/cli/lib/bin.js",
+        "sha256": "5d4bc43dccde4d9af361ac1763125d09b0737ae477e3970d18853e7063cf3e5a"
+      },
+      {
+        "path": "apps/cli/src/bin.ts",
+        "sha256": "88b57889e99435eadfed4c95518b58405d2d90c0f7f2487b11cfb0d95a1b2622"
+      },
+      {
+        "path": "examples/headless-agent/tests/fixtures/knowledge-wiki/authority.ts",
+        "sha256": "e7e0cdd5917e7a46eb137c2ed583ee982d2d3e38c867ccb2dae0172520179922"
+      },
+      {
+        "path": "examples/headless-agent/tests/fixtures/knowledge-wiki/source-identity.ts",
+        "sha256": "67a58af988ecfa3eb759b7d7239931c0ba06b4a7952cdd249c8bfaf46118f43a"
+      },
+      {
+        "path": "packages/core/agent/lib/index.js",
+        "sha256": "5d4e44f17b94485a8fbce9576deac595cdc5c1b69620a1891be9ed99625f0462"
+      },
+      {
+        "path": "packages/core/session/lib/index.js",
+        "sha256": "b6634e8c8673883cf32226d9f4562c628f00569ff91512e2f190fa6d9d823490"
+      },
+      {
+        "path": "packages/core/tools/lib/index.js",
+        "sha256": "cde2d7dd75f7bce38412514040e3fc07386c631149baa412efbbe6a6cebdebab"
+      },
+      {
+        "path": "packages/host/knowledge-wiki-tools/lib/index.js",
+        "sha256": "960fb3571f50944cd6e48d8140be267745458fa68f131cb9895403d509a9cb38"
+      },
+      {
+        "path": "packages/host/knowledge-wiki-tools/src/index.ts",
+        "sha256": "02de5417c67d40cb750679eb8ff0769ebdcb3272b78dbc5ac9504c692da2fd4e"
+      },
+      {
+        "path": "packages/host/knowledge-wiki/lib/index.js",
+        "sha256": "88c4c6d96953654a1a439e90264dfdaf936e6fb49f4a8c147698ecbdee695b91"
+      },
+      {
+        "path": "packages/host/knowledge-wiki/src/canonical-merge.ts",
+        "sha256": "b723fc9677a23f9f47b1b20171ad530330d237f718c722a6a1650e88b1852f66"
+      },
+      {
+        "path": "packages/host/knowledge-wiki/src/index.ts",
+        "sha256": "c0e1db6c1ef63dbef8822660ee72d02092f976580ded1145a99097ce7ba832af"
+      },
+      {
+        "path": "packages/host/knowledge-wiki/src/knowledge-governance.ts",
+        "sha256": "6b105fa97656399b34b15da0ae800e41e9cc45d1121023c72f773b8783b2a226"
+      },
+      {
+        "path": "packages/host/knowledge-wiki/src/reviews.ts",
+        "sha256": "275b6e65f3fbf7c0e73a62c0c40655df19e593edc8b766a927fb7f8a1f212aa6"
+      },
+      {
+        "path": "packages/host/knowledge-wiki/tests/historical-governed-fixture.ts",
+        "sha256": "eaccb3da78f3b21c2523c5a51f6b9f101cb12138d7d2fcd74b62074bb4053015"
+      },
+      {
+        "path": "packages/host/knowledge-wiki/tests/verifier-authority-fixture.ts",
+        "sha256": "bb1de081a226c47b7ab3a731d8493227ba139d50c9040cfcf1b13d390e1f41d8"
+      },
+      {
+        "path": "packages/test-support/llm-replay/lib/index.js",
+        "sha256": "5190fa3b46a1e396da0c33137619b6edd48ebfb2b6fa3821846bea41e0fb2db0"
+      },
+      {
+        "path": "snapshots/session/headless.snapshot.ts",
+        "sha256": "596f422e93ecc282347c0595316f33df2d759c7d2d63b52770c72c03a55dd696"
+      },
+      {
+        "path": "snapshots/session/wiki-governance/system-prompt.expected.md",
+        "sha256": "caeb3739430941856ddb465028c0706ffff08fceb5e70c68b4849a5dbe24cce0"
+      },
+      {
+        "path": "snapshots/session/wiki-governance/tool-schemas.expected.json",
+        "sha256": "f2882d21b35d86fa063d91c0a5428a50806152c504b899e8f7cf7a5fd982726b"
+      },
+      {
+        "path": "snapshots/session/wiki-source-identity/cold.cordis.yml",
+        "sha256": "39bdbbd8a334493daa4c6ed27f31dc6c035f9647942394ad79f9dba5c9743ac7"
+      },
+      {
+        "path": "snapshots/session/wiki-source-identity/cordis.snapshot.yml",
+        "sha256": "4dbf1fd4eac7693afca5c1bb9f2359ff69bea1afcfa2dcc62aab2ee14aefc3d7"
+      },
+      {
+        "path": "snapshots/session/wiki-source-identity/cordis.yml",
+        "sha256": "cd3e2194849e46af6c2bcd6349ae32edb3f2ad2136548bca2aa56cd17842c817"
+      },
+      {
+        "path": "snapshots/session/wiki-source-identity/session.jsonl",
+        "sha256": "48e18957d97151c01d801fb6ac2aacd46a1a99f9c5d6e8049b453e98f3ab9786"
+      },
+      {
+        "path": "snapshots/session/wiki-source-identity/snapshot.yml",
+        "sha256": "2307445afb4b80f30aa8eaa8bde3ce9f14aad089dbff9f32be9d48fcb886a9a8"
+      },
+      {
+        "path": "snapshots/session/wiki-source-identity/system-prompt.expected.md",
+        "sha256": "caeb3739430941856ddb465028c0706ffff08fceb5e70c68b4849a5dbe24cce0",
+        "symlinkTarget": "../wiki-governance/system-prompt.expected.md"
+      },
+      {
+        "path": "snapshots/session/wiki-source-identity/tool-schemas.expected.json",
+        "sha256": "f2882d21b35d86fa063d91c0a5428a50806152c504b899e8f7cf7a5fd982726b",
+        "symlinkTarget": "../wiki-governance/tool-schemas.expected.json"
+      },
+      {
+        "path": "snapshots/session/wiki-source-identity/wiki-pages.expected/concepts/source-identity.md",
+        "sha256": "1111f434230c1b53c63a47c2f05c4a4e03aebece373951f62cea355c6d074539"
+      },
+      {
+        "path": "snapshots/session/wiki-source-identity/workspace.expected/.empty",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "tsconfig.base.json",
+        "sha256": "0541808d3a19f8fefe120dc7befb78dd26ac1d8fab059ab2f6398427371ad65c"
+      },
+      {
+        "path": "tsconfig.json",
+        "sha256": "a97a35e639c25fd8831ea9baa2240a3e228da95075b83fb1899e201ceb86c77a"
+      }
+    ],
+    "fixtureAuthority": "Historical deterministic test authority and canned assistant replay; no independent learning authority.",
+    "noKnowledgeRetrievedOrInjected": true,
+    "successfulUses": 0,
+    "utilityScore": 0,
+    "completeWorldOracle": "All raw Wiki/governance/archive files and directory inventory unchanged; cold resume preserves the exact durable prefix and appends only session/end-seed.",
+    "retainedFailures": [
+      "initial cold replay assertion missed the actual session/end-seed suffix",
+      "initial focused lint arrow-parentheses errors",
+      "initial receipt digest was taken before writing its self-hash field; original bytes and correction retained"
+    ],
+    "rootVerification": {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/assembled-root-verification.json",
+      "sha256": "1f5d044c78960b72a5b8b09622e988852d22d13174b634a158e0e8c982c5e096",
+      "bytes": 679
+    }
+  },
+  "serviceObservation": {
+    "sourceSha": "eb766d51eabdcc3bb62d358b4513c286dd454076",
+    "sourceDirtyDuringRun": false,
+    "predatesCurrentSourceEdits": true,
+    "runtimeMode": "source TSX actual service and Loader import map; no packaged Native/installed-profile claim",
+    "actualCalls": 172,
+    "primaryCalls": 144,
+    "freshSequentialNodeProcesses": 4,
+    "actualMeasurementErrors": 0,
+    "actualAssertionFailures": 0,
+    "descriptiveCells": [
+      {
+        "cell": "n24-e0",
+        "samples": 36,
+        "admittedPages": 24,
+        "journalEvents": 72,
+        "journalBytes": 135032,
+        "admittedCorpusHash": "ec8367127511668a84a3091124abbd09aceb8bb997747fe27b9f5c53c698a619",
+        "p50NearestRankMs": 60.672999999999774,
+        "meanNodeCpuMicros": 31368.527777777777
+      },
+      {
+        "cell": "n24-e1000",
+        "samples": 36,
+        "admittedPages": 24,
+        "journalEvents": 1072,
+        "journalBytes": 727686,
+        "admittedCorpusHash": "ec8367127511668a84a3091124abbd09aceb8bb997747fe27b9f5c53c698a619",
+        "p50NearestRankMs": 179.36112499999945,
+        "meanNodeCpuMicros": 158761.72222222222
+      },
+      {
+        "cell": "n240-e0",
+        "samples": 36,
+        "admittedPages": 240,
+        "journalEvents": 720,
+        "journalBytes": 1359408,
+        "admittedCorpusHash": "0289ed6ad4fb67eccd49a1686e5bcf034a8f655f8140676e76445edbfb7d3e33",
+        "p50NearestRankMs": 292.94316699999763,
+        "meanNodeCpuMicros": 278530.9166666667
+      },
+      {
+        "cell": "n240-e1000",
+        "samples": 36,
+        "admittedPages": 240,
+        "journalEvents": 1720,
+        "journalBytes": 1961218,
+        "admittedCorpusHash": "0289ed6ad4fb67eccd49a1686e5bcf034a8f655f8140676e76445edbfb7d3e33",
+        "p50NearestRankMs": 443.41049999999814,
+        "meanNodeCpuMicros": 455125.75
+      }
+    ],
+    "journalLengthSensitivity": [
+      {
+        "pages": 24,
+        "addedNeutralEvents": 1000,
+        "p50DeltaMs": 118.68812499999967,
+        "p50Ratio": 2.956193446837969,
+        "meanCpuDeltaMicros": 127393.19444444444,
+        "limitation": "one fresh sequential process per cell in reverse historical order; not randomized independent-block replication; no exact phase attribution"
+      },
+      {
+        "pages": 240,
+        "addedNeutralEvents": 1000,
+        "p50DeltaMs": 150.4673330000005,
+        "p50Ratio": 1.5136400160513104,
+        "meanCpuDeltaMicros": 176594.8333333333,
+        "limitation": "one fresh sequential process per cell in reverse historical order; not randomized independent-block replication; no exact phase attribution"
+      }
+    ],
+    "phaseAttribution": "UNKNOWN",
+    "quantileInterpretation": "only descriptive nearest-rank p50 reported; no p95/p99 or acceptance/language inference",
+    "limitations": [
+      "source runtime via tsx, not packaged Native or active profile",
+      "historical fixture authority, no current production admission/trial",
+      "pre-call public modelList and bm25 oracle warm file/kernel paths outside timed interval",
+      "four fresh sequential processes, one per cell; reverse historical order only, not independent-block randomized confirmation; thermal/order effects remain observational",
+      "CPU per call is Node self, includes synchronous work and runtime overhead; service has no Rust child",
+      "RSS is endpoints only, not total peak; wait4 whole run includes all setup/oracles/snapshots and tsx children",
+      "tool samples are tiny diagnostics, not a distribution estimate",
+      "admission is observed through public modelList on unchanged prestate, not an instrumented capture of private scoring pages",
+      "cancellation/crash/current-source UI/CI/Rust benefit remain UNKNOWN"
+    ],
+    "firstControllerActualExitCode": 1,
+    "continuationActualExitCode": 0,
+    "continuationScope": "remaining129 calls only; no first-cell repetition; original shared900sec deadline retained",
+    "controllerFailureReason": "Own TSX esbuild child was classified as unrelated build interference. Actual PID/PPID/PGID observations were reviewed before continuing only the remaining129 calls under the unchanged deadline.",
+    "receipts": {
+      "final-execution-receipt.json": {
+        "path": "/private/tmp/knowledge-search-replication-eb766d51-q6os_03a/final-execution-receipt.json",
+        "sha256": "71f2ee523a91974e46438055e0f0932eacb948df38f1d75e267587516ebe6556",
+        "bytes": 1204
+      },
+      "postexit-verification-receipt.json": {
+        "path": "/private/tmp/knowledge-search-replication-eb766d51-q6os_03a/postexit-verification-receipt.json",
+        "sha256": "42c899f2ed01e2ff17438dd4c1ba9d9d278a029e42b47602c4841d8ad8f45d36",
+        "bytes": 5418
+      },
+      "postexit-artifact-index-v2.json": {
+        "path": "/private/tmp/knowledge-search-replication-eb766d51-q6os_03a/postexit-artifact-index-v2.json",
+        "sha256": "2a496c028e61b0c4ad0e20f128f54c471ee3b64f8ffcf7bd35dbcc39f8d14286",
+        "bytes": 540462
+      },
+      "postexit-command-receipts-v2.json": {
+        "path": "/private/tmp/knowledge-search-replication-eb766d51-q6os_03a/postexit-command-receipts-v2.json",
+        "sha256": "3b764dcde9275a4199d5b479810566bc109cbb948bc0779e3c6f6eed1e755be8",
+        "bytes": 3563
+      },
+      "execution-failure.json": {
+        "path": "/private/tmp/knowledge-search-replication-eb766d51-q6os_03a/execution-failure.json",
+        "sha256": "aecfb4e0a91d5174423f63914b51aee56dedfd468be07c5d012f753d2f5837ce",
+        "bytes": 739
+      },
+      "continuation-decision.json": {
+        "path": "/private/tmp/knowledge-search-replication-eb766d51-q6os_03a/continuation-decision.json",
+        "sha256": "e4da311e77074a24dc04db3ebc63db447397afc52f5c2e0d2337dcb175f0c235",
+        "bytes": 1357
+      },
+      "aggregate/summary.json": {
+        "path": "/private/tmp/knowledge-search-replication-eb766d51-q6os_03a/aggregate/summary.json",
+        "sha256": "9bb234c530fac19f5a27d8d7aede446b32cfe2eabdd4c370099c6d2a6a1bea72",
+        "bytes": 12031
+      },
+      "aggregate/report.txt": {
+        "path": "/private/tmp/knowledge-search-replication-eb766d51-q6os_03a/aggregate/report.txt",
+        "sha256": "7961da6160cf1f156cb67d042f2ec7b48f600b9f6985ff48df6d07ad9fd61c6c",
+        "bytes": 4922
+      }
+    },
+    "decision": "RETAIN_TS; descriptive journal sensitivity motivates current component profiling, not cache or Rust promotion."
+  },
+  "sourceOwnerPolicy": {
+    "decisions": {
+      "path": "/private/tmp/ark-learning-owner-decisions-eb766d51-20261008.dmwy_aju/source-owner-decisions.json",
+      "sha256": "a4a1b43f10f9c66d29e4074df5909fcb53e9cc68900fe435ed762ffa1054543c",
+      "bytes": 36555
+    },
+    "revisedDraft": {
+      "path": "/private/tmp/ark-learning-owner-decisions-eb766d51-20261008.dmwy_aju/learning-protocol.draft.ts",
+      "sha256": "a0798cfcbeae0cc8b7cef84e65e3cf35a298ff7c4df095871883c0c04b4caa84",
+      "bytes": 30560
+    },
+    "authorizationAddendum": {
+      "path": "/private/tmp/ark-learning-authorization-addendum-eb766d51-20261008.ljndmi0i/authorization-scope-addendum.json",
+      "sha256": "a2a1e39a205f6f86db2b19051901f0826b2937e9feaa677d7c27988e7cd68912",
+      "bytes": 2206
+    },
+    "exactSourceAddendum": {
+      "path": "/private/tmp/ark-learning-source-index-addendum-eb766d51-20261008.lx190ogn/source-index-policy-addendum.json",
+      "sha256": "49e8d01a5b11c1b2ddcdfb8df88fe08834c00fbe940ca1f2562544bf9048072b",
+      "bytes": 4810
+    },
+    "resolvedDecisions": [
+      "target-record identity/scope/ACL/expiry and exact-byte accounting",
+      "separate evaluator vs local journal roles and owner-protected legacy inventory"
+    ],
+    "implemented": false,
+    "successorBaselineInstalled": false,
+    "globalStateVersion": 1,
+    "externalEvaluatorCustody": "UNAVAILABLE",
+    "actualTrialGrant": "UNAVAILABLE",
+    "postPublicationDirectoryDurability": "UNRESOLVED"
+  },
+  "documentationValidation": {
+    "status": "PASS",
+    "command": [
+      "pnpm",
+      "run",
+      "doc-sync"
+    ],
+    "actualExitCode": 0,
+    "gatesPassed": 30,
+    "gatesFailed": 0,
+    "gatesSkipped": 0,
+    "receipt": {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/doc-sync-final-receipt.json",
+      "sha256": "8781b4df17e7fe09f09a80d5287e40f70347a0e1b488a94552042813286bd09c",
+      "bytes": 426
+    },
+    "initialFailureReceipt": {
+      "path": "/private/tmp/ark-source-identity-validation-eb766d51-abbdwz7f/doc-sync-receipt.json",
+      "sha256": "c7e649a4e0a00514ad4633cda57e019df8bbeed370af276ace6f4bf2897a4557",
+      "bytes": 413
+    },
+    "initialActualExitCode": 1,
+    "initialFailure": "Generated config catalog source coordinate199 was stale after adding an import; generator refreshed source coordinate200, Chinese counterpart and pairing record agree. No config field/default change."
+  },
+  "limits": {
+    "actual315Task": "NOT_RUN",
+    "nativeUIParity": "UNKNOWN",
+    "candidateRollbackBehavior": "UNKNOWN",
+    "independentRepairReuseAndUtilityLift": "UNKNOWN",
+    "currentSourceBoundGithubCI": "UNKNOWN",
+    "latestWholeRepositoryCoverage": "NOT_RUN",
+    "historical930WikiCoverageGate": "FAIL_RETAINED",
+    "actual75InvoiceWholeAnswer": "FAIL_FORMAT_RETAINED",
+    "live75ContainsCurrentPatch": false,
+    "hidden315ContainsCurrentPatch": false,
+    "filesystemCaseUnicodeAliases": "NOT_COVERED",
+    "crossProcessExternalWriters": "NOT_COVERED",
+    "nativeRawGraphListGovernance": "NOT_COVERED",
+    "alreadySentProviderInputRetraction": "NOT_COVERED",
+    "newRustEnforcement": false,
+    "formalAppReplaced": false,
+    "candidateSwappedOrLaunched": false,
+    "credentialBridgeExecuted": false,
+    "userNormalQuitCompletionReceived": false,
+    "publicationPerformed": false
+  }
+}

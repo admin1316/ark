@@ -1,0 +1,1 @@
+../wiki-governance/system-prompt.expected.md

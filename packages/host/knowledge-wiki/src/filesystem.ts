@@ -24,13 +24,30 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 /** Default maximum for one Wiki Markdown page. */
 export const MAX_WIKI_PAGE_BYTES = 5 * 1024 * 1024
 
+function missingPathHasOrdinaryParent(path: string): boolean {
+  let cursor = dirname(resolve(path))
+  while (true) {
+    try {
+      const stat = lstatSync(cursor)
+      return stat.isDirectory() && !stat.isSymbolicLink()
+    } catch (error) {
+      if (typeof error !== 'object' || error === null || Reflect.get(error, 'code') !== 'ENOENT') return false
+      const parent = dirname(cursor)
+      if (parent === cursor) return false
+      cursor = parent
+    }
+  }
+}
+
 /**
  * Distinguish an absent optional file from corruption or unsafe I/O.
  * @param error - Caught value to inspect for Node's missing-path error code.
- * @returns True only for a non-null object whose code property is ENOENT.
+ * @param path - Optional path whose existing ancestors distinguish Windows ENOENT-under-file from absence.
+ * @returns True only for ENOENT and, when a path is supplied, an ordinary existing parent directory.
  */
-export function isMissingPathError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT'
+export function isMissingPathError(error: unknown, path?: string): boolean {
+  if (typeof error !== 'object' || error === null || Reflect.get(error, 'code') !== 'ENOENT') return false
+  return path === undefined || missingPathHasOrdinaryParent(path)
 }
 
 /**
@@ -77,7 +94,7 @@ export function resolveConfinedPath(root: string, input: string, allowMissingLea
         throw new Error(`non-directory path ancestor: ${cursor}`)
       }
     } catch (error) {
-      if (!isMissingPathError(error) || !allowMissingLeaf) throw error
+      if (!isMissingPathError(error, cursor) || !allowMissingLeaf) throw error
       break
     }
   }
@@ -116,20 +133,33 @@ export function ensureConfinedDirectory(root: string, input: string): string {
       const stat = lstatSync(cursor)
       if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`unsafe directory path: ${cursor}`)
     } catch (error) {
-      if (!isMissingPathError(error)) throw error
+      if (!isMissingPathError(error, cursor)) throw error
       mkdirSync(cursor, { mode: 0o700 })
       const created = lstatSync(cursor)
       if (!created.isDirectory() || created.isSymbolicLink()) throw new Error(`unsafe created directory: ${cursor}`)
     }
+    // Repeat the barrier for visible components left by a failed earlier call.
+    syncDirectory(dirname(cursor))
   }
   return cursor
 }
 
-function ensureAbsoluteDirectory(path: string): string {
+/**
+ * Create an ordinary directory and flush its ancestor entries, including on retry.
+ * @param path - Absolute or cwd-relative directory; existing ancestor aliases retain their filesystem resolution.
+ * @returns Absolute directory after provisioning and parent barriers.
+ * @throws On an unsafe leaf or I/O failure; visible directories are retained for retry.
+ */
+export function ensureAbsoluteDirectory(path: string): string {
   const absolute = resolve(path)
   mkdirSync(absolute, { recursive: true, mode: 0o700 })
   const stat = lstatSync(absolute)
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`unsafe directory path: ${absolute}`)
+  // Realpath preserves existing ancestor resolution (for example macOS /var),
+  // while ensuring retries flush the entire chain even after mkdir became visible.
+  for (let cursor = realpathSync(absolute); dirname(cursor) !== cursor; cursor = dirname(cursor)) {
+    syncDirectory(dirname(cursor))
+  }
   return absolute
 }
 
@@ -140,7 +170,7 @@ function assertOrdinaryDestination(path: string): void {
       throw new Error(`unsafe file destination: ${path}`)
     }
   } catch (error) {
-    if (!isMissingPathError(error)) throw error
+    if (!isMissingPathError(error, path)) throw error
   }
 }
 
@@ -149,6 +179,54 @@ function sameFileIdentity(
   right: ReturnType<typeof fstatSync>,
 ): boolean {
   return left.dev === right.dev && left.ino === right.ino
+}
+
+/**
+ * Flush an ordinary directory, propagating POSIX failures.
+ * Legacy win32 callers tolerate only directory-fsync EPERM for visibility;
+ * that exception supplies no directory-durability guarantee.
+ * @param path - Existing ordinary directory whose namespace changes must be flushed.
+ * @returns After the directory flush, or the explicitly legacy win32 EPERM exception.
+ * @throws On unsafe or changed directory identity or unsupported/failed I/O, except the legacy win32 EPERM case.
+ */
+export function syncDirectory(path: string): void {
+  const before = lstatSync(path)
+  if (!before.isDirectory() || before.isSymbolicLink()) throw new Error(`unsafe directory path: ${path}`)
+  const directory = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const opened = fstatSync(directory)
+    if (!opened.isDirectory() || !sameFileIdentity(before, opened)) throw new Error(`directory identity changed: ${path}`)
+    try {
+      fsyncSync(directory)
+    } catch (error) {
+      if (process.platform !== 'win32' || typeof error !== 'object' || error === null
+        || Reflect.get(error, 'code') !== 'EPERM') throw error
+    }
+  } finally {
+    closeSync(directory)
+  }
+}
+
+/**
+ * Repeat the file flush for visible bytes left by an interrupted write.
+ * @param path - Existing ordinary single-link file; the leaf is opened without following links.
+ * @returns After the file descriptor has been flushed and closed.
+ * @throws On unsafe or changed file identity or any file-fsync failure; closes the descriptor.
+ */
+export function syncRegularFile(path: string): void {
+  const before = lstatSync(path)
+  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) throw new Error(`not a unique ordinary file: ${path}`)
+  const access = process.platform === 'win32' ? constants.O_RDWR : constants.O_RDONLY
+  const descriptor = openSync(path, access | constants.O_NOFOLLOW)
+  try {
+    const opened = fstatSync(descriptor)
+    if (!opened.isFile() || opened.nlink !== 1 || !sameFileIdentity(before, opened)) {
+      throw new Error(`file identity changed while opening: ${path}`)
+    }
+    fsyncSync(descriptor)
+  } finally {
+    closeSync(descriptor)
+  }
 }
 
 /**
@@ -206,7 +284,7 @@ export function readConfinedText(root: string, input: string, maxBytes = MAX_WIK
 }
 
 /**
- * Atomically replace one file and durably publish both bytes and directory entry.
+ * Atomically replace one file and flush bytes and directory entries on POSIX.
  * File fsync precedes rename; published identity is checked before the parent directory is fsynced.
  * @param path - Destination, absent or an ordinary single-link file; missing parent directories are created.
  * @param content - UTF-8 text or exact bytes to stage in a sibling temporary file.
@@ -238,15 +316,7 @@ export function atomicWriteFile(path: string, content: string | Buffer, mode = 0
     } finally {
       closeSync(published)
     }
-    const directory = openSync(parent, constants.O_RDONLY)
-    try {
-      fsyncSync(directory)
-    } catch (error) {
-      // Windows cannot fsync directory handles (EPERM); NTFS journals entry durability itself.
-      if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
-    } finally {
-      closeSync(directory)
-    }
+    syncDirectory(parent)
   } finally {
     if (descriptor !== undefined) closeSync(descriptor)
     if (existsSync(temporary)) unlinkSync(temporary)
@@ -254,10 +324,10 @@ export function atomicWriteFile(path: string, content: string | Buffer, mode = 0
 }
 
 /**
- * Create one private file durably; return false when it already exists.
+ * Flush one private file publication; existing bytes are re-flushed without replacement.
  * @param path - Destination checked for an ordinary single-link file or absence; missing parents are created.
  * @param content - Bytes written by exclusive creation with mode 0600, subject to umask.
- * @returns True after file and parent-directory fsync; false if exclusive creation reports EEXIST.
+ * @returns True for a new file; false for EEXIST after existing-file and parent barriers, subject to syncDirectory's win32 limit.
  * @throws On an unsafe destination or other I/O failure; a newly created file is not rolled back on write failure.
  */
 export function createPrivateFileIfMissing(path: string, content: Buffer): boolean {
@@ -267,7 +337,11 @@ export function createPrivateFileIfMissing(path: string, content: Buffer): boole
   try {
     descriptor = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
   } catch (error) {
-    if (typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'EEXIST') return false
+    if (typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'EEXIST') {
+      syncRegularFile(path)
+      syncDirectory(parent)
+      return false
+    }
     throw error
   }
   try {
@@ -276,21 +350,14 @@ export function createPrivateFileIfMissing(path: string, content: Buffer): boole
   } finally {
     closeSync(descriptor)
   }
-  const directory = openSync(parent, constants.O_RDONLY)
-  try {
-    fsyncSync(directory)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
-  } finally {
-    closeSync(directory)
-  }
+  syncDirectory(parent)
   return true
 }
 
 /**
  * Durably remove one ordinary file without following a symbolic link.
  * The file is renamed to a sibling tombstone and its identity checked before unlink and directory fsync.
- * @param path - Single-link ordinary file to remove; absence at the initial stat or open is a no-op.
+ * @param path - Single-link ordinary file to remove; absence repeats the parent barrier when its directory exists.
  * @throws On an unsafe file, changed identity, or I/O failure; a later failure may leave a tombstone or removed file.
  */
 export function durableUnlinkFile(path: string): void {
@@ -298,7 +365,10 @@ export function durableUnlinkFile(path: string): void {
   try {
     stat = lstatSync(path)
   } catch (error) {
-    if (isMissingPathError(error)) return
+    if (isMissingPathError(error, path)) {
+      if (existsSync(dirname(path))) syncDirectory(dirname(path))
+      return
+    }
     throw error
   }
   if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) {
@@ -309,7 +379,10 @@ export function durableUnlinkFile(path: string): void {
   try {
     descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
   } catch (error) {
-    if (isMissingPathError(error)) return
+    if (isMissingPathError(error, path)) {
+      syncDirectory(dirname(path))
+      return
+    }
     throw error
   }
   const expected = fstatSync(descriptor)
@@ -318,24 +391,21 @@ export function durableUnlinkFile(path: string): void {
     throw new Error(`refusing to unlink non-unique or non-ordinary file: ${path}`)
   }
   renameSync(path, tombstone)
+  syncDirectory(dirname(path))
   const moved = openSync(tombstone, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
     if (!sameFileIdentity(expected, fstatSync(moved))) {
-      if (!existsSync(path)) renameSync(tombstone, path)
+      if (!existsSync(path)) {
+        renameSync(tombstone, path)
+        syncDirectory(dirname(path))
+      }
       throw new Error(`file changed before unlink: ${path}`)
     }
   } finally {
     closeSync(moved)
   }
   unlinkSync(tombstone)
-  const directory = openSync(dirname(path), constants.O_RDONLY)
-  try {
-    fsyncSync(directory)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
-  } finally {
-    closeSync(directory)
-  }
+  syncDirectory(dirname(path))
 }
 
 /**
@@ -349,7 +419,7 @@ export function readOptionalText(path: string, maxBytes = MAX_WIKI_PAGE_BYTES): 
   try {
     return readRegularFileBounded(path, maxBytes).toString('utf8')
   } catch (error) {
-    if (isMissingPathError(error)) return undefined
+    if (isMissingPathError(error, path)) return undefined
     throw error
   }
 }
@@ -365,7 +435,7 @@ export function readOptionalJson<T>(path: string, fallback: T): T {
   try {
     return JSON.parse(readRegularFileBounded(path, MAX_WIKI_PAGE_BYTES).toString('utf8')) as T
   } catch (error) {
-    if (isMissingPathError(error)) return fallback
+    if (isMissingPathError(error, path)) return fallback
     throw error
   }
 }

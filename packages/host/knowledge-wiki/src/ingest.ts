@@ -335,7 +335,7 @@ async function optionalText(path: string): Promise<string> {
   try {
     return await readFile(path, 'utf8')
   } catch (error) {
-    if (!isMissingPathError(error)) throw error
+    if (!isMissingPathError(error, path)) throw error
     return ''
   }
 }

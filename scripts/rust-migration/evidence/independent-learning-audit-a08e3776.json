@@ -1,0 +1,264 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Read-only independent audit and executable-proof plan; NOT a successful-learning or Phase 6 receipt",
+  "checkout": "/Users/hui/ark-test/ark-github-main-20261008",
+  "observedGitSha": "a08e377654738a11b4988e7a0eecc4cc5c8561de",
+  "repoEdits": false,
+  "activeRuntimeTouched": false,
+  "authorityCreated": false,
+  "externalProviderInvoked": false,
+  "verdict": "BLOCKED for independent verified repair-reuse acceptance. Existing deterministic seams can be audited, but do not establish actual evaluator independence, paired utility lift, or zero poisoning.",
+  "criticalFindings": [
+    {
+      "id": "K1",
+      "priority": "P1",
+      "title": "Unsigned observed events can directly introduce verified high-trust records",
+      "sources": [
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts:397",
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts:533",
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts:273",
+        "packages/host/knowledge-wiki/src/index.ts:804"
+      ],
+      "mechanism": "applyKnowledgeEvent preserves item.verificationStatus for knowledge/observed and overwrites any existing record. readKnowledgeEventLog authenticates only verified/promoted event types. A project writer can generate a valid unkeyed hash chain containing observed {record: verified, trust: high, confidence: 1, authority: arbitrary} and modelRecords accepts it even with a configured authority that rejects every signature. Public source hashes are not authentication.",
+      "reproduction": "Executed source-only node --import tsx probe in a temporary /tmp directory with an authority whose validatePromotion always returns false. No key, receipt, promotion, runtime session, or external authority was created. Result: authorityValidationCalls=0; knowledgeInjectionDecision={allowed:true,reason:ok}. Temp data deleted.",
+      "minimumFixDirection": "At the authoritative fold, force observed/candidate initial trust/status to low/unverified, reject unsigned replacement of an already verified identity, and require authenticated bindings for every trust/scope/content-changing transition. Cover forged observed bootstrap and overwrite with an assembled model read, not only the pure helper."
+    },
+    {
+      "id": "K2",
+      "priority": "P1",
+      "title": "A signed verified payload can authenticate an unsigned current record instead of its signed record",
+      "sources": [
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts:401",
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts:411",
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts:415",
+        "packages/host/knowledge-wiki/src/reviews.ts:975",
+        "packages/host/knowledge-wiki/src/reviews.ts:989"
+      ],
+      "mechanism": "Verified events include a signed payload.record, but the fold prefers current over that fallback. If an attacker rewrites a previous observed/candidate record (content, source, scope, ACL, expiry), rebuilds the unkeyed event chain, and retains a later legitimate verified payload/seal, that later transition sets verified/confidence/authority on the attacker-controlled current record. The seal covers type+knowledgeId+payload, not the earlier record/chain. Forcing observed low-trust alone does not repair this path.",
+      "evidenceLevel": "Source-established branch relation; no independent key was used or fabricated to execute it.",
+      "minimumFixDirection": "Verification must establish the entire immutable admission record from its authenticated payload or compare the existing record identity/content/source/scope/ACL/expiry to those exact authenticated fields before transition. Bind resulting canonical bytes separately."
+    },
+    {
+      "id": "K3",
+      "priority": "P1",
+      "title": "Model reads do not compare current canonical bytes with verified bytes",
+      "sources": [
+        "packages/host/knowledge-wiki/src/index.ts:901",
+        "packages/host/knowledge-wiki/src/index.ts:910",
+        "packages/host/knowledge-wiki/src/index.ts:912",
+        "packages/host/knowledge-wiki/src/index.ts:915",
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts:452",
+        "packages/host/knowledge-wiki/src/reviews.ts:1274"
+      ],
+      "mechanism": "modelPageContent checks the status of a record by path, reads current Markdown, and merely returns the newly computed hash as provenance. It never compares that hash with an authority-bound canonical hash. A post-promotion file replacement remains model-readable as verified. Promotion records the applied path, but not the final canonical content hash consumed here. Merge/Replace need their output bytes bound, not merely candidateHash.",
+      "minimumFixDirection": "Bind canonical output contentHash under the authenticated promotion event and enforce it at modelPageContent and other content-producing model reads. Fail closed after post-verification tamper; do not label a fresh hash as proof of verification."
+    },
+    {
+      "id": "K4",
+      "priority": "P1",
+      "title": "Utility events target page IDs while governed records use candidate IDs",
+      "sources": [
+        "packages/host/knowledge-wiki/src/reviews.ts:247",
+        "packages/host/knowledge-wiki/src/reviews.ts:976",
+        "packages/host/knowledge-wiki/src/index.ts:1018",
+        "packages/host/knowledge-wiki/src/index.ts:1167",
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts:406",
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts:285"
+      ],
+      "mechanism": "The admission record is candidate:<reviewId>; retrieval/outcome events are page:<path>. applyKnowledgeEvent drops non-admission updates for missing IDs. The separate knowledge-utility.json increases, but the governed record used by the no-utility retention gate keeps retrievalHits=0 and utilityScore=0. Thus the >=3 retrievals/no utility fence never activates for normally promoted records.",
+      "reproduction": "Executed a pure fold with one candidate-ID admission followed by page-ID retrieved and successful-outcome events. Candidate record remains retrievalHits=0,successfulUses=0,utilityScore=0. This was a negative counterexample, not runtime learning evidence.",
+      "minimumFixDirection": "Use the existing governed knowledge ID resolved from the canonical path for durable utility updates; derive display utility from that same log. Corrections already find governed.id for rejection and provide an existing lookup to reuse."
+    },
+    {
+      "id": "K5",
+      "priority": "P2",
+      "title": "UI successful feedback is neither independent nor bound to one measured use",
+      "sources": [
+        "packages/host/knowledge-wiki/src/index.ts:1116",
+        "packages/host/knowledge-wiki/src/index.ts:1137",
+        "packages/host/knowledge-wiki/src/knowledge-governance.ts:590"
+      ],
+      "mechanism": "recordKnowledgeOutcome accepts only paths and outcome. Once the mutable utility projection says retrievalHits>=1, the caller can submit unlimited successful outcomes, with no session/call/result/receipt ID or deduplication. The fixed corrected repair rule is quarantine (do-not-reuse-until-independent-review), not an independently verified procedural repair. This UI score must never serve as verified learning utility.",
+      "minimumFixDirection": "Treat UI feedback as untrusted observation. Independent evaluator evidence must bind each counted use to exactly one durable call/session and artifact result; verified utility should be derived from those facts, preserving corrections."
+    },
+    {
+      "id": "K6",
+      "priority": "P2",
+      "title": "Any passing verification outcome automatically becomes a successful trial with utility 2",
+      "sources": [
+        "packages/host/knowledge-wiki/src/reviews.ts:920",
+        "packages/host/knowledge-wiki/src/reviews.ts:934",
+        "packages/host/knowledge-wiki/src/reviews.ts:941",
+        "packages/host/knowledge-wiki/src/verifier.ts:314"
+      ],
+      "mechanism": "A receipt is passing only when all outcomes pass; the trial then counts every pass as a successful use and computes (2*N)/N=2. A signature-format check, manual review, or unit-test outcome therefore has the same trial utility as actual correct repair reuse. There is no baseline, admitted task, use event, or benefit measurement in the trial fields.",
+      "minimumFixDirection": "Do not call this actual utility lift. A legitimate external owner can currently restrict issuing a pass to a completed bounded trial with independently observed artifacts, but runtime types still cannot distinguish that trial from arbitrary passing checks. The proper admission contract must bind distinct trial/use observations and positive measured benefit before canonical promotion."
+    },
+    {
+      "id": "A1",
+      "priority": "P1 for independent-evaluator threat model",
+      "title": "Launcher receives the same private key accepted for independent verifier results",
+      "sources": [
+        "packages/host/knowledge-wiki/src/external-verifier-adapter.ts:36",
+        "packages/host/knowledge-wiki/src/external-verifier-adapter.ts:185",
+        "packages/host/knowledge-wiki/src/external-verifier-adapter.ts:188",
+        "packages/host/knowledge-wiki/src/external-verifier-adapter.ts:195",
+        "packages/host/knowledge-wiki/src/external-verifier-adapter.ts:196",
+        "packages/host/knowledge-wiki/src/index.ts:244"
+      ],
+      "mechanism": "The adapter requires a public/private pair and probes they match. The public key verifies independent verification results, while the launcher receives the matching signing private key for WAL seals. There is no cryptographic separation of evaluator and producer/launcher signing roles. Keeping a key outside Wiki files is insufficient to prove independence from the launcher/agent-controlled runtime.",
+      "minimumFixDirection": "Use separately provisioned verifier public trust and launcher WAL signing authority with domain separation; independent evaluator retains its private signing key. If this is intentionally a common trusted build owner, document the narrower threat model and do not assert independent external evaluation against that owner. Do not generate a local pair to fill the acceptance gap."
+    },
+    {
+      "id": "A2",
+      "priority": "P2",
+      "title": "Native parent does not provision verifier configuration",
+      "sources": [
+        "integrations/jiuzhang/native/Sources/JiuzhangShellCore/ShellContract.swift:239",
+        "integrations/jiuzhang/native/Sources/JiuzhangShellCore/ShellContract.swift:247",
+        "integrations/jiuzhang/src/runtime.mjs:155",
+        "integrations/jiuzhang/profile/cordis.patch.yml:33"
+      ],
+      "mechanism": "Swift childEnvironment retains a short ambient allowlist and does not set ARK_KNOWLEDGE_VERIFIER_CONFIG. JS forwarding and source-launcher dummy-child success cannot show that a Native app has an independent verifier.",
+      "minimumFixDirection": "Preserve the narrow environment boundary. The native launch configuration owner should accept an explicitly validated, optional authority descriptor from product-owned provisioning (validated absolute executable, immutable source/build manifest, public trust, bounded fixed args). Pass that selected descriptor deliberately, preferably via protected channel/descriptor rather than private key JSON in ambient environment. Do not copy arbitrary ARK_* values or project-authored data. Until an actual provisioned descriptor exists, authority-unavailable is correct."
+    },
+    {
+      "id": "A3",
+      "priority": "P2",
+      "title": "Verifier request lacks candidate/source bytes and a trusted artifact locator",
+      "sources": [
+        "packages/host/knowledge-wiki/src/verifier.ts:40",
+        "packages/host/knowledge-wiki/src/verifier.ts:221",
+        "packages/host/knowledge-wiki/src/verifier.ts:288",
+        "packages/host/knowledge-wiki/src/external-verifier-adapter.ts:18",
+        "packages/host/knowledge-wiki/src/external-verifier-adapter.ts:102",
+        "packages/host/knowledge-wiki/src/external-verifier-adapter.ts:112"
+      ],
+      "mechanism": "The stdin request contains relative candidatePath and hashes, not candidate bytes/root or immutable evidence bundle locator. Child inherits cwd but receives an allowlisted environment excluding ARK_MAIN_ROOT/WIKI_ROOT and provider secrets. URL/virtual/missing source paths can be hashed as labels rather than source content. Existing args can point a real owner to a protected snapshot bundle; without that additional material an evaluator cannot verify the claimed content/provenance from stdin alone.",
+      "minimumFixDirection": "Owner preprovisions read-only content-addressed candidate/source/task/session artifact snapshots and a fixed locator mapping outside Wiki control. Verify actual bytes and record retrieval/origin hashes; never treat sha256(URL or label) as fetched-source proof. No new internet service need be invented."
+    },
+    {
+      "id": "A4",
+      "priority": "P2",
+      "title": "Acceptance CLI cannot authenticate any receipt",
+      "sources": [
+        "scripts/rust-migration/audit-acceptance.ts:25",
+        "scripts/rust-migration/audit-acceptance.ts:172",
+        "scripts/rust-migration/audit-acceptance.ts:288",
+        "scripts/rust-migration/audit-acceptance.ts:312"
+      ],
+      "mechanism": "auditAcceptance supports caller-supplied trustedAuthorityKeys, default empty. CLI only passes evidencePath, never trust keys. Therefore even an otherwise valid signed Phase 6 receipt always remains UNKNOWN from the documented command-line entry point.",
+      "minimumFixDirection": "A trusted caller must explicitly import auditAcceptance and pass externally provisioned public keys; or implement a trusted public-key path option with ownership/provenance checks. Do not trust a key bundled inside the receipt or outcome file."
+    },
+    {
+      "id": "A5",
+      "priority": "P2",
+      "title": "Learning reducer validates claim shape, not evaluator authority or artifacts",
+      "sources": [
+        "scripts/rust-migration/evaluate-learning.ts:95",
+        "scripts/rust-migration/evaluate-learning.ts:100",
+        "scripts/rust-migration/evaluate-learning.ts:148",
+        "scripts/rust-migration/evaluate-learning.ts:159",
+        "scripts/rust-migration/evaluate-learning.ts:173",
+        "scripts/rust-migration/audit-acceptance.ts:236"
+      ],
+      "mechanism": "Different producer/evaluator strings plus evidenceRefs satisfy independence syntactically. No signatures or artifact bytes are checked in evaluateLearning. Every metric needs positive denominators in every pair, so a single repair-only experiment necessarily leaves the overall smartness claim UNKNOWN. auditAcceptance in turn trusts signed numeric directions and booleans without directly parsing the paired input, model identity, denominators, reuse, poisoning, or replay observations.",
+      "minimumFixDirection": "Use this reducer only after an independent owner authenticates artifacts, registrations, identities and counts; bind exact input and output digests into that owner's receipt. A full Phase 6 receipt is separate and must attest every other condition honestly. Never fill unobserved opportunities with fabricated 0/1 counts."
+    }
+  ],
+  "existingEvidenceLimits": [
+    "scripts/rust-migration/launcher-verifier-smoke.json explicitly uses launcher-only-dummy-child and forwards a smoke string; no Native service/model/evaluator proof.",
+    "packages/host/knowledge-wiki/tests/verifier-authority-fixture.ts uses a published fixed HMAC fixture secret, constant source identity, and a predetermined verdict; tests contract mechanics only.",
+    "packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts generates local test keys and runs an executable returning a precomputed signed pass; tests transport/signature validation only.",
+    "packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts manually constructs Context, provides a stub LLM and fixture authority, then uses tools; not Loader/app REAL composition and not real provider improvement.",
+    "No knowledge-specific runnable example snapshot or legitimate paired learning outcome corpus was found in the targeted source scan. progress.jsonl seq4/7 explicitly retain missing-corpus/authority UNKNOWN."
+  ],
+  "minimumExternalMaterial": [
+    "An actual accountable independent evaluator owner and pre-existing trust provisioning decision, with authority ID/public key and private key exclusively controlled by that owner. No invented service or ad hoc locally minted identity.",
+    "A real evaluator executable under that owner's control, fixed args and protected artifact-root mapping, executable/build hash, bounded timeout; it must run checks instead of merely signing caller-supplied verdicts.",
+    "Read-only authenticated evidence snapshots: exact source commit and dirty/source/build digests, active resolved profile/preset and model route/config hashes, immutable mission hashes, candidate bytes, original source bytes, task fixture bytes, session logs, tool results, and expected-output oracle committed before the experiment.",
+    "Authorized access to the same real LLM provider/model for both variants; route/model/parameters/settings must be frozen and request receipts retained. Caller strings are insufficient to establish provider equality.",
+    "Owner-provided provisioning into the isolated Native candidate launch. Native UI API token, model credentials and verifier/acceptance signing keys remain separate; no secrets or full verifier JSON in logs.",
+    "Separately authenticated acceptance public key mapping and signed Phase 6 receipt if full acceptance is later sought. A verified knowledge receipt does not substitute for CI, runtime recovery, native rollback, or Rust performance evidence."
+  ],
+  "realAssembledProcedure": [
+    {
+      "step": 1,
+      "action": "Freeze source/artifacts before measurement",
+      "details": "Repair K1-K4 and content-binding gaps first. Record readRunContext and exact git/source/build/profile/preset digests. Pre-register held-out tasks, expected outputs, metric definitions, budgets and exclusion rules with the independent owner. Compare one built candidate binary/profile under two memory states, not different model configurations or source revisions."
+    },
+    {
+      "step": 2,
+      "action": "Create isolated candidate data roots and identical baseline/candidate snapshots",
+      "details": "Use the single existing ~/ark-test/candidate/Ark.app slot as required by root AGENTS. Give independent sessions fresh data homes/workspaces copied from the same fixture snapshot. Both variants receive identical model, policy, tools, permissions, task and resources. Only previously admitted repair memory differs. No active production home mutation; no model/policy hints inserted only into baseline to force failure."
+    },
+    {
+      "step": 3,
+      "action": "Capture genuine observed failure and successful repair in a training session",
+      "details": "Run through the real native app/Native API runner and Cordis Loader with actual provider. Use bounded local files/commands, no irreversible external effects. Preserve full actual failure/repaired tool results and final artifact hashes. Do not infer failure from prose. The evaluator executes the deterministic output checker independently and checks that the proposed rule explains the successful correction."
+    },
+    {
+      "step": 4,
+      "action": "Create a governed candidate through the existing runtime producer",
+      "details": "Use session-disposal summarization or actual wiki_ingest source workflow. An agent turn ending alone is insufficient: source summarization is agent/disposed. Capture knowledge/observed and knowledge/candidate, candidate Markdown, immutable review row, exact original source hash, scope and expiry. If virtual session labels are used, supply a protected actual source transcript snapshot to the evaluator; a label hash is not transcript provenance."
+    },
+    {
+      "step": 5,
+      "action": "Invoke the real external verifier protocol",
+      "details": "Through knowledgeWiki/verifyCandidate (or model tool wiki_verify_candidate), request Promote for a new canonical path. Adapter writes one newline-terminated canonical JSON envelope {schemaVersion:1,operation:\"verifyCandidate\",request:{schemaVersion:2,...}} to the owner executable stdin. Owner recomputes requestHash, candidate/source/task/session digests, checks immutableReviewRow and requested action/target, executes its bounded held-out trial and negative probes, then emits signed IndependentVerificationResult. Signature is Ed25519 over canonicalJson(unsigned result); requestHash is SHA-256 of canonicalJson(request). Receipt hash is SHA-256(canonicalJson({schemaVersion:2,request,result})); ID is verification- plus first 32 hex characters. Save original executed outcome files, not just evidence strings."
+    },
+    {
+      "step": 6,
+      "action": "Review and trial under the authorized governance path",
+      "details": "Call resolveReview only after an authenticated receipt and explicit review decision. With the present implementation, step5 must contain the actual bounded trial because reviews.ts converts all verifier outcomes to trial uses; that conversion alone is not experimental evidence. Under a repaired contract, trial measurements should remain distinct and precede canonical promotion. Failed or unavailable evaluator means candidate remains unverified; do not supply a fake passing child."
+    },
+    {
+      "step": 7,
+      "action": "Run held-out baseline/candidate pair with the same actual task",
+      "details": "Fresh sessions, identical task bytes and route/config, independently randomized/counterbalanced order, fixed maximum turns/tool budget. Candidate must obtain repair via real wiki_search/wiki_read. Baseline must have the same discovery tools but no admitted repair. Preserve actual provider requests, model outputs, tool calls/results and generated artifact bytes. A baseline success is valid evidence and must never be rewritten to failure."
+    },
+    {
+      "step": 8,
+      "action": "Audit replay and utility from facts",
+      "details": "For each exposed knowledge value match actual LLM request content to its prior knowledge/injected value and durable tool/result by callId and exact rendered bytes; match retrieved provenance to receipt/canonical-content hash and scope. Destroy process and restore from JSONL through the real session persistence reader, then reproduce the same request projection without reading fresh Wiki bytes. Count reuse only if an injected rule is followed and the independently checked task artifact succeeds. Compare cost/error outcomes to baseline; UI successful button/utilityScore alone is not success."
+    },
+    {
+      "step": 9,
+      "action": "Run controlled negative probes against the same assembled boundary",
+      "details": "Verify expired/conflicted/corrected/tampered/forged records are denied; cross-session private and cross-project/ACL canaries never appear in another request/tool output; a malicious memory cannot change permissions, model route, system/tool policy or cause an unauthorized tool effect. Exercise denied executor calls and hash the policy/route before and after. Record conflict detection AND escalation through observable runtime review/tool output. Restart/resume probe checks recovery without duplicate local effect IDs or orphan child processes."
+    },
+    {
+      "step": 10,
+      "action": "Independent evaluation and conservative reduction",
+      "details": "Independent owner derives counts from immutable evidence, records pair IDs and frozen hashes, and attests exact outcomes.json digest. Then run evaluate-learning.ts on that file. A narrow pair can show repair reuse and selected metric directions while overall status correctly stays UNKNOWN for missing opportunities. Only a pre-registered full opportunity corpus can support all 17 metrics. Full Phase6 uses auditAcceptance(root,{evidencePath,trustedAuthorityKeys}) with owner-provisioned keys and actual signed observations; do not use the CLI alone to claim PASS."
+    }
+  ],
+  "minimalConcreteScenario": {
+    "name": "Local quoted-path and flag-contract repair, two fresh measured sessions after one training episode",
+    "fixture": "An owner-authored, side-effect-free local CSV-to-summary CLI with a directory containing a space, explicit --input/--output contract, a deterministic golden JSON summary, and a --help operation. The fixture and golden checker must be frozen before any model run; the model may inspect --help normally. It is an experiment fixture, not a claim that Ark already had this failure.",
+    "trainingTask": "Produce the summary JSON for one training CSV. Only continue to repair-memory testing if a real provider run actually exhibits the registered repeated bad-flag/unquoted-path error and subsequently produces the independently checked correct artifact. Otherwise record no repair opportunity and select another pre-registered actual failure; never force an invalid call or change the baseline.",
+    "candidateRule": "When this exact CLI/version emits the registered usage/path error, consult its --help, use the documented --input and --output flags, preserve the entire path as one argument, and verify output against the input rows. Scope to the fixture project/version and set finite expiry. Do not embed the held-out expected answer in memory.",
+    "heldOutTask": "Generate a summary for a second fixed CSV under another spaced path, using exactly the same task text and input bytes in baseline and candidate. Both are allowed the same --help and tools; candidate additionally has the verified procedural rule in governed memory.",
+    "primaryObservedSuccess": "Golden checker passes and no registered repeated invalid invocation; candidate trace contains actual governed rule read and correct use. Improvement requires baseline/candidate differences measured as observed, not guaranteed by design.",
+    "minimumCounts": "One actual task per variant; error denominator = preregistered invalid-call-retry opportunity count, reuse denominator = actual applicable repair opportunity, verified success denominator = submitted tasks, utility denominator = applicable task opportunities with separately defined net benefit. Denominators must derive from real opportunities and be equivalent in definition across variants.",
+    "scopeOfClaim": "A single pair proves only this scenario and deterministic safety probes. It does not establish statistical general improvement or every required metric. Repeat a pre-registered held-out corpus for a broader claim and preserve all failed/unknown runs.",
+    "whyUseful": "Actual model/tool/provider behavior can be observed, artifact correctness is independently deterministic, there are no network writes, and a procedural rule can help without conveying the answer. The same workflow can replace the fixture with a naturally observed real Ark error from captured logs once selected."
+  },
+  "deterministicChecksToRunAfterFixes": [
+    "Forge an observed record marked verified under a deny-all authority: reject at admission and model read.",
+    "Rewrite unsigned pre-verification record content/scope/ACL and preserve a later legitimate signature: reject.",
+    "Promote once using a genuine owner-provided receipt, alter canonical file bytes: all model content paths fail closed.",
+    "Verify then alter candidate, review, source, source/build identity, requested action, target or environment: reject receipt reuse; bind target bytes for Merge/Replace.",
+    "Three real reads of admitted candidate-ID knowledge with no verified utility update the same governed record and trigger retention denial; projection JSON changes cannot defeat it.",
+    "Repeated successful UI feedback for the same use cannot generate independent success evidence or bypass retention.",
+    "Different-session/project/ACL canary queries, expired record, conflicting claim, correction, rollback and poisoned permissions instruction yield zero forbidden model content/effects.",
+    "Restart process and reconstruct every injected rendered value from session events; compare with actual model request bytes and ensure expired memory is not newly re-injected after restart.",
+    "Verifier timeout/abort/crash leaves zero children, records no pass and no promotion, and does not replay an external effect.",
+    "Missing authority, missing acceptance trust key and incomplete paired metrics remain explicitly UNKNOWN/unavailable."
+  ],
+  "auditChecksPerformed": [
+    "Read root/packages/scripts AGENTS, architecture, mission, project manifest, specified verifier/governance/evaluation/acceptance sources, runtime/profile/Native environment sources and limited test fixtures.",
+    "Ran two negative source-only Node/tsx probes; one pure in-memory and one temporary /tmp journal removed immediately. No signed proof or successful runtime-learning evidence was manufactured.",
+    "Did not run external LLM calls, mutate repository/runtime data, provision keys, or send user/third-party messages."
+  ]
+}

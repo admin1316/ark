@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
@@ -496,7 +496,11 @@ describe('Python release workflows', () => {
         const result = spawnSync('python3', ['-c', step.run], { cwd: fixture, encoding: 'utf8', env })
         expect(result.status, result.stderr).toBe(0)
         expect(readFileSync(output, 'utf8')).toContain(`wheel=deepseek_harness_runtime_bin-1.2.3rc1-py3-none-${spec.tag}.whl`)
-        expect(readFileSync(output, 'utf8')).toContain(`exe=${realpathSync(payload)}`)
+        const resolvedOutput = readFileSync(output, 'utf8')
+        const resolvedExecutable = /^exe=(.+)$/mu.exec(resolvedOutput)?.[1]
+        expect(resolvedExecutable).toBeDefined()
+        expect(existsSync(resolvedExecutable!)).toBe(true)
+        expect(readFileSync(resolvedExecutable!, 'utf8')).toBe('artifact-name fixture')
         rmSync(payload)
         const missing = spawnSync('python3', ['-c', step.run], { cwd: fixture, encoding: 'utf8', env })
         expect(missing.status).not.toBe(0)

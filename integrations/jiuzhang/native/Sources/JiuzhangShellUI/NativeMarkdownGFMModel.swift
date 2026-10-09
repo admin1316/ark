@@ -297,7 +297,7 @@ enum NativeGFMParser {
       inlineMath: preprocessed.inlineMath,
       inlineMathTokenPrefix: preprocessed.inlineMathTokenPrefix
     )
-    let document = Document(parsing: preprocessed.body)
+    let document = Document(parsing: preprocessed.body, options: [.disableSmartOpts])
     var blocks = converter.blocks(document.children)
 
     let footnotes = converter.footnoteOrder.compactMap { id -> NativeGFMFootnote? in
@@ -307,7 +307,7 @@ enum NativeGFMParser {
         inlineMath: preprocessed.inlineMath,
         inlineMathTokenPrefix: preprocessed.inlineMathTokenPrefix
       )
-      let footnoteDocument = Document(parsing: source)
+      let footnoteDocument = Document(parsing: source, options: [.disableSmartOpts])
       return NativeGFMFootnote(
         id: id,
         number: converter.footnoteNumbers[id] ?? 0,

@@ -1,0 +1,13 @@
+version: 1
+scenario: wiki-source-identity
+profile: headless
+composition: wiki-source-identity
+recording: authored
+header:
+  class: wiki-source-identity
+  pin: true
+  systemPromptSource: wiki-governance
+  toolSchemasSource: wiki-governance
+workspace:
+  setup: wiki-source-identity
+  final: true

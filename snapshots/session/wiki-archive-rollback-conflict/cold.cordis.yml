@@ -1,0 +1,9 @@
+- id: headless-runner
+  disabled: true
+- id: llm-replay
+  disabled: true
+- id: wiki-snapshot-lifecycle
+  disabled: true
+- id: wiki-snapshot-authority
+  config:
+    archiveRollbackConflict: false

@@ -1,0 +1,8 @@
+version: 1
+scenario: tool-output-unicode
+profile: headless
+composition: persistent-pwsh
+recording: authored
+header:
+  class: persistent-pwsh
+platform: pwsh

@@ -1,0 +1,417 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Keyless runnable Wiki regression evidence with actual source and built runtime consumers; not learning acceptance",
+  "sourceSnapshot": {
+    "baseCommit": "75f8050d503f836bba1104c3972845f68f192e79",
+    "dirtyAtTest": true,
+    "ownedFileHashes": {
+      "apps/cli/package.json": "cb644893a747862d8876d0bde04551bf3a234088f4fbb4f3816904a416a0fb18",
+      "examples/package.json": "c6cb731ce99b136044c09a5cf0ae5409bf876eef632ec682cdd95da25735d8c4",
+      "package.json": "af08ae40fc3a77d871b6dda82f191124d71ee8bbb9b499134b64bec7be3e5bcb",
+      "pnpm-lock.yaml": "b5a934f907b8a208386edcf50608563b3e2c39c61c4266311ceed66585099c81",
+      "pnpm-workspace.yaml": "cb9173637535043db899e982ba4ff173c9cf5a60139089496acef42c03b1e072",
+      "snapshots/session/headless.snapshot.ts": "a77c2ef46ab10da07cf96eadbf476edf9d1f892bc8d89dfedc12761635507549",
+      "examples/headless-agent/tests/fixtures/knowledge-wiki/authority.ts": "68e64f9e4b7ef3387fc69c2616c3206a1bf754eac0d577d89efcd9723a2cfedc",
+      "examples/headless-agent/tests/fixtures/knowledge-wiki/support.ts": "444e3ca29bb155872364a622555d400ddde6aa1e5d27e7aa307f1ba681a23a51",
+      "snapshots/session/wiki-governance/cold.cordis.yml": "39bdbbd8a334493daa4c6ed27f31dc6c035f9647942394ad79f9dba5c9743ac7",
+      "snapshots/session/wiki-governance/cordis.snapshot.yml": "8bf26ed3edc44fdd217adde84e15bdfc10f68b4e13b3f261cdd706c4f070e32d",
+      "snapshots/session/wiki-governance/cordis.yml": "6779e167a9582fd7bc6952c69bad2249ca8e5bbf81fb2d6c84cda781dd2f7f6f",
+      "snapshots/session/wiki-governance/session.jsonl": "27e90e460fdc37baff39ea3dc4134292ca11ad79c3163c6d8de94b89d60eaf76",
+      "snapshots/session/wiki-governance/snapshot.yml": "b18e4ae413a580671047924fc402fad4c3b0a7b03bddc3360309cfa5ec6e4832",
+      "snapshots/session/wiki-governance/system-prompt.expected.md": "caeb3739430941856ddb465028c0706ffff08fceb5e70c68b4849a5dbe24cce0",
+      "snapshots/session/wiki-governance/tool-schemas.expected.json": "f2882d21b35d86fa063d91c0a5428a50806152c504b899e8f7cf7a5fd982726b",
+      "snapshots/session/wiki-governance/wiki-pages.expected/_candidates/ingest/concepts/snapshot-check.md": "27968a80da2382b6a8f70029eb5c77eb9d50ff6ce916453aa10d0b17b95d8b2d",
+      "snapshots/session/wiki-governance/wiki-pages.expected/concepts/historical-snapshot.md": "116db29cd1b2c4ed5beb5955d2561cc9a064461c91226e31147e0ea6c52d35d5",
+      "snapshots/session/wiki-governance/wiki-pages.expected/concepts/unsigned-snapshot.md": "21e124623f416288a2cce3faab2944300bc38040981f6172dfdaf0f242ff2fae",
+      "snapshots/session/wiki-governance/workspace.expected/raw/evidence/snapshot-check.md": "bf94274921d99f74d57f4e3472651c3312ca28a156d82e4fab3454058269bae6"
+    }
+  },
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "acceptedChecks": [
+    {
+      "name": "frozen offline install",
+      "plane": "dependency",
+      "outcome": "PASS",
+      "details": "all 230 workspaces; final frozen/offline/ignore-scripts install passed after final manifest spelling restoration",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-frozen-install-final.log",
+        "sha256": "8b55f07d477d4bf92d7563d33e12daaf4fd7b1d909be4486f1e58b6493e6bca3",
+        "bytes": 456
+      }
+    },
+    {
+      "name": "source replay and adapter invariants",
+      "plane": "source",
+      "outcome": "PASS",
+      "details": "5 passed; 75 skipped; one Wiki case plus four corpus adapter invariants",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-layout-source-replay.log",
+        "sha256": "7309719cf86e34fd7db693b32188b607c2d663041dfa4c8332f3a2a272ff3484",
+        "bytes": 472
+      }
+    },
+    {
+      "name": "corpus ownership/redaction/header invariants",
+      "plane": "source",
+      "outcome": "PASS",
+      "details": "2 passed; 0 skipped",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-layout-corpus-invariants.log",
+        "sha256": "da608349513f0a128e01bed85a37da373352a84955e7c4261e22f954553ada48",
+        "bytes": 458
+      }
+    },
+    {
+      "name": "Host build including strict Host TypeScript aggregate",
+      "plane": "artifact build",
+      "outcome": "PASS",
+      "details": "all build:lib:host stages passed with NODE_OPTIONS=--max-old-space-size=4096",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-layout-host-build.log",
+        "sha256": "f62ed934a8c884a6bca1cf26bd7e34bdf8f3f71a46e743b3fff230c0c224cd18",
+        "bytes": 143566
+      }
+    },
+    {
+      "name": "checked-in fixture and adapter typecheck",
+      "plane": "source",
+      "outcome": "PASS",
+      "details": "temporary Host-face config checks actual owned checkout files, explicit installed typeRoots; no diagnostics",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-layout-typecheck.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "name": "artifact Wiki replay",
+      "plane": "artifact consumers with source-owned fixture producers",
+      "outcome": "PASS",
+      "details": "1 passed; 79 skipped; actual warm/cold plain-Node dsh processes",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-layout-lib-replay.log",
+        "sha256": "8145eb62a0521403e5ebc280b90097df5ae4558e10bf64a2a29adba8bf7f43eb",
+        "bytes": 472
+      }
+    },
+    {
+      "name": "scoped typed lint",
+      "plane": "source",
+      "outcome": "PASS",
+      "details": "0 diagnostics",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-layout-scoped-lint.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "name": "full contracts-ready lint",
+      "plane": "source",
+      "outcome": "PASS",
+      "details": "exit 0, bounded DSH_OXLINT_THREADS=2 and 4 GiB Node heap",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-layout-full-contracts-lint.log",
+        "sha256": "1eec9a56b35436cc28ce9e204705f5cefaa6d6d0ea7e4688bac5414ffc0f521f",
+        "bytes": 88
+      }
+    }
+  ],
+  "preservedInitialFailures": [
+    {
+      "name": "initial Host build",
+      "details": "Node default 2 GiB heap OOM/SIGABRT before TypeScript conclusion; fixed resource bound only",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-host-build.log",
+        "sha256": "7670722e2750dc250702af684f20ef9c8d9e2f438c6c7e10ecc9300b00a55e7e",
+        "bytes": 9041
+      }
+    },
+    {
+      "name": "initial built Wiki replay",
+      "details": "ERR_MODULE_NOT_FOUND dsh-session from examples fixture; documented examples workspace omitted from manifests; corrected normal workspace ownership and regenerated lock offline",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-lib-replay.log",
+        "sha256": "5ce6e47a4697922286faa9b3f2ed154b38151c18fbdd3ba7a019b270c375b62e",
+        "bytes": 8841
+      }
+    },
+    {
+      "name": "initial strict fixture lint",
+      "details": "formatting and unsafe JSON typing; corrected fixture code, no rule suppressions",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-lint.log",
+        "sha256": "c1870bfbe11b0fbbb2f73e354ad0b80728d4cbd097ad43995d393dcee616f454",
+        "bytes": 9625
+      }
+    },
+    {
+      "name": "first stricter Archive directory oracle",
+      "details": "incorrect fixture expectation assumed flat Archive directory; corrected to exact authenticated destination ancestry",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-source-final-replay.log",
+        "sha256": "edad0f53404f0a06d8b2942720feb3ba755f63d60a304c4513b2053243b34814",
+        "bytes": 7496
+      }
+    },
+    {
+      "name": "first post-review Host typecheck",
+      "details": "strict indexed-access diagnostics for parsed governance array; corrected explicit presence assertions",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-host-build-final.log",
+        "sha256": "9f6811252a1e0560a29d40518c04fc1ee0b9ed1cb39f92f25117fad511ce6f59",
+        "bytes": 846
+      }
+    },
+    {
+      "name": "first temporary adapter typecheck config",
+      "details": "temporary config lacked installed node typeRoots; corrected config only",
+      "log": {
+        "path": "/private/tmp/ark-wiki-snapshot-final-typecheck.log",
+        "sha256": "22d754e33e5e414d820e237c9e477c81ec8db495c45ab51f7665351a89a3c783",
+        "bytes": 165
+      }
+    },
+    {
+      "name": "first local commit pre-commit privacy rejection",
+      "details": "No commit occurred. Literal wiki directory segments were intentionally classified as local generated knowledge; fixed the fixture layout only, without privacy-rule or format changes.",
+      "log": {
+        "path": "/private/tmp/ark-keyless-wiki-local-commit.log",
+        "sha256": "89f87d60dbd51d5fe075b94295381536981fcd4f3d6a377d7b0574f12cb22a04",
+        "bytes": 1865
+      }
+    }
+  ],
+  "proofScope": {
+    "realShippedProfile": "dsh --profile headless",
+    "warm": [
+      "historical fixture-signed read accepted",
+      "unsigned page denied",
+      "actual rendered tool result equals session injection value and pinned replay output",
+      "generic semantic verifier pass leaves Promote denied and canonical file absent",
+      "real committed Archive WAL recovery appends exactly one rejection"
+    ],
+    "cold": [
+      "second real CLI process",
+      "actual ctx.agents.resume on persisted session",
+      "durable event prefix and derived model messages match original log",
+      "no provider adapter or new model request",
+      "successful and neutral feedback remain observational: governed successfulUses and utilityScore stay zero"
+    ],
+    "oracle": [
+      "complete stage-specific journal sequence 8/10/12 with exact lifecycle types/knowledge identities/project scope",
+      "raw event hash chain and fixture authority validation",
+      "raw Archive WAL operation-set hash/seal and complete file/directory inventory",
+      "excluded roots and descendants reject symlinks",
+      "utility projection is exact and bound to authenticated retrieval and latest feedback timestamp interval",
+      "ordinary snapshot workspace captures and normalizers unchanged",
+      "Independent Wiki golden pages live outside generated-knowledge directory names and are compared as a complete exact-byte tree; only this scenario scopes that root into its raw oracle."
+    ],
+    "sourceConsumerResolution": "tsx with TSX_TSCONFIG_PATH=tsconfig.host.json; named workspace services resolve source paths",
+    "artifactConsumerResolution": "plain Node apps/cli/lib/bin.js; Wiki/tool/session/agent/loop/persistence services use real built package exports",
+    "sourceOwnedFixtureProducers": [
+      "historical-governed-fixture.ts",
+      "verifier-authority-fixture.ts",
+      "pure reviews/verifier helpers",
+      "promotion-crash-worker.ts runs directly under Node type stripping"
+    ],
+    "notEstablished": [
+      "full source/artifact snapshot suite",
+      "Linux/Windows runtime validation",
+      "Ark native UI/candidate acceptance",
+      "independent evaluator key separation",
+      "measured promotion/trial benefit",
+      "paired real-provider learning outcome",
+      "Rust enforce/performance benefit"
+    ]
+  },
+  "resolverFacts": {
+    "path": "/private/tmp/ark-wiki-snapshot-resolver-facts.json",
+    "sha256": "f1da29e4fba11e04a3dac5def29dc0e69dc505fd489af4a372054ad571407e6f",
+    "bytes": 2651
+  },
+  "gitOracleInclusion": {
+    "outcome": "PASS",
+    "indexedOwnedFiles": 19,
+    "details": "Root restaged all 19 current owned paths; old 3 Wiki oracle paths and local ignore exception are absent from the index",
+    "log": {
+      "path": "/private/tmp/ark-wiki-snapshot-layout-index-inclusion.log",
+      "sha256": "8c18d6bff4bebefae42f8c346df16da85575e434e0f8fa75dea847b2365d39fa",
+      "bytes": 982
+    }
+  },
+  "modelRequests": 0,
+  "credentialOperations": 0,
+  "candidateAppMutatedByScenario": false,
+  "normalizersAndCoveragePolicyChanged": false,
+  "localReceipt": {
+    "path": "/private/tmp/ark-wiki-snapshot-layout-final-receipt.json",
+    "sha256": "bdcb22c8278372c74b905349bfce458372041449c013c20fb203bbba5addacb5",
+    "bytes": 17549
+  },
+  "limitations": [
+    "full source/artifact snapshot suite",
+    "Linux/Windows runtime validation",
+    "Ark native UI/candidate acceptance",
+    "independent evaluator key separation",
+    "measured promotion/trial benefit",
+    "paired real-provider learning outcome",
+    "Rust enforce/performance benefit"
+  ],
+  "layoutRepair": {
+    "scope": "named Wiki snapshot fixture only; production formats, global normalizers and privacy/security classifiers unchanged",
+    "ordinaryWorkspaceOracle": "workspace.expected/raw/evidence/snapshot-check.md remains captured normally",
+    "independentWikiGoldenRoot": "snapshots/session/wiki-governance/wiki-pages.expected",
+    "rawWikiOracle": "requires exactly three expected golden files; lstat rejects either root as a symlink, recursive entries reject all descendant symlinks, complete file/directory inventories must match, and each file is compared as exact Buffer bytes",
+    "caseOnlyIgnoredRuntimeRoots": [
+      ".llm-wiki",
+      "jiuzhang-tarballs",
+      "wiki"
+    ],
+    "removedScenarioIgnoreException": true,
+    "movedUnchangedGoldens": [
+      {
+        "oldPath": "snapshots/session/wiki-governance/workspace.expected/wiki/_candidates/ingest/concepts/snapshot-check.md",
+        "newPath": "snapshots/session/wiki-governance/wiki-pages.expected/_candidates/ingest/concepts/snapshot-check.md",
+        "sha256": "27968a80da2382b6a8f70029eb5c77eb9d50ff6ce916453aa10d0b17b95d8b2d"
+      },
+      {
+        "oldPath": "snapshots/session/wiki-governance/workspace.expected/wiki/concepts/historical-snapshot.md",
+        "newPath": "snapshots/session/wiki-governance/wiki-pages.expected/concepts/historical-snapshot.md",
+        "sha256": "116db29cd1b2c4ed5beb5955d2561cc9a064461c91226e31147e0ea6c52d35d5"
+      },
+      {
+        "oldPath": "snapshots/session/wiki-governance/workspace.expected/wiki/concepts/unsigned-snapshot.md",
+        "newPath": "snapshots/session/wiki-governance/wiki-pages.expected/concepts/unsigned-snapshot.md",
+        "sha256": "21e124623f416288a2cce3faab2944300bc38040981f6172dfdaf0f242ff2fae"
+      }
+    ]
+  },
+  "acceptedPrivacyGate": {
+    "path": "/private/tmp/ark-wiki-final-layout-generated-tracking.log",
+    "sha256": "28f66ad6ac9c785af6800598e29b08b8e109df2deab5c2f1410f311ca9980e35",
+    "bytes": 89
+  },
+  "supersededLayout": {
+    "localReceipt": {
+      "path": "/private/tmp/ark-wiki-snapshot-final-receipt.json",
+      "sha256": "7101ba68628cac7df86adbc130c4f2bfd0a0ece4f01e4e5699f9b26e7a55be75",
+      "bytes": 14677
+    },
+    "status": "TESTED_LOCALLY_BUT_COMMIT_REJECTED",
+    "reason": "The previous verified test layout was rejected by the unchanged generated-artifacts privacy pre-commit gate. Its original bytes and every original log remain preserved.",
+    "preservation": {
+      "path": "/private/tmp/ark-keyless-wiki-pre-layout-preservation.json",
+      "sha256": "1386373941b8cce8b6df5154781a46027602f4b74805d2488ea54b7280a03ff7",
+      "bytes": 1431
+    },
+    "privacyGateChanged": false
+  },
+  "additionalSourceReadBoundaryRegression": {
+    "sourceHeadBeforeTest": "fe3df292948658a360997113e05804328f0a8afc",
+    "testFile": {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+      "sha256": "092d36113832929a09da9b472c6ce253a74d0f6a8de1fc58932c784c163d32e7",
+      "bytes": 11765
+    },
+    "unchangedProductionSource": {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/src/index.ts",
+      "sha256": "a0e84f0dfc26d01dfc1f027e34727cfe12e5ff508e7070a480d28de6945a3731",
+      "bytes": 25179
+    },
+    "behavior": {
+      "setup": "Existing seedHistoricalCanonicalKnowledge owner admits one nested page and one original page later changed; third unsigned page has no event admission. Keys are existing isolated test fixture authority, not provider credentials.",
+      "actualConsumer": "Real KnowledgeWikiService + real ToolRuntime + Wiki tools with scoped actual Session; file listing never calls LlmRuntime.",
+      "exactOutput": {
+        "files": [
+          "concepts/admitted.md"
+        ],
+        "total": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "1 files total. First 1:\n- concepts/admitted.md"
+          }
+        ]
+      },
+      "sessionOracle": "Exact2retrieved+1injected payloads and exactly3knowledge events; asserted IDs/path/callId/session-project-workspace scope, allowed/reason, native SHA256s of original governed source label/page bytes and exact JSON values, trust/authority/evidence/status/expiry/conflicts. Injection value/hash/byte count is actual rendered ToolRuntime result, not pre-render service value.",
+      "governanceOracle": "Authenticated event-file Buffer bytes are unchanged by listing. No current promotion, trial or utility credit is manufactured."
+    },
+    "acceptedChecks": [
+      {
+        "name": "focused real Wiki service + ToolRuntime regression suite",
+        "outcome": "PASS",
+        "exitCode": 0,
+        "command": "node node_modules/vitest/vitest.mjs run packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts --maxWorkers=1",
+        "result": "1 file / 2 tests passed;233ms tests,1.69s total",
+        "plane": "source services through actual vitest tsconfig paths",
+        "log": {
+          "path": "/private/tmp/ark-wiki-files-provenance-focused.log",
+          "sha256": "280e3096698d15ce593687e2244dc4ad6f968a7eb1194d95ab394b36f52a8747",
+          "bytes": 914
+        }
+      },
+      {
+        "name": "scoped typed lint",
+        "outcome": "PASS",
+        "exitCode": 0,
+        "command": "DSH_OXLINT_THREADS=2 NODE_OPTIONS=--max-old-space-size=4096 node node_modules/tsx/dist/cli.mjs scripts/run-oxlint.ts packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+        "result": "No diagnostics; unchanged .oxlintrc.json typeAware=true",
+        "plane": "source static typed lint",
+        "log": {
+          "path": "/private/tmp/ark-wiki-files-provenance-lint.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        }
+      },
+      {
+        "name": "strict compiler check of actual changed test file",
+        "outcome": "PASS",
+        "exitCode": 0,
+        "command": "NODE_OPTIONS=--max-old-space-size=4096 node node_modules/typescript/bin/tsc -p /private/tmp/ark-wiki-files-provenance-tsconfig.json",
+        "result": "No diagnostics. Temp config extends actual tsconfig.host.json, retains all absolute Host project references, includes the changed checkout test, uses actual installed node_modules/@types; no test copy or source fixture substitution. Base strict/noUncheckedIndexedAccess/exactOptionalPropertyTypes retained.",
+        "plane": "actual source test against current built Host project declarations",
+        "config": {
+          "path": "/private/tmp/ark-wiki-files-provenance-tsconfig.json",
+          "sha256": "2e857623102df708aaf0808a6abfc45a189a6396e722421f54b2db1230a81934",
+          "bytes": 23788
+        },
+        "log": {
+          "path": "/private/tmp/ark-wiki-files-provenance-typecheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        }
+      },
+      {
+        "name": "owned diff whitespace",
+        "outcome": "PASS",
+        "exitCode": 0,
+        "command": "git diff --check",
+        "result": "No diagnostics"
+      }
+    ],
+    "receipt": {
+      "path": "/private/tmp/ark-wiki-files-provenance-final-receipt.json",
+      "sha256": "30d239c392b56a1287c4a8ba85eb6d2032cf6f500c83791c3e241169e5ee75a3",
+      "bytes": 7630
+    },
+    "measuredLearningAcceptance": "UNKNOWN",
+    "limits": [
+      "Source-plane composed test; no shipped Loader/profile/native app, artifact runtime, provider credential, model request, measured learning lift or performance claim.",
+      "Only owned test file changed; no production cleanup, policy, format, authority fixture, existing safety guard or snapshot goldens changed.",
+      "No git stage/commit/push/merge was performed by this agent.",
+      "Coverage classification is read-only and separate; no counters were rerun or inferred from passing focused tests.",
+      "Tool/read boundary and in-memory Session event proof only; no model-request consumption or durable Session replay proven by this regression."
+    ]
+  }
+}

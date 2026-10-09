@@ -1,0 +1,337 @@
+{
+  "schemaVersion": 1,
+  "status": "SCOPED_FIXTURE_OWNERSHIP_REVISION_PASS_INDEX_SYNC_AND_COMMIT_PENDING",
+  "sourceHead": "2104fb2dfd6700dc5cd78ca89e5110ef3558a9e9",
+  "sourceCommitCreated": false,
+  "automaticRetry": false,
+  "historicalPrecommitRejection": {
+    "receipt": {
+      "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-local-source-checkpoint-first-rejection.json",
+      "bytes": 964,
+      "sha256": "57a1f1dab7870c8e99a1d8f772621a9898f53a60c53831a4c4a33372a5cf8ece"
+    },
+    "actualExitCode": 1,
+    "actualRootExecSession": 28317,
+    "log": {
+      "path": "/private/tmp/ark316-governed-tool-exposure-proposal-32twt6qd/root-local-source-checkpoint.log",
+      "bytes": 1593,
+      "sha256": "e2049e26d5cec52a562b87343d32c70ede8d50e7f15b0a84feaf2403c876f303"
+    },
+    "blockedPaths": [
+      "snapshots/session/wiki-ingestion-only/workspace.expected/raw/sources/ingestion-only.png",
+      "snapshots/session/wiki-ingestion-only/workspace/raw/sources/ingestion-only.png"
+    ]
+  },
+  "independentTrackingReproductionBeforeRevision": {
+    "argv": [
+      "pnpm",
+      "run",
+      "verify-generated-tracking"
+    ],
+    "actualExitCodeObservedByAgent": 1,
+    "log": {
+      "path": "/private/tmp/ark316-ingestion-only-tracking-gate-before-revision.log",
+      "bytes": 583,
+      "sha256": "f6729b31a6c84e0f3c2c08eb2667502d06938ff13914aa17bafb0eabab6a7e5c"
+    }
+  },
+  "revision": {
+    "committedRawInputOwner": "snapshots/session/wiki-ingestion-only/raw.expected",
+    "runtimeCanonicalRawPathPreserved": "raw/sources/ingestion-only.png",
+    "rawOracle": "Exact complete file and directory inventory on both sides, reject all links and special nodes, compare every raw file Buffer against independent golden, retain copied media/cache/queue linkage.",
+    "projectionChangeScope": "Only wiki-ingestion-only setup excludes raw from generic workspace projection; complete raw ownership is assigned to assertIngestionOnlyWorld. Other scenes unchanged.",
+    "emptyProjectionOwner": "workspace.expected/.empty",
+    "danglingLinkGuard": "Root readdir entry absence replaces existsSync for jiuzhang-tarballs; catches dangling links.",
+    "removedOldCommittedInputPaths": [
+      "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/.gitignore",
+      "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace/raw/evidence/ingestion-only.md",
+      "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace/raw/sources/ingestion-only.png",
+      "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace.expected/raw/evidence/ingestion-only.md",
+      "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace.expected/raw/sources/ingestion-only.png"
+    ],
+    "preservedBeforeCopyPins": [
+      {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/retained-before/.gitignore",
+        "bytes": 57,
+        "sha256": "0599affdee8cc5f9b5f5e05aa09a74db4a7e4d1ba45b152d328015667f140d16"
+      },
+      {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/retained-before/workspace/raw/evidence/ingestion-only.md",
+        "bytes": 93,
+        "sha256": "5f2d2919cfee9d35bc4ceac11804e4a77bf274c6bd3718075778f042fbf6c564"
+      },
+      {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/retained-before/workspace/raw/sources/ingestion-only.png",
+        "bytes": 68,
+        "sha256": "fe40783151454df01eecf74d701759220ba5d4a0eeb80d102ecd326d0d255ed0"
+      },
+      {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/retained-before/workspace.expected/raw/evidence/ingestion-only.md",
+        "bytes": 93,
+        "sha256": "5f2d2919cfee9d35bc4ceac11804e4a77bf274c6bd3718075778f042fbf6c564"
+      },
+      {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/retained-before/workspace.expected/raw/sources/ingestion-only.png",
+        "bytes": 68,
+        "sha256": "fe40783151454df01eecf74d701759220ba5d4a0eeb80d102ecd326d0d255ed0"
+      }
+    ]
+  },
+  "guardPinsUnchangedFromBefore": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/verify-generated-tracking.ts",
+      "bytes": 12374,
+      "sha256": "79265a1e4c9068364f148ae41742aed738654aef31f45b5b6c44e48be22eb897"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.gitignore",
+      "bytes": 1758,
+      "sha256": "75deec3bd760bba54d2c5798e75ce56db538c0fe1dea17fcece036ee48b4d9d1"
+    }
+  ],
+  "sourceAndScenarioPins": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/examples/headless-agent/tests/fixtures/knowledge-wiki/ingestion-only.ts",
+      "bytes": 9483,
+      "sha256": "7dfff86b5aa3b750f57002e1b6922de511273d95847ae4e9f09b9dcb07990641"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/headless.snapshot.ts",
+      "bytes": 39473,
+      "sha256": "91286ce7d65683ff3fed65555f887747f50c471d3d707d96a705adc14ac01db0"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/cordis.snapshot.yml",
+      "bytes": 1814,
+      "sha256": "5ac4969d8c6a59ddc677b9123909457d5aaebc0e98ab87e00c3165e9783340b5"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/cordis.yml",
+      "bytes": 801,
+      "sha256": "6db2645e8861cd30d448152b956a237a4a43e8e93ffcdae1415d09fa668248f9"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/raw.expected/evidence/ingestion-only.md",
+      "bytes": 93,
+      "sha256": "5f2d2919cfee9d35bc4ceac11804e4a77bf274c6bd3718075778f042fbf6c564"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/raw.expected/sources/ingestion-only.png",
+      "bytes": 68,
+      "sha256": "fe40783151454df01eecf74d701759220ba5d4a0eeb80d102ecd326d0d255ed0"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/session.jsonl",
+      "bytes": 5684,
+      "sha256": "81c4f15f73951592353bf00a8c9c26ec58773f2afa37a689bc28a3ea29e83c31"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/snapshot.yml",
+      "bytes": 215,
+      "sha256": "b65315ba6f5017212fc976bd5d87f660ab1125b09a00a869a8d7e3be64e71542"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/system-prompt.expected.md",
+      "bytes": 4753,
+      "sha256": "c8cd549b74b3a62eb50f33fb721cecd4fe46088d795d8b66da399b255a4ecb21"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/tool-schemas.expected.json",
+      "bytes": 36372,
+      "sha256": "a5e1fddedee4231f0eb14d4b2c0007a81dea13baf408bcc6f9cd52ae1b6608ca"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/snapshots/session/wiki-ingestion-only/workspace.expected/.empty",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "phaseEvidence": [
+    {
+      "phase": "source-double-replay",
+      "actualExitCode": 0,
+      "receipt": {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/source-double-replay-execution.json",
+        "bytes": 17248,
+        "sha256": "d76bda0f05b94b31e51e1dc3724d92856466bd9cc8cdcaa8b6ae0f42fc403010"
+      },
+      "log": {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/source-double-replay.log",
+        "bytes": 472,
+        "sha256": "71b0aed464975abe95b8983cd2a2aa3ea12445da2eb1b58dfdc433efbdb0fed4"
+      },
+      "executedPassedTests": 2,
+      "filteredSkippedTests": 81
+    },
+    {
+      "phase": "normal-double-replay",
+      "actualExitCode": 0,
+      "receipt": {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/normal-double-replay-execution.json",
+        "bytes": 17217,
+        "sha256": "e633f1e1f4d2f690492f0dea6035abab41887ca741d5f2c5d31a271ff82ef6b1"
+      },
+      "log": {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/normal-double-replay.log",
+        "bytes": 472,
+        "sha256": "18b01580ee5b2dc1c610431cafeef38f3ab3adc42d8ddb76da711e9c75db551d"
+      },
+      "executedPassedTests": 2,
+      "filteredSkippedTests": 81
+    },
+    {
+      "phase": "corpus",
+      "actualExitCode": 0,
+      "receipt": {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/corpus-execution.json",
+        "bytes": 17052,
+        "sha256": "f3530387e328800684d8f90a53116487319ad3f605270360bb7c1bb619607132"
+      },
+      "log": {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/corpus.log",
+        "bytes": 458,
+        "sha256": "7fabda3d5eb53b0f9b677b74d71eebce0ee2d20d0eea0981ca91b26dfbbf21f1"
+      },
+      "executedPassedTests": 2,
+      "filteredSkippedTests": 0
+    },
+    {
+      "phase": "final-built-double-replay",
+      "actualExitCode": 0,
+      "receipt": {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/final-built-double-replay-execution.json",
+        "bytes": 17258,
+        "sha256": "9177668b266cd5d84ef56c90bdd301d059efe2ceaefe2e0dea5cb447f5f576c3"
+      },
+      "log": {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/final-built-double-replay.log",
+        "bytes": 472,
+        "sha256": "80064e1e22c438465469a31100108a7a34da74c0d8730085949298dc88011c7c"
+      },
+      "executedPassedTests": 2,
+      "filteredSkippedTests": 81
+    },
+    {
+      "phase": "indexed-tracking",
+      "actualExitCode": 0,
+      "receipt": {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/indexed-tracking-execution.json",
+        "bytes": 16981,
+        "sha256": "5cea04761aa3fbb7b8f6cf8560d1c5f205e8b1ca6011f0ff77bdf91114e8509c"
+      },
+      "log": {
+        "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/indexed-tracking.log",
+        "bytes": 132,
+        "sha256": "90e613264b16f4d7533df2ee703876957bfc528bd2c0b330818298f9d03e6066"
+      },
+      "executedPassedTests": null,
+      "filteredSkippedTests": null
+    }
+  ],
+  "builtRuntimePins": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki-tools/lib/index.js",
+      "bytes": 21172,
+      "sha256": "db0eee0f521255e0cb59fa102969ab867538fd0377e9486138388bad9e971ebd"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/host/knowledge-wiki/lib/index.js",
+      "bytes": 364293,
+      "sha256": "a8f47161e5f9be7a0f9c6f0c35efcdd6ba4856d8818a4fe0e16fccf6945276eb"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/apps/cli/lib/bin.js",
+      "bytes": 7675,
+      "sha256": "5d4bc43dccde4d9af361ac1763125d09b0737ae477e3970d18853e7063cf3e5a"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/apps/cli/lib/dump-config-CwsLpUI0.js",
+      "bytes": 2060,
+      "sha256": "2b757a0cbd7b0f1715aae0da3f97aa0ee65a067fdff4ee8c0e54936dfba99377"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/apps/cli/lib/installation-C2WHY-2K.js",
+      "bytes": 509,
+      "sha256": "5899a7c177e66be5ce6f3f673477158647d1ab35d2a77d99c107ba00d2136227"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/apps/cli/lib/plugin-gf7dapNU.js",
+      "bytes": 5962,
+      "sha256": "5739423f7f6233d7910de3bd846ffb9d084f2a3c52f6a6e493aa7178e4d0fa29"
+    }
+  ],
+  "builtPinsEqualPriorVerifiedHost02Lib": true,
+  "builtModeBoundary": "Existing resolver launches apps/cli/lib/bin.js through plain Node with built package exports. Relative test-only fixture TS remains source through native type stripping; no new app entrypoint or live model.",
+  "typecheck": {
+    "argv": [
+      "pnpm",
+      "run",
+      "typecheck:contracts-ready"
+    ],
+    "environmentSelection": {
+      "NODE_OPTIONS": "--max-old-space-size=8192"
+    },
+    "actualExitCodeObservedByAgent": 0,
+    "observedExecSession": 93224,
+    "log": {
+      "path": "/private/tmp/ark316-ingestion-only-revision-typecheck.log",
+      "bytes": 28,
+      "sha256": "184eb52c7a755bfb0f0a496781fd16c9b3ada6fd670afa14913fe69311a6ab84"
+    }
+  },
+  "unignoredNewAssets": {
+    "argv": [
+      "git",
+      "check-ignore",
+      "-v",
+      "--",
+      "snapshots/session/wiki-ingestion-only/raw.expected/sources/ingestion-only.png",
+      "snapshots/session/wiki-ingestion-only/raw.expected/evidence/ingestion-only.md",
+      "snapshots/session/wiki-ingestion-only/workspace.expected/.empty"
+    ],
+    "actualExitCode": 1,
+    "stdoutEmpty": true,
+    "meaning": "Exit 1 means none of the new asset paths are ignored."
+  },
+  "scopedDiffCheck": {
+    "actualExitCode": 0
+  },
+  "immutableHistoricalReceiptPins": [
+    {
+      "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/consolidated-snapshot-receipt.json",
+      "bytes": 15626,
+      "sha256": "8cc30861b5e87e1389fbb899deba79d12f52546b3e99c16a71c5511d7748a32c"
+    },
+    {
+      "path": "/private/tmp/ark-wiki-ingestion-only-verification-l3_24gho/host02-prerequisite-attachment.json",
+      "bytes": 3665,
+      "sha256": "ddc6517388ecdeeff8f07595b1c3ffa795c494733f01d779ca4c76e0ee14e4e5"
+    }
+  ],
+  "readonlyIndependentSourceReview": {
+    "agent": "/root/candidate316_activation_preparation/raw_fixture_revision_review",
+    "finding": "No source blocking issue; exact raw inventory and byte oracle, isolated projection, danglinglink protection, unchanged global guards. Review did not run tests or write files."
+  },
+  "indexScopeAtReceipt": "AM examples/headless-agent/tests/fixtures/knowledge-wiki/ingestion-only.ts\nMM snapshots/session/headless.snapshot.ts\nAD snapshots/session/wiki-ingestion-only/.gitignore\nA  snapshots/session/wiki-ingestion-only/cordis.snapshot.yml\nA  snapshots/session/wiki-ingestion-only/cordis.yml\nA  snapshots/session/wiki-ingestion-only/session.jsonl\nA  snapshots/session/wiki-ingestion-only/snapshot.yml\nA  snapshots/session/wiki-ingestion-only/system-prompt.expected.md\nA  snapshots/session/wiki-ingestion-only/tool-schemas.expected.json\nAD snapshots/session/wiki-ingestion-only/workspace.expected/raw/evidence/ingestion-only.md\nAD snapshots/session/wiki-ingestion-only/workspace/raw/evidence/ingestion-only.md\n?? snapshots/session/wiki-ingestion-only/raw.expected/\n?? snapshots/session/wiki-ingestion-only/workspace.expected/.empty\n",
+  "remainingRootActions": [
+    "Stage the reviewed revised helper, headless adapter and complete ingestion-only scenario, including removal of obsolete local ignore/evidence and addition of raw.expected plus .empty.",
+    "Run generated tracking on the synchronized final index and complete actual pre-commit. The current passing indexed-tracking check covers the current 9686 indexed paths; untracked new goldens were separately confirmed unignored.",
+    "Keep current 316 app frozen and perform artifact build/real Ark acceptance under root control."
+  ],
+  "proofLimits": [
+    "Keyless scripted model replay proves real CLI catalog, request headers, durable queue and external world assertions for these two scenes; no measured live model or user task speed/quality gain is claimed.",
+    "Unsigned candidate was independently seeded; image ingestion wrote media and warning only. No positive knowledge promotion, successful use or learning credit is claimed.",
+    "Native-mode scenario is not a runnable Code SDK snapshot; root owns separate Native built Loader Code SDK assembly assertions.",
+    "This fixture ownership revision did not rebuild or launch the native app, alter app/home/credentials/authority, change global gate, or create a source commit."
+  ],
+  "supervisor": {
+    "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/run-revision-checks.py",
+    "bytes": 4449,
+    "sha256": "2d876f2c8237f165d61f1fc71f186279b16d7df8af3118a27421ab57849b30e1"
+  },
+  "finalizer": {
+    "path": "/private/tmp/ark-ingestion-only-fixture-ownership-revision-0vzmhdy8/finalize-revision-receipt.py",
+    "bytes": 9732,
+    "sha256": "54bb9b9953511c36b29a4a27a6b0a29ac3ba79836aab04c0bf504839735ad0e8"
+  }
+}

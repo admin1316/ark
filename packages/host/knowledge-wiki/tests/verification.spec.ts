@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -66,7 +66,25 @@ describe('Candidate verification gate', () => {
     expect(applyCandidateReview(undefined, item.reviewFile, item.root, item.wikiRoot, join(item.root, 'archive'), item.reviewId, 'Promote', 'human')).toBe(false)
   })
 
-  it('promotes only after an authority-bound independent verification', async () => {
+  it('binds source provenance bytes separately from mutable Candidate bytes', async () => {
+    const item = fixture()
+    const source = join(item.root, 'raw', 'evidence', 'sha-test.json')
+    mkdirSync(dirname(source), { recursive: true })
+    writeFileSync(source, '{"source":true}', 'utf8')
+    const rows = JSON.parse(readFileSync(item.reviewFile, 'utf8')) as Array<Record<string, unknown>>
+    rows[0]!.sourcePath = 'raw/evidence/sha-test.json'
+    rows[0]!.sourceHash = sha256(readFileSync(source))
+    writeFileSync(item.reviewFile, JSON.stringify(rows, null, 2), 'utf8')
+    const authority = verifierAuthority()
+    await expect(verifyCandidate(authority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote', new AbortController().signal))
+      .resolves.toMatchObject({ ok: true })
+    rows[0]!.sourceHash = sha256('tampered-source')
+    writeFileSync(item.reviewFile, JSON.stringify(rows, null, 2), 'utf8')
+    await expect(verifyCandidate(authority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote', new AbortController().signal))
+      .resolves.toMatchObject({ ok: false, errorCode: 'candidate-invalid' })
+  })
+
+  it('retains authority-bound checks without inventing a usage trial or permitting promotion', async () => {
     const item = fixture()
     const authority = verifierAuthority()
     const verification = await verifyCandidate(
@@ -92,11 +110,24 @@ describe('Candidate verification gate', () => {
     expect(recordCandidateVerification(
       authority, item.reviewFile, item.wikiRoot, item.reviewId, verification.receiptId!, 'Promote',
     )).toBe(true)
+    const recorded = (JSON.parse(readFileSync(item.reviewFile, 'utf8')) as WikiReviewItem[])[0]!
+    expect(recorded.verification).toMatchObject({ status: 'passed', successCount: 1, failureCount: 0 })
+    expect(recorded.verification?.trial).toBeUndefined()
+    expect(recorded.options?.map(option => option.action)).toEqual(['Archive'])
+    const reviewBefore = readFileSync(item.reviewFile, 'utf8')
     expect(applyCandidateReview(
       authority, item.reviewFile, item.root, item.wikiRoot, join(item.root, 'archive'),
       item.reviewId, 'Promote', 'human',
-    )).toBe(true)
-    expect(existsSync(join(item.wikiRoot, 'concepts/git-identity-normalization.md'))).toBe(true)
+    )).toBe(false)
+    expect(existsSync(join(item.wikiRoot, 'concepts/git-identity-normalization.md'))).toBe(false)
+    expect(existsSync(item.candidateFull)).toBe(true)
+    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
+    const events = readFileSync(join(dirname(item.reviewFile), 'knowledge-events.jsonl'), 'utf8')
+      .trim().split('\n').map(line => JSON.parse(line) as { type: string; payload: Record<string, unknown> })
+    const verifiedEvent = events.find(event => event.type === 'knowledge/verified')!
+    expect(verifiedEvent.payload.trial).toBeUndefined()
+    expect(verifiedEvent.payload.record).toMatchObject({ retrievalHits: 0, successfulUses: 0, userCorrections: 0, utilityScore: 0 })
+    expect(events.some(event => event.type === 'knowledge/promoted')).toBe(false)
   })
 
   it('never promotes a Candidate whose authentic independent receipt records failure', async () => {
@@ -178,12 +209,14 @@ describe('Candidate verification gate', () => {
     expect(readTrustedReceipt(authority, item.reviewFile, result.receiptId)).toEqual(receipt)
   })
 
-  it('rejects an authentically sealed prepared journal backed by a failed receipt before mutating files', async () => {
+  it.each(['pass', 'fail'] as const)('denies a historical non-Archive WAL backed by an authentic %s receipt before mutating files', async (result) => {
     const item = fixture()
-    const failedAuthority = verifierAuthority('fail')
-    const failed = await verifyCandidate(failedAuthority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote', new AbortController().signal)
-    if (failed.receiptId === undefined) throw new Error('missing failed receipt')
-    const failedReceipt = readTrustedReceipt(failedAuthority, item.reviewFile, failed.receiptId)!
+    const receiptAuthority = verifierAuthority(result)
+    const verification = await verifyCandidate(receiptAuthority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote', new AbortController().signal)
+    expect(verification).toMatchObject({ ok: result === 'pass', result })
+    if (verification.receiptId === undefined) throw new Error('missing authentic receipt')
+    const receipt = readTrustedReceipt(receiptAuthority, item.reviewFile, verification.receiptId)!
+    expect(receipt.result.result).toBe(result)
     const stop = new Error('stop after journal persistence')
     const authority: KnowledgeWikiVerifierAuthority = {
       ...verifierAuthority(),
@@ -191,12 +224,8 @@ describe('Candidate verification gate', () => {
         if (checkpoint.phase === 'journal-persisted') throw stop
       },
     }
-    const passed = await verifyCandidate(authority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote', new AbortController().signal)
-    if (passed.receiptId === undefined) throw new Error('missing passing receipt')
-    expect(readTrustedReceipt(authority, item.reviewFile, passed.receiptId)?.request).toEqual(failedReceipt.request)
-    expect(recordCandidateVerification(authority, item.reviewFile, item.wikiRoot, item.reviewId, passed.receiptId, 'Promote')).toBe(true)
     const archiveRoot = join(item.root, 'archive')
-    expect(() => applyCandidateReview(authority, item.reviewFile, item.root, item.wikiRoot, archiveRoot, item.reviewId, 'Promote', 'human'))
+    expect(() => applyCandidateReview(authority, item.reviewFile, item.root, item.wikiRoot, archiveRoot, item.reviewId, 'Archive', 'human'))
       .toThrow(stop)
     const directory = join(dirname(item.reviewFile), 'promotion-journal')
     const journalPath = join(directory, readdirSync(directory).find(name => name.endsWith('.json'))!)
@@ -211,28 +240,38 @@ describe('Candidate verification gate', () => {
     expect(journal.state).toBe('prepared')
     const { state: _state, seal: _seal, ...originalCore } = journal
     expect(authority.validatePromotion(canonicalJson(originalCore), journal.seal)).toBe(true)
-    // Model a legacy, authentically sealed WAL whose admission ignored a
-    // failed verdict. Keep real producer operations and immutable pre-state.
-    const core = { ...originalCore, receiptId: failedReceipt.id, receiptHash: failedReceipt.receiptHash }
+    // Retain the real Archive producer's operations and immutable pre-state,
+    // but explicitly model a historical canonical action for denial only.
+    const core = {
+      ...originalCore,
+      action: 'Promote',
+      targetPath: receipt.request.targetPath,
+      reviewHash: receipt.request.reviewHash,
+      receiptId: receipt.id,
+      receiptHash: receipt.receiptHash,
+    }
     expect(core.operationSetHash).toBe(sha256(canonicalJson(core.operations)))
-    const seal = failedAuthority.sealPromotion(canonicalJson(core))
-    expect(failedAuthority.validatePromotion(canonicalJson(core), seal)).toBe(true)
+    const seal = receiptAuthority.sealPromotion(canonicalJson(core))
+    expect(receiptAuthority.validatePromotion(canonicalJson(core), seal)).toBe(true)
     writeFileSync(journalPath, JSON.stringify({ ...core, state: 'prepared', seal }), 'utf8')
     const before = core.operations.map(operation => ({
       path: operation.path,
       bytes: existsSync(operation.path) ? readFileSync(operation.path, 'utf8') : undefined,
     }))
     expect(before.map(value => value.bytes)).toEqual(core.operations.map(operation => operation.before))
-    expect(() => recoverCandidateReviewTransactions(failedAuthority, item.reviewFile, item.wikiRoot, archiveRoot))
-      .toThrow('promotion journal verified receipt binding failed')
+    expect(() => recoverCandidateReviewTransactions(receiptAuthority, item.reviewFile, item.wikiRoot, archiveRoot))
+      .toThrow(result === 'pass'
+        ? 'canonical promotion requires independently measured trial evidence'
+        : 'promotion journal verified receipt binding failed')
     expect(before.map(value => ({
       path: value.path,
       bytes: existsSync(value.path) ? readFileSync(value.path, 'utf8') : undefined,
     }))).toEqual(before)
-    expect(readTrustedReceipt(failedAuthority, item.reviewFile, failed.receiptId)?.result.result).toBe('fail')
+    expect(readTrustedReceipt(receiptAuthority, item.reviewFile, verification.receiptId)?.result.result).toBe(result)
+    expect((JSON.parse(readFileSync(journalPath, 'utf8')) as { state: string }).state).toBe('prepared')
   })
 
-  it('invalidates snapshots after a bulk verified promotion', async () => {
+  it('invalidates snapshots after a bulk Archive transaction', async () => {
     const item = fixture()
     const ctx = new Context()
     ctx.provide('knowledgeWikiVerifierAuthority', verifierAuthority())
@@ -244,7 +283,7 @@ describe('Candidate verification gate', () => {
       llmModel: 'm',
     })) as unknown as {
       verifyCandidate(
-        request: { reviewId: string; action: 'Promote' },
+        request: { reviewId: string; action: 'Archive' },
         signal: AbortSignal,
       ): Promise<{ ok: boolean; receiptId?: string }>
       resolveReviews(request: { ids: string[]; action?: string }): Promise<number>
@@ -254,11 +293,13 @@ describe('Candidate verification gate', () => {
 
     try {
       await expect(service.verifyCandidate(
-        { reviewId: item.reviewId, action: 'Promote' },
+        { reviewId: item.reviewId, action: 'Archive' },
         new AbortController().signal,
       )).resolves.toMatchObject({ ok: true })
-      await expect(service.resolveReviews({ ids: [item.reviewId], action: 'Promote' })).resolves.toBe(1)
+      await expect(service.resolveReviews({ ids: [item.reviewId], action: 'Archive' })).resolves.toBe(1)
       expect(service.snapshots.currentGeneration(item.wikiRoot)).toBe(before + 1)
+      expect(existsSync(item.candidateFull)).toBe(false)
+      expect(existsSync(join(item.wikiRoot, 'concepts/git-identity-normalization.md'))).toBe(false)
     } finally {
       await ctx.fiber.dispose()
     }
@@ -324,27 +365,31 @@ describe('Candidate verification gate', () => {
     const item = fixture()
     const authority = verifierAuthority()
     const verification = await verifyCandidate(
-      authority, item.reviewFile, item.wikiRoot, item.reviewId, 'Promote',
+      authority, item.reviewFile, item.wikiRoot, item.reviewId, 'Archive',
       new AbortController().signal,
     )
     expect(recordCandidateVerification(
-      authority, item.reviewFile, item.wikiRoot, item.reviewId, verification.receiptId!, 'Promote',
+      authority, item.reviewFile, item.wikiRoot, item.reviewId, verification.receiptId!, 'Archive',
     )).toBe(true)
     const archiveRoot = join(item.root, 'archive')
     expect(applyCandidateReview(
-      authority, item.reviewFile, item.root, item.wikiRoot, archiveRoot, item.reviewId, 'Promote', 'human',
+      authority, item.reviewFile, item.root, item.wikiRoot, archiveRoot, item.reviewId, 'Archive', 'human',
     )).toBe(true)
 
     const journalDirectory = join(dirname(item.reviewFile), 'promotion-journal')
     const journalPath = join(journalDirectory, readdirSync(journalDirectory).find(name => name.endsWith('.json'))!)
     const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
       state: string
+      seal: VerificationAuthoritySeal
       operations: Array<{ role: string; path: string; before?: string; after?: string }>
     }
-    const target = journal.operations.find(operation => operation.role === 'canonical')!
-    const review = journal.operations.find(operation => operation.role === 'review')!
-    unlinkSync(target.path)
-    writeFileSync(review.path, review.before!, 'utf8')
+    const { state: _state, seal: _seal, ...core } = journal
+    expect(authority.validatePromotion(canonicalJson(core), journal.seal)).toBe(true)
+    expect(journal.operations.some(operation => operation.role === 'candidate-archive')).toBe(true)
+    for (const operation of journal.operations) {
+      if (operation.before === undefined) rmSync(operation.path, { force: true })
+      else writeFileSync(operation.path, operation.before, 'utf8')
+    }
     writeFileSync(journalPath, JSON.stringify({ ...journal, state: 'prepared', operationSetHash: '0'.repeat(64) }), 'utf8')
 
     expect(() => recoverCandidateReviewTransactions(

@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Source containment and Archive crash-consistency regression evidence; not independently verified learning acceptance",
+  "sourceSnapshot": {
+    "parentGitSha": "2268abeb0f2e3a74fae6ad434e04fd88e5b30498",
+    "dirty": true,
+    "fileHashes": {
+      "packages/host/knowledge-wiki/src/index.ts": "f60620221d5b93d0df51397cce645823d90e13ba7c9b757b4e5a8369fa715cd6",
+      "packages/host/knowledge-wiki/src/knowledge-governance.ts": "f5834a0049eacec3a64940ec2caedb8b0e9bf7d386d446d41caeb3bb58590751",
+      "packages/host/knowledge-wiki/src/reviews.ts": "72cf615dce6eff1ae79a76885a6dd1f9c109632c7ba40777a6116bfb9c928b9a"
+    }
+  },
+  "profile": "jiuzhang",
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "repairedRelations": [
+    "Semantic check passes do not create measured trials or successful-use counters.",
+    "All four canonical forward actions deny despite exact fake legacy trials; prepared canonical journals deny recovery.",
+    "Governed positive feedback and claimed evaluator labels are observational in direct service and durable replay; negative corrections retain their effect.",
+    "Display counter edits cannot sustain governed retention after actual Loader/AgentLoop/ToolRuntime/JSONL restart.",
+    "Archive WAL roles, exact owned candidate/review/governance paths, unique operations, archive bytes, resolved review and auxiliary identities are revalidated before mutation.",
+    "Archive crash recovery records original Archive/Skip rejected/downgraded lifecycle exactly once, including missing append after committed marker; append failure preserves WAL for retry."
+  ],
+  "checks": {
+    "relatedWikiPackages": {
+      "result": "PASS",
+      "files": 83,
+      "tests": 793,
+      "command": "pnpm exec vitest run packages/host/knowledge-wiki/tests packages/host/knowledge-wiki-tools/tests --maxWorkers=2"
+    },
+    "fullLintWithHostBuild": {
+      "result": "PASS",
+      "command": "pnpm run lint"
+    },
+    "focusedArchiveRecovery": {
+      "result": "PASS",
+      "tests": 91,
+      "scope": "Existing producer/recovery, malformed signed WAL, actual SIGKILL phases, original Skip disposition, append failure/retry and rollback"
+    },
+    "realKeylessComposition": {
+      "result": "PASS",
+      "tests": 1,
+      "actualOwners": [
+        "YAML Loader",
+        "AgentLoop factory",
+        "ToolRuntime and WikiTools",
+        "JSONL session persistence and resume"
+      ],
+      "fixtures": [
+        "External verifier test authority",
+        "LLM boundary fails on invocation",
+        "Credential boundary not invoked"
+      ],
+      "modelCalls": 0
+    },
+    "independentReview": {
+      "k5AndDirectCanonicalDenial": "Scoped read-only source review completed",
+      "latestArchivePatch": "UNVERIFIED; platform blocked independent follow-up review",
+      "historicalSignedArchiveRepro": "Confirmed before repair using valid explicit fixture authority; genuine current producer cannot create malformed operations"
+    },
+    "documentation": {
+      "result": "PASS",
+      "passed": 30,
+      "failed": 0,
+      "command": "pnpm run doc-sync"
+    }
+  },
+  "limits": {
+    "measuredTrialContract": "UNRESOLVED",
+    "independentEvaluatorKeySeparation": "UNRESOLVED",
+    "nativeVerifierProvisioning": "UNRESOLVED",
+    "newSourceNativeUiAcceptance": "UNKNOWN",
+    "realProviderTask": "NOT RUN",
+    "actualRepairReuseAndUtilityLift": "UNKNOWN",
+    "currentFullCoverageGate": "UNVERIFIED; historical2268 gate failed; thresholds/exclusions unchanged",
+    "currentGithubCi": "UNKNOWN",
+    "requiredRunnableExampleSnapshot": "INCOMPLETE",
+    "newFormalRustReplacements": 0,
+    "productionTouched": false,
+    "committedMissingEventRepair": "Requires exact poststate; later divergent writes fail closed and preserve evidence"
+  },
+  "evidenceRefs": [
+    "scripts/rust-migration/evidence/candidate-native-build-2268abeb.json"
+  ],
+  "localOnlyEvidence": [
+    {
+      "path": "/tmp/ark-k5-k6-all-wiki-tests.log",
+      "sha256": "8507a5b8917a9d0329e2018f4a4e9fe2de7daf732fd06e046e41918bc8eed35f",
+      "bytes": 1230,
+      "distribution": "Local generated log/evidence; excluded from Git"
+    },
+    {
+      "path": "/tmp/ark-k5-k6-full-lint.log",
+      "sha256": "f33455b475bb27224c1b696ef5bf20b953ede6d349b3caeddf95229ff10bde76",
+      "bytes": 143852,
+      "distribution": "Local generated log/evidence; excluded from Git"
+    },
+    {
+      "path": "/tmp/ark-k5-k6-loader-composition.log",
+      "sha256": "043e7458e3fa00426493fd551b2f4f8492724eb9a3a985f90dad66ac759a0a53",
+      "bytes": 1391,
+      "distribution": "Local generated log/evidence; excluded from Git"
+    },
+    {
+      "path": "/tmp/ark-archive-recovery-red.log",
+      "sha256": "9aa1bd9e106727239c55e85cd0d29258d92120511de7d133935038ef86385724",
+      "bytes": 3829,
+      "distribution": "Local generated log/evidence; excluded from Git"
+    },
+    {
+      "path": "/tmp/ark-archive-recovery-green.log",
+      "sha256": "6d0847c3fe4be6a41240d38917da3966f798f9d72a00b6f0b7615fdf86696ba1",
+      "bytes": 917,
+      "distribution": "Local generated log/evidence; excluded from Git"
+    },
+    {
+      "path": "/tmp/ark-archive-recovery-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "distribution": "Local generated log/evidence; excluded from Git"
+    },
+    {
+      "path": "/tmp/ark-archive-recovery-tsc.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "distribution": "Local generated log/evidence; excluded from Git"
+    },
+    {
+      "path": "/tmp/ark-k6-archive-role-repro-before-fix.json",
+      "sha256": "b29e518f17b5cbc9c8fcc77b5cc0bac5de8abdc8711d459ccfc11ed2ffe0cb50",
+      "bytes": 3762,
+      "distribution": "Local generated log/evidence; excluded from Git"
+    },
+    {
+      "path": "/tmp/ark-k5-k6-doc-sync-final.log",
+      "sha256": "fd427ba6b98f5551bbdf1303c8640b38b272f781a98c8dfe3b68573d4b8b7604",
+      "bytes": 2535,
+      "distribution": "Local generated log; excluded from Git"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { join } from 'node:path'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 
 const mocks = vi.hoisted(() => ({
@@ -37,7 +38,7 @@ beforeEach(() => {
 
 describe('research write boundary', () => {
   it('rejects a resolved target outside the Wiki root', async () => {
-    mocks.resolve.mockReturnValueOnce('/project/wiki').mockReturnValueOnce('/outside/result.md')
+    mocks.resolve.mockReturnValueOnce(join('/project', 'wiki')).mockReturnValueOnce(join('/outside', 'result.md'))
 
     await expect(deepResearch(
       stageExecutorFor(llm), 'p', 'm', '/project', 'topic', new AbortController().signal,
@@ -54,8 +55,8 @@ describe('research write boundary', () => {
 
   it('reports a non-Error write failure without throwing', async () => {
     mocks.resolve
-      .mockReturnValueOnce('/project/wiki')
-      .mockReturnValueOnce('/project/wiki/_candidates/research/result.md')
+      .mockReturnValueOnce(join('/project', 'wiki'))
+      .mockReturnValueOnce(join('/project', 'wiki', '_candidates', 'research', 'result.md'))
     mocks.mkdir.mockResolvedValue(undefined)
     mocks.atomicWriteFile.mockImplementation(() => { throw 'disk unavailable' })
 

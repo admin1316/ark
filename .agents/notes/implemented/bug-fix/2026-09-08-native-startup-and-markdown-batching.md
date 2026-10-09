@@ -18,6 +18,8 @@ The transcript render window moves by stable row identity instead of expanding t
 
 The transcript scheduler and its contract probe share one base-interval policy; the probe does not maintain a second cadence formula. Trajectory body-loading checks require both a successful body response and a subsequent projection publication, so an empty observation window cannot establish row retention. Source-boundary checks do not depend on the event consumer being private.
 
+The native trajectory feed keeps its 160 ms same-context publication throttle. A session change or the model's empty-record reset cancels that pending subscription and clears visible records synchronously before a replacement subscription receives new rows. The replacement skips the publisher's initial value because `@Published` delivers changes before storing them; reading that initial value during a reset could replay the previous context. The model remains the sole projection and generation owner. Feed-level regressions check context resets and queued old rows separately from model-level projection checks.
+
 When a turn completes, full Markdown parsing is asynchronous. A pending projected row retains its exact source and uses the existing bounded streaming renderer until canonical blocks install; it must not replace an already received answer with a history-loading spinner. Row identities still contain only the message ID and source slot, and the projection worker retains the existing session, source, and request checks. This transition does not imply that the complete long answer has already been laid out.
 
 The trajectory fold computes an active assistant preview once after folding its chunks, rather than rescanning the growing full body for each delta. Canonical assistant messages still replace their streamed record. A 20,000-event regression retains the full output and every source event, compares the exact preview, and measures the fold against the five-second display budget.
@@ -29,6 +31,8 @@ The trajectory fold computes an active assistant preview once after folding its 
 **Evaluate imports to verify modules.** Importing executes package code and can trigger filesystem, network, or registration effects. Compile-only VM constructors validate syntax without these effects.
 
 **Publish every completed parse immediately.** Each completion copies the projection map and invalidates SwiftUI. Coalescing trades up to one short presentation interval for fewer copies and layout invalidations.
+
+**Remove trajectory feed throttling.** This avoids delayed resets but also increases same-context view updates during bursts. Cancelling only the obsolete subscription preserves the existing pacing without retaining old-context rows.
 
 Cold and restored live sessions now retain the existing semantic reading snapshot in their conversation surface, replacing the separate record/cut/preview fields. The raw recovery tail is intentionally incomplete for closed turns; trajectory therefore combines semantic rows with replayed live rows and gives overlapping live messages precedence. Message body loads invalidate the same trajectory owner. This preserves closed history without a second reader, polling loop, or cache. Contracts check complete cold and warm row counts plus closed/active assistant bodies and duplicate suppression; native candidate acceptance remains separate.
 
