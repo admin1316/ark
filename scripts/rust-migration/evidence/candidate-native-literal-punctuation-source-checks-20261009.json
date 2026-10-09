@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-09T07:01:33.016131+00:00",
+  "status": "SCOPED_NATIVE_PUNCTUATION_SOURCE_AND53_GROUPS_PASS_INSTALLED_CANDIDATE_PENDING",
+  "sourceParentCommit": "57956170fdbadcaa3975d15f7121851eff1e5bdb",
+  "sourceCheckpointCommit": "NOT_YET_FROZEN",
+  "worktreeState": "dirty_scoped_changes_pending_local_commit",
+  "productionChange": "Existing Swift Markdown body and footnote parsers disable typographic smart punctuation via maintained ParseOptions; exactly two production expressions change. GFM interpretation is retained. No new JSON mode, output filter, result repair, permission, model route or provider change.",
+  "sourceAssets": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/native/Sources/JiuzhangShellUI/NativeMarkdownGFMModel.swift",
+      "bytes": 26974,
+      "sha256": "d8f1fbbb75f80b4fbd97f52084d0a4429ba38a909423676ad9be75e8f5e68e67"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/native/Tests/JiuzhangShellCoreTests/ArkMarkdownGFMContractChecks.swift",
+      "bytes": 53571,
+      "sha256": "64ddd5ad06f5238ce45c7ee211c68b40818b76b9cc29c9f506f86c7d0c9bb966"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/native/README.md",
+      "bytes": 3305,
+      "sha256": "d3386c1398c9c33d7eef73081a8700e89917249935c158585989f9cbc1cc8672"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/native/README.zh.md",
+      "bytes": 2845,
+      "sha256": "3068514e3eb66b84d0aba7c2fe1cda520ec31fc8e8691bbb8c825cd67368b57c"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/native/README.i18n.yaml",
+      "bytes": 438,
+      "sha256": "dfaad58a0e6a43e0793360b1476aa5b3d50ca6b1ee1745f48c8ee6df74ba3bc3"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/implemented/bug-fix/2026-10-09-native-exact-output-guidance.md",
+      "bytes": 4318,
+      "sha256": "46c038acff663b66f2b0a4bde82dd85fee11307f1d2444b744989a169007a351"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/implemented/bug-fix/2026-10-09-native-exact-output-guidance.zh.md",
+      "bytes": 3740,
+      "sha256": "841b2377da57bd0a2dbf2cb0b64556cf983722ea87d675645457a450ff9bcf3b"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/implemented/bug-fix/2026-10-09-native-exact-output-guidance.i18n.yaml",
+      "bytes": 542,
+      "sha256": "2dd8cb5608fbbea212f4b3cca6b4677398d52b47b263e2f5304228fb3d4d9799"
+    }
+  ],
+  "actualChecks": {
+    "initialCompileFailureRetained": {
+      "path": "/private/tmp/ark-native-literal-red-3y3e1285/red-execution.json",
+      "bytes": 886,
+      "sha256": "7b0119a67896279723e72032e8e432454f204239a8bac9a93da0a52d833d6a62"
+    },
+    "redBehavior": {
+      "receipt": {
+        "path": "/private/tmp/ark-native-literal-red-3y3e1285/red-v2-execution.json",
+        "bytes": 750,
+        "sha256": "dac0b18b29e4ee6c24cf45b7339383004739d4324ce1720328f4d072bdddb337"
+      },
+      "log": {
+        "path": "/private/tmp/ark-native-literal-red-3y3e1285/red-v2-contract.log",
+        "bytes": 15054,
+        "sha256": "a684b6fd7c94eafa9bbd230d2487a7d98e015fe357382aa0e7a1458f2201e2a0"
+      },
+      "actualExitCode": 1,
+      "startedAt": "2026-10-09T06:25:20.094661+00:00",
+      "finishedAt": "2026-10-09T06:26:59.473312+00:00"
+    },
+    "redScope": "All53 groups reached; only added JSON, ASCII body and footnote punctuation fail. Authored Unicode and existing checks pass.",
+    "greenBehavior": {
+      "receipt": {
+        "path": "/private/tmp/ark-native-literal-red-3y3e1285/green-execution.json",
+        "bytes": 718,
+        "sha256": "9b9a8acb5ee389eff8491b63a76f61608f5b440e0b2fd6ba97762a8fa5726161"
+      },
+      "log": {
+        "path": "/private/tmp/ark-native-literal-red-3y3e1285/green-contract.log",
+        "bytes": 5918,
+        "sha256": "9c799295686a4c46ce0513e939f07172f43147382bdf87a71578941fd5fdb9c5"
+      },
+      "actualExitCode": 0,
+      "startedAt": "2026-10-09T06:46:51.926843+00:00",
+      "finishedAt": "2026-10-09T06:48:30.271733+00:00"
+    },
+    "greenScope": "All53 groups pass, including unchanged prior tests and four new punctuation assertions.",
+    "translationPairing": {
+      "receipt": {
+        "path": "/private/tmp/ark-native-literal-docs-tr_erkbs/pairing-execution.json",
+        "bytes": 473,
+        "sha256": "66a24013d6ea91c351388f70df49e447ad8b10877a4855450324f26b6ab159e4"
+      },
+      "log": {
+        "path": "/private/tmp/ark-native-literal-docs-tr_erkbs/pairing.log",
+        "bytes": 458,
+        "sha256": "9e52df1c1647accdf2fcd71ba657e13e12c6b411432fdd6d58318e145800f3c6"
+      },
+      "actualExitCode": 0,
+      "startedAt": "2026-10-09T06:48:24.860340+00:00",
+      "finishedAt": "2026-10-09T06:48:26.090121+00:00"
+    },
+    "docSync": {
+      "receipt": {
+        "path": "/private/tmp/ark-native-literal-docs-tr_erkbs/doc-sync-execution.json",
+        "bytes": 310,
+        "sha256": "72d454bdc33ec276b37d635dc7dd6c9a92eab763fff7c25b7c9ab4d9ff18a79e"
+      },
+      "log": {
+        "path": "/private/tmp/ark-native-literal-docs-tr_erkbs/doc-sync.log",
+        "bytes": 2539,
+        "sha256": "318a58298a1442a3e5aa4582b852d9bb0515f18158709db61e6993762b7d7036"
+      },
+      "actualExitCode": 0,
+      "startedAt": "2026-10-09T06:50:01.573442+00:00",
+      "finishedAt": "2026-10-09T06:52:03.111280+00:00"
+    },
+    "lint": {
+      "receipt": {
+        "path": "/private/tmp/ark-native-literal-docs-tr_erkbs/lint-execution.json",
+        "bytes": 306,
+        "sha256": "5774f9f1ef02e0cb8b652e6cd5a433550fad5d04b96e4b6b6437e0c76be7fc74"
+      },
+      "log": {
+        "path": "/private/tmp/ark-native-literal-docs-tr_erkbs/lint.log",
+        "bytes": 143946,
+        "sha256": "1239cf4fedae85afd4be52ba052d1fadcd7ab619221c8cc33963511850c634c7"
+      },
+      "actualExitCode": 0,
+      "startedAt": "2026-10-09T06:50:23.988616+00:00",
+      "finishedAt": "2026-10-09T06:52:01.847836+00:00"
+    }
+  },
+  "independentSourceReview": {
+    "path": "/private/tmp/ark319-native-punctuation-independent-f8u021b_/review.json",
+    "bytes": 12689,
+    "sha256": "b5ee0cb82ffc40905607dc51a71f67a97a2577eefb07396378589fcd8d97b83d"
+  },
+  "installed319Evidence": {
+    "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/candidate319-six-real-native-and-display-20261009.json",
+    "bytes": 5106,
+    "sha256": "67e8841f34ff3287bdef0bccd80554832acefe08b95d47b02c9cf480dff132c2"
+  },
+  "nextRequiredAcceptance": "Build a clean-source successor and verify actual Native message display against raw output. This source fix does not establish whole-turn format stability or prevent heredoc business errors.",
+  "knowledgeReuse": "UNPROVEN",
+  "overallLift": "UNKNOWN",
+  "githubPublication": "HOLD",
+  "formalPromotion": "HOLD",
+  "immutableManifest": {
+    "path": "/Users/hui/ark-test/ark-github-main-20261008/project-manifest.json",
+    "bytes": 862,
+    "sha256": "d1a4175f1fac86f8998196b6a217bd88e9b4ea4b59dc154c9db0ca980c265e10"
+  },
+  "appRuntimeAndProfileWrites": 0
+}

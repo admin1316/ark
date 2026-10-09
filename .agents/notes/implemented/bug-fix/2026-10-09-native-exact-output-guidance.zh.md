@@ -12,7 +12,9 @@ Native 任务的最终 JSON 即使正确，前面的普通助手消息也可能�
 
 `packages/boot/profile-runner/config/agent-presets/` 中共享的 `standard` 与 `code` persona 文字指导模型在整轮中遵守指定输出格式，在只需结果的请求中调用工具而不增加说明，并在指定舍入阶段之前保留十进制与有理数的精确值。[Profile runner](../../../../packages/boot/profile-runner/README.zh.md) 负责这些 Native-safe 资产。它们的作用域 persona 通过现有注册覆盖部署默认值；`minimal` preset 的完整 persona 保留其精确语义。
 
-这是提示词指导。助手文字仍是会话日志中可见的权威记录；该修改不增加输出过滤、重试、结构化输出传输、事件类型、权限例外或学习收益。它保留[逐会话 preset 归属](../architecture/2026-08-03-per-session-agent-presets.zh.md)的决策，不取代该决策。
+Persona 修改属于提示词指导。助手文字仍是会话日志中可见的权威记录；该修改不增加输出过滤、重试、结构化输出传输、事件类型、权限例外或学习收益。它保留[逐会话 preset 归属](../architecture/2026-08-03-per-session-agent-presets.zh.md)的决策，不取代该决策。
+
+[原生 Markdown 解析器](../../../../integrations/jiuzhang/native/Sources/JiuzhangShellUI/NativeMarkdownGFMModel.swift)在正文与脚注中禁用排版字符替换，保留原有直引号和标点，包括没有代码围栏的 JSON 引号。原有 Unicode 标点保持不变。解析器保留 GFM 解释，不增加 JSON 模式或输出修补；该显示决策不会隐藏前面的模型消息，也不会纠正源 JSON 的语法错误。
 
 ## Alternatives considered
 
@@ -27,3 +29,5 @@ Native 任务的最终 JSON 即使正确，前面的普通助手消息也可能�
 所选 persona 增加稳定的提示词文字，可能改变请求 token 计数与前缀缓存复用。指导仍具有概率性：可运行的无密钥组合验证实际共享 preset 是否进入已记录请求，全新 Native 对话则独立检验整轮输出与精确计算。样例通过不能证明一般算术正确、持久纠错复用或速度提升。
 
 [Native 组合回归](../../../../packages/bundle/native-api-app/tests/native-persona-request.spec.ts) 装载真实 profile 与共享 preset，只对外部模型提供脚本响应，并将实际 provider 请求与持久请求头、公共持久化检查结果比较。完整请求头金样覆盖 POSIX 工具；Windows 需要独立的真实 PowerShell 金样。不经过过滤的前言/工具/最终消息用例保留跨平台断言，且不会把人工编写的模型输出记为遵从能力。
+
+[原生 GFM 契约测试](../../../../integrations/jiuzhang/native/Tests/JiuzhangShellCoreTests/ArkMarkdownGFMContractChecks.swift)核对完整的无围栏有理数 JSON、原有 ASCII 和 Unicode 标点以及脚注正文，并保留现有 Markdown 语义检查。候选验收仍需比较实际 Native 显示文字与未修改的记录输出；解析器测试不能单独证明已安装应用的行为。

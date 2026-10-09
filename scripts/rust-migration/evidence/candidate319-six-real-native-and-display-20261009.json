@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-09T07:01:33.016131+00:00",
+  "status": "SIX_REAL_NATIVE_TASKS_NUMERIC_PASS_THREE_SCOPED_PASS_TWO_FAIL_ONE_ENVIRONMENT_HOLD",
+  "sourceCommit": "57956170fdbadcaa3975d15f7121851eff1e5bdb",
+  "candidate": {
+    "version": "3.1.9",
+    "build": "2026100904",
+    "sourceHead": "57956170fdbadcaa3975d15f7121851eff1e5bdb",
+    "sourceClean": true,
+    "app": "/Users/hui/ark-test/candidate/Ark.app",
+    "home": "/Users/hui/ark-test/candidate-home-current-source-20261009-v319"
+  },
+  "runContext": {
+    "path": "/var/folders/tj/zym7f5k919375cmql460k5yw0000gn/T/ark320-source-evidence-j2p1_iiz/run-context.stdout.json",
+    "bytes": 4184,
+    "sha256": "d1fb872b5b431694ee5fd5cdc61b43086ec896a02e194e90cc3ad0a3f5003d93"
+  },
+  "immutableManifest": {
+    "path": "/Users/hui/ark-test/ark-github-main-20261008/project-manifest.json",
+    "bytes": 862,
+    "sha256": "d1a4175f1fac86f8998196b6a217bd88e9b4ea4b59dc154c9db0ca980c265e10"
+  },
+  "priorFiveRunReport": {
+    "path": "/Users/hui/ark-test/evidence/candidate319-five-native-final-review-20261009.json",
+    "bytes": 13807,
+    "sha256": "b482a550e9c34ca4764d9e743e7a97fa7413c37c7efcfdf69f81d850b8ff8715"
+  },
+  "supplementaryAutomatedRunReport": {
+    "path": "/Users/hui/ark-test/evidence/candidate319-automated-native06-result-20261009.json",
+    "bytes": 3692,
+    "sha256": "78efd500c105403a05d426b4d0d3dc5dca6719cca87cddfd3209b00adf7dd2ca"
+  },
+  "actualRuns": [
+    {
+      "runId": "native319-01",
+      "task": "invoice",
+      "sessionId": "dc58a1a9-87e7-479a-95b6-a24d9712c7b3",
+      "localTaskGates": "PASS",
+      "wholeOrdinaryOutputAndMathPass": true,
+      "numericAnswerPass": true,
+      "toolErrors": 0,
+      "knowledgeSessionEvents": 0
+    },
+    {
+      "runId": "native319-02",
+      "task": "invoice",
+      "sessionId": "60f387b6-8c83-4071-a3ef-c2069d48cb40",
+      "localTaskGates": "FAIL_WHOLE_OUTPUT_FORMAT",
+      "wholeOrdinaryOutputAndMathPass": false,
+      "numericAnswerPass": true,
+      "toolErrors": 0,
+      "knowledgeSessionEvents": 0
+    },
+    {
+      "runId": "native319-03",
+      "task": "invoice",
+      "sessionId": "a75fafcd-316e-4b69-aaab-056e374d9028",
+      "localTaskGates": "PASS",
+      "wholeOrdinaryOutputAndMathPass": true,
+      "numericAnswerPass": true,
+      "toolErrors": 0,
+      "knowledgeSessionEvents": 0
+    },
+    {
+      "runId": "native319-04",
+      "task": "rational",
+      "sessionId": "df319467-4756-4448-9c7d-8a53ceb1d448",
+      "localTaskGates": "HOLD_ENVIRONMENT_DRIFT",
+      "wholeOrdinaryOutputAndMathPass": true,
+      "numericAnswerPass": true,
+      "toolErrors": 0,
+      "knowledgeSessionEvents": 0
+    },
+    {
+      "runId": "native319-05",
+      "task": "single-line",
+      "sessionId": "8c81f284-03bf-4dc9-b824-f8da537d80a1",
+      "localTaskGates": "PASS",
+      "wholeOrdinaryOutputAndMathPass": true,
+      "numericAnswerPass": true,
+      "toolErrors": 0,
+      "knowledgeSessionEvents": 0
+    },
+    {
+      "runId": "native319-06",
+      "task": "rational",
+      "sessionId": "72cc8918-1b9a-42b5-9d08-57f6f5d61197",
+      "localTaskGates": "FAIL_TOOL_BUSINESS_EXECUTION",
+      "numericAnswerPass": true,
+      "wholeOrdinaryOutputAndMathPass": true,
+      "knowledgeSessionEvents": 0,
+      "toolErrors": 1
+    }
+  ],
+  "fixedExamplesCounts": {
+    "attempts": 6,
+    "numericAnswersCorrect": 6,
+    "localTaskGatePass": 3,
+    "productFailures": 2,
+    "environmentHeld": 1,
+    "interpretation": "Fixed examples; not population reliability, old-formal A/B comparison or an improvement percentage."
+  },
+  "nativeLiteralDisplay": {
+    "status": "FAIL_STRAIGHT_QUOTES_CHANGED_IN_INSTALLED319",
+    "raw": {
+      "path": "/private/tmp/ark319-ui-raw-audit-native319-06-72cc8918-v7-root/whole-turn-answer.txt",
+      "bytes": 239,
+      "sha256": "b49371df8fe54f12a1882ab32cfa3302632b73711913dfd0bafeb44ca1574f5f"
+    },
+    "observedAX": {
+      "path": "/private/tmp/ark319-auto-native-preparation-k2wm5enl/native319-06-literal-view.stdout",
+      "bytes": 360,
+      "sha256": "742f79250282da1009163700cc4974a668c94e87f27800779eec53b79a2957bb"
+    },
+    "observationReceipt": {
+      "path": "/private/tmp/ark319-auto-native-preparation-k2wm5enl/native319-06-literal-view-receipt.json",
+      "bytes": 956,
+      "sha256": "67d352159321a38d48d89755e04bc665bb5f6793ffe8a45f195f618cc8521f20"
+    },
+    "scope": "AX read of actual message; osascript transport LF ignored only for comparison. Full pixel parity remains unproved."
+  },
+  "independentReview": {
+    "path": "/private/tmp/ark319-output-control-independent-o_qyug_y/run06-readonly-review.json",
+    "bytes": 11257,
+    "sha256": "9f35d936e0350a33a92b82392d13e248091eaf072191ae5a46729dea5fe66627"
+  },
+  "original02FormatFailRetained": true,
+  "original04EnvironmentHoldRetained": true,
+  "run06RecoveredHeredocFailureRetained": true,
+  "verifiedKnowledgeReuse": "UNPROVEN",
+  "overallAbilityAndSpeedLift": "UNKNOWN",
+  "githubPublication": "HOLD",
+  "formalPromotion": "HOLD",
+  "sourceOrArtifactRepairDoesNotRewriteInstalled319Results": true
+}

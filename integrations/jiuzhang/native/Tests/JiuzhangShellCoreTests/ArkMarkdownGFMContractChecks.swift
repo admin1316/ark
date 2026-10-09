@@ -22,6 +22,40 @@ private func runMathRenderCacheChecks() {
   )
 }
 
+private func runMarkdownLiteralPunctuationChecks() {
+  let json = #"{"rounded_by_id":{"R01":"0","R02":"0","R03":"1","R04":"-1","R05":"1","R06":"-1","R07":"9007199254740993","R08":"-9007199254740993","R09":"0","R10":"0"},"group_totals":{"G1":"9007199254740995","G2":"-9007199254740995","G3":"0"},"total":"0"}"#
+  let jsonText = NativeGFMParser.parse(json).compactMap { block -> String? in
+    guard case .paragraph(let content) = block,
+          content.count == 1,
+          case .text(let value) = content[0]
+    else { return nil }
+    return value
+  }.joined(separator: "\n")
+  check(
+    jsonText == json && (try? JSONSerialization.jsonObject(with: Data(jsonText.utf8))) != nil,
+    "native Markdown preserves the real unfenced rational JSON quotes and signed integer strings"
+  )
+  let punctuation = #"Keep "quoted", 'literal', --, --- and ... as authored."#
+  check(
+    NativeGFMParser.parse(punctuation) == [.paragraph([.text(punctuation)])],
+    "native Markdown preserves authored ASCII punctuation in prose"
+  )
+  let unicode = "Keep “quoted” and ‘literal’ — as authored."
+  check(
+    NativeGFMParser.parse(unicode) == [.paragraph([.text(unicode)])],
+    "native Markdown retains authored Unicode punctuation without replacing it"
+  )
+  let footnotes = NativeGFMParser.parse("Proof[^literal]\n\n[^literal]: \(punctuation)")
+    .compactMap { block -> [NativeGFMFootnote]? in
+      guard case .footnotes(let values) = block else { return nil }
+      return values
+    }.flatMap { $0 }
+  check(
+    footnotes.count == 1 && footnotes.first?.blocks == [.paragraph([.text(punctuation)])],
+    "native Markdown preserves authored punctuation in footnote bodies"
+  )
+}
+
 private func runSwiftMathPackagingAdapterChecks() {
   let fileManager = FileManager.default
   let buildScript = contractNativeRoot.appendingPathComponent("build-app.sh")
@@ -142,6 +176,7 @@ func runArkMarkdownGFMContractChecks() {
     "table columns cap long content for wrapping while respecting larger text settings"
   )
   runMathRenderCacheChecks()
+  runMarkdownLiteralPunctuationChecks()
   runSwiftMathPackagingAdapterChecks()
   let fixture = #"""
   # 中文 **粗体** 与 ~~删除~~
@@ -529,7 +564,8 @@ func runArkMarkdownGFMContractChecks() {
     "native Markdown pins the GFM parser and AppKit math renderer without raising the macOS 13 baseline"
   )
   check(
-    model.contains("Document(parsing: preprocessed.body)")
+    model.contains("Document(parsing: preprocessed.body, options: [.disableSmartOpts])")
+      && model.contains("Document(parsing: source, options: [.disableSmartOpts])")
       && model.contains("case footnoteReference")
       && model.contains("case table(")
       && model.contains("case math(String)")
