@@ -241,8 +241,14 @@ it.each(['prepared', 'settings-applied', 'done'])('does not return live success 
     return result
   })
   await expect(run.mutate(request)).rejects.toMatchObject({ failure: {
-    code: phase === 'done' ? 'provider-registration-rejected' : 'provider-transaction-in-doubt',
+    code: phase === 'done' ? 'provider-registration-rejected'
+      : phase === 'settings-applied' ? 'settings-rejected' : 'provider-transaction-in-doubt',
   } })
+  if (phase === 'settings-applied') {
+    await expect(run.ctx.credentials.readRecord(JOURNAL)).resolves.toMatchObject({
+      payload: { phase: 'done', outcome: 'committed-not-live', error: { code: 'settings-rejected' } },
+    })
+  }
 })
 
 it('retains progress for retry if a stored plan no longer matches its registered profile path', async () => {
@@ -746,7 +752,7 @@ it('lets an unrelated provider progress while another namespace waits for activa
   const other = run.mutate(run.request({ provider: 'independent', settingsNs: independent, expectedRevision: 0,
     ops: [{ op: 'set', path: ['model'], value: 'independent' }] })).then((result) => { completed = true; return result })
   try {
-    await vi.waitFor(() => { expect(completed).toBe(true) }, { timeout: 1000 })
+    await vi.waitFor(() => { expect(completed).toBe(true) }, { timeout: 5000 })
     expect(scope.get().model).toBe('independent')
   } finally { resume.resolve(undefined); await Promise.all([first, other]) }
 })

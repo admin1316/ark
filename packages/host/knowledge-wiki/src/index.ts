@@ -65,7 +65,7 @@ import { ARCHIVE_INPUTS, zipExportInvocation, zipListEntries, zipListInvocation 
 import {
   existsSync, lstatSync, mkdirSync, readdirSync,
 } from 'node:fs'
-import { basename, extname, join, dirname, relative, resolve, sep } from 'node:path'
+import { basename, extname, join, dirname, relative, resolve, sep, posix } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
 import { isIP, type LookupFunction } from 'node:net'
@@ -498,7 +498,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       const isIncident = parsed.action === 'incident_open' || parsed.action === 'incident_verified'
       const isReflection = parsed.action === 'reflection'
       const slug = issueSlugFrom(parsed.issueKey)
-      const rel = join(
+      // Review governance accepts durable Wiki paths in POSIX form on every OS.
+      const rel = posix.join(
         '_candidates',
         isIncident ? 'incidents' : isReflection ? 'reflections' : 'topics',
         `${slug}.md`,

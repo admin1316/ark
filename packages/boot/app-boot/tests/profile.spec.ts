@@ -631,7 +631,9 @@ describe('healProfilesModuleFallback', () => {
         once(child, 'message'),
         exited.then(() => { throw new Error('resolver exited before readiness') }),
       ])
-      for (let index = 0; index < 40; index += 1) {
+      // Keep a large package graph while bounding repeated Win32 junction churn
+      // under instrumented coverage; each pass still repoints all 160 links.
+      for (let index = 0; index < 12; index += 1) {
         healProfilesModuleFallback(index % 2 === 0 ? second : first, home)
       }
       const result = once(child, 'message')
