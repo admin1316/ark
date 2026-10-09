@@ -1,0 +1,418 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-09T02:59:18.260450+00:00",
+  "status": "SCOPED_NATIVE_PERSONA_SOURCE_AND_KEYLESS_COMPOSITION_CHECKS_PASS_REAL319_PENDING",
+  "sourceParentCommit": "be867e95fc794a6eef6be405b468817e7b45943e",
+  "sourceCheckpointCommit": "NOT_YET_FROZEN",
+  "worktreeState": "dirty_scoped_changes_pending_local_commit",
+  "productionChange": "Only six fixed guide lines appended to both canonical Native standard/code persona Config.text; reverse transformation equals parent bytes.",
+  "canonicalPersonaAssets": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/boot/profile-runner/config/agent-presets/standard/agent.cordis.yml",
+      "bytes": 14796,
+      "sha256": "2710152f39dabe5abcacd82e8ebbdd78ab088bcbbd09b09de1a16c81cc71ff5b"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/boot/profile-runner/config/agent-presets/code/agent.cordis.yml",
+      "bytes": 15241,
+      "sha256": "af0fcf09e67202f90e27eecc16c1ca3c34a39993a360ae8482126fc33e5acc17"
+    }
+  ],
+  "sixGuideSentences": [
+    "Follow the user's requested output format throughout the entire turn, including before and between tool calls.",
+    "For output-only requests, make necessary tool calls without optional user-facing narration, then emit only the requested result.",
+    "If the user requires a single JSON value, emit that value in the requested shape without greetings, plans, progress updates, Markdown fences, or surrounding explanation.",
+    "Do not invent a result to satisfy an output format.",
+    "When exact arithmetic is required, parse decimal inputs exactly, keep ratios as integer fractions, and apply rounding only at the requested stage using the specified rule.",
+    "Do not treat an approximation as exact merely because it uses high decimal precision."
+  ],
+  "documentationAndNotes": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/boot/profile-runner/README.md",
+      "bytes": 3133,
+      "sha256": "4f05d0c4ba2a0bb46933b40370d9aa0c096b4980ec27b43734aec66613459929"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/boot/profile-runner/README.zh.md",
+      "bytes": 2809,
+      "sha256": "49aab8314641dd7098cf3d2fb324a6fbbb6ac21311d3715d47426d3a10faac96"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/boot/profile-runner/README.i18n.yaml",
+      "bytes": 438,
+      "sha256": "66edb3b0dc8e2d2e0bbc65a7b55a40719e1eb2ad64fdc03a44bc93661fddbb09"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/implemented/bug-fix/2026-10-09-native-exact-output-guidance.md",
+      "bytes": 3306,
+      "sha256": "7d8c9f0c52c31bf608bcd45bc93d778f656e5eb30fd1a103cc29378554a5cb5b"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/implemented/bug-fix/2026-10-09-native-exact-output-guidance.zh.md",
+      "bytes": 2876,
+      "sha256": "3638ed62aa3b89e21ecfa0c83ab1fb56e70c70dd335f151f719c38ea65706f27"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/.agents/notes/implemented/bug-fix/2026-10-09-native-exact-output-guidance.i18n.yaml",
+      "bytes": 542,
+      "sha256": "bfad34b10f5a3dd6595a10b33ea9d0ca3fb87c6d1fa487f7b272bc5fb15fe4cb"
+    }
+  ],
+  "unchangedPublicRuntimeAndAuthorityFiles": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/project-manifest.json",
+      "bytes": 862,
+      "sha256": "d1a4175f1fac86f8998196b6a217bd88e9b4ea4b59dc154c9db0ca980c265e10"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/rust-benchmark.json",
+      "bytes": 5452,
+      "sha256": "30b1c938f9a88d890a4001dceae73e4a2039b3a821249b73300c64d121349331"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/integrations/jiuzhang/profile/cordis.patch.yml",
+      "bytes": 2429,
+      "sha256": "796d9f9c8cd65581656ae237ad13ac5bbabbebc217da9e594539a8162a1986fd"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/agent-loop/src/agent.ts",
+      "bytes": 34338,
+      "sha256": "dd17608807441467e8188dfcc6a856ff0ccbf4df5f53337373354477fa501ba2"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/core/system-prompt/src/index.ts",
+      "bytes": 24550,
+      "sha256": "fd114d41df1ffa2a98cb2f0127c58f55ac68c390140f7b67b3e70af4f11081ad"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/preset/persona/src/index.ts",
+      "bytes": 2749,
+      "sha256": "709f5560564d4ce202d5ece5da49cf81ba6894e6cd27ea3d55900dc32d970a1f"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/llm/llm/src/types.ts",
+      "bytes": 21734,
+      "sha256": "52b183816106240681d6de074423ea2b1b4b4a1a901d8cabf8471788ea64b82b"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/llm/llm/src/call-config.ts",
+      "bytes": 2932,
+      "sha256": "8c3463f1778a3590d86fa02f757c36bba41ecc6bc108a3018969b1b368d00a8b"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/llm/llm-deepseek/src/types.ts",
+      "bytes": 5968,
+      "sha256": "aa481d7bdf68e1f22f36286ae64ef6eb522afe3010545872d1d05899d825ad1e"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/llm/llm-deepseek/src/serialize.ts",
+      "bytes": 17106,
+      "sha256": "36ff023acb53f11af7eb7550e533907489e928a81037f8b4e447804a16910162"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/llm/llm-deepseek/src/translate.ts",
+      "bytes": 10111,
+      "sha256": "2793ae6128cf06ff434dc37030bf438d602d1656c2f0cd877993b2e340e6f830"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/shell/tool-bash/src/index.ts",
+      "bytes": 19142,
+      "sha256": "6b26913efb2b16337cde8076556db1452d8d8de5ff482b95ed9b8315312ed4dc"
+    }
+  ],
+  "rootActualPhases": {
+    "persona": {
+      "receipt": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/persona-execution.json",
+        "bytes": 605,
+        "sha256": "1c3193cbb4641fd1878c47a4fc2030c692f3a9148ff69f40a69198cea15dc6f0"
+      },
+      "actualExitCode": 0,
+      "argv": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/preset/persona/tests/persona.spec.ts"
+      ],
+      "log": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/persona.log",
+        "bytes": 912,
+        "sha256": "f2f07089c08156876c5cd2c12d271e53bc5c669ccf74106dfe37ebc3c938c698"
+      },
+      "startedAt": "2026-10-09T02:40:07.186870+00:00",
+      "endedAt": "2026-10-09T02:40:08.553993+00:00"
+    },
+    "pairing": {
+      "receipt": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/pairing-execution.json",
+        "bytes": 706,
+        "sha256": "9a811f7755f8e43484a9041070777970e1ddb52ecbac172ab63d01e3599130b9"
+      },
+      "actualExitCode": 0,
+      "argv": [
+        "pnpm",
+        "run",
+        "verify-translation-pairing",
+        "--write",
+        "packages/boot/profile-runner/README.md",
+        ".agents/notes/implemented/bug-fix/2026-10-09-native-exact-output-guidance.md"
+      ],
+      "log": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/pairing.log",
+        "bytes": 2882,
+        "sha256": "0eee57775ff1db171059a13ee09b1a2efe994430abb042dc0e009a342620a4af"
+      },
+      "startedAt": "2026-10-09T02:40:14.766068+00:00",
+      "endedAt": "2026-10-09T02:40:20.897777+00:00"
+    },
+    "host-build": {
+      "receipt": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/host-build-execution.json",
+        "bytes": 554,
+        "sha256": "ae8412270ba08798b0721b462cd703c3b62544df0fac176a575f73934926ce75"
+      },
+      "actualExitCode": 1,
+      "argv": [
+        "pnpm",
+        "run",
+        "build:lib:host"
+      ],
+      "log": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/host-build.log",
+        "bytes": 853,
+        "sha256": "5e33397e08a6e000207238145f9e9593f9c4532e8aa39a3cf6484e4da67ff43a"
+      },
+      "startedAt": "2026-10-09T02:42:13.513833+00:00",
+      "endedAt": "2026-10-09T02:42:19.559608+00:00"
+    },
+    "host-build-v2": {
+      "receipt": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/host-build-v2-execution.json",
+        "bytes": 563,
+        "sha256": "2003b0ba97f88db2d611fbdc0aa2a7400cc25daa272ec02c2ef1a73a1c0af4d3"
+      },
+      "actualExitCode": 0,
+      "argv": [
+        "pnpm",
+        "run",
+        "build:lib:host"
+      ],
+      "log": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/host-build-v2.log",
+        "bytes": 143655,
+        "sha256": "5a161d1401b550047597d3ebd2e3746d4a12334cf5cf9fd6b0ef89d8b914d948"
+      },
+      "startedAt": "2026-10-09T02:44:39.845903+00:00",
+      "endedAt": "2026-10-09T02:44:51.059983+00:00"
+    },
+    "host-build-final": {
+      "receipt": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/host-build-final-execution.json",
+        "bytes": 569,
+        "sha256": "0df6de5be77ef92d0d1f51c86b99d76764f80912bb6c00bc5c16dc3ada3a2cb7"
+      },
+      "actualExitCode": 0,
+      "argv": [
+        "pnpm",
+        "run",
+        "build:lib:host"
+      ],
+      "log": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/host-build-final.log",
+        "bytes": 143635,
+        "sha256": "a47a7f28783907a5d1a364c706f9288e2b4851d91d2dc588d5bdb2e28e7b71c3"
+      },
+      "startedAt": "2026-10-09T02:50:10.809566+00:00",
+      "endedAt": "2026-10-09T02:50:17.538185+00:00"
+    },
+    "pairing-final": {
+      "receipt": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/pairing-final-execution.json",
+        "bytes": 717,
+        "sha256": "6908e1798aa023695dde000c1629d3d1e29443edc0ede99f75da11cf0f6041a2"
+      },
+      "actualExitCode": 0,
+      "argv": [
+        "pnpm",
+        "run",
+        "verify-translation-pairing",
+        "--write",
+        "packages/boot/profile-runner/README.md",
+        ".agents/notes/implemented/bug-fix/2026-10-09-native-exact-output-guidance.md"
+      ],
+      "log": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/pairing-final.log",
+        "bytes": 375,
+        "sha256": "b7e5a5dd4c20aba4d9c9a993f98d7e7743b172ca82e11d668fb0756cc2045bc0"
+      },
+      "startedAt": "2026-10-09T02:47:31.321038+00:00",
+      "endedAt": "2026-10-09T02:47:32.456356+00:00"
+    },
+    "pairing-after-doc-fix": {
+      "receipt": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/pairing-after-doc-fix-execution.json",
+        "bytes": 733,
+        "sha256": "5805450294ea2cf3748b21e562714971f545daf09855b31a8bf9f5d7909d9efc"
+      },
+      "actualExitCode": 0,
+      "argv": [
+        "pnpm",
+        "run",
+        "verify-translation-pairing",
+        "--write",
+        "packages/boot/profile-runner/README.md",
+        ".agents/notes/implemented/bug-fix/2026-10-09-native-exact-output-guidance.md"
+      ],
+      "log": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/pairing-after-doc-fix.log",
+        "bytes": 337,
+        "sha256": "20c38c7c9b3bb09b57576f14e475a5c90ff04d978d3b0d1cc094247f1f5e679b"
+      },
+      "startedAt": "2026-10-09T02:51:43.570640+00:00",
+      "endedAt": "2026-10-09T02:51:44.685155+00:00"
+    },
+    "lint-contracts": {
+      "receipt": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/lint-contracts-execution.json",
+        "bytes": 567,
+        "sha256": "3623ae84a80120963a2aeac978d9c933cc3b70ea1ea6ec6e2396de1242774a80"
+      },
+      "actualExitCode": 0,
+      "argv": [
+        "pnpm",
+        "run",
+        "lint:contracts-ready"
+      ],
+      "log": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/lint-contracts.log",
+        "bytes": 30,
+        "sha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5"
+      },
+      "startedAt": "2026-10-09T02:52:09.374873+00:00",
+      "endedAt": "2026-10-09T02:53:19.856349+00:00"
+    },
+    "doc-sync": {
+      "receipt": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/doc-sync-execution.json",
+        "bytes": 545,
+        "sha256": "c7874822d577151466731aaf1b3c68d12a63c43041cf82b63ee50ac7906a4e5c"
+      },
+      "actualExitCode": 1,
+      "argv": [
+        "pnpm",
+        "run",
+        "doc-sync"
+      ],
+      "log": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/doc-sync.log",
+        "bytes": 3105,
+        "sha256": "6d316106cb0c0b4864bc5953928b29b38cc6823f7fb30e7f096f072fe8f15c7f"
+      },
+      "startedAt": "2026-10-09T02:47:55.466723+00:00",
+      "endedAt": "2026-10-09T02:49:11.045219+00:00"
+    },
+    "doc-sync-final": {
+      "receipt": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/doc-sync-final-execution.json",
+        "bytes": 557,
+        "sha256": "1712fd309a7c6ccb10e212162bd967ef89cd6fbb2b73a99393fdbe07e853a17e"
+      },
+      "actualExitCode": 0,
+      "argv": [
+        "pnpm",
+        "run",
+        "doc-sync"
+      ],
+      "log": {
+        "path": "/private/tmp/ark319-source-checks-root-63q37cte/doc-sync-final.log",
+        "bytes": 2536,
+        "sha256": "d6c058e474b8d8570201e74db870cf4e70059f0efc39f7498caa17c4b23690c4"
+      },
+      "startedAt": "2026-10-09T02:52:10.519111+00:00",
+      "endedAt": "2026-10-09T02:53:58.493657+00:00"
+    }
+  },
+  "nativeTestOwner": {
+    "path": "/private/tmp/ark319-native-persona-tests-vea9x6xe/final-native-persona-test-owner-report.json",
+    "bytes": 14374,
+    "sha256": "671027f76281b7ab1a36172e516d9c1bb9213a3e84bf4040fb4665ac88721031"
+  },
+  "nativeTestSourceAndSnapshotPins": [
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/bundle/native-api-app/tests/native-preset-runtime.ts",
+      "relativePath": "packages/bundle/native-api-app/tests/native-preset-runtime.ts",
+      "sha256": "29ae2489f039dcc653535dbb18e7bfb3eb14ce46ee21c3465bf39e029b3e4f2b",
+      "bytes": 3807,
+      "mtimeNs": 1791513546755687012,
+      "mtimeShanghai": "2026-10-09T10:39:06.755687+08:00"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/bundle/native-api-app/tests/native-persona-request.spec.ts",
+      "relativePath": "packages/bundle/native-api-app/tests/native-persona-request.spec.ts",
+      "sha256": "1e32606e091163875d2e2905c83a47ac9ca8c6b488277eaa2261f1dc5c03e407",
+      "bytes": 9609,
+      "mtimeNs": 1791513990653212802,
+      "mtimeShanghai": "2026-10-09T10:46:30.653213+08:00"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-github-main-20261008/packages/bundle/native-api-app/tests/__snapshots__/native-persona-request.spec.ts.snap",
+      "relativePath": "packages/bundle/native-api-app/tests/__snapshots__/native-persona-request.spec.ts.snap",
+      "sha256": "efad1a08d00ba36242b295bb3039a0a5a7538324c38e1d2f244d6fbe195a85bf",
+      "bytes": 104795,
+      "mtimeNs": 1791513657749373803,
+      "mtimeShanghai": "2026-10-09T10:40:57.749374+08:00"
+    }
+  ],
+  "distinctFinalTestCounts": {
+    "personaExisting": 9,
+    "nativeExistingOwnerRegression": 5,
+    "newNativeCompositionAndFullOutput": 4,
+    "totalDistinct": 18
+  },
+  "testsProve": [
+    "actual Native Loader shared standard/code guidance reaches provider request and durable/public persistence header",
+    "minimal complete prompt remains exact",
+    "authored prelude and tool read and final JSON remain complete, unfiltered ordinary output"
+  ],
+  "retainedFailures": [
+    "legacy Native shared-guidance red cases:2 fail and2 pass in isolated private old configs",
+    "initial missing4 snapshots under CI read-only run",
+    "first Host compile public loadStored type errors; corrected to public inspect",
+    "initial target lint assertion any errors; corrected typed assertions",
+    "initial doc-sync29/30: ModelExperience owner format; corrected quoted stable guidance field"
+  ],
+  "independentArchitectureReview": {
+    "path": "/private/tmp/ark-native-exact-output-readonly-review-20261009-pufyhzcx/review.json",
+    "bytes": 27619,
+    "sha256": "39453bb53375d7a0f68d4843844a076b8edfc0c906202128eb7d31daf5757a61"
+  },
+  "architectureReviewScopeLimit": "Review pins predate final README quote and note verification paragraph; production persona bytes remain the reviewed values.",
+  "priorFrozen318NativeOutcome": {
+    "path": "/Users/hui/ark-test/ark-github-main-20261008/scripts/rust-migration/evidence/candidate318-two-fresh-native-window-20261009.json",
+    "bytes": 22463,
+    "sha256": "07793ee2709b74a65ccfc2d6dcd09c2f36a9cb95c88d155d7ab0529a80f66749"
+  },
+  "immutableManifest": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "realNative319": "NOT_RUN",
+  "modelAdherence": "UNKNOWN_PENDING_REAL_TASKS",
+  "verifiedRepairLearning": "UNPROVEN",
+  "generalArithmeticCorrectness": "UNPROVEN",
+  "speedLift": "NOT_ESTABLISHED",
+  "fullHeaderSnapshotPlatform": "POSIX macOS recorded; Linux eligible not freshly run; Windows needs independent actual golden",
+  "formalPromotion": "HOLD",
+  "githubWrites": 0,
+  "activeAppOrHomeWritesByThisSourceSlice": 0,
+  "rustPolicy": "RETAIN_TS_DEFAULT_OFF",
+  "broaderProductCoverageAndCI": "UNKNOWN"
+}

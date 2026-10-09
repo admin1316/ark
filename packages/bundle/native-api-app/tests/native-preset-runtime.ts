@@ -13,7 +13,7 @@ import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 
 const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 
-export async function createNativePresetRuntime() {
+export async function createNativePresetRuntime(extraPatches: readonly PatchOptions[] = []) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-native-code-preset-'))
   const previousHome = process.env.DSH_HOME
   const previousVerifierConfig = process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
@@ -58,10 +58,11 @@ export async function createNativePresetRuntime() {
       { id: 'host-connection', disabled: true },
       { id: 'native-events', disabled: true },
       { id: 'session-telemetry-otel', disabled: true },
+      ...extraPatches,
     ]
     context = await boot('dsh-native-test', rootConfig, patches, (ctx) => {
       provideCmdline(ctx, { args: ['--port', '0'], exit: () => {} })
     })
-    return { context, dispose }
+    return { context, dispose, home }
   } catch (error) { await dispose(); throw error }
 }
