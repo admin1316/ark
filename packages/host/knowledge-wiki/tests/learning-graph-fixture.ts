@@ -30,7 +30,7 @@ export const FIXTURE_TIME = Object.freeze({
   knowledgeExpiry: '2026-10-09T00:00:00.000Z',
 })
 
-export const FIXTURE_METRICS = Object.freeze({
+const FIXTURE_METRICS = Object.freeze({
   repeatedErrorRate: 'lower', repeatedToolCallRate: 'lower', verifiedTaskSuccess: 'higher',
   falseRecallRate: 'lower', staleRecallRate: 'lower', conflictDetectionRate: 'higher',
   memoryCorrectionRate: 'higher', recoverySuccess: 'higher', knowledgeUtility: 'higher',
@@ -184,7 +184,7 @@ export class LearningFixtureSigners {
   }
 }
 
-export const FIXTURE_SOURCE: KnowledgeWikiSourceIdentity = Object.freeze({
+const FIXTURE_SOURCE: KnowledgeWikiSourceIdentity = Object.freeze({
   commit: '15cf20d4ea40e88a9f634d00510ad4b0e2da7f51',
   sourceDigest: sha256('synthetic-source-identity'), dirty: true,
   dirtyDigest: sha256('synthetic-dirty-source'), buildDigest: sha256('synthetic-build-identity-no-build-executed'),
@@ -223,7 +223,7 @@ export class LearningFixtureJournal {
   }
 }
 
-export function fixtureAdmission(record: KnowledgeRecord): JsonObject {
+function fixtureAdmission(record: KnowledgeRecord): JsonObject {
   return {
     id: record.id, content: record.content, source: record.source, sourceHash: record.sourceHash, contentHash: record.contentHash,
     claimKey: record.claimKey ?? null, scope: record.scope, acl: record.acl ?? null,
@@ -249,7 +249,7 @@ function sessionArtifact(artifacts: LearningFixtureArtifacts, session: Session):
 }
 
 /** Append through the actual Session/surface owner, and freeze the original log rather than a restored seed. */
-export function fixtureSession(artifacts: LearningFixtureArtifacts, variant: 'baseline' | 'candidate', binding: {
+function fixtureSession(artifacts: LearningFixtureArtifacts, variant: 'baseline' | 'candidate', binding: {
   run: JsonObject
   grantId: string
   useId: string
@@ -343,12 +343,12 @@ export function fixtureSession(artifacts: LearningFixtureArtifacts, variant: 'ba
   } finally { clock.mockRestore() }
 }
 
-export function fixtureCounts(variant: 'baseline' | 'candidate'): Record<FixtureMetric, FixtureCount> {
+function fixtureCounts(variant: 'baseline' | 'candidate'): Record<FixtureMetric, FixtureCount> {
   return Object.fromEntries(Object.entries(FIXTURE_METRICS).map(([name, direction]) => [name, { numerator: variant === 'candidate' ? direction === 'higher' ? 1 : 0 : direction === 'higher' ? 0 : 1, denominator: 1 }])) as Record<FixtureMetric, FixtureCount>
 }
 
 /** Construct retained semantic v2 bytes by calling the existing real request owner on isolated files. */
-export function fixtureSemantic(artifacts: LearningFixtureArtifacts, signers: LearningFixtureSigners, setup: {
+function fixtureSemantic(artifacts: LearningFixtureArtifacts, signers: LearningFixtureSigners, setup: {
   tag?: string
   times?: FixtureTimes
   target?: { bytes: string; record: KnowledgeRecord; snapshot: JsonObject }
@@ -386,7 +386,6 @@ export function fixtureSemantic(artifacts: LearningFixtureArtifacts, signers: Le
     candidatePath, targetPath, targetAfter, verifiedRecord, action }
 }
 
-export { evaluateLearning, parseEvaluationInput, governancePolicyVersion }
 
 export interface LearningFixtureChanges {
   readonly candidateRecord?: (value: KnowledgeRecord) => KnowledgeRecord

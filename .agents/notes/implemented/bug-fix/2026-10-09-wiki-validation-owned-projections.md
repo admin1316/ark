@@ -14,7 +14,11 @@ Wiki's configured per-file coverage rejects untested error paths even when its o
 
 [The Wiki model projection](../../../../packages/host/knowledge-wiki/src/index.ts) emits review metadata and provenance from one admitted pass. Content admission still checks current bytes before model exposure. The external verifier's private subprocess helper uses its caller's resolved timeout; the verifier hashes the candidate path validated before invocation. No public optional field becomes mandatory.
 
+Model reads capture the session and project scope that authorized the service request before awaiting the Wiki lookup. Retrieved and injected events use that same session owner, and source content hashes remain optional across both projections.
+
 [The learning reducer](../../../../packages/host/knowledge-wiki/src/learning-evaluation.ts) narrows pairs only after both arms have verified status. Incomplete and unverified pairs retain their unknown result. The graph narrows metric names after the required-name check and binds WAL validation to the actual trial supplied by the promotion owner. Authenticated replay preserves existing target sources through all journal transitions; current admission equality still rejects a changed canonical revision.
+
+Static analysis explicitly lists the five Wiki fixture plugins loaded by snapshot YAML as entry files. Unused fixture-helper exports and one script type re-export are removed without changing the helper bodies, loaded plugin exports or evaluation CLI. This distinguishes actual dynamic entry points from internal test implementation.
 
 ## Alternatives considered
 

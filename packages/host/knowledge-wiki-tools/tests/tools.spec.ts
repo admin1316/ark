@@ -87,6 +87,10 @@ function executeForAgent(ctx: Context, agent: Agent, name: string, args: unknown
   return ctx.tools.execute({ signal, callId: CallId(`wiki-${++calls}`), name, arguments: args, agent })
 }
 
+function executeWithoutAgent(ctx: Context, name: string, args: unknown): Promise<ToolExecutionResult> {
+  return ctx.tools.execute({ signal, callId: CallId(`wiki-${++calls}`), name, arguments: args })
+}
+
 function text(result: ToolExecutionResult): string {
   return result.content.filter(block => block.type === 'text').map(block => block.text).join('')
 }
@@ -215,6 +219,14 @@ describe('Knowledge Wiki tool catalog', () => {
     expect(session.events.filter(event => event.type.startsWith('knowledge/'))).toEqual([])
   })
 
+  it('denies model reads without an agent session', async () => {
+    const { ctx, service } = await setup()
+    const result = await executeWithoutAgent(ctx, 'wiki_search', { query: 'claim' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('knowledge scope unavailable')
+    expect(service?.modelSearch).not.toHaveBeenCalled()
+  })
+
   it('searches and renders both empty and ranked results', async () => {
     const { ctx, service } = await setup()
     service?.search.mockResolvedValueOnce([]).mockResolvedValueOnce([
@@ -245,6 +257,22 @@ describe('Knowledge Wiki tool catalog', () => {
     expect(data?.value).toEqual([{ type: 'text', text: '# entities/a.md\n\nverified page' }])
     expect((data?.scope as { sessionId?: string; projectId?: string } | undefined)?.sessionId).toBe('wiki-session')
     expect((data?.scope as { sessionId?: string; projectId?: string } | undefined)?.projectId).toBe(process.cwd())
+  })
+
+  it('keeps the captured session scope when an agent has no id', async () => {
+    const { ctx, service } = await setup()
+    service?.pageContent.mockResolvedValue({ path: 'entities/anonymous.md', content: 'session scoped' })
+    const sessionId = SessionId('wiki-anonymous-agent')
+    const session = Session.create(sessionId, [], { version: 0, id: sessionId, createdAt: Date.now(), cwd: process.cwd() })
+    const agent = { session } as unknown as Agent
+    const result = await executeForAgent(ctx, agent, 'wiki_read', { path: 'entities/anonymous.md' })
+    expect(result.isError).toBe(false)
+    for (const event of session.events.filter(item => item.type.startsWith('knowledge/'))) {
+      expect(event.data).toMatchObject({
+        scope: { sessionId: 'wiki-anonymous-agent', projectId: process.cwd(), workspaceId: process.cwd() },
+      })
+      expect(event.data).not.toHaveProperty('scope.actor')
+    }
   })
 
   it('lists at most sixty paths while reporting the full total', async () => {
@@ -361,6 +389,33 @@ describe('Knowledge Wiki tool catalog', () => {
       knowledgeId: provenance.knowledgeId, sourceHash: provenance.sourceHash, value: reviews.content,
     })
     expect(session.events.filter(event => event.type === 'knowledge/retrieved')).toHaveLength(5)
+  })
+
+  it('omits unavailable source content hashes from retrieved and rendered provenance', async () => {
+    const { ctx, service } = await setup()
+    const sessionId = SessionId('wiki-provenance-without-content-hash')
+    const session = Session.create(sessionId, [], { version: 0, id: sessionId, createdAt: Date.now(), cwd: process.cwd() })
+    const agent = { id: sessionId, session } as unknown as Agent
+    const provenance = {
+      knowledgeId: 'source-without-content-hash', sourceHash: 'c'.repeat(64),
+      trust: 'medium', authority: 'trusted-verifier', evidenceRefs: ['receipt'],
+      verificationStatus: 'verified', expiresAt: null, conflicts: [],
+    }
+    service?.modelSearch.mockResolvedValueOnce([{
+      path: 'concepts/no-source-content-hash.md', score: 0.8, provenance,
+    } as unknown as FakeHit])
+
+    const result = await executeForAgent(ctx, agent, 'wiki_search', { query: 'hash' })
+    expect(result.isError).toBe(false)
+    expect(result.value).toEqual({ hits: [{ path: 'concepts/no-source-content-hash.md', score: 0.8 }] })
+    const knowledgeEvents = session.events.filter(event => event.type === 'knowledge/retrieved' || event.type === 'knowledge/injected')
+    expect(knowledgeEvents).toHaveLength(2)
+    for (const event of knowledgeEvents) {
+      expect(event.data).toMatchObject({ sourceHash: provenance.sourceHash })
+      expect(event.data).not.toHaveProperty('sourceContentHash')
+    }
+    expect(knowledgeEvents[0]?.data).toMatchObject({ knowledgeId: 'wiki:concepts/no-source-content-hash.md' })
+    expect(knowledgeEvents[1]?.data).toMatchObject({ knowledgeId: provenance.knowledgeId })
   })
 
   it('routes all ingestion through the durable queue owner', async () => {

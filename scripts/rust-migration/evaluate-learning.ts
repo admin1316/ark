@@ -7,7 +7,7 @@ import {
 } from '../../packages/host/knowledge-wiki/src/learning-evaluation.ts'
 
 export { evaluateLearning } from '../../packages/host/knowledge-wiki/src/learning-evaluation.ts'
-export type { EvaluationInput, MetricComparison } from '../../packages/host/knowledge-wiki/src/learning-evaluation.ts'
+export type { EvaluationInput } from '../../packages/host/knowledge-wiki/src/learning-evaluation.ts'
 
 /**
  * Evidence references are opaque identifiers, paths, or URLs, but they must

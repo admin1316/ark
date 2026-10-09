@@ -101,6 +101,22 @@ describe('model-facing Wiki runtime boundaries', () => {
     expect(events.filter(event => event.type === 'knowledge/retrieved').map(event => event.payload['path'])).toEqual([pagePath])
   })
 
+  it('records a matching Rust shadow observation while returning governed TypeScript hits', async () => {
+    const value = fixture({ knowledgeSearchCandidateMode: 'shadow' })
+    vi.spyOn(rustSearch, 'runRustKnowledgeSearchCandidate').mockResolvedValue({
+      results: [[{ path: pagePath, score: 0.5 }]],
+      source: 'typescript',
+      observation: { attempted: true, matched: true, status: 'matched', timedOut: false, aborted: false, exitCode: 0, signal: null },
+    })
+    const info = vi.spyOn(value.ctx.logger, 'info').mockImplementation(() => {})
+
+    await expect(value.service.modelSearch({ query: 'boundary' }, value.scope)).resolves.toMatchObject([
+      { path: pagePath, provenance: { contentHash: governance.knowledgeSha256(content) } },
+    ])
+    expect(info).toHaveBeenCalledWith('[knowledge-wiki] Rust search candidate shadow matched TypeScript BM25')
+    expect(readFileSync(join(value.wikiRoot, pagePath), 'utf8')).toBe(content)
+  })
+
   it.each([new Error('synthetic shadow failure'), 'primitive shadow failure'])('contains a shadow provider failure without returning its data: %s', async (failure) => {
     const value = fixture({ knowledgeSearchCandidateMode: 'shadow' })
     vi.spyOn(rustSearch, 'runRustKnowledgeSearchCandidate').mockRejectedValue(failure)

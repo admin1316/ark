@@ -21,7 +21,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { ToolExecution, ToolExecutionResult, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue, Session } from '@deepseek-ai/dsh-session'
 import './session-events.ts'
 
 interface KnowledgeModelProvenance {
@@ -103,7 +103,15 @@ const SEARCH_MAX_RESULTS = 8
 const FILES_MAX = 60
 const READ_MAX_CHARS = 8000
 const REVIEW_MAX = 30
-const renderedProvenance = new Map<string, KnowledgeModelProvenance[]>()
+type SessionEventScope = Required<Pick<KnowledgeAccessContext, 'sessionId' | 'projectId' | 'workspaceId'>>
+type SessionScopedKnowledge = {
+  readonly session: Session
+  readonly scope: SessionEventScope & Pick<KnowledgeAccessContext, 'actor'>
+}
+type PendingKnowledgeProjection = SessionScopedKnowledge & {
+  readonly provenance: KnowledgeModelProvenance[]
+}
+const pendingKnowledgeProjections = new Map<string, PendingKnowledgeProjection>()
 
 /** Resolve the knowledgeWiki service; undefined when the bridge is absent. */
 function wikiService(ctx: Context): ToolKnowledgeWikiService | undefined {
@@ -115,39 +123,43 @@ function textBlock(text: string): Array<{ type: 'text'; text: string }> {
   return [{ type: 'text', text }]
 }
 
-function stableHash(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value ?? null)).digest('hex')
+function stableHash(value: JsonValue): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
 function asJsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue
 }
 
-function sessionScope(exec: Pick<ToolRunContext, 'agent'> | Pick<ToolExecution, 'agent'>): KnowledgeAccessContext | undefined {
-  const session = exec.agent?.session
+function sessionScope(exec: Pick<ToolExecution, 'agent'>): SessionScopedKnowledge | undefined {
+  const agent = exec.agent
+  const session = agent?.session
   if (session === undefined) return undefined
   const cwd = session.header.cwd
   if (cwd === undefined || cwd.trim() === '') return undefined
   const projectId = resolve(cwd)
   return {
-    sessionId: String(session.id),
-    projectId,
-    workspaceId: projectId,
-    ...(exec.agent?.id === undefined ? {} : { actor: String(exec.agent.id) }),
+    session,
+    scope: {
+      sessionId: String(session.id),
+      projectId,
+      workspaceId: projectId,
+      ...(agent?.id === undefined ? {} : { actor: String(agent.id) }),
+    },
   }
 }
 
-function sessionEventScope(scope: KnowledgeAccessContext): { sessionId: string; projectId?: string; workspaceId?: string } {
-  if (scope.sessionId === undefined) throw new Error('knowledge scope is missing session id')
+function sessionEventScope(scope: SessionEventScope): SessionEventScope {
   return {
     sessionId: scope.sessionId,
-    ...(scope.projectId === undefined ? {} : { projectId: scope.projectId }),
-    ...(scope.workspaceId === undefined ? {} : { workspaceId: scope.workspaceId }),
+    projectId: scope.projectId,
+    workspaceId: scope.workspaceId,
   }
 }
 
 function recordKnowledgeResult(
   exec: ToolRunContext,
+  scoped: SessionScopedKnowledge,
   type: 'knowledge/retrieved' | 'knowledge/injected',
   details: {
     kind: 'search' | 'page' | 'graph' | 'reviews' | 'files'
@@ -158,15 +170,16 @@ function recordKnowledgeResult(
     provenance?: KnowledgeModelProvenance
   },
 ): void {
+  const callId = String(exec.callId)
+  const pending = pendingKnowledgeProjections.get(callId) ?? {
+    ...scoped,
+    provenance: [],
+  }
+  pendingKnowledgeProjections.set(callId, pending)
   if (type === 'knowledge/injected') return
-  const session = exec.agent?.session
-  const scope = sessionScope(exec)
-  if (session === undefined || scope === undefined) return
   const resultHash = stableHash(details.value)
   if (details.provenance !== undefined) {
-    const current = renderedProvenance.get(String(exec.callId)) ?? []
-    current.push(details.provenance)
-    renderedProvenance.set(String(exec.callId), current)
+    pending.provenance.push(details.provenance)
   }
   const base = {
     knowledgeId: `wiki:${details.path}`,
@@ -175,7 +188,7 @@ function recordKnowledgeResult(
     contentHash: stableHash(details.value),
     tool: exec.name,
     callId: String(exec.callId),
-    scope: sessionEventScope(scope),
+    scope: sessionEventScope(scoped.scope),
     value: details.value,
     ...(details.provenance === undefined ? {} : {
       sourceHash: details.provenance.sourceHash,
@@ -188,7 +201,7 @@ function recordKnowledgeResult(
       conflicts: [...details.provenance.conflicts],
     }),
   }
-  session.append('knowledge/retrieved', {
+  scoped.session.append('knowledge/retrieved', {
     ...base,
     kind: details.kind,
     allowed: true,
@@ -197,10 +210,15 @@ function recordKnowledgeResult(
 }
 
 function recordRenderedKnowledgeResult(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): void {
-  if (result.isError || !['wiki_search', 'wiki_files', 'wiki_read', 'wiki_graph', 'wiki_reviews'].includes(exec.name)) return
-  const session = exec.agent?.session
-  const scope = sessionScope(exec)
-  if (session === undefined || scope === undefined) return
+  const callId = String(exec.callId)
+  if (result.isError) {
+    pendingKnowledgeProjections.delete(callId)
+    return
+  }
+  if (!['wiki_search', 'wiki_files', 'wiki_read', 'wiki_graph', 'wiki_reviews'].includes(exec.name)) return
+  // Every successful model-read handler records this owner before tools/result is emitted.
+  const pending = pendingKnowledgeProjections.get(callId) as PendingKnowledgeProjection
+  pendingKnowledgeProjections.delete(callId)
   const rendered = asJsonValue(result.content)
   const kind = exec.name.slice('wiki_'.length) as 'search' | 'files' | 'read' | 'graph' | 'reviews'
   const rawValue = result.value
@@ -208,8 +226,7 @@ function recordRenderedKnowledgeResult(exec: Readonly<ToolExecution>, result: Re
     && typeof (rawValue as { path?: unknown }).path === 'string'
     ? (rawValue as { path: string }).path
     : `tool:${exec.name}`
-  const provenance = renderedProvenance.get(String(exec.callId)) ?? []
-  renderedProvenance.delete(String(exec.callId))
+  const { session, scope, provenance } = pending
   const rows = provenance.length === 0 ? [undefined] : [...new Map(provenance.map(item => [item.knowledgeId, item])).values()]
   for (const item of rows) {
     session.append('knowledge/injected', {
@@ -304,15 +321,15 @@ export function apply(ctx: Context, config: Config = {}): void {
     async execute(args: { query: string }, exec) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const scope = sessionScope(exec)
-      if (scope === undefined) throw new Error('knowledge scope unavailable')
-      const hits = await service.modelSearch({ query: args.query, topK: SEARCH_MAX_RESULTS }, scope, exec.signal)
+      const scoped = sessionScope(exec)
+      if (scoped === undefined) throw new Error('knowledge scope unavailable')
+      const hits = await service.modelSearch({ query: args.query, topK: SEARCH_MAX_RESULTS }, scoped.scope, exec.signal)
       const visibleHits = hits.map(({ path, score }) => ({ path, score }))
-      for (const hit of hits) recordKnowledgeResult(exec, 'knowledge/retrieved', {
+      for (const hit of hits) recordKnowledgeResult(exec, scoped, 'knowledge/retrieved', {
         kind: 'search', path: hit.path, value: asJsonValue({ path: hit.path, score: hit.score }), contentBytes: JSON.stringify(hit).length,
         provenance: hit.provenance,
       })
-      recordKnowledgeResult(exec, 'knowledge/injected', {
+      recordKnowledgeResult(exec, scoped, 'knowledge/injected', {
         kind: 'search', path: `search:${args.query}`, value: asJsonValue({ hits: visibleHits }), contentBytes: JSON.stringify(visibleHits).length,
       })
       return { hits: visibleHits }
@@ -340,21 +357,21 @@ export function apply(ctx: Context, config: Config = {}): void {
     async execute(_args: Record<string, never>, exec) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const scope = sessionScope(exec)
-      if (scope === undefined) throw new Error('knowledge scope unavailable')
-      const entries = await service.modelList(scope)
+      const scoped = sessionScope(exec)
+      if (scoped === undefined) throw new Error('knowledge scope unavailable')
+      const entries = await service.modelList(scoped.scope)
       const value = { files: entries.slice(0, FILES_MAX).map(entry => entry.path), total: entries.length }
       for (const entry of entries.slice(0, FILES_MAX)) {
         if (entry.provenance === undefined) continue
-        recordKnowledgeResult(exec, 'knowledge/retrieved', {
+        recordKnowledgeResult(exec, scoped, 'knowledge/retrieved', {
           kind: 'files', path: entry.path, value: asJsonValue({ path: entry.path }), contentBytes: entry.path.length,
           provenance: entry.provenance,
         })
       }
-      recordKnowledgeResult(exec, 'knowledge/retrieved', {
+      recordKnowledgeResult(exec, scoped, 'knowledge/retrieved', {
         kind: 'files', path: 'files', value: asJsonValue(value), contentBytes: JSON.stringify(value).length,
       })
-      recordKnowledgeResult(exec, 'knowledge/injected', {
+      recordKnowledgeResult(exec, scoped, 'knowledge/injected', {
         kind: 'files', path: 'files', value: asJsonValue(value), contentBytes: JSON.stringify(value).length,
       })
       return value
@@ -386,17 +403,17 @@ export function apply(ctx: Context, config: Config = {}): void {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
       const path = wikiRootRelativePath(args.path)
-      const scope = sessionScope(exec)
-      if (scope === undefined) throw new Error('knowledge scope unavailable')
-      const page = await service.modelPageContent({ path }, scope)
+      const scoped = sessionScope(exec)
+      if (scoped === undefined) throw new Error('knowledge scope unavailable')
+      const page = await service.modelPageContent({ path }, scoped.scope)
       if (page.content === '') throw new Error(`page not found or unreadable: ${args.path}`)
       const truncated = page.content.length > READ_MAX_CHARS
       const content = page.content.slice(0, READ_MAX_CHARS)
       const value = { path: page.path, content, truncated }
-      recordKnowledgeResult(exec, 'knowledge/retrieved', {
+      recordKnowledgeResult(exec, scoped, 'knowledge/retrieved', {
         kind: 'page', path: page.path, value, contentBytes: content.length, truncated, provenance: page.provenance,
       })
-      recordKnowledgeResult(exec, 'knowledge/injected', {
+      recordKnowledgeResult(exec, scoped, 'knowledge/injected', {
         kind: 'page', path: page.path, value, contentBytes: content.length, truncated,
       })
       return value
@@ -458,9 +475,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     async execute(args: { query?: string; nodeType?: string; limit?: number }, exec) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const scope = sessionScope(exec)
-      if (scope === undefined) throw new Error('knowledge scope unavailable')
-      const graph = await service.modelGraph(scope)
+      const scoped = sessionScope(exec)
+      if (scoped === undefined) throw new Error('knowledge scope unavailable')
+      const graph = await service.modelGraph(scoped.scope)
       const q = args.query?.toLowerCase()
       const t = args.nodeType?.toLowerCase()
       const limit = Math.min(args.limit ?? 20, 100)
@@ -478,15 +495,15 @@ export function apply(ctx: Context, config: Config = {}): void {
       for (const node of nodes) {
         const provenance = graph.provenance[node.id]
         if (provenance === undefined) continue
-        recordKnowledgeResult(exec, 'knowledge/retrieved', {
+        recordKnowledgeResult(exec, scoped, 'knowledge/retrieved', {
           kind: 'graph', path: node.path, value: asJsonValue(node), contentBytes: JSON.stringify(node).length,
           provenance,
         })
       }
-      recordKnowledgeResult(exec, 'knowledge/retrieved', {
+      recordKnowledgeResult(exec, scoped, 'knowledge/retrieved', {
         kind: 'graph', path: `graph:${args.query ?? ''}`, value: asJsonValue(value), contentBytes: JSON.stringify(value).length,
       })
-      recordKnowledgeResult(exec, 'knowledge/injected', {
+      recordKnowledgeResult(exec, scoped, 'knowledge/injected', {
         kind: 'graph', path: `graph:${args.query ?? ''}`, value: asJsonValue(value), contentBytes: JSON.stringify(value).length,
       })
       return value
@@ -527,9 +544,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     async execute(_args: Record<string, never>, exec) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const scope = sessionScope(exec)
-      if (scope === undefined) throw new Error('knowledge scope unavailable')
-      const reviews = await service.modelReviews({ status: 'unresolved', limit: REVIEW_MAX }, scope)
+      const scoped = sessionScope(exec)
+      if (scoped === undefined) throw new Error('knowledge scope unavailable')
+      const reviews = await service.modelReviews({ status: 'unresolved', limit: REVIEW_MAX }, scoped.scope)
       const value = {
         reviews: reviews.map(review => ({
           id: review.id,
@@ -540,15 +557,15 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
       for (const review of reviews) {
         if (review.provenance === undefined) continue
-        recordKnowledgeResult(exec, 'knowledge/retrieved', {
+        recordKnowledgeResult(exec, scoped, 'knowledge/retrieved', {
           kind: 'reviews', path: review.id, value: asJsonValue(review), contentBytes: JSON.stringify(review).length,
           provenance: review.provenance,
         })
       }
-      recordKnowledgeResult(exec, 'knowledge/retrieved', {
+      recordKnowledgeResult(exec, scoped, 'knowledge/retrieved', {
         kind: 'reviews', path: 'reviews', value: asJsonValue(value), contentBytes: JSON.stringify(value).length,
       })
-      recordKnowledgeResult(exec, 'knowledge/injected', {
+      recordKnowledgeResult(exec, scoped, 'knowledge/injected', {
         kind: 'reviews', path: 'reviews', value: asJsonValue(value), contentBytes: JSON.stringify(value).length,
       })
       return value
