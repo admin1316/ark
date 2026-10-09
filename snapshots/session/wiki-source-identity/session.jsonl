@@ -16,7 +16,7 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_wiki_search_1","name":"wiki_search","arguments":"{\"query\":\"source identity\"}"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":0,"outputTokens":0}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_wiki_search_1","name":"wiki_search","arguments":"{\"query\":\"source identity\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:3}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[[12,16]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_wiki_search_1","name":"wiki_search","arguments":"{\"query\":\"source identity\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:3}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[12,13,14,15,16],"surfaceOp":"append"}
 {"type":"tool/call","data":{"turn":1,"step":1,"callId":"call_wiki_search_1","name":"wiki_search","arguments":"{\"query\":\"source identity\"}"}}
 {"type":"tool/result","data":{"turn":1,"step":1,"message":{"source":{"kind":"tool","callId":"call_wiki_search_1"},"content":[{"type":"tool-result","toolCallId":"call_wiki_search_1","content":[{"type":"text","text":"Error: ambiguous knowledge source ownership"}],"isError":true}],"role":"user","id":"{{message:4}}"}},"sourceEventSeqs":[18],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":1}}
@@ -26,7 +26,7 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_wiki_read_2","name":"wiki_read","arguments":"{\"path\":\"concepts/source-identity.md\"}"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"usage","usage":{"inputTokens":0,"outputTokens":0}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_wiki_read_2","name":"wiki_read","arguments":"{\"path\":\"concepts/source-identity.md\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:5}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[[22,26]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_wiki_read_2","name":"wiki_read","arguments":"{\"path\":\"concepts/source-identity.md\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:5}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[22,23,24,25,26],"surfaceOp":"append"}
 {"type":"tool/call","data":{"turn":1,"step":2,"callId":"call_wiki_read_2","name":"wiki_read","arguments":"{\"path\":\"concepts/source-identity.md\"}"}}
 {"type":"tool/result","data":{"turn":1,"step":2,"message":{"source":{"kind":"tool","callId":"call_wiki_read_2"},"content":[{"type":"tool-result","toolCallId":"call_wiki_read_2","content":[{"type":"text","text":"Error: ambiguous knowledge source ownership"}],"isError":true}],"role":"user","id":"{{message:6}}"}},"sourceEventSeqs":[28],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":2}}
@@ -36,7 +36,7 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_wiki_files_3","name":"wiki_files","arguments":"{}"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"usage","usage":{"inputTokens":0,"outputTokens":0}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":3,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_wiki_files_3","name":"wiki_files","arguments":"{}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:7}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[[32,36]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":3,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_wiki_files_3","name":"wiki_files","arguments":"{}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:7}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[32,33,34,35,36],"surfaceOp":"append"}
 {"type":"tool/call","data":{"turn":1,"step":3,"callId":"call_wiki_files_3","name":"wiki_files","arguments":"{}"}}
 {"type":"tool/result","data":{"turn":1,"step":3,"message":{"source":{"kind":"tool","callId":"call_wiki_files_3"},"content":[{"type":"tool-result","toolCallId":"call_wiki_files_3","content":[{"type":"text","text":"Error: ambiguous knowledge source ownership"}],"isError":true}],"role":"user","id":"{{message:8}}"}},"sourceEventSeqs":[38],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":3}}
@@ -46,7 +46,7 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":4,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_wiki_graph_4","name":"wiki_graph","arguments":"{}"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":4,"chunk":{"type":"usage","usage":{"inputTokens":0,"outputTokens":0}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":4,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":4,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_wiki_graph_4","name":"wiki_graph","arguments":"{}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:9}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[[42,46]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":4,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_wiki_graph_4","name":"wiki_graph","arguments":"{}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:9}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[42,43,44,45,46],"surfaceOp":"append"}
 {"type":"tool/call","data":{"turn":1,"step":4,"callId":"call_wiki_graph_4","name":"wiki_graph","arguments":"{}"}}
 {"type":"tool/result","data":{"turn":1,"step":4,"message":{"source":{"kind":"tool","callId":"call_wiki_graph_4"},"content":[{"type":"tool-result","toolCallId":"call_wiki_graph_4","content":[{"type":"text","text":"Error: ambiguous knowledge source ownership"}],"isError":true}],"role":"user","id":"{{message:10}}"}},"sourceEventSeqs":[48],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":4}}
@@ -56,7 +56,7 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":5,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_wiki_reviews_5","name":"wiki_reviews","arguments":"{}"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":5,"chunk":{"type":"usage","usage":{"inputTokens":0,"outputTokens":0}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":5,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":5,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_wiki_reviews_5","name":"wiki_reviews","arguments":"{}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:11}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[[52,56]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":5,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_wiki_reviews_5","name":"wiki_reviews","arguments":"{}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:11}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[52,53,54,55,56],"surfaceOp":"append"}
 {"type":"tool/call","data":{"turn":1,"step":5,"callId":"call_wiki_reviews_5","name":"wiki_reviews","arguments":"{}"}}
 {"type":"tool/result","data":{"turn":1,"step":5,"message":{"source":{"kind":"tool","callId":"call_wiki_reviews_5"},"content":[{"type":"tool-result","toolCallId":"call_wiki_reviews_5","content":[{"type":"text","text":"Error: ambiguous knowledge source ownership"}],"isError":true}],"role":"user","id":"{{message:12}}"}},"sourceEventSeqs":[58],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":5}}
@@ -66,6 +66,6 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":6,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"The page is unavailable because authenticated records claim the same source. All five Wiki reads were denied. No measured task improvement is asserted."}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":6,"chunk":{"type":"usage","usage":{"inputTokens":0,"outputTokens":0}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":6,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":6,"message":{"role":"assistant","content":[{"type":"text","text":"The page is unavailable because authenticated records claim the same source. All five Wiki reads were denied. No measured task improvement is asserted."}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:13}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[[62,66]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":6,"message":{"role":"assistant","content":[{"type":"text","text":"The page is unavailable because authenticated records claim the same source. All five Wiki reads were denied. No measured task improvement is asserted."}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:13}}"},"usage":{"inputTokens":0,"outputTokens":0}},"sourceEventSeqs":[62,63,64,65,66],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":6}}
 {"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}
