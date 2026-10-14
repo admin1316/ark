@@ -8,7 +8,8 @@
  * Only non-deterministic boundaries are doubled: the model endpoint is a local
  * HTTP server the owned isolate really calls over the network stack, the
  * embedding endpoint is a stubbed global fetch (network), and the parent-owned
- * stage isolate is an in-process adapter. Every filesystem, queue, graph,
+ * stage isolate is an in-process adapter. One exact raw leaf can supply a
+ * special-file metadata classification. Every filesystem, queue, graph,
  * review and ingest behavior below is the production implementation running
  * against a real temp-dir workspace.
  */
@@ -102,6 +103,15 @@ const roots: string[] = []
 const contexts: Context[] = []
 const services: ClosureSurface[] = []
 const servers: Server[] = []
+const nonRegularSources = vi.hoisted(() => new Set<string>())
+vi.mock('node:fs', async (original) => {
+  const actual = await original<typeof import('node:fs')>()
+  return { ...actual, lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+    const stat = actual.lstatSync(...args)
+    if (stat === undefined || !nonRegularSources.has(String(args[0]))) return stat
+    return Object.assign(Object.create(stat), { isFile: () => false }) as typeof stat
+  } }
+})
 
 function tempRoot(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix))
@@ -232,6 +242,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  nonRegularSources.clear()
   for (const server of servers.splice(0)) {
     await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
   }
@@ -469,6 +480,15 @@ describe('review and verification gates', () => {
 })
 
 describe('raw source tree safety', () => {
+  it('refuses a special raw-source metadata observation before queue admission', async () => {
+    const sources = resetRawSources(root), entry = join(sources, 'special.md')
+    writeFileSync(entry, 'preserved raw-source bytes')
+    nonRegularSources.add(entry)
+    await expect(service.scanSources()).rejects.toThrow('non-regular raw source is not allowed')
+    expect((await service.ingestQueueStatus()).tasks).toEqual([])
+    expect(readFileSync(entry, 'utf8')).toBe('preserved raw-source bytes')
+  })
+
   it('refuses a source root that is not an ordinary directory', async () => {
     const sources = join(root, 'raw', 'sources')
     rmSync(sources, { recursive: true, force: true })
@@ -496,8 +516,8 @@ describe('raw source tree safety', () => {
   it('refuses non-regular, hard-linked, and oversized raw sources', async () => {
     const sources = resetRawSources(root)
     if (process.platform !== 'win32') {
-      // mkfifo is POSIX-only; the non-regular refusal contract on win32 is
-      // covered by the symlink/hard-link cases in this same test.
+      // Native FIFO evidence is POSIX-only; the separate special metadata
+      // case covers this refusal branch on Windows without claiming a FIFO.
       execFileSync('/usr/bin/mkfifo', [join(sources, 'pipe.md')])
       await expect(service.scanSources()).rejects.toThrow('non-regular raw source is not allowed')
     }

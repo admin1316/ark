@@ -100,17 +100,24 @@ describe('private Native channel', () => {
     await expect(fixture({ socketPath: join(tmpdir(), `ark-missing-${randomUUID()}`, 'owner.sock') })).rejects.toThrow()
   })
   it.runIf(process.platform === 'win32')('refuses a Windows pipe as a trusted Unix owner without publishing authority', async () => {
-    const owner = await fixture({ attestWindowsPipe: false })
+    const helloPeer = vi.fn()
+    const owner = await fixture({ attestWindowsPipe: false, helloPeer })
     await expect(connectNativeKnowledgeOwner(owner.endpoint)).rejects.toThrow()
     await expect(connectNativeGuardCostOwner(owner.endpoint)).rejects.toThrow()
-    expect(owner.peers.size).toBe(0)
+    // Windows lstat itself opens the pipe for attributes. Join those real
+    // probe peers before asserting quiescence; no protocol handshake is sent.
+    await vi.waitFor(() => { expect(owner.peers.size).toBe(0) })
+    expect(helloPeer).not.toHaveBeenCalled()
+    expect(owner.requests).toEqual([])
     vi.stubEnv('ARK_NATIVE_OWNER_SOCKET_PATH', owner.endpoint.socketPath); vi.stubEnv('ARK_NATIVE_OWNER_LAUNCH_TOKEN', token)
     const context = new Context(); cleanups.push(() => context.fiber.dispose())
     provideCmdline(context, { args: [], exit: () => {} })
     await expect(Startup.apply(context)).rejects.toThrow()
     expect(context.get('knowledgeWikiVerifierAuthority')).toBeUndefined()
     expect(context.get('nativeApiStartup')).toBeUndefined()
-    expect(owner.peers.size).toBe(0)
+    await vi.waitFor(() => { expect(owner.peers.size).toBe(0) })
+    expect(helloPeer).not.toHaveBeenCalled()
+    expect(owner.requests).toEqual([])
   })
   it('keeps absent configuration and a disabled handshake without authority providers', async () => {
     expect(nativeKnowledgeOwnerEndpointFromEnvironment({})).toBeUndefined()

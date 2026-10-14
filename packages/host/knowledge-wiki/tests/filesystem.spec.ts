@@ -42,7 +42,7 @@ describe('confined Wiki filesystem contracts', () => {
     expect(readConfinedText(root, 'concepts/nested/page.md')).toBe('中文 page')
     expect(readConfinedText(root, 'concepts/nested/page.md', Buffer.byteLength('中文 page'))).toBe('中文 page')
     expect(() => readConfinedText(root, 'concepts/nested/page.md', 2)).toThrow('file exceeds 2 bytes')
-    const stat = lstatSync(join(dir, 'page.md'))
+    const stat = lstatSync(join(dir, 'page.md'), { bigint: true })
     expect(inodeIdentity(join(dir, 'page.md'))).toBe(`${stat.dev}:${stat.ino}`)
   })
 

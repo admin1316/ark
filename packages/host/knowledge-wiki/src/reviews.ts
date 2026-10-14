@@ -588,14 +588,14 @@ function assertPromotionOperationConfined(
 
 function writePromotionStage(path: string, content: string): void {
   if (pathEntryExists(path)) {
-    const before = lstatSync(path)
-    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) {
+    const before = lstatSync(path, { bigint: true })
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n) {
       throw new Error(`unsafe promotion stage at ${path}`)
     }
     const descriptor = openSync(path, (process.platform === 'win32' ? constants.O_RDWR : constants.O_RDONLY) | constants.O_NOFOLLOW)
     try {
-      const opened = fstatSync(descriptor)
-      if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== before.dev || opened.ino !== before.ino) {
+      const opened = fstatSync(descriptor, { bigint: true })
+      if (!opened.isFile() || opened.nlink !== 1n || opened.dev !== before.dev || opened.ino !== before.ino) {
         throw new Error(`promotion stage identity changed while opening: ${path}`)
       }
       if (opened.size > 8 * 1024 * 1024) throw new Error(`promotion stage conflict at ${path}`)
@@ -609,19 +609,19 @@ function writePromotionStage(path: string, content: string): void {
         if (total > 8 * 1024 * 1024) throw new Error(`promotion stage conflict at ${path}`)
         chunks.push(chunk.subarray(0, count))
       }
-      const afterRead = fstatSync(descriptor)
-      const namedAfterRead = lstatSync(path)
-      if (afterRead.dev !== opened.dev || afterRead.ino !== opened.ino || afterRead.nlink !== 1
-        || afterRead.size !== opened.size || afterRead.mtimeMs !== opened.mtimeMs
-        || namedAfterRead.dev !== opened.dev || namedAfterRead.ino !== opened.ino || namedAfterRead.nlink !== 1
+      const afterRead = fstatSync(descriptor, { bigint: true })
+      const namedAfterRead = lstatSync(path, { bigint: true })
+      if (afterRead.dev !== opened.dev || afterRead.ino !== opened.ino || afterRead.nlink !== 1n
+        || afterRead.size !== opened.size || afterRead.mtimeNs !== opened.mtimeNs
+        || namedAfterRead.dev !== opened.dev || namedAfterRead.ino !== opened.ino || namedAfterRead.nlink !== 1n
         || Buffer.concat(chunks, total).toString('utf8') !== content) {
         throw new Error(`promotion stage conflict at ${path}`)
       }
       fsyncSync(descriptor)
-      const after = fstatSync(descriptor)
-      const named = lstatSync(path)
-      if (after.dev !== opened.dev || after.ino !== opened.ino || after.nlink !== 1
-        || named.dev !== opened.dev || named.ino !== opened.ino || named.nlink !== 1) {
+      const after = fstatSync(descriptor, { bigint: true })
+      const named = lstatSync(path, { bigint: true })
+      if (after.dev !== opened.dev || after.ino !== opened.ino || after.nlink !== 1n
+        || named.dev !== opened.dev || named.ino !== opened.ino || named.nlink !== 1n) {
         throw new Error(`promotion stage identity changed while syncing: ${path}`)
       }
     } finally {

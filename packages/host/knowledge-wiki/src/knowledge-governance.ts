@@ -620,13 +620,13 @@ export function readKnowledgeEventLog(path: string, authority?: KnowledgeEventAu
  */
 function syncKnowledgeEventLogDescriptor(path: string, fileDescriptor: number): void {
   const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW
-  const fileBefore = lstatSync(path)
-  if (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1) throw new Error('unsafe knowledge event log')
-  const openedFile = fstatSync(fileDescriptor)
-  const fileAfter = lstatSync(path)
-  const openedFileMatchesPath = openedFile.isFile() && openedFile.nlink === 1 &&
+  const fileBefore = lstatSync(path, { bigint: true })
+  if (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1n) throw new Error('unsafe knowledge event log')
+  const openedFile = fstatSync(fileDescriptor, { bigint: true })
+  const fileAfter = lstatSync(path, { bigint: true })
+  const openedFileMatchesPath = openedFile.isFile() && openedFile.nlink === 1n &&
     openedFile.dev === fileBefore.dev && openedFile.ino === fileBefore.ino
-  const pathStillMatchesOpenedFile = fileAfter.isFile() && !fileAfter.isSymbolicLink() && fileAfter.nlink === 1 &&
+  const pathStillMatchesOpenedFile = fileAfter.isFile() && !fileAfter.isSymbolicLink() && fileAfter.nlink === 1n &&
     fileAfter.dev === openedFile.dev && fileAfter.ino === openedFile.ino
   if (!openedFileMatchesPath || !pathStillMatchesOpenedFile) {
     throw new Error('unsafe knowledge event log')
@@ -634,13 +634,13 @@ function syncKnowledgeEventLogDescriptor(path: string, fileDescriptor: number): 
   fsyncSync(fileDescriptor)
 
   const parentPath = dirname(path)
-  const directoryBefore = lstatSync(parentPath)
+  const directoryBefore = lstatSync(parentPath, { bigint: true })
   if (!directoryBefore.isDirectory() || directoryBefore.isSymbolicLink()) throw new Error('unsafe knowledge event log parent')
   const directoryFlags = constants.O_RDONLY | constants.O_DIRECTORY | noFollow
   const directoryDescriptor = openSync(parentPath, directoryFlags)
   try {
-    const openedDirectory = fstatSync(directoryDescriptor)
-    const directoryAfter = lstatSync(parentPath)
+    const openedDirectory = fstatSync(directoryDescriptor, { bigint: true })
+    const directoryAfter = lstatSync(parentPath, { bigint: true })
     const openedDirectoryMatchesPath = openedDirectory.isDirectory() &&
       openedDirectory.dev === directoryBefore.dev && openedDirectory.ino === directoryBefore.ino
     const pathStillMatchesOpenedDirectory = directoryAfter.isDirectory() && !directoryAfter.isSymbolicLink() &&
@@ -667,12 +667,12 @@ function syncKnowledgeEventLogDescriptor(path: string, fileDescriptor: number): 
  */
 export function syncKnowledgeEventLog(path: string): void {
   const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW
-  const fileBefore = lstatSync(path)
-  if (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1) throw new Error('unsafe knowledge event log')
+  const fileBefore = lstatSync(path, { bigint: true })
+  if (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1n) throw new Error('unsafe knowledge event log')
   const fileDescriptor = openSync(path, constants.O_WRONLY | noFollow)
   try {
-    const openedFile = fstatSync(fileDescriptor)
-    if (!openedFile.isFile() || openedFile.nlink !== 1 || fileBefore.dev !== openedFile.dev || fileBefore.ino !== openedFile.ino) {
+    const openedFile = fstatSync(fileDescriptor, { bigint: true })
+    if (!openedFile.isFile() || openedFile.nlink !== 1n || fileBefore.dev !== openedFile.dev || fileBefore.ino !== openedFile.ino) {
       throw new Error('unsafe knowledge event log')
     }
     syncKnowledgeEventLogDescriptor(path, fileDescriptor)
@@ -700,36 +700,36 @@ export function appendKnowledgeEvent(path: string, event: KnowledgeEvent): void 
   const encodedEvent = `${JSON.stringify(event)}\n`
   const encodedEventBytes = Buffer.byteLength(encodedEvent, 'utf8')
   const readExisting = () => {
-    try { return lstatSync(path) }
+    try { return lstatSync(path, { bigint: true }) }
     catch (error) {
       if (typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT') return undefined
       throw error
     }
   }
-  const assertAppendFits = (existingBytes: number) => {
-    if (existingBytes + encodedEventBytes > MAX_KNOWLEDGE_EVENT_LOG_BYTES) {
+  const assertAppendFits = (existingBytes: bigint) => {
+    if (existingBytes + BigInt(encodedEventBytes) > BigInt(MAX_KNOWLEDGE_EVENT_LOG_BYTES)) {
       throw new Error(`knowledge event log exceeds ${MAX_KNOWLEDGE_EVENT_LOG_BYTES} byte limit`)
     }
   }
   let fileBefore = readExisting()
-  if (fileBefore !== undefined && (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1)) {
+  if (fileBefore !== undefined && (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1n)) {
     throw new Error('unsafe knowledge event log')
   }
-  assertAppendFits(fileBefore?.size ?? 0)
+  assertAppendFits(fileBefore?.size ?? 0n)
 
   // Reject an over-limit append before creating a missing parent or log file.
   mkdirSync(dirname(path), { recursive: true })
   fileBefore = readExisting()
-  if (fileBefore !== undefined && (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1)) {
+  if (fileBefore !== undefined && (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1n)) {
     throw new Error('unsafe knowledge event log')
   }
-  assertAppendFits(fileBefore?.size ?? 0)
+  assertAppendFits(fileBefore?.size ?? 0n)
   const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW
   const descriptor = openSync(path, constants.O_CREAT | constants.O_APPEND | constants.O_WRONLY | noFollow, 0o600)
   try {
-    const openedFile = fstatSync(descriptor)
-    const fileAfter = lstatSync(path)
-    if (!openedFile.isFile() || openedFile.nlink !== 1 || !fileAfter.isFile() || fileAfter.isSymbolicLink() || fileAfter.nlink !== 1 ||
+    const openedFile = fstatSync(descriptor, { bigint: true })
+    const fileAfter = lstatSync(path, { bigint: true })
+    if (!openedFile.isFile() || openedFile.nlink !== 1n || !fileAfter.isFile() || fileAfter.isSymbolicLink() || fileAfter.nlink !== 1n ||
       (fileBefore !== undefined && (fileBefore.dev !== openedFile.dev || fileBefore.ino !== openedFile.ino)) ||
       fileAfter.dev !== openedFile.dev || fileAfter.ino !== openedFile.ino) throw new Error('unsafe knowledge event log')
     assertAppendFits(openedFile.size)

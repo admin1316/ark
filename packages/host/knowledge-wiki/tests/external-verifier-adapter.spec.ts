@@ -609,6 +609,29 @@ describe('external verifier adapter', () => {
     await expect(pending).rejects.toThrow('aborted')
   }, 15_000)
 
+  it('formats a typed signal outcome only after the real child is quiescent', async () => {
+    const fixture = authorityFixture()
+    let joined = false
+    const subprocess: Pick<SubprocessRuntime, 'resolveExecutable' | 'spawn'> = {
+      resolveExecutable: (...args) => verifierSubprocess.resolveExecutable(...args),
+      spawn: (spec) => {
+        const owned = verifierSubprocess.spawn(spec)
+        return { ...owned,
+          // This observation tests the typed diagnostic branch. Windows's
+          // real self-signal outcome remains exit 1 with no recorded signal.
+          done: owned.done.then(outcome => ({ ...outcome, signal: 'SIGTERM' as const })),
+          waitForExit: async (signal) => { joined = await owned.waitForExit(signal); return joined },
+        }
+      },
+    }
+    const authority = createExternalVerifierAuthority(authorityOptions(fixture, { subprocess,
+      args: rawVerifierScript('process.stdin.resume(); process.stdin.on("end", () => { process.stderr.write("typed signal diagnostic"); process.exitCode = 6 })'),
+    }))
+    await expect(authority.verifyCandidate(request, new AbortController().signal))
+      .rejects.toThrow('external verifier exited 6 (SIGTERM): typed signal diagnostic')
+    expect(joined).toBe(true)
+  })
+
   it('caps retained stderr and force-kills a child that ignores SIGTERM after output overflow', async () => {
     const fixture = authorityFixture()
     const largeStderr = createExternalVerifierAuthority(authorityOptions(fixture, {

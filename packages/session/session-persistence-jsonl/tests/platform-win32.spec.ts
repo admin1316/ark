@@ -12,11 +12,11 @@
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { lstat, mkdir, mkdtemp, readdir, rename, rm, symlink } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { encodeSegment, sessionDir } from '../src/format.ts'
+import { encodeSegment, logPath, sessionDir } from '../src/format.ts'
 import { meta, oneTurnLog } from '../../session-persistence/tests/contract.ts'
 
 /** The platform this test process really runs on; the link type needs it, not the stub. */
@@ -117,4 +117,36 @@ it('refuses a tombstone root the Windows primitive published as a reparse point'
   expect(win32State.published).toEqual([])
   expect(await readdir(outside)).toEqual([])
   expect((await ctx.sessionPersistence.load(target.id)).events).toEqual(oneTurnLog())
+})
+
+it('dispatches POSIX deletion with real publication and the ordered directory-sync boundary', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+  const { ctx, root } = await mountWindows()
+  const target = meta('posix-dispatch-target', '/work'), sibling = meta('posix-dispatch-sibling', '/work')
+  for (const header of [target, sibling]) {
+    await ctx.sessionPersistence.create(header)
+    await ctx.sessionPersistence.append(header.id, oneTurnLog())
+  }
+  const directory = sessionDir(root, target.cwd, target.id), project = dirname(directory)
+  const tombstoneRoot = join(project, '~delete')
+  const siblingLog = logPath(root, sibling.cwd, sibling.id, 'none'), siblingBytes = await readFile(siblingLog)
+  const syncPaths: string[] = []
+  // This private syscall boundary performs unsupported directory fsync on
+  // Windows. Keep mkdir/rename/rm real; POSIX hosts also execute the real sync.
+  const persistence = ctx.sessionPersistence as unknown as { syncDirPosix(path: string): Promise<void> }
+  const actualSync = persistence.syncDirPosix.bind(persistence)
+  vi.spyOn(persistence, 'syncDirPosix').mockImplementation(async (path) => {
+    syncPaths.push(path)
+    if (hostPlatform !== 'win32') await actualSync(path)
+  })
+  win32State.ensured = []; win32State.published = []
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+  await expect(ctx.sessionPersistence.delete(target.id)).resolves.toBe(true)
+  expect(syncPaths).toEqual([project, project, tombstoneRoot, tombstoneRoot])
+  expect(win32State.ensured).toEqual([])
+  expect(win32State.published).toEqual([])
+  await expect(lstat(directory)).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(await readdir(tombstoneRoot)).toEqual([])
+  expect((await ctx.sessionPersistence.load(sibling.id)).events).toEqual(oneTurnLog())
+  expect(await readFile(siblingLog)).toEqual(siblingBytes)
 })

@@ -18,7 +18,7 @@ import type {
   SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import { Context } from '@deepseek-ai/cordis'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type {
@@ -35,7 +35,7 @@ import {
   type MessagesFixture,
 } from './messages-fixture.ts'
 
-const observedSdkMessages = vi.hoisted((): SDKMessage[] => [])
+const observedSdkMessages = vi.hoisted((): { current: SDKMessage[] } => ({ current: [] }))
 const sdkTestOverrides = vi.hoisted((): { maxTurns?: number } => ({}))
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
@@ -45,6 +45,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
   return {
     ...actual,
     query(params: Parameters<typeof actual.query>[0]): Query {
+      const messages = observedSdkMessages.current
       const query = actual.query(sdkTestOverrides.maxTurns === undefined
         ? params
         : {
@@ -57,7 +58,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
           if (property === Symbol.asyncIterator) {
             return async function* (): AsyncGenerator<SDKMessage, void> {
               for await (const message of target) {
-                observedSdkMessages.push(message)
+                messages.push(message)
                 yield message
               }
             }
@@ -98,6 +99,20 @@ const fakeKey = 'dsh-fake-anthropic-key'
 const roots: string[] = []
 const fixtures: MessagesFixture[] = []
 const contexts: Context[] = []
+const retainedContexts: Context[] = []
+const retainedRoots: string[] = []
+
+async function disposeContext(ctx: Context): Promise<void> {
+  const logged = vi.spyOn(ctx.logger, 'error')
+  try {
+    const result = await Promise.allSettled([ctx.fiber.dispose()])
+    const calls: unknown[][] = logged.mock.calls
+    const failures = [...result.flatMap(outcome => outcome.status === 'rejected' ? [outcome.reason as unknown] : []), ...calls.flat()]
+    if (failures.length) throw new AggregateError(failures, 'real Claude Context disposal failed')
+  } finally {
+    logged.mockRestore()
+  }
+}
 
 // Ambient Anthropic model env leaks into the real CLI and overrides the
 // fixture settings.json on developer machines; delete it for this file and
@@ -110,29 +125,76 @@ beforeAll(() => {
   delete process.env.ANTHROPIC_SMALL_FAST_MODEL
 })
 
-afterAll(() => {
+afterAll(async () => {
   if (ambientAnthropicModel !== undefined) process.env.ANTHROPIC_MODEL = ambientAnthropicModel
   if (ambientAnthropicSmallFastModel !== undefined) process.env.ANTHROPIC_SMALL_FAST_MODEL = ambientAnthropicSmallFastModel
-})
-
-afterEach(async () => {
-  // Retire the test-owned HTTP transport before disposing consumers, so a
-  // held Messages connection cannot keep their process cleanup waiting.
-  const transport = await Promise.allSettled(fixtures.splice(0).map(fixture => fixture.close()))
-  const owners = contexts.splice(0)
-  const consumers = await Promise.allSettled(owners.map(ctx => ctx.fiber.dispose()))
-  for (const [index, result] of consumers.entries()) {
-    if (result.status === 'rejected') contexts.push(owners[index]!)
-  }
-  const failures = [...transport, ...consumers].flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+  const consumers = await Promise.allSettled(retainedContexts.splice(0).map(ctx => disposeContext(ctx)))
+  const failures = consumers.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
   if (failures.length === 0) {
-    const cleanup = await Promise.allSettled(roots.splice(0).map(root =>
+    const cleanup = await Promise.allSettled(retainedRoots.splice(0).map(root =>
       rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })))
     failures.push(...cleanup.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : []))
   }
-  observedSdkMessages.length = 0
+  if (failures.length) throw new AggregateError(failures, 'retained real Claude fixture cleanup failed')
+})
+
+beforeEach(() => {
+  observedSdkMessages.current = []
   delete sdkTestOverrides.maxTurns
-  if (failures.length) throw new AggregateError(failures, 'real Claude fixture cleanup failed')
+})
+
+afterEach(async () => {
+  // Capture every owner before awaiting: a timed-out hook can keep running
+  // after the next test starts and must not take that test's new resources.
+  const transports = fixtures.splice(0)
+  const owners = contexts.splice(0)
+  const directories = roots.splice(0)
+  const pending = new Set<string>()
+  const settled = <T>(label: string, values: readonly T[], cleanup: (value: T) => Promise<unknown>) =>
+    Promise.allSettled(values.map(async (value, index) => {
+      const owner = `${label}:${index}`
+      pending.add(owner)
+      try {
+        await cleanup(value)
+      } finally {
+        pending.delete(owner)
+      }
+    }))
+  const started = performance.now()
+  const diagnostic = setTimeout(() => {
+    console.error('REAL_CLAUDE_FIXTURE_CLEANUP_PENDING', JSON.stringify({
+      elapsedMs: Math.round(performance.now() - started),
+      pending: [...pending],
+      transports: transports.length,
+      consumers: owners.length,
+      directories: directories.length,
+    }))
+  }, 8_000)
+  diagnostic.unref()
+
+  // Retire the test-owned HTTP transport before disposing consumers, so a
+  // held Messages connection cannot keep their process cleanup waiting.
+  try {
+    const transport = await settled('transport', transports, fixture => fixture.close())
+    const consumers = await settled('consumer', owners, ctx => disposeContext(ctx))
+    for (const [index, result] of consumers.entries()) {
+      if (result.status === 'rejected') retainedContexts.push(owners[index]!)
+    }
+    const failures = [...transport, ...consumers].flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+    if (failures.length === 0) {
+      const cleanup = await settled('directory', directories, root =>
+        rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
+      for (const [index, result] of cleanup.entries()) {
+        if (result.status === 'rejected') retainedRoots.push(directories[index]!)
+      }
+      failures.push(...cleanup.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : []))
+    } else {
+      retainedRoots.push(...directories)
+    }
+    if (failures.length) throw new AggregateError(failures, 'real Claude fixture cleanup failed; failed owners and directories retained')
+  } finally {
+    clearTimeout(diagnostic)
+  }
 })
 
 interface RealHarness {
@@ -275,7 +337,7 @@ function expectedFailure(
 }
 
 function expectedObservedFailure(outcome: SubprocessOutcome): string {
-  return observedSdkMessages.some(message =>
+  return observedSdkMessages.current.some(message =>
     message.type === 'result'
     && message.subtype === 'error_during_execution')
     ? expectedFailure('query-run', 'product-error', outcome)
@@ -319,7 +381,7 @@ describe('real Claude Agent SDK 0.3.241 and its distributed Claude Code 2.1.241 
     })
     await run.dispose()
 
-    const initMessage = observedSdkMessages.find(
+    const initMessage = observedSdkMessages.current.find(
       (message): message is SDKSystemMessage =>
         message.type === 'system' && message.subtype === 'init',
     )
@@ -370,7 +432,7 @@ describe('real Claude Agent SDK 0.3.241 and its distributed Claude Code 2.1.241 
     }, 'bypassPermissions')
     const run = await startRequest(harness, 'Exercise the SDK max-turns result.')
     const result = await run.result
-    expect(observedSdkMessages
+    expect(observedSdkMessages.current
       .filter(message => message.type === 'result')
       .map(message => message.subtype)).toEqual(['error_max_turns'])
     expect(result).toMatchObject({
@@ -497,7 +559,7 @@ describe('real Claude Agent SDK 0.3.241 and its distributed Claude Code 2.1.241 
     })
     const run = await startRequest(harness, 'Write the requested fixture file.')
     await vi.waitFor(() => {
-      expect(observedSdkMessages.some(message =>
+      expect(observedSdkMessages.current.some(message =>
         message.type === 'system'
         && message.subtype === 'permission_denied')).toBe(true)
     }, { timeout: 30_000 })

@@ -223,11 +223,11 @@ export async function withFileLock<T>(
   let delay = LOCK_RETRY_INITIAL_MS
   let retriedUnconfirmedPermissionError = false
   const record = `${process.pid}\n`
-  let identity: { dev: number; ino: number }
+  let identity: { dev: bigint; ino: bigint }
   for (;;) {
     try {
       await writeFile(lockPath, record, { mode: 0o600, flag: 'wx' })
-      identity = await lstat(lockPath)
+      identity = await lstat(lockPath, { bigint: true })
       if (await readLockRecord(lockPath) !== record) {
         throw new Error(`atomic-write: writer lock changed during acquisition at ${lockPath}`)
       }
@@ -250,9 +250,9 @@ export async function withFileLock<T>(
   try {
     return await operation()
   } finally {
-    let current: Awaited<ReturnType<typeof lstat>> | undefined
+    let current: typeof identity | undefined
     try {
-      current = await lstat(lockPath)
+      current = await lstat(lockPath, { bigint: true })
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }

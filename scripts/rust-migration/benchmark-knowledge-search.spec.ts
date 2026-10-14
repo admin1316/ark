@@ -5,10 +5,12 @@ import { runBenchmark, runFileBackedComparisonSeries } from './benchmark-knowled
 import { bm25 } from '../../packages/host/knowledge-wiki/src/search.ts'
 import { createRustKnowledgeSearchRequest, runRustKnowledgeSearchCandidate } from '../../packages/host/knowledge-wiki/src/rust-search-candidate.ts'
 
+const binary = resolve('rust/knowledge-search-shadow/target/release', process.platform === 'win32'
+  ? 'knowledge-search-shadow.exe' : 'knowledge-search-shadow')
+
 describe('knowledge search benchmark scaffold', () => {
-  it.skipIf(!existsSync(resolve('rust/knowledge-search-shadow/target/release/knowledge-search-shadow')))(
+  it.skipIf(!existsSync(binary))(
     'binds real Rust result digests to Node numbers and multibyte path endpoints', async () => {
-      const binary = resolve('rust/knowledge-search-shadow/target/release/knowledge-search-shadow')
       const pages = [{ path: '中'.repeat(341) + 'x', title: 'Runtime', aliases: [], text: 'runtime 中' }]
       for (const query of [1, 64, 100, 128, 256].map(count => Array(count).fill('runtime').join(' '))) {
         const request = createRustKnowledgeSearchRequest({
@@ -26,7 +28,6 @@ describe('knowledge search benchmark scaffold', () => {
   )
 
   it('matches current and optimized TypeScript and replays Rust when its binary is built', () => {
-    const binary = resolve('rust/knowledge-search-shadow/target/release/knowledge-search-shadow')
     const result = runBenchmark(3, binary) as {
       status: string
       differentialReplay: string
@@ -56,7 +57,6 @@ describe('knowledge search benchmark scaffold', () => {
   })
 
   it('reproduces the file-backed one-query comparison with the production snapshot cache', async () => {
-    const binary = resolve('rust/knowledge-search-shadow/target/release/knowledge-search-shadow')
     const result = await runFileBackedComparisonSeries(1, 2) as {
       status: string
       execution: string

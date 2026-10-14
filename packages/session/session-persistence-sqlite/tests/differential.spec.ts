@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { CallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { type SessionEvent } from '@deepseek-ai/dsh-session'
@@ -21,10 +21,20 @@ interface MountedBackend {
 }
 
 const directories: string[] = []
+const failedDisposals = new Set<string>()
+async function cleanupDirectories(owned: readonly string[]): Promise<void> {
+  const cleanup = await Promise.allSettled(owned.map((directory) => {
+    if (failedDisposals.has(directory)) {
+      return Promise.reject(new Error('differential fixture owner did not reach quiescence; directory retained'))
+    }
+    return rm(directory, { recursive: true, force: true })
+  }))
+  const failures = cleanup.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+  if (failures.length) throw new AggregateError(failures, 'differential fixture directory cleanup failed')
+}
+
 afterEach(async () => {
-  for (const directory of directories.splice(0)) {
-    await rm(directory, { recursive: true, force: true })
-  }
+  await cleanupDirectories(directories.splice(0))
 })
 
 async function freshDirectory(prefix: string): Promise<string> {
@@ -33,19 +43,52 @@ async function freshDirectory(prefix: string): Promise<string> {
   return directory
 }
 
-async function mount(name: BackendName, root: string): Promise<MountedBackend> {
-  const ctx = new Context()
-  await ctx.plugin(SessionStore)
-  switch (name) {
-    case 'jsonl-zstd': {
-      const fiber = await ctx.plugin(SessionPersistenceJsonl, { root: join(root, 'jsonl') })
-      return { persistence: ctx.sessionPersistence, dispose: async () => { await fiber.dispose() } }
+async function disposalErrors(ctx: Context, cleanups: readonly (() => Promise<void>)[]): Promise<unknown[]> {
+  const logged = vi.spyOn(ctx.logger, 'error')
+  try {
+    const failures: unknown[] = []
+    for (const cleanup of cleanups) {
+      const [result] = await Promise.allSettled([cleanup()])
+      if (result?.status === 'rejected') failures.push(result.reason as unknown)
     }
-    case 'sqlite': {
-      const fiber = await ctx.plugin(SessionPersistenceSqlite, { path: join(root, 'sessions.db') })
-      return { persistence: ctx.sessionPersistence, dispose: async () => { await fiber.dispose() } }
-    }
+    const calls: unknown[][] = logged.mock.calls
+    return [...failures, ...calls.flat()]
+  } finally {
+    logged.mockRestore()
   }
+}
+
+async function mount(name: BackendName, root: string, ctx = new Context()): Promise<MountedBackend> {
+  let disposeBackend: () => Promise<void>
+  try {
+    await ctx.plugin(SessionStore)
+    switch (name) {
+      case 'jsonl-zstd': {
+        const fiber = await ctx.plugin(SessionPersistenceJsonl, { root: join(root, 'jsonl') })
+        disposeBackend = () => fiber.dispose()
+        break
+      }
+      case 'sqlite': {
+        const fiber = await ctx.plugin(SessionPersistenceSqlite, { path: join(root, 'sessions.db') })
+        disposeBackend = () => fiber.dispose()
+        break
+      }
+    }
+  } catch (error: unknown) {
+    const failures = await disposalErrors(ctx, [() => ctx.fiber.dispose()])
+    if (failures.length) {
+      failedDisposals.add(dirname(root))
+      throw new AggregateError([error, ...failures], 'differential fixture startup and context disposal failed')
+    }
+    throw error
+  }
+  return { persistence: ctx.sessionPersistence, dispose: async () => {
+    const failures = await disposalErrors(ctx, [disposeBackend, () => ctx.fiber.dispose()])
+    if (failures.length) {
+      failedDisposals.add(dirname(root))
+      throw new AggregateError(failures, 'differential fixture backend and context disposal failed')
+    }
+  } }
 }
 
 function closedChunkLog(
@@ -129,29 +172,36 @@ async function verifyBackend(
   sizes: readonly number[],
 ): Promise<void> {
   const header = { ...meta('differential', '/work'), delegationDepth: 0 }
-  let mounted = await mount(name, root)
-  try {
-    await mounted.persistence.create(header)
-    for (const batch of batches(events, sizes)) {
-      await mounted.persistence.append(header.id, batch)
+  for (const reopened of [false, true]) {
+    const mounted = await mount(name, root)
+    const failures: unknown[] = []
+    try {
+      if (reopened) {
+        expect(await mounted.persistence.inspect(header.id), `${name} reopen`).toEqual({ meta: header, events })
+      } else {
+        await mounted.persistence.create(header)
+        for (const batch of batches(events, sizes)) {
+          await mounted.persistence.append(header.id, batch)
+        }
+        expect(await mounted.persistence.inspect(header.id), name).toEqual({ meta: header, events })
+        expect(await mounted.persistence.list(), name).toEqual([header])
+        const revision = (await mounted.persistence.listSnapshots())[0]?.revision
+        for (let fromSeq = 0; fromSeq <= events.length + 1; fromSeq += 1) {
+          expect((await mounted.persistence.readFrom(header.id, fromSeq)).events, `${name} seq ${fromSeq}`)
+            .toEqual(events.slice(fromSeq))
+        }
+        expect((await mounted.persistence.listSnapshots())[0]?.revision, name).toBe(revision)
+      }
+    } catch (error: unknown) {
+      failures.push(error)
     }
-    expect(await mounted.persistence.inspect(header.id), name).toEqual({ meta: header, events })
-    expect(await mounted.persistence.list(), name).toEqual([header])
-    const revision = (await mounted.persistence.listSnapshots())[0]?.revision
-    for (let fromSeq = 0; fromSeq <= events.length + 1; fromSeq += 1) {
-      expect((await mounted.persistence.readFrom(header.id, fromSeq)).events, `${name} seq ${fromSeq}`)
-        .toEqual(events.slice(fromSeq))
+    try {
+      await mounted.dispose()
+    } catch (error: unknown) {
+      failures.push(error)
     }
-    expect((await mounted.persistence.listSnapshots())[0]?.revision, name).toBe(revision)
-  } finally {
-    await mounted.dispose()
-  }
-
-  mounted = await mount(name, root)
-  try {
-    expect(await mounted.persistence.inspect(header.id), `${name} reopen`).toEqual({ meta: header, events })
-  } finally {
-    await mounted.dispose()
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'differential verification and disposal failed')
   }
 }
 
@@ -196,6 +246,114 @@ const randomWorkload = fc.record({
 const randomizedDifferentialTimeoutMs = process.platform === 'win32' ? 120_000 : 60_000
 
 describe('SQLite cross-backend differential behavior', () => {
+  it('disposes an initialized Session store when SQLite rejects its database path', async () => {
+    const directory = await freshDirectory('dsh-sqlite-invalid-mount-')
+    const root = join(directory, 'sqlite')
+    await mkdir(join(root, 'sessions.db'), { recursive: true })
+    const ctx = new Context()
+    let disposed = false
+    ctx.effect(() => () => { disposed = true }, 'rejected mount owner')
+
+    await expect(mount('sqlite', root, ctx)).rejects.toThrow('must be a regular file')
+    expect(disposed).toBe(true)
+    expect(failedDisposals.has(directory)).toBe(false)
+  })
+
+  it('retains the directory and both errors if rejected initialization cannot confirm context cleanup', async () => {
+    const directory = await freshDirectory('dsh-sqlite-rejected-cleanup-')
+    const root = join(directory, 'sqlite')
+    const databasePath = join(root, 'sessions.db')
+    await mkdir(databasePath, { recursive: true })
+    const ctx = new Context()
+    let disposed = false
+    ctx.effect(() => () => { disposed = true }, 'rejected mount owner')
+    const cleanupError = new Error('injected owner cleanup failure after actual join')
+    const dispose = ctx.fiber.dispose
+    const spy = vi.spyOn(ctx.fiber, 'dispose').mockImplementation(async () => {
+      await dispose()
+      throw cleanupError
+    })
+    try {
+      const error: unknown = await mount('sqlite', root, ctx).catch((caught: unknown) => caught)
+      expect(error).toBeInstanceOf(AggregateError)
+      const errors: unknown[] = (error as AggregateError).errors
+      expect(errors).toHaveLength(2)
+      expect(errors[0]).toBeInstanceOf(Error)
+      expect((errors[0] as Error).message).toContain('must be a regular file')
+      expect(errors[1]).toBe(cleanupError)
+      expect(failedDisposals.has(directory)).toBe(true)
+      await expect(cleanupDirectories([directory])).rejects.toThrow('directory cleanup failed')
+      expect((await lstat(databasePath)).isDirectory()).toBe(true)
+    } finally {
+      spy.mockRestore()
+      // The injected rejection followed the actual join; only that confirmed
+      // owner may release this negative control's retained test directory.
+      if (disposed) failedDisposals.delete(directory)
+    }
+    expect(disposed).toBe(true)
+  })
+
+  it('rejects a logged disposal failure even when Cordis fulfills the Context join', async () => {
+    const directory = await freshDirectory('dsh-sqlite-logged-cleanup-')
+    const root = join(directory, 'sqlite')
+    const databasePath = join(root, 'sessions.db')
+    await mkdir(databasePath, { recursive: true })
+    const ctx = new Context()
+    let disposed = false
+    ctx.effect(() => () => { disposed = true }, 'rejected mount owner')
+    const cleanupError = new Error('injected actual effect disposal failure')
+    ctx.effect(() => () => { throw cleanupError }, 'failing disposal negative control')
+    try {
+      const error: unknown = await mount('sqlite', root, ctx).catch((caught: unknown) => caught)
+      expect(error).toBeInstanceOf(AggregateError)
+      const errors: unknown[] = (error as AggregateError).errors
+      expect(errors).toHaveLength(2)
+      expect((errors[0] as Error).message).toContain('must be a regular file')
+      expect(errors[1]).toBe(cleanupError)
+      expect(failedDisposals.has(directory)).toBe(true)
+      await expect(cleanupDirectories([directory])).rejects.toThrow('directory cleanup failed')
+      expect((await lstat(databasePath)).isDirectory()).toBe(true)
+    } finally {
+      // The control owns only synchronous effects and a rejected unopened
+      // database; its confirmed join permits cleanup after testing refusal.
+      if (disposed) failedDisposals.delete(directory)
+    }
+    expect(disposed).toBe(true)
+  })
+
+  it('preserves a verification failure together with its logged backend disposal failure', async () => {
+    const directory = await freshDirectory('dsh-sqlite-verification-cleanup-')
+    const root = join(directory, 'sqlite')
+    const verificationError = new Error('injected verification create failure')
+    const cleanupError = new Error('injected backend disposal failure')
+    let disposed = false
+    const create = vi.spyOn(SessionPersistenceSqlite.prototype, 'create').mockImplementationOnce(function(this: SessionPersistenceSqlite) {
+      this.ctx.effect(() => () => {
+        disposed = true
+        throw cleanupError
+      }, 'failing backend disposal negative control')
+      return Promise.reject(verificationError)
+    })
+    try {
+      const error: unknown = await verifyBackend('sqlite', root, closedChunkLog([]), [1])
+        .catch((caught: unknown) => caught)
+      expect(error).toBeInstanceOf(AggregateError)
+      const errors: unknown[] = (error as AggregateError).errors
+      expect(errors).toHaveLength(2)
+      expect(errors[0]).toBe(verificationError)
+      expect(errors[1]).toBeInstanceOf(AggregateError)
+      expect((errors[1] as AggregateError).errors).toEqual([cleanupError])
+      await expect(cleanupDirectories([directory])).rejects.toThrow('directory cleanup failed')
+      expect((await lstat(root)).isDirectory()).toBe(true)
+    } finally {
+      create.mockRestore()
+      // create rejected before opening SQLite and all Context work joined;
+      // the only failing disposer is this synchronous negative control.
+      if (disposed) failedDisposals.delete(directory)
+    }
+    expect(disposed).toBe(true)
+  })
+
   it('matches JSONL/Zstandard for every packed kind, scalar fallback, suffix, partition, and reopen', async () => {
     const events = packingMatrixLog()
     for (const [partitionIndex, sizes] of [[events.length], [1], [2, 1, 5, 3]].entries()) {
@@ -230,9 +388,25 @@ describe('SQLite cross-backend differential behavior', () => {
   it('matches JSONL/Zstandard across randomized logical logs and append partitions', async () => {
     await fc.assert(fc.asyncProperty(randomWorkload, async ({ events, batchSizes }) => {
       const directory = await freshDirectory('dsh-sqlite-property-')
-      for (const name of ['jsonl-zstd', 'sqlite'] as const) {
-        await verifyBackend(name, join(directory, name), events, batchSizes)
+      const failures: unknown[] = []
+      try {
+        for (const name of ['jsonl-zstd', 'sqlite'] as const) {
+          await verifyBackend(name, join(directory, name), events, batchSizes)
+        }
+      } catch (error: unknown) {
+        failures.push(error)
       }
+      if (!failedDisposals.has(directory)) {
+        try {
+          await rm(directory, { recursive: true, force: true })
+          const index = directories.indexOf(directory)
+          if (index !== -1) directories.splice(index, 1)
+        } catch (error: unknown) {
+          failures.push(error)
+        }
+      }
+      if (failures.length === 1) throw failures[0]
+      if (failures.length > 1) throw new AggregateError(failures, 'differential workload and directory cleanup failed')
     }), { numRuns: 100, seed: 0x5A17E })
   }, randomizedDifferentialTimeoutMs)
 

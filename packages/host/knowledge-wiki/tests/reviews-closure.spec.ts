@@ -1,4 +1,5 @@
 import {
+  constants,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -45,28 +46,60 @@ const fsFault = vi.hoisted(() => ({
   readdirFailureCalls: 0,
   mode: 'none' as 'none' | 'eperm' | 'eio',
   fileOncePath: undefined as string | undefined,
+  fileOnceFlags: undefined as number | undefined,
   replaceBeforeOpenPath: undefined as string | undefined,
   replaceAfterFileSyncPath: undefined as string | undefined,
   growBeforeReadPath: undefined as string | undefined,
   replacementContent: undefined as string | undefined,
   directoryFailureCountdown: undefined as number | undefined,
   appendEventAtDirectorySync: undefined as { directory: string; path: string; line: string } | undefined,
+  precisionChange: undefined as { path: string; operation: 'open' | 'read' | 'sync'; metadata: { ino?: bigint; mtimeNs?: bigint } } | undefined,
 }))
 const directoryFds = vi.hoisted(() => new Set<number>())
 const directoryFdPaths = vi.hoisted(() => new Map<number, string>())
 const fileFdPaths = vi.hoisted(() => new Map<number, string>())
 const fileFdFlags = vi.hoisted(() => new Map<number, number>())
 const namedInodeChanges = vi.hoisted(() => new Set<string>())
+const preciseStageMetadata = vi.hoisted(() => new Map<string, { ino?: bigint; mtimeNs?: bigint }>())
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
+  function observed<T extends ReturnType<typeof actual.fstatSync>>(stat: T, path: string): T {
+    const metadata = preciseStageMetadata.get(path)
+    if (metadata === undefined) return stat
+    const values: { ino?: number | bigint; mtimeNs?: bigint; mtimeMs?: number | bigint } = {}
+    if (metadata.ino !== undefined) values.ino = typeof stat.ino === 'bigint' ? metadata.ino : Number(metadata.ino)
+    if (metadata.mtimeNs !== undefined) {
+      if (typeof stat.ino === 'bigint') { values.mtimeNs = metadata.mtimeNs; values.mtimeMs = metadata.mtimeNs / 1_000_000n }
+      else values.mtimeMs = Number(metadata.mtimeNs) / 1_000_000
+    }
+    return Object.assign(Object.create(stat), values) as T
+  }
+  function changePrecision(operation: 'open' | 'read' | 'sync', path: string | undefined): void {
+    const change = fsFault.precisionChange
+    if (change?.operation !== operation || change.path !== path) return
+    fsFault.precisionChange = undefined
+    preciseStageMetadata.set(change.path, change.metadata)
+  }
   return {
     ...actual,
     lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
-      const stat = actual.lstatSync(...args)
+      const found = actual.lstatSync(...args)
+      const stat = found === undefined ? found : observed(found, String(args[0]))
       if (stat === undefined) return stat
       return namedInodeChanges.has(String(args[0]))
         ? Object.assign(Object.create(stat) as typeof stat, { ino: typeof stat.ino === 'bigint' ? stat.ino + 1n : stat.ino + 1 })
         : stat
+    },
+    fstatSync: (...args: Parameters<typeof actual.fstatSync>) => observed(actual.fstatSync(...args), fileFdPaths.get(args[0]) ?? ''),
+    renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+      actual.renameSync(...args)
+      const originalPath = String(args[0]), nextPath = String(args[1])
+      const metadata = preciseStageMetadata.get(originalPath)
+      if (metadata !== undefined) {
+        // Inode metadata follows the real rename into the rollback tombstone.
+        preciseStageMetadata.delete(originalPath)
+        preciseStageMetadata.set(nextPath, metadata)
+      }
     },
     readdirSync: (...args: Parameters<typeof actual.readdirSync>) => {
       if (String(args[0]) === fsFault.readdirFailurePath) {
@@ -77,6 +110,7 @@ vi.mock('node:fs', async (importOriginal) => {
     },
     openSync: (...args: Parameters<typeof actual.openSync>) => {
       const requestedPath = String(args[0])
+      changePrecision('open', requestedPath)
       if (fsFault.replaceBeforeOpenPath === requestedPath) {
         fsFault.replaceBeforeOpenPath = undefined
         // Keep the old inode allocated until its replacement exists (Linux may reuse it).
@@ -124,6 +158,7 @@ vi.mock('node:fs', async (importOriginal) => {
       }
       if (fsFault.fileOncePath !== undefined && fileFdPaths.get(descriptor) === fsFault.fileOncePath) {
         fsFault.fileOncePath = undefined
+        fsFault.fileOnceFlags = flags
         throw Object.assign(new Error('EIO: staged-file fsync fault'), { code: 'EIO' })
       }
       const syncedPath = fileFdPaths.get(descriptor)
@@ -133,6 +168,7 @@ vi.mock('node:fs', async (importOriginal) => {
         actual.appendFileSync(directoryInjection.path, directoryInjection.line, 'utf8')
       }
       actual.fsyncSync(descriptor)
+      changePrecision('sync', syncedPath)
       if (syncedPath !== undefined && fsFault.replaceAfterFileSyncPath === syncedPath) {
         fsFault.replaceAfterFileSyncPath = undefined
         if (process.platform === 'win32') namedInodeChanges.add(syncedPath)
@@ -147,6 +183,7 @@ vi.mock('node:fs', async (importOriginal) => {
     },
     readSync: (...args: Parameters<typeof actual.readSync>) => {
       const path = fileFdPaths.get(args[0])
+      changePrecision('read', path)
       if (path !== undefined && fsFault.growBeforeReadPath === path) {
         fsFault.growBeforeReadPath = undefined
         actual.appendFileSync(path, Buffer.alloc(8 * 1024 * 1024 + 1, 0x61))
@@ -165,10 +202,13 @@ const PROMOTION_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 afterEach(() => {
   Object.defineProperty(process, 'platform', originalPlatform)
   namedInodeChanges.clear()
+  preciseStageMetadata.clear()
+  fsFault.precisionChange = undefined
   fsFault.readdirFailurePath = undefined
   fsFault.readdirFailureCalls = 0
   fsFault.mode = 'none'
   fsFault.fileOncePath = undefined
+  fsFault.fileOnceFlags = undefined
   fsFault.replaceBeforeOpenPath = undefined
   fsFault.replaceAfterFileSyncPath = undefined
   fsFault.growBeforeReadPath = undefined
@@ -1085,6 +1125,26 @@ describe('promotion journal recovery boundaries', () => {
     expect(readItems(item.reviewFile)[0]!.resolved).toBe(true)
   })
 
+  it('keeps POSIX stage flag dispatch bound to a mandatory flush failure', async () => {
+    // This executes dispatch and denial on this host, not cross-platform
+    // O_NOFOLLOW or read-only flush enforcement by the host kernel.
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    const item = fixture(), reviewBefore = readFileSync(item.reviewFile, 'utf8')
+    const staging = checkpointAuthority((core, checkpoint) => {
+      if (checkpoint.phase !== 'journal-persisted') return
+      const review = operationOf(core, 'review')
+      if (review.stagingPath === undefined || review.after === undefined) throw new Error('prepared review operation lacks its stage')
+      writeFileSync(review.stagingPath, review.after)
+      fsFault.fileOncePath = review.stagingPath
+    })
+    await expect(apply(item, staging, 'Archive')).rejects.toThrow('staged-file fsync fault')
+    expect(fsFault.fileOnceFlags).toBe(constants.O_RDONLY | constants.O_NOFOLLOW)
+    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
+    expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
+    expect(existsSync(item.candidateFull)).toBe(true)
+    expect(readJournal(item).state).toBe('rolled-back')
+  })
+
   it('keeps an unsafe symlink stage from entering a promotion transaction', async () => {
     const item = fixture()
     const originalCandidate = sha256(readFileSync(item.candidateFull))
@@ -1167,6 +1227,29 @@ describe('promotion journal recovery boundaries', () => {
       expect(existsSync(item.candidateFull)).toBe(true)
       expect(readJournal(item).state).toBe('rolled-back')
     }
+  })
+
+  it.each(['open', 'read', 'sync'] as const)('refuses full-precision metadata changes in a matching promotion stage: %s', async (operation) => {
+    const item = fixture(), reviewBefore = readFileSync(item.reviewFile, 'utf8')
+    const ino = 9007199254740992n, mtimeNs = 1_700_000_000_000_000_000n
+    expect(Number(ino)).toBe(Number(ino + 1n))
+    expect(Number(mtimeNs) / 1_000_000).toBe(Number(mtimeNs + 1n) / 1_000_000)
+    const staging = checkpointAuthority((core, checkpoint) => {
+      if (checkpoint.phase !== 'journal-persisted') return
+      const review = operationOf(core, 'review')
+      if (review.stagingPath === undefined || review.after === undefined) throw new Error('prepared review operation lacks its stage')
+      writeFileSync(review.stagingPath, review.after)
+      preciseStageMetadata.set(review.stagingPath, { ino, mtimeNs })
+      fsFault.precisionChange = { path: review.stagingPath, operation,
+        metadata: operation === 'read' ? { ino, mtimeNs: mtimeNs + 1n } : { ino: ino + 1n, mtimeNs } }
+    })
+    await expect(apply(item, staging, 'Archive')).rejects.toThrow(operation === 'open'
+      ? 'promotion stage identity changed while opening' : operation === 'read'
+        ? 'promotion stage conflict' : 'promotion stage identity changed while syncing')
+    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
+    expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
+    expect(existsSync(item.candidateFull)).toBe(true)
+    expect(readJournal(item).state).toBe('rolled-back')
   })
 
   it('repairs a committed canonical Promote only with its authenticated measured-trial fixture', async () => {

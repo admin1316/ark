@@ -7,7 +7,7 @@ import { encodeReviewStore, readReviewStore, REVIEW_STORE_MAX_BYTES, writeReview
 import { appendCandidateReviews, commitReviewAppend, prepareReviewAppend } from '../src/reviews.ts'
 
 const dirs: string[] = []
-const inspectionFault = vi.hoisted(() => ({ path: '', calls: 0 }))
+const inspectionFault = vi.hoisted(() => ({ path: '', calls: 0, code: 'ENAMETOOLONG' }))
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
@@ -15,7 +15,7 @@ vi.mock('node:fs', async (importOriginal) => {
     lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
       if (String(args[0]) === inspectionFault.path) {
         inspectionFault.calls += 1
-        throw Object.assign(new Error('ENAMETOOLONG: candidate path inspection failed'), { code: 'ENAMETOOLONG' })
+        throw Object.assign(new Error(`${inspectionFault.code}: candidate path inspection failed`), { code: inspectionFault.code })
       }
       return actual.lstatSync(...args)
     },
@@ -35,10 +35,24 @@ function exactLimitItem(padding = ''): { readonly id: string; readonly title: st
 afterEach(() => {
   inspectionFault.path = ''
   inspectionFault.calls = 0
+  inspectionFault.code = 'ENAMETOOLONG'
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
 describe('review store encoding', () => {
+  it('keeps a non-directory preflight lookup refusal from publishing candidate or review bytes', () => {
+    const root = fixture(), candidatePath = '_candidates/concepts/preserved.md'
+    const reviewFile = join(root, '.llm-wiki', 'review.json'), candidateFile = join(root, 'wiki', candidatePath)
+    mkdirSync(dirname(reviewFile), { recursive: true }); mkdirSync(dirname(candidateFile), { recursive: true })
+    writeFileSync(reviewFile, '[]\n'); writeFileSync(candidateFile, '# Preserved candidate')
+    inspectionFault.path = dirname(candidateFile); inspectionFault.code = 'ENOTDIR'
+    const plan = prepareReviewAppend(reviewFile, root, undefined, [], [{ path: `wiki/${candidatePath}`, content: '# Planned candidate' }])
+    expect(inspectionFault.calls).toBe(1)
+    expect(commitReviewAppend(plan)).toMatchObject({ advisoryAppended: 0, candidateAppended: 0 })
+    expect(readFileSync(reviewFile, 'utf8')).toBe('[]\n')
+    expect(readFileSync(candidateFile, 'utf8')).toBe('# Preserved candidate')
+  })
+
   it('writes and reads an exactly 8 MiB UTF-8 JSON array', () => {
     const path = fixture()
     const reviewFile = join(path, 'review.json')

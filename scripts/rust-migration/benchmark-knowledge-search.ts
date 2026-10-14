@@ -225,7 +225,8 @@ function benchmarkRequest(input: { readonly pages: readonly Page[]; readonly que
 
 function rustBinary(explicit: string | undefined): string | undefined {
   if (explicit !== undefined) return explicit
-  const bundled = fileURLToPath(new URL('../../rust/knowledge-search-shadow/target/release/knowledge-search-shadow', import.meta.url))
+  const bundled = fileURLToPath(new URL('../../rust/knowledge-search-shadow/target/release/'
+    + (process.platform === 'win32' ? 'knowledge-search-shadow.exe' : 'knowledge-search-shadow'), import.meta.url))
   return existsSync(bundled) ? bundled : undefined
 }
 

@@ -37,7 +37,7 @@ import { produceMeasuredUseV1, FIXED_KNOWLEDGE_MEASUREMENT_DEFINITION_V1, witnes
 async function runEvaluatorCli(context: Context, configPath: string, request: unknown, inputBytes = canonicalJson(request)) {
   const compiledRuntime = process.env['ARK_PRODUCER_COMPILED_RUNTIME_ROOT'] ?? process.env['ARK_OBSERVATION_COMPILED_RUNTIME_ROOT']
   const argv = compiledRuntime === undefined
-    ? [process.execPath, '--import', createRequire(import.meta.url).resolve('tsx'),
+    ? [process.execPath, '--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href,
       fileURLToPath(new URL('./knowledge-use-evaluator.ts', import.meta.url)), configPath]
     : [process.execPath, join(compiledRuntime, 'protected-helpers/scripts/rust-migration/knowledge-use-evaluator.mjs'), configPath]
   const child = context.subprocess.spawn({
@@ -59,7 +59,7 @@ async function runEvaluatorCli(context: Context, configPath: string, request: un
 }
 
 async function cancelledEvaluator(configPath: string, mode: 'signal' | 'parent-exit') {
-  const argv = [process.execPath, '--import', createRequire(import.meta.url).resolve('tsx'),
+  const argv = [process.execPath, '--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href,
     fileURLToPath(new URL('./knowledge-use-evaluator.ts', import.meta.url)), configPath]
   const fifoRoot = await mkdtemp(join(tmpdir(), 'ark-evaluator-owner-loss-'))
   const fifo = join(fifoRoot, 'stdin.fifo')
@@ -717,7 +717,9 @@ describe('persisted actual-use producer', () => {
               registeredManifestHash: first.registeredTask.manifestHash,
               registeredRequestHash: first.registeredTask.requestHash, taskKind: 'pagination-v1', finalOutputHash,
               capturedProviderRequestHash: String(captured.facts['providerRequestHash']),
-            }, new AbortController().signal)).rejects.toThrow('pagination pilot network confinement is only implemented on macOS')
+            }, new AbortController().signal)).rejects.toThrow(process.platform === 'win32'
+              ? 'pagination pilot requires full file-effect confinement'
+              : 'pagination pilot network confinement is only implemented on macOS')
             expect(producerReceiptCount).toBe(0)
             expect(oracleOutcomes.size).toBe(0)
             expect(finalize).not.toHaveBeenCalled()
@@ -1085,7 +1087,10 @@ describe('pre-observation owner lifecycle', () => {
     }).toThrow()
   })
 
-  it.each(['none', 'zstd'] as const)('freezes original code before overwrite and assembles legacy evidence from %s logs',
+  const admissionTestName = process.platform === 'win32'
+    ? 'refuses non-POSIX pre-observation admission from %s logs without changing the task'
+    : 'freezes original code before overwrite and assembles legacy evidence from %s logs'
+  it.each(['none', 'zstd'] as const)(admissionTestName,
     async (compression) => {
       const compactTaskStep = process.env['ARK_OBSERVATION_COMPACT_TASK_STEPS'] === '1'
       const dispatchLimit = compactTaskStep ? 3 : 2
@@ -1192,7 +1197,7 @@ describe('pre-observation owner lifecycle', () => {
           : put(await readFile(ledgerPath))
         const guardConfiguration = guardConfigurationPath === undefined
           ? putJson({ schemaVersion: 1, ledgerPath }) : put(await readFile(guardConfigurationPath))
-        const core = parseObservation('Core', { schemaVersion: 1, kind: 'fixed-trial-admission-core-v1', mode: 'ephemeral-test-only',
+        const coreInput = { schemaVersion: 1, kind: 'fixed-trial-admission-core-v1', mode: 'ephemeral-test-only',
           trialId: 'observation-trial',
           packReceiptBytes: receiptBytes === undefined ? putJson({ fixture: 'pack' }) : put(receiptBytes), installedManifestBytes:
           manifestBytes === undefined ? putJson({ fixture: 'manifest' }) : put(manifestBytes), runtimeRoot,
@@ -1218,7 +1223,19 @@ describe('pre-observation owner lifecycle', () => {
           config.provider,
           configuredModel: config.model, wireModel: 'deepseek-flash', maxTokens: 8192, maximumNewDispatches: dispatchLimit, maximumNewSettlements: dispatchLimit,
           guardConfigurationBytes: guardConfiguration }, guardEntryRelativePath,
-          guardEntryHash: sha256(await readFile(join(runtimeRoot, guardEntryRelativePath))) })
+          guardEntryHash: sha256(await readFile(join(runtimeRoot, guardEntryRelativePath))) }
+        if (process.platform === 'win32') {
+          // The protected Native admission schema intentionally accepts only
+          // POSIX roots. Verify refusal without broadening that schema or
+          // pretending this Windows fixture proves admitted task execution.
+          expect(() => parseObservation('Core', coreInput)).toThrow()
+          expect(await readFile(join(projectRoot, 'paginate.ts'))).toEqual(Buffer.alloc(0))
+          expect(await readFile(join(projectRoot, 'protected.txt'), 'utf8')).toBe('frozen task fixture')
+          expect((await context.sessionPersistence.load(fixtures[0]!.metadata.id)).events).toHaveLength(0)
+          expect((await context.sessionPersistence.load(fixtures[1]!.metadata.id)).events).toHaveLength(0)
+          return
+        }
+        const core = parseObservation('Core', coreInput)
         const sourceBindingHash = sha256(canonicalJson(core))
         const admission = signed({ schemaVersion: 1, kind: 'knowledge-live-cost-admission-v1', proposalHash: proposal.hash,
           grantHash: grant.hash, preRegistrationHash: prereg.hash, sourceBindingHash, sessionIDs: slots.map(slot => slot.sessionId),

@@ -630,12 +630,19 @@ describe('healProfilesModuleFallback', () => {
   })
 
   it('never lets a concurrent resolver observe a missing entry while re-pointing links', async () => {
+    const started = performance.now()
+    const phase = (name: string, details: Record<string, unknown> = {}): void => {
+      process.stderr.write(`PROFILE_FALLBACK_CONCURRENCY_PHASE ${JSON.stringify({
+        name, elapsedMs: Math.round(performance.now() - started), ...details,
+      })}\n`)
+    }
     const names = Array.from({ length: 160 }, (_, index) => `pkg-${String(index)}`)
     const first = stageInstallation(Object.fromEntries(names.map(name => [name, {}])))
     const second = stageInstallation(Object.fromEntries(names.map(name => [name, {}])))
     const home = tmp()
     const fallback = join(home, 'profiles', 'node_modules')
     healProfilesModuleFallback(first, home)
+    phase('staged-and-initial-heal', { packageCount: names.length })
     const reader = join(home, 'reader.mjs')
     const profileSource = fileURLToPath(new URL('../src/profile.ts', import.meta.url))
     writeFileSync(reader, [
@@ -647,7 +654,7 @@ describe('healProfilesModuleFallback', () => {
       "const absentInstallation = join(profile, 'uninstalled', 'package.json')",
       'const failures = []',
       'let passes = 0',
-      "process.on('message', () => { process.send({ passes, failures }); process.exit() })",
+      "process.on('message', () => { process.send({ passes, failures }, error => { if (error) throw error; process.exit() }) })",
       'async function probe(name) {',
       // Probe through the production resolver. Windows cannot atomically replace
       // a junction, so its brief delete/recreate interval must be retried there;
@@ -674,29 +681,41 @@ describe('healProfilesModuleFallback', () => {
     const child = spawn(process.execPath, ['--import', 'tsx', reader, fallback, ...names], {
       stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
     })
+    phase('reader-spawned', { pid: child.pid })
     const exited = once(child, 'exit') as Promise<[number | null, NodeJS.Signals | null]>
     try {
-      await Promise.race([
+      const ready = await Promise.race([
         once(child, 'message'),
         exited.then(() => { throw new Error('resolver exited before readiness') }),
       ])
+      expect(ready[0]).toBe('ready')
+      phase('reader-ready')
       for (let index = 0; index < 40; index += 1) {
         healProfilesModuleFallback(index % 2 === 0 ? second : first, home)
+        if ((index + 1) % 10 === 0) phase('healed', { heals: index + 1 })
       }
       const result = once(child, 'message')
       child.send('stop')
-      const [report] = await result as [{ passes: number; failures: unknown[] }]
+      phase('report-requested')
+      const [report] = await Promise.race([
+        result,
+        exited.then(() => { throw new Error('resolver exited before reporting') }),
+      ]) as [{ passes: number; failures: unknown[] }]
+      phase('report-received', { passes: report.passes, failureCount: report.failures.length })
       const [code, signal] = await exited
+      phase('reader-exited', { code, signal })
       expect({ code, signal }).toEqual({ code: 0, signal: null })
       expect(report.passes).toBeGreaterThan(0)
       expect(report.failures).toEqual([])
       expect(readlinkSync(join(fallback, 'pkg-0'))).toBe(realpathSync.native(join(dirname(first), 'node_modules', 'pkg-0')))
     } finally {
+      phase('cleanup-started', { exitCode: child.exitCode, signalCode: child.signalCode })
       if (child.exitCode === null && child.signalCode === null) child.kill()
       await exited
       for (const directory of [home, dirname(dirname(first)), dirname(dirname(second))]) {
         rmSync(directory, { recursive: true, force: true })
       }
+      phase('cleanup-completed')
     }
   }, 20_000)
 })

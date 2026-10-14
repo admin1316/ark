@@ -139,21 +139,29 @@ describe('two-stage ingest lifecycle', () => {
     const sourceRel = writeSource(projectRoot)
     const governance = join(projectRoot, 'wiki', '_governance')
     const sources = join(projectRoot, 'wiki', '_candidates', 'ingest', 'sources')
-    mkdirSync(dirname(sources), { recursive: true })
-    writeFileSync(governance, 'preserve governance blocker')
-    writeFileSync(sources, 'preserve source blocker')
-
-    const result = await ingestSource(
-      stageExecutorFor(llmFor('no FILE blocks')), 'p', 'm', projectRoot, sourceRel, new AbortController().signal,
-    )
-
-    expect(result.written).toEqual([])
-    expect(result.warnings).toEqual(expect.arrayContaining([
-      expect.stringMatching(/^log append failed: /u),
-      expect.stringMatching(/^summary fallback failed: /u),
-    ]))
-    expect(readFileSync(governance, 'utf8')).toBe('preserve governance blocker')
-    expect(readFileSync(sources, 'utf8')).toBe('preserve source blocker')
+    const originalPrepare = reviewOwner.prepareReviewAppend
+    const prepare = vi.spyOn(reviewOwner, 'prepareReviewAppend').mockImplementation((...args) => {
+      // Reach the real preflight before obstructing the later writers. An
+      // already obstructed tree must fail at preflight, not at these writers.
+      const plan = originalPrepare(...args)
+      mkdirSync(dirname(sources), { recursive: true })
+      writeFileSync(governance, 'preserve governance blocker')
+      writeFileSync(sources, 'preserve source blocker')
+      return plan
+    })
+    try {
+      const result = await ingestSource(
+        stageExecutorFor(llmFor('no FILE blocks')), 'p', 'm', projectRoot, sourceRel, new AbortController().signal,
+      )
+      expect(prepare).toHaveBeenCalledOnce()
+      expect(result.written).toEqual([])
+      expect(result.warnings).toEqual(expect.arrayContaining([
+        expect.stringMatching(/^log append failed: /u),
+        expect.stringMatching(/^summary fallback failed: /u),
+      ]))
+      expect(readFileSync(governance, 'utf8')).toBe('preserve governance blocker')
+      expect(readFileSync(sources, 'utf8')).toBe('preserve source blocker')
+    } finally { prepare.mockRestore() }
   })
 
   it('returns a clean empty-source outcome before calling the model', async () => {

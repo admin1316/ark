@@ -37,6 +37,7 @@ export interface GovernedWikiPath {
 
 /**
  * Resolve one durable Wiki-relative path without repairing unsafe input.
+ * Existing intermediate components must be ordinary directories.
  * @param root - absolute Wiki root that owns the path.
  * @param input - persisted POSIX-style path relative to the Wiki root.
  * @param allowMissing - whether a missing suffix is valid for a future create.
@@ -56,10 +57,11 @@ export function resolveGovernedWikiPath(
   const base = resolve(root)
   const absolutePath = join(base, ...parts)
   let cursor = base
-  for (const part of parts) {
+  for (const [index, part] of parts.entries()) {
     cursor = join(cursor, part)
     try {
-      if (lstatSync(cursor).isSymbolicLink()) return undefined
+      const stat = lstatSync(cursor)
+      if (stat.isSymbolicLink() || (index < parts.length - 1 && !stat.isDirectory())) return undefined
     } catch (error) {
       if (!isMissingPathError(error)) throw error
       if (allowMissing) break

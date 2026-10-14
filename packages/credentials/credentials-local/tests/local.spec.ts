@@ -447,11 +447,15 @@ describe('real hot reload', () => {
     await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_TEST: live\n  DSH_CRED_OTHER: extra\n')
     await vi.waitFor(async () => {
       expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'live', source: 'file' })
+      expect(await ctx.credentials.resolve(OTHER)).toEqual({ value: 'extra', source: 'file' })
     })
 
     // Wholesale replacement: an entry deleted on disk never lingers in memory.
     await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_TEST: live\n')
     await vi.waitFor(async () => {
+      // OTHER is also absent in an intermediate empty/truncated document;
+      // wait for the complete replacement before counting the self-write.
+      expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'live', source: 'file' })
       expect(await ctx.credentials.resolve(OTHER)).toBeUndefined()
     })
 

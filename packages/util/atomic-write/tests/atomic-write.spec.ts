@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   claimRemovalFails: false,
   lockRemovalFails: false,
   lockStatFails: false,
+  lockInodes: undefined as { held: bigint; replacement: bigint; replaced: boolean } | undefined,
   fixedTempSuffix: false,
   atomicWriteFails: false,
   atomicCleanupFails: false,
@@ -49,7 +50,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       if (state.lockStatFails && String(args[0]).endsWith('.lock')) {
         throw Object.assign(new Error('synthetic lock identity permission failure'), { code: 'EACCES' })
       }
-      return actual.lstat(...args)
+      const stats = await actual.lstat(...args)
+      const inodes = state.lockInodes
+      if (stats !== undefined && inodes !== undefined && String(args[0]).endsWith('.lock')) {
+        // Only inode metadata is synthetic; lock creation, PID bytes and the
+        // same-PID replacement still cross the real filesystem boundary.
+        const inode = inodes.replaced ? inodes.replacement : inodes.held
+        stats.ino = typeof stats.ino === 'bigint' ? inode : Number(inode)
+      }
+      return stats
     }) as typeof actual.lstat,
     rm: async (...args: Parameters<typeof actual.rm>) => {
       if (state.atomicCleanupFails && String(args[0]).endsWith('.tmp')) {
@@ -90,6 +99,7 @@ afterEach(async () => {
   state.claimRemovalFails = false
   state.lockRemovalFails = false
   state.lockStatFails = false
+  state.lockInodes = undefined
   state.fixedTempSuffix = false
   state.atomicWriteFails = false
   state.atomicCleanupFails = false
@@ -340,6 +350,23 @@ describe('withFileLock', () => {
     const target = join(await scratch(), 'document')
     await withFileLock(target, async () => {
       await writeFileAtomic(`${target}.lock`, `${process.pid}\n`, { mode: 0o600 })
+    })
+    expect(await readFile(`${target}.lock`, 'utf8')).toBe(`${process.pid}\n`)
+  })
+
+  it('preserves a real same-PID replacement when synthetic high inode identities collide as numbers', async () => {
+    const target = join(await scratch(), 'document')
+    const held = 9_007_199_254_740_992n
+    const replacement = held + 1n
+    expect(Number(held)).toBe(Number(replacement))
+    const inodes: NonNullable<typeof state.lockInodes> = state.lockInodes = { held, replacement, replaced: false }
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    await withFileLock(target, async () => {
+      const before = await actual.lstat(`${target}.lock`, { bigint: true })
+      await writeFileAtomic(`${target}.lock`, `${process.pid}\n`, { mode: 0o600 })
+      const after = await actual.lstat(`${target}.lock`, { bigint: true })
+      expect(after.ino).not.toBe(before.ino)
+      inodes.replaced = true
     })
     expect(await readFile(`${target}.lock`, 'utf8')).toBe(`${process.pid}\n`)
   })
