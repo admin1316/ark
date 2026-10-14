@@ -173,7 +173,7 @@ function safeRelativePath(root: string, candidate: string): string {
   const absolute = resolve(root, candidate)
   const rel = relative(root, absolute)
   if (rel === '' || rel.startsWith(`..${sep}`) || rel === '..' || isAbsolute(rel)) throw new Error('evidence path escapes repository')
-  return rel
+  return rel.split(sep).join('/')
 }
 
 function artifactCompleteness(root: string): AcceptanceCheck {

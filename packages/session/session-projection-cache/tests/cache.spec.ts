@@ -411,7 +411,7 @@ describe('SessionProjectionCache cold-read seeding', () => {
     await seedRecord(root, 'cold-snap', {
       'cache-test/count': { ver: 1, seq: 2, val: 3 },
     }, { createdAt: 9 })
-    const { cache, ctx } = await harness({ root })
+    const { cache, ctx, fiber } = await harness({ root })
     const apply = vi.fn((_state: number, _event: SessionEvent) => 1)
     ctx.sessionProjections.register({
       key: 'cache-test/count',
@@ -432,14 +432,14 @@ describe('SessionProjectionCache cold-read seeding', () => {
     // Host-only unit: folded but not served; the refreshed row is written
     // back (fail-soft, fire-and-forget) once the write lands.
     expect(Object.keys(snapshot.values)).not.toContain('cache-test/count')
-    await waitForRow(root, meta.id, rows => rows?.['cache-test/count']?.seq === 4)
-    expect((await storedRows(root, meta.id))?.['cache-test/count']?.seq).toBe(4)
     // No cached row yet: the first cold read folds from init over the full
     // log and creates the cache row (the `?? {}` seed path).
     const fresh = headerOf(SessionId('cold-fresh'), 10)
     cache.coldSnapshot(fresh, events)
     expect(apply).toHaveBeenCalledTimes(7) // 2 tail + 5 full
-    await waitForRow(root, fresh.id, rows => rows?.['cache-test/count']?.seq === 4)
+    // Dispose drains the domain's actual write chain before checking the medium.
+    await fiber.dispose()
+    expect((await storedRows(root, meta.id))?.['cache-test/count']?.seq).toBe(4)
     expect((await storedRows(root, fresh.id))?.['cache-test/count']?.seq).toBe(4)
   })
 

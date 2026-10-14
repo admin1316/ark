@@ -8,7 +8,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { once } from 'node:events'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   composeEntries,
@@ -641,7 +641,7 @@ describe('healProfilesModuleFallback', () => {
     writeFileSync(reader, [
       "import { readFileSync } from 'node:fs'",
       "import { join, dirname } from 'node:path'",
-      `import { resolveBundleDir } from ${JSON.stringify(profileSource)}`,
+      `import { resolveBundleDir } from ${JSON.stringify(pathToFileURL(profileSource).href)}`,
       'const [fallback, ...names] = process.argv.slice(2)',
       "const profile = join(dirname(fallback), 'active')",
       "const absentInstallation = join(profile, 'uninstalled', 'package.json')",

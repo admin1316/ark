@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto'
 import { existsSync, linkSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, parse } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
 const faultFsync = vi.hoisted(() => ({ active: false, code: 'EPERM', failFile: false, fileCode: 'EIO', fileCalls: 0, directoryCalls: 0 }))
 const directoryFds = vi.hoisted(() => new Set<number>())
 const fileFds = vi.hoisted(() => new Set<number>())
 const nameReplacement = vi.hoisted(() => ({ targetPath: '', replacementPath: '' }))
+const windowsNamedChanges = vi.hoisted(() => new Map<string, 'inode' | 'symlink'>())
 const injectedFsChange = vi.hoisted(() => ({
   lstatPath: '', lstatCalls: 0, lstatThrowAt: 0, lstatErrorCode: 'EACCES',
   lstatReplaceTarget: '', lstatReplaceWith: '', lstatReplaceAt: 0,
@@ -24,6 +26,16 @@ vi.mock('node:fs', async (importOriginal) => {
   return {
     ...actual,
     lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      const windowsChange = windowsNamedChanges.get(String(args[0]))
+      if (windowsChange !== undefined) {
+        const stat = actual.lstatSync(...args)
+        if (stat === undefined) return stat
+        // Windows denies renaming an inode with an open descriptor. Exercise the
+        // same post-open named-stat disagreement without failing in the fixture rename.
+        return Object.assign(Object.create(stat) as typeof stat, windowsChange === 'symlink'
+          ? { isSymbolicLink: () => true }
+          : { ino: typeof stat.ino === 'bigint' ? stat.ino + 1n : stat.ino + 1 })
+      }
       if (String(args[0]) === injectedFsChange.lstatPath) {
         injectedFsChange.lstatCalls += 1
         if (injectedFsChange.lstatCalls === injectedFsChange.lstatReplaceAt &&
@@ -55,8 +67,11 @@ vi.mock('node:fs', async (importOriginal) => {
       }
       const fd = actual.openSync(...args)
       if (openedPath === injectedFsChange.openParentTarget && injectedFsChange.openParentBackup !== '') {
-        actual.renameSync(injectedFsChange.openParentTarget, injectedFsChange.openParentBackup)
-        actual.mkdirSync(injectedFsChange.openParentTarget)
+        if (process.platform === 'win32') windowsNamedChanges.set(openedPath, 'inode')
+        else {
+          actual.renameSync(injectedFsChange.openParentTarget, injectedFsChange.openParentBackup)
+          actual.mkdirSync(injectedFsChange.openParentTarget)
+        }
         injectedFsChange.openParentTarget = ''
         injectedFsChange.openParentBackup = ''
       }
@@ -79,15 +94,20 @@ vi.mock('node:fs', async (importOriginal) => {
         injectedFsChange.writeHardlinkPath = ''
       }
       if (injectedFsChange.writeParentTarget !== '' && injectedFsChange.writeParentMoved !== '') {
-        actual.renameSync(injectedFsChange.writeParentTarget, injectedFsChange.writeParentMoved)
-        if (injectedFsChange.writeParentMode === 'symlink') actual.symlinkSync(injectedFsChange.writeParentMoved, injectedFsChange.writeParentTarget)
-        else actual.mkdirSync(injectedFsChange.writeParentTarget)
+        if (process.platform === 'win32') windowsNamedChanges.set(injectedFsChange.writeParentTarget,
+          injectedFsChange.writeParentMode === 'symlink' ? 'symlink' : 'inode')
+        else {
+          actual.renameSync(injectedFsChange.writeParentTarget, injectedFsChange.writeParentMoved)
+          if (injectedFsChange.writeParentMode === 'symlink') actual.symlinkSync(injectedFsChange.writeParentMoved, injectedFsChange.writeParentTarget)
+          else actual.mkdirSync(injectedFsChange.writeParentTarget)
+        }
         injectedFsChange.writeParentTarget = ''
         injectedFsChange.writeParentMoved = ''
         injectedFsChange.writeParentMode = ''
       }
       if (nameReplacement.targetPath !== '' && nameReplacement.replacementPath !== '') {
-        actual.renameSync(nameReplacement.replacementPath, nameReplacement.targetPath)
+        if (process.platform === 'win32') windowsNamedChanges.set(nameReplacement.targetPath, 'inode')
+        else actual.renameSync(nameReplacement.replacementPath, nameReplacement.targetPath)
         nameReplacement.targetPath = ''
         nameReplacement.replacementPath = ''
       }
@@ -110,6 +130,7 @@ import {
   atomicWriteFile,
   createPrivateFileIfMissing,
   durableUnlinkFile,
+  isMissingPathError,
 } from '../src/filesystem.ts'
 import {
   appendKnowledgeEvent,
@@ -151,6 +172,8 @@ function nextRetrievedEvent(path: string, root: string, query: string) {
 }
 
 afterEach(() => {
+  Object.defineProperty(process, 'platform', originalPlatform)
+  windowsNamedChanges.clear()
   faultFsync.active = false
   faultFsync.code = 'EPERM'
   faultFsync.failFile = false
@@ -187,6 +210,37 @@ afterEach(() => {
 // must tolerate that specific failure and still publish the bytes, because
 // NTFS journals its own metadata. Every helper runs under the injected fault.
 describe('durable writes tolerate EPERM directory fsync', () => {
+  it('distinguishes Windows missing-path errors beneath directories, files and aliases', () => {
+    const root = mkdtempSync(join(tmpdir(), 'wiki-missing-ancestry-'))
+    roots.push(root)
+    const missing = (path: string) => Object.assign(new Error('ENOENT: simulated Windows inspection'), { code: 'ENOENT', path })
+    expect(isMissingPathError(missing(join(root, 'absent', 'nested', 'page.md')))).toBe(true)
+    writeFileSync(join(root, 'ordinary-file'), 'not a directory')
+    expect(isMissingPathError(missing(join(root, 'ordinary-file', 'page.md')))).toBe(false)
+    symlinkSync(root, join(root, 'linked-directory'), 'dir')
+    expect(isMissingPathError(missing(join(root, 'linked-directory', 'page.md')))).toBe(true)
+    symlinkSync(join(root, 'ordinary-file'), join(root, 'linked-file'), 'file')
+    expect(isMissingPathError(missing(join(root, 'linked-file', 'page.md')))).toBe(false)
+    expect(isMissingPathError({ code: 'ENOENT' })).toBe(true)
+    expect(isMissingPathError({ code: 'ENOENT', path: 42 })).toBe(true)
+    expect(isMissingPathError({ code: 'EIO', path: root })).toBe(false)
+  })
+
+  it('propagates ancestor inspection faults and bounds an unavailable filesystem root', () => {
+    const root = mkdtempSync(join(tmpdir(), 'wiki-missing-fault-'))
+    roots.push(root)
+    injectedFsChange.lstatPath = root
+    injectedFsChange.lstatThrowAt = 1
+    expect(() => isMissingPathError({ code: 'ENOENT', path: join(root, 'page.md') })).toThrow('EACCES: injected lstat failure')
+    expect(injectedFsChange.lstatCalls).toBe(1)
+    const filesystemRoot = parse(root).root
+    injectedFsChange.lstatPath = filesystemRoot
+    injectedFsChange.lstatCalls = 0
+    injectedFsChange.lstatErrorCode = 'ENOENT'
+    expect(isMissingPathError({ code: 'ENOENT', path: join(filesystemRoot, 'page.md') })).toBe(false)
+    expect(injectedFsChange.lstatCalls).toBe(1)
+  })
+
   it('atomicWriteFile publishes the replacement without the directory fsync', () => {
     const root = mkdtempSync(join(tmpdir(), 'wiki-eperm-'))
     roots.push(root)
@@ -298,7 +352,8 @@ describe('durable writes tolerate EPERM directory fsync', () => {
     expect(readKnowledgeEventLog(path)).toEqual([event])
   })
 
-  it('refuses a path replacement between append write and sync without fsyncing the replacement inode', () => {
+  it.each(['native', 'win32'] as const)('refuses a path replacement between append write and sync without fsyncing the replacement inode (%s)', (platform) => {
+    if (platform === 'win32') Object.defineProperty(process, 'platform', { value: 'win32' })
     const root = mkdtempSync(join(tmpdir(), 'wiki-event-replaced-'))
     roots.push(root)
     const path = join(root, 'events.jsonl')
@@ -316,7 +371,8 @@ describe('durable writes tolerate EPERM directory fsync', () => {
     nameReplacement.replacementPath = replacement
 
     expect(() => { appendKnowledgeEvent(path, second) }).toThrow('unsafe knowledge event log')
-    expect(readFileSync(path, 'utf8')).toBe('replacement inode\n')
+    if (process.platform === 'win32') expect(windowsNamedChanges.get(path)).toBe('inode')
+    else expect(readFileSync(path, 'utf8')).toBe('replacement inode\n')
     expect(faultFsync.fileCalls).toBe(1)
     expect(faultFsync.directoryCalls).toBe(1)
   })
@@ -335,7 +391,8 @@ describe('durable writes tolerate EPERM directory fsync', () => {
     expect(directoryFds.size).toBe(0)
   })
 
-  it('rejects a symlinked parent directory after the event write and closes both handles', () => {
+  it.each(['native', 'win32'] as const)('rejects a symlinked parent directory after the event write and closes both handles (%s)', (platform) => {
+    if (platform === 'win32') Object.defineProperty(process, 'platform', { value: 'win32' })
     const root = mkdtempSync(join(tmpdir(), 'wiki-event-parent-link-'))
     roots.push(root)
     const parent = join(root, 'journal')
@@ -352,7 +409,8 @@ describe('durable writes tolerate EPERM directory fsync', () => {
     expect(directoryFds.size).toBe(0)
   })
 
-  it('rejects a parent directory inode replaced after open and closes its descriptor', () => {
+  it.each(['native', 'win32'] as const)('rejects a parent directory inode replaced after open and closes its descriptor (%s)', (platform) => {
+    if (platform === 'win32') Object.defineProperty(process, 'platform', { value: 'win32' })
     const root = mkdtempSync(join(tmpdir(), 'wiki-event-parent-swap-'))
     roots.push(root)
     const parent = join(root, 'journal')

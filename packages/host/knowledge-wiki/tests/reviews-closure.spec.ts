@@ -8,7 +8,6 @@ import {
   symlinkSync,
   unlinkSync,
   writeFileSync,
-  chmodSync,
 } from 'node:fs'
 import { createHmac } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -40,7 +39,10 @@ import { issueTestReceipt, verifierAuthority } from './verifier-authority-fixtur
 // Directory-fsync fault injection: a real Windows runner cannot fsync directory
 // handles (EPERM), and a damaged one can fail with other errno codes. The fault
 // is inert unless a test activates it.
+const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
 const fsFault = vi.hoisted(() => ({
+  readdirFailurePath: undefined as string | undefined,
+  readdirFailureCalls: 0,
   mode: 'none' as 'none' | 'eperm' | 'eio',
   fileOncePath: undefined as string | undefined,
   replaceBeforeOpenPath: undefined as string | undefined,
@@ -53,10 +55,26 @@ const fsFault = vi.hoisted(() => ({
 const directoryFds = vi.hoisted(() => new Set<number>())
 const directoryFdPaths = vi.hoisted(() => new Map<number, string>())
 const fileFdPaths = vi.hoisted(() => new Map<number, string>())
+const fileFdFlags = vi.hoisted(() => new Map<number, number>())
+const namedInodeChanges = vi.hoisted(() => new Set<string>())
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
+    lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      const stat = actual.lstatSync(...args)
+      if (stat === undefined) return stat
+      return namedInodeChanges.has(String(args[0]))
+        ? Object.assign(Object.create(stat) as typeof stat, { ino: typeof stat.ino === 'bigint' ? stat.ino + 1n : stat.ino + 1 })
+        : stat
+    },
+    readdirSync: (...args: Parameters<typeof actual.readdirSync>) => {
+      if (String(args[0]) === fsFault.readdirFailurePath) {
+        fsFault.readdirFailureCalls += 1
+        throw Object.assign(new Error('EACCES: promotion journal directory unavailable'), { code: 'EACCES' })
+      }
+      return actual.readdirSync(...args)
+    },
     openSync: (...args: Parameters<typeof actual.openSync>) => {
       const requestedPath = String(args[0])
       if (fsFault.replaceBeforeOpenPath === requestedPath) {
@@ -73,7 +91,10 @@ vi.mock('node:fs', async (importOriginal) => {
         if (actual.statSync(String(args[0])).isDirectory()) {
           directoryFds.add(fd)
           directoryFdPaths.set(fd, String(args[0]))
-        } else fileFdPaths.set(fd, String(args[0]))
+        } else {
+          fileFdPaths.set(fd, String(args[0]))
+          fileFdFlags.set(fd, Number(args[1]))
+        }
       } catch { /* not stat-able */ }
       return fd
     },
@@ -81,9 +102,15 @@ vi.mock('node:fs', async (importOriginal) => {
       directoryFds.delete(fd)
       directoryFdPaths.delete(fd)
       fileFdPaths.delete(fd)
+      fileFdFlags.delete(fd)
       actual.closeSync(fd)
     },
     fsyncSync: (descriptor: number) => {
+      const flags = fileFdFlags.get(descriptor)
+      if (process.platform === 'win32' && flags !== undefined
+        && (flags & (actual.constants.O_RDWR | actual.constants.O_WRONLY)) === 0) {
+        throw Object.assign(new Error('EPERM: read-only file cannot be flushed'), { code: 'EPERM' })
+      }
       if (fsFault.mode !== 'none' && directoryFds.has(descriptor)) {
         const code = fsFault.mode === 'eperm' ? 'EPERM' : 'EIO'
         throw Object.assign(new Error(`${code}: fsync fault`), { code })
@@ -99,20 +126,23 @@ vi.mock('node:fs', async (importOriginal) => {
         fsFault.fileOncePath = undefined
         throw Object.assign(new Error('EIO: staged-file fsync fault'), { code: 'EIO' })
       }
-      actual.fsyncSync(descriptor)
       const syncedPath = fileFdPaths.get(descriptor)
       const directoryInjection = fsFault.appendEventAtDirectorySync
       if (directoryInjection !== undefined && directoryFdPaths.get(descriptor) === directoryInjection.directory) {
         fsFault.appendEventAtDirectorySync = undefined
         actual.appendFileSync(directoryInjection.path, directoryInjection.line, 'utf8')
       }
+      actual.fsyncSync(descriptor)
       if (syncedPath !== undefined && fsFault.replaceAfterFileSyncPath === syncedPath) {
         fsFault.replaceAfterFileSyncPath = undefined
-        const content = actual.readFileSync(syncedPath)
-        const retained = `${syncedPath}.replaced-inode`
-        actual.renameSync(syncedPath, retained)
-        actual.writeFileSync(syncedPath, content)
-        actual.unlinkSync(retained)
+        if (process.platform === 'win32') namedInodeChanges.add(syncedPath)
+        else {
+          const content = actual.readFileSync(syncedPath)
+          const retained = `${syncedPath}.replaced-inode`
+          actual.renameSync(syncedPath, retained)
+          actual.writeFileSync(syncedPath, content)
+          actual.unlinkSync(retained)
+        }
       }
     },
     readSync: (...args: Parameters<typeof actual.readSync>) => {
@@ -133,6 +163,10 @@ const STOP_AFTER_JOURNAL = new Error('stop after journal persistence')
 const PROMOTION_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 
 afterEach(() => {
+  Object.defineProperty(process, 'platform', originalPlatform)
+  namedInodeChanges.clear()
+  fsFault.readdirFailurePath = undefined
+  fsFault.readdirFailureCalls = 0
   fsFault.mode = 'none'
   fsFault.fileOncePath = undefined
   fsFault.replaceBeforeOpenPath = undefined
@@ -1020,7 +1054,8 @@ describe('promotion journal recovery boundaries', () => {
     expect(events.some(event => event.type === 'knowledge/promoted')).toBe(false)
   })
 
-  it('syncs an already-matching staged inode before recovery can rename it', async () => {
+  it.each(['native', 'win32'] as const)('syncs an already-matching staged inode before recovery can rename it (%s)', async (platform) => {
+    if (platform === 'win32') Object.defineProperty(process, 'platform', { value: 'win32' })
     const item = fixture()
     const journal = await interruptAtJournalPersistence(item, 'Archive')
     const review = operationOf(journal, 'review')
@@ -1103,7 +1138,8 @@ describe('promotion journal recovery boundaries', () => {
     expect(existsSync(item.candidateFull)).toBe(false)
   })
 
-  it('rejects oversized and replaced matching stages before applying a WAL operation', async () => {
+  it.each(['native', 'win32'] as const)('rejects oversized and replaced matching stages before applying a WAL operation (%s)', async (platform) => {
+    if (platform === 'win32') Object.defineProperty(process, 'platform', { value: 'win32' })
     for (const mode of ['oversized', 'replaced', 'replaced-after-sync', 'grown-during-read'] as const) {
       const item = fixture()
       const reviewBefore = readFileSync(item.reviewFile, 'utf8')
@@ -1625,14 +1661,15 @@ describe('promotion journal recovery boundaries', () => {
   it('propagates a journal directory failure that is not a missing path', async () => {
     const item = fixture()
     mkdirSync(journalDirectory(item), { recursive: true })
-    chmodSync(journalDirectory(item), 0o000)
+    fsFault.readdirFailurePath = journalDirectory(item)
     try {
       const failure = await captureFailure(() => recoverCandidateReviewTransactions(
         authority, item.reviewFile, item.wikiRoot, item.archiveRoot,
       ))
       expect(failure).toMatchObject({ code: 'EACCES' })
+      expect(fsFault.readdirFailureCalls).toBe(1)
     } finally {
-      chmodSync(journalDirectory(item), 0o700)
+      fsFault.readdirFailurePath = undefined
     }
   })
 

@@ -161,7 +161,13 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
     expect(hereString).toBe('alpha\nbeta')
 
     const large = text(await execute('large-output', '1..12050 | ForEach-Object { $_ }'))
-    expect(large.startsWith('1\n2\n3\n')).toBe(true)
+    const terminal = context.terminals.list(owner)[0]
+    const retained = terminal === undefined ? undefined : context.terminals.read(owner, terminal.sessionId, { offset: 0, count: 20000 })
+    expect(large.startsWith('1\n2\n3\n'), JSON.stringify({
+      outputLength: large.length, head: large.slice(0, 512), tail: large.slice(-256),
+      retained: retained === undefined ? undefined : { totalLines: retained.totalLines, truncated: retained.truncated,
+        head: retained.text.slice(0, 512), tail: retained.text.slice(-256) },
+    })).toBe(true)
     expect(large).toContain('<response clipped>')
     expect(large).not.toContain('beginning of this command output was dropped')
 

@@ -2,11 +2,25 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { encodeReviewStore, readReviewStore, REVIEW_STORE_MAX_BYTES, writeReviewStore } from '../src/review-store.ts'
 import { appendCandidateReviews, commitReviewAppend, prepareReviewAppend } from '../src/reviews.ts'
 
 const dirs: string[] = []
+const inspectionFault = vi.hoisted(() => ({ path: '', calls: 0 }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      if (String(args[0]) === inspectionFault.path) {
+        inspectionFault.calls += 1
+        throw Object.assign(new Error('ENAMETOOLONG: candidate path inspection failed'), { code: 'ENAMETOOLONG' })
+      }
+      return actual.lstatSync(...args)
+    },
+  }
+})
 
 function fixture(): string {
   const path = mkdtempSync(join(tmpdir(), 'wiki-review-store-'))
@@ -19,6 +33,8 @@ function exactLimitItem(padding = ''): { readonly id: string; readonly title: st
 }
 
 afterEach(() => {
+  inspectionFault.path = ''
+  inspectionFault.calls = 0
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -161,15 +177,17 @@ describe('review store encoding', () => {
     expect(existsSync(reviewFile)).toBe(false)
   })
 
-  it('propagates a real overlong candidate path inspection failure', () => {
+  it('propagates an overlong candidate path inspection failure before publishing', () => {
     const root = fixture()
     const reviewFile = join(root, '.llm-wiki', 'review.json')
     const overlongComponent = 'x'.repeat(300)
     mkdirSync(join(root, 'wiki', '_candidates'), { recursive: true })
+    inspectionFault.path = join(root, 'wiki', '_candidates', overlongComponent)
     expect(() => prepareReviewAppend(reviewFile, root, undefined, [], [{
       path: `wiki/_candidates/${overlongComponent}/page.md`,
       content: '---\ntitle: Blocked\nstatus: candidate\n---\n\nPath inspection must propagate a real filesystem error.\n',
-    }])).toThrow()
+    }])).toThrow('ENAMETOOLONG: candidate path inspection failed')
+    expect(inspectionFault.calls).toBe(1)
     expect(existsSync(reviewFile)).toBe(false)
   })
 

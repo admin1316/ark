@@ -592,7 +592,7 @@ function writePromotionStage(path: string, content: string): void {
     if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) {
       throw new Error(`unsafe promotion stage at ${path}`)
     }
-    const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const descriptor = openSync(path, (process.platform === 'win32' ? constants.O_RDWR : constants.O_RDONLY) | constants.O_NOFOLLOW)
     try {
       const opened = fstatSync(descriptor)
       if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== before.dev || opened.ino !== before.ino) {

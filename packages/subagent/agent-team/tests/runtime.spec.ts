@@ -153,7 +153,11 @@ it('reports a provisioning conflict when the durable member vanished before sett
   try {
     const teams = run.ctx.agentTeams
     const startResult = Promise.withResolvers<never>()
-    vi.spyOn(run.ctx.subagents, 'startContinuable').mockImplementation(() => startResult.promise)
+    const started = Promise.withResolvers<undefined>()
+    const start = vi.spyOn(run.ctx.subagents, 'startContinuable').mockImplementation(() => {
+      started.resolve(undefined)
+      return startResult.promise
+    })
     // Simulate a durable journal that lost the provisioning member (e.g. a
     // compacted or replaced root log): the settle must refuse instead of
     // recording a terminal phase for a teammate the journal never knew.
@@ -177,9 +181,9 @@ it('reports a provisioning conflict when the durable member vanished before sett
       name: 'vanishing-worker', description: 'Vanished mid-provisioning', prompt: [{ type: 'text', text: 'initial child task' }],
       provider: 'spawn', context: 'fresh', signal: new AbortController().signal,
     }).catch((error: unknown) => error)
-    await vi.waitFor(() => {
-      expect(run.lead.session.events.some(event => event.type === 'team/member')).toBe(true)
-    })
+    await started.promise
+    expect(run.lead.session.events.some(event => event.type === 'team/member')).toBe(true)
+    expect(start).toHaveBeenCalledOnce()
     vanishNext = true
     startResult.reject(new Error('start failed'))
     const failure = await spawning

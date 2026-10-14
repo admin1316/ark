@@ -6,7 +6,7 @@ import { generateKeyPairSync, sign, verify, type KeyObject } from 'node:crypto'
 import { mkdtemp, readFile, rm, mkdir, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import { isolatedChildEnvironment } from './process-isolation.ts'
 import { Context } from '@deepseek-ai/cordis'
@@ -38,12 +38,12 @@ async function runEvaluatorCli(context: Context, configPath: string, request: un
   const compiledRuntime = process.env['ARK_PRODUCER_COMPILED_RUNTIME_ROOT'] ?? process.env['ARK_OBSERVATION_COMPILED_RUNTIME_ROOT']
   const argv = compiledRuntime === undefined
     ? [process.execPath, '--import', createRequire(import.meta.url).resolve('tsx'),
-      new URL('./knowledge-use-evaluator.ts', import.meta.url).pathname, configPath]
+      fileURLToPath(new URL('./knowledge-use-evaluator.ts', import.meta.url)), configPath]
     : [process.execPath, join(compiledRuntime, 'protected-helpers/scripts/rust-migration/knowledge-use-evaluator.mjs'), configPath]
   const child = context.subprocess.spawn({
     argv,
     cwd: process.cwd(), env: { ...isolatedChildEnvironment(),
-      TSX_TSCONFIG_PATH: new URL('../../tsconfig.base.json', import.meta.url).pathname },
+      TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../tsconfig.base.json', import.meta.url)) },
     graceMs: 1_000, signal: AbortSignal.timeout(15_000),
     stdio: { stdin: { data: inputBytes }, stdout: { maxBytes: 4 * 1024 * 1024 }, stderr: { maxBytes: 32 * 1024 } },
   })
@@ -60,7 +60,7 @@ async function runEvaluatorCli(context: Context, configPath: string, request: un
 
 async function cancelledEvaluator(configPath: string, mode: 'signal' | 'parent-exit') {
   const argv = [process.execPath, '--import', createRequire(import.meta.url).resolve('tsx'),
-    new URL('./knowledge-use-evaluator.ts', import.meta.url).pathname, configPath]
+    fileURLToPath(new URL('./knowledge-use-evaluator.ts', import.meta.url)), configPath]
   const fifoRoot = await mkdtemp(join(tmpdir(), 'ark-evaluator-owner-loss-'))
   const fifo = join(fifoRoot, 'stdin.fifo')
   execFileSync('/usr/bin/mkfifo', [fifo])
@@ -73,7 +73,7 @@ async function cancelledEvaluator(configPath: string, mode: 'signal' | 'parent-e
     setTimeout(()=>{${mode === 'signal' ? "child.kill('SIGTERM')" : 'process.exit(0)'}},3000);
     child.once('exit',()=>process.exit(0));`
   const parent = spawn(process.execPath, ['--eval', parentCode], { cwd: process.cwd(),
-    env: { ...isolatedChildEnvironment(), TSX_TSCONFIG_PATH: new URL('../../tsconfig.base.json', import.meta.url).pathname },
+    env: { ...isolatedChildEnvironment(), TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../tsconfig.base.json', import.meta.url)) },
     stdio: ['pipe', 'pipe', 'pipe'] })
   let stdout = ''; let stderr = ''
   parent.stdout.on('data', (chunk) => { stdout += String(chunk) })
@@ -1368,11 +1368,11 @@ describe('pre-observation owner lifecycle', () => {
             await writeFile(path, canonicalJson(completedLaunch))
             const argv = compiledRoot === undefined
               ? [process.execPath, '--import', createRequire(import.meta.url).resolve('tsx'),
-                new URL('./knowledge-use-producer.ts', import.meta.url).pathname, path]
+                fileURLToPath(new URL('./knowledge-use-producer.ts', import.meta.url)), path]
               : [process.execPath, join(compiledRoot, 'protected-helpers/scripts/rust-migration/knowledge-use-producer.mjs'), path]
             const child = context.subprocess.spawn({ argv, cwd: process.cwd(),
               env: { ...isolatedChildEnvironment(), ARK_NATIVE_OWNER_SOCKET_PATH: socketPath, ARK_NATIVE_OWNER_LAUNCH_TOKEN: launchToken,
-                TSX_TSCONFIG_PATH: new URL('../../tsconfig.base.json', import.meta.url).pathname },
+                TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../tsconfig.base.json', import.meta.url)) },
               signal: AbortSignal.timeout(30_000), graceMs: 1000,
               stdio: { stdin: { data: '' }, stdout: { maxBytes: 4 * 1024 * 1024 }, stderr: { maxBytes: 32 * 1024 } } })
             try {

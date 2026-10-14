@@ -5,7 +5,7 @@ import { createPrivateKey, sign, type KeyObject } from 'node:crypto'
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -73,7 +73,7 @@ async function paginationCheck(
       import.meta.url)
     const wikiSource = resolve(import.meta.dirname, '../../packages/host/knowledge-wiki/src')
     const reads = execution === undefined ? [root] : execution.files.map(file => resolveConfinedPath(root, file.path, false))
-    const argv = [process.execPath, '--permission', ...reads.map(path => `--allow-fs-read=${path}`), `--allow-fs-read=${oracle.pathname}`,
+    const argv = [process.execPath, '--permission', ...reads.map(path => `--allow-fs-read=${path}`), `--allow-fs-read=${fileURLToPath(oracle)}`,
       `--allow-fs-read=${wikiSource}`, '--no-addons', '--input-type=module']
     const confined = sandbox.confine(argv, { mode: 'read-only', workspaceRoot: root })
     assert(confined.enforcement === 'full', 'pagination pilot requires full file-effect confinement')
@@ -136,8 +136,8 @@ export async function verifyKnowledgePilotEvidence(
   }
   const programIdentity = () => ({
     verifierSourceHash: sha256(readRegularFileBounded(import.meta.filename, 2 * 1024 * 1024)),
-    oracleSourceHash: sha256(readRegularFileBounded(new URL(import.meta.url.endsWith('.ts') ? './knowledge-task-oracles.ts' :
-      './knowledge-task-oracles.mjs', import.meta.url).pathname, 2 * 1024 * 1024)),
+    oracleSourceHash: sha256(readRegularFileBounded(fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './knowledge-task-oracles.ts' :
+      './knowledge-task-oracles.mjs', import.meta.url)), 2 * 1024 * 1024)),
   })
   const frozenPrograms = programIdentity()
   const input = z.object({ schemaVersion: z.literal(1), operation: z.literal('verifyCandidate'),

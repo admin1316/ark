@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
@@ -176,6 +176,14 @@ describe('CI workflow', () => {
     expect(native.steps.filter(isRecord).find(step => step.name === 'Run complete native Windows gate inventory')).toMatchObject({
       shell: 'pwsh', run: 'pnpm run check:ci:windows-complete',
     })
+    const nativeSteps = native.steps.filter(isRecord)
+    const rust = nativeSteps.findIndex(step => step.name === 'Build Rust search candidate (coverage prerequisite)')
+    expect(nativeSteps[rust]).toMatchObject({
+      shell: 'pwsh',
+      run: 'cargo build --locked --release --manifest-path rust/knowledge-search-shadow/Cargo.toml',
+    })
+    expect(rust).toBeGreaterThan(nativeSteps.findIndex(step => step.name === 'Install (immutable)'))
+    expect(rust).toBeLessThan(nativeSteps.findIndex(step => step.name === 'Run complete native Windows gate inventory'))
     expect(macos).toMatchObject({ 'runs-on': 'macos-15', if: "github.event_name == 'pull_request'" })
     expect(JSON.stringify(macos.steps)).toContain('--product JiuzhangShellContractTests')
     expect(JSON.stringify(macos.steps)).toContain('.build/debug/JiuzhangShellContractTests')
@@ -496,7 +504,13 @@ describe('Python release workflows', () => {
         const result = spawnSync('python3', ['-c', step.run], { cwd: fixture, encoding: 'utf8', env })
         expect(result.status, result.stderr).toBe(0)
         expect(readFileSync(output, 'utf8')).toContain(`wheel=deepseek_harness_runtime_bin-1.2.3rc1-py3-none-${spec.tag}.whl`)
-        expect(readFileSync(output, 'utf8')).toContain(`exe=${realpathSync(payload)}`)
+        const executable = readFileSync(output, 'utf8').split(/\r?\n/u).find(line => line.startsWith('exe='))?.slice(4)
+        expect(executable).toBeDefined()
+        if (executable === undefined) throw new Error('platform resolver omitted executable')
+        const actual = statSync(executable)
+        expect(actual.isFile()).toBe(true)
+        const expected = statSync(payload)
+        expect([actual.dev, actual.ino]).toEqual([expected.dev, expected.ino])
         rmSync(payload)
         const missing = spawnSync('python3', ['-c', step.run], { cwd: fixture, encoding: 'utf8', env })
         expect(missing.status).not.toBe(0)

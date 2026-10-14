@@ -1,6 +1,6 @@
 /** Private Native channel framing, ownership and real Loader consumer contracts. */
-import { createHash, generateKeyPairSync, sign } from 'node:crypto'
-import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
+import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
+import { lstat, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer, Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,8 +16,15 @@ import { createNativeKnowledgeOwnerProviders } from '../src/native-owner-provide
 import { connectNativeGuardCostOwner } from '../src/startup.ts'
 import * as Startup from '../src/startup.ts'
 
+// Only exact Windows fixture endpoints receive Unix stat test doubles; transport stays real.
+const socketStats = vi.hoisted(() => new Map<string, Awaited<ReturnType<typeof lstat>>>())
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof import('node:fs/promises')>()
+  return { ...actual, lstat: async (...args: Parameters<typeof actual.lstat>) =>
+    socketStats.get(String(args[0])) ?? actual.lstat(...args) }
+})
 const cleanups: Array<() => Promise<void>> = []
-afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.unstubAllEnvs() })
+afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); socketStats.clear(); vi.unstubAllEnvs() })
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const sourceIdentity = { commit: 'a'.repeat(40), sourceDigest: digest('source'), dirty: true, dirtyDigest: digest('dirty'), buildDigest: digest('build') }
 const token = 'test-launch-token-'.repeat(3)
@@ -30,13 +37,15 @@ function frame(value: unknown): Buffer {
   return Buffer.concat([head, bytes])
 }
 async function fixture(options: {
+  socketPath?: string
+  attestWindowsPipe?: boolean
   hello?: (value: Frame) => unknown
   request?: (value: Frame, peer: Socket) => void
   rawHello?: Buffer
   helloPeer?: (peer: Socket) => void
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'ark-owner-'))
-  const socketPath = join(root, 'owner.sock')
+  const socketPath = options.socketPath ?? (process.platform === 'win32' ? String.raw`\\.\pipe\ark-owner-${randomUUID()}` : join(root, 'owner.sock'))
   const peers = new Set<Socket>()
   const requests: Frame[] = []
   const hello = { version: 1, ok: true, ownerStatus: 'ready', sourceIdentity, artifactRoot: root,
@@ -57,12 +66,22 @@ async function fixture(options: {
       }
     })
   })
-  await new Promise<void>(resolve => server.listen(socketPath, resolve))
   cleanups.push(async () => {
     for (const peer of peers) peer.destroy()
-    await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    if (server.listening) await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
     await rm(root, { recursive: true, force: true })
   })
+  await new Promise<void>((resolve, reject) => {
+    const failed = (error: Error): void => { reject(error) }
+    server.once('error', failed)
+    server.listen(socketPath, () => { server.off('error', failed); resolve() })
+  })
+  if (process.platform === 'win32' && options.attestWindowsPipe !== false) {
+    const info = await lstat(root)
+    const socketInfo = Object.create(info) as typeof info
+    socketInfo.isSocket = () => true
+    socketStats.set(socketPath, socketInfo)
+  }
   return { root, endpoint: { socketPath, launchToken: token }, requests, peers, server }
 }
 async function ready(options: Parameters<typeof fixture>[0] = {}) {
@@ -77,6 +96,22 @@ const respond = (peer: Socket, request: Frame, result: unknown): void => {
 }
 
 describe('private Native channel', () => {
+  it('rejects fixture listen failures before constructing a channel', async () => {
+    await expect(fixture({ socketPath: join(tmpdir(), `ark-missing-${randomUUID()}`, 'owner.sock') })).rejects.toThrow()
+  })
+  it.runIf(process.platform === 'win32')('refuses a Windows pipe as a trusted Unix owner without publishing authority', async () => {
+    const owner = await fixture({ attestWindowsPipe: false })
+    await expect(connectNativeKnowledgeOwner(owner.endpoint)).rejects.toThrow()
+    await expect(connectNativeGuardCostOwner(owner.endpoint)).rejects.toThrow()
+    expect(owner.peers.size).toBe(0)
+    vi.stubEnv('ARK_NATIVE_OWNER_SOCKET_PATH', owner.endpoint.socketPath); vi.stubEnv('ARK_NATIVE_OWNER_LAUNCH_TOKEN', token)
+    const context = new Context(); cleanups.push(() => context.fiber.dispose())
+    provideCmdline(context, { args: [], exit: () => {} })
+    await expect(Startup.apply(context)).rejects.toThrow()
+    expect(context.get('knowledgeWikiVerifierAuthority')).toBeUndefined()
+    expect(context.get('nativeApiStartup')).toBeUndefined()
+    expect(owner.peers.size).toBe(0)
+  })
   it('keeps absent configuration and a disabled handshake without authority providers', async () => {
     expect(nativeKnowledgeOwnerEndpointFromEnvironment({})).toBeUndefined()
     const owner = await fixture({ hello: () => ({ version: 1, ok: true, ownerStatus: 'disabled', authorities: [] }) })
@@ -90,8 +125,10 @@ describe('private Native channel', () => {
     expect(() => nativeKnowledgeOwnerEndpointFromEnvironment(env)).toThrow()
   })
   it('rejects regular files as a socket endpoint', async () => {
-    const owner = await fixture(); const file = join(owner.root, 'plain'); await writeFile(file, '')
-    await expect(connectNativeKnowledgeOwner({ ...owner.endpoint, socketPath: file })).rejects.toThrow(/Unix socket/)
+    const root = await mkdtemp(join(tmpdir(), 'ark-owner-'))
+    cleanups.push(() => rm(root, { recursive: true, force: true }))
+    const file = join(root, 'plain'); await writeFile(file, '')
+    await expect(connectNativeKnowledgeOwner({ launchToken: token, socketPath: file })).rejects.toThrow(/Unix socket/)
   })
   it.each([
     (hello: Frame) => ({ ...hello, unexpected: true }),
@@ -113,8 +150,8 @@ describe('private Native channel', () => {
   it('rejects a peer that closes before hello and a stale socket endpoint', async () => {
     const owner = await fixture({ helloPeer(peer) { peer.end() } })
     await expect(connectNativeKnowledgeOwner(owner.endpoint)).rejects.toThrow(/closed before hello/)
-    const stale = join(owner.root, 'stale.sock')
-    await rename(owner.endpoint.socketPath, stale)
+    const stale = process.platform === 'win32' ? owner.endpoint.socketPath : join(owner.root, 'stale.sock')
+    if (process.platform !== 'win32') await rename(owner.endpoint.socketPath, stale)
     await new Promise<void>((resolve) => { owner.server.close(() => { resolve() }) })
     await expect(connectNativeKnowledgeOwner({ ...owner.endpoint, socketPath: stale })).rejects.toThrow()
   })
@@ -148,7 +185,7 @@ describe('private Native channel', () => {
     controller.abort(new Error('stop after dispatch'))
     await result
   })
-  it('assembles fragmented hello and response bodies without accepting partial JSON', async () => {
+  it('assembles fragmented hello without accepting partial JSON', async () => {
     const disabled = frame({ version: 1, ok: true, ownerStatus: 'disabled', authorities: [] })
     const owner = await fixture({ helloPeer(peer) {
       peer.write(disabled.subarray(0, 2))
@@ -156,6 +193,8 @@ describe('private Native channel', () => {
       setTimeout(() => { peer.write(disabled.subarray(6)) }, 20)
     } })
     expect(await connectNativeKnowledgeOwner(owner.endpoint)).toEqual({ status: 'disabled' })
+  })
+  it('assembles fragmented response bodies without accepting partial JSON', async () => {
     const active = await ready({ request(request, peer) {
       const bytes = frame({ version: 1, requestId: request.requestId, ok: true, result: true })
       peer.write(bytes.subarray(0, 8)); setTimeout(() => { peer.write(bytes.subarray(8)) }, 10)

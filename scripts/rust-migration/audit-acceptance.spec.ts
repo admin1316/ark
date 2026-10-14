@@ -151,8 +151,21 @@ describe('acceptance audit', () => {
       evidencePath: 'evidence/receipt.json',
       trustedAuthorityKeys: { 'independent-authority': publicKey.export({ type: 'spki', format: 'pem' }).toString() },
     })
+    const retainedReceipt = readFileSync(join(root, 'evidence/receipt.json'))
     expect(audit.overall).toBe('PASS')
     expect(audit.checks.rustPerformance.status).toBe('PASS')
     expect(audit.checks.crossSessionLeakage.status).toBe('PASS')
+    expect(readFileSync(join(root, 'evidence/receipt.json'))).toEqual(retainedReceipt)
+    expect(JSON.parse(retainedReceipt.toString()) as unknown).toMatchObject({ artifactRefs: unsigned.artifactRefs })
+    for (const path of ['../outside.json', join(root, 'evidence/probe.json')]) {
+      const rejected = { ...unsigned, artifactRefs: [{ path, sha256: artifactHash }] }
+      writeFileSync(join(root, 'evidence/receipt.json'), JSON.stringify({ ...rejected,
+        signature: sign(null, canonicalEvidencePayload(rejected), privateKey).toString('base64') }))
+      const unsafe = auditAcceptance(root, { evidencePath: 'evidence/receipt.json',
+        trustedAuthorityKeys: { 'independent-authority': publicKey.export({ type: 'spki', format: 'pem' }).toString() } })
+      expect(unsafe.overall).toBe('UNKNOWN')
+    }
+    writeFileSync(join(root, 'evidence/receipt.json'), retainedReceipt)
+
   })
 })

@@ -2693,7 +2693,8 @@ alpha reusable method and validation
     }, scope)).resolves.toMatchObject({ ok: false, errorCode: 'source-not-read' })
   })
 
-  it.skipIf(!existsSync(resolve('rust/knowledge-search-shadow/target/release/knowledge-search-shadow')))(
+  const rustShadowBinary = resolve(`rust/knowledge-search-shadow/target/release/knowledge-search-shadow${process.platform === 'win32' ? '.exe' : ''}`)
+  it.skipIf(!existsSync(rustShadowBinary))(
     'exercises the service Rust shadow seam with the real release binary',
     async () => {
       const candidateRoot = mkdtempSync(join(tmpdir(), 'wiki-service-rust-candidate-'))
@@ -2722,7 +2723,7 @@ alpha reusable method and validation
         llmProvider: 'p',
         llmModel: 'm',
         knowledgeSearchCandidateMode: 'shadow',
-        knowledgeSearchCandidateBinary: resolve('rust/knowledge-search-shadow/target/release/knowledge-search-shadow'),
+        knowledgeSearchCandidateBinary: rustShadowBinary,
         knowledgeSearchCandidateTimeoutMs: 5000,
       }))
       try {

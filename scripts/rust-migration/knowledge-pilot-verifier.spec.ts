@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SandboxLocal from '@deepseek-ai/dsh-sandbox-local'
@@ -276,8 +277,8 @@ describe('fixed-project semantic test verifier', () => {
     await writeFile(keyPath, keys.privateKey.export({ format: 'pem', type: 'pkcs8' }), { mode: 0o600 })
     const require = createRequire(import.meta.url)
     const authority = createExternalVerifierAuthority({ authorityId: f.manifest.authorityId, sourceIdentity: identity,
-      executable: process.execPath, args: [require.resolve('tsx/cli'), '--tsconfig', new URL('../../tsconfig.base.json', import.meta.url).pathname,
-        new URL('./knowledge-pilot-verifier.ts', import.meta.url).pathname, manifestPath, keyPath],
+      executable: process.execPath, args: [require.resolve('tsx/cli'), '--tsconfig', fileURLToPath(new URL('../../tsconfig.base.json', import.meta.url)),
+        fileURLToPath(new URL('./knowledge-pilot-verifier.ts', import.meta.url)), manifestPath, keyPath],
       publicKey: keys.publicKey,
       promotionSealer: {
         authorityId: f.manifest.authorityId,

@@ -583,7 +583,10 @@ describe('external verifier adapter', () => {
     const signalled = createExternalVerifierAuthority(authorityOptions(fixture, {
       args: rawVerifierScript('process.stdin.resume(); process.stdin.on("end", () => process.kill(process.pid, "SIGTERM"))'),
     }))
-    await expect(signalled.verifyCandidate(request, new AbortController().signal)).rejects.toThrow('SIGTERM')
+    // A self-signal calls TerminateProcess(..., 1) on Windows; no parent-side
+    // uv_process_kill records a signal on that child handle.
+    await expect(signalled.verifyCandidate(request, new AbortController().signal))
+      .rejects.toThrow(process.platform === 'win32' ? 'external verifier exited 1' : 'SIGTERM')
 
     const previousSecret = process.env.ARK_VERIFIER_TEST_SECRET
     process.env.ARK_VERIFIER_TEST_SECRET = 'test-secret-must-not-leak'
@@ -690,22 +693,39 @@ describe('external verifier adapter', () => {
     expect(settled).toBe(true)
   })
 
-  it.each(['timeout', 'cancel', 'natural'] as const)('bounds the whole-tree wait after verifier leader exit: %s', async (mode) => {
+  const postExitModes = process.platform === 'win32'
+    ? ['windows-parent-job'] as const
+    : ['timeout', 'cancel', 'natural'] as const
+  it.each(postExitModes)('observes a started helper after verifier leader exit: %s', async (mode) => {
     const fixture = authorityFixture()
     const root = mkdtempSync(join(tmpdir(), 'external-verifier-post-exit-'))
     roots.push(root)
     const childPidPath = join(root, 'child.pid')
+    const childReadyPath = join(root, 'child.ready')
+    const childOutcomePath = join(root, 'child.outcome')
     const childProgram = mode === 'natural'
       ? 'setTimeout(() => {}, 350)'
       : 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'
+    const readyProgram = [
+      childProgram,
+      `require('node:fs').writeFileSync(${JSON.stringify(childReadyPath)}, String(process.pid), { mode: 0o600 })`,
+    ].join('; ')
     const args = rawVerifierScript([
       'const { spawn } = require("node:child_process")',
-      'const { writeFileSync } = require("node:fs")',
-      `const helper = spawn(process.execPath, ['-e', ${JSON.stringify(childProgram)}], { stdio: 'ignore', detached: false })`,
+      'const { existsSync, writeFileSync } = require("node:fs")',
+      `const helper = spawn(process.execPath, ['-e', ${JSON.stringify(readyProgram)}], { stdio: 'ignore', detached: false })`,
       'helper.unref()',
       `writeFileSync(${JSON.stringify(childPidPath)}, String(helper.pid), { mode: 0o600 })`,
+      `helper.once('error', error => writeFileSync(${JSON.stringify(childOutcomePath)}, JSON.stringify({ error: String(error) }), { mode: 0o600 }))`,
+      `helper.once('exit', (code, signal) => writeFileSync(${JSON.stringify(childOutcomePath)}, JSON.stringify({ code, signal }), { mode: 0o600 }))`,
       'process.stdin.resume()',
-      `process.stdin.on('end', () => process.stdout.write(${JSON.stringify(JSON.stringify(fixture.result))}))`,
+      `process.stdin.on('end', () => {
+        const ready = setInterval(() => {
+          if (!existsSync(${JSON.stringify(childReadyPath)})) return;
+          clearInterval(ready);
+          process.stdout.write(${JSON.stringify(JSON.stringify(fixture.result))});
+        }, 10);
+      })`,
     ].join('; '))
     let handle: SubprocessHandle | undefined
     const subprocess: Pick<SubprocessRuntime, 'resolveExecutable' | 'spawn'> = {
@@ -720,6 +740,7 @@ describe('external verifier adapter', () => {
     const pending = authority.verifyCandidate(request, controller.signal)
       .then(value => ({ kind: 'result' as const, value }), (error: unknown) => ({ kind: 'error' as const, error }))
     let observationTimer: ReturnType<typeof setTimeout> | undefined
+    let primaryError: unknown
     try {
       for (let attempt = 0; attempt < 100 && handle === undefined; attempt += 1) await delay(10)
       expect(handle).toBeDefined()
@@ -728,7 +749,22 @@ describe('external verifier adapter', () => {
       expect(directOutcome.exitCode).toBe(0)
       expect(directOutcome.signal).toBeNull()
       const childPid = Number(readFileSync(childPidPath, 'utf8'))
-      // The response and direct exit are real; the surviving child uses no inherited output pipe.
+      expect(readFileSync(childReadyPath, 'utf8')).toBe(String(childPid))
+      expect(existsSync(childOutcomePath)).toBe(false)
+      // libuv's non-detached Windows helper belongs to the parent's job and
+      // dies with it. This is OS cleanup, not evidence of Harness signalling.
+      if (mode === 'windows-parent-job') {
+        await expect.poll(() => {
+          try { process.kill(childPid, 0); return false }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+            return true
+          }
+        }, { timeout: 3000, interval: 10 }).toBe(true)
+        expect(await pending).toEqual({ kind: 'result', value: fixture.result })
+        return
+      }
+      // On POSIX the actual survivor uses no inherited output pipe.
       expect(() => process.kill(childPid, 0)).not.toThrow()
       if (mode === 'cancel') controller.abort(new Error('test owner cancelled after leader exit'))
       const result = await Promise.race([
@@ -745,13 +781,83 @@ describe('external verifier adapter', () => {
         expect(String(result.error)).toContain(mode === 'timeout' ? 'timed out' : 'aborted')
       }
       expect(() => process.kill(childPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
+    } catch (error) {
+      primaryError = error
+      throw error
     } finally {
       if (observationTimer !== undefined) clearTimeout(observationTimer)
       // This independent fixture cleanup also reaps a failing pre-fix run; it is not a passing owner outcome.
-      handle?.terminate()
-      await handle?.done.catch(() => {})
-      if (handle !== undefined) expect(await handle.waitForExit()).toBe(true)
-      await pending
+      try {
+        handle?.terminate()
+        await handle?.done.catch(() => {})
+        if (handle !== undefined) expect(await handle.waitForExit()).toBe(true)
+        await pending
+      } catch (cleanupError) {
+        if (primaryError !== undefined) throw new AggregateError([primaryError, cleanupError], 'verifier observation and cleanup failed')
+        throw cleanupError
+      }
+    }
+  }, 10_000)
+
+  it.each(['timeout', 'cancel'] as const)('bounds an outstanding managed wait after a real leader exit: %s', async (mode) => {
+    const fixture = authorityFixture()
+    const entered = Promise.withResolvers<undefined>()
+    let handle: SubprocessHandle | undefined
+    let waiting = true
+    const subprocess: Pick<SubprocessRuntime, 'resolveExecutable' | 'spawn'> = {
+      resolveExecutable: (...values) => verifierSubprocess.resolveExecutable(...values),
+      spawn: (spec) => {
+        const owned = verifierSubprocess.spawn(spec)
+        handle = owned
+        return {
+          ...owned,
+          waitForExit: async (signal) => {
+            if (!waiting) return owned.waitForExit(signal)
+            waiting = false
+            entered.resolve(undefined)
+            if (signal === undefined) throw new Error('the first managed wait must retain its operation deadline')
+            await new Promise<void>((resolve) => {
+              if (signal.aborted) resolve()
+              else signal.addEventListener('abort', () => { resolve() }, { once: true })
+            })
+            return false
+          },
+        }
+      },
+    }
+    const controller = new AbortController()
+    const authority = createExternalVerifierAuthority(authorityOptions(fixture, { subprocess, timeoutMs: 1200 }))
+    const pending = authority.verifyCandidate(request, controller.signal)
+      .then(value => ({ value }), (error: unknown) => ({ error }))
+    let observationTimer: ReturnType<typeof setTimeout> | undefined
+    let primaryError: unknown
+    try {
+      await entered.promise
+      if (handle === undefined) throw new Error('verifier handle was not created')
+      expect(await handle.done).toEqual({ exitCode: 0, signal: null })
+      if (mode === 'cancel') controller.abort(new Error('test owner cancelled its outstanding managed wait'))
+      const outcome = await Promise.race([
+        pending,
+        new Promise<never>((_resolve, reject) => {
+          observationTimer = setTimeout(() => { reject(new Error('verifier stayed pending after its operation deadline')) }, 3000)
+        }),
+      ])
+      expect(outcome).toHaveProperty('error')
+      expect(String('error' in outcome ? outcome.error : undefined)).toContain(mode === 'timeout' ? 'timed out' : 'aborted')
+    } catch (error) {
+      primaryError = error
+      throw error
+    } finally {
+      if (observationTimer !== undefined) clearTimeout(observationTimer)
+      try {
+        handle?.terminate()
+        await handle?.done.catch(() => {})
+        if (handle !== undefined) expect(await handle.waitForExit()).toBe(true)
+        await pending
+      } catch (cleanupError) {
+        if (primaryError !== undefined) throw new AggregateError([primaryError, cleanupError], 'verifier observation and cleanup failed')
+        throw cleanupError
+      }
     }
   }, 10_000)
 

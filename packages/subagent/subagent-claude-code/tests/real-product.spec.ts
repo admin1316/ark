@@ -116,13 +116,23 @@ afterAll(() => {
 })
 
 afterEach(async () => {
-  await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
-  await Promise.all(fixtures.splice(0).map(fixture => fixture.close()))
-  for (const root of roots.splice(0)) {
-    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  // Retire the test-owned HTTP transport before disposing consumers, so a
+  // held Messages connection cannot keep their process cleanup waiting.
+  const transport = await Promise.allSettled(fixtures.splice(0).map(fixture => fixture.close()))
+  const owners = contexts.splice(0)
+  const consumers = await Promise.allSettled(owners.map(ctx => ctx.fiber.dispose()))
+  for (const [index, result] of consumers.entries()) {
+    if (result.status === 'rejected') contexts.push(owners[index]!)
+  }
+  const failures = [...transport, ...consumers].flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+  if (failures.length === 0) {
+    const cleanup = await Promise.allSettled(roots.splice(0).map(root =>
+      rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })))
+    failures.push(...cleanup.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : []))
   }
   observedSdkMessages.length = 0
   delete sdkTestOverrides.maxTurns
+  if (failures.length) throw new AggregateError(failures, 'real Claude fixture cleanup failed')
 })
 
 interface RealHarness {

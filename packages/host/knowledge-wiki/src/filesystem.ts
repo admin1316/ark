@@ -28,9 +28,27 @@ export const MAX_WIKI_PAGE_BYTES = 5 * 1024 * 1024
 /**
  * Distinguish an absent optional file from corruption or unsafe I/O.
  * @param error - Caught value to inspect for Node's missing-path error code.
- * @returns True only for a non-null object whose code property is ENOENT.
+ * @returns True for ENOENT only when its existing path ancestry permits absence.
  */
 export function isMissingPathError(error: unknown): boolean {
+  if (!hasMissingPathCode(error)) return false
+  const path: unknown = Reflect.get(error, 'path')
+  if (typeof path !== 'string') return true
+  let cursor = dirname(resolve(path))
+  for (;;) {
+    try {
+      const ancestor = lstatSync(cursor)
+      return ancestor.isDirectory() || (ancestor.isSymbolicLink() && statSync(cursor).isDirectory())
+    } catch (ancestorError) {
+      if (!hasMissingPathCode(ancestorError)) throw ancestorError
+      const parent = dirname(cursor)
+      if (parent === cursor) return false
+      cursor = parent
+    }
+  }
+}
+
+function hasMissingPathCode(error: unknown): error is object {
   return typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT'
 }
 
@@ -107,7 +125,7 @@ function nearestExistingAncestor(path: string): string {
 
 /** Unlink absence requires directory ancestry; Windows may report ENOENT beneath a file. */
 function isMissingFilePathError(error: unknown, path: string): boolean {
-  if (!isMissingPathError(error)) return false
+  if (!hasMissingPathCode(error)) return false
   const ancestor = nearestExistingAncestor(dirname(resolve(path)))
   if (!statSync(ancestor).isDirectory()) throw new Error(`ENOTDIR: non-directory path ancestor: ${ancestor}`)
   return true

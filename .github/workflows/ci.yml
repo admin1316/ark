@@ -445,6 +445,10 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
+      - name: Build Rust search candidate (coverage prerequisite)
+        shell: pwsh
+        run: cargo build --locked --release --manifest-path rust/knowledge-search-shadow/Cargo.toml
+
       - name: Run complete native Windows gate inventory
         shell: pwsh
         run: pnpm run check:ci:windows-complete

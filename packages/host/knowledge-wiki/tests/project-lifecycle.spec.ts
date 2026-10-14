@@ -11,10 +11,24 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import KnowledgeWikiService from '../src/index.ts'
 import type { IngestQueueSnapshot, IngestQueueTask } from '../src/types.ts'
 import { wikiTestConfig } from './config-fixture.ts'
+
+const privateCreations = vi.hoisted(() => [] as Array<{ path: string; mode: number | undefined }>)
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    openSync: (...args: Parameters<typeof actual.openSync>) => {
+      if ((Number(args[1]) & actual.constants.O_CREAT) !== 0) {
+        privateCreations.push({ path: String(args[0]), mode: typeof args[2] === 'number' ? args[2] : undefined })
+      }
+      return actual.openSync(...args)
+    },
+  }
+})
 
 interface ProjectLifecycleService {
   createProject(request: { name: string; path: string }): Promise<{ path: string; error?: string }>
@@ -38,6 +52,7 @@ let ctx: Context
 let service: ProjectLifecycleService
 
 beforeEach(() => {
+  privateCreations.length = 0
   root = mkdtempSync(join(tmpdir(), 'kw-project-main-'))
   external = mkdtempSync(join(tmpdir(), 'kw-project-external-'))
   mkdirSync(join(root, 'wiki'), { recursive: true })
@@ -87,7 +102,9 @@ describe('knowledge project lifecycle', () => {
 
     const registry = join(root, '.llm-wiki', 'workspaces.json')
     expect(JSON.parse(readFileSync(registry, 'utf8'))).toEqual({ workspaces: [] })
-    expect(statSync(registry).mode & 0o777).toBe(0o600)
+    expect(privateCreations.some(created => created.path.includes('workspaces.json.ark-save-') && created.mode === 0o600)).toBe(true)
+    // Windows reports compatibility mode bits rather than the requested POSIX permissions.
+    if (process.platform !== 'win32') expect(statSync(registry).mode & 0o777).toBe(0o600)
     expect(readdirSync(join(root, '.llm-wiki')).some(name => name.includes('.ark-save-'))).toBe(false)
   })
 
