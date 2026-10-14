@@ -329,30 +329,22 @@ function appendKnowledgeLifecycleEvent(
   writeKnowledgeLifecycleEvent(reviewFile, type, item, eventPayload, scope)
 }
 
-/** Authenticate the complete verification payload before publishing review projections. */
-function prepareKnowledgeVerifiedPayload(
-  item: HashBoundCandidateReview,
+/** Seal one lifecycle payload through the existing immutable request and proof validator. */
+function prepareSealedLifecyclePayload(
+  eventType: 'knowledge/verified' | 'knowledge/promoted',
+  knowledgeId: string,
   payload: Readonly<Record<string, unknown>>,
   authority: KnowledgeWikiVerifierAuthority,
   signal?: AbortSignal,
 ): Promise<Readonly<Record<string, unknown>> | undefined> {
-  signal?.throwIfAborted()
-  const type = 'knowledge/verified' as const
-  const id = `candidate:${item.id}`
-  const unsignedPayload: Readonly<Record<string, unknown>> = {
-    ...payload,
-    candidatePath: item.candidatePath,
-    candidateHash: item.candidateHash,
-    source: item.sourcePath ?? item.candidatePath,
-  }
   const request = immutablePromotionSealRequest({
     schemaVersion: 1,
     domain: 'ark.knowledge-wiki',
     authorityId: authority.authorityId,
     operation: 'seal-knowledge-event',
-    eventType: type,
-    knowledgeId: id,
-    payload: unsignedPayload,
+    eventType,
+    knowledgeId,
+    payload,
   } as const satisfies Extract<KnowledgeWikiPromotionSealRequest, { operation: 'seal-knowledge-event' }>)
   const signingPayload = encodeKnowledgeWikiPromotionSealRequest(request)
   return Promise.resolve(authority.sealPromotion(request, signal)).then((returnedSeal) => {
@@ -362,6 +354,22 @@ function prepareKnowledgeVerifiedPayload(
       || !authority.validatePromotion(signingPayload, seal)) return undefined
     return { ...request.payload, authorityId: authority.authorityId, authoritySeal: seal }
   })
+}
+
+/** Authenticate the complete verification payload before publishing review projections. */
+function prepareKnowledgeVerifiedPayload(
+  item: HashBoundCandidateReview,
+  payload: Readonly<Record<string, unknown>>,
+  authority: KnowledgeWikiVerifierAuthority,
+  signal?: AbortSignal,
+): Promise<Readonly<Record<string, unknown>> | undefined> {
+  signal?.throwIfAborted()
+  return prepareSealedLifecyclePayload('knowledge/verified', `candidate:${item.id}`, {
+    ...payload,
+    candidatePath: item.candidatePath,
+    candidateHash: item.candidateHash,
+    source: item.sourcePath ?? item.candidatePath,
+  }, authority, signal)
 }
 
 function writeKnowledgeLifecycleEvent(
@@ -422,30 +430,8 @@ function appendKnowledgePromotedEvent(
   signal?: AbortSignal,
 ): Promise<Readonly<Record<string, unknown>> | undefined> {
   signal?.throwIfAborted()
-  const type = 'knowledge/promoted' as const
-  const id = `candidate:${reviewId}`
-  const unsignedPayload = { ...payload, candidateHash }
-  const request = immutablePromotionSealRequest({
-    schemaVersion: 1,
-    domain: 'ark.knowledge-wiki',
-    authorityId: authority.authorityId,
-    operation: 'seal-knowledge-event',
-    eventType: type,
-    knowledgeId: id,
-    payload: unsignedPayload,
-  } as const satisfies Extract<KnowledgeWikiPromotionSealRequest, { operation: 'seal-knowledge-event' }>)
-  const signingPayload = encodeKnowledgeWikiPromotionSealRequest(request)
-  return Promise.resolve(authority.sealPromotion(request, signal)).then((returnedSeal) => {
-    signal?.throwIfAborted()
-    const seal = immutableAuthoritySeal(returnedSeal)
-    if (seal === undefined || seal.authorityId !== authority.authorityId
-      || !authority.validatePromotion(signingPayload, seal)) return undefined
-    return {
-      ...request.payload,
-      authorityId: authority.authorityId,
-      authoritySeal: seal,
-    }
-  })
+  return prepareSealedLifecyclePayload('knowledge/promoted', `candidate:${reviewId}`, { ...payload, candidateHash },
+    authority, signal)
 }
 
 function hasKnowledgeReviewEvent(

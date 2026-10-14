@@ -65,3 +65,48 @@ condition = "AND"
 paths = ['''^scripts/rust\-migration/candidate341\-installed\-lifecycle\-and\-native\-ready\-result\-20261013\.json$''']
 regexTarget = "secret"
 regexes = ['''^2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28$''']
+
+[[allowlists]]
+description = "Exact historical source checksum metadata; no credential bytes"
+targetRules = ["generic-api-key"]
+condition = "AND"
+commits = ["2268abeb0f2e3a74fae6ad434e04fd88e5b30498"]
+paths = ['''^scripts/rust\-migration/evidence/knowledge\-safety\-regressions\-20261008\.json$''']
+regexTarget = "secret"
+regexes = ['''^3beeb336cb4f48e679b317e2f7fa2a20ce334291d698fa878eb61d0e2d0db5b9$''']
+
+[[allowlists]]
+description = "Exact historical regression checklist prose; no credential bytes"
+targetRules = ["generic-api-key"]
+condition = "AND"
+commits = ["15cf20d4ea40e88a9f634d00510ad4b0e2da7f51"]
+paths = ['''^scripts/rust\-migration/evidence/learning\-protocol\-baseline\-20261008\.json$''']
+regexTarget = "secret"
+regexes = ['''^unsigned/legacy$''']
+
+[[allowlists]]
+description = "Exact historical source checksum metadata; no credential bytes"
+targetRules = ["generic-api-key"]
+condition = "AND"
+commits = ["a08e377654738a11b4988e7a0eecc4cc5c8561de"]
+paths = ['''^scripts/rust\-migration/feature\-language\-review\.json$''']
+regexTarget = "secret"
+regexes = ['''^b20e7b4745158d00cdf8d71bffafae6e7b0c044c4d662d83f9d02413cbf39242$''']
+
+[[allowlists]]
+description = "Exact historical source checksum metadata; no credential bytes"
+targetRules = ["generic-api-key"]
+condition = "AND"
+commits = ["a08e377654738a11b4988e7a0eecc4cc5c8561de"]
+paths = ['''^scripts/rust\-migration/feature\-language\-review\.json$''']
+regexTarget = "secret"
+regexes = ['''^f409a9fbd344c1f6a3179eef2c422ec34933f2f3865bf065506bdba88212455e$''']
+
+[[allowlists]]
+description = "Exact historical source checksum metadata; no credential bytes"
+targetRules = ["generic-api-key"]
+condition = "AND"
+commits = ["a08e377654738a11b4988e7a0eecc4cc5c8561de"]
+paths = ['''^scripts/rust\-migration/feature\-language\-review\.json$''']
+regexTarget = "secret"
+regexes = ['''^300dec6812ad634ccbd1d65a168cdd6e529eb6df6f620d84abf4e6062c7af038$''']

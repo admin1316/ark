@@ -362,7 +362,7 @@ private func runArkProtectedReadyBridgeContractChecks() async {
       journalKey.publicKey.isValidSignature($0, for: canonical)
     } == true, "actual XPC broker signs exact synthetic canonical bytes only after local finite admission")
     let nodeSource = root.appendingPathComponent("ready-consumer.mjs")
-    let repository = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let repository = contractNativeRoot.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let channelModule = repository.appendingPathComponent("packages/bundle/native-api-app/src/native-owner-channel.ts").absoluteString
     let providersModule = repository.appendingPathComponent("packages/bundle/native-api-app/src/native-owner-providers.ts").absoluteString
     let moduleLiteral = { (value: String) throws in String(decoding: try JSONEncoder().encode(value), as: UTF8.self) }

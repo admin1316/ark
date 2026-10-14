@@ -18,7 +18,7 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call_report_1","name":"report","arguments":"{\"output\": \"CHILD_REPORT_OK\"}"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_report_1","name":"report","arguments":"{\"output\": \"CHILD_REPORT_OK\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:13}}"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[[14,18]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call_report_1","name":"report","arguments":"{\"output\": \"CHILD_REPORT_OK\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:13}}"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[14,15,16,17,18],"surfaceOp":"append"}
 {"type":"tool/call","data":{"turn":1,"step":1,"callId":"call_report_1","name":"report","arguments":"{\"output\": \"CHILD_REPORT_OK\"}"}}
 {"type":"tool/result","data":{"turn":1,"step":1,"message":{"source":{"kind":"tool","callId":"call_report_1"},"content":[{"type":"tool-result","toolCallId":"call_report_1","content":[{"type":"text","text":"report accepted by the agent that started you as message {{message:6}}"}],"isError":false}],"role":"user","id":"{{message:14}}"}},"sourceEventSeqs":[20],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":1}}
@@ -28,6 +28,6 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"Reported."}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"text","text":"Reported."}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:15}}"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[[24,28]],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"text","text":"Reported."}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:15}}"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[24,25,26,27,28],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":2}}
 {"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}

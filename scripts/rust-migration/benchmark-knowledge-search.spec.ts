@@ -57,7 +57,7 @@ describe('knowledge search benchmark scaffold', () => {
 
   it('reproduces the file-backed one-query comparison with the production snapshot cache', async () => {
     const binary = resolve('rust/knowledge-search-shadow/target/release/knowledge-search-shadow')
-    const result = await runFileBackedComparisonSeries(1, 2, binary) as {
+    const result = await runFileBackedComparisonSeries(1, 2) as {
       status: string
       execution: string
       fixture: { pages: number; queryPerRequest: number; independentRuns: number; iterationsPerRun: number }

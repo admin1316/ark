@@ -1,5 +1,142 @@
-/** Approved V3 private schema source of record; generated verbatim from the frozen reviewed schema. */
+/** Approved V3 private schema source of record; projected from the frozen reviewed schema with shared identical field groups. */
 import z from 'zod'
+
+const schemaFields1 = {
+  'intentHash': {
+    'type': 'string',
+    'pattern': '^[a-f0-9]{64}$',
+  },
+  'descriptorHash': {
+    'type': 'string',
+    'pattern': '^[a-f0-9]{64}$',
+  },
+  'generationId': {
+    '$ref': '#/$defs/GenerationId',
+  },
+  'reservationRevision': {
+    'type': 'integer',
+    'minimum': 0,
+    'maximum': 9007199254740991,
+  },
+} as const
+
+const schemaFields2 = {
+  'pairId': {
+    'type': 'string',
+    'minLength': 1,
+    'maxLength': 160,
+  },
+  'role': {
+    'enum': [
+      'baseline',
+      'candidate',
+    ],
+  },
+  'useId': {
+    'type': 'string',
+    'minLength': 1,
+    'maxLength': 160,
+  },
+  'sessionId': {
+    'type': 'string',
+    'minLength': 1,
+    'maxLength': 160,
+  },
+  'turn': {
+    'type': 'integer',
+    'minimum': 1,
+    'maximum': 9007199254740991,
+  },
+} as const
+
+const schemaFields3 = {
+  'schemaVersion': {
+    'const': 1,
+  },
+  'grantHash': {
+    'type': 'string',
+    'pattern': '^[a-f0-9]{64}$',
+  },
+  'preRegistrationHash': {
+    'type': 'string',
+    'pattern': '^[a-f0-9]{64}$',
+  },
+  'proposalHash': {
+    'type': 'string',
+    'pattern': '^[a-f0-9]{64}$',
+  },
+  'candidateHash': {
+    'type': 'string',
+    'pattern': '^[a-f0-9]{64}$',
+  },
+  'sourceBindingHash': {
+    'type': 'string',
+    'pattern': '^[a-f0-9]{64}$',
+  },
+  'projectRoot': {
+    'type': 'string',
+    'minLength': 1,
+    'maxLength': 4096,
+    'pattern': '^/[^\\u0000]*$',
+  },
+  'profileIdentity': {
+    'type': 'string',
+    'minLength': 1,
+    'maxLength': 160,
+  },
+} as const
+
+const schemaFields4 = {
+  'intentHash': {
+    '$ref': '#/$defs/Hash',
+  },
+  'descriptorHash': {
+    '$ref': '#/$defs/Hash',
+  },
+  'generationId': {
+    '$ref': '#/$defs/GenerationId',
+  },
+  'slotIndex': {
+    'type': 'integer',
+    'minimum': 0,
+    'maximum': 31,
+  },
+  'reservationRevision': {
+    'type': 'integer',
+    'minimum': 0,
+    'maximum': 9007199254740991,
+  },
+  'inflightEpoch': {
+    'type': 'integer',
+    'minimum': 1,
+    'maximum': 9007199254740991,
+  },
+} as const
+
+const schemaFields5 = {
+  'evidenceHash': {
+    'anyOf': [
+      {
+        'type': 'string',
+        'pattern': '^[a-f0-9]{64}$',
+      },
+      {
+        'type': 'null',
+      },
+    ],
+  },
+  'completedConfigHash': {
+    'anyOf': [
+      {
+        'type': 'string',
+        'pattern': '^[a-f0-9]{64}$',
+      },
+      {
+        'type': 'null',
+      },
+    ],
+  },
+} as const
 
 const definitions = {
   'Hash': {
@@ -322,32 +459,7 @@ const definitions = {
       'allocatedTaskProjectionRelativeRoot',
     ],
     'properties': {
-      'pairId': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
-      'role': {
-        'enum': [
-          'baseline',
-          'candidate',
-        ],
-      },
-      'useId': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
-      'sessionId': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
-      'turn': {
-        'type': 'integer',
-        'minimum': 1,
-        'maximum': 9007199254740991,
-      },
+      ...schemaFields2,
       'snapshotRelativePath': {
         'type': 'string',
         'minLength': 1,
@@ -830,28 +942,7 @@ const definitions = {
         'minimum': 0,
         'maximum': 9007199254740991,
       },
-      'evidenceHash': {
-        'anyOf': [
-          {
-            'type': 'string',
-            'pattern': '^[a-f0-9]{64}$',
-          },
-          {
-            'type': 'null',
-          },
-        ],
-      },
-      'completedConfigHash': {
-        'anyOf': [
-          {
-            'type': 'string',
-            'pattern': '^[a-f0-9]{64}$',
-          },
-          {
-            'type': 'null',
-          },
-        ],
-      },
+      ...schemaFields5,
       'reason': {
         'anyOf': [
           {
@@ -974,32 +1065,7 @@ const definitions = {
       'capture',
     ],
     'properties': {
-      'pairId': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
-      'role': {
-        'enum': [
-          'baseline',
-          'candidate',
-        ],
-      },
-      'useId': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
-      'sessionId': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
-      'turn': {
-        'type': 'integer',
-        'minimum': 1,
-        'maximum': 9007199254740991,
-      },
+      ...schemaFields2,
       'outcome': {
         'enum': [
           'complete',
@@ -1066,22 +1132,7 @@ const definitions = {
       'operation': {
         'const': 'collectFrozenRegisteredSlotsV1',
       },
-      'intentHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'descriptorHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'generationId': {
-        '$ref': '#/$defs/GenerationId',
-      },
-      'reservationRevision': {
-        'type': 'integer',
-        'minimum': 0,
-        'maximum': 9007199254740991,
-      },
+      ...schemaFields1,
       'inflightEpoch': {
         'type': 'integer',
         'minimum': 1,
@@ -1109,22 +1160,7 @@ const definitions = {
       'kind': {
         'const': 'fixed-trial-uncosted-captures-v1',
       },
-      'intentHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'descriptorHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'generationId': {
-        '$ref': '#/$defs/GenerationId',
-      },
-      'reservationRevision': {
-        'type': 'integer',
-        'minimum': 0,
-        'maximum': 9007199254740991,
-      },
+      ...schemaFields1,
       'inflightEpoch': {
         'type': 'integer',
         'minimum': 1,
@@ -1253,22 +1289,7 @@ const definitions = {
       'kind': {
         'const': 'fixed-trial-native-cost-resolution-v1',
       },
-      'intentHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'descriptorHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'generationId': {
-        '$ref': '#/$defs/GenerationId',
-      },
-      'reservationRevision': {
-        'type': 'integer',
-        'minimum': 0,
-        'maximum': 9007199254740991,
-      },
+      ...schemaFields1,
       'orderedSlots': {
         'type': 'array',
         'items': {
@@ -1300,22 +1321,7 @@ const definitions = {
       'operation': {
         'const': 'assembleFrozenTrialConfigV1',
       },
-      'intentHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'descriptorHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'generationId': {
-        '$ref': '#/$defs/GenerationId',
-      },
-      'reservationRevision': {
-        'type': 'integer',
-        'minimum': 0,
-        'maximum': 9007199254740991,
-      },
+      ...schemaFields1,
       'inflightEpoch': {
         'type': 'integer',
         'minimum': 1,
@@ -1355,22 +1361,7 @@ const definitions = {
       'kind': {
         'const': 'fixed-trial-completed-config-v1',
       },
-      'intentHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'descriptorHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'generationId': {
-        '$ref': '#/$defs/GenerationId',
-      },
-      'reservationRevision': {
-        'type': 'integer',
-        'minimum': 0,
-        'maximum': 9007199254740991,
-      },
+      ...schemaFields1,
       'inflightEpoch': {
         'type': 'integer',
         'minimum': 1,
@@ -1444,32 +1435,7 @@ const definitions = {
       'taskProjectionHash',
     ],
     'properties': {
-      'pairId': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
-      'role': {
-        'enum': [
-          'baseline',
-          'candidate',
-        ],
-      },
-      'useId': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
-      'sessionId': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
-      'turn': {
-        'type': 'integer',
-        'minimum': 1,
-        'maximum': 9007199254740991,
-      },
+      ...schemaFields2,
       'captureOutcome': {
         'enum': [
           'complete',
@@ -1699,28 +1665,7 @@ const definitions = {
         'minimum': 1,
         'maximum': 9007199254740991,
       },
-      'evidenceHash': {
-        'anyOf': [
-          {
-            'type': 'string',
-            'pattern': '^[a-f0-9]{64}$',
-          },
-          {
-            'type': 'null',
-          },
-        ],
-      },
-      'completedConfigHash': {
-        'anyOf': [
-          {
-            'type': 'string',
-            'pattern': '^[a-f0-9]{64}$',
-          },
-          {
-            'type': 'null',
-          },
-        ],
-      },
+      ...schemaFields5,
       'reason': {
         'anyOf': [
           {
@@ -1837,40 +1782,7 @@ const definitions = {
       'liveCostAdmission',
     ],
     'properties': {
-      'schemaVersion': {
-        'const': 1,
-      },
-      'grantHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'preRegistrationHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'proposalHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'candidateHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'sourceBindingHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'projectRoot': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 4096,
-        'pattern': '^/[^\\u0000]*$',
-      },
-      'profileIdentity': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
+      ...schemaFields3,
       'buildIdentity': {
         'type': 'string',
         'pattern': '^[a-f0-9]{64}$',
@@ -2442,30 +2354,7 @@ const definitions = {
       'operation': {
         'const': 'captureNextCompletedRegisteredSlotV1',
       },
-      'intentHash': {
-        '$ref': '#/$defs/Hash',
-      },
-      'descriptorHash': {
-        '$ref': '#/$defs/Hash',
-      },
-      'generationId': {
-        '$ref': '#/$defs/GenerationId',
-      },
-      'slotIndex': {
-        'type': 'integer',
-        'minimum': 0,
-        'maximum': 31,
-      },
-      'reservationRevision': {
-        'type': 'integer',
-        'minimum': 0,
-        'maximum': 9007199254740991,
-      },
-      'inflightEpoch': {
-        'type': 'integer',
-        'minimum': 1,
-        'maximum': 9007199254740991,
-      },
+      ...schemaFields4,
     },
   },
   'CaptureNextOutput': {
@@ -2489,30 +2378,7 @@ const definitions = {
       'kind': {
         'const': 'fixed-trial-next-slot-capture-v1',
       },
-      'intentHash': {
-        '$ref': '#/$defs/Hash',
-      },
-      'descriptorHash': {
-        '$ref': '#/$defs/Hash',
-      },
-      'generationId': {
-        '$ref': '#/$defs/GenerationId',
-      },
-      'slotIndex': {
-        'type': 'integer',
-        'minimum': 0,
-        'maximum': 31,
-      },
-      'reservationRevision': {
-        'type': 'integer',
-        'minimum': 0,
-        'maximum': 9007199254740991,
-      },
-      'inflightEpoch': {
-        'type': 'integer',
-        'minimum': 1,
-        'maximum': 9007199254740991,
-      },
+      ...schemaFields4,
       'slot': {
         '$ref': '#/$defs/CaptureSlot',
       },
@@ -2899,40 +2765,7 @@ const definitions = {
       'operationLimits',
     ],
     'properties': {
-      'schemaVersion': {
-        'const': 1,
-      },
-      'grantHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'preRegistrationHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'proposalHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'candidateHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'sourceBindingHash': {
-        'type': 'string',
-        'pattern': '^[a-f0-9]{64}$',
-      },
-      'projectRoot': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 4096,
-        'pattern': '^/[^\\u0000]*$',
-      },
-      'profileIdentity': {
-        'type': 'string',
-        'minLength': 1,
-        'maxLength': 160,
-      },
+      ...schemaFields3,
       'buildIdentity': {
         'type': 'string',
         'minLength': 1,
@@ -2978,19 +2811,19 @@ const definitions = {
 } as const
 
 /** Exact approved private Hash shape. */
-export type Hash = string
+type Hash = string
 
 /** Exact approved private Id shape. */
-export type Id = string
+type Id = string
 
 /** Exact approved private AbsolutePath shape. */
-export type AbsolutePath = string
+type AbsolutePath = string
 
 /** Exact approved private RelativePath shape. */
-export type RelativePath = string
+type RelativePath = string
 
 /** Exact approved private Utc shape. */
-export type Utc = string
+type Utc = string
 
 /** Exact approved private BlobRef shape. */
 export type BlobRef = {
@@ -2999,7 +2832,7 @@ export type BlobRef = {
 }
 
 /** Exact approved private SourceIdentity shape. */
-export type SourceIdentity = {
+type SourceIdentity = {
   readonly 'commit': string
   readonly 'sourceDigest': string
   readonly 'dirty': boolean
@@ -3008,13 +2841,13 @@ export type SourceIdentity = {
 }
 
 /** Exact approved private Authority shape. */
-export type Authority = {
+type Authority = {
   readonly 'authorityId': string
   readonly 'publicKeySpkiBase64': string
 }
 
 /** Exact approved private Authorities shape. */
-export type Authorities = {
+type Authorities = {
   readonly 'promotion': Authority
   readonly 'journal': Authority
   readonly 'evaluator': Authority
@@ -3023,26 +2856,26 @@ export type Authorities = {
 }
 
 /** Exact approved private FrozenInput shape. */
-export type FrozenInput = {
+type FrozenInput = {
   readonly 'path': string
   readonly 'bytes': BlobRef
 }
 
 /** Exact approved private SingleLineTask shape. */
-export type SingleLineTask = {
+type SingleLineTask = {
   readonly 'kind': 'single-line-v1'
   readonly 'terms': FrozenInput
 }
 
 /** Exact approved private InvoiceTask shape. */
-export type InvoiceTask = {
+type InvoiceTask = {
   readonly 'kind': 'invoice-v1'
   readonly 'invoices': FrozenInput
   readonly 'rates': FrozenInput
 }
 
 /** Exact approved private PaginationTask shape. */
-export type PaginationTask = {
+type PaginationTask = {
   readonly 'kind': 'pagination-v1'
   readonly 'codePath': string
   readonly 'protectedFiles': readonly (FrozenInput)[]
@@ -3051,17 +2884,17 @@ export type PaginationTask = {
 }
 
 /** Exact approved private TaskDefinition shape. */
-export type TaskDefinition = SingleLineTask | InvoiceTask | PaginationTask
+type TaskDefinition = SingleLineTask | InvoiceTask | PaginationTask
 
 /** Exact approved private Knowledge shape. */
-export type Knowledge = {
+type Knowledge = {
   readonly 'id': string
   readonly 'sourceContentBytes': BlobRef
   readonly 'renderedBytes': BlobRef
 }
 
 /** Exact approved private StartFence shape. */
-export type StartFence = {
+type StartFence = {
   readonly 'encoding': 'jsonl' | 'jsonl-zstd'
   readonly 'originalInitialSnapshotBytes': BlobRef
   readonly 'metadataEnvelopeBytes': BlobRef
@@ -3088,13 +2921,13 @@ export type Slot = {
 }
 
 /** Exact approved private PromotionPolicy shape. */
-export type PromotionPolicy = {
+type PromotionPolicy = {
   readonly 'promotionRequestHashes': readonly (string)[]
   readonly 'promotionVerificationManifestHashes': readonly (string)[]
 }
 
 /** Exact approved private OperationLimits shape. */
-export type OperationLimits = {
+type OperationLimits = {
   readonly 'sealPromotion': number
   readonly 'signKnowledgeUseJournal': number
   readonly 'verifyCandidate': number
@@ -3106,7 +2939,7 @@ export type OperationLimits = {
 }
 
 /** Exact approved private CostIntent shape. */
-export type CostIntent = {
+type CostIntent = {
   readonly 'initialLedgerBytes': BlobRef
   readonly 'ledgerPath': string
   readonly 'endpoint': string
@@ -3120,7 +2953,7 @@ export type CostIntent = {
 }
 
 /** Exact approved private Core shape. */
-export type Core = {
+type Core = {
   readonly 'schemaVersion': 1
   readonly 'kind': 'fixed-trial-admission-core-v1'
   readonly 'mode': 'ephemeral-test-only'
@@ -3169,7 +3002,7 @@ export type Intent = {
 }
 
 /** Exact approved private FreezeRequest shape. */
-export type FreezeRequest = {
+type FreezeRequest = {
   readonly 'schemaVersion': 1
   readonly 'descriptorHash': string
   readonly 'expectedOwnerRevision': number
@@ -3177,7 +3010,7 @@ export type FreezeRequest = {
 }
 
 /** Exact approved private FreezeResponse shape. */
-export type FreezeResponse = {
+type FreezeResponse = {
   readonly 'schemaVersion': 1
   readonly 'descriptorHash': string
   readonly 'generationId': GenerationId | null
@@ -3190,10 +3023,10 @@ export type FreezeResponse = {
 }
 
 /** Exact approved private ArtifactRefList shape. */
-export type ArtifactRefList = readonly (BlobRef)[]
+type ArtifactRefList = readonly (BlobRef)[]
 
 /** Exact approved private UncostedCapture shape. */
-export type UncostedCapture = {
+type UncostedCapture = {
   readonly 'originalSnapshot': BlobRef
   readonly 'frozenSnapshotRelativePath': string
   readonly 'originalMetadata': BlobRef
@@ -3220,7 +3053,7 @@ export type CaptureSlot = {
 }
 
 /** Exact approved private CaptureInput shape. */
-export type CaptureInput = {
+type CaptureInput = {
   readonly 'schemaVersion': 1
   readonly 'operation': 'collectFrozenRegisteredSlotsV1'
   readonly 'intentHash': string
@@ -3231,7 +3064,7 @@ export type CaptureInput = {
 }
 
 /** Exact approved private CaptureOutput shape. */
-export type CaptureOutput = {
+type CaptureOutput = {
   readonly 'schemaVersion': 1
   readonly 'kind': 'fixed-trial-uncosted-captures-v1'
   readonly 'intentHash': string
@@ -3255,7 +3088,7 @@ export type CostSlot = {
 }
 
 /** Exact approved private CostResolution shape. */
-export type CostResolution = {
+type CostResolution = {
   readonly 'schemaVersion': 1
   readonly 'kind': 'fixed-trial-native-cost-resolution-v1'
   readonly 'intentHash': string
@@ -3266,7 +3099,7 @@ export type CostResolution = {
 }
 
 /** Exact approved private AssemblerInput shape. */
-export type AssemblerInput = {
+type AssemblerInput = {
   readonly 'schemaVersion': 1
   readonly 'operation': 'assembleFrozenTrialConfigV1'
   readonly 'intentHash': string
@@ -3279,7 +3112,7 @@ export type AssemblerInput = {
 }
 
 /** Exact approved private AssemblerOutput shape. */
-export type AssemblerOutput = {
+type AssemblerOutput = {
   readonly 'schemaVersion': 1
   readonly 'kind': 'fixed-trial-completed-config-v1'
   readonly 'intentHash': string
@@ -3295,7 +3128,7 @@ export type AssemblerOutput = {
 }
 
 /** Exact approved private FrozenSlot shape. */
-export type FrozenSlot = {
+type FrozenSlot = {
   readonly 'pairId': string
   readonly 'role': 'baseline' | 'candidate'
   readonly 'useId': string
@@ -3315,7 +3148,7 @@ export type FrozenSlot = {
 }
 
 /** Exact approved private FrozenObservations shape. */
-export type FrozenObservations = {
+type FrozenObservations = {
   readonly 'schemaVersion': 1
   readonly 'kind': 'fixed-trial-frozen-observations-v1'
   readonly 'intentHash': string
@@ -3332,7 +3165,7 @@ export type FrozenObservations = {
 }
 
 /** Exact approved private FreezeState shape. */
-export type FreezeState = {
+type FreezeState = {
   readonly 'generationId': GenerationId
   readonly 'phase': 'reserved' | 'frozen' | 'failed'
   readonly 'reservationRevision': number
@@ -3344,22 +3177,21 @@ export type FreezeState = {
 }
 
 /** Exact approved private Reservation shape. */
-export type Reservation = {
+type Reservation = {
   readonly 'requestDigest': string
   readonly 'operation': 'sealPromotion' | 'signKnowledgeUseJournal' | 'verifyCandidate' | 'evaluateCapturedUse' | 'finalizeMeasuredTrial' | 'registerProviderDispatch' | 'admitProviderRequest' | 'recordProviderSettlement' | 'resolveSettledUseCost'
   readonly 'phase': 'reserved' | 'spent' | 'revoked'
 }
 
 /** Exact approved private LiveDescriptorCost shape. */
-export type LiveDescriptorCost = {
+type LiveDescriptorCost = {
   readonly 'admissionHash': string
   readonly 'ledgerArtifactHash': string
   readonly 'maximumNewDispatches': number
   readonly 'maximumNewSettlements': number
 }
 
-/** Exact approved private DescriptorV1 shape. */
-export type DescriptorV1 = {
+type DescriptorIdentity = {
   readonly 'schemaVersion': 1
   readonly 'grantHash': string
   readonly 'preRegistrationHash': string
@@ -3372,18 +3204,22 @@ export type DescriptorV1 = {
   readonly 'expiresAt': Utc
   readonly 'sessionIDs': readonly (string)[]
   readonly 'fixedOracleIDs': readonly ('invoice-v1' | 'single-line-v1' | 'pagination-v1')[]
+}
+
+/** Exact approved private DescriptorV1 shape. */
+type DescriptorV1 = DescriptorIdentity & {
   readonly 'operationLimits': OperationLimits
   readonly 'liveCostAdmission': LiveDescriptorCost
 }
 
 /** Exact approved private SlotEpoch shape. */
-export type SlotEpoch = {
+type SlotEpoch = {
   readonly 'sessionId': string
   readonly 'firstDispatchEpoch': number | null
 }
 
 /** Exact approved private TrialStateV2 shape. */
-export type TrialStateV2 = {
+type TrialStateV2 = {
   readonly 'descriptor': DescriptorV1
   readonly 'phase': 'registered' | 'admitted' | 'revoked'
   readonly 'reservations': readonly (Reservation)[]
@@ -3397,7 +3233,7 @@ export type TrialStateV2 = {
 }
 
 /** Exact approved private CostRegistration shape. */
-export type CostRegistration = {
+type CostRegistration = {
   readonly 'schemaVersion': 1
   readonly 'kind': 'registered-provider-dispatch-v1'
   readonly 'dispatchId': string
@@ -3411,7 +3247,7 @@ export type CostRegistration = {
 }
 
 /** Exact approved private Settlement shape. */
-export type Settlement = {
+type Settlement = {
   readonly 'schemaVersion': 1
   readonly 'dispatchId': string
   readonly 'attemptId': string
@@ -3428,7 +3264,7 @@ export type Settlement = {
 }
 
 /** Exact approved private CostAttempt shape. */
-export type CostAttempt = {
+type CostAttempt = {
   readonly 'attemptId': string
   readonly 'phase': 'observed'
 }
@@ -3440,14 +3276,14 @@ export type CostAttempt = {
   }
 
 /** Exact approved private CostEntry shape. */
-export type CostEntry = {
+type CostEntry = {
   readonly 'registration': CostRegistration
   readonly 'registrationArtifactHash': string
   readonly 'attempts': readonly (CostAttempt)[]
 }
 
 /** Exact approved private OwnerStateV2 shape. */
-export type OwnerStateV2 = {
+type OwnerStateV2 = {
   readonly 'schemaVersion': 2
   readonly 'revision': number
   readonly 'trials': readonly (TrialStateV2)[]
@@ -3464,13 +3300,13 @@ export type IntentHelperLaunch = {
 }
 
 /** Exact approved private DescribeIntentInput shape. */
-export type DescribeIntentInput = {
+type DescribeIntentInput = {
   readonly 'schemaVersion': 1
   readonly 'operation': 'describeAdmissionIntentV1'
 }
 
 /** Exact approved private DescribeIntentOutput shape. */
-export type DescribeIntentOutput = {
+type DescribeIntentOutput = {
   readonly 'schemaVersion': 1
   readonly 'kind': 'fixed-trial-admission-description-v1'
   readonly 'intentHash': Hash
@@ -3479,7 +3315,7 @@ export type DescribeIntentOutput = {
 }
 
 /** Exact approved private CaptureNextRequest shape. */
-export type CaptureNextRequest = {
+type CaptureNextRequest = {
   readonly 'schemaVersion': 1
   readonly 'operation': 'captureNextCompletedRegisteredSlot'
   readonly 'descriptorHash': Hash
@@ -3513,7 +3349,7 @@ export type CaptureNextInput = {
 }
 
 /** Exact approved private CaptureNextOutput shape. */
-export type CaptureNextOutput = {
+type CaptureNextOutput = {
   readonly 'schemaVersion': 1
   readonly 'kind': 'fixed-trial-next-slot-capture-v1'
   readonly 'intentHash': Hash
@@ -3526,7 +3362,7 @@ export type CaptureNextOutput = {
 }
 
 /** Exact approved private CaptureNextResponse shape. */
-export type CaptureNextResponse = {
+type CaptureNextResponse = {
   readonly 'schemaVersion': 1
   readonly 'descriptorHash': Hash
   readonly 'generationId': GenerationId | null
@@ -3538,7 +3374,7 @@ export type CaptureNextResponse = {
 }
 
 /** Exact approved private CollectedSlot shape. */
-export type CollectedSlot = {
+type CollectedSlot = {
   readonly 'slotIndex': number
   readonly 'sessionId': Id
   readonly 'captureArtifactHash': Hash
@@ -3546,7 +3382,7 @@ export type CollectedSlot = {
 }
 
 /** Exact approved private Collection shape. */
-export type Collection = {
+type Collection = {
   readonly 'generationId': GenerationId
   readonly 'phase': 'collecting' | 'slot-reserved' | 'collected' | 'failed'
   readonly 'nextSlotIndex': number
@@ -3571,20 +3407,20 @@ export type CompletedEvaluationLaunch = {
 }
 
 /** Exact approved private ReviewItem shape. */
-export type ReviewItem = {
+type ReviewItem = {
   readonly 'descriptor': LegacyDescriptorV1
   readonly 'phase': 'registered' | 'admitted' | 'revoked'
 }
 
 /** Exact approved private OwnerReviewSnapshotV2 shape. */
-export type OwnerReviewSnapshotV2 = {
+type OwnerReviewSnapshotV2 = {
   readonly 'schemaVersion': 2
   readonly 'ownerRevision': number | null
   readonly 'reviews': readonly (ReviewItem)[]
 }
 
 /** Exact approved private LegacyOperationLimits shape. */
-export type LegacyOperationLimits = {
+type LegacyOperationLimits = {
   readonly 'sealPromotion'?: number
   readonly 'signKnowledgeUseJournal'?: number
   readonly 'verifyCandidate'?: number
@@ -3597,25 +3433,13 @@ export type LegacyOperationLimits = {
 }
 
 /** Exact approved private LegacyDescriptorV1 shape. */
-export type LegacyDescriptorV1 = {
-  readonly 'schemaVersion': 1
-  readonly 'grantHash': string
-  readonly 'preRegistrationHash': string
-  readonly 'proposalHash': string
-  readonly 'candidateHash': string
-  readonly 'sourceBindingHash': string
-  readonly 'projectRoot': string
-  readonly 'profileIdentity': string
-  readonly 'buildIdentity': string
-  readonly 'expiresAt': Utc
-  readonly 'sessionIDs': readonly (string)[]
-  readonly 'fixedOracleIDs': readonly ('invoice-v1' | 'single-line-v1' | 'pagination-v1')[]
+type LegacyDescriptorV1 = DescriptorIdentity & {
   readonly 'operationLimits': LegacyOperationLimits
   readonly 'liveCostAdmission'?: LiveDescriptorCost
 }
 
 /** Exact approved private GenerationId shape. */
-export type GenerationId = string
+type GenerationId = string
 
 interface DefinitionTypes {
   Hash: Hash

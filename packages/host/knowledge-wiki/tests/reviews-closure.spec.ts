@@ -61,8 +61,11 @@ vi.mock('node:fs', async (importOriginal) => {
       const requestedPath = String(args[0])
       if (fsFault.replaceBeforeOpenPath === requestedPath) {
         fsFault.replaceBeforeOpenPath = undefined
-        actual.unlinkSync(requestedPath)
+        // Keep the old inode allocated until its replacement exists (Linux may reuse it).
+        const retained = `${requestedPath}.replaced-inode`
+        actual.renameSync(requestedPath, retained)
         actual.writeFileSync(requestedPath, fsFault.replacementContent ?? '', 'utf8')
+        actual.unlinkSync(retained)
         fsFault.replacementContent = undefined
       }
       const fd = actual.openSync(...args)
@@ -106,8 +109,10 @@ vi.mock('node:fs', async (importOriginal) => {
       if (syncedPath !== undefined && fsFault.replaceAfterFileSyncPath === syncedPath) {
         fsFault.replaceAfterFileSyncPath = undefined
         const content = actual.readFileSync(syncedPath)
-        actual.unlinkSync(syncedPath)
+        const retained = `${syncedPath}.replaced-inode`
+        actual.renameSync(syncedPath, retained)
         actual.writeFileSync(syncedPath, content)
+        actual.unlinkSync(retained)
       }
     },
     readSync: (...args: Parameters<typeof actual.readSync>) => {

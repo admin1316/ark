@@ -1,3 +1,4 @@
+import { config, scenario } from './knowledge-use-test-fixture.ts'
 import { spawn, execFileSync } from 'node:child_process'
 import { once } from 'node:events'
 import { createServer, type Socket } from 'node:net'
@@ -9,10 +10,8 @@ import { pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import { isolatedChildEnvironment } from './process-isolation.ts'
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
-import { BlockAssembler, CallId, MessageId, createMessage, type ContentBlock, type StreamChunk,
-  type ToolResultBlock } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId, SessionStore, KNOWN_SESSION_EVENT_TYPES, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { describe, expect, it, vi } from 'vitest'
+import { Session, SessionId, SessionStore, KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence, { JsonlSessionPersistence as JsonlBackend } from '@deepseek-ai/dsh-session-persistence-jsonl'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SandboxLocal from '@deepseek-ai/dsh-sandbox-local'
@@ -25,7 +24,7 @@ import { atomicWriteFile, resolveConfinedPath } from '../../packages/host/knowle
 import { canonicalJson, sha256, encodeKnowledgeWikiPromotionSealRequest, type IndependentVerificationRequest,
   type IndependentVerificationResult } from '../../packages/host/knowledge-wiki/src/verifier.ts'
 import { invoiceOracle, singleLineOracle, paginationOracle } from './knowledge-task-oracles.ts'
-import { captureKnowledgeUse, capturePersistedKnowledgeUse, type KnowledgeUseBinding } from './knowledge-session-use.ts'
+import { captureKnowledgeUse, capturePersistedKnowledgeUse } from './knowledge-session-use.ts'
 import { evaluateKnowledgeUseOperation, describeCapturedKnowledgeCostUse, describeRegisteredKnowledgeTrial,
   type KnowledgeUseEvaluatorConfiguration } from './knowledge-use-evaluator.ts'
 import { evaluateObservationOperation, resolveCompletedEvaluation, readObservationSnapshot, assertUnobservedKnowledgeStartPrefix } from './knowledge-observation.ts'
@@ -86,155 +85,34 @@ async function cancelledEvaluator(configPath: string, mode: 'signal' | 'parent-e
     expect(stderr).toContain('evaluator process cancelled or owner exited')
     const pid = Number.parseInt(stdout, 10)
     expect(Number.isSafeInteger(pid)).toBe(true)
-    expect(() => process.kill(pid, 0)).toThrow()
+    // Linux PID 1 may retain an exited orphan as a zombie; a live child still fails.
+    await vi.waitFor(async () => {
+      try { process.kill(pid, 0) } catch (error: unknown) {
+        if ((error as NodeJS.ErrnoException).code === 'ESRCH') return
+        throw error
+      }
+      if (process.platform === 'linux') {
+        try {
+          const stat = await readFile(`/proc/${pid}/stat`, 'utf8')
+          const state = stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3)
+          if (state === 'Z' || state === 'X') return
+        } catch (error: unknown) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+          throw error
+        }
+      }
+      throw new Error(`evaluator pid ${pid} is still running`)
+    }, { timeout: 5_000, interval: 20 })
   } finally {
     clearTimeout(timeout); parent.stdin.destroy(); parent.kill('SIGKILL')
     await rm(fifoRoot, { recursive: true, force: true })
   }
 }
 
-const project = '/isolated/pilot-project'
-const config = { provider: 'pilot-fixture', model: 'pilot-model' }
-const retryOwner = generateKeyPairSync('ed25519')
 
-function retryDocument(f: { events: SessionEvent[]; snapshot: Buffer; binding: KnowledgeUseBinding }) {
-  return { schemaVersion: 1, kind: 'same-arguments-failed-parent-retry-v1', authorityId: 'pilot-test:retry-owner',
-    sessionId: f.binding.sessionId, turn: f.binding.turn, snapshotHash: sha256(f.snapshot), taskHash: sha256(f.binding.task),
-    calls: f.events.filter(event => event.type === 'tool/call').map((call) => {
-      const result = f.events.find(event => event.type === 'tool/result' && event.data.message.source.callId === call.data.callId)!
-      return { callId: String(call.data.callId), callSeq: call.seq, resultSeq: result.seq, resultHash: sha256(canonicalJson(result)),
-        argumentsHash: sha256(canonicalJson(JSON.parse(call.data.arguments) as unknown)), name: call.data.name,
-        failed: call.data.callId === 'first-bash', retryOf: call.data.callId === 'second-bash' ? 'first-bash' : null as string | null }
-    }) }
-}
-
-function signedRetry(f: Parameters<typeof retryDocument>[0], mutate = (_doc: ReturnType<typeof retryDocument>) => {}, keys = retryOwner) {
-  const doc = retryDocument(f)
-  mutate(doc)
-  return { authorityId: 'pilot-test:retry-owner', publicKey: keys.publicKey,
-    artifactBytes: Buffer.from(canonicalJson({ ...doc, proof: sign(null, Buffer.from(canonicalJson(doc)),
-      keys.privateKey).toString('base64') })) }
-}
-
-function scenario(options: {
-  candidate?: boolean
-  noHeaderExtras?: boolean
-  actualTaskTool?: { arguments: string; result: string }
-  compactTaskStep?: boolean
-  errorsAndRepeat?: boolean
-  explicitErrors?: boolean
-  shellError?: boolean
-  retrySecond?: { name: string; arguments: string }
-  reusedParent?: boolean
-  reasoning?: boolean
-  noCost?: boolean
-  repeatPolicy?: boolean
-  sessionId?: string
-  timeOffset?: number
-  output?: string
-  projectRoot?: string
-} = {}) {
-  const sessionId = options.sessionId ?? 'pilot-session'
-  const projectRoot = options.projectRoot ?? project
-  const session = Session.create(SessionId(sessionId), undefined, { version: 0, id: SessionId(sessionId), createdAt: 10, cwd: projectRoot })
-  session.append('permission/preset', { preset: 'read-only' })
-  session.append('sandbox/mode', { mode: 'read-only' })
-  session.append('approval/policy', { policy: 'ask' })
-  session.append('turn/start', { turn: 1 })
-  let step = 0
-  const start = () => { step += 1; session.append('step/start', { turn: 1, step }) }
-  const model = (blocks: ContentBlock[]) => {
-    const assembler = new BlockAssembler()
-    const seqs: number[] = []
-    const push = (chunk: StreamChunk) => {
-      assembler.push(chunk)
-      seqs.push(session.append('assistant/chunk', { turn: 1, step, chunk }).seq)
-    }
-    for (const [index, block] of blocks.entries()) {
-      push({ type: 'block-start', index, blockType: block.type })
-      push({ type: 'block-end', index, block })
-    }
-    push({ type: 'usage', usage: { inputTokens: 10, outputTokens: 3, totalTokens: 13 } })
-    push({ type: 'finish', reason: { kind: blocks.some(block => block.type === 'tool-call') ? 'tool-calls' : 'stop' } })
-    const usage = assembler.usage
-    if (usage === undefined) throw new Error('fixture usage not assembled')
-    session.append('assistant/message', { turn: 1, step, message: createMessage({ role: 'assistant', content: assembler.blocks(),
-      source: { kind: 'model', ...config } }), usage }, { surfaceOp: 'append', sourceEventSeqs: seqs })
-  }
-  const call = (id: string, name: string, content: ContentBlock[], isError = false, args = '{"path":"concepts/fixed-rule.md"}', visibleOutput?: string) => {
-    const callId = CallId(id)
-    model([{ type: 'tool-call', id: callId, name, arguments: args }, ...(visibleOutput === undefined ? [] : [{ type: 'text' as const, text: visibleOutput }])])
-    session.append('tool/call', { turn: 1, step, callId, name, arguments: args })
-    return () => {
-      const resultContent: [ToolResultBlock] = [{ type: 'tool-result', toolCallId: callId, content, isError }]
-      session.append('tool/result', { turn: 1, step, message: createMessage({ role: 'user', source: { kind: 'tool', callId },
-        content: resultContent }) }, { surfaceOp: 'append' })
-      session.append('step/end', { turn: 1, step })
-    }
-  }
-  start()
-  session.append('user/message', { role: 'user', id: MessageId('pilot-input'), content: [{ type: 'text', text: 'registered task' }],
-    source: { kind: 'user' } }, { surfaceOp: 'append' })
-  if (options.repeatPolicy) session.append('sandbox/mode', { mode: 'read-only' })
-  session.append('request/header', { reason: 'initial', header: { config,
-    ...(options.noHeaderExtras ? {} : { system: 'fixed system', tools: [{ name: 'wiki_read', description: 'Read scoped knowledge',
-      parameters: { type: 'object' } }] }) } })
-  const sourcePage = 'Frozen rule; not a prior answer.'
-  const rendered: ContentBlock[] = [{ type: 'text', text: '# concepts/fixed-rule.md\n\nFrozen rule; not a prior answer.' }]
-  const sourceContentHash = sha256(sourcePage)
-  if (options.candidate) {
-    const finishCall = call('wiki-call', 'wiki_read', rendered)
-    const common = { knowledgeId: 'wiki:concepts/fixed-rule.md', path: 'concepts/fixed-rule.md',
-      resultHash: sha256(JSON.stringify(rendered)), contentHash: sha256(JSON.stringify(rendered)), sourceContentHash,
-      tool: 'wiki_read', callId: 'wiki-call', scope: { sessionId, projectId: projectRoot, workspaceId: projectRoot },
-      verificationStatus: 'verified' as const }
-    session.append('knowledge/retrieved', { ...common, kind: 'page', allowed: true, reason: 'ok' })
-    session.append('knowledge/injected', { ...common, kind: 'page', value: rendered as never,
-      contentBytes: Buffer.byteLength(JSON.stringify(rendered)) })
-    finishCall()
-    start()
-  }
-  if (options.actualTaskTool !== undefined) {
-    call('actual-task-bash', 'bash', [{ type: 'text', text: options.actualTaskTool.result }], false, options.actualTaskTool.arguments, options.compactTaskStep ? options.output ?? 'SUM=23' : undefined)()
-    if (!options.compactTaskStep) start()
-  }
-  if (options.errorsAndRepeat) {
-    call('first-bash', 'bash', [{ type: 'text', text: options.shellError
-      ? 'first command failed\n[exit code: 1]' : 'first command failed' }], options.shellError !== true)()
-    start()
-    call('second-bash', options.retrySecond?.name ?? 'bash', [{ type: 'text', text: 'retry succeeded' }], options.explicitErrors ?? false,
-      options.retrySecond?.arguments)()
-    start()
-    if (options.reusedParent) { call('third-bash', 'bash', [{ type: 'text', text: 'another succeeded' }])(); start() }
-  }
-  if (!options.compactTaskStep) {
-    model([...(options.reasoning ? [{ type: 'reasoning' as const, text: 'private reasoning' }] : []), { type: 'text',
-      text: options.output ?? 'SUM=23' }])
-    session.append('step/end', { turn: 1, step })
-  }
-  session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-  const binding: KnowledgeUseBinding = {
-    useId: 'use-1', sessionId: String(session.id), projectRoot, turn: 1, role: options.candidate ? 'candidate' : 'baseline',
-    pairId: 'pair-1', grantId: options.candidate ? 'grant-1' : null, proposalHash: sha256('proposal'),
-    measurementDefinitionHash: sha256('definition'),
-    sourceIdentity: { commit: 'a'.repeat(40), sourceDigest: sha256('source'), dirty: true, dirtyDigest: sha256('dirty'),
-      buildDigest: sha256('build') },
-    profileIdentity: 'isolated-test-profile', buildIdentity: sha256('build'), config, task: 'registered task',
-    goalHash: sha256('goal'), policyHash: sha256('policy'),
-    permissions: { 'permission/preset': { preset: 'read-only' }, 'sandbox/mode': { mode: 'read-only' },
-      'approval/policy': { policy: 'ask' } },
-    knowledge: options.candidate ? { id: 'wiki:concepts/fixed-rule.md', sourceContentHash, rendered } : null,
-    cost: options.noCost ? null : { microunits: 17, artifactBytes: Buffer.from('independent test cost evidence') },
-  }
-  const events = [...structuredClone(session.events)]
-  if (options.timeOffset !== undefined) for (const item of events) Object.assign(item, { time: item.time + options.timeOffset })
-  const metadata = structuredClone(session.header)
-  const snapshot = Buffer.from(canonicalJson({ metadata, events }))
-  if (options.errorsAndRepeat && !options.explicitErrors) {
-    Object.assign(binding, { retryEvidence: signedRetry({ events, snapshot, binding }) })
-  }
-  return { metadata, events, snapshot, binding }
-}
+const rejectedReviewBinding = { reviewHash: sha256('review'), semanticReceiptHash: sha256('semantic'),
+  candidatePath: '_candidates/x.md', candidateHash: sha256('candidate'), action: 'Promote' as const, targetPath: 'x.md',
+  targetBeforeHashOrVerifiedAbsence: 'verified-absence' as const }
 
 const invoiceSource = 'invoice_id,status,currency,amount\ni1,approved,USD,1.00'
 const rateSource = 'currency,minor_units,usd_numerator,usd_denominator\nUSD,2,1,1'
@@ -463,9 +341,7 @@ describe('persisted actual-use producer', () => {
             },
           },
           costOwner, evaluator, reader,
-          reviewBinding: { reviewHash: sha256('review'), semanticReceiptHash: sha256('semantic'), candidatePath: '_candidates/x.md',
-            candidateHash: sha256('candidate'), action: 'Promote', targetPath: 'x.md',
-            targetBeforeHashOrVerifiedAbsence: 'verified-absence' },
+          reviewBinding: rejectedReviewBinding,
           artifactRoot, signal: new AbortController().signal,
         }))
       }
@@ -534,9 +410,7 @@ describe('persisted actual-use producer', () => {
         journalAuthority: { authorityId: 'negative-journal', publicKey: keys.publicKey,
           async signKnowledgeUseJournal(request) { signerCalls++; return sign(null, Buffer.from(canonicalJson(request)),
             keys.privateKey) } },
-        costOwner, evaluator, reader, reviewBinding: { reviewHash: sha256('review'), semanticReceiptHash: sha256('semantic'),
-          candidatePath: '_candidates/x.md', candidateHash: sha256('candidate'), action: 'Promote', targetPath: 'x.md',
-          targetBeforeHashOrVerifiedAbsence: 'verified-absence' },
+        costOwner, evaluator, reader, reviewBinding: rejectedReviewBinding,
         artifactRoot, signal: new AbortController().signal,
       })
       expect(result.status).toBe('rejected')
@@ -823,6 +697,33 @@ describe('persisted actual-use producer', () => {
             async finalizeMeasuredTrial(request, signal) { return sealed(request, signal) },
           }
           for (const [hash, bytes] of files) atomicWriteFile(resolveConfinedPath(artifactRoot, hash, true), bytes)
+          if (task.taskKind === 'pagination-v1' && process.platform !== 'darwin') {
+            const first = producerPairs[0]!.baseline
+            const registered = ownerConfig.registrations[0]!
+            const witnessBytes = files.get(registered.costWitnessHash)!
+            const captured = await capturePersistedKnowledgeUse(first.snapshotPath, first.expectedSnapshotHash, {
+              ...first.binding, cost: { microunits: 0, artifactBytes: witnessBytes },
+            })
+            const captureFactsHash = putCanonical(captured.facts)
+            const finalOutputHash = putRaw(Buffer.from(captured.wholeOutput))
+            for (const [hash, bytes] of files) atomicWriteFile(resolveConfinedPath(artifactRoot, hash, true), bytes)
+            const immutablePaths = [first.snapshotPath, join(projectRoot, `${first.binding.sessionId}.ts`),
+              join(projectRoot, 'protected.txt'), join(projectRoot, '.llm-wiki', proposal.candidatePath)]
+            const originals = await Promise.all(immutablePaths.map(path => readFile(path)))
+            const finalize = vi.spyOn(evaluator, 'finalizeMeasuredTrial')
+            await expect(evaluator.verifyRegisteredFixedTask({ schemaVersion: 1,
+              operation: 'verify-registered-knowledge-task-v1', sessionId: first.binding.sessionId,
+              sessionSnapshotHash: first.expectedSnapshotHash, captureFactsHash,
+              registeredManifestHash: first.registeredTask.manifestHash,
+              registeredRequestHash: first.registeredTask.requestHash, taskKind: 'pagination-v1', finalOutputHash,
+              capturedProviderRequestHash: String(captured.facts['providerRequestHash']),
+            }, new AbortController().signal)).rejects.toThrow('pagination pilot network confinement is only implemented on macOS')
+            expect(producerReceiptCount).toBe(0)
+            expect(oracleOutcomes.size).toBe(0)
+            expect(finalize).not.toHaveBeenCalled()
+            expect(await Promise.all(immutablePaths.map(path => readFile(path)))).toEqual(originals)
+            return
+          }
           const candidateRecipe = await evaluate(ownerConfig, verificationRequest,
             context.subprocess, context.sandbox, new AbortController().signal)
           expect(candidateRecipe).toMatchObject({ role: 'promotion', signatureField: 'proof',

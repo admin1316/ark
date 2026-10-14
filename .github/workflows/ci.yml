@@ -168,6 +168,11 @@ jobs:
       - name: Re-link workspace bins after the host build
         run: pnpm install --frozen-lockfile --offline
 
+      # The service shadow seam is covered against the real candidate executable.
+      # A fresh checkout must build it before the per-file coverage gate runs.
+      - name: Build Rust search candidate (coverage prerequisite)
+        run: cargo build --locked --release --manifest-path rust/knowledge-search-shadow/Cargo.toml
+
       - name: Run exhaustive coverage
         env:
           # Required mode: the pwsh-gated suites fail with the capability reason
