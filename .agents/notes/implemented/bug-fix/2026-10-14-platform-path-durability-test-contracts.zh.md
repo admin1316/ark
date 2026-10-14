@@ -24,7 +24,11 @@ Native owner 连接器继续仅支持 Unix。Windows 协议测试使用真实命
 
 托管 macOS Native 检查在运行契约前安装同样固定的 Node 和不可变 pnpm 依赖。Swift fixture 启动实际 `tsx` 源码消费者，验证 Native/XPC journal 签名与重复调用拒绝；只有 Swift 源码的 checkout 无法执行该消费者。既有源码别名解析 workspace 导入，无需新增产物构建或修改签名检查。
 
-验证器 helper 在 leader 响应前写入自己的就绪标记。POSIX 保留真实的 leader 退出后幸存进程测试。Windows 检查未分离 helper 实际消失，并将其归因于 [libuv 的父进程 job](https://github.com/nodejs/node/blob/v24.x/deps/uv/src/win/process.c)；期限与取消测试则在真实 leader 退出后单独控制受管理的等待。[既有验证器等待契约](2026-10-13-verifier-post-exit-cancellation.zh.md)继续保留操作期限和独立观察上限。
+验证器 helper 在 leader 响应前写入自己的就绪标记。POSIX 保留真实的 leader 退出后幸存进程测试。Windows 检查未分离 helper 实际退出，并将其归因于 [libuv 的父进程 job](https://github.com/nodejs/node/blob/v24.19.0/deps/uv/src/win/process.c)；期限与取消测试则在真实 leader 退出后单独控制受管理的等待。[既有验证器等待契约](2026-10-13-verifier-post-exit-cancellation.zh.md)继续保留操作期限和独立观察上限。
+
+Leader 退出后的测试在取消前绑定 helper 的实际启动身份。Linux 进程组收束可能包含同一身份的 Z/X 状态；诊断区分残留进程条目与 PID 不存在，并拒绝仍执行、身份替换或无法读取的情况。Windows 取消 fixture 保持实际匿名 stdin 管道打开，待实际就绪后再动作。其终止证据来自操作系统信号或 job 边界，不冒充未执行的 POSIX handler。清理在删除 fixture 前分别等待父子进程，并同时保留正文与清理错误。Windows ESRCH 证明已不再执行或已不存在，不证明全部内核进程对象已被销毁。
+
+缓存计数测试在测量后续事件门槛前先确认已持久化的初始化 cut。HMR 创建测试保留注册 watcher 的就绪、事件、规范路径与刷新阶段的有界诊断，不延长时限或替换为 polling。这些观察没有修复尚未查明的 HMR 事件丢失原因或 Windows junction 发布空窗。
 
 ## Alternatives considered
 

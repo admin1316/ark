@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import { parseProcStat } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createExternalVerifierAuthority, type ExternalVerifierOptions } from '../src/external-verifier-adapter.ts'
@@ -731,7 +732,10 @@ describe('external verifier adapter', () => {
       : 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'
     const readyProgram = [
       childProgram,
-      `require('node:fs').writeFileSync(${JSON.stringify(childReadyPath)}, String(process.pid), { mode: 0o600 })`,
+      'const fs = require("node:fs")',
+      `const ready = ${process.platform === 'linux' ? 'JSON.stringify({ pid: process.pid, stat: fs.readFileSync(\'/proc/self/stat\', \'utf8\') })' : 'String(process.pid)'}`,
+      `fs.writeFileSync(${JSON.stringify(`${childReadyPath}.pending`)}, ready, { mode: 0o600, flag: 'wx' })`,
+      `fs.renameSync(${JSON.stringify(`${childReadyPath}.pending`)}, ${JSON.stringify(childReadyPath)})`,
     ].join('; ')
     const args = rawVerifierScript([
       'const { spawn } = require("node:child_process")',
@@ -772,7 +776,14 @@ describe('external verifier adapter', () => {
       expect(directOutcome.exitCode).toBe(0)
       expect(directOutcome.signal).toBeNull()
       const childPid = Number(readFileSync(childPidPath, 'utf8'))
-      expect(readFileSync(childReadyPath, 'utf8')).toBe(String(childPid))
+      const readyBytes = readFileSync(childReadyPath, 'utf8')
+      const startup = process.platform === 'linux' ? parseProcStat((JSON.parse(readyBytes) as { stat: string }).stat) : undefined
+      if (process.platform === 'linux') {
+        expect((JSON.parse(readyBytes) as { pid: number }).pid).toBe(childPid)
+        expect(startup).toMatchObject({ pid: childPid, parentPid: handle.pid, pgrp: handle.pid })
+        expect(startup?.started).toMatch(/^\d+$/u)
+        expect(startup?.state).toBe('R')
+      } else expect(readyBytes).toBe(String(childPid))
       expect(existsSync(childOutcomePath)).toBe(false)
       // libuv's non-detached Windows helper belongs to the parent's job and
       // dies with it. This is OS cleanup, not evidence of Harness signalling.
@@ -789,6 +800,29 @@ describe('external verifier adapter', () => {
       }
       // On POSIX the actual survivor uses no inherited output pipe.
       expect(() => process.kill(childPid, 0)).not.toThrow()
+      const helperExitObservation = () => {
+        try { process.kill(childPid, 0) }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+          return { pid: childPid, kind: 'pid-absent' as const }
+        }
+        if (process.platform !== 'linux' || startup === undefined) throw new Error('helper is still running or its startup identity is unavailable')
+        let current: ReturnType<typeof parseProcStat>
+        try { current = parseProcStat(readFileSync(`/proc/${childPid}/stat`, 'utf8')) }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+          return { pid: childPid, kind: 'pid-absent' as const }
+        }
+        if (current === undefined || current.pid !== startup.pid || current.started !== startup.started || current.pgrp !== startup.pgrp) {
+          throw new Error('helper process identity is unreadable or changed')
+        }
+        if (current.state !== 'Z' && current.state !== 'X') throw new Error(`helper is still running: ${current.state}`)
+        return { pid: childPid, kind: 'quiescent-retained-entry' as const, state: current.state,
+          started: current.started, pgrp: current.pgrp }
+      }
+      if (process.platform === 'linux' && mode !== 'natural') {
+        expect(helperExitObservation).toThrow('helper is still running')
+      }
       if (mode === 'cancel') controller.abort(new Error('test owner cancelled after leader exit'))
       const result = await Promise.race([
         pending,
@@ -803,7 +837,11 @@ describe('external verifier adapter', () => {
         if (result.kind !== 'error') throw new Error('interrupted verification returned a result')
         expect(String(result.error)).toContain(mode === 'timeout' ? 'timed out' : 'aborted')
       }
-      expect(() => process.kill(childPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
+      const exit = helperExitObservation()
+      // Retain the actual distinction in CI output: a verified exited zombie
+      // is quiescent, while a live/unknown identity still fails this test.
+      process.stderr.write(`external-verifier-helper-exit ${JSON.stringify({ mode, startup: startup === undefined ? null : {
+        pid: startup.pid, started: startup.started, pgrp: startup.pgrp }, exit })}\n`)
     } catch (error) {
       primaryError = error
       throw error

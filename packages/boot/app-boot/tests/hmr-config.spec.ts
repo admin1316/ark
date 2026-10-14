@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Hmr from '@deepseek-ai/cordis-plugin-hmr'
@@ -28,6 +28,58 @@ async function eventually(test: () => boolean, message: string, timeoutMs = 10_0
   while (!test()) {
     if (Date.now() >= deadline) throw new Error(message)
     await new Promise(resolve => setTimeout(resolve, 10))
+  }
+}
+
+function configWatchDiagnostics(ctx: Context, filename: string, canonicalFilename: string, canonicalRoot: string) {
+  const startedAt = performance.now()
+  const events: { elapsedMs: number; event: string; path: string | undefined; detail: string | undefined }[] = []
+  const record = (event: string, path?: string, detail?: string) => {
+    if (events.length < 64) events.push({ elapsedMs: Math.round(performance.now() - startedAt), event, path, detail })
+  }
+  const getWatcher = () => ctx.hmr['configs'].get(canonicalFilename)?.watcher
+  let watcher: ReturnType<typeof getWatcher>
+  let readyAfterRegistration: boolean | undefined
+  let phase = 'registering'
+  ctx.on('hmr/config-update-failed', (failedFilename, error) => {
+    if (failedFilename === filename) record('refresh-failed', failedFilename, error.message)
+  })
+  return {
+    record,
+    setPhase(nextPhase: string) { phase = nextPhase },
+    attach() {
+      // Read this registration's real ready flag; no synthetic ready event is emitted.
+      watcher = getWatcher()
+      readyAfterRegistration = watcher?._readyEmitted
+      watcher?.on('raw', (event: string, path: string, details: unknown) => {
+        const watchedPath = details && typeof details === 'object' && 'watchedPath' in details
+          && typeof details.watchedPath === 'string' ? details.watchedPath : undefined
+        record(`raw:${event}`, path, watchedPath)
+      })
+      watcher?.on('all', (event: string, path: string) => {
+        const normalized = resolve(path)
+        record(`all:${event}`, path, JSON.stringify({
+          targetMatch: normalized === filename || normalized === canonicalFilename,
+          parentMatch: normalized === dirname(canonicalFilename),
+        }))
+      })
+      watcher?.on('error', (error: unknown) => {
+        record('watcher-error', undefined, error instanceof Error ? error.message : String(error))
+      })
+    },
+    report(observed: string[]) {
+      let fileState: { content: string } | { error: string }
+      try {
+        fileState = { content: readFileSync(filename, 'utf8') }
+      } catch (readError) {
+        fileState = { error: readError instanceof Error ? readError.message : String(readError) }
+      }
+      console.error('HMR config observation failure', JSON.stringify({
+        phase, filename, canonicalFilename, canonicalRoot, observed, fileExists: existsSync(filename), fileState, events,
+        readyAfterRegistration, readyAtFailure: watcher?._readyEmitted, watcherClosed: watcher?.closed,
+        watchDepth: watcher?.options.depth, watched: watcher?.getWatched(),
+      }))
+    },
   }
 }
 
@@ -86,10 +138,14 @@ describe('HMR exact config paths', () => {
   it('observes add, change, and unlink outside its module roots', { timeout: 20_000 }, async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-config-'))
     const filename = join(dir, 'plugins.yml')
+    const canonicalRoot = await realpath(dir)
+    const canonicalFilename = join(canonicalRoot, 'plugins.yml')
     const ctx = await bootHmr(dir)
     const observed: string[] = []
+    const diagnostics = configWatchDiagnostics(ctx, filename, canonicalFilename, canonicalRoot)
     try {
       await ctx.hmr.registerConfig(filename, () => {
+        diagnostics.record('refresh-start', filename)
         try {
           observed.push(readFileSync(filename, 'utf8'))
         } catch (error) {
@@ -97,13 +153,22 @@ describe('HMR exact config paths', () => {
           observed.push('missing')
         }
       })
-
+      diagnostics.attach()
+      diagnostics.setPhase('creating-config')
       writeFileSync(filename, 'one', { flag: 'wx' })
+      diagnostics.setPhase('waiting-for-creation')
       await eventually(() => observed.includes('one'), 'HMR did not observe config creation')
+      diagnostics.setPhase('changing-config')
       writeFileSync(filename, 'two')
+      diagnostics.setPhase('waiting-for-change')
       await eventually(() => observed.includes('two'), 'HMR did not observe config change')
+      diagnostics.setPhase('removing-config')
       unlinkSync(filename)
+      diagnostics.setPhase('waiting-for-removal')
       await eventually(() => observed.includes('missing'), 'HMR did not observe config removal')
+    } catch (error) {
+      diagnostics.report(observed)
+      throw error
     } finally {
       await ctx.fiber.dispose()
     }
@@ -113,15 +178,25 @@ describe('HMR exact config paths', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-hmr-config-'))
     const dir = join(root, 'later')
     const filename = join(dir, 'plugins.yml')
+    const canonicalRoot = await realpath(root)
+    const canonicalFilename = join(canonicalRoot, 'later', 'plugins.yml')
     const ctx = await bootHmr(root)
     const observed: string[] = []
+    const diagnostics = configWatchDiagnostics(ctx, filename, canonicalFilename, canonicalRoot)
     try {
       await ctx.hmr.registerConfig(filename, () => {
+        diagnostics.record('refresh-start', filename)
         observed.push(readFileSync(filename, 'utf8'))
       })
+      diagnostics.attach()
+      diagnostics.setPhase('creating-parent-and-file')
       mkdirSync(dir)
       writeFileSync(filename, 'created')
+      diagnostics.setPhase('waiting-for-refresh')
       await eventually(() => observed.includes('created'), 'HMR did not observe config creation under a new parent', 30_000)
+    } catch (error) {
+      diagnostics.report(observed)
+      throw error
     } finally {
       await ctx.fiber.dispose()
     }

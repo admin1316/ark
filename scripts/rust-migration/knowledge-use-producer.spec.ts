@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Session, SessionId, SessionStore, KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence, { JsonlSessionPersistence as JsonlBackend } from '@deepseek-ai/dsh-session-persistence-jsonl'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import { createWindowsProcessInspector } from '../../packages/subprocess/subprocess-local/src/windows-inspector.ts'
 import SandboxLocal from '@deepseek-ai/dsh-sandbox-local'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-user-approval'
@@ -59,6 +60,7 @@ async function runEvaluatorCli(context: Context, configPath: string, request: un
 }
 
 async function cancelledEvaluator(configPath: string, mode: 'signal' | 'parent-exit') {
+  if (process.platform === 'win32') return cancelledWindowsEvaluator(configPath, mode)
   const argv = [process.execPath, '--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href,
     fileURLToPath(new URL('./knowledge-use-evaluator.ts', import.meta.url)), configPath]
   const fifoRoot = await mkdtemp(join(tmpdir(), 'ark-evaluator-owner-loss-'))
@@ -106,6 +108,161 @@ async function cancelledEvaluator(configPath: string, mode: 'signal' | 'parent-e
   } finally {
     clearTimeout(timeout); parent.stdin.destroy(); parent.kill('SIGKILL')
     await rm(fifoRoot, { recursive: true, force: true })
+  }
+}
+
+async function cancelledWindowsEvaluator(configPath: string, mode: 'signal' | 'parent-exit') {
+  const root = await mkdtemp(join(tmpdir(), 'ark-evaluator-owner-loss-'))
+  const readyPath = join(root, 'stdin.ready')
+  const preloadPath = join(root, 'stdin-ready.mjs')
+  const tsx = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href
+  const inspectorUrl = new URL('../../packages/subprocess/subprocess-local/src/windows-inspector.ts', import.meta.url).href
+  // This test-only seam runs when main actually awaits stdin, after installing
+  // its cancellation listeners. It leaves the iterator and all input bytes intact.
+  await writeFile(preloadPath, `import { writeFileSync, renameSync } from 'node:fs';
+    import { createWindowsProcessInspector } from ${JSON.stringify(inspectorUrl)};
+    const inspector = createWindowsProcessInspector();
+    const iterate = process.stdin[Symbol.asyncIterator];
+    process.stdin[Symbol.asyncIterator] = function (...args) {
+      const identity = inspector.snapshot().tree(process.pid).find(entry => entry.pid === process.pid);
+      if (identity === undefined) throw new Error('evaluator startup identity is unavailable');
+      const ready = { ...identity, parentPid: process.ppid,
+        readableEnded: this.readableEnded, termListeners: process.listenerCount('SIGTERM') };
+      writeFileSync(${JSON.stringify(`${readyPath}.pending`)}, JSON.stringify(ready), { mode: 0o600, flag: 'wx' });
+      renameSync(${JSON.stringify(`${readyPath}.pending`)}, ${JSON.stringify(readyPath)});
+      return iterate.apply(this, args);
+    };`, { mode: 0o600, flag: 'wx' })
+  const argv = [process.execPath, '--import', tsx, '--import', pathToFileURL(preloadPath).href,
+    fileURLToPath(new URL('./knowledge-use-evaluator.ts', import.meta.url)), configPath]
+  const parentCode = `async function main() {
+    const { spawn } = require('node:child_process');
+    const { createWindowsProcessInspector } = await import(${JSON.stringify(inspectorUrl)});
+    const inspector = createWindowsProcessInspector();
+    const child = spawn(${JSON.stringify(argv[0])}, ${JSON.stringify(argv.slice(1))}, { stdio: ['pipe', 'pipe', 'pipe'] });
+    child.stdout.pipe(process.stdout); child.stderr.pipe(process.stderr);
+    child.once('error', error => { process.stderr.write(String(error)); process.exit(1); });
+    child.once('exit', (code, signal) => {
+      process.send({ kind: 'child-exit', code, signal }, () => process.exit(0));
+    });
+    const identity = inspector.snapshot().tree(child.pid).find(entry => entry.pid === child.pid);
+    process.send({ kind: 'spawned', pid: child.pid, started: identity?.started });
+    process.once('message', mode => {
+      if (child.stdin.destroyed || child.stdin.writableEnded) throw new Error('evaluator stdin was not held open');
+      process.send({ kind: 'action', mode, pid: child.pid }, () => {
+        if (mode === 'signal') { if (!child.kill('SIGTERM')) throw new Error('evaluator signal was not sent'); }
+        else if (mode === 'parent-exit') process.exit(0);
+        else throw new Error('unexpected owner-loss action');
+      });
+    });
+    } main().catch(error => { process.stderr.write(String(error)); process.exit(1); });`
+  const inspector = createWindowsProcessInspector()
+  const parent = spawn(process.execPath, ['--import', tsx, '--eval', parentCode], { cwd: process.cwd(),
+    env: { ...isolatedChildEnvironment(), TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../tsconfig.base.json', import.meta.url)) },
+    stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })
+  const closed = once(parent, 'close').then(value => ({ value }), (error: unknown) => ({ error }))
+  const spawned = once(parent, 'message')
+  let stdout = ''; let stderr = ''
+  const messages: unknown[] = []
+  parent.stdout!.on('data', (chunk) => { stdout += String(chunk) })
+  parent.stderr!.on('data', (chunk) => { stderr += String(chunk) })
+  let spawnedPid: number | undefined
+  let identity: { pid: number; started: string } | undefined
+  parent.on('message', (message) => {
+    messages.push(message)
+    if (typeof message !== 'object' || message === null || !('kind' in message) || message.kind !== 'spawned'
+      || !('pid' in message) || typeof message.pid !== 'number' || !Number.isSafeInteger(message.pid) || message.pid <= 0) return
+    spawnedPid = message.pid
+    if ('started' in message && typeof message.started === 'string' && /^\d+:\d+$/u.test(message.started)) {
+      identity = { pid: message.pid, started: message.started }
+    }
+  })
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => { reject(new Error('evaluator owner-loss fixture exceeded 10000 ms')) }, 10_000)
+  })
+  let primaryError: unknown
+  let primaryFailed = false
+  try {
+    const [message] = await Promise.race([spawned, deadline]) as [{ kind: string; pid: number; started: string }]
+    expect(message.kind).toBe('spawned')
+    expect(Number.isSafeInteger(message.pid)).toBe(true)
+    expect(message.pid).toBeGreaterThan(0)
+    expect(message.started).toMatch(/^\d+:\d+$/u)
+    expect(identity).toBeDefined()
+    if (identity === undefined) throw new Error('evaluator startup identity is unavailable')
+    expect(inspector.snapshot().tree(message.pid).find(entry => entry.pid === message.pid)).toEqual(identity)
+    const ready = await vi.waitFor(async () => JSON.parse(await readFile(readyPath, 'utf8')) as {
+      pid: number
+      started: string
+      parentPid: number
+      readableEnded: boolean
+      termListeners: number
+    }, { timeout: 3_000, interval: 20 })
+    expect(ready).toMatchObject({ ...identity, parentPid: parent.pid, readableEnded: false })
+    expect(ready.termListeners).toBeGreaterThan(0)
+    expect(inspector.isAlive(identity)).toBe(true)
+    await Promise.race([new Promise<void>((resolve, reject) => {
+      parent.send(mode, (error) => { if (error) reject(error); else resolve() })
+    }), deadline])
+    const outcome = await Promise.race([closed, deadline])
+    if ('error' in outcome) throw outcome.error
+    expect(outcome.value).toEqual([0, null])
+    expect(messages).toContainEqual({ kind: 'action', mode, pid: identity.pid })
+    if (mode === 'signal') expect(messages).toContainEqual({ kind: 'child-exit', code: null, signal: 'SIGTERM' })
+    // Windows SIGTERM and non-detached parent-job teardown are OS termination.
+    // They do not demonstrate the evaluator's POSIX handler or ppid watcher.
+    expect(stdout).toBe('')
+    expect(stderr).toBe('')
+    await vi.waitFor(() => {
+      expect(() => process.kill(identity!.pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
+    }, { timeout: 5_000, interval: 20 })
+    process.stderr.write(`evaluator-owner-loss ${JSON.stringify({ mode, startup: ready, exit: 'esrch-non-running-or-absent' })}\n`)
+  } catch (error) {
+    primaryFailed = true
+    primaryError = error
+  } finally {
+    clearTimeout(timeout)
+    const cleanupErrors: unknown[] = []
+    let parentExitProven = false; let childExitProven = false
+    let cleanupTimer: ReturnType<typeof setTimeout> | undefined
+    const cleanupUntil = Date.now() + 5_000
+    const cleanupDeadline = new Promise<never>((_resolve, reject) => {
+      cleanupTimer = setTimeout(() => { reject(new Error('evaluator cleanup exceeded the existing 5000 ms observation budget')) }, 5_000)
+    })
+    try {
+      parent.stdin!.destroy(); parent.kill('SIGKILL')
+    } catch (error) { cleanupErrors.push(error) }
+    try {
+      const outcome = await Promise.race([closed, cleanupDeadline])
+      if ('error' in outcome) throw outcome.error
+      parentExitProven = true
+    } catch (error) { cleanupErrors.push(error) }
+    try {
+      if (spawnedPid === undefined) throw new Error('evaluator child PID was not observed; retain its fixture root')
+      if (identity !== undefined && inspector.isAlive(identity)) inspector.signalProcess(identity, 'SIGKILL')
+      while (true) {
+        try { process.kill(spawnedPid, 0) } catch (error: unknown) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+          childExitProven = true
+          break
+        }
+        if (identity === undefined) throw new Error('evaluator startup identity is unknown while its PID remains active')
+        const current = inspector.snapshot().tree(spawnedPid).find(entry => entry.pid === spawnedPid)
+        if (current === undefined || current.started !== identity.started) throw new Error('evaluator process identity is unreadable or changed')
+        if (Date.now() >= cleanupUntil) throw new Error(`evaluator pid ${spawnedPid} is still running at the cleanup deadline`)
+        await new Promise(resolve => setTimeout(resolve, Math.min(20, cleanupUntil - Date.now())))
+      }
+    } catch (error) { cleanupErrors.push(error) }
+    finally { clearTimeout(cleanupTimer) }
+    if (parentExitProven && childExitProven) {
+      try { await rm(root, { recursive: true, force: true }) }
+      catch (error) { cleanupErrors.push(error) }
+    } else {
+      cleanupErrors.push(new Error(`evaluator exit is unproved; retained fixture root ${root}`))
+    }
+    const errors = primaryFailed ? [primaryError, ...cleanupErrors] : cleanupErrors
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1) throw new AggregateError(errors, 'evaluator body and/or cleanup failed')
   }
 }
 

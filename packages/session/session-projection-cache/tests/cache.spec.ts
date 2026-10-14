@@ -200,9 +200,9 @@ describe('SessionProjectionCache write policy', () => {
   it('flushes when the in-turn event count reaches the configured threshold', async () => {
     const { ctx, root } = await harness({ config: { writeEveryEvents: 3, writeIntervalMs: 60_000 } })
     const session = ctx.sessions.create(SessionId('count'))
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === -1)
     mark(session, ['1'])
     mark(session, ['2'])
-    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === -1)
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1) // still the creation cut
     mark(session, ['3'])
     await waitForRow(root, session.id, rows => (rows?.['cache-test/marks']?.val as { marks?: string[] } | undefined)?.marks?.[0] === '3')
