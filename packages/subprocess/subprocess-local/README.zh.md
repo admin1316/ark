@@ -52,6 +52,8 @@ kind: "package-reference"
 
 ### 关闭行为
 
+`done` 报告直接子进程的结果后，spawn 信号仍与可观察的进程树绑定。共享退出观察器仅在整棵树退出后释放监听器；spawn 失败时立即释放。取消后续 `waitForExit(signal)` 只限制这次观察的等待时间，本身不会终止进程树。
+
 正常 dispose 会终止每棵仍在运行的进程树与终端并等待其退出。在 JavaScript 可观察的宿主退出期间——直接 `process.exit()`、默认未捕获异常、默认未处理 rejection——同步最终清理会强制终止所有仍归本包所有的对象（对进程组发送 SIGKILL，Windows 上运行 `taskkill /T /F`），且不创建任何 Promise 或定时器。未处理的 `SIGTERM`/`SIGINT`/`SIGHUP`、`SIGKILL`、fatal OOM、native crash 与断电则需要外部 supervisor。
 
 ### 可能出错的地方
@@ -89,7 +91,7 @@ kind: "package-reference"
 
 ### 安全不变式
 
-spill 文件以 `0600` 权限、`O_EXCL` 与随机名称在 `0700` 每进程目录下创建，可抵御共享临时目录中的符号链接植入；最终关闭失败时不公布 spill 路径。进程身份携带启动时间，因此清理绝不会跟随 PID 复用。宿主退出最终清理不创建 Promise 或定时器，保留宿主退出码与诊断，分别包含每个目标的失败，也不会声称已经完全停稳。
+spill 文件以 `0600` 权限、`O_EXCL` 与随机名称在 `0700` 每进程目录下创建，可抵御共享临时目录中的符号链接植入；最终关闭失败时不公布 spill 路径。终端进程身份携带启动时间，因此终端清理不会跟随 PID 复用。宿主退出最终清理不创建 Promise 或定时器，保留宿主退出码与诊断，分别包含每个目标的失败，也不会声称已经完全停稳。
 
 </details>
 
@@ -105,6 +107,7 @@ spill 文件以 `0600` 权限、`O_EXCL` 与随机名称在 `0700` 每进程目�
 - [dsh-bash-local](../../shell/bash-local/README.zh.md)——最大的消费方及其请求的具体 stdio 形态。
 - [subprocess seam Agent Note](../../../.agents/notes/implemented/architecture/2026-07-26-subprocess-seam.zh.md)——进程部分为何成为独立的 seam。
 - [同步子进程退出清理](../../../.agents/notes/implemented/bug-fix/2026-08-11-synchronous-subprocess-exit-cleanup.zh.md)——宿主退出最终清理决策及其失败模式。
+- [Spawn 取消与进程树生命周期](../../../.agents/notes/implemented/bug-fix/2026-10-13-spawn-signal-process-tree-lifetime.zh.md)——取消所有权为何持续到直接子进程结算之后。
 
 -----
 
@@ -125,6 +128,7 @@ spill 文件以 `0600` 权限、`O_EXCL` 与随机名称在 `0700` 每进程目�
 这些限制说明本提供方何时不合适，或何时需要特别的运维注意。它们是当前包约束，不是通用平台对比或任务积压。
 
 - **Windows 进程树支持仅为尽力而为**——终止经由 `taskkill /PID <pid> /T /F` 完成，所有结果都被就地吸收（进程树已不存在、竞态、二进制缺失），存活探测则回退到直接子进程边界。
+- **POSIX 进程组使用数字身份**——一旦确认进程组已不存在，就永久停止观察和发送信号；但首次确认前发生的 PID/PGID 复用没有原子身份约束。离开自有进程组的后代可能逃过其信号。
 - **Windows 终端信号是控制台级的**——SIGINT 以 `\x03` Ctrl-C 输入写入投递，由 conhost 转为控制台级 CTRL_C 事件；SIGTSTP 与 SIGHUP 因不可用而被拒绝；不带 `/F` 的 `taskkill` 无法终止控制台进程，因此拆卸的 TERM 档是 `/F` 升级前的宽限等待。
 - **守护化的终端后代仍可能逃出可观察边界**——在 macOS 上，子进程如果在任何前台检查快照之前重新设定父进程，将无法再从 PTY 根进程发现；在 Linux 上，调用 `setsid` 的子进程会同时离开进程树与自有终端会话；本提供方不新增持续进程表监视器。
 - **进程内清理要求退出阶段仍能执行 JavaScript**——直接 `process.exit()`、默认未捕获异常和默认未处理 rejection 会发出 Node 同步 `exit` 事件；未处理的 `SIGTERM`、`SIGINT` 或 `SIGHUP`、`SIGKILL`、fatal OOM、`process.abort()`、native crash 与断电，都需要外部 supervisor、容器 init 或等价的 OS 所有者负责。

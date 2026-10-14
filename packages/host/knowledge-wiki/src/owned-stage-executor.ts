@@ -1,16 +1,21 @@
 /**
- * Fork-owned hard-deadline stage executor for the Knowledge Wiki.
+ * In-process worker-backed stage executor for the Knowledge Wiki.
  *
- * The release ships no provider for the `knowledgeWikiStageExecutor` seam, so
- * ingest refused every non-cooperative stage and the feature failed 100% of the
- * time. This provider runs each stage inside an owned worker thread: the parent
- * resolves connection facts, the isolate performs the file read or the HTTP
- * call, and cancellation terminates the isolate instead of detaching it.
+ * The parent resolves connection facts before creating the worker; the worker
+ * performs the file read or HTTP call. Cancellation joins workers that have
+ * actually started, but cannot stop a connection resolver that is still
+ * pending. The executor checks the signal after that resolver returns so a
+ * cancelled request cannot start a late worker.
  * @module @deepseek-ai/dsh-knowledge-wiki/owned-stage-executor
  */
 
 import { Worker } from 'node:worker_threads'
-import type { KnowledgeWikiStageExecutor, KnowledgeWikiStageRequest, KnowledgeWikiStageResult } from './stage-executor.ts'
+import {
+  registerKnowledgeWikiStageWorkerJoin,
+  type KnowledgeWikiStageExecutor,
+  type KnowledgeWikiStageRequest,
+  type KnowledgeWikiStageResult,
+} from './stage-executor.ts'
 
 /** Connection facts the parent resolves before the isolate performs a model call. */
 export interface StageConnectionFacts {
@@ -102,9 +107,14 @@ async function main () {
 main().catch(error => post({ ok: false, error: error && error.message ? error.message : String(error) }))
 `
 
-/** Resolve the facts one stage needs; called in the parent, before the isolate starts. */
+/** Resolve the facts one stage needs in the parent, before the worker starts. */
 export interface OwnedStageExecutorOptions {
-  /** Facts for `llm-complete`; absence fails that stage with a precise message. */
+  /**
+   * Facts for `llm-complete`; absence fails that stage with a precise message.
+   * Runs before worker creation and receives no cancellation signal. If it
+   * remains pending, cancellation cannot settle it; a late result is checked
+   * against the signal before any worker is created.
+   */
   resolveConnection: () => Promise<StageConnectionFacts>
   /** Optional search facts for `web-search`. */
   search?: StageSearchFacts
@@ -122,25 +132,66 @@ export function createOwnedStageExecutor(options: OwnedStageExecutorOptions): Kn
     async execute(request: KnowledgeWikiStageRequest, signal: AbortSignal): Promise<KnowledgeWikiStageResult> {
       const needsConnection = request.kind === 'llm-complete'
       const facts = needsConnection ? await options.resolveConnection() : undefined
+      // No async yield occurs between this check and registering the worker abort listener.
       if (signal.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('knowledge Wiki stage aborted')
       return await new Promise<KnowledgeWikiStageResult>((resolve, reject) => {
         const worker = new Worker(WORKER_SOURCE, {
           eval: true,
           workerData: { request, facts, search: options.search },
         })
-        // Exactly one settle event can ever fire: the isolate posts a single
-        // message, and once this parent aborts and terminates the isolate its
-        // late messages are dropped, so no second finish is reachable.
+        let resolveWorkerExit: (() => void) | undefined
+        const workerExited = new Promise<void>((resolve) => { resolveWorkerExit = resolve })
+        let finishing = false
+        const cleanupWorkerListeners = (): void => {
+          worker.removeListener('message', onMessage)
+          worker.removeListener('error', onError)
+          worker.removeListener('exit', onExit)
+        }
+        const rejectAfterWorkerExit = (error: Error): Promise<never> => {
+          return workerExited.then(() => { throw error })
+        }
+        // Every result, error, unexpected exit and abort shares this owner.
+        // Do not settle the caller until terminate() confirms the isolate exited.
         const finish = (settle: () => void): void => {
+          if (finishing) return
+          finishing = true
           signal.removeEventListener('abort', onAbort)
-          void worker.terminate()
-          settle()
+          let termination: Promise<number>
+          try {
+            termination = worker.terminate()
+          } catch (error) {
+            // Node's Worker.terminate() synchronous failure is an Error.
+            const failure: Error = error as Error
+            const exitJoin = rejectAfterWorkerExit(failure)
+            registerKnowledgeWikiStageWorkerJoin(signal, exitJoin)
+            void exitJoin.catch((exitError: unknown) => {
+              cleanupWorkerListeners()
+              // The native termination Error is rethrown only after actual exit.
+              const failure: Error = exitError as Error
+              reject(failure)
+            })
+            return
+          }
+          // Native termination rejection is an Error (for example ERR_WORKER_NOT_RUNNING).
+          const join = termination.then(() => undefined, (error: unknown) => {
+            const failure: Error = error as Error
+            return rejectAfterWorkerExit(failure)
+          })
+          registerKnowledgeWikiStageWorkerJoin(signal, join)
+          void join.then(
+            () => { cleanupWorkerListeners(); settle() },
+            (error: unknown) => {
+              cleanupWorkerListeners()
+              // The rejection handler above is the only source of join failures.
+              const failure: Error = error as Error
+              reject(failure)
+            },
+          )
         }
         const onAbort = (): void => {
           finish(() => { reject(signal.reason instanceof Error ? signal.reason : new Error('knowledge Wiki stage aborted')) })
         }
-        signal.addEventListener('abort', onAbort, { once: true })
-        worker.once('message', (message: { ok?: boolean; text?: string | null; sources?: KnowledgeWikiStageResult['sources']; error?: string }) => {
+        const onMessage = (message: { ok?: boolean; text?: string | null; sources?: KnowledgeWikiStageResult['sources']; error?: string }): void => {
           if (message.ok === true) {
             finish(() => {
               resolve(message.sources === undefined
@@ -149,15 +200,24 @@ export function createOwnedStageExecutor(options: OwnedStageExecutorOptions): Kn
                 : { text: message.text as string, sources: message.sources })
             })
           } else {
-            // The isolate posts ok:false only from its own catch, which always
-            // stringifies the failure into a non-empty error string.
             finish(() => { reject(new Error(message.error)) })
           }
-        })
-        // The isolate's main() catches everything and always posts a message,
-        // a killed isolate is terminated by this parent after settle, and a
-        // non-cloneable request fails synchronously at Worker construction —
-        // so the 'error' and 'exit' events are unreachable settle paths here.
+        }
+        const onError = (error: Error): void => {
+          finish(() => { reject(error) })
+        }
+        const onExit = (code: number): void => {
+          resolveWorkerExit?.()
+          if (finishing) {
+            cleanupWorkerListeners()
+            return
+          }
+          finish(() => { reject(new Error(`knowledge Wiki stage worker exited before replying (${code})`)) })
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+        worker.once('message', onMessage)
+        worker.once('error', onError)
+        worker.once('exit', onExit)
       })
     },
   }

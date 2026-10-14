@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-13T17:14:25.917962+00:00",
+  "phase": "compiled-helper-and-native-runtime-closure",
+  "classification": "progress",
+  "status": "SCOPED_COMPILED_NATIVE_CHECKS_PASS_REAL_ACTIVATION_DRIVER_WINDOW_OPEN",
+  "gitSha": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "modelSteering": {
+    "currentHumanInstruction": "GPT-6 Astra/Ultra 不需要，使用 6.1 Sol",
+    "activeSubagentsModel": "gpt-6.1-sol",
+    "reasoningOverride": null,
+    "priorAstraReadOnlyAgentsStopped": true,
+    "arkProviderChanged": false
+  },
+  "humanScopeApproval": {
+    "request": {
+      "path": "/Users/hui/ark-test/evidence/knowledge-trusted-use-source-integration-cr-20261013.zh.txt",
+      "sha256": "3c09102aad39c7cec3171bf4bf6f0ccd1cf90f129703e16ab9831c72301c5fa9"
+    },
+    "receipt": {
+      "path": "/Users/hui/ark-test/evidence/approved-trusted-use-source-integration-human-approval-20261013.json",
+      "sha256": "576c2087f59b8d6440720f66b874c60f6162d29ff25a80de7650b67c5d80ff70"
+    }
+  },
+  "sourceInstalled": false,
+  "realProtectedTrustDeployed": false,
+  "newPaidRequests": 0,
+  "rustDecision": "RETAIN_TS",
+  "authenticatedFreshReuse": "UNESTABLISHED",
+  "speedAndAccuracyLift": "UNMEASURED",
+  "fullGoalAcceptance": "UNKNOWN",
+  "githubPublished": false,
+  "formalPromotion": "HOLD",
+  "remaining": {
+    "sourcePreparation": [
+      "assemble default-disabled protected owner dependencies and complete registered trial driver before real activation; provider consumers alone are not a trial"
+    ],
+    "actualDeployment": [
+      "protected authority/key custody and reviewed immutable dependency/pin provisioning",
+      "same-UID transient substitution resistance and authenticated real owner admission",
+      "actual candidate profile/guard/provider and settled complete-use cost evidence"
+    ],
+    "behaviorAcceptance": [
+      "matched baseline/candidate fresh window tasks and genuine trusted knowledge reuse",
+      "verified utility/repeated-error improvement and safety/recovery observations without inventing 0/0 metrics"
+    ],
+    "releaseAcceptance": [
+      "one final frozen source corresponding candidate build/install/rollback and actual window acceptance",
+      "current-source GitHub CI/platform requirements; no current CI success claimed"
+    ]
+  },
+  "next": "Use consolidated default-disabled owner/driver dependency matrix first; close already authorized source composition and latency design, prepare concrete outside-scope deployment plan for review before any actual trust activation. Then run matched genuine window trials and release gates.",
+  "rootReport": {
+    "path": "/Users/hui/ark-test/evidence/protected-helper-source-closure-20261014/root-source-report-final.json",
+    "sha256": "f365f3d23851a13105a3905e063a7f2bf5a4247bbb023f9bfe31dc50c0e70651"
+  },
+  "peerReports": [
+    {
+      "path": "/Users/hui/ark-test/evidence/protected-helper-packaging-sol-20261014/report-attempt1.json",
+      "sha256": "4cfb06924f5d61343e64cf709ac03116201c9d5efb890f18d7e56d2cbeae2a29"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/protected-helper-native-sol-20261014/report.json",
+      "sha256": "88de28272f0cca0cad8a0f99259c43c2a6a0b58c30ba586c7e8c0ba40ebe7bea"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/protected-helper-compiled-fixture-sol-20261014/report.json",
+      "sha256": "9fb94d3df28ccb977a6906ce1ae8db2428cbe5996bc757ff66c983af14e1ba78"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/protected-helper-compiled-fixture-sol-20261014/activation-next-step-matrix.json",
+      "sha256": "458218fabf72a00873512656af4d91ecd80c8bef829185859b95907930b8391d"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/protected-helper-independent-review-sol-20261014/implemented-review.md",
+      "sha256": "2b730e7aad65c426bf7a28f1b8685f0fd96eb42f6b6715b382270e2844d44681"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/protected-helper-independent-review-sol-20261014/history-fixture-race-review.md",
+      "sha256": "672ba79a4de36223aaef9855422203c9e085030a5737ddb96361a99d5699d360"
+    }
+  ],
+  "checksSummary": {
+    "compiledTaskFamiliesPass": 3,
+    "compiledNegativesPass": 5,
+    "nativeMutationRefusals": 17,
+    "nativeContractGroupsPass": 54,
+    "nativeAppAndXPCBuild": "pass",
+    "wholeSourceLint": "pass",
+    "docSyncPass": 30,
+    "docSyncFail": 0,
+    "hostTypes": "pass"
+  },
+  "allProtectedBindingsExact": true,
+  "currentProfileComparisonsExact": 6,
+  "frozenPackIsCurrentFinalSource": false
+}

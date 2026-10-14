@@ -2,7 +2,8 @@ import { createServer } from 'node:http'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { Worker } from 'node:worker_threads'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createOwnedStageExecutor } from '../src/owned-stage-executor.ts'
 
 const servers: Array<ReturnType<typeof createServer>> = []
@@ -28,6 +29,86 @@ describe('owned stage executor', () => {
       new AbortController().signal,
     )
     expect(result.text).toBe('# title\n\nbody text')
+  })
+
+  it('does not settle cancellation before a real file-extract worker exits', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'stage-extract-abort-'))
+    roots.push(root)
+    const file = join(root, 'note.md')
+    writeFileSync(file, 'local-only file; no provider or network')
+    const controller = new AbortController()
+    const originalOnce = Reflect.get(Worker.prototype, 'once')
+    const originalTerminate = Reflect.get(Worker.prototype, 'terminate')
+    let workerExit = false
+    let termination: Promise<number> | undefined
+    let resolveExit: (() => void) | undefined
+    const exited = new Promise<void>((resolve) => { resolveExit = resolve })
+    vi.spyOn(Worker.prototype, 'once').mockImplementation(function (this: Worker, event, listener) {
+      const result = originalOnce.call(this, event, listener)
+      if (event === 'message') {
+        queueMicrotask(() => { controller.abort(new Error('cancelled by test owner')) })
+      }
+      return result
+    })
+    vi.spyOn(Worker.prototype, 'terminate').mockImplementation(function (this: Worker, ...args) {
+      originalOnce.call(this, 'exit', () => { workerExit = true; resolveExit?.() })
+      termination = originalTerminate.apply(this, args)
+      return termination
+    })
+    try {
+      const pending = createOwnedStageExecutor({ resolveConnection: async () => { throw new Error('no connection expected') } })
+        .execute({ kind: 'file-extract', path: file, timeoutMs: 10_000 }, controller.signal)
+      await expect(pending).rejects.toThrow('cancelled by test owner')
+      expect(termination).toBeDefined()
+      expect(workerExit).toBe(true)
+      await termination
+      await exited
+    } finally {
+      vi.restoreAllMocks()
+      await termination
+    }
+  })
+
+  it.each(['error', 'exit'] as const)('joins the real worker after an unexpected %s event', async (event) => {
+    const root = mkdtempSync(join(tmpdir(), 'stage-extract-unexpected-'))
+    roots.push(root)
+    const file = join(root, 'note.md')
+    writeFileSync(file, 'local-only file; no provider or network')
+    const originalOnce = Reflect.get(Worker.prototype, 'once')
+    const originalTerminate = Reflect.get(Worker.prototype, 'terminate')
+    let workerExit = false
+    let injectionScheduled = false
+    let termination: Promise<number> | undefined
+    let resolveExit: (() => void) | undefined
+    const exited = new Promise<void>((resolve) => { resolveExit = resolve })
+    vi.spyOn(Worker.prototype, 'once').mockImplementation(function (this: Worker, registeredEvent, listener) {
+      const result = originalOnce.call(this, registeredEvent, listener)
+      if (registeredEvent === event && !injectionScheduled) {
+        injectionScheduled = true
+        queueMicrotask(() => {
+          if (event === 'error') (listener as (error: Error) => void).call(this, new Error('injected worker error'))
+          else (listener as (code: number) => void).call(this, 23)
+        })
+      }
+      return result
+    })
+    vi.spyOn(Worker.prototype, 'terminate').mockImplementation(function (this: Worker, ...args) {
+      originalOnce.call(this, 'exit', () => { workerExit = true; resolveExit?.() })
+      termination = originalTerminate.apply(this, args)
+      return termination
+    })
+    try {
+      const pending = createOwnedStageExecutor({ resolveConnection: async () => { throw new Error('no connection expected') } })
+        .execute({ kind: 'file-extract', path: file, timeoutMs: 10_000 }, new AbortController().signal)
+      await expect(pending).rejects.toThrow(event === 'error' ? 'injected worker error' : 'exited before replying (23)')
+      expect(termination).toBeDefined()
+      expect(workerExit).toBe(true)
+      await termination
+      await exited
+    } finally {
+      vi.restoreAllMocks()
+      await termination
+    }
   })
 
   it('runs the model call from the isolate and returns its text', async () => {

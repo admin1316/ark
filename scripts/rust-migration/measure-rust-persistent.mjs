@@ -10,6 +10,7 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { monitorEventLoopDelay } from 'node:perf_hooks'
 import { createInterface } from 'node:readline'
 
 function sha256(value) {
@@ -27,10 +28,27 @@ function ms(start, end) {
 const activeChildren = new Set()
 
 function spawnTracked(binary) {
-  const child = spawn(binary, ['--persistent'], { stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawn(binary, ['--serve'], { stdio: ['pipe', 'pipe', 'pipe'] })
+  // A failed child can close stdin between a liveness check and write().
+  // Observe the stream error so EPIPE becomes a benchmark failure instead of
+  // an unhandled EventEmitter error.
+  child.stdin.on('error', (error) => {
+    child.stdinError = error
+  })
   activeChildren.add(child)
   child.once('close', () => activeChildren.delete(child))
   return child
+}
+
+function writeLine(child, payload) {
+  if (child.stdinError) return Promise.reject(child.stdinError)
+  return new Promise((resolve, reject) => {
+    child.stdin.write(`${payload}\n`, (error) => {
+      if (error) reject(error)
+      else if (child.stdinError) reject(child.stdinError)
+      else resolve()
+    })
+  })
 }
 
 function waitForSpawn(child) {
@@ -83,6 +101,8 @@ function validateOutput(line, payload) {
 }
 
 async function runPersistent(binary, payload, iterations, timeoutMs) {
+  const eventLoopDelay = monitorEventLoopDelay({ resolution: 1 })
+  eventLoopDelay.enable()
   const spawnStarted = nowNs()
   const child = spawnTracked(binary)
   const lineReader = createInterface({ input: child.stdout })
@@ -98,7 +118,7 @@ async function runPersistent(binary, payload, iterations, timeoutMs) {
     let firstOutput
     for (let index = 0; index < iterations; index += 1) {
       const started = nowNs()
-      child.stdin.write(`${payload}\n`)
+      await writeLine(child, payload)
       const next = await lines.next()
       if (next.done) throw new Error('Rust persistent child closed before response')
       const output = validateOutput(next.value, payload)
@@ -111,14 +131,23 @@ async function runPersistent(binary, payload, iterations, timeoutMs) {
     if (close.code !== 0 || close.signal !== null) {
       throw new Error(`Rust persistent child exited ${String(close.code)}${close.signal === null ? '' : ` (${close.signal})`}`)
     }
+    eventLoopDelay.disable()
+    const eventLoopDelaySamples = eventLoopDelay.count
     return {
       startupMs,
       samplesMs,
       measurementDigest: sha256(measurementDigests.join('\n')),
       resultDigest: firstOutput.digest,
       inputDigest: firstOutput.inputDigest,
+      eventLoopDelay: {
+        samples: eventLoopDelaySamples,
+        meanMs: eventLoopDelaySamples > 0 && Number.isFinite(eventLoopDelay.mean) ? eventLoopDelay.mean / 1e6 : null,
+        p95Ms: eventLoopDelaySamples > 0 ? eventLoopDelay.percentile(95) / 1e6 : null,
+        maxMs: eventLoopDelaySamples > 0 ? eventLoopDelay.max / 1e6 : null,
+      },
     }
   } finally {
+    eventLoopDelay.disable()
     clearTimeout(timeout)
     lineReader.close()
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
@@ -133,7 +162,7 @@ async function runRecovery(binary, payload, timeoutMs) {
   const closePromise = waitForClose(child)
   try {
     await waitForSpawn(child)
-    child.stdin.write(`${payload}\n`)
+    await writeLine(child, payload)
     const next = await lines.next()
     if (next.done) throw new Error('Rust recovery child closed before response')
     const output = validateOutput(next.value, payload)

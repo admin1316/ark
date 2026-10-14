@@ -58,6 +58,14 @@ export interface WikiPageContent {
   /** Page text content (Markdown). */
   readonly content: string
 }
+
+/** Public RPC scope for operations that inspect or mutate governed Wiki state. */
+export interface KnowledgeAccessContext {
+  readonly projectId?: string
+  readonly workspaceId?: string
+  readonly sessionId?: string
+  readonly actor?: string
+}
 /** One hybrid-search hit. */
 export interface WikiSearchHit {
   readonly path: string
@@ -73,6 +81,31 @@ export interface KnowledgeUtilityRecord {
   readonly utilityScore: number
   readonly lastRetrievedAt?: string
   readonly lastOutcomeAt?: string
+}
+
+/** A model-proposed correction tied to a fully rendered, governed Wiki page. */
+export interface KnowledgeRepairProposalRequest {
+  /** Canonical Wiki-relative page that supplied the corrected knowledge. */
+  readonly sourcePath: string
+  /** Human-readable title for the untrusted repair candidate. */
+  readonly title: string
+  /** Corrected rule quoted from the current direct human message; it remains untrusted until independently reviewed. */
+  readonly correctedRule: string
+  /** Full source-content SHA-256 observed in the same session. */
+  readonly expectedSourceContentHash: string
+}
+
+/** Result of staging a low-trust correction candidate for independent review. */
+export type KnowledgeRepairProposalResult = {
+  readonly ok: true
+  readonly candidatePath: string
+  readonly reviewId: string
+  readonly candidateHash: string
+} | {
+  readonly ok: false
+  readonly errorCode: 'scope-unavailable' | 'source-not-verified' | 'unsupported-source'
+    | 'invalid-proposal' | 'source-changed' | 'source-not-read'
+    | 'session-log-unavailable' | 'user-correction-unconfirmed'
 }
 
 /** Trust assigned to a knowledge item by its provenance and verifier. */
@@ -178,11 +211,11 @@ export interface CandidateVerification {
   readonly failureCount: number
   readonly verifiedBy?: 'human' | 'deterministic-executor'
   readonly lastVerifiedAt?: string
-  /** Bounded trial/utility observation required before canonical promotion. */
+  /** Legacy summary only; canonical promotion requires a separate authenticated measured-trial receipt. */
   readonly trial?: CandidateTrial
 }
 
-/** Bounded candidate trial receipt used before a knowledge record is promoted. */
+/** Projection of measured candidate use; semantic verification outcomes cannot populate or authorize it. */
 export interface CandidateTrial {
   readonly status: 'passed' | 'failed'
   readonly trialHash: string
@@ -194,6 +227,25 @@ export interface CandidateTrial {
   readonly utilityScore: number
   readonly startedAt: string
   readonly endedAt: string
+}
+
+/** Outcome of authenticating a paired measured-use trial for a Candidate. */
+export interface CandidateMeasuredTrialResult {
+  /** True only when the receipt, artifacts, and semantic-verification binding authenticate. */
+  readonly authenticated: boolean
+  /** Whether the paired trial improved utility and may unlock its bound review action. */
+  readonly eligibleForReview: boolean
+  /** Durable display projection of authenticated trial evidence. */
+  readonly trial?: CandidateTrial
+  /** Explicit blocker when no trial projection was recorded. */
+  readonly errorCode?:
+    | 'review-not-found'
+    | 'verifier-authority-unavailable'
+    | 'measured-trial-authority-unavailable'
+    | 'semantic-verification-required'
+    | 'measured-trial-invalid'
+    | 'utility-not-improved'
+    | 'review-changed'
 }
 
 /** Service result with explicit integration blockers. */

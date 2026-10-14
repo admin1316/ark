@@ -38,3 +38,5 @@ Ark is in internal testing. Report problems and suggestions to the product team 
 ## Maintainers
 
 Build, verification, packaging, and layout details: [engineering notes](docs/engineering.md).
+
+The runtime-closure command verifies a bound receipt against regenerated current sources. Its subprocess contract covers the source plan importing the shared JSON helpers and rejects a changed plan.

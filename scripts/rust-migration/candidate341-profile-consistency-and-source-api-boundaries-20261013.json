@@ -1,0 +1,74 @@
+{
+  "schema": "ark.candidate341.profile-consistency.v1",
+  "at": "2026-10-13T05:34:44.074514+00:00",
+  "candidateVersion": "3.1.41",
+  "candidateBuild": "2026101341",
+  "candidateDataHome": "/Users/hui/ark-test/candidate-home-current-20261011-v328",
+  "nativeSha256": "ec356bbddb7cd2858a5c38b9c8fae4385bba7a71cf50085c3475039e097c83c6",
+  "profileFiles": [
+    {
+      "name": "base",
+      "source": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/bundle/base/cordis.patch.yml",
+      "installed": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml",
+      "sourceSha256": "24b9156d97531fe2d6a17c2596ca5d08ff623d827155d89bbc1de7923a79a97c",
+      "installedSha256": "24b9156d97531fe2d6a17c2596ca5d08ff623d827155d89bbc1de7923a79a97c",
+      "bytes": 19433,
+      "byteEqual": true
+    },
+    {
+      "name": "native-api-app",
+      "source": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/bundle/native-api-app/cordis.patch.yml",
+      "installed": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-app/cordis.patch.yml",
+      "sourceSha256": "71a6e2d521deb3c0f2c6d1e05ae3c94aacc0dff894ca67226a87587ca550fdc7",
+      "installedSha256": "71a6e2d521deb3c0f2c6d1e05ae3c94aacc0dff894ca67226a87587ca550fdc7",
+      "bytes": 5166,
+      "byteEqual": true
+    },
+    {
+      "name": "jiuzhang-patch",
+      "source": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/profile/cordis.patch.yml",
+      "installed": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/jiuzhang/profile/cordis.patch.yml",
+      "sourceSha256": "1474a3ded0fb19a19829d39bb37d052eaa0bddc594825bca2c87f81be0c36454",
+      "installedSha256": "1474a3ded0fb19a19829d39bb37d052eaa0bddc594825bca2c87f81be0c36454",
+      "bytes": 2801,
+      "byteEqual": true
+    },
+    {
+      "name": "jiuzhang-package",
+      "source": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/profile/package.json",
+      "installed": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/jiuzhang/profile/package.json",
+      "sourceSha256": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e",
+      "installedSha256": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e",
+      "bytes": 219,
+      "byteEqual": true
+    }
+  ],
+  "activeHomeOverlayFiles": [
+    {
+      "name": "cordis.patch.yml",
+      "source": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/profile/cordis.patch.yml",
+      "homeFile": "/Users/hui/ark-test/candidate-home-current-20261011-v328/profiles/jiuzhang/cordis.patch.yml",
+      "sourceSha256": "1474a3ded0fb19a19829d39bb37d052eaa0bddc594825bca2c87f81be0c36454",
+      "homeSha256": "1474a3ded0fb19a19829d39bb37d052eaa0bddc594825bca2c87f81be0c36454",
+      "byteEqual": true
+    },
+    {
+      "name": "package.json",
+      "source": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/profile/package.json",
+      "homeFile": "/Users/hui/ark-test/candidate-home-current-20261011-v328/profiles/jiuzhang/package.json",
+      "sourceSha256": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e",
+      "homeSha256": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e",
+      "byteEqual": true
+    }
+  ],
+  "activeHomeAssemblySha256": "c300dcf2ebc5f02062d6591268d29d3db6fe45e0cb138f5467276fe2ba06076e",
+  "compiledWikiSha256": "1be29edd064523793abe4cefcae5ca2eb7302c4fb54b8ecbb2b74f13472be86a",
+  "sourceApiMigration": "CURRENT_SOURCE_ONLY_NOT_IN_341",
+  "liveNonemptyTrust": "NOT_PROVISIONED_NOT_PROVEN_BY_PROFILE_HASHES",
+  "realProtectedCustody": "UNKNOWN",
+  "nativeTaskCheckpoint": {
+    "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate341-real-native-code-task-result-20261013.json",
+    "sha256": "cb18d02a40e6b04e994fc193b189b3993b89239a4c6f4396959b7a5a0599ca33"
+  },
+  "scope": "Source/candidate/home profile file identity. Does not prove trust configuration, platform CI, authenticated knowledge use, or release."
+}

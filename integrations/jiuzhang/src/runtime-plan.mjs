@@ -4,11 +4,91 @@ import { createRequire } from 'node:module'
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { jsonSha256 } from './runtime-closure.mjs'
+import ts from 'typescript'
 
 const require = createRequire(import.meta.url)
 const { load: parseYaml } = require('js-yaml')
 
 export const ARK_RUNTIME_ROOT_PACKAGES = ['@deepseek-ai/dsh-native-api-runner']
+export const PROTECTED_HELPER_ENTRIES = [
+  'scripts/rust-migration/knowledge-use-evaluator.ts',
+  'scripts/rust-migration/knowledge-cost-guard-launcher.mjs',
+  'scripts/rust-migration/knowledge-task-oracles.ts',
+  'scripts/rust-migration/knowledge-use-producer.ts',
+]
+// Derive emitted runtime modules from the same syntax-aware closure owner. Type-only
+// inputs still bind source identity, while erased imports cannot invent payload files.
+export const PROTECTED_HELPER_FILES = (await protectedHelperSourceInputs(
+  resolve(fileURLToPath(new URL('../../..', import.meta.url))), PROTECTED_HELPER_ENTRIES, true,
+)).map(path => `protected-helpers/${path.replace(/\.(?:ts|mjs)$/u, '.mjs')}`).sort()
+
+/** Collect literal local module dependencies, including erased type imports, from the fixed helper entries. */
+export async function protectedHelperSourceInputs(repositoryRoot, entries = PROTECTED_HELPER_ENTRIES, runtimeOnly = false) {
+  const queue = [...entries]
+  const reached = new Set()
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const path = resolve(repositoryRoot, queue[cursor])
+    const local = relative(repositoryRoot, path).replaceAll('\\', '/')
+    if (local.startsWith('../') || isAbsolute(local) || local.split('/').includes('node_modules')) {
+      throw new Error(`protected helper input escapes repository source: ${queue[cursor]}`)
+    }
+    if (reached.has(local)) continue
+    const metadata = await optionalLstat(path)
+    if (!metadata?.isFile() || metadata.isSymbolicLink() || await realpath(path) !== path) {
+      throw new Error(`protected helper input must be an ordinary source file: ${path}`)
+    }
+    reached.add(local)
+    const source = await readFile(path, 'utf8')
+    const runtime = runtimeOnly ? ts.transpileModule(source, { fileName: path,
+      compilerOptions: { target: ts.ScriptTarget.ES2024, module: ts.ModuleKind.ESNext }, reportDiagnostics: true }) : undefined
+    if (runtime?.diagnostics?.some(item => item.category === ts.DiagnosticCategory.Error)) {
+      throw new Error(`protected helper runtime syntax is invalid: ${local}`)
+    }
+    const parsed = ts.createSourceFile(path, runtime?.outputText ?? source, ts.ScriptTarget.Latest, true)
+    const visit = node => {
+      const specifier = (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) ? node.moduleSpecifier
+        : ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword ? node.arguments[0] : undefined
+      const clause = ts.isImportDeclaration(node) ? node.importClause : undefined
+      const erasedImport = clause?.isTypeOnly === true || (clause !== undefined && clause.name === undefined
+        && clause.namedBindings !== undefined && ts.isNamedImports(clause.namedBindings)
+        && clause.namedBindings.elements.length > 0 && clause.namedBindings.elements.every(item => item.isTypeOnly))
+      const erasedExport = ts.isExportDeclaration(node) && (node.isTypeOnly || (node.exportClause !== undefined
+        && ts.isNamedExports(node.exportClause) && node.exportClause.elements.length > 0
+        && node.exportClause.elements.every(item => item.isTypeOnly)))
+      if (specifier !== undefined && ts.isStringLiteral(specifier) && specifier.text.startsWith('.')
+        && (!runtimeOnly || (!erasedImport && !erasedExport))) {
+        queue.push(relative(repositoryRoot, resolve(dirname(path), specifier.text)))
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(parsed)
+  }
+  return [...reached].sort()
+}
+
+/** Reject undeclared helper payloads, links and resolution shadows before packaging their exact bytes. */
+export async function assertProtectedHelperInventory(root) {
+  const expected = new Set(PROTECTED_HELPER_FILES.map(path => path.slice('protected-helpers/'.length)))
+  const actual = []
+  const visit = async directory => {
+    const metadata = await lstat(directory)
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() || await realpath(directory) !== directory) {
+      throw new Error(`protected helper directory must be ordinary: ${directory}`)
+    }
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name)
+      if (entry.isDirectory() && entry.name !== 'node_modules') await visit(path)
+      else if (entry.isFile()) actual.push(relative(root, path).replaceAll('\\', '/'))
+      else throw new Error(`protected helper payload contains a link or resolution shadow: ${path}`)
+    }
+  }
+  await visit(root)
+  if (JSON.stringify(actual.sort()) !== JSON.stringify([...expected].sort())) {
+    throw new Error(`protected helper output inventory differs: ${JSON.stringify(actual.sort())}`)
+  }
+}
+
 const ARK_RUNTIME_TARGET = Object.freeze({ id: 'macos-arm64', os: 'darwin', cpu: 'arm64' })
 const ARK_RUNTIME_PROFILE_FILES = new Set([
   'jiuzhang/profile/package.json',
@@ -62,19 +142,6 @@ async function optionalLstat(path) {
     if (error?.code === 'ENOENT') return undefined
     throw error
   }
-}
-
-function stableValue(value) {
-  if (Array.isArray(value)) return value.map(stableValue)
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, child]) => [key, stableValue(child)]))
-  }
-  return value
-}
-
-function jsonSha256(value) {
-  return createHash('sha256').update(JSON.stringify(stableValue(value), null, 2)).update('\n').digest('hex')
 }
 
 async function childDirectories(root) {
@@ -362,7 +429,7 @@ async function loadWorkspace(repositoryRoot) {
 
 async function repositoryInputDigests(repositoryRoot) {
   const inputs = []
-  for (const relativePath of ARK_RUNTIME_REPOSITORY_INPUTS) {
+  for (const relativePath of [...new Set([...ARK_RUNTIME_REPOSITORY_INPUTS, ...await protectedHelperSourceInputs(repositoryRoot)])].sort()) {
     const path = join(repositoryRoot, relativePath)
     const metadata = await optionalLstat(path)
     if (metadata === undefined || !metadata.isFile() || metadata.isSymbolicLink()) {
@@ -647,6 +714,7 @@ function supportsArkRuntimeTarget(manifest) {
 
 /** Resolve one runtime-template asset back to its current repository source. */
 export function runtimeAssetSource(repositoryRoot, relativePath) {
+  if (PROTECTED_HELPER_FILES.includes(relativePath)) return join(repositoryRoot, '.native-build', relativePath)
   if (relativePath === 'patches/@earendil-works+pi-ai@0.85.1.patch') {
     return join(repositoryRoot, relativePath)
   }
@@ -764,8 +832,14 @@ export async function createArkRuntimePlan(root, options = {}) {
     throw new Error(`Ark runtime plan reaches forbidden packages: ${forbiddenChains.join('; ')}`)
   }
 
+  const helperFiles = policy.requiredFiles.filter(path => path.startsWith('protected-helpers/')).sort()
+  if (JSON.stringify(helperFiles) !== JSON.stringify(PROTECTED_HELPER_FILES)) {
+    throw new Error('Ark runtime policy must require the exact protected helper inventory')
+  }
+  if (options.sourceOnly !== true) await assertProtectedHelperInventory(join(repositoryRoot, '.native-build/protected-helpers'))
   const assetDigests = []
   for (const relativePath of policy.requiredFiles) {
+    if (options.sourceOnly === true && PROTECTED_HELPER_FILES.includes(relativePath)) continue
     const source = runtimeAssetSource(repositoryRoot, relativePath)
     const stat = await optionalLstat(source)
     if (stat === undefined || !stat.isFile() || stat.isSymbolicLink()) {

@@ -151,5 +151,22 @@
   ],
   "gitSha": "522f3cfeee12b452a9629633d693b5d535cff140",
   "workingTreeDirty": false,
-  "profile": "jiuzhang"
+  "profile": "jiuzhang",
+  "currentSourceBoundaryAudit": {
+    "evidence": "/Users/hui/ark-test/evidence/rust-wire-boundary-repair-result-20261011.json",
+    "rustSourceSha256": "0b85277c99130a2cdc079b2f16e45ca0e19fe9e34c944b9306a13d64a2eecaae",
+    "parentSourceSha256": "47986ac33134311d99dd4fb98de6d0ed4296eb0cfc2cbe0fb619de413992d012",
+    "releaseBinarySha256": "b9a3e8db6eb1abf9bd2c11ae6800bf63bafe90e589d8dca132498fba0fe2c0b3",
+    "boundaryCasesPassed": 13,
+    "boundaryCasesTotal": 13,
+    "expandedReplayChecksPassed": 348,
+    "expandedReplayChecksTotal": 363,
+    "expandedReplayFailures": 15,
+    "scoreEquivalencePassed": false,
+    "mathLibraryProbeAdopted": false,
+    "decision": "RETAIN_TS",
+    "candidateActivated": false,
+    "newPerformanceMeasurement": false,
+    "historicalImplementationMeasurementsPreserved": true
+  }
 }

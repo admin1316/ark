@@ -52,6 +52,8 @@ If a spill file cannot be opened or written, collection continues with the bound
 
 ### Shutdown behavior
 
+The spawn signal remains bound to the observable process tree after `done` reports the direct-child outcome. The shared exit observer releases that listener only when the tree is gone; a failed spawn releases it immediately. Cancelling a later `waitForExit(signal)` bounds that observation and does not itself terminate the tree.
+
 Normal disposal terminates every running tree and terminal and awaits their exit. During a JavaScript-observable host exit — direct `process.exit()`, default uncaught exceptions, default unhandled rejections — a synchronous finalization force-terminates everything still owned (SIGKILL to the group, `taskkill /T /F` on Windows) without creating promises or timers. Unhandled `SIGTERM`/`SIGINT`/`SIGHUP`, `SIGKILL`, fatal OOM, native crashes, and power loss need an external supervisor.
 
 ### What can go wrong
@@ -89,7 +91,7 @@ A spawn builds the scrubbed child environment, starts the detached process, atta
 
 ### Safety invariants
 
-Spill files are opened `0600` with `O_EXCL` and random names under a `0700` per-process directory, defeating symlink planting in shared temp dirs; a failed final close withholds the spill path. Process identities carry start times, so cleanup never follows PID reuse. Host-exit finalization creates no promises or timers, preserves the host exit code and diagnostic, contains each target's failure, and does not claim quiescence.
+Spill files are opened `0600` with `O_EXCL` and random names under a `0700` per-process directory, defeating symlink planting in shared temp dirs; a failed final close withholds the spill path. Terminal process identities carry start times, so terminal cleanup does not follow PID reuse. Host-exit finalization creates no promises or timers, preserves the host exit code and diagnostic, contains each target's failure, and does not claim quiescence.
 
 </details>
 
@@ -105,6 +107,7 @@ Read these pages when the provider-level contract is not enough. They move from 
 - [dsh-bash-local](../../shell/bash-local/README.md) — the largest consumer and the concrete stdio shapes it asks for.
 - [Subprocess seam Agent Note](../../../.agents/notes/implemented/architecture/2026-07-26-subprocess-seam.md) — why the process half became its own seam.
 - [Synchronous subprocess exit cleanup](../../../.agents/notes/implemented/bug-fix/2026-08-11-synchronous-subprocess-exit-cleanup.md) — the host-exit finalization decision and its failure modes.
+- [Spawn cancellation and process-tree lifetime](../../../.agents/notes/implemented/bug-fix/2026-10-13-spawn-signal-process-tree-lifetime.md) — why cancellation ownership outlasts direct-child settlement.
 
 -----
 
@@ -125,6 +128,7 @@ No direct invalidation; the named consumers own any request-prefix changes.
 These limits define when the provider is a poor fit or needs special operational care. They are current package constraints, not a general platform comparison or a task backlog.
 
 - **Windows tree support is best-effort** — termination routes through `taskkill /PID <pid> /T /F` with all outcomes contained (absent tree, races, missing binary), and liveness falls back to the direct-child boundary.
+- **POSIX process groups use numeric identities** — confirmed absence permanently ends observation and signalling, but PID/PGID reuse before that first observation has no atomic identity fence. Descendants that leave the owned group can escape its signals.
 - **Windows terminal signalling is console-wide** — SIGINT is delivered as a `\x03` Ctrl-C input write that conhost turns into a console-wide CTRL_C event; SIGTSTP and SIGHUP are rejected as unavailable; a `taskkill` without `/F` does not terminate console processes, so the teardown TERM tier is a grace wait before the `/F` escalation.
 - **A daemonized terminal descendant can still escape the observable boundary** — on macOS, a child that reparents before any foreground-inspection snapshot is no longer discoverable from the PTY root; on Linux, a `setsid` child leaves both the tree and the owned terminal session; the provider adds no continuous process-table monitor.
 - **In-process cleanup requires a JavaScript-observable exit** — direct `process.exit()`, default uncaught exceptions, and default unhandled rejections emit Node's synchronous `exit` event; an unhandled `SIGTERM`, `SIGINT`, or `SIGHUP`, `SIGKILL`, fatal OOM, `process.abort()`, native crashes, and power loss require an external supervisor, container init, or equivalent OS owner.

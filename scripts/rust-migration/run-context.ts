@@ -85,6 +85,7 @@ export function readRunContext(rootInput: string, manifestPath = 'project-manife
     'progress.jsonl',
     'decision-log.md',
     'rust-benchmark.json',
+    'scripts/rust-migration/knowledge-search-cache-vs-rust-reproduction-20261011.json',
     'security-report.md',
     'scripts/rust-migration/launcher-verifier-smoke.json',
     'scripts/rust-migration/native-knowledge-smoke.json',

@@ -46,6 +46,8 @@ const snapshotVfs = vi.hoisted(() => ({
    * and it refuses exactly one destination path.
    */
   renameRefusal: undefined as { destination: string; code: string } | undefined,
+  /** Numbered syscall failures for one package candidate during a test. */
+  transientNativeFailure: undefined as { path: string; remaining: number; code?: string } | undefined,
 }))
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -69,6 +71,11 @@ vi.mock('node:fs', async (importOriginal) => {
     {
       native: (path: string): string => {
         if (inSnapshot(path)) throw failure(snapshotVfs.nativeCode, path)
+        const transient = snapshotVfs.transientNativeFailure
+        if (transient !== undefined && transient.path === path && transient.remaining > 0) {
+          transient.remaining -= 1
+          throw failure(transient.code, path)
+        }
         return (actual.realpathSync.native as unknown as (target: string) => string)(path)
       },
     },
@@ -215,6 +222,7 @@ describe('resolveBundleDir in a packaged snapshot process', () => {
     snapshotVfs.nativeCode = 'ENOENT'
     snapshotVfs.snapshotFailure = undefined
     snapshotVfs.renameRefusal = undefined
+    snapshotVfs.transientNativeFailure = undefined
     Reflect.deleteProperty(process, 'pkg')
   })
 
@@ -227,6 +235,59 @@ describe('resolveBundleDir in a packaged snapshot process', () => {
     Reflect.defineProperty(process, 'pkg', { configurable: true, value: {} })
     return { anchor, root: dirname(anchor) }
   }
+
+  it('retries a transient missing junction while resolving through the profile fallback', () => {
+    const home = tmp()
+    const profileDir = join(home, 'profiles', 'active')
+    const fallback = join(home, 'profiles', 'node_modules')
+    const target = join(tmp(), 'fallback-target')
+    const link = join(fallback, 'fallback-only')
+    mkdirSync(target, { recursive: true })
+    mkdirSync(fallback, { recursive: true })
+    writeFileSync(join(target, 'package.json'), JSON.stringify({ name: 'fallback-only' }))
+    symlinkSync(target, link, 'junction')
+    snapshotVfs.transientNativeFailure = { path: link, remaining: 1, code: 'ENOENT' }
+
+    expect(resolveBundleDir('t', 'fallback-only', join(profileDir, 'uninstalled', 'package.json'), profileDir))
+      .toBe(realpathSync.native(target))
+    expect(snapshotVfs.transientNativeFailure.remaining).toBe(0)
+  })
+
+  it('keeps a persistent junction resolution error loud after bounded retries', () => {
+    const home = tmp()
+    const profileDir = join(home, 'profiles', 'active')
+    const fallback = join(home, 'profiles', 'node_modules')
+    const target = join(tmp(), 'fallback-target')
+    const link = join(fallback, 'fallback-only')
+    mkdirSync(target, { recursive: true })
+    mkdirSync(fallback, { recursive: true })
+    writeFileSync(join(target, 'package.json'), JSON.stringify({ name: 'fallback-only' }))
+    symlinkSync(target, link, 'junction')
+    snapshotVfs.transientNativeFailure = { path: link, remaining: 9, code: 'EINVAL' }
+
+    expect(() => resolveBundleDir(
+      't', 'fallback-only', join(profileDir, 'uninstalled', 'package.json'), profileDir,
+    )).toThrow(/EINVAL/)
+    expect(snapshotVfs.transientNativeFailure.remaining).toBe(0)
+  })
+
+  it('keeps a canonicalizer failure without an errno code loud', () => {
+    const home = tmp()
+    const profileDir = join(home, 'profiles', 'active')
+    const fallback = join(home, 'profiles', 'node_modules')
+    const target = join(tmp(), 'fallback-target')
+    const link = join(fallback, 'fallback-only')
+    mkdirSync(target, { recursive: true })
+    mkdirSync(fallback, { recursive: true })
+    writeFileSync(join(target, 'package.json'), JSON.stringify({ name: 'fallback-only' }))
+    symlinkSync(target, link, 'junction')
+    snapshotVfs.transientNativeFailure = { path: link, remaining: 1 }
+
+    expect(() => resolveBundleDir(
+      't', 'fallback-only', join(profileDir, 'uninstalled', 'package.json'), profileDir,
+    )).toThrow(/without an errno code/)
+    expect(snapshotVfs.transientNativeFailure.remaining).toBe(0)
+  })
 
   it('accepts a snapshot-served candidate the syscall canonicalizer cannot see', () => {
     const { anchor, root } = stageSnapshotInstallation({ 'in-box': { patch: '[]\n' } })
@@ -578,7 +639,7 @@ describe('healProfilesModuleFallback', () => {
     const reader = join(home, 'reader.mjs')
     const profileSource = fileURLToPath(new URL('../src/profile.ts', import.meta.url))
     writeFileSync(reader, [
-      "import { lstatSync, readFileSync } from 'node:fs'",
+      "import { readFileSync } from 'node:fs'",
       "import { join, dirname } from 'node:path'",
       `import { resolveBundleDir } from ${JSON.stringify(profileSource)}`,
       'const [fallback, ...names] = process.argv.slice(2)',
@@ -588,10 +649,9 @@ describe('healProfilesModuleFallback', () => {
       'let passes = 0',
       "process.on('message', () => { process.send({ passes, failures }); process.exit() })",
       'async function probe(name) {',
-      // Probe the directory entry itself and the real bundle resolver. A raw
-      // existsSync(link/package.json) also reports macOS rename-time EINVAL
-      // as false, which is neither a missing entry nor our resolved read path.
-      "  if (!lstatSync(join(fallback, name)).isSymbolicLink()) throw new Error('link replaced by a non-link')",
+      // Probe through the production resolver. Windows cannot atomically replace
+      // a junction, so its brief delete/recreate interval must be retried there;
+      // persistent disappearance and wrong package resolution still fail.
       "  const directory = resolveBundleDir('test', name, absentInstallation, profile)",
       "  const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))",
       "  if (manifest.name !== name) throw new Error('resolved another package')",
@@ -601,17 +661,6 @@ describe('healProfilesModuleFallback', () => {
       '    try {',
       '      await probe(name)',
       '    } catch (error) {',
-      // macOS reports EINVAL transiently while the parent re-points a link; that
-      // window is neither a missing entry nor a wrong resolution. Re-probe once
-      // after yielding, and still fail on any persistent error (ENOENT, non-link,
-      // wrong package, malformed manifest).
-      "      if (error.code === 'EINVAL') {",
-      '        await new Promise(resolve => setImmediate(resolve))',
-      '        try { await probe(name); continue } catch (retry) {',
-      '          failures.push({ name, message: String(retry), code: retry.code })',
-      '          continue',
-      '        }',
-      '      }',
       '      failures.push({ name, message: String(error), code: error.code })',
       '    }',
       '  }',

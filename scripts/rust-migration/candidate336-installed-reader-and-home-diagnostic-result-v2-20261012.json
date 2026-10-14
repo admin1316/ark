@@ -1,0 +1,2463 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-12T12:01:05.792104+00:00",
+  "status": "CANDIDATE336_PACKED_INSTALLED_STARTED_OFFLINE_REGRESSION_PASS_REAL_LEARNING_AND_RELEASE_UNKNOWN",
+  "sourceRoot": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+  "sourceHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "sourceDirty": true,
+  "priorCheckpoint": {
+    "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/approved-measured-use-wiring-repair-source-result-v2-20261012.json",
+    "sha256": "9844739d2e082f0240e0fa266f302104eac81b0431102d8cdb5c6d2a672f1ddd",
+    "bytes": 56543
+  },
+  "priorDirectRecheck": {
+    "report": {
+      "path": "/Users/hui/ark-test/evidence/candidate336-phase75-input-recheck-root-20261012.json",
+      "sha256": "8a30001352de6385e8fbfa553e2bf311b4f9a60f08db75f870e795a221d40793",
+      "bytes": 24883
+    },
+    "count": 68,
+    "allMatchedBeforeActivation": true,
+    "afterActivationBoundary": "Prior current335 runtime paths now intentionally point at336; unchanged335 executable is retained in the new rollback. Frozen prior reports are preserved, not claimed to match a replaced live path."
+  },
+  "candidate": {
+    "version": "3.1.36",
+    "build": "2026101236",
+    "app": "/Users/hui/ark-test/candidate/Ark.app",
+    "dataHome": "/Users/hui/ark-test/candidate-home-current-20261011-v328",
+    "packWorkspacePackageCount": 164,
+    "installRuntimeClosurePackageCount": 315,
+    "formalVersion": "3.1.0"
+  },
+  "validation": {
+    "sourceTestsInheritedFromPhase75": "252 core and328 related consumers; changed measured reader all-four per-file100; not rerun this turn",
+    "artifactReader": "Actual staged embedded Node + Wiki public index; ten synthetic cases pass; unchanged335 rejects real producer render/source fixture that336 accepts. Test-only keys/cost do not prove actual learning.",
+    "stagedInstall": {
+      "receipt": {
+        "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012-attempt3.json",
+        "sha256": "365d4869459e036d35d1d85672b9c33b64328382509137e38d5a0f954a16010b",
+        "bytes": 80343
+      },
+      "checks": 121,
+      "failures": 0,
+      "processRuns": 2,
+      "syntheticCredentialOnly": true,
+      "literalTestRef": "ARK_INSTALL_E2E_PROVIDER_KEY",
+      "normalHome": "/Users/hui",
+      "isolatedHomeServiceCaptured": true,
+      "postTestExactMetadataExitCode": 44
+    },
+    "nativeStartup": {
+      "path": "/Users/hui/ark-test/evidence/candidate336-native-ready-readonly-api-root-20261012.json",
+      "sha256": "01a3efa94e65c7dd00b108e181f7f0e59f9dce798d5620d9ab580e3a7b5fa29f",
+      "bytes": 1129
+    },
+    "freshModelTaskThisTurn": false
+  },
+  "causalFinding": {
+    "oldStagedInstallAttempt": "FAIL31checks credential CAS; retained",
+    "old335Reference": "FAIL32checks same CAS and global scanner counting preexisting335; owned reference children and port settled; retained",
+    "diagnostic": "Compiled set succeeds, temp-HOME resolve undefined and CAS correctly refuses; exact synthetic service is found from the no-HOME PTY context with matching fake digest, then deleted. Normal user HOME with isolated DSHhome passes121.",
+    "conclusion": "Test runner HOME differed from Keychain writer context. No production credential-store or CAS relaxation justified.",
+    "independentAudit": {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-home-cause-final-audit-20261012.json",
+      "sha256": "61486b9207fdd80ee393a1970386723c549d1df1345f41b66c0e62026fd63c1d",
+      "bytes": 6363
+    },
+    "firstAttemptSyntheticKeychainCleanup": "UNKNOWN: original random service identity not retained; no broad query or deletion attempted. Later known namespaces were precisely cleaned.",
+    "testOwnerRecommendations": [
+      "Preserve normal HOME while isolating JIUZHANG_DSH_HOME.",
+      "Record generated home/service/ref immediately.",
+      "Clean the literal test reference on failure as well as success.",
+      "Final residual checks must use process baseline/owned identity."
+    ],
+    "recommendationsImplemented": false
+  },
+  "slotExchange": {
+    "normalQuit": {
+      "path": "/Users/hui/ark-test/evidence/candidate335-normal-quit-pre336-root-20261012.json",
+      "sha256": "db7f7aed97980fe216d4728c7b8dc92ec802b37a0b7feca8bea19161bf96b655",
+      "bytes": 1201
+    },
+    "exchange": {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012-attempt1.exchange.json",
+      "sha256": "55f3b38b519e44eccac3d8f2bd14feb0c5aceb3c8fbc44ffa413efce7e8fab0a",
+      "bytes": 2516
+    },
+    "postcheck": {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012-attempt1-postcheck.json",
+      "sha256": "8d4bf26d43463bd049ef21e8725eedf49593da0d6e9d05019b00cf88ccba0c20",
+      "bytes": 2251
+    },
+    "rollback": {
+      "path": "/Users/hui/ark-test/rollback-candidate-v335-before-v336-20261012/Ark.app/Contents/MacOS/Ark",
+      "sha256": "78118580b1b01a01a2c4363ba5c7590f92eac24c3edf828586584cf7079803bb",
+      "bytes": 11315504
+    },
+    "sourceStageKept": true,
+    "processLimitation": "The22-check preflight before exchange includes same_filesystem_for_exchange for the three existing parents (current/prepared/stage) with identical st_dev. Before exchange there was no full process-path scan or parent-not-symlink guard, and the exchange helper did not immediately repeat the newly requested fresh path/volume set.13 postchecks verify current/rollback/stage state only and do not retroactively establish the omitted prechecks. Original receipt creation was nonexclusive; its initial mode is not independently evidenced. Current0600 does not establish exclusive creation.",
+    "preservedSetupFailures": "Preparation KeyError/incorrect cat path plus two safe preflight key/literal failures retained; missing original inline script bytes disclosed. No failure is rewritten as PASS."
+  },
+  "budget": {
+    "path": "/Users/hui/ark-test/evidence/candidate336-cumulative-paid-budget-refresh-root-20261012.json",
+    "sha256": "c23595c5df65047af9b023ddfe9a635beed42a272d6b85f1b83f4360274abe52",
+    "bytes": 1560
+  },
+  "newDeepSeekModelRequestsThisTurn": 0,
+  "realAuthorityDeployed": false,
+  "actualPairedLearningUtilityLift": null,
+  "originalNativeWholeReport": "FAIL remains; no paid correction or fresh model-run submitted",
+  "nativeIdleWordingApproval": "Pending earlier optional change request; no UI source edit this turn",
+  "modelSettingsDrift": "Current default/composer deepseek-flash/max/read-only, frozen earlier task actual route deepseek-v4-flash; unchanged current settings hash, cause remainsUNKNOWN. No silent route restoration/change.",
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "c11146420879d77ab2ad509855c446f65b578caafe9b65b6398b9a373e19884b",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "da158c5f36e4ac8efe3d5495fd60ad66d79d4a8dd6f0614ba67a163a62436ea8",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "protectedBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/project-manifest.json",
+      "sha256": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+      "bytes": 862
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/rust-benchmark.json",
+      "sha256": "52b85fb8d97d9b1fb5114cd4e517cdb1f7a84bb3d1d6e7ee6b77a7cbeb2097db",
+      "bytes": 6239
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate-home-current-20261011-v328/settings.yaml",
+      "sha256": "305d4badb646e533d149c4a1c199a9f79f58772cf73371147e2c058028db5762",
+      "bytes": 1104
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate-home-current-20261011-v328/.credentials.yaml",
+      "sha256": "2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28",
+      "bytes": 2236
+    },
+    {
+      "path": "/Users/hui/ark/Ark.app/Contents/MacOS/Ark",
+      "sha256": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a",
+      "bytes": 11280800
+    }
+  ],
+  "runtimeBindings": [
+    {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Info.plist",
+      "sha256": "8000bd38e481de5eacee5f0e24fecb26db312c2192b2484127c9f0963a625152",
+      "bytes": 2289
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/MacOS/Ark",
+      "sha256": "c106d29137b609e4db0500557dc519bd3a0c8b4d1423ce0bbc0b1638ec56d912",
+      "bytes": 11315504
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-knowledge-wiki/lib/index.js",
+      "sha256": "7d30d46ec226cdf55f4db5d08e934556ae9f44808d7b6bea31bf5525d4d6840b",
+      "bytes": 400323
+    }
+  ],
+  "artifactBindings": [
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate335-normal-quit-pre336-root-20261012.json",
+      "sha256": "db7f7aed97980fe216d4728c7b8dc92ec802b37a0b7feca8bea19161bf96b655",
+      "bytes": 1201
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate335-pre336-fresh-session-quiescence-root-20261012.json",
+      "sha256": "0dd6612c2b7deb0ce3f7b34c1cb056c28d2a5dc6c160e61e44f7ade56c1ace21",
+      "bytes": 492
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-app-build-20261012.log",
+      "sha256": "26cd32e156235dd0122c3db1465c47e66493660679ccfd20904daec4354204ac",
+      "bytes": 5750
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/candidate336-artifact-plane-f1-control-20261012.mjs",
+      "sha256": "483e0917e38873de9d1f734b0f4dc860ff23595d0810c6ea688ccd803186b8c1",
+      "bytes": 5631
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/candidate336-artifact-plane-producer-20261012.mts",
+      "sha256": "20ca88b20e1df1bae5252fc9bd315ae8f10c4ef57eb10fad52f9c5937ebee386",
+      "bytes": 16042
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/candidate336-artifact-plane-producer-attempt1-failed-20261012.mts",
+      "sha256": "36aa7d3eefce9a751700a9336513209360c0ea98a78d0b73a926764367ae6e5f",
+      "bytes": 15122
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/candidate336-artifact-plane-producer-old335-f1-20261012.mts",
+      "sha256": "e85086f8a3ebd837ed8a883dcd3e83855439d53f15cd225f80373d342b595244",
+      "bytes": 16013
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/candidate336-artifact-plane-producer-v1-preserved-20261012.mts",
+      "sha256": "dddc39f85044d3a9bc6760769621fc336c5f0be2ff37a570f74e6b0929cdd1a7",
+      "bytes": 15121
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/candidate336-artifact-plane-reader-20261012.mjs",
+      "sha256": "275b3cee32770960c87d412f34e2e386c9117ee3a42e0fb09e43a8c634f577cb",
+      "bytes": 5123
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/final-integrity-addendum-20261012.json",
+      "sha256": "05d39ac2773e744e6410fc7f98569cfd25e4676878dffe01abafcbe93ee16f8d",
+      "bytes": 2468
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/final-report-20261012.json",
+      "sha256": "6e8a396bd96c55ab4b841a93e2f9b8c189356c3dbd2a561b2ed95c8ee5117a01",
+      "bytes": 25256
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "sha256": "084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "bytes": 30
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/0a760a8b6dc5b702bb98662e169f51ac10f0abac59c7907c3e76e8037b3a1fca",
+      "sha256": "0a760a8b6dc5b702bb98662e169f51ac10f0abac59c7907c3e76e8037b3a1fca",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "sha256": "19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "bytes": 63
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "sha256": "1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "sha256": "225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "bytes": 22
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/38b16ffcd809f560bbef577c906b1fd4b893910ab619bbad789843d6c64c7b16",
+      "sha256": "38b16ffcd809f560bbef577c906b1fd4b893910ab619bbad789843d6c64c7b16",
+      "bytes": 1167
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/4492daee225cc0f1ff2a2af58f59d944cd3f15b45b3b6d0e40bf245941e5d051",
+      "sha256": "4492daee225cc0f1ff2a2af58f59d944cd3f15b45b3b6d0e40bf245941e5d051",
+      "bytes": 863
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/4fb1fce50acf64dd96c0ff890d2937b3d1d51df39a34f57f000d523058418609",
+      "sha256": "4fb1fce50acf64dd96c0ff890d2937b3d1d51df39a34f57f000d523058418609",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/51592abebc27678e29ce9c40dae3343a7ab8ec73095c40b59f029ef7ef750c84",
+      "sha256": "51592abebc27678e29ce9c40dae3343a7ab8ec73095c40b59f029ef7ef750c84",
+      "bytes": 1631
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "sha256": "5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/5bc7b3f5f270918561f11d7d919aa2b411bcad832eebde98094d921fee74002a",
+      "sha256": "5bc7b3f5f270918561f11d7d919aa2b411bcad832eebde98094d921fee74002a",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "sha256": "62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/6d118e6d984f22e84fde2e6a049e3e51a91d23f3c907bd0077302507a35dca5f",
+      "sha256": "6d118e6d984f22e84fde2e6a049e3e51a91d23f3c907bd0077302507a35dca5f",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "sha256": "713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/71b53c495c51818a2669709b4b01a62017bd5e80efefd023abfa7e92ef28d1f4",
+      "sha256": "71b53c495c51818a2669709b4b01a62017bd5e80efefd023abfa7e92ef28d1f4",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "sha256": "7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/7d9225eb8e203071a423cc47e2f4b8d017bbc34feaedf4d31d25c5b60ffcf5a1",
+      "sha256": "7d9225eb8e203071a423cc47e2f4b8d017bbc34feaedf4d31d25c5b60ffcf5a1",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/7dcab9661779b90e5b84317267cb2a3306dc4ce625b593a8bc7506681495f7f5",
+      "sha256": "7dcab9661779b90e5b84317267cb2a3306dc4ce625b593a8bc7506681495f7f5",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/81950e40455f2c0d479afc5695ec4f9c876ce2d591d5c2c2133f67da4a4481ff",
+      "sha256": "81950e40455f2c0d479afc5695ec4f9c876ce2d591d5c2c2133f67da4a4481ff",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/8ad666c62d60918dbe45250366e18d819d04283cb4802bfec1deba518f9fbed4",
+      "sha256": "8ad666c62d60918dbe45250366e18d819d04283cb4802bfec1deba518f9fbed4",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/8e568fbe6f2c2f4d947d695422ee98653afa4edf0351e78182da7dbac7f75b62",
+      "sha256": "8e568fbe6f2c2f4d947d695422ee98653afa4edf0351e78182da7dbac7f75b62",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "sha256": "987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "bytes": 6
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/988af7ea28c068ae91b6a952202c66cdbed821c6d002e7ace0b876a1fae8f15c",
+      "sha256": "988af7ea28c068ae91b6a952202c66cdbed821c6d002e7ace0b876a1fae8f15c",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "sha256": "9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/a0b75f487675343ece7609d85ee1b37df741c0d835cbe2f5d0876a0511d172b2",
+      "sha256": "a0b75f487675343ece7609d85ee1b37df741c0d835cbe2f5d0876a0511d172b2",
+      "bytes": 3044
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/a1aef014c02b8631d016f36eb8f3a56cff3b7addb3a5c6c0a062cbaac956f9e6",
+      "sha256": "a1aef014c02b8631d016f36eb8f3a56cff3b7addb3a5c6c0a062cbaac956f9e6",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "sha256": "aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "bytes": 32
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/ab266c513a8aeb9a9efe0ef32cbe7388e0e745df7a84959aeb51e41f77fa543b",
+      "sha256": "ab266c513a8aeb9a9efe0ef32cbe7388e0e745df7a84959aeb51e41f77fa543b",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "sha256": "b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "sha256": "bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "bytes": 44
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/c1b090becac85a645f1b75b08238e3b7a7cc49ed7e6ec0e6d422596957136aff",
+      "sha256": "c1b090becac85a645f1b75b08238e3b7a7cc49ed7e6ec0e6d422596957136aff",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/c29bf13af269513fcfbc0982e6d04ed349e9de5b15c8b3a535b28ba5fc230445",
+      "sha256": "c29bf13af269513fcfbc0982e6d04ed349e9de5b15c8b3a535b28ba5fc230445",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/c6ff8d96fa4ceb246c095ce9a7ba0cd8098c8ed43352813745eee584c7beb853",
+      "sha256": "c6ff8d96fa4ceb246c095ce9a7ba0cd8098c8ed43352813745eee584c7beb853",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/c88e480521c46283b45cc437c3a5d76eedfa00ae1495289632e590cb95c5a568",
+      "sha256": "c88e480521c46283b45cc437c3a5d76eedfa00ae1495289632e590cb95c5a568",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/cacf506355133db03be4dc771814a2371fdd566ddf9b58fd1b74dbd5ab53fd8b",
+      "sha256": "cacf506355133db03be4dc771814a2371fdd566ddf9b58fd1b74dbd5ab53fd8b",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/ce6000cf2ca90bd6a3c2a14fcc2d66596d8821483a6d66bc383f6a33b9ba5860",
+      "sha256": "ce6000cf2ca90bd6a3c2a14fcc2d66596d8821483a6d66bc383f6a33b9ba5860",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "sha256": "d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/dd3b97d4770cfc7320d178a515d24b83c9f9e2a9c3786e39709aa8c438b6fdb2",
+      "sha256": "dd3b97d4770cfc7320d178a515d24b83c9f9e2a9c3786e39709aa8c438b6fdb2",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "sha256": "de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/f9529a5761b787b8144a8ea8a98f68976234c6e24d807a5ec69e32736453d1eb",
+      "sha256": "f9529a5761b787b8144a8ea8a98f68976234c6e24d807a5ec69e32736453d1eb",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/artifacts/fcb42eae47d231d1c4c6949ca641d9483bd18e768a13130de6b6a094a388d24b",
+      "sha256": "fcb42eae47d231d1c4c6949ca641d9483bd18e768a13130de6b6a094a388d24b",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture/fixture.json",
+      "sha256": "c8c9750de4e2aa3e54cbbe942a4dcf74f6deea08373520f18133715f99301268",
+      "bytes": 5042
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "sha256": "084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "bytes": 30
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/0de27e3d6ededea20594712dd40943f4e030cf5a22f231d8d304923f90c47862",
+      "sha256": "0de27e3d6ededea20594712dd40943f4e030cf5a22f231d8d304923f90c47862",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/0f2000860be5d895a45b25ad4d050a6f0d3a9d65e1d888a9e379b358a155357f",
+      "sha256": "0f2000860be5d895a45b25ad4d050a6f0d3a9d65e1d888a9e379b358a155357f",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "sha256": "19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "bytes": 63
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "sha256": "1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "sha256": "225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "bytes": 22
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/33d0b72cc0fdd6b23984795f3f25815c0053b80e6e6107b210fb636ac7326932",
+      "sha256": "33d0b72cc0fdd6b23984795f3f25815c0053b80e6e6107b210fb636ac7326932",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/3634cc111b11b9c62f7fc708c582195c13e1379b6aedaba954acb31477ac34bd",
+      "sha256": "3634cc111b11b9c62f7fc708c582195c13e1379b6aedaba954acb31477ac34bd",
+      "bytes": 1167
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/367a39b9027e0306a0d95b2644ef1ce9e1fffdb3917cdfb2f01ea0b2756fd8e1",
+      "sha256": "367a39b9027e0306a0d95b2644ef1ce9e1fffdb3917cdfb2f01ea0b2756fd8e1",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/3719fe4fbf804c98606234706c86730e2f85d76bdd2a4b0a7cb5e05923813c15",
+      "sha256": "3719fe4fbf804c98606234706c86730e2f85d76bdd2a4b0a7cb5e05923813c15",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/3918cfdbe7572a0fc1c1d1b9729a168714bdbd1fc5a14c5face51326b9bee1b0",
+      "sha256": "3918cfdbe7572a0fc1c1d1b9729a168714bdbd1fc5a14c5face51326b9bee1b0",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/4c98d0214c1fd866bd7c4a6cc7a0240664b118836b57353bf251d944dbda81e8",
+      "sha256": "4c98d0214c1fd866bd7c4a6cc7a0240664b118836b57353bf251d944dbda81e8",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/4ef64524708e70065b6a7e139a7fd604437c79b047935563dd9d3692649fc703",
+      "sha256": "4ef64524708e70065b6a7e139a7fd604437c79b047935563dd9d3692649fc703",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "sha256": "5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/5b200b0b89c9d17041ec51b38367ee0a04e91c9e72188b4a0b9c806ba88c84ea",
+      "sha256": "5b200b0b89c9d17041ec51b38367ee0a04e91c9e72188b4a0b9c806ba88c84ea",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "sha256": "62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/6ac700092e18d5c362bd24c15034b26c288bdaf7245c76fdf4f929e2fe21d55a",
+      "sha256": "6ac700092e18d5c362bd24c15034b26c288bdaf7245c76fdf4f929e2fe21d55a",
+      "bytes": 863
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "sha256": "713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "sha256": "7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/8b7a19a9060c82dab5fc3a833a689177e3841eeb514c5bba34811aed8f67156c",
+      "sha256": "8b7a19a9060c82dab5fc3a833a689177e3841eeb514c5bba34811aed8f67156c",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/921a0efab1e3588e7c2b882af8d49ce427d07da12552ec04bab180361cd1a0cc",
+      "sha256": "921a0efab1e3588e7c2b882af8d49ce427d07da12552ec04bab180361cd1a0cc",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/93c36cc9a30927223241ec49ba0c255c6e7608835cce90c713faaf21b419fc80",
+      "sha256": "93c36cc9a30927223241ec49ba0c255c6e7608835cce90c713faaf21b419fc80",
+      "bytes": 1631
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "sha256": "987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "bytes": 6
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/9a6c0c079421190ecb17ce01a20fd8f7cb9738910bf3e66c2cef8b8454176cd9",
+      "sha256": "9a6c0c079421190ecb17ce01a20fd8f7cb9738910bf3e66c2cef8b8454176cd9",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "sha256": "9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/a9183c74c3399c15d4067d96506aa72cbd2fd02a0b537f27fc4d0813d44dab5b",
+      "sha256": "a9183c74c3399c15d4067d96506aa72cbd2fd02a0b537f27fc4d0813d44dab5b",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "sha256": "aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "bytes": 32
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/b0493a878eec73db01c963d214e2f312ffaeebe9dfa1cb25320e0f4e6cf74927",
+      "sha256": "b0493a878eec73db01c963d214e2f312ffaeebe9dfa1cb25320e0f4e6cf74927",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/b2bdee1cdeb51260de53925cb8444562479593ba861ce2da11fbc43c3ce4f04d",
+      "sha256": "b2bdee1cdeb51260de53925cb8444562479593ba861ce2da11fbc43c3ce4f04d",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "sha256": "b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/ba31bebf08807f1d0e5fc7d7eb7b07a734d58db9863d46d7ade84985d1e4ae73",
+      "sha256": "ba31bebf08807f1d0e5fc7d7eb7b07a734d58db9863d46d7ade84985d1e4ae73",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "sha256": "bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "bytes": 44
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/bbfead9a2d866393d18fac0e34170249615d4817f3f20773de215f23373966fc",
+      "sha256": "bbfead9a2d866393d18fac0e34170249615d4817f3f20773de215f23373966fc",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/cada229e3d1cd6dc145e023f7ad04fa6facfcd92d1a94b046120ebe0ae11e567",
+      "sha256": "cada229e3d1cd6dc145e023f7ad04fa6facfcd92d1a94b046120ebe0ae11e567",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "sha256": "d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/d5ebccef3c9884dff7e161f5d0e08f48f0f7009987e1d2eb016b63b9c42742e4",
+      "sha256": "d5ebccef3c9884dff7e161f5d0e08f48f0f7009987e1d2eb016b63b9c42742e4",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/d97407e3efe2422a806bb5e384b12502606ac38ca2a0d93ef3d82c159d94d923",
+      "sha256": "d97407e3efe2422a806bb5e384b12502606ac38ca2a0d93ef3d82c159d94d923",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "sha256": "de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/f5a36caa715587679aba8000e35359ee1879af357cfb0a7368766a226d3d1cde",
+      "sha256": "f5a36caa715587679aba8000e35359ee1879af357cfb0a7368766a226d3d1cde",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/f9fb9589c6dd3e929c4164775133250933d3cdb87a7b0fbb7b26f8892a1dd9c0",
+      "sha256": "f9fb9589c6dd3e929c4164775133250933d3cdb87a7b0fbb7b26f8892a1dd9c0",
+      "bytes": 3044
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/artifacts/fa54e72097ae14894646e35dc6dadb33f5ca9a69bd3ebefdfeef6165b633e843",
+      "sha256": "fa54e72097ae14894646e35dc6dadb33f5ca9a69bd3ebefdfeef6165b633e843",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-session/fixture.json",
+      "sha256": "83cc52d7827a6fbfff6f086993c347ce846a2508b10dcdf493f6646a7bd7032d",
+      "bytes": 5076
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/027f685367fba08226e8418dd6b921fec646a73f7d8c616bba13aae04ab00ea6",
+      "sha256": "027f685367fba08226e8418dd6b921fec646a73f7d8c616bba13aae04ab00ea6",
+      "bytes": 863
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "sha256": "084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "bytes": 30
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "sha256": "19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "bytes": 63
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "sha256": "1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "sha256": "225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "bytes": 22
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/2318e72ebf121d1ba29fda1f9236e81b861f9a150566f086f309845a0bf15551",
+      "sha256": "2318e72ebf121d1ba29fda1f9236e81b861f9a150566f086f309845a0bf15551",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/26742eb69a738a77868f7fa2a716571cf2413d190732bf728329842ba0bc8188",
+      "sha256": "26742eb69a738a77868f7fa2a716571cf2413d190732bf728329842ba0bc8188",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/350fb17313efed9cd3759954bb5da2b858bb310187d960d3e74222f891ae263f",
+      "sha256": "350fb17313efed9cd3759954bb5da2b858bb310187d960d3e74222f891ae263f",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/366d501ea635efc83be3dfc9d0fd7c668b7ddc8980f3c51e00ae2257097174b0",
+      "sha256": "366d501ea635efc83be3dfc9d0fd7c668b7ddc8980f3c51e00ae2257097174b0",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/3a91d1062242030d806a64c2ec1eab40b863843d029ba1de8d5cb72e65b7b430",
+      "sha256": "3a91d1062242030d806a64c2ec1eab40b863843d029ba1de8d5cb72e65b7b430",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/518b357ea16322ccafbc147189fd74d1b50074b43ca9b7b0a94d5095c0d9c71b",
+      "sha256": "518b357ea16322ccafbc147189fd74d1b50074b43ca9b7b0a94d5095c0d9c71b",
+      "bytes": 1167
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/56e02f20317dc720867c4d61c1d06fd42bf6f414fb46c3b21ad149c26fbc8c82",
+      "sha256": "56e02f20317dc720867c4d61c1d06fd42bf6f414fb46c3b21ad149c26fbc8c82",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "sha256": "5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/5f1a49007882255a6c39c5cfd7894eee21f03b726656539b32a7f186cdc077db",
+      "sha256": "5f1a49007882255a6c39c5cfd7894eee21f03b726656539b32a7f186cdc077db",
+      "bytes": 2939
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "sha256": "62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/62fccb85b0c723b13859646cfed369198b0f57c380a2ceba04904286e1d234f6",
+      "sha256": "62fccb85b0c723b13859646cfed369198b0f57c380a2ceba04904286e1d234f6",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/691045973cdc7f234f605c2ea893f57c76e31be522b47c1dab9ea12061d44ece",
+      "sha256": "691045973cdc7f234f605c2ea893f57c76e31be522b47c1dab9ea12061d44ece",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/6c836aaa401ed60294264fa4af1504bb69f5f9057a9b17a8cf8acc3e336838de",
+      "sha256": "6c836aaa401ed60294264fa4af1504bb69f5f9057a9b17a8cf8acc3e336838de",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "sha256": "713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/7140f9078d5ee63068e3a5774ce547e670b098f8f113d65f1572cffa791c1b32",
+      "sha256": "7140f9078d5ee63068e3a5774ce547e670b098f8f113d65f1572cffa791c1b32",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/719913e42e7e3d3c3d626d3566d00fd9b99f6acc2e811c4ee1b5feac6d6782dc",
+      "sha256": "719913e42e7e3d3c3d626d3566d00fd9b99f6acc2e811c4ee1b5feac6d6782dc",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "sha256": "7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/829830347bdc80cca6af761f5603deb302d60bca425a476c4ce895f255d56a4c",
+      "sha256": "829830347bdc80cca6af761f5603deb302d60bca425a476c4ce895f255d56a4c",
+      "bytes": 3044
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/87b47889734a04ed1228c9a952d1de153844e0169e51373377607c1b4e6190d9",
+      "sha256": "87b47889734a04ed1228c9a952d1de153844e0169e51373377607c1b4e6190d9",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/8cf160ad4aa5ddf7a155e9b87fd6e0fdf542d065ea837e6a8969134bb0fd8361",
+      "sha256": "8cf160ad4aa5ddf7a155e9b87fd6e0fdf542d065ea837e6a8969134bb0fd8361",
+      "bytes": 1631
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/9550ead96df00077c0fda1d4db9192882c3e03be36163df7e089e625ac9e7741",
+      "sha256": "9550ead96df00077c0fda1d4db9192882c3e03be36163df7e089e625ac9e7741",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "sha256": "987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "bytes": 6
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "sha256": "9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/a0662688b06197a00b72ddd504ef8a6b2fcf90a7b858d37b97f3f9c210ac8290",
+      "sha256": "a0662688b06197a00b72ddd504ef8a6b2fcf90a7b858d37b97f3f9c210ac8290",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/a9c30640ca9816592250d51a2a9416b1bd90c2967bfa52c2fe0362fd3cb24eae",
+      "sha256": "a9c30640ca9816592250d51a2a9416b1bd90c2967bfa52c2fe0362fd3cb24eae",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "sha256": "aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "bytes": 32
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "sha256": "b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/b5b8d1fe906ceddb0ae157443215f6a15b441b6a3e8335e11666fcccdb6219ca",
+      "sha256": "b5b8d1fe906ceddb0ae157443215f6a15b441b6a3e8335e11666fcccdb6219ca",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/b89076cac98c96e2b45f26a28fa6044d0771e529f15e202e8c0d97bb1cef25c9",
+      "sha256": "b89076cac98c96e2b45f26a28fa6044d0771e529f15e202e8c0d97bb1cef25c9",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "sha256": "bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "bytes": 44
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "sha256": "d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/d4f37c5925712ae2b7941544f1ee3aeea52a76183768db4748b9e3dfa13f8241",
+      "sha256": "d4f37c5925712ae2b7941544f1ee3aeea52a76183768db4748b9e3dfa13f8241",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "sha256": "de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/ed3430ffbac263064b60662747e2c74677d4e06f5f0ceb378bb49fc2455af9f3",
+      "sha256": "ed3430ffbac263064b60662747e2c74677d4e06f5f0ceb378bb49fc2455af9f3",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/f448ad617af67778f6ed72bb01d8b6788e37df32484db658811361d534ad48d3",
+      "sha256": "f448ad617af67778f6ed72bb01d8b6788e37df32484db658811361d534ad48d3",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/artifacts/fe02e00496abcb0da79f90d98a57e51d4ddd2242799ef08e1c67a8f698801877",
+      "sha256": "fe02e00496abcb0da79f90d98a57e51d4ddd2242799ef08e1c67a8f698801877",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-baseline-candidate/fixture.json",
+      "sha256": "2f089f1238b4ed71d04c511b78fdd9f562275a40003875beec3db000fe29a6d0",
+      "bytes": 5092
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "sha256": "084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "bytes": 30
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/153ee26a73526fd2994509580cef93875d2979a80b945c387ae2e8a4cbcf4ada",
+      "sha256": "153ee26a73526fd2994509580cef93875d2979a80b945c387ae2e8a4cbcf4ada",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "sha256": "19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "bytes": 63
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/1dee4e188c8508879b3e00d626727a41e2d0778efe5dd0ab82fd349854252cb2",
+      "sha256": "1dee4e188c8508879b3e00d626727a41e2d0778efe5dd0ab82fd349854252cb2",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "sha256": "1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "sha256": "225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "bytes": 22
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/2c5b5d1945ded97a5b27c691ef3c1ee8f31f7492bef6f88b02f4fab2e0280d63",
+      "sha256": "2c5b5d1945ded97a5b27c691ef3c1ee8f31f7492bef6f88b02f4fab2e0280d63",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/2fc9c8587775bed745e163b05e9716729b9afb1593804c2ec511b59a8146123b",
+      "sha256": "2fc9c8587775bed745e163b05e9716729b9afb1593804c2ec511b59a8146123b",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/319749b10b4a2baaf4873ee1c23c27a438e9a5dd2fc3f896d49fde349f4f1257",
+      "sha256": "319749b10b4a2baaf4873ee1c23c27a438e9a5dd2fc3f896d49fde349f4f1257",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/3d0b64e643b492e9b12170d39fd6ba70e18c97c636513e1dd1c5a9794804ed14",
+      "sha256": "3d0b64e643b492e9b12170d39fd6ba70e18c97c636513e1dd1c5a9794804ed14",
+      "bytes": 1631
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/443924c3cb460e97dcb13fbf361b5d43b93fbb2447c499999b991d750095f57d",
+      "sha256": "443924c3cb460e97dcb13fbf361b5d43b93fbb2447c499999b991d750095f57d",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/4626975d2c2fcb193e42044fbc738e68580efbe9e75a720a9143f5732ea9bdb7",
+      "sha256": "4626975d2c2fcb193e42044fbc738e68580efbe9e75a720a9143f5732ea9bdb7",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/548344b3f798ab91d34e2aad9a45ee6d27877d4c97a78969a2f4802eed230223",
+      "sha256": "548344b3f798ab91d34e2aad9a45ee6d27877d4c97a78969a2f4802eed230223",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/5719e232e83a2016548a240144860379f1b74d76ae07d45c0cfd65ad8d027af8",
+      "sha256": "5719e232e83a2016548a240144860379f1b74d76ae07d45c0cfd65ad8d027af8",
+      "bytes": 863
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/58b3e8fae12f354e1664032937e4100f74860bd8a3a7fe2231b7451871da0506",
+      "sha256": "58b3e8fae12f354e1664032937e4100f74860bd8a3a7fe2231b7451871da0506",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "sha256": "5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/5aa9c69cae81a600fb73f675afccf64bf69a28412855148eef698cb1c2d07df6",
+      "sha256": "5aa9c69cae81a600fb73f675afccf64bf69a28412855148eef698cb1c2d07df6",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/5b4bb275ef77bbba2c9fbd21eace8ae320f5fe1b0de532a006c1983e496c171b",
+      "sha256": "5b4bb275ef77bbba2c9fbd21eace8ae320f5fe1b0de532a006c1983e496c171b",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "sha256": "62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/661db2b3649f2a832fb8234f76a7e74e4041764c77886ebac0928bcbaf7f51ee",
+      "sha256": "661db2b3649f2a832fb8234f76a7e74e4041764c77886ebac0928bcbaf7f51ee",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "sha256": "713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "sha256": "7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/9030219bb9b739578135fde4807869419466982aa7376b6afda45fee46baf635",
+      "sha256": "9030219bb9b739578135fde4807869419466982aa7376b6afda45fee46baf635",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/96327f4c339e573e3d580560de1d2b6e072fdf3ddc11a5d528cbc53747e8f8a4",
+      "sha256": "96327f4c339e573e3d580560de1d2b6e072fdf3ddc11a5d528cbc53747e8f8a4",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/9752e2ef620c52a9e16536c05e8c0b3bb92628130268413ae8d6cfb5f2a88f1e",
+      "sha256": "9752e2ef620c52a9e16536c05e8c0b3bb92628130268413ae8d6cfb5f2a88f1e",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/975a4547b64780b8cfedf43630bb4ff4efa949f7d5067d7305897fb3a55c847d",
+      "sha256": "975a4547b64780b8cfedf43630bb4ff4efa949f7d5067d7305897fb3a55c847d",
+      "bytes": 3044
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "sha256": "987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "bytes": 6
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "sha256": "9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "sha256": "aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "bytes": 32
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "sha256": "b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/b82ffa8fd06aa273937f02a04ca464b5842d7676ef5d33521c0ae850ab704572",
+      "sha256": "b82ffa8fd06aa273937f02a04ca464b5842d7676ef5d33521c0ae850ab704572",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/b8b0e2fda7b569582a99c023833c45a31317f853c747de82e95a0a2c6342ba17",
+      "sha256": "b8b0e2fda7b569582a99c023833c45a31317f853c747de82e95a0a2c6342ba17",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "sha256": "bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "bytes": 44
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/cc132fd868f479197df3c9e7f29b7219684133464f22489cbc0bea2b56b19372",
+      "sha256": "cc132fd868f479197df3c9e7f29b7219684133464f22489cbc0bea2b56b19372",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "sha256": "d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/d5c27d4a4ade1dd1a77f157636fae3e1bd575a21962defb75461ae0e7395d5fe",
+      "sha256": "d5c27d4a4ade1dd1a77f157636fae3e1bd575a21962defb75461ae0e7395d5fe",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/d6898304c8342916c647efb7a6bc0a21e365fb7988c56426524a9bb6f7e992fa",
+      "sha256": "d6898304c8342916c647efb7a6bc0a21e365fb7988c56426524a9bb6f7e992fa",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/ddd37a320922a049b253e386cff71d6b3fa25c97c9ea819e4bb2f0e6fce4b64f",
+      "sha256": "ddd37a320922a049b253e386cff71d6b3fa25c97c9ea819e4bb2f0e6fce4b64f",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "sha256": "de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/f112b5c467de5089df8243dcd4cd9c746ee297750dcf35a631bcb9fd56bbf7dc",
+      "sha256": "f112b5c467de5089df8243dcd4cd9c746ee297750dcf35a631bcb9fd56bbf7dc",
+      "bytes": 1167
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/artifacts/fc7084b8d4c1e41b026a32c167dfa21e4fa7e3ed9725ac07e20e994bda0d2238",
+      "sha256": "fc7084b8d4c1e41b026a32c167dfa21e4fa7e3ed9725ac07e20e994bda0d2238",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-duplicate-use-cross-pair/fixture.json",
+      "sha256": "df17457c98c327550f5c555554778331a5b910c6dbb7db62eeded17586e80f7b",
+      "bytes": 5083
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "sha256": "084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "bytes": 30
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/12fd35d602285105d3eccc0d3d2e9bfdced78dd6d64f23753169616be3b14e21",
+      "sha256": "12fd35d602285105d3eccc0d3d2e9bfdced78dd6d64f23753169616be3b14e21",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "sha256": "19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "bytes": 63
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "sha256": "225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "bytes": 22
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/269d2160fa3e5b14064d369c5279e3db48517950048e30ca09def7705aeb0244",
+      "sha256": "269d2160fa3e5b14064d369c5279e3db48517950048e30ca09def7705aeb0244",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/3720751436698746251441e994908fb5a61a377f5513d08f2cd06b625ab30f12",
+      "sha256": "3720751436698746251441e994908fb5a61a377f5513d08f2cd06b625ab30f12",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/3cda2dfaccdc192216079cceaeb703b11d9d144a78c10a0572205fb133795676",
+      "sha256": "3cda2dfaccdc192216079cceaeb703b11d9d144a78c10a0572205fb133795676",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "sha256": "5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/5bdde561057fc0f68e62cecacbd3d2fbdf881113c0453ab395f3c7c16e893b84",
+      "sha256": "5bdde561057fc0f68e62cecacbd3d2fbdf881113c0453ab395f3c7c16e893b84",
+      "bytes": 1142
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "sha256": "62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/7141d7dbac5d12567f05403fbfded5e974cff6d8962e30901c8914942250e2a7",
+      "sha256": "7141d7dbac5d12567f05403fbfded5e974cff6d8962e30901c8914942250e2a7",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "sha256": "7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "sha256": "987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "bytes": 6
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "sha256": "9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/a3fce9748d04f3c41f4ee92bfc4374f8df104d7451cf798ff3e77422a6356f78",
+      "sha256": "a3fce9748d04f3c41f4ee92bfc4374f8df104d7451cf798ff3e77422a6356f78",
+      "bytes": 2910
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "sha256": "aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "bytes": 32
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/ae0a87f8ea9d442c25e6b327590d819326b3d9af438ddf652eeb8b061365b20b",
+      "sha256": "ae0a87f8ea9d442c25e6b327590d819326b3d9af438ddf652eeb8b061365b20b",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/b73e9f241618e90e6565d9f88c43bfa752b7e75b1168f75da85187b5d6d299e5",
+      "sha256": "b73e9f241618e90e6565d9f88c43bfa752b7e75b1168f75da85187b5d6d299e5",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "sha256": "bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "bytes": 44
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/be1082e74c2be59942b83edd5effb197a869cd39719acf4dcb9c574f7d5206c1",
+      "sha256": "be1082e74c2be59942b83edd5effb197a869cd39719acf4dcb9c574f7d5206c1",
+      "bytes": 1631
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/cb2ed03777e38fab630b8212c4f6cdcacbee134a1c298a8427094fa44d2668a7",
+      "sha256": "cb2ed03777e38fab630b8212c4f6cdcacbee134a1c298a8427094fa44d2668a7",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "sha256": "d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "sha256": "de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/f05564c7b0ca666addef18bef8c4d7b134ec60caa33232134a8f8716e6303824",
+      "sha256": "f05564c7b0ca666addef18bef8c4d7b134ec60caa33232134a8f8716e6303824",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/f36bcea84da70ce687581486218cd096ea7a765088c04c76e9af04bebbeafa32",
+      "sha256": "f36bcea84da70ce687581486218cd096ea7a765088c04c76e9af04bebbeafa32",
+      "bytes": 854
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/f8702d0614deb18148d57deaec70ede64d53b5d48d9c7f183ee15ee6e58ff8ce",
+      "sha256": "f8702d0614deb18148d57deaec70ede64d53b5d48d9c7f183ee15ee6e58ff8ce",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/artifacts/fe96740c49d3d5ecca767261395cc0c59ed5914037ca0f322ddc1414e3b46947",
+      "sha256": "fe96740c49d3d5ecca767261395cc0c59ed5914037ca0f322ddc1414e3b46947",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-old335-f1-control/fixture.json",
+      "sha256": "a2be4c0616be8e13e9374afc680d9d3083cf33b892c8379e4ed7dcbd4a55cb03",
+      "bytes": 3783
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "sha256": "084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "bytes": 30
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/093c812826d31a04b8ef58cd9925936f62a01953a9dadbd305fafb11c857b41b",
+      "sha256": "093c812826d31a04b8ef58cd9925936f62a01953a9dadbd305fafb11c857b41b",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "sha256": "19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "bytes": 63
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/1a3524b0983b7ff1021f06e195cf7abd0f1749b4feaa5a4d9c0fbd9a07ab0d22",
+      "sha256": "1a3524b0983b7ff1021f06e195cf7abd0f1749b4feaa5a4d9c0fbd9a07ab0d22",
+      "bytes": 1631
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/1b625c4736e4933789289574f041950f3c62488c289240a1a01713a157f3bb12",
+      "sha256": "1b625c4736e4933789289574f041950f3c62488c289240a1a01713a157f3bb12",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/1d9700a67988978b95d73d22528313970b7d49e4859d0b2b9772a83dd815e0d7",
+      "sha256": "1d9700a67988978b95d73d22528313970b7d49e4859d0b2b9772a83dd815e0d7",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "sha256": "1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "sha256": "225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "bytes": 22
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/2810d0c55620f5d9cf31eb1297355a496450a7819f8fe665cf32236a6bb3981d",
+      "sha256": "2810d0c55620f5d9cf31eb1297355a496450a7819f8fe665cf32236a6bb3981d",
+      "bytes": 863
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/30ee88530658be15f26ef8572864c3b0eee8add931ff10aa0ba11302c8b31b3c",
+      "sha256": "30ee88530658be15f26ef8572864c3b0eee8add931ff10aa0ba11302c8b31b3c",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/359cf67a428c59ae1a18100cdea3cea2e37cd1352317cad7755852cf2052a3d5",
+      "sha256": "359cf67a428c59ae1a18100cdea3cea2e37cd1352317cad7755852cf2052a3d5",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/433fdf5c916d564c606558605ca0ee8c5664571c886c77572ee3360e4bb8b579",
+      "sha256": "433fdf5c916d564c606558605ca0ee8c5664571c886c77572ee3360e4bb8b579",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "sha256": "5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/5ee8b1a06d066ff15feaef7459090e399641c27de7022db68ddc039234d485b3",
+      "sha256": "5ee8b1a06d066ff15feaef7459090e399641c27de7022db68ddc039234d485b3",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/61c906356b1c9bb3f127190a7ebac6367a2abce5009120d41dbe450435d1c405",
+      "sha256": "61c906356b1c9bb3f127190a7ebac6367a2abce5009120d41dbe450435d1c405",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/6223cac4ff0c730a73465a827bccb816e16603969b0df917f0c28250293db323",
+      "sha256": "6223cac4ff0c730a73465a827bccb816e16603969b0df917f0c28250293db323",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/62e1b2cf517d147531ee88843cce80df154d5b9271750b547e3e9ee41811d693",
+      "sha256": "62e1b2cf517d147531ee88843cce80df154d5b9271750b547e3e9ee41811d693",
+      "bytes": 3044
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "sha256": "62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/687af4402c4527b01956170c7c7e9e4d474d698505d2cf711866fd1da085ed4b",
+      "sha256": "687af4402c4527b01956170c7c7e9e4d474d698505d2cf711866fd1da085ed4b",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/6f0425fdc23d91197902a56cc75c982a8a9d53d215bf9994a7ca0f7f8efb2940",
+      "sha256": "6f0425fdc23d91197902a56cc75c982a8a9d53d215bf9994a7ca0f7f8efb2940",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "sha256": "713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/73009049bcba8990e748ecd88defd179b612897104b48e5b1e0732502fac625b",
+      "sha256": "73009049bcba8990e748ecd88defd179b612897104b48e5b1e0732502fac625b",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "sha256": "7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/7d9979513ce99c62a8de6075eac805a18d8158ba6acb62571981a555e4499cfd",
+      "sha256": "7d9979513ce99c62a8de6075eac805a18d8158ba6acb62571981a555e4499cfd",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "sha256": "987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "bytes": 6
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "sha256": "9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/a25ee8f3b08017490ce990551ea2b4fddf404e01cb4d628e47bf3fe99671a8cc",
+      "sha256": "a25ee8f3b08017490ce990551ea2b4fddf404e01cb4d628e47bf3fe99671a8cc",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "sha256": "aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "bytes": 32
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/b266f7220320aa19270210bb89f6812891535a59a9c47458ed98865ff6edc82e",
+      "sha256": "b266f7220320aa19270210bb89f6812891535a59a9c47458ed98865ff6edc82e",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "sha256": "b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/b5b76edc245ea91589b47569aac8386b4ff274ab28d00db1c81264551079d900",
+      "sha256": "b5b76edc245ea91589b47569aac8386b4ff274ab28d00db1c81264551079d900",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/b8d5fafe79c3f91f080932ab804506095e56c07a841ddb98ae1b24b7940debb6",
+      "sha256": "b8d5fafe79c3f91f080932ab804506095e56c07a841ddb98ae1b24b7940debb6",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "sha256": "bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "bytes": 44
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/be202cae5e808459b7acba14c6b97019991661001b3641973560a4bc74904e0c",
+      "sha256": "be202cae5e808459b7acba14c6b97019991661001b3641973560a4bc74904e0c",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/cabc17f0eb1f4826f3f2e305d879725915c8378b8e1048cf460aef95997a122b",
+      "sha256": "cabc17f0eb1f4826f3f2e305d879725915c8378b8e1048cf460aef95997a122b",
+      "bytes": 1167
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/cb662900bbefb4e8a0a91f4d5c8b764adb44a5fdeedd7ea9d423c2e3dc19a417",
+      "sha256": "cb662900bbefb4e8a0a91f4d5c8b764adb44a5fdeedd7ea9d423c2e3dc19a417",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/ce0d73690c84435c31dc2308a14938696ce094dbcc7c46b5ad51fd408d808ea9",
+      "sha256": "ce0d73690c84435c31dc2308a14938696ce094dbcc7c46b5ad51fd408d808ea9",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "sha256": "d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/db4e8a30c554fc531452de8ed1f14ab81eadebd6da3b094bc83778104b0d5d43",
+      "sha256": "db4e8a30c554fc531452de8ed1f14ab81eadebd6da3b094bc83778104b0d5d43",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "sha256": "de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/artifacts/f21e65f28b3af1095a53cfa22f1c8dfa0edd078b4d1cf16e29b8973a1b1a1fbd",
+      "sha256": "f21e65f28b3af1095a53cfa22f1c8dfa0edd078b4d1cf16e29b8973a1b1a1fbd",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-event/fixture.json",
+      "sha256": "09fcd7ec566e3849d0abe97b09c877fcad58736104b07969ffae1bc08ea4ff58",
+      "bytes": 5070
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "sha256": "084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "bytes": 30
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/136a388c1e61343e87799840116add48c590f250de7a974921b2d28eb863df4d",
+      "sha256": "136a388c1e61343e87799840116add48c590f250de7a974921b2d28eb863df4d",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/157c96ade708ebc8b7809a216786c22414dba7e57e02908f50fe40b8d72fb3ac",
+      "sha256": "157c96ade708ebc8b7809a216786c22414dba7e57e02908f50fe40b8d72fb3ac",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/19650550b63c35959dfca29e82cfbea824f1191777949f73182ec7e02eb7728c",
+      "sha256": "19650550b63c35959dfca29e82cfbea824f1191777949f73182ec7e02eb7728c",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "sha256": "19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "bytes": 63
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "sha256": "1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "sha256": "225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "bytes": 22
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/2932fb50de4969f96d273ec37a5d75008f1d053912cbb82dd2d73e30065ec808",
+      "sha256": "2932fb50de4969f96d273ec37a5d75008f1d053912cbb82dd2d73e30065ec808",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/3fecc98c5a29f9f184b51d328ff802bd008d725db92f08a28c7fffbb7d2ad447",
+      "sha256": "3fecc98c5a29f9f184b51d328ff802bd008d725db92f08a28c7fffbb7d2ad447",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/568a2cbb7f4c787e3e3558fcd0e90662633da86f3c864f592eff0e1918a25a76",
+      "sha256": "568a2cbb7f4c787e3e3558fcd0e90662633da86f3c864f592eff0e1918a25a76",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "sha256": "5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "sha256": "62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/62fb5bd18df3dfe67d9cf78fbed875f57e24bd0861b94767a30860e1c12dfe65",
+      "sha256": "62fb5bd18df3dfe67d9cf78fbed875f57e24bd0861b94767a30860e1c12dfe65",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/65307a7991eb7b1822e33b89767cd5f4a303fd4f122d01bf06bd9d22c305dd38",
+      "sha256": "65307a7991eb7b1822e33b89767cd5f4a303fd4f122d01bf06bd9d22c305dd38",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "sha256": "713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "sha256": "7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/8a9ba8650d9352df6b642f7f858adabb66ead1029e0ef921cd234adf10b58265",
+      "sha256": "8a9ba8650d9352df6b642f7f858adabb66ead1029e0ef921cd234adf10b58265",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/8e60f096b9f53faa34736fafbe8ac7fb647cf3f0efc8119e398bb723740eba9a",
+      "sha256": "8e60f096b9f53faa34736fafbe8ac7fb647cf3f0efc8119e398bb723740eba9a",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "sha256": "987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "bytes": 6
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/9b972c3742b9b2c174930eefa7ef1920f5eaaf25df72604d5d4154aadcb20032",
+      "sha256": "9b972c3742b9b2c174930eefa7ef1920f5eaaf25df72604d5d4154aadcb20032",
+      "bytes": 3044
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/9d6d1878f7f3bcc428a895e2f6bbc34eab7d25a1e29ea65b6f1deb93512c83be",
+      "sha256": "9d6d1878f7f3bcc428a895e2f6bbc34eab7d25a1e29ea65b6f1deb93512c83be",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "sha256": "9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/a4ee5be998a6cde42ae496595e99594445ff079193f0bc43bafa3900f7a031c6",
+      "sha256": "a4ee5be998a6cde42ae496595e99594445ff079193f0bc43bafa3900f7a031c6",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/aa875e748a3db48adbc998b6d7e139719225e657deef1fe9fbfdf64d31f8bd8f",
+      "sha256": "aa875e748a3db48adbc998b6d7e139719225e657deef1fe9fbfdf64d31f8bd8f",
+      "bytes": 863
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "sha256": "aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "bytes": 32
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/b161d3d882fe001b6a664cf33a03ddf86f0ebf1e326236c9e55df985501760a9",
+      "sha256": "b161d3d882fe001b6a664cf33a03ddf86f0ebf1e326236c9e55df985501760a9",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "sha256": "b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/b433d53a835491d2a5880c68ef901d066ef930434e41e27fc087f51087b86551",
+      "sha256": "b433d53a835491d2a5880c68ef901d066ef930434e41e27fc087f51087b86551",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/b80630267b7b9887fd902aee6f8c8d80c237056a85ec04b010da3810d2dd2016",
+      "sha256": "b80630267b7b9887fd902aee6f8c8d80c237056a85ec04b010da3810d2dd2016",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "sha256": "bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "bytes": 44
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/bc7771c4eed1c16725e6c3a4a44e1e0f51bd6e2a58c6d6f69dacb33dbf9bef01",
+      "sha256": "bc7771c4eed1c16725e6c3a4a44e1e0f51bd6e2a58c6d6f69dacb33dbf9bef01",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/c42326826feef42914383ea23e2e275fc064828fd50b1d9e4d9ca4e49d95f6fb",
+      "sha256": "c42326826feef42914383ea23e2e275fc064828fd50b1d9e4d9ca4e49d95f6fb",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/c6c8c5c2e7068416681c1e56a515e57c4c9d9d77f10f9e8aa505c2cae4252b6b",
+      "sha256": "c6c8c5c2e7068416681c1e56a515e57c4c9d9d77f10f9e8aa505c2cae4252b6b",
+      "bytes": 1631
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "sha256": "d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/d7959940e4790fdaeeda15846155b8a7ccf1ff889862aefcfc4dfdadf3140956",
+      "sha256": "d7959940e4790fdaeeda15846155b8a7ccf1ff889862aefcfc4dfdadf3140956",
+      "bytes": 1167
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/dbce53000cfb540fd53929568066b52921f252f73e964b509c669e7478f91714",
+      "sha256": "dbce53000cfb540fd53929568066b52921f252f73e964b509c669e7478f91714",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "sha256": "de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/e37588a39529bff8c5d3390801c110705e5062d10e441aa3c17db603e7668775",
+      "sha256": "e37588a39529bff8c5d3390801c110705e5062d10e441aa3c17db603e7668775",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/e4f6b0e624c1d20eedc0dcf323293f272547ef5813b54a84724dd0a4e0e6fe52",
+      "sha256": "e4f6b0e624c1d20eedc0dcf323293f272547ef5813b54a84724dd0a4e0e6fe52",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/f3104f2fb0bb8d9877e0390ae537323135bcbcb1081e7306011837b734680a33",
+      "sha256": "f3104f2fb0bb8d9877e0390ae537323135bcbcb1081e7306011837b734680a33",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/artifacts/fc4c60b38bbd7e6f50efae24c860306690304390b5ab19581c23a71f2772a9a2",
+      "sha256": "fc4c60b38bbd7e6f50efae24c860306690304390b5ab19581c23a71f2772a9a2",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-render/fixture.json",
+      "sha256": "15834f12776ae23e011755aee494707b53e8344b9a4e53b3e29fd69ee9204a76",
+      "bytes": 5071
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/037921c773b46e12ef5b11c0200fee9355b3856de636de27dc0a7edff5abb621",
+      "sha256": "037921c773b46e12ef5b11c0200fee9355b3856de636de27dc0a7edff5abb621",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "sha256": "084f3934ef1248c183e4581e3e5d2c58dded0cb7a6df0091d190ae593878f89f",
+      "bytes": 30
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/0b05edddb16a851917dddbe1a9e4dbb2047a8d96d155f3b004edcc44d8d0bb3d",
+      "sha256": "0b05edddb16a851917dddbe1a9e4dbb2047a8d96d155f3b004edcc44d8d0bb3d",
+      "bytes": 1167
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/0b9d7940fd843d9500d40318c6a02e750786e99011b126f8a5dce5ef093ba205",
+      "sha256": "0b9d7940fd843d9500d40318c6a02e750786e99011b126f8a5dce5ef093ba205",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/12fd00b02d28dc760c56bdbae8fc83e8d2ffece29245e7bdb95bf3a421680499",
+      "sha256": "12fd00b02d28dc760c56bdbae8fc83e8d2ffece29245e7bdb95bf3a421680499",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/1857632eb4dd7ee148bed6bf8e359db13a52ec83f9118cff90965bf0575c7e4c",
+      "sha256": "1857632eb4dd7ee148bed6bf8e359db13a52ec83f9118cff90965bf0575c7e4c",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "sha256": "19e5c8e31c73121435a50b90434c5bf566e8b556b47ca06cd3509f42322bce25",
+      "bytes": 63
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/1aaf212c2bbde7d301063e490e5f4eff19c0b5b3f8d3e4e672d813d521737922",
+      "sha256": "1aaf212c2bbde7d301063e490e5f4eff19c0b5b3f8d3e4e672d813d521737922",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "sha256": "1e797c48bf8046ea08d683cbb55b011d2ce6a62e15cc7b5d9f9a08ed6bea217b",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/2038c0ca062cefd156c81230d4e5f5cb462fd41aadf82f3b1f33c17ff3a4b451",
+      "sha256": "2038c0ca062cefd156c81230d4e5f5cb462fd41aadf82f3b1f33c17ff3a4b451",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "sha256": "225e58b4b81827b1c83364cf330e1646e25bf0f6a8afdd1231887bfc49bb4b94",
+      "bytes": 22
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/25090459b8aac30cdcb96fa68c4835de128b39de78e5b4308c2654b328e0e8a6",
+      "sha256": "25090459b8aac30cdcb96fa68c4835de128b39de78e5b4308c2654b328e0e8a6",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/3edb158f59a8f01843943e377b210eca3993e9f4b24433532e2e3535c0476248",
+      "sha256": "3edb158f59a8f01843943e377b210eca3993e9f4b24433532e2e3535c0476248",
+      "bytes": 3044
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/53a4cdb840646ed543963762200f2b6f2da6fe699c854906e1418e99155757f0",
+      "sha256": "53a4cdb840646ed543963762200f2b6f2da6fe699c854906e1418e99155757f0",
+      "bytes": 1631
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/5a29e6fdc76b49c2859b13aeeee31619b96505b2f181326a19c74b93c26461c1",
+      "sha256": "5a29e6fdc76b49c2859b13aeeee31619b96505b2f181326a19c74b93c26461c1",
+      "bytes": 863
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "sha256": "5a9fd216fd1270f63175e3b1364c9a4aeb942035443b5b1421f333087b1f54fa",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/5b75a9b19cd0a109ce549c67ba25a36594b781f4acaa075ad02f6751c48e872c",
+      "sha256": "5b75a9b19cd0a109ce549c67ba25a36594b781f4acaa075ad02f6751c48e872c",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/5e7405b0de0761f032955e3744026314b52174ce111d8a935e7497656b27083d",
+      "sha256": "5e7405b0de0761f032955e3744026314b52174ce111d8a935e7497656b27083d",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "sha256": "62f11d0a0db9bb8cc5a5dbb498b08e8dd4e096b6598e8e4d673c1e03df51b575",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/662e507dbe0ff98f6610bd2dc54fbf288d985216cc60d7cc22246db860f13fe7",
+      "sha256": "662e507dbe0ff98f6610bd2dc54fbf288d985216cc60d7cc22246db860f13fe7",
+      "bytes": 878
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/6d5c10f59ded6a2c45050e306bdb5785bba1b11b53d07100e529e5f0c8935901",
+      "sha256": "6d5c10f59ded6a2c45050e306bdb5785bba1b11b53d07100e529e5f0c8935901",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "sha256": "713335fdf8cdadf73c4ad6327313987b97a108692f6afbaf191d7b4f4816445b",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/788c8bd3c3313f3838b129a18481733e08bbb2b4791a04eb213f22a7f069ce2c",
+      "sha256": "788c8bd3c3313f3838b129a18481733e08bbb2b4791a04eb213f22a7f069ce2c",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "sha256": "7af0be0e1fbb0be3919f76921cdc768c56e2f0989883a45a41bfbe5cbef5a124",
+      "bytes": 39
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "sha256": "987bd105503547c685d5017d7f9484970cfc81753ed2b068d8c709c39f89fa3c",
+      "bytes": 6
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/9f0a72def789f3fbfbb8ee0def697e4c65c9a5f45d2639fe00e88dc18d449e9d",
+      "sha256": "9f0a72def789f3fbfbb8ee0def697e4c65c9a5f45d2639fe00e88dc18d449e9d",
+      "bytes": 6109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "sha256": "9fea86fe09dade75e32f5ce689ab25d189f38326eef30cb01bd0c186e4117e6c",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "sha256": "aaa1e00336d43f450acbc6330b94b0d5341194bad6814ee42d17f4a55a176cdb",
+      "bytes": 32
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "sha256": "b422be30670553994e4407a709401493524902628f87634501ee07dc0d364310",
+      "bytes": 40
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/b80882d3582b167a31929728795f9c0bebc87edbaf7e9424c4c2ab8b9c822458",
+      "sha256": "b80882d3582b167a31929728795f9c0bebc87edbaf7e9424c4c2ab8b9c822458",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "sha256": "bbb9178809c013d2f7033950ad0122ab1ba67e205ed86dc12481ccb2bd43930a",
+      "bytes": 44
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/c4daff78eacd5d3889fa64a0c1089885b1a3f41fbdd665efaa1efd9ea3ccb8a0",
+      "sha256": "c4daff78eacd5d3889fa64a0c1089885b1a3f41fbdd665efaa1efd9ea3ccb8a0",
+      "bytes": 2868
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/c844b6978aa905d989e6b2ce290ff468c58d0a4ce788a7b7f225301d3c87e45f",
+      "sha256": "c844b6978aa905d989e6b2ce290ff468c58d0a4ce788a7b7f225301d3c87e45f",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/cce4cefc90252f3507bece3b2b80abd46bd5abb8cbec726fa14c7daeda8881b8",
+      "sha256": "cce4cefc90252f3507bece3b2b80abd46bd5abb8cbec726fa14c7daeda8881b8",
+      "bytes": 5397
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "sha256": "d4c02c55e489cf2e359749f556ac988f1b3e157551239167b9392711f8433b26",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/db772b708806032dfc063bc35e98296c6372fa4cfe5abf0d1f8755376fb85d4d",
+      "sha256": "db772b708806032dfc063bc35e98296c6372fa4cfe5abf0d1f8755376fb85d4d",
+      "bytes": 394
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/dc0614b1025d04ce57742cb5fb2d6fceec5f10dbf291d9c44c683a22c8d29d3e",
+      "sha256": "dc0614b1025d04ce57742cb5fb2d6fceec5f10dbf291d9c44c683a22c8d29d3e",
+      "bytes": 2938
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "sha256": "de5172a4327f6f7f9480d7f2b6b79756368cdc2d000484bb32023fc2089fb896",
+      "bytes": 336
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/e2d5e1e7ceda4c890724b215df06735f9f805bf442314e0f64900f1a55f15629",
+      "sha256": "e2d5e1e7ceda4c890724b215df06735f9f805bf442314e0f64900f1a55f15629",
+      "bytes": 97
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/eb97d0796e9edc2900f71ca62c47f2039528330ccac36d37b1403b16e7476454",
+      "sha256": "eb97d0796e9edc2900f71ca62c47f2039528330ccac36d37b1403b16e7476454",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/artifacts/ffe44895bfa471d52529644dfd9ab6dfd0620d3fa8d556d332b579f530b7c520",
+      "sha256": "ffe44895bfa471d52529644dfd9ab6dfd0620d3fa8d556d332b579f530b7c520",
+      "bytes": 3097
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/fixture-wrong-source/fixture.json",
+      "sha256": "18048ae87bbd7b0d5d8e5914fb1463a6b42a433098cdc0cb391a484f4dfc6fab",
+      "bytes": 5071
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/post-run-integrity-20261012.json",
+      "sha256": "a27b88c31460d1eb3c7545926c84bec06f0b5d40103c6327c2972bd6f1d178f6",
+      "bytes": 3647
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/producer-attempt1-failed-20261012.log",
+      "sha256": "701d052fa480ba2843e3db5aa926b2d8792d7c8d42e8d39a2186c52646621166",
+      "bytes": 369
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/producer-attempt2-20261012.log",
+      "sha256": "3898eb351af98f20e756788bfbd75b524ba06bc49ffbe06c8b76ac8864142ad0",
+      "bytes": 238
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/producer-duplicate-session-20261012.log",
+      "sha256": "ea4bdddb247a1c9cd3755b77fadff5348be6a3c70e2c15c92b451a08963ae37d",
+      "bytes": 256
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/producer-duplicate-use-baseline-candidate-20261012.log",
+      "sha256": "534a3c75be296004c23071dc9b6da6525b6d797cc2fcca29d4c280bfeaf40419",
+      "bytes": 271
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/producer-duplicate-use-cross-pair-20261012.log",
+      "sha256": "6cd6dffb685c1d2fa4e59b428958ceb17ad904e5545100e46094e6e1ea096eb8",
+      "bytes": 263
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/producer-old335-f1-control-20261012.log",
+      "sha256": "badbfb2f6e9d99063e34c48d4c31106e2309c1c3eaa1504f81d71c370701a9d6",
+      "bytes": 256
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/producer-wrong-event-20261012.log",
+      "sha256": "543ed993ca3f37c48ca79151135c8fdd84e1ff72bb1216de77816ca456659a20",
+      "bytes": 250
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/producer-wrong-render-20261012.log",
+      "sha256": "97c6b1be928469d57afc15b8368f58943da84b036c5cdf93ef7813dc6cdcf72a",
+      "bytes": 251
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/producer-wrong-source-20261012.log",
+      "sha256": "0a06b1250110dcecefb2179112c69986fc8fd4eb23edeff2430e440be6789709",
+      "bytes": 251
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/reader-old335-20261012.log",
+      "sha256": "88dadc5119acc1d0869c15cfbb7822624449c041aeef05fd2f4439b871a746a6",
+      "bytes": 815
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/reader-old335-f1-control-20261012.log",
+      "sha256": "d2883115671869102287d55c50cd1ae292f285d5136ab7d71ffa8edffdd2e5a9",
+      "bytes": 1361
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/reader-staged336-20261012.log",
+      "sha256": "048b00fcde21843c7c130f0031b856906916d90a32995f9b5776257d69aa53c4",
+      "bytes": 3514
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/reader-staged336-f1-control-20261012.log",
+      "sha256": "12b2824358e7d6b7061575694590a098978c4fac8625f05b6bc3a07baa124564",
+      "bytes": 1509
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/run-commands-20261012.txt",
+      "sha256": "f1f205f5c98f396c5185064683c8ed07b7f18dcaf517eacdc10359a402ca4700",
+      "bytes": 1017
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/setup-producer-binding-addendum-20261012.json",
+      "sha256": "0e19a087131fa35867e9c671d940aa0bbbdc952cec913ea7353b99445fa87477",
+      "bytes": 2090
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/setup-report-20261012.json",
+      "sha256": "892744d52752c529e79c765a57cde9369696fbbf6231a042a26598260825d30c",
+      "bytes": 140840
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/stage-binding-attempt1-failed-20261012.log",
+      "sha256": "3aa757a42d2574bc59e3baae54747570d1cdd00b805d50030e2ecee96c160cab",
+      "bytes": 418
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-artifact-plane-regression-20261012/stage-binding-attempt2-20261012.json",
+      "sha256": "1f9d86a04a7a114554ef6f3223b92fab0bf073db2a184d8f7447167373a9b22e",
+      "bytes": 3956
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-cumulative-paid-budget-refresh-root-20261012.json",
+      "sha256": "c23595c5df65047af9b023ddfe9a635beed42a272d6b85f1b83f4360274abe52",
+      "bytes": 1560
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-independent-gate-audit-20261012-attempt3-addendum.json",
+      "sha256": "d5c8a336387030a20b1682a9d3a8eb4672c8490fc56bce7d81169578d70158a4",
+      "bytes": 16692
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-independent-gate-audit-20261012-v2-addendum.json",
+      "sha256": "8f5fd91a68472d6ad63007ab0eb3142ee987155f3e83ec88c80f7e0dc7f2b631",
+      "bytes": 3066
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-independent-gate-audit-20261012.json",
+      "sha256": "00c24f642ee4385a53a75ac0034210a80665343d42e221988fcd788646033dd9",
+      "bytes": 15169
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/context-addendum-exit.txt",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/context-addendum-provenance.json",
+      "sha256": "434c4d0d40e681dbda742dd140f94b643f2d94ea0941d66751b1bdce6807ed7a",
+      "bytes": 3276
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/context-addendum.json",
+      "sha256": "f698acd8eb590be65d19b5bb3adde0ec18cbfe0faf7c4c1389a48eea1facadd1",
+      "bytes": 1324
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/context-addendum.mjs",
+      "sha256": "2a5c2bf04a8a66be1a27f4e409d3002073817865c43d0f4777040c0e45dc2ad9",
+      "bytes": 4290
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/context-addendum.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/context-addendum.stdout.log",
+      "sha256": "68ad8d29639af0d478ddbfc7c6471472dbcba3ec0afa72a40a0f3d73e52f1451",
+      "bytes": 235
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/process-exit.txt",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/provenance.json",
+      "sha256": "28402850fe820fb6a50a38230815f14d31ac1c0795d73c78879f7541964c0d4b",
+      "bytes": 6027
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/reader.mjs",
+      "sha256": "dd1655375e026477101d001d47f54585c453580fe91be9d15fcb9f710b05b0dc",
+      "bytes": 10970
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/report.json",
+      "sha256": "932b6c8fcba9eb6463c4ba93e2cbd8b03d485ee3ff290415e0bdf75a6c1beb9d",
+      "bytes": 3080
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/runner.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-cas-diagnostic-20261012-attempt1/runner.stdout.log",
+      "sha256": "275ff4e16e12c29c952fb40dbe06a29a8dd27c3ac3a610a0f86573e797da5578",
+      "bytes": 184
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-home-cause-final-audit-20261012.json",
+      "sha256": "61486b9207fdd80ee393a1970386723c549d1df1345f41b66c0e62026fd63c1d",
+      "bytes": 6363
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-keychain-home-context-audit-20261012.json",
+      "sha256": "2fd12678a4a09315c8d1877fcf79207532f2008fe667c841675aa75ea47aee5f",
+      "bytes": 9525
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-native-launch-identity-root-20261012.json",
+      "sha256": "91e3a60d3bdf91bea55715d241957778fe389ee2c3e47087b00a9f00297349db",
+      "bytes": 2111
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-native-ready-readonly-api-root-20261012.json",
+      "sha256": "01a3efa94e65c7dd00b108e181f7f0e59f9dce798d5620d9ab580e3a7b5fa29f",
+      "bytes": 1129
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-phase75-input-recheck-root-20261012.json",
+      "sha256": "8a30001352de6385e8fbfa553e2bf311b4f9a60f08db75f870e795a221d40793",
+      "bytes": 24883
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-provider-credential-root-cause-audit-20261012.json",
+      "sha256": "d8d6d6d5a9c5c8f281a599850e6399eb3770182fa8f728dc78ba406dfbf5564b",
+      "bytes": 11522
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-provider-credential-root-cause-followup-20261012.json",
+      "sha256": "fbab7c70e69176d001d4f0161a29ab7dbcd90454c2d907816ae5944604d7c56d",
+      "bytes": 10676
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012-attempt1-exchange.py",
+      "sha256": "4a29137b8883f712013833427a0e43a6eaf7b292ced4720f7e9d7c47390dd54e",
+      "bytes": 6988
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012-attempt1-postcheck.json",
+      "sha256": "8d4bf26d43463bd049ef21e8725eedf49593da0d6e9d05019b00cf88ccba0c20",
+      "bytes": 2251
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012-attempt1-preflight.py",
+      "sha256": "28a743e512f0653b9ca1864ec0329b43a31d87f60a332a4effd4de67da122331",
+      "bytes": 6138
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012-attempt1.before.json",
+      "sha256": "960cce08e6682263df4ef4d2f754bef037ccec935d15940a59b84b84acf7c644",
+      "bytes": 4334
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012-attempt1.exchange.json",
+      "sha256": "55f3b38b519e44eccac3d8f2bd14feb0c5aceb3c8fbc44ffa413efce7e8fab0a",
+      "bytes": 2516
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012-attempt1.status.json",
+      "sha256": "29b504a6895cec1ab1a26139fc3b09daf38e31709f1d85116d42980416d0fbc0",
+      "bytes": 200
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012-attempt1.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012-attempt1.stdout.txt",
+      "sha256": "6d07377001f304e3d37813ed0a944ac8ea24b4fd190ddc8a59a951e25f11e412",
+      "bytes": 568
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012.preflight-attempt1.context.json",
+      "sha256": "2875a1d660e794f5f254b179ff655d3296828ad2906b0889b4c9e771f78acfe0",
+      "bytes": 912
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012.preflight-attempt1.tool-output.txt",
+      "sha256": "4e02c1270b29c0ed01210c03f62b7ee4c4bee5836ae67f00a71cac7d11313b56",
+      "bytes": 170
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012.preflight-attempt2.context.json",
+      "sha256": "20a2e7d3db43546f32353ba38b63cc5b948a4d1b39e33b4f6bde1e64d600edf7",
+      "bytes": 976
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-exchange-20261012.preflight-attempt2.tool-output.txt",
+      "sha256": "4f0323e515aa805c64787041f01511bca798c1e7a3693fa1ed4e98e9b6f14851",
+      "bytes": 244
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-prepared-20261012.assembly-attempt1-addendum.json",
+      "sha256": "f135a8ff9d0d07d44d96a03c885625757deedaeb87d449f29a747c5a74d90b74",
+      "bytes": 766
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-prepared-20261012.assembly-attempt1-context.json",
+      "sha256": "a83996a48f70e8054ca2c56e186cca8507ef388759b80a4f1dbf539f4da0cb01",
+      "bytes": 1499
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-prepared-20261012.assembly-attempt1.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-slot-prepared-20261012.assembly-attempt1.tool-output.txt",
+      "sha256": "ad587ee547ffb95cf1068ec1d81cd77517895031e313d70de344d253dbc37f6e",
+      "bytes": 186
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012-attempt3.json",
+      "sha256": "365d4869459e036d35d1d85672b9c33b64328382509137e38d5a0f954a16010b",
+      "bytes": 80343
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012-attempt3.json.after.app.manifest.jsonl",
+      "sha256": "14c59593925839f936abb4441f070d4c1d6587fd1777e9763e1d084beb418f3b",
+      "bytes": 4055529
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012-attempt3.json.after.runtime.manifest.jsonl",
+      "sha256": "2dbfac72b85cb57045007dc47d41cc534e0ba8e3e3ddbfe984681ce273c1f408",
+      "bytes": 3538768
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012-attempt3.json.after.ws-package.manifest.jsonl",
+      "sha256": "fcc4c0a65edc40eed53e6a2e3bf14376fd64d1c852ccd723c97eaf3466d70263",
+      "bytes": 2657
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012-attempt3.json.before.app.manifest.jsonl",
+      "sha256": "14c59593925839f936abb4441f070d4c1d6587fd1777e9763e1d084beb418f3b",
+      "bytes": 4055529
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012-attempt3.json.before.runtime.manifest.jsonl",
+      "sha256": "2dbfac72b85cb57045007dc47d41cc534e0ba8e3e3ddbfe984681ce273c1f408",
+      "bytes": 3538768
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012-attempt3.json.before.ws-package.manifest.jsonl",
+      "sha256": "fcc4c0a65edc40eed53e6a2e3bf14376fd64d1c852ccd723c97eaf3466d70263",
+      "bytes": 2657
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt1.command.json",
+      "sha256": "3dc8eaee6cbce5f68f98262325a07eda8fbea708f965f560ce56bccbac578ddb",
+      "bytes": 1296
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt1.driver-home-contents.txt",
+      "sha256": "a12ef821404fc82f5439b056210809626b0ab2ee31dbe8102744ee2a2572ee9b",
+      "bytes": 68
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt1.status",
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt1.stderr.log",
+      "sha256": "3fce42125c54ce0e4a25113ea94324f6d9bc2c1dc78f8fe9ab1c3a9727ed08f7",
+      "bytes": 87
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt1.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt1.wrapper-note.txt",
+      "sha256": "89904bbc48b6c01ecf4683a7b3e4cd7176ed14c29d1191b8065bccc5fc4457a2",
+      "bytes": 1047
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.cleanup-note.txt",
+      "sha256": "fb501d8f09c57e253ca7c1f016e2ad5e3c465702fde34f7c236ab99b725b8b00",
+      "bytes": 62
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.command.json",
+      "sha256": "b05a05faa9ff5e33998065faa40348de2887d9ff0b344b008d8d01893de7a501",
+      "bytes": 1504
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.driver.zsh",
+      "sha256": "1c7508de91011b04fa7e1c16b371305f42a094c8b1aae8e339743a7dbf924ec7",
+      "bytes": 6618
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.exec-session.json",
+      "sha256": "29d723ddf8ea183ed4cf1f69866b1854a3255ad8a0df12d95586d6873ac17a5e",
+      "bytes": 178
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.keychain-aftertest.status",
+      "sha256": "b1ce0aa6fdf3cf349d773243dab9fbbe09d30619f38b0c1e8977e28c4f0bc495",
+      "bytes": 3
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.keychain-aftertest.stderr.log",
+      "sha256": "e40a1fe7d9847086f46c8b7c70cdb52dfd92b292f0e8a4a08ad38053c31dc091",
+      "bytes": 92
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.keychain-aftertest.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.keychain-commands.txt",
+      "sha256": "588b16a53774353d1e7016196a91d198cea85818d0f9811ca78ac58a7a0a5081",
+      "bytes": 241
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.listener-final.status",
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.listener-final.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.listener-final.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.outer-log-cleanup.command.txt",
+      "sha256": "f0b36764caa3502639c50c357b3308d743791d74604d23527be981325a491c33",
+      "bytes": 86
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.outer-log-cleanup.status",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.outer-log-cleanup.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.outer-log-cleanup.stdout.log",
+      "sha256": "a76a184b125a0e9d39eb064697a99ef2c8efd06925f4dfa36e26f877f2b7e39b",
+      "bytes": 62
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.process-final.command.txt",
+      "sha256": "c49305d03c8edb00fdc07dfe46e9a1e899a315d5093e40c93c5ec30e789b1f6c",
+      "bytes": 85
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.process-final.status",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.process-final.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.process-final.stdout.log",
+      "sha256": "c60817998fa955bd104b9c1f84ff5084e6de338a1b31f13cec92b573b4e14eb6",
+      "bytes": 485
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.process-handle.txt",
+      "sha256": "d84639845f3dcb464be8583195d66c2bbfcb332a6d938a0bdeb728234ad934e7",
+      "bytes": 10
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.protected-after.json",
+      "sha256": "8fab39b772809a4410b807873683cc5cb871f551707a60fa5c492e58fe7f683c",
+      "bytes": 1471
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.protected-before.json",
+      "sha256": "e19f5b8d13a11e8fb547e61372d61e4fc6476f06758b76866640e8b2c9801ae9",
+      "bytes": 1471
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.status",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.stdout.log",
+      "sha256": "322f42bcc98f4c9c8f5e24b11ce4f36137b45fe51c7e76ab7014970b0239e85b",
+      "bytes": 42
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.test-scope.json",
+      "sha256": "6479f213182ed8ec7e656a75b388f8a5033f749f85030c27575aa81b957d7a54",
+      "bytes": 692
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.tmp-before-cleanup.txt",
+      "sha256": "3fe5dfc8e80e2ec7182bb2ec06f09a36abdcd213caa20dc8503eacfe4660fd1a",
+      "bytes": 431
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.tmp-cleanup.command.txt",
+      "sha256": "fe900ea708ca9aed4404e83fc12dafb48c8caa096aa21972fa1aa63de5437a16",
+      "bytes": 111
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.tmp-cleanup.status",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.tmp-cleanup.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.tmp-cleanup.stdout.log",
+      "sha256": "8b35144c30d4a4debd7e6c264aad6c2c337baa3cbbf1204ed756766856edf118",
+      "bytes": 54
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.wrapper.status",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.wrapper.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.attempt3.wrapper.stdout.log",
+      "sha256": "7ed39f7a2f7a5ce4740f5ea02ad6bbb62e3383ac473c95efb261aa25001dcf0a",
+      "bytes": 406
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.json",
+      "sha256": "af927ccbb5d4d42263259c778f5416386f18e0564689dfd7a06c642893923a97",
+      "bytes": 21245
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.json.after.app.manifest.jsonl",
+      "sha256": "14c59593925839f936abb4441f070d4c1d6587fd1777e9763e1d084beb418f3b",
+      "bytes": 4055529
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.json.after.runtime.manifest.jsonl",
+      "sha256": "2dbfac72b85cb57045007dc47d41cc534e0ba8e3e3ddbfe984681ce273c1f408",
+      "bytes": 3538768
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.json.after.ws-package.manifest.jsonl",
+      "sha256": "fcc4c0a65edc40eed53e6a2e3bf14376fd64d1c852ccd723c97eaf3466d70263",
+      "bytes": 2657
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.json.before.app.manifest.jsonl",
+      "sha256": "14c59593925839f936abb4441f070d4c1d6587fd1777e9763e1d084beb418f3b",
+      "bytes": 4055529
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.json.before.runtime.manifest.jsonl",
+      "sha256": "2dbfac72b85cb57045007dc47d41cc534e0ba8e3e3ddbfe984681ce273c1f408",
+      "bytes": 3538768
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-staged-install-e2e-20261012.json.before.ws-package.manifest.jsonl",
+      "sha256": "fcc4c0a65edc40eed53e6a2e3bf14376fd64d1c852ccd723c97eaf3466d70263",
+      "bytes": 2657
+    },
+    {
+      "path": "/Users/hui/ark-test/staging-candidate-v336-20261012/build-report.json",
+      "sha256": "19cbaccd8b5a61ac10b5abe3cdf3d21e82d126fe7c509c6689edc74e09c9730f",
+      "bytes": 2274
+    },
+    {
+      "path": "/Users/hui/ark-test/staging-candidate-v336-20261012/commands.json",
+      "sha256": "c5bf33061250fb0a8bef0c452f0a4ed3325ead15dddebe3ec741d3b6eadd1b0b",
+      "bytes": 962
+    },
+    {
+      "path": "/Users/hui/ark-test/staging-candidate-v336-20261012/logs/build-app.log",
+      "sha256": "26cd32e156235dd0122c3db1465c47e66493660679ccfd20904daec4354204ac",
+      "bytes": 5750
+    },
+    {
+      "path": "/Users/hui/ark-test/staging-candidate-v336-20261012/logs/runtime-pack.log",
+      "sha256": "64f9de94d5908fbefa085631c01e84250227d848a3acde8ff1f71278732c2f2c",
+      "bytes": 122
+    },
+    {
+      "path": "/Users/hui/ark-test/staging-candidate-v336-20261012/provenance.json",
+      "sha256": "0b9b612106450f5b48a8c50d58d270e003b9d407580a6d842168dea12dd1fbf1",
+      "bytes": 16072561
+    },
+    {
+      "path": "/Users/hui/ark-test/staging-candidate-v336-20261012/source-snapshot-manifest.json",
+      "sha256": "8c06afbf52879ac04abe7688c75911bb87feda9e5efbde02902023e40038ea8b",
+      "bytes": 2545
+    },
+    {
+      "path": "/private/tmp/ark-candidate336-runtime-pack-20261012/closure-plan.json",
+      "sha256": "e5c86745d94cb1d722fa2f9e7a3269cfddc383d97cd82fc197166f88ad3b7245",
+      "bytes": 5009131
+    },
+    {
+      "path": "/private/tmp/ark-candidate336-runtime-pack-20261012/installed-runtime-manifest.json",
+      "sha256": "43e42bf8c683ce83e9273085b6d4407335c37c2c70327e5c02698fce8c353e77",
+      "bytes": 3837704
+    },
+    {
+      "path": "/private/tmp/ark-candidate336-runtime-pack-20261012/pack-receipt.json",
+      "sha256": "bdb4bde28b11e05c655462e65a10a3972cacc9e9e9f8f3aed36f42f2ff9b8b00",
+      "bytes": 1684
+    },
+    {
+      "path": "/private/tmp/ark-candidate336-runtime-pack-20261012/package-index.json",
+      "sha256": "235a36bb0234e6e1c6fcb2b402daec73a5021c596656f000dab1e75bbc65e970",
+      "bytes": 1805326
+    }
+  ],
+  "remainingGates": [
+    "Real protected verifier/key/program/manifest/evidence ownership and unauthorized signing refusals; source/test approval does not deploy authority.",
+    "Authenticated dispatch and unchanged-task baseline/candidate fresh-session pairs with independent costs and full reuse/utility/false-recall/leakage metrics.",
+    "Original first-command stability (prior3/4 failures) and factual whole-report contradiction; real correction/reuse not rerun.",
+    "Native delegated child settlement/summary, complete UI parity, real platforms and recovery/rollback gates beyond scoped controls.",
+    "Current source-bound GitHub CI, security/source-history/high-riskUNKNOWN and all original Phase6 gates.",
+    "Rust15 differential score mismatches and preregistered three-way end-to-end performance evidence; RETAIN_TS.",
+    "Unknown first synthetic test service cleanup and pre-swap procedure limitations retained."
+  ],
+  "rustDecision": "RETAIN_TS; shadow inactive; no migration/promotion",
+  "githubPublished": false,
+  "formalPromotion": false,
+  "fullGoalAcceptance": "UNKNOWN",
+  "goalTurnClassification": "progress",
+  "supersedesWithPreservedOriginal": {
+    "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate336-installed-reader-and-home-diagnostic-result-20261012.json",
+    "sha256": "95c1d5317426362456bbf91a6b08756e4c51e3da895e2eb4a7c9710f68700004",
+    "reason": "Independent final review clarifies the existing before-exchange same-filesystem check and distinguishes nonexclusive original receipt creation from unproved initial mode. No product, test outcome, threshold, goal or permission change."
+  }
+}

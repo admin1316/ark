@@ -468,15 +468,15 @@ public actor ArkEventPump {
   ) throws {
     switch method {
     case "session/subscribed":
-      guard safeInteger(payload["lastSeq"], minimum: -1) != nil else {
+      guard payload["lastSeq"]?.jsonSafeInteger(minimum: -1) != nil else {
         throw ArkEventPumpError.invalidSequence(method: method)
       }
     case "session/event":
-      guard safeInteger(payload["event"]?["seq"], minimum: 0) != nil else {
+      guard payload["event"]?["seq"]?.jsonSafeInteger() != nil else {
         throw ArkEventPumpError.invalidSequence(method: method)
       }
     case "session/projection":
-      guard safeInteger(payload["seq"], minimum: 0) != nil else {
+      guard payload["seq"]?.jsonSafeInteger() != nil else {
         throw ArkEventPumpError.invalidSequence(method: method)
       }
     case "stream/baseline":
@@ -505,18 +505,6 @@ public actor ArkEventPump {
     default:
       break
     }
-  }
-
-  private static func safeInteger(_ value: JSONValue?, minimum: Int) -> Int? {
-    guard let number = value?.numberValue,
-          number.isFinite,
-          number.rounded(.towardZero) == number,
-          abs(number) <= 9_007_199_254_740_991,
-          number >= Double(minimum),
-          number >= Double(Int.min),
-          number <= Double(Int.max)
-    else { return nil }
-    return Int(number)
   }
 
   private static func reconnectDelayNanoseconds(attempt: Int) -> UInt64 {

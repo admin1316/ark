@@ -546,31 +546,17 @@ public struct ArkRootView: View {
 
   private var workbenchRoot: WorkbenchRootSelection? {
     if let workspace = model.selectedWorkspace,
-       JiuzhangShellContract.protectedWorkspaceReason(path: workspace.path) == nil {
-      return WorkbenchRootSelection(
-        url: URL(fileURLWithPath: workspace.path, isDirectory: true),
-        title: workspace.title
-      )
+       let selection = WorkbenchRootSelection(path: workspace.path, title: workspace.title) {
+      return selection
     }
-    if let path = model.selectedSession?.cwd,
-       JiuzhangShellContract.protectedWorkspaceReason(path: path) == nil {
-      let url = URL(fileURLWithPath: path, isDirectory: true)
-      return WorkbenchRootSelection(
-        url: url,
-        title: url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
-      )
-    }
-    return nil
+    guard let path = model.selectedSession?.cwd else { return nil }
+    return WorkbenchRootSelection(path: path)
   }
 
   private var toolFileWorkbenchRoot: WorkbenchRootSelection? {
     if let path = model.selectedSession?.cwd,
-       JiuzhangShellContract.protectedWorkspaceReason(path: path) == nil {
-      let url = URL(fileURLWithPath: path, isDirectory: true)
-      return WorkbenchRootSelection(
-        url: url,
-        title: url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
-      )
+       let selection = WorkbenchRootSelection(path: path) {
+      return selection
     }
     return workbenchRoot
   }
@@ -777,6 +763,17 @@ final class WindowDragSurfaceView: NSView {
 private struct WorkbenchRootSelection {
   let url: URL
   let title: String
+
+  init(url: URL, title: String) {
+    self.url = url
+    self.title = title
+  }
+
+  init?(path: String, title: String? = nil) {
+    guard JiuzhangShellContract.protectedWorkspaceReason(path: path) == nil else { return nil }
+    let url = URL(fileURLWithPath: path, isDirectory: true)
+    self.init(url: url, title: title ?? (url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent))
+  }
 }
 
 enum ArkWorkbenchRootRequestDecision: Equatable {
@@ -3570,10 +3567,27 @@ private struct NativeChatProcess: Identifiable, Equatable {
   let anchorEntryID: String
   let hiddenEntryIDs: Set<String>
   let detailEntries: [NativeChatEntry]
-  let reasoningText: String?
   let messageCount: Int
   let toolCallCount: Int
   let subagentCount: Int
+
+  init(turn: Int, generation: String, anchorEntryID: String, processEntries: [NativeChatEntry]) {
+    self.turn = turn
+    self.generation = generation
+    self.anchorEntryID = anchorEntryID
+    hiddenEntryIDs = Set(processEntries.map(\.id))
+    // Assistant narration stays in the durable trajectory, while disclosure shows observable work.
+    detailEntries = processEntries.filter { !$0.isAssistantMessage }
+    messageCount = processEntries.reduce(into: 0) { result, entry in
+      if entry.isAssistantMessage { result += 1 }
+    }
+    toolCallCount = processEntries.reduce(into: 0) { result, entry in
+      if entry.isToolEntry { result += entry.toolCount }
+    }
+    subagentCount = processEntries.reduce(into: 0) { result, entry in
+      if entry.isSubagentEntry { result += entry.toolCount }
+    }
+  }
 
   var id: String { "turn-process-\(generation)" }
 }
@@ -3846,30 +3860,37 @@ private struct NativeChatView: View {
         let processEntries = (entriesByTurn[turn] ?? []).filter {
           $0.sequence < answer.sequence && $0.isProcessDetail
         }
-        let reasoningText = answer.assistantReasoning
-        guard !processEntries.isEmpty || reasoningText != nil else { continue }
+        guard !processEntries.isEmpty else { continue }
         let anchorEntryID = processEntries.first?.id ?? answer.id
-        let hiddenIDs = Set(processEntries.map(\.id))
-        let messageCount = processEntries.reduce(into: 0) { result, entry in
-          if entry.isAssistantMessage { result += 1 }
-        }
-        let toolCallCount = processEntries.reduce(into: 0) { result, entry in
-          if entry.isToolEntry { result += entry.toolCount }
-        }
-        let subagentCount = processEntries.reduce(into: 0) { result, entry in
-          if entry.isSubagentEntry { result += entry.toolCount }
-        }
         processByTurn[turn] = NativeChatProcess(
           turn: turn,
           generation: "\(turn)|\(answerID)",
           anchorEntryID: anchorEntryID,
-          hiddenEntryIDs: hiddenIDs,
-          detailEntries: processEntries,
-          reasoningText: reasoningText,
-          messageCount: messageCount,
-          toolCallCount: toolCallCount,
-          subagentCount: subagentCount
+          processEntries: processEntries
         )
+      }
+
+      if context.sessionRunning,
+         let turn = context.latestStartedTurn,
+         !context.completedTurns.contains(turn)
+      {
+        let turnEntries = entriesByTurn[turn] ?? []
+        let workEntries = turnEntries.filter(\.isProcessWork)
+        let hiddenAssistantSequences = ArkChatLiveProcessProjection.hiddenAssistantSequences(
+          turnEntries.filter(\.isAssistantMessage).map(\.sequence),
+          beforeWorkSequences: workEntries.map(\.sequence)
+        )
+        let processEntries = turnEntries.filter {
+          $0.isProcessWork || hiddenAssistantSequences.contains($0.sequence)
+        }
+        if let anchor = processEntries.first {
+          processByTurn[turn] = NativeChatProcess(
+            turn: turn,
+            generation: "\(context.sessionID ?? "live")|\(turn)|active",
+            anchorEntryID: anchor.id,
+            processEntries: processEntries
+          )
+        }
       }
     }
 
@@ -5053,14 +5074,6 @@ private struct NativeTurnProcessRow<Content: View>: View {
         Spacer(minLength: 4)
       }
 
-      if let reasoning = process.reasoningText {
-        Text(reasoning)
-          .font(.system(size: max(11, fontSize - 3)))
-          .foregroundStyle(ArkPalette.secondary)
-          .lineLimit(expanded ? nil : 4)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-
       if expanded, !process.detailEntries.isEmpty {
         Divider().overlay(ArkPalette.border)
         VStack(alignment: .leading, spacing: ChatLayoutMetrics.entrySpacing) {
@@ -5068,27 +5081,29 @@ private struct NativeTurnProcessRow<Content: View>: View {
         }
       }
 
-      Button(action: toggle) {
-        HStack(spacing: 5) {
-          Text(ArkL10n.text(
-            expanded ? .chatTurnProcessShowLess : .chatTurnProcessShowMore,
-            language
-          ))
-          Image(systemName: expanded ? "chevron.up" : "chevron.down")
-            .font(.system(size: 8, weight: .semibold))
+      if !process.detailEntries.isEmpty {
+        Button(action: toggle) {
+          HStack(spacing: 5) {
+            Text(ArkL10n.text(
+              expanded ? .chatTurnProcessShowLess : .chatTurnProcessShowMore,
+              language
+            ))
+            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+              .font(.system(size: 8, weight: .semibold))
+          }
+          .font(.system(size: max(10, fontSize - 5), weight: .medium))
+          .foregroundStyle(ArkPalette.secondary)
+          .frame(minHeight: 24)
+          .contentShape(Rectangle())
         }
-        .font(.system(size: max(10, fontSize - 5), weight: .medium))
-        .foregroundStyle(ArkPalette.secondary)
-        .frame(minHeight: 24)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        .accessibilityLabel(ArkL10n.text(
+          expanded ? .chatTurnProcessCollapse : .chatTurnProcessExpand,
+          language
+        ))
+        .accessibilityHint(processSummary)
+        .accessibilityIdentifier("ark.chat.turn-process.toggle.\(process.turn)")
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel(ArkL10n.text(
-        expanded ? .chatTurnProcessCollapse : .chatTurnProcessExpand,
-        language
-      ))
-      .accessibilityHint(processSummary)
-      .accessibilityIdentifier("ark.chat.turn-process.toggle.\(process.turn)")
     }
     .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -6043,6 +6058,20 @@ enum ArkChatOrderedMerge {
   }
 }
 
+enum ArkChatLiveProcessProjection {
+  /// Assistant narration stays in the conversation until later observable
+  /// work arrives in the same turn; only then is it grouped into the process
+  /// disclosure. Narration after the latest work remains visible as streaming
+  /// output.
+  static func hiddenAssistantSequences(
+    _ assistantSequences: [Int],
+    beforeWorkSequences: [Int]
+  ) -> [Int] {
+    guard let latestWorkSequence = beforeWorkSequences.max() else { return [] }
+    return assistantSequences.filter { $0 < latestWorkSequence }
+  }
+}
+
 private enum NativeChatEntry: Identifiable, Equatable {
   case message(ArkMessage, producedFiles: [ArkProducedFile])
   case tool(ArkToolActivity)
@@ -6117,8 +6146,8 @@ private enum NativeChatEntry: Identifiable, Equatable {
     }
   }
 
-  /// Rows hidden by the completed-turn process disclosure. Errors, stopped
-  /// states, user/system messages, and the final answer remain independent.
+  /// Rows grouped into a process disclosure. Errors, stopped states, user/system
+  /// messages, and the final answer remain independent.
   var isProcessDetail: Bool {
     switch self {
     case .message:
@@ -6127,6 +6156,19 @@ private enum NativeChatEntry: Identifiable, Equatable {
       return true
     case .status(let status):
       guard status.turn != nil else { return false }
+      switch status.kind {
+      case .command, .retry, .compaction, .context: return true
+      case .warning, .error, .stopped: return false
+      }
+    }
+  }
+
+  /// Observable work that can establish an in-progress process disclosure.
+  var isProcessWork: Bool {
+    switch self {
+    case .message: return false
+    case .tool, .subagent: return true
+    case .status(let status):
       switch status.kind {
       case .command, .retry, .compaction, .context: return true
       case .warning, .error, .stopped: return false
@@ -6752,8 +6794,8 @@ private struct NativeToolRow: View {
       case .questions: return ArkL10n.text(.toolQuestionFallback, language)
       }
     }
-    return presentationTitle(activity.resultView)
-      ?? presentationTitle(activity.callView)
+    return activity.resultView?.title
+      ?? activity.callView?.title
       ?? activity.name
   }
 
@@ -6803,18 +6845,6 @@ private struct NativeToolRow: View {
   private var terminalResult: ArkTerminalPresentation? {
     guard case .terminal(let card) = activity.resultView else { return nil }
     return card
-  }
-
-  private func presentationTitle(_ presentation: ArkToolPresentation?) -> String? {
-    switch presentation {
-    case .generic(let card): return card.title
-    case .terminal(let card): return card.title
-    case .diff(let card): return card.title
-    case .search(let card): return card.title
-    case .read(let card): return card.title
-    case .web(let card): return card.title
-    case nil: return nil
-    }
   }
 
   private func presentationSummary(_ presentation: ArkToolPresentation?) -> String? {
@@ -6994,6 +7024,10 @@ private struct NativeComposer: View {
         NativeSettingsNotice(text: error, color: .red, icon: "exclamationmark.triangle.fill")
           .accessibilityIdentifier("ark.composer.error")
           .padding(.horizontal, 8)
+      }
+      if let trial = model.selectedProtectedTrial {
+        NativePlanReviewPanel(model: model, protectedTrial: trial)
+          .id(trial.descriptorHash)
       }
       if let interaction = model.selectedPendingInteraction {
         switch interaction {
@@ -7682,69 +7716,100 @@ private struct NativeApprovalPanel: View {
   }
 }
 
-private struct NativePlanReviewPanel: View {
+struct NativePlanReviewPanel: View {
   @ObservedObject var model: ArkAppModel
-  let request: ArkQuestionRequest
-  let review: ArkPlanReview
-  private var busy: Bool { model.interactionIsResponding(request.id) }
+  private let request: ArkQuestionRequest?
+  private let review: ArkPlanReview?
+  private let protectedTrial: ArkProtectedTrialDescriptor?
   private var language: ArkLanguagePreference { model.languagePreference }
+  private var busy: Bool { request.map { model.interactionIsResponding($0.id) } ?? model.protectedTrialActionPending }
+  private var title: String { review?.question ?? (language.rawValue == "zh" ? "确认有限知识试验" : "Review a limited knowledge trial") }
+
+  init(model: ArkAppModel, request: ArkQuestionRequest, review: ArkPlanReview) {
+    self.model = model; self.request = request; self.review = review; self.protectedTrial = nil
+  }
+  init(model: ArkAppModel, protectedTrial: ArkProtectedTrialDescriptor) {
+    self.model = model; self.request = nil; self.review = nil; self.protectedTrial = protectedTrial
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 8) {
-        NativeSessionStatusLight(state: .needsDecision, language: language)
-          .frame(width: 8, height: 8)
+        NativeSessionStatusLight(state: .needsDecision, language: language).frame(width: 8, height: 8)
         Label(ArkL10n.text(.planReviewHeader, language), systemImage: "doc.text.magnifyingglass")
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(Color.orange)
+          .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.orange)
         Spacer()
         if busy { ProgressView().controlSize(.small) }
       }
-      Text(review.question)
-        .font(.system(size: 13, weight: .semibold))
+      Text(title).font(.system(size: 13, weight: .semibold))
       ScrollView {
-        NativeMarkdownText(text: review.plan)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .textSelection(.enabled)
+        if let trial = protectedTrial {
+          VStack(alignment: .leading, spacing: 6) {
+            Text(language.rawValue == "zh" ? "此摘要由受保护验证器读取已签名登记与冻结文件后生成。确认仅适用于下列有限会话。" : "The protected evaluator reconstructed this summary from signed registration and frozen files. Confirmation applies only to these sessions.")
+            descriptorRow("Project", trial.projectRoot)
+            descriptorRow("Grant", trial.grantHash)
+            descriptorRow("Preregistration", trial.preRegistrationHash)
+            descriptorRow("Candidate", trial.candidateHash)
+            descriptorRow("Source", trial.sourceBindingHash)
+            descriptorRow("Build", trial.buildIdentity)
+            descriptorRow("Profile", trial.profileIdentity)
+            descriptorRow("Sessions", trial.sessionIDs.joined(separator: ", "))
+            descriptorRow("Oracles", trial.fixedOracleIDs.joined(separator: ", "))
+            descriptorRow("Expires", trial.expiresAt)
+            if let live = trial.liveCostAdmission {
+              descriptorRow("Cost admission", live.admissionHash)
+              descriptorRow("Budget ledger", live.ledgerArtifactHash)
+            }
+            descriptorRow("Limits", trial.operationLimits.keys.sorted().map { "\($0): \(trial.operationLimits[$0] ?? 0)" }.joined(separator: ", "))
+          }
+          .font(.system(size: 12)).textSelection(.enabled)
+          .accessibilityIdentifier("ark.interaction.plan-review.protected-summary")
+        } else if let review {
+          NativeMarkdownText(text: review.plan).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+        }
       }
-      .frame(maxHeight: 280)
-      .padding(10)
+      .frame(maxHeight: 280).padding(10)
       .background(ArkPalette.raised, in: RoundedRectangle(cornerRadius: 9))
       HStack(spacing: 8) {
-        Button(ArkL10n.text(.planReviewDiscuss, language)) {
-          model.cancelQuestions(request)
-        }
-        .disabled(busy)
-        .accessibilityIdentifier("ark.interaction.plan-review.discuss")
-        Spacer()
-        if let decline = review.decline {
-          Button(ArkL10n.text(.planReviewDecline, language)) {
-            answer(decline)
+        if let trial = protectedTrial {
+          Button(language.rawValue == "zh" ? "撤销试验" : "Revoke trial") { model.revokeProtectedTrial(trial) }
+            .disabled(busy).accessibilityIdentifier("ark.interaction.plan-review.protected-revoke")
+          Spacer()
+          if model.admittedProtectedTrialIDs.contains(trial.id) {
+            Label(language.rawValue == "zh" ? "本次有限试验已确认" : "Limited trial admitted", systemImage: "checkmark.shield")
+          } else {
+            Button(ArkL10n.text(.planReviewApprove, language)) { model.admitAndAnswerProtectedTrial(trial) }
+              .buttonStyle(.borderedProminent).disabled(busy)
+              .accessibilityIdentifier("ark.interaction.plan-review.protected-admit")
           }
-          .disabled(busy)
-          .help(decline.description ?? decline.label)
-          .accessibilityIdentifier("ark.interaction.plan-review.decline")
+        } else if let request, let review {
+          Button(ArkL10n.text(.planReviewDiscuss, language)) { model.cancelQuestions(request) }
+            .disabled(busy).accessibilityIdentifier("ark.interaction.plan-review.discuss")
+          Spacer()
+          if let decline = review.decline {
+            Button(ArkL10n.text(.planReviewDecline, language)) { answer(decline, request: request, review: review) }
+              .disabled(busy).help(decline.description ?? decline.label)
+              .accessibilityIdentifier("ark.interaction.plan-review.decline")
+          }
+          Button(ArkL10n.text(.planReviewApprove, language)) { answer(review.approve, request: request, review: review) }
+            .buttonStyle(.borderedProminent).disabled(busy).help(review.approve.description ?? review.approve.label)
+            .accessibilityIdentifier("ark.interaction.plan-review.approve")
         }
-        Button(ArkL10n.text(.planReviewApprove, language)) {
-          answer(review.approve)
-        }
-        .buttonStyle(.borderedProminent)
-        .disabled(busy)
-        .help(review.approve.description ?? review.approve.label)
-        .accessibilityIdentifier("ark.interaction.plan-review.approve")
       }
     }
-    .padding(14)
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel(review.question)
+    .padding(14).accessibilityElement(children: .contain).accessibilityLabel(title)
     .accessibilityIdentifier("ark.interaction.plan-review")
   }
 
-  private func answer(_ option: ArkQuestionOption) {
-    model.answerQuestions(
-      request,
-      answers: [ArkQuestionAnswer(id: review.questionID, selected: [option.label])]
-    )
+  private func descriptorRow(_ label: String, _ value: String) -> some View {
+    HStack(alignment: .top) {
+      Text(label).fontWeight(.semibold).frame(width: 100, alignment: .leading)
+      Text(value).frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
+  private func answer(_ option: ArkQuestionOption, request: ArkQuestionRequest, review: ArkPlanReview) {
+    model.answerQuestions(request, answers: [ArkQuestionAnswer(id: review.questionID, selected: [option.label])])
   }
 }
 

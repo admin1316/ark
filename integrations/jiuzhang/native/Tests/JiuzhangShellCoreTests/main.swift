@@ -4,6 +4,18 @@ import AppKit
 import JiuzhangShellCore
 import JiuzhangShellUI
 
+if let index = CommandLine.arguments.firstIndex(of: "--protected-review-probe"), CommandLine.arguments.indices.contains(index + 1) {
+  Darwin.exit(runArkProtectedReviewProbe(output: URL(fileURLWithPath: CommandLine.arguments[index + 1])))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--protected-xpc-probe"), CommandLine.arguments.indices.contains(index + 1) {
+  Darwin.exit(await runArkProtectedXPCProbe(expectedService: URL(fileURLWithPath: CommandLine.arguments[index + 1])))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--private-channel-probe"), CommandLine.arguments.indices.contains(index + 1) {
+  Darwin.exit(runArkPrivateChannelProbe(CommandLine.arguments[index + 1]))
+}
+
 if let helperStatus = NativePTYTerminalChild.exitStatusIfRequested() {
   Darwin._exit(helperStatus)
 }
@@ -14,9 +26,40 @@ if ProcessInfo.processInfo.environment["ARK_MARKDOWN_RENDER_PROBE_CHILD"] == "1"
   Darwin._exit(runArkMarkdownHostingProbeChild())
 }
 
+if let index = CommandLine.arguments.firstIndex(of: "--protected-observation-probe") {
+  Darwin.exit(await runArkProtectedObservationProbe(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--protected-evaluator-probe") {
+  Darwin.exit(await runArkProtectedEvaluatorProbe(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--protected-guard-lifecycle-probe") {
+  Darwin.exit(await runArkProtectedGuardLifecycleProbe(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--protected-evaluator-cancellation-probe") {
+  Darwin.exit(await runArkProtectedEvaluatorCancellationProbe(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--protected-runtime-timing-probe") {
+  Darwin.exit(runArkProtectedRuntimeTimingProbe(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
+if CommandLine.arguments.contains("--protected-owner-contracts") {
+  await runArkProtectedOwnerContractChecks()
+  await runArkProtectedObservationContractChecks()
+  runArkProtectedRuntimeFDContractChecks()
+  await runArkProtectedCostContractChecks()
+  await runArkNativeOwnerChannelContractChecks()
+  print("protected-owner-contracts failures=\(failureCount)")
+  Darwin.exit(failureCount == 0 ? 0 : 1)
+}
+
 let expectedContractGroups = [
   "inline",
   "backend-recovery",
+  "protected-owner",
   "event-pump-lifecycle",
   "domain-api",
   "duplicate-key",
@@ -88,6 +131,13 @@ func runAsyncContractGroup(_ name: String, _ body: @MainActor () async -> Void) 
 runContractGroup("inline", runInlineContractChecks)
 await runAsyncContractGroup("backend-recovery") {
   failureCount += await runBackendRecoveryContractChecks()
+}
+await runAsyncContractGroup("protected-owner") {
+  await runArkProtectedOwnerContractChecks()
+  await runArkProtectedObservationContractChecks()
+  runArkProtectedRuntimeFDContractChecks()
+  await runArkProtectedCostContractChecks()
+  await runArkNativeOwnerChannelContractChecks()
 }
 await runAsyncContractGroup("event-pump-lifecycle", runArkEventPumpLifecycleContractChecks)
 runContractGroup("domain-api", runArkDomainAPIContractChecks)

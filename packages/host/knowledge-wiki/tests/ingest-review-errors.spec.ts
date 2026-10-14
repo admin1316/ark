@@ -5,16 +5,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 
 const mocks = vi.hoisted(() => ({
-  appendCandidateReviews: vi.fn(),
-  appendReviews: vi.fn(),
+  prepareReviewAppend: vi.fn(),
+  commitReviewAppend: vi.fn(),
 }))
 
 vi.mock('../src/reviews.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/reviews.ts')>()
   return {
     ...actual,
-    appendCandidateReviews: mocks.appendCandidateReviews,
-    appendReviews: mocks.appendReviews,
+    prepareReviewAppend: mocks.prepareReviewAppend,
+    commitReviewAppend: mocks.commitReviewAppend,
   }
 })
 
@@ -39,14 +39,14 @@ function llmFor(generated: string): LlmRuntime {
 }
 
 describe('ingest review error isolation', () => {
-  it('reports non-Error advisory and candidate review failures independently', async () => {
+  it('reports a non-Error combined review publication failure', async () => {
     const root = mkdtempSync(join(tmpdir(), 'wiki-ingest-review-errors-'))
     roots.push(root)
     const sourceRel = 'raw/sources/source.md'
     mkdirSync(dirname(join(root, sourceRel)), { recursive: true })
     writeFileSync(join(root, sourceRel), 'reusable source content', 'utf8')
-    mocks.appendReviews.mockImplementation(() => { throw 'advisory failed' })
-    mocks.appendCandidateReviews.mockImplementation(() => { throw 'candidate failed' })
+    mocks.prepareReviewAppend.mockReturnValue({})
+    mocks.commitReviewAppend.mockImplementation(() => { throw 'review failed' })
     const generated = [
       '---REVIEW: suggestion | Review---',
       'description: check',
@@ -58,25 +58,43 @@ describe('ingest review error isolation', () => {
       stageExecutorFor(llm), 'p', 'm', root, sourceRel, new AbortController().signal,
     )
 
-    expect(result.warnings).toContain('review append failed: advisory failed')
-    expect(result.warnings).toContain('candidate review failed: candidate failed')
+    expect(result.warnings).toContain('review append failed: review failed')
   })
 
-  it('reports Error advisory and candidate failures too', async () => {
+  it('reports an Error during combined review preflight', async () => {
     const root = mkdtempSync(join(tmpdir(), 'wiki-ingest-review-errors-'))
     roots.push(root)
     const sourceRel = 'raw/sources/source.md'
     mkdirSync(dirname(join(root, sourceRel)), { recursive: true })
     writeFileSync(join(root, sourceRel), 'reusable source content', 'utf8')
-    mocks.appendReviews.mockImplementation(() => { throw new Error('advisory error') })
-    mocks.appendCandidateReviews.mockImplementation(() => { throw new Error('candidate error') })
+    mocks.prepareReviewAppend.mockImplementation(() => { throw new Error('review preflight error') })
 
     const llm = llmFor('---REVIEW: suggestion | Review---\n---END REVIEW---')
     const result = await ingestSource(
       stageExecutorFor(llm), 'p', 'm', root, sourceRel, new AbortController().signal,
     )
 
-    expect(result.warnings).toContain('review append failed: advisory error')
-    expect(result.warnings).toContain('candidate review failed: candidate error')
+    expect(result.warnings).toContain('review preflight failed: review preflight error')
+  })
+
+  it('keeps primitive preflight failures visible without publishing generated pages', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'wiki-ingest-review-errors-'))
+    roots.push(root)
+    const sourceRel = 'raw/sources/source.md'
+    mkdirSync(dirname(join(root, sourceRel)), { recursive: true })
+    writeFileSync(join(root, sourceRel), 'reusable source content', 'utf8')
+    mocks.prepareReviewAppend.mockImplementation(() => { throw 'review preflight denied' })
+    const generated = [
+      '--- FILE: wiki/_candidates/ingest/no-publish.md ---',
+      '---', 'title: No publish', 'status: candidate', '---', 'Body.',
+      '--- END FILE ---',
+    ].join('\n')
+
+    const result = await ingestSource(
+      stageExecutorFor(llmFor(generated)), 'p', 'm', root, sourceRel, new AbortController().signal,
+    )
+
+    expect(result.written).toEqual([])
+    expect(result.warnings).toContain('review preflight failed: review preflight denied')
   })
 })

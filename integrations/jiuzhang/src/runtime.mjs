@@ -155,6 +155,12 @@ const inheritedEnvironmentKeys = [
   // Launcher-owned verifier configuration. It is never read from Wiki data;
   // an empty value keeps the service fail-closed by default.
   'ARK_KNOWLEDGE_VERIFIER_CONFIG',
+  // Public measured-trial trust anchors and the read-only evidence-store path;
+  // private signing keys are rejected by the Knowledge Wiki config parser.
+  'ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG',
+  // App-owned private IPC endpoint; neither value grants trial signing authority.
+  'ARK_NATIVE_OWNER_SOCKET_PATH',
+  'ARK_NATIVE_OWNER_LAUNCH_TOKEN',
 ]
 
 /** Return the default isolated Harness home for the Jiuzhang desktop product. */

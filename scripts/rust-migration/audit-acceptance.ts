@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { readRunContext, type ImmutableBoundaries } from './run-context.ts'
-import { asRecord, requireSha256, requireString } from './validation.ts'
+import { asRecord as object, requireString as string, requireSha256 as hash } from './validation.ts'
 
 type AcceptanceStatus = 'PASS' | 'UNKNOWN' | 'FAIL'
 
@@ -68,6 +68,34 @@ const REQUIRED_ARTIFACTS = [
   'scripts/rust-migration/external-verifier-runtime.json',
   'scripts/rust-migration/external-verifier-receipt.json',
   'scripts/rust-migration/candidate-ark-20261008-smoke.json',
+  'scripts/rust-migration/knowledge-session-event-zstd-all-tools-replay-20261010.json',
+  'scripts/rust-migration/candidate324-live-invoice-20261011.json',
+  'scripts/rust-migration/candidate324-install-e2e-20261011.json',
+  'scripts/rust-migration/candidate324-installed-e2e-20261011.json',
+  'scripts/rust-migration/candidate324-verifier-runtime-20261011.json',
+  'scripts/rust-migration/candidate324-process-observation-20261011.json',
+  'scripts/rust-migration/candidate325-live-invoice-20261011.json',
+  'scripts/rust-migration/candidate325-staged-install-e2e-20261011.json',
+  'scripts/rust-migration/candidate325-installed-e2e-20261011.json',
+  'scripts/rust-migration/candidate326-build-and-staged-install-20261011.json',
+  'scripts/rust-migration/candidate326-staged-install-e2e-20261011.json',
+  'scripts/rust-migration/candidate326-source-ci-local-20261011.json',
+  'scripts/rust-migration/candidate327-build-and-staged-install-20261011.json',
+  'scripts/rust-migration/candidate327-staged-install-e2e-20261011.json',
+  'scripts/rust-migration/github-source-status-20261011.json',
+  'scripts/rust-migration/knowledge-search-cache-vs-rust-20261011.json',
+  'scripts/rust-migration/knowledge-search-cache-vs-rust-reproduction-20261011.json',
+  'scripts/rust-migration/knowledge-search-persistent-benchmark-20261011.json',
+  'scripts/rust-migration/knowledge-search-ts-optimization-20261011.json',
+  'scripts/rust-migration/knowledge-learning-contract-v2-plan.json',
+  'scripts/rust-migration/knowledge-learning-contract-v2-data-format.json',
+  'scripts/rust-migration/knowledge-measured-trial-gate-20261011.json',
+  'scripts/rust-migration/knowledge-canonical-content-gate-20261011.json',
+  'scripts/rust-migration/canonical-review-options-20261011.json',
+  'scripts/rust-migration/external-verifier-adapter-lifecycle-20261011.json',
+  'scripts/rust-migration/native-verifier-config-forwarding-20261011.json',
+  'scripts/rust-migration/wiki-tool-provenance-binding-20261011.json',
+  'scripts/rust-migration/unpaired-success-utility-guard-20261011.json',
   'scripts/rust-migration/official-stage-20261008.json',
   'docs/rust-migration/source-truth-report.md',
   'docs/rust-migration/profile-matrix.md',
@@ -157,8 +185,8 @@ function artifactCompleteness(root: string): AcceptanceCheck {
 
 function validImmutable(value: unknown): value is ImmutableBoundaries {
   try {
-    const parsed = asRecord(value, 'receipt.immutable')
-    for (const key of ['goalHash', 'planHash', 'scopeHash', 'permissionsHash', 'securityThresholdHash', 'acceptanceHash', 'dataFormatHash', 'publishPolicyHash']) requireSha256(parsed[key], `receipt.immutable.${key}`)
+    const parsed = object(value, 'receipt.immutable')
+    for (const key of ['goalHash', 'planHash', 'scopeHash', 'permissionsHash', 'securityThresholdHash', 'acceptanceHash', 'dataFormatHash', 'publishPolicyHash']) hash(parsed[key], `receipt.immutable.${key}`)
     if (!Number.isSafeInteger(parsed.stateVersion) || (parsed.stateVersion as number) < 0) return false
     return true
   } catch { return false }
@@ -167,44 +195,44 @@ function validImmutable(value: unknown): value is ImmutableBoundaries {
 function readReceipt(root: string, path: string, trustedAuthorityKeys: Readonly<Record<string, string>>): AcceptanceReceipt | null {
   try {
     const rel = safeRelativePath(root, path)
-    const raw = asRecord(JSON.parse(readFileSync(join(root, rel), 'utf8')) as unknown, 'receipt')
+    const raw = object(JSON.parse(readFileSync(join(root, rel), 'utf8')) as unknown, 'receipt')
     if (raw.schemaVersion !== 1 || raw.kind !== 'ark-phase6-acceptance' || !validImmutable(raw.immutable)) return null
-    const authorityId = requireString(raw.authorityId, 'receipt.authorityId')
+    const authorityId = string(raw.authorityId, 'receipt.authorityId')
     const keyPem = trustedAuthorityKeys[authorityId]
     if (keyPem === undefined) return null
     const artifactRefsRaw = raw.artifactRefs
     if (!Array.isArray(artifactRefsRaw)) return null
     const artifactRefs: ArtifactRef[] = []
     for (const [index, value] of artifactRefsRaw.entries()) {
-      const item = asRecord(value, `receipt.artifactRefs[${index}]`)
-      artifactRefs.push({ path: safeRelativePath(root, requireString(item.path, 'artifact path')), sha256: requireSha256(item.sha256, 'artifact sha256') })
+      const item = object(value, `receipt.artifactRefs[${index}]`)
+      artifactRefs.push({ path: safeRelativePath(root, string(item.path, 'artifact path')), sha256: hash(item.sha256, 'artifact sha256') })
     }
-    const observations = asRecord(raw.observations, 'receipt.observations')
+    const observations = object(raw.observations, 'receipt.observations')
     for (const name of CHECK_NAMES) {
-      const observation = asRecord(observations[name], `receipt.observations.${name}`)
+      const observation = object(observations[name], `receipt.observations.${name}`)
       if ('status' in observation || 'pass' in observation || 'result' in observation) return null
       if (!Array.isArray(observation.evidenceRefs) || observation.evidenceRefs.length === 0) return null
       for (const ref of observation.evidenceRefs) {
-        const relRef = safeRelativePath(root, requireString(ref, 'observation evidenceRef'))
+        const relRef = safeRelativePath(root, string(ref, 'observation evidenceRef'))
         const artifact = artifactRefs.find(item => item.path === relRef)
         if (artifact === undefined || sha256(readFileSync(join(root, relRef))) !== artifact.sha256) return null
       }
     }
     const unsigned = {
       schemaVersion: 1 as const, kind: 'ark-phase6-acceptance' as const, authorityId,
-      gitSha: requireString(raw.gitSha, 'receipt.gitSha'), profile: requireString(raw.profile, 'receipt.profile'),
-      manifestHash: requireSha256(raw.manifestHash, 'receipt.manifestHash'), sourceDigest: requireSha256(raw.sourceDigest, 'receipt.sourceDigest'),
-      profileDigest: requireSha256(raw.profileDigest, 'receipt.profileDigest'), immutable: raw.immutable,
+      gitSha: string(raw.gitSha, 'receipt.gitSha'), profile: string(raw.profile, 'receipt.profile'),
+      manifestHash: hash(raw.manifestHash, 'receipt.manifestHash'), sourceDigest: hash(raw.sourceDigest, 'receipt.sourceDigest'),
+      profileDigest: hash(raw.profileDigest, 'receipt.profileDigest'), immutable: raw.immutable,
       artifactRefs, observations,
     }
-    const signature = requireString(raw.signature, 'receipt.signature')
+    const signature = string(raw.signature, 'receipt.signature')
     if (!verifySignature(null, canonicalEvidencePayload(unsigned), createPublicKey(keyPem), Buffer.from(signature, 'base64'))) return null
     return { ...unsigned, signature }
   } catch { return null }
 }
 
 function derivedObservation(name: CheckName, raw: unknown): { status: AcceptanceStatus; reason: string } {
-  const observation = asRecord(raw, `observation.${name}`)
+  const observation = object(raw, `observation.${name}`)
   const bool = (key: string): boolean | undefined => typeof observation[key] === 'boolean' ? observation[key] : undefined
   const allBools = (keys: readonly string[]): { status: AcceptanceStatus; reason: string } => {
     const values = keys.map(key => bool(key))
@@ -296,7 +324,7 @@ export function auditAcceptance(rootInput: string, options: AcceptanceAuditOptio
     && canonicalJson(receipt.immutable) === canonicalJson(context.immutable)) {
     for (const name of CHECK_NAMES) {
       const derived = derivedObservation(name, receipt.observations[name])
-      const observation = asRecord(receipt.observations[name], `observation.${name}`)
+      const observation = object(receipt.observations[name], `observation.${name}`)
       const evidence = (observation.evidenceRefs as string[]).map(path => safeRelativePath(root, path))
       checks[name] = check(derived.status, [evidencePath, ...evidence], derived.reason)
     }

@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "status": "unsigned-live-observation",
+  "candidate": {
+    "version": "3.1.24",
+    "build": "2026101124",
+    "appPath": "/Users/hui/ark-test/candidate/Ark.app",
+    "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.f5b666f074025193",
+    "sourceGitSha": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+    "sourceSnapshotSha256": "1a52fe258ee52964e08f2da83269bc52f500e8761a71e9e5550e3345333358c6",
+    "dirtyDiffSha256": "aef9b2236907631ad892fd6381b03bc920cca12c04b971da7a8bbd2fa58117ec",
+    "dirtyStatusSha256": "da910a40769884440bf4e51b9598028bb31727e71ecec787545c35dcfeabdd1f",
+    "finalAppTreeSha256": "540409c3aded65f60472bff72b6aabe23cddd2547881324158350548f2f4264c",
+    "signing": "ad-hoc test signature; not notarized",
+    "formalArkAtObservation": {
+      "version": "3.1.0",
+      "build": "2026092701",
+      "changed": false
+    }
+  },
+  "task": {
+    "workspace": "/Users/hui/ark-test/invoice-reconciliation-current319-20261009",
+    "promptFile": "/Users/hui/ark-test/evidence/window-test-20261009-task-v2.zh.txt",
+    "promptSha256": "0d6e0e2fece23b47e1f7281748cd8043fa04c202e862ec441a34117edf763f20",
+    "mode": "standard",
+    "permission": "read-only",
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-flash",
+    "reasoningEffort": "max"
+  },
+  "oracle": {
+    "method": "Independent Python Fraction arithmetic over the fixture CSVs, per-row currency conversion, and half-away-from-zero rounding.",
+    "expectedValues": {
+      "approved_invoice_count": 6,
+      "pending_invoice_count": 1,
+      "rejected_row_ids": ["I007", "I008"],
+      "usd_total_cents": 26598,
+      "usd_cents_by_currency": {"USD": 9750, "EUR": 8834, "JPY": 8000, "CNY": 14}
+    }
+  },
+  "runs": [
+    {
+      "index": 1,
+      "sessionId": "fd84413f-48e3-4ef9-9acc-8cadd48dc81a",
+      "eventElapsedMilliseconds": 15775,
+      "elapsedSeconds": 15.775,
+      "steps": 6,
+      "toolCalls": 9,
+      "zstdFrames": 90,
+      "storedRows": 177,
+      "parsedJsonMatchesOracle": true,
+      "strictJson": true,
+      "turnEndIsLastEvent": true,
+      "sessionLog": {
+        "path": "/Users/hui/ark-test/candidate-home-current-20261010-v323/sessions/--Users-hui-ark-test-invoice-reconciliation-current319-20261009--/fd84413f-48e3-4ef9-9acc-8cadd48dc81a/session.jsonl.zstd",
+        "sha256": "ee868776bf8548e95befc6550b6ff75d1ab64adfb8664400d660a024b50d86f4",
+        "bytes": 56589
+      },
+      "screenshot": {
+        "path": "/Users/hui/ark-test/evidence/candidate324-live-invoice-20261011/run1-final.png",
+        "sha256": "10b51c2034a3ca8ae01ca1c8985f04c6d5fb50a9829532dfe3cf1e44046b965d"
+      }
+    },
+    {
+      "index": 2,
+      "sessionId": "cf61db50-62fd-4ab1-9e37-58a206fb6166",
+      "eventElapsedMilliseconds": 13895,
+      "elapsedSeconds": 13.895,
+      "steps": 5,
+      "toolCalls": 8,
+      "zstdFrames": 76,
+      "storedRows": 153,
+      "parsedJsonMatchesOracle": true,
+      "strictJson": true,
+      "turnEndIsLastEvent": true,
+      "sessionLog": {
+        "path": "/Users/hui/ark-test/candidate-home-current-20261010-v323/sessions/--Users-hui-ark-test-invoice-reconciliation-current319-20261009--/cf61db50-62fd-4ab1-9e37-58a206fb6166/session.jsonl.zstd",
+        "sha256": "607925dd1d57cf59850841694ca126cf01ffa7e94be7f3e2c9fbc1e23afc861f",
+        "bytes": 49278
+      },
+      "screenshot": {
+        "path": "/Users/hui/ark-test/evidence/candidate324-live-invoice-20261011/run2-final.png",
+        "sha256": "0d4c2fc65ffa2e9277935a3bcd443165150b84f206cbc31c623a133103ae426b"
+      }
+    },
+    {
+      "index": 3,
+      "sessionId": "ac8476dd-b4e5-4f6b-a136-d30d77784541",
+      "eventElapsedMilliseconds": 10681,
+      "elapsedSeconds": 10.681,
+      "steps": 4,
+      "toolCalls": 7,
+      "zstdFrames": 64,
+      "storedRows": 133,
+      "parsedJsonMatchesOracle": true,
+      "strictJson": true,
+      "turnEndIsLastEvent": true,
+      "sessionLog": {
+        "path": "/Users/hui/ark-test/candidate-home-current-20261010-v323/sessions/--Users-hui-ark-test-invoice-reconciliation-current319-20261009--/ac8476dd-b4e5-4f6b-a136-d30d77784541/session.jsonl.zstd",
+        "sha256": "3d506ed0355c127951f8c8e53e180436576c16d341735f8befbdad2fedd48d4c",
+        "bytes": 43130
+      },
+      "screenshot": {
+        "path": "/Users/hui/ark-test/evidence/candidate324-live-invoice-20261011/run3-final.png",
+        "sha256": "a6fba500fc8dc0b38a2cbe29da92ec20793fd2b7d166e3ac05f86eb558d82622"
+      }
+    }
+  ],
+  "sameTaskComparison": {
+    "baseline": {
+      "receipt": "scripts/rust-migration/candidate323-live-invoice-20261011.json",
+      "version": "3.1.23",
+      "eventElapsedMilliseconds": [13686, 16286, 19816],
+      "medianMilliseconds": 16286,
+      "strictJsonPasses": "3/3",
+      "exactArithmeticPasses": "3/3",
+      "turnEndIsLastEvent": "2/3"
+    },
+    "candidate": {
+      "eventElapsedMilliseconds": [15775, 13895, 10681],
+      "medianMilliseconds": 13895,
+      "strictJsonPasses": "3/3",
+      "exactArithmeticPasses": "3/3",
+      "turnEndIsLastEvent": "3/3"
+    },
+    "observedMedianDifferenceMilliseconds": 2391,
+    "observedMedianDifferencePercent": 14.68,
+    "interpretation": "Descriptive result only: three runs per candidate are too few to establish a causal or durable latency change; model/provider variation and different tool traces remain."
+  },
+  "reliability": {
+    "invoiceCorrectnessLift": "none measured; both candidates passed 3/3",
+    "strictJsonLift": "none measured; both candidates passed 3/3",
+    "turnEndTerminalityObservation": "3/3 versus 2/3 in this small sample; not a general stability percentage",
+    "installE2e": "PASS 121 checks, 2 process runs, 0 failures",
+    "sourceTests": "PASS: 76 files / 690 tests; Jiuzhang Node tests 97/97; native contract suite 53/53 groups",
+    "stressCrashRecoveryAndLongRun": "not tested",
+    "verifierMediatedKnowledgeReuse": "not tested; active candidate profile has no verifier authority configuration",
+    "phase6BehaviorAudit": "UNKNOWN; 16 behavioral checks remain open",
+    "releaseStatus": "candidate only; no GitHub upload, merge, or formal Ark replacement"
+  }
+}

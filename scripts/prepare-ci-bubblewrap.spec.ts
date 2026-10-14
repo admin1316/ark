@@ -414,7 +414,8 @@ describe.skipIf(process.platform === 'win32')('prepare-ci-bubblewrap', () => {
     expect(capabilities.status, capabilities.stderr).not.toBe(0)
     expect(capabilities.stderr).toContain('refusing a binary with file capabilities')
     for (const run of [setuid, capabilities]) expect(run.githubPath).toBe('')
-  }, 30_000)
+  // File metadata probes can exceed 30 seconds beside repository-wide coverage.
+  }, 60_000)
 
   it('fails when the namespace probe does not run or the read-only bind is writable', () => {
     const namespace = runPrepare({ namespaceExit: 1 })
@@ -429,7 +430,9 @@ describe.skipIf(process.platform === 'win32')('prepare-ci-bubblewrap', () => {
     expect(wrongError.status, wrongError.stderr).not.toBe(0)
     expect(wrongError.stderr).toContain('the refusal did not come from the read-only bind')
     for (const run of [namespace, writable, noscript, wrongError]) expect(run.githubPath).toBe('')
-  }, 30_000)
+  // Four serial shell scenarios can exceed 30 seconds when this process runs
+  // beside the instrumented repository-wide coverage gate.
+  }, 60_000)
 
   it('fails the CVE-2026-87766 regression when the tool cannot defend anything', () => {
     // The negative controls prove the gate discriminates: an always-successful
@@ -442,7 +445,7 @@ describe.skipIf(process.platform === 'win32')('prepare-ci-bubblewrap', () => {
     expect(alwaysFail.status, alwaysFail.stderr).not.toBe(0)
     expect(alwaysFail.stderr).toContain('the security regression accepted a tool that never runs')
     for (const run of [alwaysOk, alwaysFail]) expect(run.githubPath).toBe('')
-  }, 30_000)
+  }, 60_000)
 
   it('fails when the upstream security regressions fail or are skipped', () => {
     const failed = runPrepare({ upstream: 'fail' })

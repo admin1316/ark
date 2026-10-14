@@ -210,7 +210,7 @@ private func encodedSettingMutations(_ mutations: [ArkSettingMutation]) -> [JSON
 private func decodedSettingsNamespace(_ row: JSONValue) throws -> ArkSettingsNamespace {
   guard let id = row["ns"]?.stringValue,
     let resolved = row["value"],
-    let revision = row["revision"]?.numberValue
+    let revision = row["revision"]?.jsonSafeInteger()
   else { throw ArkAPIError(message: "设置更新响应无效") }
   return ArkSettingsNamespace(
     id: id,
@@ -225,7 +225,7 @@ private func decodedSettingsNamespace(_ row: JSONValue) throws -> ArkSettingsNam
       return ArkSettingsSecret(path: path, isSet: isSet)
     } ?? [],
     applies: row["applies"]?.stringValue ?? "restart",
-    revision: Int(revision)
+    revision: revision
   )
 }
 
@@ -280,27 +280,7 @@ extension ArkAPIClient {
   public func settingsSnapshot() async throws -> ArkSettingsSnapshot {
     let value = try await remoteCall(method: "settings/describe")
     let namespaces =
-      value["namespaces"]?.arrayValue?.compactMap { row -> ArkSettingsNamespace? in
-        guard let id = row["ns"]?.stringValue,
-          let resolved = row["value"],
-          let revisionValue = row["revision"]?.numberValue
-        else { return nil }
-        return ArkSettingsNamespace(
-          id: id,
-          schema: row["schema"] ?? .null,
-          value: resolved,
-          base: row["base"],
-          user: row["user"],
-          secrets: row["secrets"]?.arrayValue?.compactMap { secret in
-            guard let path = secret["path"]?.arrayValue?.compactMap(\.stringValue),
-              let isSet = secret["set"]?.boolValue
-            else { return nil }
-            return ArkSettingsSecret(path: path, isSet: isSet)
-          } ?? [],
-          applies: row["applies"]?.stringValue ?? "restart",
-          revision: Int(revisionValue)
-        )
-      } ?? []
+      value["namespaces"]?.arrayValue?.compactMap { try? decodedSettingsNamespace($0) } ?? []
     return ArkSettingsSnapshot(
       writable: value["writable"]?.boolValue == true,
       hasDocument: value["hasDocument"]?.boolValue == true,
@@ -396,8 +376,7 @@ extension ArkAPIClient {
   /// Model capacities share JSON's exact integer range; malformed wire values cannot trap Swift conversion.
   private static func modelCapacity(_ value: JSONValue?, field: String) throws -> Int? {
     guard let value else { return nil }
-    guard let number = value.numberValue, number > 0, number <= 9_007_199_254_740_991,
-          let integer = Int(exactly: number)
+    guard let integer = value.jsonSafeInteger(minimum: 1)
     else { throw ArkAPIError(message: "模型目录返回了无效的 \(field)") }
     return integer
   }

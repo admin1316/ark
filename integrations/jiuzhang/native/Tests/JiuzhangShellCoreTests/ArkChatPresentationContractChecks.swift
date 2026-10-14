@@ -157,6 +157,20 @@ private func runNativeProjectionMemoChecks() {
 }
 
 func runArkChatPresentationContractChecks() {
+  let hiddenAssistantSequences = ArkChatLiveProcessProjection.hiddenAssistantSequences(
+    [2, 5, 9],
+    beforeWorkSequences: [3, 7]
+  )
+  check(
+    hiddenAssistantSequences == [2, 5]
+      && ArkChatLiveProcessProjection.hiddenAssistantSequences(
+        [2, 5], beforeWorkSequences: []
+      ).isEmpty
+      && ArkChatLiveProcessProjection.hiddenAssistantSequences(
+        [2, 5], beforeWorkSequences: [3]
+      ) == [2],
+    "live process projection hides only narration followed by observed work"
+  )
   runTurnNavigationLifecycleChecks()
   MainActor.assumeIsolated {
     runNativeProjectionMemoChecks()
@@ -167,11 +181,30 @@ func runArkChatPresentationContractChecks() {
     "native cancelled history refresh cannot leave the empty chat permanently loading"
   )
   check(
-    ArkEventSequenceValidator.safeInteger(.number(7)) == 7
-      && ArkEventSequenceValidator.safeInteger(.number(-1), minimum: -1) == -1
-      && ArkEventSequenceValidator.safeInteger(.number(1.5)) == nil
-      && ArkEventSequenceValidator.safeInteger(.number(9_007_199_254_740_992)) == nil,
+    JSONValue.number(7).jsonSafeInteger() == 7
+      && JSONValue.number(-1).jsonSafeInteger(minimum: -1) == -1
+      && JSONValue.number(1.5).jsonSafeInteger() == nil
+      && JSONValue.number(9_007_199_254_740_992).jsonSafeInteger() == nil,
     "native event sequences accept only finite JSON-safe integers"
+  )
+  check(
+    [JSONValue.null, .bool(true), .string("7"), .number(.nan), .number(.infinity),
+     .number(-.infinity), .number(-1), .number(-9_007_199_254_740_992)]
+      .allSatisfy { $0.jsonSafeInteger() == nil }
+      && JSONValue.number(0).jsonSafeInteger() == 0
+      && JSONValue.number(9_007_199_254_740_991).jsonSafeInteger() == 9_007_199_254_740_991
+      && JSONValue.number(-9_007_199_254_740_991).jsonSafeInteger(minimum: Int.min) == -9_007_199_254_740_991,
+    "shared JSON integer validation rejects nonnumbers and unsafe bounds without losing valid endpoints"
+  )
+  check(
+    JSONValue.number(9_007_199_254_740_992).nonnegativeIntegerValue == 9_007_199_254_740_992
+      && JSONValue.number(9_007_199_254_740_992).jsonSafeInteger() == nil
+      && JSONValue.number(Double(Int.max)).nonnegativeIntegerValue == nil
+      && JSONValue.number(-1).nonnegativeIntegerValue == nil
+      && JSONValue.number(1.5).nonnegativeIntegerValue == nil
+      && JSONValue.number(.nan).nonnegativeIntegerValue == nil
+      && JSONValue.string("1").nonnegativeIntegerValue == nil,
+    "native numeric fields retain their distinct upper bound while event cursors remain JSON-safe"
   )
   let validWirePage = try? ArkAPIClient.validatedHistoryPage(
     from: .object([
@@ -848,6 +881,11 @@ func runArkChatPresentationContractChecks() {
       from: "private struct NativeChatDisplayEntry",
       through: "private struct NativeChatProcess"
     )
+    let chatProjection = chatSourceSlice(
+      root,
+      from: "private func computeBodyProjection()",
+      through: "private func projectedDisplayRows("
+    )
     let assistantBodyRow = chatSourceSlice(
       root,
       from: "private func assistantProjectedBodyRow",
@@ -1111,16 +1149,28 @@ func runArkChatPresentationContractChecks() {
     check(
       root.contains("private struct NativeTurnProcessRow<Content: View>: View")
         && root.contains("process.detailEntries")
-        && root.contains("process.reasoningText")
+        && root.contains("detailEntries = processEntries.filter { !$0.isAssistantMessage }")
+        && !root.contains("reasoningText: reasoningText")
+        && !root.contains("if let reasoning = process.reasoningText")
         && root.contains(".chatTurnProcessShowMore")
-        && root.contains(".lineLimit(expanded ? nil : 4)")
+        && root.contains("if expanded, !process.detailEntries.isEmpty")
+        && root.contains("if !process.detailEntries.isEmpty")
         && root.contains("hideReasoning: hidesFinalReasoning(entry, finalAnswerByTurn: finalAnswerByTurn)")
         && root.contains("if process.hiddenEntryIDs.contains(entry.id)")
         && !root.contains("if !expandedProcessGenerations.contains(process.generation), process.hiddenEntryIDs.contains(entry.id)")
         && root.contains("ark.chat.turn-process.toggle.\\(process.turn)")
         && root.contains(".accessibilityHint(processSummary)")
         && !root.contains(".accessibilityValue(\n      ArkL10n.text(expanded ? .chatTurnProcessCollapse"),
-      "completed-turn metadata and reasoning render inside one bounded show-more process card"
+      "the conversation process card reveals tool activity on demand without assistant narration or reasoning"
+    )
+    check(
+      chatProjection?.contains("context.sessionRunning") == true
+        && chatProjection?.contains("context.latestStartedTurn") == true
+        && chatProjection?.contains("ArkChatLiveProcessProjection.hiddenAssistantSequences") == true
+        && chatProjection?.contains("NativeChatProcess(") == true
+        && chatProjection?.contains("processEntries: processEntries") == true
+        && chatSourceSlice(root, from: "private struct NativeChatProcess:", through: "private struct NativeChatBodyProjection")?.contains("detailEntries = processEntries.filter { !$0.isAssistantMessage }") == true,
+      "live tool work moves preceding assistant narration into the process card while the final streaming message stays visible"
     )
     check(
       systemPromptRow?.contains(".chatSystemPromptExpand") == true

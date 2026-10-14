@@ -13,7 +13,11 @@ final class HistoryWindowFixture: @unchecked Sendable {
   let turns: [JSONValue]
   let dependencies: [String: [JSONValue]]
   let expectedText: String
-  var rawLimit = 2_048
+  private var rawLimitValue = 2_048
+  var rawLimit: Int {
+    get { lock.withLock { rawLimitValue } }
+    set { lock.withLock { rawLimitValue = newValue } }
+  }
   private var incarnation = "fixture"
   func replaceSource() { lock.lock(); defer { lock.unlock() }; incarnation = "replacement" }
 
@@ -23,10 +27,10 @@ final class HistoryWindowFixture: @unchecked Sendable {
   }
 
   /// Newest through-sequence the fixture serves, injected events included.
-  func latestThrough() -> Int { (events + injectedEvents).count - 1 }
+  func latestThrough() -> Int { lock.withLock { (events + injectedEvents).count - 1 } }
 
   /// Revision string the fixture accepts for one through-sequence.
-  func revision(through: Int) -> String { "\(incarnation):\(through)" }
+  func revision(through: Int) -> String { lock.withLock { "\(incarnation):\(through)" } }
 
   /// Echo one injected live event from later history reads, in sequence order.
   func recordInjected(_ event: JSONValue) {
@@ -35,8 +39,10 @@ final class HistoryWindowFixture: @unchecked Sendable {
     injectedEvents.append(event)
     injectedEvents.sort { Self.sequence(of: $0) < Self.sequence(of: $1) }
   }
-  private(set) var reads: [String: Int] = [:]
-  private(set) var rawEventsRead = 0
+  private var readsValue: [String: Int] = [:]
+  private var rawEventsReadValue = 0
+  var reads: [String: Int] { lock.withLock { readsValue } }
+  var rawEventsRead: Int { lock.withLock { rawEventsReadValue } }
   private var boundRawRequests = 0
   private var bodies: [String: String] = [:]
   private let lock = NSLock()
@@ -48,9 +54,24 @@ final class HistoryWindowFixture: @unchecked Sendable {
 
   /// Session the navigation routes describe, and the workspace path they report.
   /// The chat replay sets these so `session/list` names the selected session.
-  var sessionID = "fixture"
-  var sessionRunning = true
-  var workspacePath = "/private/tmp/ark-fixture-workspace"
+  private var sessionIDValue = "fixture"
+  private var sessionRunningValue = true
+  private var workspacePathValue = "/private/tmp/ark-fixture-workspace"
+  var sessionID: String {
+    get { lock.withLock { sessionIDValue } }
+    set { lock.withLock { sessionIDValue = newValue } }
+  }
+  var sessionRunning: Bool {
+    get { lock.withLock { sessionRunningValue } }
+    set { lock.withLock { sessionRunningValue = newValue } }
+  }
+  var workspacePath: String {
+    get { lock.withLock { workspacePathValue } }
+    set { lock.withLock { workspacePathValue = newValue } }
+  }
+  func navigationSnapshot() -> (sessionID: String, running: Bool, workspacePath: String) {
+    lock.withLock { (sessionIDValue, sessionRunningValue, workspacePathValue) }
+  }
 
   init(rows count: Int, bodyBytes: Int = 0) {
     expectedText = ""
@@ -155,7 +176,7 @@ final class HistoryWindowFixture: @unchecked Sendable {
     var result: [String: JSONValue] = ["sourceRevision": .string(revision), "asOfThroughSeq": .number(Double(through))]
     let view = options["view"]?.stringValue ?? "raw"
     result["view"] = .string(view)
-    reads[view, default: 0] += 1
+    readsValue[view, default: 0] += 1
     if view == "raw" {
       // Metadata requests in this generic URL fixture have no view and also
       // fall back to `raw`; count only explicit bound-history reads here.
@@ -163,11 +184,11 @@ final class HistoryWindowFixture: @unchecked Sendable {
       // The cut bounds the read: an explicit cursor may walk backwards inside it,
       // but omitting the cursor must not reach past the requested source revision.
       let before = options["beforeSeq"]?.numberValue.map { min(Int($0), through + 1) } ?? (through + 1)
-      let count = min(rawLimit, Int(options["maxEvents"]?.numberValue ?? 2_048))
+      let count = min(rawLimitValue, Int(options["maxEvents"]?.numberValue ?? 2_048))
       let lower = max(0, before - count)
       let rows = Array(all[lower..<before])
       result["events"] = .array(rows); result["hasMore"] = .bool(lower > 0)
-      rawEventsRead += rows.count
+      rawEventsReadValue += rows.count
     } else if view == "semantic" {
       let beforeID = options["beforeRecordId"]?.stringValue
       let before = beforeID.flatMap { id in records.firstIndex { $0["id"] == .string(id) } } ?? records.count
@@ -184,7 +205,7 @@ final class HistoryWindowFixture: @unchecked Sendable {
       let handle = options["contentReadId"]?.stringValue ?? "read-\(id)"
       if options["close"] == .bool(true) { bodies.removeValue(forKey: handle); return .null }
       if offset == 0 {
-        reads[id, default: 0] += 1
+        readsValue[id, default: 0] += 1
         let body: JSONValue
         if id.hasPrefix("dependency-") {
           let domain = String(id.dropFirst(11))
@@ -215,10 +236,16 @@ final class HistoryWindowFixture: @unchecked Sendable {
 }
 
 final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
-  static var fixture = HistoryWindowFixture(rows: 0)
+  private static let fixtureLock = NSLock()
+  private static var fixtureValue = HistoryWindowFixture(rows: 0)
+  static var fixture: HistoryWindowFixture {
+    get { fixtureLock.withLock { fixtureValue } }
+    set { fixtureLock.withLock { fixtureValue = newValue } }
+  }
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
+    let fixture = Self.fixture
     do {
       var data = request.httpBody ?? Data()
       if data.isEmpty, let stream = request.httpBodyStream {
@@ -232,9 +259,9 @@ final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
         let value: JSONValue
         switch envelope["method"]?.stringValue {
         case "workspace/list":
-          value = Self.workspaceList()
+          value = Self.workspaceList(fixture.navigationSnapshot())
         case "session/list":
-          value = Self.sessionList()
+          value = Self.sessionList(fixture.navigationSnapshot())
         default:
           // `workspace/list` sends no args at all, so the history request shape
           // must not be required before dispatch.
@@ -242,7 +269,7 @@ final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
             let name = envelope["method"]?.stringValue ?? "<unknown>"
             throw ArkAPIError(message: "History fixture does not implement RPC: \(name)")
           }
-          value = try Self.fixture.response(options)
+          value = try fixture.response(options)
         }
         business = .object(["ok": .bool(true), "value": value])
       } catch let error as ArkAPIError {
@@ -256,14 +283,14 @@ final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
   override func stopLoading() {}
 
   /// `ArkWorkspaceList` decodes `items` with `workspaceId` / `path` / `title`.
-  private static func workspaceList() -> JSONValue {
+  private static func workspaceList(_ snapshot: (sessionID: String, running: Bool, workspacePath: String)) -> JSONValue {
     .object([
       "items": .array([
         .object([
           "workspaceId": .string("fixture-workspace"),
-          "path": .string(Self.fixture.workspacePath),
+          "path": .string(snapshot.workspacePath),
           "title": .string("fixture"),
-          "sessionIds": .array([.string(Self.fixture.sessionID)]),
+          "sessionIds": .array([.string(snapshot.sessionID)]),
         ]),
       ]),
       "archivedSessionIds": .array([]),
@@ -271,15 +298,15 @@ final class HistoryWindowURLProtocol: URLProtocol, @unchecked Sendable {
   }
 
   /// `ArkSessionSummary` decodes `sessionId` / `updatedAt` (ms) / `running` / `blank`.
-  private static func sessionList() -> JSONValue {
+  private static func sessionList(_ snapshot: (sessionID: String, running: Bool, workspacePath: String)) -> JSONValue {
     .object([
       "items": .array([
         .object([
-          "sessionId": .string(Self.fixture.sessionID),
+          "sessionId": .string(snapshot.sessionID),
           "updatedAt": .number(Date().timeIntervalSince1970 * 1_000),
-          "running": .bool(Self.fixture.sessionRunning),
+          "running": .bool(snapshot.running),
           "blank": .bool(false),
-          "cwd": .string(Self.fixture.workspacePath),
+          "cwd": .string(snapshot.workspacePath),
         ]),
       ]),
     ])

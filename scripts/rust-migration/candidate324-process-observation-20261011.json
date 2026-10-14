@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "status": "local-process-observation",
+  "observedAtUtc": "2026-10-10T23:38:18Z",
+  "candidate": {
+    "path": "/Users/hui/ark-test/candidate/Ark.app",
+    "version": "3.1.24",
+    "build": "2026101124",
+    "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.f5b666f074025193",
+    "bundlePresent": true,
+    "processRunning": false
+  },
+  "formalArk": {
+    "path": "/Users/hui/ark/Ark.app",
+    "version": "3.1.0",
+    "build": "2026092701",
+    "changed": false
+  },
+  "inspection": {
+    "processQuery": "ps -axo pid,ppid,etime,command filtered for the candidate bundle path, candidate bundle identifier, ark-runtime, and Ark API runner",
+    "matchingCandidateProcesses": 0,
+    "listenerQuery": "lsof -nP -iTCP:50074 -sTCP:LISTEN",
+    "matchingListeners": 0,
+    "conclusion": "The candidate app bundle remains in the isolated candidate slot, but no matching app/runtime/API-runner process or listener on the checked candidate port was observed at this timestamp. This is a point-in-time observation and does not prove that no process was started later."
+  },
+  "sourceSnapshot": {
+    "gitHead": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+    "workingTreeStatusSha256BeforeReportUpdate": "693a14c5dbc661f7d2b20bc82480106951b48bf908f0e0b9c8b476c1c365f409",
+    "trackedDiffSha256BeforeReportUpdate": "65e0a873eed1cd47eaae48bba8fa7db074054483e104eaf59efdc77ab1a468bc"
+  },
+  "authority": "unsigned local observation; not a release or Phase 6 acceptance receipt"
+}

@@ -1,0 +1,100 @@
+{
+  "schema": "ark.candidate-live-task-observation.v1",
+  "recordedAt": "2026-10-11T01:04:20Z",
+  "status": "PARTIAL_FAIL",
+  "candidate": {
+    "version": "3.1.25",
+    "build": "2026101125",
+    "appPath": "/Users/hui/ark-test/candidate/Ark.app",
+    "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.f5b666f074025193",
+    "sourceCheckout": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+    "sourceCommit": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "sourceTreeDirty": true,
+    "formalAppObserved": {
+      "path": "/Users/hui/ark/Ark.app",
+      "version": "3.1.0",
+      "build": "2026092701",
+      "changed": false
+    }
+  },
+  "session": {
+    "id": "c9c70499-dcb1-44ec-8e20-13171a3295a7",
+    "workspace": "/Users/hui/ark-test/invoice-reconciliation-current319-20261009",
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-flash",
+    "reasoningEffort": "max",
+    "permissionMode": "read-only"
+  },
+  "task": {
+    "promptFile": "/Users/hui/ark-test/evidence/window-test-20261009-task-v2.zh.txt",
+    "promptSha256": "0d6e0e2fece23b47e1f7281748cd8043fa04c202e862ec441a34117edf763f20",
+    "observedAtLocal": "2026-10-11 09:02 (minute shown in Ark)",
+    "fixtures": [
+      "/Users/hui/ark-test/invoice-reconciliation-current319-20261009/invoices.csv",
+      "/Users/hui/ark-test/invoice-reconciliation-current319-20261009/rates.csv"
+    ],
+    "fixtureModificationTimes": "2026-10-09 11:08:59 for both CSV files; process trace showed reads and no write operations",
+    "expected": {
+      "approved_invoice_count": 6,
+      "pending_invoice_count": 1,
+      "rejected_row_ids": [
+        "I007",
+        "I008"
+      ],
+      "usd_total_cents": 26598,
+      "usd_cents_by_currency": {
+        "CNY": 14,
+        "EUR": 8834,
+        "JPY": 8000,
+        "USD": 9750
+      }
+    },
+    "visibleAssistantText": "{“approved_invoice_count”:6,“pending_invoice_count”:1,“rejected_row_ids”:[“I007”,“I008”],“usd_total_cents”:26598,“usd_cents_by_currency”:{“USD”:9750,“EUR”:8834,“JPY”:8000,“CNY”:14}}",
+    "semanticValuesMatchAfterQuoteNormalization": true,
+    "strictJsonParse": false,
+    "strictJsonFailure": "The rendered transcript shows U+201C/U+201D typographic quotation marks and fails strict JSON parsing; the persisted final assistant/message event is ASCII and parses as strict JSON.",
+    "latencySeconds": 25.7,
+    "uiReportedLlmSeconds": 25.1,
+    "uiReportedToolSeconds": 0.5,
+    "uiReportedFirstResponseSeconds": 1.1,
+    "uiReportedInputTokens": 136000,
+    "uiReportedOutputTokens": 4300,
+    "uiReportedOutputTokensPerSecond": 265.3,
+    "uiReportedToolCalls": 14,
+    "uiReportedIntermediateSteps": 7,
+    "processObservations": {
+      "wikiFilesTool": "failed: knowledge verifier authority is unavailable",
+      "pythonExitCodes": [
+        1,
+        0,
+        0
+      ],
+      "observedWriteOperations": 0
+    },
+    "rawAssistantMessageText": "{\"approved_invoice_count\":6,\"pending_invoice_count\":1,\"rejected_row_ids\":[\"I007\",\"I008\"],\"usd_total_cents\":26598,\"usd_cents_by_currency\":{\"USD\":9750,\"EUR\":8834,\"JPY\":8000,\"CNY\":14}}",
+    "rawAssistantMessageEventSeq": 4074,
+    "rawAssistantMessageLogPath": "/Users/hui/ark-test/candidate-home-current-20261010-v323/sessions/--Users-hui-ark-test-invoice-reconciliation-current319-20261009--/c9c70499-dcb1-44ec-8e20-13171a3295a7/session.jsonl.zstd",
+    "rawAssistantMessageLogSha256": "5ec4a35364e398129b7396ffa69b0fb7eb0b4cf53b58e2cae00e350437625b6b",
+    "rawAssistantMessageStrictJsonParse": true,
+    "uiRenderedStrictJsonParse": false,
+    "presentationDiagnosis": "The persisted assistant/message is valid ASCII JSON, but swift-markdown 0.7.3 smart punctuation changes straight quotes during parsing. The source fix passes ParseOptions.disableSmartOpts for main and footnote documents and uses Text(verbatim:) for rendered model strings. The native Swift contract executable passes all 53/53 groups and specifically preserves the JSON punctuation. A rebuilt candidate live-UI retest is still pending; the 3.1.25 visible-output failure remains valid."
+  },
+  "candidateInstallEvidence": {
+    "stagedReceipt": "scripts/rust-migration/candidate325-staged-install-e2e-20261011.json",
+    "installedReceipt": "scripts/rust-migration/candidate325-installed-e2e-20261011.json",
+    "stagedStatus": "PASS",
+    "stagedChecks": 121,
+    "installedStatus": "PASS",
+    "installedChecks": 121,
+    "installedProcessRuns": 2,
+    "installedFailures": 0
+  },
+  "limitations": [
+    "This is one live task, not a repeatability or matched latency benchmark.",
+    "The persisted assistant/message payload is valid strict JSON, but the user-visible UI output still fails the strict JSON contract because typographic quotes appear during rendering.",
+    "Knowledge verifier authority is still unavailable in this candidate session.",
+    "This observation is local and unsigned; it does not authenticate Phase 6 behavioral acceptance.",
+    "GitHub publication and formal Ark promotion were not performed."
+  ],
+  "reviewedAt": "2026-10-11T01:46:24.966Z"
+}

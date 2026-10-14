@@ -139,6 +139,7 @@
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "0.25.1",
+    "@deepseek-ai/dsh-native-api-app": "workspace:^",
     "@deepseek-ai/dsh-tool-session-query": "workspace:^",
     "@deepseek-ai/dsh-web-fetch-http": "workspace:^",
     "@stylistic/eslint-plugin": "^5.10.0",
@@ -172,6 +173,7 @@
     "typescript": "^6.0.3",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.8",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "zod": "4.4.3"
   }
 }

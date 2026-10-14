@@ -1,0 +1,11 @@
+version: 1
+scenario: knowledge-wiki-repair
+profile: acp
+composition: acp-knowledge-wiki-repair
+recording: authored
+header:
+  class: knowledge-wiki-repair
+  pin: true
+permission: danger-full-access
+workspace:
+  final: true

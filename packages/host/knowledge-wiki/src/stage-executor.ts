@@ -1,5 +1,35 @@
-/** Hard-deadline execution contract for non-cooperative Knowledge Wiki stages. */
+/** Deadline and cancellation supervision for Knowledge Wiki stages. */
 
+const stageWorkerJoins = new WeakMap<AbortSignal, Set<Promise<void>>>()
+
+/**
+ * Register the actual exit proof for a worker owned by this stage signal.
+ * @param signal - The exact child signal passed to the worker executor.
+ * @param join - The real worker join; it resolves after exit or rejects with an Error after exit.
+ * @internal Only the in-process owned-worker executor registers join proofs.
+ */
+export function registerKnowledgeWikiStageWorkerJoin(signal: AbortSignal, join: Promise<void>): void {
+  let joins = stageWorkerJoins.get(signal)
+  if (joins === undefined) {
+    joins = new Set()
+    stageWorkerJoins.set(signal, joins)
+  }
+  joins.add(join)
+  const registeredJoins = joins
+  void join.then(
+    () => { registeredJoins.delete(join) },
+    () => { registeredJoins.delete(join) },
+  )
+}
+
+function joinKnowledgeWikiStageWorkers(signal: AbortSignal): Promise<void> {
+  return Promise.allSettled([...(stageWorkerJoins.get(signal) ?? [])]).then((results) => {
+    const failed = results.find(result => result.status === 'rejected')
+    if (failed?.status === 'rejected') throw failed.reason
+  })
+}
+
+/** Complete request for one Knowledge Wiki stage, including its operation-specific timeout. */
 export type KnowledgeWikiStageRequest =
   | {
     readonly kind: 'file-extract'
@@ -38,8 +68,8 @@ export interface KnowledgeWikiStageResult {
 }
 
 /**
- * Parent-owned process/worker executor. The capability marker is part of the
- * trust contract: abort must terminate the owned isolate, not merely detach it.
+ * Executor declaring a parent-owned process/worker implementation. The marker
+ * describes the provider; it does not prove that abort stops or joins its work.
  */
 export interface KnowledgeWikiStageExecutor {
   readonly isolation: 'owned-worker-v1' | 'owned-subprocess-v1'
@@ -61,13 +91,19 @@ export function isKnowledgeWikiStageExecutor(value: unknown): value is Knowledge
 }
 
 /**
- * Enforce the deadline even when an injected executor never settles.
- * Timeout/owner cancellation aborts the child signal and rejects without awaiting isolate termination.
+ * Supervise a stage deadline and owner cancellation.
+ * Timeout/owner cancellation aborts the child and waits for every worker join
+ * registered by the in-process owned-worker executor before rejecting. It
+ * propagates a join failure only after all registered joins settle. A join that
+ * never settles leaves this call pending. Opaque providers and a connection
+ * resolver still pending before worker creation have no join here, so this
+ * wrapper cannot prove they stopped; the owned executor checks cancellation
+ * after its resolver returns to prevent a late worker from starting.
  * @param executor - Parent-owned executor responsible for terminating its isolate on abort; absence rejects.
  * @param request - Stage input with a finite, positive timeoutMs deadline.
  * @param ownerSignal - Parent cancellation forwarded to the stage's dedicated controller.
- * @returns Stage result if it settles before cancellation/deadline; otherwise rejects and ignores late settlement.
- * @throws Rejects for unavailable execution, invalid deadlines, cancellation, timeout, or executor failure.
+ * @returns The executor result if it settles first; cancellation/deadline rejects after currently registered joins settle.
+ * @throws Rejects for unavailable execution, invalid deadlines, cancellation, timeout, executor failure, or join failure.
  */
 export function executeKnowledgeWikiStage(
   executor: KnowledgeWikiStageExecutor | undefined,
@@ -88,29 +124,42 @@ export function executeKnowledgeWikiStage(
   const controller = new AbortController()
   return new Promise((resolve, reject) => {
     let settled = false
+    let cancellationStarted = false
     function finish(operation: () => void): void {
-      if (settled) return
       settled = true
       clearTimeout(timeout)
       ownerSignal.removeEventListener('abort', abortFromOwner)
       operation()
     }
+    const cancelAndJoin = (error: Error, abortReason: unknown = error): void => {
+      if (settled || cancellationStarted) return
+      cancellationStarted = true
+      controller.abort(abortReason)
+      void joinKnowledgeWikiStageWorkers(controller.signal).then(
+        () => { finish(() => { reject(error) }) },
+        (joinError: unknown) => {
+          finish(() => {
+            // The private owner registers native Worker termination failures as Error.
+            const failure: Error = joinError as Error
+            reject(failure)
+          })
+        },
+      )
+    }
     const abortFromOwner = (): void => {
-      controller.abort(ownerSignal.reason)
-      finish(() => {
-        reject(ownerSignal.reason instanceof Error ? ownerSignal.reason : new Error('knowledge Wiki stage aborted'))
-      })
+      cancelAndJoin(ownerSignal.reason instanceof Error
+        ? ownerSignal.reason
+        : new Error('knowledge Wiki stage aborted'), ownerSignal.reason)
     }
     ownerSignal.addEventListener('abort', abortFromOwner, { once: true })
     const timeout = setTimeout(() => {
       const error = new Error(`knowledge Wiki ${request.kind} timed out after ${request.timeoutMs}ms`)
-      controller.abort(error)
-      finish(() => { reject(error) })
+      cancelAndJoin(error)
     }, request.timeoutMs)
     void executor.execute(request, controller.signal).then(
-      (value) => { finish(() => { resolve(value) }) },
+      (value) => { if (!cancellationStarted) finish(() => { resolve(value) }) },
       (error: unknown) => {
-        finish(() => {
+        if (!cancellationStarted) finish(() => {
           reject(error instanceof Error ? error : new Error(String(error)))
         })
       },

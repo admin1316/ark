@@ -23,4 +23,5 @@ function isResolvedConfig(value: unknown): value is Config {
     && typeof Reflect.get(value, 'knowledgeSearchCandidateBinary') === 'string'
     && typeof Reflect.get(value, 'knowledgeSearchCandidateTimeoutMs') === 'number'
     && typeof Reflect.get(value, 'knowledgeVerifierConfig') === 'string'
+    && typeof Reflect.get(value, 'knowledgeMeasuredTrialConfig') === 'string'
 }

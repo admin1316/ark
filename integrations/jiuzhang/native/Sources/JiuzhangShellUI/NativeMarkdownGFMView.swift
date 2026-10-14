@@ -53,7 +53,7 @@ struct NativeGFMDocumentView: View {
         // entire very large transcript message to CoreText for that temporary
         // first frame: doing so can monopolize the main thread before the
         // parsed lazy blocks are installed.
-        Text(firstFrameText)
+        Text(verbatim: firstFrameText)
           .font(.system(size: baseFontSize))
           .lineSpacing(4)
           .textSelection(.enabled)
@@ -149,7 +149,7 @@ struct NativeGFMBlockView: View {
         path: "\(path).footnotes"
       )
     case .literal(let source):
-      Text(source)
+      Text(verbatim: source)
         .font(.system(size: max(12, baseFontSize - 1), design: .monospaced))
         .foregroundStyle(Color.secondary)
         .textSelection(.enabled)
@@ -768,7 +768,7 @@ private enum NativeGFMInlineRenderer {
     style: NativeGFMInlineStyle,
     fontSize: CGFloat
   ) -> Text {
-    var value = Text(source)
+    var value = Text(verbatim: source)
       .font(.system(size: fontSize, design: style.contains(.code) ? .monospaced : .default))
     if style.contains(.strong) { value = value.bold() }
     if style.contains(.emphasis) { value = value.italic() }

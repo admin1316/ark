@@ -17,7 +17,7 @@ afterEach(() => {
 })
 
 describe('parseReviewBlocks', () => {
-  it('parses a complete block with description, PAGES and SEARCH', () => {
+  it('parses a complete block with description, PAGES and SEARCH', async () => {
     const text = [
       '--- FILE: wiki/x.md ---',
       '---',
@@ -41,17 +41,17 @@ describe('parseReviewBlocks', () => {
     })
   })
 
-  it('discards a block without a closer', () => {
+  it('discards a block without a closer', async () => {
     expect(parseReviewBlocks('---REVIEW: suggestion | X---\ndescription: d\n')).toEqual([])
   })
 
-  it('parses block-list PAGES items', () => {
+  it('parses block-list PAGES items', async () => {
     const text = ['---REVIEW: missing-page | M---', 'PAGES:', '- wiki/queries/q.md', '---END REVIEW---'].join('\n')
     const reviews = parseReviewBlocks(text)
     expect(reviews[0]!.affectedPages).toEqual(['wiki/queries/q.md'])
   })
 
-  it('rejects malformed openers and bounds malformed list continuations', () => {
+  it('rejects malformed openers and bounds malformed list continuations', async () => {
     expect(parseReviewBlocks('---REVIEW: missing suffix')).toEqual([])
     expect(parseReviewBlocks('---REVIEW: no separator ---\n---END REVIEW---')).toEqual([])
     const inline = parseReviewBlocks(
@@ -66,7 +66,7 @@ describe('parseReviewBlocks', () => {
 })
 
 describe('appendReviews', () => {
-  it('appends new reviews and dedupes by id on re-append', () => {
+  it('appends new reviews and dedupes by id on re-append', async () => {
     const dir = fixture()
     const reviewFile = join(dir, 'review.json')
     const text = '---REVIEW: suggestion | 标题---\ndescription: d\n---END REVIEW---'
@@ -79,7 +79,7 @@ describe('appendReviews', () => {
     expect(items[0]!.resolved).toBe(false)
   })
 
-  it('merges into an existing app-era review file', () => {
+  it('merges into an existing app-era review file', async () => {
     const dir = fixture()
     const reviewFile = join(dir, 'review.json')
     writeFileSync(reviewFile, JSON.stringify([{ id: 'review-12345678', title: 'old', type: 'suggestion', resolved: true }]))
@@ -89,7 +89,7 @@ describe('appendReviews', () => {
     expect(items).toHaveLength(2)
   })
 
-  it('fails loudly without overwriting a malformed review file', () => {
+  it('fails loudly without overwriting a malformed review file', async () => {
     const dir = fixture()
     const reviewFile = join(dir, 'review.json')
     writeFileSync(reviewFile, '{broken json')
@@ -98,7 +98,7 @@ describe('appendReviews', () => {
     expect(readFileSync(reviewFile, 'utf8')).toBe('{broken json')
   })
 
-  it('is a no-op for empty reviews and never touches the file', () => {
+  it('is a no-op for empty reviews and never touches the file', async () => {
     const dir = fixture()
     const reviewFile = join(dir, 'review.json')
     expect(appendReviews(reviewFile, '/p/a.md', [])).toBe(0)
@@ -107,7 +107,7 @@ describe('appendReviews', () => {
 })
 
 describe('resolveAdvisoryReviews', () => {
-  it('owns missing, duplicate, candidate, resolved, unrequested, and pending rows', () => {
+  it('owns missing, duplicate, candidate, resolved, unrequested, and pending rows', async () => {
     const dir = fixture()
     const reviewFile = join(dir, 'review.json')
     expect(resolveAdvisoryReviews(reviewFile, ['missing'], 'skip')).toBe(0)

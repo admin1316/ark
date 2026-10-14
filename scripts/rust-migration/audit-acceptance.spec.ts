@@ -7,14 +7,10 @@ import { describe, expect, it } from 'vitest'
 import { auditAcceptance, canonicalEvidencePayload, currentProfileDigest, currentSourceDigest } from './audit-acceptance.ts'
 
 const HASH = 'a'.repeat(64)
-
-function seedAcceptanceBaseline(root: string): void {
-  mkdirSync(join(root, 'docs/rust-migration'), { recursive: true })
-  for (const path of ['source-truth-report.md', 'profile-matrix.md', 'knowledge-runtime-report.md']) writeFileSync(join(root, 'docs/rust-migration', path), '# report\n')
-  writeFileSync(join(root, 'project-manifest.json'), JSON.stringify({ schemaVersion: 1, projectId: 'ark', profile: 'test', immutable: {
-    goalHash: HASH, planHash: HASH, scopeHash: HASH, permissionsHash: HASH, securityThresholdHash: HASH,
-    acceptanceHash: HASH, dataFormatHash: HASH, publishPolicyHash: HASH, stateVersion: 1,
-  } }))
+const IMMUTABLE = {
+  goalHash: HASH, planHash: HASH, scopeHash: HASH, permissionsHash: HASH,
+  securityThresholdHash: HASH, acceptanceHash: HASH, dataFormatHash: HASH,
+  publishPolicyHash: HASH, stateVersion: 1,
 }
 
 function commitFixture(root: string): void {
@@ -25,16 +21,18 @@ function commitFixture(root: string): void {
   execFileSync('git', ['-C', root, 'commit', '-qm', 'fixture'])
 }
 
+function writeManifest(root: string): void {
+  writeFileSync(join(root, 'project-manifest.json'), JSON.stringify({
+    schemaVersion: 1, projectId: 'ark', profile: 'test', immutable: IMMUTABLE,
+  }))
+}
+
 describe('acceptance audit', () => {
   it('binds Rust source bytes into the source digest', () => {
     const root = mkdtempSync(join(tmpdir(), 'ark-rust-digest-'))
     mkdirSync(join(root, 'rust/example'), { recursive: true })
     writeFileSync(join(root, 'rust/example/main.rs'), 'fn main() {}\n')
-    execFileSync('git', ['init', '-q', root])
-    execFileSync('git', ['-C', root, 'config', 'user.email', 'test@example.invalid'])
-    execFileSync('git', ['-C', root, 'config', 'user.name', 'Acceptance Test'])
-    execFileSync('git', ['-C', root, 'add', '.'])
-    execFileSync('git', ['-C', root, 'commit', '-qm', 'fixture'])
+    commitFixture(root)
     const before = currentSourceDigest(root)
     writeFileSync(join(root, 'rust/example/main.rs'), 'fn main() { println!("changed"); }\n')
     expect(currentSourceDigest(root)).not.toBe(before)
@@ -42,10 +40,12 @@ describe('acceptance audit', () => {
 
   it('keeps final acceptance UNKNOWN when benchmark, security, or utility evidence is incomplete', () => {
     const root = mkdtempSync(join(tmpdir(), 'ark-acceptance-'))
-    seedAcceptanceBaseline(root)
+    mkdirSync(join(root, 'docs/rust-migration'), { recursive: true })
     mkdirSync(join(root, 'packages/host/knowledge-wiki/src'), { recursive: true })
     mkdirSync(join(root, 'packages/host/knowledge-wiki-tools/src'), { recursive: true })
     mkdirSync(join(root, 'scripts/rust-migration'), { recursive: true })
+    for (const path of ['source-truth-report.md', 'profile-matrix.md', 'knowledge-runtime-report.md']) writeFileSync(join(root, 'docs/rust-migration', path), '# report\n')
+    writeManifest(root)
     writeFileSync(join(root, 'progress.jsonl'), '{}\n')
     writeFileSync(join(root, 'decision-log.md'), '# decisions\n')
     writeFileSync(join(root, 'packages/host/knowledge-wiki/src/knowledge-governance.ts'), '')
@@ -66,11 +66,14 @@ describe('acceptance audit', () => {
     expect(audit.checks.knowledgeUtility.status).toBe('UNKNOWN')
     expect(audit.checks.githubCi.status).toBe('UNKNOWN')
     expect(audit.artifactCompleteness.status).toBe('UNKNOWN')
+    expect(audit.artifactCompleteness.reason).toContain('scripts/rust-migration/knowledge-session-event-zstd-all-tools-replay-20261010.json')
   })
 
   it('ignores stale absolute-path evidence and a forged status field', () => {
     const root = mkdtempSync(join(tmpdir(), 'ark-acceptance-'))
-    seedAcceptanceBaseline(root)
+    mkdirSync(join(root, 'docs/rust-migration'), { recursive: true })
+    for (const path of ['source-truth-report.md', 'profile-matrix.md', 'knowledge-runtime-report.md']) writeFileSync(join(root, 'docs/rust-migration', path), '# report\n')
+    writeManifest(root)
     writeFileSync(join(root, 'phase6-acceptance.json'), JSON.stringify({
       schemaVersion: 1,
       kind: 'ark-phase6-acceptance',
@@ -80,11 +83,7 @@ describe('acceptance audit', () => {
       manifestHash: HASH,
       sourceDigest: HASH,
       profileDigest: HASH,
-      immutable: {
-        goalHash: HASH, planHash: HASH, scopeHash: HASH, permissionsHash: HASH,
-        securityThresholdHash: HASH, acceptanceHash: HASH, dataFormatHash: HASH,
-        publishPolicyHash: HASH, stateVersion: 1,
-      },
+      immutable: IMMUTABLE,
       artifactRefs: [],
       observations: Object.fromEntries(['sourceTruth', 'immutableRunContext', 'knowledgeGovernance', 'sessionReplay', 'runtimeRecovery', 'smartnessMetrics', 'knowledgeUtility', 'crossSessionLeakage', 'privilegeEscalation', 'rustDifferential', 'rustPerformance', 'orphanProcesses', 'sideEffectSafety', 'highRiskUnknown', 'githubCi', 'candidateBuildRollback'].map(name => [name, { evidenceRefs: [], status: 'PASS' }])),
       signature: 'not-a-signature',
@@ -110,11 +109,8 @@ describe('acceptance audit', () => {
       writeFileSync(join(root, path), '{}\n')
     }
     writeFileSync(join(root, 'packages/example/source.ts'), 'export const source = true\n')
-    const immutable = {
-      goalHash: HASH, planHash: HASH, scopeHash: HASH, permissionsHash: HASH,
-      securityThresholdHash: HASH, acceptanceHash: HASH, dataFormatHash: HASH, publishPolicyHash: HASH, stateVersion: 1,
-    }
-    writeFileSync(join(root, 'project-manifest.json'), JSON.stringify({ schemaVersion: 1, projectId: 'ark', profile: 'test', immutable }))
+    const immutable = IMMUTABLE
+    writeManifest(root)
     commitFixture(root)
     mkdirSync(join(root, 'evidence'), { recursive: true })
     writeFileSync(join(root, 'evidence/probe.json'), '{"verified":true}\n')

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "observedAtUtc": "2026-10-10T21:00:43Z",
+  "status": "candidate-config-forwarding-bundled-but-live-authority-unavailable",
+  "candidate": {
+    "path": "/Users/hui/ark-test/candidate/Ark.app",
+    "version": "3.1.24",
+    "build": "2026101124",
+    "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.f5b666f074025193"
+  },
+  "environmentInspection": {
+    "method": "macOS ps eww process-environment inspection",
+    "recordedData": "Only whether the dedicated variable name was present; environment values were neither captured nor written."
+  },
+  "processes": [
+    {
+      "pid": 18546,
+      "role": "app",
+      "verifierConfigPresent": false
+    },
+    {
+      "pid": 18551,
+      "role": "runtime",
+      "verifierConfigPresent": false
+    },
+    {
+      "pid": 18580,
+      "role": "api-runner",
+      "verifierConfigPresent": false
+    }
+  ],
+  "conclusion": "The current isolated build includes the Native launcher forwarding source fix, but ARK_KNOWLEDGE_VERIFIER_CONFIG is absent from the app, runtime, and API runner processes. The active profile therefore has no live verifier authority; no verified learning or Knowledge reuse is claimed."
+}

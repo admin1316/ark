@@ -1,0 +1,2542 @@
+{
+  "schema": "ark.install-e2e.receipt.v2",
+  "method": "pluginInventory/list",
+  "runtimeRoot": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime",
+  "runner": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js",
+  "runnerSha256": "88694da6b0094f8b4ceff8fa4b114b21f60b061c4e5e7c65ec75c2f2854e128a",
+  "descriptor": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-host-plugin-inventory/lib/typert.host.js",
+  "descriptorSha256": "50d1e26242123ad5f03e00bec79dbfa46a8709ccffdfd9d6704e9fdd7e02f2c1",
+  "entryCount": 106,
+  "entrySha256": "d87c5fc494994510b0f9839125bbfacdc2456a619520cc246e55c79903dcca86",
+  "entries": [
+    {
+      "entryId": "include",
+      "moduleName": "cordis:include",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:timer",
+      "moduleName": "@deepseek-ai/cordis-plugin-timer",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:hmr",
+      "moduleName": "@deepseek-ai/cordis-plugin-hmr",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:llm",
+      "moduleName": "@deepseek-ai/dsh-llm",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:deepseek-llm-api-extensions",
+      "moduleName": "@deepseek-ai/dsh-deepseek-llm-api-extensions",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-log-deepseek",
+      "moduleName": "@deepseek-ai/dsh-session-log-deepseek",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:plugin-package-inventory-deepseek",
+      "moduleName": "@deepseek-ai/dsh-plugin-package-inventory-deepseek",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session",
+      "moduleName": "@deepseek-ai/dsh-session",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:typert",
+      "moduleName": "@deepseek-ai/dsh-typert-registry",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:typert-loader",
+      "moduleName": "@deepseek-ai/dsh-typert-loader",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-title",
+      "moduleName": "@deepseek-ai/dsh-session-title",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-title-llm",
+      "moduleName": "@deepseek-ai/dsh-session-title-first-prompt-llm",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:user-questions",
+      "moduleName": "@deepseek-ai/dsh-user-questions",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:agent",
+      "moduleName": "@deepseek-ai/dsh-agent",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:agent-default-model",
+      "moduleName": "@deepseek-ai/dsh-agent-default-model",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:jobs",
+      "moduleName": "@deepseek-ai/dsh-jobs-local",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:llm-retry",
+      "moduleName": "@deepseek-ai/dsh-llm-retry",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:settings",
+      "moduleName": "@deepseek-ai/dsh-settings-file",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:credentials",
+      "moduleName": "@deepseek-ai/dsh-credentials-local",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:llm-pi-ai",
+      "moduleName": "@deepseek-ai/dsh-llm-pi-ai",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-persistence-jsonl",
+      "moduleName": "@deepseek-ai/dsh-session-persistence-jsonl",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:attachment-local",
+      "moduleName": "@deepseek-ai/dsh-attachment-local",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-query-sqlite",
+      "moduleName": "@deepseek-ai/dsh-session-query-sqlite",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-projection",
+      "moduleName": "@deepseek-ai/dsh-session-projection",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-telemetry-otel",
+      "moduleName": "@deepseek-ai/dsh-session-telemetry-otel",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:subprocess",
+      "moduleName": "@deepseek-ai/dsh-subprocess-local",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:sandbox",
+      "moduleName": "@deepseek-ai/dsh-sandbox-local",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:sandbox-policy",
+      "moduleName": "@deepseek-ai/dsh-sandbox-policy",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:bash-sandbox",
+      "moduleName": "@deepseek-ai/dsh-bash-sandbox",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:pwsh-sandbox",
+      "moduleName": "@deepseek-ai/dsh-pwsh-sandbox",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:approval",
+      "moduleName": "@deepseek-ai/dsh-user-approval",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:permission",
+      "moduleName": "@deepseek-ai/dsh-permission-presets",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:shell-env",
+      "moduleName": "@deepseek-ai/dsh-shell-env",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:tool-bash",
+      "moduleName": "@deepseek-ai/dsh-tool-bash",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-pwsh",
+      "moduleName": "@deepseek-ai/dsh-tool-pwsh",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-jobs",
+      "moduleName": "@deepseek-ai/dsh-tool-jobs",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:fs-observation-policy",
+      "moduleName": "@deepseek-ai/dsh-fs-observation-policy",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:tool-fs",
+      "moduleName": "@deepseek-ai/dsh-tool-fs",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-fs-search",
+      "moduleName": "@deepseek-ai/dsh-tool-fs-search",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:agent-instructions",
+      "moduleName": "@deepseek-ai/dsh-agent-instructions",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:skill",
+      "moduleName": "@deepseek-ai/dsh-skill",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:skill-filesystem",
+      "moduleName": "@deepseek-ai/dsh-skill-filesystem",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:skill-badge",
+      "moduleName": "@deepseek-ai/dsh-skill-badge",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-skill",
+      "moduleName": "@deepseek-ai/dsh-tool-skill",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:commands",
+      "moduleName": "@deepseek-ai/dsh-commands",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:command-feedback",
+      "moduleName": "@deepseek-ai/dsh-command-feedback",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:goal",
+      "moduleName": "@deepseek-ai/dsh-goal",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:goal-round-driver",
+      "moduleName": "@deepseek-ai/dsh-goal-round-driver",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:command-goal",
+      "moduleName": "@deepseek-ai/dsh-command-goal",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:plan-mode",
+      "moduleName": "@deepseek-ai/dsh-plan-mode",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:token-meter",
+      "moduleName": "@deepseek-ai/dsh-token-meter",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:compaction-basic",
+      "moduleName": "@deepseek-ai/dsh-compaction-basic",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:command-compact",
+      "moduleName": "@deepseek-ai/dsh-command-compact",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:subagent",
+      "moduleName": "@deepseek-ai/dsh-subagent",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:subagent-model-selection-settings",
+      "moduleName": "@deepseek-ai/dsh-tool-subagent/model-selection-settings",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:subagent-spawn-in-process",
+      "moduleName": "@deepseek-ai/dsh-subagent-spawn-in-process",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:subagent-fork-in-process",
+      "moduleName": "@deepseek-ai/dsh-subagent-fork-in-process",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:tool-subagent-control",
+      "moduleName": "@deepseek-ai/dsh-tool-subagent-control",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-subagent-list-agents",
+      "moduleName": "@deepseek-ai/dsh-tool-subagent-control/list-agents",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-subagent",
+      "moduleName": "@deepseek-ai/dsh-tool-subagent",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-subagent-fork",
+      "moduleName": "@deepseek-ai/dsh-tool-subagent",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-subagent-report",
+      "moduleName": "@deepseek-ai/dsh-tool-subagent-report",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:workflow-worker-thread",
+      "moduleName": "@deepseek-ai/dsh-workflow-worker-thread",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-workflow",
+      "moduleName": "@deepseek-ai/dsh-tool-workflow",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:timeout-policy",
+      "moduleName": "@deepseek-ai/dsh-tool-call-timeout-policy",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:spill-local",
+      "moduleName": "@deepseek-ai/dsh-spill-local",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:spill-policy",
+      "moduleName": "@deepseek-ai/dsh-spill-policy",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-checkpoint-policy",
+      "moduleName": "@deepseek-ai/dsh-session-checkpoint-policy",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:tool-result-pruner",
+      "moduleName": "@deepseek-ai/dsh-compaction-tool-result-pruner",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-todo",
+      "moduleName": "@deepseek-ai/dsh-tool-todo",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-goal",
+      "moduleName": "@deepseek-ai/dsh-tool-goal",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-ralph",
+      "moduleName": "@deepseek-ai/dsh-tool-ralph",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tool-str-replace-editor",
+      "moduleName": "@deepseek-ai/dsh-tool-str-replace-editor",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:repeat-tool-reminder",
+      "moduleName": "@deepseek-ai/dsh-repeat-tool-reminder",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:web",
+      "moduleName": "@deepseek-ai/dsh-web",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:web-search-deepseek",
+      "moduleName": "@deepseek-ai/dsh-web-search-deepseek",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:web-fetch-http",
+      "moduleName": "@deepseek-ai/dsh-web-fetch-http",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:tool-web",
+      "moduleName": "@deepseek-ai/dsh-tool-web",
+      "enabled": false,
+      "fiberPhase": null
+    },
+    {
+      "entryId": "include:tools",
+      "moduleName": "@deepseek-ai/dsh-tools",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:system-prompt",
+      "moduleName": "@deepseek-ai/dsh-system-prompt",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:agent-loop",
+      "moduleName": "@deepseek-ai/dsh-agent-loop",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:fs-sandbox",
+      "moduleName": "@deepseek-ai/dsh-fs-sandbox",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:llm-deepseek",
+      "moduleName": "@deepseek-ai/dsh-llm-deepseek",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:code-runtime",
+      "moduleName": "@deepseek-ai/dsh-code-runtime-worker-thread",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:storage",
+      "moduleName": "@deepseek-ai/dsh-storage",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:storage-json",
+      "moduleName": "@deepseek-ai/dsh-storage-json",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:storage-domain",
+      "moduleName": "@deepseek-ai/dsh-storage-domain",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:message-feedback",
+      "moduleName": "@deepseek-ai/dsh-message-feedback",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:workspace",
+      "moduleName": "@deepseek-ai/dsh-workspace",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-projection-cache",
+      "moduleName": "@deepseek-ai/dsh-session-projection-cache",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-reference",
+      "moduleName": "@deepseek-ai/dsh-session-reference",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:file-reference-local",
+      "moduleName": "@deepseek-ai/dsh-file-reference-local",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-stats",
+      "moduleName": "@deepseek-ai/dsh-session-stats",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:directory-picker",
+      "moduleName": "@deepseek-ai/dsh-host-directory-picker-native",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:plugin-inventory",
+      "moduleName": "@deepseek-ai/dsh-host-plugin-inventory",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:knowledge-wiki",
+      "moduleName": "@deepseek-ai/dsh-knowledge-wiki",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:workbench-remote",
+      "moduleName": "@deepseek-ai/dsh-host-workbench",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:api-gateway",
+      "moduleName": "@deepseek-ai/dsh-api-gateway",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:native-api-startup",
+      "moduleName": "@deepseek-ai/dsh-native-api-app/startup",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:webserver",
+      "moduleName": "@deepseek-ai/dsh-host-webserver",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:native-api-runtime",
+      "moduleName": "@deepseek-ai/dsh-native-api-app",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:host-connection",
+      "moduleName": "@deepseek-ai/dsh-host-connection",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:agent-presets",
+      "moduleName": "@deepseek-ai/dsh-agent-presets",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:session-remote-operations",
+      "moduleName": "@deepseek-ai/dsh-host-session-remote-operations",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:native-events",
+      "moduleName": "@deepseek-ai/dsh-host-native-events",
+      "enabled": true,
+      "fiberPhase": "active"
+    },
+    {
+      "entryId": "include:tool-knowledge-wiki",
+      "moduleName": "@deepseek-ai/dsh-tool-knowledge-wiki",
+      "enabled": true,
+      "fiberPhase": "active"
+    }
+  ],
+  "pluginInventory": {
+    "method": "pluginInventory/list",
+    "runtimeRoot": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime",
+    "runner": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js",
+    "runnerSha256": "88694da6b0094f8b4ceff8fa4b114b21f60b061c4e5e7c65ec75c2f2854e128a",
+    "descriptor": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-host-plugin-inventory/lib/typert.host.js",
+    "descriptorSha256": "50d1e26242123ad5f03e00bec79dbfa46a8709ccffdfd9d6704e9fdd7e02f2c1",
+    "entryCount": 106,
+    "entrySha256": "d87c5fc494994510b0f9839125bbfacdc2456a619520cc246e55c79903dcca86",
+    "entries": [
+      {
+        "entryId": "include",
+        "moduleName": "cordis:include",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:timer",
+        "moduleName": "@deepseek-ai/cordis-plugin-timer",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:hmr",
+        "moduleName": "@deepseek-ai/cordis-plugin-hmr",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:llm",
+        "moduleName": "@deepseek-ai/dsh-llm",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:deepseek-llm-api-extensions",
+        "moduleName": "@deepseek-ai/dsh-deepseek-llm-api-extensions",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-log-deepseek",
+        "moduleName": "@deepseek-ai/dsh-session-log-deepseek",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:plugin-package-inventory-deepseek",
+        "moduleName": "@deepseek-ai/dsh-plugin-package-inventory-deepseek",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session",
+        "moduleName": "@deepseek-ai/dsh-session",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:typert",
+        "moduleName": "@deepseek-ai/dsh-typert-registry",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:typert-loader",
+        "moduleName": "@deepseek-ai/dsh-typert-loader",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-title",
+        "moduleName": "@deepseek-ai/dsh-session-title",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-title-llm",
+        "moduleName": "@deepseek-ai/dsh-session-title-first-prompt-llm",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:user-questions",
+        "moduleName": "@deepseek-ai/dsh-user-questions",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:agent",
+        "moduleName": "@deepseek-ai/dsh-agent",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:agent-default-model",
+        "moduleName": "@deepseek-ai/dsh-agent-default-model",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:jobs",
+        "moduleName": "@deepseek-ai/dsh-jobs-local",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:llm-retry",
+        "moduleName": "@deepseek-ai/dsh-llm-retry",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:settings",
+        "moduleName": "@deepseek-ai/dsh-settings-file",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:credentials",
+        "moduleName": "@deepseek-ai/dsh-credentials-local",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:llm-pi-ai",
+        "moduleName": "@deepseek-ai/dsh-llm-pi-ai",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-persistence-jsonl",
+        "moduleName": "@deepseek-ai/dsh-session-persistence-jsonl",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:attachment-local",
+        "moduleName": "@deepseek-ai/dsh-attachment-local",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-query-sqlite",
+        "moduleName": "@deepseek-ai/dsh-session-query-sqlite",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-projection",
+        "moduleName": "@deepseek-ai/dsh-session-projection",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-telemetry-otel",
+        "moduleName": "@deepseek-ai/dsh-session-telemetry-otel",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:subprocess",
+        "moduleName": "@deepseek-ai/dsh-subprocess-local",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:sandbox",
+        "moduleName": "@deepseek-ai/dsh-sandbox-local",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:sandbox-policy",
+        "moduleName": "@deepseek-ai/dsh-sandbox-policy",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:bash-sandbox",
+        "moduleName": "@deepseek-ai/dsh-bash-sandbox",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:pwsh-sandbox",
+        "moduleName": "@deepseek-ai/dsh-pwsh-sandbox",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:approval",
+        "moduleName": "@deepseek-ai/dsh-user-approval",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:permission",
+        "moduleName": "@deepseek-ai/dsh-permission-presets",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:shell-env",
+        "moduleName": "@deepseek-ai/dsh-shell-env",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:tool-bash",
+        "moduleName": "@deepseek-ai/dsh-tool-bash",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-pwsh",
+        "moduleName": "@deepseek-ai/dsh-tool-pwsh",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-jobs",
+        "moduleName": "@deepseek-ai/dsh-tool-jobs",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:fs-observation-policy",
+        "moduleName": "@deepseek-ai/dsh-fs-observation-policy",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:tool-fs",
+        "moduleName": "@deepseek-ai/dsh-tool-fs",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-fs-search",
+        "moduleName": "@deepseek-ai/dsh-tool-fs-search",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:agent-instructions",
+        "moduleName": "@deepseek-ai/dsh-agent-instructions",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:skill",
+        "moduleName": "@deepseek-ai/dsh-skill",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:skill-filesystem",
+        "moduleName": "@deepseek-ai/dsh-skill-filesystem",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:skill-badge",
+        "moduleName": "@deepseek-ai/dsh-skill-badge",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-skill",
+        "moduleName": "@deepseek-ai/dsh-tool-skill",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:commands",
+        "moduleName": "@deepseek-ai/dsh-commands",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:command-feedback",
+        "moduleName": "@deepseek-ai/dsh-command-feedback",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:goal",
+        "moduleName": "@deepseek-ai/dsh-goal",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:goal-round-driver",
+        "moduleName": "@deepseek-ai/dsh-goal-round-driver",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:command-goal",
+        "moduleName": "@deepseek-ai/dsh-command-goal",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:plan-mode",
+        "moduleName": "@deepseek-ai/dsh-plan-mode",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:token-meter",
+        "moduleName": "@deepseek-ai/dsh-token-meter",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:compaction-basic",
+        "moduleName": "@deepseek-ai/dsh-compaction-basic",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:command-compact",
+        "moduleName": "@deepseek-ai/dsh-command-compact",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:subagent",
+        "moduleName": "@deepseek-ai/dsh-subagent",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:subagent-model-selection-settings",
+        "moduleName": "@deepseek-ai/dsh-tool-subagent/model-selection-settings",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:subagent-spawn-in-process",
+        "moduleName": "@deepseek-ai/dsh-subagent-spawn-in-process",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:subagent-fork-in-process",
+        "moduleName": "@deepseek-ai/dsh-subagent-fork-in-process",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:tool-subagent-control",
+        "moduleName": "@deepseek-ai/dsh-tool-subagent-control",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-subagent-list-agents",
+        "moduleName": "@deepseek-ai/dsh-tool-subagent-control/list-agents",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-subagent",
+        "moduleName": "@deepseek-ai/dsh-tool-subagent",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-subagent-fork",
+        "moduleName": "@deepseek-ai/dsh-tool-subagent",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-subagent-report",
+        "moduleName": "@deepseek-ai/dsh-tool-subagent-report",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:workflow-worker-thread",
+        "moduleName": "@deepseek-ai/dsh-workflow-worker-thread",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-workflow",
+        "moduleName": "@deepseek-ai/dsh-tool-workflow",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:timeout-policy",
+        "moduleName": "@deepseek-ai/dsh-tool-call-timeout-policy",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:spill-local",
+        "moduleName": "@deepseek-ai/dsh-spill-local",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:spill-policy",
+        "moduleName": "@deepseek-ai/dsh-spill-policy",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-checkpoint-policy",
+        "moduleName": "@deepseek-ai/dsh-session-checkpoint-policy",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:tool-result-pruner",
+        "moduleName": "@deepseek-ai/dsh-compaction-tool-result-pruner",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-todo",
+        "moduleName": "@deepseek-ai/dsh-tool-todo",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-goal",
+        "moduleName": "@deepseek-ai/dsh-tool-goal",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-ralph",
+        "moduleName": "@deepseek-ai/dsh-tool-ralph",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tool-str-replace-editor",
+        "moduleName": "@deepseek-ai/dsh-tool-str-replace-editor",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:repeat-tool-reminder",
+        "moduleName": "@deepseek-ai/dsh-repeat-tool-reminder",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:web",
+        "moduleName": "@deepseek-ai/dsh-web",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:web-search-deepseek",
+        "moduleName": "@deepseek-ai/dsh-web-search-deepseek",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:web-fetch-http",
+        "moduleName": "@deepseek-ai/dsh-web-fetch-http",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:tool-web",
+        "moduleName": "@deepseek-ai/dsh-tool-web",
+        "enabled": false,
+        "fiberPhase": null
+      },
+      {
+        "entryId": "include:tools",
+        "moduleName": "@deepseek-ai/dsh-tools",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:system-prompt",
+        "moduleName": "@deepseek-ai/dsh-system-prompt",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:agent-loop",
+        "moduleName": "@deepseek-ai/dsh-agent-loop",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:fs-sandbox",
+        "moduleName": "@deepseek-ai/dsh-fs-sandbox",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:llm-deepseek",
+        "moduleName": "@deepseek-ai/dsh-llm-deepseek",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:code-runtime",
+        "moduleName": "@deepseek-ai/dsh-code-runtime-worker-thread",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:storage",
+        "moduleName": "@deepseek-ai/dsh-storage",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:storage-json",
+        "moduleName": "@deepseek-ai/dsh-storage-json",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:storage-domain",
+        "moduleName": "@deepseek-ai/dsh-storage-domain",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:message-feedback",
+        "moduleName": "@deepseek-ai/dsh-message-feedback",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:workspace",
+        "moduleName": "@deepseek-ai/dsh-workspace",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-projection-cache",
+        "moduleName": "@deepseek-ai/dsh-session-projection-cache",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-reference",
+        "moduleName": "@deepseek-ai/dsh-session-reference",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:file-reference-local",
+        "moduleName": "@deepseek-ai/dsh-file-reference-local",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-stats",
+        "moduleName": "@deepseek-ai/dsh-session-stats",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:directory-picker",
+        "moduleName": "@deepseek-ai/dsh-host-directory-picker-native",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:plugin-inventory",
+        "moduleName": "@deepseek-ai/dsh-host-plugin-inventory",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:knowledge-wiki",
+        "moduleName": "@deepseek-ai/dsh-knowledge-wiki",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:workbench-remote",
+        "moduleName": "@deepseek-ai/dsh-host-workbench",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:api-gateway",
+        "moduleName": "@deepseek-ai/dsh-api-gateway",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:native-api-startup",
+        "moduleName": "@deepseek-ai/dsh-native-api-app/startup",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:webserver",
+        "moduleName": "@deepseek-ai/dsh-host-webserver",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:native-api-runtime",
+        "moduleName": "@deepseek-ai/dsh-native-api-app",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:host-connection",
+        "moduleName": "@deepseek-ai/dsh-host-connection",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:agent-presets",
+        "moduleName": "@deepseek-ai/dsh-agent-presets",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:session-remote-operations",
+        "moduleName": "@deepseek-ai/dsh-host-session-remote-operations",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:native-events",
+        "moduleName": "@deepseek-ai/dsh-host-native-events",
+        "enabled": true,
+        "fiberPhase": "active"
+      },
+      {
+        "entryId": "include:tool-knowledge-wiki",
+        "moduleName": "@deepseek-ai/dsh-tool-knowledge-wiki",
+        "enabled": true,
+        "fiberPhase": "active"
+      }
+    ]
+  },
+  "execution": {
+    "schema": "ark.install-e2e.execution.v2",
+    "startedAt": "2026-10-11T02:10:12.226Z",
+    "environment": {
+      "nodeVersion": "v24.19.0",
+      "platform": "darwin",
+      "architecture": "arm64"
+    },
+    "checks": [
+      {
+        "at": "2026-10-11T02:10:21.195Z",
+        "kind": "runtime-closure",
+        "packageCount": 315
+      },
+      {
+        "at": "2026-10-11T02:10:26.015Z",
+        "kind": "readiness",
+        "phase": "initial",
+        "baseURL": "http://127.0.0.1:53718",
+        "port": 53718
+      },
+      {
+        "at": "2026-10-11T02:10:26.063Z",
+        "kind": "process-ownership",
+        "phase": "initial",
+        "port": 53718,
+        "listenerOwners": [
+          {
+            "pid": 16455,
+            "command": "node",
+            "endpoints": [
+              "127.0.0.1:53718"
+            ]
+          }
+        ],
+        "launcher": {
+          "pid": 16436,
+          "parentPid": 16215,
+          "started": "Sun Oct 11 10:10:21 2026",
+          "executable": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+          "args": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/start.mjs --port 0"
+        },
+        "backends": [
+          {
+            "pid": 16455,
+            "parentPid": 16436,
+            "started": "Sun Oct 11 10:10:25 2026",
+            "executable": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+            "args": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js --port 0"
+          }
+        ],
+        "listenerBackends": [
+          {
+            "pid": 16455,
+            "parentPid": 16436,
+            "started": "Sun Oct 11 10:10:25 2026",
+            "executable": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+            "args": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js --port 0"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-11T02:10:26.084Z",
+        "kind": "http-response",
+        "name": "api-root",
+        "status": 200,
+        "shape": "Planet API/running"
+      },
+      {
+        "at": "2026-10-11T02:10:26.086Z",
+        "kind": "http-response",
+        "name": "index-html",
+        "status": 404
+      },
+      {
+        "at": "2026-10-11T02:10:26.089Z",
+        "kind": "http-response",
+        "name": "plugin-inventory-unauthenticated",
+        "status": 401
+      },
+      {
+        "at": "2026-10-11T02:10:26.095Z",
+        "kind": "http-response",
+        "name": "unknown-route",
+        "status": 404
+      },
+      {
+        "at": "2026-10-11T02:10:26.097Z",
+        "kind": "http-response",
+        "name": "settings-unauthenticated",
+        "status": 401
+      },
+      {
+        "at": "2026-10-11T02:10:26.109Z",
+        "kind": "http-response",
+        "name": "settings-authenticated",
+        "status": 200,
+        "envelopeType": "server-response",
+        "carrierOk": true,
+        "remoteOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.112Z",
+        "kind": "http-response",
+        "name": "retired-settings-dot-route",
+        "status": 404
+      },
+      {
+        "at": "2026-10-11T02:10:26.116Z",
+        "kind": "websocket-unauthenticated-rejected",
+        "path": "/api/events/mux",
+        "status": 401
+      },
+      {
+        "at": "2026-10-11T02:10:26.117Z",
+        "kind": "websocket-unauthenticated-rejected",
+        "path": "/api/events/host",
+        "status": 401
+      },
+      {
+        "at": "2026-10-11T02:10:26.121Z",
+        "kind": "rpc-response",
+        "method": "llm/providers",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.121Z",
+        "kind": "remote-result",
+        "method": "llm/providers",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.129Z",
+        "kind": "rpc-response",
+        "method": "agentPreset/list",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.129Z",
+        "kind": "remote-result",
+        "method": "agentPreset/list",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.141Z",
+        "kind": "rpc-response",
+        "method": "agentPreset/copy",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.141Z",
+        "kind": "remote-result",
+        "method": "agentPreset/copy",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.146Z",
+        "kind": "rpc-response",
+        "method": "agentPreset/list",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.146Z",
+        "kind": "remote-result",
+        "method": "agentPreset/list",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.155Z",
+        "kind": "rpc-response",
+        "method": "agentPreset/read",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.155Z",
+        "kind": "remote-result",
+        "method": "agentPreset/read",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.159Z",
+        "kind": "rpc-response",
+        "method": "pluginInventory/list",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.159Z",
+        "kind": "remote-result",
+        "method": "pluginInventory/list",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.163Z",
+        "kind": "rpc-response",
+        "method": "settings/describe",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.163Z",
+        "kind": "remote-result",
+        "method": "settings/describe",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.368Z",
+        "kind": "rpc-response",
+        "method": "llm/mutateProvider",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.368Z",
+        "kind": "remote-result",
+        "method": "llm/mutateProvider",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.391Z",
+        "kind": "rpc-response",
+        "method": "credentials/describe",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.391Z",
+        "kind": "remote-result",
+        "method": "credentials/describe",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.545Z",
+        "kind": "rpc-response",
+        "method": "llm/mutateProvider",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.545Z",
+        "kind": "remote-result",
+        "method": "llm/mutateProvider",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.552Z",
+        "kind": "rpc-response",
+        "method": "settings/mutate",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.552Z",
+        "kind": "remote-result",
+        "method": "settings/mutate",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.554Z",
+        "kind": "rpc-response",
+        "method": "settings/mutate",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.554Z",
+        "kind": "expected-domain-failure",
+        "method": "settings/mutate",
+        "code": "settings-conflict"
+      },
+      {
+        "at": "2026-10-11T02:10:26.559Z",
+        "kind": "rpc-response",
+        "method": "settings/describe",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.559Z",
+        "kind": "remote-result",
+        "method": "settings/describe",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.565Z",
+        "kind": "rpc-response",
+        "method": "settings/mutate",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.565Z",
+        "kind": "remote-result",
+        "method": "settings/mutate",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.568Z",
+        "kind": "rpc-response",
+        "method": "pluginInventory/list",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.568Z",
+        "kind": "remote-result",
+        "method": "pluginInventory/list",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.570Z",
+        "kind": "websocket-open",
+        "path": "/api/events/mux"
+      },
+      {
+        "at": "2026-10-11T02:10:26.571Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "stream/baseline"
+      },
+      {
+        "at": "2026-10-11T02:10:26.571Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "stream/baseline"
+      },
+      {
+        "at": "2026-10-11T02:10:26.571Z",
+        "kind": "websocket-open",
+        "path": "/api/events/host"
+      },
+      {
+        "at": "2026-10-11T02:10:26.572Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "stream/baseline"
+      },
+      {
+        "at": "2026-10-11T02:10:26.572Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "stream/baseline"
+      },
+      {
+        "at": "2026-10-11T02:10:26.597Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/workspace-changed"
+      },
+      {
+        "at": "2026-10-11T02:10:26.598Z",
+        "kind": "rpc-response",
+        "method": "workspace/create",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.598Z",
+        "kind": "remote-result",
+        "method": "workspace/create",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.658Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/remote-event"
+      },
+      {
+        "at": "2026-10-11T02:10:26.659Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/remote-event"
+      },
+      {
+        "at": "2026-10-11T02:10:26.669Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "session/projection",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5"
+      },
+      {
+        "at": "2026-10-11T02:10:26.669Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/session-added",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5"
+      },
+      {
+        "at": "2026-10-11T02:10:26.669Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "session/event",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5",
+        "seq": 0
+      },
+      {
+        "at": "2026-10-11T02:10:26.669Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "session/projection",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5"
+      },
+      {
+        "at": "2026-10-11T02:10:26.669Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "session/event",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5",
+        "seq": 1
+      },
+      {
+        "at": "2026-10-11T02:10:26.669Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "session/projection",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5"
+      },
+      {
+        "at": "2026-10-11T02:10:26.669Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "session/event",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5",
+        "seq": 2
+      },
+      {
+        "at": "2026-10-11T02:10:26.669Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "session/subscribed",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5",
+        "lastSeq": 2
+      },
+      {
+        "at": "2026-10-11T02:10:26.681Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/workspace-changed"
+      },
+      {
+        "at": "2026-10-11T02:10:26.681Z",
+        "kind": "rpc-response",
+        "method": "session/create",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.681Z",
+        "kind": "remote-result",
+        "method": "session/create",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.685Z",
+        "kind": "rpc-response",
+        "method": "session/history",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.685Z",
+        "kind": "remote-result",
+        "method": "session/history",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.688Z",
+        "kind": "websocket-close",
+        "label": "mux reconnect downlink",
+        "code": 1000
+      },
+      {
+        "at": "2026-10-11T02:10:26.709Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/remote-event"
+      },
+      {
+        "at": "2026-10-11T02:10:26.710Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/remote-event"
+      },
+      {
+        "at": "2026-10-11T02:10:26.715Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/session-added",
+        "sessionId": "session-3a17afc0-07c9-4887-bbd2-786fba7194a9"
+      },
+      {
+        "at": "2026-10-11T02:10:26.724Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/workspace-changed"
+      },
+      {
+        "at": "2026-10-11T02:10:26.724Z",
+        "kind": "rpc-response",
+        "method": "session/create",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.724Z",
+        "kind": "remote-result",
+        "method": "session/create",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.732Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/remote-event"
+      },
+      {
+        "at": "2026-10-11T02:10:26.732Z",
+        "kind": "rpc-response",
+        "method": "agentPreset/select",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.732Z",
+        "kind": "remote-result",
+        "method": "agentPreset/select",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.735Z",
+        "kind": "rpc-response",
+        "method": "session/history",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.735Z",
+        "kind": "remote-result",
+        "method": "session/history",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.735Z",
+        "kind": "mux-disconnected-history-advanced",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5",
+        "initialLastSeq": 2,
+        "advancedLastSeq": 3,
+        "hostLivenessSessionId": "session-3a17afc0-07c9-4887-bbd2-786fba7194a9"
+      },
+      {
+        "at": "2026-10-11T02:10:26.736Z",
+        "kind": "websocket-open",
+        "path": "/api/events/mux"
+      },
+      {
+        "at": "2026-10-11T02:10:26.736Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "stream/baseline"
+      },
+      {
+        "at": "2026-10-11T02:10:26.736Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "session/subscribed",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5",
+        "lastSeq": 3
+      },
+      {
+        "at": "2026-10-11T02:10:26.736Z",
+        "kind": "mux-reconnect-catch-up",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5",
+        "initialLastSeq": 2,
+        "advancedLastSeq": 3,
+        "reconnectLastSeq": 3
+      },
+      {
+        "at": "2026-10-11T02:10:26.736Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "session/subscribed",
+        "sessionId": "session-3a17afc0-07c9-4887-bbd2-786fba7194a9",
+        "lastSeq": 2
+      },
+      {
+        "at": "2026-10-11T02:10:26.736Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/mux",
+        "method": "stream/baseline"
+      },
+      {
+        "at": "2026-10-11T02:10:26.742Z",
+        "kind": "rpc-response",
+        "method": "agentPreset/remove",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.742Z",
+        "kind": "remote-result",
+        "method": "agentPreset/remove",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.746Z",
+        "kind": "rpc-response",
+        "method": "agentPreset/list",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.746Z",
+        "kind": "remote-result",
+        "method": "agentPreset/list",
+        "hostOk": true,
+        "domainLayer": false
+      },
+      {
+        "at": "2026-10-11T02:10:26.756Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/archived-sessions-changed"
+      },
+      {
+        "at": "2026-10-11T02:10:26.756Z",
+        "kind": "rpc-response",
+        "method": "workspace/archiveSession",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.756Z",
+        "kind": "remote-result",
+        "method": "workspace/archiveSession",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.762Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/session-removed",
+        "sessionId": "session-3a17afc0-07c9-4887-bbd2-786fba7194a9"
+      },
+      {
+        "at": "2026-10-11T02:10:26.791Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/workspace-changed"
+      },
+      {
+        "at": "2026-10-11T02:10:26.796Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/session-deleted",
+        "sessionId": "session-3a17afc0-07c9-4887-bbd2-786fba7194a9"
+      },
+      {
+        "at": "2026-10-11T02:10:26.797Z",
+        "kind": "rpc-response",
+        "method": "workspace/deleteArchivedSession",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.797Z",
+        "kind": "remote-result",
+        "method": "workspace/deleteArchivedSession",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.804Z",
+        "kind": "websocket-frame",
+        "path": "/api/events/host",
+        "method": "host/archived-sessions-changed"
+      },
+      {
+        "at": "2026-10-11T02:10:26.804Z",
+        "kind": "rpc-response",
+        "method": "workspace/archiveSession",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.804Z",
+        "kind": "remote-result",
+        "method": "workspace/archiveSession",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.805Z",
+        "kind": "websocket-close",
+        "label": "pre-restart mux downlink",
+        "code": 1000
+      },
+      {
+        "at": "2026-10-11T02:10:26.805Z",
+        "kind": "websocket-close",
+        "label": "pre-restart host downlink",
+        "code": 1000
+      },
+      {
+        "at": "2026-10-11T02:10:26.827Z",
+        "kind": "process-signal",
+        "role": "launcher",
+        "pid": 16436,
+        "signal": "SIGTERM",
+        "sent": true
+      },
+      {
+        "at": "2026-10-11T02:10:26.902Z",
+        "kind": "readiness-port-release",
+        "port": 53718,
+        "released": true,
+        "observations": [
+          {
+            "state": "refused",
+            "code": "ECONNREFUSED"
+          }
+        ],
+        "remainingListenerOwners": []
+      },
+      {
+        "at": "2026-10-11T02:10:31.596Z",
+        "kind": "readiness",
+        "phase": "restart",
+        "baseURL": "http://127.0.0.1:53747",
+        "port": 53747
+      },
+      {
+        "at": "2026-10-11T02:10:31.632Z",
+        "kind": "process-ownership",
+        "phase": "restart",
+        "port": 53747,
+        "listenerOwners": [
+          {
+            "pid": 16498,
+            "command": "node",
+            "endpoints": [
+              "127.0.0.1:53747"
+            ]
+          }
+        ],
+        "launcher": {
+          "pid": 16479,
+          "parentPid": 16215,
+          "started": "Sun Oct 11 10:10:26 2026",
+          "executable": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+          "args": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/start.mjs --port 0"
+        },
+        "backends": [
+          {
+            "pid": 16498,
+            "parentPid": 16479,
+            "started": "Sun Oct 11 10:10:31 2026",
+            "executable": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+            "args": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js --port 0"
+          }
+        ],
+        "listenerBackends": [
+          {
+            "pid": 16498,
+            "parentPid": 16479,
+            "started": "Sun Oct 11 10:10:31 2026",
+            "executable": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+            "args": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js --port 0"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-11T02:10:31.640Z",
+        "kind": "rpc-response",
+        "method": "workspace/list",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.640Z",
+        "kind": "remote-result",
+        "method": "workspace/list",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.640Z",
+        "kind": "restart-persistence",
+        "sessionId": "session-ff3455b8-fa90-4a66-bc09-9ce59986d3d5",
+        "archivedAfterRestart": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.650Z",
+        "kind": "rpc-response",
+        "method": "workspace/unarchiveSession",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.650Z",
+        "kind": "remote-result",
+        "method": "workspace/unarchiveSession",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.659Z",
+        "kind": "rpc-response",
+        "method": "workspace/archiveSession",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.659Z",
+        "kind": "remote-result",
+        "method": "workspace/archiveSession",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.690Z",
+        "kind": "rpc-response",
+        "method": "workspace/deleteArchivedSession",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.690Z",
+        "kind": "remote-result",
+        "method": "workspace/deleteArchivedSession",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.693Z",
+        "kind": "rpc-response",
+        "method": "session/list",
+        "status": 200,
+        "envelopeType": "server-response",
+        "rpcIdMatched": true,
+        "carrierOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.693Z",
+        "kind": "remote-result",
+        "method": "session/list",
+        "hostOk": true,
+        "domainLayer": true,
+        "domainOk": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.715Z",
+        "kind": "process-signal",
+        "role": "launcher",
+        "pid": 16479,
+        "signal": "SIGTERM",
+        "sent": true
+      },
+      {
+        "at": "2026-10-11T02:10:31.773Z",
+        "kind": "readiness-port-release",
+        "port": 53747,
+        "released": true,
+        "observations": [
+          {
+            "state": "refused",
+            "code": "ECONNREFUSED"
+          }
+        ],
+        "remainingListenerOwners": []
+      },
+      {
+        "at": "2026-10-11T02:10:31.806Z",
+        "kind": "final-residual-observation",
+        "launcherAlive": false,
+        "capturedBackendSurvivors": [],
+        "exactExecutableResiduals": [],
+        "port": 53747,
+        "listenerOwners": [],
+        "portProbe": {
+          "state": "refused",
+          "code": "ECONNREFUSED"
+        }
+      },
+      {
+        "at": "2026-10-11T02:10:35.685Z",
+        "kind": "execution-input-identity",
+        "unchanged": true,
+        "appTreeManifestSha256": "e7b8486897cb4bfcd179b923a7bdb66b5dacb5ad5684d1838c392a95c8b62de4",
+        "runtimeTreeManifestSha256": "27dda65a9e17beab101661359aea01840b2be0647ec44f7d164cecea0e69bc9f"
+      }
+    ],
+    "processRuns": [
+      {
+        "phase": "initial",
+        "port": 53718,
+        "listenerOwners": [
+          {
+            "pid": 16455,
+            "command": "node",
+            "endpoints": [
+              "127.0.0.1:53718"
+            ]
+          }
+        ],
+        "launcher": {
+          "pid": 16436,
+          "parentPid": 16215,
+          "started": "Sun Oct 11 10:10:21 2026",
+          "executable": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+          "args": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/start.mjs --port 0"
+        },
+        "backends": [
+          {
+            "pid": 16455,
+            "parentPid": 16436,
+            "started": "Sun Oct 11 10:10:25 2026",
+            "executable": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+            "args": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js --port 0"
+          }
+        ]
+      },
+      {
+        "phase": "restart",
+        "port": 53747,
+        "listenerOwners": [
+          {
+            "pid": 16498,
+            "command": "node",
+            "endpoints": [
+              "127.0.0.1:53747"
+            ]
+          }
+        ],
+        "launcher": {
+          "pid": 16479,
+          "parentPid": 16215,
+          "started": "Sun Oct 11 10:10:26 2026",
+          "executable": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+          "args": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/start.mjs --port 0"
+        },
+        "backends": [
+          {
+            "pid": 16498,
+            "parentPid": 16479,
+            "started": "Sun Oct 11 10:10:31 2026",
+            "executable": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+            "args": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js --port 0"
+          }
+        ]
+      }
+    ],
+    "status": "PASS",
+    "inputIdentityBefore": {
+      "files": {
+        "installScript": {
+          "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/tests/install-e2e.mjs",
+          "sha256": "0d7e9b8fa1386922a40ba2495b4a3ff3c999d9c020d99eda91767cbef7ab6aed"
+        },
+        "processLiveness": {
+          "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/tests/helpers/process-liveness.mjs",
+          "sha256": "a112d76d52b297367bbc88abd67058e06bb87ce6b79d03290996530f947736b4"
+        },
+        "processOwnership": {
+          "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/tests/helpers/install-process-ownership.mjs",
+          "sha256": "bd138e93f8801e2bffea9aac92b28a060bcd9040a7e6afbbf40d07c918020d22"
+        },
+        "wsEntry": {
+          "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/node_modules/.pnpm/ws@8.21.0/node_modules/ws/wrapper.mjs",
+          "sha256": "fe154662301fd558f935f9c217fccbe7a7dac02ff39e648a000589403ff27c7f"
+        },
+        "wsPackage": {
+          "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/node_modules/.pnpm/ws@8.21.0/node_modules/ws/package.json",
+          "sha256": "584ce6e7516587ba249dc910b0c04e2753f6b3f451fc3a5bc324f7735bdacc71"
+        },
+        "plutil": {
+          "path": "/usr/bin/plutil",
+          "sha256": "983854d7c73e0bcdb6d50314e900e5d0a1313888727f8a69987c0c709e991c14"
+        },
+        "ps": {
+          "path": "/bin/ps",
+          "sha256": "472992c470606d28f577590decfecd7f4a20f832fd92c671bebc6d44790b5d02"
+        },
+        "lsof": {
+          "path": "/usr/sbin/lsof",
+          "sha256": "28c36d6b6dfcce1f544717b0d1961aa03441ee0a736fee3e1eaeb215c0fbff4c"
+        },
+        "node": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+          "sha256": "2a6444e63caa2908909180832c28d33b4a27c53674ea4a7a39d11d79cefb353c"
+        },
+        "launcher": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/start.mjs",
+          "sha256": "08bba2948fab353ddb70286bbadc66a1e1573820245d741752d414415d69d287"
+        },
+        "runner": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js",
+          "sha256": "88694da6b0094f8b4ceff8fa4b114b21f60b061c4e5e7c65ec75c2f2854e128a"
+        },
+        "closureModule": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/runtime-closure.mjs",
+          "sha256": "e2d41d80d063e3639e04b89b660051b1aefc77c1fb997c49b62b1df558c2a4b0"
+        },
+        "closurePolicy": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/jiuzhang/profile/forbidden-runtime-packages.json",
+          "sha256": "5df5ac48e0b86e39016561f1ee5b65b80c5077f0037c8bb2c1b1245f0f44f2d5"
+        },
+        "pluginInventoryDescriptor": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-host-plugin-inventory/lib/typert.host.js",
+          "sha256": "50d1e26242123ad5f03e00bec79dbfa46a8709ccffdfd9d6704e9fdd7e02f2c1"
+        },
+        "infoPlist": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Info.plist",
+          "sha256": "1511916a1cd3ffd8b683276c1d8ab3baa1fdc21edd746a24eff18d05ca9803fa"
+        },
+        "mainBinary": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/MacOS/Ark",
+          "sha256": "6587cfb40a7afa7408730fba17df2fcccc8e97f27440a99e56c4020d16ef3159"
+        }
+      },
+      "wsPackageTree": {
+        "root": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/node_modules/.pnpm/ws@8.21.0/node_modules/ws",
+        "fileCount": 19,
+        "symlinkCount": 0,
+        "totalFileBytes": 151087,
+        "manifestPath": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate326-staged-install-e2e-20261011.json.before.ws-package.manifest.jsonl",
+        "manifestRecordCount": 19,
+        "manifestSha256": "fcc4c0a65edc40eed53e6a2e3bf14376fd64d1c852ccd723c97eaf3466d70263"
+      },
+      "runtimeTree": {
+        "root": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime",
+        "fileCount": 18654,
+        "symlinkCount": 11,
+        "totalFileBytes": 155164447,
+        "manifestPath": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate326-staged-install-e2e-20261011.json.before.runtime.manifest.jsonl",
+        "manifestRecordCount": 18665,
+        "manifestSha256": "27dda65a9e17beab101661359aea01840b2be0647ec44f7d164cecea0e69bc9f"
+      },
+      "appTree": {
+        "root": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app",
+        "fileCount": 18723,
+        "symlinkCount": 11,
+        "totalFileBytes": 309284852,
+        "manifestPath": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate326-staged-install-e2e-20261011.json.before.app.manifest.jsonl",
+        "manifestRecordCount": 18734,
+        "manifestSha256": "e7b8486897cb4bfcd179b923a7bdb66b5dacb5ad5684d1838c392a95c8b62de4"
+      }
+    },
+    "inputIdentityAfter": {
+      "files": {
+        "installScript": {
+          "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/tests/install-e2e.mjs",
+          "sha256": "0d7e9b8fa1386922a40ba2495b4a3ff3c999d9c020d99eda91767cbef7ab6aed"
+        },
+        "processLiveness": {
+          "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/tests/helpers/process-liveness.mjs",
+          "sha256": "a112d76d52b297367bbc88abd67058e06bb87ce6b79d03290996530f947736b4"
+        },
+        "processOwnership": {
+          "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/tests/helpers/install-process-ownership.mjs",
+          "sha256": "bd138e93f8801e2bffea9aac92b28a060bcd9040a7e6afbbf40d07c918020d22"
+        },
+        "wsEntry": {
+          "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/node_modules/.pnpm/ws@8.21.0/node_modules/ws/wrapper.mjs",
+          "sha256": "fe154662301fd558f935f9c217fccbe7a7dac02ff39e648a000589403ff27c7f"
+        },
+        "wsPackage": {
+          "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/node_modules/.pnpm/ws@8.21.0/node_modules/ws/package.json",
+          "sha256": "584ce6e7516587ba249dc910b0c04e2753f6b3f451fc3a5bc324f7735bdacc71"
+        },
+        "plutil": {
+          "path": "/usr/bin/plutil",
+          "sha256": "983854d7c73e0bcdb6d50314e900e5d0a1313888727f8a69987c0c709e991c14"
+        },
+        "ps": {
+          "path": "/bin/ps",
+          "sha256": "472992c470606d28f577590decfecd7f4a20f832fd92c671bebc6d44790b5d02"
+        },
+        "lsof": {
+          "path": "/usr/sbin/lsof",
+          "sha256": "28c36d6b6dfcce1f544717b0d1961aa03441ee0a736fee3e1eaeb215c0fbff4c"
+        },
+        "node": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/node/bin/node",
+          "sha256": "2a6444e63caa2908909180832c28d33b4a27c53674ea4a7a39d11d79cefb353c"
+        },
+        "launcher": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/start.mjs",
+          "sha256": "08bba2948fab353ddb70286bbadc66a1e1573820245d741752d414415d69d287"
+        },
+        "runner": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js",
+          "sha256": "88694da6b0094f8b4ceff8fa4b114b21f60b061c4e5e7c65ec75c2f2854e128a"
+        },
+        "closureModule": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/runtime-closure.mjs",
+          "sha256": "e2d41d80d063e3639e04b89b660051b1aefc77c1fb997c49b62b1df558c2a4b0"
+        },
+        "closurePolicy": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/jiuzhang/profile/forbidden-runtime-packages.json",
+          "sha256": "5df5ac48e0b86e39016561f1ee5b65b80c5077f0037c8bb2c1b1245f0f44f2d5"
+        },
+        "pluginInventoryDescriptor": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-host-plugin-inventory/lib/typert.host.js",
+          "sha256": "50d1e26242123ad5f03e00bec79dbfa46a8709ccffdfd9d6704e9fdd7e02f2c1"
+        },
+        "infoPlist": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Info.plist",
+          "sha256": "1511916a1cd3ffd8b683276c1d8ab3baa1fdc21edd746a24eff18d05ca9803fa"
+        },
+        "mainBinary": {
+          "path": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/MacOS/Ark",
+          "sha256": "6587cfb40a7afa7408730fba17df2fcccc8e97f27440a99e56c4020d16ef3159"
+        }
+      },
+      "wsPackageTree": {
+        "root": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/node_modules/.pnpm/ws@8.21.0/node_modules/ws",
+        "fileCount": 19,
+        "symlinkCount": 0,
+        "totalFileBytes": 151087,
+        "manifestPath": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate326-staged-install-e2e-20261011.json.after.ws-package.manifest.jsonl",
+        "manifestRecordCount": 19,
+        "manifestSha256": "fcc4c0a65edc40eed53e6a2e3bf14376fd64d1c852ccd723c97eaf3466d70263"
+      },
+      "runtimeTree": {
+        "root": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app/Contents/Resources/runtime",
+        "fileCount": 18654,
+        "symlinkCount": 11,
+        "totalFileBytes": 155164447,
+        "manifestPath": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate326-staged-install-e2e-20261011.json.after.runtime.manifest.jsonl",
+        "manifestRecordCount": 18665,
+        "manifestSha256": "27dda65a9e17beab101661359aea01840b2be0647ec44f7d164cecea0e69bc9f"
+      },
+      "appTree": {
+        "root": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app",
+        "fileCount": 18723,
+        "symlinkCount": 11,
+        "totalFileBytes": 309284852,
+        "manifestPath": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate326-staged-install-e2e-20261011.json.after.app.manifest.jsonl",
+        "manifestRecordCount": 18734,
+        "manifestSha256": "e7b8486897cb4bfcd179b923a7bdb66b5dacb5ad5684d1838c392a95c8b62de4"
+      }
+    },
+    "completedAt": "2026-10-11T02:10:35.685Z",
+    "failures": []
+  }
+}

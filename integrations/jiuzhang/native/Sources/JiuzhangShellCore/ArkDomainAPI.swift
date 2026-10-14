@@ -382,7 +382,7 @@ public enum ArkDomainAPIContract {
 
   public static func sessionRename(from value: JSONValue) throws -> ArkSessionRenameResult {
     guard let title = value["title"]?.stringValue,
-          let sequence = nonnegativeInteger(value["seq"])
+          let sequence = value["seq"]?.nonnegativeIntegerValue
     else { throw invalidResponse("session.rename") }
     return ArkSessionRenameResult(title: title, sequence: sequence)
   }
@@ -476,7 +476,7 @@ public enum ArkDomainAPIContract {
   public static func workbenchWebDocument(from value: JSONValue) throws -> ArkWorkbenchWebDocument {
     guard let url = value["url"]?.stringValue,
           let title = value["title"]?.stringValue,
-          let statusCode = nonnegativeInteger(value["statusCode"]),
+          let statusCode = value["statusCode"]?.nonnegativeIntegerValue,
           let markdown = value["markdown"]?.stringValue,
           let truncated = value["truncated"]?.boolValue
     else { throw invalidResponse("host.workbenchWebRead") }
@@ -500,7 +500,7 @@ public enum ArkDomainAPIContract {
     if resultValue["sourceEventSeq"] == nil {
       sourceSequence = nil
     } else {
-      guard let parsed = nonnegativeInteger(resultValue["sourceEventSeq"]) else {
+      guard let parsed = resultValue["sourceEventSeq"]?.nonnegativeIntegerValue else {
         throw invalidResponse("commands/execute sourceEventSeq")
       }
       sourceSequence = parsed
@@ -560,7 +560,7 @@ public enum ArkDomainAPIContract {
   }
 
   public static func resolvedReviewCount(from value: JSONValue) throws -> Int {
-    guard let count = nonnegativeInteger(value) else {
+    guard let count = value.nonnegativeIntegerValue else {
       throw invalidResponse("knowledgeWiki/resolveReviews")
     }
     return count
@@ -574,7 +574,7 @@ public enum ArkDomainAPIContract {
     else { throw invalidResponse("knowledgeWiki/ingestQueueStatus") }
     let tasks = try rows.map { row -> ArkKnowledgeIngestTask in
       guard
-        let id = nonnegativeInteger(row["id"]),
+        let id = row["id"]?.nonnegativeIntegerValue,
         let input = row["input"]?.stringValue, !input.isEmpty,
         let statusValue = row["status"]?.stringValue,
         let status = ArkKnowledgeIngestStatus(rawValue: statusValue)
@@ -687,16 +687,6 @@ public enum ArkDomainAPIContract {
       guard let string = value.stringValue else { throw invalidResponse(context) }
       return string
     }
-  }
-
-  private static func nonnegativeInteger(_ value: JSONValue?) -> Int? {
-    guard let number = value?.numberValue,
-          number.isFinite,
-          number >= 0,
-          number.rounded(.towardZero) == number,
-          number < Double(Int.max)
-    else { return nil }
-    return Int(number)
   }
 
   private static func invalidResponse(_ operation: String) -> ArkAPIError {

@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-13T09:00:13.266513+00:00",
+  "phase": "approved-signer-cancellation-source-gates-and-two-phase-peer-prototype",
+  "classification": "progress",
+  "status": "SOURCE_CANCELLATION_GATES_PASS_SCOPED_NATIVE_PEER_DESIGN_PASS",
+  "gitHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "authorizationBasis": {
+    "candidateSourceTests": "call_aM5LhZmUz34JHR7ctoxaBlV7: user approved candidate verifier source/tests and actual-use authentication",
+    "keylessOwnerMigration": "call_a5d27824914944658413e4dcd728f795: source/test typed owner migration",
+    "thisFix": "Existing caller and project lifecycle cancellation within these source/test owners; optional in-memory method signal only. No launcher JSON, event/WAL schema, canonical bytes, Remote wire, permission, security threshold, model route or publication policy delta."
+  },
+  "sourceChange": {
+    "applied": true,
+    "oneProjectGenerationController": true,
+    "transitions": [
+      "workspace switch",
+      "current workspace removal",
+      "service disposal"
+    ],
+    "verification": "AbortSignal.any combines caller and project signals",
+    "sealAwaits": [
+      "knowledge/verified",
+      "knowledge/promoted",
+      "promotion WAL",
+      "recovery event"
+    ],
+    "postAwaitStateGenerationCasFences": "RETAINED",
+    "cooperativeOnly": true,
+    "arbitraryOwnerSettlement": "UNPROVEN",
+    "synchronousServiceDisposalJoinsArbitrarySigner": false
+  },
+  "sourceChecks": {
+    "wikiTestFiles": 77,
+    "testsPassed": 1251,
+    "testsFailed": 0,
+    "coverageTargets": {
+      "external-verifier-adapter.ts": {
+        "lines": {
+          "total": 114,
+          "covered": 114,
+          "skipped": 0,
+          "pct": 100
+        },
+        "functions": {
+          "total": 19,
+          "covered": 19,
+          "skipped": 0,
+          "pct": 100
+        },
+        "statements": {
+          "total": 131,
+          "covered": 131,
+          "skipped": 0,
+          "pct": 100
+        },
+        "branches": {
+          "total": 102,
+          "covered": 102,
+          "skipped": 0,
+          "pct": 100
+        }
+      },
+      "index.ts": {
+        "lines": {
+          "total": 1251,
+          "covered": 1251,
+          "skipped": 0,
+          "pct": 100
+        },
+        "functions": {
+          "total": 248,
+          "covered": 248,
+          "skipped": 0,
+          "pct": 100
+        },
+        "statements": {
+          "total": 1435,
+          "covered": 1435,
+          "skipped": 0,
+          "pct": 100
+        },
+        "branches": {
+          "total": 1062,
+          "covered": 1062,
+          "skipped": 0,
+          "pct": 100
+        }
+      },
+      "reviews.ts": {
+        "lines": {
+          "total": 902,
+          "covered": 902,
+          "skipped": 0,
+          "pct": 100
+        },
+        "functions": {
+          "total": 105,
+          "covered": 105,
+          "skipped": 0,
+          "pct": 100
+        },
+        "statements": {
+          "total": 1058,
+          "covered": 1058,
+          "skipped": 0,
+          "pct": 100
+        },
+        "branches": {
+          "total": 910,
+          "covered": 910,
+          "skipped": 0,
+          "pct": 100
+        }
+      },
+      "verifier.ts": {
+        "lines": {
+          "total": 192,
+          "covered": 192,
+          "skipped": 0,
+          "pct": 100
+        },
+        "functions": {
+          "total": 43,
+          "covered": 43,
+          "skipped": 0,
+          "pct": 100
+        },
+        "statements": {
+          "total": 237,
+          "covered": 237,
+          "skipped": 0,
+          "pct": 100
+        },
+        "branches": {
+          "total": 417,
+          "covered": 417,
+          "skipped": 0,
+          "pct": 100
+        }
+      }
+    },
+    "strictHostTypecheck": "PASS_EXIT_0",
+    "publicHostBuild": "PASS_EXIT_0_SOURCE_UNCHANGED_AFTER_BUILD",
+    "fullSourceLint": "PASS_EXIT_0",
+    "docSync": "30_PASS_0_FAIL_0_SKIP",
+    "diffCheck": "PASS_EXIT_0",
+    "validationInputs": 112,
+    "inputHashesUnchangedAfterFinalValidation": true
+  },
+  "compiledManagedHelperCases": {
+    "currentPublicModuleSha256": "f4cbaa0eede329f968bec4566afa668b7356f383d118d49f38313517982c65b0",
+    "callerAbortMs": 18,
+    "workspaceSwitchAbortMs": 20,
+    "helperDoneAndWholeTreeExitAndPidAbsent": true,
+    "laterCandidateReviewEventGovernanceWal": "UNCHANGED_IN_BOTH_CONTROLS",
+    "receipt": "Already persisted before signing and retained after abort",
+    "positiveOriginalCanonicalBytesSignature": "PASS",
+    "fixtureKeysOnly": true,
+    "fullLearningAcceptance": false
+  },
+  "nativePeerPrototype": {
+    "twoPhase": "PASS_SCOPED_TEMPORARY_ADHOC_FIXTURE",
+    "positive": "Authenticated nonce/version callback then one typed operation and matching ACK",
+    "wrongClient": "Different client CDHash; handshake=0 and typed operation=0",
+    "wrongService": "Different actual server bytes; handshake handler=1, client peer error before callback, typed operation=0",
+    "differentServiceNamesAcrossGroups": true,
+    "sameServiceIdReferenceWithinCounterfeitCase": true,
+    "singlePhaseOriginal": "FAIL_RETAINED_wrong_service_handler_1_before_client_rejection",
+    "sixPidsNaturalExit": true,
+    "realCustodyOrProductionTaskRegistrationOrAntiRelay": "NOT_PROVEN"
+  },
+  "candidate": {
+    "version": "3.1.41",
+    "keylessAndCancellationSourceInstalled": false,
+    "newNativeBuilds": 0,
+    "formalVersion": "3.1.0",
+    "formalPromotion": "HOLD"
+  },
+  "newPaidRequests": 0,
+  "modelRouteProfileCredentialsChanged": false,
+  "realProtectedTrustDeployed": false,
+  "githubPublished": false,
+  "currentSourceRemoteCi": "UNVERIFIED_NOT_DISPATCHED",
+  "rustDecision": "RETAIN_TS",
+  "overallSpeedAndLearningLift": "UNMEASURED",
+  "fullGoalAcceptance": "UNKNOWN",
+  "sourceBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/verifier.ts",
+      "sha256": "c253d8985c46e929ce584e47f1683286a517fd7156cf04ccbbef650f4c5daaad"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/external-verifier-adapter.ts",
+      "sha256": "b964992b7435c39f9b08659fa023176a08c4a0ad0e15818801d8d62525fdff49"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/index.ts",
+      "sha256": "0cd772cea8b624f90b5fed1c3d29b92bdff2fe13b424dad599f2172a821a0b7e"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/reviews.ts",
+      "sha256": "08a8049e199f647bbc123ead77c9d059d8235fd498d5eddf610e60d01e5faa3d"
+    }
+  ],
+  "testBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts",
+      "sha256": "4872752c2856b59c30cccf69a9f8518c6b67fbac1412ca19620f15b7602bbc98"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/verification.spec.ts",
+      "sha256": "d6d8a9d45bf2cdad28728dbee71eb45c51cebe680d1f15be0124025e1c2a32b7"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-surface.spec.ts",
+      "sha256": "7301466ada17d05481a25f9ef23af24719ebdc504c43d9737e8fc484866d9755"
+    }
+  ],
+  "owningDocsBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.md",
+      "sha256": "ebddd80db021fb39118d4ae9e3471ae0d9d81e5648d3bddddccded6cc014f5be"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.zh.md",
+      "sha256": "3f306631197b1fa06c519508cf99cf17439fa397af4192fd17ade6dcc3013766"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.i18n.yaml",
+      "sha256": "9efc7cd2478c855ca8d2165747fb23c024005a65489b9c0742de32bce9e1e66a"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.md",
+      "sha256": "d01501f7170776bbf3ee9a70da2b17f71e935e10e6553d29a2f6d523fbe815a9"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md",
+      "sha256": "2c04039bb99d3bdcfa50f7ae6c664c1da9dfb7175f009945011ac488ad767134"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.i18n.yaml",
+      "sha256": "ac8f30d6150cffe47e4bb30bd0b19d2be67fcff6ff9f447d6ffca4fe3c00f54c"
+    }
+  ],
+  "protectedBindings": {
+    "/Users/hui/ark-test/ark-pr39-source-audit-20261011/project-manifest.json": {
+      "sha256": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+      "matches": true
+    },
+    "/Users/hui/ark/Ark.app/Contents/MacOS/Ark": {
+      "sha256": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a",
+      "matches": true
+    },
+    "/Users/hui/ark-test/candidate-home-current-20261011-v328/settings.yaml": {
+      "sha256": "305d4badb646e533d149c4a1c199a9f79f58772cf73371147e2c058028db5762",
+      "matches": true
+    },
+    "/Users/hui/ark-test/candidate-home-current-20261011-v328/.credentials.yaml": {
+      "sha256": "2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28",
+      "matches": true
+    },
+    "/Users/hui/ark-test/evidence/candidate339-real-retest-budget-20261013-attempt1/ledger.json": {
+      "sha256": "8124cac94ab4d789a0ddb4fe5f0822d1600e85b427f2469054e5545a20b64bdd",
+      "matches": true
+    },
+    "/Users/hui/ark-test/candidate/Ark.app/Contents/MacOS/Ark": {
+      "sha256": "ec356bbddb7cd2858a5c38b9c8fae4385bba7a71cf50085c3475039e097c83c6",
+      "matches": true
+    },
+    "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-knowledge-wiki/lib/index.js": {
+      "sha256": "1be29edd064523793abe4cefcae5ca2eb7302c4fb54b8ecbb2b74f13472be86a",
+      "matches": true
+    },
+    "/Users/hui/ark-test/evidence/candidate341-real-retest-budget-20261013-attempt1/ledger.json": {
+      "sha256": "348019c8e345e1362e499d027d2492a055cb385d9fb72791d9bac1f8b8267626",
+      "matches": true
+    }
+  },
+  "evidence": {
+    "finalWikiCoverage": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-root-gates-20261013-attempt4.wx/wiki-coverage.log",
+      "sha256": "49ba4341209ca39deb8118e67f5caa0be51673f156d3352c63a777bdb9a845ed"
+    },
+    "finalCoverageSummary": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-root-gates-20261013-attempt4.wx/coverage/coverage-summary.json",
+      "sha256": "042ea7551572705b51899f3b47f1d91b34531aa5660e0fed937297a1b34b4bcb"
+    },
+    "validationInputs": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-root-gates-20261013-attempt4.wx/validation-inputs.json",
+      "sha256": "1bcab8cf01b6d74c067a525c0095487bebecfbf3be8ab6b447ca764d8e847f15"
+    },
+    "finalStrictTypes": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-root-gates-20261013-attempt4.wx/host-typecheck.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "finalWholeSourceLint": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-root-gates-20261013-attempt4.wx/full-source-lint.log",
+      "sha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5"
+    },
+    "publicHostBuild": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-root-gates-20261013-attempt2.wx/public-host-build.log",
+      "sha256": "fb52688754888b04c0aa1c4add06d265d129c572284d6666414e834fb8e66f09"
+    },
+    "fullDocSync": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-root-gates-20261013-attempt3.wx/doc-sync.log",
+      "sha256": "74b20ed32bed8a8d85388c640a3dc937ab33f06efebd26449b0da57216e44315"
+    },
+    "compiledManagedSmoke": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-public-helper-smoke-20261013.wx/compiled-smoke-summary.json",
+      "sha256": "11b2369c3a889bb331d8e4263f35e863f731b08c3aa0dd65e794552aef24176f"
+    },
+    "sourceOwnerReport": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-source-repair-20261013.wx/report.json",
+      "sha256": "c962472717ab84040666312d4f4af2c3f8a6a6d805cedb7825cedb46d6f8fc48"
+    },
+    "testFixReport": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-source-repair-20261013-attempt3.wx/report.json",
+      "sha256": "047a974ccd9df27d8763a91a78278db0394c8d750e075d5a1991f39e8eaaa113"
+    },
+    "independentSourceReview": {
+      "path": "/Users/hui/ark-test/evidence/keyless-generation-signal-independent-review-20261013.wx/final-review.json",
+      "sha256": "62ae39d2d80be1e78e7b950dcd13eaada2e70fc6363df13fe2f728e85313582f"
+    },
+    "nativeTwoPhase": {
+      "path": "/Users/hui/ark-test/evidence/protected-owner-concrete-bootstrap-plan-20261013.wx/two-phase-final-attempt2.json",
+      "sha256": "af9d52231ee5f1ea5734db66aa9cb0939f07546b130e930a2cc47ee21154a564"
+    },
+    "originalNativeFailure": {
+      "path": "/Users/hui/ark-test/evidence/protected-owner-concrete-bootstrap-plan-20261013.wx/live-peer-final-attempt5.json",
+      "sha256": "26bb2e84c92ce5d5d86573a42ebaea290b60a1a0364bfec7099aeebb52a72c2c"
+    }
+  },
+  "retainedFailures": [
+    "Original focused coverage gaps and missing test type import retained.",
+    "Recovery fixture assumed a promoted candidate still existed; failed fixture retained and corrected presence comparison.",
+    "Original whole source lint 19 new-test diagnostics retained; only affected test callbacks/types repaired.",
+    "Parallel-heavy original77 run timed out30 tests: preserved as failed. Same source with final test-only fixes and unchanged configured timeouts/thresholds ran alone1251/0 at27.78s; no speed benchmark is claimed.",
+    "Native anonymous-endpoint bootstrap error, single-phase wrong-service handler1 and invalid equal-CDHash wrong-client fixture remain retained.",
+    "Initial root bilingual edit validation failed before writing; six pre-edit docs preserved and exact wording used for subsequent patch."
+  ],
+  "next": [
+    "Integrate closed protected signer/task registration and actual-use producer design; temporary codehash fixtures and test keys cannot enable production trust.",
+    "Apply complete stable source to isolated candidate only after reviewed remaining integration inputs are ready; preserve source/artifact separation.",
+    "Authenticated same-model fresh-session reuse, utility/error metrics, zero leakage/privilege escalation, current-source CI/platform and original recovery/rollback/Phase6 remain required."
+  ]
+}

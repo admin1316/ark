@@ -1,0 +1,9 @@
+version: 1
+scenario: bash-stdin
+profile: headless
+composition: default
+recording: authored
+header:
+  class: bash-stdin
+  pin: true
+permission: read-only

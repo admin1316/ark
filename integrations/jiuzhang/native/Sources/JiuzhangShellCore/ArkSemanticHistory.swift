@@ -7,7 +7,7 @@ public struct ArkHistoryCut: Equatable, Sendable {
 
   public init(sourceRevision: String, throughSequence: Int) throws {
     guard !sourceRevision.isEmpty,
-          ArkAPIClient.safeJSONInteger(.number(Double(throughSequence)), minimum: -1) == throughSequence
+          JSONValue.number(Double(throughSequence)).jsonSafeInteger(minimum: -1) == throughSequence
     else { throw ArkSemanticHistory.invalid("source cut") }
     self.sourceRevision = sourceRevision
     self.throughSequence = throughSequence
@@ -116,7 +116,7 @@ public enum ArkSemanticHistory {
   }
 
   private static func integer(_ value: JSONValue?, _ field: String, minimum: Int = 0) throws -> Int {
-    guard let result = ArkAPIClient.safeJSONInteger(value, minimum: minimum) else { throw invalid(field) }
+    guard let result = value?.jsonSafeInteger(minimum: minimum) else { throw invalid(field) }
     return result
   }
 
@@ -215,7 +215,7 @@ public enum ArkSemanticHistory {
   ) throws -> ArkBoundHistoryPage {
     guard value["view"] == .string("raw"), value["records"] == nil,
           value["projections"] == nil, (1...2_048).contains(maximumEvents),
-          beforeSequence == nil || ArkAPIClient.safeJSONInteger(.number(Double(beforeSequence!))) == beforeSequence
+          beforeSequence == nil || JSONValue.number(Double(beforeSequence!)).jsonSafeInteger() == beforeSequence
     else { throw invalid("bound raw page") }
     let sourceCut = try cut(value, expected: expectedCut)
     let page = try ArkAPIClient.validatedHistoryPage(from: value, context: "固定原始历史")
@@ -373,7 +373,7 @@ extension ArkAPIClient {
     maximumEvents: Int = 2_048
   ) async throws -> ArkBoundHistoryPage {
     guard !sessionID.isEmpty, (1...2_048).contains(maximumEvents),
-          beforeSequence == nil || Self.safeJSONInteger(.number(Double(beforeSequence!))) == beforeSequence
+          beforeSequence == nil || JSONValue.number(Double(beforeSequence!)).jsonSafeInteger() == beforeSequence
     else { throw ArkSemanticHistory.invalid("bound raw request") }
     var request: [String: JSONValue] = ["sessionId": .string(sessionID), "view": .string("raw"), "maxEvents": .number(Double(maximumEvents))]
     if let cut { request["sourceRevision"] = .string(cut.sourceRevision) }

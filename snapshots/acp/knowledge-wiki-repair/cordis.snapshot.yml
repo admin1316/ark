@@ -1,0 +1,32 @@
+# Keyless replay keeps the same assembled ACP/Wiki composition and replaces
+# only the live provider with the recorded, deterministic request script.
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  disabled: true
+
+- id: acp
+  name: '@deepseek-ai/dsh-acp'
+  config:
+    provider: deepseek-official
+    model: deepseek-v4-flash
+
+- insert:
+    - id: llm-replay
+      name: '@deepseek-ai/dsh-llm-replay'
+      config:
+        providers:
+          - id: deepseek-official
+            name: DeepSeek
+            models:
+              - id: deepseek-v4-flash
+
+    - id: knowledge-wiki
+      name: '@deepseek-ai/dsh-knowledge-wiki'
+      config:
+        wikiRoot: !!js dshHomePath('knowledge-snapshot/wiki')
+        mainRoot: !!js process.cwd()
+        credential: ''
+        ownedStageExecutor: false
+
+    - id: tool-knowledge-wiki
+      name: '@deepseek-ai/dsh-tool-knowledge-wiki'

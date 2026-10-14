@@ -37,6 +37,8 @@ kind: "package-reference"
 - **终端会话**：`spawnTerminal()` 使用 E2B 的字节 PTY API，以 mode 为 `0600` 的私有文件传入原样 argv 与清理后的环境，报告前台进程组，发送真实信号，并通过一项可重试且须等待的 `terminate()` 清理远程终端会话中仍存活的每个进程组；终止会拒绝新的句柄操作，中止并等待在途写入、检查和信号操作结算，并把仅含僵尸进程的进程组视为已经完全停稳。私有随机输出边界会丢弃 E2B 引导 shell 的提示符和回显的 runner 命令，同时保留请求进程的每个字节，包括其第一个提示符。终端输出推入句柄流时不等待宿主背压：流动的消费方（PTY 后端在构造时就挂上一个）把字节折叠进自身的有界状态，而暂停的消费方会在宿主内存中缓冲。在句柄发布前会一直等待 PTY 分配完成，之后才观察取消，以便由承担清理责任的回滚清理已发布句柄。setup 与 teardown 负责私有状态事务，在服务 dispose 期间中止待处理的 setup 并阻止发布；若 setup 回滚也失败，则由沙箱 dispose 或超时约束其存活时间。提示符检测、scrollback、就绪状态与所有者策略仍归 `dsh-terminal-bash` 所有。
 - **沙箱消失**：在进程或终端的存活探测、终止、回滚或断开连接期间出现 `SandboxNotFoundError`，证明远程执行环境无法保留工作，因此清理会将其视为完全停稳；其他故障仍可观察。
 
+当远程进程组仍存活时，`done` 报告直接命令的结果后，spawn 信号仍然有效。现有完全停稳观察器在确认进程组已空后释放监听器；准备阶段失败且没有命令句柄时立即释放。所有权决策见 [Spawn 取消与进程树生命周期](../../../.agents/notes/implemented/bug-fix/2026-10-13-spawn-signal-process-tree-lifetime.zh.md)。
+
 E2B 默认基础镜像提供该适配器调用的运行时和 Bash/GNU 工具：`node`、`bash`、`setsid`、`ps`、`awk`、`tr`、`env`、`base64`、`chmod`、`tee`、`head`、`rm`、`kill`、`id` 和 `getent`。
 
 <a id="model-experience"></a>

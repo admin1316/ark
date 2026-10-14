@@ -357,7 +357,8 @@ function signalTree(
 /**
  * Spawn one isolated detached process tree with the spec's per-stream stdio
  * dispositions. Runtime exits resolve `done` as {@link SubprocessOutcome};
- * only spawn failures reject.
+ * only spawn failures reject. The spawn signal remains effective until the
+ * observable tree exits, including survivors after the direct child settles.
  * @param spec - fully resolved argv, cwd, stdio, grace, cancellation, environment.
  * @param internals - spill-failure reporter and test-only spill-directory, platform, and taskkill overrides.
  * @returns live subprocess handle.
@@ -460,6 +461,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
       treeExitObserved = true
       if (graceTimer !== undefined) clearTimeout(graceTimer)
       graceTimer = undefined
+      spec.signal?.removeEventListener('abort', onAbort)
     })()
     return treeExitObservation
   }
@@ -519,12 +521,15 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
       stdoutCollector?.seal()
       stderrCollector?.seal()
       cleanup()
+      // The spawn signal owns tree lifetime even when no consumer awaits it.
+      void observeTreeExit()
       resolve({ exitCode, signal })
     }
     child.on('error', (error) => {
       // No meaningful close outcome follows a spawn failure.
       settled = true
       cleanup()
+      spec.signal?.removeEventListener('abort', onAbort)
       reject(error)
     })
     child.on('exit', (exitCode, signal) => {
@@ -540,7 +545,6 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
       // graceTimer deliberately NOT cleared: the SIGKILL escalation must be
       // able to reach tree survivors after the direct child settles.
       if (pipeDrainTimer !== undefined) clearTimeout(pipeDrainTimer)
-      spec.signal?.removeEventListener('abort', onAbort)
     }
   })
 

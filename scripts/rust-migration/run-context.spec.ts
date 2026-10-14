@@ -26,6 +26,7 @@ describe('ARK run context', () => {
     expect(context.status).toBe('ready')
     expect(context.profile).toBe('jiuzhang')
     expect(context.evidence['progress.jsonl']?.bytes).toBeGreaterThan(0)
+    expect(context.missingEvidence).toContain(join(root, 'scripts/rust-migration/knowledge-search-cache-vs-rust-reproduction-20261011.json'))
     expect(() => {
       assertImmutableBoundaries(immutable, { ...immutable, goalHash: 'b'.repeat(64) })
     }).toThrow('goalHash')

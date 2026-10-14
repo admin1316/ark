@@ -2,11 +2,20 @@
 
 import { createHash } from 'node:crypto'
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bm25, STOP_WORDS, tokenize } from '../../packages/host/knowledge-wiki/src/search.ts'
+import {
+  bm25,
+  bm25FromKnowledgeSearchIndex,
+  collectSearchPages,
+  createKnowledgeSearchIndex,
+  STOP_WORDS,
+  tokenize,
+} from '../../packages/host/knowledge-wiki/src/search.ts'
+import { WikiSnapshotStore } from '../../packages/host/knowledge-wiki/src/snapshot-store.ts'
 import { isolatedChildEnvironment } from './process-isolation.ts'
 
 export interface Page {
@@ -76,6 +85,18 @@ function percentile(values: readonly number[], fraction: number): number {
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] ?? 0
 }
 
+function measurementState(resolution: number) {
+  const delay = monitorEventLoopDelay({ resolution })
+  delay.enable()
+  return {
+    delay,
+    cpuBefore: process.cpuUsage(),
+    rssBefore: process.memoryUsage().rss,
+    durations: [] as number[],
+    digests: [] as string[],
+  }
+}
+
 function measure(run: () => unknown, iterations: number): {
   readonly p50: number
   readonly p95: number
@@ -86,12 +107,7 @@ function measure(run: () => unknown, iterations: number): {
   readonly eventLoopDelaySamples: number
   readonly digest: string
 } {
-  const delay = monitorEventLoopDelay({ resolution: 10 })
-  delay.enable()
-  const cpuBefore = process.cpuUsage()
-  const rssBefore = process.memoryUsage().rss
-  const durations: number[] = []
-  const digests: string[] = []
+  const { delay, cpuBefore, rssBefore, durations, digests } = measurementState(10)
   for (let index = 0; index < iterations; index += 1) {
     const start = performance.now()
     digests.push(JSON.stringify(run()))
@@ -108,7 +124,50 @@ function measure(run: () => unknown, iterations: number): {
   }
 }
 
-function summarizeSamples(samples: readonly number[], digest: string): Record<string, unknown> {
+async function measureAsync(run: () => unknown, iterations: number): Promise<{
+  readonly p50: number
+  readonly p95: number
+  readonly p99: number
+  readonly cpuMicros: number
+  readonly rssDelta: number
+  readonly eventLoopDelayMeanMs: number | null
+  readonly eventLoopDelayP95Ms: number | null
+  readonly eventLoopDelayMaxMs: number | null
+  readonly eventLoopDelaySamples: number
+  readonly digest: string
+}> {
+  const { delay, cpuBefore, rssBefore, durations, digests } = measurementState(1)
+  for (let index = 0; index < iterations; index += 1) {
+    const start = performance.now()
+    digests.push(JSON.stringify(await run()))
+    durations.push(performance.now() - start)
+    await new Promise<void>(resolveImmediate => setImmediate(resolveImmediate))
+  }
+  await new Promise<void>(resolveImmediate => setImmediate(resolveImmediate))
+  const cpu = process.cpuUsage(cpuBefore)
+  delay.disable()
+  const eventLoopDelaySamples = delay.count
+  return {
+    p50: percentile(durations, 0.5), p95: percentile(durations, 0.95), p99: percentile(durations, 0.99),
+    cpuMicros: cpu.user + cpu.system, rssDelta: process.memoryUsage().rss - rssBefore,
+    eventLoopDelayMeanMs: eventLoopDelaySamples > 0 && Number.isFinite(delay.mean) ? delay.mean / 1e6 : null,
+    eventLoopDelayP95Ms: eventLoopDelaySamples > 0 ? delay.percentile(95) / 1e6 : null,
+    eventLoopDelayMaxMs: eventLoopDelaySamples > 0 ? delay.max / 1e6 : null,
+    eventLoopDelaySamples,
+    digest: createHash('sha256').update(digests.join('\n')).digest('hex'),
+  }
+}
+
+function summarizeSamples(
+  samples: readonly number[],
+  digest: string,
+  loop: {
+    readonly meanMs: number | null
+    readonly p95Ms: number | null
+    readonly maxMs: number | null
+    readonly samples: number
+  } | undefined,
+): Record<string, unknown> {
   return {
     p50: percentile(samples, 0.5),
     p95: percentile(samples, 0.95),
@@ -116,8 +175,10 @@ function summarizeSamples(samples: readonly number[], digest: string): Record<st
     sampleCount: samples.length,
     cpuMicros: null,
     rssDelta: null,
-    eventLoopDelayMeanMs: null,
-    eventLoopDelaySamples: 0,
+    eventLoopDelayMeanMs: loop?.meanMs ?? null,
+    eventLoopDelayP95Ms: loop?.p95Ms ?? null,
+    eventLoopDelayMaxMs: loop?.maxMs ?? null,
+    eventLoopDelaySamples: loop?.samples ?? 0,
     digest,
   }
 }
@@ -147,7 +208,7 @@ interface RustRequest {
   readonly queries: readonly string[]
 }
 
-function benchmarkRequest(input: ReturnType<typeof benchmarkCorpus>): RustRequest {
+function benchmarkRequest(input: { readonly pages: readonly Page[]; readonly queries: readonly string[] }): RustRequest {
   return {
     schemaVersion: 1,
     requestId: 'benchmark-request-1',
@@ -196,7 +257,11 @@ function canonicalResults(results: readonly (readonly { readonly path: string; r
   return JSON.stringify(results)
 }
 
-function measureRustPersistent(binary: string, input: ReturnType<typeof benchmarkCorpus>, iterations: number): {
+function measureRustPersistent(
+  binary: string,
+  input: { readonly pages: readonly Page[]; readonly queries: readonly string[] },
+  iterations: number,
+): {
   readonly metrics: Record<string, unknown>
   readonly recovery: Record<string, unknown>
   readonly cancellation: Record<string, unknown>
@@ -220,6 +285,12 @@ function measureRustPersistent(binary: string, input: ReturnType<typeof benchmar
     readonly inputDigest: string
     readonly recovery: Record<string, unknown>
     readonly cancellation: Record<string, unknown>
+    readonly eventLoopDelay: {
+      readonly meanMs: number | null
+      readonly p95Ms: number | null
+      readonly maxMs: number | null
+      readonly samples: number
+    }
   }
   if (result.schemaVersion !== 1 || !Array.isArray(result.samplesMs) || result.samplesMs.length !== iterations
     || !/^[a-f0-9]{64}$/u.test(result.measurementDigest)
@@ -228,7 +299,7 @@ function measureRustPersistent(binary: string, input: ReturnType<typeof benchmar
   }
   return {
     metrics: {
-      ...summarizeSamples(result.samplesMs, result.measurementDigest),
+      ...summarizeSamples(result.samplesMs, result.measurementDigest, result.eventLoopDelay),
       startupMs: result.startupMs,
       startupIncludedInFirstSample: false,
       processReuse: true,
@@ -332,9 +403,212 @@ export function runBenchmark(iterations = 30, explicitRustBinary?: string): Reco
   }
 }
 
+interface FileBackedInput {
+  readonly root: string
+  readonly pages: Page[]
+  readonly query: string
+}
+
+function createFileBackedInput(): FileBackedInput {
+  const corpus = benchmarkCorpus()
+  const root = mkdtempSync(join(tmpdir(), 'ark-knowledge-search-benchmark-'))
+  try {
+    for (const page of corpus.pages) {
+      const path = join(root, page.path)
+      mkdirSync(resolve(path, '..'), { recursive: true })
+      writeFileSync(path, `---\ntitle: ${JSON.stringify(page.title)}\naliases: ${JSON.stringify(page.aliases)}\n---\n${page.text}\n`)
+    }
+    const pages = collectSearchPages(root).map(page => ({
+      path: page.path,
+      title: page.title,
+      aliases: page.aliases,
+      text: page.text,
+    }))
+    if (pages.length !== corpus.pages.length) throw new Error(`file-backed corpus loaded ${pages.length}/${corpus.pages.length} pages`)
+    return { root, pages, query: corpus.queries[0] ?? '' }
+  } catch (error) {
+    rmSync(root, { recursive: true, force: true })
+    throw error
+  }
+}
+
+function median(values: readonly number[]): number {
+  return percentile(values, 0.5)
+}
+
+function sha256File(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex')
+}
+
+function metricMedians(
+  runs: readonly Record<string, unknown>[],
+  key: string,
+): Record<string, unknown> {
+  const samples = runs.map(run => run[key]).filter((value): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value))
+  const numericKeys = ['p50', 'p95', 'p99', 'cpuMicros', 'rssDelta', 'eventLoopDelayMeanMs', 'eventLoopDelayP95Ms', 'eventLoopDelayMaxMs', 'eventLoopDelaySamples']
+  return Object.fromEntries(numericKeys.map((field) => {
+    const eligible = field === 'eventLoopDelayMeanMs'
+      ? samples.filter(sample => typeof sample['eventLoopDelaySamples'] === 'number' && sample['eventLoopDelaySamples'] > 0)
+      : samples
+    const values = eligible.map(sample => sample[field]).filter((value): value is number =>
+      typeof value === 'number' && Number.isFinite(value))
+    return [field, values.length === 0 ? null : median(values)]
+  }))
+}
+
+/**
+ * Reproduce the production-shaped, file-backed one-query comparison documented in the migration report.
+ * @param independentRuns - Number of fresh fixture/store runs.
+ * @param iterations - Timed samples in each run.
+ * @param explicitRustBinary - Optional isolated Rust candidate executable.
+ * @returns Per-run evidence and median scenario metrics.
+ */
+export async function runFileBackedComparisonSeries(
+  independentRuns = 3,
+  iterations = 30,
+  explicitRustBinary?: string,
+): Promise<Record<string, unknown>> {
+  if (!Number.isSafeInteger(independentRuns) || independentRuns < 1 || independentRuns > 20
+    || !Number.isSafeInteger(iterations) || iterations < 2 || iterations > 1000) {
+    throw new Error('file-backed benchmark bounds are invalid')
+  }
+  const binary = rustBinary(explicitRustBinary)
+  const runs: Array<Record<string, unknown>> = []
+  const firstIndexMissMs: number[] = []
+  let allDifferentialsMatch = binary !== undefined
+  let cleanRustRuns = 0
+
+  for (let runIndex = 0; runIndex < independentRuns; runIndex += 1) {
+    const input = createFileBackedInput()
+    const snapshotStore = new WikiSnapshotStore()
+    try {
+      const loadedPages = collectSearchPages(input.root)
+      const indexBuildStart = performance.now()
+      const productionIndex = await snapshotStore.get(input.root, 'knowledge-search-index', () =>
+        Promise.resolve(createKnowledgeSearchIndex(collectSearchPages(input.root))))
+      const cacheBuildMs = performance.now() - indexBuildStart
+      firstIndexMissMs.push(cacheBuildMs)
+
+      const currentResults = bm25(collectSearchPages(input.root), input.query)
+      const optimizedResults = bm25(loadedPages, input.query)
+      const cachedResults = bm25FromKnowledgeSearchIndex(productionIndex, input.query)
+      const currentAndOptimizedMatch = canonicalResults([currentResults]) === canonicalResults([optimizedResults])
+      const currentAndCacheMatch = canonicalResults([currentResults]) === canonicalResults([cachedResults])
+      const currentMetrics = await measureAsync(() => bm25(collectSearchPages(input.root), input.query), iterations)
+      const optimizedMetrics = await measureAsync(() => bm25(loadedPages, input.query), iterations)
+      const cacheMetrics = await measureAsync(
+        () => snapshotStore.get(input.root, 'knowledge-search-index', () =>
+          Promise.resolve(createKnowledgeSearchIndex(collectSearchPages(input.root)))).then(index =>
+          bm25FromKnowledgeSearchIndex(index, input.query)),
+        iterations,
+      )
+      const run: Record<string, unknown> = {
+        currentTypeScript: currentMetrics,
+        optimizedTypeScriptRebuiltIndex: optimizedMetrics,
+        productionCachedTypeScript: cacheMetrics,
+        firstIndexMissMs: cacheBuildMs,
+        currentAndOptimizedMatch,
+        productionCacheDifferentialMatch: currentAndCacheMatch,
+        pageCount: loadedPages.length,
+      }
+
+      if (binary !== undefined) {
+        const request = benchmarkRequest({ pages: input.pages, queries: [input.query] })
+        const rustOutput = runRust(binary, request)
+        const rustResults = rustOutput.results
+        const rustMatches = canonicalResults([currentResults]) === canonicalResults(rustResults)
+        const rustFreshMetrics = await measureAsync(() => runRust(binary, request).results, iterations)
+        const persistent = measureRustPersistent(binary, { pages: input.pages, queries: [input.query] }, iterations)
+        const expectedRustDigest = createHash('sha256').update(JSON.stringify(rustResults)).digest('hex')
+        const persistentMatches = persistent.resultDigest === expectedRustDigest
+        run['rustIpc'] = rustFreshMetrics
+        run['persistentRust'] = persistent.metrics
+        run['rustDifferentialMatch'] = rustMatches && persistentMatches
+        run['persistentRustRecovery'] = persistent.recovery
+        run['persistentRustCancellation'] = persistent.cancellation
+        run['rustResultDigest'] = rustOutput.digest
+        if (rustMatches && persistentMatches) cleanRustRuns += 1
+        else allDifferentialsMatch = false
+      } else {
+        run['rustIpc'] = null
+        run['persistentRust'] = null
+        run['rustDifferentialMatch'] = false
+        allDifferentialsMatch = false
+      }
+      if (!currentAndOptimizedMatch || !currentAndCacheMatch) allDifferentialsMatch = false
+      runs.push(run)
+    } finally {
+      snapshotStore.dispose()
+      rmSync(input.root, { recursive: true, force: true })
+    }
+  }
+
+  const corpus = benchmarkCorpus()
+  const sourceRoot = fileURLToPath(new URL('../..', import.meta.url))
+  const scenarioNames = [
+    'currentTypeScript', 'optimizedTypeScriptRebuiltIndex', 'productionCachedTypeScript', 'rustIpc', 'persistentRust',
+  ]
+  const scenarios = Object.fromEntries(scenarioNames.map(name => [name, metricMedians(runs, name)]))
+  return {
+    schemaVersion: 1,
+    status: binary !== undefined && allDifferentialsMatch && cleanRustRuns === independentRuns
+      ? 'bounded-source-comparison-pass'
+      : 'unknown',
+    releaseDecision: 'unknown',
+    execution: 'independent-file-backed-single-query-comparison',
+    activeProfileMode: 'disabled',
+    runtime: { platform: process.platform, arch: process.arch, node: process.versions.node },
+    fixture: {
+      pages: corpus.pages.length,
+      queryDigest: createHash('sha256').update(inputQuery(corpus)).digest('hex'),
+      independentRuns,
+      iterationsPerRun: iterations,
+      queryPerRequest: 1,
+      indexInvalidationVerifiedBy: 'WikiSnapshotStore and Knowledge Wiki search regression suites',
+    },
+    scenarios,
+    productionCacheFirstIndexMissMs: firstIndexMissMs,
+    productionCacheBuildsPerRun: Array(independentRuns).fill(1),
+    differentialMatches: cleanRustRuns,
+    rustWorkerCleanExits: cleanRustRuns,
+    sourceSha256: {
+      benchmark: sha256File(fileURLToPath(import.meta.url)),
+      search: sha256File(resolve(sourceRoot, 'packages/host/knowledge-wiki/src/search.ts')),
+      snapshotStore: sha256File(resolve(sourceRoot, 'packages/host/knowledge-wiki/src/snapshot-store.ts')),
+      rustKernel: sha256File(resolve(sourceRoot, 'rust/knowledge-search-shadow/src/main.rs')),
+    },
+    runs,
+    limitations: [
+      'Synthetic fixture only; no real user Wiki, embeddings, model provider latency, ACL replay, or whole Ark profile call.',
+      'Rust child CPU and RSS are not included in Node-parent measurements; collect process-tree resources before any production decision.',
+      'Cancellation, crash recovery, cross-platform packaging, stress, and authenticated candidate-profile enforcement remain separate gates.',
+    ],
+  }
+}
+
+function inputQuery(corpus: ReturnType<typeof benchmarkCorpus>): string {
+  return corpus.queries[0] ?? ''
+}
+
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
-  const result = runBenchmark(Number.parseInt(process.argv[2] ?? '30', 10))
-  const output = process.argv[3]
-  if (output !== undefined) writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`)
-  else process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+  const args = process.argv.slice(2)
+  if (args[0] === '--series') {
+    const output = args[3]
+    void runFileBackedComparisonSeries(Number.parseInt(args[1] ?? '3', 10), Number.parseInt(args[2] ?? '30', 10))
+      .then((result) => {
+        const serialized = `${JSON.stringify(result, null, 2)}\n`
+        if (output !== undefined) writeFileSync(output, serialized)
+        else process.stdout.write(serialized)
+      })
+      .catch((error: unknown) => {
+        process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`)
+        process.exitCode = 1
+      })
+  } else {
+    const result = runBenchmark(Number.parseInt(args[0] ?? '30', 10))
+    const output = args[1]
+    if (output !== undefined) writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`)
+    else process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+  }
 }

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-12-wiki-unlink-absence-ancestors.md
+2026-10-12-wiki-unlink-absence-ancestors.md: d17091c90698f825d83a2020286b8d43e2685dbf
+2026-10-12-wiki-unlink-absence-ancestors.zh.md: 2e15cdd2848172b7be25f47252cea582937a28f2

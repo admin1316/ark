@@ -1,0 +1,14 @@
+{
+  "steps": [
+    {
+      "op": "initialize"
+    },
+    {
+      "op": "newSession"
+    },
+    {
+      "op": "prompt",
+      "text": "The current direct user correction is: Use only verified Wiki sources for reusable knowledge.\nCall wiki_propose_repair once for concepts/rounding.md with this exact correctedRule and title Verified sources. This conversation has not read any Wiki page. After the call reply exactly REPAIR_NOT_STAGED. Do not call any other tools."
+    }
+  ]
+}

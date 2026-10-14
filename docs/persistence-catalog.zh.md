@@ -491,7 +491,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-Source: [`packages/host/knowledge-wiki-tools/src/session-events.ts:34`](../packages/host/knowledge-wiki-tools/src/session-events.ts)
+Source: [`packages/host/knowledge-wiki-tools/src/session-events.ts:44`](../packages/host/knowledge-wiki-tools/src/session-events.ts)
 
 <a id="knowledgeretrieved--log-only"></a>
 
@@ -506,8 +506,7 @@ Source: [`packages/host/knowledge-wiki-tools/src/session-events.ts:34`](../packa
 }
 ```
 
-Source: [`packages/host/knowledge-wiki-tools/src/session-events.ts:28`](../packages/host/knowledge-wiki-tools/src/session-events.ts)
-
+Source: [`packages/host/knowledge-wiki-tools/src/session-events.ts:38`](../packages/host/knowledge-wiki-tools/src/session-events.ts)
 
 ### `llm/*`
 

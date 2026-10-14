@@ -8,6 +8,15 @@ public enum ArkExecutionPhase: String, Equatable, Sendable {
   case succeeded
   case failed
   case cancelled
+
+  func localizedLabel(language: ArkLanguagePreference) -> String {
+    switch self {
+    case .running: return ArkL10n.text(.executionRunning, language)
+    case .succeeded: return ArkL10n.text(.executionCompleted, language)
+    case .failed: return ArkL10n.text(.executionFailed, language)
+    case .cancelled: return ArkL10n.text(.executionCancelled, language)
+    }
+  }
 }
 
 /// One durable nested execution step. Code-mode sub-dispatches and workflow
@@ -849,6 +858,17 @@ public enum ArkToolPresentation: Equatable, Sendable {
   case search(ArkSearchPresentation)
   case read(ArkReadPresentation)
   case web(ArkWebPresentation)
+
+  var title: String? {
+    switch self {
+    case .generic(let card): return card.title
+    case .terminal(let card): return card.title
+    case .diff(let card): return card.title
+    case .search(let card): return card.title
+    case .read(let card): return card.title
+    case .web(let card): return card.title
+    }
+  }
 
   /// Decode a canonical `ToolCallView`/`ToolResultView` payload. Unknown or
   /// missing `card` values yield nil; optional fields stay nil when absent.

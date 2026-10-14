@@ -39,6 +39,7 @@ kind: "package-reference"
     apiKeyEnv: DEEPSEEK_API_KEY  # credential reference, resolved per request
     baseURL: https://api.deepseek.com # optional; $DEEPSEEK_BASE_URL then this default
     reasoningEffort: high        # optional; off | low | high | max
+    jsonOutput: false            # optional; true asks DeepSeek for valid JSON message content
     maxTokens: 256000            # optional per-request output cap
     maxRequestFilesBytes: 134217728
     maxInlineRequestImageBytes: 20971520
@@ -54,6 +55,7 @@ kind: "package-reference"
 | `baseURL` | `https://api.deepseek.com` | 端点基址；设置了 `$DEEPSEEK_BASE_URL` 时优先 |
 | `thinking` | `enabled` | 部署策略；`disabled` 把所有请求锁定为 `off` |
 | `reasoningEffort` | `high` | 默认强度：`off`、`low`、`high` 或 `max` |
+| `jsonOutput` | `false` | 启用时，每个请求发送 `response_format: { type: 'json_object' }` |
 | `maxTokens` | `256,000` | 单次请求输出上限；模型自身上限与显式请求值优先 |
 | `defaultContextWindow` | `1,000,000` | 无精确值模型的容量回退 |
 | `models` | V4 Flash + V4 Pro + V4 Flash Vision Exp | 供发现消费方查看的建议性目录 |
@@ -82,6 +84,8 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 `reasoningEffort` 选择公布的默认值。当部署策略允许 thinking 时，确切模型元数据会按顺序公开 `off`、`low`、`high` 与 `max` 强度及选择指引。`low`、`high` 与 `max` 启用 thinking 并以 `reasoning_effort` 序列化，适配器自有的 `off` 则发送 `thinking.type: disabled`。不支持的取值会在网络 I/O 前以 `UNSUPPORTED_REASONING_EFFORT` 失败；`thinking: disabled` 会在插件加载时拒绝任何非 `off` 强度。`purpose: 'session-title'` 的请求会强制关闭 thinking，把有界输出留给可见标题文本。
 
+`jsonOutput` 是默认关闭的可选部署设置。启用后，每条 chat-completions 请求都会携带 `response_format: { type: 'json_object' }`；默认配置不发送该字段，维持当前请求行为。该设置请求有效 JSON 消息内容，不提供 JSON Schema、精确键集合，也不能保证整个含工具调用的回合只有一条 assistant 消息。普通对话配置应保持关闭；严格整轮输出必须依据完整会话轨迹验收。
+
 ### 动态配置
 
 连接事实通过可选 settings 与凭据 seam 每次操作重新读取一次。用户设置文档中的 `llm-deepseek:` 分节无需重启即可覆盖任何字段；未通过超 schema 上限的快照会保留最后有效事实并记录失败。API 密钥从提供端点、图片与 Files 策略及空闲预算的同一快照按流调用解析，因此被拒绝的设置代际不会贡献其中任何事实。图片请求在请求时解析附件服务，因此加载顺序不会冻结图片可用性。
@@ -97,6 +101,9 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 -----
 
 <a id="understand-the-implementation"></a>
+
+可选的[原生知识 owner](../../bundle/native-api-app/README.zh.md) 在 HTTP 派发前观察绑定会话的主请求。适配器在扩展合并后计算最终 UTF-8 请求体的摘要，并等待登记。已登记派发必须使用 owner 的本机 `http://127.0.0.1` 费用守卫；owner 拒绝以 `REQUEST_EVIDENCE` 失败，调用方取消仍为 `ABORTED`。这些拒绝不作为传输重试处理。缺少 owner、未跟踪会话及辅助请求保持原有提供方请求行为。
+
 ## 理解实现
 
 <details>

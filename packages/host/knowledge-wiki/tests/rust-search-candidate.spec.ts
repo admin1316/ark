@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
@@ -7,10 +8,27 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import {
   createRustKnowledgeSearchRequest,
   runRustKnowledgeSearchCandidate,
 } from '../src/rust-search-candidate.ts'
+
+const spawnObserver = vi.hoisted(() => ({
+  onSpawn: undefined as ((child: unknown) => void) | undefined,
+}))
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:child_process')>()
+  return {
+    ...original,
+    spawn: (...args: Parameters<typeof original.spawn>) => {
+      const child = original.spawn(...args)
+      spawnObserver.onSpawn?.(child)
+      return child
+    },
+  }
+})
 
 let root: string
 
@@ -146,6 +164,53 @@ describe('rust knowledge-search candidate boundary', () => {
     expect(result.observation.reason).toContain('8 MiB')
   })
 
+  it('rejects UTF-8 and tokenizer overflow before starting a child', async () => {
+    const page = { path: 'page.md', title: 'title', aliases: [], text: 'body' }
+    const marker = join(root, 'started')
+    const binary = candidateScript(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')`)
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ requestId: '中'.repeat(86) }, 'identity limit'],
+      [{ sessionId: '中'.repeat(86) }, 'identity limit'],
+      [{ pages: [{ ...page, path: '中'.repeat(342) }] }, 'page limit'],
+      [{ pages: [{ ...page, title: '中'.repeat(43691) }] }, 'page limit'],
+      [{ pages: [{ ...page, text: '中'.repeat(43691) }] }, 'page limit'],
+      [{ pages: [{ ...page, aliases: ['中'.repeat(43691)] }] }, 'page limit'],
+      [{ queries: ['😀'.repeat(2048) + 'x'] }, 'query limit'],
+      [{ queries: ['中'.repeat(129)] }, 'query token limit'],
+      [{ queries: [Array(257).fill('runtime').join(' ')] }, 'query token limit'],
+    ]
+    for (const [patch, reason] of cases) {
+      const result = await runRustKnowledgeSearchCandidate(
+        alteredRequest(patch), expected, { mode: 'shadow', binaryPath: binary },
+      )
+      expect(result.results).toBe(expected)
+      expect(result.observation).toMatchObject({ status: 'fallback', matched: false })
+      expect(result.observation.reason).toContain(reason)
+      await expect(runRustKnowledgeSearchCandidate(
+        alteredRequest(patch), expected, { mode: 'enforce', binaryPath: binary },
+      )).rejects.toThrow(new RegExp(`failed closed: .*${reason}`))
+    }
+    expect(existsSync(marker)).toBe(false)
+  })
+
+  it('accepts the exact UTF-8 byte and query token endpoints', async () => {
+    const page = {
+      path: '中'.repeat(341) + 'x',
+      title: '中'.repeat(43690) + 'xx',
+      aliases: ['中'.repeat(43690) + 'xx'],
+      text: '中'.repeat(43690) + 'xx',
+    }
+    for (const query of ['中'.repeat(128) + 'a2', '😀'.repeat(2048), Array(256).fill('runtime').join(' ')]) {
+      const result = await runRustKnowledgeSearchCandidate(
+        alteredRequest({
+          requestId: '中'.repeat(85) + 'x', sessionId: '中'.repeat(85) + 'x', pages: [page], queries: [query],
+        }), expected, { mode: 'shadow', binaryPath: validOutputScript() },
+      )
+      expect(result.observation.status).toBe('matched')
+      expect(result.results).toBe(expected)
+    }
+  })
+
   it('is disabled without touching the candidate binary', async () => {
     const result = await runRustKnowledgeSearchCandidate(request(), expected, {
       mode: 'disabled',
@@ -209,6 +274,8 @@ describe('rust knowledge-search candidate boundary', () => {
       { schemaVersion: 1, results: [[null]], digest: '0'.repeat(64), inputDigest: '0'.repeat(64) },
       { schemaVersion: 1, results: [[{}]], digest: '0'.repeat(64), inputDigest: '0'.repeat(64) },
       { schemaVersion: 1, results: [[{ path: '', score: 1 }]], digest: '0'.repeat(64), inputDigest: '0'.repeat(64) },
+      { schemaVersion: 1, results: [[{ path: 'x'.repeat(1025), score: 1 }]], digest: '0'.repeat(64), inputDigest: '0'.repeat(64) },
+      { schemaVersion: 1, results: [[{ path: '中'.repeat(342), score: 1 }]], digest: '0'.repeat(64), inputDigest: '0'.repeat(64) },
       { schemaVersion: 1, results: [[{ path: 'page.md', score: Number.POSITIVE_INFINITY }]], digest: '0'.repeat(64), inputDigest: '0'.repeat(64) },
       { schemaVersion: 1, results: [[]], digest: 'bad', inputDigest: '0'.repeat(64) },
       { schemaVersion: 1, results: [[]], digest: '0'.repeat(64), inputDigest: 'bad' },
@@ -334,6 +401,52 @@ process.stdin.on('end', () => {
       mode: 'shadow', binaryPath: quietFailure, timeoutMs: 5000,
     })
     expect(quietResult.observation.reason).toContain('exited 7')
+  })
+
+  it('drops stderr emitted only after the parent confirms it collected the 64 KiB cap', async () => {
+    const acknowledgement = join(root, 'stderr-cap-collected')
+    const failing = candidateScript(`
+const fs = require('node:fs')
+process.stdin.resume()
+process.stdin.on('end', () => {
+  process.stderr.write('x'.repeat(64 * 1024), () => {
+    const waitForAcknowledgement = setInterval(() => {
+      if (!fs.existsSync(${JSON.stringify(acknowledgement)})) return
+      clearInterval(waitForAcknowledgement)
+      process.stderr.write('z', () => process.exit(7))
+    }, 1)
+  })
+})
+`)
+    let collectedBytes = 0
+    let postAcknowledgementBytes = 0
+    let acknowledged = false
+    spawnObserver.onSpawn = (child) => {
+      const processChild = child as ChildProcessWithoutNullStreams
+      processChild.stderr.on('data', (chunk: Buffer | string) => {
+        const bytes = Buffer.isBuffer(chunk) ? chunk.byteLength : Buffer.byteLength(chunk)
+        collectedBytes += bytes
+        if (!acknowledged && collectedBytes >= 64 * 1024) {
+          acknowledged = true
+          writeFileSync(acknowledgement, 'collected')
+        } else if (acknowledged) {
+          postAcknowledgementBytes += bytes
+        }
+      })
+    }
+    try {
+      const result = await runRustKnowledgeSearchCandidate(request(), expected, {
+        mode: 'shadow', binaryPath: failing, timeoutMs: 5000,
+      })
+      expect(result.observation.status).toBe('fallback')
+      expect(result.observation.reason).toContain('exited 7')
+      expect(result.observation.reason?.length).toBeLessThan(2200)
+      expect(acknowledged).toBe(true)
+      expect(collectedBytes).toBeGreaterThanOrEqual(64 * 1024)
+      expect(postAcknowledgementBytes).toBe(1)
+    } finally {
+      spawnObserver.onSpawn = undefined
+    }
   })
 
   it('falls back when candidate output exceeds the output budget', async () => {

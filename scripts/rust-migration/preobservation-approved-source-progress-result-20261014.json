@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "seq": 102,
+  "at": "2026-10-14T01:11:59.256022+00:00",
+  "status": "SOURCE_IMPLEMENTATION_IN_PROGRESS_FULL_CHAIN_NOT_YET_ACCEPTED",
+  "report": {
+    "path": "/Users/hui/ark-test/evidence/approved-pre-observation-source-20261014/progress-report.json",
+    "sha256": "451bf5dd1786d38ca82ee6502a6cab434ed422af882b24b12c8c46fdcab573e6"
+  },
+  "approval": {
+    "path": "/Users/hui/ark-test/evidence/approved-pre-observation-source-20261014/human-approval.json",
+    "sha256": "0c9aaebd514a88d1e313b09fb2fb16ba6b6962709b9113c34a5c64e60add085e"
+  },
+  "approvalBlockResolved": true,
+  "sourceInstalled": false,
+  "newPaidRequests": 0,
+  "fullGoalAcceptance": "UNKNOWN",
+  "formalPromotion": "HOLD"
+}

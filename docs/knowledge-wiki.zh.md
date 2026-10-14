@@ -20,9 +20,15 @@
 
 事件日志接受 `knowledge/observed`、`knowledge/candidate`、`knowledge/verified`、`knowledge/rejected`、`knowledge/retrieved`、`knowledge/injected`、`knowledge/conflict`、`knowledge/expired`、`knowledge/promoted` 和 `knowledge/rolled_back`。回放 hash 链可重建受治理的记录状态；格式错误、乱序或篡改事件会 fail closed。
 
+每个独立记录的 `knowledge/retrieved` 事件最多允许该页面产生一次非中性 utility 结果。服务在接受反馈前会将 hash 链日志中的结果计数与 utility JSON 投影核对；即使中断后投影陈旧，也不能重复计入成功或修正。`wiki_propose_repair` 只有在同一会话完整读取已验证来源、消费一次性来源 hash 能力，并且 host 确认同一轮直接用户消息中的规则与日志里的工具参数一致后才记录修正结果。模型访问前，至少检索三次且 utility 不高于零的已验证记录会收到可回放的 `knowledge/expired` 事件。调用方报告的成功仍是反馈信号，不是任务正确性的独立验证。
+
+### 修正提案
+
+如果用户纠正了一个 Wiki 支持的结论，`wiki_propose_repair` 可以为 `concepts/`、`entities/`、`findings/`、`research/` 或 `methodology/` 下已验证的 Markdown 页面创建低 trust Candidate。工具要求同一会话先完整执行 `wiki_read`，服务端还会独立校验绑定会话、项目、来源路径和准确内容 hash 的一次性进程内能力。服务还会核对可回放的 session 日志，要求同一轮包含直接用户消息，且工具参数与用户原文中的修正规则一致。该能力 15 分钟后过期；超过共用 8000 字符工具读取上限的页面不会获得此能力。Candidate 发布前，旧记录先被拒绝；在独立 verifier 通过且明确执行 Replace 评审前，模型可见的 Wiki 读取仍隐藏修正规则。这是受控的修正提案流程，不能证明下一次对话会检索并复用修正。
+
 ## 模型可见行为
 
-`tool-knowledge-wiki` 注册 `wiki_search`、`wiki_files`、`wiki_read`、`wiki_graph`、`wiki_reviews`、`wiki_ingest` 和 `wiki_verify_candidate`。Wiki 内容通过这些工具进入模型，调用方 session 记录包含 tool call、scope、结果 hash 和可回放 JSON 值的检索与注入事件。每个模型步骤没有自动的无 scope recall 段落。
+`tool-knowledge-wiki` 注册 `wiki_search`、`wiki_files`、`wiki_read`、`wiki_graph`、`wiki_reviews`、`wiki_ingest`、`wiki_verify_candidate` 和 `wiki_propose_repair`。Wiki 内容通过这些工具进入模型，调用方 session 记录包含 tool call、scope、结果 hash 和可回放 JSON 值的检索与注入事件。每个模型步骤没有自动的无 scope recall 段落。
 
 检索将 BM25 与可选在线 embedding 结合；embedding 不可用时退回关键词结果。图谱从 Wiki Markdown 派生并在内存缓存。源摄取串行、受限、可取消并可恢复；生成页面在验证和评审完成前保持 candidate 状态。
 

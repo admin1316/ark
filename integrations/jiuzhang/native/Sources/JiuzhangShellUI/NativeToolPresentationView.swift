@@ -364,18 +364,6 @@ extension JSONEncoder {
 /// Case payload accessors: Swift resolves `.terminal` on an enum value to the
 /// case constructor, not the payload, so views pattern-match through these.
 private extension ArkToolPresentation {
-  /// The card title every card kind carries.
-  var title: String? {
-    switch self {
-    case .generic(let card): return card.title
-    case .terminal(let card): return card.title
-    case .diff(let card): return card.title
-    case .search(let card): return card.title
-    case .read(let card): return card.title
-    case .web(let card): return card.title
-    }
-  }
-
   var terminalCard: ArkTerminalPresentation? {
     if case .terminal(let card) = self { return card }
     return nil

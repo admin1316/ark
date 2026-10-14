@@ -1,0 +1,529 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-12T13:23:57.475803+00:00",
+  "status": "APPROVED_SINGLE_NATIVE_LABEL_SOURCE_BUILD_INSTALL_AND_ACTUAL_WINDOW_PASS_FULL_GOAL_UNKNOWN",
+  "sourceRoot": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+  "sourceHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "sourceDirty": true,
+  "authorization": {
+    "humanReplyQuestionId": "call_126e634250dd4a7fad0b48e3754ef4aa",
+    "answer": "批准候选内单项文案修正（推荐）",
+    "proposal": {
+      "path": "/Users/hui/ark-test/evidence/candidate-native-idle-wording-change-request-20261012.zh.txt",
+      "sha256": "41e6bf17064a75d789ca9b788192684db0e43ea89869f34c27edd78f9aeef232",
+      "bytes": 2348
+    },
+    "scope": "Exactly one bilingual .sessionActivityIdle Entry in ArkL10n.swift; state logic, remaining UI, permissions, model route, core wire and publishing thresholds unchanged."
+  },
+  "sourceChange": {
+    "file": {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/native/Sources/JiuzhangShellUI/ArkL10n.swift",
+      "sha256": "eb529dc1fded4bb7d3834a0f7960e9515c7a30e0e4a048ea8532ae8b1d7eac6b",
+      "bytes": 108321
+    },
+    "beforeSnapshot": {
+      "path": "/Users/hui/ark-test/evidence/candidate335-arkl10n-before-idle-wording-20261012.wx.swift",
+      "sha256": "87f6e63ee1907b821815c99c164a110115a909d1f24bff4420dfb69546776b6b",
+      "bytes": 108300
+    },
+    "singleChangedLine": 1464,
+    "beforeZh": "尚未运行任务",
+    "afterZh": "当前没有运行中的任务",
+    "beforeEn": "No task has run yet",
+    "afterEn": "No task is currently running",
+    "sourceResult": {
+      "path": "/Users/hui/ark-test/evidence/candidate-idle-wording-approved-source-result-20261012.json",
+      "sha256": "15da1708e9ebcff496e82f9d22c52d212dc5120ce7b364994e1fbab077eaee3c",
+      "bytes": 3532
+    },
+    "independentSemanticAudit": {
+      "path": "/Users/hui/ark-test/evidence/candidate-idle-wording-independent-audit-20261012.json",
+      "sha256": "bee011d05259c6d8ae106e763c7f462d55e66ba90b0905f3bb9681a2b9d44f24",
+      "bytes": 6940
+    },
+    "validation": "Existing locale-dictionary-parity1/1 passed with Swift owner compilation; no new mirroring unit test or repeated already-passing source suite. Raw log not originally saved; preserved tool-output excerpt clearly labelled."
+  },
+  "candidate": {
+    "app": "/Users/hui/ark-test/candidate/Ark.app",
+    "version": "3.1.37",
+    "build": {
+      "path": "/Users/hui/ark-test/evidence/candidate337-offline-build-20261012-attempt1.summary.json",
+      "sha256": "a2ff4dc69de02694911cb81614756b9e72aa2e6f2145726e164d94b8a0f591e8",
+      "bytes": 2216
+    },
+    "dataHome": "/Users/hui/ark-test/candidate-home-current-20261011-v328",
+    "nativeBinarySha256": "6df185a73ff66ff79093bf2c84ba9f67c7402d1ad4953b7f13e4d78301b7a1c0",
+    "packWorkspacePackages": 164,
+    "installedClosurePackages": 315,
+    "officialProvenance": {
+      "path": "/Users/hui/ark-test/staging-candidate-v337-20261012/provenance.json",
+      "sha256": "2e8139049e5549a68171cbe21f73cd6e67b4b6b81fc0e7c941f999c41e36cccf",
+      "bytes": 16072561
+    },
+    "nativeSourceInputBound": "ArkL10n eb529dc1fded4bb7d3834a0f7960e9515c7a30e0e4a048ea8532ae8b1d7eac6b"
+  },
+  "runtimeReaderRegressionInheritance": {
+    "priorCheckpoint": {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate336-installed-reader-and-home-diagnostic-result-v2-20261012.json",
+      "sha256": "8a306584fb8fc328c936bc1028b0fa505bd5d1287cb8bc0c131daa22d328a6c1",
+      "bytes": 141035
+    },
+    "runtimeSourceDigest": "6c71adfe9d881efa2c2e482b938a0bc0c59844fd65cee009bcaa1b5f34cdcf87",
+    "embeddedNodeSha256": "2a6444e63caa2908909180832c28d33b4a27c53674ea4a7a39d11d79cefb353c",
+    "wikiPublicIndexSha256": "7d30d46ec226cdf55f4db5d08e934556ae9f44808d7b6bea31bf5525d4d6840b",
+    "scope": "Byte-identical actual Node/public Wiki module to336 permits inheriting its ten offline synthetic reader cases; no repeat claimed. Does not establish real knowledge reuse or utility."
+  },
+  "installedStateE2e": {
+    "receipt": {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012-attempt4.json",
+      "sha256": "fd2c53d2f4689b543f5a1edecefe74d9c5d0dcfbf43cd42312860998632a6e94",
+      "bytes": 80321
+    },
+    "postcheck": {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.postcheck.json",
+      "sha256": "65ab57573e12500624dfa5100333d3ee91863852c56db8249a5c198c2654155c",
+      "bytes": 2925
+    },
+    "checks": 121,
+    "failures": 0,
+    "processRuns": 2,
+    "ownedProcessesAndPortsSettled": true,
+    "syntheticCredentialExactMetadataAfter": 44,
+    "syntheticKeyValueRead": false,
+    "fixtureContext": "Normal HOME=/Users/hui, isolated fixture DSHhome; literal known fake ref only; no real provider or completion request.",
+    "preservedFailures": "Attempts1-3 preflight/runner guard failures occur before E2E Node; no model/Keychain/candidate process side effect. Raw artifacts retained.",
+    "identityDisclosure": "Attempt4 command metadata internal attempt field remains3; separate identity addendum binds actual unique app/home/service/receipt. No original record rewrite."
+  },
+  "slotExchange": {
+    "normalQuitProof": {
+      "path": "/Users/hui/ark-test/evidence/candidate336-normal-quit-pre337-root-20261012.json",
+      "sha256": "9f6d3d2f8e151680e708060ebcddc4831a273424ec430831fe07fb2c46e3db9a",
+      "bytes": 1550
+    },
+    "preflight": {
+      "path": "/Users/hui/ark-test/evidence/candidate337-slot-swap-preflight-20261012-attempt1.json",
+      "sha256": "c755dec27f50079b3a1e4d2909395d23f4aacf657053a1f93c83d8e53f4ed843",
+      "bytes": 10387
+    },
+    "exchange": {
+      "path": "/Users/hui/ark-test/evidence/candidate337-slot-exchange-20261012-attempt1.json",
+      "sha256": "d6e0e631e1141deca239b69c2b1854added7a69c730b78869cee1c3331c98287",
+      "bytes": 4410
+    },
+    "method": "Darwin RENAME_SWAP then no-overwrite RENAME_EXCL",
+    "preconditions": "Fresh all-path process scan and known PIDs/port quiescence, non-symlink parents/apps, same-volume, dynamic exact binary/version/strict-signature and protected binding checks; new rollback destination absent.",
+    "rollback": {
+      "path": "/Users/hui/ark-test/rollback-candidate-v336-before-v337-20261012/Ark.app/Contents/MacOS/Ark",
+      "sha256": "c106d29137b609e4db0500557dc519bd3a0c8b4d1423ce0bbc0b1638ec56d912",
+      "bytes": 11315504
+    },
+    "cuaQuitGuardDisclosure": "First CUA UserChanged warning prevented action; fresh same idle window was observed before actual normal super+q. No first-attempt quit claim.",
+    "manualHashMessages": "Early agent exchange digest transcription was wrong; actual file hash is authoritative and is bound here, messages retained."
+  },
+  "actualNative": {
+    "launch": {
+      "path": "/Users/hui/ark-test/evidence/candidate337-native-launch-and-label-identity-root-20261012.json",
+      "sha256": "f59dffdf3b6175a22fb4db9a5c075ee9afe00852e40a6370a8089d6538a6ff1e",
+      "bytes": 2156
+    },
+    "readyAndBeforeAfter": {
+      "path": "/Users/hui/ark-test/evidence/candidate337-native-ready-and-label-comparison-root-20261012.json",
+      "sha256": "a90534d6bfc1006afb3616917bab7abed56d4f5166d2cbc0ef83a0fccda069c0",
+      "bytes": 1164
+    },
+    "sameRestoredSessionId": "64ab6c91-6b8a-481d-a721-60d962f0805a",
+    "beforeLabel": "尚未运行任务",
+    "afterLabel": "当前没有运行中的任务",
+    "historyRestored": "28 tool calls and17 intermediate steps in current AX; prior18-step footer not present in current AX and not invented.",
+    "runningSessions": 0,
+    "sessionCount": 29,
+    "newModelTaskSubmitted": false,
+    "scope": "Single approved localized activity description and native startup/readonly API acceptance. Full visual/UI parity and real task/model/knowledge learning acceptance remain unproved."
+  },
+  "budget": {
+    "path": "/Users/hui/ark-test/evidence/candidate336-cumulative-paid-budget-refresh-root-20261012.json",
+    "sha256": "c23595c5df65047af9b023ddfe9a635beed42a272d6b85f1b83f4360274abe52",
+    "bytes": 1560
+  },
+  "newDeepSeekPaidModelTasksSubmitted": 0,
+  "lastOfficialPeriodDisplayCents": 958,
+  "cumulativeCapCents": 1000,
+  "includesPriorUpgradeTests": true,
+  "certifiedRemainingBudgetCents": null,
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "c11146420879d77ab2ad509855c446f65b578caafe9b65b6398b9a373e19884b",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "da158c5f36e4ac8efe3d5495fd60ad66d79d4a8dd6f0614ba67a163a62436ea8",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "protectedBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/project-manifest.json",
+      "sha256": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+      "bytes": 862
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/rust-benchmark.json",
+      "sha256": "52b85fb8d97d9b1fb5114cd4e517cdb1f7a84bb3d1d6e7ee6b77a7cbeb2097db",
+      "bytes": 6239
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate-home-current-20261011-v328/settings.yaml",
+      "sha256": "305d4badb646e533d149c4a1c199a9f79f58772cf73371147e2c058028db5762",
+      "bytes": 1104
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate-home-current-20261011-v328/.credentials.yaml",
+      "sha256": "2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28",
+      "bytes": 2236
+    },
+    {
+      "path": "/Users/hui/ark/Ark.app/Contents/MacOS/Ark",
+      "sha256": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a",
+      "bytes": 11280800
+    }
+  ],
+  "artifactBindings": [
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate-idle-wording-approved-source-result-20261012.json",
+      "sha256": "15da1708e9ebcff496e82f9d22c52d212dc5120ce7b364994e1fbab077eaee3c",
+      "bytes": 3532
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate-idle-wording-approved-source-result-20261012.validation.log",
+      "sha256": "37388aeeb2350cec4014b4edfb2241f32fcd6784e1722374afa967946209bfd5",
+      "bytes": 1459
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate-idle-wording-independent-audit-20261012.json",
+      "sha256": "bee011d05259c6d8ae106e763c7f462d55e66ba90b0905f3bb9681a2b9d44f24",
+      "bytes": 6940
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate335-arkl10n-before-idle-wording-20261012.wx.swift",
+      "sha256": "87f6e63ee1907b821815c99c164a110115a909d1f24bff4420dfb69546776b6b",
+      "bytes": 108300
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-normal-quit-pre337-root-20261012.json",
+      "sha256": "9f6d3d2f8e151680e708060ebcddc4831a273424ec430831fe07fb2c46e3db9a",
+      "bytes": 1550
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate336-pre337-fresh-session-quiescence-root-20261012.json",
+      "sha256": "4e16c70f477937639a2f791e61c9b049fa8107098ec05d0e7d8454ecd5a9267c",
+      "bytes": 422
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-native-launch-and-label-identity-root-20261012.json",
+      "sha256": "f59dffdf3b6175a22fb4db9a5c075ee9afe00852e40a6370a8089d6538a6ff1e",
+      "bytes": 2156
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-native-ready-and-label-comparison-root-20261012.json",
+      "sha256": "a90534d6bfc1006afb3616917bab7abed56d4f5166d2cbc0ef83a0fccda069c0",
+      "bytes": 1164
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-offline-build-20261012-attempt1.official_build_app.stderr.log",
+      "sha256": "7e1db4c56fc571b13481905ffd02faeb5f01e98c92205b1f19b84e2c7e129fdb",
+      "bytes": 1705
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-offline-build-20261012-attempt1.official_build_app.stdout.log",
+      "sha256": "29098ba5ea9f56104ab41307a69ac01563ce02787cc5bba87b8174e714b5659d",
+      "bytes": 4045
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-offline-build-20261012-attempt1.py",
+      "sha256": "64006e1d05347929bcf09571d86aae7a44c5c9d4c46335bfddbe39259a227cd0",
+      "bytes": 5276
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-offline-build-20261012-attempt1.receipt.json",
+      "sha256": "75d4c91b9245233e6adea557848449b4c1e7b946aa6dbf824dc3952f1812b128",
+      "bytes": 4268
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-offline-build-20261012-attempt1.runtime_pack.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-offline-build-20261012-attempt1.runtime_pack.stdout.log",
+      "sha256": "64f9de94d5908fbefa085631c01e84250227d848a3acde8ff1f71278732c2f2c",
+      "bytes": 122
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-offline-build-20261012-attempt1.summary.json",
+      "sha256": "a2ff4dc69de02694911cb81614756b9e72aa2e6f2145726e164d94b8a0f591e8",
+      "bytes": 2216
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-prepare-slot-copy-20261012.py",
+      "sha256": "dbb7db31a491a2f9a70b9f978405e39873d49c43538b249518f62d6c35d643db",
+      "bytes": 4813
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-prepare-slot-copy-20261012.receipt.json",
+      "sha256": "cd166557c0c36c709ca110b5375163aa7971a4cf53c8f0b653f018e7893cdef3",
+      "bytes": 1988
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-slot-exchange-20261012-attempt1.json",
+      "sha256": "d6e0e631e1141deca239b69c2b1854added7a69c730b78869cee1c3331c98287",
+      "bytes": 4410
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-slot-exchange-20261012-attempt1.py",
+      "sha256": "085fcc748149145e2b8642d11dd4d291729a54efc3ec925475ac18d0cf704d42",
+      "bytes": 9183
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-slot-swap-preflight-20261012-attempt1.json",
+      "sha256": "c755dec27f50079b3a1e4d2909395d23f4aacf657053a1f93c83d8e53f4ed843",
+      "bytes": 10387
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-slot-swap-preflight-20261012-attempt1.py",
+      "sha256": "d8f5c6d0e9f27581d51268d65736f6d53aa54b75da629684c8ca48fee51e3d00",
+      "bytes": 8363
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012-attempt4.json",
+      "sha256": "fd2c53d2f4689b543f5a1edecefe74d9c5d0dcfbf43cd42312860998632a6e94",
+      "bytes": 80321
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012-attempt4.json.after.app.manifest.jsonl",
+      "sha256": "b8f1a9c488254862cd441db528978bad2a5f271666bd89deff6ba62e85dee95b",
+      "bytes": 4055529
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012-attempt4.json.after.runtime.manifest.jsonl",
+      "sha256": "e60303803150af47f6bbc4079db72ef2be7d0932dfb07de1afed324fc96f9128",
+      "bytes": 3538768
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012-attempt4.json.after.ws-package.manifest.jsonl",
+      "sha256": "fcc4c0a65edc40eed53e6a2e3bf14376fd64d1c852ccd723c97eaf3466d70263",
+      "bytes": 2657
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012-attempt4.json.before.app.manifest.jsonl",
+      "sha256": "b8f1a9c488254862cd441db528978bad2a5f271666bd89deff6ba62e85dee95b",
+      "bytes": 4055529
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012-attempt4.json.before.runtime.manifest.jsonl",
+      "sha256": "e60303803150af47f6bbc4079db72ef2be7d0932dfb07de1afed324fc96f9128",
+      "bytes": 3538768
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012-attempt4.json.before.ws-package.manifest.jsonl",
+      "sha256": "fcc4c0a65edc40eed53e6a2e3bf14376fd64d1c852ccd723c97eaf3466d70263",
+      "bytes": 2657
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt1.driver.zsh",
+      "sha256": "e7d5d75ada820dc66ba1018e491b2f63f47776ed11d0577130e80f9c4a808cce",
+      "bytes": 6618
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt1.preflight-failure.json",
+      "sha256": "c913462c6301d172060e7c20656302740e8cfa8c7743554fa25b0a012e3308f6",
+      "bytes": 416
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt1.wrapper.stderr.log",
+      "sha256": "a6a51ca759ead157bb13c830d409a1542affe4c733cf590765b88057ffdb5a9a",
+      "bytes": 121
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt1.wrapper.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt2.driver.zsh",
+      "sha256": "4b8266bd80104effd7a6363b22e78f244c8e97e0cf9073f5442439f3c985fbba",
+      "bytes": 6618
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt2.preflight-failure.json",
+      "sha256": "a01aadba52e7f06059de054e65e5de5de4e1af0764df4a46c2454524f20a8799",
+      "bytes": 425
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt2.runner.py",
+      "sha256": "3df544131982ccaca3ab3c118d87a0b5de85b873b9a6f0e9aa091fa9748e7634",
+      "bytes": 1344
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt3.driver.zsh",
+      "sha256": "504e2955ae14cbfde9a798330e52037a8335864ed3807b9d8d651fed3dfb91bc",
+      "bytes": 6618
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt3.runner.py",
+      "sha256": "9043edf740bd471045e9d7fa263f63f2c9bde9c1adca8217701079137eb507a4",
+      "bytes": 1347
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt3.runner.status.json",
+      "sha256": "85f5ae14ed90ab3c817b540de4710224bb7f0c7691fdf6cffc1530c98e329fa3",
+      "bytes": 437
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt3.runner.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt3.runner.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.cleanup-manifest.json",
+      "sha256": "deb5443cad13ef231eed759c3f25f372e5d44d0034e607334a89c62a4a75213d",
+      "bytes": 1467
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.cleanup-note.txt",
+      "sha256": "fb501d8f09c57e253ca7c1f016e2ad5e3c465702fde34f7c236ab99b725b8b00",
+      "bytes": 62
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.command.json",
+      "sha256": "1b65d86f0a9d7bd3a29f44a4eaef9917d7118bcd0f84effb49fd1420bfaafb93",
+      "bytes": 1504
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.driver.zsh",
+      "sha256": "6aab788a4986a730964e21fca88a5f1113dd1dafc0b7597415e708afc18a64c6",
+      "bytes": 6618
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.exec-session.json",
+      "sha256": "7df48dbbf03e1cff95d34d09f521815e1e54f9cb5b34e1decaec6b694ee0fc8c",
+      "bytes": 476
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.identity-addendum.json",
+      "sha256": "8ef8b8876d89fef742f5728c30657c275d8c01756283a8ae05375299862ed890",
+      "bytes": 773
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.keychain-aftertest.status",
+      "sha256": "b1ce0aa6fdf3cf349d773243dab9fbbe09d30619f38b0c1e8977e28c4f0bc495",
+      "bytes": 3
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.keychain-aftertest.stderr.log",
+      "sha256": "e40a1fe7d9847086f46c8b7c70cdb52dfd92b292f0e8a4a08ad38053c31dc091",
+      "bytes": 92
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.keychain-aftertest.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.keychain-commands.txt",
+      "sha256": "bb86b9a0a94314ed33fb2e88b61e50895567d964a40b4bc3caf01195e1453e8f",
+      "bytes": 241
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.postcheck.json",
+      "sha256": "65ab57573e12500624dfa5100333d3ee91863852c56db8249a5c198c2654155c",
+      "bytes": 2925
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.process-handle.txt",
+      "sha256": "723fd8c286dd5910d5f756df9739424942f9a79af30e8115a8f259b80512efa6",
+      "bytes": 10
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.status",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.stdout.log",
+      "sha256": "322f42bcc98f4c9c8f5e24b11ce4f36137b45fe51c7e76ab7014970b0239e85b",
+      "bytes": 42
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.test-scope.json",
+      "sha256": "dffb992c0a956180f010b1d0d5df78eae754751c892f06237a939e54f3d3ae05",
+      "bytes": 692
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.wrapper.status",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.wrapper.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate337-staged-install-e2e-20261012.attempt4.wrapper.stdout.log",
+      "sha256": "ddc845bdcd55f4b470793544c8c76384235c8582d987a087763fe59ac0690b63",
+      "bytes": 406
+    },
+    {
+      "path": "/Users/hui/ark-test/staging-candidate-v337-20261012/provenance.json",
+      "sha256": "2e8139049e5549a68171cbe21f73cd6e67b4b6b81fc0e7c941f999c41e36cccf",
+      "bytes": 16072561
+    },
+    {
+      "path": "/private/tmp/ark-candidate337-runtime-pack-20261012/closure-plan.json",
+      "sha256": "d7179fb7747070fd7ac0659ee7fa08e106f47777249749907143588425e42914",
+      "bytes": 5009131
+    },
+    {
+      "path": "/private/tmp/ark-candidate337-runtime-pack-20261012/installed-runtime-manifest.json",
+      "sha256": "b19565259be1d861c681476e3392cefa7f59bfde0867a152e31a5176dee9065e",
+      "bytes": 3837704
+    },
+    {
+      "path": "/private/tmp/ark-candidate337-runtime-pack-20261012/pack-receipt.json",
+      "sha256": "371944bbf898ac349233713e0fb72ad401a12259f805a5e4aa2e73200997ef64",
+      "bytes": 1684
+    },
+    {
+      "path": "/private/tmp/ark-candidate337-runtime-pack-20261012/package-index.json",
+      "sha256": "280785f840309bbe9278f9f59d614441577ce7eb2dfa2b2162231ba7faec20f4",
+      "bytes": 1805326
+    }
+  ],
+  "remainingGates": [
+    "Real protected verifier/key/program/manifest/evidence ownership and authenticated dispatch; candidate source/test does not deploy authority.",
+    "Independent same-model fresh-session paired trials and real utility/reuse/repeated-error/cost/false-recall/leakage metrics.",
+    "Prior code task tests6/0 but factual whole report stillFAIL; original first-command3/4 failures not closed by native text/startup.",
+    "Complete native/child lifecycle/platform/recovery/rollback/security/history and all original Phase6 gates beyond scoped controls.",
+    "Current-source-bound GitHub CI not passed; previously observed remote checks do not validate current dirty code.",
+    "Rust15 score mismatches and preregistered three-way end-to-end benefit stillunresolved; retain TS.",
+    "Unknown first336 synthetic test service cleanup and earlier336 exchange precondition gaps stay retained; this new guarded337 swap does not erase earlier evidence."
+  ],
+  "rustDecision": "RETAIN_TS; no runtime Rust promotion",
+  "realAuthorityDeployed": false,
+  "actualPairedLearningUtilityLift": null,
+  "githubPublished": false,
+  "formalPromotion": false,
+  "fullGoalAcceptance": "UNKNOWN",
+  "goalTurnClassification": "progress"
+}

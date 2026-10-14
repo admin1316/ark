@@ -8,7 +8,7 @@
  * stream back into the same state for replay and audit.
  */
 
-import { closeSync, constants, fsyncSync, lstatSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
+import { closeSync, constants, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { readRegularFileBounded } from './filesystem.ts'
@@ -23,6 +23,7 @@ import type {
 } from './types.ts'
 
 const SHA256_RE = /^[0-9a-f]{64}$/u
+const MAX_KNOWLEDGE_EVENT_LOG_BYTES = 64 * 1024 * 1024
 const EVENT_TYPES: ReadonlySet<KnowledgeEventType> = new Set([
   'knowledge/observed',
   'knowledge/candidate',
@@ -104,8 +105,8 @@ function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== ''
 }
 
-function validIso(value: string | null): boolean {
-  return value === null || Number.isFinite(Date.parse(value))
+function validIso(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string' && Number.isFinite(Date.parse(value)))
 }
 
 function validScope(scope: unknown): scope is KnowledgeScope {
@@ -148,6 +149,7 @@ export function validateKnowledgeRecord(record: unknown): KnowledgeValidationRes
   if (!nonEmpty(value.id)) errors.push('id is required')
   if (!nonEmpty(value.content)) errors.push('content is required')
   if (!nonEmpty(value.source)) errors.push('source is required')
+  if (value.claimKey !== undefined && typeof value.claimKey !== 'string') errors.push('claimKey must be a string')
   if (!nonEmpty(value.sourceHash) || !SHA256_RE.test(value.sourceHash)) errors.push('sourceHash must be sha256')
   if (!validScope(value.scope)) errors.push('scope is invalid')
   if (!['low', 'medium', 'high'].includes(value.trust as string)) errors.push('trust is invalid')
@@ -396,6 +398,9 @@ export function applyKnowledgeEvent(state: KnowledgeState, event: KnowledgeEvent
   const item = payload.record as KnowledgeRecord | undefined
   if (event.type === 'knowledge/observed' || event.type === 'knowledge/candidate') {
     if (item === undefined || !validateKnowledgeRecord(item).ok) throw new Error('knowledge event record is invalid')
+    if (item.verificationStatus === 'verified' || item.lifecycle === 'canonical') {
+      throw new Error('untrusted knowledge admission cannot claim verification or canonical lifecycle')
+    }
     records.set(event.knowledgeId, cloneRecord({ ...item, verificationStatus: event.type === 'knowledge/candidate' ? 'candidate' : item.verificationStatus }))
   } else {
     const fallback = event.type === 'knowledge/verified'
@@ -403,13 +408,12 @@ export function applyKnowledgeEvent(state: KnowledgeState, event: KnowledgeEvent
       && validateKnowledgeRecord(item).ok
       ? item
       : undefined
-    if (current === undefined && fallback === undefined) {
+    const base = current ?? fallback
+    if (base === undefined) {
       // Retrieval/injection events are useful audit facts even when their
       // page was never admitted as governed knowledge.
       return { records, lastSeq: event.seq, lastEventHash: event.eventHash }
     }
-    const base = current ?? fallback
-    if (base === undefined) throw new Error('knowledge transition lacks a record')
     const next = { ...cloneRecord(base) }
     switch (event.type) {
       case 'knowledge/verified':
@@ -422,6 +426,22 @@ export function applyKnowledgeEvent(state: KnowledgeState, event: KnowledgeEvent
           || !Array.isArray(payload.evidenceRefs) || !payload.evidenceRefs.some(nonEmpty)) {
           throw new Error('knowledge verification lacks independent authority/evidence')
         }
+        // The authenticated full record owns provenance; unsigned admission
+        // fields cannot redirect its content, scope or ACL. Preserve replayed
+        // counters and conflicts, which have their own lifecycle events.
+        if (fallback !== undefined) {
+          Object.assign(next, cloneRecord(fallback), {
+            acl: fallback.acl,
+            claimKey: fallback.claimKey,
+            conflicts: next.conflicts,
+            retrievalHits: next.retrievalHits,
+            successfulUses: next.successfulUses,
+            userCorrections: next.userCorrections,
+            utilityScore: next.utilityScore,
+          })
+        }
+        // Semantic verification alone never grants canonical reuse.
+        next.lifecycle = 'candidate'
         next.verificationStatus = 'verified'
         next.trust = (payload.trust as KnowledgeTrust | undefined) ?? 'medium'
         next.lastVerifiedAt = (payload.lastVerifiedAt as string | undefined) ?? event.timestamp
@@ -450,6 +470,33 @@ export function applyKnowledgeEvent(state: KnowledgeState, event: KnowledgeEvent
           throw new Error('knowledge promotion lacks authority seal')
         }
         if (next.verificationStatus !== 'verified' || next.evidenceRefs.length === 0 || next.conflicts.length > 0) throw new Error('knowledge promotion requires conflict-free verification evidence')
+        {
+          const evidenceRefs = payload.evidenceRefs
+          const startedAt = typeof payload.startedAt === 'string' ? Date.parse(payload.startedAt) : Number.NaN
+          const endedAt = typeof payload.endedAt === 'string' ? Date.parse(payload.endedAt) : Number.NaN
+          const measuredTrialIsBound = typeof payload.trialHash === 'string' && SHA256_RE.test(payload.trialHash)
+            && typeof payload.proposalHash === 'string' && SHA256_RE.test(payload.proposalHash)
+            && typeof payload.targetAfterHash === 'string' && SHA256_RE.test(payload.targetAfterHash)
+            && typeof payload.measuredTrialAuthorityId === 'string'
+            && nonEmpty(payload.measuredTrialAuthorityId)
+            && payload.measuredTrialAuthorityId !== payload.authorityId
+            && Array.isArray(evidenceRefs) && evidenceRefs.length > 0
+            && evidenceRefs.every(reference => typeof reference === 'string' && SHA256_RE.test(reference))
+            && Number.isSafeInteger(payload.retrievalHits) && (payload.retrievalHits as number) > 0
+            && Number.isSafeInteger(payload.successfulUses) && (payload.successfulUses as number) >= 0
+            && Number.isSafeInteger(payload.userCorrections) && (payload.userCorrections as number) >= 0
+            && typeof payload.utilityScore === 'number' && Number.isFinite(payload.utilityScore) && payload.utilityScore > 0
+            && Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt >= startedAt
+          if (!measuredTrialIsBound) {
+            next.lifecycle = 'downgraded'
+            break
+          }
+          next.retrievalHits += payload.retrievalHits as number
+          next.successfulUses += payload.successfulUses as number
+          next.userCorrections += payload.userCorrections as number
+          next.utilityScore = payload.utilityScore as number
+          next.evidenceRefs = [...new Set([...next.evidenceRefs, ...(evidenceRefs as string[])])]
+        }
         next.lifecycle = 'canonical'
         if (typeof payload.appliedPath === 'string' && payload.appliedPath !== '') next.source = payload.appliedPath
         break
@@ -472,8 +519,8 @@ export function replayKnowledgeEvents(events: readonly KnowledgeEvent[]): Knowle
 }
 
 /**
- * Produce and fold explicit expiry events. Expiry is a state transition, so a
- * caller can append the returned events before exposing the updated state.
+ * Produce and fold explicit deadline or low-utility expiry events. Expiry is a
+ * state transition, so a caller can append the returned events before exposing the updated state.
  * @param state - Current replay state.
  * @param now - Clock used for expiry checks.
  * @returns Updated state and the events that produce it.
@@ -485,10 +532,15 @@ export function expireKnowledge(
   let next = state
   const events: KnowledgeEvent[] = []
   for (const record of state.records.values()) {
-    if (record.expiresAt === null || Date.parse(record.expiresAt) > now.getTime()) continue
-    if (record.verificationStatus === 'expired') continue
+    if (record.verificationStatus === 'expired' || record.verificationStatus === 'rejected') continue
+    const deadlineExpired = record.expiresAt !== null && Date.parse(record.expiresAt) <= now.getTime()
+    const lowUtility = record.verificationStatus === 'verified' && !shouldRetainKnowledge(record)
+    if (!deadlineExpired && !lowUtility) continue
     const event = createKnowledgeEvent('knowledge/expired', record.id, record.scope, {
-      expiresAt: record.expiresAt,
+      reason: deadlineExpired ? 'deadline' : 'low-utility',
+      retrievalHits: record.retrievalHits,
+      utilityScore: record.utilityScore,
+      ...(record.expiresAt === null ? {} : { expiresAt: record.expiresAt }),
     }, {
       seq: next.lastSeq + 1,
       previousEventHash: next.lastEventHash,
@@ -522,7 +574,7 @@ export function shouldRetainKnowledge(
  */
 export function readKnowledgeEventLog(path: string, authority?: KnowledgeEventAuthority): KnowledgeEvent[] {
   let raw: string
-  try { raw = readRegularFileBounded(path, 64 * 1024 * 1024).toString('utf8') } catch (error) {
+  try { raw = readRegularFileBounded(path, MAX_KNOWLEDGE_EVENT_LOG_BYTES).toString('utf8') } catch (error) {
     if (typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT') return []
     throw error
   }
@@ -531,6 +583,12 @@ export function readKnowledgeEventLog(path: string, authority?: KnowledgeEventAu
     const parsed = JSON.parse(line) as KnowledgeEvent
     if (!validateKnowledgeEvent(parsed, events.at(-1)) || (events.length === 0 && (parsed.seq !== 0 || parsed.previousEventHash !== null))) throw new Error('invalid knowledge event log')
     if ((parsed.type === 'knowledge/verified' || parsed.type === 'knowledge/promoted') && authority !== undefined) {
+      if (parsed.type === 'knowledge/verified') {
+        const record = parsed.payload.record as KnowledgeRecord
+        if (!validateKnowledgeRecord(record).ok || record.id !== parsed.knowledgeId) {
+          throw new Error('unauthenticated knowledge verification record')
+        }
+      }
       const seal = parsed.payload.authoritySeal
       const authorityId = parsed.payload.authorityId
       if (typeof authorityId !== 'string' || authorityId !== authority.authorityId
@@ -552,9 +610,81 @@ export function readKnowledgeEventLog(path: string, authority?: KnowledgeEventAu
   return events
 }
 
+/** Sync the already-open event-log inode and its parent directory.
+ *
+ * The caller retains ownership of `fileDescriptor`; keeping that descriptor
+ * open binds the file fsync to the inode used for the append, even if its
+ * pathname is replaced concurrently.
+ * @param path - Event-log path expected to name the open inode.
+ * @param fileDescriptor - Open writable event-log descriptor owned by caller.
+ */
+function syncKnowledgeEventLogDescriptor(path: string, fileDescriptor: number): void {
+  const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW
+  const fileBefore = lstatSync(path)
+  if (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1) throw new Error('unsafe knowledge event log')
+  const openedFile = fstatSync(fileDescriptor)
+  const fileAfter = lstatSync(path)
+  const openedFileMatchesPath = openedFile.isFile() && openedFile.nlink === 1 &&
+    openedFile.dev === fileBefore.dev && openedFile.ino === fileBefore.ino
+  const pathStillMatchesOpenedFile = fileAfter.isFile() && !fileAfter.isSymbolicLink() && fileAfter.nlink === 1 &&
+    fileAfter.dev === openedFile.dev && fileAfter.ino === openedFile.ino
+  if (!openedFileMatchesPath || !pathStillMatchesOpenedFile) {
+    throw new Error('unsafe knowledge event log')
+  }
+  fsyncSync(fileDescriptor)
+
+  const parentPath = dirname(path)
+  const directoryBefore = lstatSync(parentPath)
+  if (!directoryBefore.isDirectory() || directoryBefore.isSymbolicLink()) throw new Error('unsafe knowledge event log parent')
+  const directoryFlags = constants.O_RDONLY | constants.O_DIRECTORY | noFollow
+  const directoryDescriptor = openSync(parentPath, directoryFlags)
+  try {
+    const openedDirectory = fstatSync(directoryDescriptor)
+    const directoryAfter = lstatSync(parentPath)
+    const openedDirectoryMatchesPath = openedDirectory.isDirectory() &&
+      openedDirectory.dev === directoryBefore.dev && openedDirectory.ino === directoryBefore.ino
+    const pathStillMatchesOpenedDirectory = directoryAfter.isDirectory() && !directoryAfter.isSymbolicLink() &&
+      directoryAfter.dev === openedDirectory.dev && directoryAfter.ino === openedDirectory.ino
+    if (!openedDirectoryMatchesPath || !pathStillMatchesOpenedDirectory) {
+      throw new Error('unsafe knowledge event log parent')
+    }
+    try {
+      fsyncSync(directoryDescriptor)
+    } catch (error) {
+      if (!(typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'EPERM')) throw error
+    }
+  } finally { closeSync(directoryDescriptor) }
+}
+
+/** Make an existing event log and its parent directory durable.
+ *
+ * This deliberately re-syncs on every call, including after a prior append
+ * wrote bytes but surfaced a file-fsync error. Only directory-fsync EPERM is
+ * tolerated, matching the shared durable-write policy on platforms that do
+ * not support syncing directory handles.
+ * @param path - Existing event-log path.
+ * @throws On an unsafe file or parent identity, or I/O failure other than directory-fsync EPERM.
+ */
+export function syncKnowledgeEventLog(path: string): void {
+  const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW
+  const fileBefore = lstatSync(path)
+  if (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1) throw new Error('unsafe knowledge event log')
+  const fileDescriptor = openSync(path, constants.O_WRONLY | noFollow)
+  try {
+    const openedFile = fstatSync(fileDescriptor)
+    if (!openedFile.isFile() || openedFile.nlink !== 1 || fileBefore.dev !== openedFile.dev || fileBefore.ino !== openedFile.ino) {
+      throw new Error('unsafe knowledge event log')
+    }
+    syncKnowledgeEventLogDescriptor(path, fileDescriptor)
+  } finally { closeSync(fileDescriptor) }
+}
+
 /** Append one event after checking its sequence/hash against the existing log.
+ * Appends to one path must be serialized by their caller; this owner does not acquire a cross-process lock.
  * @param path - Event-log path.
  * @param event - Event whose chain position is checked.
+ * @throws If the append exceeds the fixed event-log byte limit, the chain or file identity is invalid, or I/O fails.
+ * Written bytes may remain visible when synchronization fails.
  */
 export function appendKnowledgeEvent(path: string, event: KnowledgeEvent): void {
   const prior = readKnowledgeEventLog(path)
@@ -567,18 +697,45 @@ export function appendKnowledgeEvent(path: string, event: KnowledgeEvent): void 
   }
   const expected = createKnowledgeEvent(event.type, event.knowledgeId, event.scope, event.payload, expectedOptions)
   if (expected.eventHash !== event.eventHash) throw new Error('knowledge event hash/sequence mismatch')
-  mkdirSync(dirname(path), { recursive: true })
-  try {
-    const stat = lstatSync(path)
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new Error('unsafe knowledge event log')
-  } catch (error) {
-    if (!(typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT')) throw error
+  const encodedEvent = `${JSON.stringify(event)}\n`
+  const encodedEventBytes = Buffer.byteLength(encodedEvent, 'utf8')
+  const readExisting = () => {
+    try { return lstatSync(path) }
+    catch (error) {
+      if (typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT') return undefined
+      throw error
+    }
   }
+  const assertAppendFits = (existingBytes: number) => {
+    if (existingBytes + encodedEventBytes > MAX_KNOWLEDGE_EVENT_LOG_BYTES) {
+      throw new Error(`knowledge event log exceeds ${MAX_KNOWLEDGE_EVENT_LOG_BYTES} byte limit`)
+    }
+  }
+  let fileBefore = readExisting()
+  if (fileBefore !== undefined && (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1)) {
+    throw new Error('unsafe knowledge event log')
+  }
+  assertAppendFits(fileBefore?.size ?? 0)
+
+  // Reject an over-limit append before creating a missing parent or log file.
+  mkdirSync(dirname(path), { recursive: true })
+  fileBefore = readExisting()
+  if (fileBefore !== undefined && (!fileBefore.isFile() || fileBefore.isSymbolicLink() || fileBefore.nlink !== 1)) {
+    throw new Error('unsafe knowledge event log')
+  }
+  assertAppendFits(fileBefore?.size ?? 0)
   const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW
   const descriptor = openSync(path, constants.O_CREAT | constants.O_APPEND | constants.O_WRONLY | noFollow, 0o600)
   try {
-    writeFileSync(descriptor, `${JSON.stringify(event)}\n`)
-    fsyncSync(descriptor)
+    const openedFile = fstatSync(descriptor)
+    const fileAfter = lstatSync(path)
+    if (!openedFile.isFile() || openedFile.nlink !== 1 || !fileAfter.isFile() || fileAfter.isSymbolicLink() || fileAfter.nlink !== 1 ||
+      (fileBefore !== undefined && (fileBefore.dev !== openedFile.dev || fileBefore.ino !== openedFile.ino)) ||
+      fileAfter.dev !== openedFile.dev || fileAfter.ino !== openedFile.ino) throw new Error('unsafe knowledge event log')
+    assertAppendFits(openedFile.size)
+    assertAppendFits(fileAfter.size)
+    writeFileSync(descriptor, encodedEvent)
+    syncKnowledgeEventLogDescriptor(path, descriptor)
   } finally { closeSync(descriptor) }
 }
 

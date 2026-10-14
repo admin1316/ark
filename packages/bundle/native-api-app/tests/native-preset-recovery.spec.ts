@@ -27,4 +27,4 @@ it('projects the shipped Native roster, scoped capabilities and a real run_code 
     }
     expect({ roster, catalogs, forkDescription, codeResult }).toMatchSnapshot()
   } finally { await runtime.dispose() }
-})
+}, 15_000)

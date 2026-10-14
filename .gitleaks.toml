@@ -29,3 +29,39 @@ commits = ["95dc1aa63c6602b45c338fb22b0abe3363eea435", "a9bd3d364532c69937b6f7e0
 paths = ['''^\.agents/skills/media-production-studio/modules/media-use/scripts/lib/telemetry\.mjs$''']
 regexTarget = "secret"
 regexes = ['''^phc_[A-Za-z0-9]+$''']
+
+# Exact file-provenance SHA-256 metadata, independently inspected before publication.
+[[allowlists]]
+description = "Recorded file checksum; no credential bytes"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^scripts/rust\-migration/approved\-learning\-verifier\-source\-result\-20261012\.json$''']
+regexTarget = "secret"
+regexes = ['''^2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28$''']
+
+# Exact file-provenance SHA-256 metadata, independently inspected before publication.
+[[allowlists]]
+description = "Recorded file checksum; no credential bytes"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^scripts/rust\-migration/approved\-verification\-publication\-native\-result\-20261012\.json$''']
+regexTarget = "secret"
+regexes = ['''^2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28$''']
+
+# Exact file-provenance SHA-256 metadata, independently inspected before publication.
+[[allowlists]]
+description = "Recorded file checksum; no credential bytes"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^scripts/rust\-migration/candidate323\-live\-invoice\-20261011\.json$''']
+regexTarget = "secret"
+regexes = ['''^87baf5a59fd120f784456b553581b608b26bc0e946f4d08cb6728e43a56b9a3a$''']
+
+# Exact file-provenance SHA-256 metadata, independently inspected before publication.
+[[allowlists]]
+description = "Recorded file checksum; no credential bytes"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^scripts/rust\-migration/candidate341\-installed\-lifecycle\-and\-native\-ready\-result\-20261013\.json$''']
+regexTarget = "secret"
+regexes = ['''^2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28$''']

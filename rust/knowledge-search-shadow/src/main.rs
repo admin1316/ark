@@ -1,11 +1,15 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
+use std::sync::LazyLock;
 
 const K1: f64 = 1.5;
 const B: f64 = 0.75;
 const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
+const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_SERVER_REQUESTS: usize = 512;
+const MAX_SERVER_TOTAL_BYTES: usize = 256 * 1024 * 1024;
 const MAX_PAGES: usize = 4096;
 const MAX_QUERIES: usize = 64;
 const MAX_ALIASES: usize = 64;
@@ -57,6 +61,22 @@ struct Output {
     digest: String,
     #[serde(rename = "inputDigest")]
     input_digest: String,
+}
+
+struct SearchJsonFormatter;
+
+impl serde_json::ser::Formatter for SearchJsonFormatter {
+    fn write_f64<W: Write + ?Sized>(&mut self, writer: &mut W, value: f64) -> io::Result<()> {
+        let mut buffer = ryu_js::Buffer::new();
+        writer.write_all(buffer.format_finite(value).as_bytes())
+    }
+}
+
+fn serialize_search_json(value: &impl Serialize) -> Result<Vec<u8>, serde_json::Error> {
+    let mut bytes = Vec::new();
+    let mut serializer = serde_json::Serializer::with_formatter(&mut bytes, SearchJsonFormatter);
+    value.serialize(&mut serializer)?;
+    Ok(bytes)
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -384,6 +404,8 @@ fn stop_words() -> HashSet<&'static str> {
     .collect()
 }
 
+static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(stop_words);
+
 fn validate_input(input: &Input) -> Result<(), String> {
     if input.schema_version != 1 {
         return Err(format!(
@@ -448,26 +470,33 @@ fn validate_input(input: &Input) -> Result<(), String> {
 
 struct Document {
     page: Page,
-    tokens: Vec<String>,
+    token_count: usize,
     title_tokens: HashSet<String>,
     frequencies: HashMap<String, usize>,
 }
 
-fn bm25(pages: Vec<Page>, query: &str) -> Vec<Hit> {
+struct SearchIndex {
+    documents: Vec<Document>,
+    doc_frequency: HashMap<String, usize>,
+    average_length: f64,
+}
+
+fn prepare_index(pages: Vec<Page>) -> SearchIndex {
     let documents: Vec<Document> = pages
         .into_iter()
         .map(|page| {
             let combined = format!("{}\n{}\n{}", page.title, page.aliases.join("\n"), page.text);
             let tokens = tokenize(&combined);
+            let token_count = tokens.len();
             let title_text = format!("{}\n{}", page.title, page.aliases.join("\n"));
             let title_tokens = tokenize(&title_text).into_iter().collect();
             let mut frequencies = HashMap::new();
-            for token in &tokens {
-                *frequencies.entry(token.clone()).or_insert(0) += 1;
+            for token in tokens {
+                *frequencies.entry(token).or_insert(0) += 1;
             }
             Document {
                 page,
-                tokens,
+                token_count,
                 title_tokens,
                 frequencies,
             }
@@ -475,38 +504,42 @@ fn bm25(pages: Vec<Page>, query: &str) -> Vec<Hit> {
         .collect();
     let mut doc_frequency = HashMap::new();
     for document in &documents {
-        let mut seen = HashSet::new();
-        for token in &document.tokens {
-            if seen.insert(token) {
-                *doc_frequency.entry(token.clone()).or_insert(0usize) += 1;
-            }
+        for token in document.frequencies.keys() {
+            *doc_frequency.entry(token.clone()).or_insert(0usize) += 1;
         }
     }
-    let total_documents = documents.len();
-    let token_count: usize = documents.iter().map(|document| document.tokens.len()).sum();
-    let average_length = token_count as f64 / total_documents.max(1) as f64;
-    let stop = stop_words();
+    let token_count: usize = documents.iter().map(|document| document.token_count).sum();
+    let average_length = token_count as f64 / documents.len().max(1) as f64;
+    SearchIndex {
+        documents,
+        doc_frequency,
+        average_length,
+    }
+}
+
+fn bm25(index: &SearchIndex, query: &str) -> Vec<Hit> {
     let query_tokens: Vec<String> = tokenize(query)
         .into_iter()
-        .filter(|token| !stop.contains(token.as_str()))
+        .filter(|token| !STOP_WORDS.contains(token.as_str()))
         .collect();
     if query_tokens.is_empty() {
         return Vec::new();
     }
+    let total_documents = index.documents.len();
     let mut hits = Vec::new();
-    for document in documents {
-        if document.tokens.is_empty() {
+    for document in &index.documents {
+        if document.token_count == 0 {
             continue;
         }
         let mut score = 0.0;
         for query_token in &query_tokens {
-            let Some(&df) = doc_frequency.get(query_token) else {
+            let Some(&df) = index.doc_frequency.get(query_token) else {
                 continue;
             };
             let idf = (1.0 + (total_documents as f64 - df as f64 + 0.5) / (df as f64 + 0.5)).ln();
             let tf = document.frequencies.get(query_token).copied().unwrap_or(0) as f64;
             let norm = (tf * (K1 + 1.0))
-                / (tf + K1 * (1.0 - B + B * (document.tokens.len() as f64 / average_length)));
+                / (tf + K1 * (1.0 - B + B * (document.token_count as f64 / index.average_length)));
             score += idf * norm;
         }
         for query_token in &query_tokens {
@@ -516,7 +549,7 @@ fn bm25(pages: Vec<Page>, query: &str) -> Vec<Hit> {
         }
         if score > 0.0 {
             hits.push(Hit {
-                path: document.page.path,
+                path: document.page.path.clone(),
                 score,
             });
         }
@@ -530,55 +563,149 @@ fn bm25(pages: Vec<Page>, query: &str) -> Vec<Hit> {
     hits
 }
 
-fn process_request(input_bytes: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
+fn process_request(input_bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     if input_bytes.len() > MAX_REQUEST_BYTES {
         return Err(format!("request exceeds limit {MAX_REQUEST_BYTES} bytes").into());
     }
-    let input: Input = serde_json::from_slice(&input_bytes)?;
+    let input: Input = serde_json::from_slice(input_bytes)?;
     validate_input(&input).map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+    let index = prepare_index(input.pages);
     let results: Vec<Vec<Hit>> = input
         .queries
         .iter()
-        .map(|query| bm25(input.pages.clone(), query))
+        .map(|query| bm25(&index, query))
         .collect();
-    let result_bytes = serde_json::to_vec(&results)?;
+    let result_bytes = serialize_search_json(&results)?;
     let output = Output {
         schema_version: 1,
         results,
         digest: sha256_hex(&result_bytes),
-        input_digest: sha256_hex(&input_bytes),
+        input_digest: sha256_hex(input_bytes),
     };
-    Ok(serde_json::to_string(&output)?)
+    let output_bytes = serialize_search_json(&output)?;
+    if output_bytes.len() > MAX_RESPONSE_BYTES {
+        return Err(format!("response exceeds limit {MAX_RESPONSE_BYTES} bytes").into());
+    }
+    Ok(output_bytes)
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::args().any(|argument| argument == "--persistent") {
-        // The production candidate sends one request and closes stdin. This
-        // opt-in newline-delimited mode is only for a benchmark warm envelope:
-        // each line is still an independent, bounded request and response.
-        let stdin = io::stdin();
-        let mut stdout = io::BufWriter::new(io::stdout().lock());
-        for line in stdin.lock().lines() {
-            let line = line?;
-            let output = process_request(line.trim_end_matches('\r').as_bytes())?;
-            writeln!(stdout, "{output}")?;
-            stdout.flush()?;
+fn read_bounded_line<R: BufRead>(reader: &mut R, line: &mut Vec<u8>) -> io::Result<bool> {
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok(!line.is_empty());
         }
-        return Ok(());
+        let consumed = available
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(available.len(), |position| position + 1);
+        if line
+            .len()
+            .checked_add(consumed)
+            .is_none_or(|length| length > MAX_REQUEST_BYTES + 2)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("request line exceeds limit {MAX_REQUEST_BYTES} bytes"),
+            ));
+        }
+        let complete = available.get(consumed - 1) == Some(&b'\n');
+        line.extend_from_slice(&available[..consumed]);
+        reader.consume(consumed);
+        if complete {
+            return Ok(true);
+        }
     }
+}
 
+fn serve<R: BufRead, W: Write>(
+    mut reader: R,
+    mut writer: W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut line = Vec::new();
+    let mut request_count = 0;
+    let mut total_bytes = 0usize;
+    loop {
+        line.clear();
+        if !read_bounded_line(&mut reader, &mut line)? {
+            break;
+        }
+        if line.last() == Some(&b'\n') {
+            line.pop();
+        }
+        if line.last() == Some(&b'\r') {
+            line.pop();
+        }
+        if line.len() > MAX_REQUEST_BYTES {
+            return Err(format!("request exceeds limit {MAX_REQUEST_BYTES} bytes").into());
+        }
+        if request_count >= MAX_SERVER_REQUESTS {
+            return Err(format!("server request count exceeds limit {MAX_SERVER_REQUESTS}").into());
+        }
+        total_bytes = total_bytes.checked_add(line.len()).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "server byte count overflow")
+        })?;
+        if total_bytes > MAX_SERVER_TOTAL_BYTES {
+            return Err(
+                format!("server input exceeds limit {MAX_SERVER_TOTAL_BYTES} bytes").into(),
+            );
+        }
+        let response = process_request(&line)?;
+        writer.write_all(&response)?;
+        writer.write_all(b"\n")?;
+        writer.flush()?;
+        request_count += 1;
+    }
+    Ok(())
+}
+
+fn run_single() -> Result<(), Box<dyn std::error::Error>> {
     let mut input_bytes = Vec::new();
     io::stdin()
         .take((MAX_REQUEST_BYTES + 1) as u64)
         .read_to_end(&mut input_bytes)?;
     let output = process_request(&input_bytes)?;
-    println!("{output}");
+    let mut stdout = io::stdout().lock();
+    stdout.write_all(&output)?;
+    stdout.write_all(b"\n")?;
     Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
+        None => run_single(),
+        Some("--serve") if args.next().is_none() => {
+            let stdin = io::stdin();
+            let stdout = io::stdout();
+            serve(BufReader::new(stdin.lock()), BufWriter::new(stdout.lock()))
+        }
+        _ => Err("usage: knowledge-search-shadow [--serve]".into()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn score_serialization_matches_ecmascript_number_boundaries() {
+        let cases = [
+            (-0.0, "0"),
+            (1.0, "1"),
+            (1e-7, "1e-7"),
+            (1e-6, "0.000001"),
+            (1e20, "100000000000000000000"),
+            (1e21, "1e+21"),
+            (1.6708623161681031e19, "16708623161681031000"),
+            (0.30000000000000004, "0.30000000000000004"),
+            (f64::MAX, "1.7976931348623157e+308"),
+            (f64::from_bits(1), "5e-324"),
+        ];
+        for (score, expected) in cases {
+            assert_eq!(serialize_search_json(&score).unwrap(), expected.as_bytes());
+        }
+    }
 
     #[test]
     fn tokenization_matches_ascii_and_cjk_contract() {
@@ -607,9 +734,43 @@ mod tests {
                 text: "runtime".into(),
             },
         ];
-        let hits = bm25(pages, "runtime");
+        let index = prepare_index(pages);
+        let hits = bm25(&index, "runtime");
         assert_eq!(
             hits.iter().map(|hit| hit.path.as_str()).collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
+    }
+
+    #[test]
+    fn prepared_index_serves_multiple_queries_without_changing_results() {
+        let index = prepare_index(vec![
+            Page {
+                path: "a".into(),
+                title: "Runtime recovery".into(),
+                aliases: vec!["cancellation".into()],
+                text: "verified session replay".into(),
+            },
+            Page {
+                path: "b".into(),
+                title: "Policy".into(),
+                aliases: vec![],
+                text: "scope and cancellation".into(),
+            },
+        ]);
+
+        assert_eq!(
+            bm25(&index, "runtime")
+                .iter()
+                .map(|hit| hit.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a"]
+        );
+        assert_eq!(
+            bm25(&index, "cancellation")
+                .iter()
+                .map(|hit| hit.path.as_str())
+                .collect::<Vec<_>>(),
             vec!["a", "b"]
         );
     }
@@ -622,7 +783,7 @@ mod tests {
             aliases: vec![],
             text: "help".into(),
         }];
-        assert!(bm25(pages, "help").is_empty());
+        assert!(bm25(&prepare_index(pages), "help").is_empty());
         let input = Input {
             schema_version: 1,
             request_id: "test-request".into(),
@@ -663,5 +824,37 @@ mod tests {
             r#"{"schemaVersion":1,"pages":[],"queries":[],"unexpected":true}"#,
         );
         assert!(unknown.is_err());
+    }
+
+    #[test]
+    fn line_server_replays_multiple_requests_with_per_request_digests() {
+        let first = br#"{"schemaVersion":1,"requestId":"r1","sessionId":"s1","generation":1,"capability":"knowledge-search","deadlineMs":1000,"budget":1,"cancellationToken":"c1","pages":[{"path":"runtime.md","title":"Runtime recovery","aliases":[],"text":"verified replay"}],"queries":["runtime"]}"#;
+        let second = br#"{"schemaVersion":1,"requestId":"r2","sessionId":"s2","generation":2,"capability":"knowledge-search","deadlineMs":1000,"budget":1,"cancellationToken":"c2","pages":[{"path":"policy.md","title":"Policy","aliases":[],"text":"scope recovery"}],"queries":["scope"]}"#;
+        let input = [&first[..], &second[..]]
+            .into_iter()
+            .flat_map(|request| request.iter().copied().chain(*b"\n"))
+            .collect::<Vec<_>>();
+        let mut output = Vec::new();
+
+        serve(io::Cursor::new(input), &mut output).unwrap();
+
+        let responses = output
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(responses.len(), 2);
+        assert_eq!(responses[0]["inputDigest"], sha256_hex(first));
+        assert_eq!(responses[1]["inputDigest"], sha256_hex(second));
+        assert_eq!(responses[0]["results"][0][0]["path"], "runtime.md");
+        assert_eq!(responses[1]["results"][0][0]["path"], "policy.md");
+    }
+
+    #[test]
+    fn line_server_rejects_an_oversized_frame_before_writing_a_response() {
+        let input = vec![b'x'; MAX_REQUEST_BYTES + 3];
+        let mut output = Vec::new();
+        assert!(serve(io::Cursor::new(input), &mut output).is_err());
+        assert!(output.is_empty());
     }
 }

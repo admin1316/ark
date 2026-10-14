@@ -9,7 +9,7 @@ vi.mock('../src/filesystem.ts', async (importOriginal) => {
   return {
     ...actual,
     atomicWriteFile: (path: string, content: string | Buffer, mode?: number) => {
-      if (path.includes('/wiki/_')) throw 'atomic string failure'
+      if (path.includes(join('wiki', '_'))) throw 'atomic string failure'
       actual.atomicWriteFile(path, content, mode)
     },
   }
@@ -43,5 +43,30 @@ describe('ingest fallback primitive failures', () => {
     )
     expect(result.warnings).toContain('log append failed: atomic string failure')
     expect(result.warnings).toContain('summary fallback failed: atomic string failure')
+  })
+
+  it('renders a primitive candidate-page publication failure as a warning', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'wiki-ingest-page-string-'))
+    roots.push(root)
+    const sourceRel = 'raw/sources/source.md'
+    mkdirSync(dirname(join(root, sourceRel)), { recursive: true })
+    writeFileSync(join(root, sourceRel), 'source content', 'utf8')
+    let call = 0
+    const llm = {
+      stream: () => (async function* () {
+        yield { type: 'text-delta', text: call++ === 0 ? 'analysis' : [
+          '--- FILE: wiki/_candidates/ingest/string-failure.md ---',
+          '---', 'title: String failure', 'status: candidate', '---', 'Candidate body.',
+          '--- END FILE ---',
+        ].join('\n') }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })(),
+    } as unknown as LlmRuntime
+
+    const result = await ingestSource(
+      stageExecutorFor(llm), 'p', 'm', root, sourceRel, new AbortController().signal,
+    )
+    expect(result.written).not.toContain('wiki/_candidates/ingest/string-failure.md')
+    expect(result.warnings).toContain('atomic string failure')
   })
 })

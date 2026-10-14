@@ -19,6 +19,13 @@ import {
   parseReviewBlocks,
   recordCandidateVerification as recordCandidateVerificationWithAuthority,
 } from '../src/reviews.ts'
+import {
+  appendKnowledgeEvent,
+  createKnowledgeEvent,
+  createKnowledgeRecord,
+  knowledgeSha256,
+  readKnowledgeEventLog,
+} from '../src/knowledge-governance.ts'
 import { issueTestReceipt, verifierAuthority } from './verifier-authority-fixture.ts'
 import type { CandidateVerification, WikiReviewItem } from '../src/types.ts'
 
@@ -123,17 +130,17 @@ function verification(overrides: Partial<Omit<CandidateVerification, 'candidateH
   }
 }
 
-function recordCandidateVerification(
+async function recordCandidateVerification(
   reviewFile: string,
   wikiRoot: string,
   reviewId: string,
   receipt: unknown,
   action: CandidateVerification['action'] = 'Promote',
-): boolean {
+): Promise<boolean> {
   return recordCandidateVerificationWithAuthority(authority, reviewFile, wikiRoot, reviewId, receipt, action)
 }
 
-function applyCandidateReview(
+async function applyCandidateReview(
   reviewFile: string,
   projectRoot: string,
   wikiRoot: string,
@@ -141,18 +148,18 @@ function applyCandidateReview(
   reviewId: string,
   action: string,
   actor?: string,
-): boolean | null {
+): Promise<boolean | null> {
   return applyCandidateReviewWithAuthority(
     authority, reviewFile, projectRoot, wikiRoot, archiveRoot, reviewId, action, actor,
   )
 }
 
-function verifyReview(
+async function verifyReview(
   reviewFile: string,
   wikiRoot: string,
   reviewId: string,
   requestedAction?: NonNullable<CandidateVerification['action']>,
-): boolean {
+): Promise<boolean> {
   const item = readItems(reviewFile).find(value => value.id === reviewId)
   if (item === undefined) return false
   const action = requestedAction ?? (item.targetPath === undefined
@@ -160,7 +167,7 @@ function verifyReview(
     : existsSync(join(wikiRoot, item.targetPath)) ? 'Merge' : 'Promote')
   try {
     const receiptId = issueTestReceipt(authority, reviewFile, wikiRoot, reviewId, action)
-    return recordCandidateVerification(reviewFile, wikiRoot, reviewId, receiptId, action)
+    return await recordCandidateVerification(reviewFile, wikiRoot, reviewId, receiptId, action)
   } catch {
     return false
   }
@@ -178,7 +185,7 @@ function withoutVerifiedBy<T extends { verifiedBy?: unknown }>(value: T): Omit<T
 }
 
 describe('review parsing and advisory persistence edges', () => {
-  it('uses safe defaults for blank fields and ignores unrelated lines', () => {
+  it('uses safe defaults for blank fields and ignores unrelated lines', async () => {
     const reviews = parseReviewBlocks([
       'unrelated',
       '---REVIEW:   |   ---',
@@ -194,7 +201,7 @@ describe('review parsing and advisory persistence edges', () => {
     }])
   })
 
-  it('fails loudly on corrupt review state and omits empty descriptions for a fresh store', () => {
+  it('fails loudly on corrupt review state and omits empty descriptions for a fresh store', async () => {
     const projectRoot = root()
     const reviewFile = join(projectRoot, 'review.json')
     writeFileSync(reviewFile, '{}', 'utf8')
@@ -209,8 +216,137 @@ describe('review parsing and advisory persistence edges', () => {
   })
 })
 
+describe('candidate provenance and conflict event replay', () => {
+  it('binds candidates without a usable source to a stable unknown identity', async () => {
+    const projectRoot = root()
+    const candidatePath = '_candidates/ingest/concepts/source-fallback.md'
+    const candidateFull = join(projectRoot, 'wiki', candidatePath)
+    const reviewFile = join(projectRoot, '.llm-wiki', 'review.json')
+    mkdirSync(dirname(candidateFull), { recursive: true })
+
+    for (const [index, sourcePath] of ([undefined, ''] as const).entries()) {
+      const content = candidate(`Source fallback ${index}`)
+      writeFileSync(candidateFull, content, 'utf8')
+      expect(appendCandidateReviews(reviewFile, projectRoot, sourcePath, [`wiki/${candidatePath}`])).toBe(1)
+      const item = readItems(reviewFile).at(-1)!
+      expect(item.sourcePath).toBeUndefined()
+      expect(item.sourceHash).toBe(createHash('sha256').update('unknown-source').digest('hex'))
+    }
+
+    const events = readFileSync(join(dirname(reviewFile), 'knowledge-events.jsonl'), 'utf8')
+      .trim().split('\n').map(line => JSON.parse(line) as { payload: { record?: { source?: string } } })
+    expect(events.every(event => event.payload.record?.source === candidatePath)).toBe(true)
+  })
+
+  it('keeps a conflict event stable when an already-conflicted candidate changes', async () => {
+    const projectRoot = root()
+    const reviewFile = join(projectRoot, '.llm-wiki', 'review.json')
+    const firstPath = '_candidates/ingest/concepts/shared-a.md'
+    const secondPath = '_candidates/ingest/concepts/shared-b.md'
+    const firstFull = join(projectRoot, 'wiki', firstPath)
+    const secondFull = join(projectRoot, 'wiki', secondPath)
+    mkdirSync(dirname(firstFull), { recursive: true })
+    writeFileSync(firstFull, candidate('Shared claim'), 'utf8')
+    writeFileSync(secondFull, candidate('Shared claim', 'A conflicting conclusion has distinct evidence. '.repeat(8)), 'utf8')
+    expect(appendCandidateReviews(reviewFile, projectRoot, 'raw/source.md', [`wiki/${firstPath}`, `wiki/${secondPath}`]))
+      .toBe(2)
+
+    const readConflictEvents = () => readFileSync(join(dirname(reviewFile), 'knowledge-events.jsonl'), 'utf8')
+      .trim().split('\n').map(line => JSON.parse(line) as {
+        type: string
+        knowledgeId: string
+        payload: { candidateHash?: string }
+      }).filter(event => event.type === 'knowledge/conflict')
+    const before = readConflictEvents()
+    const firstId = readItems(reviewFile).find(item => item.candidatePath === firstPath)!.id
+    expect(before.filter(event => event.knowledgeId === `candidate:${firstId}`)).toHaveLength(1)
+
+    writeFileSync(secondFull, candidate('Shared claim', 'Competing evidence changed after initial review. '.repeat(8)), 'utf8')
+    expect(appendCandidateReviews(reviewFile, projectRoot, 'raw/source.md', [`wiki/${secondPath}`])).toBe(1)
+    const after = readConflictEvents()
+    expect(after).toEqual(before)
+    expect(after.filter(event => event.knowledgeId === `candidate:${firstId}`)).toHaveLength(1)
+  })
+
+  it('refuses independent verification while a governed candidate claim is in conflict', async () => {
+    const item = fixture()
+    const conflictingPath = '_candidates/ingest/concepts/conflicting-candidate.md'
+    const conflictingFull = join(item.wikiRoot, conflictingPath)
+    mkdirSync(dirname(conflictingFull), { recursive: true })
+    writeFileSync(conflictingFull, candidate('Candidate', 'Conflicting evidence changes the conclusion. '.repeat(8)), 'utf8')
+    expect(appendCandidateReviews(item.reviewFile, item.root, 'raw/conflict.md', [`wiki/${conflictingPath}`])).toBe(1)
+
+    expect(await recordCandidateVerification(
+      item.reviewFile, item.wikiRoot, item.reviewId, 'receipt-not-needed-before-governance-gate',
+    )).toBe(false)
+  })
+
+  it('skips conflict events when prior candidate events have no review projection or hash', async () => {
+    const projectRoot = root()
+    const wikiRoot = join(projectRoot, 'wiki')
+    const reviewFile = join(projectRoot, '.llm-wiki', 'review.json')
+    mkdirSync(join(wikiRoot, '_candidates', 'legacy'), { recursive: true })
+    mkdirSync(join(wikiRoot, '_candidates', 'ingest', 'concepts'), { recursive: true })
+    mkdirSync(dirname(reviewFile), { recursive: true })
+    const orphanPath = '_candidates/legacy/orphan.md'
+    const hashlessPath = '_candidates/legacy/hashless.md'
+    const newPath = '_candidates/ingest/concepts/new.md'
+    const orphanContent = candidate('Shared claim', 'Orphaned review projection content. '.repeat(8))
+    const hashlessContent = candidate('Shared claim', 'Hashless review projection content. '.repeat(8))
+    const newContent = candidate('Shared claim', 'New review projection content. '.repeat(8))
+    writeFileSync(join(wikiRoot, orphanPath), orphanContent, 'utf8')
+    writeFileSync(join(wikiRoot, hashlessPath), hashlessContent, 'utf8')
+    writeFileSync(join(wikiRoot, newPath), newContent, 'utf8')
+    const idFor = (path: string) => `candidate-${createHash('sha256').update(path).digest('hex').slice(0, 16)}`
+    const appendCandidateRecord = (path: string, content: string) => {
+      const id = idFor(path)
+      const now = new Date().toISOString()
+      const record = createKnowledgeRecord({
+        id: `candidate:${id}`,
+        content,
+        claimKey: 'shared claim',
+        source: path,
+        sourceHash: knowledgeSha256(path),
+        scope: { projectId: projectRoot, visibility: 'project' },
+        evidenceRefs: [`source:${id}`],
+        createdAt: now,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        lifecycle: 'candidate',
+      })
+      const eventPath = join(dirname(reviewFile), 'knowledge-events.jsonl')
+      for (const type of ['knowledge/observed', 'knowledge/candidate'] as const) {
+        const prior = readKnowledgeEventLog(eventPath)
+        const event = createKnowledgeEvent(type, record.id, record.scope, { record }, {
+          seq: prior.length,
+          previousEventHash: prior.at(-1)?.eventHash ?? null,
+        })
+        appendKnowledgeEvent(eventPath, event)
+      }
+      return id
+    }
+    const orphanId = appendCandidateRecord(orphanPath, orphanContent)
+    const hashlessId = appendCandidateRecord(hashlessPath, hashlessContent)
+    writeItems(reviewFile, [{
+      id: hashlessId,
+      title: 'Shared claim',
+      type: 'candidate-approval',
+      reviewKind: 'candidate',
+      candidatePath: hashlessPath,
+      resolved: false,
+    }])
+
+    expect(appendCandidateReviews(reviewFile, projectRoot, 'raw/new-source.md', [`wiki/${newPath}`])).toBe(1)
+    const events = readFileSync(join(dirname(reviewFile), 'knowledge-events.jsonl'), 'utf8')
+      .trim().split('\n').map(line => JSON.parse(line) as { type: string; knowledgeId: string })
+    expect(events.some(event => event.type === 'knowledge/conflict' && event.knowledgeId === `candidate:${orphanId}`))
+      .toBe(false)
+    expect(events.some(event => event.type === 'knowledge/conflict' && event.knowledgeId === `candidate:${hashlessId}`))
+      .toBe(false)
+  })
+})
+
 describe('candidate review registration', () => {
-  it('classifies candidate namespaces, skips missing/non-candidates, and refreshes resolved rows', () => {
+  it('classifies candidate namespaces, skips missing/non-candidates, and refreshes resolved rows', async () => {
     const projectRoot = root()
     const wikiRoot = join(projectRoot, 'wiki')
     const reviewFile = join(projectRoot, '.llm-wiki', 'review.json')
@@ -247,7 +383,7 @@ describe('candidate review registration', () => {
     expect(appendCandidateReviews(reviewFile, projectRoot, '/source', [`wiki/${paths[0]}`])).toBe(1)
   })
 
-  it('does not replace malformed or non-array review state with an empty array', () => {
+  it('does not replace malformed or non-array review state with an empty array', async () => {
     const item = fixture()
     writeFileSync(item.reviewFile, 'broken', 'utf8')
     expect(() => appendCandidateReviews(item.reviewFile, item.root, '/source', [`wiki/${item.candidatePath}`]))
@@ -257,7 +393,7 @@ describe('candidate review registration', () => {
       .toThrow('invalid knowledge review state')
   })
 
-  it('does not let a canonical-directory symlink influence candidate registration', () => {
+  it('does not let a canonical-directory symlink influence candidate registration', async () => {
     const projectRoot = root()
     const wikiRoot = join(projectRoot, 'wiki')
     const candidatePath = '_candidates/ingest/concepts/candidate.md'
@@ -278,7 +414,7 @@ describe('candidate review registration', () => {
     expect(readFileSync(join(outside, 'candidate.md'), 'utf8')).toBe(content)
   })
 
-  it.each(['leaf', 'intermediate'] as const)('rejects a dangling canonical %s symlink throughout registration and promotion', (kind) => {
+  it.each(['leaf', 'intermediate'] as const)('rejects a dangling canonical %s symlink throughout registration and promotion', async (kind) => {
     const projectRoot = root()
     const wikiRoot = join(projectRoot, 'wiki')
     const candidatePath = '_candidates/ingest/concepts/candidate.md'
@@ -297,9 +433,9 @@ describe('candidate review registration', () => {
     expect(appendCandidateReviews(reviewFile, projectRoot, '/source', [`wiki/${candidatePath}`])).toBe(1)
     const item = readItems(reviewFile)[0]!
     expect(item.targetPath).toBeUndefined()
-    expect(verifyReview(reviewFile, wikiRoot, item.id)).toBe(true)
+    expect(await verifyReview(reviewFile, wikiRoot, item.id)).toBe(true)
     expect(readItems(reviewFile)[0]!.options?.map(option => option.action)).toEqual(['Archive'])
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       reviewFile, projectRoot, wikiRoot, join(projectRoot, 'archive'), item.id, 'Promote', 'human',
     )).toBe(false)
     expect(existsSync(outside)).toBe(false)
@@ -311,9 +447,9 @@ describe('candidate review registration', () => {
 })
 
 describe('candidate verification validation', () => {
-  it('rejects missing, advisory, resolved, malformed, unsafe, absent, and stale review targets', () => {
+  it('rejects missing, advisory, resolved, malformed, unsafe, absent, and stale review targets', async () => {
     const missing = join(root(), 'missing.json')
-    expect(recordCandidateVerification(missing, '/wiki', 'missing', verification())).toBe(false)
+    expect(await recordCandidateVerification(missing, '/wiki', 'missing', verification())).toBe(false)
 
     const mutations: Array<(item: WikiReviewItem) => WikiReviewItem> = [
       (item: WikiReviewItem) => ({ ...item, reviewKind: 'advisory' as const }),
@@ -325,19 +461,19 @@ describe('candidate verification validation', () => {
     for (const mutate of mutations) {
       const item = fixture()
       writeItems(item.reviewFile, [mutate(readItems(item.reviewFile)[0]!)])
-      expect(recordCandidateVerification(item.reviewFile, item.wikiRoot, item.reviewId, verification())).toBe(false)
+      expect(await recordCandidateVerification(item.reviewFile, item.wikiRoot, item.reviewId, verification())).toBe(false)
     }
 
     const absent = fixture()
     rmSync(absent.candidateFull)
-    expect(recordCandidateVerification(absent.reviewFile, absent.wikiRoot, absent.reviewId, verification())).toBe(false)
+    expect(await recordCandidateVerification(absent.reviewFile, absent.wikiRoot, absent.reviewId, verification())).toBe(false)
 
     const stale = fixture()
     writeFileSync(stale.candidateFull, candidate('Changed'), 'utf8')
-    expect(recordCandidateVerification(stale.reviewFile, stale.wikiRoot, stale.reviewId, verification())).toBe(false)
+    expect(await recordCandidateVerification(stale.reviewFile, stale.wikiRoot, stale.reviewId, verification())).toBe(false)
   })
 
-  it('rejects every incomplete passed verification field', () => {
+  it('rejects every incomplete passed verification field', async () => {
     const cases: Array<(value: Omit<CandidateVerification, 'candidateHash'>) => Omit<CandidateVerification, 'candidateHash'>> = [
       value => ({ ...value, methods: [] }),
       value => ({ ...value, evidence: [] }),
@@ -356,7 +492,7 @@ describe('candidate verification validation', () => {
     ]
     for (const mutate of cases) {
       const item = fixture()
-      expect(recordCandidateVerification(
+      expect(await recordCandidateVerification(
         item.reviewFile,
         item.wikiRoot,
         item.reviewId,
@@ -376,19 +512,19 @@ describe('candidate verification validation', () => {
     '_candidates\\outside.md',
     '_candidates/\0outside.md',
     'concepts/not-candidate.md',
-  ])('rejects malformed durable candidate path %j before reading or moving it', (candidatePath) => {
+  ])('rejects malformed durable candidate path %j before reading or moving it', async (candidatePath) => {
     const item = fixture()
     const rows = readItems(item.reviewFile)
     rows[0] = { ...rows[0]!, candidatePath }
     writeItems(item.reviewFile, rows)
-    expect(recordCandidateVerification(item.reviewFile, item.wikiRoot, item.reviewId, verification())).toBe(false)
-    expect(applyCandidateReview(
+    expect(await recordCandidateVerification(item.reviewFile, item.wikiRoot, item.reviewId, verification())).toBe(false)
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive',
     )).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('rejects a candidate path whose existing component is a symbolic link', () => {
+  it('rejects a candidate path whose existing component is a symbolic link', async () => {
     const item = fixture()
     const outside = join(item.root, 'outside')
     mkdirSync(outside)
@@ -397,38 +533,38 @@ describe('candidate verification validation', () => {
     const rows = readItems(item.reviewFile)
     rows[0] = { ...rows[0]!, candidatePath: '_candidates/linked/candidate.md' }
     writeItems(item.reviewFile, rows)
-    expect(recordCandidateVerification(item.reviewFile, item.wikiRoot, item.reviewId, verification())).toBe(false)
-    expect(applyCandidateReview(
+    expect(await recordCandidateVerification(item.reviewFile, item.wikiRoot, item.reviewId, verification())).toBe(false)
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive',
     )).toBe(false)
     expect(existsSync(join(outside, 'candidate.md'))).toBe(true)
   })
 
-  it('fails deterministic verification for an invalid durable target', () => {
+  it('fails deterministic verification for an invalid durable target', async () => {
     const item = fixture()
     const rows = readItems(item.reviewFile)
     rows[0] = { ...rows[0]!, targetPath: '../promoted-outside.md' }
     writeItems(item.reviewFile, rows)
-    expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(false)
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(false)
     expect(readItems(item.reviewFile)[0]!.options?.map(option => option.action)).toEqual(['Archive'])
   })
 
-  it('sets action options for existing, missing, and autonomous targets and records failed checks', () => {
+  it('sets action options for existing, missing, and autonomous targets and records failed checks', async () => {
     const existing = fixture()
     const target = readItems(existing.reviewFile)[0]!.targetPath!
     mkdirSync(dirname(join(existing.wikiRoot, target)), { recursive: true })
     writeFileSync(join(existing.wikiRoot, target), candidate('Canonical'), 'utf8')
-    expect(verifyReview(existing.reviewFile, existing.wikiRoot, existing.reviewId)).toBe(true)
+    expect(await verifyReview(existing.reviewFile, existing.wikiRoot, existing.reviewId)).toBe(true)
     expect(readItems(existing.reviewFile)[0]!.options?.map(option => option.action))
-      .toEqual(['Merge', 'Archive'])
+      .toEqual(['Archive'])
 
     const missingTarget = fixture()
-    expect(verifyReview(missingTarget.reviewFile, missingTarget.wikiRoot, missingTarget.reviewId)).toBe(true)
+    expect(await verifyReview(missingTarget.reviewFile, missingTarget.wikiRoot, missingTarget.reviewId)).toBe(true)
     expect(readItems(missingTarget.reviewFile)[0]!.options?.map(option => option.action))
-      .toEqual(['Promote', 'Archive'])
+      .toEqual(['Archive'])
 
     const autonomous = fixture('_candidates/topics/no-target.md')
-    expect(verifyReview(autonomous.reviewFile, autonomous.wikiRoot, autonomous.reviewId)).toBe(true)
+    expect(await verifyReview(autonomous.reviewFile, autonomous.wikiRoot, autonomous.reviewId)).toBe(true)
     expect(readItems(autonomous.reviewFile)[0]!.options?.map(option => option.action)).toEqual(['Archive'])
 
     const failed = fixture()
@@ -441,7 +577,7 @@ describe('candidate verification validation', () => {
       successCount: 0,
       failureCount: 1,
     }))
-    expect(recordCandidateVerification(
+    expect(await recordCandidateVerification(
       failed.reviewFile, failed.wikiRoot, failed.reviewId, failedVerification,
     )).toBe(false)
     expect(existsSync(join(failed.root, '.llm-wiki', 'governance.jsonl'))).toBe(false)
@@ -449,27 +585,27 @@ describe('candidate verification validation', () => {
 })
 
 describe('candidate decision application', () => {
-  it('distinguishes advisory, invalid, unauthorized, missing-target, and unknown actions', () => {
+  it('distinguishes advisory, invalid, unauthorized, missing-target, and unknown actions', async () => {
     const missingReview = join(root(), 'missing-review.json')
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       missingReview, '/project', '/wiki', '/archive', 'missing', 'Archive',
     )).toBe(false)
 
     const advisory = fixture()
     const advisoryItems = readItems(advisory.reviewFile)
     writeItems(advisory.reviewFile, [{ ...advisoryItems[0]!, reviewKind: 'advisory' }])
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       advisory.reviewFile, advisory.root, advisory.wikiRoot, advisory.archiveRoot, advisory.reviewId, 'Archive',
     )).toBeNull()
 
     const denied = fixture()
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       denied.reviewFile, denied.root, denied.wikiRoot, denied.archiveRoot, 'unknown-review', 'Archive',
     )).toBe(false)
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       denied.reviewFile, denied.root, denied.wikiRoot, denied.archiveRoot, denied.reviewId, 'Promote', 'governance-agent',
     )).toBe(false)
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       denied.reviewFile, denied.root, denied.wikiRoot, denied.archiveRoot, denied.reviewId, 'Unknown',
     )).toBe(false)
 
@@ -482,35 +618,35 @@ describe('candidate decision application', () => {
     for (const mutate of invalidMutations) {
       const invalid = fixture()
       writeItems(invalid.reviewFile, [mutate(readItems(invalid.reviewFile)[0]!)])
-      expect(applyCandidateReview(
+      expect(await applyCandidateReview(
         invalid.reviewFile, invalid.root, invalid.wikiRoot, invalid.archiveRoot, invalid.reviewId, 'Archive',
       )).toBe(false)
     }
 
     const absent = fixture()
     rmSync(absent.candidateFull)
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       absent.reviewFile, absent.root, absent.wikiRoot, absent.archiveRoot, absent.reviewId, 'Archive',
     )).toBe(false)
 
     const stale = fixture()
     writeFileSync(stale.candidateFull, candidate('Changed'), 'utf8')
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       stale.reviewFile, stale.root, stale.wikiRoot, stale.archiveRoot, stale.reviewId, 'Archive',
     )).toBe(false)
 
     const noTarget = fixture('_candidates/topics/no-target.md')
-    expect(verifyReview(noTarget.reviewFile, noTarget.wikiRoot, noTarget.reviewId)).toBe(true)
-    expect(applyCandidateReview(
+    expect(await verifyReview(noTarget.reviewFile, noTarget.wikiRoot, noTarget.reviewId)).toBe(true)
+    expect(await applyCandidateReview(
       noTarget.reviewFile, noTarget.root, noTarget.wikiRoot, noTarget.archiveRoot, noTarget.reviewId, 'Promote',
     )).toBe(false)
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       noTarget.reviewFile, noTarget.root, noTarget.wikiRoot, noTarget.archiveRoot, noTarget.reviewId, 'Merge',
     )).toBe(false)
 
     const missingTarget = fixture()
-    expect(verifyReview(missingTarget.reviewFile, missingTarget.wikiRoot, missingTarget.reviewId)).toBe(true)
-    expect(applyCandidateReview(
+    expect(await verifyReview(missingTarget.reviewFile, missingTarget.wikiRoot, missingTarget.reviewId)).toBe(true)
+    expect(await applyCandidateReview(
       missingTarget.reviewFile, missingTarget.root, missingTarget.wikiRoot, missingTarget.archiveRoot,
       missingTarget.reviewId, 'Merge',
     )).toBe(false)
@@ -519,11 +655,58 @@ describe('candidate decision application', () => {
     const target = readItems(existingPromote.reviewFile)[0]!.targetPath!
     mkdirSync(dirname(join(existingPromote.wikiRoot, target)), { recursive: true })
     writeFileSync(join(existingPromote.wikiRoot, target), candidate('Existing'), 'utf8')
-    expect(verifyReview(existingPromote.reviewFile, existingPromote.wikiRoot, existingPromote.reviewId)).toBe(true)
-    expect(applyCandidateReview(
+    expect(await verifyReview(existingPromote.reviewFile, existingPromote.wikiRoot, existingPromote.reviewId)).toBe(true)
+    expect(await applyCandidateReview(
       existingPromote.reviewFile, existingPromote.root, existingPromote.wikiRoot, existingPromote.archiveRoot,
       existingPromote.reviewId, 'Promote',
     )).toBe(false)
+  })
+
+  it('blocks candidate actions when replayed governance marks the candidate conflicted', async () => {
+    const item = fixture()
+    const conflictingPath = '_candidates/ingest/concepts/conflicting-candidate.md'
+    const conflictingFull = join(item.wikiRoot, conflictingPath)
+    mkdirSync(dirname(conflictingFull), { recursive: true })
+    writeFileSync(conflictingFull, candidate('Candidate', 'A distinct conflicting method. '.repeat(8)), 'utf8')
+    expect(appendCandidateReviews(item.reviewFile, item.root, 'raw/conflict.md', [`wiki/${conflictingPath}`])).toBe(1)
+
+    expect(await applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).toBe(false)
+  })
+
+  it('does not derive trial credit from semantic verification or trust legacy trial mirrors', async () => {
+    const item = fixture()
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId, 'Promote')).toBe(true)
+    const rows = readItems(item.reviewFile)
+    const verified = rows[0]!
+    expect(verified.verification?.status).toBe('passed')
+    expect(verified.verification?.trial).toBeUndefined()
+
+    rows[0] = {
+      ...verified,
+      verification: {
+        ...verified.verification!,
+        trial: {
+          status: 'passed',
+          trialHash: 'a'.repeat(64),
+          authorityId: 'project-forged',
+          evidence: ['semantic verifier passed'],
+          retrievalHits: 1,
+          successfulUses: 1,
+          userCorrections: 0,
+          utilityScore: 2,
+          startedAt: new Date(0).toISOString(),
+          endedAt: new Date(0).toISOString(),
+        },
+      },
+    }
+    writeItems(item.reviewFile, rows)
+    expect(await applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+    )).toBe(false)
+    expect(existsSync(join(item.wikiRoot, rows[0].targetPath!))).toBe(false)
+    expect(existsSync(item.candidateFull)).toBe(true)
   })
 
   it.each([
@@ -536,45 +719,45 @@ describe('candidate decision application', () => {
     'concepts\\outside.md',
     'concepts/\0outside.md',
     '_candidates/ingest/concepts/other.md',
-  ])('rejects malformed durable target path %j before canonical mutation', (targetPath) => {
+  ])('rejects malformed durable target path %j before canonical mutation', async (targetPath) => {
     const item = fixture()
-    expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
     const rows = readItems(item.reviewFile)
     rows[0] = { ...rows[0]!, targetPath }
     writeItems(item.reviewFile, rows)
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
     )).toBe(false)
     expect(existsSync(join(item.root, 'promoted-outside.md'))).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('rejects a target path whose existing component is a symbolic link', () => {
+  it('rejects a target path whose existing component is a symbolic link', async () => {
     const item = fixture()
-    expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
     const outside = join(item.root, 'canonical-outside')
     mkdirSync(outside)
     symlinkSync(outside, join(item.wikiRoot, 'linked-target'), 'dir')
     const rows = readItems(item.reviewFile)
     rows[0] = { ...rows[0]!, targetPath: 'linked-target/promoted.md' }
     writeItems(item.reviewFile, rows)
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
     )).toBe(false)
     expect(existsSync(join(outside, 'promoted.md'))).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('rejects a dangling canonical leaf introduced after verification', () => {
+  it('rejects a dangling canonical leaf introduced after verification', async () => {
     const item = fixture()
-    expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
     const target = readItems(item.reviewFile)[0]!.targetPath!
     const targetFull = join(item.wikiRoot, target)
     const outside = join(item.root, 'missing-promoted-outside.md')
     mkdirSync(dirname(targetFull), { recursive: true })
     symlinkSync(outside, targetFull)
 
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
     )).toBe(false)
     expect(existsSync(outside)).toBe(false)
@@ -583,9 +766,9 @@ describe('candidate decision application', () => {
     expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
   })
 
-  it('preflights archive destinations before Promote can mutate canonical or review state', () => {
+  it('preflights archive destinations before Archive can mutate candidate or review state', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId, 'Archive')).toBe(true)
     const target = readItems(item.reviewFile)[0]!.targetPath!
     const targetFull = join(item.wikiRoot, target)
     const reviewBefore = readFileSync(item.reviewFile, 'utf8')
@@ -594,9 +777,9 @@ describe('candidate decision application', () => {
     mkdirSync(item.archiveRoot, { recursive: true })
     writeFileSync(join(item.archiveRoot, 'wiki-governance'), 'not a directory', 'utf8')
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow()
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow()
     expect(existsSync(targetFull)).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
     expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
@@ -604,9 +787,9 @@ describe('candidate decision application', () => {
     expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
   })
 
-  it('rejects a pre-existing candidate archive before any live mutation', () => {
+  it('rejects a pre-existing candidate archive before any live mutation', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
     const reviewBefore = readFileSync(item.reviewFile, 'utf8')
     const target = readItems(item.reviewFile)[0]!.targetPath!
     const archived = join(
@@ -620,62 +803,49 @@ describe('candidate decision application', () => {
     mkdirSync(dirname(archived), { recursive: true })
     writeFileSync(archived, 'existing archive', 'utf8')
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/candidate archive already exists/u)
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow(/candidate archive already exists/u)
     expect(existsSync(join(item.wikiRoot, target))).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
     expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
   })
 
-  it('rejects a pre-existing canonical archive before modifying an existing target', () => {
+  it('leaves an existing canonical target unchanged without a measured trial', async () => {
     const item = fixture()
     const target = readItems(item.reviewFile)[0]!.targetPath!
     const targetFull = join(item.wikiRoot, target)
     const canonicalBefore = candidate('Canonical', 'stable method')
     mkdirSync(dirname(targetFull), { recursive: true })
     writeFileSync(targetFull, canonicalBefore, 'utf8')
-    expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId, 'Replace')).toBe(true)
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId, 'Replace')).toBe(true)
     const reviewBefore = readFileSync(item.reviewFile, 'utf8')
-    const canonicalHash = createHash('sha256').update(canonicalBefore).digest('hex')
-    const archivedCanonical = join(
-      item.archiveRoot,
-      'wiki-governance',
-      new Date().toISOString().slice(0, 10),
-      basename(item.root),
-      canonicalHash.slice(0, 12),
-      'canonical-before-update',
-      target,
-    )
-    mkdirSync(dirname(archivedCanonical), { recursive: true })
-    writeFileSync(archivedCanonical, 'existing canonical archive', 'utf8')
-
-    expect(() => applyCandidateReview(
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Replace', 'human',
-    )).toThrow(/canonical archive already exists/u)
+    )).toBe(false)
     expect(readFileSync(targetFull, 'utf8')).toBe(canonicalBefore)
     expect(existsSync(item.candidateFull)).toBe(true)
     expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
   })
 
-  it('rejects a non-regular governance log before staging any mutation', () => {
+  it('rejects a non-regular governance log before staging any mutation', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
     const logFile = join(item.root, '.llm-wiki', 'governance.jsonl')
     rmSync(logFile)
     mkdirSync(logFile)
     const target = readItems(item.reviewFile)[0]!.targetPath!
     const reviewBefore = readFileSync(item.reviewFile, 'utf8')
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/unsafe review transaction file/u)
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow(/unsafe review transaction file/u)
     expect(existsSync(join(item.wikiRoot, target))).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
     expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
   })
 
-  it('uses the signed receipt as authority instead of mutable review mirrors', () => {
+  it('does not let mutable verification mirrors authorize canonical mutation', async () => {
     const nonAuthorityMutations: Array<(value: CandidateVerification) => CandidateVerification> = [
       (value: CandidateVerification) => ({ ...value, methods: [] }),
       (value: CandidateVerification) => ({ ...value, evidence: [] }),
@@ -683,26 +853,27 @@ describe('candidate decision application', () => {
     ]
     for (const verificationMutation of nonAuthorityMutations) {
       const item = fixture()
-      expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
+      expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
       const items = readItems(item.reviewFile)
       items[0] = { ...items[0]!, verification: verificationMutation(items[0]!.verification!) }
       writeItems(item.reviewFile, items)
-      expect(applyCandidateReview(
+      expect(await applyCandidateReview(
         item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-      )).toBe(true)
+      )).toBe(false)
+      expect(existsSync(item.candidateFull)).toBe(true)
     }
     const missingReceipt = fixture()
-    expect(verifyReview(missingReceipt.reviewFile, missingReceipt.wikiRoot, missingReceipt.reviewId)).toBe(true)
+    expect(await verifyReview(missingReceipt.reviewFile, missingReceipt.wikiRoot, missingReceipt.reviewId)).toBe(true)
     const rows = readItems(missingReceipt.reviewFile)
     rows[0] = { ...rows[0]!, verification: { ...rows[0]!.verification!, receipts: [] } }
     writeItems(missingReceipt.reviewFile, rows)
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       missingReceipt.reviewFile, missingReceipt.root, missingReceipt.wikiRoot, missingReceipt.archiveRoot,
       missingReceipt.reviewId, 'Promote', 'human',
     )).toBe(false)
   })
 
-  it.each(['Merge', 'Replace', 'Deduplicate'] as const)('applies %s and archives the previous canonical', (action) => {
+  it.each(['Merge', 'Replace', 'Deduplicate'] as const)('blocks %s until an authenticated measured trial exists', async (action) => {
     const canonicalBody = 'stable method'
     const candidateBody = action === 'Merge' ? canonicalBody : 'replacement body'
     const item = fixture('_candidates/ingest/concepts/candidate.md', candidate('Candidate', candidateBody))
@@ -710,17 +881,17 @@ describe('candidate decision application', () => {
     const targetFull = join(item.wikiRoot, target)
     mkdirSync(dirname(targetFull), { recursive: true })
     writeFileSync(targetFull, candidate('Canonical', canonicalBody), 'utf8')
-    expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId, action)).toBe(true)
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId, action)).toBe(true)
 
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, action, 'human',
-    )).toBe(true)
-    expect(existsSync(item.candidateFull)).toBe(false)
-    expect(existsSync(targetFull)).toBe(true)
-    expect(readFileSync(join(item.root, '.llm-wiki', 'governance.jsonl'), 'utf8')).toContain(action)
+    )).toBe(false)
+    expect(existsSync(item.candidateFull)).toBe(true)
+    expect(readFileSync(targetFull, 'utf8')).toBe(candidate('Canonical', canonicalBody))
+    expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
   })
 
-  it('promotes canonical and evidence pages and archives or skips disposable candidates', () => {
+  it('blocks canonical promotion and keeps disposable Candidate Archive available', async () => {
     for (const [candidatePath, expectedStatus] of [
       ['_candidates/sessions/session.md', 'status: canonical'],
       ['_candidates/research/research.md', 'status: evidence'],
@@ -729,36 +900,37 @@ describe('candidate decision application', () => {
         'status: candidate',
         'status: candidate\napproved_at: old\napproved_by: old',
       ))
-      expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
-      expect(applyCandidateReview(
+      expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
+      expect(await applyCandidateReview(
         item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-      )).toBe(true)
+      )).toBe(false)
       const target = readItems(item.reviewFile)[0]!.targetPath!
-      const promoted = readFileSync(join(item.wikiRoot, target), 'utf8')
-      expect(promoted).toContain(expectedStatus)
-      expect(promoted).toContain('approved_by: human')
-      expect(promoted).not.toContain('approved_at: old')
+      expect(existsSync(join(item.wikiRoot, target))).toBe(false)
+      expect(existsSync(item.candidateFull)).toBe(true)
+      expect(expectedStatus).toMatch(/^status:/u)
     }
 
     for (const action of ['Archive', 'Skip'] as const) {
       const item = fixture('_candidates/topics/disposable.md')
-      expect(applyCandidateReview(
+      expect(await applyCandidateReview(
         item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, action,
       )).toBe(true)
       expect(readItems(item.reviewFile)[0]!.resolvedAction).toBe('Archive')
     }
   })
 
-  it('merges a research candidate into an existing evidence page', () => {
+  it('keeps an existing evidence page unchanged when a research merge lacks a measured trial', async () => {
     const item = fixture('_candidates/research/research.md')
     const target = readItems(item.reviewFile)[0]!.targetPath!
     const targetFull = join(item.wikiRoot, target)
     mkdirSync(dirname(targetFull), { recursive: true })
     writeFileSync(targetFull, candidate(), 'utf8')
-    expect(verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
-    expect(applyCandidateReview(
+    expect(await verifyReview(item.reviewFile, item.wikiRoot, item.reviewId)).toBe(true)
+    const canonicalBefore = readFileSync(targetFull, 'utf8')
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Merge', 'human',
-    )).toBe(true)
-    expect(readFileSync(targetFull, 'utf8')).toContain('status: evidence')
+    )).toBe(false)
+    expect(readFileSync(targetFull, 'utf8')).toBe(canonicalBefore)
+    expect(existsSync(item.candidateFull)).toBe(true)
   })
 })

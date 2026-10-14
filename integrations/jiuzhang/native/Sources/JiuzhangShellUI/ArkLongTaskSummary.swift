@@ -221,15 +221,7 @@ public struct ArkLongTaskSummary: Equatable, Sendable {
   }
 
   private static func presentationTitle(_ activity: ArkToolActivity) -> String {
-    switch activity.resultView ?? activity.callView {
-    case .generic(let card): return card.title ?? activity.name
-    case .terminal(let card): return card.title ?? activity.name
-    case .diff(let card): return card.title ?? activity.name
-    case .search(let card): return card.title ?? activity.name
-    case .read(let card): return card.title ?? activity.name
-    case .web(let card): return card.title ?? activity.name
-    case nil: return activity.name
-    }
+    (activity.resultView ?? activity.callView)?.title ?? activity.name
   }
 
 }

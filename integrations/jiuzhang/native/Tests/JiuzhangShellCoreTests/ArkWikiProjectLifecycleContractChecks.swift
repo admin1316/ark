@@ -39,7 +39,9 @@ func runArkWikiProjectLifecycleContractChecks() {
     hostRemoval?.contains("writeWorkspaces(remaining)") == true
       && hostRemoval?.contains("cancelPendingForRoot(target)") == true
       && hostRemoval?.contains("this.currentRoot = this.mainRoot") == true
-      && hostRemoval?.contains("this.projectGeneration += 1") == true
+      && hostRemoval?.contains("this.advanceProjectGeneration('knowledge-wiki workspace removed')") == true
+      && wikiLifecycleSlice(host, from: "private advanceProjectGeneration(reason: string)", through: "/** Dispose")?.contains("this.projectGeneration += 1") == true
+      && wikiLifecycleSlice(host, from: "private advanceProjectGeneration(reason: string)", through: "/** Dispose")?.contains("this.projectGenerationController.abort(new Error(reason))") == true
       && hostRemoval?.contains("current: this.currentRoot") == true,
     "Host removal unregisters once, cancels pending work, and returns to the main project"
   )

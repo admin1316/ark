@@ -1,19 +1,21 @@
 /** Launcher-owned external verifier adapter for governed Wiki candidates. */
 
-import { createPrivateKey, createPublicKey, KeyObject, sign, verify } from 'node:crypto'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { isAbsolute } from 'node:path'
+import { createPublicKey, KeyObject, verify } from 'node:crypto'
+import { dirname, isAbsolute } from 'node:path'
+import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
   IndependentVerificationRequest,
   IndependentVerificationResult,
+  KnowledgeWikiPromotionSealRequest,
   KnowledgeWikiSourceIdentity,
   KnowledgeWikiVerifierAuthority,
   PromotionCheckpoint,
   VerificationAuthoritySeal,
 } from './verifier.ts'
-import { canonicalJson, sha256 } from './verifier.ts'
+import { canonicalJson, encodeKnowledgeWikiPromotionSealRequest, sha256 } from './verifier.ts'
 
 const MAX_OUTPUT_BYTES = 256 * 1024
+const MAX_STDERR_BYTES = 16 * 1024
 const DEFAULT_TIMEOUT_MS = 30_000
 const SAFE_ENV_KEYS = [
   'PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL',
@@ -35,14 +37,24 @@ export interface ExternalVerifierOptions {
   readonly args?: readonly string[]
   /** Ed25519 public key used to validate external results and WAL seals. */
   readonly publicKey: string | Buffer | KeyObject
-  /** Ed25519 private key held by the launcher for WAL seals. */
-  readonly privateKey: string | Buffer | KeyObject
-  /** Maximum verifier execution time. */
+  /**
+   * Existing closed typed operation owner; this adapter retains only its matching Ed25519 public key.
+   * It must honor a supplied signal and settle only after its own work is terminated and joined.
+   */
+  readonly promotionSealer: Pick<KnowledgeWikiVerifierAuthority, 'authorityId' | 'sealPromotion'>
+  /** Shared managed process-tree owner used for verifier execution and teardown. */
+  readonly subprocess: Pick<SubprocessRuntime, 'resolveExecutable' | 'spawn'>
+  /** Maximum verifier subprocess execution time; it does not impose a deadline on promotion signing. */
   readonly timeoutMs?: number
 }
 
-function safeEnvironment(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {}
+type VerifierCommand = Required<Pick<
+  ExternalVerifierOptions,
+  'authorityId' | 'executable' | 'args' | 'subprocess' | 'timeoutMs'
+>>
+
+function safeEnvironment(): Record<string, string> {
+  const env: Record<string, string> = {}
   for (const key of SAFE_ENV_KEYS) {
     const value = process.env[key]
     if (value !== undefined) env[key] = value
@@ -50,11 +62,22 @@ function safeEnvironment(): NodeJS.ProcessEnv {
   return env
 }
 
-function keyObject(value: string | Buffer | KeyObject, kind: 'public' | 'private'): KeyObject {
-  if (value instanceof KeyObject) return value
-  return kind === 'public'
-    ? createPublicKey(value)
-    : createPrivateKey(value)
+function ed25519PublicKey(value: string | Buffer | KeyObject): KeyObject {
+  if (value instanceof KeyObject) {
+    if (value.type !== 'public' || value.asymmetricKeyType !== 'ed25519') {
+      throw new Error('external verifier public key must be an Ed25519 public key')
+    }
+    return value
+  }
+  const pem = Buffer.isBuffer(value) ? value.toString('utf8') : value
+  if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/u.test(pem)) {
+    throw new Error('external verifier public key must not contain private key PEM')
+  }
+  const key = createPublicKey(value)
+  if (key.type !== 'public' || key.asymmetricKeyType !== 'ed25519') {
+    throw new Error('external verifier public key must be an Ed25519 public key')
+  }
+  return key
 }
 
 function validSourceIdentity(identity: KnowledgeWikiSourceIdentity): boolean {
@@ -67,6 +90,10 @@ function validSourceIdentity(identity: KnowledgeWikiSourceIdentity): boolean {
 
 function signedPayload(value: Omit<IndependentVerificationResult, 'proof'>): string {
   return canonicalJson(value)
+}
+
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted
 }
 
 function verifyResult(
@@ -85,96 +112,100 @@ function verifyResult(
   return verify(null, Buffer.from(signedPayload(unsigned), 'utf8'), publicKey, Buffer.from(proof, 'base64'))
 }
 
-function terminate(child: ChildProcessWithoutNullStreams): void {
-  child.kill('SIGTERM')
-  setTimeout(() => {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-  }, 100).unref()
-}
-
 async function runVerifier(
-  options: ExternalVerifierOptions,
+  options: VerifierCommand,
   request: IndependentVerificationRequest,
   publicKey: ReturnType<typeof createPublicKey>,
   signal: AbortSignal,
 ): Promise<IndependentVerificationResult> {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const timeoutMs = options.timeoutMs
   const payload = `${canonicalJson({ schemaVersion: 1, operation: 'verifyCandidate', request })}\n`
-  return new Promise((resolvePromise, reject) => {
-    if (signal.aborted) {
-      reject(new Error('external verifier aborted'))
-      return
+  if (signal.aborted) throw new Error('external verifier aborted')
+  const controller = new AbortController()
+  const abort = (): void => { controller.abort(signal.reason) }
+  let child: SubprocessHandle | undefined
+  const timeoutReason = new Error('external verifier timed out')
+  const timer = setTimeout(() => {
+    controller.abort(timeoutReason)
+  }, timeoutMs)
+  timer.unref()
+  signal.addEventListener('abort', abort, { once: true })
+  try {
+    const env = safeEnvironment()
+    const executable = await options.subprocess.resolveExecutable(options.executable, env, controller.signal)
+    child = options.subprocess.spawn({
+      argv: [executable, ...options.args],
+      cwd: dirname(executable),
+      env,
+      stdio: { stdin: { data: payload }, stdout: 'pipe', stderr: 'pipe' },
+      graceMs: 100,
+      signal: controller.signal,
+    })
+    if (child.stdout === undefined || child.stderr === undefined) {
+      throw new Error('external verifier subprocess did not provide piped output')
     }
-    let settled = false
+
     let outputBytes = 0
+    let stderrBytes = 0
+    const outputState = { exceeded: false }
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
-    const child = spawn(options.executable, [...(options.args ?? [])], {
-      shell: false,
-      env: safeEnvironment(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    const timerRef: { value?: NodeJS.Timeout } = {}
-    const cleanup = (): void => {
-      if (timerRef.value !== undefined) clearTimeout(timerRef.value)
-      signal.removeEventListener('abort', abort)
-    }
-    const fail = (error: Error): void => {
-      if (settled) return
-      settled = true
-      cleanup()
-      reject(error)
-    }
-    const abort = (): void => {
-      terminate(child)
-      fail(new Error('external verifier aborted'))
-    }
     child.stdout.on('data', (chunk: Buffer | string) => {
-      const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-      outputBytes += value.byteLength
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      outputBytes += bytes.byteLength
       if (outputBytes > MAX_OUTPUT_BYTES) {
-        terminate(child)
-        fail(new Error('external verifier output exceeds 256 KiB'))
+        if (!outputState.exceeded) {
+          outputState.exceeded = true
+          child?.terminate()
+        }
         return
       }
-      stdout.push(value)
+      stdout.push(bytes)
     })
     child.stderr.on('data', (chunk: Buffer | string) => {
-      if (Buffer.concat(stderr).byteLength < 16 * 1024) stderr.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-    })
-    child.once('error', (error) => { fail(error) })
-    child.once('close', (code, childSignal) => {
-      if (settled) return
-      if (code !== 0) {
-        const detail = Buffer.concat(stderr).toString('utf8').slice(0, 1000)
-        fail(new Error(`external verifier exited ${String(code)}${childSignal === null ? '' : ` (${childSignal})`}${detail === '' ? '' : `: ${detail}`}`))
-        return
-      }
-      try {
-        const parsed = JSON.parse(Buffer.concat(stdout).toString('utf8')) as IndependentVerificationResult
-        if (!verifyResult(options.authorityId, publicKey, request, parsed)) throw new Error('external verifier result signature or request binding is invalid')
-        settled = true
-        cleanup()
-        resolvePromise(parsed)
-      } catch (error) {
-        fail(error instanceof Error ? error : new Error(String(error)))
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      const remaining = MAX_STDERR_BYTES - stderrBytes
+      if (remaining > 0) {
+        const retained = bytes.byteLength > remaining ? bytes.subarray(0, remaining) : bytes
+        stderr.push(retained)
+        stderrBytes += retained.byteLength
       }
     })
-    signal.addEventListener('abort', abort, { once: true })
-    const timer = setTimeout(() => {
-      terminate(child)
-      fail(new Error(`external verifier timed out after ${timeoutMs}ms`))
-    }, timeoutMs)
-    timerRef.value = timer
-    timer.unref()
-    child.stdin.end(payload)
-  })
+
+    const outcome = await child.done
+    if (!await child.waitForExit(controller.signal)) {
+      child.terminate()
+      if (!await child.waitForExit()) throw new Error('external verifier process tree did not exit')
+    }
+    if (controller.signal.reason === timeoutReason) throw new Error(`external verifier timed out after ${timeoutMs}ms`)
+    if (isAborted(signal)) throw new Error('external verifier aborted')
+    if (outputState.exceeded) throw new Error('external verifier output exceeds 256 KiB')
+    if (outcome.exitCode !== 0) {
+      const detail = Buffer.concat(stderr).toString('utf8').slice(0, 1000)
+      throw new Error(`external verifier exited ${String(outcome.exitCode)}${outcome.signal === null ? '' : ` (${outcome.signal})`}${detail === '' ? '' : `: ${detail}`}`)
+    }
+    const parsed = JSON.parse(Buffer.concat(stdout).toString('utf8')) as IndependentVerificationResult
+    if (!verifyResult(options.authorityId, publicKey, request, parsed)) throw new Error('external verifier result signature or request binding is invalid')
+    return parsed
+  } catch (error) {
+    if (child !== undefined) {
+      child.terminate()
+      await child.done.catch(() => {})
+      if (!await child.waitForExit()) throw new Error('external verifier process tree did not exit')
+    }
+    if (controller.signal.reason === timeoutReason) throw new Error(`external verifier timed out after ${timeoutMs}ms`)
+    if (isAborted(signal)) throw new Error('external verifier aborted')
+    throw error
+  } finally {
+    clearTimeout(timer)
+    signal.removeEventListener('abort', abort)
+  }
 }
 
 /**
- * Create a launcher-owned, signed external verifier authority.
- * @param options - Fixed launcher-owned command, source identity, keys, and deadline.
- * @returns An authority that can be injected into KnowledgeWikiService.
+ * Create a launcher-owned verifier authority with captured command configuration and delegated typed signing.
+ * @param options - Fixed launcher-owned command, source identity, public key, and verifier timeout.
+ * @returns An authority that can be injected into KnowledgeWikiService; signer settlement follows its signal contract.
  */
 export function createExternalVerifierAuthority(options: ExternalVerifierOptions): KnowledgeWikiVerifierAuthority {
   if (!AUTHORITY_RE.test(options.authorityId)) throw new Error('external verifier authorityId is invalid')
@@ -182,22 +213,39 @@ export function createExternalVerifierAuthority(options: ExternalVerifierOptions
   if (!validSourceIdentity(options.sourceIdentity)) throw new Error('external verifier source identity is invalid')
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) throw new Error('external verifier timeout is invalid')
-  const publicKey = keyObject(options.publicKey, 'public')
-  const privateKey = keyObject(options.privateKey, 'private')
-  const probe = Buffer.from('ark-external-verifier-keypair-probe', 'utf8')
-  const probeSignature = sign(null, probe, privateKey)
-  if (!verify(null, probe, publicKey, probeSignature)) throw new Error('external verifier keypair does not match')
+  const publicKey = ed25519PublicKey(options.publicKey)
+  const promotionSealer = options.promotionSealer
+  const promotionSealerAuthorityId = promotionSealer.authorityId
+  const delegatedSealPromotion = promotionSealer.sealPromotion.bind(promotionSealer)
+  if (promotionSealerAuthorityId !== options.authorityId) throw new Error('promotion sealer authority does not match external verifier')
   const sourceIdentity = Object.freeze({ ...options.sourceIdentity })
-  return {
+  const command: VerifierCommand = Object.freeze({
     authorityId: options.authorityId,
+    executable: options.executable,
+    args: Object.freeze([...(options.args ?? [])]),
+    subprocess: options.subprocess,
+    timeoutMs,
+  })
+  return {
+    authorityId: command.authorityId,
     sourceIdentity: () => sourceIdentity,
-    verifyCandidate: (request, signal) => runVerifier({ ...options, timeoutMs }, request, publicKey, signal),
-    validateCandidateResult: (request, result) => verifyResult(options.authorityId, publicKey, request, result),
-    sealPromotion(payload: string): VerificationAuthoritySeal {
-      return { authorityId: options.authorityId, proof: sign(null, Buffer.from(payload, 'utf8'), privateKey).toString('base64') }
+    verifyCandidate: (request, signal) => runVerifier(command, request, publicKey, signal),
+    validateCandidateResult: (request, result) => verifyResult(command.authorityId, publicKey, request, result),
+    async sealPromotion(request: KnowledgeWikiPromotionSealRequest, signal?: AbortSignal): Promise<VerificationAuthoritySeal> {
+      signal?.throwIfAborted()
+      const payload = encodeKnowledgeWikiPromotionSealRequest(request)
+      if (request.authorityId !== command.authorityId) throw new Error('promotion seal authority context does not match')
+      const seal = await delegatedSealPromotion(request, signal)
+      signal?.throwIfAborted()
+      if (promotionSealer.authorityId !== promotionSealerAuthorityId
+        || seal.authorityId !== command.authorityId
+        || !verify(null, Buffer.from(payload, 'utf8'), publicKey, Buffer.from(seal.proof, 'base64'))) {
+        throw new Error('promotion sealer returned an invalid authority signature')
+      }
+      return seal
     },
     validatePromotion(payload: string, seal: VerificationAuthoritySeal): boolean {
-      return seal.authorityId === options.authorityId
+      return seal.authorityId === command.authorityId
         && verify(null, Buffer.from(payload, 'utf8'), publicKey, Buffer.from(seal.proof, 'base64'))
     },
     checkpointPromotion(_payload: string, _checkpoint: PromotionCheckpoint): void {},

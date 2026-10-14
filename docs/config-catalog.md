@@ -1031,7 +1031,7 @@ export interface Config {
   readonly wikiRoot: string
   /** Main workspace root (fixed, non-removable); defaults to the wiki root's parent. */
   readonly mainRoot: string
-  /** Credential reference for DashScope semantic embeddings and image descriptions. */
+  /** Credential reference for optional semantic embeddings and image descriptions; empty disables those calls. */
   readonly credential: string
   /** LLM provider id for ingest/research (default deepseek-official). */
   readonly llmProvider: string
@@ -1052,13 +1052,16 @@ export interface Config {
   /**
    * Launcher-owned JSON configuration for the external verifier authority.
    * Empty (the default) keeps verification unavailable; project files cannot
-   * enable this path because the value must be supplied by the launcher.
+   * enable this path because the value must be supplied by the launcher. A
+   * non-empty value also requires the managed `ctx.subprocess` service.
    */
   readonly knowledgeVerifierConfig?: string
+  /** Launcher-owned JSON containing only independent measured-trial public trust anchors and an artifact root. */
+  readonly knowledgeMeasuredTrialConfig?: string
 }
 ```
 
-Source: [`packages/host/knowledge-wiki/src/index.ts:198`](../packages/host/knowledge-wiki/src/index.ts)
+Source: [`packages/host/knowledge-wiki/src/index.ts:318`](../packages/host/knowledge-wiki/src/index.ts)
 
 <a id="deepseek-aidsh-llm"></a>
 
@@ -1100,6 +1103,8 @@ export interface Config {
   thinking?: 'enabled' | 'disabled'
   /** Default thinking effort (default `high`); `off` disables thinking per request. */
   reasoningEffort?: 'off' | 'low' | 'high' | 'max'
+  /** Send DeepSeek JSON Output mode on every request; defaults to false. */
+  jsonOutput?: boolean
   /** Default per-request output cap (default 256,000); a model's own cap and explicit request values win. */
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
@@ -2800,10 +2805,12 @@ Requires: `tools` · `shell` · `systemPrompt` · `shellEnv`
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
+  /** Maximum UTF-8 bytes accepted in one model-supplied stdin payload. */
+  maxStdinBytes?: number
 }
 ```
 
-Source: [`packages/shell/tool-bash/src/index.ts:34`](../packages/shell/tool-bash/src/index.ts)
+Source: [`packages/shell/tool-bash/src/index.ts:36`](../packages/shell/tool-bash/src/index.ts)
 
 <a id="deepseek-aidsh-tool-bash-persistent"></a>
 

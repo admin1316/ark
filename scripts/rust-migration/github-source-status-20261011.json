@@ -1,0 +1,465 @@
+{
+  "schemaVersion": 1,
+  "status": "unsigned-github-and-local-source-observation",
+  "observedAtUtc": "2026-10-10T23:47:05Z",
+  "repository": "https://github.com/admin1316/ark",
+  "remote": {
+    "defaultBranch": "main",
+    "defaultBranchSha": "d382723905742f2b87401ad444d02756f5cb229b",
+    "headSha": "d382723905742f2b87401ad444d02756f5cb229b"
+  },
+  "local": {
+    "branch": "codex/ark-upstream-reliability-20260927",
+    "headSha": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+    "workingTreeDirty": true,
+    "dirtyPathCount": 239
+  },
+  "pr39DistanceFromLocalHead": {
+    "remoteOnlyCommits": 35,
+    "localOnlyCommits": 0
+  },
+  "pr39ChangedPathsAgainstBase": 202,
+  "overlap": {
+    "localDirtyPathsAlsoChangedByPr39": 92,
+    "sameBytesAsPr39Head": 15,
+    "differentBytesFromPr39Head": 77,
+    "locallyMissingOrAbsentInPr39Head": 0,
+    "sameBytePaths": [
+      "docs/event-producer-consumer.i18n.yaml",
+      "docs/event-producer-consumer.md",
+      "docs/module-graph.i18n.yaml",
+      "docs/module-graph.md",
+      "docs/module-graph.zh.md",
+      "integrations/jiuzhang/src/runtime.mjs",
+      "integrations/jiuzhang/tests/runtime.test.mjs",
+      "packages/bundle/native-api-app/cordis.patch.yml",
+      "packages/bundle/native-api-app/tests/native-preset-runtime.ts",
+      "packages/core/session/src/known-event-types.ts",
+      "packages/host/knowledge-wiki/tests/config-fixture.ts",
+      "scripts/rust-migration/differential-replay.ts",
+      "scripts/rust-migration/process-isolation.ts",
+      "scripts/rust-migration/rust-boundary.spec.ts",
+      "scripts/rust-migration/rust-boundary.ts"
+    ],
+    "differentBytePaths": [
+      ".agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.i18n.yaml",
+      ".agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.md",
+      ".agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md",
+      "decision-log.md",
+      "docs/config-catalog.i18n.yaml",
+      "docs/config-catalog.md",
+      "docs/config-catalog.zh.md",
+      "docs/knowledge-wiki.i18n.yaml",
+      "docs/knowledge-wiki.md",
+      "docs/knowledge-wiki.zh.md",
+      "docs/persistence-catalog.i18n.yaml",
+      "docs/persistence-catalog.md",
+      "docs/persistence-catalog.zh.md",
+      "docs/rust-migration/knowledge-runtime-report.i18n.yaml",
+      "docs/rust-migration/knowledge-runtime-report.md",
+      "docs/rust-migration/knowledge-runtime-report.zh.md",
+      "docs/rust-migration/profile-matrix.i18n.yaml",
+      "docs/rust-migration/profile-matrix.md",
+      "docs/rust-migration/profile-matrix.zh.md",
+      "docs/rust-migration/rust-candidate-matrix.i18n.yaml",
+      "docs/rust-migration/rust-candidate-matrix.md",
+      "docs/rust-migration/rust-candidate-matrix.zh.md",
+      "docs/rust-migration/source-truth-report.i18n.yaml",
+      "docs/rust-migration/source-truth-report.md",
+      "docs/rust-migration/source-truth-report.zh.md",
+      "integrations/jiuzhang/native/Sources/JiuzhangShellUI/ArkAppModel.swift",
+      "integrations/jiuzhang/native/Sources/JiuzhangShellUI/ArkRootView.swift",
+      "integrations/jiuzhang/native/Tests/JiuzhangShellCoreTests/ArkChatPresentationContractChecks.swift",
+      "integrations/jiuzhang/native/Tests/JiuzhangShellCoreTests/ContractInlineChecks.swift",
+      "integrations/jiuzhang/profile/cordis.patch.yml",
+      "packages/host/knowledge-wiki-tools/package.json",
+      "packages/host/knowledge-wiki-tools/src/index.ts",
+      "packages/host/knowledge-wiki-tools/src/session-events.ts",
+      "packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+      "packages/host/knowledge-wiki-tools/tests/tools.spec.ts",
+      "packages/host/knowledge-wiki/README.i18n.yaml",
+      "packages/host/knowledge-wiki/README.md",
+      "packages/host/knowledge-wiki/README.zh.md",
+      "packages/host/knowledge-wiki/src/external-verifier-adapter.ts",
+      "packages/host/knowledge-wiki/src/index.ts",
+      "packages/host/knowledge-wiki/src/knowledge-governance.ts",
+      "packages/host/knowledge-wiki/src/reviews.ts",
+      "packages/host/knowledge-wiki/src/rust-search-candidate.ts",
+      "packages/host/knowledge-wiki/src/search.ts",
+      "packages/host/knowledge-wiki/src/types.ts",
+      "packages/host/knowledge-wiki/src/verifier.ts",
+      "packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts",
+      "packages/host/knowledge-wiki/tests/knowledge-governance.spec.ts",
+      "packages/host/knowledge-wiki/tests/rust-search-candidate.spec.ts",
+      "packages/host/knowledge-wiki/tests/search-edges.spec.ts",
+      "packages/host/knowledge-wiki/tests/service-surface.spec.ts",
+      "packages/host/knowledge-wiki/tests/verification.spec.ts",
+      "packages/shell/tool-pwsh-persistent/src/index.ts",
+      "packages/shell/tool-pwsh-persistent/tests/tools.spec.ts",
+      "packages/subprocess/subprocess-local/tests/spawn.spec.ts",
+      "pnpm-lock.yaml",
+      "progress.jsonl",
+      "project-manifest.json",
+      "rust-benchmark.json",
+      "rust/knowledge-search-shadow/README.i18n.yaml",
+      "rust/knowledge-search-shadow/README.md",
+      "rust/knowledge-search-shadow/README.zh.md",
+      "rust/knowledge-search-shadow/src/main.rs",
+      "scripts/rust-migration/README.i18n.yaml",
+      "scripts/rust-migration/README.md",
+      "scripts/rust-migration/README.zh.md",
+      "scripts/rust-migration/audit-acceptance.spec.ts",
+      "scripts/rust-migration/audit-acceptance.ts",
+      "scripts/rust-migration/benchmark-knowledge-search.spec.ts",
+      "scripts/rust-migration/benchmark-knowledge-search.ts",
+      "scripts/rust-migration/differential-replay.spec.ts",
+      "scripts/rust-migration/evaluate-learning.spec.ts",
+      "scripts/rust-migration/evaluate-learning.ts",
+      "scripts/rust-migration/launcher-verifier-smoke.json",
+      "scripts/rust-migration/run-context.spec.ts",
+      "scripts/rust-migration/run-context.ts",
+      "security-report.md"
+    ],
+    "missingPaths": []
+  },
+  "pullRequests": [
+    {
+      "number": 39,
+      "title": "fix(ark): harden long-session runtime and native chat continuity",
+      "state": "OPEN",
+      "isDraft": true,
+      "headRefName": "codex/ark-upstream-reliability-20260927",
+      "headRefOid": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+      "baseRefName": "main",
+      "baseRefOid": "d382723905742f2b87401ad444d02756f5cb229b",
+      "mergeStateStatus": "UNSTABLE",
+      "url": "https://github.com/admin1316/ark/pull/39",
+      "checks": [
+        {
+          "name": "source-privacy / source-privacy",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "e2e",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "Issue lifecycle",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "Issue policy",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "Matrix",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "Pack npm tarballs",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "Pack npm tarballs",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "sandbox e2e (bwrap, ubuntu-latest)",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "sandbox e2e (landlock, ubuntu-24.04)",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "sandbox e2e (landlock, ubuntu-24.04-arm)",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "sandbox e2e (seatbelt, macos-latest)",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE"
+        },
+        {
+          "name": "node 24 / static",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "darwin (no platform package — degradation proof)",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "node 24 / coverage",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE"
+        },
+        {
+          "name": "linux-arm64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "linux-x64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "node 24 / snapshots and artifacts",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE"
+        },
+        {
+          "name": "node 22.19",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "node 26",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python 3.10 / keyless SDK",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / plan targets",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / deepseek_harness_sdk-0.1.1rc2-py3-none-any.whl",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / node24-linux-x64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / node24-linux-arm64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / node24-macos-arm64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / node24-win-x64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "windows node 24 / wine blocking",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "windows node 24 / native complete",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE"
+        },
+        {
+          "name": "macos / native contracts",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "all checks passed",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE"
+        }
+      ],
+      "checkCounts": {
+        "SUCCESS": 25,
+        "FAILURE": 5
+      }
+    },
+    {
+      "number": 46,
+      "title": "修复 Ark 只读执行与输出，完善知识校验",
+      "state": "OPEN",
+      "isDraft": true,
+      "headRefName": "codex/ark-rust-knowledge-20261008",
+      "headRefOid": "69bc324a8b125b452993c00c95965afd9a478871",
+      "baseRefName": "main",
+      "baseRefOid": "d382723905742f2b87401ad444d02756f5cb229b",
+      "mergeStateStatus": "UNSTABLE",
+      "url": "https://github.com/admin1316/ark/pull/46",
+      "checks": [
+        {
+          "name": "e2e",
+          "status": "COMPLETED",
+          "conclusion": "CANCELLED"
+        },
+        {
+          "name": "source-privacy / source-privacy",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "Issue lifecycle",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "Issue policy",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "Matrix",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "Pack npm tarballs",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "Pack npm tarballs",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "sandbox e2e (bwrap, ubuntu-latest)",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "sandbox e2e (landlock, ubuntu-24.04)",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "sandbox e2e (landlock, ubuntu-24.04-arm)",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "sandbox e2e (seatbelt, macos-latest)",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "node 24 / static",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "darwin (no platform package — degradation proof)",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "node 24 / coverage",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "linux-arm64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "linux-x64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "node 24 / snapshots and artifacts",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "node 22.19",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "node 26",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python 3.10 / keyless SDK",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / plan targets",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / deepseek_harness_sdk-0.1.1rc2-py3-none-any.whl",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / node24-linux-x64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / node24-linux-arm64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / node24-macos-arm64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "python runtime / release-shaped matrix / node24-win-x64",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "windows node 24 / wine blocking",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "windows node 24 / native complete",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE"
+        },
+        {
+          "name": "macos / native contracts",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        },
+        {
+          "name": "all checks passed",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS"
+        }
+      ],
+      "checkCounts": {
+        "CANCELLED": 1,
+        "SUCCESS": 28,
+        "FAILURE": 1
+      }
+    }
+  ],
+  "authority": "read-only gh/git observation; not evidence that current local worktree equals GitHub or that CI passes for it"
+}

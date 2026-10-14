@@ -1,4 +1,6 @@
-# Keyless proactive compaction; 128000 - 119700 = 8300 input tokens.
+# Keyless proactive compaction; 128000 - 119487 = 8513 input tokens.
+# The fixture offsets the measured 213-token header cost of literal stdin;
+# production budgets and the compaction threshold, retention, and summary cap are unchanged.
 
 - id: llm-deepseek
   name: '@deepseek-ai/dsh-llm-deepseek'
@@ -27,4 +29,4 @@
             models:
               - id: deepseek-v4-flash
                 contextWindow: 128000
-                defaultMaxTokens: 119700
+                defaultMaxTokens: 119487

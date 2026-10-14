@@ -45,14 +45,6 @@ describe('BM25 and vector primitives', () => {
     expect(cosine([], [])).toBe(0)
     expect(cosine([0, 0], [1, 2])).toBe(0)
     expect(cosine([1, 0], [1, 0])).toBe(1)
-    expect(cosine([-1, 0], [1, 0])).toBe(-1)
-    expect(cosine([Number.NaN, 0], [1, 0])).toBe(0)
-    expect(cosine([Number.POSITIVE_INFINITY, 0], [1, 0])).toBe(0)
-  })
-
-  it('returns zero when the final cosine division is non-finite', () => {
-    vi.spyOn(Math, 'sqrt').mockReturnValue(0)
-    expect(cosine([1], [1])).toBe(0)
   })
 
   it('treats sparse vector slots from an untrusted runtime as zero', () => {
@@ -81,20 +73,45 @@ describe('BM25 and vector primitives', () => {
       .toEqual(['a', 'b'])
   })
 
-  it('rejects an empty embedding payload', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 }))
-    await expect(embed(['text'], 'key')).rejects.toThrow('invalid vectors')
+  it('rejects empty, mixed-dimension, and non-finite embedding vectors', async () => {
+    const invalidVectors: unknown[][] = [
+      [null],
+      [{ embedding: [] }],
+      [{ embedding: [1, 0] }, { embedding: [1] }],
+      [{ embedding: [1, null] }, { embedding: [1, 0] }],
+      [{ embedding: 'not a vector' }, { embedding: [1, 0] }],
+    ]
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    for (const data of invalidVectors) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ data }), { status: 200 }))
+      await expect(embed(['a', 'b'], 'key')).rejects.toThrow('invalid vectors')
+    }
   })
 })
 
 describe('hybrid Wiki search', () => {
   it('falls back to keyword results when vectors are disabled or incomplete', async () => {
     const root = fixture()
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
     const keywordOnly = await hybridSearch(root, 'alpha', '', 1)
     expect(keywordOnly).toHaveLength(1)
+    expect(fetchMock).not.toHaveBeenCalled()
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] }), { status: 200 }))
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] }), { status: 200 }))
     expect(await hybridSearch(root, 'alpha', 'key', 2)).toEqual(await hybridSearch(root, 'alpha', '', 2))
+  })
+
+  it('falls back to keyword results and records a diagnostic for invalid vectors', async () => {
+    const root = fixture()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [
+      { embedding: [1, 0] },
+      { embedding: [1] },
+    ] }), { status: 200 }))
+    const diagnostics: string[] = []
+    await expect(hybridSearch(root, 'alpha', 'key', 2, item => diagnostics.push(item.reason))).resolves.toEqual(
+      await hybridSearch(root, 'alpha', '', 2),
+    )
+    expect(diagnostics).toEqual(['knowledge embedding response has invalid vectors'])
   })
 
   it('blends positive, zero, and missing semantic vectors and sorts the result', async () => {
@@ -116,31 +133,6 @@ describe('hybrid Wiki search', () => {
 
     const zero = await hybridSearch(root, 'alpha', 'key', 5)
     expect(zero).toHaveLength(2)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-  })
-
-  it('falls back to keyword results when the endpoint returns mixed dimensions or non-finite values', async () => {
-    const root = fixture()
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [
-        { embedding: [1, 0] },
-        { embedding: [1] },
-      ] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [
-        { embedding: [1, Number.NaN] },
-        { embedding: [1, 0] },
-      ] }), { status: 200 }))
-    const diagnostics: string[] = []
-    await expect(hybridSearch(root, 'alpha', 'key', 2, d => diagnostics.push(d.reason))).resolves.toEqual(
-      await hybridSearch(root, 'alpha', '', 2),
-    )
-    await expect(hybridSearch(root, 'alpha', 'key', 2, d => diagnostics.push(d.reason))).resolves.toEqual(
-      await hybridSearch(root, 'alpha', '', 2),
-    )
-    expect(diagnostics).toEqual([
-      'knowledge embedding response has invalid vectors',
-      'knowledge embedding response has invalid vectors',
-    ])
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 

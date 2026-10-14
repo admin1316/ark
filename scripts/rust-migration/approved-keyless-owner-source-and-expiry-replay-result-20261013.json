@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-13T06:03:21.382912+00:00",
+  "phase": "approved-keyless-signature-owner-source-and-expiry-replay",
+  "classification": "progress",
+  "status": "APPROVED_KEYLESS_SOURCE_GATES_AND_PUBLIC_COMPILED_SMOKE_PASS",
+  "gitHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "approvalCall": "call_a5d27824914944658413e4dcd728f795",
+  "apiMigration": {
+    "sourceApplied": true,
+    "factory": "ExternalVerifierOptions.privateKey replaced by typed promotionSealer",
+    "launcherJson": "privateKey rejects; matching typed Context signing owner required for nonempty config",
+    "noProductConfigModuleAdded": true,
+    "canonicalEventWalBytesChanged": false,
+    "coreWireChanged": false,
+    "configuredOwnerBinding": "Captured function and receiver preserved by typed Reflect.apply closure; source-owned unsafe-any lint fixed without disabling checks",
+    "constructorMismatchedValidKeys": "Accepted until first seal; returned proof then rejected by configured public key",
+    "realProtectedCustody": "NOT_DEPLOYED_BY_THIS_WORK",
+    "delegatedSealerDeadlineCancellation": "OWNER_RESPONSIBILITY_NOT_PROVIDED_BY_ADAPTER"
+  },
+  "checks": {
+    "affectedFocusedTests": {
+      "passed": 173,
+      "failed": 0,
+      "scope": "Three affected factory/service/pilot source tests; count overlaps full Wiki suite"
+    },
+    "wikiTests": {
+      "files": 77,
+      "passed": 1244,
+      "failed": 0
+    },
+    "changedFilesFourMetricCoverage": {
+      "index.ts": "100% statements/branches/functions/lines",
+      "external-verifier-adapter.ts": "100% statements/branches/functions/lines"
+    },
+    "actualHostTypecheck": "PASS",
+    "currentPublicHostCompile": "PASS",
+    "fullSourceLint": "PASS",
+    "docSync": {
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0
+    },
+    "independentBoundSourceReview": "PASS_WITH_EXPLICIT_SCOPE_LIMITS",
+    "publicCompiledSealSmoke": "PASS_OLD_CANONICAL_EVENT_AND_WAL_BYTES"
+  },
+  "callerEvidence": {
+    "entry": "Actual KnowledgeWikiService.verifyCandidate with valid external signed result and an existing coherent receipt",
+    "wrongKeyRefusalReached": true,
+    "reviewGovernanceVerifiedEventPublication": "Rejected before these durable mutations; Candidate and absent WAL preserved",
+    "existingReceiptBytesUnchanged": true,
+    "receiptWriteOrFirstCreationImpossible": false,
+    "receiptPersistenceContract": "Semantic receipt persistence precedes Review binding; unchanged existing receipt bytes are not proof of no receipt I/O",
+    "completePairedPromotionWalCallerMismatchTest": "NOT_EXECUTED"
+  },
+  "expiryRecoveryProbe": {
+    "bundledVersion": "3.1.41",
+    "moduleSha256": "1be29edd064523793abe4cefcae5ca2eb7302c4fb54b8ecbb2b74f13472be86a",
+    "pathScope": "Staged341 bundled modules byte-identical to activated candidate modules; two separate Node processes and test-owned synthetic event log",
+    "persistentExpiredReplay": "PASS",
+    "duplicateExpiryEvents": 0,
+    "logBytesBeforeAfterEqual": true,
+    "fixtureTrust": "Unverified low-trust candidate; not active project knowledge",
+    "fullCrashRecoveryOrRollback": "NOT_ESTABLISHED"
+  },
+  "candidate": {
+    "version": "3.1.41",
+    "build": "2026101341",
+    "nativeSha256": "ec356bbddb7cd2858a5c38b9c8fae4385bba7a71cf50085c3475039e097c83c6",
+    "compiledWikiSha256": "1be29edd064523793abe4cefcae5ca2eb7302c4fb54b8ecbb2b74f13472be86a",
+    "thisSourceMigrationInstalled": false,
+    "newNativeBuilds": 0,
+    "priorActualNativeCodeTask": "PASS_SCOPED_TASK_6_TESTS_AND_INDEPENDENT_COLD_REPLAY",
+    "formalVersion": "3.1.0",
+    "formalPromotion": "HOLD"
+  },
+  "paidModelRequestsThisTurn": 0,
+  "newFeeLedgerUnchanged": true,
+  "rustDecision": "RETAIN_TS",
+  "rustExpandedScoreReplay": "348/363; 15 score differences, inactive",
+  "overallSpeedLift": "UNMEASURED",
+  "overallLearningUtilityLift": "UNMEASURED",
+  "currentSourceRemoteCi": "UNVERIFIED; PR39 failed checks still bind Oct8 old head",
+  "protectedBindings": {
+    "/Users/hui/ark-test/ark-pr39-source-audit-20261011/project-manifest.json": {
+      "sha256": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+      "matches": true
+    },
+    "/Users/hui/ark/Ark.app/Contents/MacOS/Ark": {
+      "sha256": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a",
+      "matches": true
+    },
+    "/Users/hui/ark-test/candidate-home-current-20261011-v328/settings.yaml": {
+      "sha256": "305d4badb646e533d149c4a1c199a9f79f58772cf73371147e2c058028db5762",
+      "matches": true
+    },
+    "/Users/hui/ark-test/candidate-home-current-20261011-v328/.credentials.yaml": {
+      "sha256": "2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28",
+      "matches": true
+    },
+    "/Users/hui/ark-test/evidence/candidate339-real-retest-budget-20261013-attempt1/ledger.json": {
+      "sha256": "8124cac94ab4d789a0ddb4fe5f0822d1600e85b427f2469054e5545a20b64bdd",
+      "matches": true
+    }
+  },
+  "sourceAndOwningDocsBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/index.ts",
+      "sha256": "5c0a8ce413c6c3fcd08f2e9f185243cfd3041724a870f1f633115a52fbc94d59"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/external-verifier-adapter.ts",
+      "sha256": "0415dcccc6c64c93d30dd266e17ce440a3ea9c942f53d4e6be33375bc9f72620"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts",
+      "sha256": "7f42e742e0b8faba66cbd481b077f892d79a21109dcfac527065e316af874486"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-surface.spec.ts",
+      "sha256": "ca0cb5570339e20e1ea704ea19e71d7a3c2b000cd151edf44b7f9f5570cdcdf0"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/knowledge-pilot-verifier.spec.ts",
+      "sha256": "cd9d982fd54c2ca43482e94def170de0e2928eb045b21af130e6e81521171481"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.md",
+      "sha256": "fdce6948c7ab3379a9a7a366687abd697a633f9249428f1c49aa0d5351563f6a"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.zh.md",
+      "sha256": "c6ecc4b4fff3498f705461b5ab62b3ee6afa6472042bd8f150afc7b59bb3f4c9"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.i18n.yaml",
+      "sha256": "829d53d8223ace832d58bb8c84d9617e6f0c19e981d0f8581afbe5d199ed2974"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.md",
+      "sha256": "162db0433a945fbca6b97932f7caf018666f3a0c7b5aa16122a262f55371f8f0"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md",
+      "sha256": "46dbdf1f24486ac378082d9b1860335e845b9397e3b8e7abace477426542e411"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.i18n.yaml",
+      "sha256": "02835936f4937cc785eaa29ed1874aa6589d17db15c6aefe7b9b9c6f74f1fe47"
+    }
+  ],
+  "evidence": {
+    "humanApproval": {
+      "path": "/Users/hui/ark-test/evidence/approved-keyless-owner-human-approval-20261013.json",
+      "sha256": "c194b931fe4d6061e31a5cd43cb9c617ebce018a65d666ecdb3b146d34fafc12"
+    },
+    "sourceManifest": {
+      "path": "/Users/hui/ark-test/evidence/approved-keyless-owner-source-20261013-attempt3.wx/manifest.json",
+      "sha256": "a761d69e72e920239b853add5e0c8360238aaa663fed33fde50675219bc7696a"
+    },
+    "sourceValidation": {
+      "path": "/Users/hui/ark-test/evidence/approved-keyless-owner-source-20261013-attempt3.wx/final-validation-addendum.json",
+      "sha256": "7e3fc35c35083eca637b797abbbdae6c2fb2ae98a1b532b249b1072204319b4e"
+    },
+    "sourceDiff": {
+      "path": "/Users/hui/ark-test/evidence/approved-keyless-owner-source-20261013-attempt3.wx/owned-snapshot-diff.patch",
+      "sha256": "5c392a1eb3ad2b7d33c148c7a68bd55d09d8ee4c73d7446e003e481d72a7f9d7"
+    },
+    "independentReview": {
+      "path": "/Users/hui/ark-test/evidence/approved-keyless-owner-independent-review-20261013.wx/final-source-independent-review.json",
+      "sha256": "134f5ac2953dcc8e4767169a5899624b0345420fff484d3b2ad7cca3991dad48"
+    },
+    "receiptOrderScopeAddendum": {
+      "path": "/Users/hui/ark-test/evidence/approved-keyless-owner-independent-review-20261013.wx/receipt-order-scope-correction-addendum.json",
+      "sha256": "47508b39cb39e972ab6d877be1577c703eff13bd3b50d08e96bf92d9240c1b76"
+    },
+    "publicCompiledSmoke": {
+      "path": "/Users/hui/ark-test/evidence/approved-keyless-public-compiled-smoke-20261013.wx/report.json",
+      "sha256": "fda7cbde78c1e80cafa53bf0ca1c295e853c4d5734a7895ba01eb7373056f432"
+    },
+    "fullDocGate": {
+      "path": "/Users/hui/ark-test/evidence/approved-keyless-root-docgate-20261013.wx/result.json",
+      "sha256": "295e33c3921cea193e3d69a5d9e6d6b476bb2c789f10c0f7fd8b63e65ceb7200"
+    },
+    "installedExpiryReplayProbe": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-next-recovery-probe-20261013.wx/independent-review.json",
+      "sha256": "339e17c3d431bedcb1ecddc2da4b7e351a457136e4e2315f366e6cf5ab849f1f"
+    },
+    "currentCiAudit": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-next-ci-source-readonly-20261013.wx/report.json",
+      "sha256": "e815d992979f1c0d99d3f2599618b25f8c4531257db9e88fd303fb97ada4e5f2"
+    },
+    "profileIdentity": {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate341-profile-consistency-and-source-api-boundaries-20261013.json",
+      "sha256": "20646e9df0d6d5d15e5d7fe381ed88fd3c263966966068919ffeda600fc8feec"
+    },
+    "priorNativeTask": {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/candidate341-real-native-code-task-result-20261013.json",
+      "sha256": "cb18d02a40e6b04e994fc193b189b3993b89239a4c6f4396959b7a5a0599ca33"
+    }
+  },
+  "retainedFailures": [
+    "Initial private overlay tsc wrapper reserved-variable postlude failure retained; private type pass not substituted for actual source check.",
+    "Owner initial focused runner/setup mistakes and first unsafe-any lint failure retained; only affected binding implementation repaired.",
+    "Owner doc-sync29/30 stale generated Config source line retained; generator and paired line repair followed by full30/30 bound pass.",
+    "Independent receipt I/O overstatement retained with explicit appended correction; no state, test or source changed to satisfy a stronger claim.",
+    "Earlier339 native whole-task/report failures remain retained."
+  ],
+  "fullGoalAcceptance": "UNKNOWN",
+  "githubPublished": false,
+  "next": [
+    "Before any next candidate packaging, establish the remaining signing-owner settlement/deployment and authenticated-use requirements; current source pass alone does not deploy an independent signer.",
+    "Authenticated same-model fresh-session repair reuse, utility and zero leakage; current-source CI/platform/isolation/rollback/Phase6 remain unproved.",
+    "Preserve current341 working/native evidence and source/candidate distinction."
+  ]
+}

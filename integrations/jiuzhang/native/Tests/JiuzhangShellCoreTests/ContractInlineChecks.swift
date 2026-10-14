@@ -658,6 +658,8 @@ let environment = JiuzhangShellContract.childEnvironment(
     "SERVICE_TOKEN": "must-not-leak",
     "HTTPS_PROXY": "http://127.0.0.1:1234",
     "NODE_OPTIONS": "--require=/tmp/inject.js",
+    "ARK_KNOWLEDGE_VERIFIER_CONFIG": "{\"authorityId\":\"launcher\",\"privateKey\":\"test-only\"}",
+    "ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG": "{\"authorityId\":\"evaluator\",\"publicKey\":\"public-only\"}",
     "DSH_HOME": "/Users/example/.dsh",
   ],
   harnessHome: harnessHome,
@@ -679,6 +681,14 @@ check(
 check(environment["DSH_PERMISSION_MODE"] == "read-only", "environment forces read-only mode")
 check(environment["DSH_TELEMETRY_DISABLED"] == "1", "environment disables telemetry")
 check(environment["DSH_API_TOKEN"] == "native-launch-token", "environment passes the native launch token")
+check(
+  environment["ARK_KNOWLEDGE_VERIFIER_CONFIG"] == "{\"authorityId\":\"launcher\",\"privateKey\":\"test-only\"}",
+  "environment passes only the explicitly launcher-owned verifier configuration"
+)
+check(
+  environment["ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG"] == "{\"authorityId\":\"evaluator\",\"publicKey\":\"public-only\"}",
+  "environment passes only explicitly configured measured-trial public trust anchors"
+)
 check(
   environment["ARK_MAIN_ROOT"]?.hasSuffix("/Library/Application Support/Ark/Knowledge") == true,
   "native knowledge root stays outside the Ark source checkout"

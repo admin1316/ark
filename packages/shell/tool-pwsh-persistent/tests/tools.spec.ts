@@ -87,6 +87,7 @@ type StubMode =
   | 'end-on-abort'
   | 'idle-then-normal'
   | 'large'
+  | 'crlf'
   | 'nonzero'
   | 'torn-status'
   | 'finish-torn-status'
@@ -218,9 +219,10 @@ class StubTerminalSession implements TerminalBackendSession {
     }
     const commandOutput = this.mode === 'large'
       ? this.largeOutput
-      : this.mode === 'nonzero' ? ''
-        : this.mode === 'prompt-collision' ? this.motd
-          : 'hello from stub'
+      : this.mode === 'crlf' ? 'line one\r\nline two\r\nline three'
+        : this.mode === 'nonzero' ? ''
+          : this.mode === 'prompt-collision' ? this.motd
+            : 'hello from stub'
     const exitCode = this.mode === 'nonzero' ? 7 : 0
     const output = `${start ?? ''}\n${commandOutput}\n${end ?? ''}${exitCode}\n${this.motd}`
     this.scrollback += output
@@ -365,6 +367,14 @@ describe('tool-pwsh-persistent', () => {
     expect(result).not.toContain('__DSH_PERSISTENT_PWSH_START_')
     expect(result).not.toContain('__DSH_PERSISTENT_PWSH_END_')
     expect(result).not.toContain('Invoke-Expression')
+  })
+
+  it('normalizes PowerShell CRLF output to the cross-platform tool format', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' })
+    await call(ctx, owner, 'warm up')
+    stub.sessions[0]!.mode = 'crlf'
+
+    expect(text(await call(ctx, owner, 'Write-Output lines'))).toBe('line one\nline two\nline three')
   })
 
   it('preserves command output that equals the private shell prompt', async () => {

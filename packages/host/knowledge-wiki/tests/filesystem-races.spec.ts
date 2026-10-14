@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-type Operation = 'open' | 'read' | 'write' | 'mkdir' | 'realpath' | 'rename'
+type Operation = 'open' | 'read' | 'write' | 'mkdir' | 'realpath' | 'rename' | 'lstat' | 'stat'
 const faults = vi.hoisted(() => ({
   before: undefined as ((operation: Operation, target: unknown) => void) | undefined,
 }))
@@ -17,6 +17,14 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
+    lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      faults.before?.('lstat', args[0])
+      return actual.lstatSync(...args)
+    },
+    statSync: (...args: Parameters<typeof actual.statSync>) => {
+      faults.before?.('stat', args[0])
+      return actual.statSync(...args)
+    },
     openSync: (...args: Parameters<typeof actual.openSync>) => {
       faults.before?.('open', args[0])
       return actual.openSync(...args)
@@ -49,6 +57,7 @@ import {
   atomicWriteFile, createPrivateFileIfMissing, durableUnlinkFile,
   ensureConfinedDirectory, readRegularFileBounded, resolveConfinedPath,
 } from '../src/filesystem.ts'
+import { appendKnowledgeEvent, createKnowledgeEvent, readKnowledgeEventLog } from '../src/knowledge-governance.ts'
 
 const roots: string[] = []
 function fixture(): string {
@@ -60,6 +69,70 @@ function fixture(): string {
 afterEach(() => {
   faults.before = undefined
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+describe('knowledge journal append after a complete read', () => {
+  function journal() {
+    const root = fixture()
+    const path = join(root, 'events.jsonl')
+    const scope = { projectId: 'project-a', visibility: 'project' as const }
+    const first = createKnowledgeEvent('knowledge/retrieved', 'claim:a', scope, {})
+    appendKnowledgeEvent(path, first)
+    const next = createKnowledgeEvent('knowledge/retrieved', 'claim:a', scope, {}, {
+      seq: 1, previousEventHash: first.eventHash,
+    })
+    return { root, path, first, next, before: readFileSync(path, 'utf8') }
+  }
+
+  it.each(['symlink', 'hard-link', 'directory'] as const)('rejects an unsafe journal replacement before append: %s', (change) => {
+    const value = journal()
+    const preserved = join(value.root, 'preserved.jsonl')
+    const outside = join(fixture(), 'protected.jsonl')
+    writeFileSync(outside, 'outside bytes')
+    faults.before = (operation, target) => {
+      if (operation !== 'mkdir' || target !== value.root) return
+      faults.before = undefined
+      if (change === 'hard-link') linkSync(value.path, preserved)
+      else {
+        renameSync(value.path, preserved)
+        if (change === 'symlink') symlinkSync(outside, value.path)
+        else mkdirSync(value.path)
+      }
+    }
+    expect(() => { appendKnowledgeEvent(value.path, value.next) }).toThrow('unsafe knowledge event log')
+    expect(readFileSync(preserved, 'utf8')).toBe(value.before)
+    expect(readFileSync(outside, 'utf8')).toBe('outside bytes')
+  })
+
+  it('propagates an append-time inspection denial without modifying the journal', () => {
+    const value = journal()
+    const denied = Object.assign(new Error('journal inspection denied'), { code: 'EACCES' })
+    faults.before = (operation, target) => {
+      if (operation !== 'mkdir' || target !== value.root) return
+      faults.before = (nextOperation, nextTarget) => {
+        if (nextOperation !== 'lstat' || nextTarget !== value.path) return
+        faults.before = undefined
+        throw denied
+      }
+    }
+    expect(() => { appendKnowledgeEvent(value.path, value.next) }).toThrow(denied)
+    expect(readFileSync(value.path, 'utf8')).toBe(value.before)
+    expect(readKnowledgeEventLog(value.path)).toEqual([value.first])
+  })
+
+  it('appends and validates a complete chain under the Windows flag-selection branch', () => {
+    const value = journal()
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    // This checks the flag-selection contract on the current host; native
+    // Windows behavior remains the responsibility of the Windows CI lane.
+    try {
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' })
+      appendKnowledgeEvent(value.path, value.next)
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+    }
+    expect(readKnowledgeEventLog(value.path)).toEqual([value.first, value.next])
+  })
 })
 
 describe('Wiki filesystem identity and cleanup under I/O interleavings', () => {
@@ -183,6 +256,80 @@ describe('Wiki filesystem identity and cleanup under I/O interleavings', () => {
       expect(readFileSync(target, 'utf8')).toBe('protected')
     }
     expect(readdirSync(root).some(name => name.includes('.ark-unlink-'))).toBe(false)
+  })
+
+  it.each(['lstat', 'open'] as const)('refuses Windows-style ENOENT beneath an ordinary file at %s', (boundary) => {
+    const root = fixture()
+    const parent = join(root, 'blocked')
+    const target = join(parent, 'page.md')
+    if (boundary === 'open') {
+      mkdirSync(parent)
+      writeFileSync(target, 'removed by the injected concurrent replacement')
+    } else writeFileSync(parent, 'preserve ordinary ancestor')
+    const missing = Object.assign(new Error('Windows-style missing child'), { code: 'ENOENT', path: target })
+    faults.before = (operation, path) => {
+      if (operation !== boundary || path !== target) return
+      faults.before = undefined
+      if (boundary === 'open') {
+        rmSync(parent, { recursive: true })
+        writeFileSync(parent, 'preserve ordinary ancestor')
+      }
+      throw missing
+    }
+    expect(() => { durableUnlinkFile(target) }).toThrow('ENOTDIR')
+    expect(readFileSync(parent, 'utf8')).toBe('preserve ordinary ancestor')
+    expect(readdirSync(root)).toEqual(['blocked'])
+  })
+
+  it('keeps truly absent nested targets idempotent without creating directories', () => {
+    const root = fixture()
+    expect(() => { durableUnlinkFile(join(root, 'missing', 'nested', 'page.md')) }).not.toThrow()
+    expect(readdirSync(root)).toEqual([])
+  })
+
+  it('propagates an ancestor inspection denial instead of declaring optional absence', () => {
+    const root = fixture()
+    const parent = join(root, 'missing')
+    const denied = Object.assign(new Error('ancestor inspection denied'), { code: 'EACCES' })
+    faults.before = (operation, path) => {
+      if (operation !== 'lstat' || path !== parent) return
+      faults.before = undefined
+      throw denied
+    }
+    expect(() => { durableUnlinkFile(join(parent, 'page.md')) }).toThrow(denied)
+    expect(readdirSync(root)).toEqual([])
+  })
+
+  it('bounds missing-ancestor traversal at an unavailable filesystem root', () => {
+    const root = fixture()
+    const missing = Object.assign(new Error('filesystem root unavailable'), { code: 'ENOENT' })
+    faults.before = (operation) => {
+      if (operation === 'lstat') throw missing
+    }
+    expect(() => { durableUnlinkFile(join(root, 'missing', 'page.md')) }).toThrow(missing)
+    expect(readdirSync(root)).toEqual([])
+  })
+
+  it('propagates directory stat failure after finding an existing ancestor', () => {
+    const root = fixture()
+    const denied = Object.assign(new Error('directory inspection denied'), { code: 'EACCES' })
+    faults.before = (operation, path) => {
+      if (operation !== 'stat' || path !== root) return
+      faults.before = undefined
+      throw denied
+    }
+    expect(() => { durableUnlinkFile(join(root, 'missing.md')) }).toThrow(denied)
+    expect(readdirSync(root)).toEqual([])
+  })
+
+  it('preserves intermediate directory-alias resolution for an absent target', () => {
+    const root = fixture()
+    const directory = fixture()
+    const alias = join(root, 'alias')
+    symlinkSync(directory, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    expect(() => { durableUnlinkFile(join(alias, 'missing.md')) }).not.toThrow()
+    expect(readdirSync(directory)).toEqual([])
+    expect(readdirSync(root)).toEqual(['alias'])
   })
 
   it.each([false, true])('refuses to unlink a changed inode and restores only an unoccupied path, occupied=%s', (occupied) => {

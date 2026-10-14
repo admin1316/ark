@@ -14,7 +14,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { isAbsolute } from 'node:path'
-import type { SearchPage } from './search.ts'
+import { tokenize, type SearchPage } from './search.ts'
 
 const MAX_REQUEST_BYTES = 8 * 1024 * 1024
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024
@@ -23,6 +23,7 @@ const MAX_QUERIES = 64
 const MAX_PAGE_BYTES = 128 * 1024
 const MAX_PATH_BYTES = 1024
 const MAX_QUERY_BYTES = 8192
+const MAX_QUERY_TOKENS = 256
 const DEFAULT_TIMEOUT_MS = 30_000
 
 const ALLOWED_ENVIRONMENT = [
@@ -117,7 +118,7 @@ function validHit(value: unknown): value is RustKnowledgeSearchHit {
   const hit = value as Record<string, unknown>
   return typeof hit.path === 'string'
     && hit.path.length > 0
-    && hit.path.length <= MAX_PATH_BYTES
+    && Buffer.byteLength(hit.path, 'utf8') <= MAX_PATH_BYTES
     && typeof hit.score === 'number'
     && Number.isFinite(hit.score)
 }
@@ -127,8 +128,8 @@ function validateRequest(request: RustKnowledgeSearchRequest): string {
   if (wire.schemaVersion !== 1 || wire.capability !== 'knowledge-search') {
     throw new Error('Rust candidate request contract is invalid')
   }
-  if (request.requestId.length === 0 || request.requestId.length > 256
-    || request.sessionId.length === 0 || request.sessionId.length > 256) {
+  if (request.requestId.length === 0 || Buffer.byteLength(request.requestId, 'utf8') > 256
+    || request.sessionId.length === 0 || Buffer.byteLength(request.sessionId, 'utf8') > 256) {
     throw new Error('Rust candidate request identity limit exceeded')
   }
   if (!Number.isSafeInteger(request.generation) || request.generation < 1
@@ -141,14 +142,17 @@ function validateRequest(request: RustKnowledgeSearchRequest): string {
     throw new Error('Rust candidate request count limit exceeded')
   }
   for (const page of request.pages) {
-    if (page.path.length === 0 || page.path.length > MAX_PATH_BYTES || page.aliases.length > 64
-      || page.title.length > MAX_PAGE_BYTES || page.text.length > MAX_PAGE_BYTES
-      || page.aliases.some(alias => alias.length > MAX_PAGE_BYTES)) {
+    if (page.path.length === 0 || Buffer.byteLength(page.path, 'utf8') > MAX_PATH_BYTES || page.aliases.length > 64
+      || Buffer.byteLength(page.title, 'utf8') > MAX_PAGE_BYTES || Buffer.byteLength(page.text, 'utf8') > MAX_PAGE_BYTES
+      || page.aliases.some(alias => Buffer.byteLength(alias, 'utf8') > MAX_PAGE_BYTES)) {
       throw new Error('Rust candidate page limit exceeded')
     }
   }
-  if (request.queries.some(query => query.length > MAX_QUERY_BYTES)) {
+  if (request.queries.some(query => Buffer.byteLength(query, 'utf8') > MAX_QUERY_BYTES)) {
     throw new Error('Rust candidate query limit exceeded')
+  }
+  if (request.queries.some(query => tokenize(query).length > MAX_QUERY_TOKENS)) {
+    throw new Error('Rust candidate query token limit exceeded')
   }
   const requestBytes = JSON.stringify(request)
   if (Buffer.byteLength(requestBytes, 'utf8') > MAX_REQUEST_BYTES) {
@@ -452,7 +456,7 @@ export async function runRustKnowledgeSearchCandidate(
 /**
  * Build protocol metadata for one model search invocation.
  * @param input - Session identity, corpus, query, budget, and timeout inputs.
- * @returns A validated versioned Rust candidate request.
+ * @returns A versioned request; candidate execution validates its bounds before spawning.
  */
 export function createRustKnowledgeSearchRequest(input: {
   readonly sessionId: string

@@ -16,14 +16,19 @@ vi.mock('../src/ingest.ts', () => ({
 vi.mock('node:fs/promises', () => ({
   mkdir: mocks.mkdir,
 }))
-vi.mock('../src/filesystem.ts', () => ({ atomicWriteFile: mocks.atomicWriteFile }))
+vi.mock('../src/filesystem.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/filesystem.ts')>()
+  return { ...actual, atomicWriteFile: mocks.atomicWriteFile }
+})
 vi.mock('node:path', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:path')>()
+  mocks.resolve.mockImplementation((...paths: string[]) => actual.resolve(...paths))
   return { ...actual, resolve: mocks.resolve }
 })
 
 import { deepResearch } from '../src/research.ts'
 import { stageExecutorFor } from './stage-executor-fixture.ts'
+import * as reviewOwner from '../src/reviews.ts'
 
 const llm = {} as LlmRuntime
 
@@ -64,5 +69,24 @@ describe('research write boundary', () => {
     )
     expect(result.warnings).toContain('disk unavailable')
     expect(result.written).toEqual([])
+  })
+
+  it('reports a primitive review preflight failure without publishing a page', async () => {
+    mocks.resolve
+      .mockReturnValueOnce('/project/wiki')
+      .mockReturnValueOnce('/project/wiki/_candidates/research/result.md')
+    const prepare = vi.spyOn(reviewOwner, 'prepareReviewAppend').mockImplementation(() => {
+      throw 'review preflight denied'
+    })
+    try {
+      const result = await deepResearch(
+        stageExecutorFor(llm), 'p', 'm', '/project', 'topic', new AbortController().signal,
+      )
+      expect(result.warnings).toContain('review preflight denied')
+      expect(result.written).toEqual([])
+      expect(mocks.mkdir).not.toHaveBeenCalled()
+    } finally {
+      prepare.mockRestore()
+    }
   })
 })

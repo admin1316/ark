@@ -155,6 +155,7 @@ function summaryDecision(overrides: Record<string, unknown> = {}): string {
 
 function longEvents(): unknown[] {
   return [
+    { type: 'sandbox/mode', data: { mode: 'workspace-write' } },
     { type: 'turn/start' },
     { type: 'user/message', data: { content: '用户提出一个可复用问题。'.repeat(12) } },
     { type: 'assistant/message', data: { content: '助手给出稳定方法、验证证据和回滚边界。'.repeat(12) } },
@@ -656,7 +657,7 @@ describe('ingest admission and ownership', () => {
     const provided = new Map<string, unknown>([
       ['knowledgeWikiStageExecutor', hangingStageExecutor(observed)],
       ['sessionQuery', {
-        readSession: () => Promise.resolve({ session: { cwd: external }, events: longEvents() }),
+        readSession: (id: string) => Promise.resolve({ session: { id, cwd: external }, events: longEvents() }),
       }],
     ])
     vi.spyOn(ctx, 'get').mockImplementation(name => provided.get(name))
@@ -691,7 +692,7 @@ describe('ingest admission and ownership', () => {
 })
 
 describe('session summary write failures', () => {
-  function sessionCtx(readSession: () => Promise<unknown>, answer: string): { warn: ReturnType<typeof vi.fn> } {
+  function sessionCtx(readSession: (id: string) => Promise<unknown>, answer: string): { warn: ReturnType<typeof vi.fn> } {
     const provided = new Map<string, unknown>([
       ['sessionQuery', { readSession }],
       ['knowledgeWikiStageExecutor', {
@@ -710,7 +711,7 @@ describe('session summary write failures', () => {
 
   it('writes nothing when the summary stage returns no text', async () => {
     const external = tempRoot('wiki-closure-empty-')
-    const reader = () => Promise.resolve({ session: { cwd: external }, events: longEvents() })
+    const reader = (id: string) => Promise.resolve({ session: { id, cwd: external }, events: longEvents() })
     const provided = new Map<string, unknown>([
       ['sessionQuery', { readSession: reader }],
       ['knowledgeWikiStageExecutor', {
@@ -731,7 +732,7 @@ describe('session summary write failures', () => {
     mkdirSync(dirname(target), { recursive: true })
     symlinkSync(join(external, 'missing-target.md'), target)
     const { warn } = sessionCtx(
-      () => Promise.resolve({ session: { cwd: external }, events: longEvents() }),
+      (id: string) => Promise.resolve({ session: { id, cwd: external }, events: longEvents() }),
       summaryDecision(),
     )
 

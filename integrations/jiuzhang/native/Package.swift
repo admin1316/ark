@@ -8,6 +8,7 @@ let package = Package(
   products: [
     .library(name: "JiuzhangShellCore", targets: ["JiuzhangShellCore"]),
     .executable(name: "JiuzhangShell", targets: ["JiuzhangShell"]),
+    .executable(name: "ArkKnowledgeOwner", targets: ["ArkKnowledgeOwner"]),
     .executable(name: "JiuzhangShellContractTests", targets: ["JiuzhangShellContractTests"]),
   ],
   dependencies: [
@@ -17,6 +18,7 @@ let package = Package(
   ],
   targets: [
     .target(name: "JiuzhangShellCore"),
+    .executableTarget(name: "ArkKnowledgeOwner", dependencies: ["JiuzhangShellCore"]),
     .target(
       name: "JiuzhangShellUI",
       dependencies: [

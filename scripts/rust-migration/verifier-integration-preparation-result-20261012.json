@@ -1,0 +1,263 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-11T16:38:58.985667+00:00",
+  "status": "SOURCE_CONFIGURATION_REPAIR_PASS_JOURNAL_AUTHENTICATION_GAP_RELEASE_HELD",
+  "sourceRoot": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+  "sourceHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "sourceDirty": true,
+  "plan": "/Users/hui/ark-test/evidence/knowledge-verifier-integration-plan-20261012.zh.txt",
+  "humanSteering": "No independent verifier deployed; prepare concrete integration plan first.",
+  "authorityProvisioning": {
+    "actualProgramDeployed": false,
+    "productionKeysGenerated": false,
+    "activeProfileChanged": false,
+    "knowledgeReuseProven": false
+  },
+  "configurationRepair": {
+    "owner": "packages/host/knowledge-wiki/src/external-verifier-adapter.ts",
+    "before": {
+      "reproducedFailures": 4,
+      "report": "/Users/hui/ark-test/evidence/verifier-fixed-launcher-options-red-20261012.json"
+    },
+    "after": {
+      "adapterTests": 16,
+      "relatedTests": 292,
+      "adapterFailures": 0,
+      "relatedFailures": 0,
+      "coverage": {
+        "lines": 100,
+        "branches": 100,
+        "statements": 100,
+        "functions": 100
+      },
+      "coverageScope": "external-verifier-adapter.ts only"
+    },
+    "realManagedSubprocess": true,
+    "publicSourceBuiltLibrarySmoke": {
+      "status": "PASS",
+      "scope": "fresh source-built public library with managed local subprocess; source-test signature fixture only",
+      "fixedIdentity": true,
+      "fixedExecutable": true,
+      "fixedArguments": true,
+      "fixedDeadline": true,
+      "realNativeModelTask": false,
+      "installedCandidateUpdated": false,
+      "knowledgeReuseProven": false
+    },
+    "typecheck": "PASS",
+    "fullLint": "PASS",
+    "docSync": {
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0
+    },
+    "installedInCurrentCandidate": false,
+    "compiledWikiSha256": "719a7fe75fd73d8296227fdd13711b8124a99761e18c2c88fc7b79787ff5cba7"
+  },
+  "integrationGaps": {
+    "independentProgram": "UNAVAILABLE_HUMAN_CONFIRMED",
+    "measuredJournalAuthentication": {
+      "schemaVersion": 1,
+      "scope": "installed candidate 3.1.30 public measured-trial library with synthetic source-test fixtures only",
+      "originalEligibleForReview": true,
+      "unrelatedJournalAnchorEligibleForReview": true,
+      "expected": "independent journal authentication rejects receipts with no matching journal proof",
+      "realModelOrLearningEvidence": false,
+      "productionAuthorityProvisioned": false,
+      "sourceFixture": "packages/host/knowledge-wiki/tests/measured-trial.spec.ts",
+      "fixtureDigest": "5569b998d8ec635543b5363c46efd07133de21ac718f6460562b54c38aea5cbc",
+      "execution": {
+        "exitCode": 1,
+        "status": "FAIL_REQUIRED_JOURNAL_AUTHENTICATION",
+        "firstAttempt": "not-executed-missing-public-export",
+        "fixtureOnly": true
+      },
+      "existingPromotionWalValidation": "separate existing verifier-authority validation; this probe does not test or invalidate WAL verification",
+      "deployment": "no real trust anchors provisioned; current native unavailable-authority behavior retained"
+    },
+    "workspaceBinding": "Current semantic request has relative paths and build identity but no explicit workspace/project identity; initial fixed-project plan does not establish multi-workspace dispatch.",
+    "restrictedUseExecution": "Reader and registration RPC do not themselves execute a frozen grant; real profile path must be checked before choosing minimal approved extension.",
+    "realPairedUseReceipts": "UNAVAILABLE"
+  },
+  "candidate": {
+    "path": "/Users/hui/ark-test/candidate/Ark.app",
+    "version": "3.1.30",
+    "build": "2026101130",
+    "binarySha256": "c0b9099ed54c5005dc091deb3476e482cdf9b2d6937f8f428d11c2df173461d4",
+    "installedWikiSha256": "5eaf9b39b75b119c1d816e77c1fc060fcf2b26586fb8d236d41228348e12463e",
+    "currentLivePid": 79957,
+    "currentOwnedNodePids": [
+      79964,
+      79987
+    ],
+    "currentProfileAuthorityActivated": false
+  },
+  "formal": {
+    "path": "/Users/hui/ark/Ark.app",
+    "changed": false,
+    "binarySha256": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a"
+  },
+  "github": {
+    "url": "https://github.com/admin1316/ark/pull/39",
+    "state": "OPEN",
+    "draft": true,
+    "head": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "checks": {
+      "SUCCESS": 25,
+      "FAILURE": 5
+    },
+    "publishedThisTurn": false
+  },
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "c11146420879d77ab2ad509855c446f65b578caafe9b65b6398b9a373e19884b",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "da158c5f36e4ac8efe3d5495fd60ad66d79d4a8dd6f0614ba67a163a62436ea8",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "manifestSha256": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+  "rustBenchmarkSha256": "52b85fb8d97d9b1fb5114cd4e517cdb1f7a84bb3d1d6e7ee6b77a7cbeb2097db",
+  "qualityMetrics": {
+    "repeated-error rate": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "repeated-tool-call rate": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "verified task success": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "false recall rate": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "stale recall rate": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "conflict detection rate": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "memory correction rate": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "recovery success": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "knowledge utility lift": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "cross-session leakage": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "false completion": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    },
+    "user correction frequency": {
+      "status": "UNKNOWN",
+      "value": null,
+      "reason": "No authenticated paired production task/knowledge corpus; native observations remain scoped."
+    }
+  },
+  "utilityStatus": "UNKNOWN",
+  "rust": "RETAIN_TS",
+  "fullSourceCoverage": "OPEN: prior index.ts/reviews.ts per-file gate failed; no claim that adapter-only coverage closes it.",
+  "fullGoalAcceptance": "UNKNOWN",
+  "formalPromotion": false,
+  "originalNativeFailuresPreserved": {
+    "invoiceFirstReadOnlyHeredoc": "OPEN",
+    "wikiReportPrecision": "same-conversation correction only",
+    "initialCandidateSetupProcessExit": "UNKNOWN"
+  },
+  "docOutputCleanup": {
+    "status": "PASS",
+    "owner": "website/build.ts:cleanDocSiteOutput",
+    "output": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/website/.dist",
+    "removedGeneratedFiles": 791,
+    "removedGeneratedBytes": 45018444,
+    "removedGeneratedHtml": 173,
+    "retainedTrackedSourceHtml": 41,
+    "retainedSourceHashes": {
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/brand-reveal-assemble-zoom.html": "6ef0274922bf33c9362c638476d97c475931941263f03934ce06f677c8301e5f",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/comparison-split-cards.html": "6fbf71a6620971f67d984d08346758a088d45297b68f2098d05a516001daa2b8",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/concept-demo-decode-pan.html": "003f8bbde732f9c982493ba3a531c8d861bdb3119fe772dc3bad135924b355ac",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/cta-morph-press.html": "4d423157e55cc7c46d112d3471bac207a2072f5f7d190f506809bc6c7ac68644",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/cta-orbit-collapse.html": "d41514f8bb0a4808a66f719bdc3b2118f16a476d47ac71b7db14a73e723f7aee",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/demo-page-scroll-spotlight.html": "aa1252821669b2f81d7925bac2869ee9a06650abec152c9ab0c978df1f9b2808",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/hook-counter-burst.html": "4766950cad912becd81d293ee23475caf4eac8c02dbde31c4c4f7ed015cb127b",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/messaging-multi-phrase.html": "dbfa5e74f09b0e2b45cb28cd100915143aab7f59ad3a2dffb46f5f88c3cccd77",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/metric-video-text-pivot.html": "5d0ede336552e9ac402bd7bf7dc84d95c9f76699d0e8ebb78f2dfeac3c7ebc36",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/problem-mockup-overwhelm.html": "127d94b53a48d36bf1a5eb5a9fd4e44b0c4cb3a5478c19783aff940f6683106d",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/proof-logo-chain.html": "b607d15d84d7666cb519626f1292fa42902f1c58e38766c2c8b5dc75825e7cc2",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/takeover-ticker-displace.html": "8d39a9028d8302ccd185d6fa2c5a6da1f097b4e9af083d18a1f0063a96989d22",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/workflow-approve-press.html": "2b04b61cc30113195f3a8173aec2a3abcaf13ddd5b7d577baea44aacae65990d",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/biennale-yellow/caption-skin.html": "e6e24155d587ab0fe1beca7c62e6fbfcce9d069cfb9cf02dfcecffe95194554b",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/biennale-yellow/frame-showcase.html": "5ba04e47cf9897e023dcfa49e1ec26fe26bac0c5061097dc6e7cb1d9ed46d7d0",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/blockframe/caption-skin.html": "85ef2bf1579587b97e26b617ea0c957329879e8413c2875605a278ad947c7d26",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/blockframe/frame-showcase.html": "8d2e4963713928b353d0aa28c2c83fce415df81b66a500c192b602c0aaf4ddf2",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/blue-professional/caption-skin.html": "a4cec56e723db7fc6b6f0c71a52314f80fc3f3f6c43747ae46af8a0761aa0c8b",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/blue-professional/frame-showcase.html": "715b130d086977a48925a3c79bb079fbc7270274c9c9a7761bf275df3020b0ba",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/bold-poster/caption-skin.html": "c5408b8d2b36028d85455003a5f0bbcde863f33474799477bab6afa261ec0214",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/bold-poster/frame-showcase.html": "57bbc3374b6a8b37ce59e36ed784c22bbb88fd44d039955221913b3e1bacf159",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/broadside/caption-skin.html": "d09b3e09bf497c0f2ed8db9dee181f376f75c65a25246181dc9d8f82cc938d6a",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/broadside/frame-showcase.html": "8d23a2cbeb898568a5626b38ffc864236fb4a09930d59b17c34c45f34c8e4161",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/capsule/caption-skin.html": "a66a37a0b2060ebe635f4d2309b3cf0f78c31203de19c12fc477a23009ec0e89",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/capsule/frame-showcase.html": "b3a642b5df3bbfb1ff227f1b82ee3ea02b51f20a0d7c5c46c97d72b180cddb4f",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/cartesian/caption-skin.html": "48f7b844d2936e0e0fc142605ec627adadc12120691bacb50dba7390d8706137",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/cartesian/frame-showcase.html": "d7867cee5e07c4f22345c566071f2ce0261b3fccca111a94dfbec5fde64f3e55",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/cobalt-grid/caption-skin.html": "506c0abc064ee4450afc7d34ff71a6fd04fa0dda69d57608ab310569d7651c03",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/cobalt-grid/frame-showcase.html": "b135214cd2e310273a01e3f72b2828149f022803954a22a13cbf27aa1c2f518a",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/code-editorial/caption-skin.html": "fe96654fb76433caf5b3c81e4b9c52c07c1d03b267411c12ed94f054ccb92028",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/code-editorial/frame-showcase.html": "08d711f5409a6af3fb6de05febe47fee77e4c8e85517bf2d087e2277b524e4ab",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/coral/caption-skin.html": "9af79dabd44f5d6ac934a5c371aad5316a4e2db76542a1ec3c969245b33892fa",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/coral/frame-showcase.html": "8ddf31ae13a4e57fe9730892fbbcb171cae67a204b5cb00b00374984f49b8f76",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/creative-mode/caption-skin.html": "ef4a13de5757453294db153607891e60ab3f408603ed222e53b908359dcbd296",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/creative-mode/frame-showcase.html": "32c1371fcd526c56edb515e5b255ad736a3e330ba3ff2631c61576064b384ef0",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/daisy-days/caption-skin.html": "6090e702f09c1df11e7289269a5b1ebc126981107c3ed5d9f951f69d471d1494",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/daisy-days/frame-showcase.html": "4fb93e5fa3ba12367f303996b6ca8b62f8e18c721d02e8032274df12d49d96f3",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/editorial-forest/caption-skin.html": "31999378b8fed9a4511432e38017f287127ce25a534ee57bfe4cc0f3b74c7d48",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/editorial-forest/frame-showcase.html": "bb87b88b91184f4fee7f02eea63ed35d9d378fa89fad8988326e31e82a43dbb1",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/templates/design-picker.html": "c417139fef8e21b34d56a85cedda8b9597c9574e0727ce603a4743c4ee592c1a",
+      ".agents/skills/visual-production-studio/modules/visual-storyboard-master/examples/minimal-storyboard.html": "d634cdf7ed63ed38fd0526ed5130b55ddc54b11db96857e198b2ee48c91038fc"
+    },
+    "arkRuntimeChanged": false,
+    "arkSpeedGainMeasured": false
+  },
+  "evidenceRefs": [
+    "/Users/hui/ark-test/evidence/verifier-fixed-launcher-options-red-20261012.json",
+    "/Users/hui/ark-test/evidence/verifier-fixed-launcher-options-green-20261012.json",
+    "/Users/hui/ark-test/evidence/verifier-integration-prerequisites-tests-20261012.json",
+    "/Users/hui/ark-test/evidence/verifier-fixed-launcher-options-coverage-20261012/coverage-summary.json",
+    "/Users/hui/ark-test/evidence/verifier-fixed-launcher-options-built-library-smoke-20261012.log",
+    "/Users/hui/ark-test/evidence/verifier-integration-doc-sync-20261012.log",
+    "/Users/hui/ark-test/evidence/verifier-integration-lint-20261012.log",
+    "/Users/hui/ark-test/evidence/measured-trial-journal-anchor-artifact-probe-20261012.log",
+    "/Users/hui/ark-test/evidence/measured-trial-journal-anchor-artifact-probe-v2-20261012.log",
+    "/Users/hui/ark-test/evidence/verifier-fixed-launcher-options-change-20261012.patch",
+    "/Users/hui/ark-test/evidence/candidate330-native-window-suite-20261011.json"
+  ]
+}

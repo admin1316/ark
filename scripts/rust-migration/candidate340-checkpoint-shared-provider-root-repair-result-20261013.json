@@ -1,0 +1,267 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-13T02:17:53.347468+00:00",
+  "phase": "candidate340-checkpoint-and-shared-provider-causal-source-repair",
+  "classification": "progress",
+  "gitHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "method": {
+    "causalQuestion": "Does aborting the original spawn signal terminate owned survivors after the direct process outcome?",
+    "rootCauseCountClosedWithinTestedScope": 1,
+    "implementationOwners": 2,
+    "reuseExistingOwners": true,
+    "controlVariables": [
+      "same fixture semantics",
+      "same host Node24",
+      "existing grace periods",
+      "unchanged outcome/stdio/wait contract"
+    ],
+    "extrapolation": "No global latency, accuracy or future-task success estimate. Three original observations were right-censored at 750ms; the single published smoke is a lifecycle check, not a benchmark."
+  },
+  "sourceRepair": {
+    "scope": "Existing process-tree cancellation contract. No new wire fields, profile permissions, user UI, security limits, acceptance thresholds or trust activation.",
+    "bindings": {
+      "packages/subprocess/subprocess-local/src/spawn.ts": {
+        "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/subprocess/subprocess-local/src/spawn.ts",
+        "sha256": "835949afb24b3b4869e0e92e49303668c57a8edde275a55b9ee74e61120f1666"
+      },
+      "packages/subprocess/subprocess-local/tests/spawn.spec.ts": {
+        "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/subprocess/subprocess-local/tests/spawn.spec.ts",
+        "sha256": "8d9bae11dee5621087cd4932a5f14bf5d4a7f9e8ca91dc163f630cfe233889f7"
+      },
+      "packages/e2b/subprocess-e2b/src/process.ts": {
+        "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/e2b/subprocess-e2b/src/process.ts",
+        "sha256": "1b0197ff1ef95d8631ba2eca308bb719d0a791742a240e72b576f5cdccd1a7f6"
+      },
+      "packages/e2b/subprocess-e2b/tests/subprocess.spec.ts": {
+        "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/e2b/subprocess-e2b/tests/subprocess.spec.ts",
+        "sha256": "1f452de5bf81687873369550a7db21c3a333706ba13302506c39a63519726495"
+      },
+      "packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts": {
+        "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts",
+        "sha256": "ae9c66ffdddc8112e8086507c997ff8a2422142d5739d4c2928a13be9d0c6e8c"
+      }
+    },
+    "local": {
+      "baselineFocused": {
+        "failed": 1,
+        "passed": 1,
+        "filtered": 85,
+        "exitCode": 1
+      },
+      "firstOwningCoverageRun": {
+        "testsPassed": 87,
+        "coverageGate": "FAIL_INCOMPLETE_OWNER_TEST_SELECTION",
+        "failureRetained": true
+      },
+      "completeAffectedOwners": {
+        "testsPassed": 109,
+        "testsFailed": 0,
+        "files": 3,
+        "coverage": {
+          "statements": {
+            "covered": 210,
+            "total": 210
+          },
+          "branches": {
+            "covered": 115,
+            "total": 115
+          },
+          "functions": {
+            "covered": 38,
+            "total": 38
+          },
+          "lines": {
+            "covered": 185,
+            "total": 185
+          }
+        },
+        "coverageGate": "PASS_MODIFIED_FILE_ONLY"
+      }
+    },
+    "e2b": {
+      "baselineFocused": {
+        "failed": 1,
+        "passed": 3,
+        "filtered": 71,
+        "exitCode": 1
+      },
+      "sourceOwning": {
+        "testsPassed": 75,
+        "testsFailed": 0,
+        "coverageAllFourMetricsPercent": 100
+      },
+      "liveRemoteSandbox": "UNKNOWN"
+    },
+    "externalVerifierConsumerRegression": {
+      "testsPassed": 21,
+      "testsFailed": 0
+    },
+    "strictHost": {
+      "exitCode": 0,
+      "directHostInputs": 1214,
+      "directProjectReferences": 223,
+      "noEmit": true
+    },
+    "canonicalHostBuild": {
+      "exitCode": 0,
+      "publishedModuleSmoke": "PASS",
+      "sourcePlaneAndArtifactPlaneCheckedSeparately": true
+    },
+    "fullLintAfterMechanicalTestFix": {
+      "exitCode": 0,
+      "priorThreeDiagnosticsRetained": true
+    },
+    "documentation": {
+      "originalFullRunPassed": 29,
+      "originalFullRunFailed": 1,
+      "originalFailureRetained": true,
+      "afterLinkFixAffectedLeaves": {
+        "translationPairing": "PASS",
+        "markdownLinks": "PASS",
+        "docGraphs": "PASS"
+      },
+      "unaffectedEarlierPassesRetained": true,
+      "claimFreshFullDocSyncPass": false
+    },
+    "publishedLocalSmoke": {
+      "status": "PASS",
+      "abortToQuiescenceMs": 214.587584,
+      "helperAbsentBeforeFinallyCleanup": true,
+      "realProviderRequests": 0
+    },
+    "installedInCandidate": false,
+    "remainingLimits": [
+      "Windows direct-child liveness boundary",
+      "PID/PGID reuse before first confirmed absence",
+      "descendants escaping process group",
+      "real E2B control-plane behavior"
+    ]
+  },
+  "candidateCheckpoint": {
+    "version": "3.1.40",
+    "build": "2026101340",
+    "state": "STAGED_ONLY",
+    "installedCandidateVersion": "3.1.39",
+    "allAppsClosed": true,
+    "packagingAndCompleteTreeIntegrity": "PASS_FROZEN_CHECKPOINT",
+    "packageCount": 164,
+    "installE2eChecks": 121,
+    "nativeWholeTask": "UNKNOWN_FOR_340",
+    "includesNewSharedProviderRepair": false,
+    "formalAppVersion": "3.1.0",
+    "formalPromotion": "HOLD"
+  },
+  "researchAndLearning": {
+    "persistedNative339ErrorAndMaxTokensTurns": "REJECTED_BEFORE_SIGNER_DISPATCH",
+    "signerDispatchForThoseProbes": 0,
+    "keylessSealerPreviewFullHost": {
+      "behaviorTests": 6,
+      "typeInputs": 1216,
+      "projectReferences": 223,
+      "scope": "PRIVATE_ONLY"
+    },
+    "useGrantPreview": {
+      "testsPassed": 15,
+      "testsSkipped": 4,
+      "typeInputs": 1218,
+      "projectReferences": 223,
+      "scope": "PRIVATE_ONLY",
+      "durableProtectedRegistrationAndReplay": "UNKNOWN"
+    },
+    "measuredTrialIdentityFinding": "Current accepted fixture uses different baseline/candidate builds/profiles. Its positive utility cannot isolate knowledge exposure. Source/build/profile comparison semantics and preregistration mode need a separate reviewed change request; existing eligibility has not been silently changed.",
+    "captureBorrowedBindingAlias": "Preview/test helper only; runtime snapshot still needed before future Host wiring.",
+    "realProtectedTrustDeployed": false,
+    "freshAuthenticatedNativeKnowledgeReuse": "UNKNOWN"
+  },
+  "rustDecision": "RETAIN_TS",
+  "overallSpeedLift": "UNMEASURED",
+  "overallAccuracyLift": "UNMEASURED",
+  "fullGoalAcceptance": "UNKNOWN",
+  "priorNative339WholeTask": "FAIL_INCOMPLETE_RETAINED",
+  "next": [
+    "Freeze remaining authorized source group and identity/trust design decisions before a further app package.",
+    "Package the shared repair only with fresh source/plan/artifact bindings; reuse the single candidate slot after stopped-process checks.",
+    "Complete actual native whole-task/fresh-use and platform/recovery/security gates under valid fee admission and protected custody authorization."
+  ],
+  "newPaidRequests": 0,
+  "gitPublication": "NOT_PERFORMED",
+  "formalReplacement": "NOT_PERFORMED",
+  "evidence": [
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/repair-plan.json",
+      "sha256": "dc1fbd7731207577386307cf06723c5a13112135a27835e0e62479e6c15e4fda"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/independent-review.json",
+      "sha256": "1c58e1a2de2344612427ba49535faab2e03b3c1b412a861b2d27120fe5929ded"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/independent-review-addendum.json",
+      "sha256": "5c6f28757a010afa1ae1f37bef918cb5ecc2fc979e7dbda842a3bdac0c6fd545"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/local-source-red.log",
+      "sha256": "665af2f8019dff36a654ca137ddde6822db5d3468b8a0f885e685b53c56848ae"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/local-source-green-coverage.log",
+      "sha256": "14bf38c87a8593b5b982ba69a66832f12ee118083d66176cc8c0ca6a7ece0b2b"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/local-owner-green-coverage.log",
+      "sha256": "937a3c3c4407ccf7e2da7d928922d75ebfe8a7d8be499861d5512acd46f191a9"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/e2b/result.json",
+      "sha256": "7b9898979e8f25debd9589474ecef4b060c74c8b083a335a9f63a2b45707fb94"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/external-consumer-regression.log",
+      "sha256": "e02cb10af086a5655d23ff51cdce9aee654cf2a1c082b219aff263f3cae01bd3"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/current-host-strict.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/published-local-smoke-result.json",
+      "sha256": "fc7ef4a1ffb16bfd83280ee93f05a9038d6e37fca045d58df61bcc4061fa134e"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/static-and-build/result.json",
+      "sha256": "7cae9fc648d01062239860eb5cdb283c5581bda3392d55b31e7e05fc0f7ef1c9"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/static-and-build/addendum/addendum.json",
+      "sha256": "b0eb9897f13cde61033cb07279498a08ae2284bc9ac3cc5f9e492809b0fbc363"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate340-offline-build-20261013-attempt1.wx/summary.json",
+      "sha256": "158fbf601cd940b6e34ff7676a28b9a165be6d3fdd9202f2246b86d2984c7386"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate340-install-e2e-20261013-attempt2.wx/install-e2e-receipt.json",
+      "sha256": "9e77f7d66fda319c3df7dd2163ccb46004bfadc7b5184e0093a18ad9bc6a0948"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/e2b-measured-trial-independent-review-20261013-attempt1.wx/report.json",
+      "sha256": "4d7c7e72c25898a9e1da63d16e60781e0f6673ee5c7865367d6a9500777bd2bc"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/native339-complete-use-admission-probe-20261013.wx/report.json",
+      "sha256": "a173ea82016c1c3ec7e67aec23f658d1ed5f7255d020db08e5a1e0f5c15a0818"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/external-verifier-promotion-sealer-keyless-strict-20261013-attempt2.wx/report-attempt2.json",
+      "sha256": "d4bbf6d312e3f9fa86a8e5a7566c1cf4f66832945c7cccd3f4d66586419307f4"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-use-grant-admission-preview-20261013.wx/attempt6/report-final.json",
+      "sha256": "7063d4d4f525d45802f3b4c2d92c14e92b58cb05b70f42c3a1ec031bde18cd83"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/shared-subprocess-signal-lifetime-repair-20261013.wx/root-current-state.json",
+      "sha256": "637299a14467507491641395f8de4564ddab9c2b6e766e4eec8e5d56f9bd0787"
+    }
+  ]
+}
