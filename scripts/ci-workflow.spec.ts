@@ -187,6 +187,18 @@ describe('CI workflow', () => {
     expect(macos).toMatchObject({ 'runs-on': 'macos-15', if: "github.event_name == 'pull_request'" })
     expect(JSON.stringify(macos.steps)).toContain('--product JiuzhangShellContractTests')
     expect(JSON.stringify(macos.steps)).toContain('.build/debug/JiuzhangShellContractTests')
+    if (!Array.isArray(macos.steps)) throw new TypeError('native macOS must define steps')
+    const macosSteps = macos.steps.filter(isRecord)
+    const pnpm = macosSteps.findIndex(step => step.uses === 'pnpm/action-setup@v4')
+    const node = macosSteps.findIndex(step => step.uses === 'actions/setup-node@v6')
+    const install = macosSteps.findIndex(step => step.name === 'Install (immutable)')
+    expect(pnpm).toBeGreaterThan(-1)
+    expect(node).toBeGreaterThan(pnpm)
+    expect(macosSteps[node]).toMatchObject({ with: { 'node-version': '${{ env.PRIMARY_NODE_VERSION }}' } })
+    expect(install).toBeGreaterThan(node)
+    expect(macosSteps[install]).toMatchObject({ run: 'pnpm install --frozen-lockfile' })
+    expect(macosSteps.findIndex(step => step.name === 'Build native contracts')).toBeGreaterThan(install)
+    expect(macosSteps.findIndex(step => step.name === 'Run native contracts')).toBeGreaterThan(install)
     for (const name of ['node-24', 'node-24-coverage', 'node-24-consumers', 'all-checks-passed']) {
       expect(workflowJob(workflow, name)['runs-on'], name).toBe('ubuntu-24.04')
     }

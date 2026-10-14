@@ -16,6 +16,8 @@ Lifecycle tests wait for the actual callee or persisted journal phase. Cache tes
 
 The Native owner connector remains Unix-only. Windows protocol tests use real named-pipe streams with a stat double restricted to their owned fixture endpoint. A separate untouched-filesystem control rejects the real Windows pipe without publishing authority. Native roster snapshots retain explicit Unix and Windows shell catalogs instead of normalizing the tool difference away.
 
+The hosted macOS Native lane installs the same pinned Node and immutable pnpm dependencies before its contracts run. Its Swift fixture launches the actual `tsx` source consumer to verify the Native/XPC journal signature and duplicate refusal; a Swift-only checkout cannot exercise that consumer. The existing source aliases resolve workspace imports without adding an artifact build or changing the signature check.
+
 The verifier helper writes its own readiness marker before the leader responds. POSIX retains real post-leader survivor tests. Windows checks actual disappearance of a non-detached helper, attributed to [libuv's parent-owned job](https://github.com/nodejs/node/blob/v24.x/deps/uv/src/win/process.c), while deadline and cancellation tests separately control the managed wait after a real leader exit. The [existing verifier wait contract](2026-10-13-verifier-post-exit-cancellation.md) retains its operation deadline and independent observation bound.
 
 ## Alternatives considered

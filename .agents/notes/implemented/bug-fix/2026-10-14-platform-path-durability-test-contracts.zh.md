@@ -16,6 +16,8 @@ Status: implemented
 
 Native owner 连接器继续仅支持 Unix。Windows 协议测试使用真实命名管道流，stat 替身仅作用于自己拥有的 fixture 端点。独立的真实文件系统控制拒绝实际 Windows 管道，不发布 authority。Native roster 快照保留明确的 Unix 和 Windows shell catalog，不通过归一化抹去工具差异。
 
+托管 macOS Native 检查在运行契约前安装同样固定的 Node 和不可变 pnpm 依赖。Swift fixture 启动实际 `tsx` 源码消费者，验证 Native/XPC journal 签名与重复调用拒绝；只有 Swift 源码的 checkout 无法执行该消费者。既有源码别名解析 workspace 导入，无需新增产物构建或修改签名检查。
+
 验证器 helper 在 leader 响应前写入自己的就绪标记。POSIX 保留真实的 leader 退出后幸存进程测试。Windows 检查未分离 helper 实际消失，并将其归因于 [libuv 的父进程 job](https://github.com/nodejs/node/blob/v24.x/deps/uv/src/win/process.c)；期限与取消测试则在真实 leader 退出后单独控制受管理的等待。[既有验证器等待契约](2026-10-13-verifier-post-exit-cancellation.zh.md)继续保留操作期限和独立观察上限。
 
 ## Alternatives considered
