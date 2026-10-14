@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import { isolatedChildEnvironment } from './process-isolation.ts'
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFailed, vi } from 'vitest'
 import { Session, SessionId, SessionStore, KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence, { JsonlSessionPersistence as JsonlBackend } from '@deepseek-ai/dsh-session-persistence-jsonl'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
@@ -35,7 +35,8 @@ import { produceMeasuredUseV1, FIXED_KNOWLEDGE_MEASUREMENT_DEFINITION_V1, witnes
   type KnowledgeMeasuredUseEvaluator, type RegisteredTaskV1,
   type VerifyRegisteredFixedTaskV1Request } from './knowledge-use-producer.ts'
 
-async function runEvaluatorCli(context: Context, configPath: string, request: unknown, inputBytes = canonicalJson(request)) {
+async function runEvaluatorCli(context: Context, configPath: string, request: unknown, inputBytes = canonicalJson(request),
+  diagnostic?: (phase: string, facts?: Readonly<Record<string, unknown>>) => void) {
   const compiledRuntime = process.env['ARK_PRODUCER_COMPILED_RUNTIME_ROOT'] ?? process.env['ARK_OBSERVATION_COMPILED_RUNTIME_ROOT']
   const argv = compiledRuntime === undefined
     ? [process.execPath, '--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href,
@@ -48,15 +49,25 @@ async function runEvaluatorCli(context: Context, configPath: string, request: un
     graceMs: 1_000, signal: AbortSignal.timeout(15_000),
     stdio: { stdin: { data: inputBytes }, stdout: { maxBytes: 4 * 1024 * 1024 }, stderr: { maxBytes: 32 * 1024 } },
   })
+  diagnostic?.('spawned', { pid: child.pid })
   try {
     const outcome = await child.done
-    expect(await child.waitForExit()).toBe(true)
+    diagnostic?.('outcome', { pid: child.pid, exitCode: outcome.exitCode, signal: outcome.signal })
+    const exitObserved = await child.waitForExit()
+    diagnostic?.('tree-exit-observed', { pid: child.pid, exitObserved })
+    expect(exitObserved).toBe(true)
     const stdout = child.collected.stdout?.readFrom(0)
     const stderr = child.collected.stderr?.readFrom(0)
     expect(stdout?.lossy).toBe(false)
     expect(stderr?.lossy).toBe(false)
     return { code: outcome.exitCode, stdout: stdout!.text, stderr: stderr!.text }
-  } finally { child.terminate(); await child.done; expect(await child.waitForExit()).toBe(true) }
+  } finally {
+    diagnostic?.('cleanup-start', { pid: child.pid })
+    child.terminate(); await child.done
+    const exitObserved = await child.waitForExit()
+    diagnostic?.('cleanup-exit-observed', { pid: child.pid, exitObserved })
+    expect(exitObserved).toBe(true)
+  }
 }
 
 async function cancelledEvaluator(configPath: string, mode: 'signal' | 'parent-exit') {
@@ -584,6 +595,26 @@ describe('persisted actual-use producer', () => {
   it.each(taskDefs.flatMap(task => [{ task, productionDerivation: false }, { task,
     productionDerivation: true }]))('runs $task.taskKind through fixed owner=$productionDerivation and the actual v1 reader',
     async ({ task, productionDerivation }) => {
+      const startedAt = performance.now()
+      const phases: Array<{ phase: string; elapsedMs: number; facts?: Readonly<Record<string, unknown>> }> = []
+      let droppedPhases = 0
+      const recordPhase = (phase: string, facts?: Readonly<Record<string, unknown>>) => {
+        if (!productionDerivation || task.taskKind !== 'single-line-v1') return
+        if (phases.length === 64) { phases.shift(); droppedPhases++ }
+        phases.push({ phase, elapsedMs: Math.round(performance.now() - startedAt), ...facts === undefined ? {} : { facts } })
+      }
+      const cliDiagnostic = (label: string) => (phase: string, facts?: Readonly<Record<string, unknown>>) => {
+        recordPhase(`cli:${label}:${phase}`, facts)
+      }
+      // A Vitest timeout can settle the case before its async body reaches catch/finally.
+      // Use the runner's failure hook; observe existing waits without querying or extending them.
+      onTestFailed(() => {
+        if (phases.length > 0) process.stderr.write(`knowledge-use-producer-phases ${JSON.stringify({
+          taskKind: task.taskKind, productionDerivation, platform: process.platform,
+          elapsedMs: Math.round(performance.now() - startedAt), droppedPhases, phases,
+        })}\n`)
+      })
+      recordPhase('setup-start')
       // Opt-in artifact-plane smoke requires a completed, attested runtime pack. Source tests keep source owners.
       const compiledRuntime = productionDerivation ? process.env['ARK_PRODUCER_COMPILED_RUNTIME_ROOT'] : undefined
       const receiptBytes = compiledRuntime === undefined ? undefined
@@ -747,8 +778,11 @@ describe('persisted actual-use producer', () => {
         },
       }
       try {
+        recordPhase('session-plugins-start')
         await context.plugin(SessionStore)
         await context.plugin(JsonlSessionPersistence, { root: dataRoot, compression: 'none' })
+        recordPhase('session-plugins-done')
+        recordPhase('persist-fixtures-start')
         for (const item of cases) {
           const baseline = await persistFixture(context, dataRoot, { candidate: false, sessionId: item.baselineSessionId,
             output: item.baselineOutput, projectRoot })
@@ -761,6 +795,7 @@ describe('persisted actual-use producer', () => {
           })
           pairs.push({ pairId: item.pairId, baseline, candidate })
         }
+        recordPhase('persist-fixtures-done')
         let producerPairs = pairs.map(pair => ({ pairId: pair.pairId,
           baseline: { snapshotPath: pair.baseline.snapshotPath, expectedSnapshotHash: pair.baseline.expectedSnapshotHash,
             binding: pair.baseline.f.binding, registeredTask: registered },
@@ -776,6 +811,7 @@ describe('persisted actual-use producer', () => {
           putRaw(Buffer.from(cost.artifactBytesBase64, 'base64'))
         }
         if (productionDerivation) {
+          recordPhase('production-owner-start')
           await context.plugin(LocalSubprocessRuntime)
           await context.plugin(SandboxLocal)
           await writeFile(join(projectRoot, '.llm-wiki', proposal.candidatePath), Buffer.from('fixture candidate document bytes'))
@@ -941,7 +977,7 @@ describe('persisted actual-use producer', () => {
             await writeFile(join(root, 'live-owner-config.json'), canonicalJson(liveOwnerConfig), { mode: 0o600 })
             await writeFile(join(root, 'fixture-live-ledger.json'), ledgerBytes, { mode: 0o600 })
             const liveDescribe = await runEvaluatorCli(context, join(root, 'live-owner-config.json'),
-              { schemaVersion: 1, operation: 'describeRegisteredTrial' })
+              { schemaVersion: 1, operation: 'describeRegisteredTrial' }, undefined, cliDiagnostic('live-description'))
             expect(liveDescribe.code, liveDescribe.stderr).toBe(0)
             expect(JSON.parse(liveDescribe.stdout)).toEqual(liveDescriptor)
           }
@@ -965,15 +1001,18 @@ describe('persisted actual-use producer', () => {
           if (task.taskKind === 'single-line-v1') {
             const ownerConfigPath = join(root, 'owner-config.json')
             await writeFile(ownerConfigPath, canonicalJson(ownerConfig), { mode: 0o600 })
-            const describe = await runEvaluatorCli(context, ownerConfigPath, { schemaVersion: 1, operation: 'describeRegisteredTrial' })
+            const describe = await runEvaluatorCli(context, ownerConfigPath, { schemaVersion: 1, operation: 'describeRegisteredTrial' },
+              undefined, cliDiagnostic('owner-description'))
             expect(describe.code, describe.stderr).toBe(0)
             expect(JSON.parse(describe.stdout)).toEqual(describeRegisteredKnowledgeTrial(ownerConfig))
-            const candidateCheck = await runEvaluatorCli(context, ownerConfigPath, verificationRequest)
+            const candidateCheck = await runEvaluatorCli(context, ownerConfigPath, verificationRequest, undefined,
+              cliDiagnostic('candidate-check'))
             expect(candidateCheck.code, candidateCheck.stderr).toBe(0)
             expect(JSON.parse(candidateCheck.stdout)).toMatchObject({ role: 'promotion', signatureField: 'proof' })
             const swiftBytes = canonicalJson(verificationRequest).replace('"confidence":0.00001', '"confidence":1e-05')
             expect(swiftBytes).not.toBe(canonicalJson(verificationRequest))
-            const swiftNumbers = await runEvaluatorCli(context, ownerConfigPath, verificationRequest, swiftBytes)
+            const swiftNumbers = await runEvaluatorCli(context, ownerConfigPath, verificationRequest, swiftBytes,
+              cliDiagnostic('swift-numbers'))
             expect(swiftNumbers.code, swiftNumbers.stderr).toBe(0)
             const swiftRecipe = JSON.parse(swiftNumbers.stdout) as { canonicalBytes: string; sealBinding: { requestHash: string } }
             expect(swiftRecipe.sealBinding.requestHash).toBe(sha256(swiftBytes))
@@ -985,7 +1024,7 @@ describe('persisted actual-use producer', () => {
             const candidate = ownerConfig.registrations[1]!
             const costRequest = { schemaVersion: 1, operation: 'describeCapturedCostUse', sessionId: candidate.binding.sessionId,
               sessionSnapshotHash: candidate.expectedSnapshotHash }
-            const cost = await runEvaluatorCli(context, ownerConfigPath, costRequest)
+            const cost = await runEvaluatorCli(context, ownerConfigPath, costRequest, undefined, cliDiagnostic('captured-cost'))
             expect(cost.code, cost.stderr).toBe(0)
             expect(JSON.parse(cost.stdout)).toEqual(await describeCapturedKnowledgeCostUse(ownerConfig, costRequest,
               new AbortController().signal))
@@ -997,22 +1036,28 @@ describe('persisted actual-use producer', () => {
             const wrongPath = join(root, 'reordered-config.json')
             for (const [hash, bytes] of files) atomicWriteFile(resolveConfinedPath(artifactRoot, hash, true), bytes)
             await writeFile(wrongPath, canonicalJson(reordered), { mode: 0o600 })
-            const refused = await runEvaluatorCli(context, wrongPath, costRequest)
+            const refused = await runEvaluatorCli(context, wrongPath, costRequest, undefined, cliDiagnostic('reordered-refusal'))
             expect(refused.code).not.toBe(0)
             expect(refused.stdout).toBe('')
             expect(refused.stderr).toContain('knowledge identity, scope, source, or rendered bytes differ')
+            recordPhase('owner-loss:signal:start')
             await cancelledEvaluator(ownerConfigPath, 'signal')
+            recordPhase('owner-loss:signal:done')
+            recordPhase('owner-loss:parent-exit:start')
             await cancelledEvaluator(ownerConfigPath, 'parent-exit')
+            recordPhase('owner-loss:parent-exit:done')
 
           }
           await expect(evaluate(ownerConfig, { schemaVersion: 1, operation: 'evaluate-captured-knowledge-use-v1',
             counts: {} },
           context.subprocess, context.sandbox, new AbortController().signal)).rejects.toThrow()
+          recordPhase('production-owner-done')
         }
         for (const [hash, bytes] of files) atomicWriteFile(resolveConfinedPath(artifactRoot, hash, true), bytes)
         const reader = createKnowledgeWikiMeasuredTrialReader({ authorityId, publicKey: evaluatorKeys.publicKey,
           journalSignerAuthorityId: journalAuthorityId,
           journalSignerPublicKey: journalKeys.publicKey, artifacts: createFileMeasuredTrialArtifactResolver(artifactRoot) })
+        recordPhase('produce-measured-use-start')
         const result = await produceMeasuredUseV1({
           pairs: producerPairs,
           proposalHash, grantHash, preRegistrationHash, measurementDefinitionHash,
@@ -1028,6 +1073,7 @@ describe('persisted actual-use producer', () => {
             targetPath: proposal.targetPath, targetBeforeHashOrVerifiedAbsence: 'verified-absence' },
           artifactRoot, signal: new AbortController().signal,
         })
+        recordPhase('produce-measured-use-done')
         expect(result.status).toBe(productionDerivation ? 'rejected' : 'ineligible')
         expect(producerReceiptCount).toBe(4)
         expect(oracleOutcomes).toEqual(new Map([
@@ -1076,14 +1122,15 @@ describe('persisted actual-use producer', () => {
             finalOutputHash: (facts['finalOutputArtifactManifest'] as string[])[0], capturedProviderRequestHash:
               facts['providerRequestHash'],
             journalAttestationHash: refs[0], fixedTaskOracleHash: refs[1], costWitnessHash: refs[2] }
-          const evaluation = await runEvaluatorCli(context, join(root, 'owner-config.json'), refsRequest)
+          const evaluation = await runEvaluatorCli(context, join(root, 'owner-config.json'), refsRequest, undefined,
+            cliDiagnostic('captured-use-evaluation'))
           expect(evaluation.code, evaluation.stderr).toBe(0)
           const recipe = JSON.parse(evaluation.stdout) as { canonicalBytes: string; signatureField: string }
           expect(recipe.signatureField).toBe('evaluatorSignature')
           const unsigned = { ...receipt }; delete unsigned['evaluatorSignature']
           expect(Buffer.from(recipe.canonicalBytes, 'base64').toString('utf8')).toBe(canonicalJson(unsigned))
           const wrongFacts = await runEvaluatorCli(context, join(root, 'owner-config.json'), { ...refsRequest,
-            captureFactsHash: sha256('changed facts') })
+            captureFactsHash: sha256('changed facts') }, undefined, cliDiagnostic('wrong-facts-refusal'))
           expect(wrongFacts.code).not.toBe(0)
           expect(wrongFacts.stdout).toBe('')
           expect(wrongFacts.stderr).toContain('captured facts or complete output differs')
@@ -1117,11 +1164,19 @@ describe('persisted actual-use producer', () => {
             'owner-config.json'),
           requests: join(root, 'probe-requests.json'), fixtureOnly: true, privateKeysExported: false }))
         }
+        recordPhase('snapshot-invariance-start')
         expect(await readFile(pairs[0]!.baseline.snapshotPath)).toEqual(pairs[0]!.baseline.beforeBytes)
         expect(await readFile(pairs[1]!.candidate.snapshotPath)).toEqual(pairs[1]!.candidate.beforeBytes)
+        recordPhase('snapshot-invariance-done')
       } finally {
+        recordPhase('context-dispose-start')
         await context.fiber.dispose()
-        if (!retainFixture) await rm(root, { recursive: true, force: true })
+        recordPhase('context-dispose-done')
+        if (!retainFixture) {
+          recordPhase('fixture-remove-start')
+          await rm(root, { recursive: true, force: true })
+          recordPhase('fixture-remove-done')
+        }
       }
     }, 30_000)
 
