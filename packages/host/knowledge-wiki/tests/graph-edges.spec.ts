@@ -1,6 +1,9 @@
 import {
+  closeSync,
+  fstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -9,7 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildGraph,
   listPages,
@@ -17,9 +20,26 @@ import {
   visitWikiTree,
 } from '../src/graph.ts'
 
+const nativeStatOverride = vi.hoisted(() => ({
+  value: undefined as { path: string; stat: import('node:fs').Stats } | undefined,
+}))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      const replacement = nativeStatOverride.value
+      return replacement !== undefined && args[0] === replacement.path
+        ? replacement.stat
+        : actual.lstatSync(...args)
+    },
+  }
+})
+
 const roots: string[] = []
 
 afterEach(() => {
+  nativeStatOverride.value = undefined
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -39,6 +59,30 @@ describe('Wiki tree and graph edge contracts', () => {
     // missing-path owner still refuses that obstructed root on every platform.
     expect(() => { visitWikiTree(join(file, 'child'), {}) }).toThrow(/ENOTDIR|ENOENT/u)
     expect(readFileSync(file, 'utf8')).toBe('keep')
+  })
+
+  it('rejects the unmodified native character-device stat at a discovered Wiki entry', () => {
+    const root = fixture()
+    const target = join(root, 'device.md')
+    writeFileSync(target, 'preserved Wiki bytes')
+    const descriptor = openSync(process.platform === 'win32' ? 'NUL' : '/dev/null', 'r')
+    try {
+      const nativeStat = fstatSync(descriptor)
+      expect(nativeStat.isCharacterDevice()).toBe(true)
+      expect(nativeStat.isFile()).toBe(false)
+      expect(nativeStat.isDirectory()).toBe(false)
+      expect(nativeStat.isSymbolicLink()).toBe(false)
+      nativeStatOverride.value = { path: target, stat: nativeStat }
+      const visited: string[] = []
+      expect(() => { visitWikiTree(root, { onMarkdown: (entry) => { visited.push(entry.path) } }) })
+        .toThrow('non-regular Wiki entry is not allowed: device.md')
+      expect(visited).toEqual([])
+    } finally {
+      nativeStatOverride.value = undefined
+      closeSync(descriptor)
+    }
+    expect(readFileSync(target, 'utf8')).toBe('preserved Wiki bytes')
+    expect(readdirSync(root)).toEqual(['device.md'])
   })
 
   it('revalidates a directory changed to a file between discovery and descent', () => {

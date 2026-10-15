@@ -236,6 +236,23 @@ describe('Wiki filesystem identity and cleanup under I/O interleavings', () => {
     expect(readdirSync(root).some(name => name.includes('.ark-unlink-'))).toBe(false)
   })
 
+  it('preserves an initial file-inspection denial without unlinking the existing file', () => {
+    const root = fixture()
+    const target = join(root, 'page.md')
+    writeFileSync(target, 'preserved bytes')
+    const denied = Object.assign(new Error('initial file inspection denied'), { code: 'EACCES' })
+    faults.before = (operation, path) => {
+      if (operation !== 'lstat' || path !== target) return
+      faults.before = undefined
+      throw denied
+    }
+    let observed: unknown
+    try { durableUnlinkFile(target) } catch (error: unknown) { observed = error }
+    expect(observed).toBe(denied)
+    expect(readFileSync(target, 'utf8')).toBe('preserved bytes')
+    expect(readdirSync(root)).toEqual(['page.md'])
+  })
+
   it.each(['lstat', 'open'] as const)('refuses Windows-style ENOENT beneath an ordinary file at %s', (boundary) => {
     const root = fixture()
     const parent = join(root, 'blocked')
