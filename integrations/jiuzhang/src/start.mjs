@@ -156,7 +156,7 @@ recheckParent()
 child = spawn(process.execPath, childArgs, {
   cwd: childWorkingDirectory,
   env: createLaunchEnvironment(home),
-  stdio: 'inherit',
+  stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
 })
 
 child.once('error', error => {

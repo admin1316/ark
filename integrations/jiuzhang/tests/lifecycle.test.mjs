@@ -698,6 +698,35 @@ test('lifecycle: child exit first reaps cleanly without double terminate', { tim
   assert.equal(launcher.exitCode, 7, 'launcher propagates the child exit code')
 })
 
+test('lifecycle: an IPC child with an unreferenced parent listener completes naturally', { timeout: 30_000 }, async t => {
+  const home = await mkdtemp(join(tmpdir(), 'ark-lifecycle-ipc-natural-'))
+  const factsFile = join(home, 'ipc.json')
+  const childScript = await writeScript(home, 'ipc-child.mjs', `
+import { writeFileSync } from 'node:fs'
+const factsFile = process.argv.find(entry => entry.startsWith('--ipc-facts='))?.slice('--ipc-facts='.length)
+process.on('disconnect', () => { throw new Error('parent disconnected before natural completion') })
+process.channel?.unref()
+writeFileSync(factsFile, JSON.stringify({ connected: process.connected, channel: process.channel !== undefined }))
+`)
+  const launcher = launch(home, {
+    parentPid: process.pid,
+    childScript,
+    childArgs: [`--ipc-facts=${factsFile}`],
+  })
+  t.after(async () => {
+    await runCleanups('IPC natural lifecycle', [
+      async () => { await terminateTestHandle(launcher) },
+      async () => { await rm(home, { recursive: true, force: true }) },
+    ])
+  })
+
+  const facts = await waitFile(factsFile, 8_000)
+  assert.ok(facts, 'the actual child observes its launcher connection')
+  assert.deepEqual(JSON.parse(facts), { connected: true, channel: true })
+  assert.equal(await waitExit(launcher, 8_000), true, 'the IPC connection alone does not retain the naturally completed child')
+  assert.equal(launcher.exitCode, 0, 'natural IPC completion retains a successful launcher exit')
+})
+
 test('lifecycle: parent-death and SIGTERM race still cleans up exactly once', { timeout: 30_000 }, async t => {
   const home = await mkdtemp(join(tmpdir(), 'ark-lifecycle-race-'))
   const childPidFile = join(home, 'child.pid')

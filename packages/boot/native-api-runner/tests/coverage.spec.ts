@@ -39,6 +39,7 @@ describe('Ark native API runner execution', () => {
       watchLiveConfig: false,
       profilePatchMode: 'managed',
       homePatchMode: 'none',
+      shutdownOnParentDisconnect: true,
     })
   })
 })
