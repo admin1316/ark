@@ -10,7 +10,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { devNull, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -65,7 +65,7 @@ describe('Wiki tree and graph edge contracts', () => {
     const root = fixture()
     const target = join(root, 'device.md')
     writeFileSync(target, 'preserved Wiki bytes')
-    const descriptor = openSync(process.platform === 'win32' ? 'NUL' : '/dev/null', 'r')
+    const descriptor = openSync(devNull, 'r')
     try {
       const nativeStat = fstatSync(descriptor)
       expect(nativeStat.isCharacterDevice()).toBe(true)

@@ -464,11 +464,28 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
       - name: Build native contracts
         run: swift build --package-path integrations/jiuzhang/native --configuration debug --product JiuzhangShellContractTests -Xswiftc -enable-testing
       - name: Run native contracts
+        id: native-contracts
         working-directory: integrations/jiuzhang/native
+        env:
+          ARK_NATIVE_CONTRACT_DIAGNOSTICS_DIR: ${{ runner.temp }}/native-contracts-diagnostics
         run: .build/debug/JiuzhangShellContractTests
+      - name: Collect this Native contract process's failure diagnostics
+        if: failure() && steps.native-contracts.outcome == 'failure'
+        run: node scripts/collect-native-contract-diagnostics.ts "${{ runner.temp }}/native-contracts-diagnostics" "${{ github.workspace }}/integrations/jiuzhang/native/.build/debug/JiuzhangShellContractTests"
+      - name: Upload Native contract failure diagnostics
+        if: failure() && steps.native-contracts.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-contract-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-contracts-diagnostics/collected
+          if-no-files-found: warn
+          retention-days: 7
 
   all-checks-passed:
     name: all checks passed

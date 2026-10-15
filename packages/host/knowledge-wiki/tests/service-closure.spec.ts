@@ -32,7 +32,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createServer, type Server } from 'node:http'
-import { tmpdir } from 'node:os'
+import { devNull, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -516,7 +516,7 @@ describe('raw source tree safety', () => {
     const sources = resetRawSources(root)
     const target = join(sources, 'device.md')
     writeFileSync(target, 'preserved raw bytes')
-    const descriptor = openSync(process.platform === 'win32' ? 'NUL' : '/dev/null', 'r')
+    const descriptor = openSync(devNull, 'r')
     try {
       const nativeStat = fstatSync(descriptor)
       expect(nativeStat.isCharacterDevice()).toBe(true)
