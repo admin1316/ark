@@ -824,7 +824,7 @@ describe('measured review revalidation', () => {
             const unsigned = { ...verified.payload, record: updated }
             Reflect.deleteProperty(unsigned, 'authorityId')
             Reflect.deleteProperty(unsigned, 'authoritySeal')
-            const seal = await authority.sealPromotion({
+            const seal = authority.sealPromotion({
               schemaVersion: 1, domain: 'ark.knowledge-wiki', authorityId: authority.authorityId,
               operation: 'seal-knowledge-event', eventType: 'knowledge/verified', knowledgeId: record.id, payload: unsigned,
             })

@@ -2,7 +2,7 @@
 
 [English](knowledge-runtime-report.md) | 中文
 
-**知识观察 — 2026-10-15。** [已安装候选与源码快照](source-truth-report.zh.md)将 3.1.44 的身份与学习验收分别记录。它恢复的 3.1.41 代码任务属于历史证据：该任务保留五条发生在任务前的初始化 `knowledge/injected` 记录，任务期间没有新增知识事件。[受限任务检查点](../../scripts/rust-migration/candidate341-real-native-code-task-result-20261013.json)证明记录中的代码修复和冷测试回放，不能证明已认证的使用、utility 提升或新对话复用。[当前快照](../../scripts/rust-migration/candidate344-source-profile-snapshot-20261015.json)记录 3.1.44 正式／候选对照尚未提交任务，真实受保护 authority 也没有部署证明。包内存在签名适配代码、profile 文件相同，均不能证明可信的实际配置已启用。学习验收仍为 `UNKNOWN`。
+**知识观察 — 2026-10-15。** [已安装候选与源码快照](source-truth-report.zh.md)将 3.1.44 的身份与学习验收分别记录。它恢复的 3.1.41 历史仍属于历史证据。[正式／候选全新原生同题记录](../../scripts/rust-migration/candidate344-formal310-native-paired-result-20261015.json)记录候选代码修复及六条原始断言的独立冷回放，同时保留报告准确性不足和重复测试调用。实际 `wiki_files` 与 `wiki_search` 均返回 verifier authority unavailable；一条任务前 runtime `knowledge/injected` 事件不是已认证的成功使用。同一流内授权消费的源码测试不能阻止整份合法旧前缀回退。受保护部署、utility 提升和新对话复用仍未获证明，学习验收为 `UNKNOWN`。
 
 **2026-10-12 候选观察（历史）。** 隔离候选 Ark 3.1.35/build `2026101235` 打包的 Knowledge Wiki 模块由 SHA-256 `86a726fa0f0172a9e1e9f415f76e1ceb1e21f9bc31e1468b6fdee58a5de970ab` 标识。Native first-final 任务记录 24,893 个事件；完整会话重放无需修补其私有副本（`repairedPrivateCopy=false`）；详见[first-final 会话重放快照](/Users/hui/ark-test/evidence/candidate335-native-code-first-final-20261012.json)。首次运行结果为 1 项通过／5 项失败，随后记录的复测为 6／0。完整报告因 `validate-throws` 是否执行的陈述相互矛盾而判定 `FAIL`。没有触发 child 或 job 调用。Loader test key 仅供测试；没有证据表明生产 authority 已激活或被真实使用。Rust 决策仍为 `RETAIN_TS`；正式 Ark 3.1.0 未变更，原始 learning 验收仍为 `UNKNOWN`。详见[2026-10-12 候选回执](../../scripts/rust-migration/candidate335-summary-admission-native-result-20261012.json)。
 

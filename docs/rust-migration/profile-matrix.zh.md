@@ -4,7 +4,7 @@
 
 **Sources compared:** checked-out `integrations/jiuzhang/profile`, `packages/bundle/base/cordis.patch.yml`, `packages/bundle/native-api-app/cordis.patch.yml`, installed product `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang`, and packaged runtime `/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile`. Profile rows are loader patches; later rows replace a matched row's whole config.
 
-**候选文件观察 — 2026-10-15。** [已安装 3.1.44 的源码／profile 快照](../../scripts/rust-migration/candidate344-source-profile-snapshot-20261015.json)记录六组逐字节匹配：源码对打包 base patch、native API patch、Jiuzhang patch 与 Jiuzhang package，以及源码对候选 home 的 Jiuzhang patch 与 package。配置文件匹配不代表已安装的 d33 运行时包含尚未提交的源码修复，也不能证明验证器已激活。正式与候选的默认配置均选择 `deepseek-official / deepseek-flash / max`；实际会话与 provider 归属仍须由已提交任务证明。正式 Ark 3.1.0 仍是独立安装。
+**候选文件观察 — 2026-10-15。** [已安装 3.1.44 的源码／profile 快照](../../scripts/rust-migration/candidate344-source-profile-snapshot-20261015.json)记录六组逐字节匹配：源码对打包 base patch、native API patch、Jiuzhang patch 与 Jiuzhang package，以及源码对候选 home 的 Jiuzhang patch 与 package。这些文件匹配既不会安装较新源码，也不能证明验证器已激活。正式与候选的默认配置选择 `deepseek-official / deepseek-flash / max`；[实际原生同题任务](../../scripts/rust-migration/candidate344-formal310-native-paired-result-20261015.json)另外绑定实际模型、全新会话、标准模式和仅会话级的工作区访问。两边设置均在结束后恢复；该次试验不证明受保护 authority 已部署。正式 Ark 3.1.0 仍是独立安装。
 
 **2026-10-13 候选文件观察（历史，3.1.39）。** 隔离候选 3.1.39 中，`dsh-base`、`native-api-app` 和 Jiuzhang 的源码与包内 patch 字节一致，Jiuzhang package 文件也一致。[profile 回执](../../scripts/rust-migration/candidate339-profile-consistency-and-runtime-boundaries-20261013.json) 绑定这四组对照和包内 Wiki 模块。文件一致不能证明 launcher 信任配置非空、受保护验证器已部署或正式 Ark 的 profile 成员关系。
 
@@ -16,7 +16,7 @@
 
 ## Profile rows and effective behavior
 
-下表描述这些 patch 加载后的源码组合。3.1.41 对照绑定候选文件，不能证明当前正式产品的成员关系或环境变量值。
+下表描述这些 patch 加载后的源码组合。所链接的产物与 profile 快照绑定候选文件，不能证明当前正式产品的成员关系或环境变量值。
 
 | Capability | dsh-base | native-api-app | Jiuzhang source profile overlay | Effective result |
 | --- | --- | --- | --- | --- |

@@ -4,7 +4,7 @@ English | [中文](profile-matrix.zh.md)
 
 **Sources compared:** checked-out `integrations/jiuzhang/profile`, `packages/bundle/base/cordis.patch.yml`, `packages/bundle/native-api-app/cordis.patch.yml`, installed product `/Users/hui/Library/Application Support/Ark/Harness/profiles/jiuzhang`, and packaged runtime `/Users/hui/ark/Ark.app/Contents/Resources/runtime/jiuzhang/profile`. Profile rows are loader patches; later rows replace a matched row's whole config.
 
-**Candidate file observation — 2026-10-15.** The [installed 3.1.44 source/profile snapshot](../../scripts/rust-migration/candidate344-source-profile-snapshot-20261015.json) records six byte-identical comparisons: source versus packaged base patch, native API patch, Jiuzhang patch and Jiuzhang package; source versus candidate-home Jiuzhang patch and package. Matching these configuration files does not equate the installed d33 runtime with uncommitted source followups or prove verifier activation. Formal and candidate configured defaults both select `deepseek-official / deepseek-flash / max`; actual per-session and provider attribution still requires a submitted task. Formal Ark 3.1.0 remains a separate installation.
+**Candidate file observation — 2026-10-15.** The [installed 3.1.44 source/profile snapshot](../../scripts/rust-migration/candidate344-source-profile-snapshot-20261015.json) records six byte-identical comparisons: source versus packaged base patch, native API patch, Jiuzhang patch and Jiuzhang package; source versus candidate-home Jiuzhang patch and package. Matching these files neither installs newer source nor proves verifier activation. Formal and candidate configured defaults select `deepseek-official / deepseek-flash / max`; the [actual paired native tasks](../../scripts/rust-migration/candidate344-formal310-native-paired-result-20261015.json) independently bind the exercised model, fresh sessions, standard mode and session-only workspace access. Both settings were restored afterward; the trial does not establish a deployed protected authority. Formal Ark 3.1.0 remains a separate installation.
 
 **2026-10-13 candidate file observation (historical, 3.1.39).** The isolated 3.1.39 candidate contains byte-identical source and packaged patches for `dsh-base`, `native-api-app`, and Jiuzhang, plus the matching Jiuzhang package file. The [profile receipt](../../scripts/rust-migration/candidate339-profile-consistency-and-runtime-boundaries-20261013.json) binds all four comparisons and the packaged Wiki module. File equality does not establish nonempty launcher trust configuration, a deployed protected verifier, or formal Ark profile membership.
 
@@ -16,7 +16,7 @@ The subsequent [verifier cancellation source fix](../../.agents/notes/implemente
 
 ## Profile rows and effective behavior
 
-The table describes the checked-out source composition when these patches are loaded. The 3.1.41 comparison binds candidate files; it does not establish current formal-product membership or environment values.
+The table describes the checked-out source composition when these patches are loaded. The linked artifact/profile snapshot binds candidate files; it does not establish current formal-product membership or environment values.
 
 | Capability | dsh-base | native-api-app | Jiuzhang source profile overlay | Effective result |
 | --- | --- | --- | --- | --- |
