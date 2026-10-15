@@ -56,6 +56,8 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 Commands share one shell per agent, so cwd, `$env:` variables, functions, and background jobs persist across calls. Results exclude the private completion markers, the shell prompt, and the echoed input line. A non-zero wrapped command appends `[exit code: N]` — the exact native exit code when the command ran a native program, `1` for a terminating PowerShell error. A shell that exits before reporting that status instead appends `[shell exited: code N]`, `[shell killed by signal: SIG]`, or `[shell exited]` (Windows forced termination reports exit 1 without a signal), then resets and tells the agent the next call starts fresh. Long output keeps the earliest retained prefix plus a clipping notice; if the terminal has already dropped that prefix, the result says so explicitly.
 
+A prompt alone, with neither the current command's start marker nor captured output, does not complete the call. The tool continues observing the same command within its original deadline without resubmitting it; marker-complete empty output remains valid.
+
 ### What can go wrong
 
 A call without an owning agent session fails with `pwsh requires an owning agent session`, and a composition without a pwsh-dialect PTY backend activates the tool but fails its first call with `no PTY backend registered for "shell"`. A model redefinition of the `prompt` function removes the readiness marker, and the shell then settles on the silence tier instead of the marker fast path. Raw ESC characters inside a command are consumed by PSReadLine before execution and are unsupported. A timeout or cancellation closes the uncertain shell, discards the result, and reports the reset.

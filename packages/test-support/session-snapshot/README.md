@@ -88,7 +88,7 @@ A scenario requiring a non-Windows host declares `posixOnly`, which skips its ru
 
 - **A fixture guard rejects the committed files** — orphan scenario dirs, missing files, multiple pins for one header class, duplicate sidecar content, unscrubbed JSONL headers, and malformed pinning headers all fail the suite before comparisons run.
 - **The session harvest needs raw JSONL mode** — snapshot configs set the JSONL backend's `compression: 'none'`; compressed JSONL and SQLite compositions have no snapshot-harvest path.
-- **An inbox wait expires** — the configured success deadline still applies to pending reads and late matches; the harness retains timeout causes and late read or parse errors, then joins pending reads before scenario cleanup.
+- **An inbox or child-turn wait expires** — the configured success deadline still applies to pending reads and late matches; the harness retains timeout causes and late read or parse errors, then joins pending reads before scenario cleanup.
 - **Built mode needs current artifacts** — run `pnpm run build` before selecting `DSH_EXAMPLE_MODE=lib`; source mode remains the zero-build path.
 
 -----

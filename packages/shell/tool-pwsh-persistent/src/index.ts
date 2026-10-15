@@ -374,6 +374,26 @@ async function executeCommand(
   let fallbackTruncated = false
 
   while (true) {
+    if (commandDeadline.signal.aborted) {
+      const timedOut = timeoutOf(commandDeadline.signal, TIMEOUT_CODE)
+      if (timedOut !== undefined) {
+        const latest = ctx.terminals.read(owner, id, { offset: 0, count: SCROLLBACK_PAGE_LINES })
+        const snapshot = retainedScrollback(ctx, owner, id, latest)
+        const partial = renderCaptured(
+          partialOutput(snapshot, marker, wrapped, fallback, fallbackTruncated),
+          config.maxOutputChars,
+        )
+        await shells.reset(owner, 'persistent pwsh command timed out')
+        return [
+          // TODO: Report a timeout only; this signal does not establish an OOM.
+          `Your command timed out after ${Math.round(timedOut.timeoutMs / 1000)} seconds or experienced an OOM error. Below is partial output:`,
+          partial,
+          SHELL_RESET_MESSAGE,
+        ].join('\n')
+      }
+      await shells.reset(owner, 'persistent pwsh command aborted')
+      commandDeadline.signal.throwIfAborted()
+    }
     // The shell may flip to exited between iterations (a fast `exit` can
     // settle the previous send while its exit event is still in flight, and
     // the echoed wrapper can then carry a marker end without status digits);
@@ -396,32 +416,15 @@ async function executeCommand(
       first = false
       result = await operation.done
     } catch (error: unknown) {
+      if (commandDeadline.signal.aborted && error === commandDeadline.signal.reason) continue
       await shells.reset(owner, 'persistent pwsh send failed')
       throw error
     }
     const incremental = operation.readOutput()
     fallback = incremental.delta.length > 0 ? fallback + incremental.delta : result.viewport
     fallbackTruncated ||= incremental.truncated || result.truncated
+    if (commandDeadline.signal.aborted) continue
     const latest = ctx.terminals.read(owner, id, { offset: 0, count: SCROLLBACK_PAGE_LINES })
-    const timedOut = timeoutOf(commandDeadline.signal, TIMEOUT_CODE)
-    if (timedOut !== undefined) {
-      const snapshot = retainedScrollback(ctx, owner, id, latest)
-      const partial = renderCaptured(
-        partialOutput(snapshot, marker, wrapped, fallback, fallbackTruncated),
-        config.maxOutputChars,
-      )
-      await shells.reset(owner, 'persistent pwsh command timed out')
-      return [
-        // TODO: Report a timeout only; this signal does not establish an OOM.
-        `Your command timed out after ${Math.round(timedOut.timeoutMs / 1000)} seconds or experienced an OOM error. Below is partial output:`,
-        partial,
-        SHELL_RESET_MESSAGE,
-      ].join('\n')
-    }
-    if (commandDeadline.signal.aborted) {
-      await shells.reset(owner, 'persistent pwsh command aborted')
-      commandDeadline.signal.throwIfAborted()
-    }
     if (latest.text.includes(marker.end)) {
       const complete = commandOutput(retainedScrollback(ctx, owner, id, latest), marker, wrapped)
       if (complete !== undefined) return renderCaptured(complete, config.maxOutputChars)
@@ -433,10 +436,12 @@ async function executeCommand(
     }
     if (promptCompleted(result)) {
       const snapshot = retainedScrollback(ctx, owner, id, latest)
-      return renderCaptured(
-        partialOutput(snapshot, marker, wrapped, fallback, fallbackTruncated),
-        config.maxOutputChars,
-      )
+      const captured = partialOutput(snapshot, marker, wrapped, fallback, fallbackTruncated)
+      // A prompt with no command marker or output may belong to the previous
+      // send. Observe again under the same deadline without resubmitting input.
+      if (!captured.incomplete || captured.text.length > 0) {
+        return renderCaptured(captured, config.maxOutputChars)
+      }
     }
     await pause()
   }

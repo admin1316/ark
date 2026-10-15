@@ -32,6 +32,8 @@ harness 在 Windows 上没有持久 shell。持久 `bash` 栈按构造就是 POS
 
 命令经包装器执行：先重置 `$LASTEXITCODE`（可赋值，已实测），通过 `Invoke-Expression` 在反引号转义的双引号字符串中执行 body（`quoteForPwsh`：反引号、引号、`$`、CRLF 与 ESC 转义，输入行上不携带裸控制字符，包装器可在 ConstrainedLanguage 下存活），报告精确原生退出码、PowerShell 终止性错误的 `1` 或成功的 `0`。PSReadLine 会把提交的包装器回显进流——没有 `stty -echo` 的对应物——因此提取会从捕获输出中剥离包装器原文；回显无法伪造完成，因为状态正则要求 END nonce 后紧跟数字，而回显继续是引号字符。prompt 函数安装工具自有提示符（`__DSH_PERSISTENT_PWSH_PROMPT__ `）覆盖 backend 引导值，与 bash 的双层结构相同。
 
+空提示符既没有当前命令的 START 标记，也没有捕获输出时，只是就绪信号，不能证明命令已完成。工具以空文本、不提交输入的 send 继续观察同一条命令，共用原定绝对截止时间；完整标记仍允许空结果。循环边界统一分类 send 期间和两次观察间隙的超时与取消。只有与取消原因相同的 send 拒绝值才回到该分类；其他提供方错误保留 send-failed 重置。
+
 ### 组合
 
 minimal 预设用 #2234 的 `disabled: !!js` 插值按平台门控持久 shell 栈：bash 行（`terminal-bash` + `tool-bash-persistent`）在 POSIX 挂载，pwsh 行（`shellDialect: pwsh` 的 `terminal-bash` + `tool-pwsh-persistent`）在 win32 挂载——每宿主恰好一个持久 shell。`windows-shell.spec` 钉死按平台的花名册；真实 Loader 组合在真实 ConPTY pwsh 上跑通整条栈。

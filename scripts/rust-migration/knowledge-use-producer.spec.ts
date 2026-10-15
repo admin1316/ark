@@ -650,6 +650,14 @@ describe('persisted actual-use producer', () => {
       const modelIdentity = { model: config.model, modelConfigHash: sha256(canonicalJson(config)),
         taskHash: sha256('registered task'), goalHash: sha256('goal'), policyHash: sha256('policy') }
       const files = new Map<string, Buffer>()
+      const flushArtifacts = () => {
+        const artifacts = createFileMeasuredTrialArtifactResolver(artifactRoot)
+        for (const [hash, bytes] of files) {
+          const prior = artifacts.resolveArtifact(hash)
+          if (prior === undefined) atomicWriteFile(resolveConfinedPath(artifactRoot, hash, true), bytes)
+          else expect(Buffer.from(prior)).toEqual(bytes)
+        }
+      }
       const putRaw = (bytes: Buffer): string => { const hash = sha256(bytes); files.set(hash, bytes); return hash }
       const putCanonical = (value: Record<string, unknown>): string => putRaw(Buffer.from(canonicalJson(value), 'utf8'))
       const signRecord = (record: Record<string, unknown>): Record<string, unknown> => {
@@ -889,7 +897,7 @@ describe('persisted actual-use producer', () => {
             async evaluateCapturedUse(request, signal) { producerReceiptCount++; return sealed(request, signal) },
             async finalizeMeasuredTrial(request, signal) { return sealed(request, signal) },
           }
-          for (const [hash, bytes] of files) atomicWriteFile(resolveConfinedPath(artifactRoot, hash, true), bytes)
+          flushArtifacts()
           if (task.taskKind === 'pagination-v1' && process.platform !== 'darwin') {
             const first = producerPairs[0]!.baseline
             const registered = ownerConfig.registrations[0]!
@@ -899,7 +907,7 @@ describe('persisted actual-use producer', () => {
             })
             const captureFactsHash = putCanonical(captured.facts)
             const finalOutputHash = putRaw(Buffer.from(captured.wholeOutput))
-            for (const [hash, bytes] of files) atomicWriteFile(resolveConfinedPath(artifactRoot, hash, true), bytes)
+            flushArtifacts()
             const immutablePaths = [first.snapshotPath, join(projectRoot, `${first.binding.sessionId}.ts`),
               join(projectRoot, 'protected.txt'), join(projectRoot, '.llm-wiki', proposal.candidatePath)]
             const originals = await Promise.all(immutablePaths.map(path => readFile(path)))
@@ -956,9 +964,6 @@ describe('persisted actual-use producer', () => {
             preRegistrationHash, sourceBindingHash: ownerConfig.sourceBindingHash, sessionIDs: ownerConfig.trial.orderedSessionIds,
             ledgerArtifactHash: putRaw(ledgerBytes), maximumNewDispatches: 8, maximumNewSettlements: 8 }
           const liveOwnerConfig = { ...ownerConfig, liveCostAdmissionHash: putCanonical(signRecord(admission)) }
-          const flushArtifacts = () => {
-            for (const [hash, bytes] of files) atomicWriteFile(resolveConfinedPath(artifactRoot, hash, true), bytes)
-          }
           flushArtifacts()
           const liveDescriptor = describeRegisteredKnowledgeTrial(liveOwnerConfig)
           expect(liveDescriptor).toMatchObject({ liveCostAdmission: { admissionHash: liveOwnerConfig.liveCostAdmissionHash,
@@ -1034,7 +1039,7 @@ describe('persisted actual-use producer', () => {
             // Identical fields with sorted keys must still fail the existing rendered-byte invariant.
             Object.assign(knowledge, { renderedArtifactHash: putRaw(Buffer.from(canonicalJson(original))) })
             const wrongPath = join(root, 'reordered-config.json')
-            for (const [hash, bytes] of files) atomicWriteFile(resolveConfinedPath(artifactRoot, hash, true), bytes)
+            flushArtifacts()
             await writeFile(wrongPath, canonicalJson(reordered), { mode: 0o600 })
             const refused = await runEvaluatorCli(context, wrongPath, costRequest, undefined, cliDiagnostic('reordered-refusal'))
             expect(refused.code).not.toBe(0)
@@ -1053,7 +1058,7 @@ describe('persisted actual-use producer', () => {
           context.subprocess, context.sandbox, new AbortController().signal)).rejects.toThrow()
           recordPhase('production-owner-done')
         }
-        for (const [hash, bytes] of files) atomicWriteFile(resolveConfinedPath(artifactRoot, hash, true), bytes)
+        flushArtifacts()
         const reader = createKnowledgeWikiMeasuredTrialReader({ authorityId, publicKey: evaluatorKeys.publicKey,
           journalSignerAuthorityId: journalAuthorityId,
           journalSignerPublicKey: journalKeys.publicKey, artifacts: createFileMeasuredTrialArtifactResolver(artifactRoot) })

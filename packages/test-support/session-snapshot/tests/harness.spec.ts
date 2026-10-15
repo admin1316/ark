@@ -805,17 +805,32 @@ describe('runScenario', () => {
     )).rejects.toThrow(/did not persist expected inbox message within 20ms/)
   })
 
-  it.each(['missing', 'late-match', 'late-io', 'late-json'] as const)(
-    'waitForInboxMessage joins a pending %s observation after its deadline',
+  it.each((['waitForInboxMessage', 'waitForSubagentTurnEnd'] as const).flatMap(op =>
+    (['missing', 'late-match', 'late-io', 'late-json'] as const).map(kind => [op, kind] as const)))(
+    '%s joins a pending %s observation after its deadline',
     { timeout: 20_000 },
-    async (kind) => {
+    async (op, kind) => {
       const { fixtureFile } = await scenario(kind === 'missing' ? {} : {
         prompt: 'hang-until-cancel',
         persistLogsOnCancel: true,
-        logs: [{
-          file: 'project/main/session.jsonl',
-          lines: [{ type: 'session', version: 0, id: '{{SID}}', createdAt: 1, delegationDepth: 0 }],
-        }],
+        logs: [
+          {
+            file: 'project/main/session.jsonl',
+            lines: [{ type: 'session', version: 0, id: '{{SID}}', createdAt: 1, delegationDepth: 0 }],
+          },
+          ...op === 'waitForSubagentTurnEnd' ? [{
+            file: 'project/child/session.jsonl',
+            lines: [
+              { type: 'session', version: 0, id: 'child-1', createdAt: 2, parentSession: '{{SID}}', delegationDepth: 1 },
+              { type: 'subagent/descriptor', seq: 0, time: 1, data: {} },
+              { type: 'turn/start', seq: 1, time: 2, data: { turn: 1 } },
+              { type: 'request/header', seq: 2, time: 3, data: { header: {}, reason: 'initial' } },
+              { type: 'turn/end', seq: 3, time: 4, data: { turn: 1, reason: { kind: 'completed' } } },
+              { type: 'turn/start', seq: 4, time: 5, data: { turn: 2 } },
+              { type: 'request/header', seq: 5, time: 6, data: { header: {}, reason: 'continuation' } },
+            ],
+          }] : [],
+        ],
       })
       const entered = Promise.withResolvers<undefined>()
       const release = Promise.withResolvers<undefined>()
@@ -837,25 +852,33 @@ describe('runScenario', () => {
         if (kind === 'late-json') await writeFile(path, 'not-json\n')
         if (kind === 'late-match') {
           const header = await readFile(path, 'utf8')
-          await writeFile(path, header + JSON.stringify({
+          await writeFile(path, header + JSON.stringify(op === 'waitForInboxMessage' ? {
             type: 'agent/inbox/spliced',
             seq: 0,
             time: 2,
             data: { inserted: [{ content: [{ type: 'text', text: 'marker' }] }] },
+          } : {
+            type: 'turn/end',
+            seq: 6,
+            time: 7,
+            data: { turn: 2, reason: { kind: 'completed' } },
           }) + '\n')
         }
       }
       if (kind === 'missing') control.beforeScan = holdObservation
       else {
         control.beforeRead = async (file) => {
-          if (file.endsWith(join('project', 'main', 'session.jsonl'))) await holdObservation(file)
+          const owner = op === 'waitForInboxMessage' ? 'main' : 'child'
+          if (file.endsWith(join('project', owner, 'session.jsonl'))) await holdObservation(file)
         }
       }
       fsControl.observation = control
       let settled = false
       const steps: InputStep[] = [...boot]
       if (kind !== 'missing') steps.push({ op: 'promptAndCancel', text: 'hang' })
-      steps.push({ op: 'waitForInboxMessage', text: 'marker', timeoutMs: 20 })
+      steps.push(op === 'waitForInboxMessage'
+        ? { op, text: 'marker', timeoutMs: 20 }
+        : { op, child: 1, minimumTurn: 2, timeoutMs: 20 })
       const pending = runScenario(
         { steps },
         { agent: AGENT, mode: 'replay', fixtureFile },
@@ -885,7 +908,9 @@ describe('runScenario', () => {
       expect(control.inFlight).toBe(0)
       expect(control.removedWhileReading).toBe(false)
       expect(outcome.error).toBeInstanceOf(Error)
-      expect((outcome.error as Error).message).toMatch(/did not persist expected inbox message within 20ms/)
+      expect((outcome.error as Error).message).toMatch(op === 'waitForInboxMessage'
+        ? /did not persist expected inbox message within 20ms/
+        : /subagent child #1 did not persist closed turn 2 within 20ms/)
       const timeout = outcome.error instanceof AggregateError ? outcome.error.errors[0] as Error : outcome.error as Error
       expect(timeout.cause).toBeInstanceOf(Error)
       expect((timeout.cause as Error).message).toBe('Timed out in waitFor!')
@@ -901,16 +926,17 @@ describe('runScenario', () => {
     },
   )
 
-  it.each(['session read denied', 'Timed out in waitFor!'])(
-    'waitForInboxMessage preserves an observed filesystem error: %s',
+  it.each((['waitForInboxMessage', 'waitForSubagentTurnEnd'] as const).flatMap(op =>
+    ['session read denied', 'Timed out in waitFor!'].map(message => [op, message] as const)))(
+    '%s preserves an observed filesystem error: %s',
     { timeout: 20_000 },
-    async (message) => {
+    async (op, message) => {
       const { fixtureFile } = await scenario({})
       const failure = new Error(message)
       // Fault injection makes the error observable before expiry without a
       // platform-dependent assumption about a real first read taking <20ms.
       const control: NonNullable<typeof fsControl.observation> = {
-        files: [join('project', 'main', 'session.jsonl')],
+        files: [join('project', op === 'waitForInboxMessage' ? 'main' : 'child', 'session.jsonl')],
         readFailure: failure,
         inFlight: 0,
         removedWhileReading: false,
@@ -918,7 +944,9 @@ describe('runScenario', () => {
       fsControl.observation = control
       try {
         await expect(runScenario(
-          { steps: [...boot, { op: 'waitForInboxMessage', text: 'marker', timeoutMs: 20 }] },
+          { steps: [...boot, op === 'waitForInboxMessage'
+            ? { op, text: 'marker', timeoutMs: 20 }
+            : { op, child: 1, minimumTurn: 2, timeoutMs: 20 }] },
           { agent: AGENT, mode: 'replay', fixtureFile },
         )).rejects.toBe(failure)
         expect(control.inFlight).toBe(0)
