@@ -384,6 +384,8 @@ function cloneRecord(record: KnowledgeRecord): KnowledgeRecord {
 }
 
 /** Apply one event to state. Invalid or stale transitions are rejected.
+ * Complete-stream readers own authorization consumption; this one-step fold
+ * has no authorization history beyond the supplied public state.
  * @param state - Current replay state.
  * @param event - Next hash-bound event.
  * @returns Updated replay state.
@@ -508,13 +510,39 @@ export function applyKnowledgeEvent(state: KnowledgeState, event: KnowledgeEvent
   return { records, lastSeq: event.seq, lastEventHash: event.eventHash }
 }
 
-/** Fold a complete event stream; malformed, out-of-order, and tampered events fail closed.
+/** Reject repeated authorization semantics and measured-trial credit within one complete stream. */
+function assertUnusedKnowledgeAuthorization(
+  event: KnowledgeEvent,
+  authorizations: Set<string>,
+  measuredTrials: Set<string>,
+): void {
+  if (event.type !== 'knowledge/verified' && event.type !== 'knowledge/promoted') return
+  const payload = { ...event.payload }
+  const authorityId = payload.authorityId
+  delete payload.authorityId
+  delete payload.authoritySeal
+  const authorization = knowledgeSha256(canonicalKnowledgeJson({ authorityId, type: event.type, knowledgeId: event.knowledgeId, payload }))
+  if (authorizations.has(authorization)) throw new Error('duplicate knowledge authorization')
+  const trialHash = event.type === 'knowledge/promoted' && typeof payload.trialHash === 'string'
+    && SHA256_RE.test(payload.trialHash) ? payload.trialHash : undefined
+  if (trialHash !== undefined && measuredTrials.has(trialHash)) throw new Error('duplicate knowledge measured trial')
+  authorizations.add(authorization)
+  if (trialHash !== undefined) measuredTrials.add(trialHash)
+}
+
+/** Fold a complete event stream; malformed, out-of-order, tampered, and reused authorizations fail closed.
  * @param events - Events in sequence order.
  * @returns Reconstructed knowledge state.
  */
 export function replayKnowledgeEvents(events: readonly KnowledgeEvent[]): KnowledgeState {
   let state: KnowledgeState = { records: new Map(), lastSeq: -1, lastEventHash: null }
-  for (const event of events) state = applyKnowledgeEvent(state, event)
+  const authorizations = new Set<string>()
+  const measuredTrials = new Set<string>()
+  for (const event of events) {
+    const next = applyKnowledgeEvent(state, event)
+    assertUnusedKnowledgeAuthorization(event, authorizations, measuredTrials)
+    state = next
+  }
   return state
 }
 
@@ -579,6 +607,8 @@ export function readKnowledgeEventLog(path: string, authority?: KnowledgeEventAu
     throw error
   }
   const events: KnowledgeEvent[] = []
+  const authorizations = new Set<string>()
+  const measuredTrials = new Set<string>()
   for (const line of raw.split(/\r?\n/u).filter(Boolean)) {
     const parsed = JSON.parse(line) as KnowledgeEvent
     if (!validateKnowledgeEvent(parsed, events.at(-1)) || (events.length === 0 && (parsed.seq !== 0 || parsed.previousEventHash !== null))) throw new Error('invalid knowledge event log')
@@ -605,6 +635,7 @@ export function readKnowledgeEventLog(path: string, authority?: KnowledgeEventAu
         payload: unsignedPayload,
       }), sealValue)) throw new Error('knowledge verification event seal failed')
     }
+    assertUnusedKnowledgeAuthorization(parsed, authorizations, measuredTrials)
     events.push(parsed)
   }
   return events

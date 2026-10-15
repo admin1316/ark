@@ -1063,7 +1063,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/knowledge-wiki/src/index.ts:318`](../packages/host/knowledge-wiki/src/index.ts)
+Source: [`packages/host/knowledge-wiki/src/index.ts:319`](../packages/host/knowledge-wiki/src/index.ts)
 
 <a id="deepseek-aidsh-llm"></a>
 
@@ -2999,7 +2999,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/shell/tool-pwsh-persistent/src/index.ts:502`](../packages/shell/tool-pwsh-persistent/src/index.ts)
+Source: [`packages/shell/tool-pwsh-persistent/src/index.ts:496`](../packages/shell/tool-pwsh-persistent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-ralph"></a>
 

@@ -124,7 +124,7 @@ const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-profile-'))
 
 /** Stage a fake installed app: package.json with deps and a node_modules holding bundles. */
 function stageInstallation(
-  bundles: Record<string, { patch?: string; deps?: Record<string, string> }>,
+  bundles: Record<string, { patch?: string; deps?: Record<string, string>; importable?: true }>,
   optional: readonly string[] = [],
 ): string {
   const root = tmp()
@@ -140,8 +140,13 @@ function stageInstallation(
       version: '0.0.0',
       dependencies: spec.deps ?? {},
       ...spec.patch === undefined ? {} : { dsh: { bundle: { patch: './cordis.patch.yml' } } },
+      ...spec.importable === true ? { exports: { require: './entry.cjs', import: './entry.mjs' } } : {},
     }))
     if (spec.patch !== undefined) writeFileSync(join(dir, 'cordis.patch.yml'), spec.patch)
+    if (spec.importable === true) {
+      writeFileSync(join(dir, 'entry.cjs'), `exports.name = ${JSON.stringify(name)}\n`)
+      writeFileSync(join(dir, 'entry.mjs'), `export const name = ${JSON.stringify(name)}\n`)
+    }
   }
   writeFileSync(join(appDir, 'package.json'), JSON.stringify({
     name: 'dsh-app',
@@ -781,16 +786,9 @@ describe('healProfilesModuleFallback', () => {
       })}\n`)
     }
     const names = Array.from({ length: 160 }, (_, index) => `pkg-${String(index)}`)
-    const first = stageInstallation(Object.fromEntries(names.map(name => [name, {}])))
-    const second = stageInstallation(Object.fromEntries(names.map(name => [name, {}])))
-    for (const anchor of [first, second]) for (const name of names) {
-      const directory = join(dirname(anchor), 'node_modules', name)
-      const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as Record<string, unknown>
-      writeFileSync(join(directory, 'package.json'), JSON.stringify({ ...manifest,
-        exports: { require: './entry.cjs', import: './entry.mjs' } }))
-      writeFileSync(join(directory, 'entry.cjs'), `exports.name = ${JSON.stringify(name)}\n`)
-      writeFileSync(join(directory, 'entry.mjs'), `export const name = ${JSON.stringify(name)}\n`)
-    }
+    // Stage the final entry-bearing manifests once, inside this same test budget.
+    const first = stageInstallation(Object.fromEntries(names.map(name => [name, { importable: true }] as const)))
+    const second = stageInstallation(Object.fromEntries(names.map(name => [name, { importable: true }] as const)))
     const home = tmp()
     const fallback = join(home, 'profiles', 'node_modules')
     healProfilesModuleFallback(first, home)

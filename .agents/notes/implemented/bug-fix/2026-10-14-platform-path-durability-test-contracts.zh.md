@@ -36,7 +36,7 @@ Pi 空闲超时测试在实际 HTTP 请求到达 fixture 后才开始测量固�
 
 Standalone reconciliation 将物理包目录与安装别名纳入同一份 canonical catalog。它先保留每个有效包链接，再清理缺失名称，使通用 child healer 看到相同目标。目录归属与权限收紧仍独立于包身份和链接替换。已有 Windows junction 使用共用原生更新器；缺少编译导出时拒绝更新。
 
-原生更新器接受 NTFS 目录 mount point，用同一句柄完成身份、目标检查与替换。仅属性访问、防止删除的 share 限制、namespaced 入口路径和有界 reparse buffer 维持原生边界。验证或句柄关闭失败可能发生在更新已完成之后；拒绝不构成回滚结论。保留一个 namespace 目录项不提供整个包 generation 的原子性，也不保证每次默认 Node 消费者遍历都成功。
+原生更新器接受 NTFS 目录 mount point，用同一句柄完成身份、目标检查与替换。目标已由其他调用完成时，只有通过相同的路径、NTFS、身份与 reparse tag 检查后才跳过 SET，并继续完成最终身份和目标检查及必需的句柄关闭；第三个目标仍会被拒绝。原生边界 fixture 验证这一条件，实际 Windows 双进程交错仍未验证。仅属性访问、防止删除的 share 限制、namespaced 入口路径和有界 reparse buffer 维持原生边界。验证或句柄关闭失败可能发生在更新已完成之后；拒绝不构成回滚结论。保留一个 namespace 目录项不提供整个包 generation 的原子性，也不保证每次默认 Node 消费者遍历都成功。
 
 仅描述元数据的 evaluator 操作保留产物、签名和回放检查，不加载执行 provider。两个 helper CLI 只在需要执行时加载本地子进程和 sandbox provider；evaluator 在加载期间保留取消监听、父进程监测和 deadline，并在清除它们前释放已创建的 context。这改变启动工作量，不改变签名字节或信任配置。
 
@@ -59,3 +59,5 @@ Koffi 结构描述符使用模块内的匿名值。源码与编译产物可在�
 源码与测试 owner 使用主机的路径、整数精度和持久化语义，不改变 wire 格式、签名、权限、重试策略或覆盖率门槛。受控高 inode 元数据结合实际文件替换证明拒绝机制，不构成已证实的 NTFS 攻击。平台 dispatch fixture 只证明分支契约，不构成其他操作系统的内核执行或 Windows 可信 Native owner 的证据。子进程 provider 继续明确 Windows 直接子进程存活判断和已分离后代的限制。
 
 PowerShell 大输出的严格前缀断言附带有界返回输出和保留终端诊断。在实际 Windows 执行提供这些字节前，前缀缺失的原因仍未解决；诊断不代表终端已修复。源码测试和托管 CI 仍分别区别于候选任务验收及正式安装。
+
+pwsh UTF-8 fixture 保留原断言，仅在失败时记录公开接口可见的 spawn、发送请求与收束阶段。发送请求不代表物理写入已完成；晚到的 scrollback 观察仅限于该次发送的原截止时间，保留原错误，不能替换已收束的 viewport 或把失败改成通过。这些观察不证明哪个提示符或 stdin 等待触发了就绪。

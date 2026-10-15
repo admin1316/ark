@@ -19,6 +19,22 @@ const request: KnowledgeSearchRequest = {
 const binary = resolve('rust/knowledge-search-shadow/target/release/knowledge-search-shadow')
 
 describe('Rust knowledge-search boundary', () => {
+  it.each([
+    ['generation zero', { ...request, generation: 0 }, 'control metadata'],
+    ['UTF-8 identity', { ...request, requestId: '中'.repeat(86) }, 'identity limit'],
+    ['UTF-8 page path', {
+      ...request,
+      pages: [{ ...request.pages[0]!, path: '中'.repeat(342) }],
+    }, 'page limit'],
+    ['UTF-8 query', { ...request, queries: ['😀'.repeat(2048) + 'x'] }, 'query limit'],
+    ['query token count', {
+      ...request,
+      queries: [Array.from({ length: 257 }, () => 'runtime').join(' ')],
+    }, 'query token limit'],
+  ] satisfies Array<[string, KnowledgeSearchRequest, string]>)('rejects %s before candidate execution', (_label, invalid, reason) => {
+    expect(() => runKnowledgeSearchBoundary(invalid, { mode: 'shadow' })).toThrow(reason)
+  })
+
   it('falls back to TypeScript in shadow mode when Rust is unavailable', () => {
     const result = runKnowledgeSearchBoundary(request, { mode: 'shadow', binaryPath: '/missing/rust-shadow' })
     expect(result.source).toBe('typescript')
@@ -30,8 +46,7 @@ describe('Rust knowledge-search boundary', () => {
     expect(() => runKnowledgeSearchBoundary(request, { mode: 'enforce', binaryPath: '/missing/rust-shadow' })).toThrow('failed closed')
   })
 
-  it('uses Rust only after matching the TypeScript result when a binary is available', () => {
-    if (!existsSync(binary)) return
+  it.skipIf(!existsSync(binary))('uses Rust only after matching the TypeScript result when a binary is available', () => {
     const result = runKnowledgeSearchBoundary(request, { mode: 'enforce', binaryPath: binary })
     expect(result.source).toBe('rust')
     expect(result.observation).toMatchObject({ attempted: true, matched: true, status: 'matched', timedOut: false, exitCode: 0, signal: null })

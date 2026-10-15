@@ -52,6 +52,8 @@
 
 服务包现在提供默认关闭的候选 seam，可在 candidate profile 中验证相同的子进程契约。该 seam 在 `shadow` 模式下仍只进行观测；活动 Ark profile 仍只使用 TypeScript，且没有任何候选回执授权 `enforce`。
 
+[rust-boundary.ts](rust-boundary.ts) 是历史同步实验。它复用[候选 owner](../../packages/host/knowledge-wiki/src/rust-search-candidate.ts) 的请求类型、校验和编码输入，同时保留自己的 shadow/enforce 与结果语义。它的测试不能替代正式异步候选的取消、输出边界、回退或跨平台证据。
+
 `rust-benchmark.json.productionCandidate` 会将服务层 shadow 运行单独记录；它不会改变活动 profile 的决定。
 
 隔离请求只携带 `requestId`、`sessionId`、`generation`、`capability`、`deadlineMs`、`budget` 和 `cancellationToken`；Rust 端拒绝未知字段和无效控制元数据。benchmark、回放和边界进程使用 `process-isolation.ts` 中的最小环境 allowlist；生产接入、长任务取消和崩溃恢复仍是各自独立的证据门槛。

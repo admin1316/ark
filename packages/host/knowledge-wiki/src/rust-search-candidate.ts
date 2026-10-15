@@ -123,7 +123,13 @@ function validHit(value: unknown): value is RustKnowledgeSearchHit {
     && Number.isFinite(hit.score)
 }
 
-function validateRequest(request: RustKnowledgeSearchRequest): string {
+/**
+ * Validate and encode the shared isolated Rust search request.
+ * @param request - Versioned request whose control, UTF-8, and token bounds are checked.
+ * @returns The exact JSON bytes used for child input and its request digest.
+ * @throws When the request violates the existing candidate protocol bounds.
+ */
+export function validateRustKnowledgeSearchRequest(request: RustKnowledgeSearchRequest): string {
   const wire = request as unknown as Record<string, unknown>
   if (wire.schemaVersion !== 1 || wire.capability !== 'knowledge-search') {
     throw new Error('Rust candidate request contract is invalid')
@@ -346,9 +352,9 @@ export async function runRustKnowledgeSearchCandidate(
   }
   let requestBytes: string
   try {
-    requestBytes = validateRequest(request)
+    requestBytes = validateRustKnowledgeSearchRequest(request)
   } catch (error) {
-    /* v8 ignore next -- validateRequest throws ordinary Error values for every rejection. */
+    /* v8 ignore next -- validateRustKnowledgeSearchRequest throws ordinary Error values for every rejection. */
     const reason = error instanceof Error ? error.message : String(error)
     if (options.mode === 'enforce') throw new Error(`Rust candidate failed closed: ${reason}`)
     return fallback(expected, {

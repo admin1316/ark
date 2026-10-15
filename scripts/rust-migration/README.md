@@ -52,6 +52,8 @@ Run `pnpm exec tsx scripts/rust-migration/benchmark-knowledge-search.ts --series
 
 The service package now has a default-disabled candidate seam that can exercise the same child-process contract in a candidate profile. This seam is still observational in `shadow` mode; the active Ark profile remains TypeScript-only, and no candidate receipt authorizes `enforce`.
 
+[rust-boundary.ts](rust-boundary.ts) is a historical synchronous experiment. It shares the [candidate owner](../../packages/host/knowledge-wiki/src/rust-search-candidate.ts)'s request type, validation, and encoded input, while retaining its own shadow/enforce and result semantics. Its tests do not replace the formal asynchronous candidate's cancellation, bounded-output, fallback, or cross-platform evidence.
+
 `rust-benchmark.json.productionCandidate` records a service-level shadow exercise separately from the three-way benchmark; it does not change the active profile decision.
 
 The isolated request carries `requestId`, `sessionId`, `generation`, `capability`, `deadlineMs`, `budget`, and `cancellationToken`; the Rust side rejects unknown fields and invalid control metadata. Benchmark, replay, and boundary processes use the minimal allowlisted environment in `process-isolation.ts`; production integration, long-task cancellation, and crash recovery remain separate evidence gates.

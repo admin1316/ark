@@ -83,7 +83,8 @@ function mountPointTarget(bytes: Buffer): string {
  * @param link - existing managed junction path; its ancestors remain caller-owned.
  * @param target - absolute drive target whose installation stays alive for current readers.
  * @param expected - exact BigInt identity and old target observed by the owning profile healer.
- * @returns after the same handle retains its identity and reports the requested target; native and close failures throw.
+ * @returns after the same handle retains its identity and reports the requested target,
+ * including an already completed match without SET; native and close failures throw.
  * @throws a post-SET verification or close failure can follow a completed update; rejection is not a rollback claim.
  */
 export function replaceJunctionTarget(link: string, target: string,
@@ -133,10 +134,13 @@ export function replaceJunctionTarget(link: string, target: string,
     }
     assert(fileSystem.toString('utf16le').split('\0', 1)[0] === 'NTFS', 'owned junction requires an NTFS file identity')
     assertIdentity()
-    assert(getTarget() === oldTarget, 'owned junction target changed')
-    const returned = Buffer.alloc(4)
-    if (api.deviceIoControl(handle, SET_REPARSE_POINT, desired, desired.length, null, 0, returned, null) === 0) {
-      throwLastError(api, 'FSCTL_SET_REPARSE_POINT', link)
+    const currentTarget = getTarget()
+    if (currentTarget !== junctionPath(target)) {
+      assert(currentTarget === oldTarget, 'owned junction target changed')
+      const returned = Buffer.alloc(4)
+      if (api.deviceIoControl(handle, SET_REPARSE_POINT, desired, desired.length, null, 0, returned, null) === 0) {
+        throwLastError(api, 'FSCTL_SET_REPARSE_POINT', link)
+      }
     }
     assertIdentity()
     assert(getTarget() === junctionPath(target), 'junction update did not retain the requested target')

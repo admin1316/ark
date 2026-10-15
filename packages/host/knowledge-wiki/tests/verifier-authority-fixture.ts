@@ -207,10 +207,11 @@ export function appendVerifiedKnowledgeRecord(
 }
 
 export function testMeasuredTrialPayload(id: string, targetBytes: string, at: string) {
+  const targetAfterHash = knowledgeSha256(targetBytes)
   return {
-    trialHash: knowledgeSha256(`test-trial:${id}`),
+    trialHash: knowledgeSha256(canonicalJson({ kind: 'test-measured-trial', id, targetAfterHash, at })),
     proposalHash: knowledgeSha256(`test-proposal:${id}`),
-    targetAfterHash: knowledgeSha256(targetBytes),
+    targetAfterHash,
     measuredTrialAuthorityId: `test-trial-authority:${id}`,
     evidenceRefs: [knowledgeSha256(`test-evidence:${id}`)],
     retrievalHits: 1,

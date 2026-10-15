@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { generateKeyPairSync, sign, verify } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -13,6 +14,7 @@ import {
   expireKnowledge,
   knowledgeInjectionDecision,
   readKnowledgeEventLog,
+  replayKnowledgeEvents,
   shouldRetainKnowledge,
   updateKnowledgeUtility,
   validateKnowledgeEvent,
@@ -76,7 +78,121 @@ function verifiedState(record: KnowledgeRecord): KnowledgeState {
   }))
 }
 
+function signedLifecycleFixture() {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+  const authorityId = 'independent-verifier'
+  const item = fixture({ id: 'candidate:replay', verificationStatus: 'candidate', lifecycle: 'candidate' })
+  const authority = {
+    authorityId,
+    validatePromotion: (payload: string, seal: { authorityId: string; proof: string }) =>
+      seal.authorityId === authorityId
+      && verify(null, Buffer.from(payload), publicKey, Buffer.from(seal.proof, 'base64')),
+  }
+  const sealed = (type: 'knowledge/verified' | 'knowledge/promoted', payload: Readonly<Record<string, unknown>>) => ({
+    ...payload,
+    authorityId,
+    authoritySeal: {
+      authorityId,
+      proof: sign(null, Buffer.from(canonicalKnowledgeJson({ type, knowledgeId: item.id, payload })), privateKey).toString('base64'),
+    },
+  })
+  const verification = (lastVerifiedAt = '2026-10-11T00:00:00.000Z') => sealed('knowledge/verified', {
+    record: item, authority: authorityId, evidenceRefs: ['a'.repeat(64)], trust: 'high', confidence: 0.9,
+    candidateHash: 'b'.repeat(64), candidatePath: 'candidates/replay.md', source: item.source, lastVerifiedAt,
+  })
+  const promotion = (trialHash = 'c'.repeat(64), utilityScore = 2) => sealed('knowledge/promoted', {
+    action: 'Promote', appliedPath: item.source, lifecycle: 'canonical', candidateHash: 'b'.repeat(64),
+    trialHash, proposalHash: 'd'.repeat(64), targetAfterHash: 'e'.repeat(64),
+    measuredTrialAuthorityId: 'independent-measured-trial', evidenceRefs: ['f'.repeat(64)],
+    retrievalHits: 1, successfulUses: 1, userCorrections: 0, utilityScore,
+    startedAt: '2026-10-11T00:00:00.000Z', endedAt: '2026-10-11T00:00:01.000Z',
+  })
+  const chain = (transitions: readonly (readonly [KnowledgeEventType, Readonly<Record<string, unknown>>])[]) => {
+    let current = state()
+    return transitions.map(([type, payload]) => {
+      const next = event(type, item, current, payload)
+      current = applyKnowledgeEvent(current, next)
+      return next
+    })
+  }
+  const root = mkdtempSync(join(tmpdir(), 'knowledge-authorizations-'))
+  roots.push(root)
+  const path = join(root, 'events.jsonl')
+  const persist = (events: readonly KnowledgeEvent[]) => {
+    writeFileSync(path, events.map(value => `${JSON.stringify(value)}\n`).join(''))
+    return path
+  }
+  return { item, authority, verification, promotion, chain, persist }
+}
+
 describe('knowledge governance validation contracts', () => {
+  it('rejects signed verification reuse after rejection through both complete-stream owners', () => {
+    const { item, authority, verification, promotion, chain, persist } = signedLifecycleFixture()
+    const verified = verification()
+    const promoted = promotion()
+    const admitted = chain([
+      ['knowledge/candidate', { record: item }], ['knowledge/verified', verified], ['knowledge/promoted', promoted],
+    ])
+    expect(replayKnowledgeEvents(readKnowledgeEventLog(persist(admitted), authority)).records.get(item.id))
+      .toMatchObject({ verificationStatus: 'verified', lifecycle: 'canonical', retrievalHits: 1, successfulUses: 1 })
+    const rejected = chain([
+      ['knowledge/candidate', { record: item }], ['knowledge/verified', verified], ['knowledge/promoted', promoted],
+      ['knowledge/rejected', { reason: 'human correction' }],
+    ])
+    expect(knowledgeInjectionDecision(replayKnowledgeEvents(readKnowledgeEventLog(persist(rejected), authority)).records.get(item.id)!,
+      item.scope, new Date('2026-10-15T00:00:00.000Z')).allowed).toBe(false)
+
+    // Base64 whitespace changes the proof string but preserves the real Ed25519 signature.
+    const replayedProof = { ...verified, authoritySeal: { ...verified.authoritySeal, proof: `${verified.authoritySeal.proof}\n` } }
+    const replay = chain([
+      ['knowledge/candidate', { record: item }], ['knowledge/verified', verified], ['knowledge/promoted', promoted],
+      ['knowledge/rejected', { reason: 'human correction' }], ['knowledge/verified', replayedProof],
+    ])
+    expect(() => readKnowledgeEventLog(persist(replay), authority)).toThrow('duplicate knowledge authorization')
+    expect(() => replayKnowledgeEvents(replay)).toThrow('duplicate knowledge authorization')
+  })
+
+  it('rejects repeated promotion semantics and re-signed credit for the same measured trial', () => {
+    const { item, authority, verification, promotion, chain, persist } = signedLifecycleFixture()
+    const verified = verification()
+    const promoted = promotion()
+    for (const [second, error] of [
+      [{ ...promoted, authoritySeal: { ...promoted.authoritySeal, proof: `${promoted.authoritySeal.proof}\n` } }, 'duplicate knowledge authorization'],
+      [promotion('c'.repeat(64), 3), 'duplicate knowledge measured trial'],
+    ] as const) {
+      const replay = chain([
+        ['knowledge/candidate', { record: item }], ['knowledge/verified', verified],
+        ['knowledge/promoted', promoted], ['knowledge/promoted', second],
+      ])
+      expect(() => readKnowledgeEventLog(persist(replay), authority)).toThrow(error)
+      expect(() => replayKnowledgeEvents(replay)).toThrow(error)
+    }
+  })
+
+  it('preserves a fresh signed authorization and a different measured trial after rejection', () => {
+    const { item, authority, verification, promotion, chain, persist } = signedLifecycleFixture()
+    const events = chain([
+      ['knowledge/candidate', { record: item }], ['knowledge/verified', verification()], ['knowledge/promoted', promotion()],
+      ['knowledge/rejected', { reason: 'human correction' }],
+      ['knowledge/verified', verification('2026-10-15T00:00:00.000Z')], ['knowledge/promoted', promotion('0'.repeat(64))],
+    ])
+    const parsed = readKnowledgeEventLog(persist(events), authority)
+    const restored = replayKnowledgeEvents(parsed).records.get(item.id)!
+    expect(restored).toMatchObject({ verificationStatus: 'verified', lifecycle: 'canonical', retrievalHits: 2, successfulUses: 2 })
+    expect(knowledgeInjectionDecision(restored, item.scope, new Date('2026-10-15T00:00:00.000Z')).allowed).toBe(true)
+    expect(replayKnowledgeEvents(events)).toEqual(replayKnowledgeEvents(parsed))
+  })
+
+  it('keeps a malformed measured-trial hash downgraded without granting credit', () => {
+    const { item, authority, verification, promotion, chain, persist } = signedLifecycleFixture()
+    const events = chain([
+      ['knowledge/candidate', { record: item }], ['knowledge/verified', verification()],
+      ['knowledge/promoted', promotion('not-a-trial-hash')],
+    ])
+    expect(replayKnowledgeEvents(readKnowledgeEventLog(persist(events), authority)).records.get(item.id))
+      .toMatchObject({ lifecycle: 'downgraded', retrievalHits: 0, successfulUses: 0 })
+  })
+
   it('enforces explicit session fences and blocks repeatedly useless verified knowledge', () => {
     const item = fixture()
     expect(knowledgeInjectionDecision(item, {

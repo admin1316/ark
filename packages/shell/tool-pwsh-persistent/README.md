@@ -56,11 +56,11 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 Commands share one shell per agent, so cwd, `$env:` variables, functions, and background jobs persist across calls. Results exclude the private completion markers, the shell prompt, and the echoed input line. A non-zero wrapped command appends `[exit code: N]` — the exact native exit code when the command ran a native program, `1` for a terminating PowerShell error. A shell that exits before reporting that status instead appends `[shell exited: code N]`, `[shell killed by signal: SIG]`, or `[shell exited]` (Windows forced termination reports exit 1 without a signal), then resets and tells the agent the next call starts fresh. Long output keeps the earliest retained prefix plus a clipping notice; if the terminal has already dropped that prefix, the result says so explicitly.
 
-A prompt alone, with neither the current command's start marker nor captured output, does not complete the call. The tool continues observing the same command within its original deadline without resubmitting it; marker-complete empty output remains valid.
+Normal completion requires the current command's END marker followed immediately by a numeric status and newline, in retained scrollback or incremental output. A prompt, START marker, or partial output alone does not complete the call or release the next queued command. The tool continues observing the same command within its original deadline without resubmitting it; marker-complete empty output remains valid. If that evidence never arrives, timeout or shell exit returns the bounded partial diagnostic and resets the shell.
 
 ### What can go wrong
 
-A call without an owning agent session fails with `pwsh requires an owning agent session`, and a composition without a pwsh-dialect PTY backend activates the tool but fails its first call with `no PTY backend registered for "shell"`. A model redefinition of the `prompt` function removes the readiness marker, and the shell then settles on the silence tier instead of the marker fast path. Raw ESC characters inside a command are consumed by PSReadLine before execution and are unsupported. A timeout or cancellation closes the uncertain shell, discards the result, and reports the reset.
+A call without an owning agent session fails with `pwsh requires an owning agent session`, and a composition without a pwsh-dialect PTY backend activates the tool but fails its first call with `no PTY backend registered for "shell"`. A model redefinition of the `prompt` function removes the readiness marker, so terminal observations settle on the silence tier instead of the marker fast path; tool completion still requires the wrapped END/status record. Raw ESC characters inside a command are consumed by PSReadLine before execution and are unsupported. A timeout closes the uncertain shell and returns bounded partial output with a reset diagnostic; cancellation closes it and rejects with the caller's reason.
 
 -----
 
@@ -75,7 +75,7 @@ This section explains the design decisions behind the tool and points at the cod
 ### Design philosophy
 
 - **A deliberate twin of `dsh-tool-bash-persistent`.** The session registry, polling loop, and reset contract mirror the persistent bash tool by design ([pwsh persistent PTY Agent Note](../../../.agents/notes/implemented/architecture/2026-08-11-pwsh-persistent-pty.md)).
-- **Prompt-function readiness.** The tool installs its own `prompt` function that prints a BEL-terminated OSC marker plus a printable prompt; the OSC marker carries the last exit code and the printable prompt settles every command, so a model redefinition of `prompt` degrades readiness to the silence tier.
+- **Prompt-function readiness.** The tool installs its own `prompt` function that prints a BEL-terminated OSC marker plus a printable prompt; the OSC marker carries the last exit code and the printable prompt settles terminal observations. The tool separately requires its wrapped END/status record, so a model redefinition of `prompt` degrades observation readiness to the silence tier.
 - **PSReadLine echo stripped by anchoring.** PowerShell renders submitted input back into the stream; the marker-anchored extraction and a wrapper-source strip remove the echo, and a wrapper that wraps across the terminal width may leave a partial echo in partial-output results.
 - **Reset, never repair.** Any uncertain state — an explicit `exit`, a timeout, a send failure, an abort — closes the shell and starts the next call fresh.
 
@@ -88,7 +88,7 @@ This section explains the design decisions behind the tool and points at the cod
 
 ### Command flow
 
-A first command spawns the shell through `ctx.terminals.spawn`, installs the `prompt` override, and waits for readiness. Each command is wrapped into one physical line — `Write-Output` of the start marker, the body escaped with backtick escapes into a double-quoted string, and `Write-Output` of the end marker plus the exit status — so PSReadLine's echo of a wrapped line cannot fabricate completion. The tool polls the scrollback in 1,000-line pages until the end marker or a completed prompt appears, extracts the span, strips the echoed wrapper and prompts, and renders it with any status marker. A timeout aborts the deadline, captures the partial output, and resets the shell.
+A first command spawns the shell through `ctx.terminals.spawn`, installs the `prompt` override, and waits for readiness. Each command is wrapped into one physical line — `Write-Output` of the start marker, the body escaped with backtick escapes into a double-quoted string, and `Write-Output` of the end marker plus the exit status — so PSReadLine's echo of a wrapped line cannot fabricate completion. The tool polls scrollback in 1,000-line pages and checks incremental output for the current END marker followed immediately by a numeric status and newline, then extracts the span, strips the echoed wrapper, and renders it with any status marker. Prompts and incomplete markers only lead to another observation of the same command. A timeout aborts the deadline, captures the partial output, and resets the shell.
 
 </details>
 
@@ -150,10 +150,10 @@ These limits define when the tool is a poor fit or needs special care. They are 
 - **The tool requires an owning Agent and a real terminal backend with a pwsh dialect** — Windows ConPTY or a POSIX pwsh.
 - **Input echo is unavoidable** — PowerShell's PSReadLine renders submitted input back into the terminal stream, and there is no `stty -echo` equivalent. The marker-anchored extraction excludes the echo in complete results; the wrapper-source strip covers fallback paths, but a wrapper that wraps across the terminal width may leave a partial echo in partial-output results, bounded by `maxOutputChars`.
 - **Raw ESC characters inside model commands are unsupported** — PSReadLine consumes them before execution. The wrapper escapes the control bytes it needs (`[char]27`-built OSC markers, backtick escapes for the body).
-- **A model redefinition of the `prompt` function removes the readiness marker** — the shell then settles on the silence tier instead of the marker fast path.
+- **A model redefinition of the `prompt` function removes the readiness marker** — terminal observations then settle on the silence tier instead of the marker fast path; the tool still requires its wrapped END/status record.
 - **There is no interactive stdin during a command** — a foreground command that reads input blocks until the command timeout, which resets the shell.
 - **SIGTSTP/SIGHUP are unavailable on Windows** (backend-rejected); SIGINT is delivered as a console-wide Ctrl-C input write, which at a prompt cancels the pending line instead of signalling a process.
-- **Under the Windows ACL sandbox's read-only mode, pwsh starts in ConstrainedLanguage**, which may deny the bootstrap's `[Console]::` encoding pin and prompt marker. Commands can still settle through the printable prompt and silence tier, but non-ASCII output may follow the host code page.
+- **Under the Windows ACL sandbox's read-only mode, pwsh starts in ConstrainedLanguage**, which may deny the bootstrap's `[Console]::` encoding pin and prompt marker. Terminal observations can still settle through the printable prompt and silence tier; tool completion requires the wrapped END/status record, and non-ASCII output may follow the host code page.
 - **The BEL-terminated OSC marker remains a readiness signal only** — a BEL event channel to the model stays deferred, aligned with the current implementation.
 
 <a id="dev-note"></a>

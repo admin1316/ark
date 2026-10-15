@@ -11,7 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { truncateWithoutSplittingSurrogatePair } from '@deepseek-ai/dsh-output-retention'
-import type { TerminalReadResult, TerminalSendResult, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
+import type { TerminalReadResult, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -115,6 +115,7 @@ function commandOutput(
 ): CapturedOutput | undefined {
   const text = snapshot.text
   const end = text.lastIndexOf(marker.end)
+  if (end < 0) return undefined
   const status = /^(\d+)\r?\n/.exec(text.slice(end + marker.end.length))?.[1]
   if (status === undefined) return undefined
   const startMarker = text.lastIndexOf(marker.start, end)
@@ -132,12 +133,6 @@ function commandOutput(
   }
 }
 
-function promptCompleted(result: TerminalSendResult): boolean {
-  return result.viewport.endsWith(SHELL_PROMPT)
-    || result.viewport.endsWith(`${SHELL_PROMPT}\r\n`)
-    || result.viewport.endsWith(`${SHELL_PROMPT}\n`)
-}
-
 function partialOutput(
   snapshot: RetainedOutput,
   marker: CommandMarkers,
@@ -145,21 +140,25 @@ function partialOutput(
   fallback: string,
   fallbackTruncated = false,
 ): CapturedOutput {
-  const startMarker = snapshot.text.lastIndexOf(marker.start)
+  // Strip the echo before marker lookup: slicing at its quoted START would
+  // discard the wrapper prefix and make the existing whole-wrapper strip miss.
+  const text = snapshot.text.replaceAll(wrapper, '')
+  const startMarker = text.lastIndexOf(marker.start)
   if (startMarker >= 0) {
     return {
-      text: stripPrompt(snapshot.text.slice(startMarker + marker.start.length).replace(/^\r?\n/, '')),
+      text: stripPrompt(text.slice(startMarker + marker.start.length).replace(/^\r?\n/, '')),
       incomplete: false,
     }
   }
-  const fallbackStart = fallback.lastIndexOf(marker.start)
+  const cleanedFallback = fallback.replaceAll(wrapper, '')
+  const fallbackStart = cleanedFallback.lastIndexOf(marker.start)
   const afterStart = fallbackStart < 0
-    ? fallback
-    : fallback.slice(fallbackStart + marker.start.length).replace(/^\r?\n/, '')
+    ? cleanedFallback
+    : cleanedFallback.slice(fallbackStart + marker.start.length).replace(/^\r?\n/, '')
   const fallbackEnd = afterStart.lastIndexOf(marker.end)
   const beforeEnd = fallbackEnd < 0 ? afterStart : afterStart.slice(0, fallbackEnd)
   return {
-    text: stripPrompt(beforeEnd.replaceAll(SHELL_PROMPT, '').replaceAll(wrapper, '')),
+    text: stripPrompt(beforeEnd.replaceAll(SHELL_PROMPT, '')),
     incomplete: fallbackTruncated || fallbackStart < 0,
   }
 }
@@ -429,19 +428,14 @@ async function executeCommand(
       const complete = commandOutput(retainedScrollback(ctx, owner, id, latest), marker, wrapped)
       if (complete !== undefined) return renderCaptured(complete, config.maxOutputChars)
     }
+    // Incremental output can retain the complete result when scrollback is
+    // unavailable; it must carry the same END/status evidence as scrollback.
+    const complete = commandOutput({ text: fallback, truncated: fallbackTruncated }, marker, wrapped)
+    if (complete !== undefined) return renderCaptured(complete, config.maxOutputChars)
     if (result.sessionStatus.kind === 'exited') {
       return await respondToSessionExit(
         ctx, shells, owner, id, result.sessionStatus, marker, wrapped, fallback, fallbackTruncated, config,
       )
-    }
-    if (promptCompleted(result)) {
-      const snapshot = retainedScrollback(ctx, owner, id, latest)
-      const captured = partialOutput(snapshot, marker, wrapped, fallback, fallbackTruncated)
-      // A prompt with no command marker or output may belong to the previous
-      // send. Observe again under the same deadline without resubmitting input.
-      if (!captured.incomplete || captured.text.length > 0) {
-        return renderCaptured(captured, config.maxOutputChars)
-      }
     }
     await pause()
   }

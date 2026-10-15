@@ -12,6 +12,8 @@ active Ark 源码已经保存 Wiki candidate、评审、verifier receipt 与 uti
 
 知识记录显式保存 provenance、trust、authority、evidence、verification、scope、ACL、过期时间、冲突和 utility 字段。hash 链项目日志记录 observation、candidate、verification、rejection、retrieval、injection、conflict、expiry、promotion 和 rollback。candidate 生命周期事件携带完整记录；晋级需要现有独立 verifier 与评审事务。模型可见 Wiki 工具追加 `knowledge/retrieved` 和 `knowledge/injected` session 事件，事件包含调用身份、scope、结果 hash 和可回放 JSON 值。未验证、过期、冲突、越界、ACL 拒绝或低置信度记录会 fail closed。
 
+在完整事件流内，`readKnowledgeEventLog` 与 `replayKnowledgeEvents` 共用一项授权消费检查。它独立于证明编码拒绝重复的规范化验证或晋级语义，并使每个晋级试验 hash 只能出现一次，包括重新签名的 payload。事件 wire 字节与公开回放状态字段保持不变。单事件 `applyKnowledgeEvent` 折叠不持有完整授权历史。此前尚未消费的旧证明，以及整个日志的回退或替换，仍需要可信 owner 保存新鲜度状态；完整流去重不等于完整的撤销重放防护。
+
 已验证记录达到三次检索且 utility 没有正向提升后，会在下一次模型可见查询前写入过期事件并停止注入。
 
 启用 `ownedStageExecutor` 时，阶段超时或 owner 取消会中止阶段，并等待该阶段 signal 已登记的全部真实进程内 Worker 终止 join。`Promise.allSettled` 会等所有 join 都结束后再传播任一 join 错误；未结束的 join 会让操作继续等待。这只证明已登记 Worker 的静止状态。pre-worker 连接解析和不透明 provider 的终止仍未证明，但解析返回后的 signal 检查会阻止迟到的 Worker 启动。
@@ -25,6 +27,8 @@ active Ark 源码已经保存 Wiki candidate、评审、verifier receipt 与 uti
 `knowledge-wiki/src/measured-trial.ts` reader 会校验带签名且内容寻址的 proposal、授权、预注册、配对使用与 trial artifact。当前源码通过可选的 launcher-owned `knowledgeWikiMeasuredTrialReader`、新增的 `recordCandidateMeasuredTrial` RPC、review 提交与崩溃恢复接入该 reader；提交只会应用试验回执认证过的精确目标字节。Jiuzhang 现在映射一个精确的 launcher-only JSON 配置，其中包含相互独立的 Ed25519 SPKI 公钥和有界的内容寻址文件库；活动环境仍未提供受信 authority 值或配对证据，因此这些输入配置到位并经过独立复核前，生产规范操作继续失败关闭。
 
 语义验证 owner 会在重建准确的 canonical 动作请求时拒绝缺少 Candidate 或目标字段的输入。实测绑定从与回执匹配的受信请求派生必填字段，不重复检查私有解析评审中的可选字段。事务 owner 会在登记、授权与恢复的 reader 调用前冻结平面的预期绑定值，reader 不能改写它需要满足的条件。Promote 只派生一次经过确认的目标不存在状态；可变的目标存在性与字节、回执有效性、试用资格、Candidate 字节和归档冲突仍在各自的读取与提交位置独立复核。
+
+`knowledgeWiki/reviews` 每次读取时都通过既有实测授权 owner 派生 Candidate 动作。投影与提交共用同一治理事件检查，只沿用既有的过期、冲突、scope 拒绝与 ACL 拒绝原因；没有治理投影的历史行，以及未验证或已拒绝状态，保留原有评审策略。只有当前语义回执、Candidate 字节、目标状态、独立试验绑定与正向 utility 均通过认证后，才返回绑定动作；不信任磁盘保存的动作名称和标签。authority 缺失、证据无效或 Candidate 已解决时只显示 Archive。该投影不写入 Review、Candidate、Canonical 或生命周期文件；authority 错误与未捕获的 I/O 错误仍会拒绝调用。实际解决评审时会在应用动作前再次独立验证，因此列出选项不预留其资格，也不替代提交检查。
 
 签名认证通过后仍须校验回执字段。文件哈希与 proposal 绑定由各自的解析器负责；非空且唯一的预注册与精确的 baseline/candidate 顺序保证完整配对。评审提交和崩溃恢复会在写入前独立复核可变的目标状态。事务 owner 会在签名后、日志持久化前重查当前试用资格；成功的 Canonical 恢复使用该校验已要求存在的 trial，Archive 仍是独立动作，仅有经过认证的语义回执的旧日志仍会回滚。校验成功的最终返回与 Canonical 事件投影不再重复提供缺少 trial 的兜底。拒绝错误签名的测试必须真正走到签名方，不能因先前缺少 trial 的拒绝而通过。
 
@@ -48,7 +52,7 @@ evaluator 签名认证使用回执与引用的 artifact hash。每个使用回�
 
 没有签名的准入事件不能把记录标记为已验证或 canonical。经过认证的验证事件提供完整且身份匹配的记录，负责来源信息，并在实测晋级前保留 Candidate 生命周期。模型内容入口把当前页面字节绑定到最新签名晋级的 hash；最终页面读取和修复来源读取会在返回内容或授权修正前再做比较。通过 Loader 组装的 Wiki 工具会拒绝自行认证的记录且不注入它；在内容检查与最终读取之间替换真实文件时，读取被拒绝且不记录检索。这些回归验证信任边界，不证明正向学习或实时候选验收通过。
 
-检出的源码包含默认关闭的隔离 Rust 搜索 shadow。准备好的索引保留文档 token 总数、词频和标题词成员集合，消费 token 数组并用词频表中唯一的键推导文档频率，不改变排名。现有 serde 格式化器使用 [Ryū-js](https://github.com/boa-dev/ryu-js)，为结果和摘要提供符合 ECMAScript 的分数字节。父进程校验复用 TypeScript 分词器，在启动子进程前检查子进程既有的 UTF-8 和 token 上限；摘要比较仍要求完全一致。活动 runtime 中的知识搜索、图推导、会话持久化和子进程监督仍使用 TypeScript 或已有 native C。Rust 候选矩阵要求在 enforce 模式前提供当前 TypeScript、优化后 TypeScript 和真实 N-API 或 IPC Rust 的对照，以及差分回放、取消、恢复、打包和平台证据。
+检出的源码包含默认关闭的隔离 Rust 搜索 shadow。准备好的索引保留文档 token 总数、词频和标题词成员集合，消费 token 数组并用词频表中唯一的键推导文档频率，不改变排名。现有 serde 格式化器使用 [Ryū-js](https://github.com/boa-dev/ryu-js)，为结果和摘要提供符合 ECMAScript 的分数字节。父进程校验复用 TypeScript 分词器，在启动子进程前检查子进程既有的 UTF-8 和 token 上限；摘要比较仍要求完全一致。[历史同步边界](../../../../scripts/rust-migration/rust-boundary.ts)复用[候选 owner](../../../../packages/host/knowledge-wiki/src/rust-search-candidate.ts)的请求类型、校验和编码输入。它的模式与输出仍属实验语义；其测试不能替代异步取消、输出边界、回退或平台证据。活动 runtime 中的知识搜索、图推导、会话持久化和子进程监督仍使用 TypeScript 或已有 native C。Rust 候选矩阵要求在 enforce 模式前提供当前 TypeScript、优化后 TypeScript 和真实 N-API 或 IPC Rust 的对照，以及差分回放、取消、恢复、打包和平台证据。
 
 数字写法兼容与分数相等是不同的门槛。真实进程回放还发现平台 `ln` 与 Node `Math.log` 的舍入差异；隔离实验中的现有 `libm` 库没有复现 Node 的位模式，因此没有采用。完整分数和摘要比较继续严格执行，候选保持关闭，平台和语料匹配仍是未通过的门槛。
 

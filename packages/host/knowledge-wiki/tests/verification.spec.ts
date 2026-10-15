@@ -15,7 +15,7 @@ import { buildVerificationRequest, canonicalJson, readTrustedReceipt, readTruste
 import { readKnowledgeEventLog } from '../src/knowledge-governance.ts'
 import type { KnowledgeWikiMeasuredTrialReader, VerifiedMeasuredTrial } from '../src/measured-trial.ts'
 import type { WikiSnapshotStore } from '../src/snapshot-store.ts'
-import type { CandidateVerification, WikiReviewItem } from '../src/types.ts'
+import type { CandidateVerification, KnowledgeRecord, WikiReviewItem } from '../src/types.ts'
 import { issueTestReceipt, verifierAuthority } from './verifier-authority-fixture.ts'
 import { wikiTestConfig } from './config-fixture.ts'
 import * as filesystem from '../src/filesystem.ts'
@@ -686,6 +686,178 @@ describe('verification event signing before publication', () => {
 })
 
 describe('measured review revalidation', () => {
+  it.each(['Promote', 'Merge'] as const)('exposes an authenticated measured %s action through the review service', async (action) => {
+    const { item, authority, measured } = await stagedMeasuredFixture({}, action)
+    const reviewBefore = readFileSync(item.reviewFile)
+    const persisted = JSON.parse(reviewBefore.toString('utf8')) as WikiReviewItem[]
+    expect(persisted).toContainEqual(expect.objectContaining({
+      id: item.reviewId,
+      options: [expect.objectContaining({ action })],
+    }))
+    const ctx = new Context()
+    ctx.provide('knowledgeWikiVerifierAuthority', authority)
+    ctx.provide('knowledgeWikiMeasuredTrialReader', measured.reader)
+    const service = new KnowledgeWikiService(ctx, wikiTestConfig({
+      wikiRoot: item.wikiRoot, mainRoot: item.root, credential: 'UNUSED_FIXTURE_REF', llmProvider: 'p', llmModel: 'm',
+    }))
+    try {
+      await expect(service.reviews({ status: 'all' })).resolves.toEqual(persisted)
+      expect(readFileSync(item.reviewFile)).toEqual(reviewBefore)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each(['Promote', 'Merge'] as const)('derives %s options independently of project-edited action labels', async (action) => {
+    const { item, authority, measured } = await stagedMeasuredFixture({}, action)
+    const persisted = JSON.parse(readFileSync(item.reviewFile, 'utf8')) as WikiReviewItem[]
+    const expectedOptions = persisted[0]!.options
+    persisted[0] = { ...persisted[0]!, options: [{ action: 'Replace', label: 'untrusted project action' }] }
+    writeFileSync(item.reviewFile, JSON.stringify(persisted))
+    const reviewBefore = readFileSync(item.reviewFile)
+    const ctx = new Context()
+    ctx.provide('knowledgeWikiVerifierAuthority', authority)
+    ctx.provide('knowledgeWikiMeasuredTrialReader', measured.reader)
+    const service = new KnowledgeWikiService(ctx, wikiTestConfig({
+      wikiRoot: item.wikiRoot, mainRoot: item.root, credential: 'UNUSED_FIXTURE_REF', llmProvider: 'p', llmModel: 'm',
+    }))
+    try {
+      expect((await service.reviews({ status: 'all' }))[0]!.options).toEqual(expectedOptions)
+      expect(readFileSync(item.reviewFile)).toEqual(reviewBefore)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each([
+    'verifier unavailable', 'reader unavailable', 'forged options without verification',
+    'candidate changed', 'target created', 'canonical target changed', 'canonical target removed',
+    'semantic receipt removed', 'trial revoked', 'review resolved', 'verification action not canonical',
+  ] as const)('keeps only Archive on a fresh review read when %s', async (change) => {
+    const trialState: { patch?: Partial<VerifiedMeasuredTrial> } = {}
+    const action = change === 'canonical target changed' || change === 'canonical target removed' ? 'Merge' : 'Promote'
+    const { item, authority, measured, targetFull } = await stagedMeasuredFixture(trialState, action)
+    if (action === 'Merge') trialState.patch = { targetBeforeHashOrVerifiedAbsence: sha256(readFileSync(targetFull)) }
+    const ctx = new Context()
+    if (change !== 'verifier unavailable') ctx.provide('knowledgeWikiVerifierAuthority', authority)
+    if (change !== 'reader unavailable') ctx.provide('knowledgeWikiMeasuredTrialReader', measured.reader)
+    const service = new KnowledgeWikiService(ctx, wikiTestConfig({
+      wikiRoot: item.wikiRoot, mainRoot: item.root, credential: 'UNUSED_FIXTURE_REF', llmProvider: 'p', llmModel: 'm',
+    }))
+    try {
+      if (change !== 'verifier unavailable' && change !== 'reader unavailable') {
+        expect((await service.reviews({ status: 'all' }))[0]!.options?.map(option => option.action)).toEqual([action])
+      }
+      const rows = JSON.parse(readFileSync(item.reviewFile, 'utf8')) as WikiReviewItem[]
+      switch (change) {
+        case 'verifier unavailable':
+        case 'reader unavailable':
+          break
+        case 'forged options without verification': {
+          const row = { ...rows[0]!, options: [{ action: 'Promote', label: 'forged promotion' }] }
+          Reflect.deleteProperty(row, 'verification')
+          rows[0] = row
+          writeFileSync(item.reviewFile, JSON.stringify(rows))
+          break
+        }
+        case 'candidate changed':
+          writeFileSync(item.candidateFull, `${readFileSync(item.candidateFull, 'utf8')}\nChanged Candidate.\n`)
+          break
+        case 'target created':
+          mkdirSync(dirname(targetFull), { recursive: true })
+          writeFileSync(targetFull, 'New target bytes.\n')
+          break
+        case 'canonical target changed':
+          writeFileSync(targetFull, 'Changed canonical target.\n')
+          break
+        case 'canonical target removed':
+          unlinkSync(targetFull)
+          break
+        case 'semantic receipt removed':
+          unlinkSync(join(dirname(item.reviewFile), 'verification-receipts', `${rows[0]!.verification!.receipts.at(-1)!.id}.json`))
+          break
+        case 'trial revoked':
+          trialState.patch = { eligibleForReview: false }
+          break
+        case 'review resolved':
+          rows[0] = { ...rows[0]!, resolved: true }
+          writeFileSync(item.reviewFile, JSON.stringify(rows))
+          break
+        case 'verification action not canonical':
+          rows[0] = { ...rows[0]!, verification: { ...rows[0]!.verification!, action: 'Archive' } }
+          writeFileSync(item.reviewFile, JSON.stringify(rows))
+          break
+      }
+      const paths = [item.reviewFile, item.candidateFull, targetFull,
+        join(dirname(item.reviewFile), 'knowledge-events.jsonl'), join(dirname(item.reviewFile), 'governance.jsonl')]
+      const before = paths.map(path => existsSync(path) ? readFileSync(path) : undefined)
+      expect((await service.reviews({ status: 'all' }))[0]!.options).toEqual([{ action: 'Archive', label: '归档候选' }])
+      expect(paths.map(path => existsSync(path) ? readFileSync(path) : undefined)).toEqual(before)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each(['expired', 'conflict', 'scope-denied', 'acl-denied', 'legacy without projection', 'unverified', 'rejected'] as const)(
+    'shares the commit governance decision on a fresh review read after %s', async (change) => {
+      const { item, authority, measured, targetFull } = await stagedMeasuredFixture()
+      const ctx = new Context()
+      ctx.provide('knowledgeWikiVerifierAuthority', authority)
+      ctx.provide('knowledgeWikiMeasuredTrialReader', measured.reader)
+      const service = new KnowledgeWikiService(ctx, wikiTestConfig({
+        wikiRoot: item.wikiRoot, mainRoot: item.root, credential: 'UNUSED_FIXTURE_REF', llmProvider: 'p', llmModel: 'm',
+      }))
+      try {
+        expect((await service.reviews({}))[0]!.options?.map(option => option.action)).toEqual(['Promote'])
+        const eventPath = join(dirname(item.reviewFile), 'knowledge-events.jsonl')
+        const prior = readKnowledgeEventLog(eventPath, authority)
+        const verified = prior.find(event => event.type === 'knowledge/verified')!
+        const record = verified.payload.record as KnowledgeRecord
+        if (change === 'legacy without projection') unlinkSync(eventPath)
+        else {
+          let type: 'knowledge/expired' | 'knowledge/conflict' | 'knowledge/verified' | 'knowledge/candidate' | 'knowledge/rejected'
+          let payload: Readonly<Record<string, unknown>>
+          if (change === 'scope-denied' || change === 'acl-denied') {
+            const updated = change === 'scope-denied'
+              ? { ...record, scope: { ...record.scope, workspaceId: 'other-workspace' } }
+              : { ...record, acl: { readers: ['other-reviewer'] } }
+            const unsigned = { ...verified.payload, record: updated }
+            Reflect.deleteProperty(unsigned, 'authorityId')
+            Reflect.deleteProperty(unsigned, 'authoritySeal')
+            const seal = await authority.sealPromotion({
+              schemaVersion: 1, domain: 'ark.knowledge-wiki', authorityId: authority.authorityId,
+              operation: 'seal-knowledge-event', eventType: 'knowledge/verified', knowledgeId: record.id, payload: unsigned,
+            })
+            type = 'knowledge/verified'
+            payload = { ...unsigned, authorityId: authority.authorityId, authoritySeal: seal }
+          } else if (change === 'unverified') {
+            type = 'knowledge/candidate'
+            payload = { record }
+          } else {
+            type = change === 'expired' ? 'knowledge/expired' : change === 'conflict' ? 'knowledge/conflict' : 'knowledge/rejected'
+            payload = change === 'conflict' ? { conflictIds: ['other-candidate'] } : { reason: change }
+          }
+          knowledgeGovernance.appendKnowledgeEvent(eventPath, knowledgeGovernance.createKnowledgeEvent(
+            type, record.id, record.scope, payload, { seq: prior.length, previousEventHash: prior.at(-1)?.eventHash ?? null },
+          ))
+          const current = knowledgeGovernance.replayKnowledgeEvents(readKnowledgeEventLog(eventPath, authority)).records.get(record.id)!
+          expect(knowledgeGovernance.knowledgeInjectionDecision(current, { projectId: item.root, workspaceId: item.root }).reason)
+            .toBe(change === 'rejected' ? 'unverified' : change)
+        }
+        const row = (JSON.parse(readFileSync(item.reviewFile, 'utf8')) as WikiReviewItem[])[0]!
+        expect(readTrustedVerification(authority, item.reviewFile, item.wikiRoot, row, row.verification!.receipts.at(-1)!.id, 'Promote'))
+          .toBeDefined()
+        const paths = [item.reviewFile, item.candidateFull, targetFull, eventPath, join(dirname(item.reviewFile), 'governance.jsonl')]
+        const before = paths.map(path => existsSync(path) ? readFileSync(path) : undefined)
+        const expected = change === 'legacy without projection' || change === 'unverified' || change === 'rejected' ? 'Promote' : 'Archive'
+        expect((await service.reviews({}))[0]!.options?.map(option => option.action)).toEqual([expected])
+        expect(paths.map(path => existsSync(path) ? readFileSync(path) : undefined)).toEqual(before)
+      } finally {
+        await ctx.fiber.dispose()
+      }
+    },
+  )
+
   it('refuses a persisted row with no verification before reading trial evidence', async () => {
     const item = fixture()
     const authority = verifierAuthority()

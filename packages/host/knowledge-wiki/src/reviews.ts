@@ -26,7 +26,7 @@ import {
 import { createHash } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { parseFrontmatterArray, parseFrontmatterField } from './frontmatter-utils.ts'
-import type { CandidateMeasuredTrialResult, CandidateTrial, CandidateVerification, WikiReviewItem } from './types.ts'
+import type { CandidateMeasuredTrialResult, CandidateTrial, CandidateVerification, KnowledgeEvent, WikiReviewItem } from './types.ts'
 import { encodeReviewStore, readReviewStore, writeReviewStore } from './review-store.ts'
 import {
   decideCandidateGovernance,
@@ -1793,6 +1793,50 @@ function readAuthorizedCandidateTrial(
   return { semantic, binding, measured }
 }
 
+function measuredCandidateReviewOptions(action?: MeasuredTrialReviewBinding['action']): NonNullable<WikiReviewItem['options']> {
+  return action === undefined
+    ? [{ action: 'Archive', label: '归档候选' }]
+    : [{ action, label: action === 'Promote' ? '按实测晋级' : `按实测${action}更新` }]
+}
+
+// Projection and commit share the existing expiry/conflict/scope/ACL refusals.
+// Legacy rows without a projection retain the hash-bound verifier contract.
+function candidateReviewBlockedByGovernance(events: readonly KnowledgeEvent[], reviewId: string, projectRoot: string): boolean {
+  const governed = replayKnowledgeEvents(events).records.get(`candidate:${reviewId}`)
+  return governed !== undefined && BLOCKED_REVIEW_REASONS.has(knowledgeInjectionDecision(governed, {
+    projectId: projectRoot,
+    workspaceId: projectRoot,
+  }).reason)
+}
+
+/** Reauthenticate the current Candidate action without trusting or updating its stored options.
+ * @param authority - Independent semantic verifier; absence leaves only Archive.
+ * @param reader - Independent measured-trial reader; absence leaves only Archive.
+ * @param reviewFile - Review journal containing the semantic receipt references.
+ * @param projectRoot - Current project and workspace fence used by review commit.
+ * @param wikiRoot - Current Candidate and Canonical root.
+ * @param item - Current persisted Candidate review, including its bound semantic action.
+ * @returns The authenticated measured action, or Archive for unavailable, invalid, or resolved reviews.
+ * @throws On authority callback errors or uncaught filesystem failures.
+ */
+export function projectCandidateReviewOptions(
+  authority: KnowledgeWikiVerifierAuthority | undefined,
+  reader: KnowledgeWikiMeasuredTrialReader | undefined,
+  reviewFile: string,
+  projectRoot: string,
+  wikiRoot: string,
+  item: WikiReviewItem,
+): NonNullable<WikiReviewItem['options']> {
+  const action = item.verification?.action
+  if (authority === undefined || item.resolved
+    || action === undefined || !isCanonicalReviewAction(action)
+    || readAuthorizedCandidateTrial(authority, reader, reviewFile, wikiRoot, item, action) === undefined
+    || candidateReviewBlockedByGovernance(readKnowledgeEventLog(knowledgeEventPath(reviewFile)), item.id, projectRoot)) {
+    return measuredCandidateReviewOptions()
+  }
+  return measuredCandidateReviewOptions(action)
+}
+
 /** Authenticate and record a paired measured-use trial without changing Candidate or Canonical bytes.
  * @param authority - Verifier authority that validates the semantic receipt and seals the journal.
  * @param reader - Independent measured-trial authority and content-addressed artifact resolver.
@@ -1849,9 +1893,7 @@ export function recordCandidateMeasuredTrial(
   all[index] = {
     ...item,
     verification: { ...currentVerification, trial },
-    options: eligible
-      ? [{ action, label: action === 'Promote' ? '按实测晋级' : `按实测${action}更新` }]
-      : [{ action: 'Archive', label: '归档候选' }],
+    options: measuredCandidateReviewOptions(eligible ? action : undefined),
   }
   writeReviewItemsAtomically(reviewFile, all)
   appendGovernanceLog(reviewFile, {
@@ -1931,20 +1973,9 @@ export async function applyCandidateReview(
   const actualHash = createHash('sha256').update(content).digest('hex')
   if (actualHash !== item.candidateHash) return false
 
-  // A passing receipt is necessary but not sufficient: an independently
-  // expired or conflicting knowledge record cannot be promoted from a stale
-  // review mirror. Legacy rows without an event projection remain governed by
-  // the existing hash-bound verifier contract.
   const governedEvents = readKnowledgeEventLog(knowledgeEventPath(reviewFile))
   const eventBeforeDigest = optionalRegularFileDigest(knowledgeEventPath(reviewFile), 64 * 1024 * 1024)
-  const governed = replayKnowledgeEvents(governedEvents).records.get(`candidate:${item.id}`)
-  if (governed !== undefined) {
-    const decision = knowledgeInjectionDecision(governed, {
-      projectId: projectRoot,
-      workspaceId: projectRoot,
-    })
-    if (BLOCKED_REVIEW_REASONS.has(decision.reason)) return false
-  }
+  if (candidateReviewBlockedByGovernance(governedEvents, item.id, projectRoot)) return false
 
   const now = new Date()
   const today = now.toISOString().slice(0, 10)

@@ -32,7 +32,7 @@ harness 在 Windows 上没有持久 shell。持久 `bash` 栈按构造就是 POS
 
 命令经包装器执行：先重置 `$LASTEXITCODE`（可赋值，已实测），通过 `Invoke-Expression` 在反引号转义的双引号字符串中执行 body（`quoteForPwsh`：反引号、引号、`$`、CRLF 与 ESC 转义，输入行上不携带裸控制字符，包装器可在 ConstrainedLanguage 下存活），报告精确原生退出码、PowerShell 终止性错误的 `1` 或成功的 `0`。PSReadLine 会把提交的包装器回显进流——没有 `stty -echo` 的对应物——因此提取会从捕获输出中剥离包装器原文；回显无法伪造完成，因为状态正则要求 END nonce 后紧跟数字，而回显继续是引号字符。prompt 函数安装工具自有提示符（`__DSH_PERSISTENT_PWSH_PROMPT__ `）覆盖 backend 引导值，与 bash 的双层结构相同。
 
-空提示符既没有当前命令的 START 标记，也没有捕获输出时，只是就绪信号，不能证明命令已完成。工具以空文本、不提交输入的 send 继续观察同一条命令，共用原定绝对截止时间；完整标记仍允许空结果。循环边界统一分类 send 期间和两次观察间隙的超时与取消。只有与取消原因相同的 send 拒绝值才回到该分类；其他提供方错误保留 send-failed 重置。
+正常完成要求在保留的 scrollback 或增量输出中，当前 END nonce 后立即跟随数字状态和换行，空结果和包装器内的语法错误也遵循此规则。提示符、START nonce 或非空部分输出都不能放行拥有者队列；包装器的精确、折行或部分回显中的 nonce 均不能证明完成。工具以空文本、不提交输入的 send 继续观察同一条命令，共用原定绝对截止时间。不确定的部分输出只保留作超时或 shell 退出时的诊断，两种情况都会重置 shell；该提取中的精确包装器剥离只用于清理诊断文本。循环边界统一分类 send 期间和两次观察间隙的超时与取消。只有与取消原因相同的 send 拒绝值才回到该分类；其他提供方错误保留 send-failed 重置。
 
 ### 组合
 
@@ -40,7 +40,7 @@ minimal 预设用 #2234 的 `disabled: !!js` 插值按平台门控持久 shell �
 
 ### 测试
 
-Windows 测试面沿用 master 的豁免结构：terminal-bash 与 subprocess-local 的测试在 win32 上继续排除（`windowsUnsupportedTests`），其源码在 win32 上继续覆盖豁免（`windowsUnsupportedCoveragePackages`），平台门控 fixture 与 node 翻译命令因此仍是 win32 开发车道的证据；koffi-backed inspector 在 Linux 侧加入 windows-only 覆盖豁免。`tool-pwsh-persistent` 不在豁免之列：其套件在 windows-native 车道上运行、源码受覆盖约束，镜像 `tool-bash-persistent` 的 stub 模式矩阵并加回显剥离模式；真实 pwsh 套件在真实 ConPTY 会话上证明持久 cwd/env、密钥清洗、多行与 here-string 命令、大输出裁剪与退出/重置。ACP keyless snapshot 通过真实 Loader 组合启动持久工具，并固定模型可见的 schema 与结果。启动顺序 spec 用假会话钉死新契约：pwsh 在 bootstrap send 之前等待控制台静默、该 send 恰好携带编码前导加 prompt 设置、静默未命中时仍会提交、被挂起的引导行会被释放并取得其提示符、提示符已到达时不再补发提交、bash 路径不经过该等待直接 initialize。session spec 钉死释放守卫（期望提示符缺失时补发、到达后不补发），真实 pwsh 套件以不提交的方式把一行留在编辑器里，并证明释放的回车会执行它。
+Windows 测试面沿用 master 的豁免结构：terminal-bash 与 subprocess-local 的测试在 win32 上继续排除（`windowsUnsupportedTests`），其源码在 win32 上继续覆盖豁免（`windowsUnsupportedCoveragePackages`），平台门控 fixture 与 node 翻译命令因此仍是 win32 开发车道的证据；koffi-backed inspector 在 Linux 侧加入 windows-only 覆盖豁免。`tool-pwsh-persistent` 不在豁免之列：其套件在 windows-native 车道上运行、源码受覆盖约束，覆盖 shell 复用、完成状态、输出保留、超时/取消重置、精确/折行/部分回显后出现旧提示符，以及保留到原定截止时间的不确定部分输出；真实 pwsh 套件在真实 ConPTY 会话上证明持久 cwd/env、密钥清洗、多行与 here-string 命令、大输出裁剪与退出/重置。ACP keyless snapshot 通过真实 Loader 组合启动持久工具，并固定模型可见的 schema 与结果。启动顺序 spec 用假会话钉死新契约：pwsh 在 bootstrap send 之前等待控制台静默、该 send 恰好携带编码前导加 prompt 设置、静默未命中时仍会提交、被挂起的引导行会被释放并取得其提示符、提示符已到达时不再补发提交、bash 路径不经过该等待直接 initialize。session spec 钉死释放守卫（期望提示符缺失时补发、到达后不补发），真实 pwsh 套件以不提交的方式把一行留在编辑器里，并证明释放的回车会执行它。
 
 ## 备选方案
 

@@ -38,6 +38,7 @@ import {
   applyCandidateReview,
   commitReviewAppend,
   prepareReviewAppend,
+  projectCandidateReviewOptions,
   recoverCandidateReviewTransactions,
   recordCandidateMeasuredTrial as recordMeasuredCandidateTrial,
   recordCandidateVerification as recordTrustedCandidateVerification,
@@ -2342,16 +2343,21 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   /**
    * Unresolved review items from .llm-wiki/review.json.
    * @param request - status filter and limit.
-   * @returns matching review items.
+   * @returns Matching reviews; Candidate options are reauthenticated on every read without changing persisted state.
    */
   @Remote('reviews')
   reviews(request: { status?: string; limit?: number }): Promise<WikiReviewItem[]> {
     return promiseFromSync(() => {
-      const all = readReviewItems(this.reviewFile())
+      const projectRoot = this.currentRoot
+      const reviewFile = this.reviewFile(projectRoot)
+      const wikiRoot = this.activeWikiRoot
+      const all = readReviewItems(reviewFile)
       const status = request.status ?? 'unresolved'
       const filtered = status === 'all' ? all : all.filter(item => status === 'resolved' ? item.resolved : !item.resolved)
       return filtered.slice(0, request.limit ?? 100).map(item => item.reviewKind === 'candidate'
-        ? { ...item, options: [{ action: 'Archive', label: '归档候选' }] }
+        ? { ...item, options: projectCandidateReviewOptions(
+          this.verifierAuthority, this.measuredTrialReader, reviewFile, projectRoot, wikiRoot, item,
+        ) }
         : item)
     })
   }

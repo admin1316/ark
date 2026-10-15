@@ -120,6 +120,57 @@ describe('owned junction retargeting', () => {
       .toString('utf16le')).toBe('C:\\new-\ud83d\udcc1')
   })
 
+  it('accepts an already completed matching retarget without another SET', () => {
+    replaceJunctionTarget(link, 'C:\\new', expected)
+    const published = Buffer.from(boundary.published!)
+    boundary.calls = []
+
+    replaceJunctionTarget(link, 'C:\\new', expected)
+
+    expect(boundary.calls).toContain('volume')
+    expect(boundary.calls).toContain('identity')
+    expect(boundary.calls).toContain('get')
+    expect(boundary.calls).not.toContain('set')
+    expect(boundary.calls.at(-1)).toBe('close')
+    expect(boundary.published).toEqual(published)
+  })
+
+  it('refuses a third target after another retarget completed', () => {
+    replaceJunctionTarget(link, 'C:\\new', expected)
+    const published = Buffer.from(boundary.published!)
+    boundary.calls = []
+
+    expect(() => { replaceJunctionTarget(link, 'C:\\third', expected) }).toThrow('target changed')
+    expect(boundary.calls).not.toContain('set')
+    expect(boundary.calls.at(-1)).toBe('close')
+    expect(boundary.published).toEqual(published)
+  })
+
+  it.each([
+    ['non-NTFS identity', { fileSystem: 'ReFS' }, 'requires an NTFS file identity'],
+    ['changed file identity', { namedIno: expected.ino + 1n }, 'identity changed'],
+    ['foreign reparse tag', { afterResponse: Buffer.from('0c0000a0080000000000000000000000', 'hex') }, 'not a directory junction'],
+  ] as const)('checks %s before accepting an already completed matching retarget', (_name, mutation, error) => {
+    replaceJunctionTarget(link, 'C:\\new', expected)
+    Object.assign(boundary, mutation)
+    boundary.calls = []
+
+    expect(() => { replaceJunctionTarget(link, 'C:\\new', expected) }).toThrow(error)
+    expect(boundary.calls).not.toContain('set')
+    expect(boundary.calls.at(-1)).toBe('close')
+  })
+
+  it('reports close failure when the matching retarget is already complete', () => {
+    replaceJunctionTarget(link, 'C:\\new', expected)
+    boundary.calls = []
+    boundary.closeFails = true
+
+    expect(() => { replaceJunctionTarget(link, 'C:\\new', expected) })
+      .toThrow(/CloseHandle failed \(Win32 5\)|junction update and handle close failed/u)
+    expect(boundary.calls).not.toContain('set')
+    expect(boundary.calls.at(-1)).toBe('close')
+  })
+
   it('accepts a namespaced drive target without changing the drive-target representation', () => {
     replaceJunctionTarget(link, '\\\\?\\C:\\new', expected)
     expect(boundary.published!.subarray(16, 16 + boundary.published!.readUInt16LE(10)).toString('utf16le'))
