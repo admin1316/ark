@@ -15,6 +15,7 @@ describe('Ark native API runner', () => {
     expect(source).toContain('patchFiles: []')
     expect(source).toContain("profilePatchMode: 'managed'")
     expect(source).toContain("homePatchMode: 'none'")
+    expect(source).toContain('shutdownOnParentDisconnect: true')
     expect(source).not.toMatch(/dsh-web-app|dsh-headless|parseDshArgs|runPlugin|runDumpConfig/)
     expect(bin).not.toMatch(/Commander|parseDshArgs|switch\s*\(/)
   })

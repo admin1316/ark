@@ -75,4 +75,6 @@ Ark 不嵌入任何链接 WebKit 的更新框架。在实现完全原生的升�
 
 `integrations/jiuzhang/tests/install-e2e.mjs` 以安装后的形态启动产品（内嵌 Node + 启动器、隔离 home），验证 API-only 就绪、无令牌 401、令牌放行 RPC 与预置本地模型提供方。安装态还检查 Ark 可执行文件不链接 WebKit，且辅助功能树包含原生控件而不是 Web 区域。可将测试指向独立运行时（`JIUZHANG_RUNTIME_ROOT`）或组装完成的 `Ark.app`（`ARK_APP_PATH`）。
 
-候选退出验收：候选应用的 launcher 与 backend 都是候选 UI 进程拥有的后代。先从 `dsh native-api:` 就绪行记录实际端口；退出候选 UI 后，确认 UI、launcher、backend 与该精确监听器全部消失，才可接受本次运行。launcher 会在 4 秒后强制终止不响应的 backend；UI 则等待 7 秒才强制终止 launcher，避免 supervisor 在子进程期限结算前先被移除。
+候选退出验收：候选应用的 launcher 与 backend 都是候选 UI 进程拥有的后代。先从 `dsh native-api:` 就绪行记录实际端口；退出候选 UI 后，确认 UI、launcher、backend 与该精确监听器全部消失，才可接受本次运行。runner 保留五秒 dispose 上限；launcher 给 backend 六秒时间，之后才强制终止；UI 等待 launcher 的上限为八秒，同时受应用既有绝对终止截止时间约束。
+
+launcher 还在继承三个标准流的同时提供私有 Node IPC 连接。Native runner 启用共享 profile runner 的父连接断开处理，加入同一个 shutdown owner，并在父进程仍存在时保留自然完成行为。launcher 突然丢失的验证必须针对实际构建的 Native API 及其已记录的监听器；dummy 子进程或仅准备好的源码控制不能证明该结果。IPC 事件交付依赖 backend 事件循环，不能证明主线程阻塞时仍有独立监督。

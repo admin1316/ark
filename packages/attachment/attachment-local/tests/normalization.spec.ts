@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFailed, vi } from 'vitest'
 import sharp from 'sharp'
 import { canPassThroughNormalization, normalizeImage } from '../src/normalization.ts'
 import { detectImage } from '../src/image.ts'
@@ -319,6 +319,20 @@ describe('normalizeImage', () => {
   })
 
   it('keeps an antialiased text screenshot readable on the JPEG ladder', async () => {
+    const startedAt = performance.now()
+    const milestones: Array<{ phase: string; elapsedMs: number }> = []
+    const checkpoint = (phase: string): void => {
+      milestones.push({ phase, elapsedMs: performance.now() - startedAt })
+    }
+    onTestFailed(() => {
+      console.error('ATTACHMENT_NORMALIZATION_PHASE', JSON.stringify({
+        phase: milestones.at(-1)?.phase,
+        phaseCount: milestones.length,
+        elapsedMs: performance.now() - startedAt,
+        milestones,
+      }))
+    })
+    checkpoint('source-render')
     const source = new Uint8Array(await sharp(Buffer.from(`
       <svg width="1024" height="512" xmlns="http://www.w3.org/2000/svg">
         <rect width="1024" height="512" fill="white"/>
@@ -326,15 +340,21 @@ describe('normalizeImage', () => {
       </svg>
     `)).removeAlpha().png().toBuffer())
 
-    const normalized = await normalizeImage(source, await detectImage(source), {
+    checkpoint('detect-source')
+    const detected = await detectImage(source)
+    checkpoint('normalize')
+    const normalized = await normalizeImage(source, detected, {
       maxPixels: POLICY.maxPixels,
       maxDimension: 512,
       maxBytes: POLICY.maxBytes,
     })
+    checkpoint('stats')
     const stats = await sharp(normalized.data).greyscale().stats()
 
+    checkpoint('assertions')
     expect(normalized).toMatchObject({ mediaType: 'image/jpeg', width: 512, height: 256 })
     expect(stats.channels[0]?.min).toBeLessThan(80)
     expect(stats.channels[0]?.max).toBeGreaterThan(240)
+    checkpoint('complete')
   })
 })

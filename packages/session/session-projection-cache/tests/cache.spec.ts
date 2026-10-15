@@ -10,7 +10,7 @@
  * only after durability.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -157,17 +157,33 @@ afterEach(async () => {
 
 describe('SessionProjectionCache write policy', () => {
   it('writes a durable checkpoint at turn/end (mandatory point)', async () => {
+    const startedAt = performance.now()
+    const milestones: Array<{ phase: string; elapsedMs: number }> = []
+    const checkpoint = (phase: string): void => {
+      milestones.push({ phase, elapsedMs: Math.round(performance.now() - startedAt) })
+    }
+    checkpoint('harness')
+    onTestFailed(() => {
+      process.stderr.write(`projection-cache-checkpoint-diagnostic ${JSON.stringify({
+        phase: milestones.at(-1)?.phase, elapsedMs: Math.round(performance.now() - startedAt), milestones,
+      })}\n`)
+    })
     const { ctx, root } = await harness()
     const session = ctx.sessions.create(SessionId('turn-end'))
     mark(session, ['a'])
     // Creation already wrote the init cut; the mark is throttled, so the
     // stored row is still the creation-time cut (no marks folded).
+    checkpoint('creation-row-await')
     await waitForRow(root, session.id, rows => rows?.['cache-test/marks'] !== undefined)
+    checkpoint('creation-row-ready')
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1)
+    checkpoint('turn-end-row-await')
     const end = endTurn(session)
     await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === end.seq)
+    checkpoint('turn-end-row-ready')
     const rows = await storedRows(root, session.id)
     expect(rows?.['cache-test/marks']).toEqual({ ver: 1, seq: end.seq, val: { marks: ['a'] } })
+    checkpoint('complete')
   })
 
   it('writes a checkpoint at session creation, capturing the seed-derived cut', async () => {

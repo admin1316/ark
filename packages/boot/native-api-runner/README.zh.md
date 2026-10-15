@@ -11,6 +11,8 @@ kind: "package-library"
 
 Ark 受管 Native API sidecar 的专用可执行入口。`lib/bin.js` 只能启动 `jiuzhang` profile，只接收该 profile 的应用参数，不接受任意 overlay，并关闭 profile 实时监视。其安装 manifest 持有 `dsh-base`、`dsh-native-api-app`、共享 profile runner 与 Ark 专用知识工具；dependencies、optionalDependencies、peerDependencies 均不指向通用 `@deepseek-ai/dsh` CLI、Web/headless 产品或任何 `dsh-client-*` 包。
 
+Ark launcher 在继承 stdin、stdout、stderr 的同时提供私有 Node IPC 连接。本 runner 启用共享 [profile runner](../profile-runner/README.zh.md) 的可选父连接断开处理，使启动期间或运行期间的连接丢失加入既有 shutdown owner。连接不传递应用消息，也不产生持久状态。没有 IPC 的直接启动保留普通 profile 生命周期。
+
 ## 目录
 
 - [模型体验](#model-experience)
@@ -39,6 +41,7 @@ runner 本身不直接影响 token；模型请求内容由所选 profile 与 pre
 
 - runner 有意不提供插件管理、配置导出、Web alias 或任意 profile 选择命令。
 - runtime 组装必须在打包 Ark.app 前为封闭安装图提供全部必需 peer。
+- 父连接断开事件依赖 backend 的 Node 事件循环；这条路径不提供对已阻塞 backend 的独立监督。
 
 <a id="dev-note"></a>
 ### 开发备注

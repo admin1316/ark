@@ -2075,6 +2075,8 @@ alpha reusable method and validation
     let fillIndex = 0
     let startedReads = 0
     let completedReads = 0
+    let longestFillReadMs = 0
+    let longestFillReadIndex = 0
     const milestones: Array<{
       phase: string
       elapsedMs: number
@@ -2092,6 +2094,7 @@ alpha reusable method and validation
       process.stderr.write(`wiki-read-capacity-diagnostic ${JSON.stringify({
         elapsedMs: Math.round(performance.now() - startedAt), phase: milestones.at(-1)?.phase, milestones,
         fillIndex, lastStartedReadIndex: startedReads, lastCompletedReadIndex: completedReads,
+        longestFillReadMs: Math.round(longestFillReadMs), longestFillReadIndex,
       })}\n`)
     })
     const item = repairFixture()
@@ -2104,8 +2107,14 @@ alpha reusable method and validation
     for (let index = 1; index < 256; index += 1) {
       fillIndex = index
       startedReads += 1
+      const readStartedAt = performance.now()
       await service.modelPageContent({ path: item.path }, { ...item.scope, sessionId: `repair-read-${index}` })
       completedReads += 1
+      const elapsedMs = performance.now() - readStartedAt
+      if (elapsedMs > longestFillReadMs) {
+        longestFillReadMs = elapsedMs
+        longestFillReadIndex = index
+      }
     }
     checkpoint('refresh-original')
     startedReads += 1
@@ -2115,18 +2124,15 @@ alpha reusable method and validation
     startedReads += 1
     await service.modelPageContent({ path: item.path }, { ...item.scope, sessionId: 'repair-read-overflow' })
     completedReads += 1
-    checkpoint('journal-snapshot')
+    checkpoint('repair-checks')
     const journalPath = join(root, '.llm-wiki', 'knowledge-events.jsonl')
     const before = readFileSync(journalPath, 'utf8')
 
-    checkpoint('reject-oldest-permission')
     await expect(service.proposeKnowledgeRepair(item.request, { ...item.scope, sessionId: 'repair-read-1' }))
       .resolves.toMatchObject({ ok: false, errorCode: 'source-not-read' })
-    checkpoint('assert-no-oldest-mutation')
     expect(readFileSync(journalPath, 'utf8')).toBe(before)
     expect(readFileSync(join(wikiRoot, item.path), 'utf8')).toBe(item.content)
     expect(existsSync(join(wikiRoot, '_candidates/ingest', item.path))).toBe(false)
-    checkpoint('accept-refreshed-permission')
     await expect(service.proposeKnowledgeRepair(item.request, item.scope)).resolves.toMatchObject({ ok: true })
     checkpoint('complete')
   }, 30_000)
