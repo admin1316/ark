@@ -652,14 +652,16 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
   )
 
   // 3c) 队列必须有界：主线程被一次事务占住时，PTY 仍在生产；旧实现无上限（审计 P1-6）。
-  //     这里在无 run loop 的测试里直接灌入远超上限的字节，drain 不会消费，正好验证裁剪。
+  //     在同一个 MainActor 同步区段内灌入并检查，避免主队列 drain 与写入或断言交错。
   let floodSurface = controlSurface
   let floodChunk = [UInt8](repeating: 0x41, count: 1024 * 1024)
-  for _ in 0..<12 { floodSurface.enqueue(floodChunk) }
-  check(
-    floodSurface.queuedByteCount <= floodSurface.pendingByteLimit + 64,
-    "the terminal feed queue stays bounded under a flood (\(floodSurface.queuedByteCount) bytes)"
-  )
+  await MainActor.run {
+    for _ in 0..<12 { floodSurface.enqueue(floodChunk) }
+    check(
+      floodSurface.queuedByteCount <= floodSurface.pendingByteLimit + 64,
+      "the terminal feed queue stays bounded under a flood (\(floodSurface.queuedByteCount) bytes)"
+    )
+  }
   // 3c2) PTY→主线程交接必须成批且有界：旧实现每个 read chunk 一个 MainActor Task（各持 raw），
   //      洪泛 + 主线程繁忙 = 无界队列（审计 P1-6 残留路径）。
   let handoffSourceURL = contractNativeRoot.appendingPathComponent(
