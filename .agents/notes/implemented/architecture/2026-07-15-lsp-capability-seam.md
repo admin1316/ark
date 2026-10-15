@@ -178,7 +178,7 @@ The provider trusts its configured server. Its filesystem visibility and process
 - Registry tests pin atomic reservation/release, order-independent selection, and structured unavailable, disposed, conflict, and unsupported-operation errors.
 - Fake-stdio tests pin exact initialization capabilities, four protocol mappings, `Location`/`LocationLink` and hover normalization, and `findReferences` mapping to `references.includeDeclaration`.
 - Synchronization tests pin UTF-16 negotiation and conversion, supported and rejected `textDocumentSync` forms, blocked and failed open writes, balanced transient open/close, close-write failure, and malformed-response rejection.
-- Timeout tests pin one `TOOL_TIMEOUT` budget, unclassified upstream cancellation, no hidden LSP deadline, and bounded awaited teardown.
+- Timeout tests pin one `TOOL_TIMEOUT` budget, unclassified upstream cancellation, no hidden LSP deadline, and bounded awaited teardown. Request-cancel fixtures abort only after the server records receipt of the request; startup-abort fixtures exercise the handshake separately.
 - Lifecycle tests pin startup single-flight, complete-lifecycle serialization with fresh queued source reads, cross-workspace parallelism, abortable queues, crash replacement without replay, failed-stdin teardown, and quiescent disposal.
 - Filesystem-host tests pin session-cwd requirements, provider-owned containment and URI rendering, bounded document reads, unformatted source, and no `fs/observed` event.
 - A keyless pinned TypeScript real-server e2e exercises all four operations; runnable configuration uses the same explicit provider mapping.
