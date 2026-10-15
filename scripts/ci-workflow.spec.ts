@@ -218,6 +218,42 @@ describe('CI workflow', () => {
     })
   })
 
+  it('collects only the failed Native process without masking or retrying the original contract', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const macos = workflowJob(workflow, 'macos-native')
+    if (!Array.isArray(macos.steps)) throw new TypeError('native macOS must define steps')
+    const steps = macos.steps.filter(isRecord)
+    const runIndex = steps.findIndex(step => step.name === 'Run native contracts')
+    const collectIndex = steps.findIndex(step => step.name === "Collect this Native contract process's failure diagnostics")
+    const uploadIndex = steps.findIndex(step => step.name === 'Upload Native contract failure diagnostics')
+    expect(macos['timeout-minutes']).toBe(30)
+    expect(steps[runIndex]).toMatchObject({
+      id: 'native-contracts',
+      'working-directory': 'integrations/jiuzhang/native',
+      run: '.build/debug/JiuzhangShellContractTests',
+      env: { ARK_NATIVE_CONTRACT_DIAGNOSTICS_DIR: '${{ runner.temp }}/native-contracts-diagnostics' },
+    })
+    expect(collectIndex).toBeGreaterThan(runIndex)
+    expect(uploadIndex).toBeGreaterThan(collectIndex)
+    for (const index of [collectIndex, uploadIndex]) {
+      expect(steps[index]?.if).toBe("failure() && steps.native-contracts.outcome == 'failure'")
+    }
+    expect(stepText(steps[collectIndex]?.run)).toBe(
+      'pnpm exec tsx scripts/collect-native-contract-diagnostics.ts "${{ runner.temp }}/native-contracts-diagnostics" "${{ github.workspace }}/integrations/jiuzhang/native/.build/debug/JiuzhangShellContractTests"',
+    )
+    expect(steps[uploadIndex]).toMatchObject({
+      uses: 'actions/upload-artifact@v7',
+      with: {
+        name: 'native-contract-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}',
+        path: '${{ runner.temp }}/native-contracts-diagnostics/collected',
+        'retention-days': 7,
+      },
+    })
+    for (const step of steps) expect(step['continue-on-error']).toBeUndefined()
+    expect(steps.filter(step => step.run === '.build/debug/JiuzhangShellContractTests')).toHaveLength(1)
+    expect(workflowJob(workflow, 'all-checks-passed').needs).toContain('macos-native')
+  })
+
   it('gives the Wine Host TypeScript compile the repository heap budget', () => {
     const wineGates = readFileSync(resolve(root, 'scripts/wine-windows-gates.sh'), 'utf8')
 
