@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { Service, symbols } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFailed, vi } from 'vitest'
 import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import legacySamples from './fixtures/legacy-v1-journals.json' with { type: 'json' }
@@ -731,24 +731,41 @@ it('refuses an old completed receipt while a newer journal still requires recove
 })
 
 it('lets an unrelated provider progress while another namespace waits for activation', async () => {
+  const diagnostic = { bodyPhase: 'create-runtime', cleanupPhase: 'not-started', activationEntries: 0,
+    activationEntered: false, independentCompleted: false }
+  onTestFailed(() => { console.error('provider-independent-progress-phase', diagnostic) })
   const entered = Promise.withResolvers<undefined>()
   const resume = Promise.withResolvers<undefined>()
-  const run = await runtime({ activation: async () => { entered.resolve(undefined); await resume.promise } })
+  const run = await runtime({ activation: async () => {
+    diagnostic.activationEntries += 1
+    entered.resolve(undefined)
+    await resume.promise
+  } })
+  diagnostic.bodyPhase = 'register-independent'
   const independent = settingsNamespace('independent-fixture')
   const scope = run.ctx.settings.register(independent, Profile, { base: {
     baseURL: 'https://independent.invalid', apiKeyEnv: '', model: 'initial',
   } })
   run.ctx.llm.registerConfigurableProviders([{ provider: 'independent', displayName: 'Independent', settingsNs: independent, settingsPath: [] }])
   run.ctx.llm.registerAdapter(['independent'], new FixtureAdapter(scope.get()))
+  diagnostic.bodyPhase = 'await-first-activation'
   const first = run.mutate()
   await entered.promise
+  diagnostic.activationEntered = true
+  diagnostic.bodyPhase = 'await-independent-progress'
   let completed = false
   const other = run.mutate(run.request({ provider: 'independent', settingsNs: independent, expectedRevision: 0,
-    ops: [{ op: 'set', path: ['model'], value: 'independent' }] })).then((result) => { completed = true; return result })
+    ops: [{ op: 'set', path: ['model'], value: 'independent' }] })).then((result) => { completed = true; diagnostic.independentCompleted = true; return result })
   try {
     await vi.waitFor(() => { expect(completed).toBe(true) }, { timeout: 1000 })
     expect(scope.get().model).toBe('independent')
-  } finally { resume.resolve(undefined); await Promise.all([first, other]) }
+  } finally {
+    diagnostic.cleanupPhase = 'release-first-activation'
+    resume.resolve(undefined)
+    diagnostic.cleanupPhase = 'join-both'
+    await Promise.all([first, other])
+    diagnostic.cleanupPhase = 'complete'
+  }
 })
 
 it('accepts reordered nested object keys after restart but rejects reordered model arrays', async () => {

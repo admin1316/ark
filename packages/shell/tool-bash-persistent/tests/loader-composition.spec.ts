@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
@@ -163,17 +163,86 @@ suite('persistent Bash through a real cordis.yml Loader composition', () => {
     expect(large).toContain('<response clipped>')
     expect(large).not.toContain('beginning of this command output was dropped')
 
-    const unicode = text(await execute('unicode-output', "printf 'x%.0s' {1..15999}; printf '😀tail\\n'"))
-    expect(unicode.startsWith(`${'x'.repeat(15_999)}<response clipped>`), JSON.stringify({
-      outputChars: unicode.length,
-      outputUtf8Bytes: Buffer.byteLength(unicode),
-      firstNonXOffset: unicode.search(/[^x]/u),
-      clippedMarkerOffset: unicode.indexOf('<response clipped>'),
-      lineFeedCount: unicode.split('\n').length - 1,
-      containsEmojiHighSurrogate: unicode.includes('\uD83D'),
-      endsWithTail: unicode.endsWith('tail'),
-    })).toBe(true)
-    expect(unicode).not.toContain('\uD83D')
+    const terminal = context.terminals
+    const startedAt = performance.now()
+    let startMarker = ''
+    let endMarker = ''
+    let observedSession: Parameters<typeof terminal.startSend>[1] | undefined
+    const shape = (value: string) => {
+      const end = endMarker === '' ? -1 : value.lastIndexOf(endMarker)
+      return { chars: value.length, utf8Bytes: Buffer.byteLength(value),
+        startSeen: startMarker !== '' && value.includes(startMarker), endSeen: end >= 0,
+        endStatusSeen: end >= 0 && /^\d+\r?\n/u.test(value.slice(end + endMarker.length)) }
+    }
+    const diagnostic = { sends: 0, submissions: 0, outputReads: 0, scrollbackReads: 0, lists: 0,
+      rejected: false, lastListedStatus: 'unbound',
+      done: { observed: false, waitReason: 'none', status: 'none', truncated: false, ...shape('') },
+      output: { truncated: false, ...shape('') },
+      scrollback: { totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false, ...shape('') } }
+    onTestFailed(() => { console.error('bash-unicode-existing-terminal-calls', {
+      elapsedMs: Math.round(performance.now() - startedAt), ...diagnostic,
+    }) })
+    const restoreOutputReads: Array<() => void> = []
+    const originalStart = terminal.startSend.bind(terminal)
+    const sendSpy = vi.spyOn(terminal, 'startSend').mockImplementation((...args) => {
+      const operation = originalStart(...args)
+      observedSession = args[1]
+      if (args[2].submit) {
+        startMarker = /__DSH_PERSISTENT_BASH_START_[a-f0-9-]+__/u.exec(args[2].text)?.[0] ?? ''
+        endMarker = /__DSH_PERSISTENT_BASH_END_[a-f0-9-]+:/u.exec(args[2].text)?.[0] ?? ''
+        diagnostic.submissions += 1
+      }
+      diagnostic.sends += 1
+      const originalOutput = operation.readOutput.bind(operation)
+      const outputSpy = vi.spyOn(operation, 'readOutput').mockImplementation(() => {
+        const result = originalOutput()
+        diagnostic.outputReads += 1
+        diagnostic.output = { ...shape(result.delta), truncated: result.truncated }
+        return result
+      })
+      restoreOutputReads.push(() => { outputSpy.mockRestore() })
+      void operation.done.then((result) => {
+        diagnostic.done = { observed: true, ...shape(result.viewport), truncated: result.truncated,
+          waitReason: ['stdin_read', 'inferred_idle', 'timeout', 'session_exit'].includes(result.waitReason)
+            ? result.waitReason : 'other',
+          status: result.sessionStatus.kind === 'running' ? 'running' : 'exited' }
+      }, () => { diagnostic.rejected = true })
+      return operation
+    })
+    const originalRead = terminal.read.bind(terminal)
+    const readSpy = vi.spyOn(terminal, 'read').mockImplementation((...args) => {
+      const result = originalRead(...args)
+      diagnostic.scrollbackReads += 1
+      diagnostic.scrollback = { ...shape(result.text), truncated: result.truncated,
+        totalLines: result.totalLines, lineBegin: result.lineBegin, lineEnd: result.lineEnd }
+      return result
+    })
+    const originalList = terminal.list.bind(terminal)
+    const listSpy = vi.spyOn(terminal, 'list').mockImplementation((...args) => {
+      const result = originalList(...args)
+      diagnostic.lists += 1
+      const status = result.find(session => session.sessionId === observedSession)?.status.kind
+      diagnostic.lastListedStatus = status === 'running' || status === 'exited' ? status : 'unbound'
+      return result
+    })
+    try {
+      const unicode = text(await execute('unicode-output', "printf 'x%.0s' {1..15999}; printf '😀tail\\n'"))
+      expect(unicode.startsWith(`${'x'.repeat(15_999)}<response clipped>`), JSON.stringify({
+        outputChars: unicode.length,
+        outputUtf8Bytes: Buffer.byteLength(unicode),
+        firstNonXOffset: unicode.search(/[^x]/u),
+        clippedMarkerOffset: unicode.indexOf('<response clipped>'),
+        lineFeedCount: unicode.split('\n').length - 1,
+        containsEmojiHighSurrogate: unicode.includes('\uD83D'),
+        endsWithTail: unicode.endsWith('tail'),
+      })).toBe(true)
+      expect(unicode).not.toContain('\uD83D')
+    } finally {
+      for (const restore of restoreOutputReads) restore()
+      sendSpy.mockRestore()
+      readSpy.mockRestore()
+      listSpy.mockRestore()
+    }
     expect(text(await execute('after-unicode-output', 'printf "ready\\n"'))).toBe('ready')
 
     // `exec` replaces the wrapper before its end marker prints; the seam's

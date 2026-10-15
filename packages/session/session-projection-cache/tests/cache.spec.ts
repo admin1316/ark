@@ -10,7 +10,7 @@
  * only after durability.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -133,6 +133,8 @@ async function seedRecord(
 }
 
 
+let rowWaitSequence = 0
+
 /**
  * Wait until the durable record observably satisfies a condition. Write-backs are
  * fire-and-forget over real fs I/O, so a fixed sleep only assumes the write
@@ -144,12 +146,21 @@ async function seedRecord(
 async function waitForRow(
   root: string, id: Session['id'], satisfied: (rows: CheckpointRecord['rows'] | undefined) => boolean,
 ): Promise<void> {
+  const diagnostic = { waitSequence: ++rowWaitSequence, attempts: 0, completedReads: 0,
+    lastRowCount: -1, waitCompleted: false }
+  onTestFailed(() => { console.error('projection-cache-row-wait-diagnostic', diagnostic) })
   await vi.waitFor(async () => {
-    if (!satisfied(await storedRows(root, id))) throw new Error('durable checkpoint row has not settled')
+    diagnostic.attempts += 1
+    const rows = await storedRows(root, id)
+    diagnostic.completedReads += 1
+    diagnostic.lastRowCount = rows === undefined ? -1 : Object.keys(rows).length
+    if (!satisfied(rows)) throw new Error('durable checkpoint row has not settled')
   }, { timeout: 5_000 })
+  diagnostic.waitCompleted = true
 }
 
 afterEach(async () => {
+  rowWaitSequence = 0
   vi.useRealTimers()
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })))

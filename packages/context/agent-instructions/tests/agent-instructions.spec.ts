@@ -1,7 +1,7 @@
-import { chmod, mkdtemp, mkdir, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as workspaceContext from '@deepseek-ai/dsh-agent-instructions'
@@ -42,6 +42,16 @@ import {
 import { resolveAgentInstructionsConfig } from '../src/config.ts'
 import { candidateScopeKey, renderInstructionChanges, renderWorkspaceInstructionSet, USER_GLOBAL_DIRECTORY, USER_GLOBAL_FILE } from '../src/render.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+
+const markerFault = vi.hoisted(() => ({ path: undefined as string | undefined, error: undefined as Error | undefined }))
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof import('node:fs/promises')>()
+  return { ...actual, stat: async (...args: Parameters<typeof actual.stat>) => {
+    if (String(args[0]) === markerFault.path && markerFault.error !== undefined) throw markerFault.error
+    return actual.stat(...args)
+  } }
+})
+afterEach(() => { markerFault.path = undefined; markerFault.error = undefined })
 
 /** Per-candidate reconciliation scope key: directory paired with the file name. */
 const sk = (directory: string, candidateName: string): string => candidateScopeKey(directory, candidateName)
@@ -292,6 +302,27 @@ function expectNoDerivedMessages(agent: Agent): void {
 }
 
 describe('workspace context instruction discovery', () => {
+  it('propagates a host marker inspection fault without admitting ancestor instructions', async () => {
+    const root = await tempRepo(), home = await tempRepo(), cwd = join(root, 'pkg')
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await mkdir(cwd)
+      await write(join(root, 'AGENTS.md'), 'ancestor rule must not load')
+      const marker = join(cwd, 'fault-marker')
+      await writeFile(marker, 'preserved marker bytes')
+      const denied = new Error('marker inspection unavailable')
+      markerFault.path = marker; markerFault.error = denied
+      await expect(discoverBaselineInstructionFiles({ cwd, dshHome: home, projectRootMarkers: ['fault-marker', '.git'] }))
+        .rejects.toBe(denied)
+      expect(await readFile(marker, 'utf8')).toBe('preserved marker bytes')
+      expect(await readFile(join(root, 'AGENTS.md'), 'utf8')).toBe('ancestor rule must not load')
+    } finally {
+      markerFault.path = undefined; markerFault.error = undefined
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
   it('treats ENOTDIR while probing a host candidate as confirmed absence', async () => {
     const root = await tempRepo()
     const homeFile = join(root, 'not-a-directory')
