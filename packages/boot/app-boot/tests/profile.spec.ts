@@ -735,7 +735,7 @@ describe('healProfilesModuleFallback', () => {
     expect(() => { renameSync(link, link) }).toThrow(/EPERM: simulated host refusing to replace/)
     if (process.platform === 'win32') {
       healProfilesModuleFallback(anchor, home)
-      expect(readlinkSync(link)).toBe(realpathSync.native(dirname(anchor)))
+      expect(realpathSync.native(link)).toBe(realpathSync.native(dirname(anchor)))
     } else {
       expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow(/EPERM: simulated host refusing to replace/)
       expect(readlinkSync(link)).toBe(previousTarget)

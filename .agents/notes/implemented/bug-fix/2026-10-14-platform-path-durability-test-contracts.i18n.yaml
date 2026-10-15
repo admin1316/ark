@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-14-platform-path-durability-test-contracts.md
-2026-10-14-platform-path-durability-test-contracts.md: 54ea373ec197c54353201790db3a274dc48c08d7
-2026-10-14-platform-path-durability-test-contracts.zh.md: 86fff813e8884b8b1cafcfa8e46c9fe945bfd571
+2026-10-14-platform-path-durability-test-contracts.md: 1e8d631e561eb6a7916a7774a8576bf6cca92826
+2026-10-14-platform-path-durability-test-contracts.zh.md: 1af388b3a3fd526ad956c307a388c2749657e8ed

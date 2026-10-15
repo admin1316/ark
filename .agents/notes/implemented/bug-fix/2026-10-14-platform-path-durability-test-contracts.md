@@ -42,6 +42,8 @@ Metadata-only evaluator operations retain their artifact, signature and replay c
 
 Inbox observation owns a started read through settlement even when polling expires before the first callback rejects. The expired outcome retains its session diagnostic and framework cause; late matches cannot reverse it, and distinct late I/O or parse errors remain visible. Joining the read can delay error return without extending the success deadline or allowing scenario cleanup to remove a directory still being read.
 
+Koffi struct descriptors are module-local anonymous values. Source and compiled consumers can evaluate separate module identities in one process without competing for global type names. Each consumer retains the same field order, pointer representation and ABI size guards; struct arguments use the returned descriptor rather than a registry lookup.
+
 ## Alternatives considered
 
 **Suppress filesystem errors or skip Windows suites.** This can conceal corrupted paths or bypass the refusal and protocol behavior the tests must establish.
