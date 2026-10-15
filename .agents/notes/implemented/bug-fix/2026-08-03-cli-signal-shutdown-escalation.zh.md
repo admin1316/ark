@@ -58,3 +58,5 @@ Ark Native runner 启用已导出的可选参数 `RunProfileOptions.shutdownOnPa
 `packages/session/session-telemetry-otel/tests/otel.spec.ts` 在定时器导出开始后保持一条真实 OTLP 请求打开，并固定以下行为：即使 SDK 的 `forceFlush()` 仍待结算，Cordis dispose 也会在 `shutdownTimeoutMillis` 到期时返回。随后测试释放 collector，使仍受观察的提供方 Promise 干净结算。
 
 `packages/boot/profile-runner/tests/profile-lifecycle.spec.ts` 中的父连接断开控制在可观察的启动与 dispose 边界上使用真实 shutdown owner。launcher 的 IPC 传输控制另行检查自然完成。这些控制不能证明打包后的 Native API 在父连接丢失时的行为：仍须观察实际构建的 backend 身份消失，且已记录的监听器拒绝连接。dummy 子进程不能替代该观察，IPC 事件交付也不能证明 backend 主线程阻塞时仍有独立监督。
+
+CI 保留 Unicode 输出断言，并增加有界失败指标。spill 诊断测试覆盖两条日志路径；快照规范化保持 payload 不变。凭据扫描保留默认规则和全部 ref 历史，只排除经过审阅的精确元数据匹配。

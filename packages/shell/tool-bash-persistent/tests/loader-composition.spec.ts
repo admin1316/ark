@@ -164,7 +164,15 @@ suite('persistent Bash through a real cordis.yml Loader composition', () => {
     expect(large).not.toContain('beginning of this command output was dropped')
 
     const unicode = text(await execute('unicode-output', "printf 'x%.0s' {1..15999}; printf '😀tail\\n'"))
-    expect(unicode.startsWith(`${'x'.repeat(15_999)}<response clipped>`)).toBe(true)
+    expect(unicode.startsWith(`${'x'.repeat(15_999)}<response clipped>`), JSON.stringify({
+      outputChars: unicode.length,
+      outputUtf8Bytes: Buffer.byteLength(unicode),
+      firstNonXOffset: unicode.search(/[^x]/u),
+      clippedMarkerOffset: unicode.indexOf('<response clipped>'),
+      lineFeedCount: unicode.split('\n').length - 1,
+      containsEmojiHighSurrogate: unicode.includes('\uD83D'),
+      endsWithTail: unicode.endsWith('tail'),
+    })).toBe(true)
     expect(unicode).not.toContain('\uD83D')
     expect(text(await execute('after-unicode-output', 'printf "ready\\n"'))).toBe('ready')
 
