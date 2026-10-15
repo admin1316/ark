@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { generateKeyPairSync, sign } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import KnowledgeWikiService from '../src/index.ts'
@@ -2071,23 +2071,64 @@ alpha reusable method and validation
   })
 
   it('evicts the oldest read permission at capacity and retains a refreshed session permission', async () => {
+    const startedAt = performance.now()
+    let fillIndex = 0
+    let startedReads = 0
+    let completedReads = 0
+    const milestones: Array<{
+      phase: string
+      elapsedMs: number
+      fillIndex: number
+      startedReads: number
+      completedReads: number
+    }> = []
+    const checkpoint = (phase: string): void => {
+      milestones.push({
+        phase, elapsedMs: Math.round(performance.now() - startedAt), fillIndex, startedReads, completedReads,
+      })
+    }
+    checkpoint('fixture')
+    onTestFailed(() => {
+      process.stderr.write(`wiki-read-capacity-diagnostic ${JSON.stringify({
+        elapsedMs: Math.round(performance.now() - startedAt), phase: milestones.at(-1)?.phase, milestones,
+        fillIndex, lastStartedReadIndex: startedReads, lastCompletedReadIndex: completedReads,
+      })}\n`)
+    })
     const item = repairFixture()
     ctx.provide('sessionQuery', { readSession: async () => ({ session: { cwd: root }, events: item.events }) } as never)
+    checkpoint('initial-read')
+    startedReads += 1
     await service.modelPageContent({ path: item.path }, item.scope)
+    completedReads += 1
+    checkpoint('capacity-fill')
     for (let index = 1; index < 256; index += 1) {
+      fillIndex = index
+      startedReads += 1
       await service.modelPageContent({ path: item.path }, { ...item.scope, sessionId: `repair-read-${index}` })
+      completedReads += 1
     }
+    checkpoint('refresh-original')
+    startedReads += 1
     await service.modelPageContent({ path: item.path }, item.scope)
+    completedReads += 1
+    checkpoint('overflow-read')
+    startedReads += 1
     await service.modelPageContent({ path: item.path }, { ...item.scope, sessionId: 'repair-read-overflow' })
+    completedReads += 1
+    checkpoint('journal-snapshot')
     const journalPath = join(root, '.llm-wiki', 'knowledge-events.jsonl')
     const before = readFileSync(journalPath, 'utf8')
 
+    checkpoint('reject-oldest-permission')
     await expect(service.proposeKnowledgeRepair(item.request, { ...item.scope, sessionId: 'repair-read-1' }))
       .resolves.toMatchObject({ ok: false, errorCode: 'source-not-read' })
+    checkpoint('assert-no-oldest-mutation')
     expect(readFileSync(journalPath, 'utf8')).toBe(before)
     expect(readFileSync(join(wikiRoot, item.path), 'utf8')).toBe(item.content)
     expect(existsSync(join(wikiRoot, '_candidates/ingest', item.path))).toBe(false)
+    checkpoint('accept-refreshed-permission')
     await expect(service.proposeKnowledgeRepair(item.request, item.scope)).resolves.toMatchObject({ ok: true })
+    checkpoint('complete')
   }, 30_000)
 
   it.each(['original', 'replacement'] as const)('refuses a repair read race even with the %s content hash', async (hashOf) => {
