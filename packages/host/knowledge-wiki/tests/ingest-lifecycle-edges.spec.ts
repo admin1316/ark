@@ -302,6 +302,6 @@ describe('two-stage ingest lifecycle', () => {
       stageExecutorFor(failingLlm), 'p', 'm', projectRoot, sourceRel,
       new AbortController().signal,
     ))
-      .rejects.toThrow('ENOTDIR')
+      .rejects.toThrow(/ENOTDIR|ENOENT/u)
   })
 })

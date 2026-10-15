@@ -15,6 +15,7 @@ import {
   readSync,
   realpathSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -27,9 +28,27 @@ export const MAX_WIKI_PAGE_BYTES = 5 * 1024 * 1024
 /**
  * Distinguish an absent optional file from corruption or unsafe I/O.
  * @param error - Caught value to inspect for Node's missing-path error code.
- * @returns True only for a non-null object whose code property is ENOENT.
+ * @returns True for ENOENT only when its existing path ancestry permits absence.
  */
 export function isMissingPathError(error: unknown): boolean {
+  if (!hasMissingPathCode(error)) return false
+  const path: unknown = Reflect.get(error, 'path')
+  if (typeof path !== 'string') return true
+  let cursor = dirname(resolve(path))
+  for (;;) {
+    try {
+      const ancestor = lstatSync(cursor)
+      return ancestor.isDirectory() || (ancestor.isSymbolicLink() && statSync(cursor).isDirectory())
+    } catch (ancestorError) {
+      if (!hasMissingPathCode(ancestorError)) throw ancestorError
+      const parent = dirname(cursor)
+      if (parent === cursor) return false
+      cursor = parent
+    }
+  }
+}
+
+function hasMissingPathCode(error: unknown): error is object {
   return typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT'
 }
 
@@ -90,11 +109,26 @@ export function resolveConfinedPath(root: string, input: string, allowMissingLea
 }
 
 function nearestExistingAncestor(path: string): string {
-  // Callers confine the target under an existing root, so the walk always
-  // terminates there.
   let cursor = path
-  while (!existsSync(cursor)) cursor = dirname(cursor)
-  return cursor
+  for (;;) {
+    try {
+      lstatSync(cursor)
+      return cursor
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error
+      const parent = dirname(cursor)
+      if (parent === cursor) throw error
+      cursor = parent
+    }
+  }
+}
+
+/** Unlink absence requires directory ancestry; Windows may report ENOENT beneath a file. */
+function isMissingFilePathError(error: unknown, path: string): boolean {
+  if (!hasMissingPathCode(error)) return false
+  const ancestor = nearestExistingAncestor(dirname(resolve(path)))
+  if (!statSync(ancestor).isDirectory()) throw new Error(`ENOTDIR: non-directory path ancestor: ${ancestor}`)
+  return true
 }
 
 /**
@@ -290,7 +324,7 @@ export function createPrivateFileIfMissing(path: string, content: Buffer): boole
 /**
  * Durably remove one ordinary file without following a symbolic link.
  * The file is renamed to a sibling tombstone and its identity checked before unlink and directory fsync.
- * @param path - Single-link ordinary file to remove; absence at the initial stat or open is a no-op.
+ * @param path - Single-link ordinary file to remove; initial stat/open absence is a no-op only after directory ancestry is established.
  * @throws On an unsafe file, changed identity, or I/O failure; a later failure may leave a tombstone or removed file.
  */
 export function durableUnlinkFile(path: string): void {
@@ -298,7 +332,7 @@ export function durableUnlinkFile(path: string): void {
   try {
     stat = lstatSync(path)
   } catch (error) {
-    if (isMissingPathError(error)) return
+    if (isMissingFilePathError(error, path)) return
     throw error
   }
   if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) {
@@ -309,7 +343,7 @@ export function durableUnlinkFile(path: string): void {
   try {
     descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
   } catch (error) {
-    if (isMissingPathError(error)) return
+    if (isMissingFilePathError(error, path)) return
     throw error
   }
   const expected = fstatSync(descriptor)

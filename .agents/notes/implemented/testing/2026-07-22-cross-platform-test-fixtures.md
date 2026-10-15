@@ -20,6 +20,8 @@ Language-server teardown targets the whole descendant tree through a negative pr
 
 Tests for a genuinely POSIX-only primitive use a narrow Windows exclusion on that case. Adjacent cross-platform cases continue to pin non-regular file rejection, unavailable command rejection, and inaccessible working-directory rejection. Supported Windows paths remain inside the per-file coverage gate rather than being excluded with their test files.
 
+Repository-relative discovery paths are normalized at ingestion before slash-based ownership checks. Tests compare actual artifact file identity when host APIs return different valid path spellings. Proxy fixtures distinguish Windows environment-key folding from POSIX tombstones, and Native catalog snapshots preserve the platform-selected shell and every other stable tool. Cancellation and interruption fixtures wait for the matching request, lifecycle or durable-phase receipt before triggering their boundary; that synchronization does not retrospectively prove the cause of an earlier CI failure.
+
 ## Alternatives considered
 
 **Normalize all paths and URIs to POSIX strings.** This would make assertions uniform but would change correct Windows behavior: external paths are native absolute paths, UNC file URIs are valid, and configured homes resolve through the host path rules.

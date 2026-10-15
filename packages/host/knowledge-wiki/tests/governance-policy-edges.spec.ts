@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   decideCandidateGovernance,
   governancePolicyVersion,
@@ -10,7 +10,21 @@ import {
 
 const roots: string[] = []
 
+const pathFaults = vi.hoisted(() => new Map<string, NodeJS.ErrnoException>())
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      const fault = pathFaults.get(String(args[0]))
+      if (fault !== undefined) throw fault
+      return actual.lstatSync(...args)
+    },
+  }
+})
+
 afterEach(() => {
+  pathFaults.clear()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -20,17 +34,26 @@ function root(): string {
   return value
 }
 
-it('fails closed when durable-path inspection encounters a non-missing filesystem error', () => {
+it('rejects an existing ordinary-file ancestor before inspecting its child', () => {
   const value = root()
   writeFileSync(join(value, 'not-a-directory'), 'file', 'utf8')
-  if (process.platform === 'win32') {
-    // Windows reports ENOENT (not ENOTDIR) for a path beneath an ordinary
-    // file, which the missing-path guard cannot distinguish from a genuinely
-    // absent root — the walk then treats the leaf as absent.
-    expect(resolveGovernedWikiPath(value, 'not-a-directory/child.md', true)).toBeUndefined()
-    return
+  const child = join(value, 'not-a-directory', 'child.md')
+  pathFaults.set(child, Object.assign(new Error('Windows-shaped child obstruction'), { code: 'ENOENT' }))
+  expect(resolveGovernedWikiPath(value, 'not-a-directory/child.md', true)).toBeUndefined()
+  expect(resolveGovernedWikiPath(value, 'not-a-directory/child.md', false)).toBeUndefined()
+  expect(resolveGovernedWikiPath(value, 'not-a-directory', false)?.absolutePath).toBe(join(value, 'not-a-directory'))
+})
+
+it.each(['EACCES', 'EIO'])('propagates the original %s inspection error instead of accepting a missing suffix', (code) => {
+  const value = root()
+  const fault = Object.assign(new Error(`exact inspection failure: ${code}`), { code })
+  pathFaults.set(join(value, 'blocked'), fault)
+  for (const allowMissing of [true, false]) {
+    let observed: unknown
+    try { resolveGovernedWikiPath(value, 'blocked/child.md', allowMissing) }
+    catch (error) { observed = error }
+    expect(observed).toBe(fault)
   }
-  expect(() => resolveGovernedWikiPath(value, 'not-a-directory/child.md', true)).toThrow()
 })
 
 function page(options: {

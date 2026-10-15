@@ -16,7 +16,11 @@ const JOURNAL = credentialKey('llm-remote', 'alpha')
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+  const failures: unknown[] = []
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    try { await cleanup() } catch (error) { failures.push(error) }
+  }
+  if (failures.length) throw new AggregateError(failures, 'provider fixture cleanup failed')
 })
 
 async function runtime(options: Parameters<typeof createProviderRuntime>[0] = {}) {
@@ -977,16 +981,33 @@ it('drains claimed recovery on shutdown and records persisted-but-not-live inste
   const request = run.request({ credential: { op: 'set', ref: OLD_REF, value: NEW_KEY } })
   vi.spyOn(run.ctx.credentials, 'set').mockRejectedValueOnce(new Error('fixture interruption'))
   await expect(run.mutate(request)).rejects.toMatchObject({ failure: { code: 'provider-transaction-in-doubt' } })
+  const settingsApplied = Promise.withResolvers<undefined>()
+  const modify = run.ctx.credentials.modifyRecord.bind(run.ctx.credentials)
+  vi.spyOn(run.ctx.credentials, 'modifyRecord').mockImplementation(async (...args) => {
+    const result = await modify(...args)
+    if (result?.kind === 'grant' && result.payload !== null && typeof result.payload === 'object'
+      && 'phase' in result.payload && result.payload.phase === 'settings-applied') settingsApplied.resolve(undefined)
+    return result
+  })
   const llm = run.ctx.llm
   const cancellation = new AbortController()
   const restore = llm.remoteResumeProvider({ provider: 'alpha', transactionId: request.transactionId, credentialValue: NEW_KEY }, cancellation.signal)
   const outcome = restore.then(value => ({ value }), (error: unknown) => ({ error }))
+  cleanups.push(async () => { release.resolve(undefined); await outcome })
   await entered.promise
+  await settingsApplied.promise
+  expect(await run.ctx.credentials.readRecord(JOURNAL)).toMatchObject({ payload: { phase: 'settings-applied' } })
   cancellation.abort()
   const entry = [...run.ctx.loader.entries()].find(candidate => candidate.options.name === 'cordis:fixture-llm')
   if (entry === undefined) throw new Error('LLM fixture entry is missing')
   let disposed = false
   const retiring = entry.update({ disabled: true }).then(() => { disposed = true })
+  void retiring.catch(() => {})
+  cleanups.push(async () => {
+    release.resolve(undefined)
+    await Promise.allSettled([outcome, retiring])
+    await retiring
+  })
   try {
     await vi.waitFor(async () => {
       await expect(llm.remoteProviderTransaction({ provider: 'alpha', transactionId: request.transactionId }))

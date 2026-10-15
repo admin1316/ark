@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { expect, it, onTestFailed, vi } from 'vitest'
 import type { UpdateTeamTaskRequest } from '@deepseek-ai/dsh-agent-team'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -55,21 +55,33 @@ it('provisions a real fresh teammate and persists its prompt before reporting ac
 })
 
 it('forks completed Lead history and rejects a stale caller', async () => {
+  let bodyPhase = 'create-runtime'
+  let cleanupPhase = 'not-started'
+  onTestFailed(() => { console.error('agent-team fork fixture phase', { bodyPhase, cleanupPhase }) })
   const run = await createTeamRuntime([textResponse('lead finished'), textResponse('fork finished'), textResponse('lead received completion')])
   try {
+    bodyPhase = 'lead-history-idle'
     run.lead.followup(createUserMessage({ content: [{ type: 'text', text: 'lead history' }], source: { kind: 'user' } }))
     await run.lead.whenIdle()
+    bodyPhase = 'spawn-fork'
     const child = await run.ctx.agentTeams.spawnTeammate(run.lead, {
       name: 'reviewer', description: 'Review prior work', prompt: [{ type: 'text', text: 'review task' }],
       context: 'fork', provider: 'fork', signal: new AbortController().signal,
     })
+    bodyPhase = 'fork-idle'
     await run.ctx.agents.get(child.member.id)?.whenIdle()
+    bodyPhase = 'inspect-fork'
     const stored = await run.ctx.sessionPersistence.inspect(child.member.id)
     expect(stored.meta.seedLength).toBeGreaterThan(0)
     expect(run.ctx.agentTeams.listMembers(run.lead).find(member => member.id === child.member.id)?.role).toBe('teammate')
+    bodyPhase = 'stale-caller-rejection'
     await expect(run.ctx.agentTeams.createTask(new Proxy(run.lead, {}), { subject: 'forged', description: 'forged' }))
       .rejects.toMatchObject({ code: 'TEAM_NOT_MEMBER' })
-  } finally { await run.dispose() }
+  } finally {
+    cleanupPhase = 'dispose-runtime'
+    await run.dispose()
+    cleanupPhase = 'complete'
+  }
 })
 
 it('queues quiet mail for an inactive teammate and delivers it once on wakeup', async () => {
@@ -153,7 +165,13 @@ it('reports a provisioning conflict when the durable member vanished before sett
   try {
     const teams = run.ctx.agentTeams
     const startResult = Promise.withResolvers<never>()
-    vi.spyOn(run.ctx.subagents, 'startContinuable').mockImplementation(() => startResult.promise)
+    const started = Promise.withResolvers<undefined>()
+    let startObserved = false
+    const start = vi.spyOn(run.ctx.subagents, 'startContinuable').mockImplementation(() => {
+      startObserved = true
+      started.resolve(undefined)
+      return startResult.promise
+    })
     // Simulate a durable journal that lost the provisioning member (e.g. a
     // compacted or replaced root log): the settle must refuse instead of
     // recording a terminal phase for a teammate the journal never knew.
@@ -177,9 +195,10 @@ it('reports a provisioning conflict when the durable member vanished before sett
       name: 'vanishing-worker', description: 'Vanished mid-provisioning', prompt: [{ type: 'text', text: 'initial child task' }],
       provider: 'spawn', context: 'fresh', signal: new AbortController().signal,
     }).catch((error: unknown) => error)
-    await vi.waitFor(() => {
-      expect(run.lead.session.events.some(event => event.type === 'team/member')).toBe(true)
-    })
+    await vi.waitFor(() => { expect(startObserved).toBe(true) })
+    await started.promise
+    expect(run.lead.session.events.some(event => event.type === 'team/member')).toBe(true)
+    expect(start).toHaveBeenCalledOnce()
     vanishNext = true
     startResult.reject(new Error('start failed'))
     const failure = await spawning

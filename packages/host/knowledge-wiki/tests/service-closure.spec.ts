@@ -488,7 +488,7 @@ describe('raw source tree safety', () => {
     rmSync(join(root, 'raw'), { recursive: true, force: true })
     writeFileSync(join(root, 'raw'), 'blocks the source root', 'utf8')
 
-    await expect(service.scanSources()).rejects.toThrow(/ENOTDIR/u)
+    await expect(service.scanSources()).rejects.toThrow(/ENOTDIR|ENOENT/u)
     expect((await service.ingestQueueStatus()).tasks).toEqual([])
   })
 
