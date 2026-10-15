@@ -227,6 +227,39 @@ describe('semantic history request and retention contracts', () => {
     expect(admitted.done).toBe(false)
   })
 
+  it('releases an unfinished reader when its initiating request is cancelled', async () => {
+    const { session, page, reader, request } = await fixture({ limits: { contentBytes: 6_000 } })
+    userMessage(session, 'a'.repeat(2_000))
+    userMessage(session, 'b'.repeat(2_000))
+    const first = await page()
+    const controller = new AbortController()
+    const retained = await reader.read(request(first.sourceRevision, first.records[0]!.id, { maxCodeUnits: 2 }), controller.signal)
+    if (retained.view !== 'content') throw new Error('expected content fragment')
+    expect(retained.done).toBe(false)
+    controller.abort()
+    const admitted = await reader.read(request(first.sourceRevision, first.records[1]!.id, { maxCodeUnits: 2 }), signal())
+    if (admitted.view !== 'content') throw new Error('expected content fragment')
+    expect(admitted.done).toBe(false)
+  })
+
+  it('does not retain a reader if cancellation races listener registration', async () => {
+    const { session, page, reader, request } = await fixture({ limits: { contentBytes: 6_000 } })
+    userMessage(session, 'a'.repeat(2_000))
+    userMessage(session, 'b'.repeat(2_000))
+    const first = await page()
+    const controller = new AbortController()
+    const register = controller.signal.addEventListener.bind(controller.signal)
+    vi.spyOn(controller.signal, 'addEventListener').mockImplementation((...args) => {
+      register(...args)
+      controller.abort()
+    })
+    await expect(reader.read(request(first.sourceRevision, first.records[0]!.id, { maxCodeUnits: 2 }), controller.signal))
+      .rejects.toMatchObject({ name: 'AbortError' })
+    const admitted = await reader.read(request(first.sourceRevision, first.records[1]!.id, { maxCodeUnits: 2 }), signal())
+    if (admitted.view !== 'content') throw new Error('expected content fragment')
+    expect(admitted.done).toBe(false)
+  })
+
   it('refuses a non-contiguous retained prefix instead of fabricating records', async () => {
     const ctx = new Context()
     contexts.push(ctx)
@@ -566,4 +599,3 @@ describe('semantic history index, body and presentation contracts', () => {
     }, signal()))).toEqual({ code: 'history-stale-source', message: 'child descriptor changed while reading history' })
   })
 })
-

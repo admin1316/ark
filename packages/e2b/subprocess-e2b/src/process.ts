@@ -320,6 +320,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
   private markQuiescent(): void {
     this.quiescenceProven = true
     this.terminationFailure = undefined
+    this.spec.signal?.removeEventListener('abort', this.onAbort)
   }
 
   private async run(): Promise<SubprocessOutcome> {
@@ -399,7 +400,9 @@ export class E2BSubprocessHandle implements SubprocessHandle {
       if (canceledPreparation && failure === error) return { exitCode: null, signal: 'SIGTERM' }
       throw failure
     } finally {
-      this.spec.signal?.removeEventListener('abort', this.onAbort)
+      if (await this.commandState.promise === undefined) {
+        this.spec.signal?.removeEventListener('abort', this.onAbort)
+      }
       this.stdout?.end()
       this.stderr?.end()
     }

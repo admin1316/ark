@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -34,18 +35,42 @@ type Script = ConstructorParameters<typeof MockAdapter>[0]
 
 const roots: string[] = []
 const projCacheRoots: string[] = []
+const contexts: Context[] = []
 
-afterEach(() => {
-  for (const root of projCacheRoots.splice(0)) rmSync(root, { recursive: true, force: true })
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+afterEach(async () => {
+  const owners = contexts.splice(0)
+  const directories = [...projCacheRoots.splice(0), ...roots.splice(0)]
+  const disposal = await Promise.allSettled(owners.map(async (ctx) => {
+    const logged = vi.spyOn(ctx.logger, 'error')
+    try {
+      const result = await Promise.allSettled([ctx.fiber.dispose()])
+      const calls: unknown[][] = logged.mock.calls
+      const errors = [...result.flatMap(outcome => outcome.status === 'rejected' ? [outcome.reason as unknown] : []), ...calls.flat()]
+      if (errors.length) throw new AggregateError(errors, 'subagent listing Context disposal failed')
+    } finally {
+      logged.mockRestore()
+    }
+  }))
+  const failures = disposal.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+  if (failures.length) throw new AggregateError(failures, 'subagent listing fixture disposal failed; directories retained')
+  const cleanup = await Promise.allSettled(directories.map(root =>
+    rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })))
+  failures.push(...cleanup.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : []))
+  if (failures.length) throw new AggregateError(failures, 'subagent listing fixture directory cleanup failed')
 })
+
+function ownedContext(): Context {
+  const ctx = new Context()
+  contexts.push(ctx)
+  return ctx
+}
 
 /** Boot the continuable stack with real JSONL session persistence. */
 async function setup(
   script: Script,
   options: { sessionProjections?: boolean; projectionCache?: boolean } = {},
 ) {
-  const ctx = new Context()
+  const ctx = ownedContext()
   await mountAgentLoopTestDependencies(ctx)
   const root = mkdtempSync(join(tmpdir(), 'dsh-subagent-list-'))
   roots.push(root)
@@ -165,7 +190,7 @@ const hostileProjectionDefinition = {
 
 describe('SubagentRuntime.listChildren', () => {
   it('lists live children without persistence or the continuation runtime', async () => {
-    const ctx = new Context()
+    const ctx = ownedContext()
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(TestSessionQuery)
@@ -201,7 +226,7 @@ describe('SubagentRuntime.listChildren', () => {
   })
 
   it('fails loud when the session store is not mounted', async () => {
-    const ctx = new Context()
+    const ctx = ownedContext()
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SubagentRuntime)
     await expect(ctx.subagents.listChildren(SessionId('no-store-parent'))).rejects.toThrow(
@@ -210,7 +235,7 @@ describe('SubagentRuntime.listChildren', () => {
   })
 
   it('fails loud when the Session query service is not mounted', async () => {
-    const ctx = new Context()
+    const ctx = ownedContext()
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SubagentRuntime)

@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 2,
+  "kind": "ark-knowledge-measured-learning-data-format",
+  "scope": "Knowledge Wiki candidate learning records and its protected verifier protocol only",
+  "existingContracts": {
+    "semanticVerification": "Existing verifier receipt schemaVersion 2 remains a semantic/content check. It can set verificationStatus to verified but cannot create trial credit, successfulUses, userCorrections, or positive utility.",
+    "publicMethods": "Existing Cordis, Agent, Session, ToolRuntime, LLM provider, Wiki tool, and current public service method shapes remain unchanged.",
+    "sessionEvents": "Existing SessionEventMap and current KnowledgeEvent schemaVersion 1 remain unchanged. Model-visible trial content must still be reconstructed from the existing session log.",
+    "legacyRecords": "Legacy review trial summaries, UI feedback, and semantic verifier outcomes receive no retrospective measured-use or utility credit. Preserve original bytes and failure records."
+  },
+  "records": {
+    "PreRegistration": {
+      "schemaVersion": 1,
+      "required": [
+        "preRegistrationId",
+        "proposalHash",
+        "measurementDefinitionHash",
+        "modelConfigTaskGoalPolicyIdentity",
+        "orderedPairIds",
+        "issuedAt",
+        "evaluatorAuthorityId",
+        "evaluatorSignature"
+      ],
+      "rule": "The signed preregistration fixes every baseline/candidate opportunity before candidate bytes are exposed. Runtime requires exact pair coverage and matching task identities; omitted, added, or reordered opportunities are rejected."
+    },
+    "CanonicalProposal": {
+      "schemaVersion": 1,
+      "required": [
+        "reviewHash",
+        "semanticReceiptHash",
+        "candidatePath",
+        "candidateHash",
+        "sourceArtifactManifestHash",
+        "governedRecordHash",
+        "scopeAclExpiryHash",
+        "action",
+        "targetPath",
+        "targetBeforeHashOrVerifiedAbsence",
+        "targetAfterHash",
+        "frozenApprovalActor",
+        "frozenApprovalTime",
+        "transformVersion",
+        "sourceIdentity",
+        "buildIdentity",
+        "profileIdentity",
+        "modelPolicyIdentity",
+        "immutableMissionIdentity"
+      ],
+      "rule": "targetAfterHash is the raw SHA-256 of exact target-after bytes resolved from the protected artifact store. Preparing a proposal writes neither a canonical page nor a promotion WAL."
+    },
+    "TrialAuthorization": {
+      "schemaVersion": 1,
+      "required": [
+        "grantId",
+        "proposalHash",
+        "evaluatorAuthorityId",
+        "reviewedDecisionHash",
+        "preRegistrationHash",
+        "measurementDefinitionHash",
+        "allowedSessionIds",
+        "modelConfigTaskGoalPolicyIdentity",
+        "maxObservations",
+        "maxTurns",
+        "deadline",
+        "issuedAt",
+        "expiresAt",
+        "evaluatorSignature"
+      ],
+      "rule": "modelConfigTaskGoalPolicyIdentity contains model and SHA-256 model-config/task/goal/policy identities. Only explicit named isolated sessions can read the exact frozen proposal bytes. Persist budget consumption before exposure; crash may consume a slot but cannot restore or duplicate authorization."
+    },
+    "MeasuredUseReceipt": {
+      "schemaVersion": 1,
+      "required": [
+        "useId",
+        "grantIdOrNull",
+        "proposalHash",
+        "knowledgeId",
+        "contentHash",
+        "role",
+        "pairIdOrNull",
+        "sourceProfileBuildModelConfigTaskGoalPolicyIdentity",
+        "sessionId",
+        "callId",
+        "sessionEventSequenceAndHash",
+        "renderedToolResultHash",
+        "providerRequestHash",
+        "finalOutputArtifactManifest",
+        "oracleIdentityAndResults",
+        "errorsRetriesToolCallsAndCost",
+        "measurementDefinitionHash",
+        "evidenceArtifactReferences",
+        "evaluatorSignature"
+      ],
+      "rule": "sourceProfileBuildModelConfigTaskGoalPolicyIdentity contains profile/build identities, model, and SHA-256 model-config/task/goal/policy identities. sessionEventSequenceAndHash is {sequence, hash}; finalOutputArtifactManifest and evidenceArtifactReferences are arrays of raw-byte SHA-256 values; oracleIdentityAndResults contains producerId, evaluatorId, verificationStatus, all 17 metric opportunity counts, and matching evidence refs; errorsRetriesToolCallsAndCost contains turnCount, errors, retries, toolCalls, and costMicrounits. The evaluator signature covers the complete record. Candidate-role evidence requires an actual matching injection and an allowlisted session. Baseline evidence attests no candidate exposure. Failure, unknown, and zero opportunities are explicit outcomes."
+    },
+    "MeasuredTrialReceipt": {
+      "schemaVersion": 1,
+      "required": [
+        "trialId",
+        "proposalHash",
+        "grantHash",
+        "grantId",
+        "measurementDefinitionHash",
+        "orderedUseReceiptHashes",
+        "baselineOpportunityNumeratorsAndDenominators",
+        "candidateOpportunityNumeratorsAndDenominators",
+        "safetyObservations",
+        "evaluatorAuthorityId",
+        "issuedAt",
+        "evaluatorSignature"
+      ],
+      "rule": "grantHash resolves the signed TrialAuthorization; orderedUseReceiptHashes contains each signed baseline/candidate receipt in preregistered pair order. baselineOpportunityNumeratorsAndDenominators and candidateOpportunityNumeratorsAndDenominators each contain all 17 metric counts, recomputed from the use receipts. safetyObservations contains staleRecallRate, crossSessionLeakage, falseCompletionRate, memoryPrivilegeEscalation, and memoryPoisoning counts and must match candidate counts with zero numerators and non-zero denominators. Include every preregistered observation, including failures and unknowns. Runtime validates model/task equality and completeness, then recomputes all rates and lift; caller-supplied scores are never authority."
+    },
+    "CandidateTrialProjection": {
+      "schemaVersion": 1,
+      "fields": [
+        "status",
+        "trialHash",
+        "authorityId",
+        "evidence",
+        "retrievalHits",
+        "successfulUses",
+        "userCorrections",
+        "utilityScore",
+        "startedAt",
+        "endedAt"
+      ],
+      "rule": "The existing CandidateTrial summary is a projection only. trialHash must resolve to an independently authenticated MeasuredTrialReceipt. The summary alone never authorizes trial access or promotion."
+    }
+  },
+  "journal": {
+    "schemaVersion": 1,
+    "location": ".llm-wiki/learning-events-v1.jsonl",
+    "eventTypes": [
+      "learning/trial-authorized",
+      "learning/use-measured",
+      "learning/trial-measured"
+    ],
+    "rule": "Append-only hash chain, versioned payloads, unique authorization/use/trial ids. Replay revalidates evaluator proofs and referenced content-addressed artifacts before deriving budgets, counters, or lift. Retries, imports, and restarts cannot double-credit a receipt."
+  },
+  "authoritySeparation": {
+    "evaluator": "An externally provisioned public trust anchor validates evaluator signatures. Evaluator private signing authority, oracle, build identity, and artifact resolver remain outside candidate-author and launcher access.",
+    "journal": "Product-owned local journal/WAL signing authority remains separate. Reject same-key-role configuration and cross-role receipts. Existing local promotion seals cannot certify independent evaluation.",
+    "provisioning": "Use a launcher-owned, versioned protected descriptor with fixed evaluator authority, artifact locator, and journal signer handle. Never load keys or executables from project-writable Wiki content. Missing owner, trust anchor, oracle, or descriptor means unavailable."
+  },
+  "promotion": {
+    "eligibility": "A complete preregistered paired trial with independently authenticated receipts, unchanged zero-tolerance safety conditions, and strictly improved measured knowledgeUtility is required before explicit canonical review.",
+    "utility": "successfulUses counts independently checked actual applicable repair reuse only. Positive utilityScore is derived from authenticated paired rates; unpaired success and semantic checks cannot mint causal lift.",
+    "limits": "Keep current ordinary retention and utility thresholds. One repaired-rule trial does not fill unrelated smartness metrics or Phase 6. Missing required probes remain UNKNOWN."
+  },
+  "activation": {
+    "enabled": false,
+    "reason": "No accountable independent evaluator principal, public trust anchor, oracle, artifact locator, or provisioned runtime descriptor is available.",
+    "requiredBeforePositiveTrial": [
+      "independent evaluator owner and custody channel",
+      "evaluator public-key fingerprint and distinct local journal-signing identity",
+      "immutable evaluator build and artifact locator",
+      "preregistered real task corpus, oracle, utility definition, scope, budget, and safety probes",
+      "approved Native descriptor intake and candidate-only UI/entry-point behavior"
+    ]
+  }
+}

@@ -265,7 +265,7 @@ func runArkInteractionAPIContractChecks() {
   let approvalPanel = interactionSourceSlice(
     root,
     from: "private struct NativeApprovalPanel",
-    through: "private struct NativePlanReviewPanel"
+    through: "struct NativePlanReviewPanel"
   )
   check(
     approvalPanel?.contains("ark.interaction.approval.reject") == true
@@ -275,7 +275,7 @@ func runArkInteractionAPIContractChecks() {
   )
   let planPanel = interactionSourceSlice(
     root,
-    from: "private struct NativePlanReviewPanel",
+    from: "struct NativePlanReviewPanel",
     through: "private struct NativeQuestionPanel"
   )
   check(

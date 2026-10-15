@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-13-spawn-signal-process-tree-lifetime.md
+2026-10-13-spawn-signal-process-tree-lifetime.md: c2060f5d0bca5af7c6a587c3f4b21cc8d81e99b1
+2026-10-13-spawn-signal-process-tree-lifetime.zh.md: 035d13cd0e74e39479def58480f52a0ff8557412

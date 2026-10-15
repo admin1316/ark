@@ -39,6 +39,7 @@ Choose this adapter when the deployment targets DeepSeek's official API, optiona
     apiKeyEnv: DEEPSEEK_API_KEY  # credential reference, resolved per request
     baseURL: https://api.deepseek.com # optional; $DEEPSEEK_BASE_URL then this default
     reasoningEffort: high        # optional; off | low | high | max
+    jsonOutput: false            # optional; true asks DeepSeek for valid JSON message content
     maxTokens: 256000            # optional per-request output cap
     maxRequestFilesBytes: 134217728
     maxInlineRequestImageBytes: 20971520
@@ -54,6 +55,7 @@ A request selects the route with `provider: deepseek-official`; the model id pas
 | `baseURL` | `https://api.deepseek.com` | Endpoint base; `$DEEPSEEK_BASE_URL` wins when set |
 | `thinking` | `enabled` | Deployment policy; `disabled` locks every request to `off` |
 | `reasoningEffort` | `high` | Default effort: `off`, `low`, `high`, or `max` |
+| `jsonOutput` | `false` | When true, sends `response_format: { type: 'json_object' }` on each request |
 | `maxTokens` | `256,000` | Per-request output cap; a model's own cap and explicit request values win |
 | `defaultContextWindow` | `1,000,000` | Capacity fallback for models without an exact value |
 | `models` | V4 Flash + V4 Pro + V4 Flash Vision Exp | Advisory catalog shown by discovery consumers |
@@ -82,6 +84,8 @@ Files mode bounds retained request versions by `maxRequestFilesBytes` and `maxIm
 
 `reasoningEffort` selects the advertised default. Exact-model metadata exposes ordered `off`, `low`, `high`, and `max` efforts with selection guidance when deployment policy permits thinking. `low`, `high`, and `max` enable thinking and serialize as `reasoning_effort`, while adapter-owned `off` sends `thinking.type: disabled` instead. An unsupported value fails with `UNSUPPORTED_REASONING_EFFORT` before network I/O, and `thinking: disabled` rejects any non-`off` effort at plugin load. Requests with `purpose: 'session-title'` force thinking off to reserve output for visible title text.
 
+`jsonOutput` is an opt-in deployment setting. When enabled, every chat-completions request carries `response_format: { type: 'json_object' }`; the default omits the field and preserves current wire behavior. This requests valid JSON message content, not a JSON Schema, an exact key set, or one single assistant message across a tool-using turn. Keep it disabled for general conversation profiles and evaluate strict whole-turn output from the complete session trace.
+
 ### Dynamic configuration
 
 Connection facts are re-read once per operation through the optional settings and credentials seams. A `llm-deepseek:` section in the user settings document overrides any field without a restart; a snapshot that fails a beyond-schema bound keeps the last good facts and logs the failure. The API key resolves per stream call from the same snapshot that supplies the endpoint, image and Files policies, and idle budget, so a rejected settings generation contributes none of them. Image requests resolve the attachment service at request time, so load order does not freeze image availability.
@@ -97,6 +101,9 @@ Non-2xx responses fail with stable codes: `AUTH` (401/403), `QUOTA`, `RATE_LIMIT
 -----
 
 <a id="understand-the-implementation"></a>
+
+The optional [Native knowledge owner](../../bundle/native-api-app/README.md) observes session-bound main requests before HTTP dispatch. The adapter hashes the final UTF-8 request body after extension merge and waits for registration. A registered dispatch must use the owner's local `http://127.0.0.1` cost guard; owner refusal fails with `REQUEST_EVIDENCE`, while caller cancellation remains `ABORTED`. These refusals are not transport retries. Absent owners, untracked sessions and auxiliary requests retain their provider request behavior.
+
 ## Understand the implementation
 
 <details>

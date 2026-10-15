@@ -6,6 +6,8 @@ Status: implemented
 
 ## Problem
 
+**当前源码状态。** 下文记录的有限等待回报决策不描述当前本地 runtime。未传入信号的 `waitForExit()` 会等待受管进程树退出；只有提供的信号中止时，才会返回表示观察被中断的 `false`。操作 consumer 必须传入既有信号，中断后终止并等待整组退出。[验证器 consumer 决策](2026-10-13-verifier-post-exit-cancellation.zh.md)在直接 helper 退出后应用这个契约。下文保留此前记录的决策和替代方案。
+
 `LocalSubprocessRuntime` 的拆卸通过无期限的 `while (treeAlive()) await sleepTick()` 循环等待整树存活：处于不可中断状态（D 状态，如挂死的 NFS I/O）且扛过 SIGKILL 的后代，使 `waitForExit()`——进而服务 dispose、插件 HMR 重载与任何 `ctx.effect` 清理——永久挂起。
 
 ## Decision

@@ -4,6 +4,18 @@ import AppKit
 import JiuzhangShellCore
 import JiuzhangShellUI
 
+if let index = CommandLine.arguments.firstIndex(of: "--protected-review-probe"), CommandLine.arguments.indices.contains(index + 1) {
+  Darwin.exit(runArkProtectedReviewProbe(output: URL(fileURLWithPath: CommandLine.arguments[index + 1])))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--protected-xpc-probe"), CommandLine.arguments.indices.contains(index + 1) {
+  Darwin.exit(await runArkProtectedXPCProbe(expectedService: URL(fileURLWithPath: CommandLine.arguments[index + 1])))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--private-channel-probe"), CommandLine.arguments.indices.contains(index + 1) {
+  Darwin.exit(runArkPrivateChannelProbe(CommandLine.arguments[index + 1]))
+}
+
 if let helperStatus = NativePTYTerminalChild.exitStatusIfRequested() {
   Darwin._exit(helperStatus)
 }
@@ -14,9 +26,63 @@ if ProcessInfo.processInfo.environment["ARK_MARKDOWN_RENDER_PROBE_CHILD"] == "1"
   Darwin._exit(runArkMarkdownHostingProbeChild())
 }
 
+if let index = CommandLine.arguments.firstIndex(of: "--protected-observation-probe") {
+  Darwin.exit(await runArkProtectedObservationProbe(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--protected-evaluator-probe") {
+  Darwin.exit(await runArkProtectedEvaluatorProbe(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--protected-guard-lifecycle-probe") {
+  Darwin.exit(await runArkProtectedGuardLifecycleProbe(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--protected-evaluator-cancellation-probe") {
+  Darwin.exit(await runArkProtectedEvaluatorCancellationProbe(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--protected-runtime-timing-probe") {
+  Darwin.exit(runArkProtectedRuntimeTimingProbe(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
+if CommandLine.arguments.contains("--protected-owner-contracts") {
+  await runArkProtectedOwnerContractChecks()
+  await runArkProtectedObservationContractChecks()
+  runArkProtectedRuntimeFDContractChecks()
+  await runArkProtectedCostContractChecks()
+  await runArkNativeOwnerChannelContractChecks()
+  print("protected-owner-contracts failures=\(failureCount)")
+  Darwin.exit(failureCount == 0 ? 0 : 1)
+}
+
+if let directory = ProcessInfo.processInfo.environment["ARK_NATIVE_CONTRACT_DIAGNOSTICS_DIR"],
+   !directory.isEmpty {
+  do {
+    guard let executable = Bundle.main.executableURL else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+    let destination = URL(fileURLWithPath: directory, isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: destination, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+    )
+    let identity: [String: Any] = [
+      "schemaVersion": 1,
+      "pid": Int(Darwin.getpid()),
+      "executablePath": executable.resolvingSymlinksInPath().path,
+      "startedAtUTC": ISO8601DateFormatter().string(from: Date()),
+    ]
+    let data = try JSONSerialization.data(withJSONObject: identity, options: [.sortedKeys])
+    try data.write(to: destination.appendingPathComponent("identity.json"), options: .atomic)
+  } catch {
+    FileHandle.standardError.write(Data("CONTRACT_DIAGNOSTIC identity-write-error: \(error)\n".utf8))
+  }
+}
+
 let expectedContractGroups = [
   "inline",
   "backend-recovery",
+  "protected-owner",
   "event-pump-lifecycle",
   "domain-api",
   "duplicate-key",
@@ -71,16 +137,25 @@ let expectedContractGroups = [
 ]
 var reachedContractGroups: [String] = []
 
+func recordNativeContractPhase(_ group: String, _ phase: String) {
+  let line = "CONTRACT_PHASE group=\(group) phase=\(phase) pid=\(Darwin.getpid()) uptime=\(ProcessInfo.processInfo.systemUptime)\n"
+  FileHandle.standardError.write(Data(line.utf8))
+}
+
 @MainActor
 func runContractGroup(_ name: String, _ body: @MainActor () -> Void) {
+  recordNativeContractPhase(name, "STARTED")
   body()
+  recordNativeContractPhase(name, "FINISHED")
   reachedContractGroups.append(name)
   print("REACHED: \(name)")
 }
 
 @MainActor
 func runAsyncContractGroup(_ name: String, _ body: @MainActor () async -> Void) async {
+  recordNativeContractPhase(name, "STARTED")
   await body()
+  recordNativeContractPhase(name, "FINISHED")
   reachedContractGroups.append(name)
   print("REACHED: \(name)")
 }
@@ -88,6 +163,13 @@ func runAsyncContractGroup(_ name: String, _ body: @MainActor () async -> Void) 
 runContractGroup("inline", runInlineContractChecks)
 await runAsyncContractGroup("backend-recovery") {
   failureCount += await runBackendRecoveryContractChecks()
+}
+await runAsyncContractGroup("protected-owner") {
+  await runArkProtectedOwnerContractChecks()
+  await runArkProtectedObservationContractChecks()
+  runArkProtectedRuntimeFDContractChecks()
+  await runArkProtectedCostContractChecks()
+  await runArkNativeOwnerChannelContractChecks()
 }
 await runAsyncContractGroup("event-pump-lifecycle", runArkEventPumpLifecycleContractChecks)
 runContractGroup("domain-api", runArkDomainAPIContractChecks)

@@ -130,7 +130,7 @@ describe('tool-jobs setup', () => {
 
   it('defaults delivery to wakeup and rejects an unknown lane', () => {
     expect(ToolTasks.Config({}).completionDelivery).toBe('wakeup')
-    expect(ToolTasks.Config({}).maxConsecutiveWakes).toBe(3)
+    expect(ToolTasks.Config({}).maxConsecutiveWakes).toBeUndefined()
     expect(() => ToolTasks.Config({ completionDelivery: 'loud' as never })).toThrow()
     expect(() => ToolTasks.Config({ maxConsecutiveWakes: 0 })).toThrow()
   })
@@ -565,6 +565,17 @@ describe('completion notice delivery', () => {
     p.settle({ status: 'completed', detail: 'exit code: 0' })
     await tick()
     expect(followup).toHaveBeenCalledTimes(1)
+    expect(inject).not.toHaveBeenCalled()
+  })
+
+  it('keeps waking an idle owner after more than three productive job completions by default', async () => {
+    const { ctx } = await setup()
+    const inject = vi.fn()
+    const followup = vi.fn()
+    const owner = fakeAgent(ctx, 'sess-default-unbounded', { inject, followup, status: 'idle' })
+
+    await settleTasks(ctx, owner, 5)
+    expect(followup).toHaveBeenCalledTimes(5)
     expect(inject).not.toHaveBeenCalled()
   })
 

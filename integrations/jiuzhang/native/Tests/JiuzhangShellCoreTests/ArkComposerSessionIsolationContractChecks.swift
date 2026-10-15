@@ -7,9 +7,34 @@ private final class ComposerIsolationURLProtocol: URLProtocol, @unchecked Sendab
   private static let lock = NSLock()
   private static var held: [ComposerIsolationURLProtocol] = []
   private static var calls: [(String, String)] = []
+  private static var workspaceRows: [JSONValue] = []
+  private static var sessionRows: [JSONValue] = []
+  private static var createdSessionCwdOverride: String?
+  private static var attachCreatedSessionToWorkspace = false
   private var body: JSONValue = .null
   private var stopped = false
-  static func reset() { lock.lock(); held = []; calls = []; lock.unlock() }
+  static func reset() {
+    lock.lock()
+    held = []; calls = []; workspaceRows = []; sessionRows = []; createdSessionCwdOverride = nil
+    attachCreatedSessionToWorkspace = false
+    lock.unlock()
+  }
+  static func configureWorkspace(
+    id: String,
+    path: String,
+    createdSessionCwd: String?,
+    attachCreatedSession: Bool = false
+  ) {
+    lock.lock()
+    workspaceRows = [.object([
+      "workspaceId": .string(id), "path": .string(path), "title": .string("fixture"),
+      "sessionIds": .array([]),
+    ])]
+    sessionRows = []
+    createdSessionCwdOverride = createdSessionCwd
+    attachCreatedSessionToWorkspace = attachCreatedSession
+    lock.unlock()
+  }
   static var pendingCount: Int { lock.lock(); defer { lock.unlock() }; return held.count }
   static func callCount(_ method: String, sessionID: String) -> Int {
     lock.lock(); defer { lock.unlock() }
@@ -23,11 +48,37 @@ private final class ComposerIsolationURLProtocol: URLProtocol, @unchecked Sendab
     lock.lock()
     let pending = held.filter { $0.body["method"]?.stringValue == "session/create" }
     held.removeAll { $0.body["method"]?.stringValue == "session/create" }
+    var replies: [(ComposerIsolationURLProtocol, JSONValue)] = []
+    for item in pending where success {
+      let request = item.body["payload"]?["args"]?["request"]
+      let sessionID = request?["sessionId"]?.stringValue
+      let workspaceID = request?["workspaceId"]?.stringValue
+      if let sessionID {
+        let workspacePath = workspaceRows.first(where: { $0["workspaceId"]?.stringValue == workspaceID })?["path"]?.stringValue
+        let cwd = createdSessionCwdOverride ?? workspacePath ?? "/tmp/ark-composer-default"
+        sessionRows.append(.object([
+          "sessionId": .string(sessionID), "updatedAt": .number(1), "running": .bool(false),
+          "blank": .bool(true), "cwd": .string(cwd),
+        ]))
+        if attachCreatedSessionToWorkspace,
+           let workspaceIndex = workspaceRows.firstIndex(where: { $0["workspaceId"]?.stringValue == workspaceID }),
+           let workspace = workspaceRows[workspaceIndex].objectValue {
+          let sessionIDs = workspace["sessionIds"]?.arrayValue ?? []
+          workspaceRows[workspaceIndex] = .object([
+            "workspaceId": .string(workspaceID ?? ""), "path": .string(workspacePath ?? ""),
+            "title": .string("fixture"), "sessionIds": .array(sessionIDs + [.string(sessionID)]),
+          ])
+        }
+      }
+      replies.append((item, .object(["sessionId": request?["sessionId"] ?? .null])))
+    }
     lock.unlock()
     for item in pending {
-      if success {
-        item.reply(.object(["sessionId": item.body["payload"]?["args"]?["request"]?["sessionId"] ?? .null]), domain: true)
-      } else { item.fail("synthetic creation failure") }
+      if success, let response = replies.first(where: { $0.0 === item })?.1 {
+        item.reply(response, domain: true)
+      } else if !success {
+        item.fail("synthetic creation failure")
+      }
     }
   }
   static func releasePrompt(success: Bool, imageRejection: Bool = false) {
@@ -76,12 +127,27 @@ private final class ComposerIsolationURLProtocol: URLProtocol, @unchecked Sendab
           "models": .array([.object(["id": .string("text"), "name": .string("Text")]), .object(["id": .string("vision"), "name": .string("Vision")])])])]), "failures": .array([])]), domain: true)
       case "session/selectModel":
         reply(.object(["selected": .object(["provider": .string("fixture"), "model": .string("vision")])]), domain: true)
-      case "llm/providers": reply(.object(["providers": .array([])]))
+      case "llm/providers":
+        reply(.object(["providers": .array([.object([
+          "provider": .string("fixture"), "displayName": .string("Fixture"),
+          "settingsNs": .string("agent-default-model"), "settingsPath": .array([]), "active": .bool(true),
+        ])])]))
+      case "llm/models":
+        reply(.object(["groups": .array([.object([
+          "id": .string("fixture"), "name": .string("Fixture"),
+          "models": .array([.object(["id": .string("text"), "name": .string("Text")]),
+            .object(["id": .string("vision"), "name": .string("Vision")])]),
+        ])])]))
+      case "credentials/describe": reply(.object(["credentials": .object([:])]))
       case "settings/describe":
         reply(.object(["namespaces": .array([.object(["ns": .string("agent-default-model"), "revision": .number(1),
           "value": .object(["provider": .string("fixture"), "model": .string("vision")])])])]))
-      case "workspace/list": reply(.object(["items": .array([]), "archivedSessionIds": .array([])]), domain: true)
-      case "session/list": reply(.array([]))
+      case "workspace/list":
+        Self.lock.lock(); let rows = Self.workspaceRows; Self.lock.unlock()
+        reply(.object(["items": .array(rows), "archivedSessionIds": .array([])]), domain: true)
+      case "session/list":
+        Self.lock.lock(); let rows = Self.sessionRows; Self.lock.unlock()
+        reply(.object(["items": .array(rows)]), domain: true)
       default: fail("fixture unavailable")
       }
     } catch { fail("fixture malformed request") }
@@ -360,4 +426,66 @@ private func runComposerCreationNavigationChecks(model: ArkAppModel) async {
   let failedDone = await composerIsolationEventually { !model.sessionCreationInFlight }
   check(failedDone && model.selectedSessionID == "create-after-error" && model.navigationErrorMessage == previousError,
     "late session creation failure cannot overwrite the newer navigation error surface")
+
+  await runComposerWorkspaceBindingChecks(model: model)
+}
+
+@MainActor
+private func runComposerWorkspaceBindingChecks(model: ArkAppModel) async {
+  let workspaceID = "invoice-workspace"
+  let workspacePath = "/tmp/ark-composer-isolation-invoice"
+  ComposerIsolationURLProtocol.configureWorkspace(
+    id: workspaceID,
+    path: workspacePath,
+    createdSessionCwd: "/tmp/ark-composer-isolation-default"
+  )
+  await model.refreshNavigation(refreshWiki: false)
+  let loadedWorkspacePath = model.workspaces.first(where: { $0.id == workspaceID })?.path ?? "nil"
+  let navigationError = model.navigationErrorMessage ?? "nil"
+  check(loadedWorkspacePath == workspacePath,
+    "selected workspace fixture is installed from the Host snapshot (path=\(loadedWorkspacePath), navigationError=\(navigationError))")
+  model.beginNewConversation()
+  model.selectWorkspace(workspaceID)
+  model.composerTextDidChange("read the selected project only", caret: 30, isComposing: false)
+  model.sendComposer()
+  let held = await composerIsolationEventually { ComposerIsolationURLProtocol.pendingCount == 1 }
+  let creation = ComposerIsolationURLProtocol.latestCreation
+  let requestWorkspaceID = creation?["workspaceId"]?.stringValue ?? "nil"
+  let selectedWorkspaceID = model.selectedWorkspaceID ?? "nil"
+  let submissionError = model.composerErrorMessage ?? "nil"
+  check(held && creation?["workspaceId"]?.stringValue == workspaceID,
+    "first composer submission sends the selected workspace identity (held=\(held), pending=\(ComposerIsolationURLProtocol.pendingCount), requestWorkspace=\(requestWorkspaceID), selectedWorkspace=\(selectedWorkspaceID), route=\(model.composerModelRouteAvailable), error=\(submissionError))")
+  guard held else { return }
+  let sessionID = creation?["sessionId"]?.stringValue ?? ""
+  ComposerIsolationURLProtocol.releaseCreation(success: true)
+  let finished = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(finished && ComposerIsolationURLProtocol.callCount("session/prompt", sessionID: sessionID) == 0,
+    "a session returned under the wrong cwd receives no user prompt")
+  check(model.selectedSessionID == nil && model.selectedWorkspaceID == workspaceID
+      && model.composer == "read the selected project only"
+      && model.composerErrorMessage?.contains("未绑定到已选工作区") == true,
+    "workspace mismatch preserves the unsent draft and reports the binding error in the selected project")
+
+  ComposerIsolationURLProtocol.configureWorkspace(
+    id: workspaceID,
+    path: workspacePath,
+    createdSessionCwd: nil,
+    attachCreatedSession: true
+  )
+  model.sendComposer()
+  let retryHeld = await composerIsolationEventually { ComposerIsolationURLProtocol.pendingCount == 1 }
+  let retry = ComposerIsolationURLProtocol.latestCreation
+  let retrySessionID = retry?["sessionId"]?.stringValue ?? ""
+  check(retryHeld && retry?["workspaceId"]?.stringValue == workspaceID && retrySessionID != sessionID,
+    "retry after a known workspace mismatch uses the selected workspace and a fresh creation identity")
+  guard retryHeld else { return }
+  ComposerIsolationURLProtocol.releaseCreation(success: true)
+  let promptHeld = await composerIsolationEventually {
+    ComposerIsolationURLProtocol.callCount("session/prompt", sessionID: retrySessionID) == 1
+  }
+  check(promptHeld, "a session with the verified workspace path receives the preserved draft")
+  ComposerIsolationURLProtocol.releasePrompt(success: true)
+  let delivered = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(delivered && model.selectedSessionID == retrySessionID && model.composer.isEmpty,
+    "a verified workspace binding completes the retried first submission")
 }

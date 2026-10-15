@@ -1,0 +1,121 @@
+{
+  "schema": "ark.knowledge-repair-async-boundary.v1",
+  "status": "SCOPED_SOURCE_AND_REAL_LOADER_REPAIR_VERIFIED_FULL_ACCEPTANCE_OPEN",
+  "at": "2026-10-11T13:56:41.572449+00:00",
+  "sourceHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "previousTurnClassification": "PROGRESS",
+  "rootCause": "proposeKnowledgeRepair held admitted source bytes and record across await sessionQuery.readSession, then published correction state without current writer-side checks",
+  "redCases": {
+    "total": 3,
+    "failed": 3,
+    "unexpectedResult": "ok:true; a Candidate was staged",
+    "log": "/Users/hui/ark-test/evidence/knowledge-repair-async-boundary-red-20261011.log"
+  },
+  "newRegressionCases": [
+    "File replacement during authorization read",
+    "Feedback revocation during authorization read",
+    "Authenticated replacement by a new record during authorization read",
+    "Authenticated revalidation of the same record with new content",
+    "Source deletion during authorization read",
+    "Workspace removal during authorization read"
+  ],
+  "implementation": "Reuse modelProject, resolveSafePath, modelRecords, modelRecordContentAllowed and knowledgeSha256 at the writer after session authorization; no new persistent state, public API, or default-profile authority",
+  "realLoader": "Real SessionStore and SqliteSessionQuery provider; one awaited microtask permits an actual file edit while the real query is pending. Refusal leaves the journal and Candidate absent, preserves the capability, and restored authenticated source still permits an untrusted repair. Test signatures represent seeded prior state, not production learning.",
+  "checks": {
+    "focused": {
+      "passed": 88,
+      "exitCode": 0,
+      "log": "/Users/hui/ark-test/evidence/knowledge-repair-async-boundary-complete-focused-20261011.log"
+    },
+    "completeScope": {
+      "files": 78,
+      "passed": 973,
+      "failed": 0,
+      "log": "/Users/hui/ark-test/evidence/knowledge-repair-async-boundary-coverage-20261011.log"
+    },
+    "strictCoverage": {
+      "status": "FAIL",
+      "exitCode": 1,
+      "index": {
+        "lines": 99.39,
+        "statements": 98.66,
+        "branches": 98.4,
+        "functions": 100
+      },
+      "reviews": {
+        "lines": 97.78,
+        "statements": 96.53,
+        "branches": 95.29,
+        "functions": 100
+      },
+      "requiredPerFile": 100
+    },
+    "typecheck": {
+      "exitCode": 0,
+      "log": "/Users/hui/ark-test/evidence/knowledge-repair-async-boundary-typecheck-20261011.log"
+    },
+    "lint": {
+      "exitCode": 0,
+      "log": "/Users/hui/ark-test/evidence/knowledge-repair-async-boundary-lint-20261011.log"
+    },
+    "configuredKnip": {
+      "exitCode": 0,
+      "log": "/Users/hui/ark-test/evidence/knowledge-repair-async-boundary-knip-20261011.log"
+    },
+    "docSync": {
+      "passed": 30,
+      "failed": 0,
+      "exitCode": 0,
+      "log": "/Users/hui/ark-test/evidence/knowledge-repair-async-boundary-doc-sync-20261011.log"
+    },
+    "shippedCliAcpReplay": {
+      "passed": 1,
+      "exitCode": 0,
+      "recording": "authored",
+      "positiveLearningEvidence": false,
+      "log": "/Users/hui/ark-test/evidence/knowledge-repair-async-boundary-acp-replay-20261011.log"
+    }
+  },
+  "sourceHashes": {
+    "packages/host/knowledge-wiki/src/index.ts": {
+      "before": "1dd8bec019982bc327f29f92630df1408070a1d2b045c87e3249e5d68aabbe75",
+      "after": "57f8223742c1d1c80f57e32b2ab7072a3b1aa279eb7c38eec230b4393cdc9adf"
+    },
+    "packages/host/knowledge-wiki/tests/service-surface.spec.ts": {
+      "before": "a160078521053b18c8326fdfc91114dd70c687fce8e9877e2085a8d4c2936b84",
+      "after": "dcf14be0d840bd35625654afd12aa2e721a5c0249608d963afb6bd8691f1b0fe"
+    },
+    "packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts": {
+      "before": "3bcd400fe036abac57da72a788dc22273c6a9a329bafd1d34d2ccef2de3a3a2c",
+      "after": "d88a80aa3773ba84f9f32efedacecb8893ecb9b087b72778b02aca5eba72b509"
+    }
+  },
+  "latestGithubRead": {
+    "pullRequest": "https://github.com/admin1316/ark/pull/39",
+    "state": "OPEN",
+    "draft": true,
+    "head": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "passed": 25,
+    "failed": 5,
+    "evidence": "/Users/hui/ark-test/evidence/candidate330-github-pr39-readonly-20261011.json"
+  },
+  "docOwnerCleanup": {
+    "filesRemoved": 963,
+    "logicalBytesRemoved": 47827083,
+    "owner": "website/build.ts cleanDocSiteOutput",
+    "paths": [
+      "website/.dist",
+      "website/.generated",
+      "website/.cache"
+    ],
+    "sourceHtmlDeleted": false,
+    "applicationSpeedGain": "UNMEASURED"
+  },
+  "currentCandidate": "3.1.29 remains installed; this repair is not in the installed artifact",
+  "nextCandidatePlan": "/Users/hui/ark-test/evidence/candidate330-build-and-window-plan-20261011.json",
+  "positiveKnowledgeReuse": "UNKNOWN",
+  "applicationSpeedGain": "UNMEASURED",
+  "fullAcceptance": "UNKNOWN",
+  "formalAppChanged": false,
+  "githubPublished": false
+}

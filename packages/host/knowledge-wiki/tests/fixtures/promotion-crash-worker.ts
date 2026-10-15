@@ -7,14 +7,14 @@ const required = (name: string): string => {
   return value
 }
 
-const applied = applyCandidateReview(
+const applied = await applyCandidateReview(
   verifierAuthority('pass', required('WIKI_CRASH_CHECKPOINT')),
   required('WIKI_REVIEW_FILE'),
   required('WIKI_PROJECT_ROOT'),
   required('WIKI_ROOT'),
   required('WIKI_ARCHIVE_ROOT'),
   required('WIKI_REVIEW_ID'),
-  'Promote',
+  'Archive',
   'human',
 )
 if (applied !== true) process.exitCode = 2

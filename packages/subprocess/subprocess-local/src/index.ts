@@ -144,7 +144,12 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
   }
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
-    const handle = spawnSubprocess(spec, this.internals)
+    const handle = spawnSubprocess(spec, {
+      ...this.internals,
+      onSpillFailure: (error, label) => {
+        this.ctx.logger.error(`subprocess-local: ${label} spill failed; only the in-memory tail is retained.`, error)
+      },
+    })
     this.live.add(handle)
     // Release ownership only once the whole TREE is gone, not at direct-child
     // settlement — a TERM-trapping helper that outlives the leader must stay

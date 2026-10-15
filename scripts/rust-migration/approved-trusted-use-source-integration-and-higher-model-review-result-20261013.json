@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-13T12:46:26.128239+00:00",
+  "phase": "approved-trusted-use-source-integration-and-higher-model-review",
+  "classification": "progress",
+  "status": "SCOPED_SOURCE_CONTRACTS_PASS_REAL_TRUST_AND_WINDOW_ACCEPTANCE_OPEN",
+  "gitSha": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "humanScopeApproval": {
+    "path": "/Users/hui/ark-test/evidence/approved-trusted-use-source-integration-human-approval-20261013.json",
+    "sha256": "576c2087f59b8d6440720f66b874c60f6162d29ff25a80de7650b67c5d80ff70"
+  },
+  "modelSteering": {
+    "user": "子代理使用更高的模型",
+    "model": "gpt-6-astra",
+    "reasoningEffort": "ultra",
+    "subtasks": [
+      "node_owner_astra",
+      "native_owner_astra",
+      "trusted_use_producer_astra",
+      "integration_review_astra",
+      "adapter_coverage_astra"
+    ]
+  },
+  "rootReport": {
+    "path": "/Users/hui/ark-test/evidence/trusted-use-cost-source-20261013-attempt1.wx/root-source-report-final.json",
+    "sha256": "cc990a4bfbe18f8e0c255bcb2d7adf3674f2930b2ce08a65a03b303e033407cf"
+  },
+  "peerReports": {
+    "native": {
+      "path": "/Users/hui/ark-test/evidence/native-protected-owner-integration-astra-20261013/report.json",
+      "sha256": "024ba32c848fd2f21ce8ae2dba849986be6e7300a4274d4d88d0167c03b45112"
+    },
+    "producer": {
+      "path": "/Users/hui/ark-test/evidence/knowledge-trusted-use-producer-astra-20261013/report-numeric-final.json",
+      "sha256": "b4185b172a613b5636e5110ba301c5d093222547058812a947110c267ea85a0f"
+    },
+    "adapter": {
+      "path": "/Users/hui/ark-test/evidence/deepseek-request-evidence-coverage-astra-20261013/receipt.json",
+      "sha256": "c97b798536292609f15edf47cdad1cb3d086585b63494e62aa4f32aaf2e65eeb"
+    }
+  },
+  "checksSummary": {
+    "adapterTests": {
+      "pass": 399,
+      "fail": 0,
+      "perFile100Files": 2
+    },
+    "nativeNodeTests": {
+      "pass": 61,
+      "fail": 0,
+      "perFile100Files": 3
+    },
+    "producerTests": {
+      "pass": 85,
+      "fail": 0
+    },
+    "guardTests": {
+      "pass": 30,
+      "fail": 0
+    },
+    "nativeContractGroups": {
+      "pass": 54,
+      "fail": 0
+    },
+    "hostTypes": "pass",
+    "hostBuild": "pass",
+    "wholeSourceLint": "pass",
+    "docSync": {
+      "pass": 30,
+      "fail": 0
+    },
+    "realSwiftCLIAndTinyFloat": "pass",
+    "rawExtraScriptCoverage": "FAIL diagnostic retained; outside original packages coverage corpus; no exclusions/threshold changes"
+  },
+  "closedSourceFindings": [
+    "legacy schema2 verifier deadpath",
+    "real CLI descriptor live-cost limits zero",
+    "ordinary session misrefusal",
+    "scoped route/model/cap drift untracked bypass",
+    "revocation revalidation race",
+    "legal syntax/export task failures discarded",
+    "guard owner/parent loss orphan",
+    "Swift1e-05 vs JavaScript0.00001 private recipe digest"
+  ],
+  "candidateVersion": "3.1.41",
+  "sourceInstalled": false,
+  "realProtectedTrustDeployed": false,
+  "newPaidRequests": 0,
+  "authenticatedFreshReuse": "UNKNOWN",
+  "speedAndAccuracyLift": "UNMEASURED",
+  "rustDecision": "RETAIN_TS",
+  "fullGoalAcceptance": "UNKNOWN",
+  "githubPublished": false,
+  "formalPromotion": "HOLD",
+  "protectedBindingsExact": true,
+  "currentProfileFileComparisons": 6,
+  "limits": [
+    "real protected signing custody and registered production dependency closure",
+    "same-UID isolation",
+    "actual HTTP guard peer to provider to live persisted turn whole chain",
+    "installed current source activation and fresh authenticated knowledge reuse",
+    "real utility/error/accuracy/speed lift",
+    "current-source GitHub CI/platform/recovery/rollback and original Phase6"
+  ],
+  "next": "Prepare isolated candidate only after pinning required runtime helper/dependency closure; separately review actual protected authority/custody activation and bounded route before fresh same-model baseline/candidate knowledge-use trial. Original CI/platform/recovery/rollback and Phase6 remain open."
+}

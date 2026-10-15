@@ -1,0 +1,179 @@
+{
+  "schema": "ark.matched-native-pilot.actual-result.v1",
+  "at": "2026-10-15T06:17:01.394747+00:00",
+  "status": "BOTH_ARMS_ACTUALLY_EXECUTED_CANDIDATE_CORE_CODE_PASS_REPORT_AUDIT_NOT_FULL_PASS_FORMAL_OUTPUT_LIMIT",
+  "taskSha256": "9e287dd6b8984702400957dfaeb13174d1c8f80d451d77564540e47de0af9a08",
+  "freshNativeArmsExecuted": 2,
+  "boundedPilotOutcomePairs": 1,
+  "normallyCompletedLatencyPairs": 0,
+  "conditions": {
+    "model": "deepseek-flash",
+    "reasoning": "max",
+    "mode": "standard",
+    "perResponseOutputTokenCap": 8192,
+    "taskInputs12EachOriginallyIdentical": true,
+    "noCorrectionOrAnswerBetweenArms": true,
+    "order": "formal then candidate sequential",
+    "sessionOnlyWorkspaceWriteThenRestoredReadonly": true
+  },
+  "formal": {
+    "version": "3.1.0",
+    "source": "4ef63040883f497857cff71ab0e82fd07ac123fa",
+    "sessionId": "ff251e82-e610-49dd-89f1-ef2f0f04c68a",
+    "outcome": "INCOMPLETE_OUTPUT_LIMIT",
+    "elapsedToStopMs": 60158,
+    "steps": 6,
+    "toolCalls": 12,
+    "originalTaskSends": 1,
+    "baseline": {
+      "exitCode": 1,
+      "pass": 1,
+      "fail": 5
+    },
+    "cold": {
+      "exitCode": 1,
+      "pass": 1,
+      "fail": 5
+    },
+    "modifiedSourceFiles": [],
+    "finalChineseReportProduced": false,
+    "maxTokensEndAnd8192ReasoningObserved": true,
+    "costUpperMicroCny": 495124
+  },
+  "candidate": {
+    "version": "3.1.44",
+    "source": "d33bbe5c384d1beace5728fe80597db4d43ab487",
+    "sessionId": "0c6b60e6-b10c-468d-853e-576c9a9878e4",
+    "runtimeTurnEnd": "completed",
+    "codeRepairOutcome": "PASS_6_ORIGINAL_ASSERTIONS_PLUS_PROTECTED_FILE_HASHES",
+    "fullTaskAcceptance": "NOT_FULLY_PASSED_REPORT_AUDIT",
+    "elapsedToEndMs": 132176,
+    "steps": 15,
+    "toolCalls": 31,
+    "originalTaskSends": 1,
+    "baseline": {
+      "exitCode": 1,
+      "pass": 1,
+      "fail": 5
+    },
+    "arkPostfixOriginalTestResults": "observed 6 pass/0 fail; repeated suite runs separately inventoried",
+    "independentCold": {
+      "exitCode": 0,
+      "pass": 6,
+      "fail": 0,
+      "skip": 0,
+      "runs": 1,
+      "actualBundledNode": true
+    },
+    "modifiedSourceFiles": [
+      "src/reviews.ts"
+    ],
+    "otherOriginal11Exact": true,
+    "existingDefaultWiki4Exact": true,
+    "finalChineseReportProduced": true,
+    "costUpperMicroCny": 2276956,
+    "reportAndEfficiencyFindings": [
+      {
+        "finding": "claims all sources were read",
+        "evidence": "read tools opened only4of8 source files; file listing/import/testexecution is not proof all source text was inspected",
+        "impact": "report evidence scope overstatement; code assertions remain passed"
+      },
+      {
+        "finding": "all other file mtimes claimed Oct14",
+        "evidence": "task12 originals except reviews stayed intact; four workspace-bootstrap files and preturn runtime injection log have newer times",
+        "impact": "claim needs scope qualification; no other model source edit inferred"
+      },
+      {
+        "finding": "npm test invocation inventory incomplete and repetitive",
+        "evidence": "4 bash toolcalls executed6 npm tests:1 baseline+5 postfix; final table has5 rows",
+        "impact": "retain all executions; four postfix reruns beyond required initial regression are potential avoidable work"
+      },
+      {
+        "finding": "wiki_files and wiki_search failed",
+        "error": "knowledge verifier authority is unavailable",
+        "impact": "authenticated knowledge search/use not accepted; final report did disclose this limitation"
+      }
+    ],
+    "preTurnRuntimeExtra": {
+      "path": ".llm-wiki/knowledge-events.jsonl",
+      "bytes": 571,
+      "event": "knowledge/injected",
+      "time": "2026-10-15T06:03:48.775Z",
+      "classification": "App-generated before task; not model source edit"
+    }
+  },
+  "cost": {
+    "accounting": "guard conservative upper bounds, not official invoice",
+    "freshPairUpperMicroCny": 2772080,
+    "priorBudgetInterruptedAttemptUpperMicroCny": 1084668,
+    "ledgerCumulativeUpperMicroCny": 5731596,
+    "ledgerCumulativeCapMicroCny": 10000000,
+    "ledgerRequests": 50,
+    "requestCap": 64,
+    "pending": [],
+    "historyReset": false,
+    "additionalBudgetAuthorizationCall": "call_3c94e0cb4a0846e4aedc2ce19993f360"
+  },
+  "closeout": {
+    "bothSettingsOriginalExact": true,
+    "bothCredentialHashesUnchanged": true,
+    "all18AppPinsUnchanged": true,
+    "allOwnedAppLauncherBackendAndXPCProcessesExited": true,
+    "guardAndBackendPortsClosed": [
+      56092,
+      56130,
+      56641
+    ],
+    "controller27812ExitCode": 0,
+    "ledgerLockReleased": true
+  },
+  "limitations": [
+    "one pair does not establish general accuracy or reliability percentage",
+    "formal stopped at output cap; do not compare normal completion speed",
+    "fixed order, server randomness, persistent profile and knowledge histories, product prompts/tools and cache are uncontrolled",
+    "same input task succeeded in candidate this time; causal attribution to sourceversion or Rust remains unproved",
+    "current306 source was not installed in tested344 candidate"
+  ],
+  "release": {
+    "pr39": "open draft",
+    "mainMerged": false,
+    "formalPromoted": false,
+    "current306CI": "failure: Linux PowerShell output-name case; Windows profile total20s timeout",
+    "current306Sandbox": "four jobs passed",
+    "fullMissionAcceptance": "UNKNOWN"
+  },
+  "artifacts": [
+    {
+      "path": "/Users/hui/ark-test/evidence/stable-release-source-selection-sol-20261014/matched-window-preflight/paired-start-20261015/paired-continuation-20261015/fresh-formal-independent/formal-fresh-output-limit-independent-review.json",
+      "sha256": "3c53291978f54324cdbabd8d1c90d6e70ae94956affbfe95ce5c70890f60492c"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/stable-release-source-selection-sol-20261014/matched-window-preflight/paired-start-20261015/paired-continuation-20261015/fresh-formal-independent/formal-fresh-preregistered-cold-npm-test-command.json",
+      "sha256": "6d7c6ba89652f5166f62ce08e12575efb787f069bb745a252b8aaa4f27f27df8"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/stable-release-source-selection-sol-20261014/matched-window-preflight/paired-start-20261015/paired-continuation-20261015/fresh-candidate-independent/candidate-independent-cold-npm-test-command.json",
+      "sha256": "e264bc0a63ce664c7cd1655b37748026ebea8a40afaf63472252afaa9fe3af69"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/stable-release-source-selection-sol-20261014/matched-window-preflight/paired-start-20261015/paired-continuation-20261015/fresh-candidate-independent/candidate-independent-cold-npm-test.raw.log",
+      "sha256": "bba812b05ab0b585c85946e75133a87f605a43a36d186cd310deb41fdf857a8b"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/stable-release-source-selection-sol-20261014/matched-window-preflight/paired-start-20261015/paired-continuation-20261015/fresh-candidate-independent/candidate-actual-tool-transcript-index.json",
+      "sha256": "47d73c0c09a3b16b9617d561ba126e78d1544c01156db84c53a5ce5ad214f3e5"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/stable-release-source-selection-sol-20261014/matched-window-preflight/paired-start-20261015/paired-continuation-20261015/fresh-candidate-independent/candidate-final-chinese-report.txt",
+      "sha256": "5cd494ff0694e8b5536b8075e528e6dbc307bb0339171d31b748cb1b15179644"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/stable-release-source-selection-sol-20261014/matched-window-preflight/paired-start-20261015/paired-continuation-20261015/fresh-candidate-independent/candidate-actual-reviews.diff",
+      "sha256": "18282352b610b67c76a058dc8f386a635eb51d390fc765bbe0e8f54df86d67ce"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/stable-release-source-selection-sol-20261014/matched-window-preflight/paired-start-20261015/paired-continuation-20261015/paired-continuation-actual-closeout-20261015.json",
+      "sha256": "2c82f5f6180ff06b20d199022a6495761a1beeee220eaea9d2267f51d6f47ed1"
+    }
+  ]
+}

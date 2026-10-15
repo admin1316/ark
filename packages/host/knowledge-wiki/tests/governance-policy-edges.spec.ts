@@ -1,16 +1,31 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   decideCandidateGovernance,
   governancePolicyVersion,
   resolveGovernedWikiPath,
 } from '../src/governance-policy.ts'
+import { commitReviewAppend, prepareReviewAppend } from '../src/reviews.ts'
 
 const roots: string[] = []
 
+const pathFaults = vi.hoisted(() => new Map<string, NodeJS.ErrnoException>())
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      const fault = pathFaults.get(String(args[0]))
+      if (fault !== undefined) throw fault
+      return actual.lstatSync(...args)
+    },
+  }
+})
+
 afterEach(() => {
+  pathFaults.clear()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -20,17 +35,49 @@ function root(): string {
   return value
 }
 
-it('fails closed when durable-path inspection encounters a non-missing filesystem error', () => {
+it('rejects an existing ordinary-file ancestor before inspecting its child', () => {
   const value = root()
   writeFileSync(join(value, 'not-a-directory'), 'file', 'utf8')
-  if (process.platform === 'win32') {
-    // Windows reports ENOENT (not ENOTDIR) for a path beneath an ordinary
-    // file, which the missing-path guard cannot distinguish from a genuinely
-    // absent root — the walk then treats the leaf as absent.
-    expect(resolveGovernedWikiPath(value, 'not-a-directory/child.md', true)).toBeUndefined()
-    return
+  const child = join(value, 'not-a-directory', 'child.md')
+  pathFaults.set(child, Object.assign(new Error('Windows-shaped child obstruction'), { code: 'ENOENT' }))
+  expect(resolveGovernedWikiPath(value, 'not-a-directory/child.md', true)).toBeUndefined()
+  expect(resolveGovernedWikiPath(value, 'not-a-directory/child.md', false)).toBeUndefined()
+  expect(resolveGovernedWikiPath(value, 'not-a-directory', false)?.absolutePath).toBe(join(value, 'not-a-directory'))
+})
+
+it.each(['EACCES', 'EIO'])('propagates the original %s inspection error instead of accepting a missing suffix', (code) => {
+  const value = root()
+  const fault = Object.assign(new Error(`exact inspection failure: ${code}`), { code })
+  pathFaults.set(join(value, 'blocked'), fault)
+  for (const allowMissing of [true, false]) {
+    let observed: unknown
+    try { resolveGovernedWikiPath(value, 'blocked/child.md', allowMissing) }
+    catch (error) { observed = error }
+    expect(observed).toBe(fault)
   }
-  expect(() => resolveGovernedWikiPath(value, 'not-a-directory/child.md', true)).toThrow()
+})
+
+it.each(['ENOTDIR', 'ENOENT'])('keeps blocked candidate preflight and commit empty before a child could report %s', (code) => {
+  const value = root()
+  const reviewFile = join(value, '.llm-wiki', 'review.json')
+  const candidates = join(value, 'wiki', '_candidates')
+  mkdirSync(join(value, '.llm-wiki'))
+  mkdirSync(candidates, { recursive: true })
+  const reviewBytes = Buffer.from('[]\n')
+  const blockerBytes = Buffer.from('preserved ordinary file')
+  const blocker = join(candidates, 'blocked')
+  writeFileSync(reviewFile, reviewBytes)
+  writeFileSync(blocker, blockerBytes)
+  pathFaults.set(join(blocker, 'candidate.md'), Object.assign(new Error(`unreachable child inspection: ${code}`), { code }))
+
+  const plan = prepareReviewAppend(reviewFile, value, undefined, [], [{
+    path: 'wiki/_candidates/blocked/candidate.md', content: '# Candidate',
+  }])
+  expect(commitReviewAppend(plan)).toEqual({ advisoryAppended: 0, candidateAppended: 0 })
+  expect(readFileSync(reviewFile)).toEqual(reviewBytes)
+  expect(readFileSync(blocker)).toEqual(blockerBytes)
+  expect(readdirSync(join(value, '.llm-wiki'))).toEqual(['review.json'])
+  expect(readdirSync(candidates)).toEqual(['blocked'])
 })
 
 function page(options: {

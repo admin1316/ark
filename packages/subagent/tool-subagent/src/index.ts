@@ -377,7 +377,7 @@ export function apply(ctx: Context, config: Config): void {
           // a separately installed capability, so this promise holds whenever the
           // continuable background path is reachable at all.
           ? continuable
-            ? ' This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result.'
+            ? ' This tool runs in the background by default and immediately returns a durable subagent id. That is a child-session id, not a Job id; do not pass it to `job_list`, `job_output`, or `job_kill`. When the child settles, the runtime sends the parent a notice containing its outcome and any final assistant message. Use `send_message` for later work in the child conversation. Set `run_in_background: false` only when your next action depends on receiving the result.'
             : ' This call waits for the result by default. Set `run_in_background: true` to return a job id; collect with `job_output` and stop with `job_kill`.'
           : ' This call waits for the subagent and returns its result.') + choiceDescription,
         parameters: {
@@ -415,7 +415,7 @@ export function apply(ctx: Context, config: Config): void {
             run_in_background: {
               type: 'boolean' as const,
               description: continuable
-                ? 'Whether to run in the background and return a durable subagent id immediately. Defaults to true. Set false to wait for the result when your next action depends on it.'
+                ? 'Whether to run in the background and return a durable child-session id immediately. This id is not a Job id; do not pass it to job_list, job_output, or job_kill. Defaults to true. Set false only when your next action depends on the result.'
                 : 'Whether to run as a background job and return its id. Defaults to false; collect with job_output or stop with job_kill.',
             },
           } : {},
@@ -594,7 +594,7 @@ export function apply(ctx: Context, config: Config): void {
         order: SUBAGENT_SECTION_ORDER,
         text: context => mounted === undefined || runtimeCtx.tools.get(toolName, context.scope) === undefined
           ? ''
-          : `Use ${toolName} in the background by default. Start independent delegations together in one assistant message and continue useful work while they run. Set \`run_in_background: false\` only when your next action depends on that subagent's result. When a background run settles, the runtime sends you a notice containing its outcome and any final assistant message.`,
+          : `Use ${toolName} in the background by default. Start independent delegations together in one assistant message and continue useful work while they run. A returned subagent id is a child-session id, not a Job id; do not pass it to \`job_list\`, \`job_output\`, or \`job_kill\`. When a child settles, wait for the runtime's notice containing its outcome and any final assistant message. Set \`run_in_background: false\` only when your next action depends on receiving that result.`,
       })
     }
   }

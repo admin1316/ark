@@ -86,18 +86,6 @@ enum ArkEventSequenceValidationError: LocalizedError, Equatable {
 }
 
 enum ArkEventSequenceValidator {
-  static func safeInteger(_ value: JSONValue?, minimum: Int = 0) -> Int? {
-    guard let number = value?.numberValue,
-          number.isFinite,
-          number.rounded(.towardZero) == number,
-          abs(number) <= 9_007_199_254_740_991,
-          number >= Double(minimum),
-          number >= Double(Int.min),
-          number <= Double(Int.max)
-    else { return nil }
-    return Int(number)
-  }
-
   static func validatePage(_ page: ArkHistoryPage) throws {
     var previous: Int?
     for event in page.events {
@@ -843,6 +831,10 @@ public final class ArkAppModel: ObservableObject {
 
   private let client: ArkAPIClient
   private let interactions: ArkInteractionAPI
+  private let protectedOwner: ArkProtectedOwnerBroker?
+  @Published public private(set) var protectedTrialDescriptors: [ArkProtectedTrialDescriptor] = []
+  @Published public private(set) var admittedProtectedTrialIDs: Set<String> = []
+  @Published public private(set) var protectedTrialActionPending = false
   private let eventPump: ArkEventPump
   private let documentStore: ArkDocumentReferenceStore
   private let fallbackWikiRoot: URL
@@ -946,10 +938,12 @@ public final class ArkAppModel: ObservableObject {
     eventPump: ArkEventPump,
     fallbackWikiRoot: URL,
     documentStore: ArkDocumentReferenceStore = ArkDocumentReferenceStore(),
-    defaults: UserDefaults = .standard
+    defaults: UserDefaults = .standard,
+    protectedOwner: ArkProtectedOwnerBroker? = nil
   ) {
     self.client = client
     self.interactions = interactions
+    self.protectedOwner = protectedOwner
     self.eventPump = eventPump
     self.documentStore = documentStore
     messageImages = ArkMessageImageStore { sessionID, attachmentID in
@@ -3098,6 +3092,15 @@ public final class ArkAppModel: ObservableObject {
   public func start() {
     guard eventLifecycle == .idle else { return }
     eventLifecycle = .running
+    Task { [weak self] in
+      guard let self, let owner = self.protectedOwner else { return }
+      do {
+        let reviews = try await owner.descriptors()
+        self.protectedTrialDescriptors = reviews.map(\.descriptor)
+        self.admittedProtectedTrialIDs = Set(reviews.filter { $0.phase == "admitted" }.map { $0.descriptor.id })
+      }
+      catch { self.protectedTrialDescriptors = [] } // An unavailable authority exposes no confirmation.
+    }
     // Opt-in real-usage stall recorder (default off; see ArkMainThreadStallMonitor). The context
     // provider is only called when a stall is actually recorded.
     ArkMainThreadStallMonitor.shared.contextProvider = { [weak self] in
@@ -3277,7 +3280,6 @@ public final class ArkAppModel: ObservableObject {
     statusProjection.reset(events: [])
     livePublishTask?.cancel()
     livePublishTask = nil
-    historyTask?.cancel()
     eventResyncTask?.cancel()
     eventResyncTask = nil
     historyProjectionGeneration &+= 1
@@ -3288,18 +3290,51 @@ public final class ArkAppModel: ObservableObject {
     turnUsageProjection = ArkChatTurnUsageProjection.Accumulator()
     restoreConversationSurface(for: sessionID)
     chatPresentationDidChange.send()
-    historyTask = Task { [weak self] in
-      guard let self else { return }
-      let resetHistory = self.events.isEmpty
-      async let history: Void = self.refreshHistory(resetPaging: resetHistory)
-      async let feedback: Void = self.loadMessageFeedback(for: sessionID)
-      async let modelLabel: Void = self.refreshModelLabel(for: sessionID)
-      async let modelCatalog: Void = self.refreshModelCatalog(for: sessionID)
-      if self.selectedSession?.origin == "subagent" {
-        _ = try? await self.subagentAddress(for: sessionID)
+    replaceHistoryTask { model in
+      let resetHistory = model.events.isEmpty
+      // Model metadata may resume a cold session on the Host. Finish the
+      // immutable history read before that changes its source identity.
+      await model.refreshHistory(resetPaging: resetHistory)
+      guard model.selectedSessionID == sessionID, !Task.isCancelled else { return }
+      async let feedback: Void = model.loadMessageFeedback(for: sessionID)
+      async let modelLabel: Void = model.refreshModelLabel(for: sessionID)
+      async let modelCatalog: Void = model.refreshModelCatalog(for: sessionID)
+      if model.selectedSession?.origin == "subagent" {
+        _ = try? await model.subagentAddress(for: sessionID)
       }
-      _ = await (history, feedback, modelLabel, modelCatalog)
+      _ = await (feedback, modelLabel, modelCatalog)
     }
+  }
+
+  @discardableResult
+  func replaceHistoryTask(
+    cancelPrevious: Bool = true,
+    _ operation: @escaping @MainActor (ArkAppModel) async -> Void
+  ) -> Task<Void, Never> {
+    let previous = historyTask
+    if cancelPrevious { previous?.cancel() }
+    let task = Task { [weak self] in
+      // A predecessor may still be closing a content handle, or resolving the
+      // first read of a fresh subscription. Never overlap its replacement;
+      // cancellation of a queued successor must reach the active ancestor.
+      await withTaskCancellationHandler {
+        await previous?.value
+      } onCancel: {
+        previous?.cancel()
+      }
+      guard !Task.isCancelled, let self else { return }
+      await operation(self)
+    }
+    historyTask = task
+    return task
+  }
+
+  private func refreshSubscribedHistoryIfNeeded(sessionID: String, resetPaging: Bool) async {
+    // The initial read may already have reconciled this baseline while the
+    // queued subscription waited. A second read is only needed for a remaining
+    // gap or a failed/incomplete first load.
+    guard resyncTargetBySessionID[sessionID] != nil || historyLoadState != .loaded else { return }
+    await refreshHistory(resetPaging: resetPaging)
   }
 
   private func cacheCurrentConversationSurface() {
@@ -3461,6 +3496,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func createNavigableSession(in workspaceID: String?, agentPreset: String?, creator: Bool) {
+    let workspacePath = workspaceID.flatMap { id in workspaces.first(where: { $0.id == id })?.path }
     // Every explicit click owns a fresh creation ID; only that latest click may navigate.
     let requestID = UUID()
     sessionCreationNavigationID = requestID
@@ -3480,6 +3516,10 @@ public final class ArkAppModel: ObservableObject {
           sessionID: requestID.uuidString.lowercased())
         await refreshNavigation(refreshWiki: false)
         guard navigationIsCurrent() else { return }
+        if let workspaceID {
+          guard let workspacePath else { throw Self.newSessionWorkspaceBindingError }
+          try verifyNewSessionWorkspaceBinding(sessionID: id, workspaceID: workspaceID, expectedPath: workspacePath)
+        }
         selectSession(id)
         if creator { agentPresetError = nil }
       } catch {
@@ -3487,6 +3527,30 @@ public final class ArkAppModel: ObservableObject {
         if creator { agentPresetError = error.localizedDescription }
         else { navigationErrorMessage = error.localizedDescription }
       }
+    }
+  }
+
+  private static let newSessionWorkspaceBindingError = ArkAPIError(
+    message: "新会话未绑定到已选工作区，消息尚未发送。请重新选择工作区后重试。"
+  )
+
+  private static func normalizedWorkspacePath(_ path: String) -> String {
+    URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
+  }
+
+  private func verifyNewSessionWorkspaceBinding(
+    sessionID: String,
+    workspaceID: String,
+    expectedPath: String
+  ) throws {
+    guard let workspace = workspaces.first(where: { $0.id == workspaceID }),
+          Self.normalizedWorkspacePath(workspace.path) == Self.normalizedWorkspacePath(expectedPath),
+          workspace.sessionIDs.contains(sessionID),
+          let session = sessions.first(where: { $0.id == sessionID }),
+          let cwd = session.cwd,
+          Self.normalizedWorkspacePath(cwd) == Self.normalizedWorkspacePath(expectedPath)
+    else {
+      throw Self.newSessionWorkspaceBindingError
     }
   }
 
@@ -3958,6 +4022,11 @@ public final class ArkAppModel: ObservableObject {
     let documents = pendingDocuments
     let sourceSessionID = selectedSessionID
     let sourceWorkspaceID = selectedWorkspaceID
+    let sourceWorkspacePath = sourceWorkspaceID.flatMap { id in workspaces.first(where: { $0.id == id })?.path }
+    guard sourceSessionID != nil || sourceWorkspaceID == nil || sourceWorkspacePath != nil else {
+      composerErrorMessage = Self.newSessionWorkspaceBindingError.localizedDescription
+      return
+    }
     let sourceNavigationGeneration = historyProjectionGeneration
     let sourceAgentPresetID = nextAgentPresetID
     let pendingModel = draftModelSelection
@@ -3983,6 +4052,7 @@ public final class ArkAppModel: ObservableObject {
     Task {
       var targetSessionID = sourceSessionID
       var mayReleaseDocuments = !sourceIsSubagent
+      var workspaceBindingRejected = false
       defer {
         composerSubmittedDocuments = []
         composerSubmissionInFlight = false
@@ -4008,6 +4078,22 @@ public final class ArkAppModel: ObservableObject {
           targetSessionID = sessionID
           guard composerOperationIsCurrent(submissionOwner) else { return }
           await refreshNavigation(refreshWiki: false)
+          guard composerOperationIsCurrent(submissionOwner) else { return }
+          if let sourceWorkspaceID {
+            do {
+              guard let sourceWorkspacePath else { throw Self.newSessionWorkspaceBindingError }
+              try verifyNewSessionWorkspaceBinding(
+                sessionID: sessionID,
+                workspaceID: sourceWorkspaceID,
+                expectedPath: sourceWorkspacePath
+              )
+            } catch {
+              targetSessionID = nil
+              workspaceBindingRejected = true
+              throw error
+            }
+          }
+          targetSessionID = sessionID
           if composerOperationIsCurrent(submissionOwner), selectedSessionID == sourceSessionID,
              historyProjectionGeneration == sourceNavigationGeneration {
             selectSession(sessionID)
@@ -4112,6 +4198,12 @@ public final class ArkAppModel: ObservableObject {
             images: images,
             documents: documents
           )
+        }
+        if workspaceBindingRejected,
+           composerDraftDocument.submissionID == capturedDocument.submissionID {
+          composerDraftDocument.discardSubmissionID()
+          installComposerDraft(composerDraftDocument)
+          persistComposerDraft(for: sourceSessionID)
         }
         guard selectedSessionID == targetSessionID else { return }
         composerErrorMessage = error.localizedDescription
@@ -4509,6 +4601,42 @@ public final class ArkAppModel: ObservableObject {
     removeUnreferencedComposerDocuments([document])
   }
 
+  public var selectedProtectedTrial: ArkProtectedTrialDescriptor? {
+    guard let session = selectedSessionID else { return nil }
+    return protectedTrialDescriptors.first { $0.sessionIDs.contains(session) }
+  }
+
+  /// Answer the App-local review after the protected owner revalidates and admits
+  /// its exact displayed descriptor. Ordinary questions never call this method.
+  public func admitAndAnswerProtectedTrial(_ descriptor: ArkProtectedTrialDescriptor) {
+    guard let protectedOwner, !protectedTrialActionPending,
+      selectedProtectedTrial == descriptor else { return }
+    protectedTrialActionPending = true
+    Task {
+      defer { protectedTrialActionPending = false }
+      do {
+        try await protectedOwner.admit(descriptor)
+        admittedProtectedTrialIDs.insert(descriptor.id)
+        composerErrorMessage = nil
+      } catch { composerErrorMessage = error.localizedDescription }
+    }
+  }
+
+  public func revokeProtectedTrial(_ descriptor: ArkProtectedTrialDescriptor) {
+    guard let protectedOwner, !protectedTrialActionPending,
+      protectedTrialDescriptors.contains(descriptor) else { return }
+    protectedTrialActionPending = true
+    Task {
+      defer { protectedTrialActionPending = false }
+      do {
+        try await protectedOwner.revoke(descriptor)
+        protectedTrialDescriptors.removeAll { $0.id == descriptor.id }
+        admittedProtectedTrialIDs.remove(descriptor.id)
+        composerErrorMessage = nil
+      } catch { composerErrorMessage = error.localizedDescription }
+    }
+  }
+
   public func answerApproval(_ request: ArkApprovalRequest, decision: ArkApprovalDecision) {
     guard respondingInteractionIDs.insert(request.id).inserted else { return }
     Task {
@@ -4871,9 +4999,9 @@ public final class ArkAppModel: ObservableObject {
       if sourceChanged {
         // One fresh transaction catches events committed while the replaced
         // source was being recovered, without trusting old pending identities.
-        Task { [weak self] in
-          guard let self, self.selectedSessionID == sessionID else { return }
-          await self.refreshHistory()
+        replaceHistoryTask(cancelPrevious: false) { model in
+          guard model.selectedSessionID == sessionID else { return }
+          await model.refreshHistory()
         }
       }
     } catch {
@@ -5948,10 +6076,7 @@ public final class ArkAppModel: ObservableObject {
       }
     case "session/subscribed":
       guard let sessionID = frame.payload["sessionId"]?.stringValue,
-            let lastSequence = ArkEventSequenceValidator.safeInteger(
-              frame.payload["lastSeq"],
-              minimum: -1
-            )
+            let lastSequence = frame.payload["lastSeq"]?.jsonSafeInteger(minimum: -1)
       else {
         markEventChannelDegraded(.mux, message: "会话订阅包含无效事件序号")
         return
@@ -6001,17 +6126,20 @@ public final class ArkAppModel: ObservableObject {
         events.removeAll { $0.id > lastSequence }
         pendingLiveEvents.removeAll { $0.id > lastSequence }
         seenEventIDs = Set(events.map(\.id)).union(pendingLiveEvents.map(\.id))
-        historyTask?.cancel()
-        historyTask = Task { [weak self] in
-          guard let self else { return }
+        replaceHistoryTask(cancelPrevious: false) { model in
           // A running session can resubscribe before its newest turn is
           // durable in history. Preserve the already-rendered transcript in
           // that case; only an empty, first-time surface may replace itself
           // from an authoritative page.
-          let resetHistory = self.events.isEmpty
-          async let history: Void = self.refreshHistory(resetPaging: resetHistory)
-          async let feedback: Void = self.loadMessageFeedback(for: sessionID)
-          async let modelMetadata: Void = self.refreshSubscribedModelMetadata(for: sessionID)
+          let resetHistory = model.events.isEmpty
+          // The first read may still be resolving this baseline. Cancelling
+          // it can discard an initial response before its content handle
+          // reaches the client; the queued task checks whether a gap remains.
+          async let history: Void = model.refreshSubscribedHistoryIfNeeded(
+            sessionID: sessionID, resetPaging: resetHistory
+          )
+          async let feedback: Void = model.loadMessageFeedback(for: sessionID)
+          async let modelMetadata: Void = model.refreshSubscribedModelMetadata(for: sessionID)
           _ = await (history, feedback, modelMetadata)
         }
       }
@@ -6019,7 +6147,7 @@ public final class ArkAppModel: ObservableObject {
       guard let sessionID = frame.payload["sessionId"]?.stringValue,
             sessionID == selectedSessionID,
             let wireEvent = frame.payload["event"],
-            let wireSequence = ArkEventSequenceValidator.safeInteger(wireEvent["seq"]),
+            let wireSequence = wireEvent["seq"]?.jsonSafeInteger(),
             let event = ArkAPIClient.event(fromWire: wireEvent, view: frame.payload["view"]),
             event.id == wireSequence
       else {
@@ -6253,7 +6381,11 @@ public final class ArkAppModel: ObservableObject {
       // The walk keeps the installed tail as its anchor and stops at the reported target, so the
       // page it pulls is exactly the missing range. Resetting the page would discard the tail and
       // move the head backwards below the stream.
-      await self.refreshHistory()
+      let queued = self.replaceHistoryTask(cancelPrevious: false) { model in
+        guard model.selectedSessionID == sessionID else { return }
+        await model.refreshHistory()
+      }
+      await queued.value
     }
   }
 

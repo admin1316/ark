@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "status": "source-regression-pass",
+  "date": "2026-10-11",
+  "change": "Keep canonical Wiki review actions unavailable after semantic verification until an authenticated paired measured-trial reader exists; expose only Archive.",
+  "source": {
+    "repository": "/Users/hui/ark/repo",
+    "head": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+    "workingTreeDirty": true,
+    "files": {
+      "packages/host/knowledge-wiki/src/reviews.ts": "55c6bb6c89926f7e0b8ad9e238e6f172b9f0ef17c4ad3f2a6155cea26faf3bd1",
+      "packages/host/knowledge-wiki/src/index.ts": "3d80208b0bd4c0e61fc0ea70bd5e367b57837a5943ba5791f0fa6be6d713db48",
+      "packages/host/knowledge-wiki/tests/reviews-lifecycle-edges.spec.ts": "326e16b70cd9594ddd44c3bc54da247bcd246c130a3bdd3076585f5fa073d822",
+      "packages/host/knowledge-wiki/tests/verification.spec.ts": "f8366fa8005741cc29bade034df578a9f7e2e2d6e8d5ae403ea799b96091f5de",
+      "packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts": "1a81e2b297f14afb170e6850006ca4a0f6cab79c026655cdac1079d490cad6ba",
+      "packages/host/knowledge-wiki/README.md": "5e122112863e3097e696ad07fabe2de304ab40792bb1f9b2b2b6872a8ca309fb",
+      "packages/host/knowledge-wiki/README.zh.md": "47afc1b6bf9a3cf145379498a49433e134148de903d506a871ccac2dc75b5073",
+      "docs/rust-migration/knowledge-runtime-report.md": "d454a0c407b026376ce9bef1c10e69a57e25ab9b36308e63c2c52c475b2ed9d2",
+      "docs/rust-migration/knowledge-runtime-report.zh.md": "bf9964aac8e5a672b3baf50f6954da2b05eeb8b3313db8ac243a595c31443731",
+      ".agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.md": "11f89e291ad76b7708132a865b0e65134a0a3f8edde93b8d1f5eaf3e80d7deee",
+      ".agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md": "8793675fcf931a401ed46fbf09ebc6b70565697f8b9c241f5062f26a787dd696"
+    }
+  },
+  "verification": {
+    "testCommand": "pnpm exec vitest run packages/host/knowledge-wiki/tests/reviews-lifecycle-edges.spec.ts packages/host/knowledge-wiki/tests/verification.spec.ts packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts --reporter=dot",
+    "testFilesPassed": 3,
+    "testsPassed": 67,
+    "semanticVerificationReviewOptions": [
+      "Archive"
+    ],
+    "legacyPersistedCanonicalOptionsProjection": "archive-only",
+    "canonicalMutationWithoutMeasuredTrialReader": "denied",
+    "realCordisLoaderComposition": "pass",
+    "knowledgeWikiTypecheck": "pass",
+    "knowledgeWikiToolsTypecheck": "pass",
+    "docSync": "30/30 passed",
+    "translationPairing": "pass",
+    "gitDiffCheck": "pass"
+  },
+  "runtime": {
+    "candidate": "Ark 3.1.24 / build 2026101124",
+    "candidateRebuilt": false,
+    "candidateBehaviorVerified": false,
+    "formalArkChanged": false,
+    "phase6BehaviorAudit": "UNKNOWN"
+  },
+  "limitation": "These tests establish checked-out source behavior only. No external measured-trial authority is provisioned, and the running candidate predates this source change."
+}

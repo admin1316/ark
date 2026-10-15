@@ -157,6 +157,41 @@ function requestProfileShutdown(
   child.kill('SIGTERM')
 }
 
+/** Join the owned CLI before removing its home; failures retain the fixture and every original error. */
+async function withProfileFixture(
+  fixture: Pick<ProfileLifecycleFixture, 'home'>,
+  child: PromiseLike<unknown> & Pick<ReturnType<typeof startProfileLifecycle>, 'kill'>,
+  run: () => Promise<void>,
+): Promise<void> {
+  const settlement = child.then(
+    () => ({ ok: true } as const),
+    (error: unknown) => ({ ok: false, error } as const),
+  )
+  const failures: unknown[] = []
+  try {
+    await run()
+  } catch (error) {
+    failures.push(error)
+  }
+  try {
+    child.kill('SIGKILL')
+  } catch (error) {
+    failures.push(error)
+  }
+  const settled = await settlement
+  if (!settled.ok) failures.push(settled.error)
+  if (failures.length === 0) {
+    try {
+      rmSync(fixture.home, { recursive: true, force: true })
+    } catch (error) {
+      failures.push(error)
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, `profile lifecycle failed; fixture retained at ${fixture.home}`)
+  }
+}
+
 function createEnvironmentProbeProfile(home: string, project: string): void {
   const pluginFile = join(project, 'environment-probe.mjs')
   writeFileSync(pluginFile, [
@@ -461,17 +496,14 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
   it('lets a profile without a parser ignore app arguments and dispose on a startup-time signal', async () => {
     const fixture = createProfileLifecycleFixture()
     const child = startProfileLifecycle(fixture, ['--unclaimed'])
-    try {
+    await withProfileFixture(fixture, child, async () => {
       await waitForFile(fixture.ready)
       requestProfileShutdown(child, fixture)
       const result = await child
       expect(result.exitCode, `${result.stderr}\nstdout:\n${result.stdout}\nsignal: ${String(result.signal)}`).toBe(0)
       expect(result.signal).toBeUndefined()
       expect(existsSync(fixture.disposed)).toBe(true)
-    } finally {
-      child.kill('SIGKILL')
-      rmSync(fixture.home, { recursive: true, force: true })
-    }
+    })
   }, 30_000)
 
   it('fully settles a custom profile, hot-reloads its patch layer with removal reverting, and disposes on a signal', async () => {
@@ -479,7 +511,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     const child = startProfileLifecycle(fixture)
     const profilePatch = join(fixture.home, 'profiles', 'lifecycle', 'cordis.patch.yml')
     const configFile = join(fixture.home, 'config-echo')
-    try {
+    await withProfileFixture(fixture, child, async () => {
       await waitForFile(fixture.settled)
       // The live profile layer: even without an hmr row in the composition,
       // the launcher mounts a config-only watcher, so an edited
@@ -520,40 +552,31 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(result.exitCode, `${result.stderr}\nstdout:\n${result.stdout}\nsignal: ${String(result.signal)}`).toBe(0)
       expect(result.signal).toBeUndefined()
       expect(existsSync(fixture.disposed)).toBe(true)
-    } finally {
-      child.kill('SIGKILL')
-      rmSync(fixture.home, { recursive: true, force: true })
-    }
+    })
   }, 30_000)
 
   it('hands the app arguments to the profile, which applies them before its rows start', async () => {
     const fixture = createStartupFixture()
     const child = startStartupProfile(fixture, ['--generation', 'flagged'])
-    try {
+    await withProfileFixture(fixture, child, async () => {
       await waitForFile(fixture.ready)
       // The consumer started once, already carrying the flag value: the
       // launcher never saw --generation, and the app provider resolved it first.
       expect(readFileSync(fixture.echo, 'utf8')).toBe('flagged')
       requestProfileShutdown(child, fixture)
       expect((await child).exitCode).toBe(0)
-    } finally {
-      child.kill('SIGKILL')
-      rmSync(fixture.home, { recursive: true, force: true })
-    }
+    })
   }, 30_000)
 
   it('starts a consumer on its composed value when the invocation carries no app arguments', async () => {
     const fixture = createStartupFixture()
     const child = startStartupProfile(fixture, [])
-    try {
+    await withProfileFixture(fixture, child, async () => {
       await waitForFile(fixture.ready)
       expect(readFileSync(fixture.echo, 'utf8')).toBe('bundle-default')
       requestProfileShutdown(child, fixture)
       expect((await child).exitCode).toBe(0)
-    } finally {
-      child.kill('SIGKILL')
-      rmSync(fixture.home, { recursive: true, force: true })
-    }
+    })
   }, 30_000)
 
   it('keeps the app arguments across a user patch reload', async () => {
@@ -563,7 +586,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     const fixture = createStartupFixture()
     const profilePatch = join(fixture.home, 'profiles', 'startup', 'cordis.patch.yml')
     const child = startStartupProfile(fixture, ['--generation', 'flagged'])
-    try {
+    await withProfileFixture(fixture, child, async () => {
       // Both rows: the waiting one carries the flag value, and the witness is
       // what a reload will re-mount. They start independently, so neither
       // marker implies the other.
@@ -584,10 +607,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(readFileSync(fixture.echo, 'utf8')).toBe('flagged')
       requestProfileShutdown(child, fixture)
       expect((await child).exitCode).toBe(0)
-    } finally {
-      child.kill('SIGKILL')
-      rmSync(fixture.home, { recursive: true, force: true })
-    }
+    })
   }, 30_000)
 
   it("prints the app's own help, starts none of its rows, and exits", async () => {

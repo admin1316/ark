@@ -11,8 +11,21 @@ import type {} from '@deepseek-ai/cordis-plugin-timer'
 import s from '@deepseek-ai/schemastery'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { effectiveSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
+import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { buildGraph, extractWikiLinkTargets, listPages, readPage } from './graph.ts'
-import { hybridSearch } from './search.ts'
+import {
+  bm25FromKnowledgeSearchIndex,
+  collectSearchPages,
+  createKnowledgeSearchIndex,
+  hybridSearchFromKnowledgeSearchIndex,
+  type KnowledgeSearchIndex,
+} from './search.ts'
+import {
+  createRustKnowledgeSearchRequest,
+  runRustKnowledgeSearchCandidate,
+  type RustKnowledgeSearchMode,
+} from './rust-search-candidate.ts'
 import { WikiSnapshotStore } from './snapshot-store.ts'
 import { createProjectExecutionContext, type ProjectExecutionContext } from './project-context.ts'
 import { ingestSource as runIngest } from './ingest.ts'
@@ -22,19 +35,45 @@ import {
 } from './auto-sediment.ts'
 import { deepResearch as runResearch } from './research.ts'
 import {
-  appendCandidateReviews,
   applyCandidateReview,
+  commitReviewAppend,
+  prepareReviewAppend,
+  projectCandidateReviewOptions,
   recoverCandidateReviewTransactions,
+  recordCandidateMeasuredTrial as recordMeasuredCandidateTrial,
   recordCandidateVerification as recordTrustedCandidateVerification,
   resolveAdvisoryReviewBatch,
 } from './reviews.ts'
 import {
   verifyCandidate,
+  type KnowledgeWikiPromotionSealRequest,
+  type KnowledgeWikiSourceIdentity,
   type KnowledgeWikiVerifierAuthority,
 } from './verifier.ts'
+import {
+  createExternalVerifierAuthority,
+} from './external-verifier-adapter.ts'
+import {
+  createFileMeasuredTrialArtifactResolver,
+  createKnowledgeWikiMeasuredTrialReader,
+  type KnowledgeWikiMeasuredTrialReader,
+} from './measured-trial.ts'
+import {
+  appendKnowledgeEvent,
+  createKnowledgeEvent,
+  expireKnowledge,
+  knowledgeInjectionDecision,
+  knowledgeSha256,
+  readKnowledgeEventLog,
+  replayKnowledgeEvents,
+  updateKnowledgeUtility,
+} from './knowledge-governance.ts'
 import { htmlToMarkdown } from './html-clip.ts'
+import { parseFrontmatterBlock } from './frontmatter-utils.ts'
+import { readReviewStore } from './review-store.ts'
 import { isImagePath } from './vision.ts'
 import {
+  MAX_WIKI_PAGE_BYTES,
   atomicWriteFile,
   isMissingPathError,
   readOptionalJson,
@@ -57,18 +96,106 @@ import {
   type KnowledgeWikiStageExecutor,
 } from './stage-executor.ts'
 import type {
+  CandidateMeasuredTrialResult,
   CandidateVerificationResult,
   GraphNode, IngestQueueSnapshot, IngestQueueTask, WikiFileEntry, WikiGraphResult, WikiPageContent,
-  IngestOutcome, KnowledgeUtilityRecord, WikiReviewItem, WikiSearchHit, WikiWriteResult,
+  IngestOutcome, KnowledgeAccessContext, KnowledgeRepairProposalRequest, KnowledgeRepairProposalResult, KnowledgeUtilityRecord,
+  WikiReviewItem, WikiSearchHit, WikiWriteResult,
 } from './types.ts'
+import type { KnowledgeRecord } from './types.ts'
 
 const MAX_RAW_SOURCE_BYTES = 100 * 1024 * 1024
+/** Must match the model-facing wiki_read rendering bound. */
+export const KNOWLEDGE_REPAIR_MAX_SOURCE_CHARS = 8000
+const KNOWLEDGE_REPAIR_READ_TTL_MS = 15 * 60 * 1000
+const KNOWLEDGE_REPAIR_READ_CAPACITY = 256
+
+function formatDiagnosticError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function readReviewItems(reviewFile: string): WikiReviewItem[] {
+  const bytes = readReviewStore(reviewFile)
+  const value: unknown = bytes === undefined ? [] : JSON.parse(bytes.toString('utf8'))
+  if (!Array.isArray(value)) throw new Error('invalid knowledge review state')
+  return value as WikiReviewItem[]
+}
+
+/** Internal provenance attached to model-facing projections; tools strip it from wire values. */
+interface KnowledgeModelProvenance {
+  readonly knowledgeId: string
+  readonly contentHash?: string
+  readonly sourceHash: string
+  readonly scope: KnowledgeRecord['scope']
+  readonly trust: KnowledgeRecord['trust']
+  readonly authority: string
+  readonly evidenceRefs: readonly string[]
+  readonly verificationStatus: KnowledgeRecord['verificationStatus']
+  readonly expiresAt: string | null
+  readonly conflicts: readonly string[]
+}
+
+export type { KnowledgeModelProvenance }
+
+type KnowledgeModelFileEntry = WikiFileEntry & { readonly provenance?: KnowledgeModelProvenance }
+type KnowledgeModelGraphResult = WikiGraphResult & {
+  readonly provenance: Readonly<Record<string, KnowledgeModelProvenance>>
+}
 
 export type * from './types.ts'
+export {
+  KNOWLEDGE_EVENT_TYPES,
+  appendKnowledgeEvent,
+  applyKnowledgeEvent,
+  canKnowledgeChangePolicy,
+  canonicalKnowledgeJson,
+  createKnowledgeEvent,
+  createKnowledgeRecord,
+  detectKnowledgeConflicts,
+  expireKnowledge,
+  knowledgeInjectionDecision,
+  knowledgeSha256,
+  readKnowledgeEventLog,
+  replayKnowledgeEvents,
+  shouldRetainKnowledge,
+  updateKnowledgeUtility,
+  validateKnowledgeEvent,
+  validateKnowledgeRecord,
+} from './knowledge-governance.ts'
+export type {
+  KnowledgeEventAuthority,
+  KnowledgeInjectionDecision,
+  KnowledgeState,
+  KnowledgeValidationResult,
+} from './knowledge-governance.ts'
+export type { KnowledgeAccessContext } from './types.ts'
 export type {
   IngestQueueSnapshot, IngestQueueTask, WikiFileEntry, WikiGraphResult, WikiPageContent,
   KnowledgeUtilityRecord, WikiReviewItem, WikiSearchHit, WikiWriteResult,
 } from './types.ts'
+export {
+  createRustKnowledgeSearchRequest,
+  runRustKnowledgeSearchCandidate,
+} from './rust-search-candidate.ts'
+export type {
+  RustKnowledgeSearchHit,
+  RustKnowledgeSearchMode,
+  RustKnowledgeSearchObservation,
+  RustKnowledgeSearchOptions,
+  RustKnowledgeSearchRequest,
+  RustKnowledgeSearchResult,
+} from './rust-search-candidate.ts'
+export { createExternalVerifierAuthority } from './external-verifier-adapter.ts'
+export type { ExternalVerifierOptions } from './external-verifier-adapter.ts'
+export { createKnowledgeWikiMeasuredTrialReader } from './measured-trial.ts'
+export { createFileMeasuredTrialArtifactResolver } from './measured-trial.ts'
+export type {
+  KnowledgeWikiMeasuredTrialReader,
+  KnowledgeWikiMeasuredTrialReaderOptions,
+  MeasuredTrialArtifactResolver,
+  MeasuredTrialReviewBinding,
+  VerifiedMeasuredTrial,
+} from './measured-trial.ts'
 
 /**
  * Strict endpoint metadata for the later Gateway/Native lane. This package
@@ -82,6 +209,15 @@ export const KNOWLEDGE_WIKI_ENDPOINT_METADATA = Object.freeze({
     requiresVerifierAuthority: true,
     verifierAuthorityService: 'knowledgeWikiVerifierAuthority',
     sourceIdentitySchema: 'commit40+sourceDigest+dirtyDigest+buildDigest',
+    nativeIntegration: 'pending',
+  }),
+  recordCandidateMeasuredTrial: Object.freeze({
+    endpoint: 'knowledgeWiki/recordCandidateMeasuredTrial',
+    owner: 'knowledgeWiki',
+    transport: 'strict-remote',
+    requiresVerifierAuthority: true,
+    requiresMeasuredTrialReader: true,
+    preservesExistingResolveReviewContract: true,
     nativeIntegration: 'pending',
   }),
 })
@@ -98,8 +234,8 @@ function promiseFromSync<T>(operation: () => T): Promise<T> {
 }
 
 interface SessionQuerySurface {
-  readonly session: { readonly cwd?: string }
-  readonly events: unknown[]
+  readonly session: Partial<Pick<SessionHeader, 'id' | 'cwd' | 'origin' | 'parentSession' | 'delegationDepth'>>
+  readonly events: SessionEvent[]
 }
 
 interface SessionQueryReader {
@@ -113,13 +249,79 @@ function isSessionQueryReader(value: unknown): value is SessionQueryReader {
     && typeof (value as Record<string, unknown>).readSession === 'function'
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isSessionQuerySurface(value: unknown): value is SessionQuerySurface {
+  return isRecord(value)
+    && isRecord(value.session)
+    && Array.isArray(value.events)
+}
+
+function normalizeCorrectionText(value: string): string {
+  return value.normalize('NFC').replace(/\s+/gu, ' ').trim()
+}
+
+/** Require matching tool arguments and the validated proposed rule in the latest direct human turn. */
+function hasCurrentHumanCorrection(
+  events: readonly unknown[],
+  proposal: Pick<KnowledgeRepairProposalRequest, 'sourcePath' | 'title' | 'correctedRule'>,
+  expectedRule: string,
+): boolean {
+  let repairCall = -1
+  let repairTurn: number | undefined
+  let repairArguments: unknown
+  let turnStart = -1
+  let latestTurn: unknown
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index]
+    if (!isRecord(event)) continue
+    if (event.type === 'turn/start') {
+      turnStart = index
+      latestTurn = isRecord(event.data) ? event.data.turn : undefined
+      continue
+    }
+    if (event.type !== 'tool/call' || !isRecord(event.data)) continue
+    if (event.data.name === 'wiki_propose_repair') {
+      repairCall = index
+      repairTurn = typeof event.data.turn === 'number' ? event.data.turn : undefined
+      repairArguments = event.data.arguments
+    }
+  }
+  if (repairCall < 0 || repairTurn === undefined || turnStart < 0
+    || repairCall <= turnStart || repairTurn !== latestTurn) return false
+  if (typeof repairArguments !== 'string') return false
+  try {
+    const parsed: unknown = JSON.parse(repairArguments)
+    if (!isRecord(parsed)
+      || parsed.sourcePath !== proposal.sourcePath
+      || parsed.title !== proposal.title
+      || parsed.correctedRule !== proposal.correctedRule) return false
+  } catch {
+    return false
+  }
+
+  for (let index = repairCall - 1; index > turnStart; index -= 1) {
+    const event = events[index]
+    if (!isRecord(event) || event.type !== 'user/message' || !isRecord(event.data)) continue
+    const message = event.data
+    if (!isRecord(message.source) || message.source.kind !== 'user') continue
+    if (!Array.isArray(message.content)) return false
+    const userText = message.content.flatMap((block: unknown) =>
+      isRecord(block) && block.type === 'text' && typeof block.text === 'string' ? [block.text] : []).join(' ')
+    return normalizeCorrectionText(userText).includes(expectedRule)
+  }
+  return false
+}
+
 /** Deployment configuration. */
 export interface Config {
   /** Absolute path of the project wiki directory (contains concepts/, entities/, ...). */
   readonly wikiRoot: string
   /** Main workspace root (fixed, non-removable); defaults to the wiki root's parent. */
   readonly mainRoot: string
-  /** Credential reference for DashScope semantic embeddings and image descriptions. */
+  /** Credential reference for optional semantic embeddings and image descriptions; empty disables those calls. */
   readonly credential: string
   /** LLM provider id for ingest/research (default deepseek-official). */
   readonly llmProvider: string
@@ -131,6 +333,128 @@ export interface Config {
   readonly llmCredential: string
   /** Publish the fork's owned-worker stage executor when nothing else provides one. */
   readonly ownedStageExecutor: boolean
+  /** Optional Rust knowledge-search candidate mode; disabled unless explicitly enabled. */
+  readonly knowledgeSearchCandidateMode?: string
+  /** Absolute path to the isolated Rust knowledge-search candidate binary. */
+  readonly knowledgeSearchCandidateBinary?: string
+  /** Per-query Rust candidate deadline in milliseconds. */
+  readonly knowledgeSearchCandidateTimeoutMs?: number
+  /**
+   * Launcher-owned JSON configuration for the external verifier authority.
+   * Empty (the default) keeps verification unavailable; project files cannot
+   * enable this path because the value must be supplied by the launcher. A
+   * non-empty value also requires the managed `ctx.subprocess` service.
+   */
+  readonly knowledgeVerifierConfig?: string
+  /** Launcher-owned JSON containing only independent measured-trial public trust anchors and an artifact root. */
+  readonly knowledgeMeasuredTrialConfig?: string
+}
+
+/** Parse an exact launcher-owned measured-trial trust configuration; never accept private keys or project input. */
+function configuredMeasuredTrialReader(raw: string | undefined): KnowledgeWikiMeasuredTrialReader | undefined {
+  const value = raw?.trim() ?? ''
+  if (value === '') return undefined
+  if (value.length > 32 * 1024) throw new Error('knowledgeMeasuredTrialConfig exceeds 32768 characters')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value) as unknown
+  } catch (error) {
+    throw new Error('knowledgeMeasuredTrialConfig must be valid JSON', { cause: error })
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('knowledgeMeasuredTrialConfig must be an object')
+  }
+  const config = parsed as Record<string, unknown>
+  const expected = [
+    'authorityId', 'publicKey', 'journalSignerAuthorityId', 'journalSignerPublicKey', 'artifactRoot',
+  ]
+  if (Object.keys(config).length !== expected.length || expected.some(key => !Object.hasOwn(config, key))) {
+    throw new Error('knowledgeMeasuredTrialConfig must contain exactly the two public authorities and artifactRoot')
+  }
+  for (const key of expected) {
+    const field = config[key]
+    const publicKey = key === 'publicKey' || key === 'journalSignerPublicKey'
+    if (typeof field !== 'string' || field.trim() === '' || (!publicKey && field !== field.trim()) || field.length > 16 * 1024) {
+      throw new Error(`knowledgeMeasuredTrialConfig.${key} must be a bounded non-empty string`)
+    }
+    if (publicKey && !/^-----BEGIN PUBLIC KEY-----[\s\S]+-----END PUBLIC KEY-----$/u.test(field.trim())) {
+      throw new Error(`knowledgeMeasuredTrialConfig.${key} must be an SPKI public key; private keys are not accepted`)
+    }
+  }
+  return createKnowledgeWikiMeasuredTrialReader({
+    authorityId: config['authorityId'] as string,
+    publicKey: (config['publicKey'] as string).trim(),
+    journalSignerAuthorityId: config['journalSignerAuthorityId'] as string,
+    journalSignerPublicKey: (config['journalSignerPublicKey'] as string).trim(),
+    artifacts: createFileMeasuredTrialArtifactResolver(config['artifactRoot'] as string),
+  })
+}
+
+/** Parse launcher-owned verifier configuration and resolve its typed signing owner. */
+function configuredVerifierAuthority(raw: string | undefined, ctx: Context): KnowledgeWikiVerifierAuthority | undefined {
+  const value = raw?.trim() ?? ''
+  if (value === '') return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value) as unknown
+  } catch (error) {
+    throw new Error('knowledgeVerifierConfig must be valid JSON', { cause: error })
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('knowledgeVerifierConfig must be an object')
+  }
+  const config = parsed as Record<string, unknown>
+  if (Object.hasOwn(config, 'privateKey')) {
+    throw new Error('knowledgeVerifierConfig privateKey is not accepted; promotion signing requires the typed owner')
+  }
+  const authorityId = config.authorityId
+  const executable = config.executable
+  const publicKey = config.publicKey
+  const sourceIdentity = config.sourceIdentity
+  const args = config.args
+  const timeoutMs = config.timeoutMs
+  if (typeof authorityId !== 'string'
+    || typeof executable !== 'string'
+    || typeof publicKey !== 'string'
+    || typeof sourceIdentity !== 'object'
+    || sourceIdentity === null
+    || Array.isArray(sourceIdentity)) {
+    throw new Error('knowledgeVerifierConfig is missing launcher-owned verifier fields')
+  }
+  if (args !== undefined && !isStringArray(args)) {
+    throw new Error('knowledgeVerifierConfig.args must be an array of strings')
+  }
+  const subprocess = ctx.get('subprocess')
+  if (subprocess === undefined) {
+    throw new Error('knowledgeVerifierConfig requires the managed ctx.subprocess service')
+  }
+  const owner: unknown = ctx.get('knowledgeWikiVerifierAuthority')
+  if (owner === null || typeof owner !== 'object' || Array.isArray(owner)) {
+    throw new Error('knowledgeVerifierConfig requires the typed promotion sealer owner')
+  }
+  const ownerAuthorityId: unknown = Reflect.get(owner, 'authorityId') as unknown
+  const sealPromotion: unknown = Reflect.get(owner, 'sealPromotion') as unknown
+  if (typeof ownerAuthorityId !== 'string' || ownerAuthorityId !== authorityId || typeof sealPromotion !== 'function') {
+    throw new Error('knowledge promotion sealer authority is missing or does not match')
+  }
+  const promotionSealer: Pick<KnowledgeWikiVerifierAuthority, 'authorityId' | 'sealPromotion'> = Object.freeze({
+    authorityId: ownerAuthorityId,
+    sealPromotion: (request: KnowledgeWikiPromotionSealRequest, signal?: AbortSignal) =>
+      Reflect.apply(sealPromotion, owner, [request, signal]) as ReturnType<KnowledgeWikiVerifierAuthority['sealPromotion']>,
+  })
+  return createExternalVerifierAuthority({
+    authorityId,
+    executable,
+    publicKey,
+    promotionSealer,
+    subprocess,
+    sourceIdentity: sourceIdentity as KnowledgeWikiSourceIdentity,
+    ...(args === undefined ? {} : { args }),
+    ...(typeof timeoutMs === 'number' ? { timeoutMs } : {}),
+  })
+}
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item: unknown) => typeof item === 'string')
 }
 
 /**
@@ -151,6 +475,13 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     // Absence of an executor keeps non-cooperative ingest disabled, so the
     // deployment that wants ingest turns this on explicitly.
     ownedStageExecutor: s.boolean().default(false),
+    // Rust search is a candidate only. It never changes the default TypeScript
+    // path unless an explicit, separately reviewed mode is configured.
+    knowledgeSearchCandidateMode: s.string().default('disabled'),
+    knowledgeSearchCandidateBinary: s.string().default(''),
+    knowledgeSearchCandidateTimeoutMs: s.number().step(1).min(1).max(120_000).default(30_000),
+    knowledgeVerifierConfig: s.string().default(''),
+    knowledgeMeasuredTrialConfig: s.string().default(''),
     llmProvider: s.string().default('deepseek-official'),
     llmModel: s.string().default('deepseek-reasoner'), // = deepseek-v4-flash + 推理模式（别名解析，实测检查能力≈v4-pro）
   })
@@ -158,12 +489,19 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   private readonly wikiRoot: string
   private readonly mainRoot: string
   private currentRoot: string
-  private readonly credential: CredentialRef
+  private readonly credential: CredentialRef | undefined
   private readonly llmProvider: string
   private readonly llmModel: string
   private readonly llmBaseUrl: string
   private readonly llmCredential: string
   private readonly ownedStageExecutor: KnowledgeWikiStageExecutor | undefined
+  private readonly knowledgeSearchCandidateMode: RustKnowledgeSearchMode
+  private readonly knowledgeSearchCandidateBinary: string
+  private readonly knowledgeSearchCandidateTimeoutMs: number
+  private readonly configuredVerifier: KnowledgeWikiVerifierAuthority | undefined
+  private readonly configuredMeasuredTrialReader: KnowledgeWikiMeasuredTrialReader | undefined
+  /** One-time, process-local evidence that this scoped session read a complete page. */
+  private readonly repairReadCapabilities = new Map<string, { sourceHash: string; expiresAt: number }>()
   private readonly queue: IngestQueueTask[] = []
   private readonly restoredQueueRoots = new Set<string>()
   private readonly snapshots = new WikiSnapshotStore()
@@ -173,6 +511,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   private readonly backgroundStages = new Set<AbortController>()
   private queueNextId = 1
   private projectGeneration = 0
+  private projectGenerationController = new AbortController()
 
   /**
    * @param ctx - Host context.
@@ -184,7 +523,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const parent = dirname(this.wikiRoot)
     this.mainRoot = config.mainRoot.replace(/\/+$/u, '') || parent
     this.currentRoot = this.mainRoot
-    this.credential = credentialRef(config.credential)
+    const credential = config.credential.trim()
+    this.credential = credential === '' ? undefined : credentialRef(credential)
     this.llmProvider = config.llmProvider
     this.llmModel = config.llmModel
     // The loader schema (KnowledgeWikiService.Config) fills every optional
@@ -192,6 +532,18 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     // through the wikiTestConfig test fixture instead of hand-writing a partial object.
     this.llmBaseUrl = config.llmBaseUrl.replace(/\/+$/u, '')
     this.llmCredential = config.llmCredential
+    this.knowledgeSearchCandidateMode = config.knowledgeSearchCandidateMode === 'shadow'
+      || config.knowledgeSearchCandidateMode === 'enforce'
+      ? config.knowledgeSearchCandidateMode
+      : 'disabled'
+    this.knowledgeSearchCandidateBinary = config.knowledgeSearchCandidateBinary?.trim() ?? ''
+    const candidateTimeoutMs = config.knowledgeSearchCandidateTimeoutMs ?? 0
+    this.knowledgeSearchCandidateTimeoutMs = Number.isSafeInteger(candidateTimeoutMs)
+      && candidateTimeoutMs > 0
+      ? candidateTimeoutMs
+      : 30_000
+    this.configuredVerifier = configuredVerifierAuthority(config.knowledgeVerifierConfig, ctx)
+    this.configuredMeasuredTrialReader = configuredMeasuredTrialReader(config.knowledgeMeasuredTrialConfig)
     this.ownedStageExecutor = config.ownedStageExecutor
       ? createOwnedStageExecutor({ resolveConnection: () => this.resolveStageConnection() })
       : undefined
@@ -199,6 +551,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
 
   /** Resolve on every operation so Keychain updates apply without a restart. */
   private async resolveApiKey(): Promise<string> {
+    if (this.credential === undefined) return ''
     return (await this.ctx.credentials.resolve(this.credential))?.value ?? ''
   }
 
@@ -228,6 +581,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
 
   /** Optional trusted verifier/build owner; project files can never supply it. */
   private get verifierAuthority(): KnowledgeWikiVerifierAuthority | undefined {
+    if (this.configuredVerifier !== undefined) return this.configuredVerifier
     const value: unknown = this.ctx.get('knowledgeWikiVerifierAuthority')
     if (typeof value !== 'object' || value === null
       || typeof Reflect.get(value, 'authorityId') !== 'string'
@@ -237,6 +591,16 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       || typeof Reflect.get(value, 'sealPromotion') !== 'function'
       || typeof Reflect.get(value, 'validatePromotion') !== 'function') return undefined
     return value as KnowledgeWikiVerifierAuthority
+  }
+
+  /** Launcher-owned evaluator and artifact reader; absence keeps measured trials unavailable. */
+  private get measuredTrialReader(): KnowledgeWikiMeasuredTrialReader | undefined {
+    if (this.configuredMeasuredTrialReader !== undefined) return this.configuredMeasuredTrialReader
+    const value: unknown = this.ctx.get('knowledgeWikiMeasuredTrialReader')
+    if (typeof value !== 'object' || value === null
+      || typeof Reflect.get(value, 'authorityId') !== 'string'
+      || typeof Reflect.get(value, 'read') !== 'function') return undefined
+    return value as KnowledgeWikiMeasuredTrialReader
   }
 
   /** Parent-owned hard-deadline stage executor; absence disables non-cooperative ingest. */
@@ -261,26 +625,50 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     )
   }
 
+  /** Rotate cancellation with the project-generation fence used by review signing and recovery. */
+  private advanceProjectGeneration(reason: string): void {
+    this.projectGenerationController.abort(new Error(reason))
+    this.projectGeneration += 1
+    this.projectGenerationController = new AbortController()
+  }
+
+  /** Dispose invalidates the current generation and signals its outstanding signed operations. */
+  private disposeProjectGeneration(): void {
+    this.projectGenerationController.abort(new Error('knowledge-wiki disposed'))
+    this.projectGeneration += 1
+  }
+
   /**
    * Start the source-folder auto-watch: restore the persisted queue, scan
    * raw/sources every 60s, and enqueue newly changed files for two-stage
    * ingest. A completed session may create one governed candidate after the
    * session-level admission gate accepts it; individual turns never create pages.
    */
-  protected [Service.init](): Promise<void> {
-    return promiseFromSync(() => {
+  protected async [Service.init](): Promise<void> {
+    const generation = this.projectGeneration
+    const generationSignal = this.projectGenerationController.signal
+    await promiseFromSync(() => {
       this.restoreQueue(this.currentRoot)
-      recoverCandidateReviewTransactions(
-        this.verifierAuthority,
-        this.reviewFile(this.currentRoot),
-        this.activeWikiRoot,
-        join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
-      )
       this.ctx.effect(() => () => { this.snapshots.dispose() }, 'knowledge-wiki: snapshot store')
-      this.ctx.effect(() => () => { this.activeIngest?.controller.abort(new Error('knowledge-wiki disposed')) }, 'knowledge-wiki: ingest owner')
+      this.ctx.effect(() => () => {
+        this.disposeProjectGeneration()
+        this.activeIngest?.controller.abort(new Error('knowledge-wiki disposed'))
+      }, 'knowledge-wiki: ingest owner')
       this.ctx.effect(() => () => {
         for (const controller of this.backgroundStages) controller.abort(new Error('knowledge-wiki disposed'))
       }, 'knowledge-wiki: background stages')
+    })
+    await recoverCandidateReviewTransactions(
+      this.verifierAuthority,
+      this.reviewFile(this.currentRoot),
+      this.activeWikiRoot,
+      join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
+      this.measuredTrialReader,
+      () => this.projectGeneration === generation,
+      generationSignal,
+    )
+    if (this.projectGeneration !== generation) return
+    await promiseFromSync(() => {
       const dispose = this.ctx.timer.interval(() => {
         void this.scanSources()
         // Drain independently of scan: restored pending tasks survive a
@@ -300,13 +688,31 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     })
   }
 
+  /** Read a root session with an explicit writable policy before independent automatic summarization. */
+  private async sessionSummaryInput(reader: SessionQueryReader, sessionId: string) {
+    const surface = await reader.readSession(sessionId)
+    if (!isSessionQuerySurface(surface)) return
+    const { session, events } = surface
+    if (session.id !== sessionId
+      || session.origin !== undefined
+      || session.parentSession !== undefined
+      || (session.delegationDepth ?? 0) !== 0) return
+    const mode = effectiveSandboxMode(events)
+    if (mode !== 'workspace-write' && mode !== 'danger-full-access') return
+    const target = sedimentTarget(session.cwd, this.mainRoot)
+    if (!target) return
+    const conversation = extractConversationText(events)
+    if (conversation.trim().length < 200) return
+    return { target, cwd: session.cwd, mode, conversation, eventCount: events.length }
+  }
+
   /**
-   * 会话级 AI 提炼：agent 销毁时把整段对话交给 LLM 浓缩为一页知识，
-   * 写入会话所属工作区的 `_candidates/sessions/`（每会话一页）。
-   * 候选页不进入主图谱，等待治理提案与人工审批后再晋升。
-   *
-   * 与实时沉淀同一套工作区策略（非主工作区才写）；幂等靠 slug 含会话
-   * id + 页面存在检查。LLM 失败静默（不阻塞 agent 销毁）。
+   * Summarize a writable root session into its non-main workspace's topic,
+   * incident, or reflection Candidate. Child findings stay in the parent's
+   * conversation rather than producing a second independent page. Missing
+   * identity or writable policy refuses the stage. Recheck eligibility and
+   * captured input after the stage and before the first write; failure remains
+   * best-effort and never blocks agent disposal. This is not a file transaction.
    */
   private async summarizeSession(sessionId: string | undefined): Promise<void> {
     const controller = new AbortController()
@@ -315,13 +721,9 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       if (!sessionId) return
       const sessionQuery: unknown = this.ctx.get('sessionQuery')
       if (!isSessionQueryReader(sessionQuery)) return
-      const surface = await sessionQuery.readSession(sessionId)
-      const target = sedimentTarget(surface.session.cwd, this.mainRoot)
-      if (!target) return
-      const events = surface.events
-      if (!Array.isArray(events) || events.length === 0) return
-      const conversation = extractConversationText(events)
-      if (conversation.trim().length < 200) return // 对话太短，提炼无价值
+      const input = await this.sessionSummaryInput(sessionQuery, sessionId)
+      if (!input) return
+      const { target, conversation } = input
 
       const completed = await executeKnowledgeWikiStage(this.stageExecutor, {
         kind: 'llm-complete',
@@ -334,6 +736,13 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       const out = completed.text ?? ''
       const parsed = parseSummaryJson(out)
       if (!parsed || parsed.action === 'skip' || !parsed.title) return
+      const current = await this.sessionSummaryInput(sessionQuery, sessionId)
+      if (!current
+        || current.cwd !== input.cwd
+        || current.mode !== input.mode
+        || current.eventCount !== input.eventCount
+        || current.conversation !== conversation) return
+      controller.signal.throwIfAborted()
       const isIncident = parsed.action === 'incident_open' || parsed.action === 'incident_verified'
       const isReflection = parsed.action === 'reflection'
       const slug = issueSlugFrom(parsed.issueKey)
@@ -341,7 +750,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         '_candidates',
         isIncident ? 'incidents' : isReflection ? 'reflections' : 'topics',
         `${slug}.md`,
-      )
+      ).split(sep).join('/')
       const alreadyExists = pageExists(target.wikiRoot, rel)
       const today = new Date().toISOString().slice(0, 10)
       const content = buildSessionSummaryPage({
@@ -364,7 +773,6 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       })
       try {
         const full = join(target.wikiRoot, rel)
-        mkdirSync(dirname(full), { recursive: true })
         const next = alreadyExists
           ? isIncident
             ? mergeIncidentCandidate(
@@ -382,14 +790,19 @@ export default class KnowledgeWikiService extends TypertRemoteService {
               isReflection ? '反思证据增量' : '知识证据增量',
             )
           : content
-        if (next !== readFileIfExists(full)) atomicWriteFile(full, next)
         const projectRoot = dirname(target.wikiRoot)
-        appendCandidateReviews(
+        const reviewPlan = prepareReviewAppend(
           join(projectRoot, '.llm-wiki', 'review.json'),
           projectRoot,
           `session:${sessionId}`,
-          [`wiki/${rel}`],
+          [],
+          [{ path: `wiki/${rel}`, content: next }],
         )
+        if (next !== readFileIfExists(full)) {
+          mkdirSync(dirname(full), { recursive: true })
+          atomicWriteFile(full, next)
+        }
+        commitReviewAppend(reviewPlan)
         this.ctx.logger.info(`[knowledge-wiki] session-summary: ${rel}`)
       } catch (error) {
         this.ctx.logger.warn('[knowledge-wiki] session summary write failed')
@@ -609,19 +1022,370 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     return join(projectRoot, '.llm-wiki', 'knowledge-utility.json')
   }
 
+  private knowledgeEventsFile(projectRoot = this.currentRoot): string {
+    return join(projectRoot, '.llm-wiki', 'knowledge-events.jsonl')
+  }
+
+  /** Read page-surface events only when every persisted verification has a trusted verifier. */
+  private readPageSurfaceKnowledgeEvents(projectRoot = this.currentRoot) {
+    const authority = this.verifierAuthority
+    const events = readKnowledgeEventLog(this.knowledgeEventsFile(projectRoot), authority)
+    if (authority === undefined && events.some(event =>
+      event.type === 'knowledge/verified' || event.type === 'knowledge/promoted')) {
+      throw new Error('knowledge verifier authority is unavailable')
+    }
+    return events
+  }
+
+  /** Append an auditable retrieval/injection/outcome event with project scope. */
+  private appendKnowledgeEvent(
+    type: Parameters<typeof createKnowledgeEvent>[0],
+    knowledgeId: string,
+    payload: Readonly<Record<string, unknown>>,
+    projectRoot = this.currentRoot,
+  ): void {
+    const path = this.knowledgeEventsFile(projectRoot)
+    const prior = readKnowledgeEventLog(path)
+    const event = createKnowledgeEvent(type, knowledgeId, {
+      projectId: projectRoot,
+      visibility: 'project',
+    }, payload, {
+      seq: prior.length,
+      previousEventHash: prior.at(-1)?.eventHash ?? null,
+    })
+    appendKnowledgeEvent(path, event)
+  }
+
+  /** Resolve a caller-supplied session project to a registered Wiki root. */
+  private modelProject(scope: KnowledgeAccessContext): { projectRoot: string; wikiRoot: string } | undefined {
+    if (scope.projectId === undefined || scope.projectId.trim() === '') return undefined
+    const projectRoot = resolve(scope.projectId)
+    if (scope.workspaceId !== undefined && resolve(scope.workspaceId) !== projectRoot) return undefined
+    const mainRoot = resolve(this.mainRoot)
+    if (projectRoot === mainRoot) return { projectRoot, wikiRoot: resolve(this.wikiRoot) }
+    try {
+      const registered = this.readWorkspaces().some(workspace => resolve(workspace.path) === projectRoot)
+      return registered ? { projectRoot, wikiRoot: join(projectRoot, 'wiki') } : undefined
+    } catch { return undefined }
+  }
+
+  /**
+   * Replay governed records, optionally persisting deadline/low-utility expiry.
+   * Model-facing callers persist before exposing records; repair uses a
+   * non-persisting replay only until its utility projection passes preflight.
+   * @param projectRoot - Registered project root whose journal is authoritative.
+   * @param persistExpiry - Whether to append computed expiry transitions.
+   * @returns Governed records keyed by Wiki-relative source path.
+   */
+  private modelRecords(
+    projectRoot: string,
+    persistExpiry = true,
+  ): Map<string, KnowledgeRecord & { readonly promotedContentHash: string | undefined }> {
+    if (this.verifierAuthority === undefined) throw new Error('knowledge verifier authority is unavailable')
+    const eventPath = this.knowledgeEventsFile(projectRoot)
+    const events = readKnowledgeEventLog(eventPath, this.verifierAuthority)
+    const state = replayKnowledgeEvents(events)
+    const expiry = expireKnowledge(state)
+    if (persistExpiry) {
+      for (const event of expiry.events) appendKnowledgeEvent(eventPath, event)
+    }
+    const promotedHashes = new Map(events
+      .filter(event => event.type === 'knowledge/promoted' && typeof event.payload.targetAfterHash === 'string')
+      .map(event => [event.knowledgeId, event.payload.targetAfterHash as string]))
+    return new Map([...expiry.state.records.values()].map(record => [record.source, {
+      ...record, promotedContentHash: promotedHashes.get(record.id),
+    }]))
+  }
+
+  private modelRecordAllowed(record: KnowledgeRecord | undefined, scope: KnowledgeAccessContext): record is KnowledgeRecord {
+    if (record === undefined) return false
+    return knowledgeInjectionDecision(record, scope).allowed
+  }
+
+  /** Model content must still match the bytes bound by its authenticated promotion. */
+  private modelRecordContentAllowed(
+    record: (KnowledgeRecord & { readonly promotedContentHash: string | undefined }) | undefined,
+    scope: KnowledgeAccessContext,
+    wikiRoot: string,
+  ): record is KnowledgeRecord & { promotedContentHash: string } {
+    return record?.lifecycle === 'canonical'
+      && this.modelRecordAllowed(record, scope)
+      && knowledgeSha256(readPage(wikiRoot, record.source)) === record.promotedContentHash
+  }
+
+  private modelProvenance(record: KnowledgeRecord, contentHash?: string): KnowledgeModelProvenance {
+    return {
+      knowledgeId: record.id,
+      ...(contentHash === undefined ? {} : { contentHash }),
+      sourceHash: record.sourceHash,
+      scope: record.scope,
+      trust: record.trust,
+      authority: record.authority,
+      evidenceRefs: record.evidenceRefs,
+      verificationStatus: record.verificationStatus,
+      expiresAt: record.expiresAt,
+      conflicts: record.conflicts,
+    }
+  }
+
+  /**
+   * Search governed wiki records for a model request and attach provenance.
+   * @param request - Query text and optional result limit.
+   * @param scope - Session, project, and workspace scope used for access checks.
+   * @param signal - Optional cancellation signal for shadow candidate diagnostics.
+   * @returns Search hits whose records pass the governance gate.
+   */
+  async modelSearch(
+    request: { query: string; topK?: number },
+    scope: KnowledgeAccessContext,
+    signal?: AbortSignal,
+  ): Promise<WikiSearchHit[]> {
+    const project = this.modelProject(scope)
+    if (project === undefined || scope.sessionId === undefined) throw new Error('knowledge scope is unavailable')
+    const searchIndex = await this.knowledgeSearchIndex(project.wikiRoot)
+    const raw = await hybridSearchFromKnowledgeSearchIndex(
+      searchIndex,
+      request.query,
+      await this.resolveApiKey(),
+      request.topK ?? 8,
+    )
+    const records = this.modelRecords(project.projectRoot)
+    const allowed = raw.filter(hit => this.modelRecordContentAllowed(records.get(hit.path), scope, project.wikiRoot))
+    if (this.knowledgeSearchCandidateMode === 'enforce') {
+      // The production model contract is hybrid (BM25 plus optional vectors),
+      // while the current Rust candidate implements BM25 only. Enforce mode
+      // therefore fails closed until a candidate proves the complete hybrid
+      // wire/result contract through the migration harness.
+      throw new Error('Rust knowledge-search enforce mode is unavailable until the hybrid candidate contract is verified')
+    }
+    if (this.knowledgeSearchCandidateMode === 'shadow') {
+      try {
+        const pages = searchIndex.pages
+        const expected = [bm25FromKnowledgeSearchIndex(searchIndex, request.query)]
+        const candidateRequest = createRustKnowledgeSearchRequest({
+          sessionId: scope.sessionId,
+          generation: this.projectGeneration,
+          pages,
+          query: request.query,
+          budget: request.topK ?? 8,
+          timeoutMs: this.knowledgeSearchCandidateTimeoutMs,
+        })
+        const candidate = await runRustKnowledgeSearchCandidate(
+          candidateRequest,
+          expected,
+          {
+            mode: 'shadow',
+            binaryPath: this.knowledgeSearchCandidateBinary,
+            timeoutMs: this.knowledgeSearchCandidateTimeoutMs,
+          },
+          signal,
+        )
+        if (candidate.observation.status !== 'matched') {
+          const reason = candidate.observation.reason as string
+          this.ctx.logger.warn(`[knowledge-wiki] Rust search candidate shadow fallback: ${reason}`)
+        } else {
+          this.ctx.logger.info('[knowledge-wiki] Rust search candidate shadow matched TypeScript BM25')
+        }
+      } catch (error) {
+        // Shadow diagnostics are advisory. They must never block or change the
+        // governed TypeScript result returned to the model.
+        this.ctx.logger.warn(`[knowledge-wiki] Rust search candidate shadow failed: ${formatDiagnosticError(error)}`)
+      }
+    }
+    this.recordKnowledgeRetrieval(
+      allowed.map(hit => hit.path),
+      project.projectRoot,
+      new Map(allowed.map(hit => [hit.path, (records.get(hit.path) as KnowledgeRecord).id])),
+    )
+    return allowed.map(hit => ({
+      path: hit.path,
+      score: hit.score,
+      provenance: this.modelProvenance(records.get(hit.path) as KnowledgeRecord),
+    }))
+  }
+
+  /**
+   * Read one governed wiki page for a model request; unknown or unverified pages fail closed.
+   * @param request - Wiki-relative page path to read.
+   * @param scope - Session, project, and workspace scope used for access checks.
+   * @returns Page content with the source provenance required by model consumers.
+   */
+  async modelPageContent(
+    request: { path: string },
+    scope: KnowledgeAccessContext,
+  ): Promise<WikiPageContent & { provenance: KnowledgeModelProvenance }> {
+    await Promise.resolve()
+    const project = this.modelProject(scope)
+    if (project === undefined || scope.sessionId === undefined) throw new Error('knowledge scope is unavailable')
+    const safe = resolveSafePath(project.wikiRoot, request.path, false)
+    const records = this.modelRecords(project.projectRoot)
+    const record = records.get(safe.relativePath)
+    if (!this.modelRecordContentAllowed(record, scope, project.wikiRoot)) throw new Error('knowledge page is not verified for this scope')
+    const content = readPage(project.wikiRoot, safe.relativePath)
+    if (content === '') throw new Error('knowledge page not found')
+    const contentHash = knowledgeSha256(content)
+    if (contentHash !== record.promotedContentHash) throw new Error('knowledge page content changed since verified promotion')
+    this.recordKnowledgeRetrieval([safe.relativePath], project.projectRoot, new Map([[safe.relativePath, record.id]]))
+    const provenance = this.modelProvenance(record, contentHash)
+    if (content.length <= KNOWLEDGE_REPAIR_MAX_SOURCE_CHARS) {
+      this.rememberRepairReadCapability(project.projectRoot, scope.sessionId, safe.relativePath, contentHash)
+    }
+    return Promise.resolve({ path: safe.relativePath, content, provenance })
+  }
+
+  private repairReadCapabilityKey(projectRoot: string, sessionId: string, relativePath: string): string {
+    return JSON.stringify([projectRoot, sessionId, relativePath])
+  }
+
+  private rememberRepairReadCapability(
+    projectRoot: string,
+    sessionId: string,
+    relativePath: string,
+    sourceHash: string,
+  ): void {
+    const now = Date.now()
+    for (const [key, capability] of this.repairReadCapabilities) {
+      if (capability.expiresAt <= now) this.repairReadCapabilities.delete(key)
+    }
+    const key = this.repairReadCapabilityKey(projectRoot, sessionId, relativePath)
+    this.repairReadCapabilities.delete(key)
+    while (this.repairReadCapabilities.size >= KNOWLEDGE_REPAIR_READ_CAPACITY) {
+      // A positive capacity proves this private synchronous Map has a first key.
+      // oxlint-disable-next-line typescript/no-non-null-assertion
+      this.repairReadCapabilities.delete(this.repairReadCapabilities.keys().next().value!)
+    }
+    this.repairReadCapabilities.set(key, { sourceHash, expiresAt: now + KNOWLEDGE_REPAIR_READ_TTL_MS })
+  }
+
+  private hasRepairReadCapability(
+    projectRoot: string,
+    sessionId: string,
+    relativePath: string,
+    sourceHash: string,
+  ): boolean {
+    const key = this.repairReadCapabilityKey(projectRoot, sessionId, relativePath)
+    const capability = this.repairReadCapabilities.get(key)
+    if (capability === undefined) return false
+    if (capability.expiresAt <= Date.now()) {
+      this.repairReadCapabilities.delete(key)
+      return false
+    }
+    return capability.sourceHash === sourceHash
+  }
+
+  private consumeRepairReadCapability(
+    projectRoot: string,
+    sessionId: string,
+    relativePath: string,
+    sourceHash: string,
+  ): boolean {
+    const key = this.repairReadCapabilityKey(projectRoot, sessionId, relativePath)
+    if (!this.hasRepairReadCapability(projectRoot, sessionId, relativePath, sourceHash)) return false
+    this.repairReadCapabilities.delete(key)
+    return true
+  }
+
+  /**
+   * List governed wiki files; only canonical, verified, readable pages are exposed.
+   * @param scope - Session, project, and workspace scope used for access checks.
+   * @returns The filtered file tree with provenance on readable pages.
+   */
+  async modelList(scope: KnowledgeAccessContext): Promise<KnowledgeModelFileEntry[]> {
+    await Promise.resolve()
+    const project = this.modelProject(scope)
+    if (project === undefined || scope.sessionId === undefined) throw new Error('knowledge scope is unavailable')
+    const records = this.modelRecords(project.projectRoot)
+    const entries = listPages(project.wikiRoot) as WikiFileEntry[]
+    return entries.flatMap((entry) => {
+      if (entry.isDir) return []
+      const record = records.get(entry.path)
+      return this.modelRecordContentAllowed(record, scope, project.wikiRoot)
+        ? [{ ...entry, provenance: this.modelProvenance(record) }]
+        : []
+    })
+  }
+
+  /**
+   * Build a governed graph projection filtered by the same record gate as page reads.
+   * @param scope - Session, project, and workspace scope used for access checks.
+   * @returns The filtered graph and provenance for each visible node.
+   */
+  async modelGraph(scope: KnowledgeAccessContext): Promise<KnowledgeModelGraphResult> {
+    await Promise.resolve()
+    const project = this.modelProject(scope)
+    if (project === undefined || scope.sessionId === undefined) throw new Error('knowledge scope is unavailable')
+    const records = this.modelRecords(project.projectRoot)
+    const graph = buildGraph(project.wikiRoot)
+    const allowed = new Set(graph.nodes
+      .filter(node => this.modelRecordContentAllowed(records.get(node.path), scope, project.wikiRoot))
+      .map(node => node.id))
+    return {
+      ...graph,
+      nodes: graph.nodes.filter(node => allowed.has(node.id)),
+      edges: graph.edges.filter(edge => allowed.has(edge.source) && allowed.has(edge.target)),
+      provenance: Object.fromEntries(graph.nodes
+        .filter(node => allowed.has(node.id))
+        .map(node => [node.id, this.modelProvenance(records.get(node.path) as KnowledgeRecord)])),
+    }
+  }
+
+  /**
+   * Read governed review metadata; candidate rows require an allowed knowledge record.
+   * @param request - Review status filter and optional result limit.
+   * @param scope - Session, project, and workspace scope used for access checks.
+   * @returns Review rows visible to the scoped model request.
+   */
+  async modelReviews(
+    request: { status?: string; limit?: number },
+    scope: KnowledgeAccessContext,
+  ): Promise<Array<WikiReviewItem & { provenance?: KnowledgeModelProvenance }>> {
+    await Promise.resolve()
+    const project = this.modelProject(scope)
+    if (project === undefined || scope.sessionId === undefined) throw new Error('knowledge scope is unavailable')
+    const all = readReviewItems(this.reviewFile(project.projectRoot))
+    const records = this.modelRecords(project.projectRoot)
+    const status = request.status ?? 'unresolved'
+    const filtered: Array<WikiReviewItem & { provenance?: KnowledgeModelProvenance }> = []
+    for (const item of all) {
+      if (status !== 'all' && status === 'resolved' && !item.resolved) continue
+      if (status !== 'all' && status !== 'resolved' && item.resolved) continue
+      if (item.reviewKind !== 'candidate') {
+        filtered.push(item)
+        continue
+      }
+      const record = records.get(item.candidatePath ?? '')
+      if (!this.modelRecordAllowed(record, scope)) continue
+      filtered.push({ ...item, provenance: this.modelProvenance(record) })
+    }
+    return filtered.slice(0, request.limit ?? 100)
+  }
+
   private readUtility(projectRoot = this.currentRoot): Record<string, KnowledgeUtilityRecord> {
     return readOptionalJson(this.utilityFile(projectRoot), {})
   }
 
-  private writeUtility(records: Record<string, KnowledgeUtilityRecord>, projectRoot = this.currentRoot): void {
-    atomicWriteFile(this.utilityFile(projectRoot), `${JSON.stringify(records, null, 2)}\n`)
+  private serializeUtility(records: Record<string, KnowledgeUtilityRecord>): string {
+    const serialized = `${JSON.stringify(records, null, 2)}\n`
+    if (Buffer.byteLength(serialized, 'utf8') > MAX_WIKI_PAGE_BYTES) {
+      throw new Error(`knowledge utility exceeds ${MAX_WIKI_PAGE_BYTES} byte limit`)
+    }
+    return serialized
   }
 
-  private recordKnowledgeRetrieval(paths: string[], projectRoot = this.currentRoot): void {
+  private writeUtility(serialized: string, projectRoot = this.currentRoot): void {
+    atomicWriteFile(this.utilityFile(projectRoot), serialized)
+  }
+
+  private recordKnowledgeRetrieval(
+    paths: string[],
+    projectRoot = this.currentRoot,
+    knowledgeIdByPath: ReadonlyMap<string, string> = new Map(),
+  ): void {
     if (paths.length === 0) return
     const records = this.readUtility(projectRoot)
     const now = new Date().toISOString()
-    for (const path of [...new Set(paths)]) {
+    const uniquePaths = [...new Set(paths)]
+    for (const path of uniquePaths) {
       const current = records[path] ?? {
         path,
         retrievalHits: 0,
@@ -631,7 +1395,14 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       }
       records[path] = { ...current, retrievalHits: current.retrievalHits + 1, lastRetrievedAt: now }
     }
-    this.writeUtility(records, projectRoot)
+    const utilityBytes = this.serializeUtility(records)
+    for (const path of uniquePaths) {
+      this.appendKnowledgeEvent('knowledge/retrieved', knowledgeIdByPath.get(path) ?? `page:${path}`, {
+        path,
+        retrievalAt: now,
+      }, projectRoot)
+    }
+    this.writeUtility(utilityBytes, projectRoot)
   }
 
   /**
@@ -642,6 +1413,12 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   private computeGraph(): Promise<WikiGraphResult> {
     const wikiRoot = this.activeWikiRoot
     return this.snapshots.get(wikiRoot, 'graph', () => promiseFromSync(() => buildGraph(wikiRoot)))
+  }
+
+  /** Build and reuse the root-local BM25 projection until WikiSnapshotStore invalidates it. */
+  private knowledgeSearchIndex(wikiRoot: string): Promise<KnowledgeSearchIndex> {
+    return this.snapshots.get(wikiRoot, 'knowledge-search-index', () =>
+      promiseFromSync(() => createKnowledgeSearchIndex(collectSearchPages(wikiRoot))))
   }
 
   /**
@@ -682,15 +1459,39 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   async search(request: { query: string; topK?: number }): Promise<WikiSearchHit[]> {
     const context = this.captureProjectContext()
     const topK = request.topK ?? 8
-    const hits = await this.snapshots.get(context.wikiRoot, `search:${topK}:${request.query}`, async () =>
-      hybridSearch(context.wikiRoot, request.query, await this.resolveApiKey(), topK, (diagnostic) => {
-        // Semantic search is optional. Report the degradation once, then keep serving
-        // keyword results instead of failing every query with the same upstream error.
-        if (this.embeddingWarningLogged) return
-        this.embeddingWarningLogged = true
-        this.ctx.logger.warn(`[knowledge-wiki] semantic search unavailable, using keyword results: ${diagnostic.reason}`)
-      }))
-    this.recordKnowledgeRetrieval(hits.map(hit => hit.path), context.projectRoot)
+    const rawHits = await this.snapshots.get(context.wikiRoot, `search:${topK}:${request.query}`, async () =>
+      hybridSearchFromKnowledgeSearchIndex(
+        await this.knowledgeSearchIndex(context.wikiRoot),
+        request.query,
+        await this.resolveApiKey(),
+        topK,
+        (diagnostic) => {
+          // Semantic search is optional. Report the degradation once, then keep serving
+          // keyword results instead of failing every query with the same upstream error.
+          if (this.embeddingWarningLogged) return
+          this.embeddingWarningLogged = true
+          this.ctx.logger.warn(`[knowledge-wiki] semantic search unavailable, using keyword results: ${diagnostic.reason}`)
+        },
+      ))
+    let hits = rawHits
+    const knowledgeIdByPath = new Map<string, string>()
+    try {
+      const state = replayKnowledgeEvents(this.readPageSurfaceKnowledgeEvents(context.projectRoot))
+      const governedByPath = new Map([...state.records.values()].map(record => [record.source, record]))
+      hits = rawHits.filter((hit) => {
+        const governed = governedByPath.get(hit.path)
+        const allowed = governed === undefined || knowledgeInjectionDecision(governed, {
+          projectId: context.projectRoot,
+          workspaceId: context.projectRoot,
+        }).allowed
+        if (allowed && governed !== undefined) knowledgeIdByPath.set(hit.path, governed.id)
+        return allowed
+      })
+    } catch (error) {
+      this.ctx.logger.warn(`[knowledge-wiki] knowledge replay rejected search: ${formatDiagnosticError(error)}`)
+      hits = []
+    }
+    this.recordKnowledgeRetrieval(hits.map(hit => hit.path), context.projectRoot, knowledgeIdByPath)
     return hits.map(hit => ({ path: hit.path, score: hit.score }))
   }
 
@@ -700,14 +1501,261 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    */
   @Remote('knowledgeUtility')
   knowledgeUtility(): Promise<KnowledgeUtilityRecord[]> {
-    return promiseFromSync(() =>
-      Object.values(this.readUtility()).sort((left, right) => right.utilityScore - left.utilityScore))
+    return promiseFromSync(() => {
+      const records = this.readUtility()
+      const counts = new Map<string, { retrievalHits: number; userCorrections: number }>()
+      for (const event of readKnowledgeEventLog(this.knowledgeEventsFile(), this.verifierAuthority)) {
+        const path = event.payload.path
+        if (typeof path !== 'string') continue
+        const current = counts.get(path) ?? { retrievalHits: 0, userCorrections: 0 }
+        if (event.type === 'knowledge/retrieved') current.retrievalHits += 1
+        if (event.type === 'knowledge/injected' && event.payload.outcome === 'corrected') current.userCorrections += 1
+        counts.set(path, current)
+      }
+      for (const path of counts.keys()) {
+        records[path] ??= {
+          path,
+          retrievalHits: 0,
+          successfulUses: 0,
+          userCorrections: 0,
+          utilityScore: 0,
+        }
+      }
+      return Object.values(records).map((record) => {
+        const observed = counts.get(record.path) ?? { retrievalHits: 0, userCorrections: 0 }
+        const utilityScore = Number((-3 * observed.userCorrections / Math.max(1, observed.retrievalHits)).toFixed(4))
+        return {
+          ...record,
+          retrievalHits: observed.retrievalHits,
+          successfulUses: 0,
+          userCorrections: observed.userCorrections,
+          utilityScore,
+        }
+      }).sort((left, right) => right.utilityScore - left.utilityScore)
+    })
   }
 
   /**
-   * Record whether retrieved knowledge helped or required a user correction.
+   * Convert a correction to a fully read, verified page into a low-trust Candidate.
+   * The source is rejected before Candidate publication; only the trusted review flow can restore reuse.
+   * @param request - Corrected rule and the source-content digest the caller actually saw.
+   * @param scope - Session and project scope that observed the source page.
+   * @returns A pending hash-bound review reference, or a fail-closed reason.
+   */
+  @Remote('proposeKnowledgeRepair')
+  proposeKnowledgeRepair(
+    request: KnowledgeRepairProposalRequest,
+    scope: KnowledgeAccessContext,
+  ): Promise<KnowledgeRepairProposalResult> {
+    return Promise.resolve().then(async () => {
+      // Remote payloads are untrusted at runtime even though generated clients are typed.
+      // Keep the shape check explicit without asking TypeScript to narrow its trusted signature.
+      const rawRequest: unknown = request
+      const rawScope: unknown = scope
+      if (typeof rawRequest !== 'object' || rawRequest === null || Array.isArray(rawRequest)
+        || typeof rawScope !== 'object' || rawScope === null || Array.isArray(rawScope)) {
+        return { ok: false, errorCode: 'invalid-proposal' }
+      }
+      // Capture the flat boundary fields once: the caller still owns its objects
+      // while the asynchronous session authorization is pending.
+      const proposal = Object.freeze({
+        sourcePath: request.sourcePath,
+        title: request.title,
+        correctedRule: request.correctedRule,
+        expectedSourceContentHash: request.expectedSourceContentHash,
+      })
+      const access = Object.freeze({ ...scope })
+      if (typeof proposal.expectedSourceContentHash !== 'string'
+        || typeof proposal.sourcePath !== 'string'
+        || typeof proposal.title !== 'string'
+        || typeof proposal.correctedRule !== 'string') {
+        return { ok: false, errorCode: 'invalid-proposal' }
+      }
+      if (typeof access.projectId !== 'string' || access.projectId.trim() === ''
+        || (access.workspaceId !== undefined && typeof access.workspaceId !== 'string')
+        || typeof access.sessionId !== 'string' || access.sessionId.trim() === '') {
+        return { ok: false, errorCode: 'scope-unavailable' }
+      }
+      const project = this.modelProject(access)
+      if (project === undefined) return { ok: false, errorCode: 'scope-unavailable' }
+      if (!/^[a-f0-9]{64}$/u.test(proposal.expectedSourceContentHash)
+        || proposal.title.trim() === '' || proposal.title.length > 160
+        || /[\u0000-\u001f\u007f]/u.test(proposal.title)
+        || Buffer.byteLength(proposal.correctedRule, 'utf8') > 16 * 1024
+        || proposal.correctedRule.includes('\0')) {
+        return { ok: false, errorCode: 'invalid-proposal' }
+      }
+      const expectedRule = normalizeCorrectionText(proposal.correctedRule)
+      if (expectedRule === '') return { ok: false, errorCode: 'invalid-proposal' }
+      let source: ReturnType<typeof resolveSafePath>
+      try {
+        source = resolveSafePath(project.wikiRoot, proposal.sourcePath, false)
+      } catch {
+        return { ok: false, errorCode: 'unsupported-source' }
+      }
+      if (!/^(concepts|entities|findings|research|methodology)\/.+\.md$/u.test(source.relativePath)) {
+        return { ok: false, errorCode: 'unsupported-source' }
+      }
+      const record = this.modelRecords(project.projectRoot, false).get(source.relativePath)
+      if (!this.modelRecordContentAllowed(record, access, project.wikiRoot)) return { ok: false, errorCode: 'source-not-verified' }
+      const sourceContent = readPage(project.wikiRoot, source.relativePath)
+      const sourceContentHash = knowledgeSha256(sourceContent)
+      if (sourceContent === '' || sourceContentHash !== proposal.expectedSourceContentHash
+        || sourceContentHash !== record.promotedContentHash) {
+        return { ok: false, errorCode: 'source-changed' }
+      }
+      if (parseFrontmatterBlock(sourceContent) === null) return { ok: false, errorCode: 'unsupported-source' }
+
+      const sessionQueryValue: unknown = this.ctx.get('sessionQuery')
+      if (!isSessionQueryReader(sessionQueryValue)) return { ok: false, errorCode: 'session-log-unavailable' }
+      let sessionSurface: SessionQuerySurface
+      try {
+        const result: unknown = await sessionQueryValue.readSession(access.sessionId)
+        if (!isSessionQuerySurface(result)) return { ok: false, errorCode: 'session-log-unavailable' }
+        sessionSurface = result
+      } catch {
+        return { ok: false, errorCode: 'session-log-unavailable' }
+      }
+      if (typeof sessionSurface.session.cwd !== 'string' || resolve(sessionSurface.session.cwd) !== project.projectRoot) {
+        return { ok: false, errorCode: 'session-log-unavailable' }
+      }
+      if (!hasCurrentHumanCorrection(sessionSurface.events, proposal, expectedRule)) {
+        return { ok: false, errorCode: 'user-correction-unconfirmed' }
+      }
+      // Session reads yield to project, filesystem, and governance changes.
+      // Bind the write to the still-registered source and its current admission.
+      if (this.modelProject(access)?.wikiRoot !== project.wikiRoot) return { ok: false, errorCode: 'scope-unavailable' }
+      try {
+        source = resolveSafePath(project.wikiRoot, proposal.sourcePath, false)
+      } catch {
+        return { ok: false, errorCode: 'unsupported-source' }
+      }
+      const currentRecord = this.modelRecords(project.projectRoot, false).get(source.relativePath)
+      if (!this.modelRecordContentAllowed(currentRecord, access, project.wikiRoot)) return { ok: false, errorCode: 'source-not-verified' }
+      if (currentRecord.id !== record.id || currentRecord.promotedContentHash !== sourceContentHash
+        || knowledgeSha256(readPage(project.wikiRoot, source.relativePath)) !== sourceContentHash) {
+        return { ok: false, errorCode: 'source-changed' }
+      }
+      if (!this.hasRepairReadCapability(
+        project.projectRoot, access.sessionId, source.relativePath, proposal.expectedSourceContentHash,
+      )) {
+        return { ok: false, errorCode: 'source-not-read' }
+      }
+
+      const candidatePath = `_candidates/ingest/${source.relativePath}`
+      const candidateMarkdown = [
+        '---',
+        'type: concept',
+        'status: candidate',
+        'origin: user-correction-proposal',
+        `title: ${JSON.stringify(proposal.title.trim())}`,
+        `sources: [${JSON.stringify(`wiki/${source.relativePath}`)}]`,
+        `created: ${new Date().toISOString().slice(0, 10)}`,
+        `updated: ${new Date().toISOString().slice(0, 10)}`,
+        '---',
+        '',
+        `# ${proposal.title.trim()}`,
+        '',
+        '## Proposed corrected rule',
+        '',
+        proposal.correctedRule.trim(),
+        '',
+        '## Review boundary',
+        '',
+        `This untrusted proposal targets ${source.relativePath} (source SHA-256: ${proposal.expectedSourceContentHash}). It must pass independent verification and explicit review before it can be reused.`,
+        '',
+      ].join('\n')
+      const candidateHash = this.sha256(candidateMarkdown)
+      const reviewId = `candidate-${this.sha256(candidatePath).slice(0, 16)}`
+      const correctionAt = new Date().toISOString()
+      const utility = this.readUtility(project.projectRoot)
+      const priorUtility = utility[source.relativePath]
+      const correctedRecord = updateKnowledgeUtility(currentRecord, 'corrected')
+      utility[source.relativePath] = {
+        path: source.relativePath,
+        retrievalHits: correctedRecord.retrievalHits,
+        successfulUses: correctedRecord.successfulUses,
+        userCorrections: correctedRecord.userCorrections,
+        utilityScore: correctedRecord.utilityScore,
+        ...(priorUtility?.lastRetrievedAt === undefined ? {} : { lastRetrievedAt: priorUtility.lastRetrievedAt }),
+        lastOutcomeAt: correctionAt,
+      }
+      const utilityBytes = this.serializeUtility(utility)
+      const reviewPlan = prepareReviewAppend(
+        this.reviewFile(project.projectRoot),
+        project.projectRoot,
+        `wiki/${source.relativePath}`,
+        [],
+        [{ path: `wiki/${candidatePath}`, content: candidateMarkdown }],
+      )
+      // The final utility projection is now known to fit every consumer. Only
+      // after that preflight may this operation persist governance expiries.
+      const currentDurableRecord = this.modelRecords(project.projectRoot).get(source.relativePath)
+      if (!this.modelRecordContentAllowed(currentDurableRecord, access, project.wikiRoot)) {
+        return { ok: false, errorCode: 'source-not-verified' }
+      }
+      if (currentDurableRecord.id !== currentRecord.id
+        || currentDurableRecord.promotedContentHash !== sourceContentHash
+        || knowledgeSha256(readPage(project.wikiRoot, source.relativePath)) !== sourceContentHash) {
+        return { ok: false, errorCode: 'source-changed' }
+      }
+      if (!this.consumeRepairReadCapability(
+        project.projectRoot, access.sessionId, source.relativePath, proposal.expectedSourceContentHash,
+      )) {
+        return { ok: false, errorCode: 'source-not-read' }
+      }
+
+      // Persist revocation before correction feedback: if its append fails,
+      // the prior verified source must already be unavailable for reuse.
+      this.appendKnowledgeEvent('knowledge/rejected', record.id, {
+        path: source.relativePath,
+        reason: 'user-correction',
+        sessionId: access.sessionId,
+        correctionAt,
+        repairCandidatePath: candidatePath,
+        repairCandidateHash: candidateHash,
+      }, project.projectRoot)
+      this.appendKnowledgeEvent('knowledge/injected', record.id, {
+        path: source.relativePath,
+        outcome: 'corrected',
+        sessionId: access.sessionId,
+        correctionAt,
+        repairCandidatePath: candidatePath,
+        repairCandidateHash: candidateHash,
+        repairRuleHash: this.sha256(proposal.correctedRule.trim()),
+      }, project.projectRoot)
+      const rejected = this.modelRecords(project.projectRoot).get(source.relativePath)
+      if (rejected === undefined) throw new Error('corrected knowledge record disappeared during replay')
+      if (rejected.id !== currentRecord.id) {
+        throw new Error('corrected knowledge record identity changed during replay')
+      }
+      if (rejected.verificationStatus !== 'rejected' || rejected.lifecycle !== 'downgraded') {
+        throw new Error('corrected knowledge record was not rejected during replay')
+      }
+      if (rejected.retrievalHits !== correctedRecord.retrievalHits
+        || rejected.successfulUses !== correctedRecord.successfulUses
+        || rejected.userCorrections !== correctedRecord.userCorrections
+        || rejected.utilityScore !== correctedRecord.utilityScore) {
+        throw new Error('corrected knowledge utility changed during replay')
+      }
+      this.writeUtility(utilityBytes, project.projectRoot)
+
+      const candidate = resolveSafePath(project.wikiRoot, candidatePath, true)
+      mkdirSync(dirname(candidate.absolutePath), { recursive: true })
+      atomicWriteFile(candidate.absolutePath, candidateMarkdown)
+      commitReviewAppend(reviewPlan)
+      this.snapshots.invalidate(project.wikiRoot)
+      const review = readReviewItems(this.reviewFile(project.projectRoot))
+        .find(item => item.id === reviewId && item.candidatePath === candidatePath && item.candidateHash === candidateHash)
+      if (review === undefined) throw new Error('repair Candidate was not registered for independent review')
+      return { ok: true, candidatePath, reviewId, candidateHash }
+    })
+  }
+
+  /**
+   * Record a correction signal for retrieved knowledge; standalone success reports are not utility evidence.
    * @param request - The request input.
-   * @returns The value produced by record knowledge outcome.
+   * @returns The number of feedback records accepted; unpaired success reports return zero.
    */
   @Remote('recordKnowledgeOutcome')
   recordKnowledgeOutcome(request: {
@@ -715,8 +1763,22 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     outcome: 'successful' | 'corrected' | 'neutral'
   }): Promise<number> {
     return promiseFromSync(() => {
+      // A standalone success report has no paired baseline or evaluator
+      // attestation, so it remains audit input and cannot earn utility credit.
+      if (request.outcome === 'successful') return 0
       const records = this.readUtility()
+      const events = readKnowledgeEventLog(this.knowledgeEventsFile(), this.verifierAuthority)
+      const eventCounts = new Map<string, { retrievalHits: number; userCorrections: number }>()
+      for (const event of events) {
+        const path = event.payload.path
+        if (typeof path !== 'string') continue
+        const counts = eventCounts.get(path) ?? { retrievalHits: 0, userCorrections: 0 }
+        if (event.type === 'knowledge/retrieved') counts.retrievalHits += 1
+        if (event.type === 'knowledge/injected' && event.payload.outcome === 'corrected') counts.userCorrections += 1
+        eventCounts.set(path, counts)
+      }
       const now = new Date().toISOString()
+      const pendingOutcomes: Array<{ path: string; utilityScore: number }> = []
       let updated = 0
       for (const candidate of [...new Set(request.paths)]) {
         let safe: string
@@ -730,19 +1792,72 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           userCorrections: 0,
           utilityScore: 0,
         }
-        const successfulUses = current.successfulUses + (request.outcome === 'successful' ? 1 : 0)
-        const userCorrections = current.userCorrections + (request.outcome === 'corrected' ? 1 : 0)
-        const denominator = Math.max(1, current.retrievalHits)
-        records[safe] = {
-          ...current,
+        const recorded = eventCounts.get(safe) ?? { retrievalHits: 0, userCorrections: 0 }
+        const retrievalHits = recorded.retrievalHits
+        const successfulUses = 0
+        const userCorrections = recorded.userCorrections
+        // A non-neutral outcome consumes one retrieval. Consult the event
+        // journal as well as its JSON projection so a stale projection after
+        // interruption cannot make the same retrieval count twice.
+        if (request.outcome !== 'neutral' && successfulUses + userCorrections >= retrievalHits) continue
+        const updatedRecord = updateKnowledgeUtility({
+          id: `page:${safe}`,
+          content: safe,
+          source: safe,
+          sourceHash: knowledgeSha256(safe),
+          scope: { projectId: this.currentRoot, visibility: 'project' },
+          trust: 'high',
+          authority: 'wiki-runtime',
+          evidenceRefs: [safe],
+          verificationStatus: 'verified',
+          confidence: 1,
+          createdAt: now,
+          lastVerifiedAt: now,
+          expiresAt: null,
+          conflicts: [],
+          retrievalHits,
           successfulUses,
           userCorrections,
-          utilityScore: Number(((successfulUses * 2 - userCorrections * 3) / denominator).toFixed(4)),
+          utilityScore: Number((-3 * userCorrections / Math.max(1, retrievalHits)).toFixed(4)),
+        }, request.outcome)
+        records[safe] = {
+          ...current,
+          retrievalHits,
+          successfulUses: updatedRecord.successfulUses,
+          userCorrections: updatedRecord.userCorrections,
+          utilityScore: updatedRecord.utilityScore,
           lastOutcomeAt: now,
         }
+        pendingOutcomes.push({ path: safe, utilityScore: updatedRecord.utilityScore })
         updated += 1
       }
-      if (updated > 0) this.writeUtility(records)
+      if (updated === 0) {
+        if (this.verifierAuthority !== undefined) this.modelRecords(this.currentRoot)
+        return 0
+      }
+      const utilityBytes = this.serializeUtility(records)
+      const knowledgeIdByPath = this.verifierAuthority === undefined
+        ? new Map<string, string>()
+        : new Map([...this.modelRecords(this.currentRoot)].map(([path, record]) => [path, record.id]))
+      for (const pending of pendingOutcomes) {
+        this.appendKnowledgeEvent('knowledge/injected', knowledgeIdByPath.get(pending.path) ?? `page:${pending.path}`, {
+          path: pending.path,
+          outcome: request.outcome,
+          utilityScore: pending.utilityScore,
+        })
+        if (request.outcome === 'corrected') {
+          const state = replayKnowledgeEvents(readKnowledgeEventLog(this.knowledgeEventsFile(), this.verifierAuthority))
+          const governed = [...state.records.values()].find(record => record.source === pending.path)
+          if (governed !== undefined) {
+            this.appendKnowledgeEvent('knowledge/rejected', governed.id, {
+              path: pending.path,
+              repairRule: 'do-not-reuse-until-independent-review',
+              repairRuleHash: knowledgeSha256(`do-not-reuse-until-independent-review:${pending.path}`),
+            })
+          }
+        }
+      }
+      this.writeUtility(utilityBytes)
       return updated
     })
   }
@@ -762,7 +1877,25 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           false,
         )
         if (lstatSync(resolved).isDirectory()) return { path: request.path, content: '' }
-        return { path: request.path, content: readPage(this.activeWikiRoot, safe) }
+        const content = readPage(this.activeWikiRoot, safe)
+        try {
+          const state = replayKnowledgeEvents(this.readPageSurfaceKnowledgeEvents())
+          const governed = [...state.records.values()].find(record => record.source === safe)
+          if (governed !== undefined && !knowledgeInjectionDecision(governed, {
+            projectId: this.currentRoot,
+            workspaceId: this.currentRoot,
+          }).allowed) return { path: request.path, content: '' }
+        } catch (error) {
+          // A corrupt audit stream must not leak unverified knowledge into a
+          // model prompt. Keep the page surface fail-closed for this read.
+          this.ctx.logger.warn(`[knowledge-wiki] knowledge replay rejected page read: ${formatDiagnosticError(error)}`)
+          return { path: request.path, content: '' }
+        }
+        this.appendKnowledgeEvent('knowledge/injected', `page:${safe}`, {
+          path: safe,
+          contentHash: knowledgeSha256(content),
+        })
+        return { path: request.path, content }
       } catch (error) {
         if (!isMissingPathError(error) && !(error instanceof Error && error.message === 'path does not exist')) throw error
         return { path: request.path, content: '' }
@@ -890,14 +2023,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       throw new Error('knowledge Wiki stage executor unavailable; refusing vision work')
     }
     signal.throwIfAborted()
+    const imageBytes = readRegularFileBounded(source, 16 * 1024 * 1024)
     const fileName = basename(relPath)
     const slug = fileName.replace(/[\/:*?"<>|\s]+/gu, '-').replace(/-+/gu, '-').replace(/\.[^.]+$/u, '')
     const mediaRel = `_candidates/ingest/media/${slug}${extname(fileName).toLowerCase()}`
-    atomicWriteFile(
-      join(context.wikiRoot, mediaRel),
-      readRegularFileBounded(source, 16 * 1024 * 1024),
-    )
-    signal.throwIfAborted()
     const caption = apiKey
       ? (await executeKnowledgeWikiStage(this.stageExecutor, {
         kind: 'vision-describe',
@@ -907,12 +2036,31 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       }, signal)).text ?? ''
       : ''
     signal.throwIfAborted()
-    if (!caption) return { written: [mediaRel], warnings: ['视觉说明生成失败（检查 apiKey/网络）'] }
+    if (!readRegularFileBounded(source, 16 * 1024 * 1024).equals(imageBytes)) {
+      throw new Error('image source changed during captioning')
+    }
+    if (!caption) {
+      atomicWriteFile(join(context.wikiRoot, mediaRel), imageBytes)
+      return { written: [mediaRel], warnings: ['视觉说明生成失败（检查 apiKey/网络）'] }
+    }
     const pageRel = `_candidates/ingest/sources/${slug}.md`
     const page = `---\ntype: source\nstatus: candidate\norigin: image\ntitle: ${fileName}\nsources: ["${relPath}"]\ncreated: ${new Date().toISOString().slice(0, 10)}\nupdated: ${new Date().toISOString().slice(0, 10)}\n---\n\n# ${fileName}\n\n![${fileName}](/${mediaRel})\n\n## 图片说明\n\n${caption}\n`
+    const reviewPlan = prepareReviewAppend(
+      this.reviewFile(context.projectRoot),
+      context.projectRoot,
+      relPath,
+      [],
+      [{ path: `wiki/${pageRel}`, content: page }],
+    )
+    signal.throwIfAborted()
+    if (!readRegularFileBounded(source, 16 * 1024 * 1024).equals(imageBytes)) {
+      throw new Error('image source changed during review preflight')
+    }
+    atomicWriteFile(join(context.wikiRoot, mediaRel), imageBytes)
+    signal.throwIfAborted()
     mkdirSync(dirname(join(context.wikiRoot, pageRel)), { recursive: true })
     atomicWriteFile(join(context.wikiRoot, pageRel), page)
-    appendCandidateReviews(this.reviewFile(context.projectRoot), context.projectRoot, relPath, [`wiki/${pageRel}`])
+    commitReviewAppend(reviewPlan)
     return { written: [pageRel, mediaRel], warnings: [] }
   }
 
@@ -1184,12 +2332,6 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           : 'research-failed',
       }
     }
-    appendCandidateReviews(
-      this.reviewFile(context.projectRoot),
-      context.projectRoot,
-      `research:${request.topic}`,
-      result.written,
-    )
     if (result.written.length > 0) this.snapshots.invalidate(context.wikiRoot)
     return {
       findings: result.written.map(path => ({ title: basename(path), path })),
@@ -1201,16 +2343,22 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   /**
    * Unresolved review items from .llm-wiki/review.json.
    * @param request - status filter and limit.
-   * @returns matching review items.
+   * @returns Matching reviews; Candidate options are reauthenticated on every read without changing persisted state.
    */
   @Remote('reviews')
   reviews(request: { status?: string; limit?: number }): Promise<WikiReviewItem[]> {
     return promiseFromSync(() => {
-      const all = readOptionalJson<WikiReviewItem[]>(this.reviewFile(), [])
-      if (!Array.isArray(all)) throw new Error('invalid knowledge review state')
+      const projectRoot = this.currentRoot
+      const reviewFile = this.reviewFile(projectRoot)
+      const wikiRoot = this.activeWikiRoot
+      const all = readReviewItems(reviewFile)
       const status = request.status ?? 'unresolved'
       const filtered = status === 'all' ? all : all.filter(item => status === 'resolved' ? item.resolved : !item.resolved)
-      return filtered.slice(0, request.limit ?? 100)
+      return filtered.slice(0, request.limit ?? 100).map(item => item.reviewKind === 'candidate'
+        ? { ...item, options: projectCandidateReviewOptions(
+          this.verifierAuthority, this.measuredTrialReader, reviewFile, projectRoot, wikiRoot, item,
+        ) }
+        : item)
     })
   }
 
@@ -1230,24 +2378,29 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     },
     signal: AbortSignal,
   ): Promise<CandidateVerificationResult> {
+    const generation = this.projectGeneration
+    const operationSignal = AbortSignal.any([signal, this.projectGenerationController.signal])
     const authority = this.verifierAuthority
     const reviewFile = this.reviewFile()
+    const wikiRoot = this.activeWikiRoot
     const result = await verifyCandidate(
       authority,
       reviewFile,
-      this.activeWikiRoot,
+      wikiRoot,
       request.reviewId,
       request.action,
-      signal,
+      operationSignal,
     )
     if (result.ok && result.receiptId !== undefined) {
-      const recorded = recordTrustedCandidateVerification(
+      const recorded = await recordTrustedCandidateVerification(
         authority,
         reviewFile,
-        this.activeWikiRoot,
+        wikiRoot,
         request.reviewId,
         result.receiptId,
         request.action,
+        operationSignal,
+        () => this.projectGeneration === generation,
       )
       if (!recorded) {
         return { ...result, ok: false, errorCode: 'verification-failed' }
@@ -1257,31 +2410,57 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   }
 
   /**
+   * Authenticate a paired measured-use receipt and expose its action only when utility improved.
+   * @param request - Review identity, semantic-review action, and content-addressed trial receipt.
+   * @returns Whether the receipt authenticated, its utility gate result, and a replayable review projection.
+   */
+  @Remote('recordCandidateMeasuredTrial')
+  recordCandidateMeasuredTrial(request: {
+    reviewId: string
+    action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate'
+    trialHash: string
+  }): Promise<CandidateMeasuredTrialResult> {
+    return promiseFromSync(() => recordMeasuredCandidateTrial(
+      this.verifierAuthority,
+      this.measuredTrialReader,
+      this.reviewFile(),
+      this.activeWikiRoot,
+      request.reviewId,
+      request.action,
+      request.trialHash,
+    ))
+  }
+
+  /**
    * Resolve one review item.
    * @param request - review id and optional action.
    * @returns whether the item was found and updated.
    */
   @Remote('resolveReview')
-  resolveReview(request: { reviewId: string; action?: string }): Promise<boolean> {
-    return promiseFromSync(() => {
-      const reviewFile = this.reviewFile()
-      const advisory = resolveAdvisoryReviewBatch(reviewFile, [request.reviewId], request.action ?? 'skip')
-      if (advisory.resolvedCount > 0) return true
-      for (const candidateId of advisory.candidateIds) {
-        const candidateResult = applyCandidateReview(
-          this.verifierAuthority,
-          reviewFile,
-          this.currentRoot,
-          this.activeWikiRoot,
-          join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
-          candidateId,
-          request.action ?? 'Skip',
-        )
-        if (candidateResult) this.snapshots.invalidate(this.activeWikiRoot)
-        return candidateResult === true
-      }
-      return false
-    })
+  async resolveReview(request: { reviewId: string; action?: string }): Promise<boolean> {
+    const generation = this.projectGeneration
+    const generationSignal = this.projectGenerationController.signal
+    const reviewFile = this.reviewFile()
+    const advisory = resolveAdvisoryReviewBatch(reviewFile, [request.reviewId], request.action ?? 'skip')
+    if (advisory.resolvedCount > 0) return true
+    for (const candidateId of advisory.candidateIds) {
+      const candidateResult = await applyCandidateReview(
+        this.verifierAuthority,
+        reviewFile,
+        this.currentRoot,
+        this.activeWikiRoot,
+        join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
+        candidateId,
+        request.action ?? 'Skip',
+        'human',
+        this.measuredTrialReader,
+        () => this.projectGeneration === generation,
+        generationSignal,
+      )
+      if (candidateResult) this.snapshots.invalidate(this.activeWikiRoot)
+      return candidateResult === true
+    }
+    return false
   }
 
   /**
@@ -1290,32 +2469,36 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns the number resolved.
    */
   @Remote('resolveReviews')
-  resolveReviews(request: { ids: string[]; action?: string }): Promise<number> {
-    return promiseFromSync(() => {
-      const projectRoot = this.currentRoot
-      const wikiRoot = this.activeWikiRoot
-      const reviewFile = this.reviewFile(projectRoot)
-      const advisory = resolveAdvisoryReviewBatch(reviewFile, request.ids, request.action ?? 'skip')
-      let count = advisory.resolvedCount
-      let snapshotChanged = false
-      for (const id of advisory.candidateIds) {
-        const candidateResult = applyCandidateReview(
-          this.verifierAuthority,
-          reviewFile,
-          projectRoot,
-          wikiRoot,
-          join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
-          id,
-          request.action ?? 'Skip',
-        )
-        if (candidateResult) {
-          count += 1
-          snapshotChanged = true
-        }
+  async resolveReviews(request: { ids: string[]; action?: string }): Promise<number> {
+    const generation = this.projectGeneration
+    const generationSignal = this.projectGenerationController.signal
+    const projectRoot = this.currentRoot
+    const wikiRoot = this.activeWikiRoot
+    const reviewFile = this.reviewFile(projectRoot)
+    const advisory = resolveAdvisoryReviewBatch(reviewFile, request.ids, request.action ?? 'skip')
+    let count = advisory.resolvedCount
+    let snapshotChanged = false
+    for (const id of advisory.candidateIds) {
+      const candidateResult = await applyCandidateReview(
+        this.verifierAuthority,
+        reviewFile,
+        projectRoot,
+        wikiRoot,
+        join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
+        id,
+        request.action ?? 'Skip',
+        'human',
+        this.measuredTrialReader,
+        () => this.projectGeneration === generation,
+        generationSignal,
+      )
+      if (candidateResult) {
+        count += 1
+        snapshotChanged = true
       }
-      if (snapshotChanged) this.snapshots.invalidate(wikiRoot)
-      return count
-    })
+    }
+    if (snapshotChanged) this.snapshots.invalidate(wikiRoot)
+    return count
   }
 
   private workspacesFile(): string {
@@ -1364,25 +2547,28 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns the new current root.
    */
   @Remote('setProject')
-  setProject(request: { path: string }): Promise<{ current: string }> {
-    return promiseFromSync(() => {
-      const target = request.path.replace(/\/+$/u, '')
-      const known = [this.mainRoot, ...this.readWorkspaces().map(ws => ws.path.replace(/\/+$/u, ''))]
-      if (known.includes(target)) {
-        if (this.currentRoot !== target) {
-          this.currentRoot = target
-          this.projectGeneration += 1
-          this.restoreQueue(target)
-          recoverCandidateReviewTransactions(
-            this.verifierAuthority,
-            this.reviewFile(target),
-            this.activeWikiRoot,
-            join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
-          )
-        }
+  async setProject(request: { path: string }): Promise<{ current: string }> {
+    const target = request.path.replace(/\/+$/u, '')
+    const known = [this.mainRoot, ...this.readWorkspaces().map(ws => ws.path.replace(/\/+$/u, ''))]
+    if (known.includes(target)) {
+      if (this.currentRoot !== target) {
+        this.advanceProjectGeneration('knowledge-wiki workspace changed')
+        this.currentRoot = target
+        const generation = this.projectGeneration
+        const generationSignal = this.projectGenerationController.signal
+        this.restoreQueue(target)
+        await recoverCandidateReviewTransactions(
+          this.verifierAuthority,
+          this.reviewFile(target),
+          this.activeWikiRoot,
+          join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
+          this.measuredTrialReader,
+          () => this.projectGeneration === generation,
+          generationSignal,
+        )
       }
-      return { current: this.currentRoot }
-    })
+    }
+    return { current: this.currentRoot }
   }
 
   /**
@@ -1457,8 +2643,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       this.writeWorkspaces(remaining)
       this.cancelPendingForRoot(target)
       if (this.currentRoot === target) {
+        this.advanceProjectGeneration('knowledge-wiki workspace removed')
         this.currentRoot = this.mainRoot
-        this.projectGeneration += 1
         this.restoreQueue(this.mainRoot)
       }
       return {
@@ -2084,3 +3270,7 @@ function parseSummaryJson(text: string): SummaryDecision | null {
     return null
   }
 }
+
+// Native assembly uses the existing receipt encoders and readers across the package boundary.
+export { canonicalJson, sha256, encodeKnowledgeWikiPromotionSealRequest } from './verifier.ts'
+export type { KnowledgeWikiSourceIdentity, KnowledgeWikiVerifierAuthority, IndependentVerificationRequest, IndependentVerificationResult, KnowledgeWikiPromotionSealRequest, VerificationAuthoritySeal } from './verifier.ts'

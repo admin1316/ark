@@ -231,7 +231,7 @@ public enum JiuzhangShellContract {
 
   /// Build the child environment without sharing the default `~/.dsh` state.
   /// - Parameters:
-  ///   - base: Parent process environment; only the fixed non-secret allowlist is retained.
+  ///   - base: Parent environment; retains the fixed allowlist and the dedicated launcher-owned verifier configuration.
   ///   - harnessHome: Product-owned data directory.
   ///   - apiToken: Non-empty launch token shared only with the native API client.
   ///   - dataLocations: Validated launch configuration that owns every child data path.
@@ -248,6 +248,12 @@ public enum JiuzhangShellContract {
       "HOME", "PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "SHELL", "USER", "LOGNAME",
     ]
     var environment = base.filter { retainedNames.contains($0.key) }
+    if let verifierConfig = base["ARK_KNOWLEDGE_VERIFIER_CONFIG"] {
+      environment["ARK_KNOWLEDGE_VERIFIER_CONFIG"] = verifierConfig
+    }
+    if let measuredTrialConfig = base["ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG"] {
+      environment["ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG"] = measuredTrialConfig
+    }
     environment["JIUZHANG_DSH_HOME"] = harnessHome.path
     environment["DSH_HOME"] = harnessHome.path
     environment["DSH_PERMISSION_MODE"] = "read-only"

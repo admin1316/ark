@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "status": "differential-replay-reproduced-performance-gates-open",
+  "capturedAt": "2026-10-10T14:55:07.465474+00:00",
+  "runner": "scripts/rust-migration/benchmark-knowledge-search.ts",
+  "runCount": 3,
+  "corpusHash": "3fd46f421c08f8cc89afe2eddda6809a7012477817987092d3c18b2015ccaf91",
+  "matchedConditions": {
+    "iterationsPerRun": 30,
+    "queries": 5,
+    "pages": 240,
+    "sequentialRuns": true
+  },
+  "runs": [
+    {
+      "receipt": "scripts/rust-migration/knowledge-search-benchmark-rerun-20261010.json",
+      "sha256": "1f7373de837cf135e0bd76ba86efbe010506623ec11f50145f4f80a6fe169af5",
+      "corpusHash": "3fd46f421c08f8cc89afe2eddda6809a7012477817987092d3c18b2015ccaf91",
+      "iterations": 30,
+      "differentialReplay": "current-optimized-rust-match",
+      "currentOptimizedTypeScriptMatch": true,
+      "rustDifferentialMatch": true,
+      "inMemoryFiveQueryP50Ms": {
+        "currentTypeScript": 12.113499999999988,
+        "optimizedTypeScriptWarmIndex": 0.5076669999999694,
+        "optimizedTypeScriptRebuiltIndex": 3.0155829999999924,
+        "rustFreshChildIpc": 7.284500000000207
+      },
+      "fileBackedSingleQueryP50Ms": {
+        "currentTypeScript": 10.865166999999929,
+        "optimizedTypeScriptRebuiltIndex": 9.180250000000115,
+        "rustFreshChildIpc": 17.466000000000122
+      },
+      "fileBackedSingleQueryDifferentialMatch": true,
+      "missingEvidence": [
+        "production candidate profile exercise and authenticated enforcement receipt",
+        "cross-platform Rust measurements",
+        "child CPU/RSS accounting",
+        "persistent warm-process measurements (the current Rust protocol starts one child per request)",
+        "end-to-end cancellation and crash-recovery measurements",
+        "real production Wiki corpus and candidate-level cache/ACL/path-isolation exercise"
+      ]
+    },
+    {
+      "receipt": "scripts/rust-migration/knowledge-search-benchmark-rerun2-20261010.json",
+      "sha256": "e9430797130764a2c4847914172f8d1ec7bfdb5c782c35512c100555a61f2d57",
+      "corpusHash": "3fd46f421c08f8cc89afe2eddda6809a7012477817987092d3c18b2015ccaf91",
+      "iterations": 30,
+      "differentialReplay": "current-optimized-rust-match",
+      "currentOptimizedTypeScriptMatch": true,
+      "rustDifferentialMatch": true,
+      "inMemoryFiveQueryP50Ms": {
+        "currentTypeScript": 12.19666699999999,
+        "optimizedTypeScriptWarmIndex": 0.5129999999999768,
+        "optimizedTypeScriptRebuiltIndex": 3.0039580000000115,
+        "rustFreshChildIpc": 7.257708000000093
+      },
+      "fileBackedSingleQueryP50Ms": {
+        "currentTypeScript": 10.663542000000007,
+        "optimizedTypeScriptRebuiltIndex": 9.258916999999883,
+        "rustFreshChildIpc": 17.257458999999926
+      },
+      "fileBackedSingleQueryDifferentialMatch": true,
+      "missingEvidence": [
+        "production candidate profile exercise and authenticated enforcement receipt",
+        "cross-platform Rust measurements",
+        "child CPU/RSS accounting",
+        "persistent warm-process measurements (the current Rust protocol starts one child per request)",
+        "end-to-end cancellation and crash-recovery measurements",
+        "real production Wiki corpus and candidate-level cache/ACL/path-isolation exercise"
+      ]
+    },
+    {
+      "receipt": "scripts/rust-migration/knowledge-search-benchmark-rerun3-20261010.json",
+      "sha256": "dd91ab9da1af1c0375ff60a8997265be8193850c74b8f2c15739ab8004f9f8f6",
+      "corpusHash": "3fd46f421c08f8cc89afe2eddda6809a7012477817987092d3c18b2015ccaf91",
+      "iterations": 30,
+      "differentialReplay": "current-optimized-rust-match",
+      "currentOptimizedTypeScriptMatch": true,
+      "rustDifferentialMatch": true,
+      "inMemoryFiveQueryP50Ms": {
+        "currentTypeScript": 12.14262500000001,
+        "optimizedTypeScriptWarmIndex": 0.5129160000000184,
+        "optimizedTypeScriptRebuiltIndex": 2.9825419999999667,
+        "rustFreshChildIpc": 7.253375000000233
+      },
+      "fileBackedSingleQueryP50Ms": {
+        "currentTypeScript": 10.652749999999969,
+        "optimizedTypeScriptRebuiltIndex": 9.097125000000005,
+        "rustFreshChildIpc": 16.952541999999994
+      },
+      "fileBackedSingleQueryDifferentialMatch": true,
+      "missingEvidence": [
+        "production candidate profile exercise and authenticated enforcement receipt",
+        "cross-platform Rust measurements",
+        "child CPU/RSS accounting",
+        "persistent warm-process measurements (the current Rust protocol starts one child per request)",
+        "end-to-end cancellation and crash-recovery measurements",
+        "real production Wiki corpus and candidate-level cache/ACL/path-isolation exercise"
+      ]
+    }
+  ],
+  "summary": {
+    "allRunsDifferentiallyMatch": true,
+    "inMemoryFiveQueryP50Ms": {
+      "currentTypeScript": {
+        "min": 12.113499999999988,
+        "max": 12.19666699999999,
+        "samples": [
+          12.113499999999988,
+          12.19666699999999,
+          12.14262500000001
+        ]
+      },
+      "optimizedTypeScriptWarmIndex": {
+        "min": 0.5076669999999694,
+        "max": 0.5129999999999768,
+        "samples": [
+          0.5076669999999694,
+          0.5129999999999768,
+          0.5129160000000184
+        ]
+      },
+      "optimizedTypeScriptRebuiltIndex": {
+        "min": 2.9825419999999667,
+        "max": 3.0155829999999924,
+        "samples": [
+          3.0155829999999924,
+          3.0039580000000115,
+          2.9825419999999667
+        ]
+      },
+      "rustFreshChildIpc": {
+        "min": 7.253375000000233,
+        "max": 7.284500000000207,
+        "samples": [
+          7.284500000000207,
+          7.257708000000093,
+          7.253375000000233
+        ]
+      }
+    },
+    "fileBackedSingleQueryP50Ms": {
+      "currentTypeScript": {
+        "min": 10.652749999999969,
+        "max": 10.865166999999929,
+        "samples": [
+          10.865166999999929,
+          10.663542000000007,
+          10.652749999999969
+        ]
+      },
+      "optimizedTypeScriptRebuiltIndex": {
+        "min": 9.097125000000005,
+        "max": 9.258916999999883,
+        "samples": [
+          9.180250000000115,
+          9.258916999999883,
+          9.097125000000005
+        ]
+      },
+      "rustFreshChildIpc": {
+        "min": 16.952541999999994,
+        "max": 17.466000000000122,
+        "samples": [
+          17.466000000000122,
+          17.257458999999926,
+          16.952541999999994
+        ]
+      }
+    },
+    "rustVsOptimizedTypeScriptFileBackedRatioRange": [
+      1.8635054481498259,
+      1.9025625663789008
+    ],
+    "productionDecision": "RETAIN_TS",
+    "reason": "The active modelSearch path is single-query and Rust starts one child per sample. Fresh-child Rust IPC remains slower than optimized TypeScript on the file-backed comparison; no production Rust enforcement is justified."
+  },
+  "limitations": [
+    "Synthetic 240-page corpus; embeddings, real Wiki ACL, cache invalidation, and production path isolation are not exercised.",
+    "Rust IPC starts one child for each request; the Rust child CPU/RSS is not accounted independently.",
+    "Cross-platform, persistent worker, cancellation, crash-recovery, candidate-profile enforcement, and authenticated promotion remain untested.",
+    "The older rust-benchmark.json runRepeatability entries record allCanonicalResultsMatch=false while separate fields there report differentialMatch=true; that conflict is preserved and remains unresolved."
+  ]
+}

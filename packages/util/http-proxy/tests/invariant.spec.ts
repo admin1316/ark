@@ -62,11 +62,12 @@ describe('the proxy invariant companion', () => {
     })
   })
 
-  it('accepts inherited SOCKS settings only while Node proxy parsing is withheld', async () => {
+  it.each(['HTTP_PROXY', 'http_proxy'])('accepts inherited SOCKS settings only while Node proxy parsing is withheld (%s)', async (key) => {
     await withCleanProxyEnv(async () => {
-      process.env.HTTP_PROXY = 'socks5://private-user:private-pass@proxy.example:1080'
+      const socksProxy = 'socks5://private-user:private-pass@proxy.example:1080'
+      process.env.HTTP_PROXY = socksProxy
       process.env.HTTPS_PROXY = proxyUrl
-      const lookup = env({ HTTP_PROXY: process.env.HTTP_PROXY, HTTPS_PROXY: proxyUrl })
+      const lookup = env({ HTTP_PROXY: socksProxy, HTTPS_PROXY: proxyUrl })
       const { dispose } = await install(lookup)
       const ctx = new Context()
       const registry = await ctx.plugin(InvariantRegistry, {})
@@ -75,11 +76,16 @@ describe('the proxy invariant companion', () => {
         expect(readEnvironment().NODE_USE_ENV_PROXY).toBeUndefined()
         const release = await companion.apply(ctx)
         await Promise.resolve().then(release)
-        // Corrupt only the flag in the real installed policy's child result.
+        // Exercise each supported alias without another casing masking it.
         const spy = vi.spyOn(installation, 'proxyEnvironmentForChild')
-          .mockImplementation(() => ({ ...readEnvironment(), NODE_USE_ENV_PROXY: '1' }))
+          .mockImplementation(() => {
+            const environment = { ...readEnvironment(), NODE_USE_ENV_PROXY: '1' }
+            Reflect.deleteProperty(environment, 'HTTP_PROXY')
+            Reflect.deleteProperty(environment, 'http_proxy')
+            return { ...environment, [key]: socksProxy }
+          })
         try {
-          await expect(companion.apply(ctx)).rejects.toThrow(/unsupported HTTP_PROXY/)
+          await expect(companion.apply(ctx)).rejects.toThrow(/unsupported HTTP_PROXY/i)
           await expect(companion.apply(ctx)).rejects.not.toThrow(/private-user|private-pass/)
         } finally {
           spy.mockRestore()

@@ -157,6 +157,20 @@ private func runNativeProjectionMemoChecks() {
 }
 
 func runArkChatPresentationContractChecks() {
+  let hiddenAssistantSequences = ArkChatLiveProcessProjection.hiddenAssistantSequences(
+    [2, 5, 9],
+    beforeWorkSequences: [3, 7]
+  )
+  check(
+    hiddenAssistantSequences == [2, 5]
+      && ArkChatLiveProcessProjection.hiddenAssistantSequences(
+        [2, 5], beforeWorkSequences: []
+      ).isEmpty
+      && ArkChatLiveProcessProjection.hiddenAssistantSequences(
+        [2, 5], beforeWorkSequences: [3]
+      ) == [2],
+    "live process projection hides only narration followed by observed work"
+  )
   runTurnNavigationLifecycleChecks()
   MainActor.assumeIsolated {
     runNativeProjectionMemoChecks()
@@ -167,11 +181,30 @@ func runArkChatPresentationContractChecks() {
     "native cancelled history refresh cannot leave the empty chat permanently loading"
   )
   check(
-    ArkEventSequenceValidator.safeInteger(.number(7)) == 7
-      && ArkEventSequenceValidator.safeInteger(.number(-1), minimum: -1) == -1
-      && ArkEventSequenceValidator.safeInteger(.number(1.5)) == nil
-      && ArkEventSequenceValidator.safeInteger(.number(9_007_199_254_740_992)) == nil,
+    JSONValue.number(7).jsonSafeInteger() == 7
+      && JSONValue.number(-1).jsonSafeInteger(minimum: -1) == -1
+      && JSONValue.number(1.5).jsonSafeInteger() == nil
+      && JSONValue.number(9_007_199_254_740_992).jsonSafeInteger() == nil,
     "native event sequences accept only finite JSON-safe integers"
+  )
+  check(
+    [JSONValue.null, .bool(true), .string("7"), .number(.nan), .number(.infinity),
+     .number(-.infinity), .number(-1), .number(-9_007_199_254_740_992)]
+      .allSatisfy { $0.jsonSafeInteger() == nil }
+      && JSONValue.number(0).jsonSafeInteger() == 0
+      && JSONValue.number(9_007_199_254_740_991).jsonSafeInteger() == 9_007_199_254_740_991
+      && JSONValue.number(-9_007_199_254_740_991).jsonSafeInteger(minimum: Int.min) == -9_007_199_254_740_991,
+    "shared JSON integer validation rejects nonnumbers and unsafe bounds without losing valid endpoints"
+  )
+  check(
+    JSONValue.number(9_007_199_254_740_992).nonnegativeIntegerValue == 9_007_199_254_740_992
+      && JSONValue.number(9_007_199_254_740_992).jsonSafeInteger() == nil
+      && JSONValue.number(Double(Int.max)).nonnegativeIntegerValue == nil
+      && JSONValue.number(-1).nonnegativeIntegerValue == nil
+      && JSONValue.number(1.5).nonnegativeIntegerValue == nil
+      && JSONValue.number(.nan).nonnegativeIntegerValue == nil
+      && JSONValue.string("1").nonnegativeIntegerValue == nil,
+    "native numeric fields retain their distinct upper bound while event cursors remain JSON-safe"
   )
   let validWirePage = try? ArkAPIClient.validatedHistoryPage(
     from: .object([
@@ -718,11 +751,12 @@ func runArkChatPresentationContractChecks() {
         && appModel.contains("historyLoadState = .loaded")
         && appModel.contains("historyLoadState = .failed(error.localizedDescription)")
         && appModel.contains("if modelLabel != nextLabel")
-        && appModel.contains("let resetHistory = self.events.isEmpty")
-        && appModel.contains("async let history: Void = self.refreshHistory(resetPaging: resetHistory)")
-        && appModel.contains("async let modelLabel: Void = self.refreshModelLabel(for: sessionID)")
-        && appModel.contains("async let modelCatalog: Void = self.refreshModelCatalog(for: sessionID)")
-        && appModel.contains("_ = await (history, feedback, modelLabel, modelCatalog)")
+        && appModel.contains("let resetHistory = model.events.isEmpty")
+        && appModel.contains("await model.refreshHistory(resetPaging: resetHistory)")
+        && appModel.contains("guard model.selectedSessionID == sessionID, !Task.isCancelled else { return }")
+        && appModel.contains("async let modelLabel: Void = model.refreshModelLabel(for: sessionID)")
+        && appModel.contains("async let modelCatalog: Void = model.refreshModelCatalog(for: sessionID)")
+        && appModel.contains("_ = await (feedback, modelLabel, modelCatalog)")
         && appModel.contains("struct ArkHistoryFold: Sendable")
         && appModel.contains("Task.detached(priority: .userInitiated)")
         && appModel.contains("guard livePublishTask == nil, !historyFoldInFlight")
@@ -789,11 +823,13 @@ func runArkChatPresentationContractChecks() {
       "navigation refresh publishes only changed rows and owns no unused global busy pulse"
     )
     check(
-      subscribed?.contains("let resetHistory = self.events.isEmpty") == true
-        && subscribed?.contains("self.refreshHistory(resetPaging: resetHistory)") == true
-        && subscribed?.contains("self.refreshSubscribedModelMetadata(for: sessionID)") == true
+      subscribed?.contains("let resetHistory = model.events.isEmpty") == true
+        && subscribed?.contains("replaceHistoryTask(cancelPrevious: false)") == true
+        && subscribed?.contains("model.refreshSubscribedHistoryIfNeeded(") == true
+        && appModel.contains("await refreshHistory(resetPaging: resetPaging)")
+        && subscribed?.contains("model.refreshSubscribedModelMetadata(for: sessionID)") == true
         && subscribed?.contains("_ = await (history, feedback, modelMetadata)") == true
-        && subscribed?.contains("self.refreshHistory(resetPaging: true)") == false,
+        && subscribed?.contains("model.refreshHistory(resetPaging: true)") == false,
       "native session resubscribe preserves the transcript and rehydrates its model capability metadata"
     )
     check(
@@ -844,6 +880,11 @@ func runArkChatPresentationContractChecks() {
       root,
       from: "private struct NativeChatDisplayEntry",
       through: "private struct NativeChatProcess"
+    )
+    let chatProjection = chatSourceSlice(
+      root,
+      from: "private func computeBodyProjection()",
+      through: "private func projectedDisplayRows("
     )
     let assistantBodyRow = chatSourceSlice(
       root,
@@ -952,7 +993,7 @@ func runArkChatPresentationContractChecks() {
     check(
       chatView?.contains("@State private var renderWindow = ArkChatRenderWindow()") == true
         && chatView?.contains("renderWindow.range(in: displayIDs, limit: effectiveWindow)") == true
-        && chatView?.contains("renderWindow.earlier(in: displayIDs, limit: effectiveWindow)") == true
+        && chatView?.contains("renderWindow.revealEarlier(") == true
         && chatView?.contains("renderWindow.later(in: displayIDs, limit: effectiveWindow)") == true
         && chatView?.contains(".onChange(of: context.sessionRunning)") == true
         && chatView?.contains("scrollController.settleStreamingCompletion()") == true
@@ -1010,12 +1051,9 @@ func runArkChatPresentationContractChecks() {
         // The transcript renders the tail window of that one projection, not every entry:
         // a full-window rebuild is one AttributeGraph transaction (measured 2026-09-12).
         && chatView?.contains("ForEach(visibleEntries)") == true
-        && chatView?.contains("let effectiveWindow = context.sessionRunning") == true
-        && chatView?.contains("allDisplayEntries.count > Self.largeTranscriptEntryThreshold") == true
-        && chatView?.contains("context.sessionRunning") == true
-        && chatView?.contains("Self.activeStreamingRenderWindowEntries") == true
-        && chatView?.contains("Self.largeTranscriptRenderWindowEntries(forEntryCount: allDisplayEntries.count)") == true
-        && chatView?.contains("static let activeStreamingRenderWindowEntries = 24") == true
+        && chatView?.contains("let effectiveWindow = renderWindow.visibleLimit(") == true
+        && chatView?.contains("entryCount: allDisplayEntries.count") == true
+        && chatView?.contains("running: context.sessionRunning") == true
         && chatView?.contains("projection.turnAnchorByTurn[turn] == item.id") == true
         && chatView?.contains("ForEach(displayEntries)") == false
         && chatView?.contains("entries.first(where:") == false
@@ -1111,16 +1149,28 @@ func runArkChatPresentationContractChecks() {
     check(
       root.contains("private struct NativeTurnProcessRow<Content: View>: View")
         && root.contains("process.detailEntries")
-        && root.contains("process.reasoningText")
+        && root.contains("detailEntries = processEntries.filter { !$0.isAssistantMessage }")
+        && !root.contains("reasoningText: reasoningText")
+        && !root.contains("if let reasoning = process.reasoningText")
         && root.contains(".chatTurnProcessShowMore")
-        && root.contains(".lineLimit(expanded ? nil : 4)")
+        && root.contains("if expanded, !process.detailEntries.isEmpty")
+        && root.contains("if !process.detailEntries.isEmpty")
         && root.contains("hideReasoning: hidesFinalReasoning(entry, finalAnswerByTurn: finalAnswerByTurn)")
         && root.contains("if process.hiddenEntryIDs.contains(entry.id)")
         && !root.contains("if !expandedProcessGenerations.contains(process.generation), process.hiddenEntryIDs.contains(entry.id)")
         && root.contains("ark.chat.turn-process.toggle.\\(process.turn)")
         && root.contains(".accessibilityHint(processSummary)")
         && !root.contains(".accessibilityValue(\n      ArkL10n.text(expanded ? .chatTurnProcessCollapse"),
-      "completed-turn metadata and reasoning render inside one bounded show-more process card"
+      "the conversation process card reveals tool activity on demand without assistant narration or reasoning"
+    )
+    check(
+      chatProjection?.contains("context.sessionRunning") == true
+        && chatProjection?.contains("context.latestStartedTurn") == true
+        && chatProjection?.contains("ArkChatLiveProcessProjection.hiddenAssistantSequences") == true
+        && chatProjection?.contains("NativeChatProcess(") == true
+        && chatProjection?.contains("processEntries: processEntries") == true
+        && chatSourceSlice(root, from: "private struct NativeChatProcess:", through: "private struct NativeChatBodyProjection")?.contains("detailEntries = processEntries.filter { !$0.isAssistantMessage }") == true,
+      "live tool work moves preceding assistant narration into the process card while the final streaming message stays visible"
     )
     check(
       systemPromptRow?.contains(".chatSystemPromptExpand") == true
@@ -1243,6 +1293,32 @@ func runArkChatPresentationContractChecks() {
         && root.contains("uncachedInputTokens")
         && root.contains("groups.joined(separator: \" | \")"),
       "active chat keeps implementation context out of the visible shell while retaining composer controls and run metrics"
+    )
+    let statsBar = chatSourceSlice(
+      root,
+      from: "private struct NativeSessionStatsBar: View",
+      through: "private struct NativeGoalDock: View"
+    )
+    check(
+      statsBar?.contains(".font(.system(size: 12))") == true
+        && statsBar?.contains("alignment: .center") == true
+        && statsBar?.contains(".truncationMode(.tail)") == true
+        && statsBar?.contains(".help(line)") == true
+        && statsBar?.contains(".accessibilityLabel(line)") == true
+        && statsBar?.contains("design: .monospaced") == false
+        && root.components(separatedBy: .newlines)
+          .map { $0.trimmingCharacters(in: .whitespaces) }
+          .joined(separator: "\n").contains("""
+        NativeSessionStatsBar(model: model)
+          .frame(height: ChatLayoutMetrics.statsBarHeight)
+          .frame(maxWidth: ArkChatLayoutResolver.composerWidth(
+            maximumWidth: ChatLayoutMetrics.composerMaxWidth,
+            transcriptWidth: transcriptWidth
+          ))
+        """.components(separatedBy: .newlines)
+          .map { $0.trimmingCharacters(in: .whitespaces) }
+          .joined(separator: "\n")),
+      "legacy session statistics use readable centered text below the composer with matching width and full-value access"
     )
     check(
       root.contains("if model.composer.isEmpty && !composerHasMarkedText")

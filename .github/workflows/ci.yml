@@ -168,6 +168,11 @@ jobs:
       - name: Re-link workspace bins after the host build
         run: pnpm install --frozen-lockfile --offline
 
+      # The service shadow seam is covered against the real candidate executable.
+      # A fresh checkout must build it before the per-file coverage gate runs.
+      - name: Build Rust search candidate (coverage prerequisite)
+        run: cargo build --locked --release --manifest-path rust/knowledge-search-shadow/Cargo.toml
+
       - name: Run exhaustive coverage
         env:
           # Required mode: the pwsh-gated suites fail with the capability reason
@@ -407,7 +412,7 @@ jobs:
     timeout-minutes: 120
     env:
       DSH_COVERAGE_MAX_WORKERS: '2'
-      DSH_COVERAGE_PARTITIONS: '8'
+      DSH_COVERAGE_PARTITIONS: '2'
       # Instrumented process and polling fixtures can exceed Vitest's defaults
       # under the complete lane's concurrent gate load.
       DSH_COVERAGE_TEST_TIMEOUT_MS: '30000'
@@ -440,6 +445,10 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
+      - name: Build Rust search candidate (coverage prerequisite)
+        shell: pwsh
+        run: cargo build --locked --release --manifest-path rust/knowledge-search-shadow/Cargo.toml
+
       - name: Run complete native Windows gate inventory
         shell: pwsh
         run: pnpm run check:ci:windows-complete
@@ -464,11 +473,35 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+      # The Native contracts include the actual Node/tsx source consumer of
+      # the XPC journal signature, not only Swift-side signature checks.
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
       - name: Build native contracts
         run: swift build --package-path integrations/jiuzhang/native --configuration debug --product JiuzhangShellContractTests -Xswiftc -enable-testing
       - name: Run native contracts
+        id: native-contracts
         working-directory: integrations/jiuzhang/native
+        env:
+          ARK_NATIVE_CONTRACT_DIAGNOSTICS_DIR: ${{ runner.temp }}/native-contracts-diagnostics
         run: .build/debug/JiuzhangShellContractTests
+      - name: Collect this Native contract process's failure diagnostics
+        if: failure() && steps.native-contracts.outcome == 'failure'
+        run: pnpm exec tsx scripts/collect-native-contract-diagnostics.ts "${{ runner.temp }}/native-contracts-diagnostics" "${{ github.workspace }}/integrations/jiuzhang/native/.build/debug/JiuzhangShellContractTests"
+      - name: Upload Native contract failure diagnostics
+        if: failure() && steps.native-contracts.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-contract-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-contracts-diagnostics/collected
+          if-no-files-found: warn
+          retention-days: 7
 
   all-checks-passed:
     name: all checks passed

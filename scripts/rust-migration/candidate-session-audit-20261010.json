@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-10T00:55:31Z",
+  "observationKind": "sanitized-candidate-session-and-knowledge-log-audit",
+  "signed": false,
+  "candidate": {
+    "appPath": "/Users/hui/ark-test/candidate/Ark.app",
+    "version": "3.1.13",
+    "build": "2026101002",
+    "sourceCommit": "69bc324a8b125b452993c00c95965afd9a478871",
+    "sourceSnapshotSha256": "d9403739d412d08a55644cb3d398fcd62ee507f86ca9c7ad64b969dc368fa2f8",
+    "sourceAndPackSha256": "4529f8273108d825fffa3f1b0f3633d58d6565cb642142c7b7727e5e164955e8",
+    "jiuzhangProfilePatchSha256": "796d9f9c8cd65581656ae237ad13ac5bbabbebc217da9e594539a8162a1986fd",
+    "dataHome": "/Users/hui/ark-test/candidate-home-gpt6-69bc324a-20261010-v313",
+    "modelSettings": {
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "reasoningEffort": "max"
+    }
+  },
+  "task": {
+    "path": "/Users/hui/ark-test/evidence/window-test-20261009-task-v2.zh.txt",
+    "sha256": "0d6e0e2fece23b47e1f7281748cd8043fa04c202e862ec441a34117edf763f20",
+    "sha256AfterRemovingOneTerminalLf": "a774ab74be7afb692b4beeafb48ce155889d5b67c50c5d6644dd36bf8a316145",
+    "promptContentStoredInThisAudit": false
+  },
+  "sessions": [
+    {
+      "sessionId": "91cd2717-a962-4935-bcca-fae884c84969",
+      "path": "/Users/hui/ark-test/candidate-home-gpt6-69bc324a-20261010-v313/sessions/--Users-hui-ark-test-invoice-reconciliation-current319-20261009--/91cd2717-a962-4935-bcca-fae884c84969/session.jsonl.zstd",
+      "sha256": "f37bea15accb65763c6affd60a88b7f0256734acb9151e52f98693200dba0ea0",
+      "workingDirectory": "/Users/hui/ark-test/invoice-reconciliation-current319-20261009",
+      "completeZstdFrames": 7,
+      "sessionEvents": 20,
+      "originalTaskPromptMatchesAfterRemovingTerminalLf": true,
+      "modelSelection": {
+        "provider": "openai",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "max"
+      },
+      "providerRequestReached": true,
+      "assistantTextChunkCount": 0,
+      "assistantNonTextChunkTypes": [
+        "usage",
+        "finish"
+      ],
+      "turnEnd": {
+        "kind": "error",
+        "code": "PI_AI_ERROR",
+        "httpStatus": 404,
+        "providerErrorType": "model_not_found"
+      }
+    },
+    {
+      "sessionId": "e6417627-dbf3-4384-ad61-14e46ba5cb09",
+      "path": "/Users/hui/ark-test/candidate-home-gpt6-69bc324a-20261010-v313/sessions/--Users-hui-ark-test-invoice-reconciliation-current319-20261009--/e6417627-dbf3-4384-ad61-14e46ba5cb09/session.jsonl.zstd",
+      "sha256": "3d35e049ec92d53b043333566a17410e0b759d3bae66baf8ba98a75255c44bae",
+      "workingDirectory": "/Users/hui/ark-test/invoice-reconciliation-current319-20261009",
+      "completeZstdFrames": 6,
+      "sessionEvents": 16,
+      "originalTaskPromptMatchesAfterRemovingTerminalLf": true,
+      "modelSelection": {
+        "provider": "openai",
+        "model": "gpt-6-luna",
+        "configuredReasoningEffort": "max"
+      },
+      "providerRequestReached": false,
+      "assistantTextChunkCount": 0,
+      "assistantNonTextChunkTypes": [],
+      "turnEnd": {
+        "kind": "error",
+        "code": "UNSUPPORTED_REASONING_EFFORT"
+      }
+    }
+  ],
+  "knowledgeJournal": {
+    "path": "/Users/hui/ark-test/candidate-home-gpt6-69bc324a-20261010-v313/Knowledge/.llm-wiki/knowledge-events.jsonl",
+    "sha256": "ce623fec09f88eb1abd239b4f500a1f43d2585a130c0b2591994bd4de93c323c",
+    "recordCount": 5,
+    "eventTypes": [
+      "knowledge/injected"
+    ],
+    "knowledgeId": "page:index.md",
+    "scopeKeys": [
+      "projectId",
+      "visibility"
+    ],
+    "payloadKeys": [
+      "path",
+      "contentHash"
+    ],
+    "sessionIdBound": false,
+    "renderedToolValueStoredInJournal": false,
+    "interpretation": "Project-scoped injection journal rows cannot be attributed to either failed session or reconstruct the rendered tool value; session JSONL contains no knowledge/retrieved or knowledge/injected events for these failed turns."
+  },
+  "currentSourceTestEvidence": {
+    "testFiles": [
+      "packages/host/knowledge-wiki-tools/tests/tools.spec.ts",
+      "packages/host/knowledge-wiki/tests/knowledge-governance.spec.ts"
+    ],
+    "passed": 29,
+    "failed": 0,
+    "command": "pnpm exec vitest run packages/host/knowledge-wiki-tools/tests/tools.spec.ts packages/host/knowledge-wiki/tests/knowledge-governance.spec.ts --maxWorkers=1"
+  },
+  "acceptance": {
+    "taskSubmittedInConfiguredWorkspace": true,
+    "modelAnswerAvailable": false,
+    "behavioralAcceptance": "UNKNOWN",
+    "reason": "The persisted sessions contain no assistant answer. The post-settings provider-reaching request with gpt-6-luna/max returned 404 model_not_found through a custom OpenAI-compatible endpoint; official model metadata supports the model and max, but the saved credential is not verified for the official endpoint. Candidate-only route choice remains pending user authorization."
+  },
+  "routeConfigurationSnapshot": {
+    "observedAt": "2026-10-10T01:34:21Z",
+    "path": "/Users/hui/ark-test/candidate-home-gpt6-69bc324a-20261010-v313/settings.yaml",
+    "sha256": "693d665b780827184eacac9b0a146d5b53cd217d85d5043e7052373cb73023cd",
+    "lastModifiedLocal": "2026-10-10 01:22:24 CST",
+    "provider": "openai",
+    "baseURLKind": "custom OpenAI-compatible endpoint",
+    "baseURLHost": "99887123.xyz",
+    "model": "gpt-6-luna",
+    "declaredReasoningEfforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "credentialValueExposed": false,
+    "credentialValueCopied": false,
+    "relatedSessionFileTimesLocal": {
+      "unsupportedEffortSession": "2026-10-10 01:20:50 CST",
+      "providerModelNotFoundSession": "2026-10-10 01:22:25 CST"
+    },
+    "credentialValueUsed": false
+  },
+  "officialModelCapabilityCheck": {
+    "checkedAt": "2026-10-10T01:34:21Z",
+    "source": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+    "modelId": "gpt-6-luna",
+    "maxReasoningEffortSupported": true,
+    "relevance": "Official model metadata rules out a global invalid-model-id or unsupported-max explanation; it does not establish access through the candidate custom endpoint or credential."
+  },
+  "routeChangeRequest": {
+    "status": "pending-user-choice",
+    "scope": "fresh isolated candidate only",
+    "options": [
+      "Keep the custom endpoint and have its owner enable gpt-6-luna/max.",
+      "Use https://api.openai.com/v1 only if the stored credential is an OpenAI API key and the user explicitly authorizes sending it to that host."
+    ],
+    "currentCandidateModified": false,
+    "officialProfileModified": false
+  }
+}

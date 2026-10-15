@@ -12,7 +12,8 @@
     "sandbox-exec",
     "tar",
     "taskkill",
-    "where.exe"
+    "where.exe",
+    "xcrun"
   ],
   "ignoreWorkspaces": [
     "vendor/*",

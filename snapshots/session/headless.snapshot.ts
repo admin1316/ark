@@ -1,6 +1,6 @@
 /** Recorded-session replay through the shipped headless `dsh` profile. */
 
-import { cp, copyFile, mkdir, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { cp, copyFile, mkdir, readFile, readdir, realpath, rm, utimes, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
@@ -663,6 +663,19 @@ describe('headless recorded-session snapshots', () => {
             finalWorkspace = await captureWorkspaceSnapshot(cwd, {
               ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
             })
+            if (scenario.name === 'subprocess-spill-open-failure') {
+              const diagnostics = JSON.parse(await readFile(join(cwd, '.dsh', 'spill-diagnostics.json'), 'utf8')) as JsonObject[]
+              expect(diagnostics).toEqual([{
+                type: 'error',
+                message: 'subprocess-local: stdout spill failed; only the in-memory tail is retained.',
+                code: 'ENOENT',
+                syscall: 'open',
+                path: expect.any(String),
+              }])
+              const path = diagnostics[0]?.path as string
+              expect(dirname(path)).toBe(join(await realpath(cwd), '.dsh', 'unavailable-spill'))
+              expect(basename(path)).toMatch(/^dsh-subprocess-\d+-\d+-[a-f0-9]{12}-stdout\.log$/)
+            }
           },
         })
       } finally {
@@ -681,6 +694,22 @@ describe('headless recorded-session snapshots', () => {
       expect(result.stderr).toBe(expectedStderr)
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
       const actualContext = contextOf(actualLogs.map(log => log.content))
+      if (scenario.name === 'tool-output-unicode' || scenario.name === 'subprocess-spill-open-failure') {
+        const results = parseSessionLog(actualLogs[0]!.content)
+          .filter(event => event.type === 'tool/result')
+          .flatMap(event => event.data.message.content)
+          .filter(block => block.type === 'tool-result')
+        expect(results).toHaveLength(2)
+        expect(results.map(result => result.isError)).toEqual([false, false])
+        const output = results.map(result => result.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(''))
+        expect(output[1]).toBe('READY')
+        if (scenario.name === 'tool-output-unicode') {
+          expect(output[0]?.startsWith(`${'x'.repeat(15_999)}<response clipped>`)).toBe(true)
+          expect(output[0]).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
+        } else {
+          expect(output[0]).toBe('xxxxxxxxxTAIL_OK\n[output truncated; full output: (unavailable)]')
+        }
+      }
       const fixtureContext = contextOf(fixtures)
       const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
       const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext)

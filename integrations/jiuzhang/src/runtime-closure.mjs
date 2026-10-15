@@ -1246,12 +1246,12 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(fileUR
     else if (value === '--json') options.details = true
     else positional.push(value)
   }
-  try {
-    const result = await assertArkRuntimeClosure(positional[0] ?? '', positional[1] ?? '', options)
+  // Complete module evaluation before a source plan imports these shared helpers.
+  assertArkRuntimeClosure(positional[0] ?? '', positional[1] ?? '', options).then(result => {
     if (options.details === true) process.stdout.write(stableJson(result))
     else console.log(`Ark runtime closure verified: ${String(result.packageCount)} physical package identities`)
-  } catch (error) {
+  }).catch(error => {
     console.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 2
-  }
+  })
 }

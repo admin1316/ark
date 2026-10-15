@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-output-retention` bounds how much context a tool returns to the model: a caller feeds items or text chunks into a retainer, then gets back the retained content plus exact omission metadata. `ItemRetainer` caps an ordered list of logical units (paths, matches, sources) at a head budget; `TextRetainer` caps a byte-oriented text stream with head, tail, or head-and-tail windows and keeps UTF-8 boundaries valid at every cut. A standardized omission clause and a notice formatter give tools a consistent "results capped" footer while the tool owns the recovery guidance. The library answers only the mechanical question of what was kept and what was omitted — grouping, line numbering, spill files, and provider error states stay in the tool. It is a dependency-light library that tool packages import directly; a `cordis.yml` cannot load it.
+`dsh-output-retention` bounds how much context a tool returns to the model: a caller feeds items or text chunks into a retainer, then gets back the retained content plus exact omission metadata. `ItemRetainer` caps an ordered list of logical units (paths, matches, sources) at a head budget; `TextRetainer` caps a byte-oriented text stream with head, tail, or head-and-tail windows and keeps UTF-8 boundaries valid at every cut. `truncateWithoutSplittingSurrogatePair` caps a character-budget preview without introducing a lone high surrogate at the cut. A standardized omission clause and a notice formatter give tools a consistent "results capped" footer while the tool owns the recovery guidance. The library answers only the mechanical question of what was kept and what was omitted — grouping, line numbering, spill files, and provider error states stay in the tool. It is a dependency-light library that tool packages import directly; a `cordis.yml` cannot load it.
 
 ## Table of Contents
 
@@ -74,6 +74,10 @@ const footer = formatRetentionNotice(
 
 The library standardizes the omission clause (`Omitted 3 items.`) and joins it with the tool's own recovery guidance; only the tool knows the recovery action, so the tool supplies those words.
 
+### Capping a character-budget preview
+
+`truncateWithoutSplittingSurrogatePair` caps a preview measured in UTF-16 code units. A cut that lands inside a surrogate pair drops the unpaired half, so the kept text stays a prefix and can be one code unit shorter than the cap. It does not repair an unpaired surrogate already present in the input. The persistent `bash` and `pwsh` shells and `str_replace_editor` use it for their character-budget previews; each still owns its truncation notice and incomplete-output handling.
+
 ### What `truncated` means
 
 `truncated` is a budget fact: the retainer omitted otherwise-available content because of a cap. It never means the upstream was incomplete — permission failures, skipped binary files, provider partial failures, and unreadable candidates stay in tool-domain fields, never folded into `truncated`.
@@ -104,7 +108,7 @@ The library is built on one separation: it owns the mechanical question of what 
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `ItemRetainer`, `TextRetainer`, `describeOmitted`, and `formatRetentionNotice` |
+| [`src/index.ts`](src/index.ts) | `ItemRetainer`, `TextRetainer`, `describeOmitted`, `formatRetentionNotice`, and `truncateWithoutSplittingSurrogatePair` |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; the retention algebra is exercised by unit tests) |
 
 ### Two retainers, two resource models
@@ -152,7 +156,7 @@ No direct invalidation; the retention consumers own any request-prefix changes.
 These limits define what the retainers deliberately do not cover. They are current package constraints, not a task backlog.
 
 - **Item retention supports `head` only** — tail, head/tail, pagination, grouping, and provider-completeness semantics remain tool-owned.
-- **Text retention is byte-oriented** — line and character windows such as `read` pagination require a separate renderer, and a cut may discard partial UTF-8 boundary bytes to keep the returned text valid.
+- **Text retention is byte-oriented** — `TextRetainer` counts bytes; character-budget head caps go through `truncateWithoutSplittingSurrogatePair`, and line windows such as `read` pagination still require a separate renderer. A cut may discard partial UTF-8 boundary bytes to keep the returned text valid.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -22,6 +22,7 @@ import type {
 export interface RequestDefaults {
   thinking?: 'enabled' | 'disabled' | undefined
   reasoningEffort?: 'off' | 'low' | 'high' | 'max' | undefined
+  jsonOutput?: boolean | undefined
 }
 
 interface ResolvedThinking {
@@ -359,6 +360,7 @@ function requestWithMessages(
     messages,
     stream: true,
     stream_options: { include_usage: true },
+    ...defaults.jsonOutput === true ? { response_format: { type: 'json_object' as const } } : {},
     ...resolvedThinking.thinking !== undefined ? { thinking: { type: resolvedThinking.thinking } } : {},
     ...resolvedThinking.reasoningEffort !== undefined
       ? { reasoning_effort: resolvedThinking.reasoningEffort }

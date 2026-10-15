@@ -1,0 +1,964 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-12T20:49:42.395034+00:00",
+  "status": "APPROVED_REVIEW_8MIB_CAUSAL_SOURCE_AND_PUBLIC_CAPACITY_CHECKS_PASS_NATIVE_AND_FULL_GOAL_OPEN",
+  "sourceRoot": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+  "sourceHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "previousAuthoritativeSequence": 84,
+  "previousGoalTurnClassification": "progress",
+  "goalTurnClassification": "progress",
+  "authorization": {
+    "existing": "v3 candidate source and tests, no production custody or release gate changes",
+    "reviewCapacity": {
+      "questionCall": "call_3ca799e85b9f4404b24b88048fe11ebe",
+      "humanAnswer": "批准 review 共用 8 MiB（推荐）",
+      "scope": "isolated candidate source/tests; existing entity8MiB shared with model/verifier and full projection preflight; pages/utility5MiB WAL8MiB event64MiB and persisted formats preserved"
+    }
+  },
+  "reflection": {
+    "newNativeBuilds": 0,
+    "method": "normal reachable pre-state -> actual cause/effect -> complete owner fix -> same-state control; source/candidate/native/factual-report/actual reuse remain distinct",
+    "rootCauses": [
+      "review internal8 vs consumer5 divergence confirmed on ordinary cumulative rows",
+      "utility writer crosses its5MiB reader cap before projection checks; all corresponding callers now preflight final UTF8 bytes",
+      "this-turn regression lost post-revocation replay fence; restored and original misclassified failure retained",
+      "feedback-before-revocation left old canonical usable after second append failure; rejected-first ordering closes that specific prefix case",
+      "actual worker cancellation returned before actual exit; every registered join awaited including multiple-worker error cases",
+      "Vitest 5MiB equality matcher dominated test latency; native exact byte equality preserves contract, not an Ark speed claim"
+    ],
+    "independentReviewLimit": "checker reports are not authority; wrong64MiB-utility/mutable-alias/Node-comparator/Node-terminate claims corrected using source-bound actual paths and retained clarifications",
+    "sourceIdentity": "Regular in-project source files bind bytes; outside/virtual/absent labels bind strings, unspecified uses unknown-source. research:topic does not validate fetched facts.",
+    "partialPublication": "Same-JS synchronous precommit revalidation is not cross-process atomicity or all-file transaction rollback; Candidate, Review, utility or events may precede later failure."
+  },
+  "latestCombinedValidation": {
+    "path": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt7.wx/result.json",
+    "sha256": "c5ff44f208f20cbdc45a12d4a63d498a62d52ab02d8b8820eeedca5ec344f2f5",
+    "testFiles": 80,
+    "behaviorPass": 1263,
+    "behaviorFail": 0,
+    "executionFiles": 34,
+    "perFileFourMetrics": 100,
+    "sourceInputsStable": true,
+    "sourceInputCount": 119,
+    "fullPass": true,
+    "remainingPerFile100": [],
+    "laterHostBuildAndFullLintRun": true,
+    "checks": [
+      {
+        "name": "related-coverage",
+        "argv": [
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "packages/host/knowledge-wiki/tests",
+          "packages/host/knowledge-wiki-tools/tests",
+          "--coverage",
+          "--maxWorkers=2",
+          "--coverage.include=packages/host/knowledge-wiki/src/**/*.ts",
+          "--coverage.include=packages/host/knowledge-wiki-tools/src/**/*.ts",
+          "--coverage.reporter=json",
+          "--coverage.reporter=json-summary",
+          "--coverage.reporter=text",
+          "--coverage.reportsDirectory=/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt7.wx/coverage"
+        ],
+        "exitCode": 0,
+        "log": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt7.wx/related-coverage.log",
+        "sha256": "fd09ab6218ca31e9ac5f2925d97c947873063ed2df4916ada407f79325bc137e"
+      },
+      {
+        "name": "host-types-build",
+        "argv": [
+          "pnpm",
+          "run",
+          "build:lib:host"
+        ],
+        "exitCode": 0,
+        "log": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt7.wx/host-types-build.log",
+        "sha256": "5eb7d42d00bee2175186a5732d59e2cba31d745f33204f66026a87cdd6c62a2a"
+      },
+      {
+        "name": "full-source-lint",
+        "argv": [
+          "pnpm",
+          "run",
+          "lint:contracts-ready"
+        ],
+        "exitCode": 0,
+        "log": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt7.wx/full-source-lint.log",
+        "sha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5"
+      },
+      {
+        "name": "git-diff-check",
+        "argv": [
+          "git",
+          "diff",
+          "--check"
+        ],
+        "exitCode": 0,
+        "log": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt7.wx/git-diff-check.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "publicModule": {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/lib/index.js",
+      "sha256": "4d9f02c1a18ab7d44d16c8c9be2d6f286f711af4aa4bb46f1b5b1cdfb3055ab6"
+    },
+    "environment": {
+      "node": "24.19.0",
+      "NODE_OPTIONS": "--max-old-space-size=4096",
+      "CI": "1",
+      "maxWorkers": 2,
+      "testTimeoutChanged": false
+    },
+    "scope": "Related Wiki/tools package code and allHost types/public compilation/full-source lint; not original whole-platform/native/full-goal acceptance."
+  },
+  "remainingGates": [
+    "other inferred storage/typed-consumer totals and general async signer/deadline/cancel/settlement remain open; no unlimited storage or cross-process transaction guarantee",
+    "real independent protected verifier/program/key/manifest/evidence custody not deployed",
+    "authenticated same-model fresh-session paired actual use/oracle correctness/false recall/leak/cost/repeated-error reduction not established",
+    "whole factual report and original first-command/current native task including code modification+tests need installed-candidate evidence",
+    "all original platform/CI/security/history correctness/recovery/rollback/Phase6 gates remain required and are not closed by source/public proof",
+    "review within8MiB can still be rejected during promotion by unchanged8MiB complete before/after WAL bound",
+    "history open/switch/scroll and overall response performance deferred and unmeasured"
+  ],
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "c11146420879d77ab2ad509855c446f65b578caafe9b65b6398b9a373e19884b",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "da158c5f36e4ac8efe3d5495fd60ad66d79d4a8dd6f0614ba67a163a62436ea8",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "budget": {
+    "cumulativeCapCents": 1000,
+    "includesPreviousUpgradeTests": true,
+    "lastObservedAllKeyPeriodCents": 958,
+    "certifiedRemainingCents": null,
+    "newPaidTasks": 0
+  },
+  "rustDecision": "RETAIN_TS",
+  "currentCandidate": {
+    "version": "3.1.37",
+    "buildNumber": "2026101237",
+    "path": "/Users/hui/ark-test/candidate/Ark.app",
+    "binarySha256": "6df185a73ff66ff79093bf2c84ba9f67c7402d1ad4953b7f13e4d78301b7a1c0",
+    "changed": false
+  },
+  "heldCandidate338": {
+    "version": "3.1.38",
+    "buildNumber": "2026101238",
+    "path": "/Users/hui/ark-test/staging-candidate-v338-20261012-attempt1/Ark.app",
+    "binarySha256": "955fe6b3bd4064a9dc80982dd6771015ddcdf22494e75b3b433f8228ffc2e2b4",
+    "activation": false,
+    "failureRecordPreserved": true
+  },
+  "protectedBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/project-manifest.json",
+      "sha256": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+      "matchesPrevious": true
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/rust-benchmark.json",
+      "sha256": "52b85fb8d97d9b1fb5114cd4e517cdb1f7a84bb3d1d6e7ee6b77a7cbeb2097db",
+      "matchesPrevious": true
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate-home-current-20261011-v328/settings.yaml",
+      "sha256": "305d4badb646e533d149c4a1c199a9f79f58772cf73371147e2c058028db5762",
+      "matchesPrevious": true
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate-home-current-20261011-v328/.credentials.yaml",
+      "sha256": "2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28",
+      "matchesPrevious": true
+    },
+    {
+      "path": "/Users/hui/ark/Ark.app/Contents/MacOS/Ark",
+      "sha256": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a",
+      "matchesPrevious": true
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/MacOS/Ark",
+      "sha256": "6df185a73ff66ff79093bf2c84ba9f67c7402d1ad4953b7f13e4d78301b7a1c0",
+      "matchesPrevious": true
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-knowledge-wiki/lib/index.js",
+      "sha256": "7d30d46ec226cdf55f4db5d08e934556ae9f44808d7b6bea31bf5525d4d6840b",
+      "matchesTurnStart": true
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/node/bin/node",
+      "sha256": "2a6444e63caa2908909180832c28d33b4a27c53674ea4a7a39d11d79cefb353c",
+      "matchesTurnStart": true
+    },
+    {
+      "path": "/Users/hui/ark-test/staging-candidate-v338-20261012-attempt1/Ark.app/Contents/MacOS/Ark",
+      "sha256": "955fe6b3bd4064a9dc80982dd6771015ddcdf22494e75b3b433f8228ffc2e2b4",
+      "matchesTurnStart": true
+    },
+    {
+      "path": "/Users/hui/ark-test/staging-candidate-v338-20261012-attempt1/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-knowledge-wiki/lib/index.js",
+      "sha256": "5b52a2e2c97c4999b138c9aaa056e7293ad5dc107afb8a8530e672b505fa3123",
+      "matchesTurnStart": true
+    }
+  ],
+  "sourceBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki-tools/src/index.ts",
+      "sha256": "2c272c9caf8c7ccc485214775729ace553f3d8c915b3d852b121ea26ab1c838d"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki-tools/src/invariant.ts",
+      "sha256": "ce0719daa066e8a36b212c817100f53bc754291f46b6db2121bbc1c8616d26b8"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki-tools/src/session-events.ts",
+      "sha256": "96520a01c6057da6d4c01fdb7eefcab6542a57bcfe2f1647df4b3562db900519"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+      "sha256": "575a5729b2aec5d3be3d966ee40b0653391db063b842820c38b1ad13b69546a4"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki-tools/tests/session-summary-admission-integration.spec.ts",
+      "sha256": "599a7c57f847e371f2b1a94c4c1241e1c7895c13219eda2bcd8c3761708227ad"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki-tools/tests/tools.spec.ts",
+      "sha256": "10ac559f0536d9f040c6d18c230fb30ac9854df1a8c5b29aa1f7b741707a66dd"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/archive.ts",
+      "sha256": "0fc490d422eac729e18ed54f6ac3413c37e48e7dfd329368bfdabea2d4143c9f"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/auto-sediment.ts",
+      "sha256": "1ac881488b070224d17943a8cb5a600561e4f8a3d2f9d4b7c5aad76e610fa80b"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/canonical-merge.ts",
+      "sha256": "2d474ab81c7caa5ea2e0dbff1a6612dba90d8df4685b64083417f42529198693"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/external-verifier-adapter.ts",
+      "sha256": "c64f9bbe64c6beda84a416c57d65310bf7194e1180f32a6b4376b6a550f5035a"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/fallback-summary.ts",
+      "sha256": "6d4febc5d373b8758bbe66aa77c821bdb60423deeecee847687fd2f7dc233d2b"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/file-extract.ts",
+      "sha256": "ee129bdf5a14571584d6bf67dc4ee663619d6eb3f154fd15b879909dfda49a43"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/filesystem.ts",
+      "sha256": "9cdf3c1e576235639c8a138c5887fa270ae2c26a1c3dd300f1b2acc6230c8dfa"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/frontmatter-utils.ts",
+      "sha256": "ada1273f47c5a47d8b3504805472efefa60f67ffdc6e02f1179ad2235a563dc9"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/governance-policy.ts",
+      "sha256": "7c62a2678b6092794d43774c3dc2be8043eac568a0d36c33a08a24f75bd8aa4e"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/graph.ts",
+      "sha256": "620dfd6f0f5ed09491b4e9e36732dedf6d9f99a6b32090e44132257266e3b321"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/html-clip.ts",
+      "sha256": "6048dd41feba4a9305f54cf1175ad1c7f5838f2aca6fcad96fab96571c053821"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/index-writer.ts",
+      "sha256": "75964c7abd70942a73c96586c6ad5f37666bb6c5fb6b9c48a95ecdd13dd529ef"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/index.ts",
+      "sha256": "6201b05d82138c1b67f3d47928097c64225e63eafb6d6c1e2a937bbe9bc522ad"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/ingest.ts",
+      "sha256": "711d1f0336fab9117fa6988eb1b67664fa9e2197dbacd6a5d35e7a842de06038"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/invariant.ts",
+      "sha256": "4816659b1ebddaa5cfce2575731310c23084d20bd318d0ba6c59a5288c4b6dc6"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/knowledge-governance.ts",
+      "sha256": "64b9fa2ffbcbec9feec63553a18f1e3b9fc77de76df4c0c3db9db2be0baf9a64"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/measured-trial.ts",
+      "sha256": "c6b184a65eb65d3a3169926d018b782b37fa7130ee0e74ed7909c609b5497f18"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/merge-page.ts",
+      "sha256": "c39c324f50df902316ad6877fb892b5f14ab918225f0d648261e19ef514f37f6"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/owned-stage-executor.ts",
+      "sha256": "48df53208369406398dca3ea9e62b18c25fafd54325be8d8b86b2578834287c7"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/project-context.ts",
+      "sha256": "bde3d39202bc371b885d9756d4fdc0efa8f21e4088cbadc92ddaf2bdbd2c5fda"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/research.ts",
+      "sha256": "48a60dccc64b1ea1cf16dedc03d2478618590d181801e504b1fe06f87461237e"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/review-store.ts",
+      "sha256": "9925a594d62b6a3999cb933c14f867549f2623c6ad421cdc8ae79cf94c0a4114"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/reviews.ts",
+      "sha256": "67ed75f3e723f1290af8ec2b49e27b31ba48c144946a89b560f5e56182931dc5"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/rust-search-candidate.ts",
+      "sha256": "47986ac33134311d99dd4fb98de6d0ed4296eb0cfc2cbe0fb619de413992d012"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/sanitize.ts",
+      "sha256": "ebeb88f33f24dc6d8e23501ffbd67bf8905bfc33bc714cac0e8daeb31c59f773"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/search.ts",
+      "sha256": "27c7247bea964d6cf7774850bf3ec44c2d0f20c1ec8ae0ee0ce7979d9aca5430"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/snapshot-store.ts",
+      "sha256": "03947c73b7c9ca66725eb46c7bdd69cd384c370593744ebd2efb2c413b3e74de"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/source-slug.ts",
+      "sha256": "14a152f6ba2320da4704df440c90e910dcf8a8701bbe7a591b9d120cfaa13bd4"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/stage-executor.ts",
+      "sha256": "b2ee0d264bc59e8a64400bdb914d0044b56fa059c07bd70b8f24299f8b1fd69d"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/types.ts",
+      "sha256": "4da8675e943ecee969ebc3b8d0ff39b4dc232558078f27686fc742b348c1c7b6"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/verifier.ts",
+      "sha256": "9554cb457a7d9bb7faf37795e2827cadb4441047ecd917af7217f88b685f98ee"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/vision.ts",
+      "sha256": "9888b7d42c111fee276896f60b2c00674ef0f05f235c866c31c936d1f6f72be4"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/archive.spec.ts",
+      "sha256": "138479276461d0765ba071c81d371ad9ed472f7a0d741cf70df9c1629132c7fc"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/auto-sediment-edges.spec.ts",
+      "sha256": "d7e2c6464dd037d0a0e406d43d604976aa0ee9ec2388bb27e7606ca295ca58c2"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/auto-sediment-fs-error.spec.ts",
+      "sha256": "6cbb1ad924e2ea8cbb5d28379461fe01a9585f946b2dec2aacea28ae35fd511f"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/canonical-merge.spec.ts",
+      "sha256": "814ef3f825ec4f54687bcacac3d320920445fca06cdb9ab0c784c80b39bbaa52"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/canonical-visibility.spec.ts",
+      "sha256": "e4c8a26d13221f99b1d89afb52cbd590b6e4c9a3c8914439595de1df20ffbced"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/config-fixture.ts",
+      "sha256": "e1bb54124de29ad3c81b9b95a265805a0c6f2a6f93441ed63f1368ff65915c7b"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/credential.spec.ts",
+      "sha256": "973a9ca5e3c4d02b066f2cdbf9e2af10bba44365b3c7aed36b30113fe654d4b0"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/durable-write-eperm.spec.ts",
+      "sha256": "d1362c37d263c7b4e3c2313c583b89b9412f04036fad6021532d59df2465a327"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/endpoint-metadata.spec.ts",
+      "sha256": "6d205aa528660b82f4db75561bfb1886a7d05158957f26d3ddd971cc3db0fe68"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts",
+      "sha256": "4bede2529df86ed632ff56ad0b6bb35d90d45b59d1f998f92ce6a716f4878768"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/fallback-summary.spec.ts",
+      "sha256": "daa1171ce1ac0e2054ad3a0dbd7dd1c1e8577fcba8b6742dbb017b1d6ff62d45"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/file-extract-invalid.spec.ts",
+      "sha256": "ef65510632a32f19ba0fdf65a7ed185d025c757bbfadb074eead4c33af1dec58"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/file-extract.spec.ts",
+      "sha256": "397ef1c881b1bb260467f6aeade76f01463b1774ad919288a6d8333d93ec256d"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/filesystem-races.spec.ts",
+      "sha256": "8d156b9a9e85f0d250777eba5007789aeaff1085f216e81b726a52520f27acb4"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/filesystem.spec.ts",
+      "sha256": "94d1c34abf4445c0d557ec95cbbbcdb7b24d42ba9eeb95dc22ac99e74e0178ab"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/fixtures/promotion-crash-worker.ts",
+      "sha256": "4d8a2779c19e7eb2b82b95f761373e667e20961a10924673ef0e38ae68d4a453"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/frontmatter-utils.spec.ts",
+      "sha256": "a8d36c6f615dbfdb8afcadf26a34bdbb3f572e51e4cbb5d2577b7d60d9846613"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/governance-policy-edges.spec.ts",
+      "sha256": "abdd03526bb7c377b8c2a809b22269d66a57221b00153b60838839bd955f740d"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/governance-policy.spec.ts",
+      "sha256": "6d2591c89cb2e9184f0689c68a4d8dc61a31e88187fac6dab467e100f6dc1282"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/graph-edges.spec.ts",
+      "sha256": "a7172d7bec41727dc8ab5fe94ad8828ab4b6380e1af65bd36a8e715ed07b6acf"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/graph-io-errors.spec.ts",
+      "sha256": "fb926c37d4230758685801039867477d39a238f4d62a3e32c7cb9c07c8d85458"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/graph.spec.ts",
+      "sha256": "038efa5598ebc625e3d36ee03b72add1a50abf1be77cb8c411fa86ef6b76b5c7"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/html-clip.spec.ts",
+      "sha256": "e842b1e9851313d43c49ac72a91cbb30a472d3db1aa17143ee5f86ab7aa8d7b4"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/index-writer.spec.ts",
+      "sha256": "9b7dea446cfbd8854ece70b67fa678ad787470a4fc3082b8c1fe04d6749cbbb4"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/ingest-fallback-non-error.spec.ts",
+      "sha256": "54e87e2ceb4d2f35102e9438372fdb5d4a9961602f0a4f73a87b0dfe1bbfda8b"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/ingest-lifecycle-edges.spec.ts",
+      "sha256": "86b67b0a2b3a4df2cbaf456c142ceef73ed63662ed3e1207a999c52b4d5a4aae"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/ingest-non-error.spec.ts",
+      "sha256": "7f31ce315cfd40b3c356f4ed8d2d2cf3e9ec92a36d30f24537ad48a330219ac9"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/ingest-review-errors.spec.ts",
+      "sha256": "8d413b54ab2e1cdd55522c1015e5092241b625f425547e66fbdf2cadde904fbd"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/ingest.spec.ts",
+      "sha256": "de16a64695039b3a015b4840108f1741dc26ec0a0eb67d1ecec335890dc24c21"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/knowledge-governance-contracts.spec.ts",
+      "sha256": "1d63017ae45f400fecb14ad04ec6fda0b6f845b128faf1d06a7663924f5a14fc"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/knowledge-governance.spec.ts",
+      "sha256": "5ddbd3087e02aff1bfc2e477bac2b2d8ca8a3e7fbcd7c8ba565661b179d365ca"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/measured-trial.spec.ts",
+      "sha256": "11fe86906950ea2ce6e7c0eedac8f7a7766eef031416d65a129aba7468404ed0"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/merge-page.spec.ts",
+      "sha256": "c5819e4d8cd67a32078d499b8771b1a943306863b31b2b59dab8ecefec3d4a09"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/owned-stage-executor.spec.ts",
+      "sha256": "fc83b98b80d87f60838033976d1c0b8623f049c865085343b5e86de4729829ac"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/pinned-tls.spec.ts",
+      "sha256": "9e2d2ee1116a0665673d333d74941d8d5b976539870496058e20a7e312f71da9"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/project-context.spec.ts",
+      "sha256": "f9aec84c5e924d4e90ef40c8c3974a86696a9e78f162d997ed1ad2eeb976cc9a"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/project-lifecycle.spec.ts",
+      "sha256": "ca189424ad105a9a07b984f3109c95529db14abec64d57623a604024d693050c"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/promotion-crash-phases.spec.ts",
+      "sha256": "0b22620d227744e678645080ef5610dee152b388bca96857ab8603fb2a7ca632"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/queue.spec.ts",
+      "sha256": "5c835fe7bf4b4d5ecd6798e02500595341acf5980f58ad7034845112bda8d8b3"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/receipt-primitive-outcome.spec.ts",
+      "sha256": "5b484683095b38980f796784e6fefc7b1fda12addac40dcb256c1aeb9bfa4892"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/research-boundary.spec.ts",
+      "sha256": "93dc589824b2a4e131d8f329d6081156df45e7057ef51ba1e286ecb97aa5c425"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/research-executor.spec.ts",
+      "sha256": "cd10ba02efeb8d87f2a5af29c066fcbff595f9c3023fb2851b21c6fc656c6a89"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/research.spec.ts",
+      "sha256": "9b20e66369884d7fa5481737884c8eb9cd06ba078a4a2c69e20d4d219b1a7019"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/review-store.spec.ts",
+      "sha256": "d2b5530ef0b1898a6fe056bb9540bd00fde934bb8f83cf476ac661e86637ba6b"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/reviews-closure.spec.ts",
+      "sha256": "ef8db67b36ee84abde537954618b05ee8f1c35c929b3e98c86918975ac3d1a31"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/reviews-lifecycle-edges.spec.ts",
+      "sha256": "052ecd429d08a2718d99719b5ea766afbb102ce6a73e474a5331ce60d2f41199"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/reviews-transaction-errors.spec.ts",
+      "sha256": "d4aa90f405a942437f2aeb69986f1d06090e8ae7b2d260ce5a4bdff2385be074"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/reviews.spec.ts",
+      "sha256": "18d7735484618814f98e87de701ac841e07664402fbe2abd0c0d2efa2cdac0b8"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/rust-search-candidate.spec.ts",
+      "sha256": "c4d3645c8f12667e8910c53c1f854565d7d0d7533ae708bd709c1adbdb74b6ae"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/safe-traversal.spec.ts",
+      "sha256": "9b29f993c208b0b14d09591f62144739c2f851d6ea1d7a69b3f5b34328a9ee92"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/sanitize.spec.ts",
+      "sha256": "71c1c5f960c6505f74c45c5bbc8844e429cce1ab1597d2541d1959c6a793e71e"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/search-edges.spec.ts",
+      "sha256": "d1d28faf6c9441867fe0a8ff520faae3a8aed106412406d725474e1c72efd8e5"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/search-fallback.spec.ts",
+      "sha256": "c47a15db9ab69e5f2d89d29fda4ff74147e63ebe433ccb3154180e9b612bd8c2"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/search-io-error.spec.ts",
+      "sha256": "ec6957448b8bc0383c1876d30ab6bec912f0ffd3a3f836ac41e6e44ab751754a"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/search.spec.ts",
+      "sha256": "7380f4cdacc6696ac49f44e34d7b5fd850c5186dfda8ef65a66e8103f1721627"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/security-boundaries.spec.ts",
+      "sha256": "ff96dcf93184c3941196709c29426b877382d8124aff9d52362860ae18423096"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/sediment-extract.spec.ts",
+      "sha256": "577d540398dcaf18f86d7b6088af4625662fad11972ac43fa549075d86218ebb"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/sediment-kind.spec.ts",
+      "sha256": "ae2b6a968c48564dfc65772ecde62da32ded114c6722e349282c02bdffaacbba"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/sediment-summary.spec.ts",
+      "sha256": "fa453704a25921120955b67c19f3d8c69ee310ef8235d6d3fa041395d1acec67"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/sediment-target.spec.ts",
+      "sha256": "dad6cab563b70ce93a06a475fb6a8ca28a442dd49bacaface40a3145a372cb06"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-archive-non-error.spec.ts",
+      "sha256": "7c34d18e505771054fc44fcc3be9460ffd8d0a42187d39076a87aa88ddfffb02"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-closure.spec.ts",
+      "sha256": "bd485e990462b32f84eee2eb9fcaa417c28d5b1126096043cb32f29184edeb5e"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-ingest-primitive-failure.spec.ts",
+      "sha256": "7a0dec22ba11a4482870b8418032738f7fc8f1e38574411223014642fc64d9dd"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-ingest.spec.ts",
+      "sha256": "d6bf396bce0b02c99332dca8a3749c74ec173dfe7d09604c46a9b0bcc941f650"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-init-queue-edges.spec.ts",
+      "sha256": "605c819715d764722aaf8a9351e49c52da968ecda50056bf5836f9754453f7ab"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-mocked-errors.spec.ts",
+      "sha256": "1d037cbe21cf80fab7e9616dcb023829443ede5f8c003a6ad1a636613f20d028"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-network.spec.ts",
+      "sha256": "d6d06c4dd78ad1a0d1e9138e581482738b6f4ce094e23403367118d573e45061"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-project-edges.spec.ts",
+      "sha256": "01a20d10c89a92c8bd5290f796c8e6a534b647668e479755cca56a797bfa8bde"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-summary.spec.ts",
+      "sha256": "8ccfd2609c3df21c391ead208e3b1b07274f745fddafbb76847bc06a1dae4055"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/service-surface.spec.ts",
+      "sha256": "b39364650f41e06919ef06c893beb92f5d960cf5df76ca78d3c3f0fd142b34a0"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/snapshot-store-edges.spec.ts",
+      "sha256": "7a73ffaff46897fd13b29682845d548b64e813cc431c6a279829ea061c5a296c"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/snapshot-store.spec.ts",
+      "sha256": "9f2b42ae0e75b00bd3d145a7e9746fd298d3fd6bf98d3fe130475e042a5bfbf5"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/source-slug.spec.ts",
+      "sha256": "59f4ebb70986c7a092c756f727bf1ae0b0771f9f4e76712db7617db7e0a08721"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/stage-executor-fixture.ts",
+      "sha256": "02352bbc22aaba2cfb0e0975f070fe730d94a751b20066a6f6df59355c68f81f"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/stage-executor.spec.ts",
+      "sha256": "ba08f2169d67db65d52ceb6344eec8424bb516ac8b758858bb97d00279da2cd8"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/stage-null-text.spec.ts",
+      "sha256": "453460d02b34965d8a0d7aa15923fbab1d66cb3a7fa160154c31ab5cf79d56a2"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/utility-edges.spec.ts",
+      "sha256": "a4ef73e692148a096ad7da7c7c8009e0f016f52bda3b1e074fb7d990c2da6bc2"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/verification.spec.ts",
+      "sha256": "b69d6a169f7bc86e7bdaead10a3944e8534dabf3b8603e0660205f168dc26f98"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/verifier-authority-fixture.ts",
+      "sha256": "7751e8ea2c1d94ab72c724c7f9bbfa62621e2ef3061cf8810bb4932b1bae6c0f"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/verifier-closure.spec.ts",
+      "sha256": "ac4af11c753e252763040c302f1001c984762cf1fc5f6a46b8e69814e843ffee"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/vision.spec.ts",
+      "sha256": "4a6524c20317feb961ee8847822fe0a39584d2e1939151765e82aab9f2a5865c"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.md",
+      "sha256": "a9c07f1241cb06b20d6183b7035d12b70930eacee5e239432807c175ac6c4f25"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.zh.md",
+      "sha256": "e8862e9acbc9809af223745ee92e7e50a2c8e134c697e38a8d8392853b0fa729"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.i18n.yaml",
+      "sha256": "b155b29c5762823179c84e604d80968fa2181b61f364db32873c402b92d79c88"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.md",
+      "sha256": "a6567ca4398101c310e53c0040553e90a4486e1b245bbe69eaa610f24d9bd10c"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md",
+      "sha256": "01ab58d523638ba47b4fad915bdf38817d432fdf200db455b8007aa16576e399"
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.i18n.yaml",
+      "sha256": "111ba7988668915a7870818aacacbffbc4a6edff5a8fb233922af080cf60bd27"
+    }
+  ],
+  "sourceBindingMeaning": "119 source/test files frozen to final passing combined validation; six owning documents match their subsequent successful doc checks. Source and compiled public capacity proof do not establish installed/native or full-goal acceptance.",
+  "artifactBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/knowledge-persistence-causal-repairs-and-capacity-audit-result-20261013.json",
+      "sha256": "11b9724be383fb664d4257d444d7bfd945c4f38aa60ff87a0f5697a75157686e",
+      "bytes": 86701
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/ark-upgrade-root-causes-impact-and-acceptance-plan-v4-20261013.zh.txt",
+      "sha256": "aa49ec1c0aeb379846a333c9414e9fe622fbac8aa643c9da00cbedc18279e33a",
+      "bytes": 10340
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt1.wx/result.json",
+      "sha256": "104b77489b01dd0b6f6a4715ce85cfc0eeb763619967e8085ecddab6b3f3c627",
+      "bytes": 22488
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt2.wx/result.json",
+      "sha256": "b2f2b38ca9805d328e46c09d2bb20076f52ad19c9503fe906d274bd6732312d1",
+      "bytes": 24383
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt3.wx/result.json",
+      "sha256": "19479d8dd807c8e3fd5ebcc31440f5cd81555654d73465a884f01cb4ae2119f4",
+      "bytes": 25623
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-utility-preflight-20261013-attempt1.wx/final-report.json",
+      "sha256": "c714cad34951449f560aad574aae7ce0ad6db9991c80ddfe01abc9983e46e974",
+      "bytes": 3907
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-utility-preflight-20261013-attempt2.wx/final-report.json",
+      "sha256": "91433a1cf904373cbf10321b628da928e514174c9e468d1514f6dd8458238f0f",
+      "bytes": 3024
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-utility-preflight-20261013-attempt3.wx/final-report.json",
+      "sha256": "f3038ed88f72e78b041f3ee42a20c237a6c44eddce3342a885a6cc8a351f0faa",
+      "bytes": 3335
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-utility-replay-boundaries-20261013-attempt1.wx/final-report.json",
+      "sha256": "2b929ead9d1d386a8eafc37d56bb8b532d0771f710a40b65bb24a20cd6b4fb77",
+      "bytes": 5089
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-utility-timeout-diagnostic-20261013-attempt1.wx/report.json",
+      "sha256": "9a3724a47f83b28e3e181f79d61ab3a63fabe1087634c8ce3c091639630059b7",
+      "bytes": 2939
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-utility-timeout-diagnostic-20261013-attempt2.wx/report.json",
+      "sha256": "022357717f02de501bf38b9e92464bc000cefab231a2dcaf800c76f0bc2a0a4b",
+      "bytes": 3810
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/owned-stage-worker-join-20261013-attempt2/final-result.json",
+      "sha256": "b10b1dfb45d95ddb1093977788bd7f382cb8b58a05dc8cab032da8853821a979",
+      "bytes": 2633
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/owned-stage-worker-join-20261013-attempt3/final-result.json",
+      "sha256": "8872472bfa0e7cadec5fd4dfbc1a17665c08d9a53065d754697e1a15510031e3",
+      "bytes": 1879
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/owned-stage-worker-join-20261013-attempt4/clarification-node-terminate.json",
+      "sha256": "c13ab3f12afda6407de5619bec5c998d5487bc6f007f9e590f4335bfd9018f35",
+      "bytes": 1801
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/owned-stage-worker-join-20261013-attempt4/final-result.json",
+      "sha256": "c735b149c410576c01aea884ea9acefe3202b93c21d41d44d33727b38d2025bf",
+      "bytes": 3092
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-capacity-owner-change-request-20261013.zh.txt",
+      "sha256": "23113a5c1cd75b327d0f32a8915070a25648de195bdac523cf6f87111d7441b1",
+      "bytes": 3836
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-index-coverage-edges-20261013-attempt2.wx/result.json",
+      "sha256": "30212b5b6f4a96c71aff7b7ee3893c7caa148b04fe2316d88146c9ceb95edb20",
+      "bytes": 2067
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-store-shared-8mib-freeze-20261013-attempt2.wx/report.json",
+      "sha256": "dfc588cc02ef8f228e289bf9302240083b2666560f8a29e8606cba3178775b4d",
+      "bytes": 1516
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/rust-search-stderr-cap-test-20261013-attempt1/final-result.json",
+      "sha256": "f1c2ac237bd36f9358850a1c99a35ccc7f8b04a0433b3f5057ad8a34dd3c1912",
+      "bytes": 2488
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/knowledge-causal-review-and-approved-review-capacity-progress-result-20261013.json",
+      "sha256": "b486d3bfc0a36205f49105e302f12b6e03293259010a8f697c217f7583f48654",
+      "bytes": 39163
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt7.wx/result.json",
+      "sha256": "c5ff44f208f20cbdc45a12d4a63d498a62d52ab02d8b8820eeedca5ec344f2f5",
+      "bytes": 26822
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-capacity-public-paired-probe-20261013-attempt5.wx/final-manifest.json",
+      "sha256": "de6a68dd828bffefc83094f6b7d3cecade32fbac002ec381db702eb6f286c18d",
+      "bytes": 2029
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-capacity-public-paired-probe-20261013-attempt5.wx/paired-review-capacity-report.json",
+      "sha256": "54b4b5df54a357c29c6bd6b4c7f46dc12d43cc690003a17977ecd15417503625",
+      "bytes": 7091
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-append-causal-independent-audit-20261013-attempt1.wx/report.json",
+      "sha256": "2955d8c0e506c04368eb68e11c373e0db9ce33ec82354e3e04b4df1c3c1b3f29",
+      "bytes": 7841
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-source-identity-docsync-20261013-attempt2.wx/report.json",
+      "sha256": "cf5d0363b18fa2c63999bd89f896c84256b2499d820010391a4787efb43233c1",
+      "bytes": 3360
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-source-identity-docsync-20261013-attempt2.wx/root-log-binding-erratum.json",
+      "sha256": "a49300c8172e42be02e6950cd8da89b9f85f94e61436affefe55f774dd559cf3",
+      "bytes": 831
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/lib/index.js",
+      "sha256": "4d9f02c1a18ab7d44d16c8c9be2d6f286f711af4aa4bb46f1b5b1cdfb3055ab6",
+      "bytes": 452265
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt4.wx/result.json",
+      "sha256": "47890fccfa0fbd8958da384b0f37e9e55a96204d62a4fb3c6746362f031da5c3",
+      "bytes": 25104
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt5.wx/result.json",
+      "sha256": "b598914a8dd78b5c6afc0a5aed8d56ca37705a1a09682627623acbd2228b42e3",
+      "bytes": 24443
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-capacity-worker-causal-source-validation-root-20261013-attempt6.wx/result.json",
+      "sha256": "d4038dd535be032958b2130bfa8ff22da2b44b1def8b8b00364d03cfcb2255df",
+      "bytes": 25761
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-store-controls-targeted-coverage-20261013-attempt4.wx/report.json",
+      "sha256": "c6ba0b607bacd12cb7e637da1b2739d8bd21337f31d084deab711588ed6d9448",
+      "bytes": 3784
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-reader-missing-store-branch-20261013-attempt1.wx/result.json",
+      "sha256": "792e90cdc2e7da2dd90c09a673a63ce6d030163a449fc60e5b67199ccd142837",
+      "bytes": 1462
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/reviews-remaining-branches-20261013-attempt1.wx/report.json",
+      "sha256": "f5bd87042bd988afd532ff4bfe331a9bda6818c5c0757457d9d84d46170d2b24",
+      "bytes": 2111
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/reviews-unique-governance-timeout-diagnostic-20261013-attempt1.wx/report.json",
+      "sha256": "ebc4e946dfaa2cac9e69b1311c92883bbd29832da532d397bf72ffc6064bf963",
+      "bytes": 3439
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-wiki-host-typefixture-fix-20261013-attempt1.wx/result.json",
+      "sha256": "db9f698756c6612ee090d0b397f165aa6a9c01cafb3184c69b5310aaf855ae54",
+      "bytes": 1737
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/worker-spy-this-type-correction-20261013-attempt1.wx/report.json",
+      "sha256": "925b6f8f0b75cc93ef0a4f00242c36c11a7dcad726dff154263f3e0520b34f64",
+      "bytes": 2210
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/review-source-identity-docsync-20261013-attempt1.wx/report.json",
+      "sha256": "b59bfb43e67f05ce0edf7efb66f20899e9ae4bacdfe5d4f2b06100ac53f59ecf",
+      "bytes": 4237
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/ark-upgrade-root-causes-impact-and-acceptance-plan-v5-20261013.zh.txt",
+      "sha256": "b9fe208f0721fdc0974c1f003dd5e235c21c02da21b45bf4d863e1aae62b9a1c",
+      "bytes": 13909
+    }
+  ],
+  "newCandidateBuild": false,
+  "candidateSlotChanged": false,
+  "newPaidTasks": 0,
+  "realAuthorityDeployed": false,
+  "githubPublished": false,
+  "formalChanged": false,
+  "overallSpeedLift": null,
+  "overallAccuracyLift": null,
+  "actualPairedLearningUtilityLift": null,
+  "fullGoalAcceptance": "UNKNOWN",
+  "publicCapacityControl": {
+    "manifest": "/Users/hui/ark-test/evidence/review-capacity-public-paired-probe-20261013-attempt5.wx/final-manifest.json",
+    "sha256": "de6a68dd828bffefc83094f6b7d3cecade32fbac002ec381db702eb6f286c18d",
+    "fixtureBytes": 5245006,
+    "fixtureSha256": "97af2c26dbe2d0ff5abf23955722d0f24b0c78cad6601b40b98af8445747c448",
+    "ordinaryAdvisories": 7694,
+    "candidateRows": 1,
+    "sameFourBaselines": true,
+    "oldHeld338": "modelReviews/verifyCandidate refuse at5MiB before authority, calls0",
+    "newCompiled": "modelReviews limit1 returns1; verifyCandidate calls throwing test authority once",
+    "semanticVerificationPass": false,
+    "trustedReceiptCreated": false,
+    "unchangedMeasuredState": "Review/Candidate/event bytes plus receipt directory only; not complete workspace tree atomicity",
+    "ephemeralTestOnly": true,
+    "temporaryProjectRemoved": true
+  },
+  "docValidation": {
+    "finalReport": "/Users/hui/ark-test/evidence/review-source-identity-docsync-20261013-attempt2.wx/report.json",
+    "sha256": "cf5d0363b18fa2c63999bd89f896c84256b2499d820010391a4787efb43233c1",
+    "checks": {
+      "named-translation-pair": "PASS, one named pair consistent",
+      "package-readme-model-experience": "PASS, 212 READMEs; 213 model-context entries",
+      "markdown-wrap": "PASS, 2198 files",
+      "markdown-links": "PASS, 2700 files",
+      "doc-budgets": "PASS, 8 listed documents within ceilings",
+      "package-readme-limitations": "PASS, 212 READMEs",
+      "git-diff-check": "PASS",
+      "production-or-test-changes": false
+    },
+    "sourceIdentityClarified": true,
+    "notePairAndFormatPassedInUnchangedAttempt1Note": "The Note did not change during final README-only format repair.",
+    "retainedFailure": "Our earlier second caption paragraph broke Model Experience shape; merged same text into one field paragraph.",
+    "logChecksumErratum": "/Users/hui/ark-test/evidence/review-source-identity-docsync-20261013-attempt2.wx/root-log-binding-erratum.json",
+    "erratumMeaning": "One manually transcribed checksum hex character corrected; all original bytes and logs retained; source/check status unchanged."
+  },
+  "independentCausalReview": {
+    "path": "/Users/hui/ark-test/evidence/review-append-causal-independent-audit-20261013-attempt1.wx/report.json",
+    "sha256": "2955d8c0e506c04368eb68e11c373e0db9ce33ec82354e3e04b4df1c3c1b3f29",
+    "bindingsMatch": true,
+    "scope": "Read-only owner/caller inspection; proposed concurrency probes explicitly NOT RUN; no native/custody acceptance."
+  },
+  "retainedCurrentFailures": [
+    "attempt4 all1260 behavior pass but3uncovered real branches; added missingstore/provenance/duplicatevariant controls",
+    "attempt5 allother1262 pass but signed Archive governance test5s timeout6655ms; isolated760ms and coverage392ms support resource-contention inference, then maxWorkers2 fullgate passed unchanged timeouts/assertions",
+    "attempt6 all1263behavior/34perfile100 pass but Hosttesttypes failed; explicit realWorker this typing and immutable readonly-row fixture fixes, production unchanged; prior package-only tsc did not cover tests",
+    "publicprobe attempts2-4 setup errors retained before realpublic API execution; new public verifier control throws test sentinel, not verificationPASS",
+    "docshape error and one log-checksum transcription error retained and corrected by exact bytes/log checks; not hidden or promoted to nativepass"
+  ]
+}

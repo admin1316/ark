@@ -1,0 +1,52 @@
+{
+  "schema": "ark.candidate-staged-build-and-install-e2e.v1",
+  "recordedAt": "2026-10-11T04:29:23Z",
+  "status": "PASS_STAGED_BUILD_INSTALL",
+  "attempts": [
+    {
+      "status": "REFUSED_PREPACK_VALIDATION",
+      "reason": "Initial build passed the pack root instead of receipt.runtimeRelativePath as JIUZHANG_RUNTIME_ROOT; the receipt-binding guard rejected it before producing an app."
+    },
+    {
+      "status": "PASS",
+      "reason": "Retried with the runtime-template directory bound by the pack receipt."
+    }
+  ],
+  "candidate": {
+    "version": "3.1.27",
+    "build": "2026101127",
+    "appPath": "/Users/hui/ark-test/candidate-staging-327-current-source-20261011/Ark.app",
+    "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.96edbae431a0e6fd",
+    "sourceCheckout": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+    "sourceCommit": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "sourceTreeDirty": true,
+    "sourceSnapshotSha256": "411402cc9f65049eb7358f889ed9ed78473c92b7ad271c8fffca413bdf0cd31c",
+    "mainBinarySha256": "9e14f3b98277eb242c7be26a7410f3db4160ee1fd926288d0bfc1f193cb9d960",
+    "packReceiptSha256": "075dd089546697323d3780f52db4e8d6b3ee65aac2fcb0263f1e6cc71c047e31",
+    "dataHome": "/Users/hui/ark-test/candidate-home-current-20261011-v327",
+    "candidateBuild": true
+  },
+  "checks": {
+    "candidateBundleStaticCheck": "PASS",
+    "codesignDeepStrictVerify": "PASS",
+    "embeddedNode": true,
+    "embeddedRuntimeLauncher": true,
+    "embeddedRuntimeClosure": true,
+    "stagedInstallE2E": {
+      "receipt": "scripts/rust-migration/candidate327-staged-install-e2e-20261011.json",
+      "status": "PASS",
+      "checks": 121,
+      "processRuns": 2,
+      "failures": 0,
+      "completedAt": "2026-10-11T04:27:53.440Z"
+    },
+    "liveArkWindowRetest": "PENDING"
+  },
+  "release": {
+    "phase6Overall": "UNKNOWN",
+    "phase6Passed": 0,
+    "phase6Unknown": 16,
+    "formalArkChanged": false,
+    "githubPublished": false
+  }
+}

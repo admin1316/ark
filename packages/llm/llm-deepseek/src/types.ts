@@ -15,6 +15,8 @@ export interface WireRequest {
   messages: WireMessage[]
   stream: true
   stream_options: { include_usage: true }
+  /** Constrain assistant message content to valid JSON; omitted unless explicitly enabled. */
+  response_format?: { type: 'json_object' }
   /** Thinking-mode toggle (top level, NOT inside extra_body on the wire). */
   thinking?: { type: 'enabled' | 'disabled' }
   /** Thinking effort (official levels). */

@@ -452,12 +452,13 @@ const RUNTIME_EXPRESSIONS: readonly { files: readonly string[]; expression: RegE
       'packages/experimental/inspector/src/shared/bridge/messages/cordis.ts',
       'packages/experimental/inspector/tests/cordis-query.host.spec.ts',
       'packages/experimental/inspector/tests/cordis-tree.host.spec.ts',
+      'packages/experimental/inspector/tests/fixtures/protocol-source.host.ts',
       'packages/experimental/inspector/lib/index.js',
       'packages/experimental/inspector/lib/worker.js',
       'packages/experimental/inspector/lib/types/shared/bridge/messages/cordis.js',
       'packages/experimental/inspector/lib/types/shared/bridge/messages/cordis.d.ts',
     ],
-    expression: /(?:CORDIS_TREE_TOPIC\s*=\s*|\btopic:\s*|record\.topic\s*!==\s*)(['"])cordis\/tree\1/g,
+    expression: /(?:CORDIS_TREE_TOPIC\s*=\s*|\btopic:\s*|\btopics:\s*\[\s*|record\.topic\s*!==\s*)(['"])cordis\/tree\1/g,
   },
   {
     files: [

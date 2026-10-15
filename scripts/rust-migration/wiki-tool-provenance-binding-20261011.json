@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "status": "source-regression-pass",
+  "date": "2026-10-11",
+  "change": "Bind Wiki retrieval provenance to the registry-owned ToolExecution object instead of model-supplied callId.",
+  "source": {
+    "repository": "/Users/hui/ark/repo",
+    "head": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+    "workingTreeDirty": true,
+    "files": {
+      "packages/host/knowledge-wiki-tools/src/index.ts": "c0df64c15437ea2549384559c3a180aeddb52c02ff0615482e8c3b0740de9609",
+      "packages/host/knowledge-wiki-tools/tests/tools.spec.ts": "f97fbcfaefd5c363e19fd8bb0b2e717bc71c276b1b95df44337d4294e0178081",
+      "packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts": "4aa7dfdde30d8008cd200df884990f24768990e04690eddf808c941d9c9f1040"
+    }
+  },
+  "verification": {
+    "testCommand": "pnpm exec vitest run packages/host/knowledge-wiki-tools/tests/tools.spec.ts packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts --reporter=dot",
+    "testFilesPassed": 2,
+    "testsPassed": 22,
+    "concurrentCallIdCollisionRegression": "pass",
+    "executionSessionSwitchRegression": "pass",
+    "realCordisLoaderComposition": "pass",
+    "packageTypecheck": "pass",
+    "docSync": "30/30 passed",
+    "gitDiffCheck": "pass"
+  },
+  "runtime": {
+    "candidate": "Ark 3.1.24 / build 2026101124",
+    "candidateRebuilt": false,
+    "candidateBehaviorVerified": false,
+    "formalArkChanged": false,
+    "liveKnowledgeReuseVerified": false,
+    "phase6BehaviorAudit": "UNKNOWN"
+  },
+  "limitation": "The concurrency regression and event-persistence integration test establish source behavior only. They do not establish verifier-mediated Knowledge reuse or Ark candidate behavior."
+}

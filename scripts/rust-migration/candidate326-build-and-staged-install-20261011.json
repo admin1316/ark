@@ -1,0 +1,41 @@
+{
+  "schema": "ark.candidate-staged-build-and-install-e2e.v1",
+  "recordedAt": "2026-10-11T02:10:35Z",
+  "status": "PASS_STAGED_BUILD_INSTALL",
+  "candidate": {
+    "version": "3.1.26",
+    "build": "2026101126",
+    "appPath": "/Users/hui/ark-test/candidate-staging-326-full-20261011/Ark.app",
+    "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.f5b666f074025193",
+    "sourceCheckout": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+    "sourceCommit": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "sourceTreeDirty": true,
+    "mainBinarySha256": "6587cfb40a7afa7408730fba17df2fcccc8e97f27440a99e56c4020d16ef3159",
+    "packReceiptSourceDigest": "d6d0507ab9d1da239e671b68ccbcc30b0c84b53cd1d20707740dbd82b89cadb5",
+    "dataHome": "/Users/hui/ark-test/candidate-home-current-20261010-v323",
+    "candidateBuild": true
+  },
+  "checks": {
+    "candidateBundleStaticCheck": "PASS",
+    "codesignDeepStrictVerify": "PASS",
+    "embeddedNode": true,
+    "embeddedRuntimeLauncher": true,
+    "embeddedRuntimeClosure": true,
+    "stagedInstallE2E": {
+      "receipt": "scripts/rust-migration/candidate326-staged-install-e2e-20261011.json",
+      "status": "PASS",
+      "checks": 121,
+      "processRuns": 2,
+      "failures": 0,
+      "completedAt": "2026-10-11T02:10:35.685Z"
+    },
+    "liveArkWindowRetest": "PENDING"
+  },
+  "release": {
+    "phase6Overall": "UNKNOWN",
+    "phase6Passed": 0,
+    "phase6Unknown": 16,
+    "formalArkChanged": false,
+    "githubPublished": false
+  }
+}

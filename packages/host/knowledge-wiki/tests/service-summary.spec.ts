@@ -9,13 +9,14 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import KnowledgeWikiService from '../src/index.ts'
 import { wikiTestConfig } from './config-fixture.ts'
 
 interface SummarySurface {
   snapshots: { dispose(): void }
   summarizeSession(sessionId: string | undefined): Promise<void>
+  [Service.init](): Promise<void>
 }
 
 let mainRoot: string
@@ -30,6 +31,7 @@ let stageExecutor: object
 
 function longEvents(): unknown[] {
   return [
+    { type: 'sandbox/mode', data: { mode: 'workspace-write' } },
     { type: 'turn/start' },
     { type: 'user/message', data: { content: '用户提出一个可复用问题。'.repeat(12) } },
     { type: 'assistant/message', data: { content: '助手给出稳定方法、验证证据和回滚边界。'.repeat(12) } },
@@ -59,20 +61,20 @@ beforeEach(() => {
   ctx = new Context()
   output = decision()
   finishReason = 'stop'
-  readSession = () => Promise.resolve({ session: { cwd: externalRoot }, events: longEvents() })
+  readSession = id => Promise.resolve({ session: { id, cwd: externalRoot }, events: longEvents() })
   stageExecutor = {
     isolation: 'owned-worker-v1',
-    execute: async () => {
+    execute: vi.fn(async () => {
       if (finishReason !== 'stop') throw new Error(`stage ${finishReason}`)
       return { text: output }
-    },
+    }),
   }
   Object.defineProperty(ctx, 'logger', {
     configurable: true,
     value: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   })
   getSessionService = vi.fn<(name: string) => unknown>((name) => {
-    if (name === 'sessionQuery') return { readSession }
+    if (name === 'sessionQuery') return { readSession: (id: string) => readSession(id) }
     if (name === 'knowledgeWikiStageExecutor') return stageExecutor
     return undefined
   })
@@ -94,6 +96,114 @@ afterEach(async () => {
 })
 
 describe('session summary admission', () => {
+  it.each([
+    ['subagent', { origin: 'subagent' }],
+    ['seeded child', { parentSession: 'parent' }],
+    ['delegation depth', { delegationDepth: 1 }],
+    ['different identity', { id: 'another-session' }],
+    ['missing identity', { id: undefined }],
+  ])('does not independently summarize a %s session', async (_label, metadata) => {
+    readSession = id => Promise.resolve({ session: { id, cwd: externalRoot, ...metadata }, events: longEvents() })
+
+    await service.summarizeSession('session-lineage')
+
+    expect(Reflect.get(stageExecutor, 'execute')).not.toHaveBeenCalled()
+    expect(existsSync(join(externalRoot, 'wiki'))).toBe(false)
+    expect(existsSync(join(externalRoot, '.llm-wiki'))).toBe(false)
+  })
+
+  it.each(['read-only', undefined, 'invalid'])('requires an explicit writable logged mode, received %s', async (mode) => {
+    readSession = id => Promise.resolve({
+      session: { id, cwd: externalRoot },
+      events: [
+        ...longEvents().filter(event => Reflect.get(event as object, 'type') !== 'sandbox/mode'),
+        ...(mode === undefined ? [] : [{ type: 'sandbox/mode', data: { mode } }]),
+      ],
+    })
+
+    await service.summarizeSession('session-policy')
+
+    expect(Reflect.get(stageExecutor, 'execute')).not.toHaveBeenCalled()
+    expect(existsSync(join(externalRoot, 'wiki'))).toBe(false)
+    expect(existsSync(join(externalRoot, '.llm-wiki'))).toBe(false)
+  })
+
+  it('uses the latest file policy without treating approval never as read-only', async () => {
+    readSession = id => Promise.resolve({
+      session: { id, cwd: externalRoot, delegationDepth: 0 },
+      events: [
+        ...longEvents(),
+        { type: 'sandbox/mode', data: { mode: 'read-only' } },
+        { type: 'approval/mode', data: { mode: 'never' } },
+        { type: 'sandbox/mode', data: { mode: 'danger-full-access' } },
+      ],
+    })
+    await service.summarizeSession('session-writable')
+    expect(Reflect.get(stageExecutor, 'execute')).toHaveBeenCalledOnce()
+    expect(readFileSync(join(externalRoot, 'wiki', '_candidates', 'topics', 'stable-topic.md'), 'utf8'))
+      .toContain('session:session-writable')
+  })
+
+  it.each(['read-only', 'writable-mode', 'lineage', 'identity', 'cwd', 'conversation', 'event-count', 'missing-surface', 'reader-failure'])
+  ('refuses publication if %s changes while the summary stage is running', async (change) => {
+    const otherRoot = join(externalRoot, 'other-project')
+    const before = { session: { id: 'session-race', cwd: externalRoot }, events: longEvents() }
+    readSession = () => Promise.resolve(before)
+    stageExecutor = {
+      isolation: 'owned-worker-v1',
+      execute: vi.fn(() => {
+        readSession = () => {
+          if (change === 'reader-failure') return Promise.reject(new Error('session unavailable'))
+          if (change === 'missing-surface') return Promise.resolve(null)
+          return Promise.resolve({
+            session: {
+              ...before.session,
+              ...(change === 'lineage' ? { origin: 'subagent' } : {}),
+              ...(change === 'identity' ? { id: 'changed-session' } : {}),
+              ...(change === 'cwd' ? { cwd: otherRoot } : {}),
+            },
+            events: [
+              ...before.events.map(event => change === 'conversation' && Reflect.get(event as object, 'type') === 'assistant/message'
+                ? { type: 'assistant/message', data: { content: 'Changed summary input without adding an event.'.repeat(12) } }
+                : event),
+              ...(change === 'read-only' ? [{ type: 'sandbox/mode', data: { mode: 'read-only' } }] : []),
+              ...(change === 'writable-mode' ? [{ type: 'sandbox/mode', data: { mode: 'danger-full-access' } }] : []),
+              ...(change === 'event-count' ? [{ type: 'diagnostic/event', data: {} }] : []),
+            ],
+          })
+        }
+        return Promise.resolve({ text: output })
+      }),
+    }
+
+    await service.summarizeSession('session-race')
+
+    expect(Reflect.get(stageExecutor, 'execute')).toHaveBeenCalledOnce()
+    expect(existsSync(join(externalRoot, 'wiki'))).toBe(false)
+    expect(existsSync(join(externalRoot, '.llm-wiki'))).toBe(false)
+    expect(existsSync(otherRoot)).toBe(false)
+  })
+
+  it('refuses publication when disposed after the stage but before the fresh read settles', async () => {
+    Object.defineProperty(ctx, 'timer', {
+      configurable: true,
+      value: { interval: () => () => {} },
+    })
+    await service[Service.init]()
+    let reads = 0
+    readSession = async (id) => {
+      if (++reads === 2) await ctx.fiber.dispose()
+      return { session: { id, cwd: externalRoot }, events: longEvents() }
+    }
+
+    await service.summarizeSession('session-cancel-after-stage')
+
+    expect(reads).toBe(2)
+    expect(Reflect.get(stageExecutor, 'execute')).toHaveBeenCalledOnce()
+    expect(existsSync(join(externalRoot, 'wiki'))).toBe(false)
+    expect(existsSync(join(externalRoot, '.llm-wiki'))).toBe(false)
+  })
+
   it('skips missing ids, services, workspaces, events, and short conversations', async () => {
     await service.summarizeSession(undefined)
 
@@ -102,15 +212,15 @@ describe('session summary admission', () => {
       await service.summarizeSession('session-missing-reader')
     }
 
-    readSession = () => Promise.resolve({ session: { cwd: mainRoot }, events: longEvents() })
+    readSession = id => Promise.resolve({ session: { id, cwd: mainRoot }, events: longEvents() })
     await service.summarizeSession('session-main')
-    readSession = () => Promise.resolve({ session: { cwd: externalRoot }, events: 'invalid' })
+    readSession = id => Promise.resolve({ session: { id, cwd: externalRoot }, events: 'invalid' })
     await service.summarizeSession('session-invalid-events')
-    readSession = () => Promise.resolve({ session: { cwd: externalRoot }, events: [] })
+    readSession = id => Promise.resolve({ session: { id, cwd: externalRoot }, events: [] })
     await service.summarizeSession('session-empty-events')
-    readSession = () => Promise.resolve({
-      session: { cwd: externalRoot },
-      events: [{ type: 'turn/start' }, { type: 'user/message', data: { content: 'short' } }],
+    readSession = id => Promise.resolve({
+      session: { id, cwd: externalRoot },
+      events: [{ type: 'sandbox/mode', data: { mode: 'workspace-write' } }, { type: 'turn/start' }, { type: 'user/message', data: { content: 'short' } }],
     })
     await service.summarizeSession('session-short')
 
@@ -277,7 +387,7 @@ describe('session summary admission', () => {
 
     const blocked = join(externalRoot, 'blocked')
     writeFileSync(blocked, 'file', 'utf8')
-    readSession = () => Promise.resolve({ session: { cwd: blocked }, events: longEvents() })
+    readSession = id => Promise.resolve({ session: { id, cwd: blocked }, events: longEvents() })
     output = decision()
     await expect(service.summarizeSession('session-writer-error')).resolves.toBeUndefined()
   })

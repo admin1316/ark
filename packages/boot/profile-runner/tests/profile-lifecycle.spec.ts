@@ -23,7 +23,38 @@ const testDoubles = vi.hoisted(() => ({
   provideCmdline: vi.fn<typeof import('@deepseek-ai/dsh-cmdline').provideCmdline>(),
   createProcessShutdown: vi.fn<typeof import('../src/process-shutdown.ts').createProcessShutdown>(),
   onSignal: vi.fn<(signal: 'SIGTERM' | 'SIGINT', handler: () => void) => void>(),
+  parentIPC: undefined as undefined | {
+    connected: boolean | undefined
+    channelPresent: boolean
+    unref: () => void
+    listeners: Set<() => void>
+  },
 }))
+
+vi.mock('node:process', async (importOriginal) => {
+  const actual = await importOriginal<{ default: NodeJS.Process }>()
+  return {
+    ...actual,
+    default: new Proxy(actual.default, {
+      get(target, key) {
+        const ipc = testDoubles.parentIPC
+        if (ipc !== undefined && key === 'connected') return ipc.connected
+        if (ipc !== undefined && key === 'channel') return ipc.channelPresent ? { unref: ipc.unref } : undefined
+        if (ipc !== undefined && (key === 'on' || key === 'off')) {
+          return (event: string, listener: () => void) => {
+            if (event === 'disconnect') {
+              if (key === 'on') ipc.listeners.add(listener)
+              else ipc.listeners.delete(listener)
+              return target
+            }
+            return target[key](event, listener)
+          }
+        }
+        return Reflect.get(target, key) as unknown
+      },
+    }),
+  }
+})
 
 vi.mock('node:fs', async importOriginal => ({
   ...await importOriginal<typeof import('node:fs')>(),
@@ -69,6 +100,7 @@ type Environment = RunProfileOptions['environment']
 
 beforeEach(() => {
   vi.resetAllMocks()
+  testDoubles.parentIPC = undefined
   vi.spyOn(process, 'on').mockImplementation(((signal, listener) => {
     if (signal === 'SIGTERM' || signal === 'SIGINT') {
       testDoubles.onSignal(signal, listener as () => void)
@@ -78,8 +110,10 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
+  testDoubles.parentIPC = undefined
 })
 
 function profile(overrides: Record<string, unknown> = {}): Profile {
@@ -98,14 +132,14 @@ interface LifecycleFixture {
   hostProvide: ReturnType<typeof vi.fn>
   loader: { create: ReturnType<typeof vi.fn> }
   loaderCreate: ReturnType<typeof vi.fn>
-  ctxDispose: ReturnType<typeof vi.fn>
-  hostDispose: ReturnType<typeof vi.fn>
+  ctxDispose: ReturnType<typeof vi.fn<() => Promise<void>>>
+  hostDispose: ReturnType<typeof vi.fn<() => Promise<void>>>
 }
 
 function lifecycleFixture(services: Record<string, unknown> = {}, state = FiberState.ACTIVE): LifecycleFixture {
   const loaderCreate = vi.fn(async () => undefined)
-  const ctxDispose = vi.fn(async () => undefined)
-  const hostDispose = vi.fn(async () => undefined)
+  const ctxDispose = vi.fn<() => Promise<void>>(async () => {})
+  const hostDispose = vi.fn<() => Promise<void>>(async () => {})
   const loader = { create: loaderCreate }
   const ctx = {
     fiber: { state, dispose: ctxDispose },
@@ -167,7 +201,7 @@ describe('profile runner lifecycle', () => {
       2, 'dsh', 'managed', '/app/package.json', undefined, { userLayer: false },
     )
     expect(defaults.write).toHaveBeenCalledWith(
-      '/profiles/sdk/cordis.yml',
+      join('/profiles/sdk', 'cordis.yml'),
       expect.stringContaining('dsh profile root'),
     )
   })
@@ -539,5 +573,226 @@ describe('profile runner lifecycle', () => {
       patchFiles: [],
       args: [],
     })).rejects.toThrow('live watch failed')
+  })
+})
+
+function lifecycleGate() {
+  let resolve!: () => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<void>((accept, fail) => {
+    resolve = accept
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
+
+async function parentLifecycle(connected: boolean | undefined) {
+  installProfileDefaults(profile({ layers: [] }))
+  const fixture = lifecycleFixture()
+  const stubs = installRunStubs(fixture)
+  const signals = new Map<string, () => void>()
+  stubs.onSignal.mockImplementation((signal, handler) => { signals.set(signal, handler) })
+  const ipc = { connected, channelPresent: true, unref: vi.fn(), listeners: new Set<() => void>() }
+  testDoubles.parentIPC = ipc
+  const actual = await vi.importActual<typeof import('../src/process-shutdown.ts')>('../src/process-shutdown.ts')
+  const exit = vi.fn<(code: number) => void>()
+  const complete = vi.fn<(code: number) => void>()
+  const reportFailure = vi.fn<(error: unknown) => void>()
+  stubs.createProcessShutdown.mockImplementation(dispose => actual.createProcessShutdown(
+    dispose, exit, complete, actual.PROCESS_SHUTDOWN_TIMEOUT_MS, reportFailure,
+  ))
+  const options: RunProfileOptions = {
+    installAnchor: '/app/package.json', environment: {} as Environment,
+    profile: 'managed', patchFiles: [], args: [], watchLiveConfig: false,
+    shutdownOnParentDisconnect: true,
+  }
+  const disconnect = () => {
+    ipc.connected = false
+    for (const listener of [...ipc.listeners]) listener()
+  }
+  return { fixture, stubs, ipc, signals, exit, complete, reportFailure, options, disconnect, actual }
+}
+
+describe('Native parent IPC lifetime', () => {
+  it.each(['ordinary CLI', 'direct Native without IPC'] as const)('leaves %s outside parent ownership', async (mode) => {
+    const f = await parentLifecycle(mode === 'ordinary CLI' ? true : undefined)
+    const options = { ...f.options }
+    if (mode === 'ordinary CLI') delete options.shutdownOnParentDisconnect
+    const result = await runProfile(options)
+    expect(f.ipc.listeners.size).toBe(0)
+    expect(f.ipc.unref).not.toHaveBeenCalled()
+    await result.shutdown.shutdown(0)
+    expect(f.complete).toHaveBeenCalledExactlyOnceWith(0)
+    expect(f.exit).not.toHaveBeenCalled()
+  })
+
+  it.each(['present', 'released'] as const)('refuses already-disconnected startup with its IPC channel %s', async (channel) => {
+    const f = await parentLifecycle(false)
+    f.ipc.channelPresent = channel === 'present'
+    await expect(runProfile(f.options)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(f.stubs.boot).not.toHaveBeenCalled()
+    expect(testDoubles.healProfilesModuleFallback).not.toHaveBeenCalled()
+    expect(f.exit).toHaveBeenCalledExactlyOnceWith(0)
+    expect(f.ipc.listeners.size).toBe(0)
+    expect(f.ipc.unref).toHaveBeenCalledTimes(channel === 'present' ? 1 : 0)
+  })
+
+  it.each(['queued', 'delivered'] as const)('refuses pre-mount parent loss with its disconnect event %s', async (event) => {
+    const f = await parentLifecycle(true)
+    f.stubs.boot.mockImplementation(async (_name, _root, _patches, beforeMount) => {
+      if (event === 'queued') f.ipc.connected = false
+      else f.disconnect()
+      await beforeMount?.(f.fixture.host)
+      return f.fixture.ctx
+    })
+    await expect(runProfile(f.options)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(f.fixture.hostProvide).not.toHaveBeenCalled()
+    expect(testDoubles.provideCmdline).not.toHaveBeenCalled()
+    const owner = f.stubs.createProcessShutdown.mock.results[0]
+    if (owner?.type !== 'return') throw new Error('startup did not create its shutdown owner')
+    await owner.value.shutdown(0)
+    expect(f.fixture.hostDispose).toHaveBeenCalledOnce()
+    expect(f.exit).toHaveBeenCalledExactlyOnceWith(0)
+  })
+
+  it('disposes the startup root when the parent disconnects while boot is pending', async () => {
+    const f = await parentLifecycle(true)
+    const entered = lifecycleGate()
+    const bootGate = lifecycleGate()
+    const disposal = lifecycleGate()
+    f.fixture.hostDispose.mockImplementation(() => disposal.promise)
+    f.stubs.boot.mockImplementation(async (_name, _root, _patches, beforeMount) => {
+      await beforeMount?.(f.fixture.host)
+      entered.resolve()
+      await bootGate.promise
+      return f.fixture.ctx
+    })
+    const pending = runProfile(f.options)
+    // Observe startup until its original promise can be asserted after the owned shutdown.
+    void pending.catch(() => {})
+    try {
+      await entered.promise
+      f.disconnect()
+      await Promise.resolve()
+      expect(f.fixture.hostDispose).toHaveBeenCalledOnce()
+      expect(f.exit).not.toHaveBeenCalled()
+      expect(f.ipc.listeners.size).toBe(0)
+    } finally {
+      disposal.resolve()
+      bootGate.resolve()
+    }
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(f.exit).toHaveBeenCalledExactlyOnceWith(0)
+    expect(f.stubs.createProcessShutdown).toHaveBeenCalledOnce()
+  })
+
+  it('does not count disconnect after SIGTERM as a second interrupt', async () => {
+    const f = await parentLifecycle(true)
+    const disposal = lifecycleGate()
+    f.fixture.ctxDispose.mockImplementation(() => disposal.promise)
+    const result = await runProfile(f.options)
+    const queuedDisconnect = [...f.ipc.listeners][0]
+    try {
+      f.signals.get('SIGTERM')?.()
+      f.disconnect()
+      queuedDisconnect?.()
+      await Promise.resolve()
+      expect(f.fixture.ctxDispose).toHaveBeenCalledOnce()
+      expect(f.exit).not.toHaveBeenCalled()
+    } finally {
+      disposal.resolve()
+      await result.shutdown.shutdown(0)
+    }
+    expect(f.exit).toHaveBeenCalledExactlyOnceWith(0)
+  })
+
+  it('joins appExit disposal before forcing exit after parent loss', async () => {
+    const f = await parentLifecycle(true)
+    const disposal = lifecycleGate()
+    f.fixture.ctxDispose.mockImplementation(() => disposal.promise)
+    const result = await runProfile(f.options)
+    const queuedDisconnect = [...f.ipc.listeners][0]
+    const host = testDoubles.provideCmdline.mock.calls.at(-1)?.[1]
+    try {
+      expect(host).toBeDefined()
+      host?.exit(0)
+      expect(f.ipc.listeners.size).toBe(1)
+      f.disconnect()
+      queuedDisconnect?.()
+      await Promise.resolve()
+      expect(f.exit).not.toHaveBeenCalled()
+      expect(f.complete).not.toHaveBeenCalled()
+      expect(f.ipc.listeners.size).toBe(0)
+      expect(f.ipc.unref).toHaveBeenCalledOnce()
+    } finally {
+      disposal.resolve()
+      await result.shutdown.shutdown(0)
+    }
+    expect(f.complete).toHaveBeenCalledExactlyOnceWith(0)
+    expect(f.exit).toHaveBeenCalledExactlyOnceWith(0)
+    expect(f.fixture.ctxDispose).toHaveBeenCalledOnce()
+  })
+
+  it('retains parent ownership after natural disposal while another referenced handle remains', async () => {
+    const f = await parentLifecycle(true)
+    const result = await runProfile(f.options)
+    const remainingHandle = setInterval(() => {}, 1_000)
+    try {
+      await result.shutdown.shutdown(0)
+      expect(f.complete).toHaveBeenCalledExactlyOnceWith(0)
+      expect(f.exit).not.toHaveBeenCalled()
+      expect(f.ipc.listeners.size).toBe(1)
+      f.disconnect()
+      await result.shutdown.shutdown(0)
+      expect(f.exit).toHaveBeenCalledExactlyOnceWith(0)
+      expect(f.fixture.ctxDispose).toHaveBeenCalledOnce()
+      expect(f.ipc.listeners.size).toBe(0)
+    } finally {
+      clearInterval(remainingHandle)
+    }
+  })
+
+  it('preserves immediate escalation only for a second explicit signal', async () => {
+    const f = await parentLifecycle(true)
+    const disposal = lifecycleGate()
+    f.fixture.ctxDispose.mockImplementation(() => disposal.promise)
+    const result = await runProfile(f.options)
+    try {
+      f.signals.get('SIGTERM')?.()
+      await Promise.resolve()
+      expect(f.exit).not.toHaveBeenCalled()
+      f.signals.get('SIGINT')?.()
+      expect(f.exit).toHaveBeenCalledExactlyOnceWith(130)
+      expect(f.fixture.ctxDispose).toHaveBeenCalledOnce()
+    } finally {
+      disposal.resolve()
+      await result.shutdown.shutdown(0)
+    }
+    expect(f.exit).toHaveBeenCalledOnce()
+  })
+
+  it.each(['failure', 'timeout'] as const)('preserves a nonzero parent-loss shutdown on disposal %s', async (mode) => {
+    vi.useFakeTimers()
+    const f = await parentLifecycle(true)
+    const disposal = lifecycleGate()
+    const failure = new Error('owned root disposal failed')
+    f.fixture.ctxDispose.mockImplementation(() => disposal.promise)
+    const result = await runProfile(f.options)
+    try {
+      f.disconnect()
+      await Promise.resolve()
+      if (mode === 'failure') disposal.reject(failure)
+      else await vi.advanceTimersByTimeAsync(f.actual.PROCESS_SHUTDOWN_TIMEOUT_MS)
+      if (mode === 'failure') await result.shutdown.shutdown(0)
+      expect(f.exit).toHaveBeenCalledExactlyOnceWith(1)
+      expect(f.reportFailure).toHaveBeenCalledExactlyOnceWith(mode === 'failure'
+        ? failure : expect.objectContaining({ name: 'ProcessShutdownTimeoutError' }))
+      expect(f.complete).not.toHaveBeenCalled()
+      expect(f.ipc.listeners.size).toBe(0)
+    } finally {
+      disposal.resolve()
+      await result.shutdown.shutdown(0)
+    }
+    expect(f.fixture.ctxDispose).toHaveBeenCalledOnce()
   })
 })

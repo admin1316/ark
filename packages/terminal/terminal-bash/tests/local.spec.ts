@@ -435,29 +435,68 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
   }, 30_000)
 
   it('pins UTF-8 output encoding so non-ASCII output survives the byte decode', async () => {
+    const timeoutMs = 8_000
     const { ctx, root, agent } = await harness('danger-full-access', {
       idleSilenceMs: 300,
       handoffGraceMs: 300,
-      timeoutMs: 8_000,
+      timeoutMs,
     }, 'pwsh')
+    const startedAt = Date.now()
+    const phases: {
+      phase: string
+      elapsedMs: number
+      waitReason?: string
+      viewport?: string
+    }[] = [{ phase: 'spawn-requested', elapsedMs: 0 }]
     const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
+    phases.push({ phase: 'spawn-ready', elapsedMs: Date.now() - startedAt })
     // The bootstrap itself must have pinned both encodings: the session byte
     // decode is UTF-8, so an un-pinned console writing its host code page
     // garbles every non-ASCII byte that follows.
-    const pinned = ctx.terminals.startSend(agent, created.sessionId, {
-      text: '"console=" + [Console]::OutputEncoding.WebName + " out=" + $OutputEncoding.WebName',
-      submit: true,
-    })
-    const pinnedResult = await pinned.done
-    expect(pinnedResult.viewport).toContain('console=utf-8 out=utf-8')
-    // Char codes keep the submitted line ASCII-only, so the assertion is a
-    // pure output-decode check.
-    const sent = ctx.terminals.startSend(agent, created.sessionId, {
-      text: "[Console]::Write([char]0x4E2D + [char]0x6587 + ' encoding-ok')",
-      submit: true,
-    })
-    const result = await sent.done
-    expect(result.viewport).toContain('中文 encoding-ok')
-    await ctx.terminals.kill(agent, created.sessionId)
+    let sendStartedAt = Date.now()
+    let expected = 'console=utf-8 out=utf-8'
+    try {
+      phases.push({ phase: 'encoding-name-send-requested', elapsedMs: sendStartedAt - startedAt })
+      const pinned = ctx.terminals.startSend(agent, created.sessionId, {
+        text: '"console=" + [Console]::OutputEncoding.WebName + " out=" + $OutputEncoding.WebName',
+        submit: true,
+      })
+      const pinnedResult = await pinned.done
+      phases.push({ phase: 'encoding-name-settled', elapsedMs: Date.now() - startedAt, waitReason: pinnedResult.waitReason, viewport: pinnedResult.viewport.slice(-256) })
+      expect(pinnedResult.viewport).toContain('console=utf-8 out=utf-8')
+      // Char codes keep the submitted line ASCII-only, so the assertion is a
+      // pure output-decode check.
+      sendStartedAt = Date.now()
+      expected = '中文 encoding-ok'
+      phases.push({ phase: 'unicode-send-requested', elapsedMs: sendStartedAt - startedAt })
+      const sent = ctx.terminals.startSend(agent, created.sessionId, {
+        text: "[Console]::Write([char]0x4E2D + [char]0x6587 + ' encoding-ok')",
+        submit: true,
+      })
+      const result = await sent.done
+      phases.push({ phase: 'unicode-settled', elapsedMs: Date.now() - startedAt, waitReason: result.waitReason, viewport: result.viewport.slice(-256) })
+      expect(result.viewport).toContain('中文 encoding-ok')
+      await ctx.terminals.kill(agent, created.sessionId)
+    } catch (error) {
+      // Observe only within this send's original bound. Later scrollback never
+      // repairs its settled viewport or converts the original assertion to PASS.
+      try {
+        const deadline = sendStartedAt + timeoutMs
+        let scrollback: string | undefined
+        while (Date.now() < deadline) {
+          const text = ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 100 }).text
+          if (scrollback === undefined) phases.push({ phase: 'failure-scrollback', elapsedMs: Date.now() - startedAt, viewport: text.slice(-256) })
+          scrollback = text
+          if (scrollback.includes(expected)) break
+          await new Promise(resolve => setTimeout(resolve, Math.min(10, deadline - Date.now())))
+        }
+        phases.push({ phase: scrollback === undefined ? 'scrollback-deadline-expired' : 'last-scrollback', elapsedMs: Date.now() - startedAt, ...scrollback === undefined ? {} : { viewport: scrollback.slice(-256) } })
+      } catch (diagnosticError) {
+        // Record a failed observation while preserving the original test error.
+        phases.push({ phase: 'scrollback-observation-failed', elapsedMs: Date.now() - startedAt, viewport: String(diagnosticError).slice(-256) })
+      }
+      console.error('[pwsh-utf8-phases]', JSON.stringify({ sendRequestedIsNotPhysicalWriteCompletion: true, phases }))
+      throw error
+    }
   }, 30_000)
 })

@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-13T05:25:23.851688+00:00",
+  "phase": "candidate341-authorized-real-native-code-task-and-closeout",
+  "classification": "progress",
+  "gitHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "status": "PASS_SCOPED_NATIVE_CODE_TASK_AND_INDEPENDENT_COLD_REPLAY",
+  "candidate": {
+    "version": "3.1.41",
+    "build": "2026101341",
+    "path": "/Users/hui/ark-test/candidate/Ark.app",
+    "nativeSha256": "ec356bbddb7cd2858a5c38b9c8fae4385bba7a71cf50085c3475039e097c83c6",
+    "sourceFixInstalled": true,
+    "originalRouteReopenedForViewingOnly": true,
+    "currentProcesses": [
+      "38684     1 /Users/hui/ark-test/candidate/Ark.app/Contents/MacOS/Ark",
+      "38686 38684 /Users/hui/ark-test/candidate/Ark.app/Contents/Resources/node/bin/node",
+      "38717 38686 /Users/hui/ark-test/candidate/Ark.app/Contents/Resources/node/bin/node"
+    ],
+    "currentSessionId": "b31fb6b6-cc99-472c-8171-e8f5f9a43c16",
+    "currentSessionReadonlyObserved": true,
+    "noRunningTaskObserved": true,
+    "formalVersion": "3.1.0",
+    "formalPromotion": "HOLD"
+  },
+  "authorization": {
+    "call": "call_f09ca01e2f3c4827a4e4ddd3bf7394e5",
+    "answer": "批准追加最多 ¥5 并受限复测（推荐）",
+    "plan": "/Users/hui/ark-test/evidence/candidate341-real-window-retest-budget-route-change-request-v2-20261013.zh.txt",
+    "planSha256": "e18afc68bbdcbb95d9d6c29fb4464f002fac1ec0d9eab0a51943d9864cb874d6",
+    "scope": "candidate341 temporary loopback guard, fresh CNY5 tranche, one existing-session workspace-write, fixture task only"
+  },
+  "nativeTask": {
+    "sessionId": "b31fb6b6-cc99-472c-8171-e8f5f9a43c16",
+    "cwd": "/Users/hui/ark-test/code-verification-candidate341-20261013",
+    "turns": 2,
+    "wholeRepairReportComplete": true,
+    "readonlyBaseline": {
+      "exitCode": 1,
+      "passed": 0,
+      "failed": 6,
+      "cause": "EPERM in test fixture mkdtemp before code assertions",
+      "escalatedRetry": "REJECTED_BEFORE_EXECUTION",
+      "acceptedAsCodeBaseline": false
+    },
+    "sameNativeSessionCodeBaseline": {
+      "exitCode": 1,
+      "passed": 1,
+      "failed": 5
+    },
+    "nativeAfterRepair": {
+      "exitCode": 0,
+      "passed": 6,
+      "failed": 0
+    },
+    "independentColdReplay": {
+      "exitCode": 0,
+      "passed": 6,
+      "failed": 0,
+      "installedNodeSha256": "2a6444e63caa2908909180832c28d33b4a27c53674ea4a7a39d11d79cefb353c"
+    },
+    "onlyFixtureSourceChanged": [
+      "src/reviews.ts"
+    ],
+    "taskTestsPackageAndOther11OriginalFilesExact": true,
+    "runtimeEventDelta": 0,
+    "repairTurnUiDurationSeconds": 89.9,
+    "speedLiftInferred": false,
+    "productSourceModifiedByThisBenchmark": false
+  },
+  "fee": {
+    "newTrancheMaxCny": 5,
+    "requests": 17,
+    "settledConservativeUpperBoundCny": 1.874848,
+    "pendingReservations": 0,
+    "remainingAccordingToGuardCny": 3.125152,
+    "providerAccountActualTaskBill": "NOT_INDEPENDENTLY_ATTRIBUTABLE",
+    "oldLedgerUnchanged": true,
+    "guardPid35760AndTestPidsJoined": true,
+    "guardListening": false,
+    "profileExactOriginalBytesRestored": true,
+    "sameSessionPermissionRestoredReadonly": true,
+    "globalDefaultPermissionChanged": false
+  },
+  "knowledgeAndTrust": {
+    "realProtectedTrustDeployed": false,
+    "authenticatedFreshReuse": "UNKNOWN",
+    "bootstrapInjectionIsActualUse": false,
+    "keylessApiConfigPreviewApplied": false,
+    "keylessMigrationRequiresSeparateScopeDecision": true
+  },
+  "rustDecision": "RETAIN_TS",
+  "overallSpeedLift": "UNMEASURED",
+  "overallAccuracyLift": "UNMEASURED",
+  "githubPublished": false,
+  "currentSourceGitHubCI": "NOT_BOUND_TO_DIRTY_TREE",
+  "fullGoalAcceptance": "UNKNOWN",
+  "protectedBindings": {
+    "/Users/hui/ark-test/ark-pr39-source-audit-20261011/project-manifest.json": {
+      "expected": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+      "actual": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+      "matches": true
+    },
+    "/Users/hui/ark/Ark.app/Contents/MacOS/Ark": {
+      "expected": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a",
+      "actual": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a",
+      "matches": true
+    },
+    "/Users/hui/ark-test/candidate-home-current-20261011-v328/settings.yaml": {
+      "expected": "305d4badb646e533d149c4a1c199a9f79f58772cf73371147e2c058028db5762",
+      "actual": "305d4badb646e533d149c4a1c199a9f79f58772cf73371147e2c058028db5762",
+      "matches": true
+    },
+    "/Users/hui/ark-test/candidate-home-current-20261011-v328/.credentials.yaml": {
+      "expected": "2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28",
+      "actual": "2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28",
+      "matches": true
+    },
+    "/Users/hui/ark-test/evidence/candidate339-real-retest-budget-20261013-attempt1/ledger.json": {
+      "expected": "8124cac94ab4d789a0ddb4fe5f0822d1600e85b427f2469054e5545a20b64bdd",
+      "actual": "8124cac94ab4d789a0ddb4fe5f0822d1600e85b427f2469054e5545a20b64bdd",
+      "matches": true
+    }
+  },
+  "evidence": {
+    "independentNativeAndColdAudit": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-live-task-preflight-20261013.wx/repair-and-cold-replay-audit-v1.json",
+      "sha256": "1428a6629fb86bc311b44f3688020f4bd1778ef0ed125023ff51cd539243052d"
+    },
+    "modelReport": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-live-task-preflight-20261013.wx/repair-final-model-report.turn2.zh.txt",
+      "sha256": "6b2cb94cae19f57d10dd33c632b7279c190cb54205d4ed5770624a7a5093249c"
+    },
+    "feeAndRestoreCloseout": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-real-window-closeout-20261013.wx/final-closeout.json",
+      "sha256": "22fe179a57b1c7ae52ff1570e23216845f5cf08a6257dbcb2c66787839950c76"
+    },
+    "humanApproval": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-loopback-route-approval-20261013.json",
+      "sha256": "a8212c2e53625059bf19b4f5d6123b00599482367500f416737466dd116a8100"
+    },
+    "settingsTransaction": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-settings-route-transaction-20261013-attempt1.wx/real-transaction/manifest.json",
+      "sha256": "8dc25e8ccbb95c6e6ddc476c70bd0d25a2599431a4c73041232a0362ce3d104c"
+    },
+    "guardPreflight": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-guard-independent-preflight-20261013.wx/review.json",
+      "sha256": "b63327ab9b014ca36640720aeb3d2ae25afdd5c59f8bb9f6b29d040b843e1091"
+    },
+    "nativeCompletedSnapshot": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-native-repair-completed-20261013.json",
+      "sha256": "162a85edb27bc66854b4889f321ba48cf751bc19fb34549a53705ff463b1f771"
+    },
+    "readonlyBaselineAudit": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-native-baseline-independent-review-20261013.wx/review.json",
+      "sha256": "6d11c0d4dd6ea546791d4c9fa6f28d5c129d52110c473d31521e3bb49f846a12"
+    },
+    "newFeeLedger": {
+      "path": "/Users/hui/ark-test/evidence/candidate341-real-retest-budget-20261013-attempt1/ledger.json",
+      "sha256": "348019c8e345e1362e499d027d2492a055cb385d9fb72791d9bac1f8b8267626"
+    }
+  },
+  "retainedFailuresAndLimits": [
+    "339 budget/output-truncated native whole-task failure remains retained; not overwritten by this different build pass.",
+    "The first live in-progress snapshot was repaired only in a private reader copy; its synthesized interrupted turn is observation-only. Final native completed snapshots were not repaired.",
+    "Readonly test fixture cannot create os.tmpdir and did not reach assertions; approved existing-session workspace-write allowed actual test behavior.",
+    "Fixture success proves this task only; multi-file I/O atomicity remains explicitly excluded and no global reliability percentage inferred.",
+    "Protected signer custody/task registration/anti-relay-replay, authenticated fresh knowledge utility, current-source CI/platform/isolation/recovery/rollback/Phase6 remain open.",
+    "Rust 15 score mismatches and three-way benefit gate remain open."
+  ],
+  "next": [
+    "Concentrate remaining work on protected trust and authenticated fresh-session reuse plus platform/recovery gates; no additional packaging justified by this passed task.",
+    "Keep formal/Git promotion held until original full gates are evidenced."
+  ]
+}

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-10-11-shared-native-json-integer-validation.md
+2026-10-11-shared-native-json-integer-validation.md: 30c063f93d0d135f5c121b862587b24f134e0541
+2026-10-11-shared-native-json-integer-validation.zh.md: b088822060a6d8e851a8a0fa081e737151eeded5

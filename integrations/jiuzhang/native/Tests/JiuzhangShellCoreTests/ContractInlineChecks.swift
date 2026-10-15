@@ -213,8 +213,8 @@ if let data = try? Data(contentsOf: infoPlistURL),
   check(info["CFBundleExecutable"] as? String == "Ark", "bundle executable uses the product process name")
   check(info["CFBundleIdentifier"] as? String == "cn.jiuzhangtianmu.industrybrain", "bundle identifier preserves installed product identity")
   check(info["CFBundleName"] as? String == "Ark", "bundle uses the Ark product name")
-  check(info["CFBundleShortVersionString"] as? String == "3.1.0", "bundle marketing version is 3.1.0")
-  check(info["CFBundleVersion"] as? String == "2026092003", "bundle build identifies the long-session repair release")
+  check(info["CFBundleShortVersionString"] as? String == "3.1.42", "bundle marketing version is 3.1.42")
+  check(info["CFBundleVersion"] as? String == "2026101442", "bundle build identifies the reviewed reliability release")
   check(info["CFBundleIconFile"] as? String == "AppIcon", "bundle declares the generated Jiuzhang icon")
   check(info["JiuzhangRuntimeRoot"] as? String == "__RUNTIME_ROOT__", "bundle declares the selected runtime root")
   check(info["JiuzhangLauncherPath"] as? String == "__LAUNCHER_PATH__", "bundle declares the selected launcher")
@@ -658,6 +658,8 @@ let environment = JiuzhangShellContract.childEnvironment(
     "SERVICE_TOKEN": "must-not-leak",
     "HTTPS_PROXY": "http://127.0.0.1:1234",
     "NODE_OPTIONS": "--require=/tmp/inject.js",
+    "ARK_KNOWLEDGE_VERIFIER_CONFIG": "{\"authorityId\":\"launcher\",\"privateKey\":\"test-only\"}",
+    "ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG": "{\"authorityId\":\"evaluator\",\"publicKey\":\"public-only\"}",
     "DSH_HOME": "/Users/example/.dsh",
   ],
   harnessHome: harnessHome,
@@ -679,6 +681,14 @@ check(
 check(environment["DSH_PERMISSION_MODE"] == "read-only", "environment forces read-only mode")
 check(environment["DSH_TELEMETRY_DISABLED"] == "1", "environment disables telemetry")
 check(environment["DSH_API_TOKEN"] == "native-launch-token", "environment passes the native launch token")
+check(
+  environment["ARK_KNOWLEDGE_VERIFIER_CONFIG"] == "{\"authorityId\":\"launcher\",\"privateKey\":\"test-only\"}",
+  "environment passes only the explicitly launcher-owned verifier configuration"
+)
+check(
+  environment["ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG"] == "{\"authorityId\":\"evaluator\",\"publicKey\":\"public-only\"}",
+  "environment passes only explicitly configured measured-trial public trust anchors"
+)
 check(
   environment["ARK_MAIN_ROOT"]?.hasSuffix("/Library/Application Support/Ark/Knowledge") == true,
   "native knowledge root stays outside the Ark source checkout"

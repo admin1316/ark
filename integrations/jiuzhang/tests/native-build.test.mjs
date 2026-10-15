@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile, symlink, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { nativeConfigurationModules, nativeEndpointCoverage, nativePackageEntries, verifyNativeGeneratedImports } from '../src/build-native.mjs'
-import { createArkRuntimePlan } from '../src/runtime-plan.mjs'
+import { createArkRuntimePlan, protectedHelperSourceInputs, assertProtectedHelperInventory, PROTECTED_HELPER_FILES } from '../src/runtime-plan.mjs'
 
 async function fixture(files, outDir = 'lib/types') {
   const root = await mkdtemp(join(tmpdir(), 'ark-native-source-'))
@@ -86,6 +86,9 @@ test('native compiler identity excludes retained lib inputs while package identi
   const source = await createArkRuntimePlan(root, { sourceOnly: true })
 const artifact = await createArkRuntimePlan(root)
   assert.equal(source.inputPlane, 'source')
+  assert.equal(source.requiredFiles.some(entry => entry.path.startsWith('protected-helpers/')), false)
+  assert.equal(artifact.requiredFiles.filter(entry => entry.path.startsWith('protected-helpers/')).length, PROTECTED_HELPER_FILES.length)
+  assert.deepEqual(source.repositoryInputs, artifact.repositoryInputs)
   assert.equal(artifact.inputPlane, 'package')
   assert.deepEqual(source.packages.map(pkg => pkg.name), artifact.packages.map(pkg => pkg.name))
   assert.ok(source.packages.every(pkg => pkg.sourceInputs.every(input => !input.path.startsWith(`${pkg.directory}/lib/`))))
@@ -115,4 +118,43 @@ test('native reflection cannot introduce undeclared runtime dependencies', () =>
   assert.doesNotThrow(() => verifyNativeGeneratedImports("import { x } from '@fixture/domain/types'", {
     name: '@fixture/native', peerDependencies: { '@fixture/domain': '*' },
   }))
+})
+
+
+test('protected helper source identity follows type imports, reexports and literal dynamic imports without executing them', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'ark-helper-inputs-')))
+  try {
+    await writeFile(join(root, 'entry.ts'), "import type { T } from './types.ts'; export { value } from './value.ts'; const later = () => import('./lazy.mjs'); import 'external-package';")
+    for (const name of ['types.ts', 'value.ts', 'lazy.mjs']) await writeFile(join(root, name), "throw new Error('must not execute')")
+    assert.deepEqual(await protectedHelperSourceInputs(root, ['entry.ts']), ['entry.ts', 'lazy.mjs', 'types.ts', 'value.ts'])
+    assert.deepEqual(await protectedHelperSourceInputs(root, ['entry.ts'], true), ['entry.ts', 'lazy.mjs', 'value.ts'])
+    await assert.rejects(protectedHelperSourceInputs(root, ['../escape.ts']), /escapes/)
+    await assert.rejects(protectedHelperSourceInputs(root, ['missing.ts']), /ordinary source/)
+    await symlink(join(root, 'value.ts'), join(root, 'linked.ts'))
+    await assert.rejects(protectedHelperSourceInputs(root, ['linked.ts']), /ordinary source/)
+    await mkdir(join(root, 'node_modules'))
+    await writeFile(join(root, 'node_modules/shadow.ts'), '')
+    await assert.rejects(protectedHelperSourceInputs(root, ['node_modules/shadow.ts']), /escapes/)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('protected helper inventory rejects missing modules, extra metadata and package resolution shadows', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'ark-helper-inventory-')))
+  try {
+    await assert.rejects(assertProtectedHelperInventory(root), /inventory differs/)
+    for (const path of PROTECTED_HELPER_FILES) {
+      const local = path.slice('protected-helpers/'.length)
+      await mkdir(join(root, local, '..'), { recursive: true })
+      await writeFile(join(root, local), '')
+    }
+    await assertProtectedHelperInventory(root)
+    await writeFile(join(root, 'package.json'), '{}')
+    await assert.rejects(assertProtectedHelperInventory(root), /inventory differs/)
+    await rm(join(root, 'package.json'))
+    await mkdir(join(root, 'scripts/node_modules'))
+    await assert.rejects(assertProtectedHelperInventory(root), /resolution shadow/)
+    await rm(join(root, 'scripts/node_modules'), { recursive: true })
+    await symlink(join(root, 'packages'), join(root, 'alias'))
+    await assert.rejects(assertProtectedHelperInventory(root), /resolution shadow/)
+  } finally { await rm(root, { recursive: true, force: true }) }
 })

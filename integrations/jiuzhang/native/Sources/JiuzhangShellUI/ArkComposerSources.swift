@@ -717,6 +717,10 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     return identity
   }
 
+  mutating func discardSubmissionID() {
+    submissionID = nil
+  }
+
   public mutating func replaceText(_ next: String) {
     guard next != text else { return }
     let range = editRange(from: text, to: next)

@@ -1,0 +1,461 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-12T05:22:13.555Z",
+  "status": "VERIFICATION_PUBLICATION_SOURCE_AND_NATIVE_CODE_TASK_PASS_WHOLE_RUN_SCOPE_FAIL",
+  "authorization": "Human approved v3 isolated candidate source/tests; existing native code-task workspace-write workflow reused; no production trust activation or release.",
+  "sourceRoot": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+  "head": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "sourceDirty": true,
+  "sourceBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/reviews.ts",
+      "sha256": "5e2c408e54666ce31bba0e072be3f616611e71a08104bb7e86c0ec90b2158104",
+      "bytes": 71741
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/tests/verification.spec.ts",
+      "sha256": "df943a8891b9269b863d4b53ef5de83915bfae8d416f23a2a1018c7e91b22e2b",
+      "bytes": 74774
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+      "sha256": "575a5729b2aec5d3be3d966ee40b0653391db063b842820c38b1ad13b69546a4",
+      "bytes": 21760
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.md",
+      "sha256": "a19824f34d610048b76f4c34e7d29ba7ed273f64a646fb9b44f86deb3143f8b3",
+      "bytes": 16305
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.zh.md",
+      "sha256": "45cb68edc93c1505af645f32663d0b89d005ddfab9d8bfe5430ff79eebe51cab",
+      "bytes": 14795
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/README.i18n.yaml",
+      "sha256": "c6163b3ce68968995e650c56b7a593243e8e9bd1e4ad39a3cdb6a2521ebab195",
+      "bytes": 438
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.md",
+      "sha256": "d519cf11f7dffc1ecf05b3ed27bac231f85d5602a3d8f018728957bf6a21e5df",
+      "bytes": 14621
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md",
+      "sha256": "1f177fea3de3332e25d605ab325fb2b271c31c2f8a9ab40ad1b20cef7a9103d8",
+      "bytes": 12718
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/.agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.i18n.yaml",
+      "sha256": "6c0227fbe4d1970c7a0e1b497c13527596dd08a8e5eb529a134005d96c667744",
+      "bytes": 577
+    }
+  ],
+  "compiledBindings": [
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/lib/index.js",
+      "sha256": "67e7741361b4846ed287b304c64b47d2bce052c089264c3520320791658a23ec",
+      "bytes": 397505
+    },
+    {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki-tools/lib/index.js",
+      "sha256": "75586861a028884d85849fca1b56bfce8795a993a1ed9716b24c498dfb192f41",
+      "bytes": 22226
+    }
+  ],
+  "runtimeBindings": [
+    {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Info.plist",
+      "sha256": "0dd0e440f4fc6e9f786d0b834a726252e34e092e65d68bb33801a160a40165e6",
+      "bytes": 2289
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/MacOS/Ark",
+      "sha256": "9759827fbb214e30a463515a480f959251aaed40f86087fd7380cce422ac0741",
+      "bytes": 11315504
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-knowledge-wiki/lib/index.js",
+      "sha256": "cc6e56f37a300f02a225225726d9ecb349ee8298e2cb434ddab26919adc43b8a",
+      "bytes": 395472
+    },
+    {
+      "path": "/Users/hui/ark-test/rollback-candidate-v333-before-v334-20261012/Ark.app/Contents/MacOS/Ark",
+      "sha256": "ec9349916e8eb69d69db9ad84a0a9f49028667945a65143ff6a0cea5015bb966",
+      "bytes": 11315504
+    }
+  ],
+  "protectedBindings": {
+    "manifest": {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/project-manifest.json",
+      "sha256": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+      "bytes": 862
+    },
+    "rust": {
+      "path": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/rust-benchmark.json",
+      "sha256": "52b85fb8d97d9b1fb5114cd4e517cdb1f7a84bb3d1d6e7ee6b77a7cbeb2097db",
+      "bytes": 6239
+    },
+    "formal": {
+      "path": "/Users/hui/ark/Ark.app/Contents/MacOS/Ark",
+      "sha256": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a",
+      "bytes": 11280800
+    },
+    "credentials": {
+      "path": "/Users/hui/ark-test/candidate-home-current-20261011-v328/.credentials.yaml",
+      "sha256": "2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28",
+      "bytes": 2236
+    },
+    "settings": {
+      "path": "/Users/hui/ark-test/candidate-home-current-20261011-v328/settings.yaml",
+      "sha256": "219c46c415bf79cecc50a7650a8917a3ea3db9fddc7d02a4a385f928aa9a7813",
+      "bytes": 1107
+    }
+  },
+  "artifactBindings": [
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-red-20261012.json",
+      "sha256": "47184929e2c86d418a402a4c9cbe7d6f62cded6af3d8a81330f44037144acb41",
+      "bytes": 40760
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-red-20261012.log",
+      "sha256": "6b7d3fc8acf26e09c242bbaa74262c23c3f23b385d6a8cfbd8a3b0b629b42170",
+      "bytes": 777
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-receipt-race-red-20261012.json",
+      "sha256": "54c5573da81a6cab9db1b9e87fbe8ef4379c36b209bcaa664df8494e95660ef1",
+      "bytes": 40711
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-receipt-race-red-20261012.log",
+      "sha256": "2dd719c86797f89e94d442056fc7aece1f239f3c51c419bcaabf95148f5fece1",
+      "bytes": 790
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-owner-tests-v1-20261012.json",
+      "sha256": "10aa0fd9ff739748e6434b1bf7aadc393e5502cdc4d79f491daae2e0be380f9f",
+      "bytes": 563450
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-owner-tests-v1-20261012.log",
+      "sha256": "42736cb695075f16e0c21260d871868734821782f3a24e5c0039afb4633a0707",
+      "bytes": 1467
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-owner-tests-v2-20261012.json",
+      "sha256": "a8edb13bd784a8f31897d20b50581072b0d35847f9d5afdb2a664983389a0249",
+      "bytes": 564124
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-owner-tests-v2-20261012.log",
+      "sha256": "c52b0ed94595333718ac41875a159085752e61557908310d3b5a298d53bc296e",
+      "bytes": 1096
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-owner-tests-v3-20261012.json",
+      "sha256": "a9403975e6c6a37930bb82af8071f76041d5b115226b3805c8daba5df8ebb94d",
+      "bytes": 564205
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-owner-tests-v3-20261012.log",
+      "sha256": "98f477e36919e42414586fb153feeedc49a6f595310f27acd45c75fbcff82c0c",
+      "bytes": 1096
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-coverage-v3-20261012/coverage-summary.json",
+      "sha256": "19ad23e5763596f2e013859aeca013917b0705373b599fc4e9d9884a9d3d1b90",
+      "bytes": 666
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-coverage-v3-20261012/coverage-final.json",
+      "sha256": "d9f6bd095c1b63a38ac6500da541eaa6084f0bf00471f28c86e10db3e13d24ef",
+      "bytes": 182019
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-host-types-20261012.log",
+      "sha256": "738348cb95ddb721700468f0a008910ef56e4c357f8f29a3184b9af8dfd03329",
+      "bytes": 503
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-scoped-lint-20261012.log",
+      "sha256": "6bd64c6a5eae0a38f3671e998b2833827f4495402c47682528ce8506ed96389d",
+      "bytes": 535
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-host-types-v2-20261012.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-scoped-lint-v2-20261012.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-host-build-20261012.log",
+      "sha256": "be343467e9cd60e8ae8137bdedc2c970c03bf2fd03f1881d3dd77ded88ab3b14",
+      "bytes": 172925
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-full-lint-20261012.log",
+      "sha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5",
+      "bytes": 30
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-doc-sync-20261012.log",
+      "sha256": "f87d3cb805258609ca28aadbc5cf702b28fac4536329ef68fd093a6bd499717f",
+      "bytes": 2535
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-doc-pairing-20261012.log",
+      "sha256": "49774d6dfd76a6c73ce3dd6773381a34d444a4895e4578c13c31365fb28c21e9",
+      "bytes": 488
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-compiled-20261012-01/result.json",
+      "sha256": "8517abd50963244a9ca874136426532c4c2950a30a30452f00128ab76a748fea",
+      "bytes": 3679
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/verified-event-signing-compiled-20261012-01/loader-smoke.mjs",
+      "sha256": "8af018f913c762df420363dfb09cbef8f81df8b2ba755b325bf343719d7869dd",
+      "bytes": 13875
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-session-read-20261012.mjs",
+      "sha256": "161d80a16d29fa1891d9407ded1ee3d8550b9745b478659671780236d19f7ad4",
+      "bytes": 4352
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-plan-20261012.json",
+      "sha256": "9d8969e5544d055935cfa81e0e24f6114a966b6de0efd9bfa1745e81840c49fd",
+      "bytes": 5865
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/code-verification334-fixture-manifest-20261012.json",
+      "sha256": "33b939e4285e50221f0fc276620a00744f3e219c05e3a3ae6d252fc53631218b",
+      "bytes": 3591
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/code-verification334-fixture-manifest-v2-20261012.json",
+      "sha256": "bcdafa7c2e953676649c3921dc8b7b8dd6544c8267628f43971e0e5bf9d809d0",
+      "bytes": 4109
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/code-verification334-fixture-acceptance-v2-20261012.json",
+      "sha256": "ebf48db7db98a0a2bd3431d3835642a9e709a11508063b2460646c598249a6d9",
+      "bytes": 4184
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/code-verification334-fixture-baseline.log",
+      "sha256": "52042350b85521f131e8a45dd31223bf61bbdbdda98a5e679401a4d7adbd0b64",
+      "bytes": 19112
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/code-verification334-fixture-reference.log",
+      "sha256": "876bd3a5aefa281f938d9eb27e86b1a3700542ecb64ece61c07cc20f20de897b",
+      "bytes": 768
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-final-20261012.json",
+      "sha256": "0ed32097f9e36807a73a94757026153f7ea94e28cfcaa89fb1459f5ac3f2e2f2",
+      "bytes": 19714314
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-final-20261012.jsonl",
+      "sha256": "658147351aaed3933884272a50161020d1ee820b26c9b526cdc384ca0231c233",
+      "bytes": 1987760
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-final-20261012.jsonl.zstd",
+      "sha256": "84f67e116d5e2084510c81a35b4c1b95059bc5d361604261b4013d4999ad7978",
+      "bytes": 795660
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-final-20261012.log",
+      "sha256": "70f62f04347cca2e9df803f9104b23fde23fc16ea94d5c0c68b78f8efad75bf8",
+      "bytes": 488
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-child-final-20261012.json",
+      "sha256": "66382dfe0a0fa542b9352a263f5aa4ff8f6e79eff59a3ffc1bb088a3e39e8df5",
+      "bytes": 17486218
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-child-final-20261012.jsonl",
+      "sha256": "4a541bfe007c20feab3cfd2b769f9c0e3475ed668126bcd81d90fbe17d23da43",
+      "bytes": 1602783
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-child-final-20261012.jsonl.zstd",
+      "sha256": "34532d03a57e6bfbf8fb187f43d1c0fb9063eac8a2ff17c77f51d02a55c02303",
+      "bytes": 652431
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-child-final-20261012.log",
+      "sha256": "8ea00fb2f4da2903feff3ef9265aadb4ea76e0629f50570ff556ef49a31e48f6",
+      "bytes": 494
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-independent-post-test-20261012.log",
+      "sha256": "c9fa0f92a28b39aa7240fafc161fd2b2fcf68396dc8e8c0ef1c917a1a7b6ff36",
+      "bytes": 762
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-independent-audit-20261012.json",
+      "sha256": "91e18d135ac5dee2b9bbf43cc1228999e174706c76ce17e3d783b3d9a081952e",
+      "bytes": 17482
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-pollution-frozen-20261012/manifest.json",
+      "sha256": "0f08f27ee976abc38c6160467f81ca7af95c792643c24a4919216deca3ab490e",
+      "bytes": 1093
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-pollution-frozen-20261012/_candidates/topics/candidate-verification-persistence-boundary-rejection-invariance.md",
+      "sha256": "ef95be7e438376d3b4f5cc61d99fb0c0daa4442633d14c382f424bfbb7b66fba",
+      "bytes": 3265
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-pollution-frozen-20261012/knowledge-events.jsonl",
+      "sha256": "a671a33e248aca37852d43312534da48e6cd358a496a2b365c54b0c11f4aa6f8",
+      "bytes": 10386
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-pollution-frozen-20261012/review.json",
+      "sha256": "4a863d4760514d473fa98bc185d9e9afd9f21c563284cd8a01712b16eb8b09d9",
+      "bytes": 1603
+    }
+  ],
+  "checks": {
+    "redBeforeSourceFix": {
+      "selected": 5,
+      "failed": 5,
+      "passed": 0
+    },
+    "receiptCallbackRedBeforeFinalGuard": {
+      "selected": 2,
+      "failed": 2,
+      "passed": 0
+    },
+    "finalWikiAndTools": {
+      "passed": 1091,
+      "failed": 0,
+      "skipped": 0
+    },
+    "changedReviewFileCoverage": {
+      "lines": {
+        "total": 603,
+        "covered": 603,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 68,
+        "covered": 68,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 709,
+        "covered": 709,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 613,
+        "covered": 613,
+        "skipped": 0,
+        "pct": 100
+      }
+    },
+    "hostTypes": "PASS",
+    "hostBuild": "PASS",
+    "scopedAndFullOxlint": "PASS",
+    "docSync": {
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0
+    },
+    "compiledLoader": {
+      "status": "PASS",
+      "testAuthority": true,
+      "cases": 3
+    }
+  },
+  "change": "Authenticate the complete verification seal before Review/governance publication; revalidate authenticated receipt bindings and complete receipt/Candidate/Review/event file snapshots after authority callbacks. Existing synchronous API and persisted schemas remain unchanged.",
+  "ioBoundary": "Later Review/governance/event I/O still has possible partial projections; this change is not a multi-file WAL, lock or full rollback.",
+  "native": {
+    "candidate": "3.1.34/build2026101234",
+    "rootSession": "1652e161-7241-4228-b58a-cce0f19afc0f",
+    "childSession": "16b96544-d452-4400-a804-7ae5fc6364f8",
+    "rootEvents": 57308,
+    "childEvents": 50318,
+    "privateCopyRepaired": false,
+    "scope": "code-verification-current334-20261012 isolated fixture",
+    "model": "deepseek-official/deepseek-v4-flash/max",
+    "rootPolicy": "workspace-write/ask",
+    "childPolicy": "workspace-write/never/delegation; READ-ONLY only in child prompt",
+    "codeTask": "PASS",
+    "initialNpm": {
+      "exitCode": 1,
+      "passed": 1,
+      "failed": 5
+    },
+    "finalNpm": {
+      "exitCode": 0,
+      "passed": 6,
+      "failed": 0
+    },
+    "independentPostNpm": {
+      "exitCode": 0,
+      "passed": 6,
+      "failed": 0
+    },
+    "protectedFixtureHashes": "11/11 unchanged",
+    "finalSourceOnlyChanged": true,
+    "wholeRunScope": "FAIL",
+    "automaticSediment": "Child disposal caused host-owned untrusted Candidate/review/event writes beyond the one-source-file task; parent backed up and restored the final workspace. Retain violation and restoration separately.",
+    "orchestration": "Child id was incorrectly queried with job_output; unknown-job error followed by sleep120+150. Automatic subagent relay eventually arrived; no lost-report claim.",
+    "modelReport": "Accurate code cause, test results, residual I/O/idempotency limits and contamination/restoration disclosed; independently audited.",
+    "audit": {
+      "path": "/Users/hui/ark-test/evidence/candidate334-native-code-signing-independent-audit-20261012.json",
+      "sha256": "91e18d135ac5dee2b9bbf43cc1228999e174706c76ce17e3d783b3d9a081952e",
+      "bytes": 17482
+    },
+    "installedRuntimeContainsThisNewSourceFix": false,
+    "operatorResubmittedTask": false
+  },
+  "candidateDefaultsRestored": {
+    "settingsExactOriginalHash": "219c46c415bf79cecc50a7650a8917a3ea3db9fddc7d02a4a385f928aa9a7813",
+    "credentialsExactOriginalHash": "2eb935037ee557d81530e734380ad96ea445bf32b74c289806c25e11a60acb28",
+    "mode": "read-only default restored through a blank native composer; historical task remains workspace-write"
+  },
+  "remaining": [
+    "Host-owned auto-sediment admission must respect delegated/task scope; no explicit child/read-only admission exists in the current writer.",
+    "Model-facing subagent settlement contract and ineffective sleep/job polling.",
+    "Repeated valid verification writes remain duplicated; later projection I/O is not atomic.",
+    "Real protected signer/key/program/manifest/artifact ownership, trusted dispatch and complete independent paired learning/cost evidence.",
+    "Original first-calculation gate, full native parity, Windows/platform, CI, safety, source-history, Phase6 and rollback gates."
+  ],
+  "realTrustActivated": false,
+  "actualVerifiedReuse": "UNKNOWN",
+  "learningOrSpeedPercentage": "NOT_MEASURED",
+  "formalChanged": false,
+  "githubPublished": false,
+  "rust": "RETAIN_TS; shadow disabled; original exact-score/platform gates remain open",
+  "retainedFailures": [
+    "Initial new tests failed on original writer; receipt callback race failed before final digest guard.",
+    "Initial owner coverage was below100; final100 required missing-receipt and unsafe-journal refusal cases.",
+    "Initial type/lint fixture errors corrected before final complete tests/build.",
+    "Native fixture v1 reference capture/live source hashes differed; v2 separates frozen source capture from later live source observation.",
+    "A wrong runtime-template path and authorized UI defaultPreset change caused preflight refusals; neither resubmitted the native task.",
+    "The early private-copy SessionPersistence load synthesized an interruption on an unfinished copy; final readRaw/load explicitly proves no repair and real completed turn.",
+    "A directory in pollution backup stopped initial file-only copy; subsequent bounded recursive copying froze all three actual artifacts."
+  ],
+  "fullGoalAcceptance": "UNKNOWN"
+}

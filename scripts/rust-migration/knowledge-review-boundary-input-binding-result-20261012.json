@@ -1,0 +1,357 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-11T18:01:16.399511+00:00",
+  "status": "SOURCE_INPUT_BINDING_REPAIRED_EXISTING_REVIEW_GUARDS_VERIFIED_REAL_REUSE_AND_RELEASE_OPEN",
+  "sourceRoot": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+  "sourceHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "sourceDirty": true,
+  "integrationPlan": {
+    "path": "/Users/hui/ark-test/evidence/knowledge-verifier-integration-plan-20261012.zh.txt",
+    "status": "REVIEWABLE_NOT_DEPLOYED",
+    "sha256": "4c251aef533ae411937215a5841bc3539cfebf58058e93efe0336d2d4d362b77",
+    "userDirection": "No verifier deployed; prepare a concrete integration plan first"
+  },
+  "actualAuthorityProvisioned": false,
+  "productionKeysGenerated": false,
+  "activeProfileWritesByThisWork": false,
+  "repairInputBinding": {
+    "redFailed": 2,
+    "scopeCase": "The query read the original session, but the writer consumed another session capability and journaled that other session after the caller edited its original scope during the await.",
+    "proposalCase": "A valid original proposal was refused when the caller edited its original text while the session query was pending.",
+    "implementation": "Capture the flat proposal and complete access context as frozen operation-owned values before validation and the asynchronous authorization read; reuse all existing scope, source, current-state and one-use capability checks.",
+    "publicSignatureAndPersistentFormatsChanged": false,
+    "realLoaderProof": "Actual Loader, SessionStore and SqliteSessionQuery engine retain original session and rule after caller-owned DTO edits; original source is unchanged and Candidate remains model-unreadable.",
+    "installedCandidateContainsRepair": false,
+    "knownNativeWindowTrigger": false,
+    "positiveLearningEvidence": false
+  },
+  "additionalBoundaryEvidence": {
+    "newBehaviorTests": 30,
+    "serviceCases": 7,
+    "mutableInputCases": 2,
+    "changedSemanticMirrorCases": 8,
+    "changedMeasuredReaderResultCases": 6,
+    "preparedRecoveryRollbackCases": 6,
+    "realMeasuredReaderGrantBytesCase": 1,
+    "semanticAndReaderRecoveryProof": "Existing owners reject changed semantic mirrors, changed reader outcomes, and no-longer-matching prepared transactions while preserving or restoring before-state. Mutable reader fixtures exercise the review contract; they are not real paired trials.",
+    "grantBytesProof": "The real signed-artifact reader refuses altered grant bytes addressed by the old artifact hash and accepts the restored bytes. Test-only artifacts and authorities do not establish authenticated actual use.",
+    "testExpectationCorrections": [
+      "The prior authenticated fixture already contributes one retrieval and one use; a further read and correction reconstruct 2 retrievals, 1 use and 1 correction, not 1/0/1.",
+      "Changing only a stub grantId while retaining the same authenticated trialHash violates the real reader contract. The WAL intentionally binds the trial hash, which commits the signed grant. Recovery now tests changed trialHash; real reader grant-byte tampering is tested separately. No redundant WAL field or production grant defect is asserted."
+    ],
+    "actualUseJournalAuthentication": "OPEN; the previously retained installed-library unrelated-journal-anchor probe is not fixed by these tests"
+  },
+  "checks": {
+    "focused": {
+      "passed": 319,
+      "failed": 0,
+      "skipped": 0
+    },
+    "realLoader": {
+      "passed": 1,
+      "failed": 0
+    },
+    "fullOwnerCorpus": {
+      "testFiles": 78,
+      "passed": 1012,
+      "failed": 0,
+      "skipped": 0
+    },
+    "strictPerFileCoverage": {
+      "status": "FAIL",
+      "commandExitCode": 1,
+      "sourceFiles": 33,
+      "sourceFilesAtAllFour100Percent": 31,
+      "requiredPerFilePercent": 100,
+      "missing": {
+        "packages/host/knowledge-wiki/src/index.ts": {
+          "lines": 99.74,
+          "statements": 99.47,
+          "branches": 99.19,
+          "functions": 100
+        },
+        "packages/host/knowledge-wiki/src/reviews.ts": {
+          "lines": 98.29,
+          "statements": 97.25,
+          "branches": 96.11,
+          "functions": 100
+        }
+      },
+      "aggregate": {
+        "lines": {
+          "total": 4208,
+          "covered": 4195,
+          "skipped": 0,
+          "pct": 99.69
+        },
+        "statements": {
+          "total": 5013,
+          "covered": 4987,
+          "skipped": 0,
+          "pct": 99.48
+        },
+        "functions": {
+          "total": 760,
+          "covered": 760,
+          "skipped": 0,
+          "pct": 100
+        },
+        "branches": {
+          "total": 4037,
+          "covered": 4005,
+          "skipped": 0,
+          "pct": 99.2
+        },
+        "branchesTrue": {
+          "total": 0,
+          "covered": 0,
+          "skipped": 0,
+          "pct": 100
+        }
+      },
+      "scope": "All executable knowledge-wiki and knowledge-wiki-tools source files; not whole-repository acceptance",
+      "coverageInputIndexSha256": "6c25d5c22941a604f144469af36f60f4a3f59fc3da93549a7d9a95f42d7e985b",
+      "currentIndexSourceSha256": "3f861c31e81db30d7a41363dd6a6c7cb6ef191807c3cca36f28df01824279c31",
+      "differenceSinceCoverage": "One source line wrapped for lint and two unnecessary test-only type assertions removed; rebuilt runtime library bytes are identical."
+    },
+    "wikiTypecheck": "PASS",
+    "wikiToolsTypecheck": "PASS",
+    "fullLint": "PASS",
+    "retainedInitialCheckFailures": [
+      "Optional-property capture shape required preserving omitted fields under exactOptionalPropertyTypes.",
+      "Two unnecessary test assertions and one 142-character source line were repaired for lint."
+    ],
+    "sourceBuiltPublicLibrary": {
+      "status": "PASS",
+      "malformedBodiesRefused": 2,
+      "refusedOperationsPreserveSourceAndJournal": true,
+      "laterExactRuleStagesUntrustedCandidate": true,
+      "originalSessionAndRuleRetainedAfterCallerMutation": true,
+      "candidateModelReadRefused": true,
+      "modelCalled": false,
+      "installedCandidateTest": false,
+      "positiveLearningEvidence": false,
+      "librarySha256": "d3fa9981886883363158f51f10abd5de8e936348fca79ef0a6d8f0b2cf77d1e3",
+      "sameAsCoveredRuntimeBytes": true
+    },
+    "shippedCliAcpReplay": {
+      "status": "PASS",
+      "passed": 1,
+      "otherSnapshotsSkipped": 113,
+      "recording": "authored",
+      "positiveLearningEvidence": false
+    },
+    "docSync": {
+      "status": "PASS",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0
+    },
+    "gitDiffCheck": "PASS",
+    "gitCachedDiffCheck": "PASS"
+  },
+  "changes": {
+    "files": {
+      "packages/host/knowledge-wiki/src/index.ts": {
+        "before": "9fa4a5626049b071c61e4312474c64f0f62507e4efeda18bbf6eaa1c7ee02bcf",
+        "after": "3f861c31e81db30d7a41363dd6a6c7cb6ef191807c3cca36f28df01824279c31"
+      },
+      "packages/host/knowledge-wiki/tests/service-surface.spec.ts": {
+        "before": "89e8d7a2738aa9a09c5226c3590af40e4e1a0204d5792127cc878a19dd85d2d8",
+        "after": "f8513263899b3173d918a1e7d8807f498d0443fc5c91a2153a1e0d72be6b3b14"
+      },
+      "packages/host/knowledge-wiki/tests/verification.spec.ts": {
+        "before": "a32ed7a4d08de389d1925a78a12ec04745aec45b503cf0116e458042358d7a11",
+        "after": "f1c23a2dbf8b4ea9450ff1e5b37fe814d343aa81808f7921cfd80e7e5326b156"
+      },
+      "packages/host/knowledge-wiki/README.md": {
+        "before": "004c135d389deb8ec57292b84a800d822802cfe6df4096f416ad47f27f94c836",
+        "after": "0faa0a4ada7a103f990568ff86c70862a4f315d528edd8eaa84cb520be7d3b6a"
+      },
+      "packages/host/knowledge-wiki/README.zh.md": {
+        "before": "2d8f85b35662722815278b5875ec0b2c6eb93c0c39e636923ca3c2cbee29018d",
+        "after": "11ea5643dc46ab2de8226810cce8c07a81eea35dc35b828c7bdcf9391ac50605"
+      },
+      "packages/host/knowledge-wiki/README.i18n.yaml": {
+        "before": "5c4417a33365b918d967dd17b60024331a9b3b81c3792e19ca2f51188259d32b",
+        "after": "d6fd0656a031d6cd6554bfb1b3e81ce9a4a407bc923578528835183de552f45c"
+      },
+      ".agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.md": {
+        "before": "7775601bf13a71d4dfbe72554751369d64c33caa5f14ceb1385f45709cf79b61",
+        "after": "00f8176ce022972ba07ea0207a9057782d20b8ada13ca0220c604c127f2bf862"
+      },
+      ".agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.zh.md": {
+        "before": "e08c4fb92cdf88d840f1d584d6ad74f6b07dfae546e340b839fa16e7b2b079e3",
+        "after": "ddab19f1cab7fd54353785024c2c284edccf9c3d6e7474ceeff4f5580e7dd814"
+      },
+      ".agents/notes/implemented/architecture/2026-10-07-knowledge-governance-and-rust-evidence.i18n.yaml": {
+        "before": "01248d308547871f123f9adee0e843da92d4393ee052986974f53f184949bbca",
+        "after": "dae2f1d99183cfaa0e80e8d5a5e2a115d753847e831a7c6470acff6e377b6167"
+      },
+      "packages/host/knowledge-wiki/tests/measured-trial.spec.ts": {
+        "before": "5569b998d8ec635543b5363c46efd07133de21ac718f6460562b54c38aea5cbc",
+        "after": "8cac97e12fa9485ef834b7d50d503dbe22df57e5560cb8a933cbbd7b6881b55d"
+      },
+      "packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts": {
+        "before": "5a62cdb135afe32429aaebb1333d3204954af8bfbba2513537396c32b821e2cb",
+        "after": "6553ea09f8794909e2191185f21dfed4b9714f265fab0a205b4ea31e86ec6f81"
+      }
+    },
+    "backupRoot": "/Users/hui/ark-test/evidence/knowledge-review-boundary-before-20261012",
+    "patch": "/Users/hui/ark-test/evidence/knowledge-review-boundary-source-doc-change-20261012.patch",
+    "patchSha256": "dcf7e0ce8c132d000b51d7eb345e89052674ebdd199dff634a786e3b74fe5b06"
+  },
+  "apps": {
+    "formal": {
+      "path": "/Users/hui/ark/Ark.app",
+      "version": "3.1.0",
+      "build": "2026092701",
+      "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain",
+      "binarySha256": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a"
+    },
+    "candidate": {
+      "path": "/Users/hui/ark-test/candidate/Ark.app",
+      "version": "3.1.30",
+      "build": "2026101130",
+      "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.ddd3350195492fe5",
+      "binarySha256": "c0b9099ed54c5005dc091deb3476e482cdf9b2d6937f8f428d11c2df173461d4",
+      "wikiLibrarySha256": "5eaf9b39b75b119c1d816e77c1fc060fcf2b26586fb8d236d41228348e12463e",
+      "containsCurrentRepairInputSnapshot": false
+    },
+    "candidateProcesses": [
+      "79957     1 /Users/hui/ark-test/candidate/Ark.app/Contents/MacOS/Ark",
+      "79964 79957 /Users/hui/ark-test/candidate/Ark.app/Contents/Resources/node/bin/node",
+      "79987 79964 /Users/hui/ark-test/candidate/Ark.app/Contents/Resources/node/bin/node"
+    ],
+    "at": "2026-10-11T17:52:04.052603+00:00"
+  },
+  "generatedOutputCleanup": {
+    "status": "PASS",
+    "owner": "website/build.ts:cleanDocSiteOutput",
+    "output": "/Users/hui/ark-test/ark-pr39-source-audit-20261011/website/.dist",
+    "removedGeneratedFiles": 791,
+    "removedGeneratedBytes": 45018603,
+    "removedGeneratedHtml": 173,
+    "retainedTrackedSourceHtml": 41,
+    "retainedSourceHashes": {
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/brand-reveal-assemble-zoom.html": "6ef0274922bf33c9362c638476d97c475931941263f03934ce06f677c8301e5f",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/comparison-split-cards.html": "6fbf71a6620971f67d984d08346758a088d45297b68f2098d05a516001daa2b8",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/concept-demo-decode-pan.html": "003f8bbde732f9c982493ba3a531c8d861bdb3119fe772dc3bad135924b355ac",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/cta-morph-press.html": "4d423157e55cc7c46d112d3471bac207a2072f5f7d190f506809bc6c7ac68644",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/cta-orbit-collapse.html": "d41514f8bb0a4808a66f719bdc3b2118f16a476d47ac71b7db14a73e723f7aee",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/demo-page-scroll-spotlight.html": "aa1252821669b2f81d7925bac2869ee9a06650abec152c9ab0c978df1f9b2808",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/hook-counter-burst.html": "4766950cad912becd81d293ee23475caf4eac8c02dbde31c4c4f7ed015cb127b",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/messaging-multi-phrase.html": "dbfa5e74f09b0e2b45cb28cd100915143aab7f59ad3a2dffb46f5f88c3cccd77",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/metric-video-text-pivot.html": "5d0ede336552e9ac402bd7bf7dc84d95c9f76699d0e8ebb78f2dfeac3c7ebc36",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/problem-mockup-overwhelm.html": "127d94b53a48d36bf1a5eb5a9fd4e44b0c4cb3a5478c19783aff940f6683106d",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/proof-logo-chain.html": "b607d15d84d7666cb519626f1292fa42902f1c58e38766c2c8b5dc75825e7cc2",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/takeover-ticker-displace.html": "8d39a9028d8302ccd185d6fa2c5a6da1f097b4e9af083d18a1f0063a96989d22",
+      ".agents/skills/media-production-studio/modules/hyperframes-animation/examples/workflow-approve-press.html": "2b04b61cc30113195f3a8173aec2a3abcaf13ddd5b7d577baea44aacae65990d",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/biennale-yellow/caption-skin.html": "e6e24155d587ab0fe1beca7c62e6fbfcce9d069cfb9cf02dfcecffe95194554b",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/biennale-yellow/frame-showcase.html": "5ba04e47cf9897e023dcfa49e1ec26fe26bac0c5061097dc6e7cb1d9ed46d7d0",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/blockframe/caption-skin.html": "85ef2bf1579587b97e26b617ea0c957329879e8413c2875605a278ad947c7d26",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/blockframe/frame-showcase.html": "8d2e4963713928b353d0aa28c2c83fce415df81b66a500c192b602c0aaf4ddf2",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/blue-professional/caption-skin.html": "a4cec56e723db7fc6b6f0c71a52314f80fc3f3f6c43747ae46af8a0761aa0c8b",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/blue-professional/frame-showcase.html": "715b130d086977a48925a3c79bb079fbc7270274c9c9a7761bf275df3020b0ba",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/bold-poster/caption-skin.html": "c5408b8d2b36028d85455003a5f0bbcde863f33474799477bab6afa261ec0214",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/bold-poster/frame-showcase.html": "57bbc3374b6a8b37ce59e36ed784c22bbb88fd44d039955221913b3e1bacf159",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/broadside/caption-skin.html": "d09b3e09bf497c0f2ed8db9dee181f376f75c65a25246181dc9d8f82cc938d6a",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/broadside/frame-showcase.html": "8d23a2cbeb898568a5626b38ffc864236fb4a09930d59b17c34c45f34c8e4161",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/capsule/caption-skin.html": "a66a37a0b2060ebe635f4d2309b3cf0f78c31203de19c12fc477a23009ec0e89",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/capsule/frame-showcase.html": "b3a642b5df3bbfb1ff227f1b82ee3ea02b51f20a0d7c5c46c97d72b180cddb4f",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/cartesian/caption-skin.html": "48f7b844d2936e0e0fc142605ec627adadc12120691bacb50dba7390d8706137",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/cartesian/frame-showcase.html": "d7867cee5e07c4f22345c566071f2ce0261b3fccca111a94dfbec5fde64f3e55",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/cobalt-grid/caption-skin.html": "506c0abc064ee4450afc7d34ff71a6fd04fa0dda69d57608ab310569d7651c03",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/cobalt-grid/frame-showcase.html": "b135214cd2e310273a01e3f72b2828149f022803954a22a13cbf27aa1c2f518a",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/code-editorial/caption-skin.html": "fe96654fb76433caf5b3c81e4b9c52c07c1d03b267411c12ed94f054ccb92028",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/code-editorial/frame-showcase.html": "08d711f5409a6af3fb6de05febe47fee77e4c8e85517bf2d087e2277b524e4ab",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/coral/caption-skin.html": "9af79dabd44f5d6ac934a5c371aad5316a4e2db76542a1ec3c969245b33892fa",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/coral/frame-showcase.html": "8ddf31ae13a4e57fe9730892fbbcb171cae67a204b5cb00b00374984f49b8f76",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/creative-mode/caption-skin.html": "ef4a13de5757453294db153607891e60ab3f408603ed222e53b908359dcbd296",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/creative-mode/frame-showcase.html": "32c1371fcd526c56edb515e5b255ad736a3e330ba3ff2631c61576064b384ef0",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/daisy-days/caption-skin.html": "6090e702f09c1df11e7289269a5b1ebc126981107c3ed5d9f951f69d471d1494",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/daisy-days/frame-showcase.html": "4fb93e5fa3ba12367f303996b6ca8b62f8e18c721d02e8032274df12d49d96f3",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/editorial-forest/caption-skin.html": "31999378b8fed9a4511432e38017f287127ce25a534ee57bfe4cc0f3b74c7d48",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/frame-presets/editorial-forest/frame-showcase.html": "bb87b88b91184f4fee7f02eea63ed35d9d378fa89fad8988326e31e82a43dbb1",
+      ".agents/skills/media-production-studio/modules/hyperframes-creative/templates/design-picker.html": "c417139fef8e21b34d56a85cedda8b9597c9574e0727ce603a4743c4ee592c1a",
+      ".agents/skills/visual-production-studio/modules/visual-storyboard-master/examples/minimal-storyboard.html": "d634cdf7ed63ed38fd0526ed5130b55ddc54b11db96857e198b2ee48c91038fc"
+    },
+    "arkRuntimeChanged": false,
+    "arkSpeedGainMeasured": false,
+    "initialFailure": "The external .ts helper was transformed as CommonJS and failed on the imported ESM top-level await before deletion. The .mts helper reuses the unchanged existing output owner successfully."
+  },
+  "github": {
+    "url": "https://github.com/admin1316/ark/pull/39",
+    "state": "OPEN",
+    "isDraft": true,
+    "head": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "checks": {
+      "SUCCESS": 25,
+      "FAILURE": 5
+    },
+    "uploadedByThisWork": false,
+    "mergedByThisWork": false
+  },
+  "protectedGuards": {
+    "manifestSha256": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+    "immutable": {
+      "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+      "planHash": "c11146420879d77ab2ad509855c446f65b578caafe9b65b6398b9a373e19884b",
+      "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+      "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+      "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+      "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+      "dataFormatHash": "da158c5f36e4ac8efe3d5495fd60ad66d79d4a8dd6f0614ba67a163a62436ea8",
+      "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+      "stateVersion": 1
+    },
+    "rustBenchmarkSha256": "52b85fb8d97d9b1fb5114cd4e517cdb1f7a84bb3d1d6e7ee6b77a7cbeb2097db",
+    "changed": false
+  },
+  "rustDecision": "RETAIN_TS; disabled shadow unchanged",
+  "openGates": [
+    "Two owner source files still fail strict per-file coverage; whole-repository coverage remains unestablished.",
+    "Actual semantic verifier program and trusted configuration are not deployed.",
+    "Actual use-log journal authentication and project/workspace binding are not implemented.",
+    "Real paired utility, all 12 quality metrics, fresh-dialogue correct reuse and all 16 native behaviors remain unestablished.",
+    "Installed 3.1.30 lacks the source-only configuration/latest-human/input-binding repairs.",
+    "Native read-only heredoc first-command failure, report factual precision, initial candidate process disappearance and complete Phase 6/platform/security/rollback checks remain open.",
+    "Five current remote CI failures and conditional GitHub/formal publication remain open."
+  ],
+  "evidence": {
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-service-baseline-20261012.json": "1fa48e811c0f9794f74b0c9b3a3b4cdbbc6876ca00c1f18ed23b492ae973bc94",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-utility-diagnostic-20261012.log": "71bf71a174d95f79ded69ff19e0340fe077795081a94ccc5829939007de6c997",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-verification-baseline-20261012.json": "852109f87bd411978450e01eaadc0e7ffc3227c05ae43a8c4e66aefba49a9580",
+    "/Users/hui/ark-test/evidence/knowledge-repair-input-alias-red-20261012.json": "bfd88f1aa5a5f762ba3fa4f9df0efbfbaba2c9f38eee8dea2191f5b29edfd78b",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-focused-20261012.json": "5118a19e97dacb96f4442a8aa69ceb474cd053d574bb3930f424e15070fcb2e8",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-input-binding-green-20261012.json": "beb18538f3cef822d230279ca4a02c8843e921629fb5d32d8be7e32c29ca420e",
+    "/Users/hui/ark-test/evidence/knowledge-repair-input-binding-loader-20261012.json": "e0cb2beaa238deffda6a0627775ba7be1a83b80d633a45817f54002b9c080a53",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-full-tests-20261012.json": "3cbc7cecada35458b28c01697c8c85de6586597e04323a19e2511751b3edf466",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-full-tests-v2-20261012.json": "34d5f420b8efc813e80a7ddde588e9dd3d44f8e44a17c329b07cdf4c080612ec",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-full-coverage-v2-20261012.log": "93654258864839a9294bea59e54a9858f9952944c55418d818d8be6de875752e",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-coverage-v2-20261012/coverage-summary.json": "e10307a17e237689b6f536f3ae9de08cb115c89c876815cca19514b0690bbf28",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-coverage-v2-20261012/coverage-final.json": "97e115ab57b667307c174d6126e635c08c716c0595bbac1ddb8fdd81c2894d80",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-coverage-input-hashes-20261012.json": "a19d700d99905d12b9a025d837e71cc0acdbf37eced132e5add6279556f64f25",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-wiki-typecheck-20261012.log": "7a85064472ed89d2057e4df80fbc0443e8a399dfc73ca974d16f473eb14f3f81",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-wiki-typecheck-v2-20261012.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-tools-typecheck-20261012.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-lint-20261012.log": "b3fb924c1586a814e88b3edce4aef585797cfb23bf5b66d1531765560289358d",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-lint-v2-20261012.log": "749cc6502cd06290728ec3e51450cdc426f464aa0bf6e2c322d65321f78ac23e",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-lint-v3-20261012.log": "c767f7d79de3a4c3822b01074e1f2fdc63d8651a0a646f9b80a11415a5a1aadf",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-built-library-smoke-20261012.mjs": "b5e64e0f7c10811d569d1847aee955c5048334211a22c026bce78e16c19233c8",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-built-library-smoke-20261012.log": "deb27e5210411b4385c7c5a1768872cb27dd8e7ff39b3fe1f58c3f0cda8195b7",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-acp-replay-20261012.log": "d2ae39d79f1412ef8067d10d990376f675888c38b31e8d236efd9887a91e4fd1",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-doc-sync-20261012.log": "098a8bfe9e5cec80212573b679bcdbc46edc7de854eeaf46a888094c49b3578e",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-translation-pairing-20261012.log": "49774d6dfd76a6c73ce3dd6773381a34d444a4895e4578c13c31365fb28c21e9",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-doc-output-cleanup-20261012.log": "e6a950ad3038b5c55ee4f4b18317285cce813b5f835197cdbab2094ab5766fe2",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-doc-output-cleanup-v2-20261012.log": "7e4804d5bd9addd37a69893910de607ac37bc70f1eb95864bd2adeb90d0ed847",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-clean-doc-output-v2-20261012.mts": "1ffeee6dd22fef549bfec45f178f1305db579d8a0d5fbcf691ebea1fc82838aa",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-doc-output-cleanup-20261012.json": "a13d2b67f8ccd499c0c2c1ccc5de7ff2be8da14ecb866e60e0af41324119ecbb",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-github-pr39-readonly-20261012.json": "9b287024e735fde65ef74d490b8ba5376f8c9ac987a9e6148b27f6f746c3d48e",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-app-identities-20261012.json": "1afb495dd029bb767d89d719b5dcb11cf66c9b381debdcb30056a5eeb4aeebad",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-source-doc-change-20261012.patch": "dcf7e0ce8c132d000b51d7eb345e89052674ebdd199dff634a786e3b74fe5b06",
+    "/Users/hui/ark-test/evidence/knowledge-review-boundary-change-hashes-20261012.json": "92ef9a76ab75388bb0c13ccda4e72472b278ae89ea7acbcf57ef0586a1c28b16",
+    "/Users/hui/ark-test/evidence/knowledge-verifier-integration-plan-20261012.zh.txt": "4c251aef533ae411937215a5841bc3539cfebf58058e93efe0336d2d4d362b77",
+    "/Users/hui/ark-test/evidence/measured-trial-journal-anchor-gap-20261012.json": "b759ce6d167b51056f01e7bf24c5b69a2d78510c0000589357060b2784f28934"
+  }
+}

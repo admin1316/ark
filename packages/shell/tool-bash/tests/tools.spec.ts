@@ -29,7 +29,7 @@ const testToolSignal = new AbortController().signal
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-spec-'))
 
 /** Foreground-only harness: no job runtime (backgrounding fails loud here). */
-async function setup() {
+async function setup(config: ToolBash.Config = {}) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
@@ -38,7 +38,7 @@ async function setup() {
   ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
   await ctx.plugin(BashEnvPlugin)
   await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
-  await ctx.plugin(ToolBash)
+  await ctx.plugin(ToolBash, config)
   return ctx
 }
 
@@ -560,7 +560,7 @@ describe('background execution through the job runtime', () => {
 
     const schema = ctx.tools.schemas().find(s => s.name === 'bash')!
     expect(Object.keys(schema.parameters.properties as Record<string, unknown>))
-      .toEqual(['command', 'description', 'timeoutMs', 'workdir'])
+      .toEqual(['command', 'stdin', 'description', 'timeoutMs', 'workdir'])
     expect(schema.description).toContain('Background execution is not available')
     expect(schema.description).not.toContain('run_in_background')
     // The registry-held definition agrees (schema and capability never disagree).
@@ -1058,13 +1058,124 @@ describe('tool-owned UI presentation (presentCall / presentResult)', () => {
   })
 })
 
+describe('literal bash stdin', () => {
+  it('rejects invalid input-limit configurations before registering a tool', () => {
+    for (const maxStdinBytes of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => { ToolBash.apply(new Context(), { maxStdinBytes }) }).toThrow('maxStdinBytes must be a positive safe integer')
+    }
+  })
+
+  it('passes quoted Unicode input literally, closes it, and shows the complete input', async () => {
+    const ctx = await setup()
+    const args = { command: 'cat', stdin: '中文 $HOME `printf changed` O\'Reilly\n\\end\n', description: 'Read literal standard input' }
+    try {
+      const result = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('stdin-literal'), name: 'bash', arguments: args })
+      expect(result.isError).toBe(false)
+      expect(text(result)).toBe(args.stdin)
+      expect(ctx.tools.get('bash')!.presentCall!(args)).toEqual({
+        card: 'generic', title: 'cat', kind: 'execute',
+        rawInput: { command: 'cat', stdin: args.stdin },
+        content: [{ type: 'text', text: args.description }],
+      })
+      expect(ctx.tools.get('bash')!.presentResult!(args, result)).toEqual({
+        card: 'terminal', output: args.stdin, exitCode: 0,
+      })
+      expect(ctx.tools.get('bash')!.presentResult!(args, {
+        content: [{ type: 'text', text: 'denied\n[exit code: 7]' }], isError: false,
+      })).toEqual({
+        card: 'terminal', output: 'denied', exitCode: 7,
+      })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('accepts empty input and the exact UTF-8 byte limit, rejecting oversize before execution', async () => {
+    const ctx = await setup({ maxStdinBytes: 6 })
+    const resolve = vi.spyOn(ctx.shell, 'resolve')
+    try {
+      for (const stdin of ['', '中文']) {
+        const result = await ctx.tools.execute({
+          signal: testToolSignal, callId: CallId('stdin-bound'), name: 'bash',
+          arguments: { command: 'cat', stdin, description: 'Read bounded input' },
+        })
+        expect(result.isError).toBe(false)
+        expect(text(result)).toBe(stdin || '(no output)')
+      }
+      const rejected = await ctx.tools.execute({
+        signal: testToolSignal, callId: CallId('stdin-oversize'), name: 'bash',
+        arguments: { command: 'exit 17', stdin: '中文a', description: 'Reject oversized input' },
+      })
+      expect(rejected.isError).toBe(true)
+      expect(text(rejected)).toContain('invalid stdin: exceeds 6 UTF-8 bytes')
+      expect(resolve).toHaveBeenCalledTimes(2)
+      const schema = ctx.tools.schemas().find(tool => tool.name === 'bash')!
+      expect(JSON.stringify(schema.parameters)).toContain('at most 6 bytes')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('delivers input larger than a pipe buffer and preserves a child exit that ignores it', async () => {
+    const ctx = await setup()
+    const stdin = 'x'.repeat(256 * 1024)
+    try {
+      const read = await ctx.tools.execute({
+        signal: testToolSignal, callId: CallId('stdin-large'), name: 'bash',
+        arguments: { command: 'wc -c', stdin, description: 'Count a large input stream' },
+      })
+      expect(read.isError).toBe(false)
+      expect(text(read).trim()).toBe(String(stdin.length))
+      const ignored = await ctx.tools.execute({
+        signal: testToolSignal, callId: CallId('stdin-ignored'), name: 'bash',
+        arguments: { command: 'exit 7', stdin, description: 'Exit without consuming input' },
+      })
+      expect(ignored.isError).toBe(false)
+      expect(text(ignored)).toContain('[exit code: 7]')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('delivers literal input to a background job through the same process owner', async () => {
+    const ctx = await setupWithTasks()
+    const stdin = 'background $literal `tick`\n'
+    try {
+      const started = await call(ctx, 'bash', { command: 'cat', stdin, description: 'Read background input', run_in_background: true })
+      expect(text(started)).toBe('started background job bash-1')
+      const final = await call(ctx, 'job_output', { job_id: 'bash-1', wait: true })
+      expect(text(final)).toContain(stdin)
+      expect(text(final)).toContain('[status: completed, exit code: 0]')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('cancels a command while its supplied input is blocked in the pipe', async () => {
+    const ctx = await setup()
+    const controller = new AbortController()
+    const timer = setTimeout(() => { controller.abort() }, 100)
+    try {
+      const result = await ctx.tools.execute({
+        signal: controller.signal, callId: CallId('stdin-cancel'), name: 'bash',
+        arguments: { command: 'sleep 60', stdin: 'x'.repeat(256 * 1024), description: 'Wait without consuming input' },
+      })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('aborted')
+    } finally {
+      clearTimeout(timer)
+      await ctx.fiber.dispose()
+    }
+  })
+})
+
 describe('the model-facing bash tool builds its request from named args only (no {...args} forward)', () => {
   const recordingDshHome = join(spillDir, 'dsh-home')
 
   /**
    * Records every {@link ShellExecRequest} the consumer hands to `resolve()`, so a
    * test can assert what the model-facing tool DID and DID NOT forward. The `bash`
-   * tool does not expose trusted-plugin fields (`stdoutMaxBytes`, `stdin`, or
+   * tool does not expose trusted-plugin fields (`stdoutMaxBytes` or
    * `env`) as parameters, so it must build its request from named args only and
    * never spread unknown tool-call keys into it. This guard's job is to catch a
    * future refactor that blindly forwards `...args` — which would silently thread
@@ -1235,7 +1346,7 @@ describe('the model-facing bash tool builds its request from named args only (no
 
   it('does not forward trusted-only fields even when the model includes them as extra arguments', async () => {
     const { ctx, bash } = await setupRecording()
-    // Unknown `env` and `stdin` keys are ignored by the schema and named request construction.
+    // Unknown `env` keys are ignored; the advertised stdin field is forwarded literally.
     // This preserves the request shape; it is not a security boundary because shell syntax can
     // already set environment variables or feed stdin.
     await ctx.tools.execute({
@@ -1246,7 +1357,7 @@ describe('the model-facing bash tool builds its request from named args only (no
         command: 'echo hi',
         description: 'echo',
         env: { SNEAKY_API_KEY: 'leak' },
-        stdin: 'malicious payload',
+        stdin: 'literal payload',
         stdoutMaxBytes: 999_999,
       },
     })
@@ -1254,7 +1365,7 @@ describe('the model-facing bash tool builds its request from named args only (no
     const request = bash.requests[0]!
     expect(request.command).toBe('echo hi')
     expect('env' in request).toBe(false)
-    expect('stdin' in request).toBe(false)
+    expect(request.stdin).toBe('literal payload')
     expect('stdoutMaxBytes' in request).toBe(false)
   })
 
@@ -1274,14 +1385,14 @@ describe('the model-facing bash tool builds its request from named args only (no
       },
     })
     // The call really went down the background path (the recorder sees the real
-    // request the consumer built, so the absent env/stdin below is a real
+    // request the consumer built, so the absent env below is a real
     // negative, not a recorder that drops everything).
     expect(text(result)).toBe('started background job bash-1')
     expect(bash.requests).toHaveLength(1)
     const request = bash.requests[0]!
     expect(request.command).toBe('sleep 1')
     expect('env' in request).toBe(false)
-    expect('stdin' in request).toBe(false)
+    expect(request.stdin).toBe('x')
     expect('stdoutMaxBytes' in request).toBe(false)
   })
 })

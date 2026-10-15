@@ -1461,7 +1461,7 @@ public enum ArkL10n {
     .sessionExportDone: Entry(zh: "完成", en: "Done"),
     .sessionExportFailed: Entry(zh: "会话记录导出失败", en: "Chat record export failed"),
     .sessionExportClose: Entry(zh: "关闭", en: "Close"),
-    .sessionActivityIdle: Entry(zh: "尚未运行任务", en: "No task has run yet"),
+    .sessionActivityIdle: Entry(zh: "当前没有运行中的任务", en: "No task is currently running"),
     .sessionActivityRunning: Entry(zh: "任务正常运行中", en: "Task is running"),
     .sessionActivityStopping: Entry(zh: "停止中", en: "Stopping"),
     .sessionActivityStopped: Entry(zh: "已停止", en: "Stopped"),

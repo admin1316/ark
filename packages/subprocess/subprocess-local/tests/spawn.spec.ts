@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -41,6 +41,7 @@ function shellArgv(command: string): string[] {
     case 'echo "$EXTRA_ONE/$EXTRA_TWO"': return node('console.log(process.env.EXTRA_ONE + "/" + process.env.EXTRA_TWO)')
     case 'echo "$EXPLICIT_OVERRIDE_PASSWORD"': return node('console.log(process.env.EXPLICIT_OVERRIDE_PASSWORD)')
     case 'echo "${SUBPROCESS_TOMBSTONE_PROBE:-absent}"': return node('console.log(process.env.SUBPROCESS_TOMBSTONE_PROBE ?? "absent")')
+    case 'echo "${ARK_KNOWLEDGE_VERIFIER_CONFIG:-absent}"': return node('console.log(process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG ?? "absent")')
     case 'echo "[${DSH_STALE:-absent}|$DSH_SHELL|$DSH_SESSION_ID]"':
       return node('console.log("[" + [process.env.DSH_STALE ?? "absent", process.env.DSH_SHELL, process.env.DSH_SESSION_ID].join("|") + "]")')
     case 'echo "[${DSH_TEST_API_KEY:-absent}|${DSH_TEST_TOKEN:-absent}|${SUBPROCESS_TEST_PASSWORD:-absent}|${DSH_TEST_PLAIN:-absent}]"':
@@ -55,14 +56,31 @@ function shellArgv(command: string): string[] {
   }
 }
 
-const { failNextClose, failNextUnlink } = vi.hoisted(() => ({
+const { failNextClose, failNextUnlink, failNextWrite, nextOpenCollision } = vi.hoisted(() => ({
   failNextClose: { value: false },
   failNextUnlink: { value: false },
+  failNextWrite: { value: false },
+  nextOpenCollision: { create: false, path: '' },
 }))
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
+    openSync(path: string, flags: string, mode?: number): number {
+      if (nextOpenCollision.create) {
+        nextOpenCollision.create = false
+        nextOpenCollision.path = path
+        actual.writeFileSync(path, 'another owner', { flag: 'wx', mode: 0o600 })
+      }
+      return actual.openSync(path, flags, mode)
+    },
+    writeSync(fd: number, buffer: Buffer): number {
+      if (failNextWrite.value) {
+        failNextWrite.value = false
+        throw Object.assign(new Error('simulated ENOSPC on write'), { code: 'ENOSPC' })
+      }
+      return actual.writeSync(fd, buffer)
+    },
     closeSync(fd: number): void {
       if (failNextClose.value) {
         failNextClose.value = false
@@ -480,6 +498,81 @@ describe('output truncation and spill', () => {
 })
 
 describe('OutputCollector', () => {
+  it('reports a failed optional spill without a plugin logger', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-spill-default-report-'))
+    rmdirSync(directory)
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      const collector = new OutputCollector(4, 100, 'default-report', directory)
+      expect(() => { collector.push(Buffer.from('abcdefgh')) }).not.toThrow()
+      expect(collector.finalize()).toEqual({ text: 'efgh', truncated: true })
+      expect(stderr).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('default-report spill failed'))
+    } finally {
+      stderr.mockRestore()
+    }
+  })
+
+  it('preserves a pre-existing file when exclusive spill creation loses a collision', () => {
+    const report = vi.fn()
+    const collector = new OutputCollector(4, 100, 'collision', spillDir, report)
+    nextOpenCollision.create = true
+    try {
+      collector.push(Buffer.from('abcdefgh'))
+      expect(collector.finalize()).toEqual({ text: 'efgh', truncated: true })
+      expect(readFileSync(nextOpenCollision.path, 'utf8')).toBe('another owner')
+      expect(report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'EEXIST' }), 'collision')
+    } finally {
+      nextOpenCollision.create = false
+      try { unlinkSync(nextOpenCollision.path) } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
+  })
+
+  it.each(['removed-directory', 'not-a-directory'])('retains the tail when spill open fails: %s', (failure) => {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-spill-open-'))
+    rmdirSync(directory)
+    if (failure === 'not-a-directory') writeFileSync(directory, 'occupied')
+    const report = vi.fn()
+    const collector = new OutputCollector(4, 100, 'openfail', directory, report)
+    try {
+      expect(() => { collector.push(Buffer.from('abcdefgh')) }).not.toThrow()
+      collector.push(Buffer.from('ijkl'))
+      expect(collector.readFrom(0)).toEqual({ text: 'ijkl', nextOffset: 12, lossy: true })
+      expect(collector.finalize()).toEqual({ text: 'ijkl', truncated: true })
+      expect(report).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ code: failure === 'removed-directory' ? 'ENOENT' : 'ENOTDIR' }), 'openfail',
+      )
+    } finally {
+      if (failure === 'not-a-directory') unlinkSync(directory)
+    }
+  })
+
+  it('withdraws an incomplete spill after append fails and keeps collecting', () => {
+    const report = vi.fn()
+    const collector = new OutputCollector(4, 100, 'writefail', spillDir, report)
+    collector.push(Buffer.from('abcdefgh'))
+    const path = collector.readFrom(0).spillPath!
+    failNextWrite.value = true
+    expect(() => { collector.push(Buffer.from('ijkl')) }).not.toThrow()
+    expect(failNextWrite.value).toBe(false)
+    collector.push(Buffer.from('mn'))
+    expect(collector.finalize()).toEqual({ text: 'klmn', truncated: true })
+    expect(() => readFileSync(path)).toThrow()
+    expect(report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'ENOSPC' }), 'writefail')
+  })
+
+  it('contains a failing spill reporter in the stream data path', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-spill-report-'))
+    rmdirSync(directory)
+    const report = vi.fn(() => { throw new Error('logger unavailable') })
+    const collector = new OutputCollector(4, 100, 'reportfail', directory, report)
+    expect(() => { collector.push(Buffer.from('abcdefgh')) }).not.toThrow()
+    collector.push(Buffer.from('ijkl'))
+    expect(collector.finalize()).toEqual({ text: 'ijkl', truncated: true })
+    expect(report).toHaveBeenCalledOnce()
+  })
+
   it('keeps the tail of a single oversized chunk', () => {
     const collector = new OutputCollector(10, 100, 'test', spillDir)
     collector.push(Buffer.from('0123456789abcdef'))
@@ -717,6 +810,55 @@ describe.skipIf(process.platform === 'win32')('synchronous host-exit termination
 })
 
 describe.skipIf(process.platform === 'win32')('tree-survivor escalation (terminate and bounded waits reach helpers the leader left behind)', () => {
+  it('the original spawn signal still cancels a survivor after the direct child settles', async () => {
+    const controller = new AbortController()
+    const removeListener = vi.spyOn(controller.signal, 'removeEventListener')
+    const pidFile = join(spillDir, `survivor-abort-${Date.now()}.pid`)
+    const running = spawnSubprocess(spec(
+      `bash -c 'trap "" TERM; echo $$ > ${pidFile}; sleep 60' >/dev/null 2>&1 & disown; exit 0`,
+      { signal: controller.signal, graceMs: 200 },
+    ))
+    const bound = new AbortController()
+    const timer = setTimeout(() => { bound.abort() }, 1_000)
+    try {
+      const helper = await waitForPidFile(pidFile)
+      await expect(running.done).resolves.toEqual({ exitCode: 0, signal: null })
+      expect(() => process.kill(helper, 0)).not.toThrow()
+      const removedAtDone = removeListener.mock.calls.length
+
+      controller.abort(new Error('cancel the still-owned tree'))
+      await expect(running.waitForExit(bound.signal)).resolves.toBe(true)
+      await waitGone(helper, 100)
+      expect(removedAtDone).toBe(0)
+      expect(removeListener).toHaveBeenCalledTimes(1)
+    } finally {
+      clearTimeout(timer)
+      running.terminate()
+      await running.waitForExit()
+      removeListener.mockRestore()
+    }
+  })
+
+  it('releases the spawn listener after natural tree exit without a consumer wait', async () => {
+    const controller = new AbortController()
+    const removeListener = vi.spyOn(controller.signal, 'removeEventListener')
+    const running = spawnSubprocess(spec('true', { signal: controller.signal }))
+    try {
+      await running.done
+      await vi.waitFor(() => { expect(removeListener).toHaveBeenCalledTimes(1) })
+      const kill = vi.spyOn(process, 'kill')
+      try {
+        controller.abort(new Error('the owned tree has already exited'))
+        expect(kill).not.toHaveBeenCalled()
+      } finally {
+        kill.mockRestore()
+      }
+    } finally {
+      await running.waitForExit()
+      removeListener.mockRestore()
+    }
+  })
+
   it('terminate() SIGKILLs a TERM-trapping descendant after the direct child settles', async () => {
     // The leader spawns a TERM-trapping helper with all stdio detached from
     // the collected pipes, then exits: the helper holds the GROUP alive while
@@ -1038,6 +1180,16 @@ describe('abort edge cases', () => {
 })
 
 describe('environment and spill-file hardening', () => {
+  it('scrubs the launcher-owned verifier signing config from model child processes', async () => {
+    process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG = '{"privateKey":"must-not-leak"}'
+    try {
+      const result = await finish(spawnSubprocess(spec('echo "${ARK_KNOWLEDGE_VERIFIER_CONFIG:-absent}"')))
+      expect(result.stdout.text.trim()).toBe('absent')
+    } finally {
+      delete process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
+    }
+  })
+
   it('scrubs credential-shaped and ambient DSH env vars from child processes', async () => {
     process.env.DSH_TEST_API_KEY = 'super-secret'
     process.env.DSH_TEST_TOKEN = 'also-secret'

@@ -15,8 +15,10 @@ import {
   readSync,
   realpathSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
+  type BigIntStats,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
@@ -27,9 +29,27 @@ export const MAX_WIKI_PAGE_BYTES = 5 * 1024 * 1024
 /**
  * Distinguish an absent optional file from corruption or unsafe I/O.
  * @param error - Caught value to inspect for Node's missing-path error code.
- * @returns True only for a non-null object whose code property is ENOENT.
+ * @returns True for ENOENT only when its existing path ancestry permits absence.
  */
 export function isMissingPathError(error: unknown): boolean {
+  if (!hasMissingPathCode(error)) return false
+  const path: unknown = Reflect.get(error, 'path')
+  if (typeof path !== 'string') return true
+  let cursor = dirname(resolve(path))
+  for (;;) {
+    try {
+      const ancestor = lstatSync(cursor)
+      return ancestor.isDirectory() || (ancestor.isSymbolicLink() && statSync(cursor).isDirectory())
+    } catch (ancestorError) {
+      if (!hasMissingPathCode(ancestorError)) throw ancestorError
+      const parent = dirname(cursor)
+      if (parent === cursor) return false
+      cursor = parent
+    }
+  }
+}
+
+function hasMissingPathCode(error: unknown): error is object {
   return typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT'
 }
 
@@ -90,11 +110,26 @@ export function resolveConfinedPath(root: string, input: string, allowMissingLea
 }
 
 function nearestExistingAncestor(path: string): string {
-  // Callers confine the target under an existing root, so the walk always
-  // terminates there.
   let cursor = path
-  while (!existsSync(cursor)) cursor = dirname(cursor)
-  return cursor
+  for (;;) {
+    try {
+      lstatSync(cursor)
+      return cursor
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error
+      const parent = dirname(cursor)
+      if (parent === cursor) throw error
+      cursor = parent
+    }
+  }
+}
+
+/** Unlink absence requires directory ancestry; Windows may report ENOENT beneath a file. */
+function isMissingFilePathError(error: unknown, path: string): boolean {
+  if (!hasMissingPathCode(error)) return false
+  const ancestor = nearestExistingAncestor(dirname(resolve(path)))
+  if (!statSync(ancestor).isDirectory()) throw new Error(`ENOTDIR: non-directory path ancestor: ${ancestor}`)
+  return true
 }
 
 /**
@@ -145,8 +180,8 @@ function assertOrdinaryDestination(path: string): void {
 }
 
 function sameFileIdentity(
-  left: ReturnType<typeof fstatSync>,
-  right: ReturnType<typeof fstatSync>,
+  left: BigIntStats,
+  right: BigIntStats,
 ): boolean {
   return left.dev === right.dev && left.ino === right.ino
 }
@@ -159,14 +194,14 @@ function sameFileIdentity(
  * @throws On unsafe or changed files, excess size, or filesystem failures; the opened descriptor is closed.
  */
 export function readRegularFileBounded(path: string, maxBytes: number): Buffer {
-  const before = lstatSync(path)
-  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) {
+  const before = lstatSync(path, { bigint: true })
+  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n) {
     throw new Error(`not a unique ordinary file: ${path}`)
   }
   const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
-    const stat = fstatSync(descriptor)
-    if (!stat.isFile() || stat.nlink !== 1 || !sameFileIdentity(before, stat)) {
+    const stat = fstatSync(descriptor, { bigint: true })
+    if (!stat.isFile() || stat.nlink !== 1n || !sameFileIdentity(before, stat)) {
       throw new Error(`file identity changed while opening: ${path}`)
     }
     if (stat.size > maxBytes) throw new Error(`file exceeds ${maxBytes} bytes: ${path}`)
@@ -180,10 +215,10 @@ export function readRegularFileBounded(path: string, maxBytes: number): Buffer {
       if (total > maxBytes) throw new Error(`file exceeds ${maxBytes} bytes: ${path}`)
       chunks.push(chunk.subarray(0, count))
     }
-    const afterRead = fstatSync(descriptor)
-    const afterPath = lstatSync(path)
+    const afterRead = fstatSync(descriptor, { bigint: true })
+    const afterPath = lstatSync(path, { bigint: true })
     if (!sameFileIdentity(stat, afterRead) || !sameFileIdentity(stat, afterPath)
-      || afterRead.size !== stat.size || afterRead.mtimeMs !== stat.mtimeMs || afterPath.nlink !== 1) {
+      || afterRead.size !== stat.size || afterRead.mtimeNs !== stat.mtimeNs || afterPath.nlink !== 1n) {
       throw new Error(`file changed while reading: ${path}`)
     }
     return Buffer.concat(chunks, total)
@@ -218,21 +253,21 @@ export function atomicWriteFile(path: string, content: string | Buffer, mode = 0
   assertOrdinaryDestination(path)
   const temporary = join(parent, `.${basename(path)}.ark-save-${process.pid}-${randomUUID()}`)
   let descriptor: number | undefined
-  let stagedIdentity: ReturnType<typeof fstatSync> | undefined
+  let stagedIdentity: BigIntStats | undefined
   try {
     descriptor = openSync(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, mode)
     writeFileSync(descriptor, content)
     fsyncSync(descriptor)
-    stagedIdentity = fstatSync(descriptor)
+    stagedIdentity = fstatSync(descriptor, { bigint: true })
     closeSync(descriptor)
     descriptor = undefined
     assertOrdinaryDestination(path)
     renameSync(temporary, path)
     const published = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
     try {
-      const publishedIdentity = fstatSync(published)
+      const publishedIdentity = fstatSync(published, { bigint: true })
       if (!publishedIdentity.isFile()
-        || publishedIdentity.nlink !== 1 || !sameFileIdentity(stagedIdentity, publishedIdentity)) {
+        || publishedIdentity.nlink !== 1n || !sameFileIdentity(stagedIdentity, publishedIdentity)) {
         throw new Error(`published file identity mismatch: ${path}`)
       }
     } finally {
@@ -290,18 +325,18 @@ export function createPrivateFileIfMissing(path: string, content: Buffer): boole
 /**
  * Durably remove one ordinary file without following a symbolic link.
  * The file is renamed to a sibling tombstone and its identity checked before unlink and directory fsync.
- * @param path - Single-link ordinary file to remove; absence at the initial stat or open is a no-op.
+ * @param path - Single-link ordinary file to remove; initial stat/open absence is a no-op only after directory ancestry is established.
  * @throws On an unsafe file, changed identity, or I/O failure; a later failure may leave a tombstone or removed file.
  */
 export function durableUnlinkFile(path: string): void {
   let stat
   try {
-    stat = lstatSync(path)
+    stat = lstatSync(path, { bigint: true })
   } catch (error) {
-    if (isMissingPathError(error)) return
+    if (isMissingFilePathError(error, path)) return
     throw error
   }
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) {
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n) {
     throw new Error(`refusing to unlink non-unique or non-ordinary file: ${path}`)
   }
   const tombstone = join(dirname(path), `.${basename(path)}.ark-unlink-${randomUUID()}`)
@@ -309,18 +344,18 @@ export function durableUnlinkFile(path: string): void {
   try {
     descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
   } catch (error) {
-    if (isMissingPathError(error)) return
+    if (isMissingFilePathError(error, path)) return
     throw error
   }
-  const expected = fstatSync(descriptor)
+  const expected = fstatSync(descriptor, { bigint: true })
   closeSync(descriptor)
-  if (!expected.isFile() || expected.nlink !== 1) {
+  if (!expected.isFile() || expected.nlink !== 1n) {
     throw new Error(`refusing to unlink non-unique or non-ordinary file: ${path}`)
   }
   renameSync(path, tombstone)
   const moved = openSync(tombstone, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
-    if (!sameFileIdentity(expected, fstatSync(moved))) {
+    if (!sameFileIdentity(expected, fstatSync(moved, { bigint: true }))) {
       if (!existsSync(path)) renameSync(tombstone, path)
       throw new Error(`file changed before unlink: ${path}`)
     }
@@ -377,7 +412,7 @@ export function readOptionalJson<T>(path: string, fallback: T): T {
  * @throws If the entry cannot be statted, including when it is absent.
  */
 export function inodeIdentity(path: string): string {
-  const stat = lstatSync(path)
+  const stat = lstatSync(path, { bigint: true })
   return `${stat.dev}:${stat.ino}`
 }
 

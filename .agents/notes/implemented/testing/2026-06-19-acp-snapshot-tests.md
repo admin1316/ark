@@ -61,6 +61,8 @@ Normalization replaces session, cwd, protocol-id, timestamp, path, and process v
 
 Tool determinism comes from a generated cwd, scrubbed environment, fresh non-login shell, constrained commands, and normalization. The cwd defaults to the platform temp directory; a scenario can instead supply its parent when temp is an always-writable policy root and the behavior needs an independent project location. Concurrent replay runs own separate cwd, persistence, and fixed-length scenario-keyed spill roots, so one scenario's teardown cannot delete another's in-flight full-output recovery while real-path preview budgets remain stable. This tier does not claim OS confinement. A sandboxed executor can replace the local backend through the existing [capability seam](../architecture/2026-06-13-capability-seams.md) if a stronger tier is needed.
 
+The harness owns pending log observations separately from their matching deadlines for inbox and child-turn waits. A polling timeout cannot cancel a filesystem read; cleanup therefore joins that read while preserving the already rejected outcome and any late read or parse failure. Operation diagnostics distinguish an unmet persisted condition from a framework timer expiring before the first read settles; actual read errors keep their original identity.
+
 ### The replay plugin is its own package
 
 `@deepseek-ai/dsh-llm-replay` is a support package rather than example-local glue. It replaces the real adapter by short-circuiting `llm/stream` with streams reconstructed from JSONL, and its package placement keeps the replay logic under normal coverage gates.

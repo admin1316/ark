@@ -56,7 +56,7 @@ A consumer installs each global dependency bundle once per revision and keeps it
 
 ### Memory bounds
 
-`Config.semanticHistory` controls reuse and reader admission. Defaults retain at most eight numeric indices with a conservative 16 MiB charge, and eight content readers with an ordinary 8 MiB budget and 60-second idle expiry. One initial body may materialize at a time. A single oversized message may occupy the oversize slot until completion, close, or expiry; competing reads receive `history-content-busy` instead of evicting that body between fragments. This is not an absolute RAM cap for arbitrarily large messages.
+`Config.semanticHistory` controls reuse and reader admission. Defaults retain at most eight numeric indices with a conservative 16 MiB charge, and eight content readers with an ordinary 8 MiB budget and 60-second idle expiry. One initial body may materialize at a time. A single oversized message may occupy the oversize slot until completion, close, cancellation of its initiating request, or expiry; competing reads receive `history-content-busy` instead of evicting that body between fragments. Cancellation releases the handle even when the initial response never reaches its caller. This is not an absolute RAM cap for arbitrarily large messages.
 
 The semantic owner retains no raw event arrays or cross-request prepared leases. Session may still create a frozen snapshot after mutation, and the existing persistence preparation cache remains count-bounded rather than byte- or TTL-bounded. These limits therefore do not establish a total process-memory bound.
 

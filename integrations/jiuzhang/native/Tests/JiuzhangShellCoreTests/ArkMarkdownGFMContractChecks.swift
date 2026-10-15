@@ -177,6 +177,19 @@ func runArkMarkdownGFMContractChecks() {
   """#
 
   let blocks = NativeGFMParser.parse(fixture)
+  let exactJSON = #"{"ok":true,"count":2}"#
+  let exactJSONBlocks = NativeGFMParser.parse(exactJSON)
+  let exactJSONText = exactJSONBlocks.compactMap { block -> String? in
+    guard case .paragraph(let values) = block else { return nil }
+    return values.compactMap { value -> String? in
+      guard case .text(let source) = value else { return nil }
+      return source
+    }.joined()
+  }.joined()
+  check(
+    exactJSONText == exactJSON,
+    "native Markdown parsing preserves ASCII JSON quotes byte-for-byte"
+  )
   check(
     blocks.contains { block in
       guard case .heading(level: 1, let content) = block else { return false }
@@ -529,7 +542,8 @@ func runArkMarkdownGFMContractChecks() {
     "native Markdown pins the GFM parser and AppKit math renderer without raising the macOS 13 baseline"
   )
   check(
-    model.contains("Document(parsing: preprocessed.body)")
+    model.contains("Document(parsing: preprocessed.body, options: [.disableSmartOpts])")
+      && model.contains("Document(parsing: source, options: [.disableSmartOpts])")
       && model.contains("case footnoteReference")
       && model.contains("case table(")
       && model.contains("case math(String)")
@@ -542,12 +556,12 @@ func runArkMarkdownGFMContractChecks() {
       && model.contains("installTask?.cancel()")
       && model.contains("Task.detached(priority: .userInitiated)") == false
       && model.contains("NativeGFMCache.shared.blocks(for: source)"),
-    "native Markdown owns typed GFM semantics and serializes cancellable cache-miss parsing away from the AppKit main thread"
+    "native Markdown preserves source punctuation and owns typed GFM semantics with serialized cancellable parsing"
   )
   check(
     view.contains("import SwiftMath")
       && view.contains("@StateObject private var model: NativeGFMDocumentModel")
-      && documentView?.contains("Text(firstFrameText)") == true
+      && documentView?.contains("Text(verbatim: firstFrameText)") == true
       && documentView?.contains("ArkStreamingPresentationPolicy.firstFrameText(text)") == true
       && documentView?.contains("let blocks = model.blocks") == true
       && markdownContainsStackInvocation(documentView, named: "VStack")
@@ -572,6 +586,11 @@ func runArkMarkdownGFMContractChecks() {
       && !view.contains("AsyncImage(")
       && view.contains("Link(destination: url)"),
     "native Markdown bounds its first frame while one non-lazy document stack receives cached AppKit math and syntax views"
+  )
+  check(
+    blockView?.contains("Text(verbatim: source)") == true
+      && view.contains("var value = Text(verbatim: source)"),
+    "native Markdown renders literal and inline model text verbatim after exact-punctuation parsing"
   )
   check(
     view.contains("private struct NativeGFMRemoteImage")

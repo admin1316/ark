@@ -1,0 +1,297 @@
+{
+  "schema": "ark.wiki-unlink-missing-ancestor-source-result.v1",
+  "at": "2026-10-11T23:25:51.296262+00:00",
+  "status": "SOURCE_AND_COMPILED_HELPER_FIX_PASS_CURRENT_CANDIDATE_STILL_OLD",
+  "sourceRoot": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+  "sourceHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "sourceDirty": true,
+  "previousGoalTurnClassification": "progress: seq64 portable source tests and direct runtime defect reproduction.",
+  "scope": "Existing Wiki filesystem removal/ancestor owner, real filesystem regressions and bilingual owning documentation only.",
+  "behavior": {
+    "initialStatAndPreOpenAbsenceChecked": true,
+    "realNestedAbsenceIdempotent": true,
+    "invalidAncestorRefused": true,
+    "ancestorTraversalBounded": true,
+    "lookupFailuresPropagated": true,
+    "intermediateDirectoryAliasesPreserved": true,
+    "finalTargetNoFollowUniqueFileIdentityAndDurabilityOwnersUnchanged": true
+  },
+  "sourceChanges": [
+    {
+      "path": "packages/host/knowledge-wiki/src/filesystem.ts",
+      "beforeSha256": "e9f887c840742645c4c90d609a0ee8cd3f7b34643c1f0e80014f93021e15afe1",
+      "afterSha256": "9cdf3c1e576235639c8a138c5887fa270ae2c26a1c3dd300f1b2acc6230c8dfa"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/filesystem-races.spec.ts",
+      "beforeSha256": "2a01e1a2dfa861278c953273df84c7fe050adc55401a98dcbb8e6f464f2bf665",
+      "afterSha256": "8d156b9a9e85f0d250777eba5007789aeaff1085f216e81b726a52520f27acb4"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/README.md",
+      "beforeSha256": "cb424eccc7ece6f07530c67f5c515f99a843a5929a40abf3c38ac2fe4f019c4e",
+      "afterSha256": "bc70c119b218dd41d371e78d3b5c5894058f34e219ecb28f47d3528bf2c8ff79"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/README.zh.md",
+      "beforeSha256": "d4ce367658d078e1eb6d56ee742fad2dce9a52682bfcfd2085c4e3d80f9b72f8",
+      "afterSha256": "ba0fe9ddf7492110d005fc6fc3d92357234838f28975df5025e41cbbf5317d9f"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/README.i18n.yaml",
+      "beforeSha256": "be4b9087f597c74b0ca0f00e09955a0b47a4f26962519a60071bb32c6a780cdb",
+      "afterSha256": "8f4de8962b6a304c36fe884e75811f27411df05d8bcedb581b00158096190cdd"
+    },
+    {
+      "path": ".agents/notes/implemented/bug-fix/2026-10-12-wiki-unlink-absence-ancestors.md",
+      "beforeSha256": null,
+      "afterSha256": "07effeaea04cea992084ebcdd8c66dcbabea6c6e46d1779231b6363d0a38d4d3"
+    },
+    {
+      "path": ".agents/notes/implemented/bug-fix/2026-10-12-wiki-unlink-absence-ancestors.zh.md",
+      "beforeSha256": null,
+      "afterSha256": "677d8358ffea40861bfe44ba7869e23222983f669f55746cc323501f3fa61fb1"
+    },
+    {
+      "path": ".agents/notes/implemented/bug-fix/2026-10-12-wiki-unlink-absence-ancestors.i18n.yaml",
+      "beforeSha256": null,
+      "afterSha256": "6cd14acd97529adaf7d16bc0fa58b2497859107460c2d638734c24c4cabf1310"
+    }
+  ],
+  "checks": {
+    "redControls": {
+      "pass": 22,
+      "fail": 5,
+      "skip": 0
+    },
+    "focusedFilesystem": {
+      "pass": 45,
+      "fail": 0,
+      "skip": 0
+    },
+    "fullOwnerCorpus": {
+      "files": 78,
+      "pass": 1049,
+      "fail": 0,
+      "skip": 0
+    },
+    "strictPerFileCoverage": {
+      "sourceFiles": 33,
+      "allFourMetricsAt100Percent": true,
+      "thresholdOrExclusionChanged": false,
+      "aggregate": {
+        "lines": {
+          "total": 4212,
+          "covered": 4212,
+          "skipped": 0,
+          "pct": 100
+        },
+        "statements": {
+          "total": 5016,
+          "covered": 5016,
+          "skipped": 0,
+          "pct": 100
+        },
+        "functions": {
+          "total": 761,
+          "covered": 761,
+          "skipped": 0,
+          "pct": 100
+        },
+        "branches": {
+          "total": 4017,
+          "covered": 4017,
+          "skipped": 0,
+          "pct": 100
+        },
+        "branchesTrue": {
+          "total": 0,
+          "covered": 0,
+          "skipped": 0,
+          "pct": 100
+        }
+      }
+    },
+    "coverageInputHashes": {
+      "packages/host/knowledge-wiki-tools/src/index.ts": "2c272c9caf8c7ccc485214775729ace553f3d8c915b3d852b121ea26ab1c838d",
+      "packages/host/knowledge-wiki-tools/src/invariant.ts": "ce0719daa066e8a36b212c817100f53bc754291f46b6db2121bbc1c8616d26b8",
+      "packages/host/knowledge-wiki-tools/src/session-events.ts": "96520a01c6057da6d4c01fdb7eefcab6542a57bcfe2f1647df4b3562db900519",
+      "packages/host/knowledge-wiki/src/archive.ts": "0fc490d422eac729e18ed54f6ac3413c37e48e7dfd329368bfdabea2d4143c9f",
+      "packages/host/knowledge-wiki/src/auto-sediment.ts": "1ac881488b070224d17943a8cb5a600561e4f8a3d2f9d4b7c5aad76e610fa80b",
+      "packages/host/knowledge-wiki/src/canonical-merge.ts": "2d474ab81c7caa5ea2e0dbff1a6612dba90d8df4685b64083417f42529198693",
+      "packages/host/knowledge-wiki/src/external-verifier-adapter.ts": "15279538a52cf5c408bbfe04bbb4af4a5b3b5f8eaf7ffe99585995442b17e8d1",
+      "packages/host/knowledge-wiki/src/fallback-summary.ts": "6d4febc5d373b8758bbe66aa77c821bdb60423deeecee847687fd2f7dc233d2b",
+      "packages/host/knowledge-wiki/src/file-extract.ts": "ee129bdf5a14571584d6bf67dc4ee663619d6eb3f154fd15b879909dfda49a43",
+      "packages/host/knowledge-wiki/src/filesystem.ts": "9cdf3c1e576235639c8a138c5887fa270ae2c26a1c3dd300f1b2acc6230c8dfa",
+      "packages/host/knowledge-wiki/src/frontmatter-utils.ts": "ada1273f47c5a47d8b3504805472efefa60f67ffdc6e02f1179ad2235a563dc9",
+      "packages/host/knowledge-wiki/src/governance-policy.ts": "7c62a2678b6092794d43774c3dc2be8043eac568a0d36c33a08a24f75bd8aa4e",
+      "packages/host/knowledge-wiki/src/graph.ts": "620dfd6f0f5ed09491b4e9e36732dedf6d9f99a6b32090e44132257266e3b321",
+      "packages/host/knowledge-wiki/src/html-clip.ts": "6048dd41feba4a9305f54cf1175ad1c7f5838f2aca6fcad96fab96571c053821",
+      "packages/host/knowledge-wiki/src/index-writer.ts": "75964c7abd70942a73c96586c6ad5f37666bb6c5fb6b9c48a95ecdd13dd529ef",
+      "packages/host/knowledge-wiki/src/index.ts": "eb617c1af4af32f3b32982b97fb8ee8c3e92703f56112032db114a3334877155",
+      "packages/host/knowledge-wiki/src/ingest.ts": "c6ed1b47ea0116edf16b23068b19653bc7b4c1b548a3bf0a6f3f7c90509abe57",
+      "packages/host/knowledge-wiki/src/invariant.ts": "4816659b1ebddaa5cfce2575731310c23084d20bd318d0ba6c59a5288c4b6dc6",
+      "packages/host/knowledge-wiki/src/knowledge-governance.ts": "c6f425158efa3a90daf20565ed7c8232bb5c8d2a12a1cefcf7f0c53fa5f4d8b1",
+      "packages/host/knowledge-wiki/src/measured-trial.ts": "c7e30c5d53be14818a8b8f18d9360dacfe56c8bfd38ea539c4769c8724542bbb",
+      "packages/host/knowledge-wiki/src/merge-page.ts": "c39c324f50df902316ad6877fb892b5f14ab918225f0d648261e19ef514f37f6",
+      "packages/host/knowledge-wiki/src/owned-stage-executor.ts": "c1ddf31228c808870e9c64c3c0470605f7417affc11103c02740510d51ecf814",
+      "packages/host/knowledge-wiki/src/project-context.ts": "bde3d39202bc371b885d9756d4fdc0efa8f21e4088cbadc92ddaf2bdbd2c5fda",
+      "packages/host/knowledge-wiki/src/research.ts": "a1790ab2b92af150200865213d492c07f28f669560dcfd763098b34078cd5fee",
+      "packages/host/knowledge-wiki/src/reviews.ts": "6e64273b2f8cbe3d131e2cd51ee1f37bf47ccf8dfc2bb17299c1b2cc86b7de11",
+      "packages/host/knowledge-wiki/src/rust-search-candidate.ts": "47986ac33134311d99dd4fb98de6d0ed4296eb0cfc2cbe0fb619de413992d012",
+      "packages/host/knowledge-wiki/src/sanitize.ts": "ebeb88f33f24dc6d8e23501ffbd67bf8905bfc33bc714cac0e8daeb31c59f773",
+      "packages/host/knowledge-wiki/src/search.ts": "27c7247bea964d6cf7774850bf3ec44c2d0f20c1ec8ae0ee0ce7979d9aca5430",
+      "packages/host/knowledge-wiki/src/snapshot-store.ts": "03947c73b7c9ca66725eb46c7bdd69cd384c370593744ebd2efb2c413b3e74de",
+      "packages/host/knowledge-wiki/src/source-slug.ts": "14a152f6ba2320da4704df440c90e910dcf8a8701bbe7a591b9d120cfaa13bd4",
+      "packages/host/knowledge-wiki/src/stage-executor.ts": "3110d9427581189fda1673026cd7d60c1a3a60b2dcb862e3a4b6c72b612ec8c2",
+      "packages/host/knowledge-wiki/src/verifier.ts": "7343421fdd2172a586df6d6812cd20589fd0792bc0c8604f6c708ab77150a08c",
+      "packages/host/knowledge-wiki/src/vision.ts": "9888b7d42c111fee276896f60b2c00674ef0f05f235c866c31c936d1f6f72be4"
+    },
+    "types": {
+      "wikiExitCode": 0,
+      "wikiToolsExitCode": 0
+    },
+    "hostBuildExitCode": 0,
+    "rebuiltFullLintExitCode": 0,
+    "docSync": {
+      "pass": 30,
+      "fail": 0,
+      "skip": 0
+    },
+    "translationPairingExitCode": 0,
+    "keylessAuthoredCliReplay": {
+      "pass": 1,
+      "fail": 0,
+      "otherTestsSkipped": 113,
+      "scope": "Existing knowledge-wiki-repair assembled scenario; not actual learning or mapped ancestor behavior."
+    }
+  },
+  "compiled": {
+    "newLibrarySha256": "585b936b10afa65fb341d06620bf2d0ca5e6bbde3c7b4bf89358649f82c93aa6",
+    "newHelperSha256": "185099d506a274aa7532d0c706b13a23db8e33a8747967464d590569ee836330",
+    "oldInstalledHelperAcceptsInvalidAncestor": true,
+    "newBuiltHelperRefusesInvalidAncestor": true,
+    "oldAndNewParentBytesPreserved": true,
+    "errorMappingScope": "Plain Node isolated compiled helper; one mapped Windows lstat result, no actual Windows or native model task.",
+    "publicServiceStartupRecovery": [
+      {
+        "legacyWithoutTrial": false,
+        "state": "committed",
+        "exactBeforeOrAfterState": true,
+        "compiledBindingReadCount": 1,
+        "expectedBindingMutationRefused": true
+      },
+      {
+        "legacyWithoutTrial": true,
+        "state": "rolled-back",
+        "exactBeforeOrAfterState": true,
+        "compiledBindingReadCount": 0,
+        "expectedBindingMutationRefused": true
+      }
+    ],
+    "recoveryUsesTestAuthoritiesOnly": true,
+    "actualDeployedLearningProof": false
+  },
+  "supersessionCheck": {
+    "activeNotesMentioningOwnedAbsenceMechanism": 0,
+    "newNoteOwnsThisDecision": true,
+    "archivesEdited": false
+  },
+  "retainedPreparationError": "The first coverage command was refused by zsh glob expansion before Vitest; literal include arguments then run under unchanged strict thresholds.",
+  "currentCandidate": {
+    "version": "3.1.32",
+    "containsThisSourceFix": false,
+    "candidateArtifactUnchangedWhileBuildingSource": true,
+    "nativeBehaviorAcceptanceOfNewFix": "PENDING"
+  },
+  "actualWindowsPlatformPass": false,
+  "newVerifierAuthorityOrKeyDeployed": false,
+  "pendingHumanVerifierImplementationScope": true,
+  "formalChanged": false,
+  "githubPublished": false,
+  "rust": "RETAIN_TS/shadow disabled",
+  "broadSpeedOrAccuracyGainMeasured": false,
+  "fullGoalAcceptance": "UNKNOWN",
+  "artifactBindings": [
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-plan-20261012.json",
+      "sha256": "fa3da843a8e870cf8f01c8c1c319cedac62ee4ca6283eb5e7134982d963b8f4a"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-red-20261012.json",
+      "sha256": "52472bccca583e444df9301cfdeb39bf1aa95d44d24a33838f3c063c3d15d014"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-focused-20261012.json",
+      "sha256": "4cd581d874315c269b9275366c63e696256f4d0a77e6ca423a9af51d281287fb"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-full-tests-20261012.json",
+      "sha256": "e165e81b3eb0c6ee578c1b473bb5c7b285c343799ab242ce2a76fa4d69fd99fd"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-coverage-20261012/coverage-summary.json",
+      "sha256": "e7a90c0d8489b46ab135c6d5d496c7e1f28ae1272230a679963541a9edeb2deb"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-coverage-20261012/coverage-final.json",
+      "sha256": "a2b43cb9204d1784a9f767c8777e584b27589460237b9005bc46e4b9edc1879c"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-coverage-preflight-error-20261012.json",
+      "sha256": "75d6331d18e1bd4911e94398b07cc56566ef6fb007fc44a7122d98b9fba05ce7"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-finalizer-initial-error-20261012.json",
+      "sha256": "ca291ed054c7263f196d56737cd34afdfa647814e7018f162354461076889b7e"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-full-coverage-quoted-20261012.log",
+      "sha256": "4c323617dd47d698c874efa1b5f263c940742292f0ff407c8428bb46657d0b26"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-wiki-types-20261012.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-tools-types-20261012.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-host-build-20261012.log",
+      "sha256": "7d4355a5ea1ac89df8ced5b71b8387ab2a27df4b08c14dec64b2645d983363d3"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-rebuilt-full-lint-20261012.log",
+      "sha256": "5ab93e893da8c5f0748aa794bd2eb7d7a9f0b0cd29d66dcb19d907219df202f5"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-pairing-20261012.log",
+      "sha256": "bbf86e209fef79da2941fde4fbd8e6568f79e04b5f047e1b94cea74e2ae3e825"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-doc-sync-20261012.log",
+      "sha256": "9746a7eb0dde4fb33e73d1010d4b5939943715db1e7f957239f7046708b4b4b0"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-compiled-compare-20261012.mjs",
+      "sha256": "d612c0152b515b37349db0a02c187824da2ab45f3b4f50e69337ebd005412be6"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-old-installed-helper-20261012.json",
+      "sha256": "2c275d7526dc5df19890768423b36185c673dd5761c0a3bf7e964f69cb224426"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-new-built-helper-20261012.json",
+      "sha256": "6c415b6742b7d51d055eced4cc8e5d124cd148165636550f731ffc63e5be2c62"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-built-recovery-smoke-20261012.json",
+      "sha256": "2bc7baacbb3282c2e3d13d85be168b940e5f461820adf9dd82b0e75a2aef3814"
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/wiki-unlink-absence-keyless-replay-20261012.json",
+      "sha256": "c0b8522f1fcc3fcba82c5bee9382403b3860084b9ff8fc40593da1a5409bc31a"
+    }
+  ]
+}

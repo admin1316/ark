@@ -56,6 +56,30 @@ public enum JSONValue: Codable, Equatable, Sendable {
     return value
   }
 
+  /// A finite nonnegative integer strictly below the native `Int` upper bound.
+  public var nonnegativeIntegerValue: Int? {
+    guard let number = numberValue,
+          number.isFinite,
+          number >= 0,
+          number.rounded(.towardZero) == number,
+          number < Double(Int.max)
+    else { return nil }
+    return Int(number)
+  }
+
+  /// Return an integral number within JavaScript's safe range and the caller's minimum.
+  public func jsonSafeInteger(minimum: Int = 0) -> Int? {
+    guard let number = numberValue,
+          number.isFinite,
+          number.rounded(.towardZero) == number,
+          abs(number) <= 9_007_199_254_740_991,
+          number >= Double(minimum),
+          number >= Double(Int.min),
+          number <= Double(Int.max)
+    else { return nil }
+    return Int(number)
+  }
+
   public var boolValue: Bool? {
     guard case .bool(let value) = self else { return nil }
     return value
@@ -833,7 +857,7 @@ public actor ArkAPIClient {
     }
     var projections: [String: JSONValue] = [:]
     if let projectionValue = value["projections"] {
-      guard safeJSONInteger(projectionValue["asOfSeq"], minimum: -1) != nil,
+      guard projectionValue["asOfSeq"]?.jsonSafeInteger(minimum: -1) != nil,
             let values = projectionValue["values"]?.objectValue
       else { throw ArkAPIError(message: "\(context)投影基线无效") }
       projections = values
@@ -880,7 +904,7 @@ public actor ArkAPIClient {
 
   static func historyEvent(from value: JSONValue) -> ArkHistoryEvent? {
     guard let event = value["event"],
-          let seq = safeJSONInteger(event["seq"]),
+          let seq = event["seq"]?.jsonSafeInteger(),
           let type = event["type"]?.stringValue,
           !type.isEmpty,
           let time = event["time"]?.numberValue,
@@ -894,18 +918,6 @@ public actor ArkAPIClient {
       data: data,
       view: value["view"]
     )
-  }
-
-  static func safeJSONInteger(_ value: JSONValue?, minimum: Int = 0) -> Int? {
-    guard let number = value?.numberValue,
-          number.isFinite,
-          number.rounded(.towardZero) == number,
-          abs(number) <= 9_007_199_254_740_991,
-          number >= Double(minimum),
-          number >= Double(Int.min),
-          number <= Double(Int.max)
-    else { return nil }
-    return Int(number)
   }
 
   /// Pure canonical row conversion, shared by live projection and immutable history.

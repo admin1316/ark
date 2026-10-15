@@ -1172,7 +1172,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
   })
 
   /** Boot the real continuable stack without any model-facing follow-up adapter. */
-  async function continuableSetup() {
+  async function continuableSetup(loadToolThroughLoader = false) {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
     const root = mkdtempSync(path.join(tmpdir(), 'dsh-tool-subagent-continuable-'))
@@ -1183,7 +1183,16 @@ describe('dsh-tool-subagent continuable background mode', () => {
     await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
     await ctx.plugin(LocalJobRegistry)
     await ctx.plugin(ToolTasks, {})
-    await ctx.plugin(tool, { provider: 'spawn', backgroundMode: 'continuable' })
+    if (loadToolThroughLoader) {
+      await ctx.plugin(Loader)
+      ctx.loader.builtins['tool-subagent-guidance-test'] = tool
+      await ctx.loader.create({
+        name: 'cordis:tool-subagent-guidance-test',
+        config: { provider: 'spawn', backgroundMode: 'continuable' },
+      })
+    } else {
+      await ctx.plugin(tool, { provider: 'spawn', backgroundMode: 'continuable' })
+    }
     ctx.llm.registerAdapter(['mock'], new MockAdapter([
       textResponse('continuable answer'),
     ]))
@@ -1205,19 +1214,27 @@ describe('dsh-tool-subagent continuable background mode', () => {
     const { ctx, parent } = await continuableSetup()
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')!
     // Continuable delegation has no Task, so the schema promises no collection.
-    expect(schema.description).not.toContain('job_output')
-    expect(schema.description).not.toContain('job_kill')
+    expect(schema.description).toContain('do not pass it to `job_list`, `job_output`, or `job_kill`')
     expect(schema.description).toContain('send_message')
     expect(schema.description).toContain('runs in the background by default')
+    expect(schema.description).toContain('not a Job id')
+    expect(schema.description).toContain('job_list')
+    expect(schema.description).toContain('job_output')
+    expect(schema.description).toContain('job_kill')
     expect(schema.description).not.toContain('never poll or wait on it')
     const properties = (schema.parameters as {
       properties: Record<string, { description?: string }>
     }).properties
     expect(properties.run_in_background?.description).toContain('Defaults to true')
+    expect(properties.run_in_background?.description).toContain('not a Job id')
+    expect(properties.run_in_background?.description).toContain('job_list, job_output, or job_kill')
     const assembly = await ctx.systemPrompt.assemble(assembleContextFor(parent))
     const guidance = assembly.sections.find(section => section.name === 'tool:subagent')
     expect(guidance?.text).toContain('Use subagent in the background by default')
-    expect(guidance?.text).toContain('runtime sends you a notice containing its outcome')
+    expect(guidance?.text).toContain('wait for the runtime\'s notice containing its outcome')
+    expect(guidance?.text).toContain('not a Job id')
+    expect(guidance?.text).toContain('do not pass it to `job_list`, `job_output`, or `job_kill`')
+    expect(guidance?.text).toContain('wait for the runtime\'s notice')
 
     const started = await callSubagent(
       ctx,
@@ -1238,6 +1255,21 @@ describe('dsh-tool-subagent continuable background mode', () => {
     const loaded = await ctx.sessionPersistence.load(SessionId(childId!))
     expect(loaded.events.some(event => event.type === 'subagent/descriptor')).toBe(true)
     expect(loaded.events.some(event => event.type === 'assistant/message')).toBe(true)
+  })
+
+  it('assembles the durable-id and settlement guidance through the real Loader', async () => {
+    const { ctx, parent } = await continuableSetup(true)
+    const schema = ctx.tools.schemas().find(s => s.name === 'subagent')!
+    expect(schema.description).toContain('child-session id, not a Job id')
+    const properties = (schema.parameters as {
+      properties: Record<string, { description?: string }>
+    }).properties
+    expect(properties.run_in_background?.description).toContain('do not pass it to job_list, job_output, or job_kill')
+
+    const assembly = await ctx.systemPrompt.assemble(assembleContextFor(parent))
+    const guidance = assembly.sections.find(section => section.name === 'tool:subagent')
+    expect(guidance?.text).toContain('child-session id, not a Job id')
+    expect(guidance?.text).toContain('wait for the runtime\'s notice')
   })
 
   it('hides continuable guidance when the current agent cannot see the tool', async () => {

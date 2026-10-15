@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "kind": "isolated-jiuzhang-source-launcher-smoke",
+  "sourceCheckout": "/Users/hui/ark-test/ark-github-main-20261008",
+  "sourceCommit": "2d1f1985080134140ace60812ce5342e91b0a690",
+  "profile": "jiuzhang",
+  "expectedProfile": "jiuzhang",
+  "launcher": "integrations/jiuzhang/src/start.mjs",
+  "mode": "launcher-only-dummy-child",
+  "isolatedHome": "/var/folders/tj/zym7f5k919375cmql460k5yw0000gn/T/ark-launcher-smoke-yZTcRG/Harness",
+  "isolatedWorkspace": "/var/folders/tj/zym7f5k919375cmql460k5yw0000gn/T/ark-launcher-smoke-yZTcRG/workspace",
+  "verifierConfigSha256": "154854f662364e095e0f1f0794be4b96dc291c29d7649fe27ebf59c511130072",
+  "exitCode": 0,
+  "signal": null,
+  "childObserved": {
+    "profile": null,
+    "dshHome": "/var/folders/tj/zym7f5k919375cmql460k5yw0000gn/T/ark-launcher-smoke-yZTcRG/Harness",
+    "jiuzhangHome": null,
+    "mainRoot": "/var/folders/tj/zym7f5k919375cmql460k5yw0000gn/T/ark-launcher-smoke-yZTcRG/Knowledge",
+    "wikiRoot": "/var/folders/tj/zym7f5k919375cmql460k5yw0000gn/T/ark-launcher-smoke-yZTcRG/Knowledge/wiki",
+    "verifier": "{\"authorityId\":\"launcher-smoke\",\"mode\":\"launcher-only\",\"sourceDigest\":\"0000000000000000000000000000000000000000000000000000000000000000\"}",
+    "argv": [
+      "--port",
+      "0"
+    ]
+  },
+  "stderrTail": "",
+  "stdoutTail": "",
+  "productionTouched": false,
+  "rustEnforceAuthorized": false
+}

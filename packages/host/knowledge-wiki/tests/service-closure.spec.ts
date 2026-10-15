@@ -8,7 +8,8 @@
  * Only non-deterministic boundaries are doubled: the model endpoint is a local
  * HTTP server the owned isolate really calls over the network stack, the
  * embedding endpoint is a stubbed global fetch (network), and the parent-owned
- * stage isolate is an in-process adapter. Every filesystem, queue, graph,
+ * stage isolate is an in-process adapter. One exact raw leaf can supply a
+ * special-file metadata classification. Every filesystem, queue, graph,
  * review and ingest behavior below is the production implementation running
  * against a real temp-dir workspace.
  */
@@ -102,6 +103,15 @@ const roots: string[] = []
 const contexts: Context[] = []
 const services: ClosureSurface[] = []
 const servers: Server[] = []
+const nonRegularSources = vi.hoisted(() => new Set<string>())
+vi.mock('node:fs', async (original) => {
+  const actual = await original<typeof import('node:fs')>()
+  return { ...actual, lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+    const stat = actual.lstatSync(...args)
+    if (stat === undefined || !nonRegularSources.has(String(args[0]))) return stat
+    return Object.assign(Object.create(stat), { isFile: () => false }) as typeof stat
+  } }
+})
 
 function tempRoot(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix))
@@ -155,6 +165,7 @@ function summaryDecision(overrides: Record<string, unknown> = {}): string {
 
 function longEvents(): unknown[] {
   return [
+    { type: 'sandbox/mode', data: { mode: 'workspace-write' } },
     { type: 'turn/start' },
     { type: 'user/message', data: { content: '用户提出一个可复用问题。'.repeat(12) } },
     { type: 'assistant/message', data: { content: '助手给出稳定方法、验证证据和回滚边界。'.repeat(12) } },
@@ -231,6 +242,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  nonRegularSources.clear()
   for (const server of servers.splice(0)) {
     await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
   }
@@ -468,6 +480,15 @@ describe('review and verification gates', () => {
 })
 
 describe('raw source tree safety', () => {
+  it('refuses a special raw-source metadata observation before queue admission', async () => {
+    const sources = resetRawSources(root), entry = join(sources, 'special.md')
+    writeFileSync(entry, 'preserved raw-source bytes')
+    nonRegularSources.add(entry)
+    await expect(service.scanSources()).rejects.toThrow('non-regular raw source is not allowed')
+    expect((await service.ingestQueueStatus()).tasks).toEqual([])
+    expect(readFileSync(entry, 'utf8')).toBe('preserved raw-source bytes')
+  })
+
   it('refuses a source root that is not an ordinary directory', async () => {
     const sources = join(root, 'raw', 'sources')
     rmSync(sources, { recursive: true, force: true })
@@ -488,15 +509,15 @@ describe('raw source tree safety', () => {
     rmSync(join(root, 'raw'), { recursive: true, force: true })
     writeFileSync(join(root, 'raw'), 'blocks the source root', 'utf8')
 
-    await expect(service.scanSources()).rejects.toThrow(/ENOTDIR/u)
+    await expect(service.scanSources()).rejects.toThrow(/ENOTDIR|ENOENT/u)
     expect((await service.ingestQueueStatus()).tasks).toEqual([])
   })
 
   it('refuses non-regular, hard-linked, and oversized raw sources', async () => {
     const sources = resetRawSources(root)
     if (process.platform !== 'win32') {
-      // mkfifo is POSIX-only; the non-regular refusal contract on win32 is
-      // covered by the symlink/hard-link cases in this same test.
+      // Native FIFO evidence is POSIX-only; the separate special metadata
+      // case covers this refusal branch on Windows without claiming a FIFO.
       execFileSync('/usr/bin/mkfifo', [join(sources, 'pipe.md')])
       await expect(service.scanSources()).rejects.toThrow('non-regular raw source is not allowed')
     }
@@ -656,7 +677,7 @@ describe('ingest admission and ownership', () => {
     const provided = new Map<string, unknown>([
       ['knowledgeWikiStageExecutor', hangingStageExecutor(observed)],
       ['sessionQuery', {
-        readSession: () => Promise.resolve({ session: { cwd: external }, events: longEvents() }),
+        readSession: (id: string) => Promise.resolve({ session: { id, cwd: external }, events: longEvents() }),
       }],
     ])
     vi.spyOn(ctx, 'get').mockImplementation(name => provided.get(name))
@@ -691,7 +712,7 @@ describe('ingest admission and ownership', () => {
 })
 
 describe('session summary write failures', () => {
-  function sessionCtx(readSession: () => Promise<unknown>, answer: string): { warn: ReturnType<typeof vi.fn> } {
+  function sessionCtx(readSession: (id: string) => Promise<unknown>, answer: string): { warn: ReturnType<typeof vi.fn> } {
     const provided = new Map<string, unknown>([
       ['sessionQuery', { readSession }],
       ['knowledgeWikiStageExecutor', {
@@ -710,7 +731,7 @@ describe('session summary write failures', () => {
 
   it('writes nothing when the summary stage returns no text', async () => {
     const external = tempRoot('wiki-closure-empty-')
-    const reader = () => Promise.resolve({ session: { cwd: external }, events: longEvents() })
+    const reader = (id: string) => Promise.resolve({ session: { id, cwd: external }, events: longEvents() })
     const provided = new Map<string, unknown>([
       ['sessionQuery', { readSession: reader }],
       ['knowledgeWikiStageExecutor', {
@@ -731,7 +752,7 @@ describe('session summary write failures', () => {
     mkdirSync(dirname(target), { recursive: true })
     symlinkSync(join(external, 'missing-target.md'), target)
     const { warn } = sessionCtx(
-      () => Promise.resolve({ session: { cwd: external }, events: longEvents() }),
+      (id: string) => Promise.resolve({ session: { id, cwd: external }, events: longEvents() }),
       summaryDecision(),
     )
 

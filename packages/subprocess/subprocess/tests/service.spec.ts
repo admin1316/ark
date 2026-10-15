@@ -80,6 +80,7 @@ describe('SubprocessRuntime seam', () => {
     process.env.dsh_scrub_probe_lower = 'stale'
     process.env.SCRUB_PROBE_TOKEN = 'secret'
     process.env.SCRUB_PROBE_PASSWORD = 'secret'
+    process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG = '{"privateKey":"secret"}'
     process.env.SCRUB_PROBE_PLAIN = 'visible'
     try {
       const env = scrubbedParentEnv()
@@ -87,6 +88,7 @@ describe('SubprocessRuntime seam', () => {
       expect(env.dsh_scrub_probe_lower).toBeUndefined()
       expect(env.SCRUB_PROBE_TOKEN).toBeUndefined()
       expect(env.SCRUB_PROBE_PASSWORD).toBeUndefined()
+      expect(env.ARK_KNOWLEDGE_VERIFIER_CONFIG).toBeUndefined()
       expect(env.SCRUB_PROBE_PLAIN).toBe('visible')
       expect(env.PATH).toBeDefined()
     } finally {
@@ -94,6 +96,7 @@ describe('SubprocessRuntime seam', () => {
       delete process.env.dsh_scrub_probe_lower
       delete process.env.SCRUB_PROBE_TOKEN
       delete process.env.SCRUB_PROBE_PASSWORD
+      delete process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
       delete process.env.SCRUB_PROBE_PLAIN
     }
   })

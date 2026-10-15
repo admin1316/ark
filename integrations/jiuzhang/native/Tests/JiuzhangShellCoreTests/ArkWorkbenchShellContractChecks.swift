@@ -543,7 +543,7 @@ func runArkWorkbenchShellContractChecks() async {
   let review = workbenchShellSlice(
     workbench,
     from: "private struct NativeGitInspector",
-    through: "private struct NativeOutputPanel"
+    through: "private struct NativeWorkbenchStatusBar"
   )
   check(
     review?.contains("NativeGitDiffPane(model: model") == true

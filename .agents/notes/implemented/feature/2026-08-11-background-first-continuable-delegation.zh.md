@@ -16,9 +16,9 @@ child 作用域的 `report` 提示词要求发送自包含的最终报告，而[
 
 面向模型的文本按位置划分职责：
 
-- 工具描述说明调用行为、持久化 id、运行时结算通知、通过 `send_message` 继续对话，以及显式前台覆盖；
-- `run_in_background` 参数说明具体生命周期的默认值以及何时覆盖；
-- `tool:<toolName>` 系统提示词 section 会告诉模型同时启动相互独立的委派、在它们运行时继续有用工作，并且仅当下一步动作依赖结果时选择前台。只有当该工具在组装作用域中仍可见时才会渲染这个 section，因此子级工具限制会同时移除 schema 与对应指引。
+- 工具描述将返回值说明为 child session id，明确它与 Job id 不同，列出不接受该 id 的 Job 工具，说明结算通知与通过 `send_message` 继续对话，并给出显式前台覆盖；
+- `run_in_background` 参数说明具体生命周期的默认值、child session id 与 Job id 的区别，以及何时覆盖；
+- `tool:<toolName>` 系统提示词 section 会告诉模型同时启动相互独立的委派、在它们运行时继续有用工作、不把 child id 传给 Job 工具、等待结算通知，并且仅当下一步动作依赖结果时选择前台。只有当该工具在组装作用域中仍可见时才会渲染这个 section，因此子级工具限制会同时移除 schema 与对应指引。
 
 [可继续 child 上报义务](2026-08-06-continuable-child-report-obligation.zh.md)保持不变：child 提示词要求发送一份自包含的最终报告，并在发现会改变 parent 下一步动作的信息时提前报告。由管理器负责的结算仍然无条件执行，不检查报告是否已经到达。这两条消息可能重复最终内容，但作者和用途不同：`report` 是 child 的显式交接，结算则记录本次运行如何结束，并在 child 无法配合时保留终止输出。`reportDelivery` 仍是部署调度策略，默认值为 `next-step`，通过 parent inbox 保持报告先于结算的顺序。
 

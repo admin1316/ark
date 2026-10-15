@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "ark-candidate-runtime-smoke",
+  "candidatePath": "/Users/hui/ark-test/candidate-20261008/Ark.app",
+  "candidateBundleId": "cn.jiuzhangtianmu.industrybrain.candidate.c20f8d622ac5f97a",
+  "candidateVersion": "3.1.2",
+  "candidateBuild": "2026100810",
+  "sourceCommit": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+  "candidateDataHome": "/Users/hui/ark-test/candidate-home-20261008",
+  "api": {
+    "route": "knowledgeWiki/search",
+    "rpcId": "candidate-runtime-smoke",
+    "carrierOk": true,
+    "domainOk": true,
+    "hitPath": "concepts/candidate-runtime-smoke.md"
+  },
+  "processes": {
+    "appPid": 69446,
+    "launcherPid": 69447,
+    "backendPid": 69473,
+    "backendPort": 54588
+  },
+  "officialUnchanged": {
+    "bundleId": "cn.jiuzhangtianmu.industrybrain",
+    "version": "3.1.0",
+    "build": "2026092701",
+    "appMtime": "2026-09-26T21:48:36.600Z"
+  },
+  "generatedAt": "2026-10-07T22:34:41.416Z"
+}

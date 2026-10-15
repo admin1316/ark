@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-10T17:28:29Z",
+  "checkedOutCommit": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+  "worktreeDirty": true,
+  "testCommand": "pnpm exec vitest run packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts",
+  "runtime": {
+    "node": "v24.19.0",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "testResult": {
+    "files": 1,
+    "passed": 7,
+    "failed": 0,
+    "durationMs": 896
+  },
+  "sourceEvidence": [
+    {
+      "path": "packages/host/knowledge-wiki/src/external-verifier-adapter.ts",
+      "sha256": "b1d179079658caa740f6fe895339fd9c97606823ac15bc951db5550fb52ac387"
+    },
+    {
+      "path": "packages/host/knowledge-wiki/tests/external-verifier-adapter.spec.ts",
+      "sha256": "6b6eaeb6fb2f872ada04814a1fb867e59b43424feb4f880a8cdc9f2e2581efeb"
+    }
+  ],
+  "fixture": "The suite generates a temporary Ed25519 keypair and uses it only to exercise adapter signature binding; it is not a production authority.",
+  "coverage": [
+    "request-bound signed result and promotion seal validation",
+    "timeout and caller cancellation",
+    "malformed output and nonzero exit diagnostics",
+    "stdout and stderr bounds",
+    "environment isolation",
+    "managed process-tree exit before successful settlement",
+    "helper process exit after output overflow"
+  ],
+  "liveRuntime": {
+    "jiuzhangVerifierAuthority": "unavailable",
+    "candidateLearningAcceptance": "not tested",
+    "phase6Acceptance": "UNKNOWN"
+  },
+  "result": "PASS_SOURCE_TEST_ONLY"
+}

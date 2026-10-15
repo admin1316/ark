@@ -1,0 +1,101 @@
+Ark 独立验证器接入方案
+日期：2026-10-12
+状态：可审阅方案，尚未部署实际 authority，不能据此认定知识学习或正式晋级通过。
+
+1. 这一轮要证明什么
+
+把“知识写进去”推进到“独立检查通过，而且下一次任务确实正确使用并产生收益”。证明链必须是：真实任务与错误记录 → 当前人类修正及未受信 Candidate → 独立内容验证 → 预注册的受限试用 → 实际模型请求和任务结果 → 独立同题评估 → 现有评审和晋级事务 → 新对话复用与安全、恢复验收。
+
+这次先整理可审阅方案，继续完成已有检查。没有安装新的验证程序、生成生产签名密钥、修改运行中的 profile 或替换正式 Ark。模型 API 密钥只负责调用模型，不能承担独立验收签名。
+
+2. 已有实现与真正缺口
+
+已有：Knowledge Wiki 的 Candidate/Review、验证回执、事件日志、scope/ACL、过期与冲突控制、晋级 WAL 和恢复、measured-trial reader、launcher 配置入口、受管子进程。优先接入这些 owner，不另建第二套知识库、评分层或通用服务框架。
+
+缺少 A：实际独立检查程序。当前没有部署它，3.1.30 原生窗口中的 Wiki 工具明确返回 authority unavailable。测试里签好的固定 pass 只验证接线和拒绝条件，不能当真实内容检查。
+
+缺少 B：实际使用证据的独立认证。现有 reader 会验评估者签名和 artifact 哈希，但 journalSignerPublicKey 当前只参与身份、密钥分离检查。安装库探针在保留评估者签名的情况下换成完全不同的日志公钥，仍得到 eligibleForReview=true。它使用合成测试夹具，没有读取或写入真实学习记录。现有晋级 WAL 另有 verifier authority 的 seal/validatePromotion；这个发现不等于 WAL 验签失效。
+
+缺少 C：真实 paired-use 采集、评估和签发程序。文件存在、知识被检索、签名正确分别证明不同事实；必须检查实际模型请求包含哪段知识、输出是否正确、错误是否减少，再签发结果。当前 12 项质量指标和真实 utility 仍为 UNKNOWN。
+
+缺少 D：项目来源绑定。现有 semantic request 包含相对 Candidate/target 路径、Review/hash、sourceHash、构建身份和运行环境，不包含明确的 workspace/project 身份或绝对 Wiki 根。不能让外部程序根据 Candidate 文本猜目录，也不能声称已完成多工作区可信分派。
+
+3. 最小接入分工
+
+职责 A，内容验证与现有晋级日志负责人：固定 launcher-owned 程序读取受信任务清单、项目快照和 Candidate，重新核对原始字节及请求绑定，执行独立 oracle 或受审测试，再签署 IndependentVerificationResult。现有 authority 继续签署、验证晋级 WAL，不让模型调用签名接口。
+
+职责 B，实际使用采集：从真正的 session event、工具结果、模型请求和输出保存完整运行区间，记录 workspace/session/call/turn、知识字节、权限、模型配置、源码/build/profile、任务与策略身份。采集失败、丢失事件或区间不完整必须留为 UNKNOWN，不以助手最后一句话代替日志。
+
+职责 C，对照评估：独立于任务执行模型和内容验证 authority，读取 B 的已认证证据，重新运行任务 oracle，计算 baseline/candidate 的机会分子与分母，签发已有 grant、预注册、use receipt 和 trial receipt。API 凭据与这组签名权限分开。
+
+三项是职责，不要求三个新的通用服务。现有接口要求 evaluator 与 journal signer 的 id、公钥相互独立，评审还要求 evaluator 与 semantic authority 分开；可以由现有 verifier/WAL owner 承担 journal signer，至少保留两组相互独立的 authority/key。是否另拆采集签名者，须由真实进程所有权和权限安排决定，不为凑角色数量增加密钥或抽象。
+
+第一版使用现有 Node/TypeScript、crypto 和受管 subprocess。没有证据支持为这个接入新增 Rust 路径。固定检查命令来自受审任务清单；不执行 Candidate 中拼出的命令，不把项目 npm script 的自报结果当独立 oracle。
+
+4. 具体接口和拟议改动
+
+现有接线保留：ARK_KNOWLEDGE_VERIFIER_CONFIG → knowledgeVerifierConfig → createExternalVerifierAuthority；ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG → knowledgeMeasuredTrialConfig → read-only artifact resolver / measured-trial reader。所有配置由 launcher 提供，默认缺少 authority 时继续拒绝。私钥位于项目与模型可写内容之外；本方案没有可直接启动的真实密钥配置。
+
+内容验证程序的 stdin 沿用现有单个 canonical JSON 请求：schemaVersion=1、operation=verifyCandidate、request=现有 schemaVersion=2 的验证请求。stdout 返回现有 authorityId、requestHash、result、methods、outcomes、issuedAt、proof。每个 outcome 的 evidence 必须指向真实检查产物；所有 outcome 决定 pass/fail，不能恒定返回 pass。未知题型或没有可信原始材料时，不签通过。
+
+源码身份、Review、Candidate、来源和动作必须匹配冻结快照；目标前态和拟写入的准确字节还需通过现有 measured proposal/commit 绑定。对于 sourceHash 仅绑定 URL/标签的情形，检查程序须取得额外可信来源 artifact，不能把标签哈希当内容正确性证明。
+
+项目定位：最先在一个固定的隔离测试项目中验证，项目根与可信清单由 launcher 固定为程序参数，只验证这一项目的闭环。生产多工作区接入须增加可认证的 workspace/project 绑定，或提供能证明等价约束的 launcher-owned 分派；当前 request 缺少该身份，所以第一步不能替代跨项目隔离验收。
+
+实际使用认证：建议在已有 evidenceArtifactReferences 中引用一个带版本的签名使用日志凭据，由现有日志 owner 出具。凭据绑定真实运行区间、session/call、角色/pair/grant/proposal、workspace 与 policy、事件链、渲染知识、provider request、完整输出的哈希。reader 必须使用配置的 journal signer 公钥验签，并逐项比对 use receipt；评估者仍须独立检查实际请求和结果。不同公钥、不同 session/call、替换知识、删改事件、重放凭据都应拒绝。凭据先签，再由 use receipt 引用其哈希，避免相互引用造成哈希循环。
+
+这里的签名使用凭据与 workspace 绑定是待审设计，尚未实现。优先放在已经批准的候选学习协议扩展范围内；若具体实现必须更改原有受保护数据格式或核心 wire contract，先列出准确的格式版本、消费者与变更请求，不自动改 manifest 的不可变 hash。
+
+受限试用：现在可见的 reader/recordCandidateMeasuredTrial 是验收入口，不等于已存在通用的试用执行器。先核对真实 profile 能否在冻结 grant 内注入精确知识并留下受信事件。只有发现现有 owner 缺少这一步时，才在已批准的候选扩展范围内补最小入口；不能预先晋级 Canonical 以取得候选 arm 的试用结果。
+
+5. 任务和验收顺序
+
+步骤 1，程序契约：确定可信任务清单、oracle、项目身份、证据格式和 key owner。对正确、错误、未覆盖输入分别产出 pass/fail/阻断，不把一个程序的签名当所有题型都已验证。内容验证先覆盖已经有独立判据的分页修复、精确发票换算、单行输出任务。
+
+步骤 2，证据认证：修复并加入日志公钥、身份与真实事件内容的拒绝测试。当前换公钥仍通过的安装库探针必须转为拒绝。配置缺失、损坏签名、跨项目、超预算、过期 grant、被篡改文件、取消/超时/输出超限，都不能获得 Canonical 权限，也不能留下被当作成功的记录。
+
+步骤 3，独立内容检查：验证正确修复、错误规则和适用范围过宽规则；代码任务保留原有测试文件哈希，独立执行 oracle。已出现的 read-only heredoc 第一条命令失败和报告事实错误保留，不因后面算对或修正成功而抹去。
+
+步骤 4，真实 paired-use：先冻结任务、模型、设置、权限、scope、预注册 pair 顺序和机会定义，baseline/candidate 使用全新对话。baseline 没有候选知识；candidate 仅在 grant 允许的 session、次数、时限内获得冻结知识。两边题目和模型配置相同，输入快照一致；记录全部预注册 pair，不能只保留成功轮次。不携带上一轮答案或修正提示，不提前写 Canonical。
+
+步骤 5，效果与晋级：独立评估者检查知识真的进入了相应 provider request，工具/最终输出绑定正确，oracle 重新计算无误，signed trial 的机会计数可由原始证据复算。用现有 recordCandidateMeasuredTrial 登记；只有 authentic、eligible 且正 utility 的结果，才交给现有评审/resolveReview。提交与恢复继续核对当前 Candidate、目标前态和拟写字节。
+
+步骤 6，新对话和反例：再用原题及预注册变体验证正确复用，同时运行过期、冲突、跨 session/workspace、注入投毒、权限提升、取消、异常退出、恢复与回放场景。原有 16 项行为门槛继续逐项保留；这里只列出需要接回真实 authority 的测试路径，不创建替代门槛。
+
+6. 怎样报告“提升多少”
+
+沿用原始任务的 12 项质量指标及现有 evaluate-learning.ts 的机会计数。另有 reader 所需的 17 个 metric 字段，两者用途不同，不把字段数当验收项数或完成度。
+
+rate = numerator / denominator。缺少完整独立 pair、签名、原始证据或必要机会分母时，结果是 UNKNOWN。模型独自说“正确”不算 verified；自动生成的纠正消息不能计为真实用户纠正频率。
+
+既定效果条件仍为：verifiedTaskSuccess、repeatedErrorRate、knowledgeUtility 按既定方向改善；staleRecallRate、crossSessionLeakage、memoryPrivilegeEscalation、memoryPoisoning、falseCompletionRate 为零，且有实际测试机会；repairReuseSuccess、conflictDetectionRate、conflictEscalationRate、replayExplainability 的全部机会通过，其他指标无回退。原始条件、scope、权限、安全阈值与发布政策不自动放宽。
+
+同时记录失败、重试、工具调用、费用和原始耗时。当前没有足够 paired 样本，不能给总体精准度、智能或响应速度的提升百分比。历史对话打开/切换/滚动与缓存性能仍按你选定的优先级留到下一轮。
+
+7. 本次已做与发布条件
+
+已修复 external-verifier-adapter 的配置别名问题：创建后修改原 options 或参数数组不能改变 authority、命令或时限。四项失败先复现；适配器 16 项全部通过，相关验证/配置/实测试 reader 的 292 项通过；本文件适配器行、分支、函数、语句覆盖均为 100%。类型检查、全量 lint、30 项 doc-sync 通过；fresh source-built 公共库与真实受管子进程冒烟通过。
+
+上述修复已经进入源码构建产物，尚未进入正在运行的 3.1.30 候选；它不等于实际独立内容验证程序已部署。安装库的日志公钥替换探针仍是失败证据，没有隐藏或绕过。
+
+下一次候选切换要先由已授权的 AppleScript 确认空闲并正常退出，再按唯一候选槽、单个回滚、版本/hash、完整打包和安装检查执行。不要修改运行中的 runtime/profile；不要求你重复手动输入测试题。
+
+正式/GitHub 的条件继续保留：真实 authority 与完整复用/utility 验收、全源码逐文件覆盖、CI、只读首命令问题、完整 Phase 6/平台/安全/回滚，以及候选初始化进程消失原因仍需解决或验收。既有 GitHub/正式发布授权以满足这些条件为前提；本次没有发布。
+
+可复核记录：
+/Users/hui/ark-test/evidence/verifier-fixed-launcher-options-red-20261012.json
+/Users/hui/ark-test/evidence/verifier-fixed-launcher-options-green-20261012.json
+/Users/hui/ark-test/evidence/verifier-integration-prerequisites-tests-20261012.json
+/Users/hui/ark-test/evidence/verifier-fixed-launcher-options-coverage-20261012/coverage-summary.json
+/Users/hui/ark-test/evidence/verifier-fixed-launcher-options-built-library-smoke-20261012.log
+/Users/hui/ark-test/evidence/measured-trial-journal-anchor-gap-20261012.json
+/Users/hui/ark-test/evidence/candidate330-native-window-suite-20261011.json
+
+源码 owner：
+/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/external-verifier-adapter.ts
+/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/verifier.ts
+/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/measured-trial.ts
+/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/reviews.ts
+/Users/hui/ark-test/ark-pr39-source-audit-20261011/packages/host/knowledge-wiki/src/index.ts
+/Users/hui/ark-test/ark-pr39-source-audit-20261011/integrations/jiuzhang/profile/cordis.patch.yml
+/Users/hui/ark-test/ark-pr39-source-audit-20261011/scripts/rust-migration/evaluate-learning.ts

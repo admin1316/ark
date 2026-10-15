@@ -1919,6 +1919,15 @@ swift build \
   --configuration release \
   --product JiuzhangShell
 
+# The private protected owner is an embedded, on-demand XPC service. It carries
+# no production signing key or authority configuration.
+swift build \
+  --disable-sandbox \
+  --package-path "${native_root}" \
+  --scratch-path "${swift_scratch}" \
+  --configuration release \
+  --product ArkKnowledgeOwner
+
 binary_path="$(swift build \
   --disable-sandbox \
   --package-path "${native_root}" \
@@ -1948,6 +1957,11 @@ ark_refuse_unsafe_output "${destination}" >/dev/null
 mkdir "${app_path}"
 mkdir -p "${app_path}/Contents/MacOS" "${app_path}/Contents/Resources"
 install -m 0755 "${binary_path}" "${app_path}/Contents/MacOS/Ark"
+owner_bundle="${app_path}/Contents/XPCServices/ArkKnowledgeOwner.xpc"
+mkdir -p "${owner_bundle}/Contents/MacOS"
+install -m 0755 "${binary_path:h}/ArkKnowledgeOwner" "${owner_bundle}/Contents/MacOS/ArkKnowledgeOwner"
+install -m 0644 "${native_root}/Resources/ArkKnowledgeOwner-Info.plist" "${owner_bundle}/Contents/Info.plist"
+
 /usr/bin/strip -S -x "${app_path}/Contents/MacOS/Ark"
 ark_main_swift_rpaths prune "${app_path}/Contents/MacOS/Ark"
 "${python_executable}" - "${app_path}/Contents/MacOS/Ark" "${native_root}" "${swift_scratch}" <<'PYTHON'
@@ -2195,6 +2209,7 @@ timestamp_flag="--timestamp=none"
 if [[ -x "${app_path}/Contents/Resources/node/bin/node" ]]; then
   /usr/bin/codesign --force --options runtime --entitlements "${node_entitlements_path}" --sign "${sign_identity}" "${timestamp_flag}" "${app_path}/Contents/Resources/node/bin/node"
 fi
+/usr/bin/codesign --force --options runtime --sign "${sign_identity}" "${timestamp_flag}" "${owner_bundle}"
 # --deep signs every nested executable (the embedded runtime's native addons
 # included); the app seal is applied last over the finished bundle.
 /usr/bin/codesign --force --deep --options runtime --entitlements "${entitlements_path}" --sign "${sign_identity}" "${timestamp_flag}" "${app_path}"

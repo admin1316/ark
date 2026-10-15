@@ -62,7 +62,7 @@ interface DeepSeekDefaultsServer {
 }
 
 /** Serve one deterministic DeepSeek-compatible response while retaining its request body. */
-async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
+async function deepseekDefaultsServer(keepAliveIntervalMs = 60): Promise<DeepSeekDefaultsServer> {
   const requests: JsonObject[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = ''
@@ -75,7 +75,7 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
       const write = (): void => {
         if (keepAlives-- > 0) {
           response.write(': keep-alive\n\n')
-          setTimeout(write, 60)
+          setTimeout(write, keepAliveIntervalMs)
           return
         }
         response.end([
@@ -85,7 +85,7 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
           '',
         ].join('\n\n'))
       }
-      setTimeout(write, 60)
+      setTimeout(write, keepAliveIntervalMs)
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -436,7 +436,7 @@ describe('headless stream-json snapshots', () => {
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('keeps provider comments alive and sends DeepSeek defaults through the one-shot app', async () => {
-    const server = await deepseekDefaultsServer()
+    const server = await deepseekDefaultsServer(600)
     try {
       const result = await runLoaderSmoke({
         label: 'DeepSeek adapter defaults headless stream-json snapshot',
@@ -459,7 +459,7 @@ describe('headless stream-json snapshots', () => {
       })
 
       expect(result.stderr).toBe('')
-      expect(server.requests).toHaveLength(1)
+      expect(server.requests, JSON.stringify(server.requests, null, 2)).toHaveLength(1)
       expect(server.requests[0]?.max_tokens).toBe(256_000)
       expect(server.requests[0]?.reasoning_effort).toBe('low')
       const header = (parseJsonl(result.stdout)

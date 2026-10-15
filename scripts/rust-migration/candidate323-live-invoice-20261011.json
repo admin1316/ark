@@ -1,0 +1,278 @@
+{
+  "schemaVersion": 1,
+  "status": "unsigned-live-observation",
+  "candidate": {
+    "version": "3.1.23",
+    "build": "2026101023",
+    "appPath": "/Users/hui/ark-test/candidate/Ark.app",
+    "runtimeStartSha256": "08bba2948fab353ddb70286bbadc66a1e1573820245d741752d414415d69d287",
+    "profile": "jiuzhang",
+    "profilePatchSha256": {
+      "base": "24b9156d97531fe2d6a17c2596ca5d08ff623d827155d89bbc1de7923a79a97c",
+      "nativeApiApp": "87baf5a59fd120f784456b553581b608b26bc0e946f4d08cb6728e43a56b9a3a",
+      "jiuzhang": "805694d8e8a4f512a660d71a7d1e6779c24960cd8e21775d62cc3ba4262fa37a"
+    },
+    "runtimeInventory": {
+      "entryCount": 106,
+      "includeRootCount": 1,
+      "pluginIdCount": 105,
+      "enabledPluginIds": 78,
+      "disabledPluginIds": 27,
+      "entrySha256": "d87c5fc494994510b0f9839125bbfacdc2456a619520cc246e55c79903dcca86"
+    },
+    "formalArkAtObservation": {
+      "version": "3.1.0",
+      "build": "2026092701",
+      "changed": false
+    }
+  },
+  "task": {
+    "workspace": "/Users/hui/ark-test/invoice-reconciliation-current319-20261009",
+    "promptFile": "/Users/hui/ark-test/evidence/window-test-20261009-task-v2.zh.txt",
+    "promptSha256": "0d6e0e2fece23b47e1f7281748cd8043fa04c202e862ec441a34117edf763f20",
+    "mode": "standard",
+    "permission": "read-only",
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-flash",
+    "reasoningEffort": "max",
+    "providerJsonOutputSettingOnDisk": true,
+    "providerRequestBodyCaptured": false
+  },
+  "expectedAndObservedValues": {
+    "approved_invoice_count": 6,
+    "pending_invoice_count": 1,
+    "rejected_row_ids": [
+      "I007",
+      "I008"
+    ],
+    "usd_total_cents": 26598,
+    "usd_cents_by_currency": {
+      "USD": 9750,
+      "EUR": 8834,
+      "JPY": 8000,
+      "CNY": 14
+    },
+    "independentExactArithmeticCheck": "PASS",
+    "method": "Python Fraction parsed the fixture CSVs, applied per-row conversion, and rounded half away from zero."
+  },
+  "outputContract": {
+    "scope": "The final user-visible assistant message text part; reasoning parts and tool events are not treated as answer text.",
+    "visibleAssistantPreface": "not observed in the three completed answer panes",
+    "inProgressNarrationObservation": "The run-1 in-progress screenshot shows tool progress and no visible assistant narration; runs 2 and 3 were captured only after completion.",
+    "rawFinalTextUsesAsciiDoubleQuotes": true,
+    "sameParsedJsonAcrossRuns": true,
+    "byteIdenticalFinalTextAcrossRuns": false,
+    "validJson": "PASS 3/3",
+    "finalUserVisibleTextStrictJson": "PASS 3/3",
+    "validationMethod": "JSON.parse on the persisted assistant/message data.message.content item whose type is text; every parsed object was compared with the independent exact-arithmetic oracle.",
+    "priorVisualInterpretation": "The earlier screenshot-only character reading was superseded by the persisted text-event audit."
+  },
+  "runs": [
+    {
+      "index": 1,
+      "sessionId": "74c77212-6dd9-4732-9df5-456b0b549aa1",
+      "sessionCwd": "/Users/hui/ark-test/invoice-reconciliation-current319-20261009",
+      "elapsedSeconds": 13.7,
+      "llmMilliseconds": 13357,
+      "steps": 5,
+      "toolCalls": 9,
+      "arithmeticCorrect": true,
+      "validJson": true,
+      "screenshots": [
+        {
+          "path": "/Users/hui/ark-test/evidence/candidate323-live-invoice-20261011/run1-final.png",
+          "sha256": "c90495144c88cf949a3a64607ee3764db945d28ec3e051cd7b5de476569bafe9"
+        },
+        {
+          "path": "/Users/hui/ark-test/evidence/candidate323-live-invoice-20261011/run1-tools.png",
+          "sha256": "07dd943e2ea7ae9c717241a150ab70f2a901d9cd641932dea1c1918fce6f1dfb"
+        }
+      ],
+      "sessionLogSha256": "4b1223bc1c81f278ea93d7a38ef88d45bfbe767a2f6dd7d67288e833662b79c6",
+      "sessionLogBytes": 50138,
+      "zstdFrameCount": 78,
+      "storedRecordCount": 163,
+      "logicalEventCount": 2553,
+      "assistantMessageSeq": 2550,
+      "turnEndSeq": 2552,
+      "finalTextLength": 198,
+      "finalTextSha256": "abeefe27a84e6dbcffe1f42f62c6d22952db04848461a5ee478210be784f6ced",
+      "parsedValuesMatchOracle": true,
+      "finalTextPartType": "text",
+      "finalTextQuoteCodePoint": "U+0022",
+      "turnEndPresent": true,
+      "recordsAfterTurnEnd": 0
+    },
+    {
+      "index": 2,
+      "sessionId": "f74256fb-73d4-41db-8fee-479809931dc5",
+      "sessionCwd": "/Users/hui/ark-test/invoice-reconciliation-current319-20261009",
+      "elapsedSeconds": 16.3,
+      "llmMilliseconds": 15953,
+      "steps": 6,
+      "toolCalls": 10,
+      "arithmeticCorrect": true,
+      "validJson": true,
+      "screenshots": [
+        {
+          "path": "/Users/hui/ark-test/evidence/candidate323-live-invoice-20261011/run2-final.png",
+          "sha256": "d5bb0b95194d64214fd6e93c73950cab0bd67b445b429f10e75c98384da0e538"
+        }
+      ],
+      "sessionLogSha256": "4bc172fe99590b060f2f4dd2e0467ef453e59555d7b9b63f0f086d41995a7c8f",
+      "sessionLogBytes": 53690,
+      "zstdFrameCount": 87,
+      "storedRecordCount": 180,
+      "logicalEventCount": 2681,
+      "assistantMessageSeq": 2678,
+      "turnEndSeq": 2680,
+      "finalTextLength": 181,
+      "finalTextSha256": "79210f8783cd82dffff4068c41c14593fe1d63fb5577b8c3ecfdd6284b4f2895",
+      "parsedValuesMatchOracle": true,
+      "finalTextPartType": "text",
+      "finalTextQuoteCodePoint": "U+0022",
+      "turnEndPresent": true,
+      "recordsAfterTurnEnd": 0
+    },
+    {
+      "index": 3,
+      "sessionId": "437730da-c099-4107-823c-c955ad7d6a8e",
+      "sessionCwd": "/Users/hui/ark-test/invoice-reconciliation-current319-20261009",
+      "elapsedSeconds": 19.8,
+      "llmMilliseconds": 19529,
+      "steps": 8,
+      "toolCalls": 7,
+      "arithmeticCorrect": true,
+      "validJson": true,
+      "screenshots": [
+        {
+          "path": "/Users/hui/ark-test/evidence/candidate323-live-invoice-20261011/run3-final.png",
+          "sha256": "add745532de3761f993252383b0c1567463a816c866a5277069b1854f7b06d7d"
+        }
+      ],
+      "sessionLogSha256": "23a41ff86d997fe2ddd8930ab8c02cf62364ed1077a3533718a57aba39ca791a",
+      "sessionLogBytes": 58414,
+      "zstdFrameCount": 104,
+      "storedRecordCount": 191,
+      "logicalEventCount": 3205,
+      "assistantMessageSeq": 3201,
+      "turnEndSeq": 3203,
+      "finalTextLength": 198,
+      "finalTextSha256": "abeefe27a84e6dbcffe1f42f62c6d22952db04848461a5ee478210be784f6ced",
+      "parsedValuesMatchOracle": true,
+      "finalTextPartType": "text",
+      "finalTextQuoteCodePoint": "U+0022",
+      "turnEndPresent": true,
+      "recordsAfterTurnEnd": 1,
+      "sessionRestartMarker": {
+        "type": "session/end-seed",
+        "seq": 3204,
+        "expectedOnResume": true
+      }
+    }
+  ],
+  "summary": {
+    "medianElapsedSeconds": 16.3,
+    "sameTaskPreviousCandidate": {
+      "version": "3.1.22",
+      "samples": [
+        15.135,
+        18.422,
+        5.546
+      ],
+      "medianElapsedSeconds": 15.135
+    },
+    "observedMedianDifferenceSeconds": 1.165,
+    "observedMedianDifferencePercent": 7.7,
+    "speedupClaim": "none; the current three samples are 7.7% slower by median, which does not establish a stable regression or improvement",
+    "arithmeticLift": "none demonstrated; both candidates passed 3/3",
+    "strictOutputComparison": "Candidate 3.1.22 final answer pane JSON passed 3/3, with interim narration visible during 2/3 runs. Candidate 3.1.23 persisted final user-visible text passed JSON.parse and oracle comparison 3/3; one in-progress capture showed no visible narration, while the other runs lack intermediate captures. The final-answer sample matches; this small sample does not establish a durable change in streaming narration.",
+    "rustContributionToEndToEndTime": "not measured",
+    "finalAnswerJson": "PASS 3/3",
+    "sessionPersistence": "JsonlSessionPersistence.inspect read all three sessions through turn/end; one normal quit/reopen restored the final tested conversation in the UI. Crash recovery and long-run stress remain untested."
+  },
+  "knowledgeObservation": {
+    "wikiVerifierUnavailableObservedInRun1": true,
+    "message": "knowledge verifier authority is unavailable",
+    "run2AndRun3WikiTraceAudit": "not completed",
+    "wikiAuthorityAvailableInActiveProfile": false
+  },
+  "sessionPersistence": {
+    "compressedSessionFiles": 3,
+    "completeZstandardFrameCountsByRun": [
+      78,
+      87,
+      104
+    ],
+    "storedRecordCountsByRun": [
+      163,
+      180,
+      191
+    ],
+    "logicalEventCountsByRun": [
+      2553,
+      2681,
+      3205
+    ],
+    "persistenceBackendInspect": "PASS 3/3",
+    "turnEndPresentByRun": [
+      true,
+      true,
+      true
+    ],
+    "candidateWasOpenDuringReadOnlyAudit": true,
+    "completeEventLogRead": "The persistence backend decoded each session through turn/end and exposed its final text part through inspect() for 3/3 sessions.",
+    "processRestartUiReplay": "PASS 1/1 for the last completed invoice session: normal quit then relaunch of candidate 3.1.23 restored the same conversation and final JSON without resubmitting; session/end-seed seq 3204 marks the stored-history boundary.",
+    "verifierKnowledgeReplay": "NOT TESTED; the invoice task did not validate Knowledge recall or injection.",
+    "reopenedSessionId": "437730da-c099-4107-823c-c955ad7d6a8e",
+    "restartScreenshot": {
+      "path": "/Users/hui/ark-test/evidence/candidate323-live-invoice-20261011/restart-restored-chat.png",
+      "sha256": "94fbfd9aad9b6446687ff1195ad0386e320d1a486bff6e6d2ec38aa89ede3ea4"
+    },
+    "normalQuitAndReopenProcessLifecycle": {
+      "oldCandidatePid": 78972,
+      "oldRuntimePid": 78975,
+      "oldRunnerPid": 79006,
+      "oldProcessTreeExited": true,
+      "reopenedCandidatePid": 25064,
+      "reopenedRuntimePid": 25071,
+      "reopenedRunnerPid": 25090
+    },
+    "crashRecoveryAndLongRunStress": "NOT TESTED"
+  },
+  "installE2E": {
+    "status": "PASS",
+    "checks": 121,
+    "processRuns": 2,
+    "failures": 0,
+    "receipt": "/Users/hui/ark-test/evidence/install-e2e-candidate323-20261010.json"
+  },
+  "sourceRegression": {
+    "knowledgeWikiAndTools": "PASS 76 files / 687 tests",
+    "governanceOrphanTransitionFocused": "PASS 13/13",
+    "limitations": [
+      "These are source and install checks, not long-run or stress reliability measurements.",
+      "The invoice task does not verify Knowledge correction, expiry, cross-conversation reuse, or learning utility.",
+      "This receipt is an unsigned live observation, not a Phase 6 acceptance receipt."
+    ]
+  },
+  "publication": {
+    "githubUploaded": false,
+    "promotedToFormalArk": false
+  },
+  "observationRevision": 2,
+  "observationCorrection": {
+    "date": "2026-10-11",
+    "method": "Decoded every concatenated Zstandard frame, then read the same sessions through JsonlSessionPersistence.inspect.",
+    "corrections": [
+      "The earlier screenshot-only reading mistook the rendered quote glyphs for U+201C/U+201D; the persisted user-visible text parts contain ASCII U+0022 and pass JSON.parse in all three runs.",
+      "The earlier one-record-per-file count decoded only the first Zstandard frame; each session has a complete multi-frame event stream through turn/end."
+    ],
+    "supersededClaims": {
+      "visibleCurlyQuotes": true,
+      "strictJsonPasses": "FAIL 3/3",
+      "recordsObservedPerFileWhileCandidateWasRunning": 1
+    },
+    "recoveryVerification": "After the app restarted, the most recent session gained the expected session/end-seed boundary and the same JSON answer reappeared in the UI without resubmission."
+  }
+}

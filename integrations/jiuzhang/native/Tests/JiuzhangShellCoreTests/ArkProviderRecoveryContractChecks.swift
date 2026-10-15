@@ -6,6 +6,13 @@ private final class ProviderRecoveryURLProtocol: URLProtocol, @unchecked Sendabl
   private static let lock = NSLock()
   private static var requests: [JSONValue] = []
   private static var migrationMode = "user"
+  private static var settingsRow: JSONValue?
+
+  static func useSettingsRow(_ row: JSONValue) {
+    lock.lock()
+    defer { lock.unlock() }
+    settingsRow = row
+  }
 
   static func useMigration(_ mode: String) {
     lock.lock()
@@ -17,6 +24,7 @@ private final class ProviderRecoveryURLProtocol: URLProtocol, @unchecked Sendabl
     lock.lock()
     defer { lock.unlock() }
     requests = []
+    settingsRow = nil
   }
 
   static func snapshot() -> [JSONValue] {
@@ -49,13 +57,14 @@ private final class ProviderRecoveryURLProtocol: URLProtocol, @unchecked Sendabl
       Self.lock.lock()
       Self.requests.append(body)
       let migrationMode = Self.migrationMode
+      let settingsRow = Self.settingsRow ?? .null
       Self.lock.unlock()
       guard let method = body["method"]?.stringValue,
         let rpcID = body["rpcId"]?.stringValue,
         let url = request.url
       else { throw ArkAPIError(message: "fixture request envelope failed") }
       let provider: String
-      if method == "llm/providers" {
+      if method == "llm/providers" || method == "settings/describe" || method == "settings/mutate" {
         guard body["payload"]?["args"]?.objectValue != nil else { throw ArkAPIError(message: "fixture directory args failed") }
         provider = ""
       } else {
@@ -65,7 +74,13 @@ private final class ProviderRecoveryURLProtocol: URLProtocol, @unchecked Sendabl
       }
 
       let result: JSONValue
-      if method == "llm/providers" {
+      if method == "settings/describe" {
+        result = .object(["ok": .bool(true), "value": .object([
+          "writable": .bool(true), "hasDocument": .bool(true), "namespaces": .array([settingsRow]),
+        ])])
+      } else if method == "settings/mutate" {
+        result = .object(["ok": .bool(true), "value": settingsRow])
+      } else if method == "llm/providers" {
         var migration: [String: JSONValue] = [
           "code": .string("credential-fields"), "fields": .array([.string("apiKey")]),
         ]
@@ -246,6 +261,36 @@ func runArkProviderRecoveryContractChecks() async {
         _ = try await client.verifyProvider(provider: mode, model: "fixture-model")
         check(false, "connection verification rejects \(mode)")
       } catch { check(true, "connection verification rejects \(mode)") }
+    }
+    func settingsRow(revision: JSONValue) -> JSONValue {
+      .object([
+        "ns": .string("fixture-settings"), "schema": .object(["type": .string("object")]),
+        "value": .object(["preference": .string("dark")]),
+        "base": .object(["preference": .string("system")]),
+        "user": .object(["preference": .string("dark")]),
+        "secrets": .array([.object(["path": .array([.string("fixtureReference")]), "set": .bool(false)])]),
+        "applies": .string("live"), "revision": revision,
+      ])
+    }
+    for revision in [0, 2, 9_007_199_254_740_991] {
+      ProviderRecoveryURLProtocol.useSettingsRow(settingsRow(revision: .number(Double(revision))))
+      let snapshot = try await client.settingsSnapshot()
+      let mutation = try await client.mutateSetting(namespace: "fixture-settings", path: ["preference"],
+        value: .string("dark"), expectedRevision: 0)
+      check(snapshot.namespaces == [mutation] && mutation.revision == revision,
+        "settings describe and mutation preserve all namespace metadata at revision \(revision)")
+    }
+    for revision: JSONValue in [.number(1.5), .number(-1), .number(9_007_199_254_740_992), .number(1e100), .string("2"), .null] {
+      ProviderRecoveryURLProtocol.useSettingsRow(settingsRow(revision: revision))
+      let snapshot = try await client.settingsSnapshot()
+      check(snapshot.namespaces.isEmpty, "settings describe skips an invalid revision \(revision)")
+      do {
+        _ = try await client.mutateSetting(namespace: "fixture-settings", path: ["preference"],
+          value: .string("dark"), expectedRevision: 0)
+        check(false, "settings mutation rejects an invalid revision \(revision)")
+      } catch let error as ArkAPIError {
+        check(error.message == "设置更新响应无效", "settings mutation reports its invalid namespace response")
+      }
     }
   } catch { check(false, "native provider recovery wire checks complete") }
 }

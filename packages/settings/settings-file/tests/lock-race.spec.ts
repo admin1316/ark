@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -21,6 +21,16 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args)
+      if (state.failTempWrite && String(args[0]).endsWith('.tmp')) {
+        state.failTempWrite = false
+        vi.spyOn(handle, 'writeFile').mockRejectedValueOnce(
+          Object.assign(new Error('ENOSPC: injected FileHandle.writeFile failure'), { code: 'ENOSPC' }),
+        )
+      }
+      return handle
+    },
     writeFile: (async (path: unknown, ...rest: never[]) => {
       if (state.holdDocumentCreate && String(path).endsWith('settings.yaml')) {
         state.holdDocumentCreate = false
@@ -30,10 +40,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       if (state.failDocumentCreate && String(path).endsWith('settings.yaml')) {
         state.failDocumentCreate = false
         throw Object.assign(new Error('ENOSPC: injected document create failure'), { code: 'ENOSPC' })
-      }
-      if (state.failTempWrite && String(path).endsWith('.tmp')) {
-        state.failTempWrite = false
-        throw Object.assign(new Error('ENOSPC: injected writeFile failure'), { code: 'ENOSPC' })
       }
       return (actual.writeFile as (path: unknown, ...args: never[]) => Promise<void>)(path, ...rest)
     }) as typeof actual.writeFile,
@@ -50,6 +56,7 @@ afterEach(async () => {
   state.holdDocumentCreate = false
   state.documentCreateStarted = undefined
   state.continueDocumentCreate = undefined
+  vi.restoreAllMocks()
   while (cleanups.length > 0) await cleanups.pop()!()
 })
 
@@ -118,9 +125,12 @@ describe('writer-lock failure cleanup', () => {
     const ctx = await boot({ path, watch: false })
     const scope = ctx.settings.register(settingsNamespace('alpha'), AlphaSchema)
     state.failTempWrite = true
-    await expect(scope.update({ value: 9 })).rejects.toThrow(/ENOSPC/)
+    const updating = scope.update({ value: 9 })
+    await expect(updating).rejects.toThrow(/ENOSPC/)
+    await expect(updating).rejects.toMatchObject({ code: 'ENOSPC' })
     // The document is untouched and the writer lock was released on the way out.
     expect(await readFile(path, 'utf8')).toContain('value: 1')
     await expect(access(`${path}.lock`)).rejects.toThrow()
+    expect((await readdir(dir)).filter(name => name.endsWith('.tmp'))).toEqual([])
   })
 })

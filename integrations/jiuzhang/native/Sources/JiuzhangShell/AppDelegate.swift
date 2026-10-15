@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private let backend = BackendProcess()
+  private let protectedOwner = ArkProtectedOwnerBroker()
   private let workbenchDraftFlushCoordinator = NativeWorkbenchDraftFlushCoordinator()
   private let apiToken = "\(UUID().uuidString.lowercased()).\(UUID().uuidString.lowercased())"
   private var window: NSWindow?
@@ -24,6 +25,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var terminationStopWorkItem: DispatchWorkItem?
   private var terminationDeadlineWorkItem: DispatchWorkItem?
   private var currentLanguage = "zh"
+  private var finiteSlotStopGeneration: UUID?
+  private lazy var finiteTrialRunner: ArkProtectedFiniteRunner = {
+    let runner = ArkProtectedFiniteRunner(backend: backend, broker: protectedOwner)
+    runner.intentionalSlotStop = { [weak self] generation in self?.finiteSlotStopGeneration = generation }
+    return runner
+  }()
+
+  /// Reviewed source entry; production startup supplies no finite provisioning.
+  func startReviewedFiniteGuard(_ launch: ArkProtectedGuardLaunch) async throws -> URL {
+    try await finiteTrialRunner.startGuard(launch)
+  }
+  func runReviewedFiniteTrial(_ descriptor: ArkProtectedTrialDescriptor, evaluator: ArkProtectedEvaluator,
+    launches: [ArkProtectedFiniteBackendLaunch]) async throws -> JSONValue {
+    try await finiteTrialRunner.runRegisteredTrial(descriptor: descriptor, evaluator: evaluator, launches: launches)
+  }
+
+  func runReviewedFrozenProducer(_ launch: ArkProtectedEvaluatorConfiguration, completedLaunchHash: String) async throws -> JSONValue {
+    try await finiteTrialRunner.runFrozenProducer(launch, completedLaunchHash: completedLaunchHash)
+  }
 
   /// Single-instance guard: two copies writing the same session store corrupt session logs
   /// (observed 2026-09-12 with six overlapping launches). A second launch hands focus back to the
@@ -268,6 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     backend.onExit = { [weak self] status in
       guard let self, !self.requestedTermination else { return }
+      if let expected = self.finiteSlotStopGeneration, self.backend.joinedReceipt?.generation == expected { return }
       Task { @MainActor [weak self] in
         guard let self, !self.requestedTermination else { return }
         if let error = await self.prepareNativeInterfaceShutdown() {
@@ -307,6 +328,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       try prepareDefaultKnowledgeProject(locations: locations)
       restartCircuitBreaker.recordLaunch()
+      protectedOwner.close()
+      let ownerChannel = try ArkNativeOwnerChannel(helloProvider: { [protectedOwner] in
+        try await protectedOwner.launchHello()
+      }) { [protectedOwner] operation, payload in
+        try await protectedOwner.perform(operation, payload: payload)
+      }
       try backend.start(
         executable: node,
         arguments: JiuzhangShellContract.launchArguments(launcherPath: launcher),
@@ -316,7 +343,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           apiToken: apiToken,
           dataLocations: locations
         ),
-        workingDirectory: defaultWorkspace
+        workingDirectory: defaultWorkspace,
+        ownerChannel: ownerChannel
       )
     } catch {
       showFailure("Ark 启动失败：\(error.localizedDescription)")
@@ -374,7 +402,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       interactions: ArkInteractionAPI(baseURL: serviceURL, apiToken: apiToken),
       eventPump: ArkEventPump(baseURL: serviceURL, apiToken: apiToken),
       fallbackWikiRoot: fallbackWikiRoot,
-      documentStore: ArkDocumentReferenceStore(rootURL: locations.documentReferences)
+      documentStore: ArkDocumentReferenceStore(rootURL: locations.documentReferences),
+      protectedOwner: protectedOwner
     )
     let host = ArkHostingView(rootView: ArkRootView(
       model: model,
@@ -399,6 +428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func shutdownNativeInterface() async {
+    try? await protectedOwner.closeAndWait()
     guard let model = appModel else {
       hostingView?.removeFromSuperview()
       hostingView = nil
@@ -454,7 +484,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     terminationBackendStopStarted = true
     backend.stop(deadline: deadline) { [weak self] in
       guard let self else { return }
-      self.finishApplicationTermination(sender: sender, requestID: requestID, allow: true)
+      self.finiteTrialRunner.guardProcess.stop(deadline: deadline) { [weak self] in
+        self?.finishApplicationTermination(sender: sender, requestID: requestID, allow: true)
+      }
     }
   }
 

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/rust-migration/source-truth-report.md
+source-truth-report.md: 7b4792be775339e435f64d121f2fa53cc73e46c8
+source-truth-report.zh.md: fa65670ed17e0905060d272c30e76c85d91d67e0

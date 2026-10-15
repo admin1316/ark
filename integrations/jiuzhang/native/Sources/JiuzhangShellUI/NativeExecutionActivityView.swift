@@ -22,7 +22,7 @@ struct NativeExecutionInlineStatusView: View {
   private func content(_ execution: ArkExecutionActivity, now: Date) -> some View {
     HStack(spacing: 6) {
       NativeExecutionVisuals.phaseSymbol(execution.phase)
-      Text(NativeExecutionVisuals.phaseLabel(execution.phase, language: language))
+      Text(execution.phase.localizedLabel(language: language))
         .font(.system(size: 10, weight: .semibold))
         .foregroundStyle(NativeExecutionVisuals.phaseColor(execution.phase))
       if !execution.steps.isEmpty {
@@ -60,7 +60,7 @@ struct NativeExecutionInlineStatusView: View {
   }
 
   private func accessibilityValue(_ execution: ArkExecutionActivity, now: Date) -> String {
-    var values = [NativeExecutionVisuals.phaseLabel(execution.phase, language: language)]
+    var values = [execution.phase.localizedLabel(language: language)]
     if !execution.steps.isEmpty {
       values.append("\(execution.completedStepCount)/\(execution.steps.count)")
     }
@@ -109,7 +109,7 @@ struct NativeExecutionActivityView: View {
     VStack(alignment: .leading, spacing: 7) {
         HStack(spacing: 7) {
           NativeExecutionVisuals.phaseSymbol(execution.phase)
-          Text(NativeExecutionVisuals.phaseLabel(execution.phase, language: language))
+          Text(execution.phase.localizedLabel(language: language))
             .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(NativeExecutionVisuals.phaseColor(execution.phase))
           if let stopReason = execution.stopReason, stopReason != "completed" {
@@ -270,7 +270,7 @@ struct NativeExecutionActivityView: View {
   }
 
   private func stepAccessibilityValue(_ step: ArkExecutionStep, now: Date) -> String {
-    var values = [NativeExecutionVisuals.phaseLabel(step.phase, language: language)]
+    var values = [step.phase.localizedLabel(language: language)]
     if let output = step.output?.split(separator: "\n").first, !output.isEmpty {
       values.append(String(output))
     }
@@ -314,7 +314,7 @@ private struct NativeWorkflowRunView: View {
         .foregroundStyle(Color.secondary)
         Spacer(minLength: 8)
         NativeExecutionVisuals.phaseSymbol(workflow.execution.phase)
-        Text(NativeExecutionVisuals.phaseLabel(workflow.execution.phase, language: language))
+        Text(workflow.execution.phase.localizedLabel(language: language))
           .font(.system(size: 9, weight: .semibold))
           .foregroundStyle(NativeExecutionVisuals.phaseColor(workflow.execution.phase))
         if let duration = workflow.execution.duration(at: now) {
@@ -388,7 +388,7 @@ private struct NativeWorkflowRunView: View {
       Text(member.label ?? member.name)
         .font(.system(size: 10, weight: .medium))
         .lineLimit(1)
-      Text(NativeExecutionVisuals.phaseLabel(member.phase, language: language))
+      Text(member.phase.localizedLabel(language: language))
         .font(.system(size: 9))
         .foregroundStyle(NativeExecutionVisuals.phaseColor(member.phase))
       Spacer(minLength: 6)
@@ -432,18 +432,6 @@ private enum NativeExecutionVisuals {
     case .succeeded: return "checkmark.circle.fill"
     case .failed: return "xmark.octagon.fill"
     case .cancelled: return "stop.circle.fill"
-    }
-  }
-
-  static func phaseLabel(
-    _ phase: ArkExecutionPhase,
-    language: ArkLanguagePreference
-  ) -> String {
-    switch phase {
-    case .running: return ArkL10n.text(.executionRunning, language)
-    case .succeeded: return ArkL10n.text(.executionCompleted, language)
-    case .failed: return ArkL10n.text(.executionFailed, language)
-    case .cancelled: return ArkL10n.text(.executionCancelled, language)
     }
   }
 

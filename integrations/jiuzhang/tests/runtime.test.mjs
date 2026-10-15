@@ -24,7 +24,7 @@ import test from 'node:test'
 import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runtimeAssetSource } from '../src/runtime-plan.mjs'
-import { composeEntries } from '../../../packages/boot/app-boot/lib/index.js'
+import { composeEntries, healProfilesModuleFallback } from '../../../packages/boot/app-boot/lib/index.js'
 import { prepareProfile } from '../../../packages/boot/profile-runner/lib/index.js'
 import {
   assertStandaloneRuntimeClosure,
@@ -326,6 +326,11 @@ test('launch environment is local, read-only, and telemetry-disabled by default'
     DEEPSEEK_API_KEY: 'must-not-leak',
     HTTP_PROXY: 'http://must-not-leak.invalid',
     NODE_OPTIONS: '--require=/tmp/must-not-load.cjs',
+    ARK_NATIVE_OWNER_SOCKET_PATH: '/tmp/app-owned.sock',
+    ARK_NATIVE_OWNER_LAUNCH_TOKEN: 'private-launch-token',
+    ARK_UNAPPROVED_PRIVATE_CONFIG: 'must-not-leak',
+    ARK_KNOWLEDGE_VERIFIER_CONFIG: '{"authorityId":"test"}',
+    ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG: '{"authorityId":"evaluator","publicKey":"public-only"}',
   })
   assert.equal(env.DSH_HOME, '/tmp/jiuzhang-home')
   assert.equal(env.DSH_PERMISSION_MODE, 'read-only')
@@ -338,12 +343,21 @@ test('launch environment is local, read-only, and telemetry-disabled by default'
   assert.equal(env.HTTP_PROXY, undefined)
   assert.equal(env.NODE_OPTIONS, '--max-old-space-size=4096')
   assert.equal(env.NODE_OPTIONS.includes('--require'), false)
+  assert.equal(env.ARK_NATIVE_OWNER_SOCKET_PATH, '/tmp/app-owned.sock')
+  assert.equal(env.ARK_NATIVE_OWNER_LAUNCH_TOKEN, 'private-launch-token')
+  assert.equal(env.ARK_UNAPPROVED_PRIVATE_CONFIG, undefined)
+  assert.equal(env.ARK_KNOWLEDGE_VERIFIER_CONFIG, '{"authorityId":"test"}')
+  assert.equal(env.ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG, '{"authorityId":"evaluator","publicKey":"public-only"}')
 
   const native = createLaunchEnvironment('/tmp/jiuzhang-home', {
     PATH: '/usr/bin',
     DSH_API_TOKEN: 'native-launch-token',
+    ARK_KNOWLEDGE_VERIFIER_CONFIG: '{"authorityId":"native"}',
+    ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG: '{"authorityId":"native-evaluator","publicKey":"public-only"}',
   })
   assert.equal(native.DSH_API_TOKEN, 'native-launch-token')
+  assert.equal(native.ARK_KNOWLEDGE_VERIFIER_CONFIG, '{"authorityId":"native"}')
+  assert.equal(native.ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG, '{"authorityId":"native-evaluator","publicKey":"public-only"}')
 })
 
 test('the launcher resolves the dedicated built Ark native API runner', async () => {
@@ -533,6 +547,24 @@ test('the same launcher pair serves a standalone runtime rooted beside its asset
     )
     assert.equal(standalone.resolveRepositoryRoot(), await realpath(runtimeRoot))
 
+    if (process.platform === 'win32') {
+      // This fixture uses the published native owner, not a replacement factory.
+      const nativeOwner = fileURLToPath(new URL('../../../packages/subprocess/win32-process/', import.meta.url))
+      const installedOwner = join(runtimeRoot, 'node_modules', '@deepseek-ai', 'dsh-win32-process')
+      await mkdir(installedOwner, { recursive: true })
+      await cp(join(nativeOwner, 'package.json'), join(installedOwner, 'package.json'), { recursive: true })
+      await cp(join(nativeOwner, 'lib'), join(installedOwner, 'lib'), { recursive: true })
+      const nativeRequire = createRequire(join(nativeOwner, 'package.json'))
+      const koffiRoot = await findNearestPackageRoot(nativeRequire.resolve('koffi'))
+      await cp(koffiRoot, join(runtimeRoot, 'node_modules', 'koffi'), { recursive: true, dereference: true })
+      const koffiRequire = createRequire(join(koffiRoot, 'package.json'))
+      const binaryPackage = `@koromix/koffi-win32-${process.arch}`
+      const binaryRoot = await findNearestPackageRoot(koffiRequire.resolve(binaryPackage))
+      await cp(binaryRoot, join(runtimeRoot, 'node_modules', ...binaryPackage.split('/')), {
+        recursive: true, dereference: true,
+      })
+    }
+
     const home = await mkdtemp(join(tmpdir(), 'jiuzhang-harness-'))
     try {
       const result = await standalone.installRuntimeConfiguration(home)
@@ -553,7 +585,12 @@ test('the same launcher pair serves a standalone runtime rooted beside its asset
         join(packageStore, 'package.json'),
         JSON.stringify({ name: '@deepseek-ai/fallback-test' }),
       )
-      await symlink(packageStore, runtimeLink)
+      await symlink(packageStore, runtimeLink, process.platform === 'win32' ? 'junction' : undefined)
+      const runtimeScope = dirname(runtimeLink)
+      const physicalPackage = join(runtimeScope, 'fallback-directory')
+      await mkdir(physicalPackage)
+      await writeFile(join(physicalPackage, 'package.json'), JSON.stringify({ name: '@deepseek-ai/fallback-directory' }))
+      const catalog = (await readdir(runtimeScope)).sort()
       // Older launchers created these fallback ancestors with the process's
       // ordinary 0755 mode. Their contents must survive the permission upgrade.
       const legacyDirectories = [
@@ -567,7 +604,7 @@ test('the same launcher pair serves a standalone runtime rooted beside its asset
       await writeFile(retainedFile, 'keep legacy bytes', { mode: 0o644 })
       assert.deepEqual(
         await standalone.ensureProfileModuleFallback(home),
-        { created: 1, replaced: 0, kept: 0, pruned: 0 },
+        { created: catalog.length, replaced: 0, kept: 0, pruned: 0 },
       )
       const profileScope = join(home, 'profiles', 'node_modules', '@deepseek-ai')
       for (const directory of legacyDirectories) assert.equal((await lstat(directory)).mode & 0o777, 0o700)
@@ -575,14 +612,101 @@ test('the same launcher pair serves a standalone runtime rooted beside its asset
       assert.equal((await lstat(retainedFile)).mode & 0o777, 0o644)
       assert.equal(
         await readlink(join(profileScope, 'fallback-test')),
-        join(await realpath(runtimeRoot), 'node_modules', '@deepseek-ai', 'fallback-test'),
+        await realpath(packageStore),
       )
+      assert.equal(await readlink(join(profileScope, 'fallback-directory')), await realpath(physicalPackage))
+
+      const snapshotLinks = async () => {
+        const records = []
+        const visit = async (directory, relative = '') => {
+          for (const name of (await readdir(directory)).sort()) {
+            const path = join(directory, name)
+            const pathRelative = join(relative, name)
+            const info = await lstat(path, { bigint: true })
+            if (info.isSymbolicLink()) records.push({
+              relative: pathRelative,
+              dev: String(info.dev),
+              ino: String(info.ino),
+              targetBytes: (await readlink(path, { encoding: 'buffer' })).toString('hex'),
+            })
+            else if (info.isDirectory()) await visit(path, pathRelative)
+          }
+        }
+        await visit(join(home, 'profiles', 'node_modules'))
+        return records
+      }
+      const parentLinks = await snapshotLinks()
+      const nativeAnchor = join(await realpath(runtimeScope), 'dsh-native-api-runner', 'package.json')
+      const nativeManifest = JSON.parse(await readFile(nativeAnchor, 'utf8'))
+      await writeFile(nativeAnchor, JSON.stringify({ ...nativeManifest,
+        dependencies: Object.fromEntries([...catalog.map(name => `@deepseek-ai/${name}`), 'js-yaml']
+          .filter(name => name !== nativeManifest.name).map(name => [name, '*'])),
+      }))
+      healProfilesModuleFallback(nativeAnchor, home)
+      const childLinks = await snapshotLinks()
+      assert.ok(childLinks.length > parentLinks.length, 'the public child healer also installs its unscoped closure')
+      for (const entry of parentLinks) assert.deepEqual(childLinks.find(row => row.relative === entry.relative), entry)
+      const secondParent = await standalone.ensureProfileModuleFallback(home)
+      assert.deepEqual(secondParent, { created: 0, replaced: 0, kept: catalog.length, pruned: 0 })
+      assert.deepEqual(await snapshotLinks(), childLinks, 'the second parent keeps every child link byte and inode')
+      console.log(`PROFILE_FALLBACK_IDEMPOTENCE ${JSON.stringify({
+        catalog: catalog.length, ordinaryDirectories: catalog.length - 1, symlinkAliases: 1,
+        childLinks: childLinks.length, secondParent, retained: childLinks,
+      })}`)
+
+      const wrongStore = join(runtimeRoot, 'package-store', 'wrong-fallback-test')
+      await mkdir(wrongStore, { recursive: true })
+      const fallbackLink = join(profileScope, 'fallback-test')
+      await unlink(fallbackLink)
+      await symlink(wrongStore, fallbackLink, process.platform === 'win32' ? 'junction' : undefined)
+      const wrongInfo = await lstat(fallbackLink, { bigint: true })
+      if (process.platform === 'win32') {
+        const nativeEntry = join(runtimeScope, 'dsh-win32-process', 'lib', 'index.js')
+        const nativeBytes = await readFile(nativeEntry)
+        const beforeTarget = await readlink(fallbackLink, { encoding: 'buffer' })
+        try {
+          await writeFile(nativeEntry, 'export {}\n')
+          await assert.rejects(execFileAsync(process.execPath, ['--input-type=module', '-e',
+            `const runtime = await import(${JSON.stringify(pathToFileURL(join(runtimeRoot, 'runtime.mjs')).href)}); await runtime.ensureProfileModuleFallback(${JSON.stringify(home)})`,
+          ]), /installed native owner lacks replaceJunctionTarget/)
+          const retained = await lstat(fallbackLink, { bigint: true })
+          assert.equal(retained.dev, wrongInfo.dev)
+          assert.equal(retained.ino, wrongInfo.ino)
+          assert.deepEqual(await readlink(fallbackLink, { encoding: 'buffer' }), beforeTarget)
+        } finally {
+          await writeFile(nativeEntry, nativeBytes)
+        }
+      }
+      assert.deepEqual(await standalone.ensureProfileModuleFallback(home), {
+        created: 0, replaced: 1, kept: catalog.length - 1, pruned: 0,
+      })
+      assert.equal(await readlink(fallbackLink), await realpath(packageStore))
+      if (process.platform === 'win32') {
+        const updated = await lstat(fallbackLink, { bigint: true })
+        assert.equal(updated.dev, wrongInfo.dev)
+        assert.equal(updated.ino, wrongInfo.ino, 'the real Windows native owner retains the existing junction inode')
+      }
+
+      await writeFile(join(physicalPackage, 'package.json'), JSON.stringify({ name: '@deepseek-ai/another-package' }))
+      const beforeRefusal = await snapshotLinks()
+      await assert.rejects(standalone.ensureProfileModuleFallback(home), /runtime package identity mismatch/)
+      assert.deepEqual(await snapshotLinks(), beforeRefusal)
+      await writeFile(join(physicalPackage, 'package.json'), JSON.stringify({ name: '@deepseek-ai/fallback-directory' }))
+
+      await unlink(fallbackLink)
+      await writeFile(fallbackLink, 'foreign package entry', { mode: 0o600 })
+      const beforeForeignRefusal = await snapshotLinks()
+      await assert.rejects(standalone.ensureProfileModuleFallback(home), /profile package entry is not a symlink/)
+      assert.equal(await readFile(fallbackLink, 'utf8'), 'foreign package entry')
+      assert.deepEqual(await snapshotLinks(), beforeForeignRefusal)
+      await unlink(fallbackLink)
+      await symlink(await realpath(packageStore), fallbackLink, process.platform === 'win32' ? 'junction' : undefined)
 
       const stale = join(profileScope, 'stale')
-      await symlink(packageStore, stale)
+      await symlink(packageStore, stale, process.platform === 'win32' ? 'junction' : undefined)
       assert.deepEqual(
         await standalone.ensureProfileModuleFallback(home),
-        { created: 0, replaced: 0, kept: 1, pruned: 1 },
+        { created: 0, replaced: 0, kept: catalog.length, pruned: 1 },
       )
       await assert.rejects(lstat(stale), { code: 'ENOENT' })
 

@@ -53,6 +53,8 @@ A profile is a directory under `$DSH_HOME/profiles/<name>` (the Harness home res
 
 Bundle lookup captures a canonical package directory before reading its manifest, so concurrent fallback-link replacement does not redirect later reads; missing candidates continue the search and other resolution errors propagate.
 
+An existing Windows fallback junction is re-targeted through the shared Win32 owner without unlinking its directory entry. POSIX keeps the staged rename; initial creation accepts only an identical concurrent winner. Native permission, tag or identity refusal preserves the entry and propagates the error. Both installation roots must remain valid while current readers use them; per-package updates do not switch a whole dependency generation atomically.
+
 User-level machine-local preferences also live in the Harness home:
 
 - **`.env`** — the product CLI's ordinary environment layers: the invoking directory's file outranks the Harness-home file, and both sit below the inherited environment. `loadLayeredEnv` snapshots each value's source, rejects [bootstrap-only file variables](../../../.agents/notes/implemented/architecture/2026-08-04-configuration-source-ownership.md#decision) case-insensitively, and materializes accepted values into `process.env` for Loader expressions and third-party libraries. Managed credentials live separately in [`.credentials.yaml`](../../credentials/credentials-local/README.md); a credential left in either `.env` remains a lower-priority fallback.

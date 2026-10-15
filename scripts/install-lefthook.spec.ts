@@ -25,7 +25,7 @@ const tsxPackageDirectory = dirname(fileURLToPath(import.meta.resolve('tsx/packa
 const fixtures: string[] = []
 // Multi-worktree cases spawn several Git and Node subprocesses; native Windows
 // coverage concurrency can delay them without changing installer behavior.
-const MULTI_PROCESS_TEST_TIMEOUT_MS = 30_000
+const MULTI_PROCESS_TEST_TIMEOUT_MS = process.platform === 'win32' ? 90_000 : 30_000
 
 interface Fixture {
   container: string

@@ -105,6 +105,8 @@ test('the profile provides the Ark persona and safety rules outside any preset',
   assert.ok(prompt, 'profile patch defines the system-prompt row')
   assert.match(prompt.config.persona, /你是 Ark/)
   assert.match(prompt.config.persona, /不得声称已经采集、学习、训练/)
+  assert.match(prompt.config.persona, /使用工具前后不得输出思路、计划、进度或操作播报/)
+  assert.match(prompt.config.persona, /最终只输出用户要求的内容/)
 })
 
 test('the integration contains no database, pdf, or legacy Ark references', async () => {

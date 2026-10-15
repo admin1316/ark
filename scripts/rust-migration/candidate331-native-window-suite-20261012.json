@@ -1,0 +1,683 @@
+{
+  "schema": "ark.candidate331-native-window-suite.v1",
+  "at": "2026-10-11T20:13:53.801017+00:00",
+  "status": "BUILT_ACTIVATED_REAL_WINDOW_TESTED_PARTIAL_FAIL",
+  "sourceRoot": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+  "sourceHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+  "sourceDirty": true,
+  "candidate": {
+    "path": "/Users/hui/ark-test/candidate/Ark.app",
+    "version": "3.1.31",
+    "build": "2026101231",
+    "bundleIdentifier": "cn.jiuzhangtianmu.industrybrain.candidate.ddd3350195492fe5",
+    "pid": 34907,
+    "binarySha256": "af9bbb2f8ad9d0e72424d19a325aaf570629d8053f7a977f3cad2ba09ace17db"
+  },
+  "dataHome": "/Users/hui/ark-test/candidate-home-current-20261011-v328",
+  "actualNativeWindowTestsStarted": true,
+  "completedFreshWindowTasks": 3,
+  "activeWindowProfiles": {
+    "knowledge": {
+      "sessionID": "00b5d959-fd8d-4296-b28a-e920a79f12e6",
+      "cwd": "/Users/hui/ark-test/code-repair-current329-window2-20261011",
+      "agentPreset": "standard",
+      "config": {
+        "provider": "deepseek-official",
+        "model": "deepseek-v4-flash",
+        "reasoningEffort": "max"
+      },
+      "permission": "read-only",
+      "sandbox": "read-only",
+      "observedFrom": "actual full session events and metadata"
+    },
+    "code": {
+      "sessionID": "c413d79e-ecec-4ea9-9824-b9a743af5a72",
+      "cwd": "/Users/hui/ark-test/code-repair-current329-window2-20261011",
+      "agentPreset": "standard",
+      "config": {
+        "provider": "deepseek-official",
+        "model": "deepseek-v4-flash",
+        "reasoningEffort": "max"
+      },
+      "permission": "workspace-write",
+      "sandbox": "workspace-write",
+      "observedFrom": "actual full session events and metadata"
+    },
+    "invoice": {
+      "sessionID": "92dda8bc-8bc5-4fe7-89d5-46c6c6fff1df",
+      "cwd": "/Users/hui/ark-test/invoice-reconciliation-current319-20261009",
+      "agentPreset": "standard",
+      "config": {
+        "provider": "deepseek-official",
+        "model": "deepseek-v4-flash",
+        "reasoningEffort": "max"
+      },
+      "permission": "read-only",
+      "sandbox": "read-only",
+      "observedFrom": "actual full session events and metadata"
+    }
+  },
+  "immutable": {
+    "goalHash": "54380bc644011d9099693318e9d5c7207684df72c5a19f042c01d13394cb2312",
+    "planHash": "c11146420879d77ab2ad509855c446f65b578caafe9b65b6398b9a373e19884b",
+    "scopeHash": "52b7ea78ccf96dac44aa099b03ace9608b8c22683ddb011a4666483be1f9bae6",
+    "permissionsHash": "80b4fdcd401fbf5fa17e84f252d7fe7f5eb8ca1d3e7a2ba017c0a3cbb3428d8b",
+    "securityThresholdHash": "884e0c8ba6c497b962fe57e0d0bbed74a6550ee95a29f4915a5cdb2d58d2538e",
+    "acceptanceHash": "ff0947c12050245e4603f20a7192295c94f82cd46eeec1f8aa6dc0709dc620f0",
+    "dataFormatHash": "da158c5f36e4ac8efe3d5495fd60ad66d79d4a8dd6f0614ba67a163a62436ea8",
+    "publishPolicyHash": "f4554131de8c34e9f31aea1ec558fde248957a2c36c9cfe40aae28a1435ee1b2",
+    "stateVersion": 1
+  },
+  "manifestSha256": "3d6ff9e608bc667d210e6204637dca5494c225b47b1a3ee43559ebc78b7d26ed",
+  "compiledWikiOwnerSha256": "9ed1e50cec5cdb8825921951a1a08c1ec4a3841ffccb51678cabfbff83f39b68",
+  "sourceRepairsInInstalledCandidate": true,
+  "buildTimeSourceIdentity": {
+    "commit": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "dirty": true,
+    "dirtyDiffSha256": "770841fb16bdbf79d708ea6fa72711f16e2e5c3e1a96eae388b47cdc2820ff3b",
+    "dirtyStatusSha256": "3d6c2506e497b5e20327f41e77e840151d5ac8b96b18e1fe089b4af658a70ef1",
+    "sourceSnapshotSha256": "8a293785cf64080f1a64f8e5ce84fa14cd4a96df316c7a19c044e59921b9d132"
+  },
+  "buildTimeSnapshotNote": "Frozen pack snapshot. Later evidence/progress updates change working-tree bookkeeping; all 33 tested executable source hashes and compiled Wiki bytes remain matched. Do not equate later dirty-status hashes with the build-time source snapshot.",
+  "artifactChecks": {
+    "nativeSourceBuild": "PASS",
+    "nativeAppBuild": "PASS",
+    "runtimePack": "PASS",
+    "packSourceDigest": "8a293785cf64080f1a64f8e5ce84fa14cd4a96df316c7a19c044e59921b9d132",
+    "signatureVerification": "PASS",
+    "signing": {
+      "adHocTestOnly": true,
+      "identity": "-",
+      "mode": "ad-hoc-test-only",
+      "notary": null,
+      "notaryStatus": "not-requested",
+      "spctl": null,
+      "spctlStatus": "not-run-ad-hoc",
+      "teamId": null
+    },
+    "publicDistributionSigningAccepted": false,
+    "installedSixStage": {
+      "status": "PASS",
+      "checks": 121,
+      "failures": 0,
+      "processRuns": 2,
+      "testedAtOriginalStageThenAtomicCodeTreeMove": true
+    },
+    "artifactStdin": "PASS",
+    "codeTreeProvenanceFinalTreeSha256": "024bcb2bc2a1e3a8cd2e5459ed836232a49304645093ecdd6b5b5401d5130586"
+  },
+  "activation": {
+    "ordinaryFinalQuitAndCodeExchange": "PASS",
+    "method": "renamex_np RENAME_SWAP after ordinary verified candidate AppKit quit",
+    "rollback": "/Users/hui/ark-test/rollback-candidate-v330-before-v331-20261012",
+    "credentialsAndSettingsUnchanged": {
+      "settings.yaml": true,
+      ".credentials.yaml": true
+    },
+    "firstAttempt": {
+      "at": "2026-10-11T19:47:05.136745+00:00",
+      "status": "HELD_BEFORE_EXCHANGE_QUIT_TRANSPORT_FAILED_AND_OLD_PROCESSES_GONE",
+      "priorPid": 79957,
+      "candidateSlotVersion": "3.1.30",
+      "newStageVersion": "3.1.31",
+      "codeExchanged": false,
+      "formalChanged": false,
+      "quitAttemptLog": "/Users/hui/ark-test/evidence/candidate331-guarded-activation-20261012.log",
+      "ordinaryExitEvidence": "UNKNOWN; helper nonzero and captured stderr was not emitted in original exception log",
+      "handling": "Reopen the unchanged old candidate solely to obtain a verified idle normal AppKit quit, without changing its runtime or credential configuration."
+    },
+    "formalChanged": false
+  },
+  "windowCases": {
+    "knowledge": {
+      "schema": "ark.candidate331-knowledge-window-acceptance.v1",
+      "at": "2026-10-11T19:52:22.418606+00:00",
+      "status": "PARTIAL_FAIL_AUTHORITY_UNAVAILABLE_AND_REPORT_PRECISION",
+      "version": "3.1.31",
+      "sessionID": "00b5d959-fd8d-4296-b28a-e920a79f12e6",
+      "project": "/Users/hui/ark-test/code-repair-current329-window2-20261011",
+      "completed": true,
+      "actualWikiCallCounts": {
+        "wiki_search": 3,
+        "wiki_reviews": 2,
+        "wiki_files": 1
+      },
+      "totalCalls": 6,
+      "uniqueToolNames": 3,
+      "authorityAvailable": false,
+      "authenticatedLearnedReuse": false,
+      "sameConversationOnly": false,
+      "sourceRuntimeOwner": "Current 3.1.31 with byte-matched 1042-test/33-source gate library",
+      "reportErrors": [
+        {
+          "claim": "共6次调用、4类不同工具",
+          "actual": "6 calls, 3 unique tool names: wiki_search/wiki_reviews/wiki_files",
+          "kind": "exact count mismatch"
+        },
+        {
+          "claim": "知识库子系统整体不可用",
+          "actual": "The observed three tools refuse because verifier authority is unavailable; this does not establish that every knowledge subsystem capability is unavailable.",
+          "kind": "overbroad inference"
+        }
+      ],
+      "honestMissingLearningEvidence": true,
+      "repeatedStableErrorCalls": 3,
+      "visibleEnglishProcessMessages": [
+        215,
+        402
+      ],
+      "projectBeforeHashes": {
+        ".llm-wiki/knowledge-events.jsonl": {
+          "sha256": "7205d3e67f252992ef5c7aee3a5d898c3c65cef3a2022f53b5fc4df326c7a0ee",
+          "bytes": 2214
+        },
+        "TASK.txt": {
+          "sha256": "e12fbae71eb85c300220456713fd3d2af50a1447078247e8910ae2a42ed417ce",
+          "bytes": 792
+        },
+        "package.json": {
+          "sha256": "85c42c48bcd4bbf6fa6155d34b416b18546595486f9ce4dafea9bbe3b3a8a98d",
+          "bytes": 153
+        },
+        "purpose.md": {
+          "sha256": "1736e1d3aa3419a2267048ea1d7a164d6c0a7e3e76b8407617194f307e6c7672",
+          "bytes": 89
+        },
+        "schema.md": {
+          "sha256": "3e24ebc3eaae0f8c7b3f4912f9ae0a4336dfff7ba2d6c864bca483a8ec1c3214",
+          "bytes": 233
+        },
+        "src/paginate.ts": {
+          "sha256": "ec07ec3860da9930d34e76f3e9293b0f08032b140ed7a92e31775d5e12aa0a6e",
+          "bytes": 713
+        },
+        "tests/paginate.test.mjs": {
+          "sha256": "388bf0ee89b30dffff56d81683b5da31f28d1400359eff3c36cc0c6bd858748d",
+          "bytes": 1709
+        },
+        "wiki/index.md": {
+          "sha256": "7535bd097b7fbdbd1891931f746a4ded8d66f64624d1fa23d5ac48886a44311c",
+          "bytes": 51
+        },
+        "wiki/log.md": {
+          "sha256": "b2c7941d5be02febc238e8dcf64955483afe47eaa24347feca30d2e42d4d41af",
+          "bytes": 15
+        }
+      },
+      "projectAfterHashes": {
+        ".llm-wiki/knowledge-events.jsonl": {
+          "sha256": "94e61a5503fe8eb7b16195669a57d504ec47a6e8e604787615a9bcd0adf192cd",
+          "bytes": 2783
+        },
+        "TASK.txt": {
+          "sha256": "e12fbae71eb85c300220456713fd3d2af50a1447078247e8910ae2a42ed417ce",
+          "bytes": 792
+        },
+        "package.json": {
+          "sha256": "85c42c48bcd4bbf6fa6155d34b416b18546595486f9ce4dafea9bbe3b3a8a98d",
+          "bytes": 153
+        },
+        "purpose.md": {
+          "sha256": "1736e1d3aa3419a2267048ea1d7a164d6c0a7e3e76b8407617194f307e6c7672",
+          "bytes": 89
+        },
+        "schema.md": {
+          "sha256": "3e24ebc3eaae0f8c7b3f4912f9ae0a4336dfff7ba2d6c864bca483a8ec1c3214",
+          "bytes": 233
+        },
+        "src/paginate.ts": {
+          "sha256": "ec07ec3860da9930d34e76f3e9293b0f08032b140ed7a92e31775d5e12aa0a6e",
+          "bytes": 713
+        },
+        "tests/paginate.test.mjs": {
+          "sha256": "388bf0ee89b30dffff56d81683b5da31f28d1400359eff3c36cc0c6bd858748d",
+          "bytes": 1709
+        },
+        "wiki/index.md": {
+          "sha256": "7535bd097b7fbdbd1891931f746a4ded8d66f64624d1fa23d5ac48886a44311c",
+          "bytes": 51
+        },
+        "wiki/log.md": {
+          "sha256": "b2c7941d5be02febc238e8dcf64955483afe47eaa24347feca30d2e42d4d41af",
+          "bytes": 15
+        }
+      },
+      "changedProjectFiles": [
+        ".llm-wiki/knowledge-events.jsonl"
+      ],
+      "noModelWriteOrExecutionToolCalled": true,
+      "turnElapsedMs": 9700,
+      "evidenceRefs": {
+        "session": "/Users/hui/ark-test/evidence/candidate331-knowledge-full-session-first-observation-20261012.json",
+        "before": "/Users/hui/ark-test/evidence/candidate331-knowledge-fixture-before-20261012.json",
+        "task": "/Users/hui/ark-test/evidence/candidate331-native-knowledge-task-20261012.zh.txt"
+      },
+      "fullReleaseAcceptance": "UNKNOWN"
+    },
+    "code": {
+      "schema": "ark.candidate331-code-window-acceptance.v1",
+      "at": "2026-10-11T19:59:59.011708+00:00",
+      "version": "3.1.31",
+      "status": "PASS_CODE_REPAIR_PARTIAL_FAIL_CAUSAL_REPORT",
+      "sessionID": "c413d79e-ecec-4ea9-9824-b9a743af5a72",
+      "project": "/Users/hui/ark-test/code-repair-current329-window2-20261011",
+      "completed": true,
+      "profile": {
+        "permission": "workspace-write",
+        "model": "deepseek-official/deepseek-v4-flash",
+        "reasoningEffort": "max"
+      },
+      "nativeBefore": {
+        "pass": 4,
+        "fail": 4,
+        "npmExecuted": true,
+        "npmExitStatusExplicitlyCaptured": false,
+        "note": "Two baseline commands pipe npm output to tail/grep; do not claim the pipeline exit status proves npm status."
+      },
+      "independentBaseline": {
+        "pass": 4,
+        "fail": 4,
+        "npmExitCode": 1
+      },
+      "nativeAfter": {
+        "pass": 8,
+        "fail": 0,
+        "npmExitCodeCaptured": 0
+      },
+      "independentAfter": {
+        "pass": 8,
+        "fail": 0,
+        "npmExitCode": 0
+      },
+      "independentCases": 853,
+      "subjectFilesChanged": [
+        "src/paginate.ts"
+      ],
+      "otherProtectedSubjectFilesUnchanged": true,
+      "sourceHashesAfter": {
+        "TASK.txt": "e12fbae71eb85c300220456713fd3d2af50a1447078247e8910ae2a42ed417ce",
+        "package.json": "85c42c48bcd4bbf6fa6155d34b416b18546595486f9ce4dafea9bbe3b3a8a98d",
+        "tests/paginate.test.mjs": "388bf0ee89b30dffff56d81683b5da31f28d1400359eff3c36cc0c6bd858748d",
+        "src/paginate.ts": "ec07ec3860da9930d34e76f3e9293b0f08032b140ed7a92e31775d5e12aa0a6e",
+        "schema.md": "3e24ebc3eaae0f8c7b3f4912f9ae0a4336dfff7ba2d6c864bca483a8ec1c3214",
+        "purpose.md": "1736e1d3aa3419a2267048ea1d7a164d6c0a7e3e76b8407617194f307e6c7672"
+      },
+      "dependenciesInstalled": false,
+      "reportErrors": [
+        {
+          "claim": "每一页都丢掉最后一个元素",
+          "actual": "The original exclusive slice end removes an element only when the page is full; the original partial page [5] remains [5].",
+          "kind": "incorrect affected-case generalization"
+        },
+        {
+          "claim": "第三页通过是因为slice越界截断",
+          "actual": "For 5 elements, page=3 and pageSize=2, original start=4 and end=5 equals array length; that example does not use an out-of-bounds endpoint.",
+          "kind": "incorrect causal example"
+        }
+      ],
+      "learnedReuseProven": false,
+      "setupGuardRefusals": [
+        {
+          "log": "/Users/hui/ark-test/evidence/candidate331-code-window-submit-20261012.log",
+          "taskSubmitted": false,
+          "handling": "Wait for actual native AX permission label to match before the one real submit."
+        }
+      ],
+      "evidenceRefs": {
+        "session": "/Users/hui/ark-test/evidence/candidate331-code-full-session-first-observation-20261012.json",
+        "oracle": "/Users/hui/ark-test/evidence/candidate331-code-independent-oracle-result-20261012.json",
+        "independentNpm": "/Users/hui/ark-test/evidence/candidate331-code-independent-npm-20261012.log",
+        "before": "/Users/hui/ark-test/evidence/candidate331-code-fixture-20261012.json"
+      },
+      "fullReleaseAcceptance": "UNKNOWN"
+    },
+    "invoice": {
+      "schema": "ark.candidate331-invoice-window-acceptance.v1",
+      "at": "2026-10-11T20:05:04.890442+00:00",
+      "version": "3.1.31",
+      "status": "PASS_EXACT_ARITHMETIC_AND_WHOLE_RESPONSE_KNOWLEDGE_UNAVAILABLE",
+      "sessionID": "92dda8bc-8bc5-4fe7-89d5-46c6c6fff1df",
+      "project": "/Users/hui/ark-test/invoice-reconciliation-current319-20261009",
+      "profile": {
+        "permission": "read-only",
+        "provider": "deepseek-official",
+        "model": "deepseek-v4-flash",
+        "reasoningEffort": "max"
+      },
+      "completed": true,
+      "wholeAssistantResponseStrictJson": true,
+      "duplicateKeys": false,
+      "exactOracleMatch": true,
+      "actual": {
+        "approved_invoice_count": 6,
+        "pending_invoice_count": 1,
+        "rejected_row_ids": [
+          "I007",
+          "I008"
+        ],
+        "usd_total_cents": 26598,
+        "usd_cents_by_currency": {
+          "USD": 9750,
+          "EUR": 8834,
+          "JPY": 8000,
+          "CNY": 14
+        }
+      },
+      "firstCalculationFailed": false,
+      "calculationPath": "Inline python3 -c after real read tool input; exact Fraction arithmetic. No here-document attempted.",
+      "hereDocumentDefectFixedProven": false,
+      "csvBytesUnchanged": true,
+      "subjectFilesChanged": [],
+      "runtimeMetadataChanged": [
+        ".llm-wiki/knowledge-events.jsonl"
+      ],
+      "runtimeMetadataIsNotLearningEvidence": true,
+      "unexpectedShellErrors": [],
+      "knownAuthorityErrors": [
+        {
+          "name": "wiki_search",
+          "text": "Error: knowledge verifier authority is unavailable"
+        }
+      ],
+      "authenticatedLearnedReuse": false,
+      "modelWriteToolCalled": false,
+      "turnElapsedMs": 14890,
+      "evidenceRefs": {
+        "session": "/Users/hui/ark-test/evidence/candidate331-invoice-full-session-first-observation-20261012.json",
+        "oracle": "/Users/hui/ark-test/evidence/candidate331-invoice-independent-oracle-20261012.json",
+        "before": "/Users/hui/ark-test/evidence/candidate331-invoice-fixture-before-20261012.json",
+        "task": "/Users/hui/ark-test/evidence/candidate331-native-invoice-task-20261012.zh.txt"
+      },
+      "fullReleaseAcceptance": "UNKNOWN"
+    }
+  },
+  "sourceChecks": {
+    "scope": "Executable Knowledge Wiki and Wiki Tools owners only; not all Ark",
+    "tests": {
+      "files": 78,
+      "pass": 1042,
+      "fail": 0,
+      "skip": 0
+    },
+    "coverage": {
+      "files": 33,
+      "allFourAt100Percent": 33,
+      "thresholdOrExclusionChanged": false
+    },
+    "types": "PASS",
+    "rebuiltFullLint": "PASS",
+    "docGates": {
+      "pass": 30,
+      "fail": 0,
+      "skip": 0
+    },
+    "keylessAuthoredCliReplay": "PASS",
+    "compiledStartupRecovery": "PASS_TEST_AUTHORITIES_ONLY",
+    "sourceGateReceiptSha256": "300c72be2112fd3cbbe03065caf600efff028e6d544e324a600a788385ca4f95"
+  },
+  "visualEvidence": {
+    "knowledgeAndInvoiceNativeScreenshots": "CAPTURED_AND_INSPECTED",
+    "invoiceScreenshot": "/Users/hui/ark-test/evidence/candidate331-invoice-result-window-20261012.png",
+    "codeScreenshot": "NOT_CAPTURED: helper used wrong screencapture binary path before next conversation. Actual native submit and complete session/tool/file records retained; no screenshot pass claimed.",
+    "completeNativeVisualParity": "UNKNOWN"
+  },
+  "setupObservations": [
+    {
+      "kind": "quit transport failed before code exchange",
+      "ordinaryFirstExitCause": "UNKNOWN",
+      "recovery": "Reopened unchanged prior 3.1.30, then observed final ordinary AppKit quit and all owned processes/listeners gone before guarded exchange."
+    },
+    {
+      "kind": "code submit preflight model/permission guard refusal",
+      "taskSubmitted": false,
+      "recovery": "Waited for actual AX permission/model labels, then submitted once."
+    },
+    {
+      "kind": "code screenshot helper path error",
+      "impact": "Missing code screenshot only; no pass inferred from it."
+    }
+  ],
+  "qualityMetrics": {
+    "overallAccuracyGain": "NOT_MEASURED",
+    "overallSpeedGain": "NOT_MEASURED",
+    "overallCompletionPercentage": "NOT_DERIVED",
+    "futureConversationLearnedReuse": "NOT_PROVEN",
+    "pairedIndependentUtility": "NOT_PROVEN",
+    "runtimeProvenanceAppendIsLearningProof": false,
+    "invoiceHereDocumentRepair": "NOT_PROVEN: inline Python path avoided old defect"
+  },
+  "actualAuthorityDeployed": false,
+  "verifierPlan": "REVIEWABLE_NOT_DEPLOYED",
+  "rust": {
+    "decision": "RETAIN_TS",
+    "shadowEnabled": false,
+    "productionSearchLanguage": "TypeScript",
+    "benchmarkSha256": "52b85fb8d97d9b1fb5114cd4e517cdb1f7a84bb3d1d6e7ee6b77a7cbeb2097db",
+    "newMigrationOrSpeedClaim": false
+  },
+  "github": {
+    "readOnlyReceipt": "/Users/hui/ark-test/evidence/knowledge-review-revalidation-github-pr39-readonly-20261012.json",
+    "remoteHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "draft": true,
+    "state": "OPEN",
+    "successfulChecks": 25,
+    "failedChecks": 5,
+    "pushedOrMergedByThisWork": false,
+    "snapshotOnly": true,
+    "currentLocalChangesPushed": false
+  },
+  "releaseGatesOpen": [
+    "Actual semantic verifier, authenticated real-use witness/journal and independent paired evaluator are not deployed.",
+    "Measured trial journal authentication and explicit project binding remain open.",
+    "Knowledge report counts 4 tool types although observed unique names are 3, and overgeneralizes unavailable capabilities.",
+    "Code causal report incorrectly describes all pages as affected and the partial-page example as out-of-bounds.",
+    "Fresh cross-conversation verified learning and independently measured paired utility are unproven.",
+    "Old read-only here-document failure has not been directly exercised and proved repaired by this new run.",
+    "Five remote CI failures in latest recorded read-only snapshot; current fixes are not uploaded.",
+    "Complete repository-wide/platform/Phase 6/security/source-history acceptance and signed actual-profile behavioral receipts remain open.",
+    "Historical initial 3.1.30 process disappearance and first 3.1.31 activation quit transport exit have no proven cause."
+  ],
+  "formal": {
+    "path": "/Users/hui/ark/Ark.app",
+    "version": "3.1.0",
+    "build": "2026092701",
+    "binarySha256": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a",
+    "changed": false
+  },
+  "githubPublished": false,
+  "formalPromoted": false,
+  "fullGoalAcceptance": "UNKNOWN",
+  "artifactBindings": [
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-review-revalidation-result-20261012.json",
+      "sha256": "300c72be2112fd3cbbe03065caf600efff028e6d544e324a600a788385ca4f95",
+      "bytes": 28723
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-pack-proof-20261012.json",
+      "sha256": "f1b08ccb50b03f62113f0e5a2a9eb56196cbe5d2f3b2d90b42b7b9b7b5a0c8d1",
+      "bytes": 828
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-native-source-build-20261012.log",
+      "sha256": "2d98919d0fbe1f6549c3eb7a291f7f4b0aa6b683b1dc5d4285c71b2e97074f19",
+      "bytes": 601
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-runtime-pack-20261012.log",
+      "sha256": "4c7eff875eb84bb01a56a0b0a3eeae1e64ebabbd75021c0d212f27548ec1d920",
+      "bytes": 122
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-native-app-build-20261012.log",
+      "sha256": "646306731ff5e765f13d4dacad884b8cb4c6ba8ae6790408d6563d6cd06951a3",
+      "bytes": 2395
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-staged-install-e2e-20261012.json",
+      "sha256": "2042b0416bda4edfaaaed40bf4f49cdafc9f8b27bb422d45a4ae4d1a90f6a4e1",
+      "bytes": 80233
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-artifact-stdin-check-20261012.json",
+      "sha256": "475f20058afb68a88d645afc4cba56fc8dc250d71a7c57db99b3d2837be68c8d",
+      "bytes": 921
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-first-activation-refusal-20261012.json",
+      "sha256": "48305cabac102755466a5e1d2724322a5f56322861a9fdb2a37ae6f14b9b15d8",
+      "bytes": 643
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-guarded-activation-20261012.log",
+      "sha256": "d921d32e7354de05002b4dc629bb08b34400ae9c863871d948aed7b696a8a7c8",
+      "bytes": 717
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-guarded-activation-v2-20261012.log",
+      "sha256": "e2ab58a4d99ddbecf403d5dc2e78d03ca83e73470b087883a2d378575dbfcd19",
+      "bytes": 162
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-activation-20261012.json",
+      "sha256": "70cf66c34cb779c9bff7e219909dedec3ada61e5f5393254311873cabdc302de",
+      "bytes": 2145
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-installed-identity-20261012.json",
+      "sha256": "8a088cb7bc0d56af693bfd68d37f74640db12f5466e70f174c80992a5fd76829",
+      "bytes": 1359
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-knowledge-acceptance-20261012.json",
+      "sha256": "c9be9f8f6c510e76f4b782ed9ecbfde2de26aa5111bb8e83ef1ce1a1f853a365",
+      "bytes": 4308
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-code-acceptance-20261012.json",
+      "sha256": "a6ca4bf136e2b34280fa246330e059d0490f9de8abd97d7369ea2e144c2f4a82",
+      "bytes": 3015
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-invoice-acceptance-20261012.json",
+      "sha256": "93713dabfdc3c7573245d3be806e5d0615179bf30a5ba1e02534bda5ee51860b",
+      "bytes": 2012
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-knowledge-full-session-first-observation-20261012.json",
+      "sha256": "8794a0aad305615d8f6e57f609be2e612f7bffee1ab00ab67672eb7e757babac",
+      "bytes": 294942
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-code-full-session-first-observation-20261012.json",
+      "sha256": "a74a136b6841164bea451a0d2722e8b1765041a4ad979d35777c9cf0734034b5",
+      "bytes": 919894
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-invoice-full-session-first-observation-20261012.json",
+      "sha256": "f76bce15c15d37920bf349af11cbed6be25503429b5d71a1ad38e15fa2951cf9",
+      "bytes": 529246
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-native-knowledge-task-20261012.zh.txt",
+      "sha256": "afefb336c70d53f39c5247d0ec4594820874739aa353ce5a3e68e70759cb03d0",
+      "bytes": 623
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-native-code-task-20261012.zh.txt",
+      "sha256": "13ca7ae8a8c5fb2dd4c0b222e0f2e10f606e5036a2eb0b3c9e4a4a9f47cf6968",
+      "bytes": 674
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-native-invoice-task-20261012.zh.txt",
+      "sha256": "0d6e0e2fece23b47e1f7281748cd8043fa04c202e862ec441a34117edf763f20",
+      "bytes": 1240
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-code-fixture-20261012.json",
+      "sha256": "341e09790e09d5beb56943ba54e8ddb1fa0602a0a1176d6187dc355ee51656d4",
+      "bytes": 1122
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-code-fixture-prepare-plan-20261012.json",
+      "sha256": "29dd2116a18bafb0645e7cd1642c1140dae54cdbbeb268b81125ae6aad235f17",
+      "bytes": 1609
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-code-fixture-baseline-20261012.log",
+      "sha256": "cbf9267e173ad3fd02fa4028eada3f20ec4f6399c9b6062f8fc503509c074bdd",
+      "bytes": 4311
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-code-independent-oracle-result-20261012.json",
+      "sha256": "77c4f5f3929570b41e70413266d935d7104403930947963d715ca558991f6a94",
+      "bytes": 159
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-code-independent-npm-20261012.log",
+      "sha256": "63f90afee61a20ff61cd8104518cd12a86eb8e08a40005e48be975ff6fa7e81a",
+      "bytes": 684
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-code-window-submit-20261012.log",
+      "sha256": "1ccf815a6213ab9cb708b5acc71bb7862c0c818bce15a215f2614ccdf9552cd3",
+      "bytes": 159
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-code-window-submit-v2-20261012.log",
+      "sha256": "952ed6d6a9320d588a779e2ceac0ae41be6dc9ad39350e7a5b1854d1112cc4fc",
+      "bytes": 125
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-invoice-independent-oracle-20261012.json",
+      "sha256": "5ede312c22c1a4d63c2e7f2195cadcd5ebb2dd5d12b72dec897a0bad35bf7823",
+      "bytes": 1362
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-knowledge-fixture-before-20261012.json",
+      "sha256": "1b1828e3b268a2021669d6ad233b2187da660a08d52f6684de1e4111c40827a4",
+      "bytes": 1577
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-invoice-fixture-before-20261012.json",
+      "sha256": "3ccb95637b01ccc83fc497a84bc7d29e62626942d72af266bab424a2f895855e",
+      "bytes": 1458
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-knowledge-result-window-20261012.png",
+      "sha256": "f402145256cdb36b74534d8466089de842b18f702b059570cff6cb237632fe70",
+      "bytes": 563226
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/candidate331-invoice-result-window-20261012.png",
+      "sha256": "ea4616a781c2f619711b798a5267ab56693582e958a21a8381a1da0846de390e",
+      "bytes": 449961
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-verifier-integration-plan-20261012.zh.txt",
+      "sha256": "4c251aef533ae411937215a5841bc3539cfebf58058e93efe0336d2d4d362b77",
+      "bytes": 13299
+    },
+    {
+      "path": "/Users/hui/ark-test/evidence/knowledge-review-revalidation-github-pr39-readonly-20261012.json",
+      "sha256": "9b287024e735fde65ef74d490b8ba5376f8c9ac987a9e6148b27f6f746c3d48e",
+      "bytes": 9117
+    },
+    {
+      "path": "/private/tmp/ark-candidate331-runtime-pack-20261012/pack-receipt.json",
+      "sha256": "f7e02e4d7362664884aa5baf7c68f1319e2904bf9bd3e4043e512cfe5369b1f8",
+      "bytes": 1684
+    },
+    {
+      "path": "/Users/hui/ark-test/candidate/provenance.json",
+      "sha256": "43bd646bd2632dbea3675bbe260256f637661859d3e526326566ea2bd7dea99e",
+      "bytes": 16072169
+    }
+  ],
+  "nextAffectedNodes": [
+    "Keep scoped source/build installation success separate from model report correctness.",
+    "Review the prepared real-verifier/use-witness/evaluator plan before deployment; do not fabricate authorities or keys.",
+    "Close observed report/refusal/reuse gates with unchanged-task fresh window evidence and independent oracles.",
+    "Only evaluate GitHub/formal promotion after original protected gates pass."
+  ]
+}

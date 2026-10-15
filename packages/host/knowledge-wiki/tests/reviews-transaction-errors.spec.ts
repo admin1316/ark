@@ -1,12 +1,11 @@
 import { createHash } from 'node:crypto'
 import {
   existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -18,8 +17,8 @@ const faults = vi.hoisted(() => ({
   failRenameCount: 0,
   failSecondaryRenameTo: '',
   failSecondaryRenameCount: 0,
-  armCorruptionAfterRenameTo: '',
-  armCorruptionCount: 0,
+  failDescriptorWritePath: '',
+  failDescriptorWriteCount: 0,
   corruptionPath: '',
   corruptionCount: 0,
   lstatCounts: {} as Record<string, number>,
@@ -79,10 +78,6 @@ vi.mock('node:fs', async (importOriginal) => {
         throw Object.assign(new Error(`injected rollback failure: ${destination}`), { code: 'EIO' })
       }
       actual.renameSync(...args)
-      if (destination === faults.armCorruptionAfterRenameTo && faults.armCorruptionCount > 0) {
-        faults.armCorruptionCount -= 1
-        faults.corruptionCount = 1
-      }
     },
     lstatSync: (...args: Parameters<typeof actual.lstatSync>): ReturnType<typeof actual.lstatSync> => {
       const path = String(args[0])
@@ -159,12 +154,21 @@ vi.mock('node:fs', async (importOriginal) => {
       }
       return result
     },
+    writeFileSync: (...args: Parameters<typeof actual.writeFileSync>): ReturnType<typeof actual.writeFileSync> => {
+      const path = typeof args[0] === 'number' ? faults.descriptorPaths[args[0]] : undefined
+      if (path === faults.failDescriptorWritePath && faults.failDescriptorWriteCount > 0) {
+        faults.failDescriptorWriteCount -= 1
+        throw Object.assign(new Error(`injected descriptor write failure: ${path}`), { code: 'EIO' })
+      }
+      actual.writeFileSync(...args)
+    },
   }
 })
 
 import {
   appendCandidateReviews,
   applyCandidateReview as applyCandidateReviewWithAuthority,
+  recoverCandidateReviewTransactions,
   recordCandidateVerification as recordCandidateVerificationWithAuthority,
 } from '../src/reviews.ts'
 import { verifyCandidate } from '../src/verifier.ts'
@@ -179,8 +183,8 @@ beforeEach(() => {
   faults.failRenameCount = 0
   faults.failSecondaryRenameTo = ''
   faults.failSecondaryRenameCount = 0
-  faults.armCorruptionAfterRenameTo = ''
-  faults.armCorruptionCount = 0
+  faults.failDescriptorWritePath = ''
+  faults.failDescriptorWriteCount = 0
   faults.corruptionPath = ''
   faults.corruptionCount = 0
   faults.lstatCounts = {}
@@ -243,10 +247,10 @@ Use when the verification gate passes.
 `
 }
 
-function verifyFixture(
+async function verifyFixture(
   item: Fixture,
   action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' = 'Promote',
-): boolean {
+): Promise<boolean> {
   const receiptId = issueTestReceipt(authority, item.reviewFile, item.wikiRoot, item.reviewId, action)
   return recordCandidateVerificationWithAuthority(
     authority, item.reviewFile, item.wikiRoot, item.reviewId, receiptId, action,
@@ -261,7 +265,7 @@ function applyCandidateReview(
   reviewId: string,
   action: string,
   actor?: string,
-): boolean | null {
+): Promise<boolean | null> {
   return applyCandidateReviewWithAuthority(
     authority, reviewFile, projectRoot, wikiRoot, archiveRoot, reviewId, action, actor,
   )
@@ -326,170 +330,95 @@ function candidateArchivePath(item: Fixture): string {
 }
 
 describe('candidate review transaction rollback', () => {
-  it('restores Promote when the governance-log commit fails', () => {
-    const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
-    const target = readItems(item.reviewFile)[0]!.targetPath!
+  it('restores Archive when the governance-log commit fails', async () => {
+    const item = fixture('_candidates/topics/disposable.md')
+    const archived = candidateArchivePath(item)
     const reviewBefore = readFileSync(item.reviewFile, 'utf8')
-    const logBefore = readFileSync(governanceLog(item), 'utf8')
+    const logBefore = existsSync(governanceLog(item)) ? readFileSync(governanceLog(item), 'utf8') : ''
     faults.failRenameTo = governanceLog(item)
     faults.failRenameCount = 1
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/injected rename failure/u)
-    expect(existsSync(join(item.wikiRoot, target))).toBe(false)
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow(/injected rename failure/u)
+    expect(existsSync(archived)).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
     expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
-    expect(readFileSync(governanceLog(item), 'utf8')).toBe(logBefore)
+    expect(existsSync(governanceLog(item))).toBe(false)
+    expect(logBefore).toBe('')
   })
 
-  it('restores canonical, archive, candidate, review, and log after a failed post-commit check', () => {
-    const canonicalBefore = candidate('Canonical', 'stable canonical body')
-    const item = fixture('_candidates/ingest/concepts/candidate.md', candidate('Candidate', 'replacement body'))
-    const target = readItems(item.reviewFile)[0]!.targetPath!
-    const targetFull = join(item.wikiRoot, target)
-    mkdirSync(dirname(targetFull), { recursive: true })
-    writeFileSync(targetFull, canonicalBefore, 'utf8')
-    expect(verifyFixture(item, 'Replace')).toBe(true)
+  it('rolls back Archive when the storage layer rejects the review commit', async () => {
+    const item = fixture('_candidates/topics/disposable.md')
+    const archived = candidateArchivePath(item)
     const reviewBefore = readFileSync(item.reviewFile, 'utf8')
-    const logBefore = readFileSync(governanceLog(item), 'utf8')
-    const archivedCanonical = join(
-      item.archiveRoot,
-      'wiki-governance',
-      new Date().toISOString().slice(0, 10),
-      basename(item.root),
-      createHash('sha256').update(canonicalBefore).digest('hex').slice(0, 12),
-      'canonical-before-update',
-      target,
-    )
-    faults.failRenameTo = governanceLog(item)
-    faults.failRenameCount = 1
-
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Replace', 'human',
-    )).toThrow(/injected rename failure/u)
-    expect(readFileSync(targetFull, 'utf8')).toBe(canonicalBefore)
-    expect(existsSync(archivedCanonical)).toBe(false)
-    expect(existsSync(item.candidateFull)).toBe(true)
-    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
-    expect(readFileSync(governanceLog(item), 'utf8')).toBe(logBefore)
-  })
-
-  it('restores the verifier governance log while rolling back Promote', () => {
-    const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
-    const row = readItems(item.reviewFile)[0]!
-    const target = row.targetPath
-    if (target === undefined) throw new Error('fixture did not derive a canonical target')
-    const reviewBefore = readFileSync(item.reviewFile, 'utf8')
-    const logBefore = readFileSync(governanceLog(item), 'utf8')
-    faults.failRenameTo = governanceLog(item)
-    faults.failRenameCount = 1
-
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/injected rename failure/u)
-    expect(readFileSync(governanceLog(item), 'utf8')).toBe(logBefore)
-    expect(existsSync(join(item.wikiRoot, target))).toBe(false)
-    expect(existsSync(item.candidateFull)).toBe(true)
-    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
-  })
-
-  it('fails before mutation when the storage layer rejects the review commit', () => {
-    const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
+    const logBefore = existsSync(governanceLog(item)) ? readFileSync(governanceLog(item), 'utf8') : ''
     faults.failRenameTo = item.reviewFile
     faults.failRenameCount = 1
-    faults.failSecondaryRenameCount = 1
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/injected rename failure/u)
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow(/injected rename failure/u)
+    expect(existsSync(archived)).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
+    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
+    expect(existsSync(governanceLog(item))).toBe(false)
+    expect(logBefore).toBe('')
   })
 
-  it('propagates non-missing archive inspection failures before mutation', () => {
+  it('propagates non-missing archive inspection failures before mutation', async () => {
     const item = fixture('_candidates/topics/disposable.md')
     const reviewBefore = readFileSync(item.reviewFile, 'utf8')
     faults.lstatErrorPath = candidateArchivePath(item)
     faults.lstatErrorCount = 1
 
-    expect(() => applyCandidateReview(
+    await expect(applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
-    )).toThrow(/injected lstat failure/u)
+    )).rejects.toThrow(/injected lstat failure/u)
     expect(existsSync(item.candidateFull)).toBe(true)
     expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
   })
 
-  it('handles a staged file that an external actor removes before cleanup', () => {
+  it('handles a staged file that an external actor removes before cleanup', async () => {
     const item = fixture('_candidates/topics/disposable.md')
     faults.lstatDeleteStageCount = 1
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toBe(true)
     expect(existsSync(item.candidateFull)).toBe(false)
   })
 
-  it('rejects a canonical target whose resolved identity changes during staging', () => {
+  it('denies a semantically verified candidate from canonical promotion without a measured trial', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
+    expect(await verifyFixture(item)).toBe(true)
     const target = readItems(item.reviewFile)[0]!.targetPath!
-    resetOperationCounters()
-    faults.resolveOverrideAt = 2
-
-    expect(applyCandidateReview(
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
     )).toBe(false)
     expect(existsSync(join(item.wikiRoot, target))).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('rejects a canonical target that becomes a symlink during staging', () => {
-    const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
-    const targetDirectory = join(item.wikiRoot, 'concepts')
-    rmSync(targetDirectory, { recursive: true, force: true })
-    symlinkSync(join(item.root, 'outside'), targetDirectory)
-
-    expect(applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toBe(false)
-    expect(existsSync(item.candidateFull)).toBe(true)
-  })
-
-  it('rejects a canonical target that appears while the transaction is staging', () => {
-    const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
-    const target = readItems(item.reviewFile)[0]!.targetPath!
-    const targetFull = join(item.wikiRoot, target)
-    mkdirSync(dirname(targetFull), { recursive: true })
-    writeFileSync(targetFull, 'concurrent target')
-
-    expect(applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toBe(false)
-    expect(readFileSync(targetFull, 'utf8')).toBe('concurrent target')
-    expect(existsSync(item.candidateFull)).toBe(true)
-  })
-
-  it('binds the current canonical bytes into the authority-sealed operation set', () => {
+  it('leaves current canonical content unchanged when measured-trial authority is absent', async () => {
     const item = fixture()
     const target = readItems(item.reviewFile)[0]!.targetPath!
     const targetFull = join(item.wikiRoot, target)
     mkdirSync(dirname(targetFull), { recursive: true })
-    writeFileSync(targetFull, candidate('Canonical'), 'utf8')
-    expect(verifyFixture(item, 'Replace')).toBe(true)
+    const canonicalBefore = candidate('Canonical')
+    writeFileSync(targetFull, canonicalBefore, 'utf8')
+    expect(await verifyFixture(item, 'Replace')).toBe(true)
     writeFileSync(targetFull, candidate('Changed canonical'), 'utf8')
-    expect(applyCandidateReview(
+    const changedCanonical = readFileSync(targetFull, 'utf8')
+    expect(await applyCandidateReview(
       item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Replace', 'human',
-    )).toBe(true)
-    expect(existsSync(item.candidateFull)).toBe(false)
+    )).toBe(false)
+    expect(readFileSync(targetFull, 'utf8')).toBe(changedCanonical)
+    expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('rejects a candidate whose resolved identity changes during staging', () => {
+  it('rejects a candidate whose resolved identity changes during staging', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
+    expect(await verifyFixture(item)).toBe(true)
     const changedRoot = `${item.wikiRoot}-changed`
     const changedCandidate = join(changedRoot, item.candidatePath)
     mkdirSync(dirname(changedCandidate), { recursive: true })
@@ -497,169 +426,252 @@ describe('candidate review transaction rollback', () => {
     resetOperationCounters()
     faults.resolveOverrideAt = 1
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/candidate path changed/u)
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow(/candidate path changed/u)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('rejects a candidate that becomes a symlink during staging', () => {
+  it('rejects a candidate that becomes a symlink during staging', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
+    expect(await verifyFixture(item)).toBe(true)
     resetOperationCounters()
     faults.lstatSymlinkPath = item.candidateFull
     faults.lstatSymlinkAt = 2
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/unique ordinary file/u)
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow(/unique ordinary file/u)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('rejects candidate bytes changed after independent verification', () => {
+  it('rejects candidate bytes changed after independent verification', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
+    expect(await verifyFixture(item)).toBe(true)
     writeFileSync(item.candidateFull, 'changed candidate', 'utf8')
-    expect(applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+    expect(await applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toBe(false)
     expect(existsSync(item.candidateFull)).toBe(true)
   })
 
-  it('rejects immutable Review bytes changed after independent verification', () => {
+  it('archives a semantically verified candidate after a safe review-row edit', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
+    expect(await verifyFixture(item)).toBe(true)
     const items = readItems(item.reviewFile)
     items[0] = { ...items[0]!, title: 'changed review' }
     writeFileSync(item.reviewFile, JSON.stringify(items, null, 2), 'utf8')
-    expect(applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toBe(false)
-    expect(existsSync(item.candidateFull)).toBe(true)
+    expect(await applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).toBe(true)
+    expect(existsSync(item.candidateFull)).toBe(false)
   })
 
-  it('binds current governance-log bytes into the authority-sealed operation set', () => {
-    const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
+  it('preserves and appends external audit entries to current governance-log bytes', async () => {
+    const item = fixture('_candidates/topics/disposable.md')
     writeFileSync(governanceLog(item), 'external audit line\n', 'utf8')
-    expect(applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
+    expect(await applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
     )).toBe(true)
     expect(readFileSync(governanceLog(item), 'utf8')).toContain('external audit line')
   })
+
+  it('leaves a committed Archive without its lifecycle event when only event append fails', async () => {
+    const item = fixture('_candidates/topics/disposable.md')
+    const eventPath = join(dirname(item.reviewFile), 'knowledge-events.jsonl')
+    const journalDirectory = join(dirname(item.reviewFile), 'promotion-journal')
+    const archived = candidateArchivePath(item)
+    const candidateBytesBefore = readFileSync(item.candidateFull, 'utf8')
+    const reviewBefore = readFileSync(item.reviewFile, 'utf8')
+    const governanceBefore = existsSync(governanceLog(item)) ? readFileSync(governanceLog(item), 'utf8') : undefined
+    const eventBytesBefore = existsSync(eventPath) ? readFileSync(eventPath, 'utf8') : undefined
+    const eventTypesBefore = (eventBytesBefore ?? '').trim().split('\n').filter(Boolean)
+      .map(line => (JSON.parse(line) as { type: string }).type)
+    faults.failDescriptorWritePath = eventPath
+    faults.failDescriptorWriteCount = 1
+
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow(/injected descriptor write failure/u)
+
+    expect(existsSync(item.candidateFull)).toBe(false)
+    expect(existsSync(archived)).toBe(true)
+    expect(readFileSync(archived, 'utf8')).toBe(candidateBytesBefore)
+    expect(readFileSync(item.reviewFile, 'utf8')).not.toBe(reviewBefore)
+    const governanceAfterCommit = readFileSync(governanceLog(item), 'utf8')
+    expect(governanceAfterCommit).not.toBe(governanceBefore)
+    const journalName = readdirSync(journalDirectory).find(name => name.endsWith('.json'))
+    expect(journalName).toBeDefined()
+    const journalPath = join(journalDirectory, journalName!)
+    const journalAfterCommit = readFileSync(journalPath, 'utf8')
+    const journalAtFailure = JSON.parse(journalAfterCommit) as Record<string, unknown>
+    const journalStateAtFailure = journalAtFailure.state
+    expect(journalAtFailure).toMatchObject({ action: 'Archive' })
+    expect(existsSync(eventPath) ? readFileSync(eventPath, 'utf8') : undefined).toBe(eventBytesBefore)
+    const reviewAfterCommit = readFileSync(item.reviewFile, 'utf8')
+    const archivedBytesAfterCommit = readFileSync(archived, 'utf8')
+
+    const firstRecovery = await recoverCandidateReviewTransactions(
+      authority, item.reviewFile, item.wikiRoot, item.archiveRoot,
+    )
+    const secondRecovery = await recoverCandidateReviewTransactions(
+      authority, item.reviewFile, item.wikiRoot, item.archiveRoot,
+    )
+    const events = existsSync(eventPath)
+      ? readFileSync(eventPath, 'utf8').trim().split('\n').filter(Boolean)
+        .map(line => JSON.parse(line) as { type: string })
+      : []
+    const observed = {
+      firstRecovery,
+      secondRecovery,
+      journalStateAtFailure,
+      eventTypes: events.map(event => event.type),
+      eventBytes: existsSync(eventPath) ? readFileSync(eventPath, 'utf8') : undefined,
+      journalAfterRecovery: JSON.parse(readFileSync(journalPath, 'utf8')) as Record<string, unknown>,
+      reviewAfterRecovery: readFileSync(item.reviewFile, 'utf8'),
+      governanceAfterRecovery: readFileSync(governanceLog(item), 'utf8'),
+      archivedBytesAfterRecovery: readFileSync(archived, 'utf8'),
+      archivedStillPresent: existsSync(archived),
+      candidateStillAbsent: !existsSync(item.candidateFull),
+    }
+
+    expect(typeof observed.eventBytes).toBe('string')
+    expect(observed).toMatchObject({
+      journalStateAtFailure: 'prepared',
+      firstRecovery: 1,
+      secondRecovery: 0,
+      eventTypes: [...eventTypesBefore, 'knowledge/rejected'],
+      journalAfterRecovery: { ...journalAtFailure, state: 'committed' },
+      reviewAfterRecovery: reviewAfterCommit,
+      governanceAfterRecovery: governanceAfterCommit,
+      archivedBytesAfterRecovery: archivedBytesAfterCommit,
+      archivedStillPresent: true,
+      candidateStillAbsent: true,
+    })
+  })
+
+  it('repairs a missing Archive event from a legacy committed journal without replaying file changes', async () => {
+    const item = fixture('_candidates/topics/disposable.md')
+    const eventPath = join(dirname(item.reviewFile), 'knowledge-events.jsonl')
+    const journalDirectory = join(dirname(item.reviewFile), 'promotion-journal')
+    const archived = candidateArchivePath(item)
+    const candidateBytesBefore = readFileSync(item.candidateFull, 'utf8')
+    const eventBytesBefore = readFileSync(eventPath, 'utf8')
+    const eventTypesBefore = eventBytesBefore.trim().split('\n').filter(Boolean)
+      .map(line => (JSON.parse(line) as { type: string }).type)
+    faults.failDescriptorWritePath = eventPath
+    faults.failDescriptorWriteCount = 1
+
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow(/injected descriptor write failure/u)
+
+    const journalName = readdirSync(journalDirectory).find(name => name.endsWith('.json'))
+    expect(journalName).toBeDefined()
+    const journalPath = join(journalDirectory, journalName!)
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as Record<string, unknown>
+    expect(existsSync(eventPath) ? readFileSync(eventPath, 'utf8') : undefined).toBe(eventBytesBefore)
+    expect(existsSync(archived)).toBe(true)
+    expect(readFileSync(archived, 'utf8')).toBe(candidateBytesBefore)
+
+    // Simulate the already-written committed marker from older versions whose
+    // event append ran after commitPromotionJournal.
+    writeFileSync(journalPath, `${JSON.stringify({ ...journal, state: 'committed' }, null, 2)}\n`, 'utf8')
+    const reviewAtRecovery = readFileSync(item.reviewFile, 'utf8')
+    const governanceAtRecovery = readFileSync(governanceLog(item), 'utf8')
+    const firstRecovery = await recoverCandidateReviewTransactions(
+      authority, item.reviewFile, item.wikiRoot, item.archiveRoot,
+    )
+    const eventBytesAfterFirstRecovery = existsSync(eventPath) ? readFileSync(eventPath, 'utf8') : undefined
+    const secondRecovery = await recoverCandidateReviewTransactions(
+      authority, item.reviewFile, item.wikiRoot, item.archiveRoot,
+    )
+    const eventTypesAfterRecovery = (eventBytesAfterFirstRecovery ?? '').trim().split('\n').filter(Boolean)
+      .map(line => (JSON.parse(line) as { type: string }).type)
+
+    expect({
+      firstRecovery,
+      secondRecovery,
+      eventTypesAfterRecovery,
+      reviewAfterRecovery: readFileSync(item.reviewFile, 'utf8'),
+      governanceAfterRecovery: readFileSync(governanceLog(item), 'utf8'),
+      archivedBytesAfterRecovery: readFileSync(archived, 'utf8'),
+      journalStateAfterRecovery: (JSON.parse(readFileSync(journalPath, 'utf8')) as { state: string }).state,
+    }).toMatchObject({
+      firstRecovery: 1,
+      secondRecovery: 0,
+      eventTypesAfterRecovery: [...eventTypesBefore, 'knowledge/rejected'],
+      reviewAfterRecovery: reviewAtRecovery,
+      governanceAfterRecovery: governanceAtRecovery,
+      archivedBytesAfterRecovery: candidateBytesBefore,
+      journalStateAfterRecovery: 'committed',
+    })
+  })
 })
 describe('concurrent mutation guards during a review transaction', () => {
-  it('refuses a canonical target whose resolved identity changes during staging', () => {
-    const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
-    const target = readItems(item.reviewFile)[0]!.targetPath!
-    const targetFull = join(item.wikiRoot, target)
-    const reviewBefore = readFileSync(item.reviewFile, 'utf8')
-    mkdirSync(dirname(targetFull), { recursive: true })
-    resetOperationCounters()
-    // The target is resolved again after the review pre-state has been read; an
-    // external actor can turn its leaf into a link inside that window.
-    faults.armOnOpenPath = item.reviewFile
-    faults.armOnOpenAt = 2
-    faults.armOnOpenRun = 'symlink-entry'
-    faults.armOnOpenTarget = targetFull
-    faults.armOnOpenContent = join(item.root, 'outside-canonical.md')
+  it('denies Merge and Deduplicate without measured-trial authority', async () => {
+    for (const action of ['Merge', 'Deduplicate'] as const) {
+      const item = fixture()
+      const target = readItems(item.reviewFile)[0]!.targetPath!
+      const targetFull = join(item.wikiRoot, target)
+      mkdirSync(dirname(targetFull), { recursive: true })
+      const canonicalBefore = candidate('Canonical')
+      writeFileSync(targetFull, canonicalBefore, 'utf8')
+      expect(await verifyFixture(item, action)).toBe(true)
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/canonical target changed during review transaction/u)
-    expect(lstatSync(targetFull).isSymbolicLink()).toBe(true)
-    expect(existsSync(faults.armOnOpenContent)).toBe(false)
-    expect(existsSync(item.candidateFull)).toBe(true)
-    expect(readFileSync(item.reviewFile, 'utf8')).toBe(reviewBefore)
+      expect(await applyCandidateReview(
+        item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, action, 'human',
+      )).toBe(false)
+      expect(readFileSync(targetFull, 'utf8')).toBe(canonicalBefore)
+      expect(existsSync(item.candidateFull)).toBe(true)
+    }
   })
 
-  it('refuses a canonical target that appears during staging', () => {
+  it('refuses candidate bytes that change during staging', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
-    const target = readItems(item.reviewFile)[0]!.targetPath!
-    const targetFull = join(item.wikiRoot, target)
-    mkdirSync(dirname(targetFull), { recursive: true })
-    resetOperationCounters()
-    faults.armOnOpenPath = item.reviewFile
-    faults.armOnOpenAt = 2
-    faults.armOnOpenRun = 'create-target'
-    faults.armOnOpenTarget = targetFull
-    faults.armOnOpenContent = 'concurrent target'
-
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/canonical target appeared during review transaction/u)
-    expect(readFileSync(targetFull, 'utf8')).toBe('concurrent target')
-    expect(existsSync(item.candidateFull)).toBe(true)
-    expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
-  })
-
-  it('refuses an existing canonical target whose bytes change during staging', () => {
-    const item = fixture()
-    const target = readItems(item.reviewFile)[0]!.targetPath!
-    const targetFull = join(item.wikiRoot, target)
-    mkdirSync(dirname(targetFull), { recursive: true })
-    writeFileSync(targetFull, candidate('Canonical', 'stable canonical body'), 'utf8')
-    expect(verifyFixture(item, 'Replace')).toBe(true)
-    const targetBefore = readFileSync(targetFull, 'utf8')
-    resetOperationCounters()
-    faults.tamperReadPath = targetFull
-    faults.tamperReadAt = 3
-    faults.tamperReadValue = 'canonical bytes replaced by a concurrent writer'
-
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Replace', 'human',
-    )).toThrow(/canonical target changed during review transaction/u)
-    expect(readFileSync(targetFull, 'utf8')).toBe(targetBefore)
-    expect(existsSync(item.candidateFull)).toBe(true)
-  })
-
-  it('refuses candidate bytes that change during staging', () => {
-    const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
+    expect(await verifyFixture(item)).toBe(true)
     const candidateBefore = readFileSync(item.candidateFull, 'utf8')
     resetOperationCounters()
     faults.tamperReadPath = item.candidateFull
     faults.tamperReadAt = 3
     faults.tamperReadValue = 'candidate bytes replaced by a concurrent writer'
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow(/candidate content changed during review transaction/u)
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).resolves.toBe(false)
     expect(readFileSync(item.candidateFull, 'utf8')).toBe(candidateBefore)
     expect(readItems(item.reviewFile)[0]!.resolved).toBe(false)
-    expect(existsSync(join(item.wikiRoot, 'concepts', 'candidate.md'))).toBe(false)
+    expect(existsSync(candidateArchivePath(item))).toBe(false)
   })
 
-  it('refuses review state that changes during staging', () => {
+  it('refuses review state that changes during staging', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
+    expect(await verifyFixture(item)).toBe(true)
     resetOperationCounters()
     faults.tamperReadPath = item.reviewFile
     faults.tamperReadAt = 3
     faults.tamperReadValue = 'review bytes replaced by a concurrent writer'
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow('review state changed during review transaction')
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow('review state changed during review transaction')
     expect(existsSync(item.candidateFull)).toBe(true)
-    expect(existsSync(join(item.wikiRoot, 'concepts', 'candidate.md'))).toBe(false)
+    expect(existsSync(candidateArchivePath(item))).toBe(false)
   })
 
-  it('refuses a governance log that changes during staging', () => {
+  it('refuses a governance log that changes during staging', async () => {
     const item = fixture('_candidates/sessions/candidate.md')
-    expect(verifyFixture(item)).toBe(true)
+    expect(await verifyFixture(item)).toBe(true)
     resetOperationCounters()
     faults.tamperReadPath = governanceLog(item)
     faults.tamperReadAt = 2
     faults.tamperReadValue = 'governance bytes replaced by a concurrent writer\n'
 
-    expect(() => applyCandidateReview(
-      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Promote', 'human',
-    )).toThrow('governance log changed during review transaction')
+    await expect(applyCandidateReview(
+      item.reviewFile, item.root, item.wikiRoot, item.archiveRoot, item.reviewId, 'Archive', 'human',
+    )).rejects.toThrow('governance log changed during review transaction')
     expect(existsSync(item.candidateFull)).toBe(true)
-    expect(existsSync(join(item.wikiRoot, 'concepts', 'candidate.md'))).toBe(false)
+    expect(existsSync(candidateArchivePath(item))).toBe(false)
   })
 
   it('propagates a non-missing failure while inspecting a canonical target', async () => {

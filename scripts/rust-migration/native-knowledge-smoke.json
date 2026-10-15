@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "isolatedHarness": true,
+  "ready": true,
+  "httpStatus": 200,
+  "routeOk": true,
+  "hitPath": "concepts/native-smoke.md",
+  "utilityWritten": true,
+  "retrievalEventWritten": true,
+  "utilitySha256": "a50db6388e70b8001f19386fa1a43fb0c34b90f86c38c895b21d689995a2151f",
+  "eventSha256": "6fc8ab2e796182884b5cfb739f2b875bdccc8b47b1145ebd26d588a4846f0c3b",
+  "utilityPath": "/var/folders/tj/zym7f5k919375cmql460k5yw0000gn/T/ark-native-knowledge-smoke-V4dG42/Knowledge/.llm-wiki/knowledge-utility.json",
+  "eventPath": "/var/folders/tj/zym7f5k919375cmql460k5yw0000gn/T/ark-native-knowledge-smoke-V4dG42/Knowledge/.llm-wiki/knowledge-events.jsonl",
+  "stderrEmpty": true,
+  "cleanExit": true,
+  "generatedAt": "2026-10-07T22:11:39.666Z",
+  "response": {
+    "type": "server-response",
+    "rpcId": "native-knowledge-smoke",
+    "result": {
+      "ok": true,
+      "value": {
+        "ok": true,
+        "value": [
+          {
+            "path": "concepts/native-smoke.md",
+            "score": 0.5753641449035617
+          }
+        ]
+      }
+    }
+  }
+}

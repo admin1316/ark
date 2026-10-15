@@ -49,13 +49,26 @@ public struct BackendRestartCircuitBreaker {
 /// exit, so no launch may reuse another launch's objects. The old process's
 /// termination handler clears only its own pipe and reports only its own
 /// exit and stop completion.
+public struct BackendProcessJoinedLaunch: Sendable {
+  public let generation: UUID
+  public let processIdentifier: pid_t
+  public let channelGeneration: UUID?
+  public let terminationStatus: Int32
+  public let exitedNormally: Bool
+  public let forced: Bool
+}
+
 public final class BackendProcess {
   /// The launcher gets six seconds for its child and two seconds to reap/exit.
   public static let forceKillGraceSeconds: TimeInterval = 8
 
   private let lock = NSLock()
   private var process: Process?
+  private var launchGeneration = UUID()
+  private var launchForced = false
+  private var joinedLaunch: BackendProcessJoinedLaunch?
   private var output: Pipe?
+  private var ownerChannel: ArkNativeOwnerChannel?
   private var bufferedOutput = Data()
   private var stopCompletions: [() -> Void] = []
   private var forceKillWorkItem: DispatchWorkItem?
@@ -68,6 +81,10 @@ public final class BackendProcess {
   public var onExit: ((Int32) -> Void)?
 
   public init() {}
+  public var generation: UUID { lock.lock(); defer { lock.unlock() }; return launchGeneration }
+  public var channelGeneration: UUID? { lock.lock(); defer { lock.unlock() }; return ownerChannel?.generation }
+  /// Available only after launcher reaping and private handler settlement.
+  public var joinedReceipt: BackendProcessJoinedLaunch? { lock.lock(); defer { lock.unlock() }; return joinedLaunch }
 
   /// Whether a process is currently running.
   public var isRunning: Bool {
@@ -90,7 +107,8 @@ public final class BackendProcess {
     executable: String,
     arguments: [String],
     environment: [String: String],
-    workingDirectory: URL
+    workingDirectory: URL,
+    ownerChannel: ArkNativeOwnerChannel? = nil
   ) throws {
     lock.lock()
     guard process == nil else {
@@ -99,13 +117,15 @@ public final class BackendProcess {
     }
     let process = Process()
     let output = Pipe()
+    launchGeneration = UUID(); launchForced = false; joinedLaunch = nil
     self.process = process
     self.output = output
+    self.ownerChannel = ownerChannel
     lock.unlock()
 
     process.executableURL = URL(fileURLWithPath: executable)
     process.arguments = arguments
-    process.environment = environment
+    process.environment = environment.merging(ownerChannel?.environment ?? [:]) { _, owned in owned }
     process.currentDirectoryURL = workingDirectory
     process.standardOutput = output
     process.standardError = output
@@ -121,35 +141,43 @@ public final class BackendProcess {
         guard let self, let output else { return }
         output.fileHandleForReading.readabilityHandler = nil
         self.flushBufferedOutput()
-        // Clear the ownership slot before notifying observers. The observer
-        // is allowed to start a replacement after it receives the exit signal;
-        // clearing it afterwards races that recovery path into
-        // `alreadyRunning`.
-        let stopCompletions: [() -> Void]
         self.lock.lock()
-        if self.process === terminated {
-          self.process = nil
-          self.output = nil
-          self.forceKillWorkItem?.cancel()
-          self.forceKillWorkItem = nil
-          self.forceKillDeadline = nil
-          self.stopRequested = false
-        }
-        stopCompletions = self.stopCompletions
-        self.stopCompletions.removeAll()
+        let channel = self.process === terminated ? self.ownerChannel : nil
         self.lock.unlock()
-        self.onExit?(terminated.terminationStatus)
-        stopCompletions.forEach { $0() }
+        let settled: @Sendable () -> Void = { [weak self] in
+          DispatchQueue.main.async {
+            guard let self else { return }
+            self.lock.lock()
+            if self.process === terminated {
+              self.joinedLaunch = BackendProcessJoinedLaunch(generation: self.launchGeneration,
+                processIdentifier: terminated.processIdentifier, channelGeneration: self.ownerChannel?.generation,
+                terminationStatus: terminated.terminationStatus, exitedNormally: terminated.terminationReason == .exit,
+                forced: self.launchForced)
+              self.process = nil; self.output = nil; self.ownerChannel = nil
+              self.forceKillWorkItem?.cancel(); self.forceKillWorkItem = nil
+              self.forceKillDeadline = nil; self.stopRequested = false
+            }
+            let completions = self.stopCompletions
+            self.stopCompletions.removeAll()
+            self.lock.unlock()
+            self.onExit?(terminated.terminationStatus)
+            completions.forEach { $0() }
+          }
+        }
+        if let channel { channel.close(completion: settled) } else { settled() }
       }
     }
 
     do {
       try process.run()
+      ownerChannel?.bindLauncher(process)
     } catch {
       lock.lock()
       if self.process === process {
         self.process = nil
         self.output = nil
+        self.ownerChannel?.close()
+        self.ownerChannel = nil
       }
       lock.unlock()
       output.fileHandleForReading.readabilityHandler = nil
@@ -158,7 +186,7 @@ public final class BackendProcess {
   }
 
   /// Terminate the running launcher, force-killing it after a bounded grace, and
-  /// invoke `completion` once the termination handler has reaped it. When
+  /// invoke `completion` once it is reaped and its private owner handler settles. When
   /// nothing is running, `completion` runs immediately. The force deadline is
   /// capped at eight seconds but may be shortened by the AppKit owner's one
   /// absolute termination deadline.
@@ -167,12 +195,13 @@ public final class BackendProcess {
     let shouldTerminate: Bool
     let selectedDeadline: Date
     lock.lock()
-    guard let running = self.process, running.isRunning else {
+    guard let running = self.process else {
       lock.unlock()
       completion()
       return
     }
     process = running
+    ownerChannel?.close()
     stopCompletions.append(completion)
     shouldTerminate = !stopRequested
     stopRequested = true
@@ -187,6 +216,7 @@ public final class BackendProcess {
         guard let self, let process else { return }
         self.lock.lock()
         let stillOwned = self.process === process && process.isRunning
+        if stillOwned { self.launchForced = true }
         self.lock.unlock()
         if stillOwned { _ = Darwin.kill(pid, SIGKILL) }
       }
@@ -197,7 +227,7 @@ public final class BackendProcess {
       )
     }
     lock.unlock()
-    if shouldTerminate { process.terminate() }
+    if shouldTerminate && process.isRunning { process.terminate() }
   }
 
   private func consume(_ data: Data) {
