@@ -161,9 +161,46 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
     expect(hereString).toBe('alpha\nbeta')
 
     const large = text(await execute('large-output', '1..12050 | ForEach-Object { $_ }'))
+    if (!large.startsWith('1\n2\n3\n') || !large.includes('<response clipped>')
+      || large.includes('beginning of this command output was dropped')) {
+      process.stderr.write(`pwsh-large-output-shape-diagnostic ${JSON.stringify({
+        codeUnits: large.length,
+        utf8Bytes: Buffer.byteLength(large, 'utf8'),
+        lfCount: large.split('\n').length - 1,
+        crlfCount: large.split('\r\n').length - 1,
+        expectedPrefix: large.startsWith('1\n2\n3\n'),
+        clippedMarker: large.includes('<response clipped>'),
+        droppedPrefixMarker: large.includes('beginning of this command output was dropped'),
+        wrapperMarker: large.includes('DSH_PERSISTENT_PWSH'),
+        timeoutNotice: large.includes('timed out after'),
+        resetNotice: large.includes('was reset; the next pwsh call starts from the workspace'),
+      })}\n`)
+    }
     expect(large.startsWith('1\n2\n3\n')).toBe(true)
     expect(large).toContain('<response clipped>')
     expect(large).not.toContain('beginning of this command output was dropped')
+
+    const unicode = text(await execute(
+      'unicode-output',
+      "Write-Output (('x' * 15999) + [char]::ConvertFromUtf32(0x1f600) + 'tail')",
+    ))
+    if (!unicode.startsWith(`${'x'.repeat(15_999)}<response clipped>`) || unicode.includes('\uD83D')) {
+      process.stderr.write(`pwsh-unicode-output-shape-diagnostic ${JSON.stringify({
+        outputChars: unicode.length,
+        outputUtf8Bytes: Buffer.byteLength(unicode, 'utf8'),
+        firstNonXOffset: unicode.search(/[^x]/u),
+        clippedMarkerOffset: unicode.indexOf('<response clipped>'),
+        lineFeedCount: unicode.split('\n').length - 1,
+        containsEmojiHighSurrogate: unicode.includes('\uD83D'),
+        endsWithTail: unicode.endsWith('tail'),
+        wrapperMarker: unicode.includes('DSH_PERSISTENT_PWSH'),
+        timeoutNotice: unicode.includes('timed out after'),
+        resetNotice: unicode.includes('was reset; the next pwsh call starts from the workspace'),
+      })}\n`)
+    }
+    expect(unicode.startsWith(`${'x'.repeat(15_999)}<response clipped>`)).toBe(true)
+    expect(unicode).not.toContain('\uD83D')
+    expect(text(await execute('after-unicode-output', 'Write-Output ready'))).toBe('ready')
 
     const exited = text(await execute('exit', 'exit'))
     expect(exited).toContain('next pwsh call starts from the workspace')

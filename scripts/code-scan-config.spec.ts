@@ -33,7 +33,7 @@ function localPlugins(value: unknown, file: string): string[] {
   const paths: string[] = []
   if (typeof row.name === 'string' && row.name.startsWith('.') && /\.[cm]?tsx?$/.test(row.name)) {
     const target = resolve(dirname(file), row.name)
-    if (existsSync(target)) paths.push(relative(root, target))
+    if (existsSync(target)) paths.push(relative(root, target).replaceAll('\\', '/'))
   }
   if (isCordisGroupEntry(row)) paths.push(...localPlugins(row.config, file))
   if (Array.isArray(row.insert)) paths.push(...localPlugins(row.insert, file))
@@ -41,10 +41,12 @@ function localPlugins(value: unknown, file: string): string[] {
 }
 
 describe('source analysis boundaries', () => {
-  it('includes every live package source and test without treating generated lib as source', () => {
+  it.each(['/', '\\'])('includes every live package source and test without treating generated lib as source (%s)', (separator) => {
     const sources = globSync('packages/*/*/{src,tests}/**/*.{ts,tsx}', { cwd: root })
+      .map(file => file.replaceAll('\\', '/').replaceAll('/', separator))
     expect(sources.length).toBeGreaterThan(500)
-    for (const source of sources) {
+    for (const rawSource of sources) {
+      const source = rawSource.replaceAll('\\', '/')
       const owner = source.split('/').slice(0, 3).join('/')
       const config = workspaceScan(owner)
       expect(config.project, owner).toBeDefined()
@@ -60,11 +62,12 @@ describe('source analysis boundaries', () => {
     const files = globSync(['packages/**/*cordis*.yml', 'apps/**/*cordis*.yml'], {
       cwd: root,
       exclude: ['**/node_modules/**', '**/lib/**'],
-    })
+    }).map(file => file.replaceAll('\\', '/'))
     const plugins = new Set(files.flatMap(file => localPlugins(
       loadCordisYaml(readFileSync(join(root, file), 'utf8')), join(root, file),
     )))
     expect(plugins.size).toBeGreaterThan(10)
+    let checkedFixtureImports = 0
     for (const plugin of plugins) {
       // Published plugin entry points are already derived from package exports by Knip.
       if (!plugin.includes('/tests/')) continue
@@ -72,7 +75,9 @@ describe('source analysis boundaries', () => {
       if (owner === undefined) continue
       const local = plugin.slice(owner.length + 1)
       expect(included(local, workspaceScan(owner).entry), plugin).toBe(true)
+      checkedFixtureImports += 1
     }
+    expect(checkedFixtureImports).toBeGreaterThan(0)
   })
 
   it('does not promote arbitrary config strings into entry points or evaluate expressions', () => {
@@ -108,7 +113,7 @@ describe('source analysis boundaries', () => {
       write('packages/group/two/src/copy.ts')
       const duplicate = run()
       expect(duplicate.status, String(duplicate.stdout) + String(duplicate.stderr)).toBe(1)
-      expect(String(duplicate.stdout)).toContain('src/copy.ts')
+      expect(String(duplicate.stdout)).toContain(join('src', 'copy.ts'))
       rmSync(join(fixture, 'packages/group/two/src/copy.ts'))
       write('scripts/lib/hand-owned.ts')
       const script = run()

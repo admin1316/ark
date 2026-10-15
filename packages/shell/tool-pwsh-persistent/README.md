@@ -47,7 +47,7 @@ The default `shell` backend starts a PowerShell shell through a `dsh-terminal-ba
 |---|---|---|
 | `backendType` | `shell` | Registered PTY backend used for each agent's shell |
 | `timeoutMs` | `300,000` | Wall-clock limit for one command; timeout closes the shell |
-| `maxOutputChars` | `16,000` | Maximum retained command-output characters; fixed diagnostics are added afterward |
+| `maxOutputChars` | `16,000` | Maximum retained command-output UTF-16 code units; cuts preserve surrogate pairs, and fixed diagnostics are added afterward |
 | `description` | `Run commands in a persistent PowerShell shell. State, including the current directory and exported environment variables, persists across calls for this agent.` | Model-facing environment contract; deployments may describe their environment |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-pwsh-persistent) is the exhaustive source for every accepted field and its JSDoc.

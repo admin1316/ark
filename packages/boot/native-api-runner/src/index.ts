@@ -29,6 +29,7 @@ export async function runNativeApi(args: readonly string[]): Promise<void> {
     watchLiveConfig: false,
     profilePatchMode: 'managed',
     homePatchMode: 'none',
+    shutdownOnParentDisconnect: true,
   } as const
   await runProfile(managedProfile)
 }

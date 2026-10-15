@@ -14,7 +14,7 @@ import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type {
@@ -46,12 +46,63 @@ const roots: string[] = []
 const fixtures: ResponsesFixture[] = []
 const contexts: Context[] = []
 
-afterEach(async () => {
-  await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
-  await Promise.all(fixtures.splice(0).map(fixture => fixture.close()))
-  for (const root of roots.splice(0)) {
-    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+let cleanupDiagnostic: {
+  phase: string
+  contextsPlanned: number
+  contextsStarted: number
+  contextsCompleted: number
+  fixturesPlanned: number
+  fixturesStarted: number
+  fixturesCompleted: number
+  rootsPlanned: number
+  rootsStarted: number
+  rootsCompleted: number
+} | undefined
+
+beforeEach(() => {
+  const startedAt = performance.now()
+  const diagnostic = {
+    phase: 'body',
+    contextsPlanned: 0, contextsStarted: 0, contextsCompleted: 0,
+    fixturesPlanned: 0, fixturesStarted: 0, fixturesCompleted: 0,
+    rootsPlanned: 0, rootsStarted: 0, rootsCompleted: 0,
   }
+  cleanupDiagnostic = diagnostic
+  onTestFailed(() => {
+    process.stderr.write(`codex-real-cleanup-diagnostic ${JSON.stringify({
+      elapsedMs: Math.round(performance.now() - startedAt), ...diagnostic,
+    })}\n`)
+  })
+})
+
+afterEach(async () => {
+  const diagnostic = cleanupDiagnostic
+  if (diagnostic !== undefined) {
+    diagnostic.phase = 'context-dispose'
+    diagnostic.contextsPlanned = contexts.length
+    diagnostic.fixturesPlanned = fixtures.length
+    diagnostic.rootsPlanned = roots.length
+  }
+  await Promise.all(contexts.splice(0).map((ctx) => {
+    if (diagnostic !== undefined) diagnostic.contextsStarted += 1
+    return ctx.fiber.dispose().then(() => {
+      if (diagnostic !== undefined) diagnostic.contextsCompleted += 1
+    })
+  }))
+  if (diagnostic !== undefined) diagnostic.phase = 'fixture-close'
+  await Promise.all(fixtures.splice(0).map((fixture) => {
+    if (diagnostic !== undefined) diagnostic.fixturesStarted += 1
+    return fixture.close().then(() => {
+      if (diagnostic !== undefined) diagnostic.fixturesCompleted += 1
+    })
+  }))
+  if (diagnostic !== undefined) diagnostic.phase = 'root-rm'
+  for (const root of roots.splice(0)) {
+    if (diagnostic !== undefined) diagnostic.rootsStarted += 1
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    if (diagnostic !== undefined) diagnostic.rootsCompleted += 1
+  }
+  if (diagnostic !== undefined) diagnostic.phase = 'complete'
 })
 
 interface RealHarness {

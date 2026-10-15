@@ -8,8 +8,8 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { once } from 'node:events'
-import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import {
   composeEntries,
   healProfilesModuleFallback,
@@ -569,18 +569,24 @@ describe('healProfilesModuleFallback', () => {
   })
 
   it('never lets a concurrent resolver observe a missing entry while re-pointing links', async () => {
+    const diagnostic = { bodyPhase: 'stage-first', cleanupPhase: 'not-started', healsCompleted: 0,
+      readyReceived: false, reportReceived: false, exitReceived: false }
+    onTestFailed(() => { console.error('profile-concurrent-resolver-phase', diagnostic) })
     const names = Array.from({ length: 160 }, (_, index) => `pkg-${String(index)}`)
     const first = stageInstallation(Object.fromEntries(names.map(name => [name, {}])))
+    diagnostic.bodyPhase = 'stage-second'
     const second = stageInstallation(Object.fromEntries(names.map(name => [name, {}])))
     const home = tmp()
     const fallback = join(home, 'profiles', 'node_modules')
+    diagnostic.bodyPhase = 'initial-heal'
     healProfilesModuleFallback(first, home)
     const reader = join(home, 'reader.mjs')
     const profileSource = fileURLToPath(new URL('../src/profile.ts', import.meta.url))
+    diagnostic.bodyPhase = 'write-reader'
     writeFileSync(reader, [
       "import { lstatSync, readFileSync } from 'node:fs'",
       "import { join, dirname } from 'node:path'",
-      `import { resolveBundleDir } from ${JSON.stringify(profileSource)}`,
+      `import { resolveBundleDir } from ${JSON.stringify(pathToFileURL(profileSource).href)}`,
       'const [fallback, ...names] = process.argv.slice(2)',
       "const profile = join(dirname(fallback), 'active')",
       "const absentInstallation = join(profile, 'uninstalled', 'package.json')",
@@ -622,32 +628,46 @@ describe('healProfilesModuleFallback', () => {
       'scan()',
     ].join('\n'))
     const { spawn } = await import('node:child_process')
+    diagnostic.bodyPhase = 'spawn-reader'
     const child = spawn(process.execPath, ['--import', 'tsx', reader, fallback, ...names], {
       stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
     })
     const exited = once(child, 'exit') as Promise<[number | null, NodeJS.Signals | null]>
     try {
+      diagnostic.bodyPhase = 'await-reader-ready'
       await Promise.race([
         once(child, 'message'),
         exited.then(() => { throw new Error('resolver exited before readiness') }),
       ])
+      diagnostic.readyReceived = true
+      diagnostic.bodyPhase = 'rotate-heals'
       for (let index = 0; index < 40; index += 1) {
         healProfilesModuleFallback(index % 2 === 0 ? second : first, home)
+        diagnostic.healsCompleted += 1
       }
+      diagnostic.bodyPhase = 'await-reader-report'
       const result = once(child, 'message')
       child.send('stop')
       const [report] = await result as [{ passes: number; failures: unknown[] }]
+      diagnostic.reportReceived = true
+      diagnostic.bodyPhase = 'await-reader-exit'
       const [code, signal] = await exited
+      diagnostic.exitReceived = true
+      diagnostic.bodyPhase = 'assert-report'
       expect({ code, signal }).toEqual({ code: 0, signal: null })
       expect(report.passes).toBeGreaterThan(0)
       expect(report.failures).toEqual([])
       expect(readlinkSync(join(fallback, 'pkg-0'))).toBe(realpathSync.native(join(dirname(first), 'node_modules', 'pkg-0')))
     } finally {
+      diagnostic.cleanupPhase = 'signal-if-running'
       if (child.exitCode === null && child.signalCode === null) child.kill()
+      diagnostic.cleanupPhase = 'await-reader-exit'
       await exited
+      diagnostic.cleanupPhase = 'remove-fixtures'
       for (const directory of [home, dirname(dirname(first)), dirname(dirname(second))]) {
         rmSync(directory, { recursive: true, force: true })
       }
+      diagnostic.cleanupPhase = 'complete'
     }
   }, 20_000)
 })

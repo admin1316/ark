@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed } from 'vitest'
 import fc from 'fast-check'
 import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -127,32 +127,48 @@ async function verifyBackend(
   root: string,
   events: readonly SessionEvent[],
   sizes: readonly number[],
+  observe?: (phase: string, index?: number) => void,
 ): Promise<void> {
   const header = { ...meta('differential', '/work'), delegationDepth: 0 }
+  observe?.('mount')
   let mounted = await mount(name, root)
   try {
+    observe?.('create')
     await mounted.persistence.create(header)
+    let batchIndex = 0
     for (const batch of batches(events, sizes)) {
+      observe?.('append', batchIndex)
       await mounted.persistence.append(header.id, batch)
+      batchIndex += 1
     }
+    observe?.('inspect')
     expect(await mounted.persistence.inspect(header.id), name).toEqual({ meta: header, events })
+    observe?.('list')
     expect(await mounted.persistence.list(), name).toEqual([header])
+    observe?.('list-snapshots-before')
     const revision = (await mounted.persistence.listSnapshots())[0]?.revision
     for (let fromSeq = 0; fromSeq <= events.length + 1; fromSeq += 1) {
+      observe?.('read-from', fromSeq)
       expect((await mounted.persistence.readFrom(header.id, fromSeq)).events, `${name} seq ${fromSeq}`)
         .toEqual(events.slice(fromSeq))
     }
+    observe?.('list-snapshots-after')
     expect((await mounted.persistence.listSnapshots())[0]?.revision, name).toBe(revision)
   } finally {
+    observe?.('dispose-first')
     await mounted.dispose()
   }
 
+  observe?.('mount-reopen')
   mounted = await mount(name, root)
   try {
+    observe?.('inspect-reopen')
     expect(await mounted.persistence.inspect(header.id), `${name} reopen`).toEqual({ meta: header, events })
   } finally {
+    observe?.('dispose-reopen')
     await mounted.dispose()
   }
+  observe?.('backend-complete')
 }
 
 const streamChunkArbitrary: fc.Arbitrary<StreamChunk> = fc.oneof(
@@ -228,12 +244,37 @@ describe('SQLite cross-backend differential behavior', () => {
   }, 30_000)
 
   it('matches JSONL/Zstandard across randomized logical logs and append partitions', async () => {
+    const startedAt = performance.now()
+    const diagnostic = {
+      phase: 'property-start',
+      workloadsStarted: 0, workloadsCompleted: 0, backendsCompleted: 0,
+      backend: 'none', eventCount: 0, partitionSizeCount: 0,
+      phaseIndex: null as number | null,
+    }
+    onTestFailed(() => {
+      process.stderr.write(`sqlite-randomized-progress-diagnostic ${JSON.stringify({
+        elapsedMs: Math.round(performance.now() - startedAt), ...diagnostic,
+      })}\n`)
+    })
     await fc.assert(fc.asyncProperty(randomWorkload, async ({ events, batchSizes }) => {
+      diagnostic.workloadsStarted += 1
+      diagnostic.eventCount = events.length
+      diagnostic.partitionSizeCount = batchSizes.length
+      diagnostic.backend = 'none'
+      diagnostic.phaseIndex = null
+      diagnostic.phase = 'fresh-directory'
       const directory = await freshDirectory('dsh-sqlite-property-')
       for (const name of ['jsonl-zstd', 'sqlite'] as const) {
-        await verifyBackend(name, join(directory, name), events, batchSizes)
+        diagnostic.backend = name
+        await verifyBackend(name, join(directory, name), events, batchSizes, (phase, index) => {
+          diagnostic.phase = phase
+          diagnostic.phaseIndex = index ?? null
+        })
+        diagnostic.backendsCompleted += 1
       }
+      diagnostic.workloadsCompleted += 1
     }), { numRuns: 100, seed: 0x5A17E })
+    diagnostic.phase = 'complete'
   }, randomizedDifferentialTimeoutMs)
 
 })

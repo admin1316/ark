@@ -10,13 +10,16 @@
  * embedding endpoint is a stubbed global fetch (network), and the parent-owned
  * stage isolate is an in-process adapter. Every filesystem, queue, graph,
  * review and ingest behavior below is the production implementation running
- * against a real temp-dir workspace.
+ * against a real temp-dir workspace. One source-type control injects the
+ * unmodified Stats of a real native device at a single lstat lookup; all other
+ * filesystem lookups still reach the host.
  */
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import {
   closeSync,
   existsSync,
+  fstatSync,
   ftruncateSync,
   linkSync,
   lstatSync,
@@ -29,7 +32,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createServer, type Server } from 'node:http'
-import { tmpdir } from 'node:os'
+import { devNull, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -97,6 +100,22 @@ interface ClosureSurface {
   ): Promise<CandidateVerificationResult>
   [Service.init](): Promise<void>
 }
+
+const nativeStatOverride = vi.hoisted(() => ({
+  value: undefined as { path: string; stat: import('node:fs').Stats } | undefined,
+}))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      const replacement = nativeStatOverride.value
+      return replacement !== undefined && args[0] === replacement.path
+        ? replacement.stat
+        : actual.lstatSync(...args)
+    },
+  }
+})
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -231,6 +250,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  nativeStatOverride.value = undefined
   for (const server of servers.splice(0)) {
     await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
   }
@@ -488,8 +508,29 @@ describe('raw source tree safety', () => {
     rmSync(join(root, 'raw'), { recursive: true, force: true })
     writeFileSync(join(root, 'raw'), 'blocks the source root', 'utf8')
 
-    await expect(service.scanSources()).rejects.toThrow(/ENOTDIR/u)
+    await expect(service.scanSources()).rejects.toThrow(/ENOTDIR|ENOENT/u)
     expect((await service.ingestQueueStatus()).tasks).toEqual([])
+  })
+
+  it('rejects the unmodified native character-device stat at a discovered raw source', async () => {
+    const sources = resetRawSources(root)
+    const target = join(sources, 'device.md')
+    writeFileSync(target, 'preserved raw bytes')
+    const descriptor = openSync(devNull, 'r')
+    try {
+      const nativeStat = fstatSync(descriptor)
+      expect(nativeStat.isCharacterDevice()).toBe(true)
+      expect(nativeStat.isFile()).toBe(false)
+      expect(nativeStat.isDirectory()).toBe(false)
+      expect(nativeStat.isSymbolicLink()).toBe(false)
+      nativeStatOverride.value = { path: target, stat: nativeStat }
+      await expect(service.scanSources()).rejects.toThrow('non-regular raw source is not allowed: device.md')
+      expect((await service.ingestQueueStatus()).tasks).toEqual([])
+    } finally {
+      nativeStatOverride.value = undefined
+      closeSync(descriptor)
+    }
+    expect(readFileSync(target, 'utf8')).toBe('preserved raw bytes')
   })
 
   it('refuses non-regular, hard-linked, and oversized raw sources', async () => {

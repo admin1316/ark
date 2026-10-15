@@ -29,6 +29,8 @@ Status: implemented
 
 profile 启动器为监督进程的 SIGTERM 请求退出码 0，为用户 SIGINT 请求退出码 130。disposer 失败或超时不能报告成功。headless 回合结果仍由其应用插件负责。
 
+Ark Native runner 启用已导出的可选参数 `RunProfileOptions.shutdownOnParentDisconnect`；通用调用方保持关闭。其 launcher 保留三个标准流，并增加不传递应用消息、不保存持久状态的 Node IPC 连接。IPC 子进程在准备 profile 前安装监听，在挂载条目前拒绝已丢失的父连接，并在断开时加入同一个 shutdown owner。父连接丢失先等待正在进行的 dispose，再通过该 owner 请求退出；正常 dispose 已完成但仍有其他句柄时也由它结束进程。监听由进程持有，在正常插件树 dispose 后继续保留，同时取消 channel 引用，使 IPC 本身不能阻止自然退出。显式信号或致命错误关闭会移除监听；已排队的断开回调不能成为第二个显式信号。五秒失败兜底、非零失败与第二个显式信号的强制退出行为均保持不变。
+
 这项决策取代了[遥测部署 Agent Note](../feature/2026-07-31-web-telemetry-default-mount.zh.md) 中 SDK 导出器／处理器超时能够限制提供方完整关闭流程的假设，也取代了其中暂缓进程级退出兜底的决定。后端负责导出数据丢失与延迟策略，并封住已知的 SDK `forceFlush()` 缺口；启动器负责最外层保证，确保任何插件都无法无限期困住进程。
 
 ## 考虑过的替代方案
@@ -54,3 +56,7 @@ profile 启动器为监督进程的 SIGTERM 请求退出码 0，为用户 SIGINT
 `apps/cli/tests/headless-shutdown.e2e.ts` 在 PTY 中启动真实交付的 headless Loader 插件树，并挂载一个仅用于测试的插件；该插件的 disposer 会声明已经进入清理流程，但永不结算。测试在观察地址出现后发送 SIGINT，等待 dispose 已启动的证据，再次发送 SIGINT，并要求进程以 130 退出。源码／产物启动解析器使两个执行平面都覆盖同一项回归。该 PTY 用例覆盖用户可见的进程状态；模型输出快照没有变化。
 
 `packages/session/session-telemetry-otel/tests/otel.spec.ts` 在定时器导出开始后保持一条真实 OTLP 请求打开，并固定以下行为：即使 SDK 的 `forceFlush()` 仍待结算，Cordis dispose 也会在 `shutdownTimeoutMillis` 到期时返回。随后测试释放 collector，使仍受观察的提供方 Promise 干净结算。
+
+`packages/boot/profile-runner/tests/profile-lifecycle.spec.ts` 中的父连接断开控制在可观察的启动与 dispose 边界上使用真实 shutdown owner。launcher 的 IPC 传输控制另行检查自然完成。这些控制不能证明打包后的 Native API 在父连接丢失时的行为：仍须观察实际构建的 backend 身份消失，且已记录的监听器拒绝连接。dummy 子进程不能替代该观察，IPC 事件交付也不能证明 backend 主线程阻塞时仍有独立监督。
+
+CI 保留 Unicode 输出断言，并增加有界失败指标。spill 诊断测试覆盖两条日志路径；快照规范化保持 payload 不变。凭据扫描保留默认规则和全部 ref 历史，只排除经过审阅的精确元数据匹配。

@@ -3,10 +3,10 @@ import {
   readdirSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, parse } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-type Operation = 'open' | 'read' | 'write' | 'mkdir' | 'realpath' | 'rename'
+type Operation = 'open' | 'read' | 'write' | 'mkdir' | 'realpath' | 'rename' | 'lstat' | 'stat'
 const faults = vi.hoisted(() => ({
   before: undefined as ((operation: Operation, target: unknown) => void) | undefined,
 }))
@@ -17,6 +17,14 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
+    lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      faults.before?.('lstat', args[0])
+      return actual.lstatSync(...args)
+    },
+    statSync: (...args: Parameters<typeof actual.statSync>) => {
+      faults.before?.('stat', args[0])
+      return actual.statSync(...args)
+    },
     openSync: (...args: Parameters<typeof actual.openSync>) => {
       faults.before?.('open', args[0])
       return actual.openSync(...args)
@@ -47,7 +55,7 @@ vi.mock('node:fs', async (importOriginal) => {
 
 import {
   atomicWriteFile, createPrivateFileIfMissing, durableUnlinkFile,
-  ensureConfinedDirectory, readRegularFileBounded, resolveConfinedPath,
+  ensureConfinedDirectory, isMissingPathError, readRegularFileBounded, resolveConfinedPath,
 } from '../src/filesystem.ts'
 
 const roots: string[] = []
@@ -63,6 +71,49 @@ afterEach(() => {
 })
 
 describe('Wiki filesystem identity and cleanup under I/O interleavings', () => {
+  it.each(['directory', 'file'] as const)('classifies missing children through a real linked %s without changing its target', (kind) => {
+    const root = fixture()
+    const target = join(root, 'target')
+    if (kind === 'directory') mkdirSync(target)
+    else writeFileSync(target, 'preserved target')
+    const link = join(root, 'link')
+    symlinkSync(target, link, kind === 'directory' ? process.platform === 'win32' ? 'junction' : 'dir' : 'file')
+    const missing = Object.assign(new Error('Windows-style missing child'), {
+      code: 'ENOENT', path: join(link, 'missing.md'),
+    })
+    expect(isMissingPathError(missing)).toBe(kind === 'directory')
+    if (kind === 'directory') expect(readdirSync(target)).toEqual([])
+    else expect(readFileSync(target, 'utf8')).toBe('preserved target')
+  })
+
+  it('preserves an ancestor inspection error while classifying an absent optional file', () => {
+    const root = fixture()
+    const parent = join(root, 'missing')
+    const denied = Object.assign(new Error('ancestor inspection denied'), { code: 'EACCES' })
+    faults.before = (operation, path) => {
+      if (operation === 'lstat' && path === parent) throw denied
+    }
+    const missing = Object.assign(new Error('optional file absent'), { code: 'ENOENT', path: join(parent, 'page.md') })
+    let caught: unknown
+    try { isMissingPathError(missing) } catch (error: unknown) { caught = error }
+    expect(caught).toBe(denied)
+    expect(readdirSync(root)).toEqual([])
+  })
+
+  it('refuses optional absence when no directory ancestry can be inspected', () => {
+    const root = fixture()
+    const inspected: unknown[] = []
+    faults.before = (operation, path) => {
+      if (operation !== 'lstat') return
+      inspected.push(path)
+      throw Object.assign(new Error('ancestor unavailable'), { code: 'ENOENT' })
+    }
+    const missing = Object.assign(new Error('optional file absent'), { code: 'ENOENT', path: join(root, 'missing.md') })
+    expect(isMissingPathError(missing)).toBe(false)
+    expect(inspected).toContain(parse(root).root)
+    expect(readdirSync(root)).toEqual([])
+  })
+
   it('rejects a directory replaced with a link between component checks and final realpath', () => {
     const root = fixture()
     const outside = fixture()
@@ -183,6 +234,97 @@ describe('Wiki filesystem identity and cleanup under I/O interleavings', () => {
       expect(readFileSync(target, 'utf8')).toBe('protected')
     }
     expect(readdirSync(root).some(name => name.includes('.ark-unlink-'))).toBe(false)
+  })
+
+  it('preserves an initial file-inspection denial without unlinking the existing file', () => {
+    const root = fixture()
+    const target = join(root, 'page.md')
+    writeFileSync(target, 'preserved bytes')
+    const denied = Object.assign(new Error('initial file inspection denied'), { code: 'EACCES' })
+    faults.before = (operation, path) => {
+      if (operation !== 'lstat' || path !== target) return
+      faults.before = undefined
+      throw denied
+    }
+    let observed: unknown
+    try { durableUnlinkFile(target) } catch (error: unknown) { observed = error }
+    expect(observed).toBe(denied)
+    expect(readFileSync(target, 'utf8')).toBe('preserved bytes')
+    expect(readdirSync(root)).toEqual(['page.md'])
+  })
+
+  it.each(['lstat', 'open'] as const)('refuses Windows-style ENOENT beneath an ordinary file at %s', (boundary) => {
+    const root = fixture()
+    const parent = join(root, 'blocked')
+    const target = join(parent, 'page.md')
+    if (boundary === 'open') {
+      mkdirSync(parent)
+      writeFileSync(target, 'removed by the injected concurrent replacement')
+    } else writeFileSync(parent, 'preserve ordinary ancestor')
+    const missing = Object.assign(new Error('Windows-style missing child'), { code: 'ENOENT', path: target })
+    faults.before = (operation, path) => {
+      if (operation !== boundary || path !== target) return
+      faults.before = undefined
+      if (boundary === 'open') {
+        rmSync(parent, { recursive: true })
+        writeFileSync(parent, 'preserve ordinary ancestor')
+      }
+      throw missing
+    }
+    expect(() => { durableUnlinkFile(target) }).toThrow('ENOTDIR')
+    expect(readFileSync(parent, 'utf8')).toBe('preserve ordinary ancestor')
+    expect(readdirSync(root)).toEqual(['blocked'])
+  })
+
+  it('keeps truly absent nested targets idempotent without creating directories', () => {
+    const root = fixture()
+    expect(() => { durableUnlinkFile(join(root, 'missing', 'nested', 'page.md')) }).not.toThrow()
+    expect(readdirSync(root)).toEqual([])
+  })
+
+  it('propagates an ancestor inspection denial instead of declaring optional absence', () => {
+    const root = fixture()
+    const parent = join(root, 'missing')
+    const denied = Object.assign(new Error('ancestor inspection denied'), { code: 'EACCES' })
+    faults.before = (operation, path) => {
+      if (operation !== 'lstat' || path !== parent) return
+      faults.before = undefined
+      throw denied
+    }
+    expect(() => { durableUnlinkFile(join(parent, 'page.md')) }).toThrow(denied)
+    expect(readdirSync(root)).toEqual([])
+  })
+
+  it('bounds missing-ancestor traversal at an unavailable filesystem root', () => {
+    const root = fixture()
+    const missing = Object.assign(new Error('filesystem root unavailable'), { code: 'ENOENT' })
+    faults.before = (operation) => {
+      if (operation === 'lstat') throw missing
+    }
+    expect(() => { durableUnlinkFile(join(root, 'missing', 'page.md')) }).toThrow(missing)
+    expect(readdirSync(root)).toEqual([])
+  })
+
+  it('propagates directory stat failure after finding an existing ancestor', () => {
+    const root = fixture()
+    const denied = Object.assign(new Error('directory inspection denied'), { code: 'EACCES' })
+    faults.before = (operation, path) => {
+      if (operation !== 'stat' || path !== root) return
+      faults.before = undefined
+      throw denied
+    }
+    expect(() => { durableUnlinkFile(join(root, 'missing.md')) }).toThrow(denied)
+    expect(readdirSync(root)).toEqual([])
+  })
+
+  it('preserves intermediate directory-alias resolution for an absent target', () => {
+    const root = fixture()
+    const directory = fixture()
+    const alias = join(root, 'alias')
+    symlinkSync(directory, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    expect(() => { durableUnlinkFile(join(alias, 'missing.md')) }).not.toThrow()
+    expect(readdirSync(directory)).toEqual([])
+    expect(readdirSync(root)).toEqual(['alias'])
   })
 
   it.each([false, true])('refuses to unlink a changed inode and restores only an unoccupied path, occupied=%s', (occupied) => {

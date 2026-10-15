@@ -1,8 +1,10 @@
 import { PassThrough } from 'node:stream'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { basename, dirname, relative, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import LocalSubprocessRuntime from '../src/index.ts'
 import type { SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { childEnv } from '../src/spawn.ts'
 
@@ -400,6 +402,34 @@ describe('LocalSubprocessRuntime', () => {
     expect(result.exitCode).toBe(0)
     expect(handle.collected.stdout!.readFrom(0).text).toBe('managed\n')
     await fiber.dispose()
+  })
+
+  it('logs optional spill loss while retaining a bounded tail', async () => {
+    const spillDir = await mkdtemp(resolve(tmpdir(), 'dsh-spill-service-'))
+    await rm(spillDir, { recursive: true })
+    const ctx = new Context()
+    const errors: unknown[][] = []
+    ctx.logger.error = ((...args: unknown[]) => { errors.push(args) }) as typeof ctx.logger.error
+    const fiber = await ctx.plugin(LocalSubprocessRuntime)
+    try {
+      ;(ctx.subprocess as LocalSubprocessRuntime).internals.spillDir = spillDir
+      const handle = ctx.subprocess.spawn(spec('echo managed', {
+        stdio: {
+          stdin: 'ignore',
+          stdout: { maxBytes: 4, spill: { maxBytes: 100 } },
+          stderr: { maxBytes: 4 },
+        },
+      }))
+      expect((await handle.done).exitCode).toBe(0)
+      const output = handle.collected.stdout?.readFrom(0)
+      expect(output?.lossy).toBe(true)
+      expect(output?.text).toContain('ged')
+      expect(errors).toHaveLength(1)
+      expect(errors[0]?.[0]).toContain('stdout spill failed; only the in-memory tail is retained')
+      expect(errors[0]?.[1]).toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await fiber.dispose()
+    }
   })
 
   it('disposal kills still-running processes and awaits their exit', async () => {

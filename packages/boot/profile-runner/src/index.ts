@@ -13,6 +13,7 @@
 
 import { writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import process from 'node:process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -207,6 +208,8 @@ export interface RunProfileOptions {
   homePatchMode?: 'user' | 'none'
   /** Additional application-owned system preset roots; the shared standard/code/minimal root always comes first. */
   additionalSystemPresetRoots?: readonly string[]
+  /** Native supervisor ownership; only an actual Node IPC child observes parent disconnect. */
+  shutdownOnParentDisconnect?: boolean
 }
 
 /**
@@ -232,20 +235,39 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @returns the settled root context and the shutdown controller.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const composed = composeProfile(
-    options.profile,
-    options.installAnchor,
-    options.patchFiles,
-    options.additionalSystemPresetRoots ?? [],
-    options.profilePatchMode ?? 'user',
-    options.homePatchMode ?? 'user',
-  )
   const app: { current?: Context } = {}
+  let parentDisconnectListener: (() => void) | undefined
+  const stopParentListener = (): void => {
+    if (parentDisconnectListener === undefined) return
+    process.off('disconnect', parentDisconnectListener)
+    parentDisconnectListener = undefined
+  }
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
   const signalShutdown = new AbortController()
   const interrupt = (code: number): void => {
+    stopParentListener()
     signalShutdown.abort()
     shutdown.interrupt(code)
+  }
+  const managedParent = options.shutdownOnParentDisconnect === true && typeof process.connected === 'boolean'
+  if (managedParent) {
+    parentDisconnectListener = () => {
+      if (parentDisconnectListener === undefined) return
+      stopParentListener()
+      signalShutdown.abort()
+      // Parent loss joins an appExit already disposing; it is not a second
+      // explicit signal. After disposal the same owner exits any remaining handles.
+      void shutdown.shutdown(0).then(() => { shutdown.interrupt(0) })
+    }
+    process.on('disconnect', parentDisconnectListener)
+    // The process-owned listener survives normal tree disposal, but its IPC
+    // connection must not keep a naturally completed application alive.
+    process.channel?.unref()
+    if (!process.connected) parentDisconnectListener()
+    if (signalShutdown.signal.aborted) {
+      await shutdown.shutdown(0)
+      signalShutdown.signal.throwIfAborted()
+    }
   }
   // Signals own teardown throughout the startup window, not only after boot()
   // settles: an inserted provider can publish before sibling rows finish mounting.
@@ -255,12 +277,22 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   process.on('SIGTERM', () => { interrupt(0) })
   process.on('SIGINT', () => { interrupt(130) })
   installFailLoud(NAME, process, async () => {
+    stopParentListener()
     // Fatal loader rejection, signals, appExit, and natural completion all
     // join the same disposal promise. installFailLoud still owns the final
     // fatal process.exit(1), but it can no longer enter the Cordis disposer a
     // second time with a shorter competing deadline.
     await shutdown.shutdown(1)
   })
+
+  const composed = composeProfile(
+    options.profile,
+    options.installAnchor,
+    options.patchFiles,
+    options.additionalSystemPresetRoots ?? [],
+    options.profilePatchMode ?? 'user',
+    options.homePatchMode ?? 'user',
+  )
 
   const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
   // Recomposition for the live user layers: bundle layers below, overlays
@@ -297,6 +329,10 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // application must not mutate the objects later reloads recompose from.
   const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
     app.current = hostCtx
+    if (managedParent) {
+      if (!process.connected) parentDisconnectListener?.()
+      signalShutdown.signal.throwIfAborted()
+    }
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable provenance snapshot.
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
@@ -308,6 +344,10 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     })
   }, bareModuleBase)
   app.current = ctx
+  if (managedParent && signalShutdown.signal.aborted) {
+    await shutdown.shutdown(0)
+    signalShutdown.signal.throwIfAborted()
+  }
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
   // presence and fiber state own liveness; the initial check skips a tree

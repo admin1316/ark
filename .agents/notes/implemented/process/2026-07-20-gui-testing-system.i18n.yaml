@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-07-20-gui-testing-system.md
-2026-07-20-gui-testing-system.md: 7e74551791eddb780fedc30c4a177f7ca8428ce0
-2026-07-20-gui-testing-system.zh.md: 9e1835a381b19280815abad08fbdbd5718413d4c
+2026-07-20-gui-testing-system.md: 99e92f664b93503f878dd07c0642520b2b64ce07
+2026-07-20-gui-testing-system.zh.md: d9bf4312d10c2a92ee5afdf744ed25ce864320ca

@@ -8,7 +8,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import KnowledgeWikiService from '../src/index.ts'
 import type { WikiGraphResult, WikiReviewItem } from '../src/types.ts'
@@ -252,13 +252,26 @@ describe('review, insight, lint, and archive surface', () => {
   })
 
   it('exports and inspects a minimal project archive and reports invalid imports', async () => {
+    const startedAt = performance.now()
+    let phase = 'fixture-write'
+    onTestFailed(() => {
+      process.stderr.write(`wiki-archive-surface-diagnostic ${JSON.stringify({
+        phase, elapsedMs: Math.round(performance.now() - startedAt),
+      })}\n`)
+    })
     writeFileSync(join(wikiRoot, 'index.md'), '# Wiki', 'utf8')
+    phase = 'export-await'
     const exported = await service.exportProject()
+    phase = 'export-assertions'
     expect(exported.error).toBeUndefined()
     expect(existsSync(exported.path)).toBe(true)
+    phase = 'import-await'
     const imported = await service.importProject({ path: exported.path })
+    phase = 'import-assertions'
     expect(imported.ok).toBe(true)
     expect(imported.entries).toContain('wiki/index.md')
+    phase = 'missing-import-await-or-assertion'
     expect((await service.importProject({ path: join(root, 'missing.zip') })).ok).toBe(false)
+    phase = 'body-complete'
   })
 })

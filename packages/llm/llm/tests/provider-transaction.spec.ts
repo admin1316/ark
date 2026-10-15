@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { Service, symbols } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFailed, vi } from 'vitest'
 import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import legacySamples from './fixtures/legacy-v1-journals.json' with { type: 'json' }
@@ -16,7 +16,11 @@ const JOURNAL = credentialKey('llm-remote', 'alpha')
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+  const failures: unknown[] = []
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    try { await cleanup() } catch (error) { failures.push(error) }
+  }
+  if (failures.length) throw new AggregateError(failures, 'provider fixture cleanup failed')
 })
 
 async function runtime(options: Parameters<typeof createProviderRuntime>[0] = {}) {
@@ -727,24 +731,41 @@ it('refuses an old completed receipt while a newer journal still requires recove
 })
 
 it('lets an unrelated provider progress while another namespace waits for activation', async () => {
+  const diagnostic = { bodyPhase: 'create-runtime', cleanupPhase: 'not-started', activationEntries: 0,
+    activationEntered: false, independentCompleted: false }
+  onTestFailed(() => { console.error('provider-independent-progress-phase', diagnostic) })
   const entered = Promise.withResolvers<undefined>()
   const resume = Promise.withResolvers<undefined>()
-  const run = await runtime({ activation: async () => { entered.resolve(undefined); await resume.promise } })
+  const run = await runtime({ activation: async () => {
+    diagnostic.activationEntries += 1
+    entered.resolve(undefined)
+    await resume.promise
+  } })
+  diagnostic.bodyPhase = 'register-independent'
   const independent = settingsNamespace('independent-fixture')
   const scope = run.ctx.settings.register(independent, Profile, { base: {
     baseURL: 'https://independent.invalid', apiKeyEnv: '', model: 'initial',
   } })
   run.ctx.llm.registerConfigurableProviders([{ provider: 'independent', displayName: 'Independent', settingsNs: independent, settingsPath: [] }])
   run.ctx.llm.registerAdapter(['independent'], new FixtureAdapter(scope.get()))
+  diagnostic.bodyPhase = 'await-first-activation'
   const first = run.mutate()
   await entered.promise
+  diagnostic.activationEntered = true
+  diagnostic.bodyPhase = 'await-independent-progress'
   let completed = false
   const other = run.mutate(run.request({ provider: 'independent', settingsNs: independent, expectedRevision: 0,
-    ops: [{ op: 'set', path: ['model'], value: 'independent' }] })).then((result) => { completed = true; return result })
+    ops: [{ op: 'set', path: ['model'], value: 'independent' }] })).then((result) => { completed = true; diagnostic.independentCompleted = true; return result })
   try {
     await vi.waitFor(() => { expect(completed).toBe(true) }, { timeout: 1000 })
     expect(scope.get().model).toBe('independent')
-  } finally { resume.resolve(undefined); await Promise.all([first, other]) }
+  } finally {
+    diagnostic.cleanupPhase = 'release-first-activation'
+    resume.resolve(undefined)
+    diagnostic.cleanupPhase = 'join-both'
+    await Promise.all([first, other])
+    diagnostic.cleanupPhase = 'complete'
+  }
 })
 
 it('accepts reordered nested object keys after restart but rejects reordered model arrays', async () => {
@@ -977,16 +998,33 @@ it('drains claimed recovery on shutdown and records persisted-but-not-live inste
   const request = run.request({ credential: { op: 'set', ref: OLD_REF, value: NEW_KEY } })
   vi.spyOn(run.ctx.credentials, 'set').mockRejectedValueOnce(new Error('fixture interruption'))
   await expect(run.mutate(request)).rejects.toMatchObject({ failure: { code: 'provider-transaction-in-doubt' } })
+  const settingsApplied = Promise.withResolvers<undefined>()
+  const modify = run.ctx.credentials.modifyRecord.bind(run.ctx.credentials)
+  vi.spyOn(run.ctx.credentials, 'modifyRecord').mockImplementation(async (...args) => {
+    const result = await modify(...args)
+    if (result?.kind === 'grant' && result.payload !== null && typeof result.payload === 'object'
+      && 'phase' in result.payload && result.payload.phase === 'settings-applied') settingsApplied.resolve(undefined)
+    return result
+  })
   const llm = run.ctx.llm
   const cancellation = new AbortController()
   const restore = llm.remoteResumeProvider({ provider: 'alpha', transactionId: request.transactionId, credentialValue: NEW_KEY }, cancellation.signal)
   const outcome = restore.then(value => ({ value }), (error: unknown) => ({ error }))
+  cleanups.push(async () => { release.resolve(undefined); await outcome })
   await entered.promise
+  await settingsApplied.promise
+  expect(await run.ctx.credentials.readRecord(JOURNAL)).toMatchObject({ payload: { phase: 'settings-applied' } })
   cancellation.abort()
   const entry = [...run.ctx.loader.entries()].find(candidate => candidate.options.name === 'cordis:fixture-llm')
   if (entry === undefined) throw new Error('LLM fixture entry is missing')
   let disposed = false
   const retiring = entry.update({ disabled: true }).then(() => { disposed = true })
+  void retiring.catch(() => {})
+  cleanups.push(async () => {
+    release.resolve(undefined)
+    await Promise.allSettled([outcome, retiring])
+    await retiring
+  })
   try {
     await vi.waitFor(async () => {
       await expect(llm.remoteProviderTransaction({ provider: 'alpha', transactionId: request.transactionId }))

@@ -101,11 +101,21 @@ async function acceptedSocket(downlinks: WebSocketDownlinks): Promise<WebSocket>
 /** Typed view of the heartbeat and pump bookkeeping the downlink shares per socket. */
 function internals(downlinks: WebSocketDownlinks): {
   server: { clients: Set<WebSocket> }
-  leases: Map<WebSocket, { channel: string; closing: boolean; awaitingPong: boolean }>
+  leases: Map<WebSocket, {
+    channel: string
+    closing: boolean
+    awaitingPong: boolean
+    closeTimer?: NodeJS.Timeout
+  }>
 } {
   return downlinks as unknown as {
     server: { clients: Set<WebSocket> }
-    leases: Map<WebSocket, { channel: string; closing: boolean; awaitingPong: boolean }>
+    leases: Map<WebSocket, {
+      channel: string
+      closing: boolean
+      awaitingPong: boolean
+      closeTimer?: NodeJS.Timeout
+    }>
   }
 }
 
@@ -792,6 +802,39 @@ describe('WebSocket downlinks', () => {
     // already sent, so it reports 1005; only an unbuffered hard termination
     // surfaces as 1006. The server-side terminate() is asserted above.
     expect([1005, 1006]).toContain(code)
+  })
+
+  it('clears a pending close deadline when the downlink owner shuts down', async () => {
+    const clearTimer = vi.spyOn(globalThis, 'clearTimeout')
+    const gate = Promise.withResolvers<undefined>()
+    const downlinks = new WebSocketDownlinks(sources(async function * () {
+      await gate.promise
+    }, idle))
+    const host = await serve(downlinks)
+    const cleanup = host.close
+    running.push(cleanup)
+    let socket: WebSocket | undefined
+    try {
+      socket = new WebSocket(`${host.origin}${MUX_EVENTS_PATH}`)
+      await once(socket, 'open')
+      const accepted = await acceptedSocket(downlinks)
+      const lease = internals(downlinks).leases.get(accepted)
+      if (lease === undefined) throw new Error('missing socket lease')
+      socket.pause()
+      gate.resolve(undefined)
+      await vi.waitFor(() => { expect(lease.closeTimer).toBeDefined() })
+      const closeTimer = lease.closeTimer
+      if (closeTimer === undefined) throw new Error('missing bounded close deadline')
+      expect(internals(downlinks).server.clients.has(accepted)).toBe(true)
+      expect(internals(downlinks).leases.get(accepted)).toBe(lease)
+      await cleanup()
+      const cleanupIndex = running.indexOf(cleanup)
+      if (cleanupIndex >= 0) running.splice(cleanupIndex, 1)
+      expect(clearTimer).toHaveBeenCalledWith(closeTimer)
+    } finally {
+      gate.resolve(undefined)
+      socket?.terminate()
+    }
   })
 
   it('waits for source cleanup before teardown resolves', async () => {

@@ -341,7 +341,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         '_candidates',
         isIncident ? 'incidents' : isReflection ? 'reflections' : 'topics',
         `${slug}.md`,
-      )
+      ).split(sep).join('/')
       const alreadyExists = pageExists(target.wikiRoot, rel)
       const today = new Date().toISOString().slice(0, 10)
       const content = buildSessionSummaryPage({

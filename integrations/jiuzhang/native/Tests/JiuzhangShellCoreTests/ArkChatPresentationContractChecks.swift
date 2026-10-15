@@ -1244,6 +1244,32 @@ func runArkChatPresentationContractChecks() {
         && root.contains("groups.joined(separator: \" | \")"),
       "active chat keeps implementation context out of the visible shell while retaining composer controls and run metrics"
     )
+    let statsBar = chatSourceSlice(
+      root,
+      from: "private struct NativeSessionStatsBar: View",
+      through: "private struct NativeGoalDock: View"
+    )
+    check(
+      statsBar?.contains(".font(.system(size: 12))") == true
+        && statsBar?.contains("alignment: .center") == true
+        && statsBar?.contains(".truncationMode(.tail)") == true
+        && statsBar?.contains(".help(line)") == true
+        && statsBar?.contains(".accessibilityLabel(line)") == true
+        && statsBar?.contains("design: .monospaced") == false
+        && root.components(separatedBy: .newlines)
+          .map { $0.trimmingCharacters(in: .whitespaces) }
+          .joined(separator: "\n").contains("""
+        NativeSessionStatsBar(model: model)
+          .frame(height: ChatLayoutMetrics.statsBarHeight)
+          .frame(maxWidth: ArkChatLayoutResolver.composerWidth(
+            maximumWidth: ChatLayoutMetrics.composerMaxWidth,
+            transcriptWidth: transcriptWidth
+          ))
+        """.components(separatedBy: .newlines)
+          .map { $0.trimmingCharacters(in: .whitespaces) }
+          .joined(separator: "\n")),
+      "legacy session statistics use readable centered text below the composer with matching width and full-value access"
+    )
     check(
       root.contains("if model.composer.isEmpty && !composerHasMarkedText")
         && root.contains("hero ? .composerHeroPlaceholder : .composerPlaceholder")

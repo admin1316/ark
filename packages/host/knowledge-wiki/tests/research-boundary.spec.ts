@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 
@@ -25,6 +27,10 @@ vi.mock('node:path', async (importOriginal) => {
 import { deepResearch } from '../src/research.ts'
 import { stageExecutorFor } from './stage-executor-fixture.ts'
 
+const projectRoot = join(tmpdir(), 'wiki-research-boundary')
+const wikiRoot = join(projectRoot, 'wiki')
+const candidateTarget = join(wikiRoot, '_candidates', 'research', 'result.md')
+
 const llm = {} as LlmRuntime
 
 beforeEach(() => {
@@ -37,10 +43,10 @@ beforeEach(() => {
 
 describe('research write boundary', () => {
   it('rejects a resolved target outside the Wiki root', async () => {
-    mocks.resolve.mockReturnValueOnce('/project/wiki').mockReturnValueOnce('/outside/result.md')
+    mocks.resolve.mockReturnValueOnce(wikiRoot).mockReturnValueOnce('/outside/result.md')
 
     await expect(deepResearch(
-      stageExecutorFor(llm), 'p', 'm', '/project', 'topic', new AbortController().signal,
+      stageExecutorFor(llm), 'p', 'm', projectRoot, 'topic', new AbortController().signal,
     )).resolves.toEqual({
       written: [],
       sourceCount: 0,
@@ -54,13 +60,13 @@ describe('research write boundary', () => {
 
   it('reports a non-Error write failure without throwing', async () => {
     mocks.resolve
-      .mockReturnValueOnce('/project/wiki')
-      .mockReturnValueOnce('/project/wiki/_candidates/research/result.md')
+      .mockReturnValueOnce(wikiRoot)
+      .mockReturnValueOnce(candidateTarget)
     mocks.mkdir.mockResolvedValue(undefined)
     mocks.atomicWriteFile.mockImplementation(() => { throw 'disk unavailable' })
 
     const result = await deepResearch(
-      stageExecutorFor(llm), 'p', 'm', '/project', 'topic', new AbortController().signal,
+      stageExecutorFor(llm), 'p', 'm', projectRoot, 'topic', new AbortController().signal,
     )
     expect(result.warnings).toContain('disk unavailable')
     expect(result.written).toEqual([])

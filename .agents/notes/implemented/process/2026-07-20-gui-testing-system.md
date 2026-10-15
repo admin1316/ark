@@ -30,6 +30,8 @@ Every repaired defect needs an assertion at its actual owner. Carrier changes re
 
 When intended behavior changes, reconcile the implementation, the owning decision and its tests together. Do not leave a red assertion behind, increase its timeout to hide a hang, or replace a real path with a simulated success. Use the current [development commands](../../../../docs/development.md), rather than maintaining a second command inventory in this decision.
 
+Native contract groups emit stderr start/end records with the current PID and monotonic uptime while retaining their original stdout completion markers. The macOS CI lane keeps the original build, run and failure result; failure-only collection retains reports matching that run's main PID, resolved executable and launch window, plus its binary and UUID-matched symbols. These are verbatim synthetic CI test artifacts, not field-redacted reports, and this collector is not used with user apps, profiles or credential-bearing processes. Missing or rejected reports remain evidence gaps; the last completed group does not identify a crash cause.
+
 ## Alternatives considered
 
 **One end-to-end test for everything.** It repeats application startup for cheap state checks and gives poor control of event races; a focused state test can isolate those cases deterministically.

@@ -11,6 +11,8 @@ kind: "package-library"
 
 供 dsh 可执行应用复用的 profile 生命周期。`runProfile()` 根据调用方显式提供的 `installAnchor` 组合 bundle 层、profile 与 home patch、命令行 overlay、遥测策略、失败即停启动和有界退出。通用应用默认保留 patch 热监视；受管应用设置 `watchLiveConfig: false`。
 
+可选参数 `RunProfileOptions.shutdownOnParentDisconnect` 默认关闭。在 Node IPC 子进程中启用它的应用，会在 profile 准备前及插件树启动期间观察父连接断开。断开会中止启动，加入既有的五秒 shutdown owner，并在 dispose 后请求进程退出；失败或超时保留非零结果。该监听由进程持有，在正常插件树 dispose 后仍保留，以便后续父进程丢失时结束剩余句柄。IPC channel 不保持引用，使正常完成仍可自然退出；显式信号先移除监听，再使用既有的信号升级路径。没有 IPC 的直接调用不安装此监听。
+
 本包也是 Native-safe 的 `standard`、`code`、`minimal` 三套系统 preset 的唯一发布真源。应用可通过 `additionalSystemPresetRoots` 增加独立系统根；通用 CLI 用该入口装入 CLI-only 的 `cordis` preset，不复制共享资产。
 
 ## 目录

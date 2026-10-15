@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-output-retention` 限制工具返回给模型的上下文量：调用方把项或文本分片送入 retainer，然后取回保留的内容与精确的省略元数据。`ItemRetainer` 以头部预算限制有序逻辑单元列表（路径、匹配项、来源）；`TextRetainer` 以 head、tail 或 head+tail 窗口限制面向字节的文本流，并在每个切割处保持 UTF-8 边界有效。标准化的省略子句与通知格式化器让工具获得一致的「结果已达上限」页脚，而恢复指引由工具自己提供。该库只回答「保留了什么、省略了什么」这个机制问题——分组、行号、spill 文件与提供方错误状态都留在工具侧。它是轻依赖库，由工具包直接导入；`cordis.yml` 无法加载它。
+`dsh-output-retention` 限制工具返回给模型的上下文量：调用方把项或文本分片送入 retainer，然后取回保留的内容与精确的省略元数据。`ItemRetainer` 以头部预算限制有序逻辑单元列表（路径、匹配项、来源）；`TextRetainer` 以 head、tail 或 head+tail 窗口限制面向字节的文本流，并在每个切割处保持 UTF-8 边界有效。`truncateWithoutSplittingSurrogatePair` 按字符预算截断预览时，不会因切割而留下孤立的高位代理项。标准化的省略子句与通知格式化器让工具获得一致的「结果已达上限」页脚，而恢复指引由工具自己提供。该库只回答「保留了什么、省略了什么」这个机制问题——分组、行号、spill 文件与提供方错误状态都留在工具侧。它是轻依赖库，由工具包直接导入；`cordis.yml` 无法加载它。
 
 ## 目录
 
@@ -74,6 +74,10 @@ const footer = formatRetentionNotice(
 
 库负责标准化省略子句（`Omitted 3 items.`）并把它与工具自有的恢复指引拼接；只有工具知道恢复动作，因此这些措辞由工具提供。
 
+### 按字符预算截断预览
+
+`truncateWithoutSplittingSurrogatePair` 按 UTF-16 码元限制预览文本。切口落在代理对内部时丢弃不成对的半个码元，因此保留文本仍是前缀，可能比上限少一个码元。它不修复输入中原有的不成对代理项。持久 `bash`、`pwsh` 与 `str_replace_editor` 用它处理各自的字符预算预览；截断提示与不完整输出的处理仍由各工具自行负责。
+
 ### `truncated` 意味着什么
 
 `truncated` 是预算事实：retainer 因上限而省略了本可获得的内容。它绝不表示上游不完整——权限失败、跳过二进制文件、提供方部分失败与不可读候选项都留在工具领域字段中，绝不并入 `truncated`。
@@ -104,7 +108,7 @@ const footer = formatRetentionNotice(
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `ItemRetainer`、`TextRetainer`、`describeOmitted` 与 `formatRetentionNotice` |
+| [`src/index.ts`](src/index.ts) | `ItemRetainer`、`TextRetainer`、`describeOmitted`、`formatRetentionNotice` 与 `truncateWithoutSplittingSurrogatePair` |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件（无运行时不变式；保留运算由单元测试覆盖） |
 
 ### 两个 retainer，两种资源模型
@@ -152,7 +156,7 @@ const footer = formatRetentionNotice(
 这些限制说明 retainer 刻意不覆盖什么。它们是当前包约束，不是任务积压。
 
 - **项保留只支持 `head`**——tail、head/tail、分页、分组与提供方完整性语义仍归工具所有。
-- **文本保留面向字节**——`read` 分页等行窗口与字符窗口需要单独的渲染器；切割可能丢弃部分 UTF-8 边界字节，以保持返回文本有效。
+- **文本保留面向字节**——`TextRetainer` 以字节计数；字符预算的头部截断走 `truncateWithoutSplittingSurrogatePair`，`read` 分页等行窗口仍需独立渲染器；切割可能丢弃部分 UTF-8 边界字节，以保持返回文本有效。
 
 <a id="dev-note"></a>
 ### 开发备注

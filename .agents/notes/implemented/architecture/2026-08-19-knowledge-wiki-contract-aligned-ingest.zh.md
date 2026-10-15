@@ -22,6 +22,8 @@ Status: implemented
 - **契约对齐的写盘管线。** 新模块按源 identity 推导摘要页 slug（`{structuralLength}-{readable}` 段以 `--` 连接，尾部 FNV-1a 32bit base36，上限 120 字符——以存量页名 `--1js7z6u`、`--n2u7v5` 验证一致），sanitize 生成内容（外层围栏、`frontmatter:` 前缀、缺失开 fence、frontmatter 内 wikilink 列表），日期戳到摄取日，规范化 `sources` 字段（剥 `raw/sources/` 前缀、过滤非法引用、去重、强制含本源 identity），并与既有页面 merge（仅本源独占时整页替换，否则保守并集 `sources`）。确定性兜底——index 条目、log 条目、源摘要页、评审项——与模型输出形态无关地照常执行。
 - **Prompt 契约。** 阶段二 prompt 钉死今日日期、精确摘要页路径、项目 schema 与严格的 frontmatter 规则，使模型输出落到存量语料格式上。
 
+共享文件系统 owner 只有在现存祖先允许缺失时才把 ENOENT 视为可选缺失；普通文件祖先不能使缺失文件删除被误报为成功。受治理路径要求现存中间节点为目录，生成的 canonical 与摘要 review 路径先使用 POSIX 分隔符再校验；持久路径输入语法及拒绝反斜杠规则不变。这些检查不改变信任准入、review/WAL 格式或公开 API。Windows 验证与源码选取分别记录；本契约不代表其他输出、进程或清理失败已解决。
+
 ## Alternatives considered
 
 - **跨 Remote 边界抛错** —— 让 `ingestSource` 重新抛出 LLM 错误以触发 `drainQueue` 的 catch 分支。否决：Remote 方法的 `{ written, warnings }` 契约是先于队列存在的 UI 面，错误以 warnings 形态返回；零产出启发式保留契约的同时在 drain 处修复缓存中毒。

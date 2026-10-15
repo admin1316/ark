@@ -8,7 +8,6 @@ import {
   symlinkSync,
   unlinkSync,
   writeFileSync,
-  chmodSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -32,12 +31,23 @@ import { issueTestReceipt, verifierAuthority } from './verifier-authority-fixtur
 // Directory-fsync fault injection: a real Windows runner cannot fsync directory
 // handles (EPERM), and a damaged one can fail with other errno codes. The fault
 // is inert unless a test activates it.
-const fsFault = vi.hoisted(() => ({ mode: 'none' as 'none' | 'eperm' | 'eio' }))
+const fsFault = vi.hoisted(() => ({
+  mode: 'none' as 'none' | 'eperm' | 'eio',
+  readdirFailurePath: undefined as string | undefined,
+  readdirFailureCalls: 0,
+}))
 const directoryFds = vi.hoisted(() => new Set<number>())
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
+    readdirSync: (...args: Parameters<typeof actual.readdirSync>) => {
+      if (String(args[0]) === fsFault.readdirFailurePath) {
+        fsFault.readdirFailureCalls += 1
+        throw Object.assign(new Error('EACCES: promotion journal directory unavailable'), { code: 'EACCES' })
+      }
+      return actual.readdirSync(...args)
+    },
     openSync: (...args: Parameters<typeof actual.openSync>) => {
       const fd = actual.openSync(...args)
       try { if (actual.statSync(String(args[0])).isDirectory()) directoryFds.add(fd) } catch { /* not stat-able */ }
@@ -62,6 +72,8 @@ const authority = verifierAuthority()
 const STOP_AFTER_JOURNAL = new Error('stop after journal persistence')
 
 afterEach(() => {
+  fsFault.readdirFailurePath = undefined
+  fsFault.readdirFailureCalls = 0
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -463,14 +475,15 @@ describe('promotion journal recovery boundaries', () => {
   it('propagates a journal directory failure that is not a missing path', () => {
     const item = fixture()
     mkdirSync(journalDirectory(item), { recursive: true })
-    chmodSync(journalDirectory(item), 0o000)
+    fsFault.readdirFailurePath = journalDirectory(item)
     try {
       const failure = captureFailure(() => recoverCandidateReviewTransactions(
         authority, item.reviewFile, item.wikiRoot, item.archiveRoot,
       ))
       expect(failure).toMatchObject({ code: 'EACCES' })
+      expect(fsFault.readdirFailureCalls).toBe(1)
     } finally {
-      chmodSync(journalDirectory(item), 0o700)
+      fsFault.readdirFailurePath = undefined
     }
   })
 

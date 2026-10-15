@@ -199,7 +199,8 @@ function retiredWebRuntimeViolations(root: string): string[] {
   ]
   const violations = paths.filter(path => existsSync(resolve(root, path)))
     .map(path => `${path}: retired Web runtime must not be shipped`)
-  for (const path of globSync('packages/*/*/package.json', { cwd: root })) {
+  for (const rawPath of globSync('packages/*/*/package.json', { cwd: root })) {
+    const path = repositoryPath(rawPath)
     const manifest: unknown = JSON.parse(readFileSync(resolve(root, path), 'utf8'))
     if (path.startsWith('packages/client/')) {
       violations.push(`${path}: retired browser Client package must not be shipped`)

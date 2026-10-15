@@ -1215,7 +1215,7 @@ private struct NativeTrajectoryGroup: Identifiable {
 }
 
 @MainActor
-private final class NativeTrajectoryFeed: ObservableObject {
+final class NativeTrajectoryFeed: ObservableObject {
   @Published private(set) var records: [ArkTrajectorySemanticRecord]
   @Published private(set) var selectedSessionID: String?
   @Published private(set) var hasOlderHistory: Bool
@@ -1224,6 +1224,7 @@ private final class NativeTrajectoryFeed: ObservableObject {
   @Published private(set) var loadingOlderHistory: Bool
   @Published private(set) var language: ArkLanguagePreference
   private var cancellables = Set<AnyCancellable>()
+  private var recordsObservation: AnyCancellable?
 
   init(model: ArkAppModel) {
     records = model.trajectoryRecords
@@ -1234,16 +1235,29 @@ private final class NativeTrajectoryFeed: ObservableObject {
     loadingOlderHistory = model.loadingOlderHistory
     language = model.languagePreference
 
+    observeRecords(model: model)
+    // Empty arrays are the model's authoritative session/cut reset boundary.
+    // Clear immediately and cancel that context's queued throttle delivery.
     model.$trajectoryRecords
-      .throttle(for: .milliseconds(160), scheduler: RunLoop.main, latest: true)
-      .sink { [weak self] records in
-        guard let self, self.records != records else { return }
-        self.records = records
+      .filter(\.isEmpty)
+      .sink { [weak self, weak model] _ in
+        guard let self, let model else { return }
+        if !self.records.isEmpty { self.records = [] }
+        self.observeRecords(model: model)
       }
       .store(in: &cancellables)
     model.$selectedSessionID
       .removeDuplicates()
-      .sink { [weak self] in self?.selectedSessionID = $0 }
+      .sink { [weak self, weak model] sessionID in
+        guard let self, let model else { return }
+        // @Published emits before the model's didSet clears its projection.
+        // Clear the feed before publishing the new session identity as well.
+        if self.selectedSessionID != sessionID {
+          if !self.records.isEmpty { self.records = [] }
+          self.observeRecords(model: model)
+        }
+        self.selectedSessionID = sessionID
+      }
       .store(in: &cancellables)
     model.$hasOlderHistory
       .removeDuplicates()
@@ -1268,6 +1282,20 @@ private final class NativeTrajectoryFeed: ObservableObject {
       .removeDuplicates()
       .sink { [weak self] in self?.language = $0 }
       .store(in: &cancellables)
+  }
+
+  private func observeRecords(model: ArkAppModel) {
+    recordsObservation?.cancel()
+    recordsObservation = model.$trajectoryRecords
+      // The current value is already installed or deliberately cleared. A
+      // reset arrives during @Published's willSet, so replaying it can enqueue
+      // rows from the context we just discarded.
+      .dropFirst()
+      .throttle(for: .milliseconds(160), scheduler: RunLoop.main, latest: true)
+      .sink { [weak self] records in
+        guard let self, self.records != records else { return }
+        self.records = records
+      }
   }
 }
 
