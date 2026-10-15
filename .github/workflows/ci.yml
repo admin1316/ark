@@ -412,7 +412,7 @@ jobs:
     timeout-minutes: 120
     env:
       DSH_COVERAGE_MAX_WORKERS: '2'
-      DSH_COVERAGE_PARTITIONS: '8'
+      DSH_COVERAGE_PARTITIONS: '2'
       # Instrumented process and polling fixtures can exceed Vitest's defaults
       # under the complete lane's concurrent gate load.
       DSH_COVERAGE_TEST_TIMEOUT_MS: '30000'
