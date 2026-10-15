@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-14T17:46:40.258733+00:00",
+  "clientDate": "2026-10-15",
+  "scope": "READ_ONLY_SOURCE_ARTIFACT_PROFILE_SNAPSHOT_NOT_LIVE_TASK_OR_MISSION_ACCEPTANCE",
+  "candidate": {
+    "version": "3.1.44",
+    "build": "2026101444",
+    "sourceCommit": "d33bbe5c384d1beace5728fe80597db4d43ab487",
+    "appPath": "/Users/hui/ark-test/candidate/Ark.app",
+    "dataHome": "/Users/hui/ark-test/candidate-home-current-20261011-v328",
+    "binary": {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/MacOS/Ark",
+      "bytes": 12282848,
+      "sha256": "154919d48800e903893b61e76438dae748e61efb86eb944a421bfbcd16e0a631"
+    },
+    "knowledgeWiki": {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-knowledge-wiki/lib/index.js",
+      "bytes": 456768,
+      "sha256": "42b2f07530c100fb5c0e53439bef3bbab1f5700c355930a8661ca8a8ee1efbde"
+    },
+    "packReceipt": {
+      "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/ArkProvenance/pack-receipt.json",
+      "bytes": 1685,
+      "sha256": "7bfb9be65887f88493374862c76eacf53a74182bfdbb665ac47657e80764b803"
+    }
+  },
+  "profileComparisons": [
+    {
+      "source": {
+        "path": "/Users/hui/ark-test/ark-stable-windows-repair-source-20261014/packages/bundle/base/cordis.patch.yml",
+        "bytes": 19433,
+        "sha256": "24b9156d97531fe2d6a17c2596ca5d08ff623d827155d89bbc1de7923a79a97c"
+      },
+      "observedTarget": {
+        "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml",
+        "bytes": 19433,
+        "sha256": "24b9156d97531fe2d6a17c2596ca5d08ff623d827155d89bbc1de7923a79a97c"
+      },
+      "byteIdentical": true
+    },
+    {
+      "source": {
+        "path": "/Users/hui/ark-test/ark-stable-windows-repair-source-20261014/packages/bundle/native-api-app/cordis.patch.yml",
+        "bytes": 5166,
+        "sha256": "71a6e2d521deb3c0f2c6d1e05ae3c94aacc0dff894ca67226a87587ca550fdc7"
+      },
+      "observedTarget": {
+        "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-app/cordis.patch.yml",
+        "bytes": 5166,
+        "sha256": "71a6e2d521deb3c0f2c6d1e05ae3c94aacc0dff894ca67226a87587ca550fdc7"
+      },
+      "byteIdentical": true
+    },
+    {
+      "source": {
+        "path": "/Users/hui/ark-test/ark-stable-windows-repair-source-20261014/integrations/jiuzhang/profile/cordis.patch.yml",
+        "bytes": 2801,
+        "sha256": "1474a3ded0fb19a19829d39bb37d052eaa0bddc594825bca2c87f81be0c36454"
+      },
+      "observedTarget": {
+        "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/jiuzhang/profile/cordis.patch.yml",
+        "bytes": 2801,
+        "sha256": "1474a3ded0fb19a19829d39bb37d052eaa0bddc594825bca2c87f81be0c36454"
+      },
+      "byteIdentical": true
+    },
+    {
+      "source": {
+        "path": "/Users/hui/ark-test/ark-stable-windows-repair-source-20261014/integrations/jiuzhang/profile/package.json",
+        "bytes": 219,
+        "sha256": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e"
+      },
+      "observedTarget": {
+        "path": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/jiuzhang/profile/package.json",
+        "bytes": 219,
+        "sha256": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e"
+      },
+      "byteIdentical": true
+    },
+    {
+      "source": {
+        "path": "/Users/hui/ark-test/ark-stable-windows-repair-source-20261014/integrations/jiuzhang/profile/cordis.patch.yml",
+        "bytes": 2801,
+        "sha256": "1474a3ded0fb19a19829d39bb37d052eaa0bddc594825bca2c87f81be0c36454"
+      },
+      "observedTarget": {
+        "path": "/Users/hui/ark-test/candidate-home-current-20261011-v328/profiles/jiuzhang/cordis.patch.yml",
+        "bytes": 2801,
+        "sha256": "1474a3ded0fb19a19829d39bb37d052eaa0bddc594825bca2c87f81be0c36454"
+      },
+      "byteIdentical": true
+    },
+    {
+      "source": {
+        "path": "/Users/hui/ark-test/ark-stable-windows-repair-source-20261014/integrations/jiuzhang/profile/package.json",
+        "bytes": 219,
+        "sha256": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e"
+      },
+      "observedTarget": {
+        "path": "/Users/hui/ark-test/candidate-home-current-20261011-v328/profiles/jiuzhang/package.json",
+        "bytes": 219,
+        "sha256": "7dde652cc7638fe205e1e1c2e22974646c7d9d99586ada6a4b17c362cc502d3e"
+      },
+      "byteIdentical": true
+    }
+  ],
+  "sourceWorktree": "/Users/hui/ark-test/ark-stable-windows-repair-source-20261014",
+  "sourceBaseCommit": "15970f360bb7b9b6742d195541adebfd419d560a",
+  "uncommittedRuntimeFollowupsInstalled": false,
+  "publishedHeadObserved": "15970f360bb7b9b6742d195541adebfd419d560a",
+  "formal": {
+    "version": "3.1.0",
+    "sourceCommit": "4ef63040883f497857cff71ab0e82fd07ac123fa",
+    "binary": {
+      "path": "/Users/hui/ark/Ark.app/Contents/MacOS/Ark",
+      "bytes": 11280800,
+      "sha256": "072cd2176a949ed5464bb2f2c14ac22198d2c3ab95a79072a9a3457ad62c989a"
+    },
+    "replaced": false
+  },
+  "exact159CI": {
+    "runId": 38574358772,
+    "url": "https://github.com/admin1316/ark/actions/runs/38574358772",
+    "conclusion": "failure",
+    "linuxCoverage": "PASS",
+    "macOSNative": "PASS",
+    "nativeWindows": "FAIL_FIVE_UNIQUE_CONTRACTS",
+    "sandboxRunId": 38574358849,
+    "sandboxConclusion": "success"
+  },
+  "lastCompletedFreshNativeCodeTask": {
+    "version": "3.1.41",
+    "receipt": "candidate341-real-native-code-task-result-20261013.json",
+    "restoredHistoryIn44IsNotFreshTask": true
+  },
+  "pairedNativeComparison": {
+    "submittedArms": 0,
+    "configuredDefaultSelection": {
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "reasoningEffort": "max"
+    },
+    "freshTwoHomeTemporaryRouteHumanDecision": "REQUESTED_PENDING",
+    "measuredLift": null
+  },
+  "knowledge": {
+    "realProtectedAuthorityDeployment": "UNPROVEN",
+    "authenticatedFreshReuse": "UNPROVEN",
+    "verifiedUtilityLift": "UNMEASURED",
+    "fullAcceptance": "UNKNOWN"
+  },
+  "productionSearchSelection": "RETAIN_TS",
+  "newPaidRequests": 0,
+  "realProfileWrites": 0,
+  "credentialsReadOrPublished": false,
+  "mainMerged": false,
+  "fullMissionAcceptance": "UNKNOWN"
+}

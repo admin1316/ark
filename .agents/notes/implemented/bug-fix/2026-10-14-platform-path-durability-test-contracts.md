@@ -30,6 +30,18 @@ Post-leader tests bind the helper's actual startup identity before cancelling. L
 
 Cache count tests establish the durable creation cut before measuring the subsequent event threshold. HMR creation tests retain bounded diagnostics for the registered watcher's readiness, events, canonical paths and refresh phase without extending their time limits or substituting polling. These observations do not repair the retained HMR event-loss cause or the Windows junction publication gap.
 
+Built CLI fixtures own each child settlement before running assertions. Teardown signals and joins the child before deleting its profile; body, signal, settlement and removal failures are retained together, and a failed fixture stays available for inspection. Cache failure tests establish the initial durable checkpoint before introducing a path obstruction, so the failure belongs to the subsequent event write rather than creation.
+
+The Pi idle test begins its fixed timeout after the actual HTTP request reaches the fixture. A shared virtual clock controls the SDK and watchdog; the response must close before normal completion and before the caller cleanup abort. The original operation and observation limits remain unchanged. Producer diagnostics retain a bounded sequence of existing phases only when the case fails; they do not extend its deadline or supply a lifecycle result.
+
+Standalone reconciliation treats physical package directories and installation aliases as one canonical catalog. It retains each valid package link before pruning absent names, so the generic child healer sees the same targets. Directory ownership and permission tightening remain separate from package identity and link replacement. Existing Windows junctions use the shared native updater; a missing compiled export rejects the update.
+
+The native updater accepts NTFS directory mount points and retains the same handle for identity, target checks and replacement. Attribute-only access, a deletion share fence, namespaced entry paths and a bounded reparse buffer preserve its native boundary. Failed verification or handle closure can follow a completed update; rejection is not a rollback claim. Keeping one namespace entry does not provide an atomic package generation or guarantee every default Node consumer traversal.
+
+Metadata-only evaluator operations retain their artifact, signature and replay checks without loading execution providers. Both helper CLIs load the local subprocess and sandbox providers only when execution requires them; the evaluator keeps its cancellation listeners, parent watch and deadline active during loading and disposes any created context before clearing them. This changes startup work, not the signed bytes or trust configuration.
+
+Inbox observation owns a started read through settlement even when polling expires before the first callback rejects. The expired outcome retains its session diagnostic and framework cause; late matches cannot reverse it, and distinct late I/O or parse errors remain visible. Joining the read can delay error return without extending the success deadline or allowing scenario cleanup to remove a directory still being read.
+
 ## Alternatives considered
 
 **Suppress filesystem errors or skip Windows suites.** This can conceal corrupted paths or bypass the refusal and protocol behavior the tests must establish.

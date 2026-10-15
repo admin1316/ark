@@ -644,22 +644,46 @@ async function waitForPersistedInboxMessage(
   text: string,
   timeoutMs = DEFAULT_WAIT_TIMEOUT_MS,
 ): Promise<void> {
-  await vi.waitFor(async () => {
-    const log = (await harvestSessionLogs(root)).find(candidate => candidate.id === sessionId)
-    const matched = log?.content.split('\n').some((line) => {
-      if (line.length === 0) return false
-      const record = JSON.parse(line) as {
-        type?: unknown
-        data?: { inserted?: Array<{ content?: Array<{ type?: unknown; text?: unknown }> }> }
-      }
-      return record.type === 'agent/inbox/spliced' && record.data?.inserted?.some(message =>
-        message.content?.some(block => block.type === 'text'
-          && typeof block.text === 'string' && block.text.includes(text))) === true
-    }) ?? false
-    if (!matched) {
-      throw new Error(`snapshot-harness: session "${sessionId}" did not persist expected inbox message within ${timeoutMs}ms`)
+  const notReady = new Error(`snapshot-harness: session "${sessionId}" did not persist expected inbox message within ${timeoutMs}ms`)
+  let inFlight = Promise.resolve()
+  let observedFailure: { error: unknown } | undefined
+  try {
+    await vi.waitFor(() => {
+      inFlight = (async () => {
+        const log = (await harvestSessionLogs(root)).find(candidate => candidate.id === sessionId)
+        const matched = log?.content.split('\n').some((line) => {
+          if (line.length === 0) return false
+          const record = JSON.parse(line) as {
+            type?: unknown
+            data?: { inserted?: Array<{ content?: Array<{ type?: unknown; text?: unknown }> }> }
+          }
+          return record.type === 'agent/inbox/spliced' && record.data?.inserted?.some(message =>
+            message.content?.some(block => block.type === 'text'
+              && typeof block.text === 'string' && block.text.includes(text))) === true
+        }) ?? false
+        if (!matched) throw notReady
+      })().catch((error: unknown) => {
+        observedFailure = { error }
+        throw error
+      })
+      return inFlight
+    }, { interval: WAIT_POLL_INTERVAL_MS, timeout: timeoutMs })
+  } catch (error) {
+    const failure = error instanceof Error && error.message === 'Timed out in waitFor!'
+      && observedFailure?.error !== error
+      ? new Error(notReady.message, { cause: error })
+      : error
+    // Expiry fixes the outcome; joining the read neither extends the matching
+    // deadline nor lets scenario cleanup remove a directory still being read.
+    const lateFailure = await inFlight.then(
+      () => undefined,
+      (reason: unknown) => ({ error: reason }),
+    )
+    if (lateFailure !== undefined && lateFailure.error !== notReady && lateFailure.error !== failure) {
+      throw new AggregateError([failure, lateFailure.error], notReady.message)
     }
-  }, { interval: WAIT_POLL_INTERVAL_MS, timeout: timeoutMs })
+    throw failure
+  }
 }
 
 /** Whether a child log contains model work after its own descriptor event. */

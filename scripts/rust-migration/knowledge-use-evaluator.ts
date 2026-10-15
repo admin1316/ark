@@ -3,9 +3,7 @@
 import assert from 'node:assert/strict'
 import { createPublicKey, verify } from 'node:crypto'
 import { isAbsolute, resolve } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import SandboxLocal from '@deepseek-ai/dsh-sandbox-local'
+import type { Context } from '@deepseek-ai/cordis'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import z from 'zod'
@@ -465,7 +463,7 @@ async function main(): Promise<void> {
     physicalProjectRoot: resolve(completed.launch.artifactRoot, projection.physicalRelativeRoot),
     files: projection.files.map(file => ({ path: file.path, hash: file.bytes.hash })),
   }]))
-  const context = new Context()
+  let context: Context | undefined
   const controller = new AbortController()
   const parentPid = process.ppid
   const abort = () => {
@@ -491,8 +489,6 @@ async function main(): Promise<void> {
     controller.signal.throwIfAborted()
     const inputBytes = Buffer.concat(chunks)
     const request: unknown = JSON.parse(inputBytes.toString('utf8'))
-    await context.plugin(LocalSubprocessRuntime)
-    await context.plugin(SandboxLocal)
     const operation = z.record(z.string(), z.unknown()).parse(request)['operation']
     let result: unknown
     if (launchKind === 'fixed-trial-intent-helper-launch-v1') {
@@ -503,6 +499,15 @@ async function main(): Promise<void> {
     } else if (operation === 'describeCapturedCostUse') {
       result = await describeCapturedKnowledgeCostUse(config, request, controller.signal)
     } else {
+      const [{ Context }, { default: LocalSubprocessRuntime }, { default: SandboxLocal }] = await Promise.all([
+        import('@deepseek-ai/cordis'),
+        import('@deepseek-ai/dsh-subprocess-local'),
+        import('@deepseek-ai/dsh-sandbox-local'),
+      ])
+      controller.signal.throwIfAborted()
+      context = new Context()
+      await context.plugin(LocalSubprocessRuntime)
+      await context.plugin(SandboxLocal)
       const recipe = await evaluateKnowledgeUseOperation(config, request, context.subprocess, context.sandbox, controller.signal,
         executions, writeNewArtifact)
       // Bind the private transport to the exact owner-sent bytes. Swift and JS may
@@ -512,7 +517,7 @@ async function main(): Promise<void> {
     controller.signal.throwIfAborted()
     process.stdout.write(`${canonicalJson(result)}\n`)
   } finally {
-    try { await context.fiber.dispose() } finally {
+    try { await context?.fiber.dispose() } finally {
       clearTimeout(deadline)
       clearInterval(parentWatch)
       process.off('SIGTERM', abort)

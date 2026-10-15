@@ -731,6 +731,9 @@ importers:
 
   packages/boot/app-boot:
     dependencies:
+      '@deepseek-ai/dsh-win32-process':
+        specifier: workspace:^
+        version: link:../../subprocess/win32-process
       js-yaml:
         specifier: ^4.2.0
         version: 4.2.0

@@ -6,10 +6,7 @@ import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { Context } from '@deepseek-ai/cordis'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import SandboxLocal from '@deepseek-ai/dsh-sandbox-local'
 import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import { seatbeltProfileArgs } from '../../packages/sandbox/sandbox-local/src/profiles.ts'
 import z from 'zod'
@@ -256,6 +253,11 @@ async function main(): Promise<void> {
     input.push(part)
   }
   const payload: unknown = JSON.parse(Buffer.concat(input).toString('utf8'))
+  const [{ Context }, { default: LocalSubprocessRuntime }, { default: SandboxLocal }] = await Promise.all([
+    import('@deepseek-ai/cordis'),
+    import('@deepseek-ai/dsh-subprocess-local'),
+    import('@deepseek-ai/dsh-sandbox-local'),
+  ])
   const context = new Context()
   try {
     await context.plugin(LocalSubprocessRuntime)

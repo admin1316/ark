@@ -54,6 +54,8 @@ profile 是位于 `$DSH_HOME/profiles/<name>` 下的目录（harness home 由 [`
 
 组合包查找会先确定规范包目录，再读取 manifest，因此并发替换后备链接不会重定向后续读取；候选路径缺失时继续查找，其他解析错误向上传递。
 
+已有的 Windows 后备 junction 通过共用 Win32 实现改变目标，不先删除目录项。POSIX 保留暂存后重命名的方式；首次创建只接受目标相同的并发胜者。原生权限、tag 或身份检查拒绝时保留目录项并传递错误。现有读取者使用期间，两份安装目录都必须有效；逐包更新不构成整个依赖代际的原子切换。
+
 用户级的机器本地偏好同样位于 harness home 中：
 
 - **`.env`**：产品 CLI 的普通环境层；调用目录的文件优先于 harness home 的文件，两者都低于继承环境。`loadLayeredEnv` 记录每个值的来源，按不区分大小写的方式拒绝 [bootstrap-only 文件变量](../../../.agents/notes/implemented/architecture/2026-08-04-configuration-source-ownership.zh.md#decision)，并把其余值物化进 `process.env`，供 Loader 表达式和第三方库使用。受管凭据另存于 [`.credentials.yaml`](../../credentials/credentials-local/README.zh.md)；留在任一 `.env` 中的凭据仍是低优先级后备值。

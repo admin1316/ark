@@ -268,19 +268,31 @@ describe('SessionProjectionCache write policy', () => {
     ctx.sessionProjections.register(marksUnit())
     await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 100, writeIntervalMs: 60_000 })
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
-    // A directory where the record document must land makes the atomic
-    // rename fail — including the creation write, so no row ever lands.
-    const blocker = recordPath(root, SessionId('fail-soft'))
-    await mkdir(blocker, { recursive: true })
     const session = ctx.sessions.create(SessionId('fail-soft'))
+    // Creation is a separate mandatory write. Observe its durable init cut
+    // before blocking the next turn/end write, so its warning cannot mask it.
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === -1)
+    expect(ctx.sessionProjectionCache.cachedSnapshot(session.header)).toEqual({
+      asOfSeq: -1, values: { 'cache-test/marks': { marks: [] } },
+    })
+    expect(warn).not.toHaveBeenCalled()
+    // A directory where the record document must land makes the atomic
+    // rename fail only for the turn/end write; memory retains the init cut.
+    const blocker = recordPath(root, session.id)
+    await rm(blocker)
+    await mkdir(blocker, { recursive: true })
     mark(session, ['x'])
-    endTurn(session)
+    const failedEnd = endTurn(session)
     // The write-back is fire-and-forget; the warn call is its observable
     // completion, so wait on the mock interaction instead of a fixed delay.
     await vi.waitFor(() => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('turn/end write for "fail-soft" failed'))
     })
     expect(await storedRows(root, session.id)).toBeUndefined()
+    expect(session.events).toContainEqual(failedEnd)
+    expect(ctx.sessionProjectionCache.cachedSnapshot(session.header)).toEqual({
+      asOfSeq: -1, values: { 'cache-test/marks': { marks: [] } },
+    })
     // Self-heal: once the blocker clears, the next mandatory point writes.
     await rm(recordPath(root, session.id), { recursive: true })
     mark(session, ['y'])

@@ -40,3 +40,5 @@ Ark is in internal testing. Report problems and suggestions to the product team 
 Build, verification, packaging, and layout details: [engineering notes](docs/engineering.md).
 
 The runtime-closure command verifies a bound receipt against regenerated current sources. Its subprocess contract covers the source plan importing the shared JSON helpers and rejects a changed plan.
+
+The standalone launcher maintains the profile package fallback from both ordinary installed package directories and package symlinks, using canonical targets shared with the child healer. It validates package identities, retains installed names during stale-link cleanup, and preserves owner-only directory checks and legacy permission tightening. Existing Windows junctions use the [shared native owner](../../packages/subprocess/win32-process/README.md) without removing the live entry; an error after the update does not imply rollback. Per-package publication does not promise one installation generation or atomic resolution across a reader's entire module lookup.

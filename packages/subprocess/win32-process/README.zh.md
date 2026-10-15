@@ -29,6 +29,7 @@ kind: "package-library"
 - **管道进程原语** — `spawnPipedProcess()` 创建匿名 stdin/stdout/stderr 管道，立即关闭 stdin，并返回两个读取端；调用方负责等待进程与排空管道。任一局部失败都会关闭该操作已经拥有的句柄，并在各自 Win32 生命周期结束后释放每个 Koffi 输出槽与结构体分配。
 - **继承 stdio 的 Job 原语** — `spawnInheritedJobProcess()` 创建一个 kill-on-close Job，临时把当前 stdio 句柄设为可继承，以 suspended 状态创建 restricted child，把它分配给 Job，再恢复初始线程。目标代码不会在 Job 分配前运行；受控的分配或恢复失败会终止 suspended child，或在释放全部已拥有句柄前关闭已分配的 Job。
 - **显式结算归属** — `waitForProcessExit()` 等待并关闭进程句柄。`drainPipe()` 在排空期间复用一个 native count slot，释放该分配并关闭管道读取句柄。sandbox 保留既有调度、result 组合与调用方拥有的 Job 关闭行为。
+- **受管 junction 更新** — `replaceJunctionTarget()` 只申请属性访问，通过同一句柄读取并更新已存在、tag 相同的目录挂载点。它核对精确的 BigInt 文件身份与旧目标，拒绝删除分享，并在关闭前确认新目标。不支持的 tag、路径、ACL 或身份冲突会明确报错；它不会删除当前目录项或申请额外权限。SET 之后的验证或关闭失败可能发生在更新完成之后，不能据此认定已回滚。
 
 Windows ACL 沙箱在这些原语上增加 SID、DACL、grant、workspace 与公共 child policy。
 
@@ -72,6 +73,7 @@ Koffi 的 `STARTUPINFOW` 与 `PROCESS_INFORMATION` 定义还会在模块加载�
 - **只有 restricted-token 消费方** — ordinary `CreateProcessW`、精确 `applicationName`、parent-stdio release 与 whole-Job settlement 在 ordinary process 消费方出现前均不提供。
 - **创建到分配之间的中断** — 目标以 suspended 状态启动，不能在 Job 分配前执行，但 runner 若在进程创建到分配之间的极窄区间被外力终止，可能留下 suspended target。本包不声明原子 Job 附加保证。
 - **header 证据限定架构** — 已提交的 ABI probe 与布局常量覆盖仓库当前 64 位 Windows 目标。支持新的指针宽度或不兼容 Windows ABI 前，必须先更新 probe。
+- **junction 发布边界** — 调用方负责祖先目录，并为现有读取者保留两份安装目录。目录项必须位于 NTFS 卷上，因为 Node 的 64 位文件 ID 不能确立 ReFS 的 128 位身份。本函数支持已有的盘符目标挂载点，不支持 UNC 目标、符号链接 tag 转换或整个依赖代际的原子切换。句柄不会排斥其他属性写入者，读取旧目标不构成原子比较交换。边界测试不能证明 Windows 内核的并发可见性或崩溃持久性。
 
 
 <a id="dev-note"></a>
