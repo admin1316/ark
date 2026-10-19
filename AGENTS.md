@@ -103,6 +103,8 @@ Use [dsh-pre-push-checks](.agents/skills/dsh-pre-push-checks/SKILL.md) before pu
 
 Real-API tests and demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and root `.env`. cordis.yml allows `!!js` (never `!js`) under plugin `config` and entry `disabled`; other metadata stays literal, so conditional composition also uses overlays ([primer](docs/cordis-primer.md#loader-configuration)). Never commit credentials. CI e2e skips without a key; [testing.md](docs/testing.md) owns key policy.
 
+Ark GitHub publication must exclude passwords, API keys, access or refresh tokens, private keys, signing and notarization credentials, `.env` files, and personal profiles, sessions, attachments, and runtime data. Inspect the outgoing source diff, application bundle, release archives, logs, screenshots, and other attachments before publication; block publication on a suspected secret until it is resolved. Keep user credentials local, prefer macOS Keychain, and inject release credentials only through the signing or CI secret mechanism; never bake them into a distributed app. Public test fixtures may contain clearly synthetic credentials only.
+
 ## Conventions
 
 - Packages are private `@deepseek-ai/dsh-<name>` workspaces; vendored packages are rescoped and `@deepseek-ai/cordis` is a peer + dev dependency ([mapping](docs/rescope.md)).
