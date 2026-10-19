@@ -53,11 +53,11 @@ JIUZHANG_SELF_CONTAINED=1 JIUZHANG_RUNTIME_ROOT=/path/to/runtime \
   zsh integrations/jiuzhang/native/build-app.sh /path/to/output
 ```
 
-在输出目录产出 `Ark.app`：原生 AppKit + SwiftUI 可执行文件、ICNS 生成（需要 Pillow），以及记录 Node.js、启动器、CLI 与运行时根的 Info.plist。自包含构建为内嵌 Node 单独应用 `Resources/node.entitlements`，并在接受应用包前实际执行签名后的 Node。默认使用 ad-hoc 签名，也可通过 `JIUZHANG_SIGN_IDENTITY` 使用 Developer ID；`JIUZHANG_NOTARY_PROFILE` 还会提交 notarytool 并装订票据。自包含应用包按 `Bundle.main.bundleURL` 解析 `Contents/...` 相对路径，移动应用不会失效。应用包营销版本为 `3.1.0`（Info.plist 的 `CFBundleShortVersionString` 与 `CFBundleVersion`；native contract tests 同时断言两个字段，改版本时需一起更新）。源码/独立运行时布局仍依赖记录的外部路径，移动后必须重新构建。
+在输出目录产出 `Ark.app`：原生 AppKit + SwiftUI 可执行文件、ICNS 生成（需要 Pillow），以及记录 Node.js、启动器、CLI 与运行时根的 Info.plist。自包含构建为内嵌 Node 单独应用 `Resources/node.entitlements`，并在接受应用包前实际执行签名后的 Node。默认使用 ad-hoc 签名，也可通过 `JIUZHANG_SIGN_IDENTITY` 使用 Developer ID；`JIUZHANG_NOTARY_PROFILE` 还会提交 notarytool 并装订票据。自包含应用包按 `Bundle.main.bundleURL` 解析 `Contents/...` 相对路径，移动应用不会失效。应用包营销版本（`CFBundleShortVersionString`）为 `3.1.1`，独立构建号（`CFBundleVersion`）为 `2026101901`。原生契约测试同时断言两个字段；字段变化时更新对应断言。源码/独立运行时布局仍依赖记录的外部路径，移动后必须重新构建。
 
 ## 品牌
 
-原生视图直接拥有 Ark 品牌：应用与窗口名为 `Ark`，导航栏字标为“九章天幕 + ARK”，`Resources/AppIcon.png` 提供应用图标。浏览器构建身份与 PWA 元数据不再是 Ark 产品输入。
+原生视图使用已认可的黑色 Ark 应用图标（`Resources/AppIcon.png`）与原生 `ARK` 字标；应用与窗口名为 `Ark`。保留此品牌，不得重新引入已退役的红色九章天幕图标。浏览器构建身份与 PWA 元数据不是 Ark 产品输入。
 
 ## 本地 API 鉴权
 

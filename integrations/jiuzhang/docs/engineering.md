@@ -53,11 +53,11 @@ JIUZHANG_SELF_CONTAINED=1 JIUZHANG_RUNTIME_ROOT=/path/to/runtime \
   zsh integrations/jiuzhang/native/build-app.sh /path/to/output
 ```
 
-Emits `Ark.app` at the output path: a native AppKit + SwiftUI executable, ICNS generation (Pillow required), and Info.plist recording of the Node.js executable, launcher, CLI, and runtime root. A self-contained build signs embedded Node separately with `Resources/node.entitlements`, then executes that signed Node before accepting the bundle. Signing is ad-hoc by default, or uses a Developer ID from `JIUZHANG_SIGN_IDENTITY`; `JIUZHANG_NOTARY_PROFILE` additionally submits to notarytool and staples the ticket. The self-contained bundle resolves its recorded `Contents/...` paths against `Bundle.main.bundleURL`, so moving the app does not break it. The application bundle's marketing version is `3.1.0` (Info.plist `CFBundleShortVersionString` and `CFBundleVersion`; the native contract tests assert both fields, so update them together). Source/standalone layouts still depend on the recorded external paths and require rebuilding when one moves.
+Emits `Ark.app` at the output path: a native AppKit + SwiftUI executable, ICNS generation (Pillow required), and Info.plist recording of the Node.js executable, launcher, CLI, and runtime root. A self-contained build signs embedded Node separately with `Resources/node.entitlements`, then executes that signed Node before accepting the bundle. Signing is ad-hoc by default, or uses a Developer ID from `JIUZHANG_SIGN_IDENTITY`; `JIUZHANG_NOTARY_PROFILE` additionally submits to notarytool and staples the ticket. The self-contained bundle resolves its recorded `Contents/...` paths against `Bundle.main.bundleURL`, so moving the app does not break it. The application bundle's marketing version (`CFBundleShortVersionString`) is `3.1.1`; its independent build number (`CFBundleVersion`) is `2026101901`. The native contract tests assert both fields; update each assertion when its field changes. Source/standalone layouts still depend on the recorded external paths and require rebuilding when one moves.
 
 ## Brand
 
-The native view owns the Ark identity directly: the application/window name is `Ark`, the navigation lockup is `九章天幕 + ARK`, and `Resources/AppIcon.png` supplies the application icon. Browser build identity and PWA metadata are not Ark product inputs.
+The native view uses the approved black Ark application icon from `Resources/AppIcon.png` and the native `ARK` wordmark; the application/window name is `Ark`. Preserve this branding and do not reintroduce the retired red 九章天幕 icon. Browser build identity and PWA metadata are not Ark product inputs.
 
 ## Local API gate
 
