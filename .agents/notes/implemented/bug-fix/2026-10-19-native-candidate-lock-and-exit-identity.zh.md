@@ -12,7 +12,7 @@ pnpm 11.7 在离线推导锁文件时，可能报告某个可选依赖的 `resol
 
 ## 决策
 
-[运行时计划](../../../../integrations/jiuzhang/src/runtime-plan.mjs) 保留根锁定的外部依赖图，包括外平台可选解析结果。[打包所有者](../../../../integrations/jiuzhang/src/pack-runtime.mjs) 使用 `--reporter=ndjson` 推导锁文件，并将输出交给 [`assertArkOfflineLockResolution`](../../../../integrations/jiuzhang/src/runtime-closure.mjs)。即使 pnpm 以零退出，该辅助函数也会拒绝因 `resolution_failure` 而跳过的可选依赖。正常的平台跳过仍被允许。在线完整元数据缓存准备与离线打包相互独立；缓存不完整不能改变打包所接受的依赖图。
+[运行时计划](../../../../integrations/jiuzhang/src/runtime-plan.mjs) 保留根锁定的外部依赖图，包括外平台可选解析结果。[打包所有者](../../../../integrations/jiuzhang/src/pack-runtime.mjs) 使用 `--reporter=ndjson` 推导锁文件，并将输出交给 [`assertArkOfflineLockResolution`](../../../../integrations/jiuzhang/src/runtime-closure.mjs)。即使 pnpm 以零退出，该辅助函数也会拒绝因 `resolution_failure` 而跳过的可选依赖。其唯一的解析失败例外来自根计划已存在的 `optionalDependencies` 中的 `omitted-platform-workspace` 边：事件的直接父节点名称和版本必须匹配该边的来源所有者，子节点名称及精确的 `bareSpecifier` 必须匹配计划中的子节点名称和版本。仅凭外平台属性不能获得例外。正常的平台跳过仍被允许。在线完整元数据缓存准备与离线打包相互独立；缓存不完整不能改变打包所接受的依赖图。
 
 [运行时锁校验器](../../../../integrations/jiuzhang/src/runtime-closure.mjs) 由安装前校验与最终收据校验共用。打包在冻结离线安装前，先按计划中的精确解析结果、完整性值和依赖边检查推导出的锁。最终收据保留同样的严格校验，独立于包管理器的诊断信息。
 
@@ -32,6 +32,6 @@ pnpm 11.7 在离线推导锁文件时，可能报告某个可选依赖的 `resol
 
 ## 后果
 
-[运行时计划测试](../../../../integrations/jiuzhang/tests/runtime-plan.test.mjs) 固定了外平台 WASM 链的保留、单一离线锁推导与安装所有者，以及安装前校验。[运行时闭包测试](../../../../integrations/jiuzhang/tests/runtime-closure.test.mjs) 固定了无需已安装内容的严格锁校验、对可选解析失败和非法报告输出的拒绝，以及对正常平台跳过的接受。生命周期回归覆盖新鲜匹配行、PID 复用、argv 与可执行文件漂移、持续模糊状态、保守存活判断，以及由暂停父进程保持未回收状态的真实子进程。启动器关闭协议保持不变；竞态测试的观察与信号授权更加精确。
+[运行时计划测试](../../../../integrations/jiuzhang/tests/runtime-plan.test.mjs) 固定了外平台 WASM 链的保留、单一离线锁推导与安装所有者，以及安装前校验。[运行时闭包测试](../../../../integrations/jiuzhang/tests/runtime-closure.test.mjs) 固定了无需已安装内容的严格锁校验、对可选解析失败和非法报告输出的拒绝、正常平台跳过，以及精确的工作区排除例外。子节点或所有者身份变化、仅祖先节点匹配，以及缺失父节点身份，都不能授权该例外。生命周期回归覆盖新鲜匹配行、PID 复用、argv 与可执行文件漂移、持续模糊状态、保守存活判断，以及由暂停父进程保持未回收状态的真实子进程。启动器关闭协议保持不变；竞态测试的观察与信号授权更加精确。
 
 源码检查确立了这些机制。正式运行时打包成功、候选安装态校验与原生交互验收仍是独立证据；仅源码测试不能确立发布就绪，也不能证明与旧应用一致。

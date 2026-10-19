@@ -697,14 +697,23 @@ async function tarballInventory(path, cwd) {
 
 /**
  * Reject optional resolution failures that pnpm reports with a successful exit.
- * Platform skips are expected; missing offline metadata must never erase edges.
+ * The root graph may omit foreign optional workspace packages. Missing offline
+ * metadata must never erase a planned external dependency edge.
  * @param {string} output Output from the pinned pnpm NDJSON reporter.
- * @returns {void} Returns only when every reported resolution succeeded.
+ * @param {object[]} workspaceImporters Root-lock workspace edges with explicit platform omissions.
+ * @returns {void} Returns only when every planned resolution succeeded.
  */
-export function assertArkOfflineLockResolution(output) {
+export function assertArkOfflineLockResolution(output, workspaceImporters) {
   for (const line of output.split('\n').filter(line => line.trim() !== '')) {
     const event = JSON.parse(line)
     if (event?.name === 'pnpm:skipped-optional-dependency' && event.reason === 'resolution_failure') {
+      const parent = Array.isArray(event.parents) ? event.parents.at(-1) : undefined
+      const owner = workspaceImporters.find(entry => entry.name === parent?.name && entry.version === parent?.version)
+      const omitted = owner?.edges.some(edge => (
+        edge.kind === 'omitted-platform-workspace' && edge.section === 'optionalDependencies'
+          && edge.name === event.package?.name && edge.version === event.package?.bareSpecifier
+      ))
+      if (omitted === true) continue
       throw new Error(`Ark offline lock resolution failed; prepare the exact full metadata cache before packing: ${String(event.details)}`)
     }
   }

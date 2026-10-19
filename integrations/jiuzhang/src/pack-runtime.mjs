@@ -289,7 +289,10 @@ async function pack(repositoryRoot, output) {
     await writeJson(planPath, plan)
     await writeJson(indexPath, packed)
     await writeJson(commandPath, installOwner)
-    assertArkOfflineLockResolution(capture(lockCommand[0], lockCommand.slice(1), runtimeTemplate))
+    assertArkOfflineLockResolution(
+      capture(lockCommand[0], lockCommand.slice(1), runtimeTemplate),
+      plan.rootLockGraph.workspaceImporters,
+    )
     const lockfilePath = join(runtimeTemplate, 'pnpm-lock.yaml')
     verifyRuntimeLock(plan, packed, runtimeTemplate, await readFile(lockfilePath, 'utf8'))
     const lockfileBeforeInstall = createHash('sha256').update(await readFile(lockfilePath)).digest('hex')

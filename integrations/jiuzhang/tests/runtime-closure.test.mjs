@@ -295,7 +295,7 @@ test('offline lock derivation rejects optional resolution failures despite pnpm 
     reason: 'resolution_failure',
     details: 'Failed to resolve @img/sharp-wasm32@0.35.3 in package mirror metadata-full',
   })
-  assert.throws(() => assertArkOfflineLockResolution(output), /prepare the exact full metadata cache.*sharp-wasm32/u)
+  assert.throws(() => assertArkOfflineLockResolution(output, []), /prepare the exact full metadata cache.*sharp-wasm32/u)
 })
 
 test('offline lock derivation permits platform skips and rejects malformed reporter output', () => {
@@ -303,8 +303,38 @@ test('offline lock derivation permits platform skips and rejects malformed repor
     JSON.stringify({ name: 'pnpm:stage', stage: 'resolution_started' }),
     JSON.stringify({ name: 'pnpm:skipped-optional-dependency', reason: 'unsupported_platform' }),
     '',
-  ].join('\n')))
-  assert.throws(() => assertArkOfflineLockResolution('not ndjson'), SyntaxError)
+  ].join('\n'), []))
+  assert.throws(() => assertArkOfflineLockResolution('not ndjson', []), SyntaxError)
+})
+
+test('offline lock derivation permits only the exact owner of a planned platform workspace omission', () => {
+  const owner = { name: '@fixture/native', version: '1.0.0', edges: [{
+    name: '@fixture/linux', version: '1.0.0', kind: 'omitted-platform-workspace', section: 'optionalDependencies',
+  }] }
+  const event = {
+    name: 'pnpm:skipped-optional-dependency', reason: 'resolution_failure',
+    package: { name: '@fixture/linux', bareSpecifier: '1.0.0' },
+    parents: [{ name: owner.name, version: owner.version }],
+  }
+  assert.doesNotThrow(() => assertArkOfflineLockResolution(JSON.stringify(event), [owner]))
+  for (const changed of [
+    { ...event, package: { ...event.package, name: '@fixture/required' } },
+    { ...event, package: { ...event.package, bareSpecifier: '2.0.0' } },
+    { ...event, parents: [{ name: '@fixture/another', version: owner.version }] },
+    { ...event, parents: [...event.parents, { name: '@fixture/another', version: owner.version }] },
+    { ...event, parents: [{ name: owner.name, version: '2.0.0' }] },
+    { ...event, parents: [] },
+  ]) {
+    assert.throws(() => assertArkOfflineLockResolution(JSON.stringify(changed), [owner]), /offline lock resolution failed/u)
+  }
+  for (const edge of [
+    { ...owner.edges[0], kind: 'external' },
+    { ...owner.edges[0], kind: 'workspace' },
+    { ...owner.edges[0], section: 'dependencies' },
+    { ...owner.edges[0], section: 'peerDependencies' },
+  ]) {
+    assert.throws(() => assertArkOfflineLockResolution(JSON.stringify(event), [{ ...owner, edges: [edge] }]), /offline lock resolution failed/u)
+  }
 })
 
 test('derived lock verification runs before installed package content exists', async () => {
