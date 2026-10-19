@@ -200,6 +200,8 @@ public struct ArkMessage: Identifiable, Equatable, Sendable {
   }
 
   public let id: Int
+  /// Client-only row ownership across a live assembler's canonical replacement.
+  public fileprivate(set) var presentationID: Int
   public let role: Role
   public let text: String
   public let reasoning: String?
@@ -232,9 +234,11 @@ public struct ArkMessage: Identifiable, Equatable, Sendable {
     step: Int? = nil,
     interrupted: Bool = false,
     blocks: [ArkMessageBlock] = [],
-    time: Date
+    time: Date,
+    presentationID: Int? = nil
   ) {
     self.id = id
+    self.presentationID = presentationID ?? id
     self.role = role
     self.text = text
     self.reasoning = reasoning
@@ -431,7 +435,8 @@ public struct ArkMessageProjection: Sendable {
           step: current.step,
           interrupted: current.interrupted,
           blocks: orderedBlocks,
-          time: current.time
+          time: current.time,
+          presentationID: current.presentationID
         )
       } else {
         partialIndex[key] = rows.count
@@ -456,7 +461,9 @@ public struct ArkMessageProjection: Sendable {
       finalized.insert(key)
       partialBlocks.removeValue(forKey: key)
       if let index = partialIndex.removeValue(forKey: key), rows.indices.contains(index) {
-        rows[index] = message
+        var replacement = message
+        replacement.presentationID = rows[index].presentationID
+        rows[index] = replacement
         return true
       }
     }

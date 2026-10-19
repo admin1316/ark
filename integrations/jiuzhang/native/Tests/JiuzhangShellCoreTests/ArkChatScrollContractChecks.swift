@@ -275,7 +275,6 @@ func runArkChatScrollContractChecks() {
     check(
       mainArea?.contains("@StateObject private var chatScrollController") == true
         && mainArea?.contains("@StateObject private var chatTranscriptFeed") == true
-        && mainArea?.contains("_chatTranscriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))") == true
         && mainArea?.contains("@StateObject private var chatProjectionMemo") == true
         && mainArea?.contains("@StateObject private var chatRowCache") == true
         && mainArea?.contains("_chatProjectionMemo = StateObject(wrappedValue: NativeProjectionMemo())") == true

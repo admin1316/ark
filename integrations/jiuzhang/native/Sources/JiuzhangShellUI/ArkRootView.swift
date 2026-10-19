@@ -1708,7 +1708,7 @@ private struct WorkspaceSection: View {
 
 private struct NativeMainArea: View {
   @ObservedObject var model: ArkAppModel
-  @StateObject private var chatScrollController = ArkChatScrollController()
+  @StateObject private var chatScrollController: ArkChatScrollController
   /// The chat tab is conditionally mounted, but its authoritative feed must outlive that mount.
   /// Otherwise every chat/trajectory round trip reparses and republishes every restored answer.
   @StateObject private var chatTranscriptFeed: NativeChatTranscriptFeed
@@ -1722,7 +1722,14 @@ private struct NativeMainArea: View {
 
   init(model: ArkAppModel) {
     self.model = model
-    _chatTranscriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(model: model))
+    let scrollController = ArkChatScrollController()
+    _chatScrollController = StateObject(wrappedValue: scrollController)
+    _chatTranscriptFeed = StateObject(wrappedValue: NativeChatTranscriptFeed(
+      model: model, followingBottom: scrollController.$isAtBottom.eraseToAnyPublisher(),
+      followsBottomForSession: { [weak scrollController] sessionID in
+        scrollController?.snapshot(for: sessionID)?.followsBottom ?? true
+      }
+    ))
     _chatProjectionMemo = StateObject(wrappedValue: NativeProjectionMemo())
     _chatRowCache = StateObject(wrappedValue: NativeProjectedRowCache())
   }
@@ -2773,8 +2780,13 @@ private struct NativeChatContext: Equatable {
   let latestStartedTurn: Int?
   let forkSequenceByMessageID: [Int: Int]
   let latestAssistantMessageID: Int?
+  let readingFramesBySourceID: [NativeAssistantMarkdownSourceID: String]
 
-  init(model: ArkAppModel) {
+  init(
+    model: ArkAppModel,
+    readingFramesBySourceID: [NativeAssistantMarkdownSourceID: String] = [:]
+  ) {
+    self.readingFramesBySourceID = readingFramesBySourceID
     let history = model.historyReadingSnapshot
     let shownMessages = history?.messages ?? model.messages
     historyCut = history?.cut
@@ -2830,7 +2842,10 @@ private struct NativeChatContext: Equatable {
       metrics: message.turn.flatMap { turnMetricsByTurn[$0] },
       forkSequence: forkSequenceByMessageID[message.id],
       isLatestAssistant: message.id == latestAssistantMessageID,
-      isPreview: previewMessageIDs.contains(message.id)
+      isPreview: previewMessageIDs.contains(message.id),
+      readingFramesBySlot: readingFramesBySourceID.reduce(into: [:]) { result, frame in
+        if frame.key.messageID == message.id { result[frame.key.sourceSlot] = frame.value }
+      }
     )
   }
 }
@@ -2845,6 +2860,7 @@ private struct NativeMessagePresentation: Equatable {
   let forkSequence: Int?
   let isLatestAssistant: Bool
   let isPreview: Bool
+  let readingFramesBySlot: [Int: String]
 }
 
 struct NativeAssistantMarkdownSourceID: Hashable, Sendable {
@@ -2864,12 +2880,70 @@ struct NativeAssistantMarkdownSource: Equatable, Sendable {
   var sourceSlot: Int { id.sourceSlot }
 }
 
+/// Keeps the already-published live frame while its source continues to append.
+/// Pixel scroll anchors cannot preserve text that a bounded suffix removes.
+/// This state owns only presentation-sized strings; complete messages remain in the model.
+struct NativeChatReadingFrames {
+  struct SourceID: Hashable {
+    let presentationID: Int
+    let textOrdinal: Int
+  }
+
+  struct LiveSource {
+    let id: SourceID
+    let text: String
+  }
+
+  private(set) var scope: String?
+  private var suspended = false
+  private var presentedLiveFrames: [SourceID: String] = [:]
+  private var heldByID: [SourceID: String] = [:]
+  private var renderIDs: [SourceID: NativeAssistantMarkdownSourceID] = [:]
+
+  var heldFrames: [NativeAssistantMarkdownSourceID: String] {
+    heldByID.reduce(into: [:]) { result, frame in
+      if let renderID = renderIDs[frame.key] { result[renderID] = frame.value }
+    }
+  }
+
+  mutating func recordPresentation(
+    scope: String?,
+    liveSources: [LiveSource],
+    renderIDs: [SourceID: NativeAssistantMarkdownSourceID]
+  ) {
+    if self.scope != scope {
+      self.scope = scope
+      suspended = false
+      heldByID.removeAll()
+    }
+    self.renderIDs = renderIDs
+    heldByID = heldByID.filter { renderIDs[$0.key] != nil }
+    presentedLiveFrames = liveSources.reduce(into: [:]) { result, source in
+      result[source.id] = heldByID[source.id] ?? ArkStreamingPresentationPolicy.firstFrameText(
+        ArkStreamingPresentationPolicy.markdownText(source.text, streaming: true)
+      )
+    }
+    if suspended { suspendFollowing() }
+  }
+
+  mutating func suspendFollowing() {
+    suspended = true
+    heldByID.merge(presentedLiveFrames) { retained, _ in retained }
+  }
+
+  mutating func returnToLatest() {
+    suspended = false
+    heldByID.removeAll()
+  }
+}
+
 private enum NativeAssistantMarkdownProjectionPolicy {
   static func sources(
     message: ArkMessage,
     presentation: NativeMessagePresentation
   ) -> [NativeAssistantMarkdownSource] {
     guard message.role == .assistant, !presentation.isPreview,
+          presentation.readingFramesBySlot.isEmpty,
           !ArkStreamingPresentationPolicy.usesStreamingAssistantPresentation(
             role: message.role,
             isLatestAssistant: presentation.isLatestAssistant,
@@ -2877,6 +2951,11 @@ private enum NativeAssistantMarkdownProjectionPolicy {
           )
     else { return [] }
 
+    return textSources(message: message)
+  }
+
+  static func textSources(message: ArkMessage) -> [NativeAssistantMarkdownSource] {
+    guard message.role == .assistant else { return [] }
     if message.blocks.isEmpty {
       guard !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
         return []
@@ -3025,10 +3104,11 @@ private struct NativeChatSnapshot {
     model: ArkAppModel,
     entries: [NativeChatEntry],
     contentRevision: UInt64,
-    markdownBlocksBySourceID: [NativeAssistantMarkdownSourceID: [NativeGFMBlock]] = [:]
+    markdownBlocksBySourceID: [NativeAssistantMarkdownSourceID: [NativeGFMBlock]] = [:],
+    readingFramesBySourceID: [NativeAssistantMarkdownSourceID: String] = [:]
   ) {
     self.entries = entries
-    context = NativeChatContext(model: model)
+    context = NativeChatContext(model: model, readingFramesBySourceID: readingFramesBySourceID)
     self.contentRevision = contentRevision
     self.markdownBlocksBySourceID = markdownBlocksBySourceID
   }
@@ -3059,6 +3139,8 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   private var refreshBackoff: TimeInterval = 0
   private var presentationGeneration: UInt64 = 0
   private var installedPresentationGeneration: UInt64 = 0
+  private var readingFrames = NativeChatReadingFrames()
+  private let followsBottomForSession: (String) -> Bool
   private weak var model: ArkAppModel?
   private static let diagnostics = Logger(
     subsystem: ArkEventChannelDiagnostics.subsystem, category: "chat-feed"
@@ -3075,8 +3157,13 @@ private final class NativeChatTranscriptFeed: ObservableObject {
     Self.diagnostics.notice("stage=\(stage, privacy: .public) session=\(session, privacy: .public) sequence=\(sequence) revision=\(self.snapshot.contentRevision) entries=\(self.snapshot.entries.count) running=\(running) reading=\(reading) delayMs=\(Int(delay * 1000))")
   }
 
-  init(model: ArkAppModel) {
+  init(
+    model: ArkAppModel,
+    followingBottom: AnyPublisher<Bool, Never>,
+    followsBottomForSession: @escaping (String) -> Bool
+  ) {
     self.model = model
+    self.followsBottomForSession = followsBottomForSession
     snapshot = NativeChatSnapshot(
       model: model,
       entries: NativeChatEntry.merge(
@@ -3087,6 +3174,19 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       ),
       contentRevision: 0
     )
+    recordReadingFrames(model: model, entries: snapshot.entries)
+
+    followingBottom.removeDuplicates()
+      .sink { [weak self, weak model] followsBottom in
+        guard !followsBottom, let self, let model else { return }
+        self.readingFrames.suspendFollowing()
+        self.scheduleRefresh(model: model)
+      }
+      .store(in: &cancellables)
+
+    model.chatPresentationSourceDidChange
+      .sink { [weak self] in self?.readingFrames = NativeChatReadingFrames() }
+      .store(in: &cancellables)
 
     let triggers: [AnyPublisher<Void, Never>] = [
       model.$selectedSessionID.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
@@ -3130,6 +3230,56 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   deinit {
     refreshTask?.cancel()
     for task in markdownTasks.values { task.cancel() }
+  }
+
+  /// An explicit navigation releases the retained frame, including one whose
+  /// turn completed while the reader was away from the bottom.
+  func returnToLatest() {
+    readingFrames.returnToLatest()
+    refreshTask?.cancel()
+    refreshTask = nil
+    if let model { refresh(model: model) }
+  }
+
+  private func recordReadingFrames(model: ArkAppModel, entries: [NativeChatEntry]) {
+    let context = NativeChatContext(model: model)
+    var liveSources: [NativeChatReadingFrames.LiveSource] = []
+    var renderIDs: [NativeChatReadingFrames.SourceID: NativeAssistantMarkdownSourceID] = [:]
+    for entry in entries {
+      guard case .message(let message, _) = entry, message.role == .assistant else { continue }
+      func source(_ text: String, slot: Int, ordinal: Int) {
+        let id = NativeChatReadingFrames.SourceID(
+          presentationID: message.presentationID, textOrdinal: ordinal
+        )
+        renderIDs[id] = NativeAssistantMarkdownSourceID(messageID: message.id, sourceSlot: slot)
+        if message.id == context.latestAssistantMessageID {
+          liveSources.append(NativeChatReadingFrames.LiveSource(id: id, text: text))
+        }
+      }
+      if message.blocks.isEmpty {
+        if !message.text.isEmpty { source(message.text, slot: 0, ordinal: 0) }
+      } else {
+        var ordinal = 0
+        for (slot, block) in message.blocks.enumerated() {
+          if case .text(let text) = block {
+            source(text, slot: slot, ordinal: ordinal)
+            ordinal += 1
+          }
+        }
+      }
+    }
+    let scope = context.sessionID.map { id in
+      context.historyCut.map { id + "#history:" + $0.sourceRevision } ?? id
+    }
+    let scopeChanged = readingFrames.scope != scope
+    readingFrames.recordPresentation(
+      scope: scope,
+      liveSources: liveSources,
+      renderIDs: renderIDs
+    )
+    if scopeChanged, let sessionID = context.sessionID, !followsBottomForSession(sessionID) {
+      readingFrames.suspendFollowing()
+    }
   }
   /// Coalesce feed refreshes into one in-flight transaction, and back off when the main thread
   /// cannot keep up.
@@ -3223,6 +3373,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       statuses: model.historyReadingSnapshot?.chatStatuses ?? model.chatStatuses,
       producedFiles: model.historyReadingSnapshot?.producedFiles ?? model.producedFiles
     )
+    recordReadingFrames(model: model, entries: entries)
     let reconciliation = reconcileMarkdownSources(model: model)
     var retainedMarkdown = reconciliation.sessionChanged
       ? [:]
@@ -3243,7 +3394,8 @@ private final class NativeChatTranscriptFeed: ObservableObject {
       model: model,
       entries: entries,
       contentRevision: revision,
-      markdownBlocksBySourceID: retainedMarkdown
+      markdownBlocksBySourceID: retainedMarkdown,
+      readingFramesBySourceID: readingFrames.heldFrames
     )
     if !snapshot.hasSamePresentation(as: next) {
       // Publishing a whole snapshot with implicit animation would animate every row of a long
@@ -3260,7 +3412,7 @@ private final class NativeChatTranscriptFeed: ObservableObject {
   private func reconcileMarkdownSources(
     model: ArkAppModel
   ) -> NativeAssistantMarkdownProjectionReconcile {
-    let context = NativeChatContext(model: model)
+    let context = NativeChatContext(model: model, readingFramesBySourceID: readingFrames.heldFrames)
     let nextSources = (model.historyReadingSnapshot?.messages ?? model.messages).flatMap { message in
       NativeAssistantMarkdownProjectionPolicy.sources(
         message: message,
@@ -3592,6 +3744,7 @@ private struct NativeChatBodyProjection {
 struct NativeChatProjectionKey: Equatable {
   var historyCut: ArkHistoryCut? = nil
   var previewMessageIDs: Set<Int> = []
+  var readingFramesBySourceID: [NativeAssistantMarkdownSourceID: String] = [:]
   let contentRevision: UInt64
   let sessionID: String?
   let sessionRunning: Bool
@@ -3631,6 +3784,7 @@ extension NativeChatProjectionKey {
   func sameInputs(as other: NativeChatProjectionKey) -> Bool {
     historyCut == other.historyCut
       && previewMessageIDs == other.previewMessageIDs
+      && readingFramesBySourceID == other.readingFramesBySourceID
       && sessionID == other.sessionID
       && sessionRunning == other.sessionRunning
       && language == other.language
@@ -3778,6 +3932,7 @@ private struct NativeChatView: View {
     let key = NativeChatProjectionKey(
       historyCut: context.historyCut,
       previewMessageIDs: context.previewMessageIDs,
+      readingFramesBySourceID: context.readingFramesBySourceID,
       contentRevision: contentRevision,
       sessionID: context.sessionID,
       sessionRunning: context.sessionRunning,
@@ -4066,7 +4221,7 @@ private struct NativeChatView: View {
     // those rows are outside the viewport. Keep roughly one to two screens mounted
     // while streaming; restore the wider browsing window as soon as the turn
     // finishes so completed conversations retain their existing scroll range.
-    let effectiveWindow = context.sessionRunning
+    let effectiveWindow = context.sessionRunning || !context.readingFramesBySourceID.isEmpty
       ? Self.activeStreamingRenderWindowEntries
       : (heavyTranscript
         ? Self.largeTranscriptRenderWindowEntries(forEntryCount: allDisplayEntries.count)
@@ -4243,12 +4398,18 @@ private struct NativeChatView: View {
                 .frame(width: 0, height: 0)
             }
             .overlay(alignment: .bottomTrailing) {
-              if (context.historyCut != nil || !renderWindow.followsLatest || !scrollController.isAtBottom) && !entries.isEmpty {
+              if (context.historyCut != nil || !renderWindow.followsLatest || !scrollController.isAtBottom || !context.readingFramesBySourceID.isEmpty) && !entries.isEmpty {
                 Button {
+                  let sessionID = context.sessionID
                   Task {
                     await model.returnToLatestHistory()
+                    guard model.selectedSessionID == sessionID else { return }
+                    transcriptFeed.returnToLatest()
                     renderWindow.returnToLatest()
-                    DispatchQueue.main.async { scrollController.scrollBottom() }
+                    DispatchQueue.main.async {
+                      guard model.selectedSessionID == sessionID else { return }
+                      scrollController.scrollBottom()
+                    }
                   }
                 } label: {
                   Image(systemName: "arrow.down")
@@ -4297,6 +4458,11 @@ private struct NativeChatView: View {
             scrollController.beginSessionTransition(to: sessionID)
             DispatchQueue.main.async {
               scrollController.completeSessionTransition()
+            }
+          }
+          .onChange(of: scrollController.isAtBottom) { followsBottom in
+            if !followsBottom {
+              renderWindow.suspendLatest(in: displayIDs, limit: effectiveWindow)
             }
           }
           .onChange(of: contentRevision) { _ in
@@ -5274,7 +5440,7 @@ private struct NativeMessageRow: View, Equatable {
 
   private var isUser: Bool { message.role == .user }
   private var isStreamingAssistant: Bool {
-    ArkStreamingPresentationPolicy.usesStreamingAssistantPresentation(
+    !presentation.readingFramesBySlot.isEmpty || ArkStreamingPresentationPolicy.usesStreamingAssistantPresentation(
       role: message.role,
       isLatestAssistant: presentation.isLatestAssistant,
       sessionRunning: presentation.sessionRunning
@@ -5317,7 +5483,8 @@ private struct NativeMessageRow: View, Equatable {
                 NativeStreamingMarkdownText(
                   text: message.text,
                   baseFontSize: fontSize,
-                  producedFilePaths: producedFiles.map(\.path)
+                  producedFilePaths: producedFiles.map(\.path),
+                  readingFrame: presentation.readingFramesBySlot[0]
                 )
               } else {
                 NativeMarkdownText(
@@ -5328,7 +5495,7 @@ private struct NativeMessageRow: View, Equatable {
               }
             }
           } else {
-            ForEach(Array(message.blocks.enumerated()), id: \.offset) { _, block in
+            ForEach(Array(message.blocks.enumerated()), id: \.offset) { slot, block in
               NativeMessageBlockView(
                 model: model,
                 block: block,
@@ -5336,7 +5503,8 @@ private struct NativeMessageRow: View, Equatable {
                 streaming: isStreamingAssistant,
                 fontSize: fontSize,
                 hideReasoning: hideReasoning,
-                language: presentation.language
+                language: presentation.language,
+                readingFrame: presentation.readingFramesBySlot[slot]
               )
             }
           }
@@ -5447,6 +5615,7 @@ private struct NativeMessageBlockView: View {
   let fontSize: CGFloat
   let hideReasoning: Bool
   let language: ArkLanguagePreference
+  var readingFrame: String? = nil
 
   var body: some View {
     switch block {
@@ -5455,7 +5624,8 @@ private struct NativeMessageBlockView: View {
         NativeStreamingMarkdownText(
           text: text,
           baseFontSize: fontSize,
-          producedFilePaths: producedFilePaths
+          producedFilePaths: producedFilePaths,
+          readingFrame: readingFrame
         )
       } else {
         NativeMarkdownText(
@@ -5991,7 +6161,7 @@ private enum NativeChatEntry: Identifiable, Equatable {
 
   var id: String {
     switch self {
-    case .message(let message, _): return "message-\(message.id)"
+    case .message(let message, _): return "message-\(message.presentationID)"
     case .tool(let activity): return "tool-\(activity.id)"
     case .subagent(let group): return group.id
     case .status(let status): return "status-\(status.id)"
@@ -8365,11 +8535,12 @@ private struct NativeStreamingMarkdownText: View {
   init(
     text: String,
     baseFontSize: CGFloat = 14,
-    producedFilePaths: [String] = []
+    producedFilePaths: [String] = [],
+    readingFrame: String? = nil
   ) {
     // Keep the transient View value itself bounded. The complete answer
-    // remains in ArkMessage and replaces this frame after completion.
-    self.text = ArkStreamingPresentationPolicy.firstFrameText(
+    // remains in ArkMessage and replaces this frame when reading resumes after completion.
+    self.text = readingFrame ?? ArkStreamingPresentationPolicy.firstFrameText(
       ArkStreamingPresentationPolicy.markdownText(text, streaming: true)
     )
     self.baseFontSize = baseFontSize
@@ -12881,6 +13052,16 @@ extension NativeChatTranscriptFeed {
     }
   }
 
+  func probeHeldFrames() -> [NativeAssistantMarkdownSourceID: String] {
+    snapshot.context.readingFramesBySourceID
+  }
+
+  func probeHasCanonicalSource(messageID: Int) -> Bool {
+    markdownProjectionState.requestedSourcesByID.keys.contains { $0.messageID == messageID }
+  }
+
+  func probeSessionRunning() -> Bool { snapshot.context.sessionRunning }
+
   /// Drive the production coalescing schedule; no replacement refresh path.
   func probeScheduleRefresh(model: ArkAppModel) { scheduleRefresh(model: model) }
 
@@ -12927,14 +13108,23 @@ enum ArkChatFeedProbe {
   }
 
   @MainActor final class Feed {
+    private final class FollowingState {
+      var bySession: [String: Bool] = [:]
+    }
     private let feed: NativeChatTranscriptFeed
     private let model: ArkAppModel
+    private let followingBottom = CurrentValueSubject<Bool, Never>(true)
+    private let followingState = FollowingState()
     private var observation: AnyCancellable?
     private(set) var installOrder: [Int] = []
 
     init(model: ArkAppModel) {
       self.model = model
-      feed = NativeChatTranscriptFeed(model: model)
+      let followingState = followingState
+      feed = NativeChatTranscriptFeed(
+        model: model, followingBottom: followingBottom.eraseToAnyPublisher(),
+        followsBottomForSession: { followingState.bySession[$0] ?? true }
+      )
       observation = feed.$snapshot.sink { [weak self] snapshot in
         self?.installOrder.append(snapshot.entries.count)
       }
@@ -12944,6 +13134,14 @@ enum ArkChatFeedProbe {
     func containsAssistantText(_ text: String) -> Bool { feed.probeContainsAssistantText(text) }
     func containsToolResult(_ text: String) -> Bool { feed.probeContainsToolResult(text) }
     func scheduleRefresh() { feed.probeScheduleRefresh(model: model) }
+    func followBottom(_ value: Bool) {
+      if let id = model.selectedSessionID { followingState.bySession[id] = value }
+      followingBottom.send(value)
+    }
+    func returnToLatest() { feed.returnToLatest() }
+    var heldFrames: [NativeAssistantMarkdownSourceID: String] { feed.probeHeldFrames() }
+    func hasCanonicalSource(messageID: Int) -> Bool { feed.probeHasCanonicalSource(messageID: messageID) }
+    var sessionRunning: Bool { feed.probeSessionRunning() }
 
     /// Backoff the next scheduled refresh will add to its base interval.
     var refreshBackoff: TimeInterval { feed.probeRefreshBackoff() }

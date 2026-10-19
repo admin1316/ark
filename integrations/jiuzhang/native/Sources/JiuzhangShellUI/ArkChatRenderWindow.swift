@@ -14,6 +14,13 @@ struct ArkChatRenderWindow: Equatable {
     return start..<min(ids.count, start + limit)
   }
 
+  mutating func suspendLatest(in ids: [String], limit: Int) {
+    guard firstRowID == nil,
+      let first = ids[range(in: ids, limit: limit)].first
+    else { return }
+    firstRowID = first
+  }
+
   mutating func earlier(in ids: [String], limit: Int) {
     let current = range(in: ids, limit: limit)
     guard current.lowerBound > 0 else { return }

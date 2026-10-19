@@ -675,6 +675,7 @@ public final class ArkAppModel: ObservableObject {
   public private(set) var producedFiles: [ArkProducedFile] = []
   public let messageImages: ArkMessageImageStore
   let chatPresentationDidChange = PassthroughSubject<Void, Never>()
+  let chatPresentationSourceDidChange = PassthroughSubject<Void, Never>()
   @Published public private(set) var hasOlderHistory = false
   @Published public private(set) var loadingOlderHistory = false
   @Published public private(set) var historyLoadState: ArkHistoryLoadState = .idle
@@ -4808,6 +4809,7 @@ public final class ArkAppModel: ObservableObject {
         throw ArkAPIError(message: "恢复后的实时水位与固定来源不一致", code: "invalid-history-response")
       }
       if sourceChanged {
+        chatPresentationSourceDidChange.send()
         // Buffered frames from a replaced incarnation cannot be admitted by
         // coincident sequence numbers. The next bound refresh observes its new tail.
         pendingLiveEvents = []
@@ -4882,6 +4884,7 @@ public final class ArkAppModel: ObservableObject {
       historyLoadState = .failed(error.localizedDescription)
       composerErrorMessage = error.localizedDescription
       if (error as? ArkAPIError)?.code == "history-stale-source" {
+        chatPresentationSourceDidChange.send()
         liveHistoryCut = nil
         historyReader?.cancel()
         historyReader = nil
@@ -5993,6 +5996,7 @@ public final class ArkAppModel: ObservableObject {
         // Only frames above the Host's own log length stop existing, and they must leave the dedupe
         // set too — the log re-uses those sequence numbers.
         if lastSequence < (events.last?.id ?? -1) {
+          chatPresentationSourceDidChange.send()
           liveHistoryCut = nil
           historyReader?.cancel()
           historyReader = nil

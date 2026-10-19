@@ -158,6 +158,7 @@ private func runNativeProjectionMemoChecks() {
 
 func runArkChatPresentationContractChecks() {
   runTurnNavigationLifecycleChecks()
+  runArkChatReadingFrameContractChecks()
   MainActor.assumeIsolated {
     runNativeProjectionMemoChecks()
   }
@@ -978,9 +979,7 @@ func runArkChatPresentationContractChecks() {
         && chatDisplayEntry?.contains("enum Kind {") == true
         && chatDisplayEntry?.contains("NativeChatDisplayEntry: Identifiable, Equatable") == false
         && chatDisplayEntry?.contains("enum Kind: Equatable") == false
-        && chatView?.contains("let excerpt = String(text.prefix(2_048))") == true
-        && streamingMarkdown?.contains("self.text = ArkStreamingPresentationPolicy.firstFrameText(") == true
-        && streamingMarkdown?.contains("ArkStreamingPresentationPolicy.markdownText(text, streaming: true)") == true,
+        && chatView?.contains("let excerpt = String(text.prefix(2_048))") == true,
       "live chat avoids whole-row array equality and bounds stored text plus navigation work"
     )
     check(

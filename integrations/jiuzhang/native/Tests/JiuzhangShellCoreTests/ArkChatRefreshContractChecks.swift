@@ -11,6 +11,7 @@ import Foundation
 /// legitimate contiguous live events through the real `consume` path.
 @MainActor
 func runArkChatRefreshContractChecks() async {
+  await runArkChatReadingFrameFeedContractChecks()
   let root = FileManager.default.temporaryDirectory
     .appendingPathComponent("ark-chat-refresh-\(UUID().uuidString)")
   let suite = "ark-chat-refresh-\(UUID().uuidString)"
