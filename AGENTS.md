@@ -58,10 +58,11 @@ website/     VitePress projection of selected bilingual docs/ sources
 ## Ark.app native product invariant
 
 - `~/ark/Ark.app` is Ark's only visible product, built with AppKit/SwiftUI. The user-requested Workbench browser renders external HTTP(S) pages in WebKit; it has no bridge to Ark credentials, tools, or local files. Product UI stays native, and loopback is an authenticated API-only sidecar, never a browser-delivered application shell.
-- Preserve Ark's visual, functional, and interaction baseline. Until parity is verified, retain native equivalents for Settings, sidebar, Chat, scroll following, Trajectory, archive management, Workbench, and knowledge views.
+- Preserve Ark's visual, functional, and interaction baseline, including the approved black Ark application icon and ARK wordmark. Do not restore the retired red 九章天幕 icon or change branding without an explicit user request. Until parity is verified, retain native equivalents for Settings, sidebar, Chat, scroll following, Trajectory, archive management, Workbench, and knowledge views.
 - UI acceptance requires an isolated candidate, native interaction tests, and same-state screenshots against the legacy source; builds and unit tests alone do not qualify.
 - Never mutate the active runtime or user profile in place. Reuse the single `~/ark-test/candidate/Ark.app` slot with a separate version and data home. Validate it, retain one temporary code rollback, then atomically replace `~/ark/Ark.app` only after it passes. Remove the candidate and duplicate installed apps after final acceptance.
 - Release and Git publication are separate: prepare a dry-run change and push plan, then wait for explicit user confirmation before pushing or rewriting remote history.
+- Store Ark installers and rollback assets in a separate release repository (`admin1316/ark-releases`, verify or create before publication), never `admin1316/ark`.
 
 Package groups: [packages/README.md](packages/README.md).
 
@@ -103,7 +104,7 @@ Use [dsh-pre-push-checks](.agents/skills/dsh-pre-push-checks/SKILL.md) before pu
 
 Real-API tests and demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and root `.env`. cordis.yml allows `!!js` (never `!js`) under plugin `config` and entry `disabled`; other metadata stays literal, so conditional composition also uses overlays ([primer](docs/cordis-primer.md#loader-configuration)). Never commit credentials. CI e2e skips without a key; [testing.md](docs/testing.md) owns key policy.
 
-Ark GitHub publication must exclude passwords, API keys, access or refresh tokens, private keys, signing and notarization credentials, `.env` files, and personal profiles, sessions, attachments, and runtime data. Inspect the outgoing source diff, application bundle, release archives, logs, screenshots, and other attachments before publication; block publication on a suspected secret until it is resolved. Keep user credentials local, prefer macOS Keychain, and inject release credentials only through the signing or CI secret mechanism; never bake them into a distributed app. Public test fixtures may contain clearly synthetic credentials only.
+Exclude passwords, API keys, tokens, private keys, signing/notarization credentials, `.env`, and personal profiles, sessions, attachments and runtime data from Ark GitHub publications. Review outgoing diffs, bundles, archives, logs, screenshots and attachments; block suspected leaks. Keep user credentials local, preferably in macOS Keychain; inject release credentials through signing or CI secrets, never app bytes. Clearly synthetic credentials are allowed only in public test fixtures.
 
 ## Conventions
 
