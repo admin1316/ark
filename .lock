@@ -1,1 +1,5 @@
-1872
+# REMOVED: temporary lock file
+
+This file was a transient build/test artifact previously checked into the repository root. It has been replaced with this marker in the cleanup/remove-lock-and-doc-duplicates branch so reviewers can see the change and optionally remove it from history if desired.
+
+To restore, see the branch cleanup/remove-lock-and-doc-duplicates or revert the commit.

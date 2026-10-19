@@ -79,3 +79,6 @@ CLAUDE.local.md*
 # .agents source dirs that are merely NAMED lib/ stay tracked.
 packages/*/*/lib/
 apps/*/lib/
+
+# Ignore transient root lock file
+.lock
