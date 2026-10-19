@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-11-knowledge-search-index-cache.md
-2026-10-11-knowledge-search-index-cache.md: f9d850422b41ed5e523db743e1c2b4070eee9a01
-2026-10-11-knowledge-search-index-cache.zh.md: a9ad9310a154fced4884440c4351d945f4f95308
+2026-10-11-knowledge-search-index-cache.md: 21f8a25b6821e743609ffd7d6884c2d7b7af46e9
+2026-10-11-knowledge-search-index-cache.zh.md: 8f45e9fd65686ae15567f02d5ba644544854ebe9

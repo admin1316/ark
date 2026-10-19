@@ -3,6 +3,9 @@ node_modules/
 .build/
 .native-build/
 *.log
+
+# Benchmark run receipts are folded into their aggregate before retention.
+/scripts/rust-migration/*-run[0-9].json
 .DS_Store
 /tsconfig.host.tsbuildinfo
 /*.tsbuildinfo

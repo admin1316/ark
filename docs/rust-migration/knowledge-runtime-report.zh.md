@@ -2,9 +2,9 @@
 
 [English](knowledge-runtime-report.md) | 中文
 
-**知识观察 — 2026-10-15。** [已安装候选与源码快照](source-truth-report.zh.md)将 3.1.44 的身份与学习验收分别记录。它恢复的 3.1.41 历史仍属于历史证据。[正式／候选全新原生同题记录](../../scripts/rust-migration/candidate344-formal310-native-paired-result-20261015.json)记录候选代码修复及六条原始断言的独立冷回放，同时保留报告准确性不足和重复测试调用。实际 `wiki_files` 与 `wiki_search` 均返回 verifier authority unavailable；一条任务前 runtime `knowledge/injected` 事件不是已认证的成功使用。同一流内授权消费的源码测试不能阻止整份合法旧前缀回退。受保护部署、utility 提升和新对话复用仍未获证明，学习验收为 `UNKNOWN`。
+**知识观察 — 2026-10-15。** [已安装候选与源码快照](source-truth-report.zh.md)将 3.1.44 的身份与学习验收分别记录。它恢复的 3.1.41 历史仍属于历史证据。[正式／候选全新原生同题记录](../../scripts/rust-migration/historical-evidence-index.tsv)记录候选代码修复及六条原始断言的独立冷回放，同时保留报告准确性不足和重复测试调用。实际 `wiki_files` 与 `wiki_search` 均返回 verifier authority unavailable；一条任务前 runtime `knowledge/injected` 事件不是已认证的成功使用。同一流内授权消费的源码测试不能阻止整份合法旧前缀回退。受保护部署、utility 提升和新对话复用仍未获证明，学习验收为 `UNKNOWN`。
 
-**2026-10-12 候选观察（历史）。** 隔离候选 Ark 3.1.35/build `2026101235` 打包的 Knowledge Wiki 模块由 SHA-256 `86a726fa0f0172a9e1e9f415f76e1ceb1e21f9bc31e1468b6fdee58a5de970ab` 标识。Native first-final 任务记录 24,893 个事件；完整会话重放无需修补其私有副本（`repairedPrivateCopy=false`）；详见[first-final 会话重放快照](/Users/hui/ark-test/evidence/candidate335-native-code-first-final-20261012.json)。首次运行结果为 1 项通过／5 项失败，随后记录的复测为 6／0。完整报告因 `validate-throws` 是否执行的陈述相互矛盾而判定 `FAIL`。没有触发 child 或 job 调用。Loader test key 仅供测试；没有证据表明生产 authority 已激活或被真实使用。Rust 决策仍为 `RETAIN_TS`；正式 Ark 3.1.0 未变更，原始 learning 验收仍为 `UNKNOWN`。详见[2026-10-12 候选回执](../../scripts/rust-migration/candidate335-summary-admission-native-result-20261012.json)。
+**2026-10-12 候选观察（历史）。** 隔离候选 Ark 3.1.35/build `2026101235` 打包的 Knowledge Wiki 模块由 SHA-256 `86a726fa0f0172a9e1e9f415f76e1ceb1e21f9bc31e1468b6fdee58a5de970ab` 标识。Native first-final 任务记录 24,893 个事件；完整会话重放无需修补其私有副本（`repairedPrivateCopy=false`）；详见[first-final 会话重放快照](/Users/hui/ark-test/evidence/candidate335-native-code-first-final-20261012.json)。首次运行结果为 1 项通过／5 项失败，随后记录的复测为 6／0。完整报告因 `validate-throws` 是否执行的陈述相互矛盾而判定 `FAIL`。没有触发 child 或 job 调用。Loader test key 仅供测试；没有证据表明生产 authority 已激活或被真实使用。Rust 决策仍为 `RETAIN_TS`；正式 Ark 3.1.0 未变更，原始 learning 验收仍为 `UNKNOWN`。详见[2026-10-12 候选回执](../../scripts/rust-migration/historical-evidence-index.tsv)。
 
 **2026-10-08 源码观察快照（历史）。** 当时源码发现按 checkout 提交 `02bf7ebc7f973b35e298bcd4121199f0ab81683c` 刷新。运行时观察区分隔离候选 Ark 与未修改的正式包；更早的 `b8adf5a7ec` 是历史基线。
 
@@ -57,7 +57,7 @@
 当前工作树在 `KnowledgeWikiService` 中提供可选且默认关闭的 Rust search 候选。Shadow 模式只观察：它将有界、不可变的页面／query DTO 发送到隔离子进程，校验输入和结果 digest 以及 canonical BM25 是否一致，并保留 TypeScript 结果。候选失败、取消、超时或结果分歧时会回退到 TypeScript。Rust 尚未覆盖完整的 hybrid BM25＋embedding 契约，因此 Enforce 模式会被明确拒绝。该路径可在候选 profile 中测试，但活动 Ark profile 仍只使用 TypeScript；缺少生产边界回执时，验收审计仍为 `UNKNOWN`。
 
 
-Rust 内核会在一次请求的 query batch 中复用预建 BM25 index。维护的三轮基准每轮有 30 个样本；维护的每次回放中 TypeScript 与 Rust 结果 digest 均一致，独立差分回放也完全相同。对 Ark `modelSearch` 的基于文件、单 query 路径，新建 Rust 子进程 IPC p50 为 16.953–17.466 ms，current TypeScript 为 10.653–10.865 ms，每个样本重建索引的优化 TypeScript 为 9.097–9.259 ms。因此 Rust 在此生产形态路径上比 current TypeScript 慢约 59–62%，比优化 TypeScript 慢约 86–90%；生产决策仍为 `RETAIN_TS`，Rust enforcement 继续关闭。另一个内存五 query batch 中，Rust 为 7.253–7.285 ms，current TypeScript 为 12.113–12.197 ms；但重建索引的优化 TypeScript 为 2.983–3.016 ms，热索引 TypeScript 为 0.508–0.513 ms，因此该 batch 不代表 Ark 的单 query 调用形态。以上合成结果不能证明生产语料或长时间运行性能。跨平台运行、常驻 worker 生命周期、子进程 CPU/RSS、取消和崩溃恢复都未测量。详见[可重复性回执](../../scripts/rust-migration/knowledge-search-benchmark-repeatability-20261010.json)、[差分回放回执](../../scripts/rust-migration/knowledge-search-differential-replay-20261010.json)和[Rust 候选矩阵](rust-candidate-matrix.zh.md#current-benchmark-snapshot--2026-10-10)。
+Rust 内核会在一次请求的 query batch 中复用预建 BM25 index。维护的三轮基准每轮有 30 个样本；维护的每次回放中 TypeScript 与 Rust 结果 digest 均一致，独立差分回放也完全相同。对 Ark `modelSearch` 的基于文件、单 query 路径，新建 Rust 子进程 IPC p50 为 16.953–17.466 ms，current TypeScript 为 10.653–10.865 ms，每个样本重建索引的优化 TypeScript 为 9.097–9.259 ms。因此 Rust 在此生产形态路径上比 current TypeScript 慢约 59–62%，比优化 TypeScript 慢约 86–90%；生产决策仍为 `RETAIN_TS`，Rust enforcement 继续关闭。另一个内存五 query batch 中，Rust 为 7.253–7.285 ms，current TypeScript 为 12.113–12.197 ms；但重建索引的优化 TypeScript 为 2.983–3.016 ms，热索引 TypeScript 为 0.508–0.513 ms，因此该 batch 不代表 Ark 的单 query 调用形态。以上合成结果不能证明生产语料或长时间运行性能。跨平台运行、常驻 worker 生命周期、子进程 CPU/RSS、取消和崩溃恢复都未测量。详见[可重复性回执](../../scripts/rust-migration/historical-evidence-index.tsv)、[差分回放回执](../../scripts/rust-migration/historical-evidence-index.tsv)和[Rust 候选矩阵](rust-candidate-matrix.zh.md#current-benchmark-snapshot--2026-10-10)。
 
 工作树还包含由 launcher 管理、返回签名子进程结果和 promotion seal 的外部 verifier adapter。它通过受管理的 `ctx.subprocess` owner 运行、限制输出，并在返回前等待整个进程树退出。profile 只暴露由 launcher 持有的 `knowledgeVerifierConfig` 配置入口，当前值为空；因此当前产品明确无法执行候选验证。隔离 fixture 验证配置绑定和进程清理，但不声称通过正式验收。
 
@@ -65,7 +65,7 @@ Rust 内核会在一次请求的 query batch 中复用预建 BM25 index。维护
 
 Ark 3.1.13 候选配置为 `gpt-6-luna`、推理强度 `max`。只读设置快照声明了 `max`，并将 `openai` provider 路由到自定义 OpenAI 兼容主机。较早的本地 `UNSUPPORTED_REASONING_EFFORT` 会话早于该设置快照；之后一项已到达 provider 的请求使用 `gpt-6-luna/max`，返回 HTTP 404 `model_not_found`。OpenAI 的[官方 API 模型页面](https://developers.openai.com/api/docs/models/gpt-6-luna)列明该模型支持 `max`，因此这次失败来自已配置的自定义 endpoint／账号路由；但已保存凭据是否能用于 OpenAI 官方 endpoint 仍未知。两次请求都没有产生助手文本，也都不计入语义、完整答复或学习验收。当时切换 endpoint 会把已保存凭据发送给另一台主机，因此仅隔离候选的切换操作当时等待用户明确选择；当时没有修改候选或正式 profile。
 
-[候选持久会话审计](../../scripts/rust-migration/candidate-session-audit-20261010.json)确认，原发票任务 prompt 曾在目标 Workspace 的两个会话中提交，但都没有产生助手文本：一个 provider 请求以 `model_not_found` 结束，另一个在发出 provider 请求前因 `max` 推理强度不受支持而被拒绝。3.1.13 候选的项目级 Wiki journal 含有五条 `knowledge/injected` 记录，但只保存项目／可见性范围、路径和内容 hash；它没有 Session ID 或渲染后的工具值。两个失败的 Session 日志都没有 session 级 Wiki 检索或注入事件，所以这些 journal 行不能证明 session recall 或回放。
+[候选持久会话审计](../../scripts/rust-migration/historical-evidence-index.tsv)确认，原发票任务 prompt 曾在目标 Workspace 的两个会话中提交，但都没有产生助手文本：一个 provider 请求以 `model_not_found` 结束，另一个在发出 provider 请求前因 `max` 推理强度不受支持而被拒绝。3.1.13 候选的项目级 Wiki journal 含有五条 `knowledge/injected` 记录，但只保存项目／可见性范围、路径和内容 hash；它没有 Session ID 或渲染后的工具值。两个失败的 Session 日志都没有 session 级 Wiki 检索或注入事件，所以这些 journal 行不能证明 session recall 或回放。
 
 当前源码会在调用方 Session 中记录 `knowledge/retrieved` 和 `knowledge/injected`，包括 Session ID 和精确渲染的工具结果。定向工具套件覆盖搜索、文件列表、页面读取、图谱和 review 结果；它通过默认 Zstandard JSONL backend 写入检索／注入事件，释放 writer，再用全新的 persistence context 冷加载，通过 `Session.fromRestore` 恢复，并逐项比较事件、范围、来源记录和渲染后的工具值。全部 19 项工具测试通过；[机器可读回放回执](../../scripts/rust-migration/knowledge-session-event-zstd-all-tools-replay-20261010.json)把结果绑定到测试源码文件。这证明五类 Wiki 工具结果可在本地持久回放，但不证明跨会话复用、效用提升或候选实时行为。3.1.15 和 3.1.16 候选打包了相同 runtime 源码快照；3.1.16 安装态 E2E 在两次进程运行中通过 121 项检查、失败 0 项。它在目标发票 Workspace 中发起的全新只读 GPT-6 Luna/max 任务，在任何助手答复或工具调用前返回 `API credentials rejected · AUTH`。这些源码测试和安装结果没有证明实时知识行为。3.1.16 的机器证据位于 `/Users/hui/ark-test/evidence/current-source-candidate-3.1.16-20261010.json`。
 
@@ -73,7 +73,7 @@ Ark 3.1.13 候选配置为 `gpt-6-luna`、推理强度 `max`。只读设置快�
 
 隔离的 3.1.22 候选在两次进程运行中通过 121 项安装态 E2E 检查。三次全新只读发票对话都生成完整的五键 JSON，并与独立精确算术 oracle 相符（approved 为 6，pending 为 1，拒绝 `I007`／`I008`，总额为 26,598 美分）；最终答复面板的结构与算术通过 3/3。但其中两轮在任务运行中出现旁白，所以严格的“整轮只输出 JSON”显示要求仍有 2/3 失败。该候选发票任务的中位耗时为 15.135 秒；3.1.21 为 14.4 秒（每个候选仅三个样本），样本太少，不能宣称速度变化稳定。这些任务没有测试 Knowledge 修正或跨对话复用，活动 profile 的 verifier authority 仍不可用。
 
-另一项合成只读范围探测选中 Workspace B，并确认 `pwd` 位于该目录；随后仍能通过绝对路径读取 Workspace A 中的 canary，没有观察到写入。这符合当前 `fs-sandbox` 契约：所有模式都允许读取，只读模式只拒绝变更。因此，所选 Workspace 并非文件系统读取边界。单次未签名探测不能证明 verifier 管理的跨会话 Knowledge 泄漏，但也不能支持读取隔离声明。参见[3.1.22 实时发票回执](../../scripts/rust-migration/candidate322-live-invoice-20261010.json)和[范围探测回执](../../scripts/rust-migration/candidate322-cross-workspace-isolation-20261010.json)。
+另一项合成只读范围探测选中 Workspace B，并确认 `pwd` 位于该目录；随后仍能通过绝对路径读取 Workspace A 中的 canary，没有观察到写入。这符合当前 `fs-sandbox` 契约：所有模式都允许读取，只读模式只拒绝变更。因此，所选 Workspace 并非文件系统读取边界。单次未签名探测不能证明 verifier 管理的跨会话 Knowledge 泄漏，但也不能支持读取隔离声明。参见[3.1.22 实时发票回执](../../scripts/rust-migration/historical-evidence-index.tsv)和[范围探测回执](../../scripts/rust-migration/historical-evidence-index.tsv)。
 
 ### 修正修复源码变更 — 2026-10-10
 
@@ -89,7 +89,7 @@ Ark 3.1.19 使用 `deepseek-official/deepseek-v4-flash/max` 完成了发票任�
 
 ### Ark 3.1.20 的实时 Knowledge 与 Workspace 结果 — 2026-10-10
 
-3.1.20 的只读发票任务使用了所选 Workspace，持久化 Session 的 CWD 和 Workspace registry 条目相符。它读取两份 fixture CSV，返回的最终 JSON 对象与独立精确有理数计算一致；有一项行内计算最初差 2 美分，并在同一轮中修正。Wiki search 工具报告 `knowledge verifier authority is unavailable`，所以发票答复正确并不证明检索到了已验证知识。同一候选的第二个全新对话再次绑定到所选 Workspace，并返回相同精确有理数结果和合法五键 JSON。该轮读取了两份 CSV 以及项目的 `purpose.md` 和 `schema.md`；持久化记录中没有写入／编辑调用，也没有最终答复以外的助手纯文本消息。UI 上独立的进程卡片使整轮 JSON-only 验收仍无法判定。两次 Wiki 搜索都因没有配置 verifier authority 而失败。这两份匹配的最终答复不能证明持久化修正迁移、效用提升、重复错误减少或文件系统读取隔离。15.266 秒和 19.044 秒只是两个任务样本，不能证明提速。参见[首次实时审计回执](/Users/hui/ark-test/evidence/candidate320-deepseek-v4-flash-output-audit-20261010.json)和[重复审计回执](../../scripts/rust-migration/candidate320-repeat-live-audit-20261010.json)。
+3.1.20 的只读发票任务使用了所选 Workspace，持久化 Session 的 CWD 和 Workspace registry 条目相符。它读取两份 fixture CSV，返回的最终 JSON 对象与独立精确有理数计算一致；有一项行内计算最初差 2 美分，并在同一轮中修正。Wiki search 工具报告 `knowledge verifier authority is unavailable`，所以发票答复正确并不证明检索到了已验证知识。同一候选的第二个全新对话再次绑定到所选 Workspace，并返回相同精确有理数结果和合法五键 JSON。该轮读取了两份 CSV 以及项目的 `purpose.md` 和 `schema.md`；持久化记录中没有写入／编辑调用，也没有最终答复以外的助手纯文本消息。UI 上独立的进程卡片使整轮 JSON-only 验收仍无法判定。两次 Wiki 搜索都因没有配置 verifier authority 而失败。这两份匹配的最终答复不能证明持久化修正迁移、效用提升、重复错误减少或文件系统读取隔离。15.266 秒和 19.044 秒只是两个任务样本，不能证明提速。参见[首次实时审计回执](/Users/hui/ark-test/evidence/candidate320-deepseek-v4-flash-output-audit-20261010.json)和[重复审计回执](../../scripts/rust-migration/historical-evidence-index.tsv)。
 
 ### 效用结果回放门控 — 2026-10-10
 
@@ -127,7 +127,7 @@ Service-surface 回归重现了一个缺口：可信 verifier 不可用时，通
 
 ### 每个 Wiki 根目录复用搜索索引 — 2026-10-11
 
-当前 TypeScript service 通过 `WikiSnapshotStore`，为每个 Wiki 根目录只准备一次 BM25 索引；写入和外部文件 watcher 事件会使该根目录的派生 snapshot 失效，排序后仍会对每个请求执行 verifier／ACL 检查。在一份 240 页合成 Wiki 上，三个独立运行各测量 30 个五 query 批次；热批次 p50／p95／p99 从索引复用前的 48.988／53.216／54.600 ms 降至 0.559／0.696／1.528 ms，降幅为 98.86%／98.69%／97.20%。父进程 CPU 降低 98.95%；冷索引构建中位数为 9.496 ms，首个五 query 批次中位数为 11.758 ms。结果一致性和显式写入失效检查均通过 3/3，每个热批次只构建一次索引。这是源码基准，不代表 Ark 实时或生产 Wiki 延迟，也不建立总体稳定性百分比。参见[当前源码绑定回执](../../scripts/rust-migration/knowledge-search-index-cache-current-20261011.json)，其中记录 benchmark、search 和 snapshot store 的 hash。
+当前 TypeScript service 通过 `WikiSnapshotStore`，为每个 Wiki 根目录只准备一次 BM25 索引；写入和外部文件 watcher 事件会使该根目录的派生 snapshot 失效，排序后仍会对每个请求执行 verifier／ACL 检查。在一份 240 页合成 Wiki 上，三个独立运行各测量 30 个五 query 批次；热批次 p50／p95／p99 从索引复用前的 48.988／53.216／54.600 ms 降至 0.559／0.696／1.528 ms，降幅为 98.86%／98.69%／97.20%。父进程 CPU 降低 98.95%；冷索引构建中位数为 9.496 ms，首个五 query 批次中位数为 11.758 ms。结果一致性和显式写入失效检查均通过 3/3，每个热批次只构建一次索引。这是源码基准，不代表 Ark 实时或生产 Wiki 延迟，也不建立总体稳定性百分比。参见[当前源码绑定回执](../../scripts/rust-migration/historical-evidence-index.tsv)，其中记录 benchmark、search 和 snapshot store 的 hash。
 
 ### 缓存单 query 对照 — 2026-10-11
 

@@ -32,6 +32,10 @@
 | `conflictEscalationRate` | 送交审查的冲突数／已检测冲突数 | 越高越好 |
 | `replayExplainability` | 输入和来源信息完整的回放数／回放尝试数 | 越高越好 |
 
+## 历史证据留存
+
+当前验收清单以及保留的聚合基准所引用的七份运行回执继续留在仓库。较旧候选和已被聚合记录取代的结果 JSON 已从工作树移除；[历史证据索引](historical-evidence-index.tsv)记录每个移除路径、字节数、行数和 SHA-256。精确字节保存在清理回执记录的本地隔离归档中，因此回滚和取证重放不依赖 GitHub 上的第二份副本。
+
 ## 运行上下文与不可变边界
 
 `run-context.ts` 是自动运行前的只读预检。运行 `pnpm exec tsx scripts/rust-migration/run-context.ts <repo-root>`，可读取 `project-manifest.json`、当前 Git SHA／profile、活动 profile patch、knowledge utility，以及可用的 `progress.jsonl`、`decision-log.md`、benchmark、安全和 drift 证据。它会为每个证据文件计算 hash，并报告缺失项，不会伪造通过结果。证据清单明确区分候选版本：3.1.24 的任务、安装、verifier 进程和停止状态回执仅为历史记录；3.1.25 有实时发票任务观察及安装态回执；3.1.26 有已签名的暂存构建、安装态 E2E 和本地 CI 回执，但其实时 UI 复测仍待完成。清单还包括 TS/Rust 配对搜索基准、版本化实测学习协议及治理回归，以及 GitHub refs、PR CI 和本地源码差异的只读快照。`assertImmutableBoundaries()` 会拒绝对目标、计划、范围、权限、安全门槛、验收标准、数据格式、发布策略或 state version 的更改；自动更新只能作用于单独记录的证据和排序数据。Phase 6 回执把源码 digest 绑定到 `packages/`、`integrations/`、`native/`、`scripts/` 和 `rust/`，包括已跟踪和未被忽略的未跟踪源码文件。
