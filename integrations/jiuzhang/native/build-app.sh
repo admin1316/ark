@@ -23,10 +23,11 @@ function ark_refuse_unsafe_output() {
 
   local canonical="${requested:A}"
   local padded="/${canonical#/}/"
-  local production_app="${HOME}/ark/Ark.app"
+  local production_app="${HOME}/Ark.app"
   production_app="${production_app:A}"
   if [[ "${canonical}" == "/" || "${canonical}" == "/Applications" || "${canonical}" == /Applications/* \
-    || "${canonical}" == "${production_app}" || "${canonical}" == ${production_app}/* ]]; then
+    || "${canonical}" == "${production_app}" || "${canonical}" == ${production_app}/* \
+    || "${production_app}" == ${canonical}/* ]]; then
     print -u2 "refusing Ark candidate output in the production application hierarchy: ${canonical}"
     return 2
   fi
@@ -52,9 +53,10 @@ function ark_refuse_unsafe_candidate() {
     return 2
   }
   local canonical="${requested:A}"
-  local production_app="${HOME}/ark/Ark.app"
+  local production_app="${HOME}/Ark.app"
   production_app="${production_app:A}"
   [[ "${canonical}" != "${production_app}" && "${canonical}" != ${production_app}/* \
+    && "${production_app}" != ${canonical}/* \
     && "${canonical}" != "/Applications/Ark.app" && "${canonical}" != /Applications/* ]] || {
     print -u2 "refusing the production Ark.app as a candidate: ${canonical}"
     return 2

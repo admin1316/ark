@@ -12,6 +12,8 @@ Ark 可能把 Native 客户端与较旧的 Host RPC 集合组装在一起，也�
 
 Native 构建只产候选。输出 owner 拒绝正式、link-shaped、嵌套与既有 App 目标；self-contained 构建跟随 Native API runtime plan，在嵌入前后都要求每条严格 Remote route 同时存在于实现、生成 descriptor、Host lookup 与 package entry。
 
+规范正式应用包位于 `~/Ark.app`，与 `~/ark` 源码检出分离。候选输出和工作区注册会拒绝正式应用包本身、其后代及祖先。源码检出仍可显式作为维护工作区，同时保留已有的构建与候选输出保护。产品不定义旧安装路径别名。
+
 Provider mutation 为每个 Provider 保留一个持久事务 identity。active journal 只包含设置意图与 credential digest，绝不包含凭据材料。macOS Keychain 写入在私有伪终端中运行 `/usr/bin/security`，通过终端输入完成两次确认；值不会进入 argv、捕获输出、文档或向上传播的诊断。
 
 Workbench Git 操作在启动时捕获 clean file-tab 状态。改变 worktree 的操作成功后，只有当前状态仍与该 clean snapshot 完全相同时才重置 tabs；之后产生的编辑、打开的 tab 与选择变化继续由用户拥有，现有保存 CAS 会拒绝外部文件冲突。

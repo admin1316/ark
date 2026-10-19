@@ -12,6 +12,8 @@ Ark could assemble a Native client with an older Host RPC set, build directly ov
 
 Native builds are candidate-only. The output owner rejects production, link-shaped, nested, and existing App targets, while the self-contained build follows the Native API runtime plan and requires every strict Remote route in the implementation, generated descriptor, Host lookup, and package entry before and after embedding.
 
+The canonical production bundle is `~/Ark.app`, separate from the source checkout at `~/ark`. Candidate output and workspace registration reject the production bundle, its descendants, and its ancestors. The source checkout remains eligible as an explicit maintenance workspace while retaining its existing build and candidate-output protections. The product defines no legacy installation alias.
+
 Provider mutation keeps one durable transaction identity per Provider. Its active journal contains settings intent and a credential digest, never credential material. macOS Keychain writes run `/usr/bin/security` in a private pseudoterminal and provide both confirmations through terminal input; the value never enters argv, captured output, a document, or a propagated diagnostic.
 
 Workbench Git operations capture the clean file-tab state at launch. A successful worktree-changing operation resets tabs only when the current state is still exactly that clean snapshot; later edits, opened tabs, and selection changes remain owned by the user and existing save CAS rejects external-file conflicts.

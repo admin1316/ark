@@ -8,7 +8,7 @@ One entry for what counts as source, generated output, and historical evidence; 
 
 - `main` is the current development source entry; the HEAD at the time this page was refreshed is recorded in root README section 9.
 - `release/20260913-clean-baseline` is the historical baseline reference (snapshot `9e83b626…`, hygiene commit `795c5306…`); its commits are not ancestors of `main`.
-- The installed artifact `~/ark/Ark.app` carries its own release identity and provenance; it never inherits "current" from a main push.
+- The installed artifact `~/Ark.app` carries its own release identity and provenance; it never inherits "current" from a main push.
 
 ## Directory taxonomy
 

@@ -34,9 +34,13 @@ export function candidateDataPlan(environment = process.env) {
     throw new Error('Candidate data home must be an existing owner-only ordinary directory')
   }
   const home = canonical(raw)
-  const protectedRoots = [canonical(repositoryRoot), canonical(path.join(homedir(), 'Library/Application Support/Ark'))]
+  const protectedRoots = [
+    canonical(repositoryRoot),
+    canonical(path.join(homedir(), 'Ark.app')),
+    canonical(path.join(homedir(), 'Library/Application Support/Ark')),
+  ]
   if (home === path.parse(home).root || protectedRoots.some(root => overlaps(home, root))) {
-    throw new Error('Candidate data home overlaps source or production data')
+    throw new Error('Candidate data home overlaps source or production paths')
   }
   const production = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', path.join(nativeRoot, 'Resources/Info.plist')], { encoding: 'utf8' }))
   const version = environment.JIUZHANG_CANDIDATE_VERSION
@@ -63,7 +67,7 @@ export function applyCandidateDataPlan(infoPath, plan) {
   const info = fs.lstatSync(infoPath)
   if (!info.isFile() || info.isSymbolicLink()) throw new Error('Candidate Info.plist must be an ordinary file')
   const app = canonical(path.resolve(infoPath, '../..'))
-  if (!app.endsWith('.app') || app === '/Applications/Ark.app' || app.startsWith('/Applications/') || overlaps(app, canonical(path.join(homedir(), 'ark/Ark.app'))) || overlaps(plan.home, app) || overlaps(app, canonical(repositoryRoot))) {
+  if (!app.endsWith('.app') || app === '/Applications/Ark.app' || app.startsWith('/Applications/') || overlaps(app, canonical(path.join(homedir(), 'Ark.app'))) || overlaps(plan.home, app) || overlaps(app, canonical(repositoryRoot))) {
     throw new Error('Candidate bundle overlaps a protected or data path')
   }
   for (const [operation, key, type, value] of [

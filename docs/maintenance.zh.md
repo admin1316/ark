@@ -8,7 +8,7 @@
 
 - `main` 是当前开发源码入口；本页刷新时的 HEAD 记录在根 README 第 9 节。
 - `release/20260913-clean-baseline` 是历史基线参考（快照 `9e83b626…`、卫生提交 `795c5306…`）；其提交不在 `main` 祖先中。
-- 已安装正式件 `~/ark/Ark.app` 携带自身发布身份与 provenance；不因 main 前进而继承"当前"身份。
+- 已安装正式件 `~/Ark.app` 携带自身发布身份与 provenance；不因 main 前进而继承"当前"身份。
 
 ## 目录分类
 

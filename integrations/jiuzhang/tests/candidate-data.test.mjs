@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { homedir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -72,6 +73,42 @@ test('empty, invalid, shared, source and symlink homes fail closed', () => {
   assert.throws(() => candidateDataPlan({ ...environment, JIUZHANG_CANDIDATE_DATA_HOME: shared }))
   const link = path.join(root, 'home-link'); fs.symlinkSync(home, link)
   assert.throws(() => candidateDataPlan({ ...environment, JIUZHANG_CANDIDATE_DATA_HOME: link }))
+})
+test('candidate data and bundle metadata reject the production hierarchy before writing', (context) => {
+  const productionApp = path.join(homedir(), 'Ark.app')
+  const realpath = fs.realpathSync
+  // Model physical ownership without creating or modifying the installed application.
+  for (const physicalHome of [productionApp, path.join(productionApp, 'Contents'), homedir(), repository]) {
+    const resolution = context.mock.method(fs, 'realpathSync', (value, ...options) => (
+      value === home ? physicalHome : realpath(value, ...options)
+    ))
+    try {
+      assert.throws(() => candidateDataPlan(environment), /overlaps source or production/u)
+    } finally {
+      resolution.mock.restore()
+    }
+  }
+  const app = path.join(root, 'protected-metadata', 'Ark.app')
+  const info = path.join(app, 'Contents', 'Info.plist')
+  fs.mkdirSync(path.dirname(info), { recursive: true })
+  fs.writeFileSync(info, infoBytes)
+  const plan = candidateDataPlan(environment)
+  for (const physicalApp of [
+    productionApp,
+    path.join(productionApp, 'Contents', 'Nested.app'),
+    homedir(),
+    path.join(repository, 'Nested.app'),
+  ]) {
+    const resolution = context.mock.method(fs, 'realpathSync', (value, ...options) => (
+      value === app ? physicalApp : realpath(value, ...options)
+    ))
+    try {
+      assert.throws(() => applyCandidateDataPlan(info, plan), /overlaps a protected or data path/u)
+      assert.equal(hash(fs.readFileSync(info)), hash(infoBytes), 'rejected candidate metadata changed Info.plist')
+    } finally {
+      resolution.mock.restore()
+    }
+  }
 })
 test('build entry uses the candidate metadata preflight without building an app', () => {
   const result = execute('build-data-preflight', '/bin/zsh', [path.join(native, 'build-app.sh'), '--check-candidate-data'], { env: { ...process.env, ...environment } })

@@ -214,7 +214,7 @@ if let data = try? Data(contentsOf: infoPlistURL),
   check(info["CFBundleIdentifier"] as? String == "cn.jiuzhangtianmu.industrybrain", "bundle identifier preserves installed product identity")
   check(info["CFBundleName"] as? String == "Ark", "bundle uses the Ark product name")
   check(info["CFBundleShortVersionString"] as? String == "3.1.1", "bundle marketing version is 3.1.1")
-  check(info["CFBundleVersion"] as? String == "2026102001", "bundle build is 2026102001")
+  check(info["CFBundleVersion"] as? String == "2026102003", "bundle build is 2026102003")
   check(info["CFBundleIconFile"] as? String == "AppIcon", "bundle declares the generated Ark icon")
   check(info["JiuzhangRuntimeRoot"] as? String == "__RUNTIME_ROOT__", "bundle declares the selected runtime root")
   check(info["JiuzhangLauncherPath"] as? String == "__LAUNCHER_PATH__", "bundle declares the selected launcher")
@@ -711,7 +711,7 @@ check(
   "blank chats never open the Ark source checkout"
 )
 let protectedSource = FileManager.default.homeDirectoryForCurrentUser
-  .appendingPathComponent("ark/repo", isDirectory: true).path
+  .appendingPathComponent("ark", isDirectory: true).path
 check(
   JiuzhangShellContract.protectedWorkspaceReason(path: protectedSource) == nil,
   "Ark source remains available as an explicit maintenance Workspace"
@@ -727,9 +727,9 @@ check(
   "Ark app/runtime cannot be registered as a Workspace"
 )
 let canonicalApp = FileManager.default.homeDirectoryForCurrentUser
-  .appendingPathComponent("ark/Ark.app", isDirectory: true)
+  .appendingPathComponent("Ark.app", isDirectory: true)
 for path in [canonicalApp.path, canonicalApp.appendingPathComponent("Contents").path,
-             canonicalApp.deletingLastPathComponent().path] {
+             canonicalApp.deletingLastPathComponent().path, "/"] {
   check(
     JiuzhangShellContract.protectedWorkspaceReason(path: path) != nil,
     "canonical Ark bundle, descendants and containing directory are protected"

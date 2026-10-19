@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-29-ark-native-risk-boundaries.md
-2026-08-29-ark-native-risk-boundaries.md: 46ecca6133814c64b12ae21998c0c9e29acecd54
-2026-08-29-ark-native-risk-boundaries.zh.md: 84e13024613873bea7394b1d83150d735be44ff0
+2026-08-29-ark-native-risk-boundaries.md: 0459b3dcfbe72bae814105259f7834ee25221ef3
+2026-08-29-ark-native-risk-boundaries.zh.md: 87a9dff471f9a9d854b9c4522d5436e8021e6252

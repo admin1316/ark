@@ -57,10 +57,10 @@ website/     VitePress projection of selected bilingual docs/ sources
 
 ## Ark.app native product invariant
 
-- `~/ark/Ark.app` is Ark's only visible product, built with AppKit/SwiftUI. The user-requested Workbench browser renders external HTTP(S) pages in WebKit; it has no bridge to Ark credentials, tools, or local files. Product UI stays native, and loopback is an authenticated API-only sidecar, never a browser-delivered application shell.
+- `~/Ark.app` is Ark's only visible product, built with AppKit/SwiftUI. Source stays in `~/ark/`. The user-requested Workbench browser renders external HTTP(S) pages in WebKit; it has no bridge to Ark credentials, tools, or local files. Product UI stays native, and loopback is an authenticated API-only sidecar, never a browser-delivered application shell.
 - Preserve Ark's visual, functional, and interaction baseline, including the approved black Ark application icon and ARK wordmark. Do not restore the retired red 九章天幕 icon or change branding without an explicit user request. Until parity is verified, retain native equivalents for Settings, sidebar, Chat, scroll following, Trajectory, archive management, Workbench, and knowledge views.
 - UI acceptance requires an isolated candidate, native interaction tests, and same-state screenshots against the legacy source; builds and unit tests alone do not qualify.
-- Never mutate the active runtime or user profile in place. Reuse the single `~/ark-test/candidate/Ark.app` slot with a separate version and data home. Validate it, retain one temporary code rollback, then atomically replace `~/ark/Ark.app` only after it passes. Remove the candidate and duplicate installed apps after final acceptance.
+- Never mutate the active runtime or user profile in place. Reuse the single `~/ark-test/candidate/Ark.app` slot with a separate version and data home. Validate it, retain one temporary code rollback, then atomically replace `~/Ark.app` only after it passes and the user confirms. Remove the candidate and duplicate installed apps after final acceptance.
 - Release and Git publication are separate: prepare a dry-run change and push plan, then wait for explicit user confirmation before pushing or rewriting remote history.
 - Store Ark installers and rollback assets in a separate release repository (`admin1316/ark-releases`, verify or create before publication), never `admin1316/ark`.
 

@@ -12,7 +12,7 @@ while [[ "${#}" -gt 0 ]]; do
     --desktop) print -u2 "use the single fixed candidate at ~/ark-test/candidate/Ark.app"; exit 2 ;;
     --no-build) do_build=0 ;;
     --system)
-      print -u2 "direct installation to ${HOME}/ark/Ark.app is disabled"
+      print -u2 "direct installation to ${HOME}/Ark.app is disabled"
       print -u2 "build and validate an isolated candidate, then use the explicitly authorized governed promotion flow"
       exit 2
       ;;
@@ -38,4 +38,4 @@ zsh "${native_root}/build-app.sh" --check-candidate "${built}" >/dev/null
 
 print -r -- "Ark candidate ready: ${built}"
 print -r -- "No installed application was modified."
-print -r -- "Promotion to ${HOME}/ark/Ark.app requires candidate acceptance, a unique rollback, and explicit authorization."
+print -r -- "Promotion to ${HOME}/Ark.app requires candidate acceptance, a unique rollback, and explicit authorization."

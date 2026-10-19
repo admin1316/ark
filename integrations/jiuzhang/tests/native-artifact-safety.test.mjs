@@ -246,8 +246,9 @@ test('native Ark artifact scripts reject production paths and accept a fresh tem
       '/Applications',
       '/Applications/Ark.app',
       '/Applications/Ark.app/Contents',
-      join(homedir(), 'ark/Ark.app'),
-      join(homedir(), 'ark/Ark.app/Contents'),
+      homedir(),
+      join(homedir(), 'Ark.app'),
+      join(homedir(), 'Ark.app/Contents'),
       join(sandbox, 'Ark.app', 'nested-output'),
     ]) {
       await rejectsPolicy(buildScript, ['--check-output', dangerous], /refusing/)
@@ -278,9 +279,19 @@ test('native Ark artifact scripts reject production paths and accept a fresh tem
       'ABCDEFGHIJ',
     ])
     assert.match(signing.stdout, /valid Developer ID Application identity and Team ID/)
-    await rejectsPolicy(installScript, ['--system'], /governed promotion flow/)
+    await assert.rejects(runZsh(installScript, ['--system']), (error) => {
+      assert.equal(error.code, 2)
+      assert.ok(error.stderr.includes('direct installation to ' + join(homedir(), 'Ark.app') + ' is disabled'))
+      assert.match(error.stderr, /governed promotion flow/)
+      return true
+    })
     await rejectsPolicy(installScript, ['--desktop'], /single fixed candidate/)
-    await rejectsPolicy(buildScript, ['--check-candidate', join(homedir(), 'ark/Ark.app')], /production Ark.app/)
+    for (const dangerous of [
+      join(homedir(), 'Ark.app'),
+      join(homedir(), 'Ark.app/Contents/Ark.app'),
+    ]) {
+      await rejectsPolicy(buildScript, ['--check-candidate', dangerous], /production Ark.app/)
+    }
     await rejectsPolicy(updateScript, ['--system'], /governed promotion flow/)
   } finally {
     await rm(sandbox, { recursive: true, force: true })
