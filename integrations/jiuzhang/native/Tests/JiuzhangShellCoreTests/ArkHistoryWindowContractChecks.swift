@@ -16,6 +16,8 @@ final class HistoryWindowFixture: @unchecked Sendable {
   var rawLimit = 2_048
   private var incarnation = "fixture"
   func replaceSource() { lock.lock(); defer { lock.unlock() }; incarnation = "replacement" }
+  private var rejectsFreshHead = false
+  func rejectFreshHeadReads() { lock.lock(); defer { lock.unlock() }; rejectsFreshHead = true }
 
   /// Sequence of one history row, tolerant of the `{"event": ...}` envelope.
   private static func sequence(of row: JSONValue) -> Double {
@@ -59,8 +61,8 @@ final class HistoryWindowFixture: @unchecked Sendable {
     records = (0..<count).map { Self.record($0, kind: kind, canonical: $0) }
   }
 
-  init(chunks: Int, closed: Bool = false, endReason: String = "completed") {
-    expectedText = (0..<chunks).map { "p\($0 % 10)" }.joined()
+  init(chunks: Int, closed: Bool = false, endReason: String = "completed", textPrefix: String = "p") {
+    expectedText = (0..<chunks).map { "\(textPrefix)\($0 % 10)" }.joined()
     var source: [JSONValue] = [
       Self.event(0, "turn/start", ["turn": .number(1)]),
       Self.event(1, "user/message", ["content": .array([.object(["type": .string("text"), "text": .string("question")])])]),
@@ -68,7 +70,7 @@ final class HistoryWindowFixture: @unchecked Sendable {
     ]
     for index in 0..<chunks {
       source.append(Self.event(index + 3, "assistant/chunk", ["turn": .number(1), "step": .number(2), "chunk": .object([
-        "type": .string("text-delta"), "index": .number(0), "text": .string("p\(index % 10)"),
+        "type": .string("text-delta"), "index": .number(0), "text": .string("\(textPrefix)\(index % 10)"),
       ])]))
     }
     let canonical = closed ? source.count : nil
@@ -140,6 +142,9 @@ final class HistoryWindowFixture: @unchecked Sendable {
 
   func response(_ options: JSONValue) throws -> JSONValue {
     lock.lock(); defer { lock.unlock() }
+    if rejectsFreshHead, options["sourceRevision"] == nil, options["maxEvents"] == .number(1) {
+      throw ArkAPIError(message: "replacement during fresh head read", code: "history-stale-source")
+    }
     let all = events + injectedEvents
     let current = all.count - 1
     let revision = options["sourceRevision"]?.stringValue ?? "\(incarnation):\(current)"

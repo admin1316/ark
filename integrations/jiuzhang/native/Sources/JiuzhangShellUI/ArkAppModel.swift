@@ -4808,8 +4808,10 @@ public final class ArkAppModel: ObservableObject {
       guard (fold.events.last?.id ?? -1) == head.cut.throughSequence else {
         throw ArkAPIError(message: "恢复后的实时水位与固定来源不一致", code: "invalid-history-response")
       }
-      if sourceChanged {
+      if sourceChanged || checkpoint == nil {
         chatPresentationSourceDidChange.send()
+      }
+      if sourceChanged {
         // Buffered frames from a replaced incarnation cannot be admitted by
         // coincident sequence numbers. The next bound refresh observes its new tail.
         pendingLiveEvents = []

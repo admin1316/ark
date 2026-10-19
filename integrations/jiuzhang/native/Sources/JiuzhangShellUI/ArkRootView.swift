@@ -13061,6 +13061,7 @@ extension NativeChatTranscriptFeed {
   }
 
   func probeSessionRunning() -> Bool { snapshot.context.sessionRunning }
+  func probeHistoryLoadState() -> ArkHistoryLoadState { snapshot.context.historyLoadState }
 
   /// Drive the production coalescing schedule; no replacement refresh path.
   func probeScheduleRefresh(model: ArkAppModel) { scheduleRefresh(model: model) }
@@ -13142,6 +13143,7 @@ enum ArkChatFeedProbe {
     var heldFrames: [NativeAssistantMarkdownSourceID: String] { feed.probeHeldFrames() }
     func hasCanonicalSource(messageID: Int) -> Bool { feed.probeHasCanonicalSource(messageID: messageID) }
     var sessionRunning: Bool { feed.probeSessionRunning() }
+    var historyLoadState: ArkHistoryLoadState { feed.probeHistoryLoadState() }
 
     /// Backoff the next scheduled refresh will add to its base interval.
     var refreshBackoff: TimeInterval { feed.probeRefreshBackoff() }

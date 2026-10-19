@@ -210,6 +210,70 @@ func runArkChatReadingFrameFeedContractChecks() async {
   feed.returnToLatest()
   check(feed.heldFrames.isEmpty && feed.hasCanonicalSource(messageID: canonicalID),
         "returning to latest releases the frame and requests the complete canonical source")
+  await runArkChatReadingFrameSourceReplacementContractCheck()
+}
+
+@MainActor
+private func runArkChatReadingFrameSourceReplacementContractCheck() async {
+  let root = FileManager.default.temporaryDirectory.appendingPathComponent("ark-reader-source-\(UUID().uuidString)")
+  let suite = "ark-reader-source-\(UUID().uuidString)"
+  guard let defaults = UserDefaults(suiteName: suite) else { return }
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [HistoryWindowURLProtocol.self]
+  let transport = URLSession(configuration: configuration)
+  let endpoint = URL(string: "http://ark-reader-source.invalid")!
+  let model = ArkAppModel(
+    client: ArkAPIClient(baseURL: endpoint, apiToken: "synthetic-contract", session: transport),
+    interactions: ArkInteractionAPI(baseURL: endpoint, apiToken: "synthetic-contract", session: transport),
+    eventPump: ArkEventPump(baseURL: endpoint, apiToken: "synthetic-contract"),
+    fallbackWikiRoot: root, documentStore: ArkDocumentReferenceStore(rootURL: root), defaults: defaults
+  )
+  defer {
+    transport.invalidateAndCancel()
+    defaults.removePersistentDomain(forName: suite)
+    try? FileManager.default.removeItem(at: root)
+  }
+  let original = HistoryWindowFixture(chunks: 2, textPrefix: "old-source-")
+  original.sessionID = "reader-replaced-source"
+  HistoryWindowURLProtocol.fixture = original
+  model.selectSession(original.sessionID, navigateToChat: false)
+  guard await readingFrameEventually({ model.historyLoadState == .loaded }) else {
+    check(false, "replacement fixture loads its original active source")
+    return
+  }
+  await model.refreshNavigation(refreshWiki: false)
+  let feed = ArkChatFeedProbe.Feed(model: model)
+  feed.followBottom(false)
+  let heldOriginal = await readingFrameEventually({ feed.heldFrames.values.first == original.expectedText })
+  check(heldOriginal, "replacement regression begins with a held frame from the original live source")
+  guard heldOriginal else { return }
+
+  await model.refreshHistory()
+  check(feed.heldFrames.values.first == original.expectedText,
+        "ordinary warm recovery does not release the current reading frame")
+  original.rejectFreshHeadReads()
+  await model.refreshHistory()
+  let heldAfterFailure = await readingFrameEventually {
+    if case .failed = feed.historyLoadState {
+      return feed.heldFrames.values.first == original.expectedText
+    }
+    return false
+  }
+  check(heldAfterFailure && model.messages.last?.text == original.expectedText,
+        "a real stale fresh-head failure retains old model data and republishes its paused frame")
+  guard heldAfterFailure else { return }
+
+  let replacement = HistoryWindowFixture(chunks: 2, textPrefix: "new-source-")
+  replacement.sessionID = original.sessionID
+  replacement.replaceSource()
+  HistoryWindowURLProtocol.fixture = replacement
+  await model.refreshHistory()
+  let installedFresh = await readingFrameEventually {
+    model.historyLoadState == .loaded && feed.containsAssistantText(replacement.expectedText)
+      && feed.heldFrames.values.first == replacement.expectedText
+  }
+  check(installedFresh && model.messages.last?.presentationID == 3,
+        "cold recovery after a stale cut invalidates old held text even when the replacement reuses its presentation sequence")
 }
 
 @MainActor
