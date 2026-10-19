@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { createArkRuntimePlan, deriveArkExternalLockGraph } from '../src/runtime-plan.mjs'
+import { createArkRuntimePlan } from '../src/runtime-plan.mjs'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
@@ -18,64 +18,6 @@ const required = [
   '@deepseek-ai/dsh-session-log-deepseek',
   '@deepseek-ai/dsh-web-fetch-http',
 ]
-
-function externalGraphFixture({ sharedPath = false, requiredForeign = false, negativeSelector = false } = {}) {
-  const packages = Object.fromEntries(['image', 'wasm', 'runtime', 'shared'].map(name => [
-    `${name}@1.0.0`, { resolution: { integrity: `sha512-${name}` } },
-  ]))
-  packages['wasm@1.0.0'].cpu = negativeSelector ? ['!arm64'] : ['wasm32']
-  const snapshots = {
-    'image@1.0.0': { optionalDependencies: { wasm: '1.0.0' } },
-    'wasm@1.0.0': { dependencies: { runtime: '1.0.0' }, optional: true },
-    'runtime@1.0.0': { dependencies: { shared: '1.0.0' }, optional: true },
-    'shared@1.0.0': { optional: true },
-  }
-  const roots = [{ from: 'app@1.0.0', name: 'image', reference: '1.0.0', section: 'dependencies' }]
-  if (sharedPath) roots.push({ from: 'app@1.0.0', name: 'runtime', reference: '1.0.0', section: 'dependencies' })
-  if (requiredForeign) roots.push({ from: 'app@1.0.0', name: 'wasm', reference: '1.0.0', section: 'dependencies' })
-  return { lock: { packages, snapshots }, roots }
-}
-
-test('external lock graph retains foreign optional metadata without demanding its pruned descendants', () => {
-  const { lock, roots } = externalGraphFixture()
-  const graph = deriveArkExternalLockGraph(lock, roots, new Set())
-  assert.deepEqual(graph.externalResolutions.map(entry => entry.name), ['image', 'wasm'])
-  const foreign = graph.externalSnapshots.find(entry => entry.name === 'wasm')
-  assert.equal(foreign.integrity, 'sha512-wasm')
-  assert.deepEqual(foreign.dependencies, {})
-  assert.deepEqual(foreign.optionalDependencies, {})
-  assert.deepEqual(graph.edges.map(entry => `${entry.from}->${entry.name}`), ['app@1.0.0->image', 'image@1.0.0->wasm'])
-  assert.deepEqual(lock.snapshots['wasm@1.0.0'].dependencies, { runtime: '1.0.0' })
-  assert.equal(roots.length, 1)
-})
-
-test('external lock graph keeps descendants reached through a supported path', () => {
-  const { lock, roots } = externalGraphFixture({ sharedPath: true })
-  const graph = deriveArkExternalLockGraph(lock, roots, new Set())
-  assert.deepEqual(graph.externalResolutions.map(entry => entry.name), ['image', 'runtime', 'shared', 'wasm'])
-  assert.equal(graph.externalResolutions.find(entry => entry.name === 'runtime').integrity, 'sha512-runtime')
-  assert.deepEqual(graph.externalSnapshots.find(entry => entry.name === 'wasm').dependencies, {})
-  assert.deepEqual(graph.externalSnapshots.find(entry => entry.name === 'runtime').dependencies, { shared: '1.0.0' })
-})
-
-test('external lock graph upgrades an optional visit when the same foreign package is required', () => {
-  const { lock, roots } = externalGraphFixture({ requiredForeign: true })
-  // Reach wasm through the optional branch first, then its required path.
-  roots[1] = { from: 'app@1.0.0', name: 'shared', reference: '1.0.0', section: 'dependencies' }
-  lock.snapshots['shared@1.0.0'] = { dependencies: { wasm: '1.0.0' } }
-  const graph = deriveArkExternalLockGraph(lock, roots, new Set())
-  assert.deepEqual(graph.externalResolutions.map(entry => entry.name), ['image', 'runtime', 'shared', 'wasm'])
-  assert.deepEqual(graph.externalSnapshots.find(entry => entry.name === 'wasm').dependencies, { runtime: '1.0.0' })
-})
-
-test('external lock graph propagates optional reachability and honors negative platform selectors', () => {
-  const { lock, roots } = externalGraphFixture({ negativeSelector: true })
-  lock.snapshots['image@1.0.0'] = { optionalDependencies: { runtime: '1.0.0' } }
-  lock.snapshots['runtime@1.0.0'] = { dependencies: { wasm: '1.0.0' } }
-  const graph = deriveArkExternalLockGraph(lock, roots, new Set())
-  assert.deepEqual(graph.externalResolutions.map(entry => entry.name), ['image', 'runtime', 'wasm'])
-  assert.deepEqual(graph.externalSnapshots.find(entry => entry.name === 'wasm').dependencies, {})
-})
 
 test('current Ark runtime analysis maps its dedicated runner, security packages, and any forbidden reachability', async () => {
   const plan = await createArkRuntimePlan(repositoryRoot, { allowForbiddenAnalysis: true })
@@ -92,6 +34,9 @@ test('current Ark runtime analysis maps its dedicated runner, security packages,
   assert.ok(plan.requiredFiles.some(entry => entry.path === 'patches/@earendil-works+pi-ai@0.85.1.patch'),
     'Responses metadata patch bytes must be included in the sealed runtime plan')
   assert.equal(plan.externalResolutions.length > 150, true)
+  const foreignOptional = plan.rootLockGraph.externalSnapshots.find(entry => entry.name === '@img/sharp-webcontainers-wasm32')
+  assert.ok(foreignOptional?.dependencies['@img/sharp-wasm32'], 'foreign optional dependency edges remain part of the root lock graph')
+  assert.ok(plan.externalResolutions.some(entry => entry.name === '@emnapi/runtime'), 'offline metadata gaps must not redefine the planned closure')
   for (const input of [
     'pnpm-lock.yaml',
     'scripts/build-host-bundles.ts',
@@ -176,7 +121,9 @@ test('runtime pack has one pinned offline lock/install owner and atomically publ
   assert.ok(!source.includes("['run', 'build:lib:host']"))
   assert.ok(!source.includes('nativeRunnerImports.length === 0'))
   assert.ok(source.includes("packedMember(requiredTarball('@deepseek-ai/dsh-native-api-runner'), 'package/lib/index.js', repositoryRoot)"))
-  assert.match(source, /const lockCommand = \['pnpm', 'install', '--lockfile-only', '--offline', '--ignore-scripts'\]/u)
+  assert.match(source, /const lockCommand = \['pnpm', 'install', '--lockfile-only', '--offline', '--ignore-scripts', '--reporter=ndjson'\]/u)
+  assert.ok(source.indexOf('assertArkOfflineLockResolution(capture(lockCommand') < source.indexOf('run(installCommand[0]'))
+  assert.ok(source.indexOf('verifyRuntimeLock(plan, packed, runtimeTemplate') < source.indexOf('run(installCommand[0]'))
   assert.match(source, /const installCommand = \['pnpm', 'install', '--offline', '--frozen-lockfile'\]/u)
   assert.match(source, /actualPackageManagerVersion !== packageManagerVersion/u)
   assert.match(source, /lockfileAfterInstall !== lockfileBeforeInstall/u)

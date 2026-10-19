@@ -695,6 +695,21 @@ async function tarballInventory(path, cwd) {
   return { files, filesSha256: jsonSha256(files) }
 }
 
+/**
+ * Reject optional resolution failures that pnpm reports with a successful exit.
+ * Platform skips are expected; missing offline metadata must never erase edges.
+ * @param {string} output Output from the pinned pnpm NDJSON reporter.
+ * @returns {void} Returns only when every reported resolution succeeded.
+ */
+export function assertArkOfflineLockResolution(output) {
+  for (const line of output.split('\n').filter(line => line.trim() !== '')) {
+    const event = JSON.parse(line)
+    if (event?.name === 'pnpm:skipped-optional-dependency' && event.reason === 'resolution_failure') {
+      throw new Error(`Ark offline lock resolution failed; prepare the exact full metadata cache before packing: ${String(event.details)}`)
+    }
+  }
+}
+
 function expectedInstallCommand(plan, packageManager) {
   return {
     version: 2,
@@ -706,7 +721,7 @@ function expectedInstallCommand(plan, packageManager) {
       rootLockSha256: plan.rootLockSha256,
       externalResolutionCount: plan.externalResolutions.length,
     },
-    lockCommand: ['pnpm', 'install', '--lockfile-only', '--offline', '--ignore-scripts'],
+    lockCommand: ['pnpm', 'install', '--lockfile-only', '--offline', '--ignore-scripts', '--reporter=ndjson'],
     installCommand: ['pnpm', 'install', '--offline', '--frozen-lockfile'],
     network: 'forbidden',
     repeatabilityCheck: ['pnpm', 'install', '--offline', '--frozen-lockfile'],
@@ -765,7 +780,15 @@ async function verifyPackageIndex(plan, packageIndex, packRoot) {
   if (seenNames.size !== planByName.size) throw new Error('Ark package index omits closure-plan packages')
 }
 
-function verifyRuntimeLock(plan, packageIndex, runtimeRoot, lockSource) {
+/**
+ * Verify the derived lock against every planned resolution and snapshot edge.
+ * @param {object} plan Current source closure plan.
+ * @param {object[]} packageIndex Packed first-party package identities.
+ * @param {string} runtimeRoot Runtime directory used to resolve TGZ references.
+ * @param {string} lockSource Derived pnpm lockfile bytes decoded as UTF-8.
+ * @returns {void} Returns only when the complete root-lock graph is retained.
+ */
+export function verifyRuntimeLock(plan, packageIndex, runtimeRoot, lockSource) {
   const lock = parseYaml(lockSource)
   const importer = lock?.importers?.['.']
   const packages = lock?.packages

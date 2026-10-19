@@ -9,9 +9,11 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { runtimeAssetSource } from '../src/runtime-plan.mjs'
 import {
+  assertArkOfflineLockResolution,
   assertArkRuntimeClosure,
   createArkRuntimeManifest,
   packageJavaScriptEntries,
+  verifyRuntimeLock,
 } from '../src/runtime-closure.mjs'
 
 const execFileAsync = promisify(execFile)
@@ -199,7 +201,7 @@ async function stageBoundRuntime() {
       rootLockSha256: plan.rootLockSha256,
       externalResolutionCount: 0,
     },
-    lockCommand: ['pnpm', 'install', '--lockfile-only', '--offline', '--ignore-scripts'],
+    lockCommand: ['pnpm', 'install', '--lockfile-only', '--offline', '--ignore-scripts', '--reporter=ndjson'],
     installCommand: ['pnpm', 'install', '--offline', '--frozen-lockfile'],
     network: 'forbidden',
     repeatabilityCheck: ['pnpm', 'install', '--offline', '--frozen-lockfile'],
@@ -286,6 +288,43 @@ async function stageBoundRuntime() {
   await copyFile(receiptPath, join(provenance, 'pack-receipt.json'))
   return { packRoot, runtime, receiptPath, plan }
 }
+
+test('offline lock derivation rejects optional resolution failures despite pnpm exit success', () => {
+  const output = JSON.stringify({
+    name: 'pnpm:skipped-optional-dependency',
+    reason: 'resolution_failure',
+    details: 'Failed to resolve @img/sharp-wasm32@0.35.3 in package mirror metadata-full',
+  })
+  assert.throws(() => assertArkOfflineLockResolution(output), /prepare the exact full metadata cache.*sharp-wasm32/u)
+})
+
+test('offline lock derivation permits platform skips and rejects malformed reporter output', () => {
+  assert.doesNotThrow(() => assertArkOfflineLockResolution([
+    JSON.stringify({ name: 'pnpm:stage', stage: 'resolution_started' }),
+    JSON.stringify({ name: 'pnpm:skipped-optional-dependency', reason: 'unsupported_platform' }),
+    '',
+  ].join('\n')))
+  assert.throws(() => assertArkOfflineLockResolution('not ndjson'), SyntaxError)
+})
+
+test('derived lock verification runs before installed package content exists', async () => {
+  const fixture = await stageBoundRuntime()
+  try {
+    const index = JSON.parse(await readFile(join(fixture.packRoot, 'package-index.json'), 'utf8'))
+    const lockSource = await readFile(join(fixture.runtime, 'pnpm-lock.yaml'), 'utf8')
+    await rm(join(fixture.runtime, 'node_modules'), { recursive: true })
+    assert.doesNotThrow(() => verifyRuntimeLock(fixture.plan, index, fixture.runtime, lockSource))
+    fixture.plan.externalResolutions.push({
+      name: '@img/sharp-wasm32', version: '0.35.3', integrity: 'sha512-missing-optional',
+    })
+    assert.throws(
+      () => verifyRuntimeLock(fixture.plan, index, fixture.runtime, lockSource),
+      /external resolution differs from root lock: @img\/sharp-wasm32@0\.35\.3/u,
+    )
+  } finally {
+    await rm(fixture.packRoot, { recursive: true, force: true })
+  }
+})
 
 test('Ark runtime closure accepts the dedicated entry and scans pnpm package identities', async () => {
   const root = await stageRuntime()

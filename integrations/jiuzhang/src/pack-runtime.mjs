@@ -7,12 +7,14 @@ import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { createArkRuntimePlan, runtimeAssetSource } from './runtime-plan.mjs'
 import {
+  assertArkOfflineLockResolution,
   assertJavaScriptModuleSyntax,
   createArkPackReceipt,
   createArkRuntimeManifest,
   packageJavaScriptEntries,
   stableJson,
   verifyArkPackReceipt,
+  verifyRuntimeLock,
 } from './runtime-closure.mjs'
 
 function run(command, args, cwd) {
@@ -264,7 +266,7 @@ async function pack(repositoryRoot, output) {
         `Ark runtime pack requires ${repositoryManifest.packageManager}, found pnpm@${actualPackageManagerVersion}`,
       )
     }
-    const lockCommand = ['pnpm', 'install', '--lockfile-only', '--offline', '--ignore-scripts']
+    const lockCommand = ['pnpm', 'install', '--lockfile-only', '--offline', '--ignore-scripts', '--reporter=ndjson']
     const installCommand = ['pnpm', 'install', '--offline', '--frozen-lockfile']
     const installOwner = {
       version: 2,
@@ -287,8 +289,9 @@ async function pack(repositoryRoot, output) {
     await writeJson(planPath, plan)
     await writeJson(indexPath, packed)
     await writeJson(commandPath, installOwner)
-    run(lockCommand[0], lockCommand.slice(1), runtimeTemplate)
+    assertArkOfflineLockResolution(capture(lockCommand[0], lockCommand.slice(1), runtimeTemplate))
     const lockfilePath = join(runtimeTemplate, 'pnpm-lock.yaml')
+    verifyRuntimeLock(plan, packed, runtimeTemplate, await readFile(lockfilePath, 'utf8'))
     const lockfileBeforeInstall = createHash('sha256').update(await readFile(lockfilePath)).digest('hex')
     run(installCommand[0], installCommand.slice(1), runtimeTemplate)
     const lockfileAfterInstall = createHash('sha256').update(await readFile(lockfilePath)).digest('hex')
