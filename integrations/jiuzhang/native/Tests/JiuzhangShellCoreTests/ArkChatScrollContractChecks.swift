@@ -31,6 +31,62 @@ private func approximatelyEqual(_ left: Double, _ right: Double, tolerance: Doub
 func runArkChatScrollContractChecks() {
   let renderIDs = (0..<6_001).map { "row-\($0)" }
   var readingWindow = ArkChatRenderWindow()
+  let tailWindow = readingWindow.range(
+    in: renderIDs,
+    limit: readingWindow.visibleLimit(entryCount: renderIDs.count, running: true)
+  )
+  readingWindow.revealEarlier(
+    in: renderIDs,
+    entryCount: renderIDs.count,
+    running: true
+  )
+  let firstReadingPage = readingWindow.range(
+    in: renderIDs,
+    limit: readingWindow.visibleLimit(entryCount: renderIDs.count, running: true)
+  )
+  check(
+    firstReadingPage.count == 96
+      && firstReadingPage.upperBound == renderIDs.count
+      && tailWindow.allSatisfy(firstReadingPage.contains),
+    "the first automatic reading page preserves the current tail while mounting older rows"
+  )
+  readingWindow.revealEarlier(
+    in: renderIDs,
+    entryCount: renderIDs.count,
+    running: true
+  )
+  let secondReadingPage = readingWindow.range(
+    in: renderIDs,
+    limit: readingWindow.visibleLimit(entryCount: renderIDs.count, running: true)
+  )
+  check(
+    secondReadingPage.lowerBound < firstReadingPage.lowerBound
+      && secondReadingPage.contains(firstReadingPage.lowerBound)
+      && secondReadingPage.count == 96,
+    "automatic reading pages overlap and keep the previous first row materialized"
+  )
+  var smallReadingWindow = ArkChatRenderWindow()
+  let shortTranscript = Array(renderIDs.prefix(100))
+  smallReadingWindow.revealEarlier(in: shortTranscript, entryCount: shortTranscript.count, running: true)
+  check(
+    smallReadingWindow.visibleLimit(entryCount: shortTranscript.count, running: true) == 400
+      && smallReadingWindow.range(
+        in: shortTranscript,
+        limit: smallReadingWindow.visibleLimit(entryCount: shortTranscript.count, running: true)
+      ).count == shortTranscript.count,
+    "reading an active short transcript mounts all rows beyond the 24-row follower tail"
+  )
+  readingWindow.returnToLatest()
+  for count in [601, 4_444] {
+    check(readingWindow.visibleLimit(entryCount: count, running: true) == 24
+          && readingWindow.visibleLimit(entryCount: count, running: false) == 24,
+          "a heavy follower does not prepend rows when streaming completes")
+  }
+  readingWindow.reveal("row-2500", in: renderIDs, limit: 24)
+  check(readingWindow.visibleLimit(entryCount: 4_444, running: true) == 96
+        && readingWindow.visibleLimit(entryCount: 4_444, running: false) == 96,
+        "a heavy reader keeps the same mounted range across completion")
+  readingWindow.returnToLatest()
   var backwardCoverage = Set<String>()
   for _ in 0..<100 {
     let range = readingWindow.range(in: renderIDs, limit: 160)
@@ -116,6 +172,66 @@ func runArkChatScrollContractChecks() {
     ) == .scrollToBottom,
     "final-body shrink keeps a live follower pinned to the new bottom"
   )
+
+  var followMotion = ArkChatScrollFollowMotion()
+  check(
+    followMotion.requestBottom(to: 500, animated: true) == .animate(to: 500)
+      && followMotion.isAnimating,
+    "a following content change starts one native scroll animation"
+  )
+  check(
+    followMotion.requestBottom(to: 640, animated: true) == .none,
+    "content growth during an animation does not restart the active motion"
+  )
+  check(
+    followMotion.animationDidComplete(
+      at: 500,
+      latestBottom: 700,
+      followsBottom: true
+    ) == .animate(to: 700),
+    "completion follows current geometry even if a pending target became stale"
+  )
+  check(
+    followMotion.animationDidComplete(
+      at: 700,
+      latestBottom: 700,
+      followsBottom: true
+    ) == .none
+      && !followMotion.isAnimating,
+    "follow animation stops when it reaches the current tail"
+  )
+  check(
+    followMotion.requestBottom(to: 750, animated: true) == .animate(to: 750)
+      && followMotion.animationDidComplete(
+        at: 700,
+        latestBottom: 750,
+        followsBottom: true
+      ) == .jump(to: 750)
+      && !followMotion.isAnimating,
+    "an animation that made no useful progress settles once instead of looping"
+  )
+  check(
+    followMotion.requestBottom(to: 1_000, animated: true) == .animate(to: 1_000)
+      && followMotion.requestBottom(to: 800, animated: true) == .jump(to: 800)
+      && !followMotion.isAnimating,
+    "content shrink corrects the viewport instead of animating toward a stale tail"
+  )
+  check(
+    followMotion.requestBottom(to: 800, animated: true) == .animate(to: 800)
+      && followMotion.interrupt()
+      && !followMotion.isAnimating
+      && followMotion.animationDidComplete(
+        at: 600,
+        latestBottom: 800,
+        followsBottom: true
+      ) == .none,
+    "reader input invalidates a stale animation completion"
+  )
+  check(
+    followMotion.requestBottom(to: 900, animated: false) == .jump(to: 900)
+      && !followMotion.isAnimating,
+    "reduced motion and explicit positioning use a synchronous jump"
+  )
   let attachmentURL = contractNativeRoot.appendingPathComponent(
     "Sources/JiuzhangShellUI/ArkChatScrollAttachment.swift"
   )
@@ -171,14 +287,32 @@ func runArkChatScrollContractChecks() {
         && coordinator.contains("NSScrollView.willStartLiveScrollNotification")
         && coordinator.contains("private func hitsTranscriptScroller")
         && coordinator.contains("private func isTranscriptScrollKey")
+        && coordinator.contains("private func reportUserReachedTop")
+        && coordinator.contains("guard isUserMove, !userReachedTopLatched else { return }")
+        && coordinator.contains("metrics.offset <= 1")
+        && coordinator.contains("ArkChatScrollFollowMotion")
+        && coordinator.contains("context.duration = Self.followAnimationDuration")
+        && coordinator.contains("animator().setBoundsOrigin(targetOrigin)")
+        && coordinator.contains("NSWorkspace.shared.accessibilityDisplayShouldReduceMotion")
+        && coordinator.contains("func noteUserScrollInput() {\n    interruptFollowAnimation()")
         && !coordinator.contains(
           "stateMachine.viewportDidMove(sessionID: sessionID, metrics: metrics, source: .user)"
         )
         && root.contains("@Published private(set) var snapshot: NativeChatSnapshot")
         && root.contains("snapshot.contentRevision &+ 1")
         && root.contains(".onChange(of: contentRevision)")
-        && root.contains("ArkChatScrollAttachment(controller: scrollController)"),
-      "chat scroll follows semantic transcript revisions without an AppKit frame-to-layout feedback loop"
+        && root.contains("onUserReachedTop: {")
+        && root.contains("renderWindow.revealEarlier(")
+        && root.contains("pendingTranscriptPrependAnchor")
+        && root.contains("pendingTranscriptPrependAnchor = scrollController.capturePrependAnchor()")
+        && root.contains("let previousFirstRecordID = model.historyReadingSnapshot?.records.first?.id")
+        && root.contains("nextFirstRecordID != previousFirstRecordID")
+        && root.contains("transcriptPrependRestoreToken &+= 1")
+        && root.contains("scrollController.restoreAfterPrepend(anchor)")
+        && root.contains("proxy.scrollTo(anchor, anchor: alignment)")
+        && !root.contains(".onChange(of: context.loadingOlderHistory)")
+        && attachment.contains("onUserReachedTop"),
+      "chat scroll retains the older-page anchor through coalesced feed publication"
     )
 
     let feed = chatSourceSlice(

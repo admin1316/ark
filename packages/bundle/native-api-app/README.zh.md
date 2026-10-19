@@ -13,6 +13,12 @@ kind: "package-bundle"
 
 监听器固定绑定 loopback，要求启动级 `DSH_API_TOKEN`，并设置 `apiOnly: true`。该组合包不挂载前端 fallback、模块扫描器、Client runner、浏览器 runtime、浏览器包、UI 插件、Web prompt、shell Web URL 或浏览器打开器。`@deepseek-ai/dsh-host-connection` 持有 `/api`、`/api/events/mux`、`/api/events/host` 以及精确下载/响应 route，且不发布浏览器入口；`@deepseek-ai/dsh-api-gateway` 仅在 Host 运行，并持有所有动态注册的严格斜杠 Remote 拦截。
 
+原生启动还持有由 `ARK_NATIVE_OWNER_SOCKET_PATH` 与 `ARK_NATIVE_OWNER_LAUNCH_TOKEN` 提供的可选知识私有通道。有界且具有关联 ID 的 Unix socket 消息独立于 loopback 和就绪日志。就绪握手提供已登记的源码/构建身份、各角色公钥及只读工件目录；同一通道提供 Wiki verifier、journal signer、固定任务 evaluator、measured-trial reader 与逐次使用费用解析器。Adapter 只向此 owner 发送最终请求摘要和固定元数据。启动令牌只绑定子进程，不授予试用权限。端点缺失或 owner 禁用时，不发布可信能力。
+
+通道串行处理操作，取消后等待 owner 响应或 socket 关闭。启动阶段卸载会中止未完成握手并等待 socket 关闭；握手具有十秒协议时限。回执解析验证既有 canonical 签名字节，不改变事件或 WAL 格式。Owner 准入、密钥托管、guard 来源认证与启用均不由此 Node provider 决定；测试密钥与源码检查不能证明这些条件。
+
+单独启动的 guard 可从既有 `startup` 入口导入 `connectNativeGuardCostOwner`。它复用相同的分帧、关联与清理机制，但握手保持 `ownerStatus: disabled`，不提供签名密钥，并且只公开已登记派发的准入核验及结算记录。它的 `closed` promise 在 socket 实际终止后结算，让 launcher 在 owner 消失时关闭 HTTP listener。App 认证其独立启动的 peer；普通 backend Context 没有结算方法。费用 owner 禁用时，guard helper 不得启动。
+
 ## 目录
 
 - [Model Experience](#model-experience)

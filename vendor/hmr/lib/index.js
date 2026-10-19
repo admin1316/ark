@@ -2,9 +2,9 @@ import { createRequire } from "node:module";
 import { Service } from "@deepseek-ai/cordis";
 import { watch } from "chokidar";
 import { dirname, relative, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { codeFrameColumns } from "@babel/code-frame";
-import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import picomatch from "picomatch";
 import z from "@deepseek-ai/schemastery";
@@ -139,6 +139,9 @@ var Hmr = class extends Service {
 		watcher.on("add", onChange);
 		watcher.on("change", onChange);
 		watcher.on("unlink", onChange);
+		if (depth > 0) watcher.on("addDir", (path) => {
+			if (resolve(path) === dirname(watchFilename) && existsSync(watchFilename)) this.refreshConfig(registration, filename, refresh);
+		});
 		const ready = Promise.withResolvers();
 		let readyState = "pending";
 		watcher.once("ready", () => {

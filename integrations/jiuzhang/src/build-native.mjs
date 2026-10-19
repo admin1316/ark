@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
 import { isBuiltin } from 'node:module'
 import yaml from 'js-yaml'
-import { createArkRuntimePlan } from './runtime-plan.mjs'
+import { createArkRuntimePlan, PROTECTED_HELPER_ENTRIES, PROTECTED_HELPER_FILES, protectedHelperSourceInputs, assertProtectedHelperInventory } from './runtime-plan.mjs'
 import { assertJavaScriptModuleSyntax, packageJavaScriptEntries } from './runtime-closure.mjs'
 
 const JS = /\.[cm]?js$/u
@@ -179,6 +179,36 @@ export function verifyNativeGeneratedImports(source, manifest) {
   }
 }
 
+/** Emit fixed protected helpers as separate modules so sibling URLs and CLI guards retain their identity. */
+export async function buildProtectedKnowledgeHelpers(root) {
+  root = await realpath(resolve(root))
+  const inputs = await protectedHelperSourceInputs(root)
+  const plan = await createArkRuntimePlan(root, { sourceOnly: true })
+  const names = new Set([...plan.packages.map(pkg => pkg.name), ...plan.externalDependencies.map(pkg => pkg.name)])
+  const output = join(root, '.native-build/protected-helpers')
+  const { build } = await import('tsdown')
+  const result = await build({
+    config: false, cwd: root, tsconfig: false, root, unbundle: true,
+    entry: await protectedHelperSourceInputs(root, PROTECTED_HELPER_ENTRIES, true), outDir: output,
+    format: 'esm', platform: 'node', target: 'es2024', dts: false, clean: false, sourcemap: false,
+    envPrefix: [], logLevel: 'warn', report: false, failOnWarn: true,
+    deps: { neverBundle: id => !id.startsWith('.') && !isAbsolute(id) },
+  })
+  for (const chunk of result.flatMap(item => item.chunks)) {
+    for (const specifier of [...(chunk.imports ?? []), ...(chunk.dynamicImports ?? [])]) {
+      if (isBuiltin(specifier) || specifier.startsWith('.') || chunk.fileName === specifier
+        || PROTECTED_HELPER_FILES.includes(`protected-helpers/${specifier}`)) continue
+      const name = specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : specifier.split('/')[0]
+      if (!names.has(name)) throw new Error(`protected helper runtime dependency is outside the package closure: ${specifier}`)
+    }
+  }
+  await assertProtectedHelperInventory(output)
+  for (const path of PROTECTED_HELPER_FILES) {
+    assertJavaScriptModuleSyntax(await readFile(join(root, '.native-build', path), 'utf8'), path, process.execPath, 'module')
+  }
+  return { inputs, outputs: [...PROTECTED_HELPER_FILES] }
+}
+
 /** Compile verified sources, emit each published entry independently, then generate Native reflection. */
 export async function buildNative(root) {
   root = await realpath(resolve(root))
@@ -225,10 +255,12 @@ export async function buildNative(root) {
   const { NATIVE_TYPERT_REMOTE_ENDPOINTS, NATIVE_TYPERT_REMOTE_OWNERS } = await import(
     pathToFileURL(join(root, 'packages/api/gateway/lib/types/native-remote-routes.js')).href)
   const endpoints = nativeEndpointCoverage(descriptors, NATIVE_TYPERT_REMOTE_ENDPOINTS, NATIVE_TYPERT_REMOTE_OWNERS)
+  const protectedHelpers = await buildProtectedKnowledgeHelpers(root)
   const evidence = join(root, '.native-build')
   await mkdir(evidence, { recursive: true })
   await writeFile(join(evidence, 'build.json'), JSON.stringify({
     sourceDigestBeforeBuild: spec.plan.sourceDigest,
+    protectedHelpers,
     packages: spec.packages.map(pkg => pkg.name),
     entries: entries.map(({ entry }) => ({ source: relative(root, entry.source), output: relative(root, entry.output) })),
     reflected: artifacts.map(artifact => artifact.package),

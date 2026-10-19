@@ -8,6 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
+import { createHash } from 'node:crypto'
 import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
@@ -113,6 +114,10 @@ export interface DeepSeekConnectionOptions {
 
 /** Constructor options for {@link DeepSeekAdapter}: the operation-local resolution hooks the plugin owns. */
 export interface DeepSeekAdapterOptions {
+  /** Observe the exact finalized payload through an optional launcher-owned finite-trial owner. */
+  recordProviderRequest?: (request: ProviderRequestObservation, signal: AbortSignal) => Promise<
+    { readonly status: 'untracked' } | { readonly status: 'registered'; readonly dispatchId: string }
+  >
   /** Current validated connection facts; called once per operation. */
   options: () => DeepSeekConnectionOptions
   /**
@@ -132,6 +137,18 @@ export interface DeepSeekAdapterOptions {
   resolveFiles?: () => DeepSeekFileStore
   /** Prepare the official API's plugin-contributed top-level fields for one exact wire request. */
   prepareExtensions: (request: DeepSeekLlmApiExtensionRequest) => Promise<PreparedDeepSeekLlmApiExtensions>
+}
+
+/** In-memory request observation; only its hashes and metadata may enter the private owner channel. */
+export interface ProviderRequestObservation {
+  readonly sessionId: string
+  readonly endpoint: string
+  readonly provider: string
+  readonly configuredModel: string
+  readonly wireModel: string
+  readonly requestBodyHash: string
+  readonly maxTokens: number | null
+  readonly request: Readonly<Record<string, unknown>>
 }
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
@@ -520,7 +537,7 @@ export class DeepSeekAdapter extends LlmAdapter {
     attachments: AttachmentStore | undefined,
     onActivity: () => void,
   ): AsyncIterable<StreamChunk> {
-    const headers = {
+    const headers: Record<string, string> = {
       'authorization': `Bearer ${apiKey}`,
       'content-type': 'application/json',
       'accept': 'text/event-stream',
@@ -556,6 +573,7 @@ export class DeepSeekAdapter extends LlmAdapter {
       : await prepareRequestImages(requestOptions, attachments, model, signal)
     let representation: 'file' | 'base64' = 'file'
     let fileAttempt = 0
+    const recordProviderRequest = this.config.recordProviderRequest
     while (true) {
       const usedFiles: UsedRequestFile[] = []
       let body: WireRequest
@@ -627,6 +645,31 @@ export class DeepSeekAdapter extends LlmAdapter {
       // Prepared outside the try so the TRANSPORT label below covers exactly the
       // transport boundary, never a serialization failure.
       const payload = JSON.stringify({ ...body, ...extensions.fields })
+
+      delete headers['x-ark-cost-dispatch-id']
+      if (recordProviderRequest !== undefined && options.sessionId !== undefined && options.purpose === undefined) {
+        let observation: Awaited<ReturnType<NonNullable<DeepSeekAdapterOptions['recordProviderRequest']>>>
+        try {
+          observation = await recordProviderRequest({
+            sessionId: String(options.sessionId), endpoint: `${connection.baseURL}/chat/completions`,
+            provider: options.provider, configuredModel: options.model, wireModel: body.model,
+            requestBodyHash: createHash('sha256').update(payload, 'utf8').digest('hex'),
+            maxTokens: body.max_tokens ?? null,
+            request: Object.fromEntries(Object.entries(options).filter(([field]) => field !== 'signal' && field !== 'purpose')),
+          }, signal)
+        } catch (error) {
+          if (signal.aborted) throw error
+          throw new LlmError('Native trial request evidence registration failed', 'REQUEST_EVIDENCE', { cause: error })
+        }
+        signal.throwIfAborted()
+        if (observation.status === 'registered') {
+          const target = new URL(connection.baseURL)
+          if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1') {
+            throw new LlmError('Registered trial dispatch requires its local cost guard', 'REQUEST_EVIDENCE')
+          }
+          headers['x-ark-cost-dispatch-id'] = observation.dispatchId
+        }
+      }
 
       // TODO(http): adopt the Cordis HTTP service when shared transport configuration
       // outweighs its additional runtime dependencies.

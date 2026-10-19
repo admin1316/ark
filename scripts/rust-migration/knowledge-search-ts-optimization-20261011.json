@@ -1,0 +1,302 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-10-11",
+  "status": "unknown",
+  "candidate": "knowledge-search-bm25-production-typescript-optimization",
+  "execution": "benchmark-only-three-run-file-backed-differential",
+  "decision": "RETAIN_TS",
+  "activeProfileMode": "disabled",
+  "fixture": {
+    "pages": 240,
+    "iterationsPerRun": 30,
+    "independentRuns": 3,
+    "corpusHash": "3fd46f421c08f8cc89afe2eddda6809a7012477817987092d3c18b2015ccaf91"
+  },
+  "measurement": "Current production TypeScript path after a bounded scorePages optimization; each sample traverses a temporary file-backed Wiki. Each run also compares a benchmark-only rebuilt-index TypeScript reference and a persistent Rust JSONL worker. This is a source benchmark, not an Ark candidate or whole-app benchmark.",
+  "previousRecordedBaseline": {
+    "receipt": "scripts/rust-migration/knowledge-search-persistent-benchmark-20261011.json",
+    "currentTypeScriptMedianAcrossRunQuantilesMs": {
+      "p50": 10.689125000000104,
+      "p95": 12.968208000000004,
+      "p99": 12.972208000000023
+    },
+    "sourceBindingNote": "The previous receipt did not record the production search.ts SHA-256. The delta is a same-fixture, same-runner historical comparison, but is not cryptographically paired to the prior module source."
+  },
+  "sourceSha256": {
+    "packages/host/knowledge-wiki/src/search.ts": "13102d37270f691fe181a479e670e49fbad063f8f798ba0a12106fdcd83a8ccc",
+    "scripts/rust-migration/benchmark-knowledge-search.ts": "94de53baa0df3700f814db93848df928e7027114ec47fbd7348cde2edec8c21f"
+  },
+  "medianAcrossRunQuantilesMs": {
+    "currentTypeScript": {
+      "p50": 10.28916700000002,
+      "p95": 11.973208999999997,
+      "p99": 12.33237500000007
+    },
+    "optimizedTypeScriptRebuiltIndex": {
+      "p50": 8.835833999999977,
+      "p95": 11.569291999999905,
+      "p99": 11.825874999999996
+    },
+    "persistentRust": {
+      "p50": 15.091082999999799,
+      "p95": 16.02383400000008,
+      "p99": 16.28841700000021
+    }
+  },
+  "comparisons": {
+    "p50ChangeVsPreviousRecordedTypeScriptPercent": -3.74,
+    "p95ChangeVsPreviousRecordedTypeScriptPercent": -7.67,
+    "p99ChangeVsPreviousRecordedTypeScriptPercent": -4.93,
+    "persistentRustP50SlowerThanCurrentTypeScriptPercent": 46.67,
+    "rebuiltIndexTypeScriptP50FasterThanCurrentTypeScriptPercent": 14.12
+  },
+  "repeatability": {
+    "typescriptDifferentialMatches": 3,
+    "rustDifferentialMatches": 3,
+    "persistentRustNormalExitCount": 3,
+    "persistentRustRequestsPerWorker": [
+      33,
+      33,
+      33
+    ],
+    "measurementFailures": 0
+  },
+  "validation": {
+    "focusedSearchAndDifferentialTests": "4 files / 16 tests passed",
+    "knowledgeWikiTypecheck": "passed"
+  },
+  "existingCandidateStabilityEvidence": {
+    "candidate": "Ark 3.1.23/build 2026101023",
+    "installE2E": "121 checks across two process runs, zero failures",
+    "liveInvoiceFinalJsonAndArithmetic": "3/3",
+    "cleanQuitReopenUiRestore": "1/1 scenario",
+    "currentSourceIncludedInCandidate": false,
+    "stressCrashRecoveryOrLongRunMeasured": false
+  },
+  "stabilityConclusion": "No overall stability improvement percentage is established. The Ark candidate evidence predates this source optimization and is bounded; crash recovery, stress, and long-running reliability remain unmeasured.",
+  "missingEvidence": [
+    "rebuild and install a candidate containing this source change before candidate-level claims",
+    "production Wiki corpus and active-profile end-to-end speed measurements",
+    "long-running stress, crash recovery, and cancellation tests",
+    "cross-platform performance measurements",
+    "authenticated Phase 6 receipt; all 16 behavior checks remain UNKNOWN"
+  ],
+  "perRun": [
+    {
+      "run": 1,
+      "receipt": "scripts/rust-migration/knowledge-search-ts-optimization-20261011-run1.json",
+      "receiptSha256": "742f7bc876fbb591c99ffde6ba3a1c7e55e390baf5fc3679a18069f21bd3bfc0",
+      "corpusHash": "3fd46f421c08f8cc89afe2eddda6809a7012477817987092d3c18b2015ccaf91",
+      "differentialReplay": "current-optimized-rust-match",
+      "currentTypeScript": {
+        "p50": 10.293541000000005,
+        "p95": 12.042042000000038,
+        "p99": 12.610791999999947,
+        "cpuMicros": 466748,
+        "rssDelta": 59555840,
+        "eventLoopDelayMeanMs": 10.634605714285714,
+        "eventLoopDelayP95Ms": 12.271615,
+        "eventLoopDelayMaxMs": 13.287423,
+        "eventLoopIdleBaselineMeanMs": 1.2830989473684211,
+        "eventLoopIdleBaselineP95Ms": 1.294335,
+        "eventLoopExcessMeanMs": 9.351506766917293,
+        "eventLoopExcessP95Ms": 10.97728,
+        "eventLoopDelaySamples": 28,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "optimizedTypeScriptRebuiltIndex": {
+        "p50": 10.06508400000007,
+        "p95": 11.547834000000194,
+        "p99": 13.534042,
+        "cpuMicros": 430992,
+        "rssDelta": 4308992,
+        "eventLoopDelayMeanMs": 10.118673655172413,
+        "eventLoopDelayP95Ms": 11.665407,
+        "eventLoopDelayMaxMs": 13.565951,
+        "eventLoopIdleBaselineMeanMs": 1.339335111111111,
+        "eventLoopIdleBaselineP95Ms": 1.573887,
+        "eventLoopExcessMeanMs": 8.779338544061302,
+        "eventLoopExcessP95Ms": 10.09152,
+        "eventLoopDelaySamples": 29,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "persistentRust": {
+        "metrics": {
+          "p50": 15.091082999999799,
+          "p95": 16.563333000000057,
+          "p99": 16.906625000000076,
+          "cpuMicros": 659911,
+          "rssDelta": 2899968,
+          "eventLoopDelayMeanMs": 3.622119024390244,
+          "eventLoopDelayP95Ms": 11.911167,
+          "eventLoopDelayMaxMs": 13.139967,
+          "eventLoopIdleBaselineMeanMs": 1.2886437647058824,
+          "eventLoopIdleBaselineP95Ms": 1.307647,
+          "eventLoopExcessMeanMs": 2.333475259684362,
+          "eventLoopExcessP95Ms": 10.603520000000001,
+          "eventLoopDelaySamples": 123,
+          "digest": "b8f930a98f5c7bda4fa6da8ce060185f244167b1fd61bfa2a2994d609a955e7a"
+        },
+        "workerPid": 20946,
+        "workerSpawnEventMs": 0.023165999999946507,
+        "coldFirstResponseMs": 15.939666000000216,
+        "warmupRequests": 2,
+        "requestsPerProcess": 33,
+        "processReuse": true,
+        "subprocessPerSample": false,
+        "execution": "benchmark-only-persistent-differential",
+        "activeProfileMode": "disabled",
+        "processExitCode": 0,
+        "firstRequestDigest": "9565a5a37cec07c2cad715af9545640e0fecb320345448da161c1b312cb1020e",
+        "firstResultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9",
+        "source": "rust"
+      },
+      "tsDifferentialMatch": true,
+      "rustDifferentialMatch": true
+    },
+    {
+      "run": 2,
+      "receipt": "scripts/rust-migration/knowledge-search-ts-optimization-20261011-run2.json",
+      "receiptSha256": "40f6407d42dc346a389343295239914176dcc3bbab8d21e09a87fb057c1b233d",
+      "corpusHash": "3fd46f421c08f8cc89afe2eddda6809a7012477817987092d3c18b2015ccaf91",
+      "differentialReplay": "current-optimized-rust-match",
+      "currentTypeScript": {
+        "p50": 10.179791999999907,
+        "p95": 11.93729099999996,
+        "p99": 12.33237500000007,
+        "cpuMicros": 466955,
+        "rssDelta": 60276736,
+        "eventLoopDelayMeanMs": 10.617782857142856,
+        "eventLoopDelayP95Ms": 12.197887,
+        "eventLoopDelayMaxMs": 13.082623,
+        "eventLoopIdleBaselineMeanMs": 1.2290944,
+        "eventLoopIdleBaselineP95Ms": 1.298431,
+        "eventLoopExcessMeanMs": 9.388688457142857,
+        "eventLoopExcessP95Ms": 10.899456,
+        "eventLoopDelaySamples": 28,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "optimizedTypeScriptRebuiltIndex": {
+        "p50": 8.835833999999977,
+        "p95": 11.671207999999979,
+        "p99": 11.825874999999996,
+        "cpuMicros": 421056,
+        "rssDelta": 5373952,
+        "eventLoopDelayMeanMs": 9.8816,
+        "eventLoopDelayP95Ms": 11.812863,
+        "eventLoopDelayMaxMs": 11.870207,
+        "eventLoopIdleBaselineMeanMs": 1.3371733333333333,
+        "eventLoopIdleBaselineP95Ms": 1.582079,
+        "eventLoopExcessMeanMs": 8.544426666666666,
+        "eventLoopExcessP95Ms": 10.230784,
+        "eventLoopDelaySamples": 29,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "persistentRust": {
+        "metrics": {
+          "p50": 15.102499999999964,
+          "p95": 15.757874999999785,
+          "p99": 16.28841700000021,
+          "cpuMicros": 666630,
+          "rssDelta": 6062080,
+          "eventLoopDelayMeanMs": 3.470368251968504,
+          "eventLoopDelayP95Ms": 11.493375,
+          "eventLoopDelayMaxMs": 12.075007,
+          "eventLoopIdleBaselineMeanMs": 1.2875722105263157,
+          "eventLoopIdleBaselineP95Ms": 1.297407,
+          "eventLoopExcessMeanMs": 2.182796041442188,
+          "eventLoopExcessP95Ms": 10.195968,
+          "eventLoopDelaySamples": 127,
+          "digest": "b8f930a98f5c7bda4fa6da8ce060185f244167b1fd61bfa2a2994d609a955e7a"
+        },
+        "workerPid": 21455,
+        "workerSpawnEventMs": 0.022084000000177184,
+        "coldFirstResponseMs": 16.109207999999853,
+        "warmupRequests": 2,
+        "requestsPerProcess": 33,
+        "processReuse": true,
+        "subprocessPerSample": false,
+        "execution": "benchmark-only-persistent-differential",
+        "activeProfileMode": "disabled",
+        "processExitCode": 0,
+        "firstRequestDigest": "60973eb5e562e37a49e07d47661df8b8efd195adb9c5ee074aa90d7b33f43aed",
+        "firstResultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9",
+        "source": "rust"
+      },
+      "tsDifferentialMatch": true,
+      "rustDifferentialMatch": true
+    },
+    {
+      "run": 3,
+      "receipt": "scripts/rust-migration/knowledge-search-ts-optimization-20261011-run3.json",
+      "receiptSha256": "45e38b3837baa49533bcb44956272daa3704c6d74fdf89d20fcefecd2187d106",
+      "corpusHash": "3fd46f421c08f8cc89afe2eddda6809a7012477817987092d3c18b2015ccaf91",
+      "differentialReplay": "current-optimized-rust-match",
+      "currentTypeScript": {
+        "p50": 10.28916700000002,
+        "p95": 11.973208999999997,
+        "p99": 12.23275000000001,
+        "cpuMicros": 461726,
+        "rssDelta": 59080704,
+        "eventLoopDelayMeanMs": 10.597481931034483,
+        "eventLoopDelayP95Ms": 12.369919,
+        "eventLoopDelayMaxMs": 12.845055,
+        "eventLoopIdleBaselineMeanMs": 1.2169566315789475,
+        "eventLoopIdleBaselineP95Ms": 1.291263,
+        "eventLoopExcessMeanMs": 9.380525299455536,
+        "eventLoopExcessP95Ms": 11.078655999999999,
+        "eventLoopDelaySamples": 29,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "optimizedTypeScriptRebuiltIndex": {
+        "p50": 8.740000000000009,
+        "p95": 11.569291999999905,
+        "p99": 11.80879200000004,
+        "cpuMicros": 422130,
+        "rssDelta": 6455296,
+        "eventLoopDelayMeanMs": 9.88322427586207,
+        "eventLoopDelayP95Ms": 11.730943,
+        "eventLoopDelayMaxMs": 11.837439,
+        "eventLoopIdleBaselineMeanMs": 1.265408,
+        "eventLoopIdleBaselineP95Ms": 1.538047,
+        "eventLoopExcessMeanMs": 8.617816275862069,
+        "eventLoopExcessP95Ms": 10.192896,
+        "eventLoopDelaySamples": 29,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "persistentRust": {
+        "metrics": {
+          "p50": 15.046458000000257,
+          "p95": 16.02383400000008,
+          "p99": 16.094084000000294,
+          "cpuMicros": 667937,
+          "rssDelta": 4571136,
+          "eventLoopDelayMeanMs": 3.2634007703703705,
+          "eventLoopDelayP95Ms": 11.337727,
+          "eventLoopDelayMaxMs": 12.042239,
+          "eventLoopIdleBaselineMeanMs": 1.2870776470588237,
+          "eventLoopIdleBaselineP95Ms": 1.298431,
+          "eventLoopExcessMeanMs": 1.9763231233115468,
+          "eventLoopExcessP95Ms": 10.039296,
+          "eventLoopDelaySamples": 135,
+          "digest": "b8f930a98f5c7bda4fa6da8ce060185f244167b1fd61bfa2a2994d609a955e7a"
+        },
+        "workerPid": 21757,
+        "workerSpawnEventMs": 0.017708999999740627,
+        "coldFirstResponseMs": 16.03625000000011,
+        "warmupRequests": 2,
+        "requestsPerProcess": 33,
+        "processReuse": true,
+        "subprocessPerSample": false,
+        "execution": "benchmark-only-persistent-differential",
+        "activeProfileMode": "disabled",
+        "processExitCode": 0,
+        "firstRequestDigest": "b658bda1d0a1c49d126fc67f3a61acaa516edc50e70e63ea39c839a699d857d6",
+        "firstResultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9",
+        "source": "rust"
+      },
+      "tsDifferentialMatch": true,
+      "rustDifferentialMatch": true
+    }
+  ]
+}

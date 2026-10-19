@@ -185,18 +185,9 @@ struct NativeLongTaskSummaryView: View {
   }
 
   private func itemAccessibilityValue(_ item: ArkLongTaskItem) -> String {
-    var values = [executionPhaseLabel(item.phase)]
+    var values = [item.phase.localizedLabel(language: language)]
     if let detail = item.detail, !detail.isEmpty { values.append(detail) }
     return values.joined(separator: ", ")
-  }
-
-  private func executionPhaseLabel(_ phase: ArkExecutionPhase) -> String {
-    switch phase {
-    case .running: return ArkL10n.text(.executionRunning, language)
-    case .succeeded: return ArkL10n.text(.executionCompleted, language)
-    case .failed: return ArkL10n.text(.executionFailed, language)
-    case .cancelled: return ArkL10n.text(.executionCancelled, language)
-    }
   }
 
   private func formatDuration(_ interval: TimeInterval) -> String {

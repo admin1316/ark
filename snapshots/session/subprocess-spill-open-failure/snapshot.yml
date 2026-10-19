@@ -1,0 +1,11 @@
+version: 1
+scenario: subprocess-spill-open-failure
+profile: headless
+composition: subprocess-spill-open-failure
+recording: authored
+header:
+  class: subprocess-spill-open-failure
+  pin: true
+  systemPromptSource: text-turn
+  toolSchemasSource: text-turn
+platform: posix

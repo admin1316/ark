@@ -9,10 +9,65 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type KnowledgeWikiService from '@deepseek-ai/dsh-knowledge-wiki'
+import { KNOWLEDGE_REPAIR_MAX_SOURCE_CHARS } from '@deepseek-ai/dsh-knowledge-wiki'
+import type {
+  KnowledgeAccessContext,
+  WikiFileEntry,
+  WikiGraphResult,
+  WikiPageContent,
+  WikiReviewItem,
+  KnowledgeRepairProposalRequest,
+  KnowledgeRepairProposalResult,
+  WikiSearchHit,
+} from '@deepseek-ai/dsh-knowledge-wiki'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { ToolExecution, ToolExecutionResult, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { createHash } from 'node:crypto'
+import { resolve } from 'node:path'
+import type { JsonValue } from '@deepseek-ai/dsh-session'
+import './session-events.ts'
 
-type ToolKnowledgeWikiService = KnowledgeWikiService & {
+interface KnowledgeModelProvenance {
+  readonly knowledgeId: string
+  readonly contentHash?: string
+  readonly sourceHash: string
+  readonly trust: 'low' | 'medium' | 'high'
+  readonly authority: string
+  readonly evidenceRefs: readonly string[]
+  readonly verificationStatus: 'observed' | 'candidate' | 'verified' | 'rejected' | 'conflict' | 'expired'
+  readonly expiresAt: string | null
+  readonly conflicts: readonly string[]
+}
+
+interface SessionWikiScope extends KnowledgeAccessContext {
+  readonly sessionId: string
+  readonly projectId: string
+  readonly workspaceId: string
+}
+
+type ToolKnowledgeWikiService = {
+  modelSearch(
+    request: { query: string; topK?: number },
+    scope: KnowledgeAccessContext,
+    signal?: AbortSignal,
+  ): Promise<Array<WikiSearchHit & { provenance: KnowledgeModelProvenance }>>
+  modelPageContent(
+    request: { path: string },
+    scope: KnowledgeAccessContext,
+  ): Promise<WikiPageContent & { provenance: KnowledgeModelProvenance }>
+  modelList(scope: KnowledgeAccessContext): Promise<Array<WikiFileEntry & { provenance?: KnowledgeModelProvenance }>>
+  modelGraph(scope: KnowledgeAccessContext): Promise<WikiGraphResult & {
+    provenance: Readonly<Record<string, KnowledgeModelProvenance>>
+  }>
+  modelReviews(
+    request: { status?: string; limit?: number },
+    scope: KnowledgeAccessContext,
+  ): Promise<Array<WikiReviewItem & { provenance?: KnowledgeModelProvenance }>>
+  ingestQueueAdd(request: { inputs: string[] }): Promise<{
+    tasks: Array<{ id: number; input: string; status: string }>
+    running: boolean
+    cancelled?: boolean
+  }>
   verifyCandidate(request: {
     reviewId: string
     action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' | 'Archive'
@@ -23,6 +78,10 @@ type ToolKnowledgeWikiService = KnowledgeWikiService & {
     evidence: string[]
     errorCode?: string
   }>
+  proposeKnowledgeRepair(
+    request: KnowledgeRepairProposalRequest,
+    scope: KnowledgeAccessContext,
+  ): Promise<KnowledgeRepairProposalResult>
 }
 
 /** Stable Cordis plugin name. */
@@ -34,17 +93,187 @@ export const inject = ['tools', 'systemPrompt']
 /** Cap on returned hits / listed files / read characters. */
 const SEARCH_MAX_RESULTS = 8
 const FILES_MAX = 60
-const READ_MAX_CHARS = 8000
 const REVIEW_MAX = 30
+const renderedProvenance = new WeakMap<ToolExecution, RenderedKnowledgeHandoff>()
 
-/** Resolve the knowledgeWiki service; undefined when the bridge is absent. */
-function wikiService(ctx: Context): ToolKnowledgeWikiService | undefined {
-  return ctx.get('knowledgeWiki') as ToolKnowledgeWikiService | undefined
+/** Resolve the knowledgeWiki service at execution; fail when the bridge is absent. */
+function wikiService(ctx: Context): ToolKnowledgeWikiService {
+  const service = ctx.get('knowledgeWiki') as ToolKnowledgeWikiService | undefined
+  if (service === undefined) throw new Error('knowledgeWiki service unavailable')
+  return service
 }
 
 /** Text block helper for render callbacks. */
 function textBlock(text: string): Array<{ type: 'text'; text: string }> {
   return [{ type: 'text', text }]
+}
+
+function stableHash(value: JsonValue): string {
+  const serialized = JSON.stringify(value)
+  return createHash('sha256').update(serialized).digest('hex')
+}
+
+function asJsonValue(value: unknown): JsonValue {
+  return JSON.parse(JSON.stringify(value)) as JsonValue
+}
+
+interface SessionWikiExecution {
+  readonly session: NonNullable<NonNullable<ToolRunContext['agent']>['session']>
+  readonly scope: SessionWikiScope
+}
+
+interface RenderedKnowledgeHandoff extends SessionWikiExecution {
+  readonly provenance: KnowledgeModelProvenance[]
+}
+
+function sessionExecution(exec: Pick<ToolRunContext, 'agent'> | Pick<ToolExecution, 'agent'>): SessionWikiExecution | undefined {
+  const session = exec.agent?.session
+  if (session === undefined) return undefined
+  const cwd = session.header.cwd
+  if (cwd === undefined) return undefined
+  const projectId = resolve(cwd)
+  return {
+    session,
+    scope: {
+      sessionId: String(session.id),
+      projectId,
+      workspaceId: projectId,
+      ...(exec.agent?.id === undefined ? {} : { actor: String(exec.agent.id) }),
+    },
+  }
+}
+
+function sessionEventScope(scope: SessionWikiScope): { sessionId: string; projectId: string; workspaceId: string } {
+  return {
+    sessionId: scope.sessionId,
+    projectId: scope.projectId,
+    workspaceId: scope.workspaceId,
+  }
+}
+
+function requireSessionExecution(exec: ToolRunContext): SessionWikiExecution {
+  const execution = sessionExecution(exec)
+  if (execution === undefined) throw new Error('knowledge scope unavailable')
+  return execution
+}
+
+function recordKnowledgeResult(
+  exec: ToolRunContext,
+  session: SessionWikiExecution['session'],
+  scope: SessionWikiScope,
+  details: {
+    kind: 'search' | 'page' | 'graph' | 'reviews' | 'files'
+    path: string
+    value: JsonValue
+    contentBytes: number
+    truncated?: boolean
+    provenance?: KnowledgeModelProvenance
+  },
+): void {
+  const resultHash = stableHash(details.value)
+  const handoff = renderedProvenance.get(exec) ?? { session, scope, provenance: [] }
+  if (details.provenance !== undefined) handoff.provenance.push(details.provenance)
+  renderedProvenance.set(exec, handoff)
+  const base = {
+    knowledgeId: details.provenance?.knowledgeId ?? `wiki:${details.path}`,
+    path: details.path,
+    resultHash,
+    contentHash: resultHash,
+    tool: exec.name,
+    callId: String(exec.callId),
+    scope: sessionEventScope(scope),
+    value: details.value,
+    ...(details.provenance === undefined ? {} : {
+      sourceHash: details.provenance.sourceHash,
+      ...(details.provenance.contentHash === undefined ? {} : { sourceContentHash: details.provenance.contentHash }),
+      trust: details.provenance.trust,
+      authority: details.provenance.authority,
+      evidenceRefs: [...details.provenance.evidenceRefs],
+      verificationStatus: details.provenance.verificationStatus,
+      expiresAt: details.provenance.expiresAt,
+      conflicts: [...details.provenance.conflicts],
+    }),
+    ...(details.truncated === undefined ? {} : { truncated: details.truncated }),
+  }
+  session.append('knowledge/retrieved', {
+    ...base,
+    kind: details.kind,
+    allowed: true,
+    reason: 'ok',
+  })
+}
+
+function recordRenderedKnowledgeResult(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): void {
+  if (result.isError || !['wiki_search', 'wiki_files', 'wiki_read', 'wiki_graph', 'wiki_reviews'].includes(exec.name)) {
+    renderedProvenance.delete(exec)
+    return
+  }
+  const handoff = renderedProvenance.get(exec)
+  renderedProvenance.delete(exec)
+  const execution = handoff ?? sessionExecution(exec)
+  if (execution === undefined) return
+  const { session, scope } = execution
+  const rendered = asJsonValue(result.content)
+  const renderedHash = stableHash(rendered)
+  const kind = exec.name.slice('wiki_'.length) as 'search' | 'files' | 'read' | 'graph' | 'reviews'
+  const rawValue = result.value
+  const truncated = typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)
+    && Reflect.get(rawValue, 'truncated') === true
+  const resultPath = typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)
+    && typeof (rawValue as { path?: unknown }).path === 'string'
+    ? (rawValue as { path: string }).path
+    : `tool:${exec.name}`
+  const provenance = handoff?.provenance ?? []
+  const rows = provenance.length === 0 ? [undefined] : [...new Map(provenance.map(item => [item.knowledgeId, item])).values()]
+  for (const item of rows) {
+    session.append('knowledge/injected', {
+      knowledgeId: item?.knowledgeId ?? `wiki:${resultPath}`,
+      path: item === undefined || provenance.length === 1 ? resultPath : `tool:${exec.name}:${item.knowledgeId}`,
+      resultHash: renderedHash,
+      contentHash: renderedHash,
+      tool: exec.name,
+      callId: String(exec.callId),
+      scope: sessionEventScope(scope),
+      value: rendered,
+      kind: kind === 'read' ? 'page' : kind,
+      contentBytes: Buffer.byteLength(JSON.stringify(rendered), 'utf8'),
+      ...(item === undefined ? {} : {
+        sourceHash: item.sourceHash,
+        ...(item.contentHash === undefined ? {} : { sourceContentHash: item.contentHash }),
+        trust: item.trust,
+        authority: item.authority,
+        evidenceRefs: [...item.evidenceRefs],
+        verificationStatus: item.verificationStatus,
+        expiresAt: item.expiresAt,
+        conflicts: [...item.conflicts],
+      }),
+      ...(truncated ? { truncated: true } : {}),
+    })
+  }
+}
+
+function correctionSourceHash(
+  session: SessionWikiExecution['session'],
+  scope: SessionWikiScope,
+  sourcePath: string,
+): string | undefined {
+  const retrieved = new Set<string>()
+  const injected = new Set<string>()
+  let sourceHash: string | undefined
+  for (const event of session.events) {
+    if (event.type !== 'knowledge/retrieved' && event.type !== 'knowledge/injected') continue
+    const data = event.data as unknown as Record<string, unknown>
+    const eventScope = data['scope'] as Record<string, unknown> | undefined
+    if (eventScope?.['sessionId'] !== scope.sessionId || eventScope['projectId'] !== scope.projectId
+      || data['kind'] !== 'page' || data['path'] !== sourcePath || data['truncated'] === true
+      || data['allowed'] === false || typeof data['knowledgeId'] !== 'string') continue
+    if (event.type === 'knowledge/retrieved') retrieved.add(data['knowledgeId'])
+    else if (typeof data['sourceContentHash'] === 'string' && /^[a-f0-9]{64}$/u.test(data['sourceContentHash'])) {
+      injected.add(data['knowledgeId'])
+      sourceHash = data['sourceContentHash']
+    }
+  }
+  return [...injected].some(id => retrieved.has(id)) ? sourceHash : undefined
 }
 
 function wikiRootRelativePath(input: string): string {
@@ -62,10 +291,14 @@ function wikiRootRelativePath(input: string): string {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
+  ctx.on('tools/result', (exec, result) => {
+    recordRenderedKnowledgeResult(exec, result)
+    return undefined
+  })
   ctx.systemPrompt.section({
     name: 'tool:knowledge-wiki',
     order: 120,
-    text: 'Use wiki_search to find knowledge-base pages, wiki_read to read one Wiki-root-relative page, wiki_files to list canonical pages, wiki_graph to inspect the graph, wiki_reviews to inspect governance, wiki_verify_candidate to run the trusted verifier, and wiki_ingest to enqueue source work. Cite pages by their Wiki-root-relative path.',
+    text: 'Use wiki_search to find knowledge-base pages, wiki_read to read one Wiki-root-relative page, wiki_files to list canonical pages, wiki_graph to inspect the graph, wiki_reviews to inspect governance, wiki_verify_candidate to run the trusted verifier, and wiki_ingest to enqueue source work. If a user corrects a Wiki-backed claim, read the complete source in this conversation and quote the corrected rule from that direct user message exactly when calling wiki_propose_repair. Do not infer or invent a correction; the host verifies the logged user message and matching tool call in the same turn. Never claim it is learned until independent verification and review pass. Cite pages by their Wiki-root-relative path.',
   })
 
   ctx.tools.register(defineTool({
@@ -99,11 +332,16 @@ export function apply(ctx: Context): void {
         return textBlock(hits.map(hit => `- ${hit.path} (score ${hit.score})`).join('\n'))
       },
     },
-    async execute(args: { query: string }) {
+    async execute(args: { query: string }, exec) {
       const service = wikiService(ctx)
-      if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const hits = await service.search({ query: args.query, topK: SEARCH_MAX_RESULTS })
-      return { hits }
+      const { session, scope } = requireSessionExecution(exec)
+      const hits = await service.modelSearch({ query: args.query, topK: SEARCH_MAX_RESULTS }, scope, exec.signal)
+      const visibleHits = hits.map(({ path, score }) => ({ path, score }))
+      for (const hit of hits) recordKnowledgeResult(exec, session, scope, {
+        kind: 'search', path: hit.path, value: asJsonValue({ path: hit.path, score: hit.score }), contentBytes: JSON.stringify(hit).length,
+        provenance: hit.provenance,
+      })
+      return { hits: visibleHits }
     },
   }))
 
@@ -125,11 +363,22 @@ export function apply(ctx: Context): void {
         return textBlock(`${value.total as number} files total. First ${files.length}:\n${files.map(file => `- ${file}`).join('\n')}`)
       },
     },
-    async execute(_args: Record<string, never>) {
+    async execute(_args: Record<string, never>, exec) {
       const service = wikiService(ctx)
-      if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const entries = await service.list()
-      return { files: entries.slice(0, FILES_MAX).map(entry => entry.path), total: entries.length }
+      const { session, scope } = requireSessionExecution(exec)
+      const entries = await service.modelList(scope)
+      const value = { files: entries.slice(0, FILES_MAX).map(entry => entry.path), total: entries.length }
+      for (const entry of entries.slice(0, FILES_MAX)) {
+        if (entry.provenance === undefined) continue
+        recordKnowledgeResult(exec, session, scope, {
+          kind: 'files', path: entry.path, value: asJsonValue({ path: entry.path }), contentBytes: entry.path.length,
+          provenance: entry.provenance,
+        })
+      }
+      recordKnowledgeResult(exec, session, scope, {
+        kind: 'files', path: 'files', value: asJsonValue(value), contentBytes: JSON.stringify(value).length,
+      })
+      return value
     },
   }))
 
@@ -154,14 +403,19 @@ export function apply(ctx: Context): void {
         return textBlock(`# ${value.path as string}\n\n${value.content as string}${truncated}`)
       },
     },
-    async execute(args: { path: string }) {
+    async execute(args: { path: string }, exec) {
       const service = wikiService(ctx)
-      if (service === undefined) throw new Error('knowledgeWiki service unavailable')
       const path = wikiRootRelativePath(args.path)
-      const page = await service.pageContent({ path })
+      const { session, scope } = requireSessionExecution(exec)
+      const page = await service.modelPageContent({ path }, scope)
       if (page.content === '') throw new Error(`page not found or unreadable: ${args.path}`)
-      const truncated = page.content.length > READ_MAX_CHARS
-      return { path: page.path, content: page.content.slice(0, READ_MAX_CHARS), truncated }
+      const truncated = page.content.length > KNOWLEDGE_REPAIR_MAX_SOURCE_CHARS
+      const content = page.content.slice(0, KNOWLEDGE_REPAIR_MAX_SOURCE_CHARS)
+      const value = { path: page.path, content, truncated }
+      recordKnowledgeResult(exec, session, scope, {
+        kind: 'page', path: page.path, value, contentBytes: content.length, truncated, provenance: page.provenance,
+      })
+      return value
     },
   }))
 
@@ -217,10 +471,10 @@ export function apply(ctx: Context): void {
         return textBlock(`Nodes (${nodes.length}):\n${nodeLines.join('\n')}\n\nEdges (showing first 30 of ${edges.length}):\n${edgeLines.join('\n')}`)
       },
     },
-    async execute(args: { query?: string; nodeType?: string; limit?: number }) {
+    async execute(args: { query?: string; nodeType?: string; limit?: number }, exec) {
       const service = wikiService(ctx)
-      if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const graph = await service.graph()
+      const { session, scope } = requireSessionExecution(exec)
+      const graph = await service.modelGraph(scope)
       const q = args.query?.toLowerCase()
       const t = args.nodeType?.toLowerCase()
       const limit = Math.min(args.limit ?? 20, 100)
@@ -234,7 +488,19 @@ export function apply(ctx: Context): void {
         .slice(0, limit)
       for (const node of nodes) matchedIds.add(node.id)
       const edges = graph.edges.filter(edge => matchedIds.has(edge.source) && matchedIds.has(edge.target))
-      return { nodes, edges }
+      const value = { nodes, edges }
+      for (const node of nodes) {
+        const provenance = graph.provenance[node.id]
+        if (provenance === undefined) continue
+        recordKnowledgeResult(exec, session, scope, {
+          kind: 'graph', path: node.path, value: asJsonValue(node), contentBytes: JSON.stringify(node).length,
+          provenance,
+        })
+      }
+      recordKnowledgeResult(exec, session, scope, {
+        kind: 'graph', path: `graph:${args.query ?? ''}`, value: asJsonValue(value), contentBytes: JSON.stringify(value).length,
+      })
+      return value
     },
   }))
 
@@ -269,11 +535,11 @@ export function apply(ctx: Context): void {
         return textBlock(reviews.map(review => `- [${review.type}] ${review.title}${review.description ? ` — ${review.description.slice(0, 140)}` : ''}`).join('\n'))
       },
     },
-    async execute(_args: Record<string, never>) {
+    async execute(_args: Record<string, never>, exec) {
       const service = wikiService(ctx)
-      if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const reviews = await service.reviews({ status: 'unresolved', limit: REVIEW_MAX })
-      return {
+      const { session, scope } = requireSessionExecution(exec)
+      const reviews = await service.modelReviews({ status: 'unresolved', limit: REVIEW_MAX }, scope)
+      const value = {
         reviews: reviews.map(review => ({
           id: review.id,
           title: review.title,
@@ -281,6 +547,57 @@ export function apply(ctx: Context): void {
           ...(review.description === undefined ? {} : { description: review.description }),
         })),
       }
+      for (const review of reviews) {
+        if (review.provenance === undefined) continue
+        recordKnowledgeResult(exec, session, scope, {
+          kind: 'reviews', path: review.id, value: asJsonValue(review), contentBytes: JSON.stringify(review).length,
+          provenance: review.provenance,
+        })
+      }
+      recordKnowledgeResult(exec, session, scope, {
+        kind: 'reviews', path: 'reviews', value: asJsonValue(value), contentBytes: JSON.stringify(value).length,
+      })
+      return value
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'wiki_propose_repair',
+    description: 'Stage a rule quoted from the current direct user message for a verified Wiki page read in this conversation. The host checks the session log and matching tool arguments in the same turn. It blocks the old page and creates an untrusted Candidate; it never verifies or promotes the correction.',
+    parameters: {
+      sourcePath: { type: 'string', required: true, description: 'Wiki-root-relative path of the fully read page being corrected.' },
+      title: { type: 'string', required: true, description: 'Short title for the corrected rule.' },
+      correctedRule: { type: 'string', required: true, description: 'Quote the corrected rule with its conditions and important exceptions exactly from the current direct user message.' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          candidatePath: { type: 'string' },
+          reviewId: { type: 'string' },
+          candidateHash: { type: 'string' },
+          errorCode: { type: 'string' },
+        },
+      },
+      render: (_args, value) => textBlock(value.ok
+        ? `Correction staged as ${value.candidatePath} (${value.reviewId}); independent verification and explicit review are still required.`
+        : `Correction was not staged: ${value.errorCode ?? 'unknown-error'}.`),
+    },
+    async execute(args: { sourcePath: string; title: string; correctedRule: string }, exec) {
+      const service = wikiService(ctx)
+      const { session, scope } = requireSessionExecution(exec)
+      const expectedSourceContentHash = correctionSourceHash(session, scope, args.sourcePath)
+      if (expectedSourceContentHash === undefined) {
+        throw new Error('read the complete verified Wiki page with wiki_read in this conversation before proposing a correction')
+      }
+      return service.proposeKnowledgeRepair({
+        sourcePath: args.sourcePath,
+        title: args.title,
+        correctedRule: args.correctedRule,
+        expectedSourceContentHash,
+      }, scope)
     },
   }))
 
@@ -320,7 +637,6 @@ export function apply(ctx: Context): void {
     },
     async execute(args: { input: string }) {
       const service = wikiService(ctx)
-      if (service === undefined) throw new Error('knowledgeWiki service unavailable')
       const snapshot = await service.ingestQueueAdd({ inputs: [args.input] })
       return {
         tasks: snapshot.tasks.map(task => ({ id: task.id, input: task.input, status: task.status })),
@@ -365,7 +681,6 @@ export function apply(ctx: Context): void {
       exec,
     ) {
       const service = wikiService(ctx)
-      if (service === undefined) throw new Error('knowledgeWiki service unavailable')
       return service.verifyCandidate({ reviewId: args.reviewId, action: args.action }, exec.signal)
     },
   }))

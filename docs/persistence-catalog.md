@@ -474,6 +474,38 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:19`](../packages/hooks/hook-
 
 Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-protocol/src/types.ts)
 
+### `knowledge/*`
+
+<a id="knowledgeinjected--log-only"></a>
+
+#### `knowledge/injected` — log-only
+
+```ts persistence-catalog
+/** A Wiki result was rendered into the model-visible tool result. */
+'knowledge/injected': KnowledgeSessionEventBase & {
+  kind: 'search' | 'page' | 'graph' | 'reviews' | 'files'
+  contentBytes: number
+  truncated?: boolean
+}
+```
+
+Source: [`packages/host/knowledge-wiki-tools/src/session-events.ts:44`](../packages/host/knowledge-wiki-tools/src/session-events.ts)
+
+<a id="knowledgeretrieved--log-only"></a>
+
+#### `knowledge/retrieved` — log-only
+
+```ts persistence-catalog
+/** A Wiki item was selected for a model-facing result. */
+'knowledge/retrieved': KnowledgeSessionEventBase & {
+  kind: 'search' | 'page' | 'graph' | 'reviews' | 'files'
+  allowed: boolean
+  reason: 'ok' | 'scope-denied' | 'acl-denied' | 'expired' | 'conflict' | 'unverified'
+}
+```
+
+Source: [`packages/host/knowledge-wiki-tools/src/session-events.ts:38`](../packages/host/knowledge-wiki-tools/src/session-events.ts)
+
 ### `llm/*`
 
 <a id="llmretry--log-only"></a>

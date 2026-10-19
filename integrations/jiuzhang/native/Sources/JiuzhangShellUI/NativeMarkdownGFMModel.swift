@@ -297,7 +297,10 @@ enum NativeGFMParser {
       inlineMath: preprocessed.inlineMath,
       inlineMathTokenPrefix: preprocessed.inlineMathTokenPrefix
     )
-    let document = Document(parsing: preprocessed.body)
+    // swift-markdown enables smart punctuation by default. That silently
+    // changes JSON, source snippets, and other exact model output before it is
+    // rendered, so preserve authored punctuation on every parser path.
+    let document = Document(parsing: preprocessed.body, options: [.disableSmartOpts])
     var blocks = converter.blocks(document.children)
 
     let footnotes = converter.footnoteOrder.compactMap { id -> NativeGFMFootnote? in
@@ -307,7 +310,7 @@ enum NativeGFMParser {
         inlineMath: preprocessed.inlineMath,
         inlineMathTokenPrefix: preprocessed.inlineMathTokenPrefix
       )
-      let footnoteDocument = Document(parsing: source)
+      let footnoteDocument = Document(parsing: source, options: [.disableSmartOpts])
       return NativeGFMFootnote(
         id: id,
         number: converter.footnoteNumbers[id] ?? 0,
@@ -707,7 +710,7 @@ enum NativeGFMParser {
 
         if source[index] == "$",
            !source[index...].hasPrefix("$$"),
-           !isEscaped(source, at: index),
+           !NativeGFMParser.isEscaped(source, at: index),
            let close = closingDollar(in: source, after: index)
         {
           let valueStart = source.index(after: index)
@@ -765,22 +768,11 @@ enum NativeGFMParser {
       var index = source.index(after: opening)
       while index < source.endIndex {
         if source[index] == "\n" { return nil }
-        if source[index] == "$", !isEscaped(source, at: index) { return index }
+        if source[index] == "$", !NativeGFMParser.isEscaped(source, at: index) { return index }
         index = source.index(after: index)
       }
       return nil
     }
 
-    private func isEscaped(_ source: String, at index: String.Index) -> Bool {
-      var cursor = index
-      var slashCount = 0
-      while cursor > source.startIndex {
-        let previous = source.index(before: cursor)
-        guard source[previous] == "\\" else { break }
-        slashCount += 1
-        cursor = previous
-      }
-      return slashCount.isMultiple(of: 2) == false
-    }
   }
 }

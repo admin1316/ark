@@ -7,6 +7,8 @@
 import { Command } from 'commander'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
+import { connectNativeKnowledgeOwner, nativeKnowledgeOwnerEndpointFromEnvironment } from './native-owner-channel.ts'
+import { createNativeKnowledgeOwnerProviders } from './native-owner-providers.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'native-api-startup'
@@ -48,7 +50,8 @@ export function parseNativeApiPort(value: string | undefined): number | undefine
  * Parse the native API invocation and publish its immutable startup values.
  * @param ctx - plugin context carrying the launcher argument snapshot.
  */
-export function apply(ctx: Context): void {
+export async function apply(ctx: Context): Promise<void> {
+  let startup: NativeApiStartupValues | undefined
   const program = new Command()
     .name('dsh --profile native-api')
     .description('Serve an authenticated loopback API for a native desktop client.')
@@ -62,9 +65,40 @@ export function apply(ctx: Context): void {
     } catch (error) {
       program.error(`error: ${error instanceof Error ? error.message : String(error)}`)
     }
-    ctx.provide(NATIVE_API_STARTUP_SERVICE, Object.freeze({
-      ...(port === undefined ? {} : { port }),
-    }) satisfies NativeApiStartupValues)
+    startup = Object.freeze({ ...(port === undefined ? {} : { port }) })
   })
   parseCmdline(ctx, program)
+  if (startup === undefined) return
+  const endpoint = nativeKnowledgeOwnerEndpointFromEnvironment(process.env)
+  if (endpoint !== undefined) {
+    await ctx.effect(async function* () {
+      const controller = new AbortController()
+      // Disposal is announced before Cordis waits for asynchronous setup to finish.
+      ctx.on('internal/plugin', (fiber) => {
+        if (fiber === ctx.fiber && fiber.uid === null) controller.abort(new Error('Native startup disposed'))
+      })
+      yield () =>{  controller.abort(new Error('Native startup disposed')) }
+      let connection: Awaited<ReturnType<typeof connectNativeKnowledgeOwner>>
+      try {
+        connection = await connectNativeKnowledgeOwner(endpoint, controller.signal)
+      } catch (error) {
+        if (controller.signal.aborted) return
+        throw error
+      }
+      if (connection.status === 'disabled') return
+      yield () => connection.channel.close()
+      const providers = createNativeKnowledgeOwnerProviders(connection.channel)
+      ctx.provide('knowledgeWikiVerifierAuthority', providers.authority)
+      ctx.provide('knowledgeUseJournalSigningAuthority', providers.journalAuthority)
+      ctx.provide('knowledgeMeasuredUseEvaluator', providers.measuredUseEvaluator)
+      ctx.provide('knowledgeWikiMeasuredTrialReader', providers.measuredTrialReader)
+      ctx.provide('nativeKnowledgeOwnerClient', providers.adapterClient)
+      ctx.provide('knowledgeSettledUseCostEvidenceOwner', providers.costOwner)
+    }, 'Native knowledge owner channel')
+    if (ctx.fiber.uid === null) return
+  }
+  ctx.provide(NATIVE_API_STARTUP_SERVICE, startup)
 }
+
+export { connectNativeGuardCostOwner, nativeKnowledgeOwnerEndpointFromEnvironment } from './native-owner-channel.ts'
+export type { NativeGuardAdmissionRequest, NativeGuardSettlementRequest, NativeKnowledgeOwnerEndpoint } from './native-owner-channel.ts'

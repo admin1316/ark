@@ -87,6 +87,7 @@ type StubMode =
   | 'end-on-abort'
   | 'idle-then-normal'
   | 'large'
+  | 'crlf'
   | 'nonzero'
   | 'torn-status'
   | 'finish-torn-status'
@@ -97,11 +98,23 @@ type StubMode =
   | 'send-error'
   | 'prompt-after-idle'
   | 'incremental-fallback'
+  | 'incremental-torn-status'
   | 'empty-page-after-latest'
   | 'paged-scrollback'
   | 'with-echo'
   | 'exit-after-send'
   | 'prompt-collision'
+  | 'empty-prompt-then-normal'
+  | 'echo-prompt-then-normal'
+  | 'echo-prompt-then-empty-read'
+  | 'folded-echo-prompt-then-normal'
+  | 'partial-echo-prompt-then-normal'
+  | 'quoted-start-prompt-then-normal'
+  | 'empty-prompt-until-abort'
+  | 'empty-output'
+  | 'syntax-error'
+  | 'reject-on-abort'
+  | 'send-error-on-abort'
 
 const START_PATTERN = /__DSH_PERSISTENT_PWSH_START_[^_]+(?:-[^_]+)*__/
 const END_PATTERN = /__DSH_PERSISTENT_PWSH_END_[^:]+:/
@@ -117,6 +130,8 @@ class StubTerminalSession implements TerminalBackendSession {
   pendingText = ''
   historyTruncated = false
   throwOnSend = false
+  largeOutput = 'x'.repeat(100)
+  readonly abortSendError = new Error('stub provider send failed during cancellation')
 
   constructor(mode: StubMode) {
     this.mode = mode
@@ -136,6 +151,23 @@ class StubTerminalSession implements TerminalBackendSession {
     }
     if (this.mode === 'send-error') throw new Error('stub send failed')
     if (this.throwOnSend) throw new Error('PTY session has exited')
+    if (this.mode === 'empty-prompt-until-abort') {
+      // Match the real PTY's pre-write rejection, including observation-only sends.
+      request.signal?.throwIfAborted()
+      this.scrollback += this.motd
+      return this.operation(Promise.resolve(this.result(this.motd, 'stdin_read')))
+    }
+    if (this.mode === 'reject-on-abort' || this.mode === 'send-error-on-abort') {
+      const rejectWithSendError = this.mode === 'send-error-on-abort'
+      const done = new Promise<ReturnType<StubTerminalSession['result']>>((_resolve, reject) => {
+        request.signal?.addEventListener('abort', () => {
+          const reason: unknown = request.signal?.reason
+          reject(rejectWithSendError ? this.abortSendError
+            : reason instanceof Error ? reason : new Error('stub aborted', { cause: reason }))
+        }, { once: true })
+      })
+      return this.operation(done)
+    }
     if (this.mode === 'wait-for-abort' || this.mode === 'end-on-abort') {
       const done = new Promise<ReturnType<StubTerminalSession['result']>>((resolve) => {
         request.signal?.addEventListener('abort', () => {
@@ -154,6 +186,22 @@ class StubTerminalSession implements TerminalBackendSession {
       this.mode = 'normal'
       this.pendingText = request.text
       return this.operation(Promise.resolve(this.result('', 'inferred_idle')))
+    }
+    if (this.mode === 'empty-prompt-then-normal' || this.mode === 'echo-prompt-then-normal'
+      || this.mode === 'echo-prompt-then-empty-read' || this.mode === 'folded-echo-prompt-then-normal'
+      || this.mode === 'partial-echo-prompt-then-normal' || this.mode === 'quoted-start-prompt-then-normal') {
+      const start = START_PATTERN.exec(request.text)?.[0] ?? ''
+      // Folded echo can put the nonce on its own line without executing it.
+      const echo = this.mode === 'empty-prompt-then-normal' ? ''
+        : this.mode === 'folded-echo-prompt-then-normal' ? request.text.replace(start, `\n${start}\n`)
+          : this.mode === 'partial-echo-prompt-then-normal' ? request.text.slice(request.text.indexOf(start))
+            : this.mode === 'quoted-start-prompt-then-normal' ? `'${start}'`
+              : request.text
+      const output = `${echo}\n${this.motd}`
+      this.mode = this.mode === 'echo-prompt-then-empty-read' ? 'empty-read' : 'normal'
+      this.pendingText = request.text
+      this.scrollback += output
+      return this.operation(Promise.resolve(this.result(output, 'stdin_read')))
     }
     if (this.mode === 'prompt-after-idle') {
       if (request.text.length > 0) {
@@ -195,8 +243,8 @@ class StubTerminalSession implements TerminalBackendSession {
       this.throwOnSend = true
       return this.operation(Promise.resolve(settled))
     }
-    if (this.mode === 'incremental-fallback') {
-      const incremental = `${start ?? ''}\nincrement\n${this.motd}`
+    if (this.mode === 'incremental-fallback' || this.mode === 'incremental-torn-status') {
+      const incremental = `${start ?? ''}\nincrement\n${this.mode === 'incremental-torn-status' ? end ?? '' : ''}${this.motd}`
       return this.operation(Promise.resolve(this.result(this.motd, 'stdin_read')), incremental)
     }
     if (this.mode === 'torn-status') {
@@ -216,11 +264,13 @@ class StubTerminalSession implements TerminalBackendSession {
       return this.operation(Promise.resolve(this.result(output, 'stdin_read')))
     }
     const commandOutput = this.mode === 'large'
-      ? 'x'.repeat(100)
-      : this.mode === 'nonzero' ? ''
-        : this.mode === 'prompt-collision' ? this.motd
-          : 'hello from stub'
-    const exitCode = this.mode === 'nonzero' ? 7 : 0
+      ? this.largeOutput
+      : this.mode === 'crlf' ? 'line one\r\nline two\r\nline three'
+        : this.mode === 'nonzero' || this.mode === 'empty-output' ? ''
+          : this.mode === 'prompt-collision' ? this.motd
+            : this.mode === 'syntax-error' ? 'pwsh: syntax error'
+              : 'hello from stub'
+    const exitCode = this.mode === 'nonzero' ? 7 : this.mode === 'syntax-error' ? 1 : 0
     const output = `${start ?? ''}\n${commandOutput}\n${end ?? ''}${exitCode}\n${this.motd}`
     this.scrollback += output
     if (this.mode === 'exit' || this.mode === 'signal-exit' || this.mode === 'unknown-exit') {
@@ -366,6 +416,14 @@ describe('tool-pwsh-persistent', () => {
     expect(result).not.toContain('Invoke-Expression')
   })
 
+  it('normalizes PowerShell CRLF output to the cross-platform tool format', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' })
+    await call(ctx, owner, 'warm up')
+    stub.sessions[0]!.mode = 'crlf'
+
+    expect(text(await call(ctx, owner, 'Write-Output lines'))).toBe('line one\nline two\nline three')
+  })
+
   it('preserves command output that equals the private shell prompt', async () => {
     const { ctx, owner, stub } = await setup({ backendType: 'stub' })
     await call(ctx, owner, 'warm up')
@@ -373,6 +431,69 @@ describe('tool-pwsh-persistent', () => {
 
     session.mode = 'prompt-collision'
     expect(text(await call(ctx, owner, 'complete prompt collision'))).toBe(session.motd)
+  })
+
+  it('waits past an empty prompt without resubmitting the current command', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+    session.mode = 'empty-prompt-then-normal'
+    const sends = vi.spyOn(session, 'startSend')
+
+    expect(text(await call(ctx, owner, 'Write-Output "$PWD"'))).toBe('hello from stub')
+    expect(sends.mock.calls.map(([request]) => request.submit)).toEqual([true, false])
+    expect(sends.mock.calls[0]?.[0].text).toContain('__DSH_PERSISTENT_PWSH_START_')
+    expect(sends.mock.calls[1]?.[0].text).toBe('')
+  })
+
+  it.each([
+    'echo-prompt-then-normal',
+    'echo-prompt-then-empty-read',
+    'folded-echo-prompt-then-normal',
+    'partial-echo-prompt-then-normal',
+    'quoted-start-prompt-then-normal',
+  ] as const)('waits past wrapper echo and an old prompt for real command markers without resubmitting: %s', async (mode) => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+    session.mode = mode
+    const sends = vi.spyOn(session, 'startSend')
+    vi.useFakeTimers()
+    try {
+      let settled = false
+      const pending = call(ctx, owner, 'Write-Output hi').then((result) => { settled = true; return result })
+      void pending.catch(() => {})
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sends).toHaveBeenCalledTimes(1)
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(25)
+      expect(text(await pending)).toBe('hello from stub')
+      expect(sends.mock.calls.map(([request]) => request.submit)).toEqual([true, false])
+      expect(sends.mock.calls[1]?.[0].text).toBe('')
+    } finally {
+      vi.useRealTimers()
+      sends.mockRestore()
+    }
+  })
+
+  it('preserves marker-complete empty command output', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' })
+    await call(ctx, owner, 'warm up')
+    stub.sessions[0]!.mode = 'empty-output'
+
+    expect(text(await call(ctx, owner, '$null = 1'))).toBe('')
+  })
+
+  it('returns a syntax error once the wrapper reports its completed status', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+    session.mode = 'syntax-error'
+    const sends = vi.spyOn(session, 'startSend')
+
+    expect(text(await call(ctx, owner, 'bad {'))).toBe('pwsh: syntax error\n[exit code: 1]')
+    expect(sends.mock.calls.map(([request]) => request.submit)).toEqual([true])
   })
 
   it('reports the exit path when the shell exits between send settlement and the next poll', async () => {
@@ -390,7 +511,7 @@ describe('tool-pwsh-persistent', () => {
     expect(stub.sessions).toHaveLength(2)
   })
 
-  it('handles inferred idle, prompt fallback, shell exit, clipping, and cleanup', async () => {
+  it('handles inferred idle, shell exit, clipping, and cleanup', async () => {
     const { ctx, owner, stub, fiber } = await setup({
       backendType: 'stub',
       maxOutputChars: 10,
@@ -400,21 +521,6 @@ describe('tool-pwsh-persistent', () => {
 
     session.mode = 'idle-then-normal'
     expect(text(await call(ctx, owner, 'silent then complete'))).toContain('hello from')
-
-    session.mode = 'incremental-fallback'
-    session.scrollback = ''
-    expect(text(await call(ctx, owner, 'incremental fallback'))).toBe('increment')
-
-    session.mode = 'prompt-only'
-    const promptFallback = text(await call(ctx, owner, 'bad {'))
-    expect(promptFallback).toContain('pwsh: synt')
-    expect(promptFallback).not.toContain('DSH_PERSISTENT_PWSH_PROMPT')
-
-    session.mode = 'prompt-crlf'
-    session.scrollback = ''
-    const crlfPromptFallback = text(await call(ctx, owner, 'bad {'))
-    expect(crlfPromptFallback).toContain('pwsh: synt')
-    expect(crlfPromptFallback).not.toContain('DSH_PERSISTENT_PWSH_PROMPT')
 
     session.mode = 'end-only'
     session.scrollback = ''
@@ -451,6 +557,20 @@ describe('tool-pwsh-persistent', () => {
     await ctx.terminals.kill(owner, externallyClosed!, 'external cleanup')
     await fiber.dispose()
     expect(stub.sessions[2]?.closed).toEqual(['external cleanup'])
+  })
+
+  it('clips a split surrogate pair instead of leaving a lone half', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', maxOutputChars: 10 })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+    session.mode = 'large'
+    // The tenth code unit is the emoji's high surrogate.
+    session.largeOutput = `${'x'.repeat(9)}😀tail`
+
+    const rendered = text(await call(ctx, owner, 'emoji'))
+
+    expect(rendered.startsWith(`${'x'.repeat(9)}<response clipped>`)).toBe(true)
+    expect(rendered).not.toContain('\uD83D')
   })
 
   it('waits for status digits after a torn completion marker', async () => {
@@ -500,17 +620,39 @@ describe('tool-pwsh-persistent', () => {
     expect(text(await call(ctx, owner, 'paged output'))).toBe('hello from stub')
   })
 
-  it('sanitizes a prompt fallback reached after multiple polling rounds', async () => {
-    const { ctx, owner, stub } = await setup({ backendType: 'stub', maxOutputChars: 1_000 })
+  it.each(['incremental-fallback', 'incremental-torn-status', 'prompt-only', 'prompt-crlf', 'prompt-after-idle'] as const)('retains an uncertain partial result until the original deadline resets the shell: %s', async (mode) => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', maxOutputChars: 1_000, timeoutMs: 40 })
     await call(ctx, owner, 'warm up')
     const session = stub.sessions[0]!
-    session.mode = 'prompt-after-idle'
+    session.mode = mode
     session.scrollback = ''
-    const result = text(await call(ctx, owner, 'bad {'))
-    expect(result).toContain('partial syntax output')
-    expect(result).toContain('pwsh: syntax error')
-    expect(result).not.toContain('DSH_PERSISTENT_PWSH_PROMPT')
-    expect(result).not.toContain('DSH_PERSISTENT_PWSH_START')
+    const sends = vi.spyOn(session, 'startSend')
+    vi.useFakeTimers()
+    try {
+      let settled = false
+      const pending = call(ctx, owner, 'bad {').then((result) => { settled = true; return result })
+      void pending.catch(() => {})
+      await vi.advanceTimersByTimeAsync(0)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(25)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(25)
+
+      const result = text(await pending)
+      expect(result).toContain('timed out after')
+      expect(result).toContain('next pwsh call starts from the workspace')
+      expect(result).toContain(mode.startsWith('incremental') ? 'increment' : 'pwsh: syntax error')
+      if (mode === 'prompt-after-idle') expect(result).toContain('partial syntax output')
+      expect(result).not.toContain('DSH_PERSISTENT_PWSH_PROMPT')
+      expect(result).not.toContain('DSH_PERSISTENT_PWSH_START')
+      expect(result).not.toContain('DSH_PERSISTENT_PWSH_END')
+      expect(session.closed).toEqual(['persistent pwsh command timed out'])
+      expect(sends.mock.calls.map(([request]) => request.submit)).toEqual([true, false])
+      expect(sends.mock.calls[1]?.[0].text).toBe('')
+    } finally {
+      vi.useRealTimers()
+      sends.mockRestore()
+    }
   })
 
   it('does not attribute old scrollback truncation to a complete current command', async () => {
@@ -532,6 +674,116 @@ describe('tool-pwsh-persistent', () => {
     expect(text(result)).toContain('partial output')
     expect(text(result)).toContain('next pwsh call starts from the workspace')
     expect(stub.sessions[0]?.closed).toContain('persistent pwsh command timed out')
+  })
+
+  it('classifies a deadline reached between empty-prompt observations without resubmitting', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', timeoutMs: 10 })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+    session.mode = 'empty-prompt-until-abort'
+    const sends = vi.spyOn(session, 'startSend')
+    vi.useFakeTimers()
+    try {
+      const pending = call(ctx, owner, 'Write-Output once')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sends).toHaveBeenCalledTimes(1)
+      // The tool is in its 25ms polling pause when this original deadline fires.
+      await vi.advanceTimersByTimeAsync(10)
+      expect(sends).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(15)
+
+      const result = await pending
+      expect(result.isError).not.toBe(true)
+      expect(text(result)).toContain('timed out after')
+      expect(text(result)).toContain('next pwsh call starts from the workspace')
+      expect(session.closed).toEqual(['persistent pwsh command timed out'])
+      expect(sends.mock.calls.filter(([request]) => request.submit)).toHaveLength(1)
+      expect(sends.mock.calls.slice(1).every(([request]) => request.text === '' && !request.submit)).toBe(true)
+    } finally {
+      vi.useRealTimers()
+      sends.mockRestore()
+    }
+  })
+
+  it('preserves caller cancellation reached between empty-prompt observations without resubmitting', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', timeoutMs: 5_000 })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+    session.mode = 'empty-prompt-until-abort'
+    const sends = vi.spyOn(session, 'startSend')
+    const execution = vi.spyOn(ctx.tools.get('pwsh')!, 'execute')
+    const controller = new AbortController()
+    const reason = new Error('caller stopped between prompt observations')
+    vi.useFakeTimers()
+    try {
+      const pending = call(ctx, owner, 'Write-Output once', controller.signal)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sends).toHaveBeenCalledTimes(1)
+      controller.abort(reason)
+      await vi.advanceTimersByTimeAsync(25)
+
+      expect((await pending).isError).toBe(true)
+      await expect(execution.mock.results[0]?.value).rejects.toBe(reason)
+      expect(session.closed).toEqual(['persistent pwsh command aborted'])
+      expect(sends.mock.calls.filter(([request]) => request.submit)).toHaveLength(1)
+      expect(sends.mock.calls.slice(1).every(([request]) => request.text === '' && !request.submit)).toBe(true)
+    } finally {
+      vi.useRealTimers()
+      execution.mockRestore()
+      sends.mockRestore()
+    }
+  })
+
+  it('classifies operation.done rejecting with the caller reason as cancellation', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', timeoutMs: 5_000 })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+    session.mode = 'reject-on-abort'
+    const sends = vi.spyOn(session, 'startSend')
+    const execution = vi.spyOn(ctx.tools.get('pwsh')!, 'execute')
+    const controller = new AbortController()
+    const reason = new Error('caller stopped while observing the command')
+    try {
+      const pending = call(ctx, owner, 'Write-Output once', controller.signal)
+      await vi.waitFor(() => { expect(sends).toHaveBeenCalledTimes(1) })
+      controller.abort(reason)
+
+      expect((await pending).isError).toBe(true)
+      await expect(execution.mock.results[0]?.value).rejects.toBe(reason)
+      expect(session.closed).toEqual(['persistent pwsh command aborted'])
+      expect(sends).toHaveBeenCalledTimes(1)
+      expect(sends.mock.calls[0]?.[0].submit).toBe(true)
+    } finally {
+      execution.mockRestore()
+      sends.mockRestore()
+    }
+  })
+
+  it('preserves a distinct operation.done send error concurrent with caller cancellation', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', timeoutMs: 5_000 })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+    session.mode = 'send-error-on-abort'
+    const sends = vi.spyOn(session, 'startSend')
+    const execution = vi.spyOn(ctx.tools.get('pwsh')!, 'execute')
+    const controller = new AbortController()
+    const reason = new Error('caller stopped alongside a provider failure')
+    try {
+      const pending = call(ctx, owner, 'Write-Output once', controller.signal)
+      await vi.waitFor(() => { expect(sends).toHaveBeenCalledTimes(1) })
+      controller.abort(reason)
+
+      const result = await pending
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain(session.abortSendError.message)
+      await expect(execution.mock.results[0]?.value).rejects.toBe(session.abortSendError)
+      expect(session.closed).toEqual(['persistent pwsh send failed'])
+      expect(sends).toHaveBeenCalledTimes(1)
+      expect(sends.mock.calls[0]?.[0].submit).toBe(true)
+    } finally {
+      execution.mockRestore()
+      sends.mockRestore()
+    }
   })
 
   it.each(['wait-for-abort', 'end-on-abort'] as const)(

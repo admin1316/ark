@@ -1,0 +1,56 @@
+{
+  "schema": "ark.knowledge.canonical-content-gate.source-receipt.v1",
+  "observedAt": "2026-10-10T21:11:54.845Z",
+  "sourceTree": {
+    "gitHead": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+    "branch": "codex/ark-upstream-reliability-20260927",
+    "worktreeDirty": true
+  },
+  "change": {
+    "sourceFile": "packages/host/knowledge-wiki/src/index.ts",
+    "sourceSha256": "05485531f020ff8b30eaa1bf83b27b0458e0203272937fae085d75a6ce9c5d1a",
+    "testFile": "packages/host/knowledge-wiki/tests/service-surface.spec.ts",
+    "testSha256": "cfdb14608017b6bc43d2d89bf6293a8a3fdf51822528872a91c9d314c5f02659",
+    "policy": "Ordinary model search, page reads, file lists, graph nodes, and repair proposals require a signed canonical lifecycle in addition to existing verification, scope, ACL, freshness, conflict, confidence, and utility gates. Candidate review metadata remains on the separate review surface.",
+    "publicInterfacesChanged": false
+  },
+  "validation": {
+    "focusedTests": {
+      "command": "pnpm exec vitest run packages/host/knowledge-wiki/tests/service-surface.spec.ts packages/host/knowledge-wiki-tools/tests/canonical-integration.spec.ts",
+      "result": "PASS",
+      "files": 2,
+      "tests": 26
+    },
+    "packageTests": {
+      "command": "pnpm exec vitest run packages/host/knowledge-wiki packages/host/knowledge-wiki-tools",
+      "result": "PASS",
+      "files": 76,
+      "tests": 691
+    },
+    "knowledgeWikiTypecheck": {
+      "command": "pnpm --filter @deepseek-ai/dsh-knowledge-wiki run typecheck",
+      "result": "PASS"
+    },
+    "diffCheck": {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  },
+  "runtime": {
+    "candidateVersion": "3.1.24",
+    "candidateBuild": "2026101124",
+    "candidateProcessesObserved": [
+      "18546 /Users/hui/ark-test/candidate/Ark.app/Contents/MacOS/Ark",
+      "18551 /Users/hui/ark-test/candidate/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/start.mjs --parent-pid 18546 --port 0",
+      "18580 /Users/hui/ark-test/candidate/Ark.app/Contents/Resources/node/bin/node /Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-native-api-runner/lib/bin.js --port 0"
+    ],
+    "packagedModule": "/Users/hui/ark-test/candidate/Ark.app/Contents/Resources/runtime/node_modules/@deepseek-ai/dsh-knowledge-wiki/lib/index.js",
+    "packagedModuleSha256": "586c480dcca4eba19a00184f315680b1aa76f7b793d452f3aedc84b91f1e7c37",
+    "packagedModuleContainsLifecycleGate": false,
+    "sourcePatchBuiltIntoCandidate": false,
+    "formalArkVersion": "3.1.0",
+    "formalArkBuild": "2026092701",
+    "candidateRebuiltOrReplaced": false
+  },
+  "authority": "unsigned source/test receipt; it is not independent Phase 6 acceptance"
+}

@@ -210,7 +210,7 @@ extension ArkAPIClient {
     cut: ArkHistoryCut? = nil, beforeSequence: Int? = nil, maximumEvents: Int = 2_048
   ) async throws -> ArkBoundHistoryPage {
     guard (1...2_048).contains(maximumEvents),
-          beforeSequence == nil || Self.safeJSONInteger(.number(Double(beforeSequence!))) == beforeSequence
+          beforeSequence == nil || JSONValue.number(Double(beforeSequence!)).jsonSafeInteger() == beforeSequence
     else { throw ArkSemanticHistory.invalid("child bound raw request") }
     var options: [String: JSONValue] = ["view": .string("raw"), "maxEvents": .number(Double(maximumEvents))]
     if let cut { options["sourceRevision"] = .string(cut.sourceRevision) }

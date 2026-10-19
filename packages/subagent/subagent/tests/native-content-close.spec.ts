@@ -1,5 +1,7 @@
-import { expect, it, vi } from 'vitest'
+import { randomUUID } from 'node:crypto'
+import { expect, it } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { createTeamRuntime } from '../../agent-team/tests/runtime.ts'
@@ -14,17 +16,27 @@ it('releases deleted child content under its original address without admitting 
     new SessionRemoteOperationsService(run.ctx, { semanticHistory: { contentReaders: 1 } })
     const signal = new AbortController().signal
     async function childContent() {
-      const child = await run.ctx.subagents.startContinuable({
-        provider: 'spawn', label: 'content close child',
-        request: { parent: run.lead, prompt: [{ type: 'text', text: 'initial task' }] }, signal,
+      const childId = SessionId(randomUUID())
+      const settled = Promise.withResolvers<SubagentRunEndInfo>()
+      const detach = run.ctx.on('subagent/end', (info) => {
+        if (info.id === childId) settled.resolve(info)
       })
-      await vi.waitFor(() => { expect(run.ctx.agents.get(child.childId)).toBeUndefined() })
-      const page = await run.ctx.subagents.remoteHistory(run.lead.id, child.childId, 'continuable',
+      try {
+        await run.ctx.subagents.startContinuable({
+          childId, provider: 'spawn', label: 'content close child',
+          request: { parent: run.lead, prompt: [{ type: 'text', text: 'initial task' }] }, signal,
+        })
+        // The manager emits this edge after durable flush and handle disposal;
+        // a still-live Agent must not become an assertion formatter's input.
+        expect((await settled.promise).stopReason).toBe('completed')
+        expect(run.ctx.agents.get(childId) === undefined).toBe(true)
+      } finally { detach() }
+      const page = await run.ctx.subagents.remoteHistory(run.lead.id, childId, 'continuable',
         { view: 'semantic' }, undefined, signal)
       if (page.view !== 'semantic') throw new Error('expected semantic history')
       const record = page.records.find(record => record.kind === 'assistant')
       if (record === undefined) throw new Error('expected assistant content')
-      return { id: child.childId, options: {
+      return { id: childId, options: {
         view: 'content' as const, sourceRevision: page.sourceRevision, recordId: record.id, maxCodeUnits: 32,
       } }
     }

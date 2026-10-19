@@ -1,0 +1,67 @@
+{
+  "schema": "ark.candidate-source-ci-local.v1",
+  "recordedAt": "2026-10-11T02:45:40Z",
+  "source": {
+    "checkout": "/Users/hui/ark-test/ark-pr39-source-audit-20261011",
+    "commit": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "workingTreeDirty": true
+  },
+  "changes": [
+    {
+      "path": "packages/bundle/native-api-app/tests/__snapshots__/native-preset-recovery.spec.ts.snap",
+      "reason": "The shipped Native preset now includes wiki_propose_repair in standard and minimal tool catalogs.",
+      "validation": {
+        "command": "pnpm exec vitest run packages/bundle/native-api-app/tests/native-preset-recovery.spec.ts -u",
+        "status": "PASS",
+        "testFiles": 1,
+        "passed": 1
+      }
+    },
+    {
+      "path": "scripts/prepare-ci-bubblewrap.spec.ts",
+      "reason": "The four serial negative scenarios exceeded their 30-second Vitest limit under concurrent exhaustive coverage.",
+      "change": "Test-only timeout increased to 60 seconds; each production subprocess retains its own bounded contract."
+    }
+  ],
+  "localCi": {
+    "command": "pnpm run check:ci:coverage",
+    "status": "PARTIAL",
+    "gates": {
+      "test:coverage-exempt-heavy": "PASS",
+      "test:coverage": "FAIL_COVERAGE_THRESHOLD"
+    },
+    "coverageSummary": {
+      "statementsPercent": 99.83,
+      "branchesPercent": 99.75,
+      "functionsPercent": 99.96,
+      "linesPercent": 99.86
+    },
+    "remainingThresholdFailure": {
+      "path": "packages/host/knowledge-wiki/src/reviews.ts",
+      "statementsPercent": 90.84,
+      "branchesPercent": 90.0,
+      "functionsPercent": 92.98,
+      "cause": "Canonical mutation paths remain fail-closed until an authenticated measured-trial receipt reader is implemented and provisioned."
+    }
+  },
+  "remoteCi": {
+    "pullRequest": "https://github.com/admin1316/ark/pull/39",
+    "checkedHead": "8de9f3b9549f24563c04f4867301f74d0d6c53eb",
+    "runDate": "2026-10-08",
+    "status": "FAIL",
+    "note": "The run predates this dirty working-tree change. Its Windows lane reported broad cross-platform failures and must be rerun before treating the local fixes as remote CI evidence."
+  },
+  "candidateAndRelease": {
+    "activeCandidate": "3.1.25/build 2026101125",
+    "activeCandidatePid": 76456,
+    "nextCandidate": "3.1.26/build 2026101126",
+    "nextCandidateStatus": "STAGED_INSTALL_PASS_LIVE_UI_RETEST_PENDING",
+    "phase6": {
+      "passed": 0,
+      "unknown": 16
+    },
+    "formalArkChanged": false,
+    "githubPublished": false
+  },
+  "gitDiffCheck": "PASS"
+}

@@ -30,6 +30,7 @@ import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { replaceJunctionTarget } from '@deepseek-ai/dsh-win32-process'
 import { loadOverlayPatches } from './index.ts'
 
 /** Directory under the Harness home holding every profile. */
@@ -140,6 +141,12 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
 /** The bundle list a `dsh plugin` init uses for a name with no shipped template. */
 export const DEFAULT_PROFILE_BUNDLES: readonly string[] = ['@deepseek-ai/dsh-base']
 
+// Retry only the maintained search root when an external launch changes it;
+// ordinary missing packages fail immediately. Windows re-targets the owned
+// junction in place, without an unlink/recreate interval.
+const PROFILE_LINK_REPAIR_RETRIES = 8
+const PROFILE_LINK_REPAIR_WAIT = new Int32Array(new SharedArrayBuffer(4))
+
 const PROFILE_PATCH_TEMPLATE = `# Your patch layer for this dsh profile, applied after every bundle layer:
 # a top-level YAML array of loader patch entries (id-targeted config
 # overrides, disables, and insert lists; \`!!js\` expressions allowed).
@@ -189,19 +196,31 @@ export function initProfile(dir: string, bundles: readonly string[], patchReload
 function ensureSymlink(link: string, target: string): void {
   let stat
   try {
-    stat = lstatSync(link)
-  } catch {
-    // Missing link (first run) — created below. Any other lstat failure on a
-    // path we just created the parent of would resurface on symlinkSync.
-    stat = undefined
+    stat = lstatSync(link, { bigint: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
   if (stat !== undefined) {
     if (!stat.isSymbolicLink()) {
       throw new Error(`dsh: ${link} exists and is not a symlink; remove it so dsh can manage the installation fallback`)
     }
-    if (readlinkSync(link) === target) return
+    const previousTarget = readlinkSync(link)
+    if (previousTarget === target) return
+    if (process.platform === 'win32') {
+      replaceJunctionTarget(link, target, { dev: stat.dev, ino: stat.ino, target: previousTarget })
+      return
+    }
+  } else {
+    try {
+      symlinkSync(target, link, 'junction')
+    } catch (error) {
+      // Another initial healer may publish the same link before this create.
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST'
+        || !lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) throw error
+    }
+    return
   }
-  // Replace by atomic rename. Every profile resolves bare plugin names through
+  // POSIX replaces by atomic rename. Every profile resolves bare plugin names through
   // this fallback, and a restart heals it while another runtime may still be
   // answering a preset roster or a mount: unlinking first leaves the entry
   // missing for the whole gap between the two syscalls, and one missing entry
@@ -216,28 +235,10 @@ function ensureSymlink(link: string, target: string): void {
   symlinkSync(target, staged, 'junction')
   try {
     renameSync(staged, link)
-    return
   } catch (error) {
-    /* v8 ignore next 3 -- POSIX rename always replaces the link; only Windows can refuse. */
-    if (!['EEXIST', 'EPERM', 'ENOTEMPTY', 'EISDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) {
-      unlinkSync(staged)
-      throw error
-    }
-  }
-  // Windows fallback: delete the reparse point itself (unlink, not rmSync — a
-  // junction is a directory to rmSync and throws EISDIR unless recursive).
-  unlinkSync(staged)
-  if (stat !== undefined) unlinkSync(link)
-  try {
-    symlinkSync(target, link, 'junction')
-  } catch (error) {
-    // Concurrent launches heal the same fallback; losing the race to a
-    // process writing the identical link is success, anything else is not.
-    /* v8 ignore next 4 */
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST'
-      || !lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) {
-      throw error
-    }
+    try { unlinkSync(staged) }
+    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'profile link replacement and staging cleanup failed') }
+    throw error
   }
 }
 
@@ -395,15 +396,40 @@ function snapshotPackageDir(candidate: string): string | undefined {
  * probe the require resolution paths for a directory holding the named
  * manifest. This is Node's own node_modules lookup order, so the result
  * matches what the Loader would import from the same anchor. Capture a package
- * symlink's destination before probing its manifest: traversing a link while
- * another process atomically replaces it can fail with EINVAL on macOS. A
- * snapshot-served anchor additionally accepts a candidate the syscall-backed
- * canonicalizer cannot see, through {@link snapshotPackageDir}.
+ * symlink's destination before probing its manifest. The maintained profile
+ * fallback may be re-pointed during another launch; Windows temporarily removes
+ * its junction during replacement, and macOS may report EINVAL while traversing
+ * one. Only that fallback path gets bounded retries. A snapshot-served anchor
+ * additionally accepts a candidate the syscall-backed canonicalizer cannot see,
+ * through {@link snapshotPackageDir}.
  * @param anchor - absolute path of a package.json to resolve from.
  * @param packageName - the package name to resolve.
  * @returns the canonical package directory, or `undefined` when it is absent.
  */
-function packageDirFromAnchor(anchor: string, packageName: string): string | undefined {
+function canonicalPackageCandidate(candidate: string, retryLinkRepair: boolean): string | undefined {
+  let retries = 0
+  while (true) {
+    try {
+      return realpathSync.native(candidate)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? ''
+      const missing = code === 'ENOENT' || code === 'ENOTDIR'
+      const transient = missing || code === 'EINVAL'
+      if (!retryLinkRepair || !transient || retries >= PROFILE_LINK_REPAIR_RETRIES) {
+        if (missing) return undefined
+        throw error
+      }
+      retries += 1
+      Atomics.wait(PROFILE_LINK_REPAIR_WAIT, 0, 0, 1)
+    }
+  }
+}
+
+function packageDirFromAnchor(
+  anchor: string,
+  packageName: string,
+  repairableSearchPath?: string,
+): string | undefined {
   // One probe per anchor, so ordinary Node processes answer from the packaged
   // marker alone and never pay a filesystem call for it.
   const snapshotAnchor = isSnapshotServedDirectory(dirname(anchor))
@@ -411,11 +437,8 @@ function packageDirFromAnchor(anchor: string, packageName: string): string | und
   /* v8 ignore next */
   for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
     const candidate = join(searchPath, packageName)
-    let directory: string
-    try {
-      directory = realpathSync.native(candidate)
-    } catch (error) {
-      if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
+    let directory = canonicalPackageCandidate(candidate, searchPath === repairableSearchPath)
+    if (directory === undefined) {
       // The syscall reports a snapshot entry as missing; the snapshot's own
       // canonicalizer is the only authority left for this candidate.
       const canonical = snapshotAnchor ? snapshotPackageDir(candidate) : undefined
@@ -442,8 +465,9 @@ function packageDirFromAnchor(anchor: string, packageName: string): string | und
 export function resolveBundleDir(
   binName: string, packageName: string, installAnchor: string, profileDir: string,
 ): string {
+  const repairableSearchPath = join(dirname(profileDir), 'node_modules')
   for (const anchor of [installAnchor, join(profileDir, 'package.json')]) {
-    const dir = packageDirFromAnchor(anchor, packageName)
+    const dir = packageDirFromAnchor(anchor, packageName, repairableSearchPath)
     if (dir !== undefined) return dir
   }
   throw new Error(

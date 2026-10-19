@@ -187,6 +187,7 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
       ) == 125,
     "native PTY helper mode ignores ordinary launches and rejects unauthenticated arguments"
   )
+  recordNativeContractPhase("native-pty-terminal", "inbox-controls-returned")
 
   let root = FileManager.default.temporaryDirectory
     .appendingPathComponent("ark-native-pty-\(UUID().uuidString)", isDirectory: true)
@@ -216,6 +217,7 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
       && session.output.contains("__ARK_SIZE__43 132")
       && session.output.contains("__ARK_SECRET_SCRUBBED__")
   }
+  recordNativeContractPhase("native-pty-terminal", "initial-session-observation-returned")
   let shellPID = await MainActor.run { session.processIdentifier }
   let processGroupID = await MainActor.run { session.processGroupIdentifier }
   let processSessionID = await MainActor.run { session.processSessionIdentifier }
@@ -274,6 +276,7 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
   async let firstStop = session.shutdown()
   async let repeatedStop = session.shutdown()
   let (firstTermination, repeatedTermination) = await (firstStop, repeatedStop)
+  recordNativeContractPhase("native-pty-terminal", "owned-session-shutdown-returned")
   check(firstTermination == repeatedTermination, "native Terminal repeat stop awaits one teardown result")
   check(firstTermination?.sessionDrained == true, "native Terminal drains every process group in its owned session")
   if let shellPID {
@@ -379,6 +382,8 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
   } else {
     check(false, "native Workbench source is readable for Terminal close ownership")
   }
+
+  recordNativeContractPhase("native-pty-terminal", "session-boundary-observations-returned")
 
   // MARK: - Session recovery / repair (cwd reuse, automatic rebuild; no content is ever replayed)
 
@@ -493,6 +498,7 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
     "an exhausted repair budget stops the session with the restart notice instead of rebuilding"
   )
   _ = await exhaustionSession.shutdown()
+  recordNativeContractPhase("native-pty-terminal", "recovery-observations-returned")
 
   // MARK: - A 组审计修复：Task 生命周期 / 重建硬上限 / surface 回放 / 本地化退出行
 
@@ -563,6 +569,7 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
   }
   check(manualCeilingReset, "a manual restart clears the automatic-repair lifetime ceiling")
   _ = await ceilingSession.shutdown()
+  recordNativeContractPhase("native-pty-terminal", "repair-lifecycle-observations-returned")
   try? FileManager.default.removeItem(at: ceilingRoot)
   try? FileManager.default.removeItem(at: ceilingStoreDirectory)
 
@@ -645,14 +652,16 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
   )
 
   // 3c) 队列必须有界：主线程被一次事务占住时，PTY 仍在生产；旧实现无上限（审计 P1-6）。
-  //     这里在无 run loop 的测试里直接灌入远超上限的字节，drain 不会消费，正好验证裁剪。
+  //     在同一个 MainActor 同步区段内灌入并检查，避免主队列 drain 与写入或断言交错。
   let floodSurface = controlSurface
   let floodChunk = [UInt8](repeating: 0x41, count: 1024 * 1024)
-  for _ in 0..<12 { floodSurface.enqueue(floodChunk) }
-  check(
-    floodSurface.queuedByteCount <= floodSurface.pendingByteLimit + 64,
-    "the terminal feed queue stays bounded under a flood (\(floodSurface.queuedByteCount) bytes)"
-  )
+  await MainActor.run {
+    for _ in 0..<12 { floodSurface.enqueue(floodChunk) }
+    check(
+      floodSurface.queuedByteCount <= floodSurface.pendingByteLimit + 64,
+      "the terminal feed queue stays bounded under a flood (\(floodSurface.queuedByteCount) bytes)"
+    )
+  }
   // 3c2) PTY→主线程交接必须成批且有界：旧实现每个 read chunk 一个 MainActor Task（各持 raw），
   //      洪泛 + 主线程繁忙 = 无界队列（审计 P1-6 残留路径）。
   let handoffSourceURL = contractNativeRoot.appendingPathComponent(
@@ -765,6 +774,7 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
     hiddenSession.sendCommand(floodCommandTemplate)
   }
   let floodStartedAt = Date()
+  recordNativeContractPhase("native-pty-terminal", "flood-command-request-returned")
   var floodLastProgressAt = floodStartedAt
   var floodPreviousSurfaceChars = await MainActor.run { hiddenSurface.surfaceText().count }
   var floodPreviousHandoffBytes = 0
@@ -803,6 +813,7 @@ func runArkNativePTYTerminalBehaviorContractChecks() async {
   try? FileManager.default.removeItem(at: hiddenRoot)
   _ = await retentionSession.shutdown()
   _ = await controlSession.shutdown()
+  recordNativeContractPhase("native-pty-terminal", "surface-shutdowns-returned")
   try? FileManager.default.removeItem(at: retentionRoot)
 
   // 4) A7：⌘R 只在终端拥有键盘焦点时生效（窗口级隐藏 Button shortcut 会在聊天框误触发）。

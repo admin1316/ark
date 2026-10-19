@@ -1619,6 +1619,69 @@ describe('E2BSubprocessHandle', () => {
   })
 })
 
+describe('original spawn signal follows process-tree lifetime', () => {
+  it('keeps the original signal effective after direct done while a helper remains', async () => {
+    const fake = new FakeSandbox()
+    fake.trapsTerm = true
+    const controller = new AbortController()
+    const handle = testHandle(runtime(fake), spec({ signal: controller.signal, graceMs: 2 }), '/runtime/post-leader-abort', 1)
+    await flush()
+    await fake.completeOutput()
+    fake.exitStatus = '0\n'
+    fake.handle.succeed(0)
+    await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+    expect(fake.alive).toBe(true)
+
+    controller.abort(new Error('late cancellation'))
+    await expect(handle.waitForExit()).resolves.toBe(true)
+    await expect(fake.handle.wait()).resolves.toEqual({ exitCode: 0, stdout: '', stderr: '' })
+    expect(fake.commandsSeen.filter(command => command.startsWith('kill -TERM -- -4242'))).toHaveLength(1)
+    expect(fake.commandsSeen).toContain('kill -KILL -- -4242')
+    expect(fake.alive).toBe(false)
+  })
+
+  it('does not signal after waitForExit has confirmed the whole tree is gone', async () => {
+    const fake = new FakeSandbox()
+    const controller = new AbortController()
+    const handle = testHandle(runtime(fake), spec({ signal: controller.signal }), '/runtime/tree-exited')
+    await flush()
+    fake.finish()
+    await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+    await expect(handle.waitForExit()).resolves.toBe(true)
+
+    controller.abort(new Error('late cancellation after quiescence'))
+    await flush()
+    expect(fake.commandsSeen.some(command => command.startsWith('kill -TERM -- -4242'))).toBe(false)
+    expect(fake.commandsSeen.some(command => command.startsWith('kill -KILL -- -4242'))).toBe(false)
+  })
+
+  it('keeps early abort behavior and coalesces explicit repeated termination', async () => {
+    const fake = new FakeSandbox()
+    const controller = new AbortController()
+    const handle = testHandle(runtime(fake), spec({ signal: controller.signal }), '/runtime/early-abort', 1)
+    await flush()
+    controller.abort(new Error('early cancellation'))
+    handle.terminate()
+    await expect(handle.waitForExit()).resolves.toBe(true)
+    await expect(handle.done).resolves.toMatchObject({ signal: 'SIGTERM' })
+    expect(fake.commandsSeen.filter(command => command.startsWith('kill -TERM -- -4242'))).toHaveLength(1)
+  })
+
+  it('releases the original signal listener when startup fails before a command handle exists', async () => {
+    const fake = new FakeSandbox()
+    fake.backgroundError = new Error('startup failure')
+    const controller = new AbortController()
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener')
+    const handle = testHandle(runtime(fake), spec({ signal: controller.signal }), '/runtime/start-failure')
+
+    await expect(handle.done).rejects.toThrow('startup failure')
+    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function))
+    controller.abort(new Error('late cancellation after startup failure'))
+    await flush()
+    expect(fake.commandsSeen.some(command => command.startsWith('kill -TERM -- -4242'))).toBe(false)
+  })
+})
+
 describe('E2BSubprocessRuntime', () => {
   async function service(
     fake = new FakeSandbox(),

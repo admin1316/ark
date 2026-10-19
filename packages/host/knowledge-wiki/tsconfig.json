@@ -9,6 +9,12 @@
   ],
   "references": [
     {
+      "path": "../../sandbox/sandbox-policy"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
       "path": "../../credentials/credentials"
     },
     {
@@ -28,6 +34,9 @@
     },
     {
       "path": "../../llm/llm"
+    },
+    {
+      "path": "../../subprocess/subprocess"
     },
     {
       "path": "../../web/web"

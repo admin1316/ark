@@ -105,7 +105,7 @@ export function visitWikiTree(
 ): void {
   let rootStat
   try {
-    rootStat = lstatSync(wikiRoot)
+    rootStat = lstatSync(wikiRoot, { bigint: true })
   } catch (error) {
     if (isMissingPathError(error)) return
     throw error
@@ -114,7 +114,7 @@ export function visitWikiTree(
   const visited = new Set<string>()
   const visitedFiles = new Set<string>()
   const walk = (dir: string, relPrefix: string): void => {
-    const directoryStat = lstatSync(dir)
+    const directoryStat = lstatSync(dir, { bigint: true })
     if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) throw new Error(`unsafe Wiki directory: ${dir}`)
     const identity = `${directoryStat.dev}:${directoryStat.ino}`
     if (visited.has(identity)) throw new Error(`revisited Wiki directory inode: ${dir}`)
@@ -124,7 +124,7 @@ export function visitWikiTree(
       if (SKIP_DIRS.has(name) || name.startsWith('.')) continue
       const fullPath = join(dir, name)
       const path = relPrefix === '' ? name : `${relPrefix}/${name}`
-      const st = lstatSync(fullPath)
+      const st = lstatSync(fullPath, { bigint: true })
       if (st.isSymbolicLink()) throw new Error(`symbolic links are not allowed in Wiki: ${path}`)
       if (st.isDirectory()) {
         visitor.onDirectory?.({ name, path })
@@ -132,12 +132,14 @@ export function visitWikiTree(
       } else if (!st.isFile()) {
         throw new Error(`non-regular Wiki entry is not allowed: ${path}`)
       } else if (name.endsWith('.md')) {
-        if (st.nlink !== 1) throw new Error(`hard-linked Wiki page is not allowed: ${path}`)
+        if (st.nlink !== 1n) throw new Error(`hard-linked Wiki page is not allowed: ${path}`)
         const fileIdentity = `${st.dev}:${st.ino}`
         if (visitedFiles.has(fileIdentity)) throw new Error(`revisited Wiki file inode: ${path}`)
         visitedFiles.add(fileIdentity)
         if (st.size > MAX_WIKI_PAGE_BYTES) throw new Error(`Wiki page exceeds 5 MiB: ${path}`)
-        visitor.onMarkdown?.({ name, path, fullPath, size: st.size })
+        // The existing page-size bound makes this public number conversion
+        // exact; inode identity above must retain the OS's full integer.
+        visitor.onMarkdown?.({ name, path, fullPath, size: Number(st.size) })
       }
     }
   }

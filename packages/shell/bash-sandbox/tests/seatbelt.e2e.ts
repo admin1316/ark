@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -21,6 +21,8 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 
 const probe = spawnSync('sandbox-exec', [...seatbeltProfileArgs({ mode: 'read-only', workspaceRoot: '/' }), '--', 'true'], { timeout: 5_000, stdio: 'ignore' })
 const seatbeltUsable = probe.status === 0
+const bashVersion = spawnSync('bash', ['-c', 'printf "%s" "$BASH_VERSION"'], { timeout: 5_000, encoding: 'utf8' })
+const pythonAvailable = spawnSync('python3', ['--version'], { timeout: 5_000, stdio: 'ignore' }).status === 0
 
 let ctx: Context | undefined
 const tempDirs: string[] = []
@@ -55,6 +57,72 @@ describe.skipIf(!seatbeltUsable)('bash-sandbox: real Seatbelt confinement throug
     expect(result.exitCode).not.toBe(0)
     expect(result.sandbox).toEqual({ mode: 'read-only', denied: true, enforcement: 'full' })
     expect(existsSync(join(workdir, 'denied.txt'))).toBe(false)
+  })
+
+  it.skipIf(bashVersion.status !== 0 || !bashVersion.stdout.startsWith('3.') || !pythonAvailable)(
+    'Bash 3.x read-only rejects a heredoc temp file while inline Python computes without writes',
+    async () => {
+      const workdir = await tempDir(homedir())
+      const input = 'numerator,denominator\n1,3\n1,6\n-1,4\n'
+      await writeFile(join(workdir, 'values.csv'), input)
+      const bash = await sandboxedBash(workdir, 'read-only')
+      // Bash 3.x needs a temp file for this script's stdin. This is not a
+      // claim about every heredoc implementation or newer Bash pipe paths.
+      const script = [
+        'import csv,json',
+        'from fractions import Fraction',
+        'with open("values.csv", newline="") as source:',
+        '    total=sum((Fraction(int(row["numerator"]),int(row["denominator"])) for row in csv.DictReader(source)), Fraction(0))',
+        'label="O\'Reilly $literal `tick`"',
+        'print(json.dumps({"numerator":total.numerator,"denominator":total.denominator,"label":label},sort_keys=True))',
+        `# ${'multi-line calculation '.repeat(500)}`,
+      ].join('\n')
+      const denied = await bash.run(bash.resolve({ command: `python3 - <<'PY'\n${script}\nPY` }))
+      expect(denied.exitCode).toBe(1)
+      expect(denied.sandbox).toEqual({ mode: 'read-only', denied: true, enforcement: 'full' })
+      expect(denied.stderr.text).toContain('cannot create temp file for here document')
+      expect(denied.stdout.text).toBe('')
+
+      const quotedScript = `'${script.replaceAll("'", "'\\''")}'`
+      const computed = await bash.run(bash.resolve({ command: `python3 -c ${quotedScript}` }))
+      expect(computed.exitCode).toBe(0)
+      expect(computed.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })
+      expect(computed.stderr.text).toBe('')
+      expect(JSON.parse(computed.stdout.text)).toEqual({
+        numerator: 1,
+        denominator: 4,
+        label: "O'Reilly $literal `tick`",
+      })
+      expect(readFileSync(join(workdir, 'values.csv'), 'utf8')).toBe(input)
+      expect(readdirSync(workdir)).toEqual(['values.csv'])
+    },
+  )
+
+  it.skipIf(!pythonAvailable)('literal multiline stdin computes without temporary files and still cannot write', async () => {
+    const workdir = await tempDir(homedir())
+    const input = 'numerator,denominator\n1,3\n1,6\n-1,4\n'
+    await writeFile(join(workdir, 'values.csv'), input)
+    const bash = await sandboxedBash(workdir, 'read-only')
+    const script = [
+      'import csv,json',
+      'from fractions import Fraction',
+      'with open("values.csv", newline="") as source:',
+      '    total=sum((Fraction(int(row["numerator"]),int(row["denominator"])) for row in csv.DictReader(source)), Fraction(0))',
+      'print(json.dumps({"numerator":total.numerator,"denominator":total.denominator}))',
+      '# 中文 $literal `tick` O\'Reilly\n'.repeat(12_000),
+    ].join('\n')
+    const result = await bash.run(bash.resolve({ command: 'python3 -', stdin: script }))
+    expect(result.exitCode, result.stderr.text).toBe(0)
+    expect(result.stderr.text).toBe('')
+    expect(result.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })
+    expect(JSON.parse(result.stdout.text)).toEqual({ numerator: 1, denominator: 4 })
+
+    const denied = await bash.run(bash.resolve({ command: 'python3 -', stdin: 'open("denied.txt", "w").write("forbidden")\n' }))
+    expect(denied.exitCode).not.toBe(0)
+    expect(denied.sandbox).toEqual({ mode: 'read-only', denied: true, enforcement: 'full' })
+    expect(existsSync(join(workdir, 'denied.txt'))).toBe(false)
+    expect(readFileSync(join(workdir, 'values.csv'), 'utf8')).toBe(input)
+    expect(readdirSync(workdir)).toEqual(['values.csv'])
   })
 
   it('workspace-write lands a write inside the workspace root and still denies one beside it', async () => {

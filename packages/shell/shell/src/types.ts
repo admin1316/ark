@@ -52,10 +52,8 @@ export interface ShellExecRequest {
   signal?: AbortSignal | undefined
   /**
    * Bytes to write to the command's stdin, then close it. Absent leaves stdin
-   * closed/empty (the default for model-driven tool calls). Set by in-process
-   * plugins (e.g. the hooks bridges, which write a hook command's JSON payload
-   * to its stdin); the model-facing bash tool does not expose it as a parameter
-   * (a model that needs stdin uses shell syntax like a heredoc or a pipe).
+   * closed/empty. The model-facing bash tool and in-process plugins (e.g. hook
+   * bridges) supply literal input without shell expansion or temporary files.
    */
   stdin?: string | undefined
   /**

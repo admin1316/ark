@@ -8,7 +8,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { once } from 'node:events'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   composeEntries,
@@ -38,14 +38,15 @@ const snapshotVfs = vi.hoisted(() => ({
   nativeCode: 'ENOENT' as string | undefined,
   /** Exact path where the simulated snapshot canonicalizer itself fails, and how; a missing code means the hook threw a bare Error. */
   snapshotFailure: undefined as { path: string; code?: string } | undefined,
-  /**
-   * Destination the simulated host refuses to replace through `renameSync`, and
-   * the errno it reports. POSIX rename always replaces a link, so this is the
-   * only way to reach the Windows-only delete-and-recreate fallback in
-   * `profile.ts`; it is the same fs-boundary simulation the snapshot VFS uses,
-   * and it refuses exactly one destination path.
-   */
+  /** Destination where the filesystem refuses replacement without removing the old entry. */
   renameRefusal: undefined as { destination: string; code: string } | undefined,
+  statRefusal: undefined as { path: string; code: string | undefined; remaining: number } | undefined,
+  createRefusal: undefined as { path: string; code: string | undefined } | undefined,
+  unlinkRefusal: undefined as string | undefined,
+  nativeRetarget: undefined as ((link: string, target: string,
+    expected: { dev: bigint; ino: bigint; target: string }) => void) | undefined,
+  /** Numbered syscall failures for one package candidate during a test. */
+  transientNativeFailure: undefined as { path: string; remaining: number; code?: string } | undefined,
 }))
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -69,6 +70,11 @@ vi.mock('node:fs', async (importOriginal) => {
     {
       native: (path: string): string => {
         if (inSnapshot(path)) throw failure(snapshotVfs.nativeCode, path)
+        const transient = snapshotVfs.transientNativeFailure
+        if (transient !== undefined && transient.path === path && transient.remaining > 0) {
+          transient.remaining -= 1
+          throw failure(transient.code, path)
+        }
         return (actual.realpathSync.native as unknown as (target: string) => string)(path)
       },
     },
@@ -86,14 +92,39 @@ vi.mock('node:fs', async (importOriginal) => {
     }
     actual.renameSync(from, to)
   }
-  return { ...actual, realpathSync, renameSync }
+  const lstatSync = (...args: Parameters<typeof actual.lstatSync>) => {
+    const refusal = snapshotVfs.statRefusal
+    if (refusal !== undefined && String(args[0]) === refusal.path && refusal.remaining > 0) {
+      refusal.remaining--
+      throw failure(refusal.code, args[0])
+    }
+    return actual.lstatSync(...args)
+  }
+  const unlinkSync = (path: import('node:fs').PathLike): void => {
+    if (String(path) === snapshotVfs.unlinkRefusal) throw failure('EACCES', path)
+    actual.unlinkSync(path)
+  }
+  const symlinkSync = (...args: Parameters<typeof actual.symlinkSync>): void => {
+    const refusal = snapshotVfs.createRefusal
+    if (refusal !== undefined && String(args[1]) === refusal.path) throw failure(refusal.code, args[1])
+    actual.symlinkSync(...args)
+  }
+  return { ...actual, realpathSync, renameSync, lstatSync, unlinkSync, symlinkSync }
+})
+
+vi.mock('@deepseek-ai/dsh-win32-process', async (original) => {
+  const actual = await original<typeof import('@deepseek-ai/dsh-win32-process')>()
+  return { ...actual, replaceJunctionTarget: (...args: Parameters<typeof actual.replaceJunctionTarget>) => {
+    if (snapshotVfs.nativeRetarget !== undefined) snapshotVfs.nativeRetarget(...args)
+    else actual.replaceJunctionTarget(...args)
+  } }
 })
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-profile-'))
 
 /** Stage a fake installed app: package.json with deps and a node_modules holding bundles. */
 function stageInstallation(
-  bundles: Record<string, { patch?: string; deps?: Record<string, string> }>,
+  bundles: Record<string, { patch?: string; deps?: Record<string, string>; importable?: true }>,
   optional: readonly string[] = [],
 ): string {
   const root = tmp()
@@ -109,8 +140,13 @@ function stageInstallation(
       version: '0.0.0',
       dependencies: spec.deps ?? {},
       ...spec.patch === undefined ? {} : { dsh: { bundle: { patch: './cordis.patch.yml' } } },
+      ...spec.importable === true ? { exports: { require: './entry.cjs', import: './entry.mjs' } } : {},
     }))
     if (spec.patch !== undefined) writeFileSync(join(dir, 'cordis.patch.yml'), spec.patch)
+    if (spec.importable === true) {
+      writeFileSync(join(dir, 'entry.cjs'), `exports.name = ${JSON.stringify(name)}\n`)
+      writeFileSync(join(dir, 'entry.mjs'), `export const name = ${JSON.stringify(name)}\n`)
+    }
   }
   writeFileSync(join(appDir, 'package.json'), JSON.stringify({
     name: 'dsh-app',
@@ -215,6 +251,7 @@ describe('resolveBundleDir in a packaged snapshot process', () => {
     snapshotVfs.nativeCode = 'ENOENT'
     snapshotVfs.snapshotFailure = undefined
     snapshotVfs.renameRefusal = undefined
+    snapshotVfs.transientNativeFailure = undefined
     Reflect.deleteProperty(process, 'pkg')
   })
 
@@ -227,6 +264,59 @@ describe('resolveBundleDir in a packaged snapshot process', () => {
     Reflect.defineProperty(process, 'pkg', { configurable: true, value: {} })
     return { anchor, root: dirname(anchor) }
   }
+
+  it('retries a transient missing junction while resolving through the profile fallback', () => {
+    const home = tmp()
+    const profileDir = join(home, 'profiles', 'active')
+    const fallback = join(home, 'profiles', 'node_modules')
+    const target = join(tmp(), 'fallback-target')
+    const link = join(fallback, 'fallback-only')
+    mkdirSync(target, { recursive: true })
+    mkdirSync(fallback, { recursive: true })
+    writeFileSync(join(target, 'package.json'), JSON.stringify({ name: 'fallback-only' }))
+    symlinkSync(target, link, 'junction')
+    snapshotVfs.transientNativeFailure = { path: link, remaining: 1, code: 'ENOENT' }
+
+    expect(resolveBundleDir('t', 'fallback-only', join(profileDir, 'uninstalled', 'package.json'), profileDir))
+      .toBe(realpathSync.native(target))
+    expect(snapshotVfs.transientNativeFailure.remaining).toBe(0)
+  })
+
+  it('keeps a persistent junction resolution error loud after bounded retries', () => {
+    const home = tmp()
+    const profileDir = join(home, 'profiles', 'active')
+    const fallback = join(home, 'profiles', 'node_modules')
+    const target = join(tmp(), 'fallback-target')
+    const link = join(fallback, 'fallback-only')
+    mkdirSync(target, { recursive: true })
+    mkdirSync(fallback, { recursive: true })
+    writeFileSync(join(target, 'package.json'), JSON.stringify({ name: 'fallback-only' }))
+    symlinkSync(target, link, 'junction')
+    snapshotVfs.transientNativeFailure = { path: link, remaining: 9, code: 'EINVAL' }
+
+    expect(() => resolveBundleDir(
+      't', 'fallback-only', join(profileDir, 'uninstalled', 'package.json'), profileDir,
+    )).toThrow(/EINVAL/)
+    expect(snapshotVfs.transientNativeFailure.remaining).toBe(0)
+  })
+
+  it('keeps a canonicalizer failure without an errno code loud', () => {
+    const home = tmp()
+    const profileDir = join(home, 'profiles', 'active')
+    const fallback = join(home, 'profiles', 'node_modules')
+    const target = join(tmp(), 'fallback-target')
+    const link = join(fallback, 'fallback-only')
+    mkdirSync(target, { recursive: true })
+    mkdirSync(fallback, { recursive: true })
+    writeFileSync(join(target, 'package.json'), JSON.stringify({ name: 'fallback-only' }))
+    symlinkSync(target, link, 'junction')
+    snapshotVfs.transientNativeFailure = { path: link, remaining: 1 }
+
+    expect(() => resolveBundleDir(
+      't', 'fallback-only', join(profileDir, 'uninstalled', 'package.json'), profileDir,
+    )).toThrow(/without an errno code/)
+    expect(snapshotVfs.transientNativeFailure.remaining).toBe(0)
+  })
 
   it('accepts a snapshot-served candidate the syscall canonicalizer cannot see', () => {
     const { anchor, root } = stageSnapshotInstallation({ 'in-box': { patch: '[]\n' } })
@@ -449,6 +539,121 @@ describe('composeEntries', () => {
 describe('healProfilesModuleFallback', () => {
   afterEach(() => {
     snapshotVfs.renameRefusal = undefined
+    snapshotVfs.statRefusal = undefined
+    snapshotVfs.createRefusal = undefined
+    snapshotVfs.unlinkRefusal = undefined
+    snapshotVfs.nativeRetarget = undefined
+  })
+
+  it.each(['darwin', 'win32'] as const)('dispatches an existing link through the %s owner without removing it', (platform) => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const fallback = join(home, 'profiles', 'node_modules')
+    mkdirSync(fallback, { recursive: true })
+    const link = join(fallback, 'dsh-app')
+    symlinkSync(tmp(), link, 'junction')
+    const before = lstatSync(link, { bigint: true })
+    const previousTarget = readlinkSync(link)
+    const native = vi.fn((named: string, _target: string, identity: { dev: bigint; ino: bigint; target: string }) => {
+      expect(named).toBe(link)
+      expect(readlinkSync(named)).toBe(previousTarget)
+      expect(identity).toEqual({ dev: before.dev, ino: before.ino, target: previousTarget })
+    })
+    snapshotVfs.nativeRetarget = native
+    snapshotVfs.renameRefusal = { destination: link, code: 'EPERM' }
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!
+    try {
+      Object.defineProperty(process, 'platform', { ...descriptor, value: platform })
+      if (platform === 'win32') healProfilesModuleFallback(anchor, home)
+      else expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow('EPERM: simulated')
+    } finally { Object.defineProperty(process, 'platform', descriptor) }
+    expect(native).toHaveBeenCalledTimes(platform === 'win32' ? 1 : 0)
+    expect(readlinkSync(link)).toBe(previousTarget)
+    const after = lstatSync(link, { bigint: true })
+    expect({ dev: after.dev, ino: after.ino }).toEqual({ dev: before.dev, ino: before.ino })
+    expect(readdirSync(fallback)).toEqual(['dsh-app'])
+    // This proves platform dispatch with a native-boundary observation, not a
+    // successful Windows kernel update on a non-Windows host.
+  })
+
+  it('retains a native retarget refusal and leaves the managed point intact', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const fallback = join(home, 'profiles', 'node_modules')
+    mkdirSync(fallback, { recursive: true })
+    const link = join(fallback, 'dsh-app')
+    symlinkSync(tmp(), link, 'junction')
+    const previousTarget = readlinkSync(link)
+    snapshotVfs.nativeRetarget = () => { throw new Error('native retarget refused') }
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!
+    try {
+      Object.defineProperty(process, 'platform', { ...descriptor, value: 'win32' })
+      expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow('native retarget refused')
+    } finally { Object.defineProperty(process, 'platform', descriptor) }
+    expect(readlinkSync(link)).toBe(previousTarget)
+    expect(readdirSync(fallback)).toEqual(['dsh-app'])
+  })
+
+  it.each(['EACCES', undefined])('does not treat lstat refusal %s as permission to create or replace', (code) => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    snapshotVfs.statRefusal = { path: link, code, remaining: 1 }
+    expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow()
+    expect(existsSync(link)).toBe(false)
+  })
+
+  it.each(['same-link', 'different-link', 'ordinary-directory'] as const)(
+    'accepts only the identical winner after an initial-create race: %s', (winner) => {
+      const anchor = stageInstallation({})
+      const home = tmp()
+      const fallback = join(home, 'profiles', 'node_modules')
+      mkdirSync(fallback, { recursive: true })
+      const link = join(fallback, 'dsh-app')
+      const target = dirname(anchor)
+      if (winner === 'ordinary-directory') mkdirSync(link)
+      else symlinkSync(winner === 'same-link' ? target : tmp(), link, 'junction')
+      // Model the lstat absence before a concurrent process publishes its
+      // actual entry. The following symlink call and EEXIST are real syscalls.
+      snapshotVfs.statRefusal = { path: link, code: 'ENOENT', remaining: 1 }
+      if (winner === 'same-link') healProfilesModuleFallback(anchor, home)
+      else expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow()
+      expect(lstatSync(link).isSymbolicLink()).toBe(winner !== 'ordinary-directory')
+      if (winner === 'same-link') expect(readlinkSync(link)).toBe(target)
+      else if (winner === 'different-link') expect(readlinkSync(link)).not.toBe(target)
+      expect(readdirSync(fallback)).toEqual(['dsh-app'])
+    })
+
+  it.each(['EACCES', undefined])('retains initial-create refusal %s without retry or removal', (code) => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    snapshotVfs.createRefusal = { path: link, code }
+    expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow()
+    expect(existsSync(link)).toBe(false)
+  })
+
+  it('retains the rename refusal and staging cleanup failure without removing the old link', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const fallback = join(home, 'profiles', 'node_modules')
+    mkdirSync(fallback, { recursive: true })
+    const link = join(fallback, 'dsh-app')
+    symlinkSync(tmp(), link, 'junction')
+    const previousTarget = readlinkSync(link)
+    snapshotVfs.renameRefusal = { destination: link, code: 'EPERM' }
+    snapshotVfs.unlinkRefusal = `${link}.staged-${String(process.pid)}`
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!
+    let failure: unknown
+    try {
+      Object.defineProperty(process, 'platform', { ...descriptor, value: 'darwin' })
+      healProfilesModuleFallback(anchor, home)
+    } catch (error) { failure = error }
+    finally { Object.defineProperty(process, 'platform', descriptor) }
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors.map(error => (error as NodeJS.ErrnoException).code)).toEqual(['EPERM', 'EACCES'])
+    expect(readlinkSync(link)).toBe(previousTarget)
+    expect(lstatSync(snapshotVfs.unlinkRefusal).isSymbolicLink()).toBe(true)
   })
 
   it('links the app and bundle dependency surface flat under profiles/node_modules', () => {
@@ -511,35 +716,41 @@ describe('healProfilesModuleFallback', () => {
     const home = tmp()
     const fallback = join(home, 'profiles', 'node_modules')
     mkdirSync(fallback, { recursive: true })
-    symlinkSync(tmp(), join(fallback, 'dsh-app'), 'junction')
+    const link = join(fallback, 'dsh-app')
+    symlinkSync(tmp(), link, 'junction')
+    const before = lstatSync(link, { bigint: true })
     healProfilesModuleFallback(anchor, home)
-    expect(readlinkSync(join(fallback, 'dsh-app'))).toContain('app')
+    expect(readlinkSync(link)).toContain('app')
+    if (process.platform === 'win32') {
+      const after = lstatSync(link, { bigint: true })
+      expect({ dev: after.dev, ino: after.ino }).toEqual({ dev: before.dev, ino: before.ino })
+    }
   })
 
-  it('re-points a wrong link when the host refuses the replacing rename (Windows fallback)', () => {
+  it('preserves the old entry on POSIX rename refusal and uses in-place publication on Windows', () => {
     const anchor = stageInstallation({})
     const home = tmp()
     const fallback = join(home, 'profiles', 'node_modules')
     mkdirSync(fallback, { recursive: true })
     const link = join(fallback, 'dsh-app')
     symlinkSync(tmp(), link, 'junction')
-    // POSIX rename always replaces the destination (the ignore comment on the
-    // branch above says as much), so the Windows-only delete-and-recreate arm is
-    // reached by refusing exactly this one destination at the syscall boundary —
-    // the same boundary simulation the snapshot VFS above uses. The staged link,
-    // the recreated link, and the resolver all stay real.
+    const previousTarget = readlinkSync(link)
+    const previousIdentity = lstatSync(link, { bigint: true })
     snapshotVfs.renameRefusal = { destination: link, code: 'EPERM' }
     expect(() => { renameSync(link, link) }).toThrow(/EPERM: simulated host refusing to replace/)
-    healProfilesModuleFallback(anchor, home)
-    expect(lstatSync(link).isSymbolicLink()).toBe(true)
-    const profileDir = join(home, 'profiles', 'active')
-    expect(resolveBundleDir('t', 'dsh-app', join(profileDir, 'absent', 'package.json'), profileDir))
-      .toBe(realpathSync.native(dirname(anchor)))
-    // The refused rename removed its staging file: only the managed link is left.
+    if (process.platform === 'win32') {
+      healProfilesModuleFallback(anchor, home)
+      expect(realpathSync.native(link)).toBe(realpathSync.native(dirname(anchor)))
+    } else {
+      expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow(/EPERM: simulated host refusing to replace/)
+      expect(readlinkSync(link)).toBe(previousTarget)
+    }
+    const after = lstatSync(link, { bigint: true })
+    expect({ dev: after.dev, ino: after.ino }).toEqual({ dev: previousIdentity.dev, ino: previousIdentity.ino })
     expect(readdirSync(fallback)).toEqual(['dsh-app'])
   })
 
-  it('creates a missing link when the host refuses the replacing rename (Windows fallback)', () => {
+  it('creates a missing link without needing to replace a destination', () => {
     const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
     const home = tmp()
     const fallback = join(home, 'profiles', 'node_modules')
@@ -547,8 +758,7 @@ describe('healProfilesModuleFallback', () => {
     snapshotVfs.renameRefusal = { destination: link, code: 'EEXIST' }
     expect(() => { renameSync(link, link) }).toThrow(/EEXIST: simulated host refusing to replace/)
     healProfilesModuleFallback(anchor, home)
-    // There was no destination to unlink, so the fallback itself creates the
-    // entry while every other link still takes the ordinary replace path.
+    // Initial creation does not need a rename or remove an existing entry.
     expect(lstatSync(link).isSymbolicLink()).toBe(true)
     expect(realpathSync(link)).toBe(realpathSync.native(join(dirname(anchor), 'node_modules', 'bundle-a')))
     expect(readdirSync(fallback).sort()).toEqual(['bundle-a', 'dsh-app'])
@@ -569,29 +779,77 @@ describe('healProfilesModuleFallback', () => {
   })
 
   it('never lets a concurrent resolver observe a missing entry while re-pointing links', async () => {
+    const started = performance.now()
+    const phase = (name: string, details: Record<string, unknown> = {}): void => {
+      process.stderr.write(`PROFILE_FALLBACK_CONCURRENCY_PHASE ${JSON.stringify({
+        name, elapsedMs: Math.round(performance.now() - started), ...details,
+      })}\n`)
+    }
     const names = Array.from({ length: 160 }, (_, index) => `pkg-${String(index)}`)
-    const first = stageInstallation(Object.fromEntries(names.map(name => [name, {}])))
-    const second = stageInstallation(Object.fromEntries(names.map(name => [name, {}])))
+    // Stage the final entry-bearing manifests once, inside this same test budget.
+    const first = stageInstallation(Object.fromEntries(names.map(name => [name, { importable: true }] as const)))
+    const second = stageInstallation(Object.fromEntries(names.map(name => [name, { importable: true }] as const)))
     const home = tmp()
     const fallback = join(home, 'profiles', 'node_modules')
     healProfilesModuleFallback(first, home)
-    const reader = join(home, 'reader.mjs')
+    phase('staged-and-initial-heal', { packageCount: names.length })
+    const profile = join(home, 'profiles', 'active')
+    mkdirSync(profile)
+    const reader = join(profile, 'reader.mjs')
     const profileSource = fileURLToPath(new URL('../src/profile.ts', import.meta.url))
+    const cordisSource = fileURLToPath(new URL('../../../../vendor/cordis/src/index.ts', import.meta.url))
+    const loaderSource = fileURLToPath(new URL('../../../../vendor/loader/src/index.ts', import.meta.url))
     writeFileSync(reader, [
-      "import { lstatSync, readFileSync } from 'node:fs'",
+      "import { readFileSync, lstatSync, readlinkSync } from 'node:fs'",
       "import { join, dirname } from 'node:path'",
-      `import { resolveBundleDir } from ${JSON.stringify(profileSource)}`,
+      "import { createRequire } from 'node:module'",
+      `import { Context } from ${JSON.stringify(pathToFileURL(cordisSource).href)}`,
+      `import Loader from ${JSON.stringify(pathToFileURL(loaderSource).href)}`,
+      `import { resolveBundleDir } from ${JSON.stringify(pathToFileURL(profileSource).href)}`,
+      'const readerStartedAt = performance.now()',
       'const [fallback, ...names] = process.argv.slice(2)',
       "const profile = join(dirname(fallback), 'active')",
       "const absentInstallation = join(profile, 'uninstalled', 'package.json')",
       'const failures = []',
       'let passes = 0',
-      "process.on('message', () => { process.send({ passes, failures }); process.exit() })",
+      'let stopping = false',
+      'const bareImports = { cjs: 0, esm: 0, loader: 0 }',
+      'const context = new Context()',
+      'context.baseUrl = new URL("./loader-entry.mjs", import.meta.url).href',
+      'await context.plugin(Loader, { baseUrl: new URL("./loader-entry.mjs", import.meta.url).href })',
+      'const require = createRequire(import.meta.url)',
+      'function recordFailure(name, consumer, error, readerElapsedMs, observedEntry) {',
+      '  const stack = typeof error.stack === "string" ? error.stack : undefined',
+      '  const failure = { name, consumer, message: String(error), code: error.code, observedEntry, readerElapsedMs,',
+      '    error: { name: error.name ?? null, message: error.message ?? String(error), code: error.code ?? null,',
+      '      errno: error.errno ?? null, syscall: error.syscall ?? null, path: error.path ?? null,',
+      '      stack: stack === undefined ? null : stack.length <= 4096 ? stack : `${stack.slice(0, 2048)}\\n<stack clipped>\\n${stack.slice(-2048)}`,',
+      '      stackCharacters: stack?.length ?? null, stackTruncated: stack === undefined ? null : stack.length > 4096 } }',
+      '  failures.push(failure)',
+      '  process.stderr.write(`PROFILE_FALLBACK_CONCURRENCY_FAILURE ${JSON.stringify(failure)}\\n`)',
+      '}',
+      // Every package is imported once per consumer with a fresh per-process
+      // module cache. Later cached imports are not counted as new probes.
+      'async function importBarePackages() {',
+      '  for (const name of names) for (const consumer of ["cjs", "esm", "loader"]) {',
+      '    try {',
+      '      const module = consumer === "cjs" ? require(name) : consumer === "esm" ? await import(name) : await context.loader.import(name)',
+      '      if (module.name !== name) throw new Error("imported another package")',
+      '      bareImports[consumer] += 1',
+      '    } catch (error) {',
+      '      const readerElapsedMs = performance.now() - readerStartedAt',
+      '      let observedEntry',
+      '      try { const entry = join(fallback, name); const stat = lstatSync(entry, { bigint: true }); observedEntry = { isLink: stat.isSymbolicLink(), dev: String(stat.dev), ino: String(stat.ino), target: readlinkSync(entry) } }',
+      '      catch (observationError) { observedEntry = { observationError: String(observationError), code: observationError.code } }',
+      '      recordFailure(name, consumer, error, readerElapsedMs, observedEntry)',
+      '    }',
+      '  }',
+      '}',
+      'let imports',
+      "process.once('message', async () => { stopping = true; await imports; await context.fiber.dispose(); process.send({ passes, failures, bareImports }, error => { if (error) throw error; process.exit() }) })",
       'async function probe(name) {',
-      // Probe the directory entry itself and the real bundle resolver. A raw
-      // existsSync(link/package.json) also reports macOS rename-time EINVAL
-      // as false, which is neither a missing entry nor our resolved read path.
-      "  if (!lstatSync(join(fallback, name)).isSymbolicLink()) throw new Error('link replaced by a non-link')",
+      // Probe the production resolver throughout all forty heals; ordinary
+      // CJS/ESM/Loader consumers also traverse this same published namespace.
       "  const directory = resolveBundleDir('test', name, absentInstallation, profile)",
       "  const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))",
       "  if (manifest.name !== name) throw new Error('resolved another package')",
@@ -601,53 +859,56 @@ describe('healProfilesModuleFallback', () => {
       '    try {',
       '      await probe(name)',
       '    } catch (error) {',
-      // macOS reports EINVAL transiently while the parent re-points a link; that
-      // window is neither a missing entry nor a wrong resolution. Re-probe once
-      // after yielding, and still fail on any persistent error (ENOENT, non-link,
-      // wrong package, malformed manifest).
-      "      if (error.code === 'EINVAL') {",
-      '        await new Promise(resolve => setImmediate(resolve))',
-      '        try { await probe(name); continue } catch (retry) {',
-      '          failures.push({ name, message: String(retry), code: retry.code })',
-      '          continue',
-      '        }',
-      '      }',
-      '      failures.push({ name, message: String(error), code: error.code })',
+      '      recordFailure(name, "bundle-resolver", error, performance.now() - readerStartedAt)',
       '    }',
       '  }',
       '  passes += 1',
-      '  setImmediate(scan)',
+      '  if (!stopping) setImmediate(scan)',
       '}',
       "process.send('ready')",
+      'imports = importBarePackages()',
       'scan()',
     ].join('\n'))
     const { spawn } = await import('node:child_process')
-    const child = spawn(process.execPath, ['--import', 'tsx', reader, fallback, ...names], {
+    const child = spawn(process.execPath, ['--expose-internals', '--import', 'tsx', reader, fallback, ...names], {
       stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
     })
+    phase('reader-spawned', { pid: child.pid })
     const exited = once(child, 'exit') as Promise<[number | null, NodeJS.Signals | null]>
     try {
-      await Promise.race([
+      const ready = await Promise.race([
         once(child, 'message'),
         exited.then(() => { throw new Error('resolver exited before readiness') }),
       ])
+      expect(ready[0]).toBe('ready')
+      phase('reader-ready')
       for (let index = 0; index < 40; index += 1) {
         healProfilesModuleFallback(index % 2 === 0 ? second : first, home)
+        if ((index + 1) % 10 === 0) phase('healed', { heals: index + 1 })
       }
       const result = once(child, 'message')
       child.send('stop')
-      const [report] = await result as [{ passes: number; failures: unknown[] }]
+      phase('report-requested')
+      const [report] = await Promise.race([
+        result,
+        exited.then(() => { throw new Error('resolver exited before reporting') }),
+      ]) as [{ passes: number; failures: unknown[]; bareImports: { cjs: number; esm: number; loader: number } }]
+      phase('report-received', { passes: report.passes, failureCount: report.failures.length })
       const [code, signal] = await exited
+      phase('reader-exited', { code, signal })
       expect({ code, signal }).toEqual({ code: 0, signal: null })
       expect(report.passes).toBeGreaterThan(0)
       expect(report.failures).toEqual([])
+      expect(report.bareImports).toEqual({ cjs: names.length, esm: names.length, loader: names.length })
       expect(readlinkSync(join(fallback, 'pkg-0'))).toBe(realpathSync.native(join(dirname(first), 'node_modules', 'pkg-0')))
     } finally {
+      phase('cleanup-started', { exitCode: child.exitCode, signalCode: child.signalCode })
       if (child.exitCode === null && child.signalCode === null) child.kill()
       await exited
       for (const directory of [home, dirname(dirname(first)), dirname(dirname(second))]) {
         rmSync(directory, { recursive: true, force: true })
       }
+      phase('cleanup-completed')
     }
   }, 20_000)
 })

@@ -243,6 +243,12 @@ describe('serializeRequest', () => {
     })
   })
 
+  it('omits provider JSON Output unless the deployment opts in', () => {
+    const wire = serializeRequest(request({ messages: history }), { jsonOutput: true })
+    expect(wire.response_format).toEqual({ type: 'json_object' })
+    expect(serializeRequest(request({ messages: history })).response_format).toBeUndefined()
+  })
+
   it('prepends the system prompt', () => {
     const wire = serializeRequest(request({ messages: history, system: 'be helpful' }))
     expect(wire.messages[0]).toEqual({ role: 'system', content: 'be helpful' })
@@ -268,6 +274,16 @@ describe('serializeRequest', () => {
       { type: 'function', function: { name: 'a', description: 'A', parameters: { type: 'object', properties: {} } } },
       { type: 'function', function: { name: 'b', description: 'B', parameters: { type: 'object', properties: { x: { type: 'string' } } } } },
     ])
+  })
+
+  it('keeps JSON Output and tool declarations in the same request', () => {
+    const wire = serializeRequest(request({
+      messages: history,
+      tools: [{ name: 'read', description: 'Read a file', parameters: { type: 'object' } }],
+    }), { jsonOutput: true, thinking: 'enabled', reasoningEffort: 'max' })
+    expect(wire.response_format).toEqual({ type: 'json_object' })
+    expect(wire.tools).toHaveLength(1)
+    expect(wire.reasoning_effort).toBe('max')
   })
 
   it('omits an empty tools array', () => {

@@ -1516,61 +1516,6 @@ private struct NativeGitHistoryView: View {
   }
 }
 
-private struct NativeGitBranchesView: View {
-  @ObservedObject var model: NativeWorkbenchModel
-  let language: ArkLanguagePreference
-
-  var body: some View {
-    VStack(spacing: 0) {
-      HStack(spacing: 8) {
-        TextField(ArkL10n.text(.gitNewBranchPlaceholder, language), text: $model.gitNewBranchName)
-          .textFieldStyle(.roundedBorder)
-          .onSubmit(model.createGitBranch)
-        Button(ArkL10n.text(.gitCreateBranch, language), action: model.createGitBranch)
-          .buttonStyle(.borderedProminent)
-          .disabled(
-            model.gitNewBranchName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-              || model.fileTabs.hasDirtyTabs
-              || model.gitIsLoading
-          )
-      }
-      .padding(12)
-      Divider().overlay(NativeWorkbenchPalette.border)
-      ScrollView {
-        LazyVStack(spacing: 4) {
-          ForEach(model.gitBranches) { branch in
-            HStack(spacing: 10) {
-              Image(systemName: branch.isCurrent ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(branch.isCurrent ? NativeWorkbenchPalette.accent : NativeWorkbenchPalette.secondary)
-              Text(branch.name)
-                .font(.system(size: 12, design: .monospaced))
-              Spacer()
-              if branch.isCurrent {
-                Text(ArkL10n.text(.gitCurrentBranch, language))
-                  .font(.system(size: 10))
-                  .foregroundStyle(NativeWorkbenchPalette.secondary)
-              } else {
-                Button(ArkL10n.text(.gitSwitchBranch, language)) {
-                  model.switchGitBranch(branch)
-                }
-                .disabled(model.fileTabs.hasDirtyTabs || model.gitIsLoading)
-              }
-            }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 36)
-            .background(
-              branch.isCurrent ? NativeWorkbenchPalette.selected : Color.clear,
-              in: RoundedRectangle(cornerRadius: 7)
-            )
-          }
-        }
-        .padding(10)
-      }
-    }
-    .background(NativeWorkbenchPalette.background)
-  }
-}
-
 private struct NativeGitRepositoryView: View {
   @ObservedObject var model: NativeWorkbenchModel
   let language: ArkLanguagePreference
@@ -1751,47 +1696,6 @@ private struct NativeGitRepositoryView: View {
       RoundedRectangle(cornerRadius: 10)
         .stroke(NativeWorkbenchPalette.border, lineWidth: 1)
     )
-  }
-}
-
-private struct NativeOutputPanel: View {
-  let title: String
-  let output: String
-  let language: ArkLanguagePreference
-
-  var body: some View {
-    VStack(spacing: 0) {
-      HStack {
-        Text(title)
-          .font(.system(size: 11, weight: .semibold))
-        Spacer()
-        Button {
-          let pasteboard = NSPasteboard.general
-          pasteboard.clearContents()
-          pasteboard.setString(output, forType: .string)
-        } label: {
-          Label(ArkL10n.text(.filesTerminalCopy, language), systemImage: "doc.on.doc")
-        }
-        .buttonStyle(.plain)
-        .font(.system(size: 10))
-        .disabled(output.isEmpty)
-      }
-      .padding(.horizontal, 12)
-      .frame(height: 32)
-      .background(NativeWorkbenchPalette.raised)
-      Divider().overlay(NativeWorkbenchPalette.border)
-      ScrollView([.horizontal, .vertical]) {
-        Text(output.isEmpty ? ArkL10n.text(.filesNoOutput, language) : output)
-          .font(.system(size: 11, design: .monospaced))
-          .foregroundStyle(output.isEmpty ? NativeWorkbenchPalette.secondary : NativeWorkbenchPalette.primary)
-          .textSelection(.enabled)
-          .fixedSize(horizontal: true, vertical: false)
-          .frame(maxWidth: .infinity, alignment: .topLeading)
-          .padding(12)
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(NativeWorkbenchPalette.background)
-    }
   }
 }
 

@@ -318,7 +318,7 @@ describe('independent verdict authentication', () => {
 })
 
 describe('stored receipt authentication', () => {
-  it('rejects unreadable, mislabelled, and incoherent stored receipts', () => {
+  it('rejects unreadable, mislabelled, and incoherent stored receipts', async () => {
     const item = fixture()
     const authority = verifierAuthority()
     const receipts = join(dirname(item.reviewFile), 'verification-receipts')
@@ -359,10 +359,10 @@ describe('stored receipt authentication', () => {
       'utf8',
     )
     expect(readTrustedReceipt(authority, item.reviewFile, 'verification-null-outcome')).toBeUndefined()
-    expect(recordCandidateVerification(
+    expect(await recordCandidateVerification(
       authority, item.reviewFile, item.wikiRoot, item.reviewId, 'verification-unparseable', 'Promote',
     )).toBe(false)
-    expect(recordCandidateVerification(
+    expect(await recordCandidateVerification(
       authority, item.reviewFile, item.wikiRoot, item.reviewId, 'verification-null-outcome', 'Promote',
     )).toBe(false)
   })

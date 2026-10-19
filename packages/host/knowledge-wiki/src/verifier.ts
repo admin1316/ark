@@ -2,8 +2,10 @@
 
 import { createHash } from 'node:crypto'
 import { lstatSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { atomicWriteFile, readRegularFileBounded } from './filesystem.ts'
+import { readReviewStore } from './review-store.ts'
+import { validateKnowledgeRecord } from './knowledge-governance.ts'
 import { decideCandidateGovernance, governancePolicyVersion, resolveGovernedWikiPath } from './governance-policy.ts'
 import type { CandidateVerification, CandidateVerificationResult, VerificationReceiptReference, WikiReviewItem } from './types.ts'
 
@@ -43,6 +45,7 @@ export interface IndependentVerificationRequest {
   readonly reviewHash: string
   readonly candidatePath: string
   readonly candidateHash: string
+  readonly sourceHash: string
   readonly targetPath: string | null
   readonly governanceAction: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' | 'Archive'
   readonly governanceDecision: {
@@ -76,6 +79,266 @@ export interface VerificationAuthoritySeal {
   readonly proof: string
 }
 
+/** A JSON-only operation row carried by the promotion WAL signer. */
+export interface PromotionOperationSigningPayload {
+  readonly role: 'candidate' | 'candidate-archive' | 'canonical' | 'canonical-archive' | 'review' | 'governance'
+  readonly path: string
+  readonly before?: string
+  readonly after?: string
+  readonly stagingPath?: string
+  readonly tombstonePath?: string
+}
+
+/** The exact existing WAL core shape; it does not include state or seal. */
+export interface PromotionJournalSigningPayload {
+  readonly schemaVersion: 1
+  readonly id: string
+  readonly reviewId: string
+  readonly candidateHash: string
+  readonly createdAt: string
+  readonly action: string
+  readonly targetPath: string | null
+  readonly reviewHash: string | null
+  readonly receiptId: string | null
+  readonly receiptHash: string | null
+  readonly measuredTrial?: {
+    readonly trialHash: string
+    readonly authorityId: string
+    readonly proposalHash: string
+    readonly targetAfterHash: string
+    readonly evidenceRefs: readonly string[]
+    readonly retrievalHits: number
+    readonly successfulUses: number
+    readonly userCorrections: number
+    readonly utilityScore: number
+    readonly startedAt: string
+    readonly endedAt: string
+  } | null
+  readonly operationSetHash: string
+  readonly operations: readonly PromotionOperationSigningPayload[]
+}
+
+/** Closed source-only request vocabulary for signing the three existing domains. */
+export type KnowledgeWikiPromotionSealRequest = {
+  readonly schemaVersion: 1
+  readonly domain: 'ark.knowledge-wiki'
+  readonly authorityId: string
+} & (
+  | {
+    readonly operation: 'seal-knowledge-event'
+    readonly eventType: 'knowledge/verified' | 'knowledge/promoted'
+    readonly knowledgeId: string
+    readonly payload: Readonly<Record<string, unknown>>
+  }
+  | {
+    readonly operation: 'seal-promotion-wal'
+    readonly journal: PromotionJournalSigningPayload
+  }
+)
+
+/**
+ * Recreate only the legacy canonical byte payloads accepted by persisted event/WAL readers.
+ * The request wrapper is never serialized or signed.
+ * @param request - Closed operation request whose payload is validated before encoding.
+ * @returns The legacy canonical payload bytes represented as a UTF-8 string.
+ * @throws If the request does not match a supported schema, domain, authority, or payload.
+ */
+export function encodeKnowledgeWikiPromotionSealRequest(request: KnowledgeWikiPromotionSealRequest): string {
+  assertSealRequest(request)
+  if (request.operation === 'seal-knowledge-event') {
+    return canonicalJson({ type: request.eventType, knowledgeId: request.knowledgeId, payload: request.payload })
+  }
+  return canonicalJson(request.journal)
+}
+
+const EVENT_VERIFIED_FIELDS = new Set([
+  'record', 'verificationStatus', 'trust', 'authority', 'confidence', 'lastVerifiedAt', 'evidenceRefs',
+  'candidatePath', 'candidateHash', 'source',
+])
+const EVENT_PROMOTED_FIELDS = new Set([
+  'action', 'appliedPath', 'lifecycle', 'candidateHash', 'trialHash', 'proposalHash', 'targetAfterHash',
+  'measuredTrialAuthorityId', 'evidenceRefs', 'retrievalHits', 'successfulUses', 'userCorrections',
+  'utilityScore', 'startedAt', 'endedAt',
+])
+
+function exactRecord(value: unknown, expected: readonly string[], optional: readonly string[] = []): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype: unknown = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) return false
+  const keys = Reflect.ownKeys(value)
+  if (keys.some(key => typeof key !== 'string')) return false
+  const allowed = new Set([...expected, ...optional])
+  return expected.every(key => Object.hasOwn(value, key))
+    && keys.length <= allowed.size
+    && keys.every(key => typeof key === 'string' && allowed.has(key)
+      && Object.getOwnPropertyDescriptor(value, key)?.enumerable === true
+      && Object.getOwnPropertyDescriptor(value, key)?.get === undefined
+      && Object.getOwnPropertyDescriptor(value, key)?.set === undefined)
+}
+
+function isJsonValue(value: unknown, seen = new Set<object>()): boolean {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (typeof value !== 'object') return false
+  if (seen.has(value)) return false
+  seen.add(value)
+  let valid = false
+  if (Array.isArray(value)) {
+    const keys = Reflect.ownKeys(value)
+    valid = keys.length === value.length + 1
+      && keys.every(key => key === 'length' || (typeof key === 'string' && /^(0|[1-9][0-9]*)$/u.test(key)
+        && Number(key) < value.length && Object.getOwnPropertyDescriptor(value, key)?.enumerable === true
+        && Object.getOwnPropertyDescriptor(value, key)?.get === undefined
+        && Object.getOwnPropertyDescriptor(value, key)?.set === undefined))
+      && value.every(item => isJsonValue(item, seen))
+  } else if (exactRecord(value, [], Reflect.ownKeys(value).filter((key): key is string => typeof key === 'string'))) {
+    valid = Object.values(value).every(item => isJsonValue(item, seen))
+  }
+  seen.delete(value)
+  return valid
+}
+
+function assertSealRequest(value: unknown): asserts value is KnowledgeWikiPromotionSealRequest {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('promotion seal request is invalid')
+  const prototype: unknown = Object.getPrototypeOf(value)
+  const requestKeys = Reflect.ownKeys(value)
+  if ((prototype !== Object.prototype && prototype !== null)
+    || requestKeys.some(key => typeof key !== 'string'
+      || Object.getOwnPropertyDescriptor(value, key)?.enumerable !== true
+      || Object.getOwnPropertyDescriptor(value, key)?.get !== undefined
+      || Object.getOwnPropertyDescriptor(value, key)?.set !== undefined)) {
+    throw new Error('promotion seal request must contain only plain data fields')
+  }
+  const operation: unknown = Object.getOwnPropertyDescriptor(value, 'operation')?.value
+  const common = ['schemaVersion', 'domain', 'authorityId', 'operation']
+  if (operation === 'seal-knowledge-event') {
+    if (!exactRecord(value, [...common, 'eventType', 'knowledgeId', 'payload'])
+      || value.schemaVersion !== 1 || value.domain !== 'ark.knowledge-wiki'
+      || typeof value.authorityId !== 'string' || value.authorityId.length === 0
+      || (value.eventType !== 'knowledge/verified' && value.eventType !== 'knowledge/promoted')
+      || typeof value.knowledgeId !== 'string' || !/^candidate:[A-Za-z0-9._:-]{1,160}$/u.test(value.knowledgeId)
+      || !exactRecord(value.payload, [], [...(value.eventType === 'knowledge/verified' ? EVENT_VERIFIED_FIELDS : EVENT_PROMOTED_FIELDS)])
+      || !isJsonValue(value.payload)) throw new Error('promotion knowledge-event seal request is invalid')
+    if (value.eventType === 'knowledge/verified'
+      && (typeof value.payload.candidateHash !== 'string' || !/^[0-9a-f]{64}$/u.test(value.payload.candidateHash)
+        || typeof value.payload.candidatePath !== 'string' || value.payload.candidatePath.trim() === ''
+        || typeof value.payload.source !== 'string' || value.payload.source.trim() === ''
+        || !Array.isArray(value.payload.evidenceRefs) || !value.payload.evidenceRefs.every(item => typeof item === 'string')
+        || typeof value.payload.trust !== 'string'
+        || !['low', 'medium', 'high'].includes(value.payload.trust)
+        || value.payload.authority !== value.authorityId
+        || typeof value.payload.confidence !== 'number' || !Number.isFinite(value.payload.confidence)
+        || value.payload.confidence < 0 || value.payload.confidence > 1
+        || typeof value.payload.lastVerifiedAt !== 'string' || !validCanonicalIso(value.payload.lastVerifiedAt)
+        || value.payload.record === undefined || !validKnowledgeRecordSigningPayload(value.payload.record, value.knowledgeId))) {
+      throw new Error('promotion knowledge/verified payload schema is invalid')
+    }
+    if (value.eventType === 'knowledge/promoted'
+      && (typeof value.payload.action !== 'string' || typeof value.payload.lifecycle !== 'string'
+        || !['Promote', 'Merge', 'Replace', 'Deduplicate', 'Archive'].includes(value.payload.action)
+        || !['canonical', 'downgraded'].includes(value.payload.lifecycle)
+        || typeof value.payload.candidateHash !== 'string' || !/^[0-9a-f]{64}$/u.test(value.payload.candidateHash)
+        || typeof value.payload.appliedPath !== 'string' || value.payload.appliedPath.trim() === '')) {
+      throw new Error('promotion knowledge/promoted payload schema is invalid')
+    }
+    if (value.eventType === 'knowledge/promoted' && value.payload.trialHash !== undefined
+      && !validMeasuredTrialEventPayload(value.payload)) throw new Error('promotion measured-trial event payload schema is invalid')
+    return
+  }
+  if (operation === 'seal-promotion-wal') {
+    if (!exactRecord(value, [...common, 'journal']) || value.schemaVersion !== 1
+      || value.domain !== 'ark.knowledge-wiki' || typeof value.authorityId !== 'string' || value.authorityId.length === 0
+      || !validPromotionJournalSigningPayload(value.journal)) throw new Error('promotion WAL seal request is invalid')
+    return
+  }
+  throw new Error('promotion seal operation is unknown')
+}
+
+function validPromotionJournalSigningPayload(value: unknown): value is PromotionJournalSigningPayload {
+  if (!exactRecord(value,
+    ['schemaVersion', 'id', 'reviewId', 'candidateHash', 'createdAt', 'action', 'targetPath', 'reviewHash',
+      'receiptId', 'receiptHash', 'operationSetHash', 'operations'], ['measuredTrial'])
+    || value.schemaVersion !== 1 || typeof value.id !== 'string' || !/^promotion-[0-9a-f]{24}$/u.test(value.id)
+    || typeof value.reviewId !== 'string' || !ID_RE.test(value.reviewId)
+    || typeof value.candidateHash !== 'string' || !SHA256_RE.test(value.candidateHash)
+    || typeof value.createdAt !== 'string' || !validCanonicalIso(value.createdAt)
+    || typeof value.action !== 'string' || !['Promote', 'Merge', 'Replace', 'Deduplicate', 'Archive'].includes(value.action)
+    || !(value.targetPath === null || typeof value.targetPath === 'string')
+    || !(value.reviewHash === null || typeof value.reviewHash === 'string')
+    || !(value.receiptId === null || typeof value.receiptId === 'string')
+    || !(value.receiptHash === null || typeof value.receiptHash === 'string')
+    || typeof value.operationSetHash !== 'string' || !SHA256_RE.test(value.operationSetHash)
+    || !Array.isArray(value.operations) || value.operations.length === 0
+    || !value.operations.every(validPromotionOperationSigningPayload)) return false
+  if (Object.hasOwn(value, 'measuredTrial') && value.measuredTrial !== null && !validMeasuredTrialSigningPayload(value.measuredTrial)) return false
+  if ((value.receiptId === null) !== (value.receiptHash === null)
+    || (value.receiptHash !== null && !SHA256_RE.test(value.receiptHash))
+    || (value.reviewHash !== null && !SHA256_RE.test(value.reviewHash))) return false
+  return value.operationSetHash === sha256(canonicalJson(value.operations)) && isJsonValue(value)
+}
+
+function validPromotionOperationSigningPayload(value: unknown): value is PromotionOperationSigningPayload {
+  if (!exactRecord(value, ['role', 'path'], ['before', 'after', 'stagingPath', 'tombstonePath'])
+    || typeof value.role !== 'string'
+    || !['candidate', 'candidate-archive', 'canonical', 'canonical-archive', 'review', 'governance'].includes(value.role)
+    || typeof value.path !== 'string' || value.path.trim() === '') return false
+  if (!['before', 'after', 'stagingPath', 'tombstonePath'].every(key => value[key] === undefined || typeof value[key] === 'string')) return false
+  return value.after === undefined
+    ? typeof value.tombstonePath === 'string' && value.stagingPath === undefined
+    : typeof value.stagingPath === 'string' && value.tombstonePath === undefined
+}
+
+function validMeasuredTrialSigningPayload(value: unknown): boolean {
+  return exactRecord(value,
+    ['trialHash', 'authorityId', 'proposalHash', 'targetAfterHash', 'evidenceRefs', 'retrievalHits', 'successfulUses',
+      'userCorrections', 'utilityScore', 'startedAt', 'endedAt'])
+    && ['trialHash', 'authorityId', 'proposalHash', 'targetAfterHash', 'startedAt', 'endedAt']
+      .every(key => typeof value[key] === 'string')
+    && Array.isArray(value.evidenceRefs) && value.evidenceRefs.every(item => typeof item === 'string')
+    && ['retrievalHits', 'successfulUses', 'userCorrections', 'utilityScore'].every(key => typeof value[key] === 'number' && Number.isFinite(value[key]))
+    && ['trialHash', 'proposalHash', 'targetAfterHash'].every(key => typeof value[key] === 'string' && SHA256_RE.test(value[key]))
+    && typeof value.authorityId === 'string' && value.authorityId.length > 0
+    && value.evidenceRefs.every(reference => SHA256_RE.test(reference))
+    && ['retrievalHits', 'successfulUses', 'userCorrections'].every(key => Number.isSafeInteger(value[key]) && (value[key] as number) >= 0)
+    && (value.retrievalHits as number) > 0 && (value.utilityScore as number) > 0
+    && validCanonicalIso(value.startedAt as string) && validCanonicalIso(value.endedAt as string)
+    && Date.parse(value.endedAt as string) >= Date.parse(value.startedAt as string)
+}
+
+function validMeasuredTrialEventPayload(value: Record<string, unknown>): boolean {
+  return typeof value.trialHash === 'string' && SHA256_RE.test(value.trialHash)
+    && typeof value.proposalHash === 'string' && SHA256_RE.test(value.proposalHash)
+    && typeof value.targetAfterHash === 'string' && SHA256_RE.test(value.targetAfterHash)
+    && typeof value.measuredTrialAuthorityId === 'string' && value.measuredTrialAuthorityId.length > 0
+    && Array.isArray(value.evidenceRefs) && value.evidenceRefs.every(item => typeof item === 'string')
+    && ['retrievalHits', 'successfulUses', 'userCorrections', 'utilityScore']
+      .every(key => typeof value[key] === 'number' && Number.isFinite(value[key]))
+    && value.evidenceRefs.every(item => SHA256_RE.test(item))
+    && ['retrievalHits', 'successfulUses', 'userCorrections'].every(key => Number.isSafeInteger(value[key]) && (value[key] as number) >= 0)
+    && (value.retrievalHits as number) > 0 && (value.utilityScore as number) > 0
+    && typeof value.startedAt === 'string' && validCanonicalIso(value.startedAt)
+    && typeof value.endedAt === 'string' && validCanonicalIso(value.endedAt)
+    && Date.parse(value.endedAt) >= Date.parse(value.startedAt)
+}
+
+function validCanonicalIso(value: string): boolean {
+  const time = Date.parse(value)
+  return Number.isFinite(time) && new Date(time).toISOString() === value
+}
+
+function validKnowledgeRecordSigningPayload(value: unknown, knowledgeId: string): boolean {
+  if (!exactRecord(value,
+    ['id', 'content', 'source', 'sourceHash', 'scope', 'trust', 'authority', 'evidenceRefs', 'verificationStatus',
+      'confidence', 'createdAt', 'lastVerifiedAt', 'expiresAt', 'conflicts', 'retrievalHits', 'successfulUses',
+      'userCorrections', 'utilityScore'], ['claimKey', 'acl', 'lifecycle'])
+    || value.id !== knowledgeId || !exactRecord(value.scope, [], ['projectId', 'workspaceId', 'sessionId', 'visibility'])
+    || Object.values(value.scope).some(item => typeof item !== 'string')
+    || (!exactRecord(value.acl, [], ['readers', 'writers']) && value.acl !== undefined)) return false
+  if (value.lifecycle !== undefined && (typeof value.lifecycle !== 'string'
+    || !['candidate', 'canonical', 'downgraded', 'rolled_back'].some(lifecycle => lifecycle === value.lifecycle))) return false
+  return validateKnowledgeRecord(value).ok
+}
+
 /** Synchronous audit/crash-consistency position reported by a promotion transaction. */
 export interface PromotionCheckpoint {
   /** Persisted-journal, per-operation, or pre-commit position at which the authority is called. */
@@ -102,7 +365,17 @@ export interface KnowledgeWikiVerifierAuthority {
     request: IndependentVerificationRequest,
     result: IndependentVerificationResult,
   ): boolean
-  sealPromotion(payload: string): VerificationAuthoritySeal
+  /**
+   * Sign one closed promotion operation.
+   * @param request - Typed event or promotion-WAL request with its existing canonical payload.
+   * @param signal - Optional cooperative cancellation; an owner must terminate and join owned work before settling.
+   * @returns The authority seal, synchronously or after owned asynchronous work settles.
+   * @throws On cancellation, refusal, or signing failure. An owner that ignores the signal may remain pending.
+   */
+  sealPromotion(
+    request: KnowledgeWikiPromotionSealRequest,
+    signal?: AbortSignal,
+  ): VerificationAuthoritySeal | Promise<VerificationAuthoritySeal>
   validatePromotion(payload: string, seal: VerificationAuthoritySeal): boolean
   /** Optional external audit/crash-consistency checkpoint. */
   checkpointPromotion?(payload: string, checkpoint: PromotionCheckpoint): void
@@ -162,6 +435,7 @@ export function immutableReviewRow(item: WikiReviewItem): Readonly<Record<string
     reviewKind: item.reviewKind ?? null,
     candidatePath: item.candidatePath ?? null,
     candidateHash: item.candidateHash ?? null,
+    ...(item.sourceHash === undefined ? {} : { sourceHash: item.sourceHash }),
     targetPath: item.targetPath ?? null,
   })
 }
@@ -195,13 +469,9 @@ function isReviewItem(value: unknown): value is WikiReviewItem {
 }
 
 function loadReview(reviewFile: string, reviewId: string): WikiReviewItem | undefined {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(readRegularFileBounded(reviewFile, 5 * 1024 * 1024).toString('utf8')) as unknown
-  } catch (error) {
-    if (typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT') return undefined
-    throw error
-  }
+  const bytes = readReviewStore(reviewFile)
+  if (bytes === undefined) return undefined
+  const parsed: unknown = JSON.parse(bytes.toString('utf8'))
   if (!Array.isArray(parsed) || !parsed.every(isReviewItem)) throw new Error('invalid review state')
   return parsed.find(item => item.id === reviewId)
 }
@@ -214,6 +484,25 @@ function actionIsCompatible(
   if (action === 'Archive') return true
   if (targetPath === undefined) return false
   return action === 'Promote' ? !targetExists : targetExists
+}
+
+type CandidateSourceReview = WikiReviewItem & { readonly candidatePath: string }
+
+function sourceHashForReview(wikiRoot: string, item: CandidateSourceReview): string {
+  const source = item.sourcePath ?? item.candidatePath
+  const projectRoot = resolve(dirname(wikiRoot))
+  const absolute = resolve(projectRoot, source)
+  const rel = relative(projectRoot, absolute)
+  try {
+    const stat = lstatSync(absolute)
+    if (source !== '' && rel !== '' && !rel.startsWith(`..${sep}`) && !rel.includes(`${sep}..${sep}`)
+      && stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1) {
+      return sha256(readRegularFileBounded(absolute, 100 * 1024 * 1024))
+    }
+  } catch {
+    // URL, virtual research label, or missing source: bind the stable label.
+  }
+  return sha256(source)
 }
 
 /**
@@ -232,6 +521,7 @@ export function buildVerificationRequest(
   action: IndependentVerificationRequest['governanceAction'],
 ): IndependentVerificationRequest | undefined {
   if (item.reviewKind !== 'candidate' || item.resolved || !item.candidatePath || !item.candidateHash) return undefined
+  const candidateSourceItem: CandidateSourceReview = { ...item, candidatePath: item.candidatePath }
   const candidate = resolveGovernedWikiPath(wikiRoot, item.candidatePath, false)
   if (candidate === undefined || !candidate.relativePath.startsWith('_candidates/')) return undefined
   const stat = lstatSync(candidate.absolutePath)
@@ -243,6 +533,7 @@ export function buildVerificationRequest(
     ? undefined
     : resolveGovernedWikiPath(wikiRoot, item.targetPath, true)
   if (item.targetPath !== undefined && target === undefined) return undefined
+  if (item.sourceHash !== undefined && item.sourceHash !== sourceHashForReview(wikiRoot, candidateSourceItem)) return undefined
   let targetExists = false
   if (target !== undefined) {
     try {
@@ -265,6 +556,7 @@ export function buildVerificationRequest(
     reviewHash: sha256(canonicalJson(review)),
     candidatePath: item.candidatePath,
     candidateHash: item.candidateHash,
+    sourceHash: item.sourceHash ?? sha256(item.sourcePath ?? item.candidatePath),
     targetPath: item.targetPath ?? null,
     governanceAction: action,
     governanceDecision: Object.freeze({
@@ -414,7 +706,11 @@ export function readTrustedVerification(
   item: WikiReviewItem,
   receiptId: string,
   expectedAction: IndependentVerificationRequest['governanceAction'],
-): { verification: CandidateVerification; receipt: TrustedVerificationReceipt } | undefined {
+): {
+  authority: KnowledgeWikiVerifierAuthority
+  verification: CandidateVerification & Required<Pick<CandidateVerification, 'authorityId' | 'lastVerifiedAt'>>
+  receipt: TrustedVerificationReceipt
+} | undefined {
   const receipt = readTrustedReceipt(authority, reviewFile, receiptId)
   if (receipt === undefined || receipt.result.result !== 'pass'
     || receipt.request.governanceAction !== expectedAction || authority === undefined) return undefined
@@ -431,10 +727,12 @@ export function readTrustedVerification(
     gitCommit: request.sourceIdentity.commit,
   }
   return {
+    authority,
     receipt,
     verification: {
       status: 'passed',
       candidateHash: request.candidateHash,
+      sourceHash: request.sourceHash,
       action: expectedAction,
       reviewHash: request.reviewHash,
       sourceIdentity: request.sourceIdentity,

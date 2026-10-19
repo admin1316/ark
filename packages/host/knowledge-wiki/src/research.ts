@@ -12,6 +12,7 @@ import type { WebSearchSource } from '@deepseek-ai/dsh-web'
 import { parseFileBlocks } from './ingest.ts'
 import type { ResearchResult } from './types.ts'
 import { atomicWriteFile } from './filesystem.ts'
+import { commitReviewAppend, prepareReviewAppend } from './reviews.ts'
 import { executeKnowledgeWikiStage, type KnowledgeWikiStageExecutor } from './stage-executor.ts'
 
 /** Parse 3-5 search queries out of the LLM expansion output. */
@@ -135,12 +136,13 @@ export async function deepResearch(
   }, signal)
 
   const written: string[] = []
+  const pages: Array<{ readonly path: string; readonly target: string; readonly content: string }> = []
+  const wikiRoot = resolve(projectPath, 'wiki')
   for (const block of parseFileBlocks(synthesis.text ?? '')) {
     if (!block.closed) {
       warnings.push(`FILE block not closed: ${block.path}`)
       continue
     }
-    const wikiRoot = resolve(projectPath, 'wiki')
     const fileName = basename(block.path)
     const rel = `wiki/_candidates/research/${fileName}`
     const target = resolve(join(projectPath, rel))
@@ -148,16 +150,40 @@ export async function deepResearch(
       warnings.push(`research: FILE path escapes wiki directory: ${block.path}`)
       continue
     }
+    let content = block.content
+    if (!/^status:\s*/mu.test(content)) content = content.replace(/^---\n/u, '---\nstatus: candidate\n')
+    if (!/^origin:\s*/mu.test(content)) content = content.replace(/^---\n/u, '---\norigin: research\n')
+    pages.push({ path: rel, target, content })
+  }
+
+  const reviewFile = join(projectPath, '.llm-wiki', 'review.json')
+  let reviewPlan
+  try {
+    reviewPlan = prepareReviewAppend(
+      reviewFile,
+      projectPath,
+      `research:${topic}`,
+      [],
+      pages.map(page => ({ path: page.path, content: page.content })),
+    )
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : String(error))
+    return { written, sourceCount: sources.length, warnings }
+  }
+
+  for (const page of pages) {
     try {
-      await mkdir(dirname(target), { recursive: true })
-      let content = block.content
-      if (!/^status:\s*/mu.test(content)) content = content.replace(/^---\n/u, '---\nstatus: candidate\n')
-      if (!/^origin:\s*/mu.test(content)) content = content.replace(/^---\n/u, '---\norigin: research\n')
-      atomicWriteFile(target, content)
-      written.push(rel)
+      await mkdir(dirname(page.target), { recursive: true })
+      atomicWriteFile(page.target, page.content)
+      written.push(page.path)
     } catch (error) {
       warnings.push(error instanceof Error ? error.message : String(error))
     }
+  }
+  try {
+    commitReviewAppend(reviewPlan, written)
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : String(error))
   }
   return { written, sourceCount: sources.length, warnings }
 }

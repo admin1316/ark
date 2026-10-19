@@ -416,18 +416,50 @@ describe('PiAiAdapter provider routing', () => {
   it('stops the SDK request when the adapter idle watchdog expires', async () => {
     const server = await mockServer([{ events: textEvents, delayMs: 200 }])
     const ctx = await harness(server.url, { streamIdleTimeoutMs: 20 })
-
-    const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
-    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'TIMEOUT' } })
-    await Promise.race([
-      server.responseClosed,
-      new Promise<never>((_resolve, reject) => {
-        setTimeout(() => { reject(new Error('SDK request did not close after idle timeout')) }, 1_000)
-      }),
-    ])
-
-    expect(server.paths).toEqual(['/chat/completions'])
-    expect(server.closedResponses).toBe(1)
+    const schedule = setTimeout
+    const controller = new AbortController()
+    let readinessTimer: ReturnType<typeof setTimeout> | undefined
+    let assembling: ReturnType<typeof assemble> | undefined
+    let primaryError: unknown
+    // Observe real HTTP readiness before advancing the shared SDK, fixture, and watchdog clock.
+    vi.useFakeTimers()
+    try {
+      assembling = assemble(ctx, { model: 'deepseek-v4-flash', messages: [], signal: controller.signal })
+      await Promise.race([
+        server.requestReceived,
+        new Promise<never>((_resolve, reject) => {
+          readinessTimer = schedule(() => { reject(new Error('SDK request was not received before idle expiry probe')) }, 1_000)
+        }),
+      ])
+      if (readinessTimer !== undefined) clearTimeout(readinessTimer)
+      await vi.advanceTimersByTimeAsync(20)
+      vi.useRealTimers()
+      const result = await assembling
+      expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'TIMEOUT' } })
+      await Promise.race([
+        server.responseClosed,
+        new Promise<never>((_resolve, reject) => {
+          readinessTimer = schedule(() => { reject(new Error('SDK request did not close after idle timeout')) }, 1_000)
+        }),
+      ])
+      expect(server.paths).toEqual(['/chat/completions'])
+      expect(server.closedResponses).toBe(1)
+      expect(server.interruptedResponses).toBe(1)
+    } catch (error) {
+      primaryError = error
+    } finally {
+      vi.useRealTimers()
+      if (readinessTimer !== undefined) clearTimeout(readinessTimer)
+      controller.abort('idle watchdog fixture cleanup')
+      const joined = await Promise.allSettled([...(assembling === undefined ? [] : [assembling]), ctx.fiber.dispose()])
+      const cleanupErrors: unknown[] = []
+      for (const outcome of joined) {
+        if (outcome.status === 'rejected') cleanupErrors.push(outcome.reason)
+      }
+      if (primaryError !== undefined || cleanupErrors.length) {
+        throw new AggregateError([...(primaryError === undefined ? [] : [primaryError]), ...cleanupErrors], 'idle watchdog fixture failed')
+      }
+    }
   })
 })
 

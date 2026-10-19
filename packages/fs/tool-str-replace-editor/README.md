@@ -23,7 +23,7 @@ Standalone model-facing `str_replace_editor` over `ctx.fs`. It can be composed w
 
 | Key | Default | Meaning |
 |---|---:|---|
-| `maxOutputChars` | `16000` | Prefix characters retained for file and directory views. |
+| `maxOutputChars` | `16000` | Prefix UTF-16 code units retained for file and directory views; cuts preserve surrogate pairs. |
 | `description` | Editor command guide | Model-facing tool description. |
 
 ## Tool

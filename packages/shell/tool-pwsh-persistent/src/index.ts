@@ -10,7 +10,8 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { TerminalReadResult, TerminalSendResult, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
+import { truncateWithoutSplittingSurrogatePair } from '@deepseek-ai/dsh-output-retention'
+import type { TerminalReadResult, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -59,7 +60,7 @@ function maybeTruncate(content: string, maxOutputChars: number, incomplete = fal
   if (content.length <= maxOutputChars && !incomplete) return content
   return content.length <= maxOutputChars
     ? content + TRUNCATED_MESSAGE
-    : content.slice(0, maxOutputChars) + TRUNCATED_MESSAGE
+    : truncateWithoutSplittingSurrogatePair(content, maxOutputChars) + TRUNCATED_MESSAGE
 }
 
 function markers(): CommandMarkers {
@@ -114,6 +115,7 @@ function commandOutput(
 ): CapturedOutput | undefined {
   const text = snapshot.text
   const end = text.lastIndexOf(marker.end)
+  if (end < 0) return undefined
   const status = /^(\d+)\r?\n/.exec(text.slice(end + marker.end.length))?.[1]
   if (status === undefined) return undefined
   const startMarker = text.lastIndexOf(marker.start, end)
@@ -125,16 +127,10 @@ function commandOutput(
   // scrolled out and extraction fell back to the echoed copy.
   captured = captured.replaceAll(wrapper, '')
   return {
-    text: captured.replace(/^\r?\n/, '').replace(/\r?\n$/, ''),
+    text: captured.replaceAll('\r\n', '\n').replace(/^\r?\n/, '').replace(/\r?\n$/, ''),
     incomplete: startMarker < 0,
     exitCode: Number(status),
   }
-}
-
-function promptCompleted(result: TerminalSendResult): boolean {
-  return result.viewport.endsWith(SHELL_PROMPT)
-    || result.viewport.endsWith(`${SHELL_PROMPT}\r\n`)
-    || result.viewport.endsWith(`${SHELL_PROMPT}\n`)
 }
 
 function partialOutput(
@@ -144,21 +140,25 @@ function partialOutput(
   fallback: string,
   fallbackTruncated = false,
 ): CapturedOutput {
-  const startMarker = snapshot.text.lastIndexOf(marker.start)
+  // Strip the echo before marker lookup: slicing at its quoted START would
+  // discard the wrapper prefix and make the existing whole-wrapper strip miss.
+  const text = snapshot.text.replaceAll(wrapper, '')
+  const startMarker = text.lastIndexOf(marker.start)
   if (startMarker >= 0) {
     return {
-      text: stripPrompt(snapshot.text.slice(startMarker + marker.start.length).replace(/^\r?\n/, '')),
+      text: stripPrompt(text.slice(startMarker + marker.start.length).replace(/^\r?\n/, '')),
       incomplete: false,
     }
   }
-  const fallbackStart = fallback.lastIndexOf(marker.start)
+  const cleanedFallback = fallback.replaceAll(wrapper, '')
+  const fallbackStart = cleanedFallback.lastIndexOf(marker.start)
   const afterStart = fallbackStart < 0
-    ? fallback
-    : fallback.slice(fallbackStart + marker.start.length).replace(/^\r?\n/, '')
+    ? cleanedFallback
+    : cleanedFallback.slice(fallbackStart + marker.start.length).replace(/^\r?\n/, '')
   const fallbackEnd = afterStart.lastIndexOf(marker.end)
   const beforeEnd = fallbackEnd < 0 ? afterStart : afterStart.slice(0, fallbackEnd)
   return {
-    text: stripPrompt(beforeEnd.replaceAll(SHELL_PROMPT, '').replaceAll(wrapper, '')),
+    text: stripPrompt(beforeEnd.replaceAll(SHELL_PROMPT, '')),
     incomplete: fallbackTruncated || fallbackStart < 0,
   }
 }
@@ -373,6 +373,26 @@ async function executeCommand(
   let fallbackTruncated = false
 
   while (true) {
+    if (commandDeadline.signal.aborted) {
+      const timedOut = timeoutOf(commandDeadline.signal, TIMEOUT_CODE)
+      if (timedOut !== undefined) {
+        const latest = ctx.terminals.read(owner, id, { offset: 0, count: SCROLLBACK_PAGE_LINES })
+        const snapshot = retainedScrollback(ctx, owner, id, latest)
+        const partial = renderCaptured(
+          partialOutput(snapshot, marker, wrapped, fallback, fallbackTruncated),
+          config.maxOutputChars,
+        )
+        await shells.reset(owner, 'persistent pwsh command timed out')
+        return [
+          // TODO: Report a timeout only; this signal does not establish an OOM.
+          `Your command timed out after ${Math.round(timedOut.timeoutMs / 1000)} seconds or experienced an OOM error. Below is partial output:`,
+          partial,
+          SHELL_RESET_MESSAGE,
+        ].join('\n')
+      }
+      await shells.reset(owner, 'persistent pwsh command aborted')
+      commandDeadline.signal.throwIfAborted()
+    }
     // The shell may flip to exited between iterations (a fast `exit` can
     // settle the previous send while its exit event is still in flight, and
     // the echoed wrapper can then carry a marker end without status digits);
@@ -395,46 +415,26 @@ async function executeCommand(
       first = false
       result = await operation.done
     } catch (error: unknown) {
+      if (commandDeadline.signal.aborted && error === commandDeadline.signal.reason) continue
       await shells.reset(owner, 'persistent pwsh send failed')
       throw error
     }
     const incremental = operation.readOutput()
     fallback = incremental.delta.length > 0 ? fallback + incremental.delta : result.viewport
     fallbackTruncated ||= incremental.truncated || result.truncated
+    if (commandDeadline.signal.aborted) continue
     const latest = ctx.terminals.read(owner, id, { offset: 0, count: SCROLLBACK_PAGE_LINES })
-    const timedOut = timeoutOf(commandDeadline.signal, TIMEOUT_CODE)
-    if (timedOut !== undefined) {
-      const snapshot = retainedScrollback(ctx, owner, id, latest)
-      const partial = renderCaptured(
-        partialOutput(snapshot, marker, wrapped, fallback, fallbackTruncated),
-        config.maxOutputChars,
-      )
-      await shells.reset(owner, 'persistent pwsh command timed out')
-      return [
-        // TODO: Report a timeout only; this signal does not establish an OOM.
-        `Your command timed out after ${Math.round(timedOut.timeoutMs / 1000)} seconds or experienced an OOM error. Below is partial output:`,
-        partial,
-        SHELL_RESET_MESSAGE,
-      ].join('\n')
-    }
-    if (commandDeadline.signal.aborted) {
-      await shells.reset(owner, 'persistent pwsh command aborted')
-      commandDeadline.signal.throwIfAborted()
-    }
     if (latest.text.includes(marker.end)) {
       const complete = commandOutput(retainedScrollback(ctx, owner, id, latest), marker, wrapped)
       if (complete !== undefined) return renderCaptured(complete, config.maxOutputChars)
     }
+    // Incremental output can retain the complete result when scrollback is
+    // unavailable; it must carry the same END/status evidence as scrollback.
+    const complete = commandOutput({ text: fallback, truncated: fallbackTruncated }, marker, wrapped)
+    if (complete !== undefined) return renderCaptured(complete, config.maxOutputChars)
     if (result.sessionStatus.kind === 'exited') {
       return await respondToSessionExit(
         ctx, shells, owner, id, result.sessionStatus, marker, wrapped, fallback, fallbackTruncated, config,
-      )
-    }
-    if (promptCompleted(result)) {
-      const snapshot = retainedScrollback(ctx, owner, id, latest)
-      return renderCaptured(
-        partialOutput(snapshot, marker, wrapped, fallback, fallbackTruncated),
-        config.maxOutputChars,
       )
     }
     await pause()

@@ -16,7 +16,7 @@ Status: implemented
 
 三个有意为之的选择：
 
-1. **模型侧工具不暴露 `stdin` 和 `env`。** Shell 语法已覆盖这些需求，重复参数只会增加接口面而不带来权限隔离。工具仅从声明的模型参数、signal 和 owner 构建请求；受信的进程内调用方可以直接设置请求字段。harness 自有变量使用[托管环境决策](../feature/2026-07-10-agent-session-identity-and-log-location.zh.md)规定的独立 `dshEnv` 通道，因此普通 `env` 无法替换它们。
+1. **模型侧工具不暴露 `env`；可选字面量 `stdin` 遵循[有界输入决策](../bug-fix/2026-10-09-bash-literal-stdin.zh.md)。** 工具仅从声明的模型参数、signal 和 owner 构建请求；受信的进程内调用方可以直接设置请求字段。harness 自有变量使用[托管环境决策](../feature/2026-07-10-agent-session-identity-and-log-location.zh.md)规定的独立 `dshEnv` 通道，因此普通 `env` 无法替换它们。
 
 2. **`env` 在凭证擦除之后合并，因此调用方显式设置的条目即使具有凭证形态的名称也会胜出。** 后续的托管命名空间决策负责管理 `DSH_*`：这类环境条目会被移除，受信的 `dshEnv` 最后合并，因此普通 `env` 条目永远无法顶掉托管值。完整顺序为 `scrub(process.env, including DSH_*)` → `ENV_OVERRIDES` → 普通 `env` → `dshEnv`。
 
@@ -30,4 +30,4 @@ Status: implemented
 
 ## 后果
 
-钩子桥接层通过既有的 bash seam 传递 JSON 载荷和钩子特定变量，保留其进程组终止、截断和 spill 行为。面向模型的行为不变，bash 工具仍是模型调用请求构建的唯一所有者。相关词汇定义见 [bash 数据结构参考](../../../../docs/subsystems/shell.zh.md)。
+钩子桥接层通过既有的 bash seam 传递 JSON 载荷和钩子特定变量，保留其进程组终止、截断和 spill 行为。bash 工具仍是模型调用请求构建的唯一所有者，也负责有大小上限的字面量 stdin。相关词汇定义见 [bash 数据结构参考](../../../../docs/subsystems/shell.zh.md)。

@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-10-11",
+  "status": "unknown",
+  "candidate": "knowledge-search-bm25",
+  "decision": "RETAIN_TS",
+  "execution": "benchmark-only-persistent-differential",
+  "activeProfileMode": "disabled",
+  "fixture": {
+    "pages": 240,
+    "corpusHash": "3fd46f421c08f8cc89afe2eddda6809a7012477817987092d3c18b2015ccaf91",
+    "iterationsPerRun": 30,
+    "independentRuns": 3,
+    "differentialReplay": "current-optimized-rust-match"
+  },
+  "method": "Each fresh benchmark process compares file-backed current TypeScript, optimized TypeScript with an index rebuilt for each sample, fresh-child Rust IPC, and one Rust JSONL worker receiving one request per query. Persistent route uses two warmups and 30 timed requests after the first cold response; every Rust response is checked against the TypeScript oracle.",
+  "medianAcrossRunQuantilesMs": {
+    "currentTypeScript": {
+      "p50": 10.689125000000104,
+      "p95": 12.968208000000004,
+      "p99": 12.972208000000023
+    },
+    "optimizedTypeScriptRebuiltIndex": {
+      "p50": 9.541459000000032,
+      "p95": 11.684750000000122,
+      "p99": 11.82400000000007
+    },
+    "rustIpc": {
+      "p50": 17.129167000000052,
+      "p95": 18.20083300000033,
+      "p99": 18.23129199999994
+    },
+    "persistentRust": {
+      "p50": 14.800125000000207,
+      "p95": 15.637832999999773,
+      "p99": 15.94024999999965
+    }
+  },
+  "comparisons": {
+    "persistentVsFreshChildRustP50ReductionPercent": 13.6,
+    "persistentVsCurrentTypeScriptP50SlowerPercent": 38.46,
+    "persistentVsRebuiltIndexTypeScriptP50SlowerPercent": 55.11,
+    "persistentColdFirstResponseMedianMs": 15.970208
+  },
+  "workerLifecycle": {
+    "freshWorkerProcesses": 3,
+    "requestsPerWorker": 33,
+    "requestsAcrossRuns": 99,
+    "normalExitCount": 3,
+    "nonzeroExitCount": 0,
+    "differentialMatchCount": 3,
+    "measurementFailures": 0
+  },
+  "perRun": [
+    {
+      "run": 1,
+      "receipt": "scripts/rust-migration/knowledge-search-persistent-benchmark-20261011-run1.json",
+      "receiptSha256": "d2cf0b8f7462b697e05bce290181b6fa3bbc0bf2ad741fad60387ba10d684a1f",
+      "latencyMs": {
+        "currentTypeScript": {
+          "p50": 10.656417000000147,
+          "p95": 12.668334000000073,
+          "p99": 12.948292000000038
+        },
+        "optimizedTypeScriptRebuiltIndex": {
+          "p50": 9.613207999999986,
+          "p95": 12.024499999999989,
+          "p99": 12.31191600000011
+        },
+        "rustIpc": {
+          "p50": 17.46054099999992,
+          "p95": 18.20083300000033,
+          "p99": 18.23129199999994
+        },
+        "persistentRust": {
+          "p50": 14.928124999999909,
+          "p95": 15.76050000000032,
+          "p99": 15.94024999999965
+        }
+      },
+      "persistentRust": {
+        "coldFirstResponseMs": 15.970208000000184,
+        "workerSpawnEventMs": 0.0182079999999587,
+        "requestsPerProcess": 33,
+        "processExitCode": 0,
+        "processReuse": true,
+        "differentialMatch": true,
+        "persistentRustFailure": null
+      }
+    },
+    {
+      "run": 2,
+      "receipt": "scripts/rust-migration/knowledge-search-persistent-benchmark-20261011-run2.json",
+      "receiptSha256": "46512f839121b07022f087aa524e5be87c67755420b68dce599ce97d86d69b6e",
+      "latencyMs": {
+        "currentTypeScript": {
+          "p50": 10.694582999999966,
+          "p95": 12.968208000000004,
+          "p99": 12.972208000000023
+        },
+        "optimizedTypeScriptRebuiltIndex": {
+          "p50": 9.541459000000032,
+          "p95": 11.684750000000122,
+          "p99": 11.766708999999992
+        },
+        "rustIpc": {
+          "p50": 17.09308299999998,
+          "p95": 18.017667000000074,
+          "p99": 18.05187500000011
+        },
+        "persistentRust": {
+          "p50": 14.800125000000207,
+          "p95": 15.637832999999773,
+          "p99": 15.739125000000058
+        }
+      },
+      "persistentRust": {
+        "coldFirstResponseMs": 15.95233399999961,
+        "workerSpawnEventMs": 0.017374999999901775,
+        "requestsPerProcess": 33,
+        "processExitCode": 0,
+        "processReuse": true,
+        "differentialMatch": true,
+        "persistentRustFailure": null
+      }
+    },
+    {
+      "run": 3,
+      "receipt": "scripts/rust-migration/knowledge-search-persistent-benchmark-20261011-run3.json",
+      "receiptSha256": "cc93bba64d4d75e830204cdcdbb85277014a76387345ba3246249a4837cca700",
+      "latencyMs": {
+        "currentTypeScript": {
+          "p50": 10.689125000000104,
+          "p95": 13.134874999999965,
+          "p99": 13.24245899999994
+        },
+        "optimizedTypeScriptRebuiltIndex": {
+          "p50": 9.119875000000093,
+          "p95": 11.597958999999946,
+          "p99": 11.82400000000007
+        },
+        "rustIpc": {
+          "p50": 17.129167000000052,
+          "p95": 18.55462499999976,
+          "p99": 18.61870799999997
+        },
+        "persistentRust": {
+          "p50": 14.660624999999982,
+          "p95": 15.254582999999911,
+          "p99": 16.588416999999936
+        }
+      },
+      "persistentRust": {
+        "coldFirstResponseMs": 16.165707999999995,
+        "workerSpawnEventMs": 0.017708999999740627,
+        "requestsPerProcess": 33,
+        "processExitCode": 0,
+        "processReuse": true,
+        "differentialMatch": true,
+        "persistentRustFailure": null
+      }
+    }
+  ],
+  "missingEvidence": [
+    "production profile integration, worker ownership, and fail-safe lifecycle",
+    "child CPU and RSS accounting",
+    "cross-platform Rust measurements",
+    "end-to-end cancellation, crash recovery, and long-running stress",
+    "real production Wiki corpus and candidate-level cache/ACL/path isolation"
+  ],
+  "sourceSha256": {
+    "rust/knowledge-search-shadow/src/main.rs": "efa70ae723f10f0f2ffa4770a8619f2838e830caf19747416575c25f77080333",
+    "scripts/rust-migration/benchmark-knowledge-search.ts": "94de53baa0df3700f814db93848df928e7027114ec47fbd7348cde2edec8c21f",
+    "scripts/rust-migration/benchmark-knowledge-search.spec.ts": "620700565cf9a8454393e3ac0f66ac7fd238e6f8c25e2d46b5ec642efbd6a261",
+    "rust/knowledge-search-shadow/target/release/knowledge-search-shadow": "8fef834f3b2440502b48ed5b438d23ba822f646a1acfa206bd10841463afd3ce"
+  }
+}

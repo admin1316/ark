@@ -1,0 +1,360 @@
+{
+  "schemaVersion": 1,
+  "status": "bounded-source-comparison-pass",
+  "releaseDecision": "unknown",
+  "execution": "independent-file-backed-single-query-comparison",
+  "activeProfileMode": "disabled",
+  "runtime": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "24.19.0"
+  },
+  "fixture": {
+    "pages": 240,
+    "queryDigest": "05a63ccd9235e421f5274e37ca89781489d99a357c412d5eabd41a7e0f746a18",
+    "independentRuns": 3,
+    "iterationsPerRun": 30,
+    "queryPerRequest": 1,
+    "indexInvalidationVerifiedBy": "WikiSnapshotStore and Knowledge Wiki search regression suites"
+  },
+  "scenarios": {
+    "currentTypeScript": {
+      "p50": 10.10850000000005,
+      "p95": 11.071875000000091,
+      "p99": 11.576874999999973,
+      "cpuMicros": 444843,
+      "rssDelta": 17694720,
+      "eventLoopDelayMeanMs": 10.356736,
+      "eventLoopDelayP95Ms": 12.402687,
+      "eventLoopDelayMaxMs": 13.656063,
+      "eventLoopDelaySamples": 29
+    },
+    "optimizedTypeScriptRebuiltIndex": {
+      "p50": 2.1715830000002825,
+      "p95": 3.0242089999997006,
+      "p99": 4.048084000000017,
+      "cpuMicros": 77277,
+      "rssDelta": 9322496,
+      "eventLoopDelayMeanMs": 2.2523586206896553,
+      "eventLoopDelayP95Ms": 2.516991,
+      "eventLoopDelayMaxMs": 3.037183,
+      "eventLoopDelaySamples": 29
+    },
+    "productionCachedTypeScript": {
+      "p50": 0.09475000000020373,
+      "p95": 0.12695899999994253,
+      "p99": 0.19454100000007202,
+      "cpuMicros": 3476,
+      "rssDelta": 0,
+      "eventLoopDelayMeanMs": 0.84928,
+      "eventLoopDelayP95Ms": 1.020415,
+      "eventLoopDelayMaxMs": 1.020415,
+      "eventLoopDelaySamples": 3
+    },
+    "rustIpc": {
+      "p50": 6.631000000000313,
+      "p95": 6.880582999999888,
+      "p99": 7.031916999999794,
+      "cpuMicros": 24232,
+      "rssDelta": 6209536,
+      "eventLoopDelayMeanMs": 6.663980137931035,
+      "eventLoopDelayP95Ms": 6.885375,
+      "eventLoopDelayMaxMs": 6.909951,
+      "eventLoopDelaySamples": 29
+    },
+    "persistentRust": {
+      "p50": 4.079,
+      "p95": 4.595083,
+      "p99": 5.554416,
+      "cpuMicros": null,
+      "rssDelta": null,
+      "eventLoopDelayMeanMs": 1.3441211182795698,
+      "eventLoopDelayP95Ms": 1.596415,
+      "eventLoopDelayMaxMs": 1.864703,
+      "eventLoopDelaySamples": 93
+    }
+  },
+  "productionCacheFirstIndexMissMs": [
+    12.902000000000001,
+    11.57487500000002,
+    11.12558399999989
+  ],
+  "productionCacheBuildsPerRun": [
+    1,
+    1,
+    1
+  ],
+  "differentialMatches": 3,
+  "rustWorkerCleanExits": 3,
+  "sourceSha256": {
+    "benchmark": "17806650345a38096479ab30a22302d048243a8bc17fb284e91da3a68a4d6838",
+    "search": "27c7247bea964d6cf7774850bf3ec44c2d0f20c1ec8ae0ee0ce7979d9aca5430",
+    "snapshotStore": "03947c73b7c9ca66725eb46c7bdd69cd384c370593744ebd2efb2c413b3e74de",
+    "rustKernel": "efa70ae723f10f0f2ffa4770a8619f2838e830caf19747416575c25f77080333"
+  },
+  "runs": [
+    {
+      "currentTypeScript": {
+        "p50": 10.377625000000023,
+        "p95": 12.237333999999976,
+        "p99": 13.600290999999999,
+        "cpuMicros": 444843,
+        "rssDelta": 84344832,
+        "eventLoopDelayMeanMs": 10.57191724137931,
+        "eventLoopDelayP95Ms": 12.402687,
+        "eventLoopDelayMaxMs": 13.656063,
+        "eventLoopDelaySamples": 29,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "optimizedTypeScriptRebuiltIndex": {
+        "p50": 2.133041999999989,
+        "p95": 2.4851659999999924,
+        "p99": 2.4862920000000486,
+        "cpuMicros": 69333,
+        "rssDelta": 9322496,
+        "eventLoopDelayMeanMs": 2.1956678620689654,
+        "eventLoopDelayP95Ms": 2.504703,
+        "eventLoopDelayMaxMs": 2.590719,
+        "eventLoopDelaySamples": 29,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "productionCachedTypeScript": {
+        "p50": 0.09770900000000893,
+        "p95": 0.17525000000000546,
+        "p99": 0.2727499999999736,
+        "cpuMicros": 4113,
+        "rssDelta": -344064,
+        "eventLoopDelayMeanMs": 0.84928,
+        "eventLoopDelayP95Ms": 1.020415,
+        "eventLoopDelayMaxMs": 1.020415,
+        "eventLoopDelaySamples": 4,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "firstIndexMissMs": 12.902000000000001,
+      "currentAndOptimizedMatch": true,
+      "productionCacheDifferentialMatch": true,
+      "pageCount": 240,
+      "rustIpc": {
+        "p50": 6.688957999999957,
+        "p95": 6.963082999999983,
+        "p99": 7.28754200000003,
+        "cpuMicros": 24497,
+        "rssDelta": 6635520,
+        "eventLoopDelayMeanMs": 6.703527724137931,
+        "eventLoopDelayP95Ms": 6.979583,
+        "eventLoopDelayMaxMs": 6.991871,
+        "eventLoopDelaySamples": 29,
+        "digest": "b8f930a98f5c7bda4fa6da8ce060185f244167b1fd61bfa2a2994d609a955e7a"
+      },
+      "persistentRust": {
+        "p50": 4.067416,
+        "p95": 4.595083,
+        "p99": 5.632625,
+        "sampleCount": 30,
+        "cpuMicros": null,
+        "rssDelta": null,
+        "eventLoopDelayMeanMs": 1.344324817204301,
+        "eventLoopDelayP95Ms": 1.656831,
+        "eventLoopDelayMaxMs": 1.886207,
+        "eventLoopDelaySamples": 93,
+        "digest": "b8f930a98f5c7bda4fa6da8ce060185f244167b1fd61bfa2a2994d609a955e7a",
+        "startupMs": 2.030417,
+        "startupIncludedInFirstSample": false,
+        "processReuse": true,
+        "indexReuse": false,
+        "resultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9"
+      },
+      "rustDifferentialMatch": true,
+      "persistentRustRecovery": {
+        "status": "observed",
+        "crashSignal": "SIGKILL",
+        "restartRequestMs": 5.919375,
+        "restartStartupMs": 0.483792,
+        "resultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9",
+        "elapsedMs": 13.558542
+      },
+      "persistentRustCancellation": {
+        "status": "not-measured",
+        "reason": "The synchronous benchmark has no in-flight AbortSignal; cancellation remains owned by the TypeScript candidate boundary."
+      },
+      "rustResultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9"
+    },
+    {
+      "currentTypeScript": {
+        "p50": 10.10850000000005,
+        "p95": 10.826209000000063,
+        "p99": 11.205375000000004,
+        "cpuMicros": 458654,
+        "rssDelta": 17694720,
+        "eventLoopDelayMeanMs": 10.356736,
+        "eventLoopDelayP95Ms": 12.451839,
+        "eventLoopDelayMaxMs": 15.523839,
+        "eventLoopDelaySamples": 29,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "optimizedTypeScriptRebuiltIndex": {
+        "p50": 2.3275000000001,
+        "p95": 3.538250000000062,
+        "p99": 4.303540999999996,
+        "cpuMicros": 86166,
+        "rssDelta": 45563904,
+        "eventLoopDelayMeanMs": 2.423896275862069,
+        "eventLoopDelayP95Ms": 2.867199,
+        "eventLoopDelayMaxMs": 6.094847,
+        "eventLoopDelaySamples": 29,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "productionCachedTypeScript": {
+        "p50": 0.09475000000020373,
+        "p95": 0.12695899999994253,
+        "p99": 0.19454100000007202,
+        "cpuMicros": 3476,
+        "rssDelta": 16384,
+        "eventLoopDelayMeanMs": 0.9982293333333334,
+        "eventLoopDelayP95Ms": 1.089535,
+        "eventLoopDelayMaxMs": 1.089535,
+        "eventLoopDelaySamples": 3,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "firstIndexMissMs": 11.57487500000002,
+      "currentAndOptimizedMatch": true,
+      "productionCacheDifferentialMatch": true,
+      "pageCount": 240,
+      "rustIpc": {
+        "p50": 6.602832999999919,
+        "p95": 6.880582999999888,
+        "p99": 7.015791999999919,
+        "cpuMicros": 23098,
+        "rssDelta": 5734400,
+        "eventLoopDelayMeanMs": 6.631212137931035,
+        "eventLoopDelayP95Ms": 6.868991,
+        "eventLoopDelayMaxMs": 6.909951,
+        "eventLoopDelaySamples": 29,
+        "digest": "b8f930a98f5c7bda4fa6da8ce060185f244167b1fd61bfa2a2994d609a955e7a"
+      },
+      "persistentRust": {
+        "p50": 4.083291,
+        "p95": 4.603792,
+        "p99": 5.554416,
+        "sampleCount": 30,
+        "cpuMicros": null,
+        "rssDelta": null,
+        "eventLoopDelayMeanMs": 1.3248626382978723,
+        "eventLoopDelayP95Ms": 1.596415,
+        "eventLoopDelayMaxMs": 1.864703,
+        "eventLoopDelaySamples": 94,
+        "digest": "b8f930a98f5c7bda4fa6da8ce060185f244167b1fd61bfa2a2994d609a955e7a",
+        "startupMs": 1.92525,
+        "startupIncludedInFirstSample": false,
+        "processReuse": true,
+        "indexReuse": false,
+        "resultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9"
+      },
+      "rustDifferentialMatch": true,
+      "persistentRustRecovery": {
+        "status": "observed",
+        "crashSignal": "SIGKILL",
+        "restartRequestMs": 5.854875,
+        "restartStartupMs": 0.458375,
+        "resultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9",
+        "elapsedMs": 13.332584
+      },
+      "persistentRustCancellation": {
+        "status": "not-measured",
+        "reason": "The synchronous benchmark has no in-flight AbortSignal; cancellation remains owned by the TypeScript candidate boundary."
+      },
+      "rustResultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9"
+    },
+    {
+      "currentTypeScript": {
+        "p50": 10.01520800000003,
+        "p95": 11.071875000000091,
+        "p99": 11.576874999999973,
+        "cpuMicros": 438132,
+        "rssDelta": -2326528,
+        "eventLoopDelayMeanMs": 10.20751448275862,
+        "eventLoopDelayP95Ms": 11.935743,
+        "eventLoopDelayMaxMs": 13.524991,
+        "eventLoopDelaySamples": 29,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "optimizedTypeScriptRebuiltIndex": {
+        "p50": 2.1715830000002825,
+        "p95": 3.0242089999997006,
+        "p99": 4.048084000000017,
+        "cpuMicros": 77277,
+        "rssDelta": 2080768,
+        "eventLoopDelayMeanMs": 2.2523586206896553,
+        "eventLoopDelayP95Ms": 2.516991,
+        "eventLoopDelayMaxMs": 3.037183,
+        "eventLoopDelaySamples": 29,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "productionCachedTypeScript": {
+        "p50": 0.08608300000014424,
+        "p95": 0.0939170000001468,
+        "p99": 0.1845410000000811,
+        "cpuMicros": 2818,
+        "rssDelta": 0,
+        "eventLoopDelayMeanMs": 0.8453973333333333,
+        "eventLoopDelayP95Ms": 1.018367,
+        "eventLoopDelayMaxMs": 1.018367,
+        "eventLoopDelaySamples": 3,
+        "digest": "5c83d87ebf94c7c1264d61cafa8f28794c952c0935015351a65e23e9c1bfe121"
+      },
+      "firstIndexMissMs": 11.12558399999989,
+      "currentAndOptimizedMatch": true,
+      "productionCacheDifferentialMatch": true,
+      "pageCount": 240,
+      "rustIpc": {
+        "p50": 6.631000000000313,
+        "p95": 6.876749999999902,
+        "p99": 7.031916999999794,
+        "cpuMicros": 24232,
+        "rssDelta": 6209536,
+        "eventLoopDelayMeanMs": 6.663980137931035,
+        "eventLoopDelayP95Ms": 6.885375,
+        "eventLoopDelayMaxMs": 6.897663,
+        "eventLoopDelaySamples": 29,
+        "digest": "b8f930a98f5c7bda4fa6da8ce060185f244167b1fd61bfa2a2994d609a955e7a"
+      },
+      "persistentRust": {
+        "p50": 4.079,
+        "p95": 4.493167,
+        "p99": 5.496458,
+        "sampleCount": 30,
+        "cpuMicros": null,
+        "rssDelta": null,
+        "eventLoopDelayMeanMs": 1.3441211182795698,
+        "eventLoopDelayP95Ms": 1.587199,
+        "eventLoopDelayMaxMs": 1.860607,
+        "eventLoopDelaySamples": 93,
+        "digest": "b8f930a98f5c7bda4fa6da8ce060185f244167b1fd61bfa2a2994d609a955e7a",
+        "startupMs": 1.946917,
+        "startupIncludedInFirstSample": false,
+        "processReuse": true,
+        "indexReuse": false,
+        "resultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9"
+      },
+      "rustDifferentialMatch": true,
+      "persistentRustRecovery": {
+        "status": "observed",
+        "crashSignal": "SIGKILL",
+        "restartRequestMs": 5.914958,
+        "restartStartupMs": 0.433208,
+        "resultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9",
+        "elapsedMs": 13.405625
+      },
+      "persistentRustCancellation": {
+        "status": "not-measured",
+        "reason": "The synchronous benchmark has no in-flight AbortSignal; cancellation remains owned by the TypeScript candidate boundary."
+      },
+      "rustResultDigest": "3e78cd49676d4f149feb6ed4710a4c0df17a89aa7c9d9217eedf501b9fdd44a9"
+    }
+  ],
+  "limitations": [
+    "Synthetic fixture only; no real user Wiki, embeddings, model provider latency, ACL replay, or whole Ark profile call.",
+    "Rust child CPU and RSS are not included in Node-parent measurements; collect process-tree resources before any production decision.",
+    "Cancellation, crash recovery, cross-platform packaging, stress, and authenticated candidate-profile enforcement remain separate gates."
+  ]
+}

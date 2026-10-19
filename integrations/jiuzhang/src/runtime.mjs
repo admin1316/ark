@@ -152,6 +152,15 @@ const inheritedEnvironmentKeys = [
   'TERM',
   'COLORTERM',
   'NO_COLOR',
+  // Launcher-owned verifier configuration. It is never read from Wiki data;
+  // an empty value keeps the service fail-closed by default.
+  'ARK_KNOWLEDGE_VERIFIER_CONFIG',
+  // Public measured-trial trust anchors and the read-only evidence-store path;
+  // private signing keys are rejected by the Knowledge Wiki config parser.
+  'ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG',
+  // App-owned private IPC endpoint; neither value grants trial signing authority.
+  'ARK_NATIVE_OWNER_SOCKET_PATH',
+  'ARK_NATIVE_OWNER_LAUNCH_TOKEN',
 ]
 
 /** Return the default isolated Harness home for the Jiuzhang desktop product. */
@@ -414,9 +423,9 @@ function migrationConflict(relative) {
   return new Error(`Ark data migration conflict at ${relative || '.'}; source data was retained`)
 }
 
-async function optionalLstat(path) {
+async function optionalLstat(path, options) {
   try {
-    return await lstat(path)
+    return await lstat(path, options)
   } catch (error) {
     if (error?.code === 'ENOENT') return undefined
     throw error
@@ -425,7 +434,7 @@ async function optionalLstat(path) {
 
 function assertCurrentUserOwner(path, info) {
   const uid = typeof process.getuid === 'function' ? process.getuid() : undefined
-  if (uid !== undefined && info.uid !== uid) {
+  if (uid !== undefined && info.uid !== (typeof info.uid === 'bigint' ? BigInt(uid) : uid)) {
     throw new Error(`Ark-owned path is not owned by the current user: ${path}`)
   }
 }
@@ -798,10 +807,13 @@ export async function installRuntimeConfiguration(home) {
 /**
  * Rebuild the standalone profile's package-resolution fallback from the
  * installed runtime. The profile scope is a real directory containing one
- * absolute link per canonical package; a scope-level symlink would let the
- * loader's healer rewrite the pnpm tree through the alias.
+ * absolute link per canonical installed directory or package symlink. A scope-level
+ * symlink would let the loader's healer rewrite the pnpm tree through the alias.
  * Owned legacy directories with only group/other read or execute access are
  * tightened through validated descriptors; writable or aliased directories fail.
+ * Windows updates existing junctions through the shared native owner without
+ * removing their directory entries. A post-update verification or close failure
+ * does not imply rollback. Only packages absent from the installed catalog are pruned.
  * @param {string} home - Absolute Harness home.
  * @returns {Promise<{created: number, replaced: number, kept: number, pruned: number}>} Reconciliation counts.
  */
@@ -826,9 +838,10 @@ export async function ensureProfileModuleFallback(home) {
   let kept = 0
   let pruned = 0
   for (const name of (await readdir(runtimeScope)).sort()) {
-    const target = join(runtimeScope, name)
-    const targetStat = await lstat(target)
-    if (!targetStat.isSymbolicLink()) continue
+    const packageEntry = join(runtimeScope, name)
+    const targetStat = await lstat(packageEntry)
+    if (!targetStat.isDirectory() && !targetStat.isSymbolicLink()) continue
+    const target = await realpath(packageEntry)
     const manifest = JSON.parse(await readFile(join(target, 'package.json'), 'utf8'))
     const expected = `@deepseek-ai/${name}`
     if (manifest.name !== expected) {
@@ -836,7 +849,7 @@ export async function ensureProfileModuleFallback(home) {
     }
     runtimeNames.add(name)
     const link = join(profileScope, name)
-    const linkStat = await optionalLstat(link)
+    const linkStat = await optionalLstat(link, { bigint: true })
     if (linkStat !== undefined) {
       if (!linkStat.isSymbolicLink()) throw new Error(`profile package entry is not a symlink: ${link}`)
       assertCurrentUserOwner(link, linkStat)
@@ -845,37 +858,50 @@ export async function ensureProfileModuleFallback(home) {
         kept += 1
         continue
       }
+      if (process.platform === 'win32') {
+        const { replaceJunctionTarget } = await import('@deepseek-ai/dsh-win32-process')
+        if (typeof replaceJunctionTarget !== 'function') {
+          throw new Error('Ark installed native owner lacks replaceJunctionTarget; refusing junction update')
+        }
+        replaceJunctionTarget(link, target, { dev: linkStat.dev, ino: linkStat.ino, target: currentTarget })
+        replaced += 1
+        continue
+      }
+    } else {
+      try {
+        await symlink(target, link, process.platform === 'win32' ? 'junction' : undefined)
+      } catch (error) {
+        if (error?.code !== 'EEXIST') throw error
+        const winner = await lstat(link, { bigint: true })
+        if (!winner.isSymbolicLink() || await readlink(link) !== target) throw error
+        assertCurrentUserOwner(link, winner)
+        kept += 1
+        continue
+      }
+      created += 1
+      continue
     }
     // Stage then rename: the fallback is resolved through by every preset
     // roster and mount, and the previous runtime may still be serving while a
     // restart replaces this scope. Unlinking before creating would leave the
     // entry missing for that whole window, which marks every preset naming the
     // package broken.
-    const staged = `${link}.staged-${String(process.pid)}`
-    await rm(staged, { recursive: false, force: true })
-    await symlink(target, staged, process.platform === 'win32' ? 'junction' : undefined)
+    const staged = `${link}.staged-${String(process.pid)}-${randomBytes(8).toString('hex')}`
+    await symlink(target, staged)
+    const stagedInfo = await lstat(staged, { bigint: true })
     try {
       await rename(staged, link)
     } catch (error) {
-      // Windows may refuse to rename over an existing reparse point; keep the
-      // validated replace path as the fallback there.
-      if (!['EEXIST', 'EPERM', 'ENOTEMPTY', 'EISDIR'].includes(error?.code ?? '')) {
-        await rm(staged, { recursive: false, force: true })
-        throw error
-      }
-      await rm(staged, { recursive: false, force: true })
-      if (linkStat !== undefined) {
-        await unlinkValidatedProfileSymlink(profileScope, link, linkStat, await readlink(link))
-      }
-      await symlink(target, link, process.platform === 'win32' ? 'junction' : undefined)
+      try { await unlinkValidatedProfileSymlink(profileScope, staged, stagedInfo, target) }
+      catch (cleanupError) { throw new AggregateError([error, cleanupError], 'profile link replacement and staging cleanup failed') }
+      throw error
     }
-    if (linkStat === undefined) created += 1
-    else replaced += 1
+    replaced += 1
   }
   for (const name of await readdir(profileScope)) {
     if (runtimeNames.has(name)) continue
     const link = join(profileScope, name)
-    const linkStat = await lstat(link)
+    const linkStat = await lstat(link, { bigint: true })
     if (!linkStat.isSymbolicLink()) continue
     assertCurrentUserOwner(link, linkStat)
     await unlinkValidatedProfileSymlink(profileScope, link, linkStat, await readlink(link))
@@ -889,7 +915,7 @@ async function unlinkValidatedProfileSymlink(profileScope, link, expectedInfo, e
   if (dirname(resolve(link)) !== resolve(profileScope)) {
     throw new Error(`profile package link escapes its validated scope: ${link}`)
   }
-  const current = await lstat(link)
+  const current = await lstat(link, { bigint: true })
   if (!current.isSymbolicLink()
     || !sameFileIdentity(expectedInfo, current)
     || await readlink(link) !== expectedTarget) {

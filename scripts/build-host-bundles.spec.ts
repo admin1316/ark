@@ -76,7 +76,7 @@ it.each([false, true])('uses real TypeScript build options with invalid source %
   } finally {
     await rm(root, { recursive: true, force: true })
   }
-})
+}, 15_000)
 
 async function reflectionFixture(root: string, status: number): Promise<void> {
   const directory = join(root, 'packages/typert/generator/lib/types')

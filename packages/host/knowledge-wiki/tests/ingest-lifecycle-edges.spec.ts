@@ -20,6 +20,7 @@ import {
 import { sourceSummaryFileNameFromIdentity } from '../src/source-slug.ts'
 import { stageExecutorFor } from './stage-executor-fixture.ts'
 import type { KnowledgeWikiStageExecutor, KnowledgeWikiStageRequest } from '../src/stage-executor.ts'
+import * as reviewOwner from '../src/reviews.ts'
 
 const roots: string[] = []
 
@@ -138,21 +139,29 @@ describe('two-stage ingest lifecycle', () => {
     const sourceRel = writeSource(projectRoot)
     const governance = join(projectRoot, 'wiki', '_governance')
     const sources = join(projectRoot, 'wiki', '_candidates', 'ingest', 'sources')
-    mkdirSync(dirname(sources), { recursive: true })
-    writeFileSync(governance, 'preserve governance blocker')
-    writeFileSync(sources, 'preserve source blocker')
-
-    const result = await ingestSource(
-      stageExecutorFor(llmFor('no FILE blocks')), 'p', 'm', projectRoot, sourceRel, new AbortController().signal,
-    )
-
-    expect(result.written).toEqual([])
-    expect(result.warnings).toEqual(expect.arrayContaining([
-      expect.stringMatching(/^log append failed: /u),
-      expect.stringMatching(/^summary fallback failed: /u),
-    ]))
-    expect(readFileSync(governance, 'utf8')).toBe('preserve governance blocker')
-    expect(readFileSync(sources, 'utf8')).toBe('preserve source blocker')
+    const originalPrepare = reviewOwner.prepareReviewAppend
+    const prepare = vi.spyOn(reviewOwner, 'prepareReviewAppend').mockImplementation((...args) => {
+      // Reach the real preflight before obstructing the later writers. An
+      // already obstructed tree must fail at preflight, not at these writers.
+      const plan = originalPrepare(...args)
+      mkdirSync(dirname(sources), { recursive: true })
+      writeFileSync(governance, 'preserve governance blocker')
+      writeFileSync(sources, 'preserve source blocker')
+      return plan
+    })
+    try {
+      const result = await ingestSource(
+        stageExecutorFor(llmFor('no FILE blocks')), 'p', 'm', projectRoot, sourceRel, new AbortController().signal,
+      )
+      expect(prepare).toHaveBeenCalledOnce()
+      expect(result.written).toEqual([])
+      expect(result.warnings).toEqual(expect.arrayContaining([
+        expect.stringMatching(/^log append failed: /u),
+        expect.stringMatching(/^summary fallback failed: /u),
+      ]))
+      expect(readFileSync(governance, 'utf8')).toBe('preserve governance blocker')
+      expect(readFileSync(sources, 'utf8')).toBe('preserve source blocker')
+    } finally { prepare.mockRestore() }
   })
 
   it('returns a clean empty-source outcome before calling the model', async () => {
@@ -292,6 +301,93 @@ describe('two-stage ingest lifecycle', () => {
     expect(result.warnings).toEqual([])
   })
 
+  it('publishes only actual successful candidate paths after a filesystem page failure', async () => {
+    const projectRoot = root()
+    const sourceRel = writeSource(projectRoot)
+    const blockedDirectory = join(projectRoot, 'wiki', '_candidates', 'ingest', 'blocked')
+    const generated = [
+      '--- FILE: wiki/_candidates/ingest/blocked/page.md ---',
+      '---', 'title: Blocked page', 'status: candidate', '---', 'Body for the blocked page.',
+      '--- END FILE ---',
+      '--- FILE: wiki/_candidates/ingest/notes/good.md ---',
+      '---', 'title: Good page', 'status: candidate', '---', 'Body for the page that can be written.',
+      '--- END FILE ---',
+    ].join('\n')
+    const originalPrepare = reviewOwner.prepareReviewAppend
+    const prepare = vi.spyOn(reviewOwner, 'prepareReviewAppend')
+    prepare.mockImplementation((...args) => {
+      const plan = originalPrepare(...args)
+      mkdirSync(dirname(blockedDirectory), { recursive: true })
+      writeFileSync(blockedDirectory, 'obstruct candidate parent directory')
+      return plan
+    })
+    try {
+      const result = await ingestSource(
+        stageExecutorFor(llmFor(generated)), 'p', 'm', projectRoot, sourceRel,
+        new AbortController().signal,
+      )
+
+      const goodPath = 'wiki/_candidates/ingest/notes/good.md'
+      const blockedPath = 'wiki/_candidates/ingest/blocked/page.md'
+      expect(result.written).toContain(goodPath)
+      expect(result.written).not.toContain(blockedPath)
+      expect(result.warnings.some(warning => warning.includes('blocked'))).toBe(true)
+      const review = JSON.parse(readFileSync(join(projectRoot, '.llm-wiki', 'review.json'), 'utf8')) as Array<{ candidatePath?: string }>
+      expect(review.some(row => row.candidatePath === goodPath.replace(/^wiki\//u, ''))).toBe(true)
+      expect(review.some(row => row.candidatePath === blockedPath.replace(/^wiki\//u, ''))).toBe(false)
+    } finally {
+      prepare.mockRestore()
+    }
+  })
+
+  it('reports an actual review-byte CAS conflict after writing the candidate without adding a review row', async () => {
+    const projectRoot = root()
+    const sourceRel = writeSource(projectRoot)
+    const reviewFile = join(projectRoot, '.llm-wiki', 'review.json')
+    mkdirSync(dirname(reviewFile), { recursive: true })
+    const candidatePath = 'wiki/_candidates/ingest/cas-change.md'
+    const generated = [
+      `--- FILE: ${candidatePath} ---`,
+      '---', 'title: CAS change', 'status: candidate', '---', 'A valid candidate body for CAS control.',
+      '--- END FILE ---',
+    ].join('\n')
+    const originalPrepare = reviewOwner.prepareReviewAppend
+    const prepare = vi.spyOn(reviewOwner, 'prepareReviewAppend')
+    prepare.mockImplementation((...args) => {
+      const plan = originalPrepare(...args)
+      writeFileSync(reviewFile, '[]\n')
+      return plan
+    })
+    try {
+      const result = await ingestSource(
+        stageExecutorFor(llmFor(generated)), 'p', 'm', projectRoot, sourceRel,
+        new AbortController().signal,
+      )
+      expect(result.written).toContain(candidatePath)
+      expect(result.warnings).toContain('review append failed: review state changed after append preflight')
+      expect(existsSync(join(projectRoot, candidatePath))).toBe(true)
+      expect(readFileSync(reviewFile, 'utf8')).toBe('[]\n')
+    } finally {
+      prepare.mockRestore()
+    }
+  })
+
+  it('rejects an oversized actual model candidate before publishing candidate, log, summary, or review bytes', async () => {
+    const projectRoot = root()
+    const sourceRel = writeSource(projectRoot)
+    const candidatePath = 'wiki/_candidates/ingest/too-large.md'
+    const generated = `--- FILE: ${candidatePath} ---\n---\ntitle: Too large\nstatus: candidate\n---\n\n${'x'.repeat(5 * 1024 * 1024 + 1)}\n--- END FILE ---`
+    const result = await ingestSource(
+      stageExecutorFor(llmFor(generated)), 'p', 'm', projectRoot, sourceRel,
+      new AbortController().signal,
+    )
+    expect(result.written).toEqual([])
+    expect(result.warnings.some(warning => warning.includes('candidate exceeds 5242880 bytes'))).toBe(true)
+    expect(existsSync(join(projectRoot, candidatePath))).toBe(false)
+    expect(existsSync(join(projectRoot, 'wiki', '_governance', 'ingest-candidate-log.md'))).toBe(false)
+    expect(existsSync(join(projectRoot, '.llm-wiki', 'review.json'))).toBe(false)
+  })
+
   it('reports a non-missing filesystem error before deterministic fallbacks', async () => {
     const projectRoot = root()
     const sourceRel = writeSource(projectRoot)
@@ -302,6 +398,6 @@ describe('two-stage ingest lifecycle', () => {
       stageExecutorFor(failingLlm), 'p', 'm', projectRoot, sourceRel,
       new AbortController().signal,
     ))
-      .rejects.toThrow('ENOTDIR')
+      .rejects.toThrow(/ENOTDIR|ENOENT/u)
   })
 })

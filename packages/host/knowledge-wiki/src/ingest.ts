@@ -19,7 +19,7 @@ import { sanitizeIngestedFileContent, stampGeneratedFrontmatterDates, stampGener
 import { buildFallbackSourceSummaryPage, fallbackSummaryRelPath } from './fallback-summary.ts'
 import { atomicWriteFile, isMissingPathError } from './filesystem.ts'
 import { mergePageContent } from './merge-page.ts'
-import { appendCandidateReviews, appendReviews, parseReviewBlocks } from './reviews.ts'
+import { commitReviewAppend, parseReviewBlocks, prepareReviewAppend } from './reviews.ts'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { IngestOutcome } from './types.ts'
 import { executeKnowledgeWikiStage, type KnowledgeWikiStageExecutor } from './stage-executor.ts'
@@ -423,27 +423,23 @@ export async function ingestSource(
   if (generated.text === null) throw new Error('ingest generation returned no text')
 
   const written: string[] = []
-  for (const block of parseFileBlocks(generated.text)) {
+  const preparedPages: Array<{ readonly rel: string; readonly target: string; readonly content: string; readonly logEntry?: string }> = []
+  const candidateInputs: Array<{ readonly path: string; readonly content: string }> = []
+  const blocks = parseFileBlocks(generated.text)
+  for (const block of blocks) {
     signal.throwIfAborted()
     if (!block.closed) {
       warnings.push(`FILE block not closed: ${block.path}`)
       continue
     }
     let rel = block.path
-    // Force the summary page onto the contract slug: the model may emit a
-    // base-name path instead of the exact slugged path.
-    if (rel === `wiki/sources/${sourceTitle}.md`) {
-      rel = `wiki/sources/${summaryFileName}`
-    }
+    if (rel === `wiki/sources/${sourceTitle}.md`) rel = `wiki/sources/${summaryFileName}`
     try {
       rel = candidateIngestRel(rel)
       const target = safeWikiPath(projectPath, rel)
       if (rel === CANDIDATE_LOG_REL) {
         const entry = block.content.replace(/^---[\s\S]*?---\n\n?/u, '').trim()
-        if (entry !== '') {
-          await appendLogEntry(target, stampGeneratedLogDate(entry, today))
-          written.push(rel)
-        }
+        if (entry !== '') preparedPages.push({ rel, target, content: '', logEntry: stampGeneratedLogDate(entry, today) })
         continue
       }
       let content = sanitizeIngestedFileContent(block.content)
@@ -459,16 +455,44 @@ export async function ingestSource(
         }
         content = merged
       }
-      signal.throwIfAborted()
-      atomicWriteFile(target, content)
-      written.push(rel)
+      preparedPages.push({ rel, target, content })
+      candidateInputs.push({ path: rel, content })
     } catch (error) {
       warnings.push(error instanceof Error ? error.message : String(error))
     }
   }
 
-  // Deterministic fallbacks: log entry, source summary, and review items —
-  // each independent of model output shape.
+  const summaryRel = candidateIngestRel(fallbackSummaryRelPath(identity))
+  const fallbackSummary = stampCandidateFrontmatter(buildFallbackSourceSummaryPage(identity, today))
+  candidateInputs.push({ path: summaryRel, content: fallbackSummary })
+
+  const reviewFile = join(projectPath, '.llm-wiki', 'review.json')
+  let reviewPlan
+  try {
+    reviewPlan = prepareReviewAppend(
+      reviewFile,
+      projectPath,
+      sourceRel,
+      parseReviewBlocks(generated.text),
+      candidateInputs,
+      join(projectPath, sourceRel),
+    )
+  } catch (error) {
+    warnings.push(`review preflight failed: ${error instanceof Error ? error.message : String(error)}`)
+    return { written, warnings }
+  }
+
+  for (const page of preparedPages) {
+    signal.throwIfAborted()
+    try {
+      if (page.logEntry !== undefined) await appendLogEntry(page.target, page.logEntry)
+      else atomicWriteFile(page.target, page.content)
+      written.push(page.rel)
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : String(error))
+    }
+  }
+
   if (!written.includes(CANDIDATE_LOG_REL)) {
     try {
       signal.throwIfAborted()
@@ -478,12 +502,11 @@ export async function ingestSource(
       warnings.push(`log append failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
-  const summaryRel = candidateIngestRel(fallbackSummaryRelPath(identity))
   if (!written.includes(summaryRel)) {
     try {
       signal.throwIfAborted()
       const target = safeWikiPath(projectPath, summaryRel)
-      atomicWriteFile(target, stampCandidateFrontmatter(buildFallbackSourceSummaryPage(identity, today)))
+      atomicWriteFile(target, fallbackSummary)
       written.push(summaryRel)
     } catch (error) {
       warnings.push(`summary fallback failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -491,18 +514,9 @@ export async function ingestSource(
   }
   try {
     signal.throwIfAborted()
-    const reviews = parseReviewBlocks(generated.text)
-    if (reviews.length > 0) {
-      appendReviews(join(projectPath, '.llm-wiki', 'review.json'), join(projectPath, sourceRel), reviews)
-    }
+    commitReviewAppend(reviewPlan, written.filter(path => path.startsWith(`${CANDIDATE_INGEST_PREFIX}/`)))
   } catch (error) {
     warnings.push(`review append failed: ${error instanceof Error ? error.message : String(error)}`)
-  }
-  try {
-    signal.throwIfAborted()
-    appendCandidateReviews(join(projectPath, '.llm-wiki', 'review.json'), projectPath, sourceRel, written)
-  } catch (error) {
-    warnings.push(`candidate review failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 
   return { written, warnings }

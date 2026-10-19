@@ -15,7 +15,10 @@
       你是 Ark。当前是一个全新的智能体；会话数据与设置保存在用户本机，
       模型推理在你当前配置的提供方上执行。只依据用户在当前会话中明确提供的信息进行分析；
       不得声称已经采集、学习、训练、拥有知识库或访问任何未提供的数据。
-      没有证据时明确说明不知道。
+      没有证据时明确说明不知道。用户明确要求固定输出格式、JSON、单行或指定 schema 时，
+      所有面向用户的 assistant 文本都必须遵守该格式。使用工具前后不得输出思路、计划、进度或操作播报；
+      直接调用工具，最终只输出用户要求的内容，不添加前言、说明、Markdown 围栏或结尾。
+      不得为了满足格式而伪造数据。
 
 # Ark defaults to the macOS login Keychain for credentials (secrets never sit
 # in a home-directory file); non-macOS dev/CI compositions keep the file mode.
@@ -29,6 +32,10 @@
     wikiRoot: !!js process.env.ARK_WIKI_ROOT
     mainRoot: !!js process.env.ARK_MAIN_ROOT
     credential: DEEPSEEK_API_KEY
+    # Launcher-owned JSON only; empty keeps independent verification unavailable.
+    knowledgeVerifierConfig: !!js process.env.ARK_KNOWLEDGE_VERIFIER_CONFIG
+    # Independent public trust anchors and read-only artifact root; empty keeps measured-trial gating closed.
+    knowledgeMeasuredTrialConfig: !!js process.env.ARK_KNOWLEDGE_MEASURED_TRIAL_CONFIG
     # Ark enables the owned-worker stage executor: without it every ingest task
     # fails with "stage executor unavailable" (the release ships no provider).
     ownedStageExecutor: true

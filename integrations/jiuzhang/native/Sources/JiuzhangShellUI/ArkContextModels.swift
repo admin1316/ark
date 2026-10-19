@@ -38,13 +38,10 @@ public struct ArkContextPressure: Equatable, Sendable {
   }
 
   private static func integer(_ value: JSONValue?, positive: Bool) -> Int? {
-    guard let number = value?.numberValue,
-          number.isFinite,
-          number.rounded(.towardZero) == number,
-          positive ? number > 0 : number >= 0,
-          number < Double(Int.max)
+    guard let number = value?.nonnegativeIntegerValue,
+          !positive || number > 0
     else { return nil }
-    return Int(number)
+    return number
   }
 }
 
@@ -66,9 +63,9 @@ public struct ArkContextBreakdown: Equatable, Sendable {
   public let messageTokens: Int
 
   public init?(projection: JSONValue?) {
-    guard let systemTokens = Self.integer(projection?["systemTokens"]),
-          let toolsTokens = Self.integer(projection?["toolsTokens"]),
-          let messageTokens = Self.integer(projection?["messageTokens"])
+    guard let systemTokens = projection?["systemTokens"]?.nonnegativeIntegerValue,
+          let toolsTokens = projection?["toolsTokens"]?.nonnegativeIntegerValue,
+          let messageTokens = projection?["messageTokens"]?.nonnegativeIntegerValue
     else { return nil }
     self.systemTokens = systemTokens
     self.toolsTokens = toolsTokens
@@ -77,15 +74,6 @@ public struct ArkContextBreakdown: Equatable, Sendable {
 
   public var total: Int { systemTokens + toolsTokens + messageTokens }
 
-  private static func integer(_ value: JSONValue?) -> Int? {
-    guard let number = value?.numberValue,
-          number.isFinite,
-          number >= 0,
-          number.rounded(.towardZero) == number,
-          number < Double(Int.max)
-    else { return nil }
-    return Int(number)
-  }
 }
 
 public enum ArkContextRole: String, Equatable, Sendable {

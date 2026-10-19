@@ -10,7 +10,7 @@
  * only after durability.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -157,17 +157,33 @@ afterEach(async () => {
 
 describe('SessionProjectionCache write policy', () => {
   it('writes a durable checkpoint at turn/end (mandatory point)', async () => {
+    const startedAt = performance.now()
+    const milestones: Array<{ phase: string; elapsedMs: number }> = []
+    const checkpoint = (phase: string): void => {
+      milestones.push({ phase, elapsedMs: Math.round(performance.now() - startedAt) })
+    }
+    checkpoint('harness')
+    onTestFailed(() => {
+      process.stderr.write(`projection-cache-checkpoint-diagnostic ${JSON.stringify({
+        phase: milestones.at(-1)?.phase, elapsedMs: Math.round(performance.now() - startedAt), milestones,
+      })}\n`)
+    })
     const { ctx, root } = await harness()
     const session = ctx.sessions.create(SessionId('turn-end'))
     mark(session, ['a'])
     // Creation already wrote the init cut; the mark is throttled, so the
     // stored row is still the creation-time cut (no marks folded).
+    checkpoint('creation-row-await')
     await waitForRow(root, session.id, rows => rows?.['cache-test/marks'] !== undefined)
+    checkpoint('creation-row-ready')
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1)
+    checkpoint('turn-end-row-await')
     const end = endTurn(session)
     await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === end.seq)
+    checkpoint('turn-end-row-ready')
     const rows = await storedRows(root, session.id)
     expect(rows?.['cache-test/marks']).toEqual({ ver: 1, seq: end.seq, val: { marks: ['a'] } })
+    checkpoint('complete')
   })
 
   it('writes a checkpoint at session creation, capturing the seed-derived cut', async () => {
@@ -200,9 +216,9 @@ describe('SessionProjectionCache write policy', () => {
   it('flushes when the in-turn event count reaches the configured threshold', async () => {
     const { ctx, root } = await harness({ config: { writeEveryEvents: 3, writeIntervalMs: 60_000 } })
     const session = ctx.sessions.create(SessionId('count'))
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === -1)
     mark(session, ['1'])
     mark(session, ['2'])
-    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === -1)
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1) // still the creation cut
     mark(session, ['3'])
     await waitForRow(root, session.id, rows => (rows?.['cache-test/marks']?.val as { marks?: string[] } | undefined)?.marks?.[0] === '3')
@@ -268,19 +284,31 @@ describe('SessionProjectionCache write policy', () => {
     ctx.sessionProjections.register(marksUnit())
     await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 100, writeIntervalMs: 60_000 })
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
-    // A directory where the record document must land makes the atomic
-    // rename fail — including the creation write, so no row ever lands.
-    const blocker = recordPath(root, SessionId('fail-soft'))
-    await mkdir(blocker, { recursive: true })
     const session = ctx.sessions.create(SessionId('fail-soft'))
+    // Creation is a separate mandatory write. Observe its durable init cut
+    // before blocking the next turn/end write, so its warning cannot mask it.
+    await waitForRow(root, session.id, rows => rows?.['cache-test/marks']?.seq === -1)
+    expect(ctx.sessionProjectionCache.cachedSnapshot(session.header)).toEqual({
+      asOfSeq: -1, values: { 'cache-test/marks': { marks: [] } },
+    })
+    expect(warn).not.toHaveBeenCalled()
+    // A directory where the record document must land makes the atomic
+    // rename fail only for the turn/end write; memory retains the init cut.
+    const blocker = recordPath(root, session.id)
+    await rm(blocker)
+    await mkdir(blocker, { recursive: true })
     mark(session, ['x'])
-    endTurn(session)
+    const failedEnd = endTurn(session)
     // The write-back is fire-and-forget; the warn call is its observable
     // completion, so wait on the mock interaction instead of a fixed delay.
     await vi.waitFor(() => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('turn/end write for "fail-soft" failed'))
     })
     expect(await storedRows(root, session.id)).toBeUndefined()
+    expect(session.events).toContainEqual(failedEnd)
+    expect(ctx.sessionProjectionCache.cachedSnapshot(session.header)).toEqual({
+      asOfSeq: -1, values: { 'cache-test/marks': { marks: [] } },
+    })
     // Self-heal: once the blocker clears, the next mandatory point writes.
     await rm(recordPath(root, session.id), { recursive: true })
     mark(session, ['y'])
@@ -411,7 +439,7 @@ describe('SessionProjectionCache cold-read seeding', () => {
     await seedRecord(root, 'cold-snap', {
       'cache-test/count': { ver: 1, seq: 2, val: 3 },
     }, { createdAt: 9 })
-    const { cache, ctx } = await harness({ root })
+    const { cache, ctx, fiber } = await harness({ root })
     const apply = vi.fn((_state: number, _event: SessionEvent) => 1)
     ctx.sessionProjections.register({
       key: 'cache-test/count',
@@ -432,14 +460,14 @@ describe('SessionProjectionCache cold-read seeding', () => {
     // Host-only unit: folded but not served; the refreshed row is written
     // back (fail-soft, fire-and-forget) once the write lands.
     expect(Object.keys(snapshot.values)).not.toContain('cache-test/count')
-    await waitForRow(root, meta.id, rows => rows?.['cache-test/count']?.seq === 4)
-    expect((await storedRows(root, meta.id))?.['cache-test/count']?.seq).toBe(4)
     // No cached row yet: the first cold read folds from init over the full
     // log and creates the cache row (the `?? {}` seed path).
     const fresh = headerOf(SessionId('cold-fresh'), 10)
     cache.coldSnapshot(fresh, events)
     expect(apply).toHaveBeenCalledTimes(7) // 2 tail + 5 full
-    await waitForRow(root, fresh.id, rows => rows?.['cache-test/count']?.seq === 4)
+    // Dispose drains the domain's actual write chain before checking the medium.
+    await fiber.dispose()
+    expect((await storedRows(root, meta.id))?.['cache-test/count']?.seq).toBe(4)
     expect((await storedRows(root, fresh.id))?.['cache-test/count']?.seq).toBe(4)
   })
 

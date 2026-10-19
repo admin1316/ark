@@ -1202,6 +1202,31 @@ describe('DeepSeekAdapter against a mock server', () => {
     })
   })
 
+  it('sends provider JSON Output only when enabled in the deployment config', async () => {
+    const server = await mockServer([
+      { kind: 'sse', events: textEvents },
+      { kind: 'sse', events: textEvents },
+    ])
+    const messages = [createUserMessage({
+      content: [{ type: 'text', text: 'Return a JSON object.' }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })]
+
+    await assemble(await harness(server.url), {
+      model: 'deepseek-v4-flash',
+      messages,
+    })
+    await assemble(await harness(server.url, { jsonOutput: true }), {
+      model: 'deepseek-v4-flash',
+      messages,
+    })
+
+    expect(server.requests[0]).not.toHaveProperty('response_format')
+    expect(server.requests[1]).toMatchObject({
+      response_format: { type: 'json_object' },
+    })
+  })
+
   it('uses the configured maxTokens default and preserves an explicit request cap', async () => {
     const server = await mockServer([
       { kind: 'sse', events: textEvents },

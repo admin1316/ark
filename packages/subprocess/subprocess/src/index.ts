@@ -35,17 +35,17 @@ export type {
 } from './types.ts'
 
 /**
- * Credential-shaped environment names are NOT forwarded to children (the
- * harness's own `DEEPSEEK_API_KEY`/secrets must not leak into a spawned
- * process implicitly). One heuristic for every in-repo spawner; a
- * deliberately supplied entry survives because explicit env layers merge
- * after the scrub.
+ * Credential-shaped names and the exact launcher-owned Knowledge verifier
+ * configuration name are NOT forwarded to children. The verifier JSON holds
+ * signing-key material despite its non-secret-looking name. One policy covers
+ * every in-repo spawner; deliberately supplied entries survive because
+ * explicit env layers merge after the scrub.
  */
-export const SENSITIVE_ENV_PATTERN = /KEY|PASSWORD|SECRET|TOKEN/i
+export const SENSITIVE_ENV_PATTERN = /(?:KEY|PASSWORD|SECRET|TOKEN|^ARK_KNOWLEDGE_VERIFIER_CONFIG$)/i
 
 /**
- * The ambient parent environment minus credential-shaped names and minus all
- * `DSH_*` names — the canonical base every harness child starts from. `PATH`,
+ * The ambient parent environment minus credential-shaped names, the Knowledge
+ * verifier config, and all `DSH_*` names — the canonical base every harness child starts from. `PATH`,
  * `HOME`, locale, and proxy variables survive, so child CLIs run normally;
  * harness identity never leaks implicitly (a deliberately forwarded
  * credential or current `DSH_*` fact goes through the spec's explicit `env`,

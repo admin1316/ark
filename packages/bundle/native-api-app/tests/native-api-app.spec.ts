@@ -354,7 +354,7 @@ describe('native API startup and readiness edges', () => {
   it('publishes immutable default and explicit port startup values', async () => {
     const defaultCtx = new Context()
     provideCmdline(defaultCtx, { args: [], exit: () => {} })
-    NativeApiStartup.apply(defaultCtx)
+    await NativeApiStartup.apply(defaultCtx)
     const defaults = startupValues(defaultCtx)
     expect(defaults).toEqual({})
     expect(Object.isFrozen(defaults)).toBe(true)
@@ -362,7 +362,7 @@ describe('native API startup and readiness edges', () => {
 
     const explicitCtx = new Context()
     provideCmdline(explicitCtx, { args: ['--port', '0'], exit: () => {} })
-    NativeApiStartup.apply(explicitCtx)
+    await NativeApiStartup.apply(explicitCtx)
     const explicit = startupValues(explicitCtx)
     expect(explicit).toEqual({ port: 0 })
     expect(Object.isFrozen(explicit)).toBe(true)
@@ -373,7 +373,7 @@ describe('native API startup and readiness edges', () => {
     const exits: number[] = []
     const invalid = new Context()
     provideCmdline(invalid, { args: ['--port', '-1'], exit: (code) => { exits.push(code) } })
-    NativeApiStartup.apply(invalid)
+    await NativeApiStartup.apply(invalid)
     expect(exits).toEqual([1])
     expect(startupValues(invalid)).toBeUndefined()
     await invalid.fiber.dispose()
@@ -386,7 +386,7 @@ describe('native API startup and readiness edges', () => {
     vi.stubGlobal('Number', throwingNumber)
     const nonError = new Context()
     provideCmdline(nonError, { args: ['--port', '1'], exit: (code) => { exits.push(code) } })
-    NativeApiStartup.apply(nonError)
+    await NativeApiStartup.apply(nonError)
     expect(exits).toEqual([1, 1])
     expect(startupValues(nonError)).toBeUndefined()
     await nonError.fiber.dispose()

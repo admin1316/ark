@@ -8,13 +8,56 @@ import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { runScenario, snapshotSpillRoot, type AgentUnderTest, type InputStep } from '../src/harness.ts'
 import { launchAcpTestAgent } from '../src/launcher.ts'
 
-const fsControl = vi.hoisted(() => ({ cleanupFailure: undefined as Error | undefined }))
+const fsControl = vi.hoisted(() => ({
+  cleanupFailure: undefined as Error | undefined,
+  observation: undefined as {
+    root?: string
+    beforeScan?: (root: string) => Promise<void>
+    beforeRead?: (file: string) => Promise<void>
+    files?: string[]
+    readFailure?: Error
+    inFlight: number
+    removedWhileReading: boolean
+    onIdle?: () => void
+  } | undefined,
+}))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
+    async readdir(...args: Parameters<typeof actual.readdir>) {
+      const control = fsControl.observation
+      const root = String(args[0])
+      if (control === undefined || !root.includes('acp-snap-sessions-')) return await actual.readdir(...args)
+      control.root ??= root
+      if (root !== control.root) return await actual.readdir(...args)
+      control.inFlight += 1
+      try {
+        await control.beforeScan?.(root)
+        return control.files ?? await actual.readdir(...args)
+      } finally {
+        control.inFlight -= 1
+        if (control.inFlight === 0) control.onIdle?.()
+      }
+    },
+    async readFile(...args: Parameters<typeof actual.readFile>) {
+      const control = fsControl.observation
+      const file = args[0]
+      if (typeof file !== 'string' || control?.root === undefined || !file.startsWith(`${control.root}${sep}`)) return await actual.readFile(...args)
+      control.inFlight += 1
+      try {
+        await control.beforeRead?.(file)
+        if (control.readFailure !== undefined) throw control.readFailure
+        return await actual.readFile(...args)
+      } finally {
+        control.inFlight -= 1
+        if (control.inFlight === 0) control.onIdle?.()
+      }
+    },
     async rm(...args: Parameters<typeof actual.rm>): Promise<void> {
+      const control = fsControl.observation
+      if (control !== undefined && String(args[0]) === control.root && control.inFlight > 0) control.removedWhileReading = true
       if (String(args[0]).includes('acp-snap-cwd-') && fsControl.cleanupFailure !== undefined) {
         const failure = fsControl.cleanupFailure
         fsControl.cleanupFailure = undefined
@@ -761,6 +804,158 @@ describe('runScenario', () => {
       { agent: AGENT, mode: 'replay', fixtureFile: unmatched.fixtureFile },
     )).rejects.toThrow(/did not persist expected inbox message within 20ms/)
   })
+
+  it.each((['waitForInboxMessage', 'waitForSubagentTurnEnd'] as const).flatMap(op =>
+    (['missing', 'late-match', 'late-io', 'late-json'] as const).map(kind => [op, kind] as const)))(
+    '%s joins a pending %s observation after its deadline',
+    { timeout: 20_000 },
+    async (op, kind) => {
+      const { fixtureFile } = await scenario(kind === 'missing' ? {} : {
+        prompt: 'hang-until-cancel',
+        persistLogsOnCancel: true,
+        logs: [
+          {
+            file: 'project/main/session.jsonl',
+            lines: [{ type: 'session', version: 0, id: '{{SID}}', createdAt: 1, delegationDepth: 0 }],
+          },
+          ...op === 'waitForSubagentTurnEnd' ? [{
+            file: 'project/child/session.jsonl',
+            lines: [
+              { type: 'session', version: 0, id: 'child-1', createdAt: 2, parentSession: '{{SID}}', delegationDepth: 1 },
+              { type: 'subagent/descriptor', seq: 0, time: 1, data: {} },
+              { type: 'turn/start', seq: 1, time: 2, data: { turn: 1 } },
+              { type: 'request/header', seq: 2, time: 3, data: { header: {}, reason: 'initial' } },
+              { type: 'turn/end', seq: 3, time: 4, data: { turn: 1, reason: { kind: 'completed' } } },
+              { type: 'turn/start', seq: 4, time: 5, data: { turn: 2 } },
+              { type: 'request/header', seq: 5, time: 6, data: { header: {}, reason: 'continuation' } },
+            ],
+          }] : [],
+        ],
+      })
+      const entered = Promise.withResolvers<undefined>()
+      const release = Promise.withResolvers<undefined>()
+      const drained = Promise.withResolvers<undefined>()
+      let gateEntered = false
+      const readFailure = new Error('late session read failed')
+      const control: NonNullable<typeof fsControl.observation> = {
+        inFlight: 0,
+        removedWhileReading: false,
+        onIdle: () => { if (gateEntered) drained.resolve(undefined) },
+      }
+      const holdObservation = async (path: string): Promise<void> => {
+        delete control.beforeScan
+        delete control.beforeRead
+        gateEntered = true
+        entered.resolve(undefined)
+        await release.promise
+        if (kind === 'late-io') throw readFailure
+        if (kind === 'late-json') await writeFile(path, 'not-json\n')
+        if (kind === 'late-match') {
+          const header = await readFile(path, 'utf8')
+          await writeFile(path, header + JSON.stringify(op === 'waitForInboxMessage' ? {
+            type: 'agent/inbox/spliced',
+            seq: 0,
+            time: 2,
+            data: { inserted: [{ content: [{ type: 'text', text: 'marker' }] }] },
+          } : {
+            type: 'turn/end',
+            seq: 6,
+            time: 7,
+            data: { turn: 2, reason: { kind: 'completed' } },
+          }) + '\n')
+        }
+      }
+      if (kind === 'missing') control.beforeScan = holdObservation
+      else {
+        control.beforeRead = async (file) => {
+          const owner = op === 'waitForInboxMessage' ? 'main' : 'child'
+          if (file.endsWith(join('project', owner, 'session.jsonl'))) await holdObservation(file)
+        }
+      }
+      fsControl.observation = control
+      let settled = false
+      const steps: InputStep[] = [...boot]
+      if (kind !== 'missing') steps.push({ op: 'promptAndCancel', text: 'hang' })
+      steps.push(op === 'waitForInboxMessage'
+        ? { op, text: 'marker', timeoutMs: 20 }
+        : { op, child: 1, minimumTurn: 2, timeoutMs: 20 })
+      const pending = runScenario(
+        { steps },
+        { agent: AGENT, mode: 'replay', fixtureFile },
+      ).then(
+        (value) => { settled = true; return { status: 'fulfilled', value } as const },
+        (error: unknown) => { settled = true; return { status: 'rejected', error } as const },
+      )
+      try {
+        await Promise.race([
+          entered.promise,
+          pending.then(() => { throw new Error('scenario settled before the observation gate') }),
+        ])
+        // Hold real filesystem observation beyond the unchanged 20ms deadline;
+        // the second delay does not grant late matches a longer success window.
+        await new Promise(resolve => setTimeout(resolve, 40))
+        expect(control.inFlight).toBeGreaterThan(0)
+        expect(control.removedWhileReading).toBe(false)
+        expect(settled).toBe(false)
+      } finally {
+        release.resolve(undefined)
+        await pending
+        if (gateEntered) await drained.promise
+        fsControl.observation = undefined
+      }
+      const outcome = await pending
+      if (outcome.status !== 'rejected') throw new Error('late observation unexpectedly satisfied the deadline')
+      expect(control.inFlight).toBe(0)
+      expect(control.removedWhileReading).toBe(false)
+      expect(outcome.error).toBeInstanceOf(Error)
+      expect((outcome.error as Error).message).toMatch(op === 'waitForInboxMessage'
+        ? /did not persist expected inbox message within 20ms/
+        : /subagent child #1 did not persist closed turn 2 within 20ms/)
+      const timeout = outcome.error instanceof AggregateError ? outcome.error.errors[0] as Error : outcome.error as Error
+      expect(timeout.cause).toBeInstanceOf(Error)
+      expect((timeout.cause as Error).message).toBe('Timed out in waitFor!')
+      if (kind === 'late-io' || kind === 'late-json') {
+        expect(outcome.error).toBeInstanceOf(AggregateError)
+        const errors = (outcome.error as AggregateError).errors as unknown[]
+        expect(errors).toHaveLength(2)
+        if (kind === 'late-io') expect(errors[1]).toBe(readFailure)
+        else expect(errors[1]).toBeInstanceOf(SyntaxError)
+      } else {
+        expect(outcome.error).not.toBeInstanceOf(AggregateError)
+      }
+    },
+  )
+
+  it.each((['waitForInboxMessage', 'waitForSubagentTurnEnd'] as const).flatMap(op =>
+    ['session read denied', 'Timed out in waitFor!'].map(message => [op, message] as const)))(
+    '%s preserves an observed filesystem error: %s',
+    { timeout: 20_000 },
+    async (op, message) => {
+      const { fixtureFile } = await scenario({})
+      const failure = new Error(message)
+      // Fault injection makes the error observable before expiry without a
+      // platform-dependent assumption about a real first read taking <20ms.
+      const control: NonNullable<typeof fsControl.observation> = {
+        files: [join('project', op === 'waitForInboxMessage' ? 'main' : 'child', 'session.jsonl')],
+        readFailure: failure,
+        inFlight: 0,
+        removedWhileReading: false,
+      }
+      fsControl.observation = control
+      try {
+        await expect(runScenario(
+          { steps: [...boot, op === 'waitForInboxMessage'
+            ? { op, text: 'marker', timeoutMs: 20 }
+            : { op, child: 1, minimumTurn: 2, timeoutMs: 20 }] },
+          { agent: AGENT, mode: 'replay', fixtureFile },
+        )).rejects.toBe(failure)
+        expect(control.inFlight).toBe(0)
+        expect(control.removedWhileReading).toBe(false)
+      } finally {
+        fsControl.observation = undefined
+      }
+    },
+  )
 
   it('waitForTitleAfterTurnEnd holds the app through a standalone durable title', { timeout: 20_000 }, async () => {
     const { fixtureFile } = await scenario({

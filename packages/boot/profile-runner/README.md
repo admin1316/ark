@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 Shared profile lifecycle for executable dsh applications. `runProfile()` composes bundle layers, profile and home patches, command-line overlays, telemetry policy, fail-loud startup, and bounded shutdown against the caller's explicit `installAnchor`. Generic applications keep live patch watching by default; managed applications set `watchLiveConfig: false`.
 
+The optional `RunProfileOptions.shutdownOnParentDisconnect` defaults to disabled. An application enabling it in a Node IPC child observes parent disconnect before profile preparation and while the tree boots. Disconnect aborts startup, joins the existing five-second shutdown owner, and requests process exit after disposal; failure or timeout retains a nonzero result. The process-owned listener survives normal tree disposal so a later parent loss can end remaining handles. Its channel is unreferenced to preserve natural completion, and an explicit signal removes the listener before using the existing signal escalation. A direct invocation without IPC does not install this listener.
+
 The package is also the single published source for the Native-safe `standard`, `code`, and `minimal` system presets. An application may add a distinct system root through `additionalSystemPresetRoots`; the generic CLI uses that seam for its CLI-only `cordis` preset without copying shared assets.
 
 ## Table of Contents

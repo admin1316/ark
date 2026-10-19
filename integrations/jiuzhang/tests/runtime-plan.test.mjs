@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { createArkRuntimePlan } from '../src/runtime-plan.mjs'
+import { createArkRuntimePlan, PROTECTED_HELPER_FILES, protectedHelperSourceInputs, runtimeAssetSource } from '../src/runtime-plan.mjs'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
@@ -46,6 +46,13 @@ test('current Ark runtime analysis maps its dedicated runner, security packages,
   ]) {
     assert.ok(plan.repositoryInputs.some(entry => entry.path === input), `${input} must bind the source digest`)
   }
+  assert.deepEqual(plan.requiredFiles.filter(entry => entry.path.startsWith('protected-helpers/')).map(entry => entry.path).sort(), PROTECTED_HELPER_FILES)
+  const helperInputs = await protectedHelperSourceInputs(repositoryRoot)
+  for (const input of helperInputs) assert.ok(plan.repositoryInputs.some(entry => entry.path === input), `${input} must bind helper source identity`)
+  assert.ok(helperInputs.includes('packages/host/knowledge-wiki/src/types.ts'))
+  assert.ok(helperInputs.includes('packages/host/knowledge-wiki-tools/src/session-events.ts'))
+  assert.equal(runtimeAssetSource(repositoryRoot, PROTECTED_HELPER_FILES[0]), join(repositoryRoot, '.native-build', PROTECTED_HELPER_FILES[0]))
+  assert.throws(() => runtimeAssetSource(repositoryRoot, 'protected-helpers/unreviewed.mjs'), /unsupported source asset/)
   assert.ok(plan.packages.every(entry => /^[a-f0-9]{64}$/u.test(entry.sourceSha256)))
   for (const name of required) assert.ok(names.has(name), `${name} must be in the current Ark closure plan`)
   assert.ok(names.has('@deepseek-ai/node-addon-landlock-run'), 'the portable Landlock seam remains in the closure')

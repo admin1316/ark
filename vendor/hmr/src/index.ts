@@ -4,6 +4,7 @@ import { ModuleLoader, type ModuleJob, type ResolveResult } from '@deepseek-ai/c
 import type { Include } from '@deepseek-ai/cordis-plugin-include'
 import { FSWatcher, watch, type ChokidarOptions } from 'chokidar'
 import { dirname, relative, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import { handleError } from './error.ts'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
@@ -156,6 +157,13 @@ class Hmr extends Service {
     watcher.on('add', onChange)
     watcher.on('change', onChange)
     watcher.on('unlink', onChange)
+    if (depth > 0) {
+      watcher.on('addDir', path => {
+        if (resolve(path) === dirname(watchFilename) && existsSync(watchFilename)) {
+          this.refreshConfig(registration, filename, refresh)
+        }
+      })
+    }
 
     const ready = Promise.withResolvers<void>()
     let readyState: 'pending' | 'resolved' | 'rejected' = 'pending'

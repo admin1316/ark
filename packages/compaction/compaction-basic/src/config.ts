@@ -125,14 +125,16 @@ export function resolveTargetPolicy(
 }
 
 /**
- * Scale one routed policy into concrete token budgets for its model capacity.
+ * Scale one routed policy into budgets that leave room for the request's output.
  * @param policy - merged policy for the exact routed target.
  * @param contextWindow - positive adapter-owned capacity for that target.
+ * @param reservedCompletionTokens - effective request output cap, or zero when none is declared.
  * @returns detached immutable pressure and retention budgets.
  */
 export function resolveCompactSpec(
   policy: ResolvedTargetPolicy,
   contextWindow: number,
+  reservedCompletionTokens: number,
 ): ResolvedCompactSpec {
   const targetKey = `${policy.target.provider}/${policy.target.model}`
   if (!Number.isInteger(contextWindow) || contextWindow <= 0) {
@@ -141,9 +143,24 @@ export function resolveCompactSpec(
       `BasicCompactionConfig: contextWindow (${contextWindow}) must be a positive integer`,
     )
   }
-  const thresholdTokens = Math.floor(contextWindow * policy.thresholdRatio)
+  if (!Number.isInteger(reservedCompletionTokens) || reservedCompletionTokens < 0) {
+    throw new TargetPressureConfigError(
+      targetKey,
+      `BasicCompactionConfig: reservedCompletionTokens (${reservedCompletionTokens}) must be a non-negative integer`,
+    )
+  }
+  const messageBudgetTokens = contextWindow - reservedCompletionTokens
+  if (messageBudgetTokens <= 0) {
+    throw new TargetPressureConfigError(
+      targetKey,
+      `compaction-basic: ${targetKey} reserves ${reservedCompletionTokens} completion tokens `
+      + `of its ${contextWindow}-token context window, leaving no message budget; `
+      + 'the effective request maxTokens must be smaller than the declared contextWindow',
+    )
+  }
+  const thresholdTokens = Math.floor(Math.min(contextWindow * policy.thresholdRatio, messageBudgetTokens))
   const retainTokens = policy.retainTokens === undefined
-    ? Math.floor(contextWindow * policy.retainRatio)
+    ? Math.floor(messageBudgetTokens * policy.retainRatio)
     : policy.retainTokens
   if (retainTokens >= thresholdTokens) {
     throw new TargetPressureConfigError(

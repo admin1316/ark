@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "schema": "ark.knowledge.measured-trial-gate.source-receipt.v1",
+  "observedAtUtc": "2026-10-10T21:58:54Z",
+  "status": "source-regression-pass-canonical-mutation-fail-closed",
+  "execution": "source-only-regression-and-typecheck",
+  "repository": {
+    "head": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+    "workingTreeDirty": true,
+    "profile": "jiuzhang"
+  },
+  "policy": {
+    "semanticVerification": "establishes candidate correctness but is not evidence of observed model-task reuse or measured utility",
+    "canonicalActions": {
+      "actions": ["Promote", "Merge", "Replace", "Deduplicate"],
+      "resultWithoutMeasuredTrialAuthority": "denied",
+      "measuredTrialReceiptReaderProvisioned": false
+    },
+    "archive": "continues through the authenticated WAL transaction and recovery path",
+    "legacyPreparedCanonicalJournal": "rolled back when it has only semantic verifier evidence"
+  },
+  "implementation": {
+    "path": "packages/host/knowledge-wiki/src/reviews.ts",
+    "sha256": "a95883739ac67e4f66cb3304e8c203235de1821e23be3611444d23a2ba0278fe"
+  },
+  "primaryRegression": {
+    "path": "packages/host/knowledge-wiki/tests/reviews-transaction-errors.spec.ts",
+    "sha256": "f671ace9e20e5d081f79088fca9ea2887b420890d0ca11481910b6a6e78c39d6"
+  },
+  "validation": {
+    "packageTests": {
+      "command": "pnpm exec vitest run packages/host/knowledge-wiki/tests packages/host/knowledge-wiki-tools/tests --reporter=dot",
+      "status": "PASS",
+      "files": 76,
+      "passed": 684,
+      "failed": 0
+    },
+    "focusedReviewAndRecoveryTests": {
+      "status": "PASS",
+      "files": 7,
+      "passed": 156,
+      "failed": 0
+    },
+    "knowledgeWikiTypecheck": {
+      "command": "pnpm --filter @deepseek-ai/dsh-knowledge-wiki run typecheck",
+      "status": "PASS"
+    },
+    "gitDiffCheck": "PASS"
+  },
+  "runtimeBoundary": {
+    "candidate": "Ark 3.1.24/build 2026101124",
+    "candidateContainsThisSourceChange": false,
+    "activeVerifierAuthority": false,
+    "phase6BehavioralChecks": "UNKNOWN: 16 remain open",
+    "formalRelease": "unchanged",
+    "githubPublication": "not performed"
+  },
+  "authority": "unsigned source/test receipt; not independent Phase 6 acceptance"
+}

@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "kind": "ark-knowledge-measured-learning-affected-node-plan",
+  "approval": {
+    "scope": "Candidate-only Knowledge Wiki bounded trial, actual-use, and paired-acceptance protocol",
+    "approvedByUser": true,
+    "approvedIn": "Current Ark task; approval followed the linked knowledge-learning-protocol-change-request.zh.txt",
+    "excluded": [
+      "formal Ark promotion",
+      "GitHub push, merge, or release",
+      "model/provider credential or route changes",
+      "Rust enforcement",
+      "permissions or acceptance-threshold changes",
+      "retroactive credit for old verifier outcomes or UI feedback"
+    ]
+  },
+  "baseline": {
+    "priorDataFormatHash": "86fc8543a334bcdd673703ae8c4dd291d61ee6fa2fb23b484805b1fb292bbb15",
+    "priorPlanHash": "0c7e8b01c4ed5c5c0cbcb450aac0e78d74db4d2d42870d7f5160ca62ffed83f2",
+    "unchangedImmutableFields": [
+      "goalHash",
+      "scopeHash",
+      "permissionsHash",
+      "securityThresholdHash",
+      "acceptanceHash",
+      "publishPolicyHash",
+      "stateVersion"
+    ],
+    "formatHashAlgorithm": "SHA-256 over UTF-8 canonical JSON: recursively sort object keys, preserve array order, and use JSON.stringify-compatible scalar encoding.",
+    "formatPreimage": "scripts/rust-migration/knowledge-learning-contract-v2-data-format.json",
+    "planPreimage": "scripts/rust-migration/knowledge-learning-contract-v2-plan.json"
+  },
+  "affectedNodes": [
+    {
+      "node": "packages/host/knowledge-wiki/src/verifier.ts and external-verifier-adapter.ts",
+      "required": "Keep semantic candidate verification separate from measured trial receipts; validate independent evaluator evidence under a public trust anchor distinct from local WAL signing."
+    },
+    {
+      "node": "packages/host/knowledge-wiki/src/reviews.ts and canonical-merge.ts",
+      "required": "Freeze exact proposal and target prestate/output before trial; reject semantic-only and legacy summary promotion; apply exact frozen bytes only after measured eligibility and CAS."
+    },
+    {
+      "node": "packages/host/knowledge-wiki/src/index.ts and knowledge-governance.ts",
+      "required": "Canonical content remains ordinary access. Only internally resolved, named trial sessions may read frozen proposal bytes; persist budget before exposure and derive unique use/lift from authenticated replay."
+    },
+    {
+      "node": "packages/host/knowledge-wiki-tools and native Jiuzhang launcher",
+      "required": "Keep existing tools and public methods unchanged; add only a narrow authenticated trial entry point after protected descriptor and evaluator artifact transport are approved and provisioned."
+    },
+    {
+      "node": "scripts/rust-migration/evaluate-learning.ts and audit-acceptance.ts",
+      "required": "Consume authenticated complete paired opportunities; keep metric denominators and Phase 6 gates independent."
+    }
+  ],
+  "executionOrder": [
+    "Record the approved successor plan and data-format preimages; update only the authorized planHash and dataFormatHash fields.",
+    "Remove semantic verifier outcomes as a source of trial counts or positive utility; preserve verification and review inspection evidence.",
+    "Fail closed for canonical mutation unless a distinct, authenticated MeasuredTrialReceipt validates against a frozen proposal and complete paired trial.",
+    "Implement and test versioned grant, measured-use, paired-trial, replay, idempotency, expiry, CAS, and recovery contracts without changing core SessionEventMap or public method shapes.",
+    "Keep positive trial activation disabled until accountable external evaluator trust, oracle, artifact resolver, and protected candidate-only runtime descriptor are supplied.",
+    "Run assembled candidate behavior tests only after a provisioned evaluator is available; compare preregistered baseline/candidate tasks and record failures and unknowns.",
+    "Re-run affected package tests, typecheck, doc sync, source/profile/runtime drift, CI, rollback, and Phase 6 audit; do not release or publish without separate authorization."
+  ],
+  "unresolvedExternalInputs": [
+    "independent evaluator owner and trust provisioning",
+    "evaluator public-key fingerprint and custody model",
+    "evaluator build identity and immutable artifact locator",
+    "real task corpus, oracle, measurement definition, and preregistered safety opportunities",
+    "candidate-only protected descriptor intake and trial entry-point owner"
+  ],
+  "acceptanceState": "UNKNOWN until real independently authenticated paired task evidence exists; this plan is not a pass or release approval."
+}

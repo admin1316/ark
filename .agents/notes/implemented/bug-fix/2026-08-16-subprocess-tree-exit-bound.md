@@ -6,6 +6,8 @@ English | [中文](2026-08-16-subprocess-tree-exit-bound.zh.md)
 
 ## Problem
 
+**Current source status.** The bounded-report decision recorded below does not describe the current local runtime. An unsignalled `waitForExit()` waits until the managed tree exits; `false` is an interrupted observation when a supplied signal aborts. Operation consumers must pass their existing signal, then terminate and join on interruption. The [verifier consumer decision](2026-10-13-verifier-post-exit-cancellation.md) applies this contract after direct helper exit. The earlier decision and alternatives remain recorded below.
+
 `LocalSubprocessRuntime` teardown awaited whole-tree liveness through an unbounded `while (treeAlive()) await sleepTick()` loop: a descendant in an uninterruptible state (D-state, e.g. wedged NFS I/O) that survives SIGKILL made `waitForExit()` — and therefore service disposal, plugin HMR reload, and any `ctx.effect` teardown — hang forever.
 
 ## Decision

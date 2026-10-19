@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "status": "source-tests-passed-candidate-not-rebuilt",
+  "platform": "macOS arm64",
+  "nodeVersion": "24.19.0",
+  "sourceAndTestFiles": [
+    {
+      "path": "integrations/jiuzhang/native/Sources/JiuzhangShellCore/ShellContract.swift",
+      "sha256": "334173f16340abfe9877204dafb7c84d6924ae01c32617941707811363898706"
+    },
+    {
+      "path": "integrations/jiuzhang/native/Tests/JiuzhangShellCoreTests/ContractInlineChecks.swift",
+      "sha256": "b5fedd0b9c476488457cdeea08ec8b66525b1a7bda2d36e2784088b6efc776a9"
+    },
+    {
+      "path": "packages/subprocess/subprocess/src/index.ts",
+      "sha256": "5fb97bb2a5a26c15283fe68333c38f76ba62ea3fdbe0ff41cdf46a58f95f4ee9"
+    },
+    {
+      "path": "packages/subprocess/subprocess/tests/service.spec.ts",
+      "sha256": "d7a2d91dfac5e2b0e88b90b627d8ef6c1fba2936e565ba6822cabe3eb2d9f9eb"
+    },
+    {
+      "path": "packages/subprocess/subprocess-local/tests/spawn.spec.ts",
+      "sha256": "859963d5acae8c834da03431e0235cab4a2d3197660143bb63fc7caa3b9d497e"
+    },
+    {
+      "path": "integrations/jiuzhang/tests/run.mjs",
+      "sha256": "5c97e4d5ad54cb1d07311b213bd580d417e3756dba06993297306544696c096d"
+    }
+  ],
+  "results": [
+    {
+      "suite": "subprocess environment and local spawn regression",
+      "command": "pnpm exec vitest run packages/subprocess/subprocess/tests/service.spec.ts packages/subprocess/subprocess-local/tests/spawn.spec.ts",
+      "status": "PASS",
+      "passed": 88,
+      "failed": 0
+    },
+    {
+      "suite": "Jiuzhang Node integration tests",
+      "command": "pnpm run test:jiuzhang",
+      "status": "PASS",
+      "passed": 97,
+      "failed": 0
+    },
+    {
+      "suite": "Jiuzhang native shell contract groups",
+      "command": "pnpm run test:jiuzhang",
+      "status": "PASS",
+      "groupsReached": 53,
+      "summary": "Jiuzhang shell contract checks passed"
+    }
+  ],
+  "candidate": {
+    "version": "3.1.23",
+    "status": "not rebuilt; existing isolated candidate predates this source fix",
+    "verifierAuthorityConfigured": false
+  },
+  "limits": [
+    "Source-level environment forwarding and secret scrubbing only",
+    "No live verifier authority configuration",
+    "No live Knowledge replay, learning, speed, stability, or Phase 6 acceptance claim"
+  ]
+}

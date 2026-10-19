@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 2,
+  "request": {
+    "schemaVersion": 2,
+    "review": {
+      "id": "candidate-5f4cfcb99db161b1",
+      "title": "verifier-runtime",
+      "type": "candidate-approval",
+      "description": "候选：_candidates/ingest/concepts/verifier-runtime.md → concepts/verifier-runtime.md；自治决定：Archive；置信度：0.99；评分：0/10；knowledge body is too short；candidate has no source evidence；candidate has no independent source evidence",
+      "sourcePath": "raw/evidence/runtime.json",
+      "affectedPages": [
+        "_candidates/ingest/concepts/verifier-runtime.md"
+      ],
+      "resolved": false,
+      "createdAt": 1791410864976,
+      "searchQueries": [],
+      "reviewKind": "candidate",
+      "candidatePath": "_candidates/ingest/concepts/verifier-runtime.md",
+      "candidateHash": "cc9ef7cd99aaaada37ae73fe8de4a303c46754360ba12887d826ab932b76b960",
+      "sourceHash": "fd6dcbcae010a7e9a714f8675d973738eacad376531198729a58884e0655ee62",
+      "targetPath": "concepts/verifier-runtime.md"
+    },
+    "reviewHash": "41741f64bfa939ef613d502ed562c1bf8a80898b5bedaa3d491c094b68f34faf",
+    "candidatePath": "_candidates/ingest/concepts/verifier-runtime.md",
+    "candidateHash": "cc9ef7cd99aaaada37ae73fe8de4a303c46754360ba12887d826ab932b76b960",
+    "sourceHash": "fd6dcbcae010a7e9a714f8675d973738eacad376531198729a58884e0655ee62",
+    "targetPath": "concepts/verifier-runtime.md",
+    "governanceAction": "Promote",
+    "governanceDecision": {
+      "action": "Archive",
+      "targetPath": "concepts/verifier-runtime.md",
+      "policyVersion": "wiki-governance-v3"
+    },
+    "sourceIdentity": {
+      "commit": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+      "sourceDigest": "bd21a76dabf55b55fee983623fe00beab824a06aad6a5af742dbc53434224b4b",
+      "dirty": true,
+      "dirtyDigest": "6b6b2f3e0209454a6e202be62b0748091624859293c8b549287c67141886de19",
+      "buildDigest": "70e0124139a01a7b1c38d401efea1d18064c5f8a8d52d41d41c2af14bd501f0e"
+    },
+    "environment": {
+      "nodeVersion": "24.19.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "policyVersion": "wiki-governance-v3"
+    }
+  },
+  "result": {
+    "authorityId": "ark-local-external-verifier",
+    "requestHash": "e48a13fab58eca9b5e3543c8695ffa44ef5c6228104ecb5cc7f4d184e3cf4fa3",
+    "result": "pass",
+    "methods": [
+      "integration_test"
+    ],
+    "outcomes": [
+      {
+        "name": "external-process-request-binding",
+        "result": "pass",
+        "evidence": [
+          "separate verifier process signed the exact request bytes"
+        ]
+      }
+    ],
+    "issuedAt": "2026-10-08T00:00:00.000Z",
+    "proof": "29/FPVUXdFoB6KlUFVt6mQNFwdW3s98TnkcBX+VGY7HK6cBvaFImm/rop4tiVFRLXI1ywvtMyVRsNdxwdl7kBQ=="
+  },
+  "id": "verification-9968c6ab93b0499e535c3931739073b0",
+  "receiptHash": "9968c6ab93b0499e535c3931739073b07c12694de096ff7f3d12c3a818ad78c4"
+}

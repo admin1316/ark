@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-10 05:07:16 UTC",
+  "status": "source-integration-test-pass",
+  "scope": "Knowledge Wiki retrieval and rendered-result persistence across all model-facing Wiki read tools",
+  "gitSha": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+  "workingTreeDirty": true,
+  "profile": "jiuzhang",
+  "filesSha256": {
+    "packages/host/knowledge-wiki-tools/src/index.ts": "dc7d3e01cd0e24c86a5861dfb679256dc15163c1ec17ed9bfe2ecea8c3e907ad",
+    "packages/host/knowledge-wiki-tools/src/session-events.ts": "9d2b859ed3b7ff168dcb85a08902a29384cfef425164e8611103c92386bbb98b",
+    "packages/host/knowledge-wiki-tools/tests/tools.spec.ts": "5fe89b422f28bfb1ea6fe2962939743933d6618ce134c7b519b82f51cabe24a3",
+    "packages/core/session/src/known-event-types.ts": "1fdfdf8266331bcd17fc618c152abfe2df36382fece73f82ca404a48c7309113",
+    "packages/session/session-persistence-jsonl/src/index.ts": "0d0fc6c9d82150fd3469eaebd7a33f7f585171c6e44dff914d94376a6cf097ac"
+  },
+  "test": {
+    "command": "pnpm exec vitest run packages/host/knowledge-wiki-tools/tests/tools.spec.ts",
+    "file": "packages/host/knowledge-wiki-tools/tests/tools.spec.ts",
+    "passed": 19,
+    "failed": 0,
+    "durationSeconds": 1.7
+  },
+  "exercise": {
+    "tools": [
+      "wiki_search",
+      "wiki_files",
+      "wiki_read",
+      "wiki_graph",
+      "wiki_reviews"
+    ],
+    "persistence": "default JSONL Zstandard backend",
+    "writerAndReaderContexts": "separate; writer disposed before cold load",
+    "restore": "Session.fromRestore",
+    "retrievedEventCount": 8,
+    "injectedEventCount": 5,
+    "fieldsComparedAfterRestore": [
+      "complete event equality",
+      "knowledgeId",
+      "sourceHash",
+      "sourceContentHash",
+      "authority",
+      "trust",
+      "evidenceRefs",
+      "scope",
+      "sessionId",
+      "projectId",
+      "tool",
+      "callId",
+      "resultHash",
+      "exact rendered tool values for each tool"
+    ],
+    "storedArtifact": {
+      "extension": ".jsonl.zstd",
+      "existsAfterAppend": true
+    }
+  },
+  "limitations": [
+    "Synthetic verified fixtures and local source test; no GPT response or live candidate session.",
+    "The active profile still has no launcher-provided independent verifier configuration.",
+    "This does not prove cross-session reuse, knowledge utility lift, smartness improvement, or release acceptance."
+  ],
+  "acceptanceImpact": "No acceptance status is promoted; the 16 behavioral checks remain UNKNOWN."
+}

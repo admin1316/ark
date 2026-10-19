@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "schema": "ark.knowledge.utility.unpaired-success-guard.source-receipt.v1",
+  "status": "source-regression-pass-no-positive-feedback-credit",
+  "observedAtUtc": "2026-10-10T22:24:09Z",
+  "execution": "source-regression-typecheck-doc-sync",
+  "repository": {
+    "head": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+    "workingTreeDirty": true,
+    "profile": "jiuzhang"
+  },
+  "policy": {
+    "standaloneSuccessfulOutcome": "recordKnowledgeOutcome returns 0 and does not append a positive-use event",
+    "legacySuccessfulInjectionEvents": "retained for audit; replay does not increment successfulUses or utilityScore",
+    "utilityProjection": "journal-derived retrieval/correction counts; successfulUses is zero absent authenticated paired-trial evidence",
+    "candidateAndSemanticVerificationCounters": "cleared at observation, candidate, and semantic-verification boundaries",
+    "canonicalActions": "Promote, Merge, Replace, and Deduplicate remain denied without a distinct authenticated measured-trial reader"
+  },
+  "sourceSha256": {
+    "knowledgeGovernance": "9eedfcc67c56e0513a6b2625318644383e73ccabe76bae8079d72c05b92c5456",
+    "knowledgeWikiService": "a65faa933bdfa0918745de95bd9e626ab9f514ec9b0050772febfafaef829f56",
+    "governanceTests": "e4b39f268094b200ede202b34ed01dc33df333680368161252c8c352badc98d0",
+    "serviceTests": "237dde6536a0593e8942cb1f682cc0e84cbe429a942b8967907711c9f7e4c180"
+  },
+  "validation": {
+    "knowledgeWikiAndToolsTests": {
+      "command": "pnpm exec vitest run packages/host/knowledge-wiki/tests packages/host/knowledge-wiki-tools/tests --reporter=dot",
+      "status": "PASS",
+      "files": 76,
+      "passed": 684,
+      "failed": 0
+    },
+    "focusedGovernanceAndServiceTests": {
+      "files": 2,
+      "passed": 38,
+      "failed": 0
+    },
+    "knowledgeWikiTypecheck": "PASS",
+    "docSync": {
+      "status": "PASS",
+      "gates": 30,
+      "failed": 0
+    },
+    "gitDiffCheck": "PASS"
+  },
+  "runtimeBoundary": {
+    "activeMeasuredTrialEvaluator": false,
+    "measuredTrialReceiptReader": false,
+    "livePairedTaskEvidence": false,
+    "candidateRebuiltFromThisChange": false,
+    "formalArkChanged": false,
+    "githubPublished": false,
+    "phase6BehavioralChecks": "UNKNOWN; 16 remain open"
+  },
+  "authority": "unsigned source/test receipt; not independent measured-learning acceptance"
+}

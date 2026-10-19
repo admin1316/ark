@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "ark-official-stage-only",
+  "stagePath": "/Users/hui/ark-test/official-stage-20261008/Ark.app",
+  "bundleId": "cn.jiuzhangtianmu.industrybrain",
+  "build": "2026092705",
+  "sourceCommit": "e9571a5b01b2fc98d64914e3fa9b2e97feae0197",
+  "candidateKeysPresent": false,
+  "adHoc": true,
+  "productionInstallUnchanged": {
+    "bundleId": "cn.jiuzhangtianmu.industrybrain",
+    "build": "2026092701",
+    "plistMtime": "2026-09-26T21:50:33.470Z"
+  },
+  "promotion": false,
+  "generatedAt": "2026-10-07T22:52:22.454Z"
+}

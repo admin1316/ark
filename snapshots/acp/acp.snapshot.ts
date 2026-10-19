@@ -40,6 +40,11 @@ const controllerCases: readonly {
     hasModelTurn: true,
     configPath: join(corpusDir, 'image-compaction', 'cordis.yml'),
   },
+  {
+    name: 'knowledge-wiki-repair',
+    hasModelTurn: true,
+    configPath: join(corpusDir, 'knowledge-wiki-repair', 'cordis.yml'),
+  },
 ] as const
 
 function localScenarioSource(source: string | undefined): string | undefined {

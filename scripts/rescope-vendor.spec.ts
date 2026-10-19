@@ -19,6 +19,7 @@ const runtimeOwners = [
   'packages/experimental/inspector/src/shared/bridge/messages/cordis.ts',
   'packages/experimental/inspector/tests/cordis-query.host.spec.ts',
   'packages/experimental/inspector/tests/cordis-tree.host.spec.ts',
+  'packages/experimental/inspector/tests/fixtures/protocol-source.host.ts',
   'packages/experimental/inspector/lib/index.js',
   'packages/experimental/inspector/lib/worker.js',
   'packages/experimental/inspector/lib/types/shared/bridge/messages/cordis.js',
@@ -59,6 +60,22 @@ describe('runtime identifiers are not npm specifiers', () => {
     const scoped = `${expression} require('@deepseek-ai/cordis/tree'); require('@deepseek-ai/schemastery');`
     expect(rescopeText(original, file).text).toBe(scoped)
     expect(rescopeText(scoped, file, true).text).toBe(original)
+  })
+
+  it.each(["'", '"'])('keeps protocol topic bytes but rescopes adjacent module references with %s', (quote) => {
+    const file = 'packages/experimental/inspector/tests/fixtures/protocol-source.host.ts'
+    const wire = `const options = { topics: [${quote}cordis/tree${quote}, ${quote}client/probe${quote}] };`
+    const original = `${wire} import { Context } from ${quote}cordis/tree${quote}; import(${quote}cordis/tree${quote}); require(${quote}cordis/tree${quote});`
+    const scoped = `${wire} import { Context } from ${quote}@deepseek-ai/cordis/tree${quote}; import(${quote}@deepseek-ai/cordis/tree${quote}); require(${quote}@deepseek-ai/cordis/tree${quote});`
+    expect(rescopeText(original, file)).toEqual({ text: scoped, lines: 1 })
+    expect(rescopeText(scoped, file)).toEqual({ text: scoped, lines: 0 })
+    expect(rescopeText(scoped, file, true)).toEqual({ text: original, lines: 1 })
+    expect(rescopeText("const other = 'cordis/tree'", file).text)
+      .toBe("const other = '@deepseek-ai/cordis/tree'")
+    expect(rescopeText("const options = { topics: [require('cordis/tree')] }", file).text)
+      .toBe("const options = { topics: [require('@deepseek-ai/cordis/tree')] }")
+    expect(rescopeText(wire, 'packages/other/src/index.ts').text)
+      .toBe(`const options = { topics: [${quote}@deepseek-ai/cordis/tree${quote}, ${quote}client/probe${quote}] };`)
   })
 
   it('does not preserve the same spelling outside the documented owner/context', () => {

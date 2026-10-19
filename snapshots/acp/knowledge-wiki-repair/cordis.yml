@@ -1,0 +1,20 @@
+# Live composition for the Knowledge Wiki model-facing contract snapshot.
+# The only added behavior is the real Wiki service and its tool consumer;
+# persistence and all other host behavior remain owned by the shipped ACP profile.
+- id: acp
+  name: '@deepseek-ai/dsh-acp'
+  config:
+    provider: deepseek-official
+    model: deepseek-v4-flash
+
+- insert:
+    - id: knowledge-wiki
+      name: '@deepseek-ai/dsh-knowledge-wiki'
+      config:
+        wikiRoot: !!js dshHomePath('knowledge-snapshot/wiki')
+        mainRoot: !!js process.cwd()
+        credential: ''
+        ownedStageExecutor: false
+
+    - id: tool-knowledge-wiki
+      name: '@deepseek-ai/dsh-tool-knowledge-wiki'

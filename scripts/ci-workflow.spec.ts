@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
@@ -176,9 +176,29 @@ describe('CI workflow', () => {
     expect(native.steps.filter(isRecord).find(step => step.name === 'Run complete native Windows gate inventory')).toMatchObject({
       shell: 'pwsh', run: 'pnpm run check:ci:windows-complete',
     })
+    const nativeSteps = native.steps.filter(isRecord)
+    const rust = nativeSteps.findIndex(step => step.name === 'Build Rust search candidate (coverage prerequisite)')
+    expect(nativeSteps[rust]).toMatchObject({
+      shell: 'pwsh',
+      run: 'cargo build --locked --release --manifest-path rust/knowledge-search-shadow/Cargo.toml',
+    })
+    expect(rust).toBeGreaterThan(nativeSteps.findIndex(step => step.name === 'Install (immutable)'))
+    expect(rust).toBeLessThan(nativeSteps.findIndex(step => step.name === 'Run complete native Windows gate inventory'))
     expect(macos).toMatchObject({ 'runs-on': 'macos-15', if: "github.event_name == 'pull_request'" })
     expect(JSON.stringify(macos.steps)).toContain('--product JiuzhangShellContractTests')
     expect(JSON.stringify(macos.steps)).toContain('.build/debug/JiuzhangShellContractTests')
+    if (!Array.isArray(macos.steps)) throw new TypeError('native macOS must define steps')
+    const macosSteps = macos.steps.filter(isRecord)
+    const pnpm = macosSteps.findIndex(step => step.uses === 'pnpm/action-setup@v4')
+    const node = macosSteps.findIndex(step => step.uses === 'actions/setup-node@v6')
+    const install = macosSteps.findIndex(step => step.name === 'Install (immutable)')
+    expect(pnpm).toBeGreaterThan(-1)
+    expect(node).toBeGreaterThan(pnpm)
+    expect(macosSteps[node]).toMatchObject({ with: { 'node-version': '${{ env.PRIMARY_NODE_VERSION }}' } })
+    expect(install).toBeGreaterThan(node)
+    expect(macosSteps[install]).toMatchObject({ run: 'pnpm install --frozen-lockfile' })
+    expect(macosSteps.findIndex(step => step.name === 'Build native contracts')).toBeGreaterThan(install)
+    expect(macosSteps.findIndex(step => step.name === 'Run native contracts')).toBeGreaterThan(install)
     for (const name of ['node-24', 'node-24-coverage', 'node-24-consumers', 'all-checks-passed']) {
       expect(workflowJob(workflow, name)['runs-on'], name).toBe('ubuntu-24.04')
     }
@@ -196,6 +216,42 @@ describe('CI workflow', () => {
     expect(workflowJob(master, 'serial-windows')).toMatchObject({
       if: "github.event_name == 'push' && github.ref == 'refs/heads/main'", 'runs-on': 'windows-2025',
     })
+  })
+
+  it('collects only the failed Native process without masking or retrying the original contract', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const macos = workflowJob(workflow, 'macos-native')
+    if (!Array.isArray(macos.steps)) throw new TypeError('native macOS must define steps')
+    const steps = macos.steps.filter(isRecord)
+    const runIndex = steps.findIndex(step => step.name === 'Run native contracts')
+    const collectIndex = steps.findIndex(step => step.name === "Collect this Native contract process's failure diagnostics")
+    const uploadIndex = steps.findIndex(step => step.name === 'Upload Native contract failure diagnostics')
+    expect(macos['timeout-minutes']).toBe(30)
+    expect(steps[runIndex]).toMatchObject({
+      id: 'native-contracts',
+      'working-directory': 'integrations/jiuzhang/native',
+      run: '.build/debug/JiuzhangShellContractTests',
+      env: { ARK_NATIVE_CONTRACT_DIAGNOSTICS_DIR: '${{ runner.temp }}/native-contracts-diagnostics' },
+    })
+    expect(collectIndex).toBeGreaterThan(runIndex)
+    expect(uploadIndex).toBeGreaterThan(collectIndex)
+    for (const index of [collectIndex, uploadIndex]) {
+      expect(steps[index]?.if).toBe("failure() && steps.native-contracts.outcome == 'failure'")
+    }
+    expect(stepText(steps[collectIndex]?.run)).toBe(
+      'pnpm exec tsx scripts/collect-native-contract-diagnostics.ts "${{ runner.temp }}/native-contracts-diagnostics" "${{ github.workspace }}/integrations/jiuzhang/native/.build/debug/JiuzhangShellContractTests"',
+    )
+    expect(steps[uploadIndex]).toMatchObject({
+      uses: 'actions/upload-artifact@v7',
+      with: {
+        name: 'native-contract-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}',
+        path: '${{ runner.temp }}/native-contracts-diagnostics/collected',
+        'retention-days': 7,
+      },
+    })
+    for (const step of steps) expect(step['continue-on-error']).toBeUndefined()
+    expect(steps.filter(step => step.run === '.build/debug/JiuzhangShellContractTests')).toHaveLength(1)
+    expect(workflowJob(workflow, 'all-checks-passed').needs).toContain('macos-native')
   })
 
   it('gives the Wine Host TypeScript compile the repository heap budget', () => {
@@ -496,7 +552,13 @@ describe('Python release workflows', () => {
         const result = spawnSync('python3', ['-c', step.run], { cwd: fixture, encoding: 'utf8', env })
         expect(result.status, result.stderr).toBe(0)
         expect(readFileSync(output, 'utf8')).toContain(`wheel=deepseek_harness_runtime_bin-1.2.3rc1-py3-none-${spec.tag}.whl`)
-        expect(readFileSync(output, 'utf8')).toContain(`exe=${realpathSync(payload)}`)
+        const executable = readFileSync(output, 'utf8').split(/\r?\n/u).find(line => line.startsWith('exe='))?.slice(4)
+        expect(executable).toBeDefined()
+        if (executable === undefined) throw new Error('platform resolver omitted executable')
+        const actual = statSync(executable)
+        expect(actual.isFile()).toBe(true)
+        const expected = statSync(payload)
+        expect([actual.dev, actual.ino]).toEqual([expected.dev, expected.ino])
         rmSync(payload)
         const missing = spawnSync('python3', ['-c', step.run], { cwd: fixture, encoding: 'utf8', env })
         expect(missing.status).not.toBe(0)

@@ -108,6 +108,14 @@ describe('pwsh capability probe', () => {
     expect(capability.detail.length).toBeGreaterThan(0)
   })
 
+  it('uses the ambient environment when probing an explicitly missing executable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pwsh-ambient-'))
+    roots.push(root)
+    const executable = join(root, 'absent-pwsh')
+    const capability = probePwshCapability({ executable })
+    expect(capability).toMatchObject({ executable, available: false, reason: 'NOT_FOUND', version: null })
+  })
+
   it.skipIf(!posixToolFixtures)('reports NOT_EXECUTABLE for a file without the execute bit', () => {
     const capability = probePwshCapability({ executable: fakePwsh("echo '7.6.6 X64'", 0o644), env: noPath })
     expect(capability.available).toBe(false)

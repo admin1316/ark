@@ -12,7 +12,7 @@ Status: implemented
 
 本决策取代[后台任务运行时决策](../architecture/2026-06-20-generic-long-running-tool-runtime.zh.md)中的一条事实——完成永不唤醒空闲所有者——并把 teardown 加为 `reported` 的置位方。那份 note 仍拥有其余全部任务运行时决策，因此就地更新而非替换。
 
-交付机制从来不是障碍。自[统一 send 决策](../architecture/2026-07-22-unified-send-and-coalesced-user-messages.zh.md)起，`Agent.send(message, target, wakeup)` 就覆盖了 `target` × `wakeup` 矩阵，`wakeDriver()` 也已经处理 idle、maintenance 和已取消未收敛三种相位。缺的是「一次完成走哪条通道」这一策略选择，以及该选择所需的界。
+交付机制从来不是障碍。自[统一 send 决策](../architecture/2026-07-22-unified-send-and-coalesced-user-messages.zh.md)起，`Agent.send(message, target, wakeup)` 就覆盖了 `target` × `wakeup` 矩阵，`wakeDriver()` 也已经处理 idle、maintenance 和已取消未收敛三种相位。缺的是「一次完成走哪条通道」这一策略选择，以及按部署需要设置的可选上限。
 
 ## 决策
 
@@ -26,11 +26,11 @@ Status: implemented
 
 在那里注入才是对的。轮次被取消意味着用户按了停止，替他们重新开一轮等于把一次中断洗成了他们没有要求的模型请求。普通情形已由轮次循环覆盖：只要 next-step inbox 还有内容，轮次就无法结束，因此在该检查之前抵达的通知会延长当前轮次，同时结算的多个任务只花掉一步而不是各占一轮。
 
-### 唤醒有界，且该界不是时间
+### 唤醒可以设限，但上限不是时间
 
-`maxConsecutiveWakes`（默认 3）限制一个所有者由此开启的轮数；超出后通知降级为注入，等待下一轮。领取任何用户撰写的消息都会恢复预算——是领取而非抵达，因为那才是人类输入真正进入某一步的时刻。本插件自己排队的通知永远不会补充它。
+原先默认连续唤醒 3 次，会让空闲所有者的第四次完成通知静默搁置，直到用户再次发消息。[上游 v0.1.7-alpha.2](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-alpha.2) 移除了这个默认上限。Ark 现在也默认省略 `maxConsecutiveWakes`，使每条尚未报告的完成通知都能唤醒空闲所有者。部署仍可设置正整数上限；超出后通知降级为注入，等待下一轮。领取用户撰写的输入会恢复显式预算。本插件自己排队的通知不会补充它。
 
-设界是因为这条链会自激，而 subagent 结算不会。结算受限于模型派生了多少子 agent；被唤醒的一轮却可能启动某个后台任务，而它的完成又会唤醒同一个所有者，且无人旁观。`dsh run` 不需要单独策略：它唯一的用户消息在第一轮就被领取且不会重复，因此预算单调消耗，进程必然终止。
+可选上限仍有用途，因为这条链会自激，而 subagent 结算不会。被唤醒的一轮可能再启动后台任务，其完成又唤醒同一个所有者，且无人旁观。默认行为优先让长任务继续完成；需要限制请求数的部署必须显式设置上限，或使用 `completionDelivery: quiet`。
 
 `completionDelivery: quiet` 为空闲所有者恢复旧通道。它的存在是为了确定性 transcript；后台任务完成会独立保留 `quiet | wakeup`，因为其有界的所有者轮次策略不同于 next-step subagent 报告。
 
@@ -50,24 +50,24 @@ Status: implemented
 
 **一个通用的非请求输入队列**并带优先级通道，正如 Claude Code 用来把后台任务、cron、MCP 推送与 hook 合并进同一次排空。DSH 的 inbox 本身就是那个队列——`next-turn`/`next-step` 之上的持久 `agent/inbox/spliced` splice——因此这等于在既有层之上再加一层，只为决定一个 bit。
 
-**拒绝重开一个已经产出可见答复的轮次**，即 Codex 的 `MailboxDeliveryPhase` 闩锁。那条闩锁正是本决策刻意反转的默认值：在模型已经说完话之后唤醒它就是本特性的全部意义，界由唤醒预算来承担。
+**拒绝重开一个已经产出可见答复的轮次**，即 Codex 的 `MailboxDeliveryPhase` 闩锁。那条闩锁正是本决策刻意反转的默认值：在模型已经说完话之后唤醒它就是本特性的全部意义。需要时可由部署配置唤醒预算。
 
-**在计数之上再加墙钟窗口**。对交互式 agent 而言，慢的那种情形恰恰是想要的——一小时的构建结束、agent 接着干下去，这就是特性本身——而 `dsh run` 已被它无法补充的计数封顶。只有当出现无人值守的长生命周期部署时才值得重新考虑。
+**在可选计数之上再加墙钟窗口**。对交互式 agent 而言，慢的那种情形恰恰是想要的——一小时的构建结束、agent 接着干下去，这就是特性本身。时间窗口也无法区分有效工作与自激循环。
 
 **在 owner 排空期间整体压制 `onJobDone`**，与服务级的 `listenersClosed` 对称。它读起来更干净，但会移走一个不只服务于通知的信号：强制失败记录与运行时不变量都会观察 teardown 结算。`reported` 位恰好只否决报告方，别的什么也不否决。
 
 ## 影响
 
-- 默认行为改变：空闲所有者现在每次完成会花掉一次模型请求，按所有者、在两次用户消息之间由 `maxConsecutiveWakes` 封顶。想要旧行为的部署设置 `completionDelivery: quiet`。
+- 默认行为：空闲所有者每收到一条尚未报告的完成通知会花掉一次模型请求，不再于第三次后静默停住。部署可设置 `maxConsecutiveWakes` 限制这项成本，或用 `completionDelivery: quiet` 让通知保持待领。
 - `tool-jobs` 的提示词段落无需改动；「任务完成时你会在会话内收到通知」从愿景变成了事实。
 - `JobSnapshot.reported` 新增 teardown 作为第四个置位方，记录在 Service Definition 与[子系统参考](../../../../docs/subsystems/jobs.zh.md)中。
 - `settle()` 在提交记录并发布可见集变更之后才宣布完成。任何依赖「在释放等待方之前或在 `onJobsChanged` 之前运行」的监听器现在都排在两者之后。
 - `tool-bash` 的 real-composition 测试去掉了第二条用户消息：仅靠结算就能把通知带入一个收集输出的轮次。它断言持久结果而非轮次边界，因为命令是否活得比它的轮次久是一场竞态；通道选择改由 `tool-jobs` 单元测试钉住。
-- 单元覆盖钉住：空闲唤醒、繁忙注入、quiet 交付、预算耗尽、用户输入恢复预算、插件通知不恢复预算，以及 teardown 静默。
+- 单元覆盖钉住：默认连续五次空闲唤醒、繁忙注入、quiet 交付、显式预算耗尽与恢复、插件通知不恢复预算，以及 teardown 静默。
 
 ### 已接受的风险
 
-已花掉的预算只由用户输入恢复。耗尽预算的无人值守 agent 要等到其他原因开启轮次时才收走剩余通知，在此期间没有任何机制为它重新充能。
+不设显式上限时，自激链可能继续消耗模型请求。设置上限后，已花掉的预算只由用户输入恢复；耗尽预算的无人值守 agent 要等到其他原因开启轮次时才收走剩余通知。
 
 在 `quiet` 下待领于空闲所有者的通知仍会随该所有者释放而消亡，与此前一致：释放时的取消会清空未领取的 inbox，日志保留插入/取消这一对作为记录。[结算交付 note](2026-08-06-manager-owned-subagent-settlement-delivery.zh.md) 承载这需要的离线信箱讨论。
 

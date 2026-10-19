@@ -66,22 +66,52 @@ describe('BM25 and vector primitives', () => {
 
     await expect(embed(['a'], 'key')).rejects.toThrow('failed (500)')
     await expect(embed(['a'], 'key')).rejects.toThrow('malformed')
-    expect(await embed(['a', 'b'], 'key')).toEqual([[1, 2], []])
+    await expect(embed(['a', 'b'], 'key')).rejects.toThrow('invalid vectors')
     await expect(embed(['a'], 'key')).rejects.toThrow('offline')
     const body = fetchMock.mock.calls[2]?.[1]?.body
     expect(typeof body === 'string' ? (JSON.parse(body) as { input: string[] }).input : undefined)
       .toEqual(['a', 'b'])
+  })
+
+  it('rejects empty, mixed-dimension, and non-finite embedding vectors', async () => {
+    const invalidVectors: unknown[][] = [
+      [null],
+      [{ embedding: [] }],
+      [{ embedding: [1, 0] }, { embedding: [1] }],
+      [{ embedding: [1, null] }, { embedding: [1, 0] }],
+      [{ embedding: 'not a vector' }, { embedding: [1, 0] }],
+    ]
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    for (const data of invalidVectors) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ data }), { status: 200 }))
+      await expect(embed(['a', 'b'], 'key')).rejects.toThrow('invalid vectors')
+    }
   })
 })
 
 describe('hybrid Wiki search', () => {
   it('falls back to keyword results when vectors are disabled or incomplete', async () => {
     const root = fixture()
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
     const keywordOnly = await hybridSearch(root, 'alpha', '', 1)
     expect(keywordOnly).toHaveLength(1)
+    expect(fetchMock).not.toHaveBeenCalled()
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] }), { status: 200 }))
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] }), { status: 200 }))
     expect(await hybridSearch(root, 'alpha', 'key', 2)).toEqual(await hybridSearch(root, 'alpha', '', 2))
+  })
+
+  it('falls back to keyword results and records a diagnostic for invalid vectors', async () => {
+    const root = fixture()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [
+      { embedding: [1, 0] },
+      { embedding: [1] },
+    ] }), { status: 200 }))
+    const diagnostics: string[] = []
+    await expect(hybridSearch(root, 'alpha', 'key', 2, item => diagnostics.push(item.reason))).resolves.toEqual(
+      await hybridSearch(root, 'alpha', '', 2),
+    )
+    expect(diagnostics).toEqual(['knowledge embedding response has invalid vectors'])
   })
 
   it('blends positive, zero, and missing semantic vectors and sorts the result', async () => {

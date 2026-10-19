@@ -9,7 +9,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildGraph,
   listPages,
@@ -17,9 +17,21 @@ import {
   visitWikiTree,
 } from '../src/graph.ts'
 
+const largeInodes = vi.hoisted(() => new Map<string, bigint>())
+vi.mock('node:fs', async (original) => {
+  const actual = await original<typeof import('node:fs')>()
+  return { ...actual, lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+    const stat = actual.lstatSync(...args)
+    const inode = largeInodes.get(String(args[0]))
+    if (stat === undefined || inode === undefined) return stat
+    return Object.assign(Object.create(stat), { ino: args[1]?.bigint === true ? inode : Number(inode) }) as typeof stat
+  } }
+})
+
 const roots: string[] = []
 
 afterEach(() => {
+  largeInodes.clear()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -30,18 +42,26 @@ function fixture(): string {
 }
 
 describe('Wiki tree and graph edge contracts', () => {
+  it('preserves distinct large inode identities without changing the public bounded size', () => {
+    const root = fixture()
+    const paths = [join(root, 'a.md'), join(root, 'b.md')]
+    paths.forEach((path) => { writeFileSync(path, '# Page') })
+    const identities = [9007199254740992n, 9007199254740993n]
+    expect(Number(identities[0])).toBe(Number(identities[1]))
+    paths.forEach((path, index) => { largeInodes.set(path, identities[index]!) })
+    const pages: { path: string; size: number }[] = []
+    visitWikiTree(root, { onMarkdown: ({ path, size }) => { pages.push({ path, size }) } })
+    expect(pages).toEqual([{ path: 'a.md', size: 6 }, { path: 'b.md', size: 6 }])
+  })
+
   it('rejects a non-directory root and propagates a non-missing root lookup failure', () => {
     const root = fixture()
     const file = join(root, 'ordinary-file')
     writeFileSync(file, 'keep')
     expect(() => { visitWikiTree(file, {}) }).toThrow('Wiki root is not an ordinary directory')
-    // A path beneath an ordinary file: POSIX reports ENOTDIR, Windows
-    // reports ENOENT, which the missing-root guard treats as an absent wiki.
-    if (process.platform === 'win32') {
-      expect(() => { visitWikiTree(join(file, 'child'), {}) }).not.toThrow()
-    } else {
-      expect(() => { visitWikiTree(join(file, 'child'), {}) }).toThrow('ENOTDIR')
-    }
+    // Windows may report ENOENT beneath an ordinary file; the shared
+    // missing-path owner still refuses that obstructed root on every platform.
+    expect(() => { visitWikiTree(join(file, 'child'), {}) }).toThrow(/ENOTDIR|ENOENT/u)
     expect(readFileSync(file, 'utf8')).toBe('keep')
   })
 

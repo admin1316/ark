@@ -333,7 +333,7 @@ func runArkTrajectoryContractChecks() {
   let trajectorySource = (try? String(contentsOf: trajectoryURL, encoding: .utf8)) ?? ""
   let rootSource = (try? String(contentsOf: rootURL, encoding: .utf8)) ?? ""
   check(
-    trajectorySource.contains("private final class NativeTrajectoryFeed: ObservableObject")
+    trajectorySource.contains("final class NativeTrajectoryFeed: ObservableObject")
       && trajectorySource.contains(".throttle(for: .milliseconds(160)")
       && trajectorySource.contains("struct NativeTrajectoryParityView: View, Equatable")
       && trajectorySource.contains("@StateObject private var feed: NativeTrajectoryFeed")

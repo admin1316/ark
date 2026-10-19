@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
 import { promisify } from 'node:util'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runtimeAssetSource } from '../src/runtime-plan.mjs'
 import {
   assertArkRuntimeClosure,
@@ -633,6 +633,37 @@ test('recursive manifest discovers nested package roots and is byte-repeatable',
     assert.ok(first.packages.some(entry => entry.name === 'nested-package' && entry.version === '3.0.0'))
   } finally {
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('closure CLI completes source-plan validation when the plan imports its JSON helpers', async () => {
+  const fixture = await stageBoundRuntime()
+  const checker = join(integrationRoot, 'src/runtime-closure.mjs')
+  const sourcePlan = join(fixture.packRoot, 'source-plan.mjs')
+  const planModule = `import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { jsonSha256 } from ${JSON.stringify(pathToFileURL(checker).href)}
+export async function createArkRuntimePlan(root) {
+  const plan = JSON.parse(await readFile(join(root, 'closure-plan.json'), 'utf8'))
+  if (jsonSha256(plan).length !== 64) throw new Error('Invalid shared digest')
+  return plan
+}
+`
+  const args = [checker, fixture.runtime, policy, '--receipt', fixture.receiptPath,
+    '--source-plan', sourcePlan, '--repository-root', fixture.packRoot]
+  try {
+    await writeFile(sourcePlan, planModule)
+    const accepted = await execFileAsync(process.execPath, args, { timeout: 15_000 })
+    assert.match(accepted.stdout, /^Ark runtime closure verified: \d+ physical package identities\n$/)
+    assert.equal(accepted.stderr, '')
+    await writeFile(sourcePlan, planModule.replace('return plan', "return { ...plan, sourceDigest: '0'.repeat(64) }"))
+    await assert.rejects(execFileAsync(process.execPath, args, { timeout: 15_000 }), error => {
+      assert.equal(error.code, 2)
+      assert.match(error.stderr, /closure plan bytes differ from the regenerated current source plan/)
+      return true
+    })
+  } finally {
+    await rm(fixture.packRoot, { recursive: true, force: true })
   }
 })
 
