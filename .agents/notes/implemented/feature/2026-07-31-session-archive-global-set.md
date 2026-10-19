@@ -21,6 +21,8 @@ The session row menu in the sidebar workspace browser carried a purely visual "D
 - Durable deletion: `SessionPersistence.delete()` is serialized with every load/append/preparation for that id. SQLite deletes in a transaction. JSONL first renames the whole Session directory to the deterministic project-local `~delete/<encoded-id>` tombstone, fsyncs the participating directories, then recursively removes the tombstone. A cleanup or post-rename fsync failure is reported while the archive marker remains, so the same operation can finish idempotently after retry or restart.
 - Committed projection: the persistence-level deletion event only removes derived caches. One `host/session-deleted` frame per removed identity is emitted after every workspace account and the final archive snapshot commit; the client purges selection, summaries, pending interactions, jobs, catalogs, scopes, and projections before it installs that final archive set. Unary-first and Host-frame-first delivery are therefore both idempotent and cannot briefly resurrect a deleted row.
 
+The [native archive action decision](../bug-fix/2026-10-20-native-archive-action-reachability.md) owns row invocation without pointer hover; it preserves this registry lifecycle and the separate permanent-delete confirmation.
+
 ## Alternatives considered
 
 **Per-workspace archivedSessionIds (the original phrasing).** Rejected: Ungrouped sessions have no home; the user switched to global.

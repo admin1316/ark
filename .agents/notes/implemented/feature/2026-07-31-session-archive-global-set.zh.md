@@ -21,6 +21,8 @@ Sidebar workspace 浏览区的会话行菜单里，「Delete session」一直是
 - 持久删除：`SessionPersistence.delete()` 与同一 id 的所有 load/append/preparation 串行。SQLite 在事务内删除。JSONL 先把整个 Session 目录重命名到项目内确定性的 `~delete/<encoded-id>` 墓碑，fsync 参与的目录，再递归清除墓碑。清理失败或重命名后的 fsync 失败会向上报告，同时保留归档标记，使同一个操作可在重试或重启后幂等完成。
 - 已提交投影：persistence 层删除事件只清理派生缓存。只有所有 workspace 记账和最终归档快照都提交后，才会为每个被删身份发送一帧 `host/session-deleted`；client 会先清除 selection、summary、pending interaction、job、catalog、scope 与 projection，再安装该最终归档集合。因此 unary 先到或 Host frame 先到都保持幂等，已删除行不会短暂复活。
 
+[原生归档操作决策](../bug-fix/2026-10-20-native-archive-action-reachability.zh.md)负责不依赖指针悬停的行调用方式，保留本文的注册表生命周期及独立的永久删除确认。
+
 ## 已考虑的替代方案
 
 **per-workspace archivedSessionIds（最初表述）。** 否决：Ungrouped 会话无落点；用户改口全局。

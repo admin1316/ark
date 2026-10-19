@@ -214,7 +214,7 @@ if let data = try? Data(contentsOf: infoPlistURL),
   check(info["CFBundleIdentifier"] as? String == "cn.jiuzhangtianmu.industrybrain", "bundle identifier preserves installed product identity")
   check(info["CFBundleName"] as? String == "Ark", "bundle uses the Ark product name")
   check(info["CFBundleShortVersionString"] as? String == "3.1.1", "bundle marketing version is 3.1.1")
-  check(info["CFBundleVersion"] as? String == "2026101901", "bundle build is 2026101901")
+  check(info["CFBundleVersion"] as? String == "2026102001", "bundle build is 2026102001")
   check(info["CFBundleIconFile"] as? String == "AppIcon", "bundle declares the generated Ark icon")
   check(info["JiuzhangRuntimeRoot"] as? String == "__RUNTIME_ROOT__", "bundle declares the selected runtime root")
   check(info["JiuzhangLauncherPath"] as? String == "__LAUNCHER_PATH__", "bundle declares the selected launcher")

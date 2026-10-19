@@ -75,6 +75,7 @@ struct NativeArchiveSidebarView: View {
         }
         .buttonStyle(.plain)
         .help(ArkL10n.text(.archiveRestoreHelp, model.languagePreference))
+        .accessibilityLabel(ArkL10n.text(.archiveRestoreHelp, model.languagePreference))
         .accessibilityIdentifier("ark.archive.restore.\(session.id)")
         Button(role: .destructive) {
           pendingDelete = session
@@ -84,6 +85,7 @@ struct NativeArchiveSidebarView: View {
         }
         .buttonStyle(.plain)
         .help(ArkL10n.text(.archiveDeletePermanently, model.languagePreference))
+        .accessibilityLabel(ArkL10n.text(.archiveDeletePermanently, model.languagePreference))
         .accessibilityIdentifier("ark.archive.delete.\(session.id)")
       } else {
         Text(relativeDate(session.updatedAt))
@@ -94,12 +96,34 @@ struct NativeArchiveSidebarView: View {
     }
     .padding(.leading, 8)
     .frame(height: 32)
+    .contentShape(Rectangle())
     .background(
       hoveredSessionID == session.id
         ? Color(nsColor: .underPageBackgroundColor) : Color.clear,
       in: RoundedRectangle(cornerRadius: 8)
     )
     .onHover { hoveredSessionID = $0 ? session.id : nil }
+    .contextMenu {
+      Button(ArkL10n.text(.archiveRestoreHelp, model.languagePreference)) {
+        model.restoreArchivedSession(session.id)
+      }
+      .disabled(mutationRunning)
+      Button(ArkL10n.text(.archiveDeletePermanently, model.languagePreference), role: .destructive) {
+        pendingDelete = session
+      }
+      .disabled(mutationRunning)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(session.title)
+    .accessibilityIdentifier("ark.archive.row.\(session.id)")
+    .accessibilityAction(named: Text(ArkL10n.text(.archiveRestoreHelp, model.languagePreference))) {
+      guard !mutationRunning else { return }
+      model.restoreArchivedSession(session.id)
+    }
+    .accessibilityAction(named: Text(ArkL10n.text(.archiveDeletePermanently, model.languagePreference))) {
+      guard !mutationRunning else { return }
+      pendingDelete = session
+    }
   }
 
   private func relativeDate(_ date: Date) -> String {

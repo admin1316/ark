@@ -15,6 +15,8 @@ The transcript renders a movable row window with controls for earlier and newer 
 
 The toolbar opens the selected workspace in Finder or Terminal through Launch Services and reports unavailable folders or launch failures. The connection indicator reflects both event channels. Manual reconnect replaces their socket loops while preserving the mailbox and consumer; only a subsequent baseline establishes a healthy connection, and shutdown prevents reconnection from restarting the loops.
 
+Archive rows offer Restore and Permanent Delete through a native context menu and named accessibility actions without requiring hover. An in-flight archive mutation disables both actions; permanent deletion still requires its separate confirmation. The compact hover controls and date remain visible in their existing states; the [archive action decision](../../../.agents/notes/implemented/bug-fix/2026-10-20-native-archive-action-reachability.md) records the accessibility and layout trade-off.
+
 ## Build
 
 ```sh
