@@ -17,6 +17,7 @@ import {
   sameProcessIdentity,
   serializeRedactedError,
   signalExactProcessIdentity,
+  signalExactProcessIdentityWithExitRetry,
   signalOwnedProcess,
   waitLoopbackPortUnbound,
   withCleanupDeadline,
@@ -167,10 +168,17 @@ const runCleanups = async (label, cleanups) => {
 const readProcessTable = async () => {
   const { stdout } = await execFileAsync(
     '/bin/ps',
-    ['-ww', '-axo', 'pid=,ppid=,lstart=,args='],
+    ['-ww', '-axo', 'pid=,ppid=,lstart=,stat=,args='],
     { maxBuffer: 16_000_000 },
   )
-  return parseInstallProcessTable(stdout)
+  return stdout.split('\n').flatMap(line => {
+    const match = /^(\s*\d+\s+\d+\s+\S+\s+\S+\s+\d+\s+\S+\s+\d+)\s+(\S+)\s+(.+?)\s*$/u.exec(line)
+    if (match === null) return []
+    return parseInstallProcessTable(`${match[1]} ${match[3]}`).map(row => ({
+      ...row,
+      status: match[2],
+    }))
+  })
 }
 
 const captureTestIdentity = async (pid, { executable = process.execPath, argument } = {}) => {
@@ -186,8 +194,12 @@ const captureTestIdentity = async (pid, { executable = process.execPath, argumen
   return identity
 }
 
-const exactIdentityIsAlive = async identity => (
-  (await readProcessTable()).some(row => sameProcessIdentity(row, identity))
+// Liveness stays conservative while an owned start identity loses argv during
+// exit; only signalling requires the full executable/argv authorization.
+const exactIdentityIsAlive = async (identity, readRows = readProcessTable) => (
+  (await readRows()).some(row => (
+    row.pid === identity.pid && row.started === identity.started && !row.status.startsWith('Z')
+  ))
 )
 
 const waitIdentityDead = async (identity, timeoutMs) => {
@@ -202,11 +214,9 @@ const waitIdentityDead = async (identity, timeoutMs) => {
 /** Cleanup may signal only an identity retained before the failure path. */
 const terminateTestIdentity = async identity => {
   if (identity === null || identity === undefined) return
-  let rows = await readProcessTable()
-  if (!signalExactProcessIdentity(identity, rows, 'SIGTERM')) return
+  if (!await signalExactProcessIdentityWithExitRetry(identity, readProcessTable, 'SIGTERM')) return
   if (await waitIdentityDead(identity, 2_000)) return
-  rows = await readProcessTable()
-  if (!signalExactProcessIdentity(identity, rows, 'SIGKILL')) return
+  if (!await signalExactProcessIdentityWithExitRetry(identity, readProcessTable, 'SIGKILL')) return
   if (!await waitIdentityDead(identity, 2_000)) {
     throw new Error(`test identity ${String(identity.pid)} survived SIGKILL cleanup`)
   }
@@ -287,6 +297,175 @@ test('lifecycle: cleanup signals only a retained exact start/executable/argv ide
   ), /refusing to signal reused or changed pid/)
   assert.equal(signalExactProcessIdentity(expected, [], 'SIGKILL'), false)
   assert.deepEqual(signals, [[91, 'SIGTERM']])
+})
+
+test('lifecycle: cleanup accepts only an exited zombie with the retained start identity', () => {
+  const expected = {
+    pid: 91,
+    parentPid: 12,
+    started: 'Thu Sep  4 12:50:46 2026',
+    executable: '/runtime/node',
+    args: '/runtime/node /runtime/start.mjs --port 0',
+  }
+  const signals = []
+  const signal = (pid, kind) => { signals.push([pid, kind]) }
+  const zombie = { ...expected, executable: '<defunct>', args: '<defunct>', status: 'Z+' }
+  assert.equal(signalExactProcessIdentity(expected, [zombie], 'SIGTERM', signal), false)
+  for (const changed of [
+    { ...zombie, started: 'Thu Sep  4 12:55:00 2026' },
+    { ...zombie, status: 'S' },
+    { ...zombie, status: undefined },
+    { ...expected, args: `${expected.args} --changed`, status: 'S' },
+    { ...expected, executable: '/another/node', status: 'S' },
+  ]) {
+    assert.throws(
+      () => signalExactProcessIdentity(expected, [changed], 'SIGKILL', signal),
+      error => (
+        /refusing to signal reused or changed pid/u.test(error.message)
+          && error.expectedStart === expected.started
+          && error.observedStart === changed.started
+          && error.observedStatus === changed.status
+      ),
+    )
+  }
+  assert.deepEqual(signals, [], 'neither zombie nor changed identities receive a signal')
+})
+
+test('lifecycle: transient argv loss is reobserved without granting signal authority', async () => {
+  const expected = {
+    pid: 91,
+    parentPid: 12,
+    started: 'Thu Sep  4 12:50:46 2026',
+    executable: '/runtime/node',
+    args: '/runtime/node /runtime/start.mjs --port 0',
+    status: 'S',
+  }
+  const unavailable = { ...expected, parentPid: 1, executable: '(node)', args: '(node)' }
+  const signals = []
+  const waits = []
+  const options = {
+    signalProcess: (pid, kind) => { signals.push([pid, kind]) },
+    delay: async milliseconds => { waits.push(milliseconds) },
+  }
+  for (const resolved of [
+    [],
+    [{ ...unavailable, executable: '<defunct>', args: '<defunct>', status: 'Z' }],
+  ]) {
+    const snapshots = [[unavailable], resolved]
+    assert.equal(await signalExactProcessIdentityWithExitRetry(
+      expected,
+      async () => snapshots.shift(),
+      'SIGTERM',
+      options,
+    ), false)
+    assert.equal(snapshots.length, 0, 'argv loss requires a fresh observation proving exit')
+  }
+  assert.deepEqual(signals, [], 'transient rows never receive a signal')
+  const snapshots = [[unavailable], [expected]]
+  assert.equal(await signalExactProcessIdentityWithExitRetry(
+    expected,
+    async () => snapshots.shift(),
+    'SIGTERM',
+    options,
+  ), true)
+  assert.deepEqual(signals, [[91, 'SIGTERM']], 'only a fully matching fresh row authorizes a signal')
+  assert.deepEqual(waits, [10, 10, 10])
+
+  for (const changed of [
+    { ...expected, started: 'Thu Sep  4 12:55:00 2026' },
+    { ...expected, args: `${expected.args} --changed` },
+    { ...expected, executable: '/another/node' },
+    { ...unavailable, started: 'Thu Sep  4 12:55:00 2026' },
+  ]) {
+    let reads = 0
+    await assert.rejects(signalExactProcessIdentityWithExitRetry(
+      expected,
+      async () => { reads += 1; return [changed] },
+      'SIGKILL',
+      options,
+    ), /refusing to signal reused or changed pid/)
+    assert.equal(reads, 1, 'real identity drift is rejected without retry')
+  }
+  let ambiguousReads = 0
+  await assert.rejects(signalExactProcessIdentityWithExitRetry(
+    expected,
+    async () => { ambiguousReads += 1; return [unavailable] },
+    'SIGKILL',
+    options,
+  ), /refusing to signal reused or changed pid/)
+  assert.equal(ambiguousReads, 10, 'a persistent placeholder fails after bounded reobservation')
+  assert.deepEqual(signals, [[91, 'SIGTERM']], 'no changed or ambiguous row grants signal authority')
+})
+
+test('lifecycle: retained process stays live while an exiting row has lost its argv', async () => {
+  const expected = {
+    pid: 91,
+    started: 'Thu Sep  4 12:50:46 2026',
+    executable: '/runtime/node',
+    args: '/runtime/node /runtime/start.mjs --port 0',
+    status: 'S',
+  }
+  const unavailable = { ...expected, executable: '(node)', args: '(node)' }
+  assert.equal(await exactIdentityIsAlive(expected, async () => [expected]), true)
+  assert.equal(await exactIdentityIsAlive(expected, async () => [unavailable]), true)
+  assert.equal(await exactIdentityIsAlive(expected, async () => [{ ...unavailable, status: 'Z' }]), false)
+  assert.equal(await exactIdentityIsAlive(expected, async () => []), false)
+  assert.equal(await exactIdentityIsAlive(expected, async () => [{ ...unavailable, started: 'Thu Sep  4 12:55:00 2026' }]), false)
+})
+
+test('lifecycle: exited child loses argv before its paused parent reaps it', { timeout: 15_000 }, async t => {
+  const home = await mkdtemp(join(tmpdir(), 'ark-lifecycle-zombie-'))
+  const pidFile = join(home, 'child.pid')
+  const childScript = await writeScript(home, 'child.mjs', longLivedChild)
+  const parentScript = await writeScript(home, 'parent.mjs', `
+import { spawn } from 'node:child_process'
+spawn(process.execPath, process.argv.slice(2), { stdio: 'ignore' })
+setInterval(() => {}, 1000)
+`)
+  const parent = spawn(process.execPath, [parentScript, childScript, `--child-pid-file=${pidFile}`], {
+    stdio: 'ignore',
+  })
+  let childIdentity = null
+  t.after(async () => {
+    await runCleanups('zombie identity lifecycle', [
+      async () => {
+        parent.kill('SIGCONT')
+        await terminateTestHandle(parent)
+      },
+      async () => { await terminateTestIdentity(childIdentity) },
+      async () => { await rm(home, { recursive: true, force: true }) },
+    ])
+  })
+
+  const pidText = await waitFile(pidFile, 4_000)
+  assert.ok(pidText, 'child reports its PID before the parent is paused')
+  childIdentity = await captureTestIdentity(Number(pidText.trim()), { argument: childScript })
+  parent.kill('SIGSTOP')
+  const pauseDeadline = Date.now() + 2_000
+  while (!(await readProcessTable()).some(row => row.pid === parent.pid && row.status.startsWith('T'))) {
+    assert.ok(Date.now() < pauseDeadline, 'parent enters the stopped state')
+    await sleep(20)
+  }
+  assert.equal(signalExactProcessIdentity(childIdentity, await readProcessTable(), 'SIGTERM'), true)
+  let zombie
+  const exitDeadline = Date.now() + 2_000
+  while (zombie === undefined) {
+    zombie = (await readProcessTable()).find(row => row.pid === childIdentity.pid && row.status.startsWith('Z'))
+    assert.ok(Date.now() < exitDeadline, 'child exits while its parent cannot reap it')
+    if (zombie === undefined) await sleep(20)
+  }
+  assert.equal(zombie.started, childIdentity.started, 'the start identity survives exit')
+  assert.notEqual(zombie.args, childIdentity.args, 'ps replaces the exited process argv')
+  assert.equal(sameProcessIdentity(zombie, childIdentity), false, 'argv loss explains the old identity rejection')
+  assert.equal(signalExactProcessIdentity(childIdentity, [zombie], 'SIGKILL', () => {
+    assert.fail('an exited, unreaped child must receive no further signal')
+  }), false)
+  parent.kill('SIGCONT')
+  const reapDeadline = Date.now() + 2_000
+  while ((await readProcessTable()).some(row => row.pid === childIdentity.pid)) {
+    assert.ok(Date.now() < reapDeadline, 'resumed parent reaps the exited child')
+    await sleep(20)
+  }
 })
 
 test('lifecycle: cleanup runner attempts every task and preserves failure order', async () => {
@@ -732,12 +911,7 @@ test('lifecycle: parent-death and SIGTERM race still cleans up exactly once', { 
 
   // 近同时触发两条路径：parent death 与 launcher SIGTERM。
   parent.kill('SIGKILL')
-  try {
-    signalExactProcessIdentity(launcherIdentity, await readProcessTable(), 'SIGTERM')
-  } catch (error) {
-    // parent-death 路径可能已抢先让 launcher 退出——该竞态是允许结果。
-    if (error?.code !== 'ESRCH') throw error
-  }
+  await signalExactProcessIdentityWithExitRetry(launcherIdentity, readProcessTable, 'SIGTERM')
 
   assert.equal(await waitIdentityDead(childIdentity, 12_000), true, 'child must exit under the race')
   assert.equal(await waitIdentityDead(launcherIdentity, 12_000), true, 'launcher must exit under the race')

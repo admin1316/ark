@@ -1,4 +1,5 @@
 import { createConnection } from 'node:net'
+import { basename } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 /** Probe one test-owned PID without changing process state. */
@@ -53,7 +54,10 @@ export const sameProcessIdentity = (left, right) => (
 /**
  * Signal a retained test process only while its start time, executable, and
  * complete argv still match a fresh process-table row. A vanished identity is
- * already clean; PID reuse fails closed without emitting a signal.
+ * already clean. An exited, unreaped process has no signalable work and may
+ * expose only `<defunct>` as argv; require its retained start time and an
+ * explicit zombie state before accepting that result. Other identity changes
+ * fail closed without emitting a signal.
  */
 export const signalExactProcessIdentity = (
   expected,
@@ -66,10 +70,50 @@ export const signalExactProcessIdentity = (
   }
   const current = currentRows.find(row => row?.pid === expected.pid)
   if (current === undefined) return false
+  if (current.started === expected.started && current.status?.startsWith('Z')) return false
   if (!sameProcessIdentity(current, expected)) {
-    throw new Error(`refusing to signal reused or changed pid ${String(expected.pid)}`)
+    throw Object.assign(
+      new Error(`refusing to signal reused or changed pid ${String(expected.pid)}`),
+      {
+        expectedStart: expected.started,
+        observedStart: current.started,
+        observedStatus: current.status,
+        executableMatches: current.executable === expected.executable,
+        argvMatches: current.args === expected.args,
+      },
+    )
   }
   return signalOwnedProcess(expected.pid, signal, signalProcess)
+}
+
+/**
+ * Reobserve a retained process when ps loses its argv during exit. macOS can
+ * return the command-name placeholder while its state still says sleeping;
+ * that row grants no signal authority. Only disappearance, an explicit zombie,
+ * or a fully matching fresh identity can resolve it. Persistent ambiguity and
+ * every other identity change retain the strict helper's failure.
+ */
+export const signalExactProcessIdentityWithExitRetry = async (
+  expected,
+  readRows,
+  signal,
+  { signalProcess = process.kill.bind(process), delay = sleep } = {},
+) => {
+  if (!validProcessIdentity(expected)) {
+    return signalExactProcessIdentity(expected, [], signal, signalProcess)
+  }
+  for (let attempt = 0; ; attempt += 1) {
+    const rows = await readRows()
+    const current = rows.find(row => row?.pid === expected.pid)
+    const argvUnavailable = current?.started === expected.started
+      && current.executable === `(${basename(expected.executable)})`
+      && current.args === current.executable
+    if (argvUnavailable && attempt < 9) {
+      await delay(10)
+      continue
+    }
+    return signalExactProcessIdentity(expected, rows, signal, signalProcess)
+  }
 }
 
 /** Probe one exact IPv4 loopback port without treating timeouts as release. */

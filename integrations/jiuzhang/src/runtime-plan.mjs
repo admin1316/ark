@@ -416,6 +416,101 @@ function sortedRecord(value) {
   return value
 }
 
+/**
+ * Project exact external snapshots reachable from workspace dependency roots.
+ * @param {object} rootLock Root pnpm lock with exact packages and snapshots.
+ * @param {object[]} roots Workspace-owned external dependency edges.
+ * @param {Set<string>} workspaceNames Package names resolved by workspace TGZs.
+ * @returns {object} Exact resolutions, dependency edges, and snapshot metadata.
+ */
+export function deriveArkExternalLockGraph(rootLock, roots, workspaceNames) {
+  const { packages, snapshots } = rootLock
+  const queue = [...roots]
+  const seenSnapshots = new Map()
+  const exact = new Map()
+  const edges = []
+  const externalSnapshots = new Map()
+  for (let index = 0; index < queue.length; index++) {
+    const item = queue[index]
+    const optionalPath = item.optionalPath ?? item.section === 'optionalDependencies'
+    const snapshotKey = snapshotIdentity(item.name, item.reference, snapshots)
+    const version = identityVersion(item.name, snapshotKey)
+    const packageKey = `${item.name}@${version}`
+    const resolution = packages[packageKey]?.resolution
+    if (resolution === undefined || typeof resolution.integrity !== 'string') {
+      throw new Error(`Ark root lock external lacks exact integrity: ${packageKey}`)
+    }
+    const identity = `${item.name}@${version}`
+    const previous = exact.get(identity)
+    if (previous !== undefined && previous.integrity !== resolution.integrity) {
+      throw new Error(`Ark root lock identity has conflicting integrity: ${identity}`)
+    }
+    exact.set(identity, { name: item.name, version, integrity: resolution.integrity })
+    edges.push({ from: item.from, name: item.name, version, integrity: resolution.integrity, section: item.section })
+    const snapshot = snapshots[snapshotKey]
+    const packageMetadata = packages[packageKey]
+    const visit = optionalPath ? 1 : 2
+    const visited = seenSnapshots.get(snapshotKey) ?? 0
+    if ((visited & visit) !== 0) continue
+    seenSnapshots.set(snapshotKey, visited | visit)
+    // pnpm retains a foreign optional package's metadata but omits its
+    // descendants from the target lock. A required path must still expand
+    // the same snapshot, including when an optional path visited it first.
+    const pruneChildren = optionalPath && !supportsArkRuntimeTarget(packageMetadata)
+    // Record the snapshot's dependency edges under the runtime template's
+    // autoInstallPeers: false semantics: peers the root auto-installed are
+    // not part of the runtime closure, so they are filtered from the
+    // recorded edge lists exactly as the traversal skips them.
+    const snapshotDeclaredPeers = packageMetadata.peerDependencies ?? {}
+    const withoutDeclaredPeers = (record) => Object.fromEntries(
+      Object.entries(record ?? {}).filter(([dependency]) => snapshotDeclaredPeers[dependency] === undefined))
+    const projectedSnapshot = {
+      snapshotKey,
+      name: item.name,
+      version,
+      integrity: resolution.integrity,
+      resolution: sortedRecord(packageMetadata.resolution),
+      os: sortedRecord(packageMetadata.os),
+      cpu: sortedRecord(packageMetadata.cpu),
+      engines: sortedRecord(packageMetadata.engines),
+      hasBin: packageMetadata.hasBin === true,
+      requiresBuild: packageMetadata.requiresBuild === true,
+      optional: packageMetadata.optional === true,
+      peerDependencies: sortedRecord(packageMetadata.peerDependencies),
+      peerDependenciesMeta: sortedRecord(packageMetadata.peerDependenciesMeta),
+      dependencies: sortedRecord(pruneChildren ? {} : withoutDeclaredPeers(snapshot?.dependencies)),
+      optionalDependencies: sortedRecord(pruneChildren ? {} : withoutDeclaredPeers(snapshot?.optionalDependencies)),
+      transitivePeerDependencies: sortedRecord(snapshot?.transitivePeerDependencies),
+    }
+    if (!pruneChildren || !externalSnapshots.has(snapshotKey)) {
+      externalSnapshots.set(snapshotKey, projectedSnapshot)
+    }
+    if (pruneChildren) continue
+    // The runtime template resolves with autoInstallPeers: false — its
+    // reviewed standalone policy — so a peer of an external package enters
+    // the runtime only through some real dependency edge, never through the
+    // peer edge itself. Mirror that: peers declared by an external package
+    // are not part of the runtime closure.
+    const declaredPeers = packageMetadata.peerDependencies ?? {}
+    for (const section of ['dependencies', 'optionalDependencies']) {
+      for (const [dependency, value] of Object.entries(snapshot?.[section] ?? {})) {
+        if (workspaceNames.has(dependency)) continue
+        if (declaredPeers[dependency] !== undefined) continue
+        const reference = dependencyReference(value)
+        if (reference === undefined || isLocalReference(reference)) continue
+        queue.push({
+          from: identity, name: dependency, reference, section,
+          optionalPath: optionalPath || section === 'optionalDependencies',
+        })
+      }
+    }
+  }
+  const externalResolutions = [...exact.values()].sort((left, right) => (
+    left.name.localeCompare(right.name) || left.version.localeCompare(right.version)
+  ))
+  return { externalResolutions, edges, externalSnapshots: [...externalSnapshots.values()] }
+}
+
 async function deriveRootLockedExternals(repositoryRoot, workspace, reached, identityPolicy, allowIdentityAnalysis) {
   const lockPath = join(repositoryRoot, 'pnpm-lock.yaml')
   const rootLock = parseYaml(await readFile(lockPath, 'utf8'))
@@ -501,74 +596,7 @@ async function deriveRootLockedExternals(repositoryRoot, workspace, reached, ide
       )),
     })
   }
-  const seenSnapshots = new Set()
-  const exact = new Map()
-  const edges = []
-  const externalSnapshots = new Map()
-  for (let index = 0; index < queue.length; index++) {
-    const item = queue[index]
-    const snapshotKey = snapshotIdentity(item.name, item.reference, snapshots)
-    const version = identityVersion(item.name, snapshotKey)
-    const packageKey = `${item.name}@${version}`
-    const resolution = packages[packageKey]?.resolution
-    if (resolution === undefined || typeof resolution.integrity !== 'string') {
-      throw new Error(`Ark root lock external lacks exact integrity: ${packageKey}`)
-    }
-    const identity = `${item.name}@${version}`
-    const previous = exact.get(identity)
-    if (previous !== undefined && previous.integrity !== resolution.integrity) {
-      throw new Error(`Ark root lock identity has conflicting integrity: ${identity}`)
-    }
-    exact.set(identity, { name: item.name, version, integrity: resolution.integrity })
-    edges.push({ from: item.from, name: item.name, version, integrity: resolution.integrity, section: item.section })
-    if (seenSnapshots.has(snapshotKey)) continue
-    seenSnapshots.add(snapshotKey)
-    const snapshot = snapshots[snapshotKey]
-    const packageMetadata = packages[packageKey]
-    // Record the snapshot's dependency edges under the runtime template's
-    // autoInstallPeers: false semantics: peers the root auto-installed are
-    // not part of the runtime closure, so they are filtered from the
-    // recorded edge lists exactly as the traversal skips them.
-    const snapshotDeclaredPeers = packageMetadata.peerDependencies ?? {}
-    const withoutDeclaredPeers = (record) => Object.fromEntries(
-      Object.entries(record ?? {}).filter(([dependency]) => snapshotDeclaredPeers[dependency] === undefined))
-    externalSnapshots.set(snapshotKey, {
-      snapshotKey,
-      name: item.name,
-      version,
-      integrity: resolution.integrity,
-      resolution: sortedRecord(packageMetadata.resolution),
-      os: sortedRecord(packageMetadata.os),
-      cpu: sortedRecord(packageMetadata.cpu),
-      engines: sortedRecord(packageMetadata.engines),
-      hasBin: packageMetadata.hasBin === true,
-      requiresBuild: packageMetadata.requiresBuild === true,
-      optional: packageMetadata.optional === true,
-      peerDependencies: sortedRecord(packageMetadata.peerDependencies),
-      peerDependenciesMeta: sortedRecord(packageMetadata.peerDependenciesMeta),
-      dependencies: sortedRecord(withoutDeclaredPeers(snapshot?.dependencies)),
-      optionalDependencies: sortedRecord(withoutDeclaredPeers(snapshot?.optionalDependencies)),
-      transitivePeerDependencies: sortedRecord(snapshot?.transitivePeerDependencies),
-    })
-    // The runtime template resolves with autoInstallPeers: false — its
-    // reviewed standalone policy — so a peer of an external package enters
-    // the runtime only through some real dependency edge, never through the
-    // peer edge itself. Mirror that: peers declared by an external package
-    // are not part of the runtime closure.
-    const declaredPeers = packageMetadata.peerDependencies ?? {}
-    for (const section of ['dependencies', 'optionalDependencies']) {
-      for (const [dependency, value] of Object.entries(snapshot?.[section] ?? {})) {
-        if (workspaceNames.has(dependency)) continue
-        if (declaredPeers[dependency] !== undefined) continue
-        const reference = dependencyReference(value)
-        if (reference === undefined || isLocalReference(reference)) continue
-        queue.push({ from: identity, name: dependency, reference, section })
-      }
-    }
-  }
-  const externalResolutions = [...exact.values()].sort((left, right) => (
-    left.name.localeCompare(right.name) || left.version.localeCompare(right.version)
-  ))
+  const { externalResolutions, edges, externalSnapshots } = deriveArkExternalLockGraph(rootLock, queue, workspaceNames)
   // Bind each external resolution to the content the root install actually
   // carries on disk: the runtime template's installed bytes must derive from
   // exactly this content, so the plan carries it for receipt verification.
@@ -606,7 +634,7 @@ async function deriveRootLockedExternals(repositoryRoot, workspace, reached, ide
     )),
     rootLockGraph: {
       workspaceImporters: workspaceImporters.sort((left, right) => left.name.localeCompare(right.name)),
-      externalSnapshots: [...externalSnapshots.values()].sort((left, right) => (
+      externalSnapshots: externalSnapshots.sort((left, right) => (
         left.snapshotKey.localeCompare(right.snapshotKey)
       )),
     },
