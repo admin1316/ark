@@ -178,7 +178,7 @@ function recordKnowledgeResult(
     knowledgeId: details.provenance?.knowledgeId ?? `wiki:${details.path}`,
     path: details.path,
     resultHash,
-    contentHash: stableHash(details.value),
+    contentHash: resultHash,
     tool: exec.name,
     callId: String(exec.callId),
     scope: sessionEventScope(scope),
@@ -214,6 +214,7 @@ function recordRenderedKnowledgeResult(exec: Readonly<ToolExecution>, result: Re
   if (execution === undefined) return
   const { session, scope } = execution
   const rendered = asJsonValue(result.content)
+  const renderedHash = stableHash(rendered)
   const kind = exec.name.slice('wiki_'.length) as 'search' | 'files' | 'read' | 'graph' | 'reviews'
   const rawValue = result.value
   const truncated = typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)
@@ -228,8 +229,8 @@ function recordRenderedKnowledgeResult(exec: Readonly<ToolExecution>, result: Re
     session.append('knowledge/injected', {
       knowledgeId: item?.knowledgeId ?? `wiki:${resultPath}`,
       path: item === undefined || provenance.length === 1 ? resultPath : `tool:${exec.name}:${item.knowledgeId}`,
-      resultHash: stableHash(rendered),
-      contentHash: stableHash(rendered),
+      resultHash: renderedHash,
+      contentHash: renderedHash,
       tool: exec.name,
       callId: String(exec.callId),
       scope: sessionEventScope(scope),
