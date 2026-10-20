@@ -203,3 +203,54 @@ it('keeps explicit selected-child release destructive for that complete forest',
     expect(run.adapter.requests).toHaveLength(0)
   } finally { await run.dispose() }
 })
+
+it('prepares quit without replaying a maintenance wake and resumes retained input only after an explicit followup', async () => {
+  const run = await createTeamRuntime([textResponse('retained input completed'), textResponse('explicit followup completed')])
+  const release = Promise.withResolvers<undefined>()
+  let maintaining: Promise<void> | undefined
+  try {
+    run.ctx.loader.builtins['maintenance-quit-checkpoint'] = Checkpoints
+    await run.ctx.loader.create({ name: 'cordis:maintenance-quit-checkpoint' })
+    await run.ctx.loader.await()
+    const storage = new StorageLifecycle(run.ctx)
+    const original = createUserMessage({ content: [{ type: 'text', text: 'SYNTHETIC_INPUT_QUEUED_BEFORE_QUIT' }],
+      source: { kind: 'user' } })
+    maintaining = run.lead.runMaintenance(async () => { await release.promise })
+    run.lead.followup(original)
+    await run.ctx.sessions.flush(run.lead.session)
+
+    const attemptId = 'synthetic-maintenance-quit' as SessionQuitAttemptId
+    storage.handle({ kind: 'prepare-quit', attemptId, epoch: 0 })
+    release.resolve(undefined)
+    await maintaining
+    await run.lead.whenIdle()
+    await vi.waitFor(() => { expect(storage.handle({ kind: 'state' }).quit?.safeToQuit).toBe(true) })
+    expect(run.adapter.requests).toHaveLength(0)
+    expect(run.lead.inbox.nextTurn.map(input => input.id)).toEqual([original.id])
+    expect(run.ctx.sessionPersistence.writeState().totalEvents).toBe(0)
+    expect(await coldInbox(run.root, [run.lead.id])).toEqual([
+      { id: run.lead.id, queued: [original.id], users: [] },
+    ])
+
+    const cancelled = storage.handle({ kind: 'cancel-quit', attemptId, epoch: 0 })
+    expect(cancelled.quit).toBeNull()
+    expect(cancelled.quitEpoch).toBe(1)
+    expect(run.lead.status).toBe('idle')
+    expect(run.adapter.requests).toHaveLength(0)
+    storage.assertAdmission(run.lead.session)
+    const explicit = createUserMessage({ content: [{ type: 'text', text: 'SYNTHETIC_EXPLICIT_FOLLOWUP_AFTER_QUIT_CANCEL' }],
+      source: { kind: 'user' } })
+    run.lead.followup(explicit)
+    await run.lead.whenIdle()
+    await run.ctx.sessions.flush(run.lead.session)
+    const users = run.lead.session.events.flatMap(event => event.type === 'user/message' && event.data.source.kind === 'user'
+      ? [event.data.id] : [])
+    expect(users).toEqual([original.id, explicit.id])
+    expect(run.adapter.requests).toHaveLength(2)
+    expect(run.lead.inbox.hasPending).toBe(false)
+  } finally {
+    release.resolve(undefined)
+    await maintaining
+    await run.dispose()
+  }
+})

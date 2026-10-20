@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.md
-2026-10-20-session-save-pressure-and-quit-barrier.md: 55ea1f75ce4b5989124a52d4a359ff74da99e51a
-2026-10-20-session-save-pressure-and-quit-barrier.zh.md: 0b2803236fc9ac1bd11c660bfee9b83541fc4443
+2026-10-20-session-save-pressure-and-quit-barrier.md: 64ea70510eadf4f29e649e0770ec7269f14bac84
+2026-10-20-session-save-pressure-and-quit-barrier.zh.md: ddb58efc48b570597781179ac1767da5960a3474

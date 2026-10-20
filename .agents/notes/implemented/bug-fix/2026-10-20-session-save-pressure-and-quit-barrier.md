@@ -26,6 +26,8 @@ The final local draft barrier begins by freezing editing and actions, including 
 
 Lifecycle disposal preserves the durable inbox after Host readiness. Factory co-owners and continuation drains pass `keepInbox` through every child and handle, and mark disposal before awaiting quiescence so maintenance cannot wake retained work. Explicit handle and selected-child disposal retain their default discard semantics. The terminal observer reads the quiescent inbox projection; retained work is stopped, never completed.
 
+Cancellation clears wake requests already latched by the cancelled activity, even when its inbox is retained. A later explicit waking send can set a fresh latch; cancelling quit alone does not restart parked work.
+
 ## Alternatives considered
 
 **Drop stream chunks or clear counts when a batch starts.** This changes transcript evidence or conceals outstanding writes. Acknowledgement-aware accounting and producer pressure preserve the log.
@@ -49,6 +51,8 @@ A real `URLSession` with synthetic `URLProtocol` holds a command response after 
 Native draft contracts edit during the Host wait, freeze the owners, and hold a final flusher. Real temporary filesystem obstructions fail composer and Workbench saving; restoring the directory and retrying must recover the last frozen text. Late edits, revert and save actions are rejected while frozen. Mounted disabled SwiftUI bridges expose read-only AppKit editors and reject Return and marked-text submission.
 
 A real Loader test reaches Host readiness with accepted child and grandchild inputs, stops the entire Loader, and reads both original identities from a fresh persistence owner. Scoped descendant shutdown also retains both inputs. Explicit handle and selected-child disposal discard them; preparation failure remains idle until an explicit continuation, then executes each identity once. Maintenance-held teardown cannot issue another model request.
+
+Host quit preparation cancels maintenance with a previously accepted waking input. Releasing maintenance must reach safe readiness with no model call and the original input still durable. Cancelling quit keeps it parked; an explicit follow-up then executes the retained and new identities once in FIFO order. Existing abort-to-idle follow-up tests preserve the fresh-wake behavior.
 
 ## Consequences
 

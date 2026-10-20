@@ -418,11 +418,11 @@ export class ReactLoopAgent implements Agent {
 
   cancel(cause: AgentCancelCause, options: CancelOptions = {}): void {
     if (cause.kind === 'disposed') this.closing = true
-    if (!options.keepInbox) {
-      this.inbox.clear()
-      if (this.phase.kind !== 'idle') this.phase.wakeRequested = false
+    if (!options.keepInbox) this.inbox.clear()
+    if (this.phase.kind !== 'idle') {
+      this.phase.wakeRequested = false
+      this.phase.abort.abort(cause)
     }
-    if (this.phase.kind !== 'idle') this.phase.abort.abort(cause)
   }
 
   runMaintenance<T>(job: (signal: AbortSignal) => Promise<T>): Promise<T> {
