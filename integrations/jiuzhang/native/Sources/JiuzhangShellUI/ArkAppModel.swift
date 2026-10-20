@@ -4537,7 +4537,7 @@ public final class ArkAppModel: ObservableObject {
               guard composerOperationIsCurrent(submissionOwner), selectedSessionID == sessionID else { return }
               composerErrorMessage = execution.text ?? "命令执行失败"
               try await retireFailedComposerCommand(capturedDocument, sessionID: sessionID,
-                sourceSessionID: sourceSessionID)
+                sourceSessionID: sourceSessionID, images: images, documents: documents)
               return
             }
           }
@@ -4546,9 +4546,10 @@ public final class ArkAppModel: ObservableObject {
         try await documentStore.removeInflightSubmission(capturedDocument.submissionID)
         retireRecoverableSubmission(capturedDocument.submissionID)
         await composerPersistence.flush()
-        try await documentStore.acknowledgePendingSubmission(sessionID: sessionID, submissionID: capturedDocument.submissionID)
+        try await documentStore.acknowledgePendingSubmission(sessionID: sessionID,
+          submissionID: capturedDocument.submissionID, matchingDocument: nil)
         try await acknowledgeComposerSubmissionSources(capturedDocument, sessionID: sessionID,
-          sourceSessionID: sourceSessionID)
+          sourceSessionID: sourceSessionID, images: images, documents: documents)
         commitComposerSubmission(capturedDocument, sessionID: sessionID, images: images, documents: documents)
         if selectedSessionID == sessionID { await refreshHistory() }
         await refreshNavigation(refreshWiki: false)
@@ -4630,10 +4631,10 @@ public final class ArkAppModel: ObservableObject {
     return api.message.contains("does not support image input")
   }
 
-  /// Clear only the exact acknowledged payload. Later edits and attachments retain a fresh identity.
+  /// Clear only the exact acknowledged payload; later content and attachments remain intact.
   private func commitComposerSubmission(
     _ captured: ArkComposerDraftDocument,
-    sessionID: String,
+    sessionID: String?,
     images: [ArkPromptImage],
     documents: [ArkPendingDocument]
   ) {
@@ -4654,7 +4655,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func retireFailedComposerCommand(_ captured: ArkComposerDraftDocument, sessionID: String,
-    sourceSessionID: String?) async throws {
+    sourceSessionID: String?, images: [ArkPromptImage], documents: [ArkPendingDocument]) async throws {
     await composerPersistence.flush()
     var replacement = captured
     replacement.retireSubmission()
@@ -4670,16 +4671,19 @@ public final class ArkAppModel: ObservableObject {
     await composerPersistence.flush()
     try await documentStore.removeInflightSubmission(captured.submissionID)
     retireRecoverableSubmission(captured.submissionID)
-    try await acknowledgeComposerSubmissionSources(captured, sessionID: sessionID, sourceSessionID: sourceSessionID)
+    try await acknowledgeComposerSubmissionSources(captured, sessionID: sessionID,
+      sourceSessionID: sourceSessionID, images: images, documents: documents)
   }
 
   private func acknowledgeComposerSubmissionSources(_ captured: ArkComposerDraftDocument, sessionID: String,
-    sourceSessionID: String?) async throws {
+    sourceSessionID: String?, images: [ArkPromptImage], documents: [ArkPendingDocument]) async throws {
     var sources: [String?] = []
     if sourceSessionID != sessionID { sources.append(sourceSessionID) }
     if sourceSessionID != nil, sessionID == captured.submissionID { sources.append(nil) }
     for source in sources {
-      try await documentStore.acknowledgePendingSubmission(sessionID: source, submissionID: captured.submissionID)
+      try await documentStore.acknowledgePendingSubmission(sessionID: source, submissionID: captured.submissionID,
+        matchingDocument: captured, matchingImages: images, matchingDocuments: documents)
+      commitComposerSubmission(captured, sessionID: source, images: images, documents: documents)
       let key = Keys.draft(source)
       if composerMigratingDrafts[key] == captured.submissionID { composerMigratingDrafts.removeValue(forKey: key) }
     }

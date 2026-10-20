@@ -351,12 +351,20 @@ public actor ArkDocumentReferenceStore {
     removeDraftAttachments(previous.journalIdentifier)
   }
 
-  public func acknowledgePendingSubmission(sessionID: String?, submissionID: String?) throws {
+  /// A source snapshot requires a matching document and attachments; nil retains receipt-only acknowledgement.
+  public func acknowledgePendingSubmission(sessionID: String?, submissionID: String?,
+    matchingDocument: ArkComposerDraftDocument? = nil, matchingImages: [ArkPromptImage] = [],
+    matchingDocuments: [ArkPendingDocument] = []) throws {
     let target = pendingSubmissionURL(sessionID)
     guard fileManager.fileExists(atPath: target.path) else { return }
     let data = try readRegularFile(target, maximumBytes: 4 * 1_024 * 1_024)
     let value = try JSONDecoder().decode(PendingSubmission.self, from: data)
     guard value.document.submissionID == submissionID else { return }
+    if let matchingDocument {
+      guard value.document == matchingDocument else { return }
+      let attachments = try restoreDraftAttachments(value.journalIdentifier)
+      guard attachments.images == matchingImages, attachments.documents == matchingDocuments else { return }
+    }
     _ = try persistComposerState(document: ArkComposerDraftDocument(), sessionID: sessionID, images: [], documents: [])
   }
 

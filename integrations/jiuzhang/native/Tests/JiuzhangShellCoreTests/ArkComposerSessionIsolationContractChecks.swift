@@ -318,7 +318,8 @@ func runArkComposerSessionIsolationContractChecks() async {
 @MainActor
 private func runColdMigratedComposerReceiptChecks() async {
   for route in ["command-error", "command-success", "prompt-success"] {
-    for newerHome in [false, true] {
+    for homeState in ["original", "new-identity", "same-identity-edited", "same-identity-images"] {
+      let newerHome = homeState != "original"
       let suite = "ark-cold-migrated-receipt-\(UUID().uuidString)"
       let defaults = UserDefaults(suiteName: suite)!
       let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
@@ -340,8 +341,17 @@ private func runColdMigratedComposerReceiptChecks() async {
         let images = [ArkPromptImage(mediaType: .png, data: Data([21]), name: "synthetic.png")]
         let targetJournal = try await store.persistComposerState(document: captured, sessionID: targetID,
           images: images, documents: [])
-        var homeDocument = newerHome ? ArkComposerDraftDocument(text: "later independent home input") : captured
-        if newerHome { homeDocument.prepareSubmission(mode: .queue, timeZone: "UTC") }
+        var homeDocument = captured
+        if homeState == "new-identity" {
+          homeDocument = ArkComposerDraftDocument(text: "later independent home input")
+          homeDocument.prepareSubmission(mode: .queue, timeZone: "UTC")
+        } else if homeState == "same-identity-edited" {
+          var fields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(captured)) as! [String: Any]
+          fields["text"] = "later restored home input with the original identity"
+          fields["revision"] = NSNumber(value: captured.revision + 1)
+          homeDocument = try JSONDecoder().decode(ArkComposerDraftDocument.self,
+            from: JSONSerialization.data(withJSONObject: fields))
+        }
         let homeImages = newerHome ? [ArkPromptImage(mediaType: .png, data: Data([22]), name: "later.png")] : images
         let homeJournal = try await store.persistComposerState(document: homeDocument, sessionID: nil,
           images: homeImages, documents: [])
@@ -360,7 +370,7 @@ private func runColdMigratedComposerReceiptChecks() async {
         await model.loadSettings()
         model.selectSession(targetID)
         let ready = await composerIsolationEventually { model.composerModelRouteAvailable && model.pendingImages == images }
-        check(ready, "cold migrated target restores its captured payload without a migration map (\(route), newerHome=\(newerHome))")
+        check(ready, "cold migrated target restores its captured payload without a migration map (\(route), homeState=\(homeState))")
         for state in command ? ["unknown", "running"] : ["rejected"] {
           model.sendComposer()
           let held = await composerIsolationEventually {
@@ -374,7 +384,7 @@ private func runColdMigratedComposerReceiptChecks() async {
           let target = try await store.restorePendingSubmission(sessionID: targetID)
           check(settled && home?.document == homeDocument && home?.images == homeImages
             && target?.document.submissionID == targetID,
-            "uncertain migrated retry preserves both durable receipts (\(route), \(state), newerHome=\(newerHome))")
+            "uncertain migrated retry preserves both durable receipts (\(route), \(state), homeState=\(homeState))")
         }
         model.sendComposer()
         let held = await composerIsolationEventually {
@@ -389,7 +399,7 @@ private func runColdMigratedComposerReceiptChecks() async {
         let target = try await store.restorePendingSubmission(sessionID: targetID)
         check(settled && (newerHome ? home?.document == homeDocument && home?.images == homeImages
           : home?.document.submissionID != targetID && home?.document.text.isEmpty == true),
-          "cold migrated terminal receipt retires only the original home identity (\(route), newerHome=\(newerHome))")
+          "cold migrated terminal receipt retires only the original home identity (\(route), homeState=\(homeState))")
         if route == "command-error" {
           check(target?.document.submissionID == nil && target?.document.text == captured.text
             && target?.images == images && model.composer == captured.text,
@@ -398,8 +408,52 @@ private func runColdMigratedComposerReceiptChecks() async {
           check(target?.document.submissionID == nil && target?.document.text.isEmpty == true && model.composer.isEmpty,
             "cold migrated success clears only the acknowledged target payload (\(route))")
         }
+        model.selectWorkspace("synthetic-home")
+        func homeProjectionMatches() -> Bool {
+          guard model.selectedSessionID == nil,
+            let data = defaults.data(forKey: "ark.native.composer-document.new-session"),
+            let projected = try? JSONDecoder().decode(ArkComposerDraftDocument.self, from: data) else { return false }
+          if newerHome {
+            return model.composer == homeDocument.text && model.pendingImages == homeImages
+              && model.pendingDocuments.isEmpty && projected == homeDocument
+          }
+          return model.composer.isEmpty && model.pendingImages.isEmpty && model.pendingDocuments.isEmpty
+            && projected.text.isEmpty && projected.submissionID == nil
+        }
+        let projectionSettled = await composerIsolationEventually { homeProjectionMatches() }
+        let projectedData = defaults.data(forKey: "ark.native.composer-document.new-session")
+        let projected = projectedData.flatMap { try? JSONDecoder().decode(ArkComposerDraftDocument.self, from: $0) }
+        let projectionPointer = defaults.string(forKey: "ark.native.composer-attachments.new-session")
+        if !projectionSettled { print("[home-projection] route=\(route) homeState=\(homeState) matched=\(projectionSettled) selectedHome=\(model.selectedSessionID == nil) visibleTextEmpty=\(model.composer.isEmpty) visibleImages=\(model.pendingImages.count) preferenceID=\(projected?.submissionID ?? "nil") originalID=\(targetID) preferenceJournal=\(projectionPointer ?? "nil") originalJournal=\(homeJournal) terminalDurableJournal=\(home?.journalIdentifier ?? "nil")") }
+        check(projectionSettled,
+          "terminal migrated receipt retires the original home defaults and attachment cache without clearing newer input (\(route), homeState=\(homeState))")
+        var journalMatches = projectionPointer == nil && !newerHome
+        if let projectionPointer {
+          do {
+            let restored = try await store.restoreDraftAttachments(projectionPointer)
+            journalMatches = restored.images == (newerHome ? homeImages : []) && restored.documents.isEmpty
+          } catch { journalMatches = false }
+        }
+        check(journalMatches,
+          "home journal contains only the retained payload after terminal navigation (\(route), homeState=\(homeState))")
+        model.selectSession(targetID)
+        let returnedToTarget = await composerIsolationEventually {
+          model.selectedSessionID == targetID && model.composerModelRouteAvailable
+        }
+        check(returnedToTarget, "home projection probe returns through the real target session navigation")
+        model.freezeNativeInput()
+        let flushError = await model.flushFrozenComposerDrafts()
+        check(flushError == nil, "home projection round trip reaches the real final local persistence barrier")
+        let roundTripHome = try await store.restorePendingSubmission(sessionID: nil)
+        let durableHomeMatches = newerHome
+          ? roundTripHome?.document == homeDocument && roundTripHome?.images == homeImages
+          : roundTripHome?.document.text.isEmpty == true && roundTripHome?.document.submissionID == nil
+            && roundTripHome?.images.isEmpty == true && roundTripHome?.documents.isEmpty == true
+        if !durableHomeMatches { print("[home-roundtrip] route=\(route) homeState=\(homeState) matched=\(durableHomeMatches) durableID=\(roundTripHome?.document.submissionID ?? "nil") originalID=\(targetID) durableTextEmpty=\(roundTripHome?.document.text.isEmpty == true) durableImages=\(roundTripHome?.images.count ?? -1) durableJournal=\(roundTripHome?.journalIdentifier ?? "nil") originalJournal=\(homeJournal)") }
+        check(durableHomeMatches,
+          "navigating away and flushing cannot revive a retired home identity or remove newer home input (\(route), homeState=\(homeState))")
         await model.shutdown()
-      } catch { check(false, "cold migrated receipt \(route), newerHome=\(newerHome): \(error)") }
+      } catch { check(false, "cold migrated receipt \(route), homeState=\(homeState): \(error)") }
     }
   }
 }

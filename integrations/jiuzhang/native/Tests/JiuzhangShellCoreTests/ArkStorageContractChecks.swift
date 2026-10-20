@@ -206,8 +206,55 @@ func runArkStorageContractChecks() async {
   try? FileManager.default.removeItem(at: root)
   StorageContractURLProtocol.reset()
   await runStoragePostSafeTransportChecks()
+  await runSourceDraftAcknowledgementChecks()
   await runFrozenAttachmentRestoreChecks()
   await runFrozenNativeDraftChecks()
+}
+
+private func runSourceDraftAcknowledgementChecks() async {
+  for change in ["unchanged", "revision", "body", "images", "documents"] {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("ark-source-draft-cas-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    do {
+      let store = ArkDocumentReferenceStore(rootURL: root)
+      var captured = ArkComposerDraftDocument(text: "synthetic captured source")
+      captured.prepareSubmission(mode: .queue, timeZone: "UTC")
+      let images = [ArkPromptImage(mediaType: .png, data: Data([31]), name: "original.png")]
+      var fields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(captured)) as! [String: Any]
+      if change == "revision" { fields["revision"] = NSNumber(value: captured.revision + 1) }
+      if change == "body" { fields["text"] = "later source body with the original identity" }
+      let current = try JSONDecoder().decode(ArkComposerDraftDocument.self,
+        from: JSONSerialization.data(withJSONObject: fields))
+      let currentImages = change == "images"
+        ? [ArkPromptImage(mediaType: .png, data: Data([32]), name: "later.png")] : images
+      let currentDocuments = change == "documents"
+        ? [try await store.importPastedText("later source document", name: "later.txt")] : []
+      let journal = try await store.persistComposerState(document: current, sessionID: nil,
+        images: currentImages, documents: currentDocuments)
+      func storedBytes() throws -> [String: Data] {
+        var values: [String: Data] = [:]
+        for path in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+          values[path.lastPathComponent] = try Data(contentsOf: path)
+        }
+        return values
+      }
+      let before = try storedBytes()
+      try await store.acknowledgePendingSubmission(sessionID: nil, submissionID: captured.submissionID,
+        matchingDocument: captured, matchingImages: images, matchingDocuments: [])
+      let restored = try await store.restorePendingSubmission(sessionID: nil)
+      if change == "unchanged" {
+        check(restored?.document.text.isEmpty == true && restored?.document.submissionID == nil
+          && restored?.images.isEmpty == true && restored?.documents.isEmpty == true,
+          "source acknowledgement writes the existing empty pending record for an exact payload")
+      } else {
+        let after = try storedBytes()
+        check(current.submissionID == captured.submissionID && restored?.document == current
+          && restored?.images == currentImages && restored?.documents == currentDocuments
+          && restored?.journalIdentifier == journal && after == before,
+          "source acknowledgement preserves same-identity \(change) changes without writing a partial clear")
+      }
+    } catch { check(false, "source draft acknowledgement \(change): \(error)") }
+  }
 }
 
 private final class FrozenAttachmentStoreGate: @unchecked Sendable {
