@@ -1,0 +1,12 @@
+# Reviewed historical false positives; exact commit/path/rule/line only.
+# Eight SHA-256 manifest values and one embedded verification sentence.
+# The same text in a new commit is not exempt. See the source-privacy Agent Note.
+4e8b5964b63f56c331984bc77e9c1603e704170c:scripts/rust-migration/approved-verification-publication-native-result-20261012.json:generic-api-key:435
+4e8b5964b63f56c331984bc77e9c1603e704170c:scripts/rust-migration/approved-learning-verifier-source-result-20261012.json:generic-api-key:176
+4e8b5964b63f56c331984bc77e9c1603e704170c:scripts/rust-migration/candidate323-live-invoice-20261011.json:generic-api-key:12
+4e8b5964b63f56c331984bc77e9c1603e704170c:scripts/rust-migration/candidate341-installed-lifecycle-and-native-ready-result-20261013.json:generic-api-key:101
+2268abeb0f2e3a74fae6ad434e04fd88e5b30498:scripts/rust-migration/evidence/knowledge-safety-regressions-20261008.json:generic-api-key:14
+15cf20d4ea40e88a9f634d00510ad4b0e2da7f51:scripts/rust-migration/evidence/learning-protocol-baseline-20261008.json:generic-api-key:111
+a08e377654738a11b4988e7a0eecc4cc5c8561de:scripts/rust-migration/feature-language-review.json:generic-api-key:5744
+a08e377654738a11b4988e7a0eecc4cc5c8561de:scripts/rust-migration/feature-language-review.json:generic-api-key:6573
+a08e377654738a11b4988e7a0eecc4cc5c8561de:scripts/rust-migration/feature-language-review.json:generic-api-key:7116

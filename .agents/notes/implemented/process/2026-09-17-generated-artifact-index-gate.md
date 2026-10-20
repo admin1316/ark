@@ -24,6 +24,8 @@ The same index check rejects machine-owned distribution inputs: real `.env` vari
 
 [Source privacy](../../../../.github/workflows/source-privacy.yml) scans fetched Git history with checksum-pinned Gitleaks on pull requests and main pushes. Both workflows call the same scan; the PR `all checks passed` verdict depends on its success and rejects failure, cancellation, or skipping. Its [configuration](../../../../.gitleaks.toml) retains the default rules, with narrow exceptions for Git blob metadata, exact synthetic test literals, and the historical upstream public ingestion identifier in its original commits. Output is redacted. The media skill requires an explicit telemetry ingestion key in a directly launched tool process instead of shipping one; model-facing subprocesses continue stripping ambient keys; an unconfigured installation sends no media telemetry. Local user data and offline recovery archives are outside these source checks; CI neither erases them nor rewrites history.
 
+Historical false positives use [exact finding fingerprints](../../../../.gitleaksignore): eight SHA-256 manifest values and one English verification sentence embedded in audit JSON. Each fingerprint binds the original commit, path, rule, and line; the same text in a new commit remains reportable. The scanner still checks all fetched heads and tags with unchanged detection rules. A digest shape alone does not justify an exception: the original blob and its manifest or document context must establish a non-secret purpose. Suspected credentials do not qualify.
+
 The same job inspects every commit tree newly reachable from the PR head (excluding its base) or main push (excluding the previous tip), using the index classifier. Intermediate files deleted before the final commit and merged side branches are included. Missing commits or invalid boundaries fail the check; existing history is not rewritten.
 
 ## Testing
@@ -43,6 +45,8 @@ Not covered: content-based or semantic detection (a generated file with a novel 
 **Add a dedicated workflow like `expected-filenames.yml`.** Rejected for this decision: the check needs no path-filtered trigger, it is cheap and repository-wide, and wiring it into the existing gate scheduler plus the pre-commit hook gives CI and commit-time coverage without a second quality framework.
 
 **Check only staged paths in the hook.** Rejected: one full-index scan serves both the commit and CI, keeping a single definition of the checked path set.
+
+**Exclude audit directories, digest-shaped values, or entire historical branches.** Rejected: a location or token shape does not prove a non-secret purpose. Reviewed historical fingerprints preserve detection for other locations and future commits.
 
 **Treat a Git error as no violations.** Rejected: it turns an unreadable state into a green gate.
 
