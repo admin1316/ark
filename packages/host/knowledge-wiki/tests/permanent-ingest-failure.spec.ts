@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -101,6 +101,34 @@ describe('permanent extraction failure admission', () => {
     const manual = fixture(root, 2)
     manual.owner.restoreQueue()
     expect(manual.owner.queue.filter(task => task.status === 'pending')).toHaveLength(1)
+  })
+
+  it.each(['removed', 'replaced'] as const)('retains unrelated pending work when a rejected source was %s before recovery', async (change) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { root, service, owner } = fixture(undefined, 2)
+    const source = join(root, 'raw/sources/document.docx')
+    writeFileSync(source, 'synthetic Office bytes')
+    await service.ingestSource({ ...projectRequest(service), path: 'document.docx' })
+    writeFileSync(join(root, 'raw/sources/keep.txt'), 'synthetic pending text')
+    owner.enqueueIngest('keep.txt')
+    const queuePath = join(root, '.llm-wiki/ingest-queue.json')
+    const saved = JSON.parse(readFileSync(queuePath, 'utf8')) as IngestQueueTask[]
+    const running = { ...saved.find(task => task.input === 'document.docx')!, status: 'running' }
+    delete running.permanentFailure
+    writeFileSync(queuePath, JSON.stringify([running, saved.find(task => task.input === 'keep.txt')!]))
+    unlinkSync(source)
+    if (change === 'replaced') mkdirSync(source)
+
+    const recovered = fixture(root, 2)
+    recovered.owner.restoreQueue()
+    expect(recovered.owner.queue.map(task => ({ input: task.input, status: task.status }))).toEqual([
+      { input: 'document.docx', status: 'pending' },
+      { input: 'keep.txt', status: 'pending' },
+    ])
+    expect(JSON.parse(readFileSync(queuePath, 'utf8'))).toMatchObject([
+      { input: 'document.docx', status: 'pending' },
+      { input: 'keep.txt', status: 'pending' },
+    ])
   })
 
   it.each([

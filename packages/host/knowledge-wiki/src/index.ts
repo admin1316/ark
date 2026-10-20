@@ -527,12 +527,18 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   /** Restore resumable tasks and cancelled-source tombstones. */
   private restoreQueue(projectRoot = this.currentRoot): void {
     if (this.restoredQueueRoots.has(projectRoot)) return
+    let content: string
+    try {
+      content = readRegularFileBounded(this.queueFile(projectRoot), this.limits.ingestStateMaxBytes).toString('utf8')
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error
+      this.restoredQueueRoots.add(projectRoot)
+      return
+    }
     const before = [...this.queue]
     const nextId = this.queueNextId
     try {
-      const parsed = JSON.parse(
-        readRegularFileBounded(this.queueFile(projectRoot), this.limits.ingestStateMaxBytes).toString('utf8'),
-      ) as unknown
+      const parsed = JSON.parse(content) as unknown
       if (!Array.isArray(parsed)) throw new Error('invalid knowledge ingest queue state')
       const context = createProjectExecutionContext(projectRoot, this.mainRoot, this.wikiRoot, this.projectGeneration)
       for (const value of parsed) {
@@ -611,8 +617,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     } catch (error) {
       this.queue.splice(0, this.queue.length, ...before)
       this.queueNextId = nextId
-      if (!isMissingPathError(error)) throw error
-      this.restoredQueueRoots.add(projectRoot)
+      throw error
     }
   }
 
@@ -780,7 +785,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   }
 
   private permanentFailureIsCurrent(failure: PermanentFailure, input: string, projectRoot: string): boolean {
-    return failure.policyHash === knowledgeFilePolicyHash() && failure.sourceHash === this.currentHash(input, projectRoot)
+    return failure.policyHash === knowledgeFilePolicyHash() && failure.sourceHash === this.sourceHashForFailure(input, projectRoot)
   }
 
   private sourceHashForFailure(input: string, projectRoot: string): string | undefined {

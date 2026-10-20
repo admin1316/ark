@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-20-knowledge-research-evidence-and-permanent-rejections.md
-2026-10-20-knowledge-research-evidence-and-permanent-rejections.md: 5188e0c6a606949a21fcc171f139f3fd653b592b
-2026-10-20-knowledge-research-evidence-and-permanent-rejections.zh.md: 98baa120a93a3e5d84c8f096260ceb12347a3ec1
+2026-10-20-knowledge-research-evidence-and-permanent-rejections.md: 99c045185d059252a6f4724eb01eeb82db640017
+2026-10-20-knowledge-research-evidence-and-permanent-rejections.zh.md: 7a3b5ad7fd3401c0925856fc61c285be2e81b3ac

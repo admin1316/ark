@@ -61,7 +61,7 @@ kind: "package-reference"
 ## 持久状态（.llm-wiki/）
 
 - `ingest-cache.json` —— 来源身份映射到成功的内容 hash、显式取消的 `{ cancelledHash, admissionId? }`、暂时失败冷却的 `{ retryAfter }`，或永久本地提取拒绝的 `{ permanentFailure: { code, sourceHash, policyHash }, admissionId? }`。这些处理状态跨终态历史回收和重启保留；新手动准入不会继承旧拒绝。
-- `ingest-queue.json` —— pending/running 任务及有界终态历史；恢复时 running 转为 pending，并移除旧租约元数据。新任务携带准入身份，显式重试不会继承旧取消记录。状态无效或超过容量时，恢复失败，不发布部分队列，也不改变项目选择。
+- `ingest-queue.json` —— pending/running 任务及有界终态历史；恢复时 running 转为 pending，并移除旧租约元数据。新任务携带准入身份，显式重试不会继承旧取消记录。永久拒绝的来源缺失或不可读时，不丢弃其他恢复任务。只有队列文件不存在才表示空队列；状态无效或超过容量时，恢复失败，不发布部分队列，也不改变项目选择。
 - `review.json` —— 追加式评审项数组（按确定性 id 去重）。
 - `workspaces.json` —— 已注册的次级工作区。
 

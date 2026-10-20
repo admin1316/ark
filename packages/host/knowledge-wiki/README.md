@@ -59,7 +59,7 @@ Automatic session summaries use only registered secondary session workspaces. Th
 ## Durable state (.llm-wiki/)
 
 - `ingest-cache.json` — source identities map to a successful content hash, `{ cancelledHash, admissionId? }` for explicit cancellation, `{ retryAfter }` for temporary failure cooldown, or `{ permanentFailure: { code, sourceHash, policyHash }, admissionId? }` for a permanent local extraction rejection. These dispositions survive terminal-history pruning and restart; a fresh manual admission does not inherit an older rejection.
-- `ingest-queue.json` — pending/running tasks and bounded terminal history; restored running tasks become pending without old lease metadata. Each new task has an admission identity so an explicit retry cannot inherit an earlier cancellation. Invalid or over-capacity state fails restoration without publishing a partial queue or changing project selection.
+- `ingest-queue.json` — pending/running tasks and bounded terminal history; restored running tasks become pending without old lease metadata. Each new task has an admission identity so an explicit retry cannot inherit an earlier cancellation. Missing or unreadable permanently rejected sources do not discard other restored tasks. Only an absent queue file denotes an empty queue; invalid or over-capacity state fails restoration without publishing a partial queue or changing project selection.
 - `review.json` — append-only array of review items (deduped by deterministic id).
 - `workspaces.json` — registered secondary workspaces.
 
