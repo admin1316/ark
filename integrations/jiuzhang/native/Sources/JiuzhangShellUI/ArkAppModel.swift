@@ -1690,7 +1690,7 @@ public final class ArkAppModel: ObservableObject {
         try await requireCommandActionSuccess(receipt, sessionID: sessionID, owner: owner)
         var current = selectedSessionID == sessionID ? composerDraftDocument
           : Self.loadComposerDraft(defaults: defaults, sessionID: sessionID)
-        if current == previousDocument, current.replacePlainText(in: replacementRange, with: "",
+        if replacementRange.length > 0, current == previousDocument, current.replacePlainText(in: replacementRange, with: "",
           expectedRevision: previousDocument.revision) {
           let saved = try await documentStore.acknowledgeCommandDraft(sessionID: sessionID,
             previous: previousDocument, replacement: current)

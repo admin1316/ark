@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-20-durable-native-command-receipts.md
-2026-10-20-durable-native-command-receipts.md: 65cb7246487b3ebfcf67f07c42c82cdcc9c4d174
-2026-10-20-durable-native-command-receipts.zh.md: 6b67a45c9bfbadb7d05b48032d92dc0182fb1da4
+2026-10-20-durable-native-command-receipts.md: f6cb3e09c6678812816e414ee674304bb4a0c118
+2026-10-20-durable-native-command-receipts.zh.md: d9b7c6154241762f336f22628166c09eae4ab6c8

@@ -109,6 +109,7 @@ private final class ComposerIsolationURLProtocol: URLProtocol, @unchecked Sendab
           .object(["name": .string("record"), "description": .string("Synthetic command"),
             "input": .object(["hint": .string("Synthetic input"), "images": .bool(true)])]),
           .object(["name": .string("bare"), "description": .string("Synthetic menu action")]),
+          .object(["name": .string("compact"), "description": .string("Synthetic compact menu action")]),
         ]))
       case "session/models":
         reply(.object(["current": .object(["provider": .string("fixture"), "model": .string("text")]),
@@ -623,6 +624,39 @@ private func runComposerCommandReceiptChecks(model: ArkAppModel, store: ArkDocum
   ComposerIsolationURLProtocol.releaseCommand(state: "completed")
   _ = await composerIsolationEventually { model.composerErrorMessage == nil }
 
+  text("/record before launcher")
+  model.sendComposer()
+  verify(await commandHeld(), "body command before the empty plus launcher reaches transport")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight && model.composer.isEmpty }
+  let emptyBeforeLauncher = try? await store.restorePendingSubmission(sessionID: "command-A")
+  model.openComposerSourceLauncher()
+  _ = await composerIsolationEventually { model.composerSuggestions.candidates.contains { $0.command?.name == "compact" } }
+  if let suggestion = model.composerSuggestions.candidates.first(where: { $0.command?.name == "compact" }) {
+    let launcherHit = model.composerSuggestions.hit
+    check(launcherHit?.range.length == 0, "explicit plus launcher owns no typed draft query")
+    model.chooseComposerSuggestion(suggestion.id)
+    verify(await commandHeld(), "empty plus launcher runs a bare command after a completed body submission")
+    let launcherID = ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue
+    ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+    _ = await composerIsolationEventually {
+      model.composerErrorMessage?.hasPrefix("命令已完成，但草稿保存尚未确认") == true
+        || (model.composerErrorMessage == nil
+          && !FileManager.default.fileExists(atPath: root.appendingPathComponent("inflight-\(launcherID ?? "missing").json").path))
+    }
+    if model.composerErrorMessage != nil {
+      print("[empty-launcher] range=\(launcherHit?.range.length ?? -1) error=\(model.composerErrorMessage ?? "nil") journal=\(launcherID ?? "nil")")
+    }
+    check(model.composerErrorMessage == nil && model.composer.isEmpty,
+      "completed empty plus-launcher command does not report an unrelated draft acknowledgement failure")
+    check(launcherID != nil
+      && !FileManager.default.fileExists(atPath: root.appendingPathComponent("inflight-\(launcherID ?? "missing").json").path),
+      "completed plus-launcher action retires its exact invocation without a draft edit")
+    let emptyAfterLauncher = try? await store.restorePendingSubmission(sessionID: "command-A")
+    check(emptyBeforeLauncher != nil && emptyAfterLauncher?.document == emptyBeforeLauncher?.document,
+      "zero-length launcher action leaves the durable draft revision and submission metadata unchanged")
+  } else { check(false, "empty plus launcher exposes the registered bare command") }
+
   text("/")
   let menuReady = await composerIsolationEventually {
     model.composerSuggestions.candidates.contains { $0.command?.name == "bare" }
@@ -648,6 +682,20 @@ private func runComposerCommandReceiptChecks(model: ArkAppModel, store: ArkDocum
       check(model.composer.isEmpty, "completed menu action commits only the matching draft edit")
     }
   }
+  text("/")
+  _ = await composerIsolationEventually { model.composerSuggestions.candidates.contains { $0.command?.name == "bare" } }
+  if let suggestion = model.composerSuggestions.candidates.first(where: { $0.command?.name == "bare" }) {
+    model.chooseComposerSuggestion(suggestion.id)
+    _ = await commandHeld()
+    let menuID = ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue
+    text("newer text while menu command runs")
+    ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+    _ = await composerIsolationEventually {
+      !FileManager.default.fileExists(atPath: root.appendingPathComponent("inflight-\(menuID ?? "missing").json").path)
+    }
+    check(model.composer == "newer text while menu command runs" && model.composerErrorMessage == nil,
+      "completed typed-query menu action preserves later composer edits")
+  } else { check(false, "typed-query menu exposes the registered bare command for later-edit protection") }
   check(ComposerIsolationURLProtocol.callCount("commands/execute", sessionID: "command-A") == 0,
     "native command entry points never call the retired remote executor")
 
