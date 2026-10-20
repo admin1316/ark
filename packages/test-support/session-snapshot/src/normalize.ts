@@ -13,6 +13,7 @@ import {
   type SessionEvent,
 } from '@deepseek-ai/dsh-session'
 import { redactSessionSnapshotIds } from './identity.ts'
+import { expandAtomicSessionLog } from './storage-records.ts'
 
 const SESSION_ID = '{{sessionId}}'
 const MESSAGE_ID = '{{messageId}}'
@@ -345,7 +346,7 @@ export function normalizeSessionLog(
 ): string {
   const cwdPathMode = options.cwdPathMode ?? 'canonical'
   const identityMode = options.identityMode ?? 'legacy'
-  const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
+  const lines = expandAtomicSessionLog(rawLog).split('\n').filter(line => line.trim().length > 0)
   const records = lines.map((line) => {
     const record = JSON.parse(line) as Record<string, unknown>
     if (record.type === 'session') {
@@ -521,7 +522,7 @@ interface HeaderScrubOptions {
 
 /** Transform the selected request-header payloads. */
 function scrubHeaderContent(rawLog: string, options: HeaderScrubOptions): string {
-  const lines = rawLog.split('\n')
+  const lines = expandAtomicSessionLog(rawLog).split('\n')
   const out = lines.map((line) => {
     if (line.trim().length === 0) return line
     const record = JSON.parse(line) as Record<string, unknown>

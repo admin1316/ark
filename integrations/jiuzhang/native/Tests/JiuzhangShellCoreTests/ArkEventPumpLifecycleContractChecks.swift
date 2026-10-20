@@ -294,18 +294,30 @@ func runArkEventPumpLifecycleContractChecks() async {
       ]),
     "app model cancels event delivery and awaits pump and consumer quiescence"
   )
+  check(appearsInOrder(modelShutdown, [
+    "submission?.cancel()",
+    "await commandSubmissions.stop(cancelResponseWaiters: true)",
+    "if let submission { await submission.value }",
+  ]), "native shutdown settles owned response observations before waiting for their composer callers")
   check(
     appearsInOrder(appTermination, [
       "let deadline = Date().addingTimeInterval(terminationTimeoutSeconds)",
       "armTerminationDeadline(sender: sender, requestID: requestID, deadline: deadline)",
-      "if let error = await prepareNativeInterfaceShutdown()",
-      "if terminationBackendStopStarted",
-      "presentDraftFlushFailure(error)",
-      "allow: false",
+      "terminationTask = Task",
+      "prepareApplicationTermination(sender: sender, requestID: requestID)",
+    ]) && appearsInOrder(deadlineOwner, [
+      "model.prepareStorageQuit(attemptID: attemptID)",
+      "terminationDraftError = await prepareNativeInterfaceShutdown()",
+      "model.storagePermitsQuit(attemptID: attemptID)",
+      "if safe && terminationDraftError == nil && !terminationCancellationRequested",
+      "terminationInterfaceShutdownStarted = true",
+      "freezeNativeInterfaceInput()",
+      "armTerminationDeadline(sender: sender, requestID: requestID,",
+      "terminationDraftError = await flushFinalNativeDrafts()",
       "await shutdownNativeInterface()",
-      "beginBackendStop(sender: sender, requestID: requestID, deadline: deadline)",
+      "beginBackendStop(sender: sender, requestID: requestID,",
     ]),
-    "AppKit owns one request-time deadline and only vetoes before irreversible native shutdown"
+    "AppKit preserves the interface until matching Host durability and native drafts are confirmed"
   )
   check(
     interfacePreparation.contains("await workbenchDraftFlushCoordinator.flush()")
@@ -315,21 +327,44 @@ func runArkEventPumpLifecycleContractChecks() async {
       "hostingView?.removeFromSuperview()",
       "appModel = nil",
     ])
-      && delegate.components(separatedBy: "workbenchDraftFlushCoordinator.flush()").count == 2
+      && delegate.components(separatedBy: "workbenchDraftFlushCoordinator.flush()").count == 3
       && delegate.components(separatedBy: "appModel = nil").count == 2
       && delegate.contains("await self.shutdownNativeInterface()")
       && delegate.contains("guard let self, !self.requestedTermination,")
       && delegate.contains("guard !requestedTermination, backend.isRunning,"),
-    "a failed draft flush has no post-shutdown second flush and cannot return to a half-closed interface"
+    "final frozen drafts are flushed before shutdown; a failure retains the mounted interface for retry"
+  )
+  check(
+    appearsInOrder(interfacePreparation, ["editor.unmarkText()", "editor.delegate?.textDidChange?(",
+        "window?.makeFirstResponder(nil)", "appModel?.freezeNativeInput()"])
+      && interfacePreparation.contains("appModel?.freezeNativeInput()")
+      && interfacePreparation.contains("workbenchDraftFlushCoordinator.freezeLocalInput()")
+      && interfacePreparation.contains("editor.isEditable = false")
+      && interfacePreparation.contains("NSEvent.addLocalMonitorForEvents(matching: .any)")
+      && interfacePreparation.contains("event.window === window")
+      && appearsInOrder(interfacePreparation, [
+        "private func flushFinalNativeDrafts()",
+        "appModel?.flushFrozenComposerDrafts()",
+        "workbenchDraftFlushCoordinator.flush()",
+      ])
+      && deadlineOwner.contains("terminationDraftError = await flushFinalNativeDrafts()"),
+    "the final quit barrier freezes keyboard, AppKit editing and mutation owners before saving the latest local drafts"
   )
   check(
     delegate.contains("private let terminationTimeoutSeconds: TimeInterval = 20")
-      && deadlineOwner.contains("BackendProcess.forceKillGraceSeconds")
-      && deadlineOwner.contains("deadline.addingTimeInterval(-0.25)")
-      && deadlineOwner.contains("finishApplicationTermination(sender: sender, requestID: requestID, allow: true)")
+      && eventLifecycleSourceSlice(delegate, from: "private func armTerminationDeadline(",
+        through: "private func prepareApplicationTermination(")?.contains("beginBackendStop") == false
+      && deadlineOwner.contains("presentTerminationChoices(sender: sender, requestID: requestID)")
+      && deadlineOwner.contains("case .alertThirdButtonReturn:")
+      && deadlineOwner.contains("model.cancelStorageQuit(attemptID: attemptID)")
+      && deadlineOwner.contains("guard state.quit == nil")
+      && deadlineOwner.contains("if safe && terminationDraftError == nil && !terminationCancellationRequested")
+      && deadlineOwner.contains("BackendProcess.forceKillGraceSeconds + 1")
+      && deadlineOwner.contains("let finishingNativeTasks = terminationInterfaceShutdownStarted")
+      && deadlineOwner.contains("alert.buttons[1].isEnabled = !finishingNativeTasks")
       && deadlineOwner.contains("backend.stop(deadline: deadline)")
       && deadlineOwner.contains("sender.reply(toApplicationShouldTerminate: allow)"),
-    "the AppKit total deadline reserves the launcher grace and emits one final termination reply"
+    "the twenty-second deadline offers a choice and only verified saving or explicit force can stop the backend"
   )
   check(
     !delegate.contains("restartAttempts = 0")

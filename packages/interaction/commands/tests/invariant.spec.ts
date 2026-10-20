@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import * as CommandInvariant from '@deepseek-ai/dsh-commands/invariant'
 import InvariantRegistry, { InvariantError } from '@deepseek-ai/dsh-invariants'
-import SessionStore, { SessionId, type Session } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionPromptInvocationId, type Session } from '@deepseek-ai/dsh-session'
 import { CommandId } from '@deepseek-ai/dsh-commands'
 
 async function mount(installCompanion = true): Promise<{ ctx: Context; session: Session }> {
@@ -24,6 +24,22 @@ function appendRun(session: Session, id: string): void {
 }
 
 describe('command lifecycle invariants', () => {
+  it('refuses repeated durable invocation identities and terminal records', async () => {
+    const { session } = await mount()
+    const data = { commandId: CommandId('stable'), name: 'record', source: { kind: 'user' as const },
+      invocationId: SessionPromptInvocationId('stable-input'), inputDigest: 'command-v1:' + 'a'.repeat(64) }
+    session.append('command/run', data)
+    expect(() => session.append('command/run', { ...data, commandId: CommandId('second') })).toThrow('repeats invocationId')
+    session.append('command/done', { commandId: data.commandId, kind: 'success' })
+    expect(() => session.append('command/done', { commandId: data.commandId, kind: 'success' })).toThrow('repeats a settled commandId')
+  })
+
+  it('does not consume terminal ownership when a malformed completion is rejected', async () => {
+    const { session } = await mount()
+    appendRun(session, 'repairable')
+    expect(() => session.append('command/done', { commandId: CommandId('repairable'), kind: 'success', sourceEventSeq: 100 })).toThrow()
+    expect(() => session.append('command/done', { commandId: CommandId('repairable'), kind: 'success' })).not.toThrow()
+  })
   it('accepts a success outcome linked to an earlier non-command domain event', async () => {
     const { session } = await mount()
     const source = session.append('turn/start', { turn: 1 })

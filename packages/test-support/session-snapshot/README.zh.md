@@ -72,6 +72,8 @@ defineAcpSnapshotSuite({
 
 `normalizeSessionSnapshot` 在规范化路径并清理 request header 后，会保留完整会话 header 与事件 payload，但从已提交 fixture 中省略普通行的 `seq`/`time` 和打包行的 `seq0`/`time0` envelope。回放只在内存中合成这些 envelope，而运行时持久化仍写入完整日志。fixture 使用规范打包行；[临时仓库迁移器](../../../scripts/migrate-packed-session-fixtures.ts)（`pnpm run migrate:packed-session-fixtures`）会改写较旧的布局，由其[移除提案](../../../.agents/notes/proposed/process/2026-07-26-remove-packed-session-fixture-migrator.zh.md)负责删除该迁移器。
 
+工具包在身份映射、规范化与回放之前展开经过验证的物理 `atomic-events` 记录。规范 fixture 保留逻辑事件流；组装后的 headless `input-atomic` 场景另行检查实际持久化的组，因此规范化不会掩盖原子写入缺失。
+
 ### 录制、回放与刷新
 
 `pnpm run test:snapshot:record` 调用在线 LLM（大语言模型），并重写已录制的模型 fixture；`pnpm run test:snapshot:refresh` 保持无密钥，运行回放 overlay，并从已提交模型脚本重写 stdout、可比较会话日志预期输出，以及各 pin 自有的提示词与工具 schema 伴随文件。每个组合 owner 把 replay patch 放在 live patch 旁；顶层 `snapshots/` 拥有会话驱动场景，其他预期输出留在其包 owner 旁。[`dsh-llm-replay`](../llm-replay/README.zh.md) 提供通过 `DSH_SNAPSHOT_*` 环境值选择的已记录流。
@@ -113,6 +115,7 @@ defineAcpSnapshotSuite({
 | [`src/manifest.ts`](src/manifest.ts) | 封闭 `snapshot.yml` schema、收集与归属规则 |
 | [`src/identity.ts`](src/identity.ts) | 跨父子日志的类型化首次出现身份 token 化 |
 | [`src/normalize.ts`](src/normalize.ts) | 纯规范化器与擦除辅助 |
+| [`src/storage-records.ts`](src/storage-records.ts) | 共享日志处理前的物理原子记录展开 |
 | [`src/workspace.ts`](src/workspace.ts) | 场景 workspace 设置与完整预期状态比较 |
 | [`src/suite.ts`](src/suite.ts) | 场景表套件工厂、fixture 保护、录制/刷新回写 |
 | [`src/index.ts`](src/index.ts) | 再导出四个层的包入口 |

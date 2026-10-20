@@ -332,6 +332,35 @@ describe('Zstandard frame structure', () => {
 })
 
 describe('JsonlSessionPersistence: default Zstandard encoding', () => {
+  it('isolates each atomic record from preceding and following ordinary records in its own frame', async () => {
+    const root = await freshRoot()
+    const ctx = await mount(root)
+    const session = ctx.sessions.create(SessionId('atomic-frame-boundary'))
+    session.append('turn/start', { turn: 1 })
+    session.appendAtomic([
+      { type: 'step/start', data: { turn: 1, step: 1 } },
+      { type: 'step/end', data: { turn: 1, step: 1 } },
+    ])
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await ctx.sessions.flush(session)
+    const bytes = await readFile(logPath(root, undefined, session.id, 'zstd'))
+    const frames = scanZstdFrames(bytes).frames
+    const records: { type: string; seq?: number; events?: { seq: number }[] }[][] = []
+    for (const frame of frames) {
+      const plain = await decompressZstdFrame(bytes.subarray(frame.start, frame.end))
+      records.push(plain.toString('utf8').trimEnd().split('\n').map(line => JSON.parse(line) as {
+        type: string
+        seq?: number
+        events?: { seq: number }[]
+      }))
+    }
+    expect(records.map(rows => rows.map(row => row.type))).toEqual([
+      ['session'], ['turn/start'], ['atomic-events'], ['turn/end'],
+    ])
+    expect(records[2]?.[0]).toMatchObject({ seq: 1, events: [{ seq: 1 }, { seq: 2 }] })
+    expect((await ctx.sessionPersistence.load(session.id)).events).toEqual(session.events)
+  })
+
   it('materializes an explicitly durable empty session as one header frame', async () => {
     const root = await freshRoot()
     const ctx = await mount(root)

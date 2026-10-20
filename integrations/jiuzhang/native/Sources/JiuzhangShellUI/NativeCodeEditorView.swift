@@ -14,6 +14,7 @@ enum NativeCodeEditorPresentation: Equatable {
 /// attributes are debounced and skipped for very large files; text ownership
 /// always remains with the bound file tab.
 struct NativeCodeEditorView: NSViewRepresentable {
+  @Environment(\.isEnabled) private var isEnabled
   @Binding var text: String
   let fileURL: URL?
   let isEditable: Bool
@@ -53,7 +54,7 @@ struct NativeCodeEditorView: NSViewRepresentable {
     scrollView.documentView = textView
 
     textView.delegate = context.coordinator
-    textView.isEditable = isEditable
+    textView.isEditable = isEditable && isEnabled
     textView.isSelectable = true
     textView.isRichText = false
     textView.importsGraphics = false
@@ -110,7 +111,7 @@ struct NativeCodeEditorView: NSViewRepresentable {
   func updateNSView(_ containerView: NativeCodeEditorContainerView, context: Context) {
     let scrollView = containerView.scrollView
     guard let textView = scrollView.documentView as? NSTextView else { return }
-    textView.isEditable = isEditable
+    textView.isEditable = isEditable && isEnabled
     context.coordinator.presentation = presentation
     context.coordinator.applyAppearance(from: scrollView)
     context.coordinator.fitDocument(to: scrollView)
@@ -274,7 +275,7 @@ struct NativeCodeEditorView: NSViewRepresentable {
     func textDidChange(_ notification: Notification) {
       guard !applyingExternalText,
             !applyingSyntaxAttributes,
-            let editor = notification.object as? NSTextView
+            let editor = notification.object as? NSTextView, editor.isEditable
       else { return }
       text = editor.string
       lastText = editor.string

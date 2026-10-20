@@ -56,6 +56,8 @@ dsh --profile headless --dump-config
 
 事件就是扩展点，而选对事件域是大多数改动的第一个决定。
 
+Agent 创建与恢复先在私有状态中准备。同步 `agent/publishing` 检查在最终注册表进入时、发布之前运行，使生命周期拥有方可以在退出准入关闭时拒绝迟到的已准备 agent。
+
 - **会话事件**是追加到日志并通过 `session/event` 广播的持久事实。当某个事实必须在重新加载后仍然存在时，使用它。
 - **Agent 事件**（`agent/*`）携带活跃 `Agent`：inbox、步骤、状态、请求、验证、续跑。要观察或拦截进行中的工作时，使用它。
 - **能力事件**无需导入循环即可向某个 seam（`fs/*`、`tools/*`、`telemetry/*`）附加策略和适配器。
@@ -70,17 +72,17 @@ dsh --profile headless --dump-config
 
 ```text
 turn/start
-  claim next-step input plus one queued message
+  preview next-step input plus one queued message
   assemble prompt sections + tool schemas
   -> agent/pre-step                   reject | enter(messages)
      reject, or a first enter rewritten empty -> close the turn with no step
-     step/start
-     append entered messages as user/message
+     atomic commit: inbox claim + step/start
+                    + entered user/message events
      derive model history from the log
      agent/request -> llm/stream -> assistant/chunk* -> assistant/message
      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
      step/end
-     tools owe another request, or next-step input arrived -> claim -> next step
+     tools owe another request, or next-step input arrived -> preview -> next step
   -> agent/turn-stopping
 turn/end
 ```
@@ -89,7 +91,7 @@ turn/end
 
 输入通过同一个 inbox 到达驱动器。有些消息会立即唤醒它；注入的上下文会留在 inbox 中，直到另一条消息将其唤醒。
 
-`agent/pre-step` 决定模型看到什么。监听器可以改写已领取的消息，也可以直接拒绝它们；首次领取被拒绝或被改写为空时，仍会关闭一个不含步骤的持久轮次，因此日志会记录这次尝试。每个步骤读取插件注册的提示词片段和工具 schema。
+`agent/pre-step` 根据尚未消费的输入预览决定模型看到什么。异步准备结束后，循环核对所选输入仍有效，并原子提交其 inbox 移除、步骤开始与接受消息。带 `keepInbox` 的取消或准备失败保留待处理输入；显式拒绝消费所选批次，并关闭 blocked 的无步骤轮次。每个步骤读取插件注册的提示词片段和工具 schema。
 
 详情见[时序图](agent-lifecycle.zh.md)、[工具流水线](tool-execution-pipeline.zh.md)和[取消与错误恢复](subsystems/core.zh.md#the-agent-handle)。
 

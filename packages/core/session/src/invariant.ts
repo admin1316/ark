@@ -231,8 +231,20 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
   }, { global: true })
 
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
+    if (eventName === 'session/committed') {
+      const [session, events] = args as [Session, readonly SessionEvent[]]
+      const trace = traceFor(session)
+      const preview = { ...trace, pendingCalls: new Set(trace.pendingCalls) }
+      for (const event of events) {
+        const transition = validateEvent(preview, event, fail)
+        stagedTransitions.set(event, { session, trace, transition })
+        applyTransition(preview, transition)
+      }
+      return
+    }
     if (eventName !== 'session/event') return
     const [session, event] = args as [Session, SessionEvent]
+    if (stagedTransitions.has(event)) return
     const trace = traceFor(session)
     const transition = validateEvent(trace, event, fail)
     // A later dispatch listener may veto. Validation is pure, so abandoning

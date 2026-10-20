@@ -24,8 +24,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var terminationID: UUID?
   private var terminationBackendStopStarted = false
   private var terminationReplySent = false
-  private var terminationStopWorkItem: DispatchWorkItem?
   private var terminationDeadlineWorkItem: DispatchWorkItem?
+  private var terminationTask: Task<Void, Never>?
+  private var terminationActionTask: Task<Void, Never>?
+  private var terminationPrompt: NSAlert?
+  private var terminationCancellationRequested = false
+  private var terminationInterfaceShutdownStarted = false
+  private var terminationRetryRequested = false
+  private var terminationDraftError: String?
+  private var terminationStorageEpoch: Int?
+  private var terminationInputMonitor: Any?
+  private var backendStorageClient: ArkAPIClient?
   private var currentLanguage = "zh"
 
   /// Single-instance guard: two copies writing the same session store corrupt session logs
@@ -129,28 +138,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     readinessDeadline.cancel()
     terminationBackendStopStarted = false
     terminationReplySent = false
+    terminationCancellationRequested = false
+    terminationInterfaceShutdownStarted = false
+    terminationRetryRequested = false
+    terminationDraftError = nil
+    terminationStorageEpoch = nil
     let requestID = UUID()
     terminationID = requestID
     let deadline = Date().addingTimeInterval(terminationTimeoutSeconds)
     armTerminationDeadline(sender: sender, requestID: requestID, deadline: deadline)
-    Task {
-      if let error = await prepareNativeInterfaceShutdown() {
-        guard terminationID == requestID, !terminationReplySent else { return }
-        if terminationBackendStopStarted {
-          NSLog("Ark termination draft flush failed after the total-deadline path began: %@", error)
-          return
-        }
-        presentDraftFlushFailure(error)
-        finishApplicationTermination(
-          sender: sender,
-          requestID: requestID,
-          allow: false
-        )
-        return
-      }
-      await shutdownNativeInterface()
-      guard terminationID == requestID, !terminationReplySent else { return }
-      beginBackendStop(sender: sender, requestID: requestID, deadline: deadline)
+    terminationTask = Task { [weak self] in
+      await self?.prepareApplicationTermination(sender: sender, requestID: requestID)
     }
     return .terminateLater
   }
@@ -242,6 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     readinessDeadline.cancel()
     let launchID = UUID()
     backendLaunchID = launchID
+    backendStorageClient = nil
     backendStartupFailure = nil
     guard
       let recordedNode = Bundle.main.object(forInfoDictionaryKey: "JiuzhangNodeExecutable") as? String,
@@ -275,6 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.readinessDeadline.acceptReadiness(launchID: launchID)
       else { return }
       self.restartCircuitBreaker.recordReadiness()
+      self.backendStorageClient = ArkAPIClient(baseURL: url, apiToken: self.apiToken)
       self.showNativeInterface(serviceURL: url)
     }
     backend.onExit = { [weak self] status in
@@ -419,6 +419,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     await workbenchDraftFlushCoordinator.flush()
   }
 
+  private func freezeNativeInterfaceInput() {
+    if let editor = window?.firstResponder as? NSTextView, editor.hasMarkedText() {
+      editor.unmarkText()
+      editor.delegate?.textDidChange?(Notification(name: NSText.didChangeNotification, object: editor))
+    }
+    window?.makeFirstResponder(nil)
+    appModel?.freezeNativeInput()
+    workbenchDraftFlushCoordinator.freezeLocalInput()
+    func disable(_ view: NSView) {
+      if let control = view as? NSControl { control.isEnabled = false }
+      if let editor = view as? NSTextView { editor.isEditable = false }
+      view.subviews.forEach(disable)
+    }
+    if let hostingView { disable(hostingView) }
+    if terminationInputMonitor == nil {
+      terminationInputMonitor = NSEvent.addLocalMonitorForEvents(matching: .any) { [weak self] event in
+        guard let window = self?.window, event.window === window else { return event }
+        return nil
+      }
+    }
+  }
+
+  private func flushFinalNativeDrafts() async -> String? {
+    let composerError = await appModel?.flushFrozenComposerDrafts()
+    let workbenchError = await workbenchDraftFlushCoordinator.flush()
+    return composerError ?? workbenchError
+  }
+
   private func shutdownNativeInterface() async {
     guard let model = appModel else {
       hostingView?.removeFromSuperview()
@@ -437,31 +465,186 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     requestID: UUID,
     deadline: Date
   ) {
-    let stopDelay = max(
-      0,
-      deadline.timeIntervalSinceNow - BackendProcess.forceKillGraceSeconds
-    )
-    let stopWorkItem = DispatchWorkItem { [weak self] in
+    terminationDeadlineWorkItem?.cancel()
+    let item = DispatchWorkItem { [weak self] in
       guard let self, self.terminationID == requestID, !self.terminationReplySent else { return }
-      self.beginBackendStop(
-        sender: sender,
-        requestID: requestID,
-        deadline: deadline.addingTimeInterval(-0.25)
-      )
+      self.presentTerminationChoices(sender: sender, requestID: requestID)
     }
-    terminationStopWorkItem = stopWorkItem
-    DispatchQueue.main.asyncAfter(deadline: .now() + stopDelay, execute: stopWorkItem)
-
-    let finalWorkItem = DispatchWorkItem { [weak self] in
-      guard let self, self.terminationID == requestID, !self.terminationReplySent else { return }
-      self.beginBackendStop(sender: sender, requestID: requestID, deadline: Date())
-      self.finishApplicationTermination(sender: sender, requestID: requestID, allow: true)
-    }
-    terminationDeadlineWorkItem = finalWorkItem
+    terminationDeadlineWorkItem = item
     DispatchQueue.main.asyncAfter(
       deadline: .now() + max(0, deadline.timeIntervalSinceNow),
-      execute: finalWorkItem
+      execute: item
     )
+  }
+
+  private func prepareApplicationTermination(sender: NSApplication, requestID: UUID) async {
+    let attemptID = requestID.uuidString.lowercased()
+    let model = appModel
+    let storageClient = backendStorageClient
+    // Before readiness no native input has been accepted. A ready Host always needs its barrier,
+    // including the short interval in which an old interface is being released after recovery.
+    let startupOnly = model == nil && storageClient == nil
+    if let model {
+      do { try await model.prepareStorageQuit(attemptID: attemptID) }
+      catch { /* Poll the same Host attempt; a lost response is not a save acknowledgement. */ }
+    } else if let storageClient {
+      do {
+        let state = try await storageClient.storage(.state())
+        terminationStorageEpoch = state.quitEpoch
+        _ = try await storageClient.storage(.prepareQuit(attemptID: attemptID, epoch: state.quitEpoch))
+      }
+      catch { /* The next state observation reconciles a possibly accepted prepare action. */ }
+    }
+    guard terminationID == requestID, !Task.isCancelled else { return }
+    terminationDraftError = await prepareNativeInterfaceShutdown()
+    guard terminationID == requestID, !Task.isCancelled else { return }
+    if terminationDraftError != nil { presentTerminationChoices(sender: sender, requestID: requestID) }
+    while terminationID == requestID && !terminationReplySent && !Task.isCancelled {
+      if terminationCancellationRequested {
+        do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+        continue
+      }
+      if terminationRetryRequested {
+        terminationRetryRequested = false
+        if terminationInterfaceShutdownStarted {
+          terminationDraftError = await flushFinalNativeDrafts()
+        } else {
+          if terminationDraftError != nil { terminationDraftError = await prepareNativeInterfaceShutdown() }
+          if let model { model.retryStorageSave() }
+          else if let storageClient {
+          do {
+            if terminationStorageEpoch == nil { terminationStorageEpoch = try await storageClient.storage(.state()).quitEpoch }
+            if let epoch = terminationStorageEpoch {
+              _ = try await storageClient.storage(.prepareQuit(attemptID: attemptID, epoch: epoch))
+            }
+          }
+          catch { /* Keep waiting for a confirmed Host state or an explicit user choice. */ }
+          }
+        }
+      }
+      let safe: Bool
+      if let model { safe = model.storagePermitsQuit(attemptID: attemptID) }
+      else if let storageClient {
+        do {
+          let state = try await storageClient.storage(.state())
+          safe = terminationStorageEpoch.map { state.permitsQuit(attemptID: attemptID, epoch: $0) } ?? false
+        }
+        catch { safe = false }
+      } else { safe = startupOnly }
+      guard terminationID == requestID, !Task.isCancelled else { return }
+      if safe && terminationDraftError == nil && !terminationCancellationRequested {
+        if !terminationInterfaceShutdownStarted {
+          terminationInterfaceShutdownStarted = true
+          dismissTerminationPrompt()
+          freezeNativeInterfaceInput()
+          armTerminationDeadline(sender: sender, requestID: requestID,
+            deadline: Date().addingTimeInterval(terminationTimeoutSeconds))
+          terminationDraftError = await flushFinalNativeDrafts()
+          guard terminationID == requestID, !terminationReplySent, !Task.isCancelled else { return }
+          if terminationDraftError != nil {
+            presentTerminationChoices(sender: sender, requestID: requestID)
+            continue
+          }
+        }
+        await shutdownNativeInterface()
+        guard terminationID == requestID, !terminationReplySent, !Task.isCancelled else { return }
+        beginBackendStop(sender: sender, requestID: requestID,
+          deadline: Date().addingTimeInterval(BackendProcess.forceKillGraceSeconds + 1))
+        return
+      }
+      do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+    }
+  }
+
+  private func dismissTerminationPrompt() {
+    guard let alert = terminationPrompt else { return }
+    terminationPrompt = nil
+    if let parent = alert.window.sheetParent { parent.endSheet(alert.window, returnCode: .abort) }
+    else { alert.window.orderOut(nil) }
+  }
+
+  private func presentTerminationChoices(sender: NSApplication, requestID: UUID) {
+    guard terminationID == requestID, !terminationReplySent,
+          terminationPrompt == nil, !terminationCancellationRequested else { return }
+    let finishingNativeTasks = terminationInterfaceShutdownStarted
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = currentLanguage == "en" ? "Ark is waiting for saving to finish" : "Ark 正在等待保存完成"
+    alert.informativeText = currentLanguage == "en"
+      ? "The save barrier has not been confirmed. Keep waiting and retry saving, cancel quitting, or explicitly force quit. Force quitting may lose unsaved records."
+      : "尚未收到完整的保存确认。可以继续等待并重试保存、取消退出，或明确强制退出。强制退出可能丢失尚未保存的记录。"
+    if finishingNativeTasks {
+      alert.messageText = currentLanguage == "en" ? "Ark is finishing quitting" : "Ark 正在完成退出"
+      alert.informativeText = currentLanguage == "en"
+        ? "The service has confirmed saving. Ark is finishing local tasks; keep waiting or explicitly force quit. Quitting can no longer be cancelled at this stage. Force quitting may lose unsaved local drafts."
+        : "服务已确认保存，Ark 正在完成本机收尾。可以继续等待或明确强制退出。此阶段已无法取消退出；强制退出可能丢失尚未保存的本地草稿。"
+    }
+    if terminationDraftError != nil {
+      alert.informativeText += currentLanguage == "en"
+        ? " Recovery drafts also need to be saved; keep waiting to retry their final save."
+        : " 恢复草稿也尚未保存成功；继续等待会重试最后版本的保存。"
+    }
+    alert.addButton(withTitle: finishingNativeTasks && terminationDraftError == nil
+      ? (currentLanguage == "en" ? "Keep waiting" : "继续等待")
+      : (currentLanguage == "en" ? "Keep waiting and retry" : "继续等待并重试"))
+    alert.addButton(withTitle: currentLanguage == "en" ? "Cancel quitting" : "取消退出")
+    alert.buttons[1].isEnabled = !finishingNativeTasks
+    alert.addButton(withTitle: currentLanguage == "en" ? "Force quit" : "强制退出")
+    alert.buttons.last?.hasDestructiveAction = true
+    terminationPrompt = alert
+    let finish: (NSApplication.ModalResponse) -> Void = { [weak self, weak alert] response in
+      guard let self, self.terminationID == requestID, !self.terminationReplySent else { return }
+      if self.terminationPrompt === alert { self.terminationPrompt = nil }
+      switch response {
+      case .alertFirstButtonReturn:
+        if !self.terminationInterfaceShutdownStarted || self.terminationDraftError != nil {
+          self.terminationRetryRequested = true
+        }
+        self.armTerminationDeadline(sender: sender, requestID: requestID,
+          deadline: Date().addingTimeInterval(self.terminationTimeoutSeconds))
+      case .alertSecondButtonReturn:
+        if !self.terminationInterfaceShutdownStarted {
+          self.cancelApplicationTermination(sender: sender, requestID: requestID)
+        }
+      case .alertThirdButtonReturn:
+        self.terminationInterfaceShutdownStarted = true
+        self.terminationTask?.cancel()
+        self.terminationDeadlineWorkItem?.cancel()
+        self.beginBackendStop(sender: sender, requestID: requestID,
+          deadline: Date().addingTimeInterval(BackendProcess.forceKillGraceSeconds + 1))
+      default: break
+      }
+    }
+    if let window, window.isVisible { alert.beginSheetModal(for: window, completionHandler: finish) }
+    else { finish(alert.runModal()) }
+  }
+
+  private func cancelApplicationTermination(sender: NSApplication, requestID: UUID) {
+    guard terminationID == requestID, !terminationInterfaceShutdownStarted,
+          !terminationCancellationRequested else { return }
+    terminationCancellationRequested = true
+    terminationActionTask = Task { [weak self] in
+      guard let self else { return }
+      let attemptID = requestID.uuidString.lowercased()
+      do {
+        if let model = self.appModel { try await model.cancelStorageQuit(attemptID: attemptID) }
+        else if let client = self.backendStorageClient {
+          let observed = try await client.storage(.state())
+          if observed.quit != nil {
+            guard let epoch = self.terminationStorageEpoch else { throw ArkAPIError(message: "退出代次尚未确认") }
+            let state = try await client.storage(.cancelQuit(attemptID: attemptID, epoch: epoch))
+            guard state.quit == nil else { throw ArkAPIError(message: "取消退出尚未确认") }
+          }
+        }
+        guard self.terminationID == requestID, !Task.isCancelled else { return }
+        self.finishApplicationTermination(sender: sender, requestID: requestID, allow: false)
+      } catch {
+        guard self.terminationID == requestID, !Task.isCancelled else { return }
+        self.terminationCancellationRequested = false
+        self.presentTerminationChoices(sender: sender, requestID: requestID)
+      }
+      self.terminationActionTask = nil
+    }
   }
 
   private func beginBackendStop(
@@ -486,10 +669,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   ) {
     guard terminationID == requestID, !terminationReplySent else { return }
     terminationReplySent = true
-    terminationStopWorkItem?.cancel()
     terminationDeadlineWorkItem?.cancel()
-    terminationStopWorkItem = nil
     terminationDeadlineWorkItem = nil
+    terminationTask?.cancel()
+    terminationTask = nil
+    dismissTerminationPrompt()
     if !allow {
       requestedTermination = false
       terminationID = nil

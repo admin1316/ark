@@ -11,9 +11,14 @@ import type { EncodedImageAttachment } from '@deepseek-ai/dsh-attachment/types'
 import type { ImageBlock } from '@deepseek-ai/dsh-llm'
 import { NamedEntries, ScopedLayers } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer } from '@deepseek-ai/dsh-scope'
-import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
-import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
+import type {
+  Session, SessionEvent, SessionEventMap, SessionId, SessionRemoteCommandRequest, SessionRemoteCommandValue,
+} from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-persistence'
+import type {} from '@deepseek-ai/dsh-session-projection'
+import { TypertRemoteService, Remote, TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import { CommandId } from './brand.ts'
+import { commandDigest, commandReceipt, type CommandReceipt } from './receipts.ts'
 import type {
   CommandDescriptor,
   CommandExecution,
@@ -22,6 +27,8 @@ import type {
 } from './types.ts'
 
 export { CommandId } from './brand.ts'
+export { commandDigest, commandReceipt, foldCommandReceipts } from './receipts.ts'
+export type { CommandReceipt, CommandReceipts } from './receipts.ts'
 export type * from './types.ts'
 
 export const name = 'commands'
@@ -47,7 +54,7 @@ export interface CommandInvocation {
    * error so the dispatching composer retains the originals.
    */
   readonly attachments: readonly ImageBlock[]
-  /** Cancellation signal owned by the dispatching UI request. */
+  /** Host activity signal for durable execution; caller signal for local-only dispatch. */
   readonly signal: AbortSignal
 }
 
@@ -249,6 +256,13 @@ function normalizeResult(command: string, value: unknown): CommandResult {
  * globals for that agent.
  */
 export class CommandRuntime extends TypertRemoteService {
+  private readonly active = new Map<SessionId, {
+    invocationId: SessionRemoteCommandRequest['invocationId']
+    digest: string
+    commandId: CommandId
+    operation: Promise<SessionRemoteCommandValue | undefined>
+  }>()
+  private closing = false
   private readonly layers = new ScopedLayers(
     scope => new CommandLayer(scope),
     () => { this.notifyChange() },
@@ -261,6 +275,131 @@ export class CommandRuntime extends TypertRemoteService {
 
   constructor(ctx: Context) {
     super(ctx, 'commands')
+    ctx.effect(() => async () => {
+      this.closing = true
+      await Promise.allSettled([...this.active.values()].map(value => value.operation))
+    }, 'commands: drain owned durable invocations')
+  }
+
+  /**
+   * Test whether a submission identity already belongs to this session's command plane.
+   * @param session - Live or borrowed session.
+   * @param invocationId - Stable caller submission identity.
+   * @returns Whether an active operation or authoritative log receipt owns the identity.
+   */
+  hasInvocation(session: Session, invocationId: SessionRemoteCommandRequest['invocationId']): boolean {
+    const state = this.ctx.get('sessionProjections')?.stateOf(session, 'commandReceipts')
+    return this.active.get(session.id)?.invocationId === invocationId
+      || (state !== undefined && commandReceipt(state, invocationId) !== undefined)
+  }
+
+  /**
+   * Read a receipt before resolving a live Agent; completed cold commands need no model configuration.
+   * @param session - Exact live or borrowed persisted session.
+   * @param request - Original stable command submission.
+   * @param durable - Whether this exact snapshot was read from durable storage.
+   * @returns The original outcome, running state, or undefined for an unclaimed identity.
+   */
+  async receipt(
+    session: Session, request: SessionRemoteCommandRequest, durable: boolean = false,
+  ): Promise<SessionRemoteCommandValue | undefined> {
+    const digest = commandDigest(request)
+    const active = this.active.get(request.sessionId)
+    if (active?.invocationId === request.invocationId) {
+      if (active.digest !== digest) this.conflict()
+      return { state: 'running', commandId: active.commandId }
+    }
+    const state = this.ctx.get('sessionProjections')?.stateOf(session, 'commandReceipts')
+    if (state === undefined) throw new Error('command receipt projection is unavailable')
+    const receipt = commandReceipt(state, request.invocationId)
+    if (receipt === undefined) return undefined
+    if (receipt.conflict || receipt.digest !== digest) this.conflict()
+    if (receipt.doneSeq === null) return { state: 'unknown', commandId: receipt.commandId, reason: 'interrupted' }
+    if (!durable) {
+      try { await this.flush(session) } catch {
+        // The handler has already settled; failed durability must never rerun it.
+        return { state: 'unknown', commandId: receipt.commandId, reason: 'durability-unconfirmed' }
+      }
+    }
+    return this.completed(session, receipt)
+  }
+
+  /**
+   * Admit one durable command; repeats only observe its original invocation.
+   * @param agent - Current receiving Agent resolved by the Host lifecycle owner.
+   * @param request - Stable caller identity and exact command input.
+   * @param signal - Operation lifetime, independent of any transport waiter.
+   * @param assertAdmission - Host-owned synchronous lifecycle and cross-plane identity fence.
+   * @returns A durable result, current state, or undefined for an unmatched command.
+   */
+  async execute(
+    agent: Agent, request: SessionRemoteCommandRequest, signal: AbortSignal, assertAdmission: () => void,
+  ): Promise<SessionRemoteCommandValue | undefined> {
+    if (agent.id !== request.sessionId || agent.session.id !== request.sessionId) throw new Error('command target does not match its Agent')
+    const existing = await this.receipt(agent.session, request)
+    if (existing !== undefined) return existing
+    if (signal.aborted) throw abortError(signal)
+    if (this.closing) throw new Error('command owner is closing')
+    assertAdmission()
+    const pending = this.active.get(agent.id)
+    if (pending?.invocationId === request.invocationId) {
+      if (pending.digest !== commandDigest(request)) this.conflict()
+      return { state: 'running', commandId: pending.commandId }
+    }
+    if (pending !== undefined) throw new TypertRemoteFailure({
+      code: 'command-busy', message: 'another command is still running for this session', details: {},
+    })
+    const parsed = parseCommand(request.line)
+    if (parsed === undefined || this.find(agent, parsed.name) === undefined) return undefined
+    const digest = commandDigest(request)
+    const commandId = this.mintCommandId()
+    const operation = Promise.resolve().then(async (): Promise<SessionRemoteCommandValue | undefined> => {
+      try {
+        const execution = await this.runCommand(agent, request.line, request.images, signal, {
+          request, digest, commandId, assertAdmission,
+        })
+        return execution === undefined ? undefined : { state: 'completed', ...execution }
+      } catch (error: unknown) {
+        const state = this.ctx.get('sessionProjections')?.stateOf(agent.session, 'commandReceipts')
+        if (state !== undefined && commandReceipt(state, request.invocationId) !== undefined) {
+          return { state: 'unknown', commandId, reason: 'durability-unconfirmed' }
+        }
+        throw error
+      }
+    })
+    const owned = { invocationId: request.invocationId, digest, commandId, operation }
+    this.active.set(agent.id, owned)
+    try { return await operation } finally {
+      if (this.active.get(agent.id) === owned) this.active.delete(agent.id)
+    }
+  }
+
+  /**
+   * Await entered handlers and their durability checks before the Host disposes Agents.
+   * @returns After every currently owned command has quiesced.
+   */
+  async whenSettled(): Promise<void> {
+    await Promise.allSettled([...this.active.values()].map(value => value.operation))
+  }
+
+  private conflict(): never {
+    throw new TypertRemoteFailure({ code: 'invocation-conflict', message: 'command invocationId was already used with different input', details: {} })
+  }
+
+  private async flush(session: Session): Promise<void> {
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined || !await this.ctx.sessions.flush(session)) throw new Error('commands require a durability owner')
+    await persistence.ensureMaterialized(session)
+  }
+
+  private completed(session: Session, receipt: CommandReceipt): SessionRemoteCommandValue {
+    const event = receipt.doneSeq === null ? undefined : session.events[receipt.doneSeq]
+    if (event?.type !== 'command/done' || event.data.commandId !== receipt.commandId) throw new Error('command receipt result is missing')
+    const result: CommandResult = event.data.kind === 'error'
+      ? { kind: 'error', text: event.data.text ?? 'command failed' }
+      : { kind: 'success', ...event.data.text === undefined ? {} : { text: event.data.text },
+        ...event.data.sourceEventSeq === undefined ? {} : { sourceEventSeq: event.data.sourceEventSeq } }
+    return { state: 'completed', commandId: receipt.commandId, result }
   }
 
   /**
@@ -326,26 +465,34 @@ export class CommandRuntime extends TypertRemoteService {
    * @returns the settled execution (result + lifecycle pairing id), or
    *   `undefined` when syntax or name does not resolve.
    */
-  @Remote
-  async execute(
+  async executeLocal(
     agent: Agent,
     line: string,
     images: readonly EncodedImageAttachment[],
     signal: AbortSignal,
+  ): Promise<CommandExecution | undefined> {
+    return this.runCommand(agent, line, images, signal)
+  }
+
+  private async runCommand(
+    agent: Agent, line: string, images: readonly EncodedImageAttachment[], signal: AbortSignal,
+    durable?: { request: SessionRemoteCommandRequest; digest: string; commandId: CommandId; assertAdmission: () => void },
   ): Promise<CommandExecution | undefined> {
     const parsed = parseCommand(line)
     if (parsed === undefined) return undefined
     const command = this.view(agent).get(parsed.name)
     if (command === undefined) return undefined
     if (signal.aborted) throw abortError(signal)
-    const commandId = this.mintCommandId()
+    durable?.assertAdmission()
+    const commandId = durable?.commandId ?? this.mintCommandId()
     this.appendLifecycle(agent.session, 'command/run', {
       commandId,
       name: parsed.name,
       ...command.definition.recordInput === false ? {} : { args: parsed.rawInput },
       source: { kind: 'user' },
+      ...durable === undefined ? {} : { invocationId: durable.request.invocationId, inputDigest: durable.digest },
     })
-    const settle = (result: CommandResult): CommandExecution => {
+    const settle = async (result: CommandResult): Promise<CommandExecution> => {
       this.appendLifecycle(agent.session, 'command/done', {
         commandId, kind: result.kind,
         ...result.text === undefined ? {} : { text: result.text },
@@ -353,8 +500,10 @@ export class CommandRuntime extends TypertRemoteService {
           ? { sourceEventSeq: result.sourceEventSeq }
           : {},
       })
+      if (durable !== undefined) await this.flush(agent.session)
       return Object.freeze({ commandId, result: Object.freeze(result) })
     }
+    if (durable !== undefined) await this.flush(agent.session)
     let attachments: readonly ImageBlock[] = NO_ATTACHMENTS
     if (images.length > 0) {
       if (command.definition.input?.images !== true) {
@@ -371,6 +520,7 @@ export class CommandRuntime extends TypertRemoteService {
         if (error instanceof AttachmentError) {
           return settle({ kind: 'error', text: error.message })
         }
+        if (durable !== undefined) return settle({ kind: 'error', text: renderThrown(error) })
         this.settleThrown(agent.session, parsed.name, commandId, error)
         throw error
       }
@@ -380,6 +530,7 @@ export class CommandRuntime extends TypertRemoteService {
       // image objects stay unreferenced and are deferred-GC territory.)
       const cancelledDuringAdmission = cancellationOf(signal)
       if (cancelledDuringAdmission !== undefined) {
+        if (durable !== undefined) return settle({ kind: 'error', text: cancelledDuringAdmission.message })
         this.settleThrown(agent.session, parsed.name, commandId, cancelledDuringAdmission)
         throw cancelledDuringAdmission
       }
@@ -387,9 +538,13 @@ export class CommandRuntime extends TypertRemoteService {
     const invocation = Object.freeze({ commandId, agent, rawInput: parsed.rawInput, attachments, signal })
     let result: CommandResult
     try {
+      if (durable !== undefined) signal.throwIfAborted()
+      durable?.assertAdmission()
       const output = command.definition.handler(invocation)
-      result = normalizeResult(parsed.name, await withAbort(Promise.resolve(output), signal))
+      result = normalizeResult(parsed.name, await (durable === undefined
+        ? withAbort(Promise.resolve(output), signal) : output))
     } catch (error: unknown) {
+      if (durable !== undefined) return settle({ kind: 'error', text: error instanceof Error ? error.message : renderThrown(error) })
       this.settleThrown(agent.session, parsed.name, commandId, error)
       throw error
     }

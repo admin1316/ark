@@ -486,6 +486,7 @@ export class AgentRegistry extends Service {
     // This is the authoritative collision boundary. Concurrent create/resume
     // operations may both prepare, but only one exact entry can publish.
     if (this.store.has(id)) throw new Error(`agent "${id}" is already registered`)
+    this.ctx.emit(carrier, 'agent/publishing', { agent })
     const entry: AgentEntry = {
       id,
       agent,

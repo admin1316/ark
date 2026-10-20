@@ -7,6 +7,7 @@ func runArkDocumentReferenceContractChecks() async {
   await runComposerSharedJournalChecks()
   await runArkComposerCrashRecoveryContractChecks()
   await runArkComposerSessionIsolationContractChecks()
+  await runArkCommandSubmissionContractChecks()
   await runArkKnowledgeIsolationContractChecks()
   await runArkKnowledgeConnectionSaveContractChecks()
   let root = FileManager.default.temporaryDirectory

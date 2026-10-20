@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import LlmRuntime, { CallId, type GenerateOptions, LlmAdapter, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
@@ -15,6 +15,12 @@ const contexts: Context[] = []
 class TestPersistence extends SessionPersistence {
   override readonly supportsRawArtifacts = false
   delete(_id: SessionId): Promise<boolean> { return Promise.reject(new Error('deletion is not used by checkpoint tests')) }
+
+  override writeState() { return { phase: 'healthy' as const, events: 0, bytes: 0, totalEvents: 0, totalBytes: 0,
+    oldestAt: null, lastSuccessAt: null, waitTimeoutMs: 30000, errorCode: null } }
+  override waitForCapacity(_session: Session, signal: AbortSignal): Promise<void> {
+    return signal.aborted ? Promise.reject(signal.reason instanceof Error ? signal.reason : new Error('aborted')) : Promise.resolve()
+  }
 
   locate(_meta: SessionHeader): undefined { return undefined }
   create(_meta: SessionHeader): Promise<void> { return Promise.resolve() }
@@ -60,6 +66,7 @@ async function drain(stream: AsyncIterable<StreamChunk>): Promise<void> {
 }
 
 afterEach(async () => {
+  vi.useRealTimers()
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
 })
 
@@ -271,4 +278,120 @@ describe('session-checkpoint-policy lifecycle', () => {
     expect(unwrapped.inject).toEqual(['llm', 'sessionPersistence', 'sessions', 'tools'])
     expect(typeof unwrapped.apply).toBe('function')
   })
+})
+
+describe('session storage pressure checkpoints', () => {
+  it('times out a producer checkpoint while keeping the original flush alive', async () => {
+    const ctx = await setup()
+    vi.useFakeTimers()
+    const session = ctx.sessions.create(SessionId('deadline-checkpoint'))
+    const healthy = ctx.sessionPersistence.writeState(session)
+    vi.spyOn(ctx.sessionPersistence, 'writeState').mockReturnValue({ ...healthy, waitTimeoutMs: 20 })
+    const gate = Promise.withResolvers<undefined>()
+    let saved = false
+    ctx.on('session/flush', async () => { await gate.promise; saved = true })
+    ctx.llm.registerAdapter(['mock'], new RecordingAdapter([]))
+    const pending = expect(drain(ctx.llm.stream({ provider: 'mock', model: 'mock', messages: [], sessionId: session.id })))
+      .rejects.toMatchObject({ code: 'storage-stalled' })
+    await vi.advanceTimersByTimeAsync(20)
+    await pending
+    expect(saved).toBe(false)
+    gate.resolve(undefined)
+    await Promise.resolve()
+    expect(saved).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('blocks model dispatch immediately when saving has failed or closed', async () => {
+    const ctx = await setup()
+    const session = ctx.sessions.create(SessionId('failed-checkpoint'))
+    const healthy = ctx.sessionPersistence.writeState(session)
+    const read = vi.spyOn(ctx.sessionPersistence, 'writeState')
+    const order: string[] = []
+    ctx.llm.registerAdapter(['mock'], new RecordingAdapter(order))
+    for (const state of [
+      { ...healthy, phase: 'failed' as const, errorCode: 'storage-write-failed' as const },
+      { ...healthy, phase: 'closing' as const, errorCode: null },
+    ]) {
+      read.mockReturnValue(state)
+      await expect(drain(ctx.llm.stream({ provider: 'mock', model: 'mock', messages: [], sessionId: session.id })))
+        .rejects.toMatchObject({ code: state.phase === 'failed' ? 'storage-write-failed' : 'storage-closing' })
+    }
+    expect(order).toEqual([])
+  })
+
+  it('waits for stream capacity even when the request has no cancellation signal', async () => {
+    const ctx = await setup()
+    const session = ctx.sessions.create(SessionId('signal-free-pressure'))
+    const healthy = ctx.sessionPersistence.writeState(session)
+    let pressured = false
+    const gate = Promise.withResolvers<undefined>()
+    vi.spyOn(ctx.sessionPersistence, 'writeState').mockImplementation(() => pressured
+      ? { ...healthy, phase: 'pressured', errorCode: null } : healthy)
+    const capacity = vi.spyOn(ctx.sessionPersistence, 'waitForCapacity').mockImplementation(async () => {
+      await gate.promise
+      pressured = false
+    })
+    class CapacityAdapter extends LlmAdapter {
+      async * stream(): AsyncIterable<StreamChunk> {
+        pressured = true
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+    ctx.llm.registerAdapter(['mock'], new CapacityAdapter())
+    let finished = false
+    const pending = drain(ctx.llm.stream({ provider: 'mock', model: 'mock', messages: [], sessionId: session.id }))
+      .then(() => { finished = true })
+    await vi.waitFor(() => { expect(capacity).toHaveBeenCalledOnce() })
+    expect(finished).toBe(false)
+    gate.resolve(undefined)
+    await pending
+    expect(finished).toBe(true)
+  })
+})
+
+it('waits for capacity before opening the durable checkpoint or a new model request', async () => {
+  const ctx = await setup()
+  const session = ctx.sessions.create(SessionId('initial-capacity'))
+  const healthy = ctx.sessionPersistence.writeState(session)
+  const gate = Promise.withResolvers<undefined>()
+  let pressured = true
+  const order: string[] = []
+  vi.spyOn(ctx.sessionPersistence, 'writeState').mockImplementation(() => pressured
+    ? { ...healthy, phase: 'pressured', errorCode: null } : healthy)
+  vi.spyOn(ctx.sessionPersistence, 'waitForCapacity').mockImplementation(async () => {
+    order.push('capacity')
+    await gate.promise
+    pressured = false
+  })
+  ctx.on('session/flush', () => { order.push('flush') })
+  ctx.llm.registerAdapter(['mock'], new RecordingAdapter(order))
+  const pending = drain(ctx.llm.stream({ provider: 'mock', model: 'mock', messages: [], sessionId: session.id }))
+  expect(order).toEqual(['capacity'])
+  gate.resolve(undefined)
+  await pending
+  expect(order).toEqual(['capacity', 'flush', 'adapter'])
+})
+
+it('uses the tool owner cancellation fence if cancellation arrives after the checkpoint', async () => {
+  const ctx = await setup()
+  const session = ctx.sessions.create(SessionId('post-checkpoint-cancel'))
+  const controller = new AbortController()
+  let checkpointed = false
+  let ran = false
+  ctx.on('session/flush', () => { checkpointed = true })
+  ctx.on('tools/execute', (_exec, next) => {
+    expect(checkpointed).toBe(true)
+    controller.abort(new Error('cancelled before dispatch'))
+    return next()
+  })
+  ctx.tools.register({
+    name: 'write', description: 'synthetic side effect', parameters: {},
+    output: { schema: { type: 'null' }, render: () => [] },
+    execute: async () => { ran = true; return null },
+  })
+  const result = await ctx.tools.execute({ callId: CallId('late-cancel'), name: 'write', arguments: {},
+    agent: { session } as Agent, signal: controller.signal })
+  expect(result).toMatchObject({ isError: true, error: { info: { code: TOOL_ABORTED_BEFORE_DISPATCH } } })
+  expect(ran).toBe(false)
 })

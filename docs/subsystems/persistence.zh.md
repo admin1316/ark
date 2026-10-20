@@ -8,7 +8,9 @@
 
 ## flush 检查点
 
-`session/event` 是一个*同步*通知；持久化插件会将事件复制到逐会话控制器，而不阻塞生产方。第一个待处理事件会开启固定批处理窗口，后续事件会加入但不会重置截止时间。窗口到期后会启动一个持久化批次；该次写入期间接纳的事件会获得自己的截止时间，并形成后续批次。`session/flush` 会取消等待并排空至完全停稳，因此循环仍将其用作在领取下一个普通轮次之前的顺序与错误观察检查点。后台写入被拒绝时会保留对应事件并暂停自动重试；新事件会开启新的固定窗口，而显式 flush 会立即重试，并通过 `agent/error` 和 logger 报告失败，绝不会把失败记录成已关闭轮次之后的会话事件。dispose（资源释放）会执行同样的最终排空。配置的最大值只限制有意的批处理等待，不限制事件循环调度或后端完成持久化的延迟（[决策](../../.agents/notes/implemented/architecture/2026-08-08-bounded-session-persistence-write-batching.zh.md)）。
+`session/committed` 同步将完整追加组交给持久化，而不阻塞生产方；`session/event` 仍是逐条投影流。第一个待处理事件会开启固定批处理窗口，后续事件会加入但不会重置截止时间。窗口到期后会启动一个持久化批次；该次写入期间接纳的事件会获得自己的截止时间，并形成后续批次。`session/flush` 取消等待，并将该确切拥有方排空至完全停稳。写入被拒绝时保留事件并暂停自动重试；显式保存重试保留的拥有方。`flushAll()` 还包括初始化失败与已离开活跃注册表的退役会话。取消检查点等待不会取消其所属写入器。[持久化包](../../packages/session/session-persistence/README.zh.md)拥有计数与排空语义，[检查点策略](../../packages/session/session-checkpoint-policy/README.zh.md)拥有生产方等待与取消。
+
+`SessionWriteState` 报告所选及全部拥有方的未确认事件／序列化字节计数、最早待处理时间与最近成功确认时间。其健康判别将 `failed` 绑定到具体存储错误；`healthy` 与 `pressured` 没有错误。这些计数不含事件载荷或后端异常字符串，也不衡量 JavaScript 堆内存。健康快照不等于持久化确认：安全退出等待拥有方全量保存屏障。
 
 ## 崩溃恢复保留被中断的轮次
 
@@ -302,6 +304,27 @@ ensureMaterialized(_session: Session): Promise<void>
  * @param events - the contiguous batch to persist, in seq order.
  */
 abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
+
+/**
+ * Inspect unconfirmed writes without loading a cold session.
+ * @param _session - optional exact selected live session.
+ * @returns current session and coordinator write health.
+ */
+writeState(_session?: Session): SessionWriteState
+
+/**
+ * Await low water without cancelling retained writes.
+ * @param _session - exact producer lifecycle.
+ * @param _signal - cancellation of this capacity wait.
+ * @returns when the producer may continue.
+ */
+waitForCapacity(_session: Session, _signal: AbortSignal): Promise<void>
+
+/**
+ * Drain every persistence-owned lifecycle, including failed initialization and retired sessions.
+ * @returns confirmation that all retained writes reached durable storage.
+ */
+flushAll(): Promise<void>
 
 /**
  * Permanently remove an unowned session and await derived-data cleanup.

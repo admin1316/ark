@@ -12,6 +12,7 @@ import type {
   AgentStatus,
   CancelOptions,
   InboxTarget,
+  InboxPreview,
   PreStepDecision,
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
@@ -122,14 +123,15 @@ type Phase =
     step: number
     wakeRequested: boolean
     budget?: TurnBudget
+    preview?: InboxPreview
     residual: ReturnType<typeof Promise.withResolvers<AgentQuiescenceResidual>>
   }
 
 type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }>
 
 type PreparedStep =
-  | { kind: 'reject' }
-  | { kind: 'enter'; messages: UserMessage[]; assembly: PromptAssembly }
+  | { kind: 'reject'; preview: InboxPreview }
+  | { kind: 'enter'; messages: UserMessage[]; assembly: PromptAssembly; preview: InboxPreview }
 
 type ActivityBoundary = {
   done: Promise<void>
@@ -541,23 +543,32 @@ export class ReactLoopAgent implements Agent {
     /* v8 ignore next -- private callers establish the running phase before proposing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
     const signal = this.phase.abort.signal
-    const claimed = this.inbox.claim(target, position.turn)
-    const assembly = await budget.monitor(
-      'system-prompt',
-      () => this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal)),
-    )
-    signal.throwIfAborted()
+    const phase = this.phase
+    let preview: InboxPreview
+    let assembly: PromptAssembly
+    do {
+      preview = this.inbox.preview(target)
+      phase.preview = preview
+      assembly = await budget.monitor(
+        'system-prompt',
+        () => this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal)),
+      )
+      signal.throwIfAborted()
+    } while (!this.inbox.isCurrent(preview))
     const sections = renderContextSections(assembly)
     const context = this.runtimeContext.project(joinContextSections(sections), sections)
     const decision = await budget.monitor('pre-step', () => this.dispatch.waterfall(
-      'agent/pre-step', { messages: claimed, ...position, signal },
+      'agent/pre-step', { messages: [...preview.messages], ...position, signal },
       (): Promise<PreStepDecision> => Promise.resolve<PreStepDecision>({
         kind: 'enter',
-        messages: context === undefined ? claimed : [...claimed, context],
+        messages: context === undefined ? [...preview.messages] : [...preview.messages, context],
       }),
     ))
     signal.throwIfAborted()
-    return decision.kind === 'reject' ? decision : { ...decision, assembly }
+    if (!this.inbox.isCurrent(preview)) {
+      throw new Error('pending input changed during pre-step preparation; input was preserved and preparation was not retried')
+    }
+    return decision.kind === 'reject' ? { ...decision, preview } : { ...decision, assembly, preview }
   }
 
   /** Open one turn before claiming its first proposed step. */
@@ -591,24 +602,30 @@ export class ReactLoopAgent implements Agent {
         const step = phase.step + 1
         const decision = await this.preStep(target, { turn, step }, budget)
         if (decision.kind === 'reject') {
+          this.inbox.commit(decision.preview, turn, [])
           turnEnds = { kind: 'blocked' }
           return false
         }
-        if (turnEnds && decision.messages.length === 0) break
+        if (turnEnds && decision.messages.length === 0) {
+          this.inbox.commit(decision.preview, turn, [])
+          break
+        }
         // A removed waking message or an enter decision rewritten to empty
         // still owns the initial turn boundary, but it spends no model call.
         if (phase.step === 0 && decision.messages.length === 0) {
+          this.inbox.commit(decision.preview, turn, [])
           turnEnds = { kind: 'completed' }
           return false
         }
         signal.throwIfAborted()
         budget.consumeStep()
-        this.session.append('step/start', { turn, step })
+        if (!this.inbox.commit(decision.preview, turn, [
+          { type: 'step/start', data: { turn, step } },
+          ...decision.messages.map(data => ({ type: 'user/message' as const, data, surfaceOp: 'append' as const })),
+        ])) throw new Error('pending input changed before commit; input was preserved')
+        delete phase.preview
         phase.step = step
         try {
-          for (const message of decision.messages) {
-            this.session.append('user/message', message, { surfaceOp: 'append' })
-          }
           // max-tokens is sticky: once any step hits the ceiling, later steps
           // that complete normally must not downgrade the turn outcome.
           const stepEnd = await this.step(decision.assembly, budget)
@@ -634,7 +651,7 @@ export class ReactLoopAgent implements Agent {
         }
         // Follow-ups are separate user intent, not work owned by the exhausted
         // turn. Replay them under a fresh turn budget after this driver closes.
-        phase.wakeRequested ||= this.inbox.nextTurn.length > 0
+        phase.wakeRequested ||= this.inbox.nextTurn.some(message => !phase.preview?.messages.includes(message))
         return false
       }
       if (signal.aborted) {

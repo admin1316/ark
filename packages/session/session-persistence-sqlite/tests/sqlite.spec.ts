@@ -115,6 +115,24 @@ function chunkLog(count: number): SessionEvent[] {
   ]
 }
 
+it('rolls back every member of an atomic input batch when a later insert fails', async () => {
+  const store = new SqliteStore({ path: await freshDbPath('dsh-atomic-sqlite-'), journalMode: 'wal', busyTimeoutMs: 5_000 })
+  const header = meta(SessionId('atomic-insert-failure'))
+  try {
+    await store.appendBatch(header, [chunk(0)], false)
+    const owner = store as unknown as { insertRecord(...args: unknown[]): void }
+    const insert = owner.insertRecord.bind(owner)
+    const fault = vi.spyOn(owner, 'insertRecord')
+      .mockImplementationOnce((...args) => { insert(...args) })
+      .mockImplementationOnce(() => { throw new Error('synthetic failure after first member') })
+    await expect(store.appendBatch(header, [chunk(1), chunk(2)], true)).rejects.toThrow('synthetic failure')
+    fault.mockRestore()
+    expect((await store.loadStored(header.id))?.events).toEqual([chunk(0)])
+    await store.appendBatch(header, [chunk(1), chunk(2)], true)
+    expect((await store.loadStored(header.id))?.events).toEqual([chunk(0), chunk(1), chunk(2)])
+  } finally { await store.close() }
+})
+
 async function measureWriteTraffic(
   path: string,
   events: readonly SessionEvent[],

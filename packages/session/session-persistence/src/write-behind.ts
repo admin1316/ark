@@ -1,64 +1,87 @@
-/**
- * Bounded per-session write batching for the shared persistence coordinator.
- * @module @deepseek-ai/dsh-session-persistence/write-behind
- */
+/** Ordered, lossless live-session writes with explicit atomic group boundaries. */
+import { Buffer } from 'node:buffer'
+import type { SessionAtomicGroup, SessionEvent } from '@deepseek-ai/dsh-session'
 
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+/** Unconfirmed work includes the active batch until its durable acknowledgement. */
+export interface SessionWriteQueueState {
+  readonly initializing?: boolean
+  readonly events: number
+  readonly bytes: number
+  readonly oldestAt: number | null
+  readonly lastSuccessAt: number | null
+  readonly failed: boolean
+}
 
 /** Dependencies and scheduling policy for one live session's write controller. */
 export interface SessionWriteBehindOptions {
-  /** Maximum intentional batching wait after an idle queue receives work. */
   readonly maxDelayMs: number
-  /** Persist one stable ordered prefix; resolves only after backend durability. */
-  readonly write: (events: readonly SessionEvent[]) => Promise<void>
-  /** Observe a detached background write failure without rejecting the producer. */
+  readonly write: (events: readonly SessionEvent[], atomicGroups: readonly SessionAtomicGroup[]) => Promise<void>
   readonly reportBackgroundFailure: (error: unknown) => void
+  readonly stateChanged?: (state: SessionWriteQueueState) => void
 }
 
-/**
- * Owns one live session's pending events, fixed batching deadline, active write,
- * failure retention, and explicit quiescence barrier.
- */
+/** One writer owns retained events, group boundaries and every durability barrier. */
 export class SessionWriteBehind {
   private pending: SessionEvent[] = []
+  private groups: SessionAtomicGroup[] = []
+  private pendingSince: number | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private active: Promise<void> | undefined
   private barrier: Promise<void> | undefined
   private deadlineExpired = false
   private automaticPaused = false
+  private eventCount = 0
+  private byteCount = 0
+  private oldestAt: number | null = null
+  private lastSuccessAt: number | null = null
+  private failed = false
 
-  /**
-   * @param options - fixed scheduling policy and durable batch sink.
-   */
   constructor(private readonly options: SessionWriteBehindOptions) {}
 
-  /** Whether this controller owns queued events or an active durable write. */
-  get hasWork(): boolean {
-    return this.pending.length > 0 || this.active !== undefined
+  /** Whether retained or actively written events still need acknowledgement. */
+  get hasWork(): boolean { return this.eventCount > 0 || this.active !== undefined }
+
+  /** Detached accounting snapshot, never a copy of event payloads. */
+  get state(): SessionWriteQueueState {
+    return { events: this.eventCount, bytes: this.byteCount, oldestAt: this.oldestAt,
+      lastSuccessAt: this.lastSuccessAt, failed: this.failed }
   }
 
   /**
-   * Copy one event into the persistence-owned queue and start a fixed deadline
-   * when the automatic path is idle.
-   * @param event - frozen live event to retain independently of its producer.
+   * Retain one ordinary event.
+   * @param event - committed canonical event.
    */
-  enqueue(event: SessionEvent): void {
+  enqueue(event: SessionEvent): void { this.enqueueBatch([event], false) }
+
+  /**
+   * Retain a complete commit without splitting its atomic boundary.
+   * @param events - contiguous committed events.
+   * @param atomic - whether all events must recover as one group.
+   */
+  enqueueBatch(events: readonly SessionEvent[], atomic: boolean): void {
+    const first = events[0]
+    if (first === undefined) return
     const wasEmpty = this.pending.length === 0
-    this.pending.push(structuredClone(event))
+    const copies = events.map(event => structuredClone(event))
+    const now = Date.now()
+    this.pending.push(...copies)
+    if (atomic) this.groups.push({ firstSeq: first.seq, count: copies.length })
+    this.pendingSince ??= now
+    this.oldestAt ??= now
+    this.eventCount += copies.length
+    this.byteCount += copies.reduce((sum, event) => sum + Buffer.byteLength(JSON.stringify(event)), 0)
+    this.publish()
     if (this.barrier !== undefined) return
     if (this.automaticPaused) {
       this.automaticPaused = false
       this.deadlineExpired = false
       this.armTimer()
-    } else if (wasEmpty) {
-      this.armTimer()
-    }
+    } else if (wasEmpty) this.armTimer()
   }
 
   /**
-   * Cancel the batching wait and durably drain through a quiescent point.
-   * Concurrent callers join the same barrier.
-   * @returns a promise that rejects if the barrier's durable retry fails.
+   * Drain through quiescence. Cancelling a caller never cancels this owned write.
+   * @returns the shared durability acknowledgement.
    */
   flush(): Promise<void> {
     if (this.barrier !== undefined) return this.barrier
@@ -71,55 +94,34 @@ export class SessionWriteBehind {
     return barrier.promise
   }
 
-  /** Cancel the current automatic deadline without draining retained work. */
-  cancelAutomaticWait(): void {
-    this.cancelTimer()
-    this.deadlineExpired = false
-  }
+  /** Cancel scheduling without dropping retained work. */
+  cancelAutomaticWait(): void { this.cancelTimer(); this.deadlineExpired = false }
 
-  /** Start the one fixed window for the current pending prefix. */
+  private publish(): void { this.options.stateChanged?.(this.state) }
   private armTimer(): void {
+    this.cancelTimer()
     this.timer = setTimeout(() => { this.onDeadline() }, this.options.maxDelayMs)
   }
-
-  /** Cancel any pending automatic deadline. */
   private cancelTimer(): void {
-    if (this.timer === undefined) return
-    clearTimeout(this.timer)
+    if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
   }
-
-  /** Start a background write now, or remember that an active write used the budget. */
   private onDeadline(): void {
     this.timer = undefined
-    if (this.active !== undefined) {
-      this.deadlineExpired = true
-      return
-    }
+    if (this.active !== undefined) { this.deadlineExpired = true; return }
     this.startBackground()
   }
-
-  /** Start one detached write whose failure is reported and retained. */
   private startBackground(): void {
-    const active = this.startWrite(true)
-    void active.then(() => { this.continueAutomatic() }, () => {})
+    void this.startWrite(true).then(() =>{  this.continueAutomatic() }, () => {})
   }
-
-  /** Continue immediately after an over-budget active write, otherwise keep its timer. */
   private continueAutomatic(): void {
     if (this.barrier !== undefined || this.pending.length === 0) return
-    if (this.deadlineExpired) {
-      this.deadlineExpired = false
-      this.startBackground()
-    }
+    if (this.deadlineExpired) { this.deadlineExpired = false; this.startBackground() }
   }
-
-  /** Await overlapping work, drain to quiescence, and settle the shared barrier. */
   private async drainBarrier(resolve: () => void, reject: (reason?: unknown) => void): Promise<void> {
     try {
-      const overlapping = this.active
-      if (overlapping !== undefined) {
-        await Promise.allSettled([overlapping])
+      if (this.active !== undefined) {
+        await Promise.allSettled([this.active])
         this.automaticPaused = false
       }
       while (this.pending.length > 0) await this.startWrite(false)
@@ -128,31 +130,37 @@ export class SessionWriteBehind {
       reject(error)
       return
     }
-    // Close admission to this barrier in the same job that observes the empty
-    // queue, before resolving callers. A later enqueue therefore starts its own
-    // automatic window instead of being stranded behind a settled barrier.
     this.barrier = undefined
     resolve()
   }
-
-  /** Start one stable pending prefix, retaining it in order if durability fails. */
   private startWrite(background: boolean): Promise<void> {
     const batch = this.pending.splice(0)
+    const groups = this.groups.splice(0)
+    const since = this.pendingSince
+    this.pendingSince = null
+    const bytes = batch.reduce((sum, event) => sum + Buffer.byteLength(JSON.stringify(event)), 0)
     this.cancelTimer()
     this.deadlineExpired = false
-    const operation = Promise.resolve().then(() => this.options.write(batch))
-    const active = operation
-      .catch((error: unknown) => {
-        this.pending = batch.concat(this.pending)
-        this.cancelTimer()
-        this.deadlineExpired = false
-        this.automaticPaused = true
-        if (background) this.options.reportBackgroundFailure(error)
-        throw error
-      })
-      .finally(() => {
-        this.active = undefined
-      })
+    const active = Promise.resolve().then(() => this.options.write(batch, groups)).then(() => {
+      this.eventCount -= batch.length
+      this.byteCount -= bytes
+      this.oldestAt = this.pendingSince
+      this.lastSuccessAt = Date.now()
+      this.failed = false
+      this.publish()
+    }).catch((error: unknown) => {
+      this.pending = batch.concat(this.pending)
+      this.groups = groups.concat(this.groups)
+      this.pendingSince = since
+      this.oldestAt = this.pendingSince
+      this.failed = true
+      this.cancelTimer()
+      this.deadlineExpired = false
+      this.automaticPaused = true
+      this.publish()
+      if (background) this.options.reportBackgroundFailure(error)
+      throw error
+    }).finally(() => { this.active = undefined })
     this.active = active
     return active
   }

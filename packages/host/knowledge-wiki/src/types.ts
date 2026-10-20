@@ -263,6 +263,12 @@ export interface IngestQueueTask {
   readonly error?: string
   /** Epoch ms of the last failure (error tasks); used for retry cooldown. */
   readonly failedAt?: number
+  /** Content and extraction-policy identity that prevents automatic retries of permanent failures. */
+  readonly permanentFailure?: {
+    readonly code: KnowledgeFileErrorCode
+    readonly sourceHash: string
+    readonly policyHash: string
+  }
   /** Non-fatal warnings retained with a successful outcome. */
   readonly warnings?: string[]
 }
@@ -278,8 +284,20 @@ export interface IngestQueueSnapshot {
 export interface ResearchResult {
   readonly errorCode?: KnowledgeResearchResult['errorCode']
   readonly written: string[]
+  readonly pageSources: Record<string, string[]>
+  readonly sources: ResearchSource[]
   readonly sourceCount: number
   readonly warnings: string[]
+}
+
+/** Permanent local extraction failures; source or policy changes permit another attempt. */
+export type KnowledgeFileErrorCode = 'unsupported-format' | 'binary-content' | 'invalid-utf8' | 'source-too-large' | 'invalid-text' | 'empty-content'
+
+/** A real search result; a search snippet is not proof that its full page was read. */
+export interface ResearchSource {
+  readonly url: string
+  readonly title?: string
+  readonly evidence: 'search-snippet'
 }
 
 /** Required identity on every project-scoped knowledge operation. */
@@ -304,9 +322,10 @@ export interface WikiProjectRegistry {
 
 /** Complete user-visible research status. */
 export interface KnowledgeResearchResult {
-  readonly findings: Array<{ title: string; path: string }>
+  readonly findings: Array<{ title: string; path: string; sourceURLs: string[] }>
+  readonly sources: ResearchSource[]
   readonly sourceCount: number
   readonly warnings: string[]
   readonly degraded: boolean
-  readonly errorCode?: 'web-search-unavailable' | 'no-sources' | 'invalid-queries' | 'stage-executor-unavailable' | 'research-failed' | 'cancelled' | 'timeout'
+  readonly errorCode?: 'web-search-unavailable' | 'no-sources' | 'invalid-queries' | 'stage-executor-unavailable' | 'research-failed' | 'invalid-output' | 'invalid-citations' | 'no-pages' | 'cancelled' | 'timeout'
 }

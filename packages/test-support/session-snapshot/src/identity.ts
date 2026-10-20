@@ -1,4 +1,5 @@
 /** Relationship-preserving identity redaction for committed session snapshots. */
+import { expandAtomicSessionLog } from './storage-records.ts'
 
 const UUID_FRAGMENT_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 const LEGACY_TOKEN_RE = /^\{\{(?:sessionId|messageId)\}\}$/
@@ -18,7 +19,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseLog(log: string): ParsedLog {
   return {
-    records: log.split(/\r?\n/)
+    records: expandAtomicSessionLog(log).split(/\r?\n/)
       .filter(line => line.trim() !== '')
       .map(line => JSON.parse(line) as Record<string, unknown>),
     trailingNewline: log.endsWith('\n'),

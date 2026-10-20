@@ -90,7 +90,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:356`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:363`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:392`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:424`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:356`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:363`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:392`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:436`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -260,7 +260,7 @@ Source: [`packages/core/session/src/types.ts:293`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/interaction/commands/src/types.ts:103`](../packages/interaction/commands/src/types.ts)
+Source: [`packages/interaction/commands/src/types.ts:112`](../packages/interaction/commands/src/types.ts)
 
 <a id="commandrun--log-only"></a>
 
@@ -277,7 +277,16 @@ Source: [`packages/interaction/commands/src/types.ts:103`](../packages/interacti
  * a line. `args` is absent when the definition sets `recordInput: false`
  * because an authoritative domain event owns the input payload.
  */
-'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource }
+'command/run': {
+  commandId: CommandId
+  name: string
+  args?: string
+  source: CommandSource
+  /** Stable caller identity; absent for historical/local-only commands. */
+  invocationId?: import('@deepseek-ai/dsh-session').SessionPromptInvocationId
+  /** Versioned fingerprint of the exact submitted command and images. */
+  inputDigest?: string
+}
 ```
 
 Source: [`packages/interaction/commands/src/types.ts:96`](../packages/interaction/commands/src/types.ts)

@@ -9,6 +9,28 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { SessionPreparation } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionPersistenceRevision } from './revision.ts'
+import type { SessionWriteState } from './write-pressure.ts'
+
+export { DEFAULT_WRITE_PRESSURE, resolveWritePressure, SessionStorageUnavailable } from './write-pressure.ts'
+export type { SessionWritePressureConfig, SessionWriteState } from './write-pressure.ts'
+
+/**
+ * Observe an owned save or quiescence barrier without cancelling its work.
+ * @param operation - promise whose owner retains responsibility until settlement.
+ * @param signal - cancellation of this caller's wait only.
+ * @returns the original result, or an abort error while the owner keeps running.
+ */
+export function waitForPersistenceOperation<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = (): void => {
+      signal.removeEventListener('abort', abort)
+      reject(signal.reason instanceof Error ? signal.reason : new Error('aborted'))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    void operation.then(resolve, reject).finally(() => { signal.removeEventListener('abort', abort) })
+    if (signal.aborted) abort()
+  })
+}
 
 // Re-export the metadata vocabulary so Consumers import it from the Service Definition.
 export type { SessionHeader } from '@deepseek-ai/dsh-session'
@@ -181,6 +203,33 @@ export abstract class SessionPersistence extends Service {
    * @param events - the contiguous batch to persist, in seq order.
    */
   abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
+
+  /**
+   * Inspect unconfirmed writes without loading a cold session.
+   * @param _session - optional exact selected live session.
+   * @returns current session and coordinator write health.
+   */
+  writeState(_session?: Session): SessionWriteState {
+    throw new Error('session persistence provider does not expose write health')
+  }
+
+  /**
+   * Await low water without cancelling retained writes.
+   * @param _session - exact producer lifecycle.
+   * @param _signal - cancellation of this capacity wait.
+   * @returns when the producer may continue.
+   */
+  waitForCapacity(_session: Session, _signal: AbortSignal): Promise<void> {
+    return Promise.reject(new Error('session persistence provider does not expose capacity waits'))
+  }
+
+  /**
+   * Drain every persistence-owned lifecycle, including failed initialization and retired sessions.
+   * @returns confirmation that all retained writes reached durable storage.
+   */
+  flushAll(): Promise<void> {
+    return Promise.reject(new Error('session persistence provider does not expose an owner-wide save barrier'))
+  }
 
   /**
    * Permanently remove an unowned session and await derived-data cleanup.

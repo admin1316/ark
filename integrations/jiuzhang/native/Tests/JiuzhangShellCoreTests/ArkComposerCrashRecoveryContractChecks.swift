@@ -14,7 +14,7 @@ func runArkComposerCrashRecoveryChildIfRequested() async -> Int32? {
     if mode == "write" {
       let reference = try await store.importPastedText("独立进程文档", name: "synthetic.txt")
       var document = ArkComposerDraftDocument(text: "独立进程待确认消息")
-      document.prepareSubmission(mode: .steer, timeZone: "Asia/Shanghai")
+      document.prepareSubmission(mode: .steer, timeZone: "Asia/Shanghai", permissionPreset: "workspace-write")
       let journal = try await store.persistDraftAttachments(
         images: [ArkPromptImage(mediaType: .png, data: Data([4, 5, 6]), name: "synthetic.png")], documents: [reference])
       try await store.persistPendingSubmission(document: document, sessionID: "crash-session", journalIdentifier: journal)
@@ -30,6 +30,7 @@ func runArkComposerCrashRecoveryChildIfRequested() async -> Int32? {
     let inflight = try await store.restoreInflightSubmissions(sessionID: "crash-session")
     guard inflight.count == 1, inflight[0].document.text == "独立进程待确认消息",
       inflight[0].document.submissionMode == .steer, inflight[0].document.submissionTimeZone == "Asia/Shanghai",
+      inflight[0].document.submissionPermissionPreset == "workspace-write",
       inflight[0].document.submissionID != nil, inflight[0].images.map(\.data) == [Data([4, 5, 6])],
       inflight[0].documents.count == 1 else { return 4 }
     return 0

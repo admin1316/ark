@@ -69,8 +69,8 @@ function domainEvents(session: Session): readonly Session['events'][number][] {
 }
 
 /** Execute `/goal` through the same registry boundary as a UI adapter. */
-async function run(test: Harness, suffix = ''): Promise<NonNullable<Awaited<ReturnType<CommandRuntime['execute']>>>['result']> {
-  const execution = await test.ctx.commands.execute(
+async function run(test: Harness, suffix = ''): Promise<NonNullable<Awaited<ReturnType<CommandRuntime['executeLocal']>>>['result']> {
+  const execution = await test.ctx.commands.executeLocal(
     test.agent,
     `/goal${suffix}`,
     [],
@@ -267,7 +267,7 @@ describe('/goal image attachments', () => {
     const images = Array.from({ length: count }, (_, index) => ({
       mediaType: 'image/png' as const, data: PNG, name: `ref-${index + 1}.png`,
     }))
-    const execution = await test.ctx.commands.execute(test.agent, `/goal${suffix}`, images, new AbortController().signal)
+    const execution = await test.ctx.commands.executeLocal(test.agent, `/goal${suffix}`, images, new AbortController().signal)
     if (execution === undefined) throw new Error('goal command was not registered')
     return execution.result
   }

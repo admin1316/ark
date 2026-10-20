@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-08-bounded-session-persistence-write-batching.zh.md)
 
+The [save-pressure decision](../bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.md) owns acknowledgement-aware backpressure and quit authority. This note continues to own fixed-window scheduling and its crash-loss limits.
+
 ## Problem
 
 Streaming responses can emit many `assistant/chunk` events in a short interval. The persistence coordinator previously scheduled a backend append as soon as an idle queue received one event. Events arriving while that append was active shared a follow-up batch, but a fast backend could still produce many small durable appends. Each JSONL append creates and syncs a Zstandard frame or raw suffix, while each SQLite append opens and commits a transaction and increments the session revision.

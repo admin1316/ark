@@ -317,13 +317,14 @@ function assertToolResultRewrite(
   shadowedSeqs: readonly number[],
   events: readonly SessionEvent[],
   baseSeq: number,
+  additionalEvents: readonly SessionEvent[] = [],
 ): void {
   if (event.type !== 'tool/result') return
   if (shadowedSeqs.length !== 1) {
     throw new Error('tool/result surface replacement must rewrite exactly one current node')
   }
   for (const originalSeq of shadowedSeqs) {
-    const original = events[originalSeq - baseSeq]
+    const original = events[originalSeq - baseSeq] ?? additionalEvents[originalSeq - baseSeq - events.length]
     if (original?.type !== 'tool/result') {
       throw new Error('tool/result surface replacement must target a current tool/result')
     }
@@ -352,6 +353,7 @@ function planSurfaceEvent(
   expectedSeq: number,
   events: readonly SessionEvent[],
   baseSeq: number,
+  additionalEvents: readonly SessionEvent[] = [],
 ): SurfacePlan | undefined {
   if (event.seq !== expectedSeq) {
     throw new Error(`session event seq ${event.seq} is not contiguous; expected ${expectedSeq}`)
@@ -364,7 +366,7 @@ function planSurfaceEvent(
   }
   const range = replacementRange(state, surfaceOp)
   assertProvenance(event, range.shadowedSeqs)
-  assertToolResultRewrite(event, range.shadowedSeqs, events, baseSeq)
+  assertToolResultRewrite(event, range.shadowedSeqs, events, baseSeq, additionalEvents)
   return {
     kind: 'replace',
     seq: event.seq,
@@ -453,6 +455,19 @@ export class SurfaceManager implements SessionSurface {
       event,
       expectedSeq,
       plan: planSurfaceEvent(this._state, event, expectedSeq, this.log, this.baseSeq),
+    }
+  }
+
+  /**
+   * Validate a complete group without changing the log or committed projection.
+   * @param events - contiguous candidates immediately following the live log.
+   */
+  validateBatch(events: readonly SessionEvent[]): void {
+    if (this._lastProcessedSeq < this.baseSeq + this.log.length - 1) this._processDelta()
+    const state = { nodes: [...this._state.nodes], replaceGeneration: this._state.replaceGeneration }
+    for (const [index, event] of events.entries()) {
+      applySurfacePlan(state, planSurfaceEvent(state, event, this.baseSeq + this.log.length + index,
+        this.log, this.baseSeq, events))
     }
   }
 

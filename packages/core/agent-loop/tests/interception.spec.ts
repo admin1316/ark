@@ -59,6 +59,68 @@ function events(agent: Agent): SessionEvent[] {
 }
 
 describe('agent/pre-step', () => {
+  it('preserves accepted input when cancelled while an asynchronous pre-step waits', async () => {
+    const adapter = new MockAdapter([textResponse('unused')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('cancel-prepared-input'), { provider: 'mock', model: 'mock' })
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    ctx.on('agent/pre-step', async (_payload, next) => {
+      entered.resolve(undefined)
+      await release.promise
+      return next()
+    })
+    send(agent, 'must survive')
+    await entered.promise
+    agent.cancel({ kind: 'hook', reason: 'synthetic storage pressure' }, { keepInbox: true })
+    release.resolve(undefined)
+    await agent.whenIdle()
+    expect(agent.inbox.nextTurn.map(message => message.content[0])).toEqual([{ type: 'text', text: 'must survive' }])
+    expect(agent.session.events.some(event => event.type === 'user/message')).toBe(false)
+    expect(adapter.requests).toHaveLength(0)
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps an edited input and never reruns an already-invoked pre-step automatically', async () => {
+    const adapter = new MockAdapter([textResponse('unused')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('edited-prepared-input'), { provider: 'mock', model: 'mock' })
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    let calls = 0
+    ctx.on('agent/pre-step', async (_payload, next) => {
+      calls++
+      entered.resolve(undefined)
+      await release.promise
+      return next()
+    })
+    send(agent, 'original')
+    await entered.promise
+    const queued = agent.inbox.nextTurn[0]!
+    const replacement = createUserMessage({ content: [{ type: 'text', text: 'edited' }], source: { kind: 'user' } })
+    expect(agent.inbox.replace(queued.id, replacement)).toBe(true)
+    release.resolve(undefined)
+    await agent.whenIdle()
+    expect(calls).toBe(1)
+    expect(agent.inbox.nextTurn[0]?.content).toEqual(replacement.content)
+    expect(adapter.requests).toHaveLength(0)
+    expect(agent.session.events.some(event => event.type === 'step/start')).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
+  it('commits inbox consumption, step start and accepted user messages in one persistence group', async () => {
+    const ctx = await harness(new MockAdapter([textResponse('ok')]))
+    const agent = ctx.agentLoop.create(SessionId('prepared-step-group'), { provider: 'mock', model: 'mock' })
+    const captured: SessionEvent[][] = []
+    ctx.on('session/committed', (session, committed, atomic) => {
+      if (session === agent.session && atomic && committed.some(event => event.type === 'step/start')) captured.push([...committed])
+    })
+    send(agent, 'commit once')
+    await agent.whenIdle()
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.map(event => event.type)).toEqual(['agent/inbox/spliced', 'step/start', 'user/message'])
+    await ctx.fiber.dispose()
+  })
   it('enter (default via next) records the user/message unchanged', async () => {
     const adapter = new MockAdapter([textResponse('ok')])
     const ctx = await harness(adapter)
@@ -549,7 +611,7 @@ describe('agent/pre-step', () => {
     expect(statuses).toEqual(['running', 'idle'])
     expect(adapter.requests).toHaveLength(0)
     expect(agent.inbox.nextTurn.map(message => message.content[0]))
-      .toEqual([{ type: 'text', text: 'second' }])
+      .toEqual([{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }])
   })
 })
 

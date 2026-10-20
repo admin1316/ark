@@ -13,7 +13,10 @@
  */
 
 import { Buffer } from 'node:buffer'
+import { StorageLifecycle } from './storage-lifecycle.ts'
+import { SessionStorageUnavailable } from '@deepseek-ai/dsh-session-persistence'
 import { installPromptReceipts, promptDigest, type PromptReceipt } from './prompt-receipts.ts'
+import { installCommandReceipts } from './command-receipts.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
@@ -47,6 +50,7 @@ import {
   type ImageAttachmentRef,
 } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-commands'
+import { isTypertRemoteFailure, TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import {
   createUserMessage,
   freezeMessage,
@@ -69,6 +73,10 @@ import {
   type SessionRemoteAttachmentRequest,
   type SessionRemoteAttachmentValue,
   type SessionRemoteCancelRequest,
+  type SessionRemoteStorageRequest,
+  type SessionRemoteStorageValue,
+  type SessionRemoteCommandRequest,
+  type SessionRemoteCommandValue,
   type SessionRemoteCatalogFailure,
   type SessionRemoteCreateRequest,
   type SessionRemoteCreateValue,
@@ -570,11 +578,13 @@ export class SessionRemoteOperationsService extends Service
   private readonly creations = new Map<SessionId, Promise<Agent>>()
   private readonly resumes = new Map<SessionId, Promise<Agent>>()
   private readonly admissionChains = new WeakMap<Agent, Promise<void>>()
+  private readonly storageLifecycle: StorageLifecycle
   private readonly lifetime = new AbortController()
   private readonly semanticHistory: SemanticHistoryReader
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'sessionRemoteOperations')
+    this.storageLifecycle = new StorageLifecycle(ctx)
     this.semanticHistory = new SemanticHistoryReader(ctx, (source) => {
       let scope: Promise<ScopeKey | undefined> | undefined
       return async (event, dependencies) => {
@@ -606,6 +616,7 @@ export class SessionRemoteOperationsService extends Service
     })
     ctx.effect(() => async () => {
       this.lifetime.abort(new Error('session Remote operations disposed'))
+      await this.ctx.get('commands')?.whenSettled()
       this.semanticHistory.clear()
       const handles = [...this.handles.values()]
       this.handles.clear()
@@ -614,6 +625,7 @@ export class SessionRemoteOperationsService extends Service
 
     ctx.inject(['sessionProjections'], (projectionCtx) => {
       installPromptReceipts(projectionCtx)
+      installCommandReceipts(projectionCtx)
       projectionCtx.sessionProjections.register<'sessionListMetadata', SessionListMetadata>({
         key: 'sessionListMetadata',
         stateSchema: sessionListMetadataSchema,
@@ -703,10 +715,12 @@ export class SessionRemoteOperationsService extends Service
       const prepared = await setup?.(agentCtx)
       return {
         commit: () => {
+          this.storageLifecycle.assertAdmission(agentCtx.agent?.session)
           for (const check of checks) {
             this.ctx.workspaceRegistry.assertSessionAdmission(check.sessionId, check.revision)
           }
           prepared?.commit()
+          this.storageLifecycle.assertAdmission(agentCtx.agent?.session)
           for (const check of checks) {
             this.ctx.workspaceRegistry.assertSessionAdmission(check.sessionId, check.revision)
           }
@@ -1782,6 +1796,93 @@ export class SessionRemoteOperationsService extends Service
       ? failure('invocation-conflict', 'invocationId was already accepted with different or unverifiable input') : undefined
   }
 
+  /** Check durable command state before Agent lookup, including completed cold sessions. */
+  private async acceptedCommand(
+    request: SessionRemoteCommandRequest, signal: AbortSignal,
+  ): Promise<SessionRemoteResult<SessionRemoteCommandValue> | undefined> {
+    const commands = this.ctx.get('commands')
+    if (commands === undefined) return failure('unknown-command', 'this deployment mounts no command registry')
+    const revision = this.ctx.workspaceRegistry.sessionAdmissionRevision(request.sessionId)
+    this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision)
+    const observe = async (session: Session, durable: boolean): Promise<SessionRemoteResult<SessionRemoteCommandValue> | undefined> => {
+      if (hasApiRemoteSubagentOwner(this.ctx, session, this.ctx.agents.get(request.sessionId))) {
+        return this.subagentFailure(request.sessionId)
+      }
+      if (this.promptReceipt(session, request.invocationId) !== undefined) {
+        return failure('invocation-conflict', 'invocationId was already used for an ordinary prompt')
+      }
+      const receipt = await commands.receipt(session, request, durable)
+      this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision)
+      return receipt === undefined ? undefined : success(receipt)
+    }
+    const live = this.ctx.sessions.get(request.sessionId)
+    if (live !== undefined) return observe(live, false)
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) return failure('command-unavailable', 'commands require a persistence owner')
+    using borrowed = await persistence.borrowSession(request.sessionId, signal)
+    signal.throwIfAborted()
+    this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision)
+    if (this.ctx.sessions.get(request.sessionId) !== undefined || borrowed.source === 'live') return await this.acceptedCommand(request, signal)
+    this.ctx.get('sessionProjectionCache')?.hydratePrepared(borrowed.preparedSession, borrowed.inspection.meta, borrowed.inspection.events)
+    return await observe(borrowed.preparedSession, true)
+  }
+
+  /**
+   * Observe saving and coordinate one explicit native quit attempt.
+   * @param request - storage or quit action.
+   * @param signal - caller response wait cancellation.
+   * @returns operational status without reading message contents.
+   */
+  storage(request: SessionRemoteStorageRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteStorageValue>> {
+    if (signal.aborted) return Promise.resolve(cancelled())
+    try { return Promise.resolve(success(this.storageLifecycle.handle(request))) }
+    catch (error: unknown) {
+      return Promise.resolve(failure(error instanceof SessionStorageUnavailable ? error.code : 'storage-action-failed',
+        'cannot complete the requested storage action'))
+    }
+  }
+
+  /** Invoke a human command with persistent caller identity and explicit uncertain outcomes. */
+  async command(
+    request: SessionRemoteCommandRequest, signal: AbortSignal,
+  ): Promise<SessionRemoteResult<SessionRemoteCommandValue>> {
+    if (aborted(signal)) return cancelled()
+    if (request.invocationId.length === 0) return failure('invalid-invocation-id', 'command invocationId must be non-empty')
+    request = Object.freeze({ ...request, images: Object.freeze(request.images.map(image => Object.freeze({ ...image }))) })
+    try {
+      const accepted = await this.acceptedCommand(request, signal)
+      if (accepted !== undefined) return accepted
+      this.storageLifecycle.assertAdmission(this.ctx.sessions.get(request.sessionId))
+      const found = await this.agentFor(request.sessionId)
+      if (!found.ok) return found
+      signal.throwIfAborted()
+      const commands = this.ctx.get('commands')
+      if (commands === undefined) return failure('unknown-command', 'this deployment mounts no command registry')
+      const revision = this.ctx.workspaceRegistry.sessionAdmissionRevision(request.sessionId)
+      this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision)
+      if (this.promptReceipt(found.value.session, request.invocationId) !== undefined) {
+        return failure('invocation-conflict', 'invocationId was already used for an ordinary prompt')
+      }
+      const operationSignal = AbortSignal.any([this.lifetime.signal, this.storageLifecycle.activitySignal])
+      const execution = await commands.execute(found.value, request, operationSignal, () => {
+        this.storageLifecycle.assertAdmission(found.value.session)
+        this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision)
+        this.assertPromptAdmission(request.sessionId, found.value)
+        if (this.promptReceipt(found.value.session, request.invocationId) !== undefined) {
+          throw new TypertRemoteFailure({ code: 'invocation-conflict', message: 'invocationId belongs to an ordinary prompt', details: {} })
+        }
+      })
+      return execution === undefined ? failure('unknown-command', 'command name is not registered') : success(execution)
+    } catch (error: unknown) {
+      if (error instanceof TypertRemoteFailure || isTypertRemoteFailure(error)) {
+        return failure(error.failure.code, error.failure.message, jsonValue(error.failure.details) ?? {})
+      }
+      if (error instanceof SessionStorageUnavailable) return failure(error.code, 'command admission is blocked by saving or exit preparation')
+      if (aborted(signal)) return cancelled()
+      return failure('command-unavailable', 'cannot confirm command execution', { reason: String(error) })
+    }
+  }
+
   /** Once accepted, caller cancellation cannot undo delivery or bypass durability confirmation. */
   private async confirmPrompt(
     session: Session, invocationId: SessionPromptInvocationId,
@@ -1802,7 +1903,7 @@ export class SessionRemoteOperationsService extends Service
 
   /** Confirm a retry before provider lookup or Agent activation, including a cold completed Session. */
   private async acceptedPrompt(
-    request: SessionRemotePromptRequest, digest: string, signal: AbortSignal,
+    request: SessionRemotePromptRequest, digest: string, signal: AbortSignal, deferCommands = false,
   ): Promise<SessionRemoteResult<SessionRemotePromptValue> | undefined> {
     const revision = this.ctx.workspaceRegistry.sessionAdmissionRevision(request.sessionId)
     try {
@@ -1813,6 +1914,9 @@ export class SessionRemoteOperationsService extends Service
     const live = this.ctx.sessions.get(request.sessionId)
     if (live !== undefined) {
       if (hasApiRemoteSubagentOwner(this.ctx, live, this.ctx.agents.get(request.sessionId))) return this.subagentFailure(request.sessionId)
+      if (this.ctx.get('commands')?.hasInvocation(live, request.invocationId) === true) {
+        return deferCommands ? undefined : failure('invocation-conflict', 'invocationId belongs to a command')
+      }
       const receipt = this.promptReceipt(live, request.invocationId)
       if (receipt === undefined) return undefined
       return this.receiptConflict(receipt, digest) ?? this.confirmPrompt(live, request.invocationId)
@@ -1822,11 +1926,14 @@ export class SessionRemoteOperationsService extends Service
     using borrowed = await persistence.borrowSession(request.sessionId, signal)
     signal.throwIfAborted()
     this.ctx.workspaceRegistry.assertSessionAdmission(request.sessionId, revision)
-    if (this.ctx.sessions.get(request.sessionId) !== undefined) return await this.acceptedPrompt(request, digest, signal)
+    if (this.ctx.sessions.get(request.sessionId) !== undefined) return await this.acceptedPrompt(request, digest, signal, deferCommands)
     if (borrowed.source === 'live') return failure('agent-busy', 'session lifecycle changed while verifying prompt admission')
     const session = borrowed.preparedSession
     if (hasApiRemoteSubagentOwner(this.ctx, session, undefined)) return this.subagentFailure(request.sessionId)
     this.ctx.get('sessionProjectionCache')?.hydratePrepared(session, borrowed.inspection.meta, borrowed.inspection.events)
+    if (this.ctx.get('commands')?.hasInvocation(session, request.invocationId) === true) {
+      return deferCommands ? undefined : failure('invocation-conflict', 'invocationId belongs to a command')
+    }
     const receipt = this.promptReceipt(session, request.invocationId)
     if (receipt === undefined) return undefined
     // This exact retained source was already read from persistence; no live flush or Agent resume is needed.
@@ -1856,51 +1963,47 @@ export class SessionRemoteOperationsService extends Service
       )
     }
     const digest = promptDigest(request, canonicalTimeZone)
+    const commandLine = request.content.length === 1 && request.content[0]?.type === 'text'
+      && request.content[0].text.startsWith('/') ? request.content[0].text : undefined
     try {
-      const accepted = await this.acceptedPrompt(request, digest, signal)
+      const accepted = await this.acceptedPrompt(request, digest, signal, commandLine !== undefined)
       if (accepted !== undefined) return accepted
     } catch (error: unknown) {
       if (aborted(signal)) return cancelled()
       return failure('prompt-unavailable', 'cannot verify ordinary prompt admission', { reason: String(error) })
     }
+    if (commandLine !== undefined) {
+      const result = await this.command({
+        sessionId: request.sessionId, invocationId: request.invocationId, line: commandLine, images: [],
+      }, signal)
+      if (result.ok) {
+        if (result.value.state !== 'completed') return failure(
+          result.value.state === 'running' ? 'command-running' : 'command-state-unknown',
+          'the original command must not be submitted again with a new identity',
+          { accepted: true, invocationId: request.invocationId, commandId: result.value.commandId },
+        )
+        if (result.value.result.kind === 'error') return failure('command-error', result.value.result.text)
+        return success({ accepted: true, command: result.value.result })
+      }
+      if (result.error.code !== 'unknown-command') return result
+    }
+    try { this.storageLifecycle.assertAdmission(this.ctx.sessions.get(request.sessionId)) }
+    catch (error: unknown) {
+      return failure(error instanceof SessionStorageUnavailable ? error.code : 'storage-unavailable', 'input was not accepted; preserve the draft')
+    }
     const found = await this.agentFor(request.sessionId)
     if (!found.ok) return found
     const agent = found.value
 
-    const commandLine = request.content.length === 1 && request.content[0]?.type === 'text'
-      && request.content[0].text.startsWith('/')
-      ? request.content[0].text
-      : undefined
     if (commandLine !== undefined) {
-      const commands = this.ctx.get('commands')
-      if (commands === undefined) {
-        return failure('unknown-command', 'this deployment mounts no command registry')
-      }
       try {
-        const execution = await commands.execute(agent, commandLine, [], signal)
-        if (execution === undefined) {
-          // Preserve a recognized skill gesture for dsh-tool-skill's pre-step
-          // owner; every other unmatched slash line remains a command error.
-          const skillPrompt = await this.admitUnknownCommandAsSkill(commandLine, agent, signal)
-          if (skillPrompt === undefined) {
-            return failure(
-              'unknown-command',
-              `unknown command: ${commandLine.split(/\s/u, 1)[0]}`,
-            )
-          }
-          request = { ...request, content: [{ type: 'text', text: skillPrompt }] }
-        } else {
-          if (execution.result.kind === 'error') {
-            return failure('command-error', execution.result.text)
-          }
-          return success({
-            accepted: true,
-            command: {
-              kind: 'success',
-              ...execution.result.text === undefined ? {} : { text: execution.result.text },
-            },
-          })
+        // Preserve a recognized skill gesture for dsh-tool-skill's pre-step
+        // owner; every other unmatched slash line remains a command error.
+        const skillPrompt = await this.admitUnknownCommandAsSkill(commandLine, agent, signal)
+        if (skillPrompt === undefined) {
+          return failure('unknown-command', `unknown command: ${commandLine.split(/\s/u, 1)[0]}`)
         }
+        request = { ...request, content: [{ type: 'text', text: skillPrompt }] }
       } catch (error: unknown) {
         if (aborted(signal)) return cancelled()
         return failure('command-error', error instanceof Error ? error.message : String(error))
@@ -1935,6 +2038,7 @@ export class SessionRemoteOperationsService extends Service
         if (this.ctx.get('sessionPersistence') === undefined) {
           return failure('prompt-unavailable', 'ordinary prompts require a persistence owner')
         }
+        this.storageLifecycle.assertAdmission(agent.session)
         // Ark 定制：图片一律允许上传，能否识别由模型自行决定；不再按模型模态拦截。
         const content = await this.durablePromptContent(request.content)
         signal.throwIfAborted()
@@ -1945,6 +2049,8 @@ export class SessionRemoteOperationsService extends Service
           ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
         }
         const message: UserMessage = createUserMessage({ content, source })
+        if (this.ctx.get('commands')?.hasInvocation(agent.session, request.invocationId) === true) return failure('invocation-conflict', 'invocationId belongs to a command')
+        this.storageLifecycle.assertAdmission(agent.session)
         this.assertPromptAdmission(request.sessionId, agent)
         try {
           if (request.mode === 'steer') agent.steer(message)
@@ -1957,6 +2063,7 @@ export class SessionRemoteOperationsService extends Service
         return await this.confirmPrompt(agent.session, request.invocationId)
       } catch (error: unknown) {
         if (aborted(signal)) return cancelled()
+        if (error instanceof SessionStorageUnavailable) return failure(error.code, 'input was not accepted; preserve the draft')
         if (error instanceof AttachmentError) {
           return failure('attachment-error', error.message, { reason: error.code })
         }

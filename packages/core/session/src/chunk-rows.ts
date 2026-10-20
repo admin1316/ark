@@ -20,7 +20,7 @@
 
 import { CallId, assertNever } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from './types.ts'
+import type { SessionAtomicGroup, SessionEvent } from './types.ts'
 
 /** The chunk kinds that may pack; block boundaries, usage, and finish chunks always stay one event per line. */
 type DeltaKind = 'text-delta' | 'reasoning-delta' | 'tool-call-delta'
@@ -66,8 +66,46 @@ export type ChunkRow =
   | { type: 'reasoning-chunks'; seq0: number; time0: number; data: TextRunData }
   | { type: 'tool-call-chunks'; seq0: number; time0: number; data: ToolCallRunData }
 
-/** One durable log line's JSON value: a session event verbatim, or a packed chunk row. */
-export type StorageRecord = SessionEvent | ChunkRow
+/** One durable log line: a scalar event, packed chunk run, or indivisible event group. */
+export type StorageRecord = SessionEvent | ChunkRow | AtomicEventsRow
+
+/** Versioned physical record; a truncated member is never an accepted prefix. */
+export interface AtomicEventsRow {
+  readonly type: 'atomic-events'
+  readonly version: 1
+  /** First member seq; keeps older scanners from treating a complete group as a torn tail. */
+  readonly seq: number
+  readonly events: readonly SessionEvent[]
+}
+
+/**
+ * Pack explicit atomic groups without combining or splitting their boundaries.
+ * @param events - contiguous canonical events in this write batch.
+ * @param groups - complete non-overlapping groups identified by canonical seq.
+ * @param chunks - whether ordinary regions use the existing chunk packing.
+ * @returns one physical record per atomic group and ordinary storage records elsewhere.
+ */
+export function packStorageRecords(
+  events: readonly SessionEvent[], groups: readonly SessionAtomicGroup[], chunks: boolean,
+): StorageRecord[] {
+  const out: StorageRecord[] = []
+  let offset = 0
+  const firstSeq = events[0]?.seq ?? 0
+  for (const group of groups) {
+    const start = group.firstSeq - firstSeq
+    if (!Number.isSafeInteger(group.firstSeq) || !Number.isSafeInteger(group.count) || group.count < 1
+      || start < offset || start + group.count > events.length) throw new Error('invalid or split atomic session group')
+    const ordinary = events.slice(offset, start)
+    out.push(...(chunks ? packChunkRuns(ordinary) : ordinary))
+    const members = events.slice(start, start + group.count)
+    if (members.some((event, index) => event.seq !== group.firstSeq + index)) throw new Error('atomic session group is not contiguous')
+    out.push({ type: 'atomic-events', version: 1, seq: group.firstSeq, events: members })
+    offset = start + group.count
+  }
+  const tail = events.slice(offset)
+  out.push(...(chunks ? packChunkRuns(tail) : tail))
+  return out
+}
 
 /**
  * Identify a packed row in an already-typed storage record.
@@ -198,8 +236,8 @@ function buildRow(kind: DeltaKind, run: readonly DeltaEvent[]): ChunkRow {
  * @param events - the batch to encode, in log order.
  * @returns the storage records to write, one JSONL line each.
  */
-export function packChunkRuns(events: readonly SessionEvent[]): StorageRecord[] {
-  const out: StorageRecord[] = []
+export function packChunkRuns(events: readonly SessionEvent[]): (SessionEvent | ChunkRow)[] {
+  const out: (SessionEvent | ChunkRow)[] = []
   let kind: DeltaKind | undefined
   let run: DeltaEvent[] = []
   const flush = (): void => {
@@ -348,6 +386,21 @@ function expandRow(row: ChunkRow): SessionEvent[] {
 export function decodeStorageRecord(value: unknown): SessionEvent[] {
   if (!isRecord(value)) return [value as SessionEvent]
   const tag = value.type
+  if (tag === 'atomic-events') {
+    if (!hasExactKeys(value, ['type', 'version', 'seq', 'events']) || value.version !== 1
+      || !Array.isArray(value.events) || value.events.length === 0) malformed(tag, 'expected version 1 and a non-empty complete event array')
+    const events = value.events as unknown[]
+    let firstSeq: number | undefined
+    for (const [index, event] of events.entries()) {
+      if (!isRecord(event) || typeof event.type !== 'string' || event.type.length === 0 || event.type === 'atomic-events'
+        || !Number.isSafeInteger(event.seq) || (event.seq as number) < 0
+        || !Number.isSafeInteger(event.time) || !Object.hasOwn(event, 'data')) malformed(tag, 'invalid member event envelope')
+      firstSeq ??= event.seq as number
+      if (event.seq !== firstSeq + index) malformed(tag, 'member events must be contiguous')
+    }
+    if (value.seq !== firstSeq) malformed(tag, 'guard seq must match the first member')
+    return events as SessionEvent[]
+  }
   if (tag !== 'text-chunks' && tag !== 'reasoning-chunks' && tag !== 'tool-call-chunks') {
     return [value as SessionEvent]
   }

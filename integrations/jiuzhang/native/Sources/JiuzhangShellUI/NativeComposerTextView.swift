@@ -22,6 +22,7 @@ private func focusSearchIfNeeded(_ field: NSSearchField) {
 /// using the alternate busy-session delivery mode. Marked-text/IME events and
 /// repeated Return presses never submit accidentally.
 struct NativeComposerTextView: NSViewRepresentable {
+  @Environment(\.isEnabled) private var isEnabled
   let text: String
   let references: [ArkComposerReferenceOccurrence]
   @Binding var isComposing: Bool
@@ -55,6 +56,7 @@ struct NativeComposerTextView: NSViewRepresentable {
     scroll.borderType = .noBorder
 
     let editor = ComposerNSTextView()
+    editor.isEditable = isEnabled
     editor.isRichText = false
     editor.allowsUndo = true
     editor.isAutomaticQuoteSubstitutionEnabled = false
@@ -99,6 +101,7 @@ struct NativeComposerTextView: NSViewRepresentable {
 
   func updateNSView(_ scroll: NSScrollView, context: Context) {
     guard let editor = scroll.documentView as? ComposerNSTextView else { return }
+    editor.isEditable = isEnabled
     context.coordinator.textChanged = textChanged
     context.coordinator.selectionChanged = selectionChanged
     editor.onSubmit = submit
@@ -210,7 +213,7 @@ struct NativeComposerTextView: NSViewRepresentable {
 
     func textDidChange(_ notification: Notification) {
       guard !applyingProgrammaticUpdate,
-        let editor = notification.object as? NSTextView
+        let editor = notification.object as? NSTextView, editor.isEditable
       else { return }
       let composing = editor.hasMarkedText()
       setComposition(composing)
@@ -243,6 +246,7 @@ struct NativeComposerTextView: NSViewRepresentable {
 /// It moves first responder away from the message composer and routes the same
 /// Up/Down/Enter/Escape contract, so search text never leaks into the draft.
 struct NativeComposerSearchField: NSViewRepresentable {
+  @Environment(\.isEnabled) private var isEnabled
   let text: String
   let placeholder: String
   let focusRevision: Int
@@ -258,6 +262,7 @@ struct NativeComposerSearchField: NSViewRepresentable {
 
   func makeNSView(context: Context) -> ComposerNSSearchField {
     let field = ComposerNSSearchField()
+    field.isEnabled = isEnabled
     field.stringValue = text
     field.placeholderString = placeholder
     field.font = .systemFont(ofSize: 12)
@@ -273,6 +278,7 @@ struct NativeComposerSearchField: NSViewRepresentable {
   }
 
   func updateNSView(_ field: ComposerNSSearchField, context: Context) {
+    field.isEnabled = isEnabled
     context.coordinator.textChanged = textChanged
     field.onMenuKey = handleMenuKey
     field.placeholderString = placeholder
@@ -296,7 +302,7 @@ struct NativeComposerSearchField: NSViewRepresentable {
     }
 
     func controlTextDidChange(_ notification: Notification) {
-      guard let field = notification.object as? NSSearchField else { return }
+      guard let field = notification.object as? NSSearchField, field.isEnabled else { return }
       textChanged(field.stringValue)
     }
   }
@@ -382,6 +388,7 @@ final class ComposerNSTextView: NSTextView {
     selectedRange: NSRange,
     replacementRange: NSRange
   ) {
+    guard isEditable else { return }
     super.setMarkedText(
       string,
       selectedRange: selectedRange,
@@ -403,6 +410,7 @@ final class ComposerNSTextView: NSTextView {
   }
 
   override func paste(_ sender: Any?) {
+    guard isEditable else { return }
     let pasteboard = NSPasteboard.general
     let urls = attachmentFileURLs(in: pasteboard)
     if !urls.isEmpty {
@@ -429,14 +437,15 @@ final class ComposerNSTextView: NSTextView {
   }
 
   override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-    attachmentFileURLs(in: sender.draggingPasteboard).isEmpty ? [] : .copy
+    !isEditable || attachmentFileURLs(in: sender.draggingPasteboard).isEmpty ? [] : .copy
   }
 
   override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-    !attachmentFileURLs(in: sender.draggingPasteboard).isEmpty
+    isEditable && !attachmentFileURLs(in: sender.draggingPasteboard).isEmpty
   }
 
   override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    guard isEditable else { return false }
     let urls = attachmentFileURLs(in: sender.draggingPasteboard)
     guard !urls.isEmpty else { return false }
     onAddAttachmentURLs?(urls)
@@ -456,6 +465,7 @@ final class ComposerNSTextView: NSTextView {
   }
 
   override func keyDown(with event: NSEvent) {
+    guard isEditable else { super.keyDown(with: event); return }
     let composing = hasMarkedText()
     let menuKey = ArkComposerMenuKey(nativeKeyCode: event.keyCode)
     if let menuKey, onMenuKey?(menuKey, composing) == true { return }

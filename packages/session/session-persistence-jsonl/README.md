@@ -45,7 +45,7 @@ Choose this backend when consumers benefit from one artifact per session — nav
 | Field | Default | Meaning |
 |---|---|---|
 | `root` | required | Root directory for all session files |
-| `packChunks` | `true` | Write eligible `assistant/chunk` runs as packed rows; `false` keeps one event per line for diagnostics |
+| `packChunks` | `true` | Pack eligible `assistant/chunk` runs outside atomic groups; `false` keeps those events on separate lines |
 | `compression` | `'zstd'` | Physical encoding: `'zstd'` checksummed frames, or `'none'` newline-delimited UTF-8 text |
 | `preparedSessionCacheSize` | `5` | Cold session preparations retained for resume reuse |
 | `writeBatchMaxDelayMs` | `200` | Fixed live-event coalescing window, in milliseconds |
@@ -54,7 +54,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### On-disk layout
 
-Each session gets a session-owned directory under a readable project directory; the first logical line of the log is the immutable `SessionHeader`, followed by one storage record per logical event (or one packed chunk row per eligible run). Storage records use the lossless provenance representation described below:
+Each session gets a session-owned directory under a readable project directory; the first logical line is the immutable `SessionHeader`, followed by scalar events, packed chunk runs, or versioned `atomic-events` groups. Storage records use the lossless provenance representation described below:
 
 ```text
 <root>/
@@ -72,9 +72,13 @@ Physical mutations share an ID-scoped cross-process lock under `~locks`. Deletio
 
 A session is materialized lazily: `create(meta)` writes nothing, and the first `append` writes and `fsync`s the encoded header and first batch through a no-overwrite publish — so a created-but-never-appended session leaves nothing on disk unless a lifecycle consumer calls `ensureMaterialized`, which publishes one header frame without an event. Flushed events are never rewritten; each subsequent batch appends lines or one compressed frame, and a caught write or sync failure rolls the file back to its prior length. After a crash, `load` preserves an interrupted final turn: it keeps the complete decoded records of an incomplete last frame, truncates from that frame's start, and re-encodes the records with the synthetic tool, step, and turn closers required by the shared persistence contract. Only a never-fully-written torn tail is discarded; checksum, decompression, or structural failure in the committed prefix rejects as corruption.
 
+An atomic group occupies one complete `atomic-events` version `1` record regardless of `packChunks`. Its required physical `seq` matches the first member, and compression places that record in its own frame, separate from following ordinary events. Together these boundaries make the Ark 3.1.2 reader retain the complete unknown record and refuse it before repair instead of treating it as a torn tail. The current scanner validates the guard and admits all members or none, including when it salvages a partial Zstandard frame; a frame alone is not a logical atomicity boundary. Unknown group versions reject. This wrapper preserves the existing logical events and session-format version.
+
 ### Reading the logs
 
 `inspect(id)` returns an immutable balanced view without committing recovery. `readFrom(id, fromSeq)` returns stored events at or past a sequence number for watermark consumers; sequential media like JSONL parse the whole artifact and skip forward. With `compression: 'none'`, the log is newline-delimited text an external reader can consume directly; the compressed default must be read through the backend.
+
+Ark 3.1.2 cannot read `atomic-events` records. For offline rollback, pass bytes copied from a stopped session and their explicit compression to `exportLegacySessionArtifact`; it returns lossless scalar-event plaintext JSONL, refuses damaged or incomplete input, and never modifies the source. An older application must use an independent exported copy, never the active profile containing the new packing.
 
 -----
 
@@ -92,7 +96,7 @@ The backend is a thin storage layer over the shared [PersistenceCoordinator](../
 
 ### Physical encoding
 
-The default artifact is a standard concatenation of independent [Zstandard frames](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.md): one checksummed frame containing only the header line, then one checksummed frame per durable append batch, using Node's built-in Zstandard API at its default compression level (no level knob). `sourceEventSeqs` uses a lossless storage representation: consecutive runs of at least three sequence numbers become `[start, end]` pairs, any other list stays verbatim, and reading expands the exact in-memory array. Listing reads and validates only the header frame. Corrupt compressed headers are omitted with a warning so healthy sessions remain available; targeted reads still reject corruption. Stored-identity conflicts, duplicate session IDs, mixed encodings, cancellation, and other I/O failures are never swallowed. `compression: 'none'` keeps the same storage-form logical lines without frame compression. A root belongs to one encoding: startup discovery and targeted lookup reject the opposite suffix, and there is no format or compression migration, mixed-root fallback, or dual write. When `packChunks` is enabled, an eligible run of ≥3 consecutive same-block `assistant/chunk` delta events becomes one packed row (`text-chunks`/`reasoning-chunks`/`tool-call-chunks`) whose `seq0`/`time0` and per-member `dt` gaps reconstruct every member exactly; the lossless codec lives in `dsh-session` and reading is layout-blind, so packed, unpacked, and mixed files load identically.
+The default artifact is a standard concatenation of independent [Zstandard frames](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.md): one checksummed header frame, then checksummed event frames using Node's default compression level (no level knob). Ordinary regions of an append batch share a frame; each atomic record occupies a separate frame. `sourceEventSeqs` uses a lossless storage representation: consecutive runs of at least three sequence numbers become `[start, end]` pairs, any other list stays verbatim, and reading expands the exact in-memory array. Listing reads and validates only the header frame. Corrupt compressed headers are omitted with a warning so healthy sessions remain available; targeted reads still reject corruption. Stored-identity conflicts, duplicate session IDs, mixed encodings, cancellation, and other I/O failures are never swallowed. `compression: 'none'` keeps the same storage-form logical lines without frame compression. A root belongs to one encoding: startup discovery and targeted lookup reject the opposite suffix, and there is no format or compression migration, mixed-root fallback, or dual write. When `packChunks` is enabled, an eligible run of ≥3 consecutive same-block `assistant/chunk` delta events becomes one packed row (`text-chunks`/`reasoning-chunks`/`tool-call-chunks`) whose `seq0`/`time0` and per-member `dt` gaps reconstruct every member exactly; the lossless codec lives in `dsh-session` and reading is layout-blind, so packed, unpacked, and mixed files load identically.
 
 ### Source map
 
@@ -100,6 +104,7 @@ The default artifact is a standard concatenation of independent [Zstandard frame
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, backend class, coordinator wiring |
 | [`src/format.ts`](src/format.ts) | Log path derivation, header encoding, record scanning, packed-row layout |
+| [`src/export-legacy.ts`](src/export-legacy.ts) | Strict offline conversion of complete artifacts to scalar-event JSONL |
 | [`src/zstd.ts`](src/zstd.ts) | Zstandard frame compression, decoding, and frame scanning |
 | [`src/win32.ts`](src/win32.ts) | Windows write-through publish and directory creation |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; identity is enforced at the storage layer) |

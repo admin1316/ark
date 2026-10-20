@@ -666,7 +666,7 @@ describe('step boundary publication order', () => {
     await waitForIdle(ctx, agent)
 
     expect(observed).toHaveLength(1)
-    expect(observed[0]).toMatchObject({ turn: 1, step: 1, lastEventType: 'step/start', sawStepStart: true })
+    expect(observed[0]).toMatchObject({ turn: 1, step: 1, lastEventType: 'user/message', sawStepStart: true })
   })
 })
 

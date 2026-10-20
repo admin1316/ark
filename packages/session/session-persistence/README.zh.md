@@ -45,6 +45,21 @@ const headers = await ctx.sessionPersistence.list()        // every stored sessi
 
 `append` 只在批次持久后返回，因此成功返回的写入在操作系统崩溃或断电后依然存在。普通 `create` 保持惰性；只有当空会话本身必须出现在持久列表中时，生命周期前端才调用 `ensureMaterialized`，且不会虚构事件。`load` 返回不可变的平衡日志并提交任何需要的崩溃恢复；`inspect` 读取同一视图但不提交恢复。从水位恢复的消费方可以只读取该序列号及之后的已存储事件，会话的产物位置（`locate`）不经文件系统 I/O 即可解析。
 
+<a id="save-health-and-producer-pressure"></a>
+### 保存状态与生产压力
+
+`writeState(session?)` 提供准确会话及聚合的未确认事件/字节数、最早待写时间、最近成功时间，以及 `healthy`、`pressured`、`failed` 或 `closing` 状态。初始化种子、活动批次、失败后保留的内容，以及已移出列表但等待退休的 Session，都由原所有者保留到持久确认。`flushAll()` 排空这些所有者及其按 id 串行操作，包括不在活动 Session 注册表中的初始化与退休。重试保存使用这些所有者，不重新创建 Session，也不重放 Agent。
+
+后端的 `writePressure` 配置按序列化事件字节计量，并使用低水位滞回：
+
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `sessionHighBytes` / `sessionLowBytes` | 4 / 2 MiB | 暂停/恢复单个 Session 的生产 |
+| `totalHighBytes` / `totalLowBytes` | 32 / 16 MiB | 暂停/恢复整个协调器的生产 |
+| `waitTimeoutMs` | 30,000 ms | 生产者报告保存停滞前的最大等待时间 |
+
+这些阈值计量等待确认的写入，不是 JavaScript 堆占用或进程内存上限。单个事件可以超过阈值。`waitForCapacity(session, signal)` 等待低水位，或在失败、取消、关闭及超时后拒绝；取消等待不取消写入器，也不丢弃保留的事件。[检查点策略](../session-checkpoint-policy/README.zh.md)把这一信号接入模型与工具的生产流程。
+
 ### 恢复与崩溃恢复
 
 `delete(id)` 永久移除未存活、未被预约的会话，释放写入链后等待 `session-persistence/deleted` 清理。存活或已预约的身份以 `SessionPersistenceDeleteBlockedError` 拒绝。关联数据清理失败时，持久删除已经完成，但请求仍会失败；重试相同删除时，即使会话已不存在也会通知清理。后端向协调器提供 `deleteStored` 并保留这一顺序。
@@ -83,13 +98,14 @@ const headers = await ctx.sessionPersistence.list()        // every stored sessi
 | [`src/index.ts`](src/index.ts) | 插件入口：抽象 `SessionPersistence` 服务与重新导出的元数据类型 |
 | [`src/coordinator.ts`](src/coordinator.ts) | 共享写入编排：批处理、串行化、修复、接管、dispose、格式拒绝 |
 | [`src/write-behind.ts`](src/write-behind.ts) | 每会话有界写入控制器与 flush 屏障 |
+| [`src/write-pressure.ts`](src/write-pressure.ts) | 以确认计数的状态、滞回及可取消生产者等待 |
 | [`src/preparations.ts`](src/preparations.ts) | 为恢复复用而有界保留的未发布 Session 准备结果 |
 | [`src/revision.ts`](src/revision.ts) | 带品牌类型的不透明修订值 token |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件（无运行时不变式；协调器断言存储/活动身份与 cwd） |
 
 ### 写入路径概览
 
-每个 `session/event` 把事件复制到其会话的 controller。第一个待处理事件开启固定批处理窗口；后续事件加入但不重置截止时间。窗口到期后启动一次持久追加；该次写入期间接纳的事件形成另一个独立有界的后续批次。`session/flush` 取消等待并排空至完全停稳，因此 loop 在下一轮次前把它用作排序与错误观察检查点。被拒绝的后台写入保留其事件并暂停自动重试；新事件开启新窗口，而显式 flush 或后端拆卸会立即重试。
+每个 `session/committed` 把已提交批次及其原子边界复制到其 Session 的 controller。第一个待处理事件开启固定批处理窗口；后续事件加入但不重置截止时间。窗口到期后启动一次持久追加；该次写入期间接纳的事件形成另一个独立有界的后续批次。活动批次在收到确认前一直计数；失败批次回到队首，但不重复增加计数。`session/flush` 取消等待并排空至完全停稳，因此 loop 在下一轮次前把它用作排序与错误观察检查点。被拒绝的后台写入保留其事件并暂停自动重试；新事件开启新窗口，而显式 flush 或后端拆卸会立即重试。
 
 ### 存储记录兼容
 
@@ -107,6 +123,7 @@ const headers = await ctx.sessionPersistence.list()        // every stored sessi
 - [JSONL 持久化后端](../session-persistence-jsonl/README.zh.md)——随产品交付、按会话存储文件的后端。
 - [SQLite 持久化后端](../session-persistence-sqlite/README.zh.md)——可选启用的单数据库后端。
 - [会话检查点策略](../session-checkpoint-policy/README.zh.md)——在语义边界上经由本服务刷新的插件。
+- [保存压力与退出决策](../../../.agents/notes/implemented/bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.zh.md)——生产者取消、保留所有者及显式退出确认。
 - [会话包映射](../README.zh.md)——相邻的持久化、投影、标题与遥测包。
 
 -----
@@ -135,7 +152,7 @@ seam 不添加提示词或 schema。恢复会将已存储的表层事件还原�
 
 这些限制界定 seam 保证的终点。它们是当前包约束，不是任务积压。
 
-- **无删除或保留接口**——剪枝已存储会话属于带外后端维护。
+- **无自动保留清理**——冷会话删除需要显式操作；按时间或大小保留仍属于后端维护。
 - **`list()` 无分页且无过滤**——它返回每个已存储会话的 header；适合本地存储，大规模时无索引。
 - **合成 closer 是唯一崩溃方案**——后端必须在 load 时合成 `tool/result`/`step/end`/`turn/end` closer；没有继续中断轮次而不先关闭它的部分轮次恢复。
 

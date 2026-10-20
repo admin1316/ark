@@ -12,6 +12,7 @@
  */
 
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { SessionId, SessionPromptInvocationId } from './types.ts'
 
 /** A stable failure emitted by the Session Remote port. */
@@ -389,6 +390,29 @@ export interface SessionRemotePromptValue {
   readonly command?: { readonly kind: 'success'; readonly text?: string }
 }
 
+/** Stable human-command submission, independent of the transport request id. */
+export interface SessionRemoteCommandRequest {
+  readonly sessionId: SessionId
+  readonly invocationId: SessionPromptInvocationId
+  readonly line: string
+  readonly images: readonly Extract<SessionRemotePromptContentPart, { readonly type: 'image' }>[]
+}
+
+/** Durable command result or an explicit state that must never trigger automatic re-execution. */
+export type SessionRemoteCommandValue =
+  | {
+    readonly state: 'completed'
+    readonly commandId: Branded<'CommandId'>
+    readonly result: { readonly kind: 'success'; readonly text?: string; readonly sourceEventSeq?: number }
+      | { readonly kind: 'error'; readonly text: string }
+  }
+  | { readonly state: 'running'; readonly commandId: Branded<'CommandId'> }
+  | {
+    readonly state: 'unknown'
+    readonly commandId: Branded<'CommandId'>
+    readonly reason: 'interrupted' | 'durability-unconfirmed'
+  }
+
 /** Inputs and output for attachment retrieval. */
 export interface SessionRemoteAttachmentRequest {
   readonly sessionId: SessionId
@@ -424,6 +448,7 @@ export interface SessionRemoteCancelRequest { readonly sessionId: SessionId }
  * existing agent/persistence/attachment authorization and cancellation logic.
  */
 export interface SessionRemoteOperations {
+  storage(request: SessionRemoteStorageRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteStorageValue>>
   list(request: SessionRemoteListRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteListValue>>
   search(request: SessionRemoteSearchRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteSearchValue>>
   create(request: SessionRemoteCreateRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteCreateValue>>
@@ -433,6 +458,7 @@ export interface SessionRemoteOperations {
   rename(request: SessionRemoteRenameRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteRenameValue>>
   fork(request: SessionRemoteForkRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteForkValue>>
   prompt(request: SessionRemotePromptRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemotePromptValue>>
+  command(request: SessionRemoteCommandRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteCommandValue>>
   attachment(request: SessionRemoteAttachmentRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteAttachmentValue>>
   updateQueue(request: SessionRemoteUpdateQueueRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteAcceptedValue>>
   cancel(request: SessionRemoteCancelRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteAcceptedValue>>
@@ -466,4 +492,37 @@ export function sessionRemoteCancelled(): SessionRemoteFailure {
       details: {},
     },
   }
+}
+
+/** Caller identity of one explicit application quit attempt. */
+export type SessionQuitAttemptId = Branded<'SessionQuitAttemptId'>
+
+/** Authenticated native storage actions; observing state never resumes an Agent. */
+export type SessionRemoteStorageRequest =
+  | { readonly kind: 'state'; readonly sessionId?: SessionId }
+  | { readonly kind: 'retry-save' }
+  | { readonly kind: 'prepare-quit'; readonly attemptId: SessionQuitAttemptId; readonly epoch: number }
+  | { readonly kind: 'cancel-quit'; readonly attemptId: SessionQuitAttemptId; readonly epoch: number }
+
+/** Operational counters contain neither messages nor backend exception text. */
+export interface SessionRemoteStorageValue {
+  readonly quitEpoch: number
+  readonly write: {
+    readonly phase: 'healthy' | 'pressured' | 'failed' | 'closing'
+    readonly events: number
+    readonly bytes: number
+    readonly totalEvents: number
+    readonly totalBytes: number
+    readonly oldestAt: number | null
+    readonly lastSuccessAt: number | null
+    readonly waitTimeoutMs: number
+    readonly errorCode: 'storage-write-failed' | 'storage-stalled' | null
+  }
+  readonly retrying: boolean
+  readonly quit: {
+    readonly attemptId: SessionQuitAttemptId
+    readonly phase: 'stopping' | 'saving' | 'ready' | 'failed'
+    readonly safeToQuit: boolean
+    readonly errorCode: 'storage-write-failed' | null
+  } | null
 }

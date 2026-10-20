@@ -28,6 +28,7 @@ final class NativeWorkbenchCommandCenter: NSObject {
   static let shared = NativeWorkbenchCommandCenter()
 
   let openTool = PassthroughSubject<NativeWorkbenchTabKind, Never>()
+  let openResearchSource = PassthroughSubject<URL, Never>()
 
   @objc func routeWorkbenchTool(_ sender: NSMenuItem) {
     guard let rawValue = sender.representedObject as? String,

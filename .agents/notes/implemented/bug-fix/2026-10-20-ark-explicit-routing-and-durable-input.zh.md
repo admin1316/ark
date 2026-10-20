@@ -50,6 +50,8 @@ Ark 的显式测试清单拒绝未登记、缺失与重复测试。必需 CI 分
 
 ## 相关决策
 
+[研究证据与永久提取拒绝](2026-10-20-knowledge-research-evidence-and-permanent-rejections.zh.md)拥有确定性引用成员关系、候选元数据和内容/策略相关的重试抑制。本笔记继续保留独立路由、项目、操作生命周期和输入持久性决策。
+
 [原生风险边界](2026-08-29-ark-native-risk-boundaries.zh.md)继续拥有仅构建候选、凭据安全修改、事件泵静止与 Workbench 恢复。[原生壳打包](2026-08-15-ark-native-shell-recovery-and-packaging.zh.md)继续拥有新进程／管道归属与签名顺序。[锁图和退出身份决策](2026-10-19-native-candidate-lock-and-exit-identity.zh.md)继续拥有精确依赖与信号权限。[图片接收](../feature/2026-07-22-web-multimodal-image-input-and-durable-attachments.zh.md)继续拥有已接收对象的持久性与授权读取；这里对客户端草稿恢复作较窄扩展。[知识导入](../architecture/2026-08-19-knowledge-wiki-contract-aligned-ingest.zh.md)继续拥有持久队列与规范写入规则。这些是部分重叠，且理由各自仍有价值，因此笔记保持活跃，不进入冻结归档。
 
 ## 后果

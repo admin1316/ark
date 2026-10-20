@@ -30,6 +30,12 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../../session/session-projection"
+    },
+    {
       "path": "../../util/brand"
     },
     {

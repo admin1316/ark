@@ -21,7 +21,10 @@ import { pathToFileURL } from 'node:url'
 import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import TeamService from '../src/index.ts'
 
-export async function createTeamRuntime(script: ConstructorParameters<typeof MockAdapter>[0]) {
+export async function createTeamRuntime(
+  script: ConstructorParameters<typeof MockAdapter>[0],
+  writePressure?: ConstructorParameters<typeof JsonlSessionPersistence>[1]['writePressure'],
+) {
   const root = await mkdtemp(join(tmpdir(), 'ark-team-source-'))
   const scriptedRequestLimit = script.length
   const adapter = new MockAdapter(script)
@@ -39,7 +42,11 @@ export async function createTeamRuntime(script: ConstructorParameters<typeof Moc
       'team-test-prompt': SystemPrompt,
       'team-test-tools': ToolRuntime,
       'team-test-agents': AgentRegistry,
-      'team-test-persistence': JsonlSessionPersistence,
+      'team-test-persistence': writePressure === undefined ? JsonlSessionPersistence : class extends JsonlSessionPersistence {
+        constructor(owner: Context, config: ConstructorParameters<typeof JsonlSessionPersistence>[1]) {
+          super(owner, { ...config, ...writePressure === undefined ? {} : { writePressure } })
+        }
+      },
       'team-test-query': SessionQuerySqlite,
       'team-test-loop': AgentLoop,
       'team-test-subagents': SubagentRuntime,

@@ -184,21 +184,24 @@ describe('service ingest routing', () => {
     const full = join(root, candidatePath)
     mkdirSync(dirname(full), { recursive: true })
     writeFileSync(full, 'candidate', 'utf8')
-    mocks.research.mockResolvedValueOnce({ written: [candidatePath], sourceCount: 1, warnings: [] })
+    const sources = [{ url: 'https://source.test/', evidence: 'search-snippet' }]
+    mocks.research.mockResolvedValueOnce({ written: [candidatePath], pageSources: { [candidatePath]: ['https://source.test/'] }, sources, sourceCount: 1, warnings: [] })
     const before = service.snapshots.currentGeneration(wikiRoot)
     expect(await service.deepResearch({ ...projectRequest(service), topic: 'topic' }, new AbortController().signal)).toEqual({
-      findings: [{ title: 'result.md', path: candidatePath }],
+      findings: [{ title: 'result.md', path: candidatePath, sourceURLs: ['https://source.test/'] }],
+      sources,
       sourceCount: 1,
       warnings: [],
       degraded: false,
     })
     expect(service.snapshots.currentGeneration(wikiRoot)).toBe(before + 1)
 
-    mocks.research.mockResolvedValueOnce({ written: [], sourceCount: 0, warnings: [] })
-    expect(await service.deepResearch({ ...projectRequest(service), topic: 'empty' }, new AbortController().signal)).toEqual({ findings: [], sourceCount: 0, warnings: [], degraded: false })
+    mocks.research.mockResolvedValueOnce({ written: [], pageSources: {}, sources: [], sourceCount: 0, warnings: ['no output'], errorCode: 'invalid-output' })
+    expect(await service.deepResearch({ ...projectRequest(service), topic: 'empty' }, new AbortController().signal)).toEqual({ findings: [], sources: [], sourceCount: 0, warnings: ['no output'], degraded: true, errorCode: 'invalid-output' })
     mocks.research.mockRejectedValueOnce(new Error('research failed'))
     await expect(service.deepResearch({ ...projectRequest(service), topic: 'error' }, new AbortController().signal)).resolves.toEqual({
       findings: [],
+      sources: [],
       sourceCount: 0,
       warnings: ['research failed'],
       degraded: true,

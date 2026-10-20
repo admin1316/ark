@@ -34,6 +34,8 @@ public struct NativeWorkbenchView: View {
   private let language: ArkLanguagePreference
   private let requestedTool: NativeWorkbenchTabKind?
   private let requestedToolRevision: Int
+  private let requestedBrowserURL: URL?
+  private let browserRequestHandled: () -> Void
   private let browserCancellationRevision: Int
 
   /// Creates a workbench rooted at a local directory.
@@ -49,6 +51,8 @@ public struct NativeWorkbenchView: View {
     initialTool: NativeWorkbenchTabKind = .files,
     requestedTool: NativeWorkbenchTabKind? = nil,
     requestedToolRevision: Int = 0,
+    requestedBrowserURL: URL? = nil,
+    browserRequestHandled: @escaping () -> Void = {},
     browserCancellationRevision: Int = 0
   ) {
     self.appModel = appModel
@@ -56,6 +60,8 @@ public struct NativeWorkbenchView: View {
     self.draftFlushCoordinator = draftFlushCoordinator
     self.requestedTool = requestedTool
     self.requestedToolRevision = requestedToolRevision
+    self.requestedBrowserURL = requestedBrowserURL
+    self.browserRequestHandled = browserRequestHandled
     self.browserCancellationRevision = browserCancellationRevision
     _model = StateObject(wrappedValue: NativeWorkbenchModel(
       rootURL: rootURL,
@@ -116,9 +122,12 @@ public struct NativeWorkbenchView: View {
     .foregroundStyle(NativeWorkbenchPalette.primary)
     .onAppear {
       model.loadIfNeeded()
+      if let requestedBrowserURL { model.openExternalBrowserURL(requestedBrowserURL); browserRequestHandled() }
       dirtyStateAction(model.fileTabs.hasDirtyTabs)
       if draftFlushRegistrationID == nil {
-        draftFlushRegistrationID = draftFlushCoordinator.register { [weak model] in
+        draftFlushRegistrationID = draftFlushCoordinator.register(freeze: { [weak model] in
+          model?.freezeLocalInput()
+        }) { [weak model] in
           guard let model else { return .unavailable }
           if let error = await model.flushRecoveryDrafts() { return .failed(error) }
           await model.shutdownTerminalSessions()
@@ -140,7 +149,8 @@ public struct NativeWorkbenchView: View {
       dirtyStateAction(hasDirtyTabs)
     }
     .onChange(of: requestedToolRevision) { _ in
-      if let requestedTool { model.openTool(requestedTool) }
+      if let requestedBrowserURL { model.openExternalBrowserURL(requestedBrowserURL); browserRequestHandled() }
+      else if let requestedTool { model.openTool(requestedTool) }
     }
     .onChange(of: browserCancellationRevision) { _ in
       model.cancelBrowserRequests()
@@ -823,7 +833,7 @@ private struct NativeTextEditor: View {
       NativeCodeEditorView(text: Binding(
         get: { model.activeFileTab?.text ?? "" },
         set: model.updateEditorText
-      ), fileURL: model.activeFileTab?.url, isEditable: true)
+      ), fileURL: model.activeFileTab?.url, isEditable: !model.localInputFrozen)
         .accessibilityIdentifier("ark.files.code-editor")
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(NativeWorkbenchPalette.background)
@@ -2031,6 +2041,7 @@ final class NativeWorkbenchModel: ObservableObject {
   private let injectedFileReader: ((URL) async throws -> String)?
   let rootURL: URL
   let rootError: String?
+  @Published private(set) var localInputFrozen = false
 
   @Published fileprivate var toolTabs = NativeWorkbenchTabsState()
   @Published fileprivate var pendingDirtyToolCloseID: String?
@@ -2197,6 +2208,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func updateEditorText(_ newValue: String) {
+    guard !localInputFrozen else { return }
     guard let activeID = fileTabs.activeTabID else { return }
     fileTabs.updateText(id: activeID, text: newValue)
     guard let tab = fileTabs.tab(withID: activeID) else { return }
@@ -2223,6 +2235,10 @@ final class NativeWorkbenchModel: ObservableObject {
   /// debounce. The journal serializes concurrent debounce writes under its
   /// lock and replaces deterministic owner-only records atomically.
   func flushRecoveryDrafts() async -> String? {
+    if localInputFrozen {
+      for task in Array(saveTasks.values) { await task.value }
+      if let task = fileMutationTask { await task.value }
+    }
     let writes = fileTabs.tabs.filter(\.isDirty).map { tab in
       let record = recoveryDraftRecord(for: tab)
       return (record, nextDraftMutationSequence(for: record.id))
@@ -2240,7 +2256,13 @@ final class NativeWorkbenchModel: ObservableObject {
     return firstError
   }
 
+  /// A final quit barrier may retry saving but never reopens local editing.
+  func freezeLocalInput() {
+    localInputFrozen = true
+  }
+
   func restoreRecoveryDraft(_ record: NativeWorkbenchDraftRecord) {
+    guard !localInputFrozen else { return }
     let url = URL(fileURLWithPath: record.filePath)
     guard FileManager.default.fileExists(atPath: url.path) else {
       editorStatus = .fileNotExists(url.lastPathComponent)
@@ -2256,6 +2278,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func discardRecoveryDraft(_ record: NativeWorkbenchDraftRecord) {
+    guard !localInputFrozen else { return }
     let fileURL = URL(fileURLWithPath: record.filePath)
     let mutationSequence = nextDraftMutationSequence(for: record.id)
     Task { [weak self] in
@@ -2361,6 +2384,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func promptCreateFile(language: ArkLanguagePreference) {
+    guard !localInputFrozen else { return }
     guard let access else { return }
     let targetDirectory = mutationDirectoryURL
     guard let name = requestName(
@@ -2370,6 +2394,7 @@ final class NativeWorkbenchModel: ObservableObject {
             language: language
           ) else { return }
     do {
+      guard !localInputFrozen else { return }
       let url = try access.createFile(named: name, in: targetDirectory)
       refreshTree()
       Task { await selectFile(url) }
@@ -2379,6 +2404,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func promptCreateFolder(language: ArkLanguagePreference) {
+    guard !localInputFrozen else { return }
     guard let access else { return }
     let targetDirectory = mutationDirectoryURL
     guard let name = requestName(
@@ -2388,6 +2414,7 @@ final class NativeWorkbenchModel: ObservableObject {
             language: language
           ) else { return }
     do {
+      guard !localInputFrozen else { return }
       selectedTreeURL = try access.createFolder(named: name, in: targetDirectory)
       selectedTreeIsDirectory = true
       refreshTree()
@@ -2397,6 +2424,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func promptRenameSelected(language: ArkLanguagePreference) {
+    guard !localInputFrozen else { return }
     guard let access, let selectedTreeURL, canMutateSelectedTreeItem else { return }
     guard !hasOpenTab(atOrBelow: selectedTreeURL) else {
       editorStatus = .saveFailed(closeOpenItemMessage(language))
@@ -2409,6 +2437,7 @@ final class NativeWorkbenchModel: ObservableObject {
       language: language
     ) else { return }
     do {
+      guard !localInputFrozen else { return }
       self.selectedTreeURL = try access.renameItem(selectedTreeURL, to: name)
       refreshTree()
     } catch {
@@ -2417,6 +2446,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func duplicateSelectedTreeItem() {
+    guard !localInputFrozen else { return }
     guard access != nil,
           let selectedTreeURL,
           canMutateSelectedTreeItem,
@@ -2461,6 +2491,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func promptMoveSelected(language: ArkLanguagePreference) {
+    guard !localInputFrozen else { return }
     guard let access, let selectedTreeURL, canMutateSelectedTreeItem else { return }
     guard !hasOpenTab(atOrBelow: selectedTreeURL) else {
       editorStatus = .saveFailed(closeOpenItemMessage(language))
@@ -2474,6 +2505,7 @@ final class NativeWorkbenchModel: ObservableObject {
     panel.prompt = language == .en ? "Move" : "移动"
     guard panel.runModal() == .OK, let directory = panel.url else { return }
     do {
+      guard !localInputFrozen else { return }
       self.selectedTreeURL = try access.moveItem(selectedTreeURL, to: directory)
       refreshTree()
     } catch {
@@ -2482,6 +2514,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func promptTrashSelected(language: ArkLanguagePreference) {
+    guard !localInputFrozen else { return }
     guard access != nil, let selectedTreeURL, canMutateSelectedTreeItem else { return }
     guard !hasOpenTab(atOrBelow: selectedTreeURL) else {
       editorStatus = .saveFailed(closeOpenItemMessage(language))
@@ -2506,7 +2539,7 @@ final class NativeWorkbenchModel: ObservableObject {
     onSuccess: @escaping @MainActor (NativeWorkbenchModel) -> Void,
     onFailure: (@MainActor (NativeWorkbenchModel, Error) -> Void)? = nil
   ) {
-    guard access != nil, fileMutationTask == nil else { return }
+    guard !localInputFrozen, access != nil, fileMutationTask == nil else { return }
     fileMutationGeneration &+= 1
     let generation = fileMutationGeneration
     let rootURL = rootURL
@@ -2701,11 +2734,13 @@ final class NativeWorkbenchModel: ObservableObject {
   /// 原生「导出副本」：NSSavePanel 选择目标位置，导出当前编辑内容；
   /// 用户取消面板属正常取消（不设任何错误状态），源文件不被修改。
   func exportSelectedFile() {
+    guard !localInputFrozen else { return }
     guard let active = fileTabs.activeTab else { return }
     let panel = NSSavePanel()
     panel.nameFieldStringValue = active.url.lastPathComponent
     panel.canCreateDirectories = true
     guard panel.runModal() == .OK, let destination = panel.url else { return }
+    guard !localInputFrozen else { return }
     do {
       try active.text.write(to: destination, atomically: true, encoding: .utf8)
       editorStatus = .exportSucceeded(destination.lastPathComponent)
@@ -2715,6 +2750,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func revertEditor() {
+    guard !localInputFrozen else { return }
     guard let activeID = fileTabs.activeTabID,
           let active = fileTabs.tab(withID: activeID)
     else { return }
@@ -2724,6 +2760,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func saveEditor() {
+    guard !localInputFrozen else { return }
     guard let active = fileTabs.activeTab,
           access != nil,
           !savingFileTabIDs.contains(active.id)
@@ -2793,6 +2830,7 @@ final class NativeWorkbenchModel: ObservableObject {
   }
 
   func discardCloseTab() {
+    guard !localInputFrozen else { return }
     let discarded = fileTabs.pendingCloseTabID.flatMap { fileTabs.tab(withID: $0) }
     fileTabs.discardClose()
     if let discarded { clearRecoveryDraft(for: discarded) }
@@ -2812,6 +2850,7 @@ final class NativeWorkbenchModel: ObservableObject {
   /// Returns true when the whole Workbench should close; false when only the
   /// pending Files tool tab was discarded.
   func confirmDiscardDirtyClosure() -> Bool {
+    guard !localInputFrozen else { return false }
     let pendingToolID = pendingDirtyToolCloseID
     let discardedTabs = fileTabs.tabs.filter(\.isDirty)
     fileTabs.confirmDiscardWorkbenchClose()
@@ -2824,6 +2863,15 @@ final class NativeWorkbenchModel: ObservableObject {
 
   func openTool(_ kind: NativeWorkbenchTabKind) {
     toolTabs.open(kind)
+  }
+
+  func openExternalBrowserURL(_ url: URL) {
+    guard NativeBrowserNavigationPolicy.allows(url) else { return }
+    let active = toolTabs.activeTab
+    let tabID = active?.kind == .browser ? active!.id : toolTabs.open(.browser)
+    let browser = browserSession(for: tabID)
+    browser.address = url.absoluteString
+    browser.navigate()
   }
 
   func activateToolTab(_ id: String) {
@@ -3279,6 +3327,7 @@ final class NativeWorkbenchModel: ObservableObject {
   /// must survive the operation's asynchronous success callback.
   @discardableResult
   func resetFileTabsAfterGitOperation(startedWith snapshot: NativeFileTabsState) -> Bool {
+    guard !localInputFrozen else { return false }
     guard !snapshot.hasDirtyTabs, !fileTabs.hasDirtyTabs, fileTabs == snapshot else { return false }
     fileTabs = NativeFileTabsState()
     return true
@@ -3610,7 +3659,7 @@ final class NativeWorkbenchModel: ObservableObject {
     resetsFileTabs: Bool = false,
     selectsLatestCommitAfterRefresh: Bool = false
   ) -> Bool {
-    guard !gitIsLoading, let access else { return false }
+    guard !localInputFrozen, !gitIsLoading, let access else { return false }
     if resetsFileTabs, fileTabs.hasDirtyTabs {
       gitMessage = .gitOperationFailed("Close or save dirty Files tabs first.")
       return false

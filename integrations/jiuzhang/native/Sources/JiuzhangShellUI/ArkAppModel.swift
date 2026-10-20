@@ -816,6 +816,10 @@ public final class ArkAppModel: ObservableObject {
   private var imageModelFallbackInFlight = false
   @Published public private(set) var navigationErrorMessage: String?
   @Published public private(set) var settingsErrorMessage: String?
+  @Published public private(set) var storageState: ArkStorageState?
+  @Published public private(set) var storageObservationFailed = false
+  @Published public private(set) var storageActionInFlight = false
+  @Published public private(set) var nativeInputFrozen = false
   @Published public private(set) var composerErrorMessage: String?
   @Published public private(set) var knowledgeErrorMessage: String?
   @Published public private(set) var eventConnectionStates: [ArkEventChannel: ArkEventConnectionState] = [
@@ -853,6 +857,9 @@ public final class ArkAppModel: ObservableObject {
   private let interactions: ArkInteractionAPI
   private let eventPump: ArkEventPump
   private let documentStore: ArkDocumentReferenceStore
+  private lazy var commandSubmissions = ArkCommandSubmissionOwner(documentStore: documentStore) { [client] sessionID, line, images, invocationID in
+    try await client.executeCommand(sessionID: sessionID, line: line, images: images, invocationID: invocationID)
+  }
   private let fallbackWikiRoot: URL
   private let defaults: UserDefaults
   private let providerTransactions: ArkProviderTransactionRegistry
@@ -867,6 +874,12 @@ public final class ArkAppModel: ObservableObject {
   private var historyTask: Task<Void, Never>?
   private var eventTask: Task<Void, Never>?
   private var eventLifecycle = EventLifecycle.idle
+  private var storageMonitorTask: Task<Void, Never>?
+  private var storageRetryTask: Task<Void, Never>?
+  private var storageObservationRevision: UInt64 = 0
+  private var storageQuitAttemptID: String?
+  private var storageQuitEpoch: Int?
+  private var storageStopped = false
   private var eventShutdownTask: Task<Void, Never>?
   private var eventBaselineGenerationByChannel: [ArkEventChannel: String] = [:]
   /// Applied-sequence anchor per Session, see `ArkSessionEventCursor`. Only this anchor may be
@@ -911,6 +924,8 @@ public final class ArkAppModel: ObservableObject {
   private lazy var composerPersistence = ArkComposerPersistenceQueue<ComposerPersistenceSnapshot> { [weak self] snapshot in
     await self?.writeComposerState(snapshot)
   }
+  private var failedComposerWrites: [String: ComposerPersistenceSnapshot] = [:]
+  private var composerWriteErrors: [String: String] = [:]
   private var composerMigratingDrafts: [String: String] = [:]
   private var composerRecoverableSubmissions: [String: [ArkPersistedComposerSubmission]] = [:]
   @Published public private(set) var composerRecoverableSubmissionCount = 0
@@ -1112,6 +1127,7 @@ public final class ArkAppModel: ObservableObject {
     caret: Int,
     isComposing: Bool
   ) {
+    guard !nativeInputFrozen, !composerStopped else { return }
     composerErrorMessage = nil
     composerMenuWasLaunched = false
     composerLauncherPage = .root
@@ -1225,19 +1241,11 @@ public final class ArkAppModel: ObservableObject {
 
     if let command = suggestion.command, command.input == nil {
       let previous = composerDraftDocument
-      guard composerDraftDocument.replacePlainText(
-        in: hit.range,
-        with: "",
-        expectedRevision: hit.draftRevision
-      ) else { return }
-      installComposerDraft(composerDraftDocument)
-      persistComposerDraft(for: selectedSessionID)
-      let resultingRevision = composerDraftDocument.revision
       invalidateComposerSuggestions()
       executeBareComposerCommand(
         command,
         previousDocument: previous,
-        resultingRevision: resultingRevision
+        replacementRange: hit.range
       )
       return
     }
@@ -1657,29 +1665,74 @@ public final class ArkAppModel: ObservableObject {
   private func executeBareComposerCommand(
     _ command: ArkComposerCommand,
     previousDocument: ArkComposerDraftDocument,
-    resultingRevision: UInt64
+    replacementRange: NSRange
   ) {
-    guard let sessionID = selectedSessionID else { return }
+    guard !composerStopped, let sessionID = selectedSessionID else { return }
+    let owner = beginComposerOperation(for: sessionID)
     Task {
+      defer { finishComposerOperation(owner) }
       do {
-        guard let execution = try await client.executeCommand(
-          sessionID: sessionID,
-          line: "/\(command.name)"
-        ) else {
-          throw ArkAPIError(message: "命令目录已经变化，请重试")
+        await composerPersistence.flush()
+        let receipt = try await commandSubmissions.submitAction(sessionID: sessionID, line: "/\(command.name)")
+        guard composerOperationIsCurrent(owner) else { return }
+        try await requireCommandActionSuccess(receipt, sessionID: sessionID, owner: owner)
+        var current = selectedSessionID == sessionID ? composerDraftDocument
+          : Self.loadComposerDraft(defaults: defaults, sessionID: sessionID)
+        if current == previousDocument, current.replacePlainText(in: replacementRange, with: "",
+          expectedRevision: previousDocument.revision) {
+          let saved = try await documentStore.acknowledgeCommandDraft(sessionID: sessionID,
+            previous: previousDocument, replacement: current)
+          guard composerOperationIsCurrent(owner) else { return }
+          let latest = selectedSessionID == sessionID ? composerDraftDocument
+            : Self.loadComposerDraft(defaults: defaults, sessionID: sessionID)
+          if !saved, latest == previousDocument {
+            throw ArkAPIError(message: "命令已完成，但草稿保存尚未确认，请重试查询原回执")
+          }
+          if latest == previousDocument {
+            persistComposerDraft(current, for: sessionID)
+            if selectedSessionID == sessionID { installComposerDraft(current) }
+          }
         }
-        guard execution.result == .success else {
-          throw ArkAPIError(message: execution.text ?? "/\(command.name) 执行失败")
+        try await commandSubmissions.acknowledgeAction(receipt)
+        if selectedSessionID == sessionID {
+          await refreshHistory()
+          if composerOperationIsCurrent(owner), selectedSessionID == sessionID { composerErrorMessage = nil }
         }
-        await refreshHistory()
-        composerErrorMessage = nil
       } catch {
-        if selectedSessionID == sessionID, composerDraftDocument.revision == resultingRevision {
-          installComposerDraft(previousDocument)
-          persistComposerDraft(for: sessionID)
+        if composerOperationIsCurrent(owner), selectedSessionID == sessionID {
+          composerErrorMessage = error.localizedDescription
         }
-        composerErrorMessage = error.localizedDescription
       }
+    }
+  }
+
+  private func requireCommandActionSuccess(_ receipt: ArkCommandActionReceipt,
+    sessionID: String, owner: ComposerOperationOwner) async throws {
+    guard receipt.execution.result == .error else { return }
+    let message = receipt.execution.text ?? "命令执行失败"
+    if composerOperationIsCurrent(owner), selectedSessionID == sessionID {
+      composerErrorMessage = message
+      try await commandSubmissions.acknowledgeAction(receipt)
+    }
+    throw ArkAPIError(message: message)
+  }
+
+  private func supersedeComposerPermissionPrerequisite(for sessionID: String) async throws {
+    await composerPersistence.flush()
+    let previous = selectedSessionID == sessionID ? composerDraftDocument
+      : Self.loadComposerDraft(defaults: defaults, sessionID: sessionID)
+    var replacement = previous
+    guard replacement.clearSubmissionPermissionPrerequisite() else { return }
+    let saved = try await documentStore.acknowledgeCommandDraft(sessionID: sessionID,
+      previous: previous, replacement: replacement)
+    let latest = selectedSessionID == sessionID ? composerDraftDocument
+      : Self.loadComposerDraft(defaults: defaults, sessionID: sessionID)
+    if latest == previous {
+      guard saved else { throw ArkAPIError(message: "权限已更新，但草稿保存尚未确认，请重试查询原回执") }
+      persistComposerDraft(replacement, for: sessionID)
+      if selectedSessionID == sessionID { installComposerDraft(replacement) }
+    } else if latest.submissionPermissionPreset != nil {
+      throw ArkAPIError(message: "权限已更新，但待发送草稿已变化，请重试确认权限")
     }
   }
 
@@ -1784,7 +1837,11 @@ public final class ArkAppModel: ObservableObject {
 
   private func writeComposerState(_ snapshot: ComposerPersistenceSnapshot) async {
     let key = Keys.draft(snapshot.sessionID)
-    guard composerAttachmentGenerations[key] == snapshot.generation else { return }
+    guard composerAttachmentGenerations[key] == snapshot.generation else {
+      failedComposerWrites.removeValue(forKey: key)
+      composerWriteErrors.removeValue(forKey: key)
+      return
+    }
     do {
       let journal = try await documentStore.persistComposerState(document: snapshot.document,
         sessionID: snapshot.sessionID, images: snapshot.images, documents: snapshot.documents)
@@ -1796,7 +1853,11 @@ public final class ArkAppModel: ObservableObject {
       let previous = defaults.string(forKey: Keys.draftAttachments(snapshot.sessionID))
       defaults.set(journal, forKey: Keys.draftAttachments(snapshot.sessionID))
       if let previous, previous != journal { await removeUnreferencedAttachmentJournal(previous) }
+      failedComposerWrites.removeValue(forKey: key)
+      composerWriteErrors.removeValue(forKey: key)
     } catch {
+      failedComposerWrites[key] = snapshot
+      composerWriteErrors[key] = error.localizedDescription
       if !composerStopped, selectedSessionID == snapshot.sessionID { composerErrorMessage = "草稿保存失败：\(error.localizedDescription)" }
     }
   }
@@ -3229,9 +3290,167 @@ public final class ArkAppModel: ObservableObject {
     }
   }
 
+  public var storageBannerMessage: String? {
+    if storageObservationFailed {
+      return languagePreference == .en
+        ? "Save status is unavailable. Keep Ark open until saving is confirmed."
+        : "暂时无法确认保存状态，请保持 Ark 打开，等待保存确认。"
+    }
+    guard let state = storageState else { return nil }
+    if state.write.phase == .failed || state.quit?.phase == .failed {
+      return languagePreference == .en
+        ? "Saving is blocked. \(state.write.totalEvents) events are waiting; retry saving before quitting."
+        : "保存受阻，\(state.write.totalEvents) 条记录等待写入；退出前请重试保存。"
+    }
+    if state.write.phase == .pressured {
+      return languagePreference == .en
+        ? "Saving is catching up. New work is paused until the write queue clears."
+        : "正在写入积压记录，写入队列恢复后才会接收新任务。"
+    }
+    return nil
+  }
+
+  /// One monitor owns observations; action revisions reject replies captured before a quit or retry.
+  private func startStorageMonitoring() {
+    guard !storageStopped, storageMonitorTask == nil else { return }
+    storageMonitorTask = Task { [weak self, client] in
+      while !Task.isCancelled {
+        guard let self, !self.storageStopped else { return }
+        let revision = self.storageObservationRevision
+        do {
+          let state = try await client.storage(.state())
+          guard !Task.isCancelled, !self.storageStopped else { return }
+          if revision == self.storageObservationRevision && !self.storageActionInFlight {
+            self.storageState = state
+            self.storageObservationFailed = false
+          }
+        } catch {
+          guard !Task.isCancelled, !self.storageStopped else { return }
+          if revision == self.storageObservationRevision && !self.storageActionInFlight {
+            self.storageObservationFailed = true
+          }
+        }
+        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+      }
+    }
+  }
+
+  private func performStorageAction(_ action: ArkStorageAction) async throws -> ArkStorageState {
+    guard !storageStopped, !storageActionInFlight else {
+      throw ArkAPIError(message: "保存操作尚未完成，请稍候", code: "storage-action-pending")
+    }
+    storageActionInFlight = true
+    storageObservationRevision &+= 1
+    let revision = storageObservationRevision
+    defer {
+      storageActionInFlight = false
+      storageObservationRevision &+= 1
+    }
+    do {
+      let state = try await client.storage(action)
+      try Task.checkCancellation()
+      guard !storageStopped, revision == storageObservationRevision else { throw CancellationError() }
+      storageState = state
+      storageObservationFailed = false
+      return state
+    } catch {
+      if !Task.isCancelled && !storageStopped { storageObservationFailed = true }
+      throw error
+    }
+  }
+
+  /// Reusing an attempt resumes its Host-owned save barrier without creating another quit task.
+  public func prepareStorageQuit(attemptID: String) async throws {
+    guard storageQuitAttemptID == nil || storageQuitAttemptID == attemptID else {
+      throw ArkAPIError(message: "另一个退出请求尚未完成", code: "storage-quit-pending")
+    }
+    storageQuitAttemptID = attemptID
+    startStorageMonitoring()
+    if storageQuitEpoch == nil {
+      let state = try await performStorageAction(.state())
+      guard state.quit == nil || state.quit?.attemptID == attemptID else {
+        throw ArkAPIError(message: "另一个退出请求尚未完成", code: "storage-quit-pending")
+      }
+      storageQuitEpoch = state.quitEpoch
+    }
+    guard let epoch = storageQuitEpoch else { throw ArkAPIError(message: "退出代次尚未确认") }
+    let state = try await performStorageAction(.prepareQuit(attemptID: attemptID, epoch: epoch))
+    guard state.quitEpoch == epoch, state.quit?.attemptID == attemptID else {
+      throw ArkAPIError(message: "本机服务未确认当前退出请求", code: "invalid-storage-response")
+    }
+  }
+
+  public func storagePermitsQuit(attemptID: String) -> Bool {
+    guard let epoch = storageQuitEpoch else { return false }
+    return !storageObservationFailed && storageQuitAttemptID == attemptID
+      && storageState?.permitsQuit(attemptID: attemptID, epoch: epoch) == true
+  }
+
+  /// Keep the interface alive unless the Host confirms that admission has reopened.
+  public func cancelStorageQuit(attemptID: String) async throws {
+    guard storageQuitAttemptID == attemptID else {
+      throw ArkAPIError(message: "退出请求已经改变", code: "storage-quit-mismatch")
+    }
+    if storageQuitEpoch == nil {
+      let state = try await performStorageAction(.state())
+      if state.quit == nil { storageQuitAttemptID = nil; return }
+      guard state.quit?.attemptID == attemptID else {
+        throw ArkAPIError(message: "退出请求已经改变", code: "storage-quit-mismatch")
+      }
+      storageQuitEpoch = state.quitEpoch
+    }
+    guard let epoch = storageQuitEpoch else { throw ArkAPIError(message: "退出代次尚未确认") }
+    let state = try await performStorageAction(.cancelQuit(attemptID: attemptID, epoch: epoch))
+    guard state.quit == nil else {
+      throw ArkAPIError(message: "本机服务尚未取消退出", code: "invalid-storage-response")
+    }
+    storageQuitAttemptID = nil
+    storageQuitEpoch = nil
+  }
+
+  /// Explicit retries save existing events only; failed quit attempts retain their identity.
+  public func retryStorageSave() {
+    guard !storageStopped, storageRetryTask == nil, !storageActionInFlight else { return }
+    storageRetryTask = Task { [weak self] in
+      guard let self else { return }
+      defer { self.storageRetryTask = nil }
+      do {
+        if let attemptID = self.storageQuitAttemptID {
+          try await self.prepareStorageQuit(attemptID: attemptID)
+        } else {
+          _ = try await self.performStorageAction(.retrySave)
+        }
+      } catch {
+        // The monitor retains the unconfirmed state; retry does not advance a conversation.
+      }
+    }
+  }
+
+  /// Close local input synchronously before awaiting the final native draft barrier.
+  public func freezeNativeInput() { nativeInputFrozen = true }
+
+  /// Save the final frozen composer version; failures retain snapshots for an explicit retry.
+  public func flushFrozenComposerDrafts() async -> String? {
+    guard nativeInputFrozen, !composerStopped else { return "恢复草稿尚未进入最终保存阶段" }
+    let submission = composerSubmissionTask
+    submission?.cancel()
+    await commandSubmissions.stop(cancelResponseWaiters: true)
+    if let submission { await submission.value }
+    for task in Array(composerAttachmentTasks.values) { await task.value }
+    let key = Keys.draft(selectedSessionID)
+    guard !composerAttachmentRestores.contains(key), !composerAttachmentFailedKeys.contains(key) else {
+      return "恢复草稿附件尚未确认保存，请重试或明确强制退出"
+    }
+    for (key, snapshot) in failedComposerWrites { composerPersistence.enqueue(snapshot, for: key) }
+    persistComposerDraft(for: selectedSessionID)
+    await composerPersistence.flush()
+    return composerWriteErrors.values.first.map { "草稿保存失败：\($0)" }
+  }
+
   public func start() {
     guard eventLifecycle == .idle else { return }
     eventLifecycle = .running
+    startStorageMonitoring()
     // Opt-in real-usage stall recorder (default off; see ArkMainThreadStallMonitor). The context
     // provider is only called when a stall is actually recorded.
     ArkMainThreadStallMonitor.shared.contextProvider = { [weak self] in
@@ -3290,6 +3509,16 @@ public final class ArkAppModel: ObservableObject {
 
   /// Stop event delivery and await both WebSocket pumps before the owner releases this model.
   public func shutdown() async {
+    storageStopped = true
+    storageObservationRevision &+= 1
+    let storageMonitor = storageMonitorTask
+    let storageRetry = storageRetryTask
+    storageMonitorTask = nil
+    storageRetryTask = nil
+    storageMonitor?.cancel()
+    storageRetry?.cancel()
+    if let storageMonitor { await storageMonitor.value }
+    if let storageRetry { await storageRetry.value }
     composerStopped = true
     knowledgeStopped = true
     _ = stopDeepResearch()
@@ -3297,6 +3526,7 @@ public final class ArkAppModel: ObservableObject {
     wikiLoadGeneration &+= 1
     let submission = composerSubmissionTask
     submission?.cancel()
+    await commandSubmissions.stop(cancelResponseWaiters: true)
     let attachmentRestores = Array(composerAttachmentTasks.values)
     attachmentRestores.forEach { $0.cancel() }
     let knowledgeOperations = Array(knowledgeOperationTasks.values)
@@ -3378,6 +3608,7 @@ public final class ArkAppModel: ObservableObject {
   /// 选中会话并恢复其对话表面。用户从侧栏点选时导航到对话页；
   /// 启动恢复等程序化路径可传 `navigateToChat: false` 避免覆盖用户已选的 Tab。
   public func selectSession(_ sessionID: String, navigateToChat: Bool = true) {
+    guard !nativeInputFrozen else { return }
     navigationErrorMessage = nil
     cacheCurrentConversationSurface()
     let previousWorkspaceID = selectedWorkspaceID
@@ -3527,6 +3758,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func selectWorkspace(_ workspaceID: String) {
+    guard !nativeInputFrozen else { return }
     navigationErrorMessage = nil
     selectedWorkspaceID = workspaceID
     var cancelledResearch: Task<Void, Never>?
@@ -3546,6 +3778,7 @@ public final class ArkAppModel: ObservableObject {
   /// Enter the resident new-conversation hero without creating a durable
   /// blank Session.  The first real submit owns session creation.
   public func beginNewConversation() {
+    guard !nativeInputFrozen else { return }
     clearConversationSurface()
     let abandonedDocuments = pendingDocuments
     composerMigratingDrafts.removeValue(forKey: Keys.draft(nil))
@@ -4104,7 +4337,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func sendComposer(modeOverride: ArkPromptDeliveryMode?) {
-    guard !composerStopped, !composerSubmissionInFlight else { return }
+    guard !nativeInputFrozen, !composerStopped, !composerSubmissionInFlight else { return }
     guard !composerAttachmentFailedKeys.contains(Keys.draft(selectedSessionID)) else {
       composerErrorMessage = "草稿附件恢复失败，请重试恢复或明确移除失败附件后再发送"
       return
@@ -4119,7 +4352,8 @@ public final class ArkAppModel: ObservableObject {
     }
     composerDraftDocument.prepareSubmission(
       mode: selectedSession?.running == true ? (modeOverride ?? busyEnterBehavior) : .queue,
-      timeZone: ArkInteractionAPI.launchTimeZoneIdentifier()
+      timeZone: ArkInteractionAPI.launchTimeZoneIdentifier(),
+      permissionPreset: selectedSessionID == nil ? draftPermissionPreset : nil
     )
     persistComposerDraft(for: selectedSessionID)
     let capturedDocument = composerDraftDocument
@@ -4139,16 +4373,16 @@ public final class ArkAppModel: ObservableObject {
     let sourceNavigationGeneration = historyProjectionGeneration
     let sourceAgentPresetID = nextAgentPresetID
     let pendingModel = draftModelSelection
-    let pendingPermission = draftPermissionPreset
+    let pendingPermission = capturedDocument.submissionPermissionPreset
     let sourceIsSubagent = selectedSession?.origin == "subagent" || selectedSubagentEntry != nil
-    // Ordinary prompts retain caller-stable receipts; slash commands clear only after their
-    // existing execution succeeds and do not acquire prompt retry semantics.
+    // Prompt and command retries retain the same captured identity and attachment journal.
     invalidateComposerSuggestions()
     composerSubmissionInFlight = true
     composerSubmittedDocuments = documents
     let submissionOwner = beginComposerOperation(for: sourceSessionID ?? capturedDocument.submissionID)
     composerSubmissionTask = Task {
       var targetSessionID = sourceSessionID
+      var submittedAsCommand = false
       defer {
         composerSubmissionTask = nil
         composerSubmittedDocuments = []
@@ -4158,14 +4392,8 @@ public final class ArkAppModel: ObservableObject {
       }
       do {
         await composerPersistence.flush()
-        let journalIdentifier: String
-        if text.hasPrefix("/"), !sourceIsSubagent {
-          journalIdentifier = try await documentStore.prepareComposerAttachments(
-            sessionID: sourceSessionID, images: images, documents: documents)
-        } else {
-          journalIdentifier = try await documentStore.persistInflightComposerSubmission(
-            document: capturedDocument, sessionID: sourceSessionID, images: images, documents: documents)
-        }
+        let journalIdentifier = try await documentStore.persistInflightComposerSubmission(
+          document: capturedDocument, sessionID: sourceSessionID, images: images, documents: documents)
         await composerDocumentCleanupTask?.value
         guard composerOperationIsCurrent(submissionOwner) else { return }
         let promptText = try await documentStore.contextualizedPrompt(
@@ -4193,13 +4421,18 @@ public final class ArkAppModel: ObservableObject {
           if let pendingModel {
             _ = try await client.selectModel(sessionID: sessionID, selection: pendingModel)
           }
-          if let pendingPermission {
-            _ = try await client.setPermissionPreset(sessionID: sessionID, preset: pendingPermission)
-          }
           if selectedSessionID == sessionID {
             draftModelSelection = nil
             draftPermissionPreset = nil
           }
+        }
+        guard composerOperationIsCurrent(submissionOwner) else { return }
+        if let pendingPermission, let parentID = capturedDocument.submissionID {
+          let receipt = try await commandSubmissions.submitAction(sessionID: sessionID,
+            line: "/permission \(pendingPermission)", parentSubmissionID: parentID)
+          guard composerOperationIsCurrent(submissionOwner) else { return }
+          try await requireCommandActionSuccess(receipt, sessionID: sessionID, owner: submissionOwner)
+          try await commandSubmissions.acknowledgeAction(receipt)
         }
         guard composerOperationIsCurrent(submissionOwner) else { return }
         if sourceIsSubagent {
@@ -4260,16 +4493,12 @@ public final class ArkAppModel: ObservableObject {
             guard documents.isEmpty else {
               throw ArkAPIError(message: "/\(command.name) 暂不接受文档引用")
             }
-            guard let execution = try await client.executeCommand(
-              sessionID: sessionID,
-              line: text,
-              images: images
-            ) else {
-              throw ArkAPIError(message: "命令目录已经变化，请重试")
+            guard let invocationID = capturedDocument.submissionID else {
+              throw ArkAPIError(message: "命令提交身份缺失，请重新编辑后发送")
             }
-            guard execution.result == .success else {
-              throw ArkAPIError(message: execution.text ?? "/\(command.name) 执行失败")
-            }
+            submittedAsCommand = true
+            _ = try await commandSubmissions.submitCaptured(sessionID: sessionID, line: text,
+              images: images, invocationID: invocationID)
           }
         }
         guard composerOperationIsCurrent(submissionOwner) else { return }
@@ -4293,7 +4522,7 @@ public final class ArkAppModel: ObservableObject {
         }
         guard selectedSessionID == targetSessionID else { return }
         composerErrorMessage = error.localizedDescription
-        if !sourceIsSubagent,
+        if !sourceIsSubagent, !submittedAsCommand,
            composerDraftDocument == capturedDocument,
            pendingImages == images, pendingDocuments == documents,
            !imageModelFallbackInFlight,
@@ -4574,6 +4803,8 @@ public final class ArkAppModel: ObservableObject {
     composerAttachmentFailedKeys.remove(key)
     if selectedSessionID == sessionID { composerAttachmentRestoreFailed = false }
     composerPersistence.discardPending(for: key)
+    failedComposerWrites.removeValue(forKey: key)
+    composerWriteErrors.removeValue(forKey: key)
     guard let identifier = defaults.string(forKey: Keys.draftAttachments(sessionID)) else { return }
     defaults.removeObject(forKey: Keys.draftAttachments(sessionID))
     Task { await removeUnreferencedAttachmentJournal(identifier) }
@@ -4608,7 +4839,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func composerOperationIsCurrent(_ owner: ComposerOperationOwner) -> Bool {
-    !Task.isCancelled && !composerStopped && composerOperations[owner.key]?.token == owner.token
+    !Task.isCancelled && !nativeInputFrozen && !composerStopped && composerOperations[owner.key]?.token == owner.token
   }
 
   private func finishComposerOperation(_ owner: ComposerOperationOwner) {
@@ -4661,6 +4892,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func addPastedImage(data: Data, mediaType: ArkImageMediaType) {
+    guard !nativeInputFrozen else { return }
     let limits = sessionProjections["imageLimits"]
     let maxCount = Int(limits?["maxImagesPerMessage"]?.numberValue ?? 20)
     let maxEach = min(Int(limits?["maxImageBytes"]?.numberValue ?? Double(5 * 1024 * 1024)), 5 * 1024 * 1024)
@@ -4683,6 +4915,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func addImageURLs(_ urls: [URL]) {
+    guard !nativeInputFrozen else { return }
     let limits = sessionProjections["imageLimits"]
     let maxCount = Int(limits?["maxImagesPerMessage"]?.numberValue ?? 20)
     let maxEach = min(Int(limits?["maxImageBytes"]?.numberValue ?? Double(5 * 1024 * 1024)), 5 * 1024 * 1024)
@@ -4724,12 +4957,14 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func removePendingImage(at index: Int) {
+    guard !nativeInputFrozen else { return }
     guard pendingImages.indices.contains(index) else { return }
     pendingImages.remove(at: index)
     composerAttachmentsDidChange(for: selectedSessionID)
   }
 
   public func addPastedDocument(_ text: String) {
+    guard !nativeInputFrozen else { return }
     guard text.utf8.count >= ArkDocumentReferenceStore.longPasteThreshold else { return }
     guard pendingDocuments.count < 8 else {
       composerErrorMessage = "每条消息最多可引用 8 份文档"
@@ -4757,6 +4992,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func addDocumentURLs(_ urls: [URL]) {
+    guard !nativeInputFrozen else { return }
     guard pendingDocuments.count + urls.count <= 8 else {
       composerErrorMessage = "每条消息最多可引用 8 份文档"
       return
@@ -4835,6 +5071,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func removePendingDocument(at index: Int) {
+    guard !nativeInputFrozen else { return }
     guard pendingDocuments.indices.contains(index) else { return }
     let document = pendingDocuments.remove(at: index)
     composerAttachmentsDidChange(for: selectedSessionID)
@@ -4842,6 +5079,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func answerApproval(_ request: ArkApprovalRequest, decision: ArkApprovalDecision) {
+    guard !nativeInputFrozen else { return }
     guard respondingInteractionIDs.insert(request.id).inserted else { return }
     Task {
       defer { respondingInteractionIDs.remove(request.id) }
@@ -4956,20 +5194,34 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func setPermissionPreset(_ preset: String) {
+    guard !nativeInputFrozen, !composerStopped else { return }
+    let selected = preset.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !selected.isEmpty else { composerErrorMessage = "权限预设不能为空"; return }
     guard let sessionID = selectedSessionID else {
-      draftPermissionPreset = preset
-      setDefaultPermissionPreset(preset)
+      draftPermissionPreset = selected
+      setDefaultPermissionPreset(selected)
       return
     }
+    let owner = beginComposerOperation(for: sessionID)
     Task {
+      defer { finishComposerOperation(owner) }
       do {
-        _ = try await client.setPermissionPreset(sessionID: sessionID, preset: preset)
+        let receipt = try await commandSubmissions.submitAction(sessionID: sessionID,
+          line: "/permission \(selected)")
+        guard composerOperationIsCurrent(owner) else { return }
+        try await requireCommandActionSuccess(receipt, sessionID: sessionID, owner: owner)
+        try await supersedeComposerPermissionPrerequisite(for: sessionID)
+        guard composerOperationIsCurrent(owner) else { return }
         await refreshNavigation(refreshWiki: false)
+        guard composerOperationIsCurrent(owner) else { return }
+        try await commandSubmissions.acknowledgeAction(receipt)
         // 权限选择器本身原地显示当前状态，不再弹 Toast，
         // 切换不产生任何瞬态 UI，也不触碰布局与滚动。
-        composerErrorMessage = nil
+        if composerOperationIsCurrent(owner), selectedSessionID == sessionID { composerErrorMessage = nil }
       } catch {
-        composerErrorMessage = error.localizedDescription
+        if composerOperationIsCurrent(owner), selectedSessionID == sessionID {
+          composerErrorMessage = error.localizedDescription
+        }
       }
     }
   }
@@ -5016,13 +5268,20 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func runSessionCommand(_ line: String) {
-    guard let sessionID = selectedSessionID else { return }
+    guard !nativeInputFrozen, !composerStopped, let sessionID = selectedSessionID else { return }
+    let owner = beginComposerOperation(for: sessionID)
     Task {
+      defer { finishComposerOperation(owner) }
       do {
-        _ = try await client.executeCommand(sessionID: sessionID, line: line)
-        composerErrorMessage = nil
+        let receipt = try await commandSubmissions.submitAction(sessionID: sessionID, line: line)
+        guard composerOperationIsCurrent(owner) else { return }
+        try await requireCommandActionSuccess(receipt, sessionID: sessionID, owner: owner)
+        try await commandSubmissions.acknowledgeAction(receipt)
+        if composerOperationIsCurrent(owner), selectedSessionID == sessionID { composerErrorMessage = nil }
       } catch {
-        composerErrorMessage = error.localizedDescription
+        if composerOperationIsCurrent(owner), selectedSessionID == sessionID {
+          composerErrorMessage = error.localizedDescription
+        }
       }
     }
   }
@@ -6081,11 +6340,15 @@ public final class ArkAppModel: ObservableObject {
         guard knowledgeResearchOperationID == operationID, knowledgeScopeIsCurrent(scope) else { return }
         await loadWiki()
         guard knowledgeResearchOperationID == operationID, knowledgeScopeIsCurrent(scope) else { return }
-        guard result.errorCode == nil, result.sourceCount > 0 else {
-          knowledgeErrorMessage = result.warnings.first ?? "研究没有取得来源，未生成研究结果"
+        guard result.errorCode == nil, result.sourceCount > 0, !result.findings.isEmpty else {
+          knowledgeErrorMessage = result.warnings.first ?? (languagePreference == .zh
+            ? "研究没有生成有来源的候选页面，请检查来源或重试。"
+            : "Research produced no candidate pages with sources. Check the sources or retry.")
           return
         }
-        postResultMessage("研究完成：\(result.sourceCount) 个来源，\(result.findings.count) 个页面")
+        postResultMessage(languagePreference == .zh
+          ? "已生成 \(result.findings.count) 个待审阅候选；\(result.sourceCount) 个搜索摘要来源，未读取全文。"
+          : "Created \(result.findings.count) candidates for review from \(result.sourceCount) search-snippet sources; full pages were not read.")
         knowledgeErrorMessage = result.degraded ? result.warnings.joined(separator: "\n") : nil
       } catch {
         guard knowledgeResearchOperationID == operationID, knowledgeScopeIsCurrent(scope) else { return }

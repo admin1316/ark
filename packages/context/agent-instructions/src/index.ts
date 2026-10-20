@@ -222,7 +222,7 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   const syncInbox = (agent: Agent, claimed: readonly UserMessage[], desired: UserMessage | undefined): void => {
-    const pending = agent.inbox.nextStep.filter(isWorkspaceContext)
+    const pending = agent.inbox.nextStep.filter(message => isWorkspaceContext(message) && !claimed.includes(message))
     const alreadySupplied = desired !== undefined && (
       claimed.some(message => sameContextPayload(message, desired))
       || agent.session.surface.nodes.some((seq) => {
@@ -253,7 +253,7 @@ export function apply(ctx: Context, config: Config): void {
     claimed: readonly UserMessage[],
     touchedPaths: readonly string[] = [],
   ): Promise<void> => {
-    const pending = agent.inbox.nextStep.filter(isWorkspaceContext)
+    const pending = agent.inbox.nextStep.filter(message => isWorkspaceContext(message) && !claimed.includes(message))
     const desired = await compose(agent, signal, claimed, pending, touchedPaths)
     signal.throwIfAborted()
     syncInbox(agent, claimed, desired)
@@ -325,7 +325,7 @@ export function apply(ctx: Context, config: Config): void {
   ): Promise<PreStepDecision> => {
     const decision = await next()
     await waitForProjections(agent)
-    const pending = agent.inbox.nextStep.filter(isWorkspaceContext)
+    const pending = agent.inbox.nextStep.filter(message => isWorkspaceContext(message) && !messages.includes(message))
     const desired = await compose(agent, signal, messages, pending)
     signal.throwIfAborted()
     // An empty first entry owns a no-step turn; keep context pending instead

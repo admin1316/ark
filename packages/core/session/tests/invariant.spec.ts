@@ -15,6 +15,23 @@ async function setup(): Promise<{ ctx: Context; fiber: Awaited<ReturnType<Contex
 }
 
 describe('session-log invariants', () => {
+  it('validates an entire atomic step against provisional relations without advancing a rejected prefix', async () => {
+    const { ctx } = await setup()
+    const session = ctx.sessions.create(SessionId('atomic-relations'))
+    session.append('turn/start', { turn: 1 })
+    expect(() => session.appendAtomic([
+      { type: 'step/start', data: { turn: 1, step: 1 } },
+      { type: 'step/end', data: { turn: 1, step: 2 } },
+    ])).toThrow('open is turn 1/step 1')
+    expect(session.seq).toBe(1)
+    expect(() => session.appendAtomic([
+      { type: 'step/start', data: { turn: 1, step: 1 } },
+      { type: 'step/end', data: { turn: 1, step: 1 } },
+      { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ])).not.toThrow()
+    expect(() => session.append('turn/start', { turn: 2 })).not.toThrow()
+    await ctx.fiber.dispose()
+  })
   it('keeps registration global when the companion is mounted under a scope', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

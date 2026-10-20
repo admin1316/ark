@@ -5,7 +5,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { WebRuntime } from '@deepseek-ai/dsh-web'
 import type { AttachmentStore, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { basename, extname } from 'node:path'
-import { decodeKnowledgeText } from './file-extract.ts'
+import { decodeKnowledgeText, isKnowledgeFileErrorCode, KnowledgeFileError } from './file-extract.ts'
 import { readRegularFileBounded } from './filesystem.ts'
 import type { KnowledgeWikiStageExecutor, KnowledgeWikiStageRequest, KnowledgeWikiStageResult } from './stage-executor.ts'
 
@@ -23,15 +23,19 @@ function abortError(signal: AbortSignal): Error {
 const FILE_WORKER_SOURCE = `
 const { parentPort, workerData } = require('node:worker_threads')
 const fs = require('node:fs')
+const { createHash } = require('node:crypto')
+const KnowledgeFileError = (${KnowledgeFileError.toString()})
 const decode = (${decodeKnowledgeText.toString()})
+let sourceHash
 try {
-  const admitted = decode(workerData.path, new Uint8Array())
-  if (admitted === null) throw new Error('unsupported knowledge source format; original file was preserved')
+  const admitted = decode(workerData.path, new Uint8Array(), true)
+  if (admitted === null) throw new KnowledgeFileError('unsupported-format', 'unsupported knowledge source format; original file was preserved')
   else {
     const fd = fs.openSync(workerData.path, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0))
     try {
       const stat = fs.fstatSync(fd)
-      if (!stat.isFile() || stat.nlink !== 1 || stat.size > 5 * 1024 * 1024) throw new Error('knowledge source is not a bounded regular text file')
+      if (!stat.isFile() || stat.nlink !== 1) throw new Error('knowledge source is not a regular unlinked text file')
+      if (stat.size > 5 * 1024 * 1024) throw new KnowledgeFileError('source-too-large', 'knowledge text exceeds the 5 MiB extraction limit')
       const bytes = Buffer.alloc(stat.size + 1)
       let count = 0
       while (count < bytes.length) {
@@ -40,11 +44,15 @@ try {
         count += read
       }
       if (count > stat.size) throw new Error('knowledge source changed during extraction')
-      parentPort.postMessage({ ok: true, text: decode(workerData.path, bytes.subarray(0, count)) })
+      const source = bytes.subarray(0, count)
+      let text
+      try { text = decode(workerData.path, source) }
+      catch (error) { sourceHash = createHash('sha256').update(source).digest('hex'); throw error }
+      parentPort.postMessage({ ok: true, text })
     } finally { fs.closeSync(fd) }
   }
 } catch (error) {
-  parentPort.postMessage({ ok: false, error: error instanceof Error ? error.message : String(error) })
+  parentPort.postMessage({ ok: false, error: error instanceof Error ? error.message : String(error), code: error instanceof Error && 'code' in error ? error.code : undefined, sourceHash })
 }
 `
 
@@ -62,10 +70,13 @@ async function extractOwned(path: string, signal: AbortSignal): Promise<Knowledg
       }
       const onAbort = (): void => { finish(() => { reject(abortError(signal)) }) }
       signal.addEventListener('abort', onAbort, { once: true })
-      worker.once('message', (message: { ok: boolean; text: string | null; error?: string }) => {
+      worker.once('message', (message: { ok: boolean; text: string | null; error?: string; code?: unknown; sourceHash?: unknown }) => {
         finish(() => {
           if (message.ok) resolve({ text: message.text })
-          else reject(new Error(message.error))
+          else reject(isKnowledgeFileErrorCode(message.code)
+            ? new KnowledgeFileError(message.code, message.error ?? 'knowledge source extraction failed',
+              typeof message.sourceHash === 'string' && /^[a-f0-9]{64}$/u.test(message.sourceHash) ? message.sourceHash : undefined)
+            : new Error(message.error))
         })
       })
       worker.once('error', (error) => { finish(() => { reject(error) }) })

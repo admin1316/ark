@@ -72,8 +72,8 @@ describe('Agent.cancel()', () => {
     expect(agent.session.events.some(e => e.type === 'turn/end')).toBe(true)
   })
 
-  it('cancel({ keepInbox: true }) does not restore work already claimed by a waking send', async () => {
-    const adapter = new MockAdapter([textResponse('wake reply')])
+  it('cancel({ keepInbox: true }) preserves a waking send until its atomic input commit', async () => {
+    const adapter = new MockAdapter([textResponse('preserved reply'), textResponse('wake reply')])
     const ctx = await harness(adapter)
     const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
 
@@ -81,13 +81,12 @@ describe('Agent.cancel()', () => {
       content: [{ type: 'text', text: 'preserved' }],
       source: { kind: 'user' },
     }))
-    // A waking send starts and claims synchronously, so keepInbox has no
-    // pending item to preserve by the time this cancellation runs.
+    // Async preparation observes input without deleting it from the durable inbox.
     agent.cancel({ kind: 'user' }, { keepInbox: true })
     expect(agent.session.events.some(event =>
       event.type === 'agent/inbox/spliced' && event.data.outcome === 'canceled')).toBe(false)
     await agent.whenIdle()
-    expect(agent.inbox.nextTurn).toHaveLength(0)
+    expect(agent.inbox.nextTurn).toHaveLength(1)
     expect(userTexts(agent)).toEqual([])
     expect(adapter.requests).toHaveLength(0)
     expect(agent.session.events.findLast(event => event.type === 'turn/end')?.data.reason)
@@ -96,8 +95,8 @@ describe('Agent.cancel()', () => {
     const idle = waitForIdle(ctx, agent)
     send(agent, 'wake it')
     await idle
-    expect(userTexts(agent)).toEqual(['wake it'])
-    expect(adapter.requests).toHaveLength(1)
+    expect(userTexts(agent)).toEqual(['preserved', 'wake it'])
+    expect(adapter.requests).toHaveLength(2)
   })
 
   it('cancel({ keepInbox: true }) parks queued work after an active turn aborts', async () => {

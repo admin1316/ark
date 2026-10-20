@@ -400,6 +400,9 @@ async function harness(options: HarnessOptions = {}): Promise<CoverageHarness> {
     ctx.provide('sessionPersistence', {
       supportsRawArtifacts: true,
       ensureMaterialized: async () => {},
+      writeState: () => ({ phase: 'healthy', events: 0, bytes: 0, totalEvents: 0, totalBytes: 0,
+        oldestAt: null, lastSuccessAt: null, waitTimeoutMs: 30_000, errorCode: null }),
+      waitForCapacity: async (_session: Session, signal: AbortSignal) => { signal.throwIfAborted() },
       list: persistenceList,
       inspect: persistenceInspect,
       locate: (header: SessionHeader) => ({ path: join(cwd, `${header.id}.jsonl`) }),
@@ -423,7 +426,15 @@ async function harness(options: HarnessOptions = {}): Promise<CoverageHarness> {
     })
   }
   if (!omitted.has('sessionTitle')) ctx.provide('sessionTitle', { rename: titleRename } as never)
-  if (!omitted.has('commands')) ctx.provide('commands', { execute: commandExecute } as never)
+  if (!omitted.has('commands')) ctx.provide('commands', {
+    hasInvocation: () => false,
+    receipt: async () => undefined,
+    whenSettled: async () => {},
+    execute: async (...args: unknown[]) => {
+      const value = await commandExecute(...args)
+      return value === undefined ? undefined : { state: 'completed', ...value as object }
+    },
+  } as never)
   if (!omitted.has('agentPresets')) {
     ctx.provide('agentPresets', {
       resolve: presetResolve,
@@ -2803,14 +2814,14 @@ describe('Session Remote prompt, attachment, queue, and cancellation', () => {
       content: [{ type: 'text', text: '/explode' }],
     }), new AbortController().signal)).resolves.toMatchObject({
       ok: false,
-      error: { code: 'command-error', message: 'command exploded' },
+      error: { code: 'command-unavailable', details: { reason: 'Error: command exploded' } },
     })
     state.commandExecute.mockRejectedValueOnce('command string failure')
     await expect(state.service.prompt(prompt(session.id, {
       content: [{ type: 'text', text: '/explode' }],
     }), new AbortController().signal)).resolves.toMatchObject({
       ok: false,
-      error: { message: 'command string failure' },
+      error: { code: 'command-unavailable', details: { reason: 'command string failure' } },
     })
     expect(agent.followup).not.toHaveBeenCalled()
   })
@@ -3518,8 +3529,8 @@ describe('Session Remote admission, history source, and delivery contracts', () 
     await expect(state.service.prompt(requestFor(sessionId, 'invocation'), new AbortController().signal)).resolves.toEqual({
       ok: false,
       error: {
-        code: 'internal',
-        message: `resume failed for session "${sessionId}": Error: session persistence is not configured`,
+        code: 'storage-write-failed',
+        message: 'input was not accepted; preserve the draft',
         details: {},
       },
     })
@@ -3533,8 +3544,8 @@ describe('Session Remote admission, history source, and delivery contracts', () 
     await expect(state.service.prompt(requestFor(session.id, 'invocation'), new AbortController().signal)).resolves.toEqual({
       ok: false,
       error: {
-        code: 'prompt-unavailable',
-        message: 'ordinary prompts require a persistence owner',
+        code: 'storage-write-failed',
+        message: 'input was not accepted; preserve the draft',
         details: {},
       },
     })

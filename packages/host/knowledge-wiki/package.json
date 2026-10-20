@@ -42,6 +42,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "mdast-util-from-markdown": "^2.0.3",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -58,6 +59,7 @@
     "@deepseek-ai/dsh-brand": "workspace:^"
   },
   "devDependencies": {
+    "@types/mdast": "^4.0.4",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",

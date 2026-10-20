@@ -572,9 +572,9 @@ describe('/plan', () => {
     ])
 
     const signal = new AbortController().signal
-    expect(await ctx.commands.execute(plainAgent, '/mode', [], signal)).toBeUndefined()
-    expect(await ctx.commands.execute(plainAgent, '/review', [], signal)).toBeUndefined()
-    const plain = await ctx.commands.execute(plainAgent, '/plan', [], signal)
+    expect(await ctx.commands.executeLocal(plainAgent, '/mode', [], signal)).toBeUndefined()
+    expect(await ctx.commands.executeLocal(plainAgent, '/review', [], signal)).toBeUndefined()
+    const plain = await ctx.commands.executeLocal(plainAgent, '/plan', [], signal)
     expect(plain?.result).toEqual({
       kind: 'success',
       text: 'Entering plan mode (applies from the next step). Use /plan off to leave.',
@@ -586,7 +586,7 @@ describe('/plan', () => {
     openTurn(messageAgent.session)
     const messageSteer = vi.fn()
     ;(messageAgent as unknown as { steer: typeof messageSteer }).steer = messageSteer
-    const plan = await ctx.commands.execute(messageAgent, '/plan   draft the migration  ', [], signal)
+    const plan = await ctx.commands.executeLocal(messageAgent, '/plan   draft the migration  ', [], signal)
     expect(plan?.result).toEqual({
       kind: 'success',
       text: 'Entering plan mode (applies from the next step). Use /plan off to leave.',
@@ -607,7 +607,7 @@ describe('/plan', () => {
     const signal = new AbortController().signal
 
     const inactive = await agentWithSession(ctx, 'inactive-plan-command')
-    expect((await ctx.commands.execute(inactive, '/plan off', [], signal))?.result)
+    expect((await ctx.commands.executeLocal(inactive, '/plan off', [], signal))?.result)
       .toEqual({ kind: 'success', text: 'Plan mode is already inactive.' })
     expect(ctx.planMode.get(inactive)).toEqual({ active: false })
 
@@ -615,8 +615,8 @@ describe('/plan', () => {
     openTurn(entering.session)
     const enteringSteer = vi.fn()
     ;(entering as unknown as { steer: typeof enteringSteer }).steer = enteringSteer
-    await ctx.commands.execute(entering, '/plan', [], signal)
-    expect((await ctx.commands.execute(entering, '/plan off', [], signal))?.result)
+    await ctx.commands.executeLocal(entering, '/plan', [], signal)
+    expect((await ctx.commands.executeLocal(entering, '/plan off', [], signal))?.result)
       .toEqual({ kind: 'success', text: 'Plan mode entry cancelled.' })
     expect(ctx.planMode.get(entering)).toEqual({ active: false, pending: false })
     expect(enteringSteer).not.toHaveBeenCalled()
@@ -628,10 +628,10 @@ describe('/plan', () => {
     openTurn(active.session)
     const activeSteer = vi.fn()
     ;(active as unknown as { steer: typeof activeSteer }).steer = activeSteer
-    expect((await ctx.commands.execute(active, '/plan off', [], signal))?.result)
+    expect((await ctx.commands.executeLocal(active, '/plan off', [], signal))?.result)
       .toEqual({ kind: 'success', text: 'Leaving plan mode (applies from the next step).' })
     expect(ctx.planMode.get(active)).toEqual({ active: true, pending: false })
-    expect((await ctx.commands.execute(active, '/plan off', [], signal))?.result)
+    expect((await ctx.commands.executeLocal(active, '/plan off', [], signal))?.result)
       .toEqual({ kind: 'success', text: 'Leaving plan mode (applies from the next step).' })
     expect(activeSteer).not.toHaveBeenCalled()
     await boundary(ctx, active, 'step-start')
@@ -644,10 +644,10 @@ describe('/plan', () => {
     await new Promise(resolve => setImmediate(resolve))
     const signal = new AbortController().signal
     const agent = await agentWithSession(ctx, 'idle-plan-command')
-    expect((await ctx.commands.execute(agent, '/plan', [], signal))?.result)
+    expect((await ctx.commands.executeLocal(agent, '/plan', [], signal))?.result)
       .toEqual({ kind: 'success', text: 'Plan mode on. Use /plan off to leave.' })
     expect(foldPlanMode(agent.session.events)).toBe(true)
-    expect((await ctx.commands.execute(agent, '/plan off', [], signal))?.result)
+    expect((await ctx.commands.executeLocal(agent, '/plan off', [], signal))?.result)
       .toEqual({ kind: 'success', text: 'Plan mode off.' })
     expect(foldPlanMode(agent.session.events)).toBe(false)
   })
@@ -683,7 +683,7 @@ describe('/plan', () => {
     openTurn(agent.session)
     const steer = vi.fn()
     ;(agent as unknown as { steer: typeof steer }).steer = steer
-    const withMessage = await ctx.commands.execute(agent, '/plan sketch the layout', images, signal)
+    const withMessage = await ctx.commands.executeLocal(agent, '/plan sketch the layout', images, signal)
     expect(withMessage?.result.kind).toBe('success')
     expect(steer).toHaveBeenCalledExactlyOnceWith({
       id: expect.any(String) as unknown,
@@ -699,7 +699,7 @@ describe('/plan', () => {
     openTurn(bareAgent.session)
     const bareSteer = vi.fn()
     ;(bareAgent as unknown as { steer: typeof bareSteer }).steer = bareSteer
-    expect((await ctx.commands.execute(bareAgent, '/plan', images, signal))?.result)
+    expect((await ctx.commands.executeLocal(bareAgent, '/plan', images, signal))?.result)
       .toEqual({ kind: 'success', text: 'Entering plan mode (applies from the next step). Use /plan off to leave.' })
     expect(bareSteer).toHaveBeenCalledExactlyOnceWith({
       id: expect.any(String) as unknown,
@@ -712,7 +712,7 @@ describe('/plan', () => {
     const activeAgent = await agentWithSession(ctx, 'imaged-off-plan-command', { active: true })
     const offSteer = vi.fn()
     ;(activeAgent as unknown as { steer: typeof offSteer }).steer = offSteer
-    expect((await ctx.commands.execute(activeAgent, '/plan off', images, signal))?.result)
+    expect((await ctx.commands.executeLocal(activeAgent, '/plan off', images, signal))?.result)
       .toEqual({ kind: 'error', text: 'Image attachments cannot accompany /plan off.' })
     expect(offSteer).not.toHaveBeenCalled()
     expect(ctx.planMode.get(activeAgent)).toEqual({ active: true })

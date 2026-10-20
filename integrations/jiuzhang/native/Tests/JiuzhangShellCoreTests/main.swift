@@ -24,6 +24,7 @@ let expectedContractGroups = [
   "backend-readiness",
   "event-pump-lifecycle",
   "domain-api",
+  "storage",
   "duplicate-key",
   "interaction-api",
   "composer-sources",
@@ -97,6 +98,7 @@ await runAsyncContractGroup("backend-recovery") {
 await runAsyncContractGroup("backend-readiness", runArkBackendReadinessContractChecks)
 await runAsyncContractGroup("event-pump-lifecycle", runArkEventPumpLifecycleContractChecks)
 runContractGroup("domain-api", runArkDomainAPIContractChecks)
+await runAsyncContractGroup("storage", runArkStorageContractChecks)
 runContractGroup("duplicate-key", runArkDuplicateKeyContractChecks)
 runContractGroup("interaction-api", runArkInteractionAPIContractChecks)
 runContractGroup("composer-sources", runArkComposerSourcesContractChecks)

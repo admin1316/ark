@@ -45,6 +45,21 @@ const headers = await ctx.sessionPersistence.list()        // every stored sessi
 
 `append` resolves only after the batch is durable, so a resolved write survives an OS crash or power loss. Ordinary `create` remains lazy; a lifecycle frontend calls `ensureMaterialized` only when an empty session must itself appear in durable listing without inventing an event. `load` returns an immutable balanced log and commits any needed crash recovery; `inspect` reads the same view without committing recovery. Consumers that resume from a watermark can read only the events at or past a sequence number, and a session's artifact location (`locate`) resolves without filesystem I/O.
 
+<a id="save-health-and-producer-pressure"></a>
+### Save health and producer pressure
+
+`writeState(session?)` exposes exact-session and aggregate unconfirmed event/byte counts, the oldest outstanding write, last success, and `healthy`, `pressured`, `failed`, or `closing` status. Initialization seeds, active batches, retained failures and disposed Sessions awaiting retirement remain owned until durable acknowledgement. `flushAll()` drains that owner set and its per-id operations, including initialization and retirement absent from the live Session registry. Retrying saving uses these owners; it does not recreate a Session or replay an Agent.
+
+The backend's `writePressure` configuration uses serialized event bytes with low-water hysteresis:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `sessionHighBytes` / `sessionLowBytes` | 4 / 2 MiB | Pause/resume production for one Session |
+| `totalHighBytes` / `totalLowBytes` | 32 / 16 MiB | Pause/resume production across the coordinator |
+| `waitTimeoutMs` | 30,000 ms | Maximum producer wait before reporting a stalled save |
+
+These thresholds measure writes awaiting acknowledgement, not JavaScript heap usage or a process-memory cap. One event can exceed a threshold. `waitForCapacity(session, signal)` waits for low water or rejects on failure, cancellation, closing or timeout; cancelling the wait leaves the writer and retained events intact. The [checkpoint policy](../session-checkpoint-policy/README.md) joins this signal to model and tool production.
+
 ### Resuming and crash recovery
 
 `delete(id)` permanently removes a cold, unreserved session and awaits `session-persistence/deleted` cleanup after releasing its write chain. Live or reserved identities reject with `SessionPersistenceDeleteBlockedError`. A cleanup failure rejects after the durable removal; retrying the same deletion also notifies when the session is already absent. Backends provide `deleteStored` to the coordinator and preserve this ordering.
@@ -83,13 +98,14 @@ The package is the Service Definition of a capability seam with two halves. The 
 | [`src/index.ts`](src/index.ts) | Plugin entry: the abstract `SessionPersistence` service and re-exported metadata types |
 | [`src/coordinator.ts`](src/coordinator.ts) | Shared write orchestration: batching, serialization, repair, adoption, disposal, format refusal |
 | [`src/write-behind.ts`](src/write-behind.ts) | The per-session bounded write controller and flush barrier |
+| [`src/write-pressure.ts`](src/write-pressure.ts) | Acknowledgement-aware counters, hysteresis and cancellable producer waits |
 | [`src/preparations.ts`](src/preparations.ts) | Bounded retention of unpublished Session preparations for resume reuse |
 | [`src/revision.ts`](src/revision.ts) | The branded opaque revision token |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; the coordinator asserts stored/live identity and cwd) |
 
 ### The write path at a glance
 
-Each `session/event` copies the event into its session's controller. The first pending event starts a fixed batching window; later events join without resetting its deadline. Expiry starts one durable append; events admitted during that write form a separately bounded follow-up batch. `session/flush` cancels the wait and drains through quiescence, so the loop uses it as the ordering and error-observation checkpoint before the next turn. A rejected background write retains its events and pauses automatic retry; a new event starts a fresh window, while explicit flush or backend teardown retries immediately.
+Each `session/committed` copies the committed batch and its atomic boundary into its Session's controller. The first pending event starts a fixed batching window; later events join without resetting its deadline. Expiry starts one durable append; events admitted during that write form a separately bounded follow-up batch. The active batch remains counted until acknowledgement; a failed batch returns to the front without increasing its count again. `session/flush` cancels the wait and drains through quiescence, so the loop uses it as the ordering and error-observation checkpoint before the next turn. A rejected background write retains its events and pauses automatic retry; a new event starts a fresh window, while explicit flush or backend teardown retries immediately.
 
 ### Stored-record compatibility
 
@@ -107,6 +123,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [JSONL persistence backend](../session-persistence-jsonl/README.md) — the shipped per-session-file backend.
 - [SQLite persistence backend](../session-persistence-sqlite/README.md) — the opt-in single-database backend.
 - [Session checkpoint policy](../session-checkpoint-policy/README.md) — the plugin that flushes through this service at semantic boundaries.
+- [Save pressure and quit decision](../../../.agents/notes/implemented/bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.md) — producer cancellation, retained owners and explicit quit confirmation.
 - [Session package map](../README.md) — adjacent persistence, projection, title, and telemetry packages.
 
 -----
@@ -135,7 +152,7 @@ Persistence does not mutate live request prefixes. A resumed loop can reuse prov
 
 These limits define where the seam's guarantees stop. They are current package constraints, not a task backlog.
 
-- **No deletion or retention API** — pruning stored sessions is out-of-band backend maintenance.
+- **No automatic retention pruning** — cold-session deletion is explicit; age- or size-based retention remains backend maintenance.
 - **`list()` is unpaginated and unfiltered** — it returns every stored session's header; fine for local stores, unindexed at scale.
 - **Synthetic closers are the only crash story** — a backend must synthesize `tool/result`/`step/end`/`turn/end` closers on load; there is no partial-turn resume that continues an interrupted turn instead of closing it.
 

@@ -59,11 +59,11 @@ ctx.commands.register({
 
 ### 从适配器分派
 
-交互式适配器调用 `execute(agent, line, images, signal)`，传入确切的接收 agent、完整命令行与本次提交的图片。它返回已结算的 `CommandExecution`——规范化结果加生命周期配对 `commandId`——语法无效或名称未知时返回 `undefined`。`list(agent)` 与 `find(agent, name)` 在应用 agent 作用域遮蔽后服务发现。
+原生适配器向 `session/command` 提交 `sessionId`、调用方已保存的 `invocationId`、确切的 `line` 和有序 `images`。Host 在解析 Agent 前先检查活跃或冷会话回执。`completed` 回放持久结果，`running` 观察同一次所属执行，`unknown` 保留身份且不重复处理器。相同身份对应不同内容时失败；同一会话的新调用不能排队等待活跃命令。`list(agent)` 与 `find(agent, name)` 在应用 agent 作用域遮蔽后服务发现。同进程适配器可以显式使用 `executeLocal(agent, line, images, signal)`；该方法没有 Remote 路由，也不提供持久重试约定。
 
 ### 取消
 
-调用方的中止信号会让注册表停止等待处理器；无视信号的处理器可能在调用方停止等待后继续产生自身的外部副作用。被取消或抛异常的处理器在日志中以 `command/done` 错误结算。
+Host 独立于响应传输拥有持久命令的取消。调用方断线后可以查询同一身份，同时处理器继续保持活跃。退出会等待已经进入的处理器；不配合取消的工作仍在运行时，系统不能发布终态记录。重启后，已有持久开始记录却没有确认终态的命令返回 `unknown`。仅限本地的分派会在调用方中止时停止等待，因此处理器必须配合才能停止外部副作用。
 
 -----
 
@@ -82,11 +82,12 @@ ctx.commands.register({
 | [`src/index.ts`](src/index.ts) | `CommandRuntime` 服务：注册、作用域、分派、生命周期事件 |
 | [`src/types.ts`](src/types.ts) | 命令定义、描述符、执行与结果类型 |
 | [`src/brand.ts`](src/brand.ts) | 生命周期配对 id 的 `CommandId` brand |
+| [`src/receipts.ts`](src/receipts.ts) | 基于现有日志事件的输入摘要和仅 Host 回执投影 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：按会话日志配对 `command/run` 与 `command/done` |
 
 ### 生命周期事件
 
-`execute()` 会生成一个 `commandId`，在处理器运行前追加 `command/run`，并在结算时追加携带结果类型与原样文本的 `command/done`；确切载荷字段见 [`src/index.ts`](src/index.ts)。成功结果可以通过 `sourceEventSeq` 指向更早的一条非命令权威领域事件；处理器抛出或被中止时以 `kind: 'error'` 结算。两个事件都是直接独立追加的仅写日志事件：没有轮次包裹它们，持久化机制会在常规检查点和销毁期间排空这些事件。未通过准入的输入（语法无效或名称未知）不记录任何事件。
+持久 `execute()` 在进入处理器前刷盘携带调用身份和输入摘要的 `command/run`，并在返回 `completed` 前刷盘 `command/done`。成功结果可以通过 `sourceEventSeq` 指向更早的权威领域事件；处理器异常成为终态错误结果。两个事件都是独立的仅写日志追加，没有轮次包裹。回执投影引用这些原始记录，不另建账本。持久化屏障失败时返回 `unknown`，绝不会因此允许再次运行处理器。未通过准入的输入（语法无效或名称未知）不记录任何事件。仅限本地的分派在常规检查点和销毁时持久化。
 
 ### 作用域
 
@@ -137,7 +138,7 @@ ctx.commands.register({
 这些限制说明注册表不提供什么。它们是当前包约束，不是 UI 积压事项。
 
 - **仅支持非结构化文本输入**：表单、补全 schema 和类型化参数仍由各命令自行解析。
-- **副作用采用协作式取消**：中止后，分发会停止等待；处理器必须遵循信号，才能停止已经进入外部系统的工作。
+- **外部副作用由处理器负责**：持久回执会阻止自动重复处理器，但不能保证外部系统中的副作用恰好一次；结果中断时需要检查，而不是自动重试。
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -138,7 +138,7 @@ public struct ArkSessionModels: Equatable, Sendable {
   }
 }
 
-/// Settled result kind returned by `commands/execute`.
+/// Settled result kind returned by `session/command`.
 public enum ArkCommandResultKind: String, Equatable, Sendable {
   case success
   case error
@@ -162,6 +162,18 @@ public struct ArkCommandExecution: Identifiable, Equatable, Sendable {
     self.text = text
     self.sourceEventSequence = sourceEventSequence
   }
+}
+
+/// A retried command either replays its result or reports why automatic re-execution is forbidden.
+public enum ArkCommandOutcome: Equatable, Sendable {
+  case completed(ArkCommandExecution)
+  case running(commandID: String)
+  case unknown(commandID: String, reason: ArkCommandUnknownReason)
+}
+
+public enum ArkCommandUnknownReason: String, Equatable, Sendable {
+  case interrupted
+  case durabilityUnconfirmed = "durability-unconfirmed"
 }
 
 /// One browser-free page fetched by the Host and rendered natively as Markdown.
@@ -218,18 +230,37 @@ public struct ArkKnowledgeWriteResult: Equatable, Sendable {
 public struct ArkKnowledgeFinding: Identifiable, Equatable, Sendable {
   public let title: String
   public let path: String
+  public let sourceURLs: [String]
 
   public var id: String { path }
 
-  public init(title: String, path: String) {
+  public init(title: String, path: String, sourceURLs: [String]) {
     self.title = title
     self.path = path
+    self.sourceURLs = sourceURLs
+  }
+}
+
+/// One actual search result; this label never claims the full page was fetched or verified.
+public struct ArkKnowledgeResearchSource: Identifiable, Equatable, Sendable {
+  public let url: String
+  public let title: String?
+  public let evidence = "search-snippet"
+  public var id: String { url }
+
+  public init?(url: String, title: String? = nil) {
+    guard let components = URLComponents(string: url),
+          let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
+          components.host?.isEmpty == false, components.user == nil, components.password == nil else { return nil }
+    self.url = url
+    self.title = title
   }
 }
 
 /// Research provenance and partial failures remain visible to the native caller.
 public struct ArkKnowledgeResearchResult: Equatable, Sendable {
   public let findings: [ArkKnowledgeFinding]
+  public let sources: [ArkKnowledgeResearchSource]
   public let sourceCount: Int
   public let warnings: [String]
   public let degraded: Bool
@@ -349,6 +380,7 @@ public enum ArkHTTPURLInput {
 public enum ArkDomainAPIContract {
   public enum Method {
     public static let sessionCancel = "session/cancel"
+    public static let sessionCommand = "session/command"
     public static let sessionRename = "session/rename"
     public static let sessionFork = "session/fork"
     public static let sessionSearch = "session/search"
@@ -361,7 +393,6 @@ public enum ArkDomainAPIContract {
     public static let workspaceInsertBefore = "workspace/insertBefore"
     public static let workspaceInsertSessionBefore = "workspace/insertSessionBefore"
     public static let commandsList = "commands/list"
-    public static let commandsExecute = "commands/execute"
     public static let knowledgeSearch = "knowledgeWiki/search"
     public static let knowledgeCreatePage = "knowledgeWiki/createPage"
     public static let knowledgeWritePage = "knowledgeWiki/writePage"
@@ -504,13 +535,13 @@ public enum ArkDomainAPIContract {
           let resultValue = value["result"],
           let kindValue = resultValue["kind"]?.stringValue,
           let kind = ArkCommandResultKind(rawValue: kindValue)
-    else { throw invalidResponse("commands/execute") }
+    else { throw invalidResponse("session/command") }
     let sourceSequence: Int?
     if resultValue["sourceEventSeq"] == nil {
       sourceSequence = nil
     } else {
       guard let parsed = nonnegativeInteger(resultValue["sourceEventSeq"]) else {
-        throw invalidResponse("commands/execute sourceEventSeq")
+        throw invalidResponse("session/command sourceEventSeq")
       }
       sourceSequence = parsed
     }
@@ -520,6 +551,29 @@ public enum ArkDomainAPIContract {
       text: resultValue["text"]?.stringValue,
       sourceEventSequence: sourceSequence
     )
+  }
+
+  public static func commandOutcome(from value: JSONValue) throws -> ArkCommandOutcome {
+    guard let state = value["state"]?.stringValue,
+          let commandID = value["commandId"]?.stringValue, !commandID.isEmpty
+    else { throw invalidResponse("session/command") }
+    switch state {
+    case "completed":
+      guard let execution = try commandExecution(from: value) else {
+        throw invalidResponse("session/command result")
+      }
+      return .completed(execution)
+    case "running":
+      return .running(commandID: commandID)
+    case "unknown":
+      guard let rawReason = value["reason"]?.stringValue,
+            let reason = ArkCommandUnknownReason(rawValue: rawReason) else {
+        throw invalidResponse("session/command unknown state")
+      }
+      return .unknown(commandID: commandID, reason: reason)
+    default:
+      throw invalidResponse("session/command state")
+    }
   }
 
   public static func knowledgeSearch(from value: JSONValue) throws -> [ArkKnowledgeSearchHit] {
@@ -550,20 +604,37 @@ public enum ArkDomainAPIContract {
     }
     return try rows.map { row in
       guard let title = row["title"]?.stringValue,
-            let path = row["path"]?.stringValue
+            let path = row["path"]?.stringValue,
+            let sourceValues = row["sourceURLs"]?.arrayValue
       else { throw invalidResponse("knowledgeWiki/deepResearch finding") }
-      return ArkKnowledgeFinding(title: title, path: path)
+      let sourceURLs = try stringArray(sourceValues, context: "knowledgeWiki/deepResearch finding sources")
+      guard !sourceURLs.isEmpty, Set(sourceURLs).count == sourceURLs.count else { throw invalidResponse("knowledgeWiki/deepResearch finding sources") }
+      return ArkKnowledgeFinding(title: title, path: path, sourceURLs: sourceURLs)
     }
   }
 
   public static func knowledgeResearch(from value: JSONValue) throws -> ArkKnowledgeResearchResult {
     guard let sourceCount = nonnegativeInteger(value["sourceCount"]),
+          let sourceValues = value["sources"]?.arrayValue,
           let warnings = value["warnings"]?.arrayValue,
           let degraded = value["degraded"]?.boolValue else {
       throw invalidResponse("knowledgeWiki/deepResearch provenance")
     }
+    let sources = try sourceValues.map { row -> ArkKnowledgeResearchSource in
+      guard row["evidence"]?.stringValue == "search-snippet", let url = row["url"]?.stringValue,
+            let source = ArkKnowledgeResearchSource(url: url, title: row["title"]?.stringValue) else {
+        throw invalidResponse("knowledgeWiki/deepResearch source")
+      }
+      return source
+    }
+    let knownURLs = Set(sources.map(\.url))
+    let findings = try knowledgeFindings(from: value)
+    guard sourceCount == sources.count, knownURLs.count == sources.count,
+          findings.allSatisfy({ Set($0.sourceURLs).isSubset(of: knownURLs) }) else {
+      throw invalidResponse("knowledgeWiki/deepResearch source association")
+    }
     return ArkKnowledgeResearchResult(
-      findings: try knowledgeFindings(from: value), sourceCount: sourceCount,
+      findings: findings, sources: sources, sourceCount: sourceCount,
       warnings: try stringArray(warnings, context: "knowledgeWiki/deepResearch warnings"),
       degraded: degraded, errorCode: value["errorCode"]?.stringValue
     )
@@ -913,45 +984,45 @@ extension ArkAPIClient {
   public func executeCommand(
     sessionID: String,
     line: String,
-    images: [ArkPromptImage] = []
-  ) async throws -> ArkCommandExecution? {
+    images: [ArkPromptImage] = [],
+    invocationID: String
+  ) async throws -> ArkCommandOutcome {
+    guard !invocationID.isEmpty else { throw ArkAPIError(message: "命令提交标识不能为空") }
     let encodedImages: [JSONValue] = images.map { image in
       var value: [String: JSONValue] = [
+        "type": .string("image"),
         "mediaType": .string(image.mediaType.rawValue),
         "data": .string(image.data.base64EncodedString()),
       ]
       if let name = image.name, !name.isEmpty { value["name"] = .string(name) }
       return .object(value)
     }
-    let value = try await remoteCall(
-      method: ArkDomainAPIContract.Method.commandsExecute,
-      args: [
-        "agentId": .string(sessionID),
+    let value = try await remoteDomainRequest(
+      method: ArkDomainAPIContract.Method.sessionCommand,
+      request: [
+        "sessionId": .string(sessionID),
+        "invocationId": .string(invocationID),
         "line": .string(line),
         "images": .array(encodedImages),
       ]
     )
-    return try ArkDomainAPIContract.commandExecution(from: value)
+    return try ArkDomainAPIContract.commandOutcome(from: value)
   }
 
   /// Switch a session's permission preset through the Host-owned `/permission` command.
   @discardableResult
   public func setPermissionPreset(
     sessionID: String,
-    preset: String
-  ) async throws -> ArkCommandExecution {
+    preset: String,
+    invocationID: String
+  ) async throws -> ArkCommandOutcome {
     let selected = preset.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !selected.isEmpty else { throw ArkAPIError(message: "权限预设不能为空") }
-    guard let execution = try await executeCommand(
+    return try await executeCommand(
       sessionID: sessionID,
-      line: "/permission \(selected)"
-    ) else {
-      throw ArkAPIError(message: "当前会话没有提供权限切换命令")
-    }
-    guard execution.result == .success else {
-      throw ArkAPIError(message: execution.text ?? "权限切换失败")
-    }
-    return execution
+      line: "/permission \(selected)",
+      invocationID: invocationID
+    )
   }
 
   /// Bind every project operation before crossing the Host boundary.

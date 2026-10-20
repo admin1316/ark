@@ -45,7 +45,7 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `root` | 必填 | 所有会话文件的根目录 |
-| `packChunks` | `true` | 把符合条件的 `assistant/chunk` 连续段写为打包行；`false` 为诊断保留每事件一行 |
+| `packChunks` | `true` | 打包原子组之外符合条件的 `assistant/chunk` 连续段；`false` 让这些事件各占一行 |
 | `compression` | `'zstd'` | 物理编码：`'zstd'` 带校验和帧，或 `'none'` 换行分隔 UTF-8 文本 |
 | `preparedSessionCacheSize` | `5` | 为恢复复用而保留的冷会话准备结果数量 |
 | `writeBatchMaxDelayMs` | `200` | 实时事件的固定聚合窗口，单位为毫秒 |
@@ -54,7 +54,7 @@ kind: "package-reference"
 
 ### 磁盘布局
 
-每个会话在可读项目目录下获得一个会话自有目录；日志第一个逻辑行是不可变 `SessionHeader`，之后每个逻辑事件一条存储记录（或每个符合条件的连续段一条打包分片行）。存储记录使用下文所述的无损来源序列表示：
+每个会话在可读项目目录下获得一个会话自有目录；第一个逻辑行是不可变 `SessionHeader`，后面可以是单事件、打包分片连续段或带版本的 `atomic-events` 组。存储记录使用下文所述的无损来源序列表示：
 
 ```text
 <root>/
@@ -72,9 +72,13 @@ kind: "package-reference"
 
 会话延迟实体化：`create(meta)` 不写入任何内容，第一次 `append` 通过无覆盖发布写入并 `fsync` 编码后的 header 与第一批——因此已创建但从未 append 的会话不留下任何磁盘内容，除非生命周期消费方调用 `ensureMaterialized`，以无事件的单个 header 帧发布它。已 flush 事件绝不重写；后续每个批次追加行或一个压缩帧，捕获到写入或同步失败时把文件回滚到之前的字节长度。崩溃后，`load` 保留被中断的最终轮次：保留不完整最后帧中完整解码的记录，从该帧开头截断，并按共享持久化约定的要求，用合成工具、步骤与轮次 closer 重新编码这些记录。只有从未完整写入的撕裂尾部被丢弃；已提交前缀中的校验和、解压或结构失败以损坏拒绝。
 
+原子组始终占据一条完整的 `atomic-events` 版本 `1` 记录，不受 `packChunks` 影响。必需的物理 `seq` 与首成员一致，压缩时该记录单独占一帧，与后续普通事件分开。这两项边界共同使 Ark 3.1.2 读取方保留完整的未知记录，并在修复之前拒绝它，而不会把它当成撕裂尾部。当前扫描器验证这一护栏，要么接纳全部成员，要么全部不接纳，包括从不完整 Zstandard 帧抢救内容时；单个帧本身不是逻辑原子性边界。未知组版本会被拒绝。这个封装保留既有逻辑事件与会话格式版本。
+
 ### 读取日志
 
 `inspect(id)` 返回不可变的平衡视图，不提交恢复。`readFrom(id, fromSeq)` 为水位消费方返回该序列号及之后的已存储事件；JSONL 这类顺序介质解析整个产物并向前跳过。选择 `compression: 'none'` 后，日志是外部读取方可直接消费的换行分隔文本；压缩默认值必须经后端读取。
+
+Ark 3.1.2 无法读取 `atomic-events` 记录。离线回滚时，将停止写入后复制的会话字节及其明确压缩方式传给 `exportLegacySessionArtifact`；它返回无损的单事件纯文本 JSONL，拒绝损坏或不完整输入，且绝不修改源内容。旧应用必须使用独立导出副本，不能直接打开含新打包方式的活跃配置目录。
 
 -----
 
@@ -92,7 +96,7 @@ kind: "package-reference"
 
 ### 物理编码
 
-默认产物是独立 [Zstandard 帧](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.zh.md) 的标准拼接：一个仅包含 header 行的带校验和帧，后跟每个持久 append 批次一个带校验和帧，使用 Node 内置 Zstandard API 的默认压缩级别（无级别开关）。`sourceEventSeqs` 使用无损存储形式：至少包含三个序列号的连续段会变成 `[start, end]` 区间对，其他列表原样保留；读取时会展开回精确的内存数组。列表只读取并验证 header 帧。损坏的压缩 header 会被跳过并记录警告，使健康会话仍然可用；定向读取仍拒绝损坏内容。存储身份冲突、重复会话 ID、混合编码、取消与其他 I/O 失败不会被忽略。`compression: 'none'` 保留相同的存储形式逻辑行，但不使用帧压缩。一个根只属于一种编码：启动发现与定向查找会拒绝相反后缀，且不提供格式或压缩迁移、混合根回退或双写。启用 `packChunks` 时，符合条件的 ≥3 个连续同 block `assistant/chunk` delta 事件连续段会变成一行打包行（`text-chunks`/`reasoning-chunks`/`tool-call-chunks`），其 `seq0`/`time0` 与各成员的 `dt` 间隔精确重建每个成员；无损 codec 位于 `dsh-session`，读取与布局无关，因此打包、非打包与混合文件加载结果一致。
+默认产物是独立 [Zstandard 帧](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.zh.md) 的标准拼接：一个带校验和的 header 帧，后跟使用 Node 默认压缩级别的带校验和事件帧（无级别开关）。追加批次中的普通连续区段共享一帧；每条原子记录独占一帧。`sourceEventSeqs` 使用无损存储形式：至少包含三个序列号的连续段会变成 `[start, end]` 区间对，其他列表原样保留；读取时会展开回精确的内存数组。列表只读取并验证 header 帧。损坏的压缩 header 会被跳过并记录警告，使健康会话仍然可用；定向读取仍拒绝损坏内容。存储身份冲突、重复会话 ID、混合编码、取消与其他 I/O 失败不会被忽略。`compression: 'none'` 保留相同的存储形式逻辑行，但不使用帧压缩。一个根只属于一种编码：启动发现与定向查找会拒绝相反后缀，且不提供格式或压缩迁移、混合根回退或双写。启用 `packChunks` 时，符合条件的 ≥3 个连续同 block `assistant/chunk` delta 事件连续段会变成一行打包行（`text-chunks`/`reasoning-chunks`/`tool-call-chunks`），其 `seq0`/`time0` 与各成员的 `dt` 间隔精确重建每个成员；无损 codec 位于 `dsh-session`，读取与布局无关，因此打包、非打包与混合文件加载结果一致。
 
 ### 源码地图
 
@@ -100,6 +104,7 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、后端类、协调器接线 |
 | [`src/format.ts`](src/format.ts) | 日志路径派生、header 编码、记录扫描、打包行布局 |
+| [`src/export-legacy.ts`](src/export-legacy.ts) | 将完整产物严格离线转换为单事件 JSONL |
 | [`src/zstd.ts`](src/zstd.ts) | Zstandard 帧压缩、解码与帧扫描 |
 | [`src/win32.ts`](src/win32.ts) | Windows write-through 发布与目录创建 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件（无运行时不变式；身份在存储层强制） |

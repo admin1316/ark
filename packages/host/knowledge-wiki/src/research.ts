@@ -12,6 +12,7 @@ import { parseFileBlocks } from './ingest.ts'
 import type { ResearchResult } from './types.ts'
 import { createPrivateConfinedFileIfMissing } from './filesystem.ts'
 import { executeKnowledgeWikiStage, type KnowledgeWikiStageExecutor } from './stage-executor.ts'
+import { normalizeResearchURL, validateResearchPage } from './research-evidence.ts'
 
 /** Parse 3-5 search queries out of the LLM expansion output. */
 function parseQueries(text: string): string[] {
@@ -70,7 +71,7 @@ export async function deepResearch(
   }, signal)
   const queries = parseQueries(expansion.text ?? '')
   if (queries.length === 0) {
-    return { written: [], sourceCount: 0, warnings: ['research: LLM produced no usable queries'], errorCode: 'invalid-queries' }
+    return { written: [], pageSources: {}, sources: [], sourceCount: 0, warnings: ['research: LLM produced no usable queries'], errorCode: 'invalid-queries' }
   }
 
   const sources: WebSearchSource[] = []
@@ -84,12 +85,10 @@ export async function deepResearch(
         timeoutMs: 60_000,
       }, signal)
       for (const source of result.sources ?? []) {
-        let parsed: URL
-        try { parsed = new URL(source.url) } catch { continue }
-        if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) continue
-        if (seenUrls.has(source.url)) continue
-        seenUrls.add(source.url)
-        sources.push(source)
+        const url = normalizeResearchURL(source.url)
+        if (url === null || seenUrls.has(url)) continue
+        seenUrls.add(url)
+        sources.push({ ...source, url })
       }
     } catch (error) {
       signal.throwIfAborted()
@@ -99,7 +98,7 @@ export async function deepResearch(
 
   signal.throwIfAborted()
   if (sources.length === 0) {
-    return { written: [], sourceCount: 0, warnings: [...warnings, 'research: no citeable web sources; synthesis was not run'], errorCode: 'no-sources' }
+    return { written: [], pageSources: {}, sources: [], sourceCount: 0, warnings: [...warnings, 'research: no citeable web sources; synthesis was not run'], errorCode: 'no-sources' }
   }
 
   const sourceDigest = sources.map((source, i) => (
@@ -114,6 +113,8 @@ export async function deepResearch(
       'You are a research synthesist. Based on the topic and the collected web sources, generate one wiki research page.',
       'Do not output chain-of-thought or preamble. Output ONLY the FILE block.',
       'The page must include a summary of findings, key points with source citations (as markdown links), and open questions.',
+      'The supplied evidence consists of search snippets, not fetched full pages. State this limitation and distinguish inference from source statements.',
+      'Cite only the supplied source URLs, using Markdown links or reference links. Include at least one citation; do not add other links, images, or HTML.',
       '',
       'Output format (STRICT):',
       '--- FILE: wiki/_candidates/research/<slug>.md ---',
@@ -151,28 +152,49 @@ export async function deepResearch(
   }, signal)
 
   const written: string[] = []
+  const pageSources: Record<string, string[]> = {}
+  let rejection: 'invalid-output' | 'invalid-citations' | undefined
+  let validPages = 0
+  const today = new Date().toISOString().slice(0, 10)
   for (const block of parseFileBlocks(synthesis.text ?? '')) {
     signal.throwIfAborted()
     if (!block.closed) {
       warnings.push(`FILE block not closed: ${block.path}`)
+      rejection ??= 'invalid-output'
       continue
     }
     const fileName = basename(block.path)
     const rel = `wiki/_candidates/research/${fileName}`
+    if (!/^[^\\/\u0000]+\.md$/iu.test(fileName) || fileName === '.md') {
+      warnings.push(`invalid research page filename: ${block.path}`)
+      rejection ??= 'invalid-output'
+      continue
+    }
+    const page = validateResearchPage(block.content, seenUrls, fileName.slice(0, -3), today)
+    if ('errorCode' in page) {
+      warnings.push(`${block.path}: ${page.message}`)
+      if (page.errorCode === 'invalid-citations' || rejection === undefined) rejection = page.errorCode
+      continue
+    }
+    validPages++
     try {
       signal.throwIfAborted()
-      let content = block.content
-      if (!/^status:\s*/mu.test(content)) content = content.replace(/^---\n/u, '---\nstatus: candidate\n')
-      if (!/^origin:\s*/mu.test(content)) content = content.replace(/^---\n/u, '---\norigin: research\n')
-      if (!createPrivateConfinedFileIfMissing(projectPath, rel, Buffer.from(content))) {
+      if (!createPrivateConfinedFileIfMissing(projectPath, rel, Buffer.from(page.content))) {
         warnings.push(`research destination already exists; existing page preserved: ${rel}`)
         continue
       }
       written.push(rel)
+      pageSources[rel] = page.sourceURLs
     } catch (error) {
       signal.throwIfAborted()
       warnings.push(error instanceof Error ? error.message : String(error))
     }
   }
-  return { written, sourceCount: sources.length, warnings }
+  const errorCode = written.length > 0 ? undefined : validPages > 0 ? 'no-pages' : rejection ?? 'invalid-output'
+  if (errorCode !== undefined && warnings.length === 0) warnings.push('research produced no valid candidate pages')
+  return {
+    written, pageSources, sourceCount: sources.length,
+    sources: sources.map(({ url, title }) => ({ url, ...title === undefined ? {} : { title }, evidence: 'search-snippet' as const })),
+    warnings, ...errorCode === undefined ? {} : { errorCode },
+  }
 }

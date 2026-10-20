@@ -49,9 +49,10 @@
  * - `FAKE_STDERR`: write this line to stderr at boot (diagnostics-tail probe).
  * - `FAKE_STDERR_NO_NEWLINE`: write this to stderr WITHOUT a newline (buffer-flush probe).
  * - `FAKE_RECORD_INIT`: append each `initialize` params JSON to this file (handshake probe).
+ * - `FAKE_COMMAND_EVENTS`: stream historical and durable command records from the shared fixture.
  */
 
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import process from 'node:process'
 import { createInterface } from 'node:readline'
 
@@ -105,6 +106,13 @@ function runTurn(sessionId: string): void {
     return
   }
   event(sessionId, 'turn/start', { turn: 0 })
+  if (env.FAKE_COMMAND_EVENTS !== undefined) {
+    const commands = JSON.parse(readFileSync(new URL('./fixtures/command-events.json', import.meta.url), 'utf8')) as {
+      type: string
+      data: object
+    }[]
+    for (const command of commands) event(sessionId, command.type, command.data)
+  }
   event(sessionId, 'assistant/chunk', { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text } })
   if (env.FAKE_MALFORMED_MESSAGE !== undefined) {
     event(sessionId, 'assistant/message', {

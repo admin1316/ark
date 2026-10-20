@@ -151,6 +151,15 @@ public actor ArkDocumentReferenceStore {
     let sessionID: String?
     let document: ArkComposerDraftDocument
     let journalIdentifier: String
+    let commandAction: Bool?
+
+    init(sessionID: String?, document: ArkComposerDraftDocument, journalIdentifier: String,
+      commandAction: Bool? = nil) {
+      self.sessionID = sessionID
+      self.document = document
+      self.journalIdentifier = journalIdentifier
+      self.commandAction = commandAction
+    }
   }
 
   private func pendingSubmissionURL(_ sessionID: String?) -> URL {
@@ -167,10 +176,6 @@ public actor ArkDocumentReferenceStore {
     let identifier = try persistDraftAttachments(images: images, documents: documents)
     if cache { composerJournals[key] = CachedAttachments(images: images, documents: documents, identifier: identifier) }
     return identifier
-  }
-
-  func prepareComposerAttachments(sessionID: String?, images: [ArkPromptImage], documents: [ArkPendingDocument]) throws -> String {
-    try composerJournal(sessionID: sessionID, images: images, documents: documents, cache: false)
   }
 
   /// Share one attachment receipt between autosave and transmitted-payload recovery.
@@ -242,25 +247,94 @@ public actor ArkDocumentReferenceStore {
 
   /// Keep the transmitted payload independently from text edited while its receipt is pending.
   public func persistInflightSubmission(document: ArkComposerDraftDocument, sessionID: String?, journalIdentifier: String) throws {
+    try writeInflightSubmission(document: document, sessionID: sessionID,
+      journalIdentifier: journalIdentifier, commandAction: nil)
+  }
+
+  private func writeInflightSubmission(document: ArkComposerDraftDocument, sessionID: String?,
+    journalIdentifier: String, commandAction: Bool?) throws {
     guard let submissionID = document.submissionID else { throw ArkAPIError(message: "待确认消息身份缺失") }
-    let data = try JSONEncoder().encode(PendingSubmission(sessionID: sessionID, document: document, journalIdentifier: journalIdentifier))
+    guard UUID(uuidString: journalIdentifier) != nil else { throw ArkAPIError(message: "草稿提交记录无效") }
+    let data = try JSONEncoder().encode(PendingSubmission(sessionID: sessionID, document: document,
+      journalIdentifier: journalIdentifier, commandAction: commandAction))
     guard data.count <= 4 * 1_024 * 1_024 else { throw ArkAPIError(message: "待确认消息超过本地限制") }
     let target = try inflightSubmissionURL(submissionID)
     let previous = try pendingSubmission(at: target)
-    if let previous, previous.document == document, previous.journalIdentifier == journalIdentifier { return }
+    if let previous, previous.document == document, previous.journalIdentifier == journalIdentifier,
+      previous.commandAction == commandAction { return }
+    if previous == nil, try inflightSubmissionURLs().count >= 128 {
+      throw ArkAPIError(message: "待确认消息数量超过本地恢复限制")
+    }
     try durableWrite(data, to: target)
     if let previous, previous.journalIdentifier != journalIdentifier { removeDraftAttachments(previous.journalIdentifier) }
   }
 
-  public func restoreInflightSubmissions(sessionID: String?) throws -> [ArkPersistedComposerSubmission] {
+  private func inflightSubmissionURLs() throws -> [URL] {
     guard fileManager.fileExists(atPath: rootURL.path) else { return [] }
     let entries = try fileManager.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil)
       .filter { $0.lastPathComponent.hasPrefix("inflight-") && $0.pathExtension == "json" }
       .sorted { $0.lastPathComponent < $1.lastPathComponent }
     guard entries.count <= 128 else { throw ArkAPIError(message: "待确认消息数量超过本地恢复限制") }
-    return try entries.compactMap { entry in
+    return entries
+  }
+
+  private func inflightSubmissions() throws -> [PendingSubmission] {
+    try inflightSubmissionURLs().map { entry in
       let data = try readRegularFile(entry, maximumBytes: 4 * 1_024 * 1_024)
       let value = try JSONDecoder().decode(PendingSubmission.self, from: data)
+      guard let submissionID = value.document.submissionID,
+        try inflightSubmissionURL(submissionID).lastPathComponent == entry.lastPathComponent else {
+        throw ArkAPIError(message: "待确认消息记录身份不匹配")
+      }
+      return value
+    }
+  }
+
+  private func commandActionIdentity(_ value: PendingSubmission) throws -> String {
+    guard let submissionID = value.document.submissionID, UUID(uuidString: submissionID) != nil else {
+      throw ArkAPIError(message: "待确认命令身份无效")
+    }
+    let attachments = try restoreDraftAttachments(value.journalIdentifier)
+    guard attachments.images.isEmpty, attachments.documents.isEmpty else {
+      throw ArkAPIError(message: "待确认命令附件记录无效")
+    }
+    return submissionID
+  }
+
+  /// A repeated native menu action reuses its durable identity until a terminal receipt arrives.
+  func prepareCommandAction(sessionID: String, line: String, invocationID: String? = nil) throws -> String {
+    if let invocationID, let existing = try pendingSubmission(at: inflightSubmissionURL(invocationID)) {
+      guard existing.commandAction == true, existing.sessionID == sessionID,
+        existing.document.submissionID == invocationID, existing.document.text == line else {
+        throw ArkAPIError(message: "待确认命令身份对应了不同内容，已阻止发送")
+      }
+      return try commandActionIdentity(existing)
+    }
+    let inflight: [PendingSubmission]
+    if invocationID == nil { inflight = try inflightSubmissions() }
+    else { inflight = [] }
+    let matches = invocationID == nil ? inflight.filter {
+      $0.commandAction == true && $0.sessionID == sessionID && $0.document.text == line
+    } : []
+    guard matches.count <= 1 else { throw ArkAPIError(message: "待确认命令身份冲突，请保留记录并检查执行状态") }
+    if let previous = matches.first { return try commandActionIdentity(previous) }
+    var document = invocationID.map { ArkComposerDraftDocument(commandLine: line, invocationID: $0) }
+      ?? ArkComposerDraftDocument(text: line)
+    let submissionID = document.ensureSubmissionID()
+    let journal = try composerJournal(sessionID: sessionID, images: [], documents: [], cache: false)
+    do {
+      try writeInflightSubmission(document: document, sessionID: sessionID,
+        journalIdentifier: journal, commandAction: true)
+      return submissionID
+    } catch {
+      removeDraftAttachments(journal)
+      throw error
+    }
+  }
+
+  public func restoreInflightSubmissions(sessionID: String?) throws -> [ArkPersistedComposerSubmission] {
+    try inflightSubmissions().compactMap { value in
+      guard value.commandAction != true else { return nil }
       guard value.sessionID == sessionID || value.document.submissionID == sessionID else { return nil }
       let attachments = try restoreDraftAttachments(value.journalIdentifier)
       return ArkPersistedComposerSubmission(document: value.document, journalIdentifier: value.journalIdentifier,
@@ -284,6 +358,18 @@ public actor ArkDocumentReferenceStore {
     let value = try JSONDecoder().decode(PendingSubmission.self, from: data)
     guard value.document.submissionID == submissionID else { return }
     _ = try persistComposerState(document: ArkComposerDraftDocument(), sessionID: sessionID, images: [], documents: [])
+  }
+
+  /// Commit an exact native draft update before retiring the command's durable identity.
+  func acknowledgeCommandDraft(sessionID: String, previous: ArkComposerDraftDocument,
+    replacement: ArkComposerDraftDocument) throws -> Bool {
+    guard let value = try pendingSubmission(at: pendingSubmissionURL(sessionID)) else {
+      throw ArkAPIError(message: "命令已完成，但草稿保存尚未确认；原命令回执已保留")
+    }
+    guard value.document == previous else { return false }
+    try persistPendingSubmission(document: replacement, sessionID: sessionID,
+      journalIdentifier: value.journalIdentifier)
+    return true
   }
 
   public func removePendingSubmission(sessionID: String?, submissionID: String? = nil) throws {

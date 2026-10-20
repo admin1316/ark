@@ -22,7 +22,7 @@ The optional `@deepseek-ai/dsh-session/invariant` companion registers this packa
 
 ## Service: `SessionStore` (ctx key: `sessions`)
 
-Creates and holds event-sourced `Session` instances. Persistence is intentionally not implemented here — plugins subscribe to `session/event`, flush on `session/flush`, and may mirror the paired `session/created`/`session/disposed` lifecycle.
+Creates and holds event-sourced `Session` instances. Persistence is intentionally not implemented here — plugins subscribe to `session/committed`, flush on `session/flush`, and may mirror the paired `session/created`/`session/disposed` lifecycle. UI and projection consumers retain the individual `session/event` feed.
 
 ### Public API
 
@@ -51,6 +51,7 @@ The store pairs announced creation with disposal, publishes post-commit append n
 Plain class (not a Cordis Service). Create live sessions through `ctx.sessions.create()` and detached replay or inspection sessions through `Session.create()`; the detached factory does not publish lifecycle events or bind the session to a fiber.
 
 - `session.append(type, data, opts?)` snapshots and freezes durable data and surface metadata, validates marker shape, cited source-event seqs, complete replacement coverage, and content-only single-result `tool/result` rewrites, commits synchronously, then notifies observers with independent failure containment. Reentrant attached-session appends reject, and runtime checks cover widened unions and loaded logs.
+- `session.appendAtomic(inputs)` validates a complete group before changing the log, publishes one `session/committed` notification with its storage boundary, and then publishes each `session/event`. Every observer sees the complete committed group; a group-validation failure publishes nothing. Ordinary append publishes the same persistence feed with a non-atomic single event.
 - `session.deriveMessages()` incrementally projects each new surface entry once and returns a fresh array over the complete identified, frozen messages stored by those entries. Assistant messages preserve the provider and model that produced them plus adapter-private replay state in their model source. A surface rewrite rebuilds the projection; there is no raw-log fallback.
 - `session.deriveEventMessage(event)` is the canonical per-event projection used by reconstruction and request checks.
 - `session.surface` exposes the readonly `SessionSurface` view owned by the session's single incremental surface manager; `replaceGeneration` changes on every committed rewrite.
@@ -66,7 +67,7 @@ Session-event import separates ownership from message validation. `snapshotSessi
 
 ### Chunk-row storage codec (`chunk-rows.ts`)
 
-The shared [storage codec](src/chunk-rows.ts), exported at `@deepseek-ai/dsh-session/chunk-rows`, losslessly converts event sequences to compact rows and back. It preserves unrecognized events verbatim and rejects malformed encoded rows; persistence backends decide whether to enable packed writes.
+The shared [storage codec](src/chunk-rows.ts), exported at `@deepseek-ai/dsh-session/chunk-rows`, losslessly converts event sequences to compact rows and back. It preserves unrecognized events verbatim and rejects malformed encoded rows; persistence backends decide whether to enable packed writes. Versioned `atomic-events` records preserve explicit groups without adding a logical session event type.
 
 ### Surface types
 
@@ -102,7 +103,7 @@ Every `SessionEvent` carries three optional top-level fields (structural metadat
 
 ### Extension points
 
-- Persistence plugins: subscribe to `session/event` (write-behind) and drain on `session/flush` (awaited) and fiber dispose. A durable backend reads the log and reloads it into a live session; the metadata contract (`SessionHeader`, `session.header`) is what such a backend stores beside the log.
+- Persistence plugins: subscribe to `session/committed` (write-behind, with complete group boundaries) and drain on `session/flush` (awaited) and fiber dispose. A durable backend reads the log and reloads it into a live session; the metadata contract (`SessionHeader`, `session.header`) is what such a backend stores beside the log.
 - Replay/fork: `create(id, { seed })` validates and freezes a contiguous current-format log and rebuilds its surface; request headers require provider/model, and assistant messages require provider/model provenance. Persistence owns read compatibility before constructing this current-format seed. `fork(source, boundary?, childSessionId?)` selects a completed-turn prefix and records lineage.
 - Compaction: `dsh-compaction-basic` appends a `user/message` replacement for summary checkpoints, while `dsh-compaction-tool-result-pruner` appends a content-only `tool/result` replacement. Tool-pairing boundary policy and its cache belong to the [`dsh-compaction` seam](../../compaction/compaction/README.md), while this package owns ordered surface membership, replacement validation, and `replaceGeneration`.
 

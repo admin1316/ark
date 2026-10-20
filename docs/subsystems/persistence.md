@@ -8,7 +8,9 @@ The seam is a [capability seam](../../.agents/notes/implemented/architecture/202
 
 ## The flush checkpoint
 
-`session/event` is a *synchronous* notification; persistence plugins copy the event into a per-session controller without blocking the producer. The first pending event starts a fixed batching window, and later events join without resetting its deadline. Expiry starts one durable batch; events admitted during that write receive their own deadline and form a follow-up batch. `session/flush` cancels the wait and drains through quiescence, so the loop still uses it as the ordering and error-observation checkpoint before claiming the next ordinary turn. A rejected background write retains its events and pauses automatic retry; a new event starts a fresh window, while explicit flush retries immediately and reports failure through `agent/error` and the logger, never as a session event past the closed turn. Disposal performs the same final drain. The configured maximum bounds only intentional batching wait, not event-loop scheduling or backend durability latency ([decision](../../.agents/notes/implemented/architecture/2026-08-08-bounded-session-persistence-write-batching.md)).
+`session/committed` synchronously delivers complete append groups to persistence without blocking producers; `session/event` remains the individual projection feed. The first pending event starts a fixed batching window, and later events join without resetting its deadline. Expiry starts one durable batch; events admitted during that write receive their own deadline and form a follow-up batch. `session/flush` cancels the wait and drains that exact owner through quiescence. Rejected writes retain events and pause automatic retry; explicit save retries the retained owner. `flushAll()` also includes failed initialization and retired sessions absent from the live registry. Cancelling a checkpoint wait does not cancel its owned writer. The [persistence package](../../packages/session/session-persistence/README.md) owns accounting and drain semantics, and the [checkpoint policy](../../packages/session/session-checkpoint-policy/README.md) owns producer waits and cancellation.
+
+`SessionWriteState` reports selected and aggregate unconfirmed event/serialized-byte counts, oldest pending time, and last successful acknowledgement. Its health discriminant binds `failed` to a concrete storage error; `healthy` and `pressured` have no error. These counters contain no event payloads or backend exception strings and do not measure JavaScript heap usage. A healthy snapshot is not a durability acknowledgement: safe shutdown awaits the owner-wide save barrier.
 
 ## Crash recovery preserves an interrupted turn
 
@@ -302,6 +304,27 @@ ensureMaterialized(_session: Session): Promise<void>
  * @param events - the contiguous batch to persist, in seq order.
  */
 abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
+
+/**
+ * Inspect unconfirmed writes without loading a cold session.
+ * @param _session - optional exact selected live session.
+ * @returns current session and coordinator write health.
+ */
+writeState(_session?: Session): SessionWriteState
+
+/**
+ * Await low water without cancelling retained writes.
+ * @param _session - exact producer lifecycle.
+ * @param _signal - cancellation of this capacity wait.
+ * @returns when the producer may continue.
+ */
+waitForCapacity(_session: Session, _signal: AbortSignal): Promise<void>
+
+/**
+ * Drain every persistence-owned lifecycle, including failed initialization and retired sessions.
+ * @returns confirmation that all retained writes reached durable storage.
+ */
+flushAll(): Promise<void>
 
 /**
  * Permanently remove an unowned session and await derived-data cleanup.

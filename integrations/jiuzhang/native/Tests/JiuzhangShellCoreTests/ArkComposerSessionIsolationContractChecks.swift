@@ -23,6 +23,26 @@ private final class ComposerIsolationURLProtocol: URLProtocol, @unchecked Sendab
     lock.lock(); defer { lock.unlock() }
     return held.last(where: { $0.body["method"]?.stringValue == "session/create" })?.body["payload"]?["args"]?["request"]
   }
+  static var latestCommand: JSONValue? {
+    lock.lock(); defer { lock.unlock() }
+    return held.last(where: { $0.body["method"]?.stringValue == "session/command" })?.body["payload"]?["args"]?["request"]
+  }
+  static func releaseCommand(state: String, reason: String = "interrupted", resultKind: String = "success") {
+    lock.lock()
+    let pending = held.filter { $0.body["method"]?.stringValue == "session/command" }
+    held.removeAll { $0.body["method"]?.stringValue == "session/command" }
+    lock.unlock()
+    for item in pending {
+      var value: [String: JSONValue] = ["state": .string(state), "commandId": .string("synthetic-native-command")]
+      if state == "completed" {
+        var result: [String: JSONValue] = ["kind": .string(resultKind)]
+        if resultKind == "error" { result["text"] = .string("synthetic confirmed command failure") }
+        value["result"] = .object(result)
+      }
+      if state == "unknown" { value["reason"] = .string(reason) }
+      item.reply(.object(value), domain: true)
+    }
+  }
   static func releaseCreation(success: Bool) {
     lock.lock()
     let pending = held.filter { $0.body["method"]?.stringValue == "session/create" }
@@ -69,11 +89,17 @@ private final class ComposerIsolationURLProtocol: URLProtocol, @unchecked Sendab
       let sessionID = args["request"]?["sessionId"]?.stringValue
         ?? args["childSessionId"]?.stringValue ?? args["sessionId"]?.stringValue ?? ""
       Self.lock.lock(); Self.calls.append((method, sessionID))
-      if method == "session/prompt" || method == "subagent/prompt" || method == "session/create" {
+      if method == "session/prompt" || method == "subagent/prompt" || method == "session/create" || method == "session/command" {
         Self.held.append(self); Self.lock.unlock(); return
       }
       Self.lock.unlock()
       switch method {
+      case "commands/list":
+        reply(.array([
+          .object(["name": .string("record"), "description": .string("Synthetic command"),
+            "input": .object(["hint": .string("Synthetic input"), "images": .bool(true)])]),
+          .object(["name": .string("bare"), "description": .string("Synthetic menu action")]),
+        ]))
       case "session/models":
         reply(.object(["current": .object(["provider": .string("fixture"), "model": .string("text")]),
           "routable": .bool(true), "groups": .array([.object(["id": .string("fixture"), "name": .string("Fixture"),
@@ -259,6 +285,7 @@ func runArkComposerSessionIsolationContractChecks() async {
   await runComposerAttachmentImportIsolationChecks(model: model, store: store)
   await runComposerCreationNavigationChecks(model: model)
   await runComposerNewSessionReceiptChecks(model: model, defaults: defaults)
+  await runComposerCommandReceiptChecks(model: model, store: store, root: root)
   let corruptID = UUID().uuidString.lowercased()
   try? Data("broken JSON".utf8).write(to: root.appendingPathComponent("draft-\(corruptID).json"))
   defaults.set(corruptID, forKey: "ark.native.composer-attachments.broken-recovery")
@@ -283,6 +310,189 @@ private func composerIsolationEventually(_ condition: () -> Bool) async -> Bool 
     try? await Task.sleep(nanoseconds: 5_000_000)
   }
   return condition()
+}
+
+@MainActor
+private func runComposerCommandReceiptChecks(model: ArkAppModel, store: ArkDocumentReferenceStore, root: URL) async {
+  func verify(_ condition: Bool, _ message: String) { check(condition, message) }
+  func text(_ value: String) {
+    model.composerTextDidChange(value, caret: (value as NSString).length, isComposing: false)
+  }
+  func commandHeld() async -> Bool {
+    await composerIsolationEventually { ComposerIsolationURLProtocol.latestCommand != nil }
+  }
+  model.selectSession("command-A")
+  _ = await composerIsolationEventually { model.composerModelRouteAvailable }
+  text("/record uncertain")
+  model.sendComposer()
+  verify(await commandHeld(), "composer slash command uses the Host session command route")
+  let invocationID = ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue
+  do {
+    let inflight = try await store.restoreInflightSubmissions(sessionID: "command-A")
+    check(invocationID != nil && inflight.contains { $0.document.submissionID == invocationID },
+      "composer command journal persists the captured invocation before native transport")
+  } catch { check(false, "composer command journal can be restored before reply: \(error)") }
+  ComposerIsolationURLProtocol.releaseCommand(state: "unknown")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.composer == "/record uncertain" && model.composerErrorMessage?.contains("结果未知") == true,
+    "unknown native command retains input and explains why it cannot be repeated automatically")
+  model.sendComposer()
+  verify(await commandHeld(), "unknown composer command permits receipt query")
+  check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == invocationID,
+    "unknown composer retry uses its original captured invocation")
+  ComposerIsolationURLProtocol.releaseCommand(state: "running")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.composer == "/record uncertain", "running command receipt cannot clear the draft")
+  model.sendComposer()
+  _ = await commandHeld()
+  text("new input while command receipt returns")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.composer == "new input while command receipt returns",
+    "completed native command clears only its captured draft revision")
+
+  model.setPermissionPreset("read-only")
+  verify(await commandHeld(), "native permission selector uses the shared command owner")
+  let permissionID = ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue
+  check(ComposerIsolationURLProtocol.latestCommand?["line"]?.stringValue == "/permission read-only",
+    "permission selector preserves the canonical command payload")
+  ComposerIsolationURLProtocol.releaseCommand(state: "unknown", reason: "durability-unconfirmed")
+  _ = await composerIsolationEventually { model.composerErrorMessage != nil }
+  model.setPermissionPreset("read-only")
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == permissionID,
+    "permission selector retry queries the original pending command identity")
+  let requestsBeforeError = ComposerIsolationURLProtocol.callCount("session/command", sessionID: "command-A")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed", resultKind: "error")
+  _ = await composerIsolationEventually {
+    model.composerErrorMessage == "synthetic confirmed command failure"
+      && !FileManager.default.fileExists(atPath: root.appendingPathComponent("inflight-\(permissionID ?? "missing").json").path)
+  }
+  check(model.composerErrorMessage == "synthetic confirmed command failure"
+    && ComposerIsolationURLProtocol.callCount("session/command", sessionID: "command-A") == requestsBeforeError,
+    "confirmed action error is displayed and retired without any automatic new execution")
+  model.setPermissionPreset("read-only")
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue != permissionID,
+    "a new explicit permission click after the confirmed error starts a new intent")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+  _ = await composerIsolationEventually { model.composerErrorMessage == nil }
+
+  model.selectSession("command-A")
+  model.runSessionCommand("/record toolbar")
+  verify(await commandHeld(), "native session toolbar uses the shared command owner")
+  let toolbarID = ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue
+  ComposerIsolationURLProtocol.releaseCommand(state: "running")
+  _ = await composerIsolationEventually { model.composerErrorMessage != nil }
+  model.runSessionCommand("/record toolbar")
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == toolbarID,
+    "native toolbar retry retains its pending invocation identity")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+  _ = await composerIsolationEventually { model.composerErrorMessage == nil }
+
+  text("/")
+  let menuReady = await composerIsolationEventually {
+    model.composerSuggestions.candidates.contains { $0.command?.name == "bare" }
+  }
+  check(menuReady, "native bare-command menu loads its real command catalog")
+  if let suggestion = model.composerSuggestions.candidates.first(where: { $0.command?.name == "bare" }) {
+    model.chooseComposerSuggestion(suggestion.id)
+    _ = await commandHeld()
+    let bareID = ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue
+    check(model.composer == "/", "bare-command menu preserves its draft until a completed receipt")
+    ComposerIsolationURLProtocol.releaseCommand(state: "unknown")
+    _ = await composerIsolationEventually { model.composerErrorMessage != nil }
+    check(model.composer == "/", "unknown menu action cannot clear persisted composer input")
+    text("/")
+    _ = await composerIsolationEventually { model.composerSuggestions.candidates.contains { $0.command?.name == "bare" } }
+    if let retry = model.composerSuggestions.candidates.first(where: { $0.command?.name == "bare" }) {
+      model.chooseComposerSuggestion(retry.id)
+      _ = await commandHeld()
+      check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == bareID,
+        "bare-command menu retry preserves the pending action identity")
+      ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+      _ = await composerIsolationEventually { model.composer.isEmpty }
+      check(model.composer.isEmpty, "completed menu action commits only the matching draft edit")
+    }
+  }
+  check(ComposerIsolationURLProtocol.callCount("commands/execute", sessionID: "command-A") == 0,
+    "native command entry points never call the retired remote executor")
+
+  model.beginNewConversation()
+  model.setPermissionPreset("workspace-write")
+  _ = await composerIsolationEventually { model.composerModelRouteAvailable }
+  text("/record created session")
+  model.sendComposer()
+  let creating = await composerIsolationEventually { ComposerIsolationURLProtocol.latestCreation != nil }
+  check(creating, "new-session command retains its captured creation identity")
+  let creationID = ComposerIsolationURLProtocol.latestCreation?["sessionId"]?.stringValue
+  ComposerIsolationURLProtocol.releaseCreation(success: true)
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["line"]?.stringValue == "/permission workspace-write"
+    && ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue != creationID,
+    "new-session permission setup owns a distinct durable command identity")
+  let prerequisiteID = ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue
+  ComposerIsolationURLProtocol.releaseCommand(state: "unknown")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.composer == "/record created session", "unknown permission prerequisite keeps the migrated main submission")
+  model.sendComposer()
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["line"]?.stringValue == "/permission workspace-write"
+    && ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == prerequisiteID,
+    "migrated composer retry confirms its original permission prerequisite before the main command")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+  _ = await composerIsolationEventually {
+    ComposerIsolationURLProtocol.latestCommand?["line"]?.stringValue == "/record created session"
+  }
+  check(creationID != nil && ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == creationID,
+    "new-session composer command retains its captured identity after permission setup")
+  ComposerIsolationURLProtocol.releaseCommand(state: "unknown")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  model.sendComposer()
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["line"]?.stringValue == "/permission workspace-write"
+    && ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == prerequisiteID,
+    "retry after prerequisite acknowledgement still queries the same deterministic permission identity")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+  _ = await composerIsolationEventually {
+    ComposerIsolationURLProtocol.latestCommand?["line"]?.stringValue == "/record created session"
+  }
+  check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == creationID,
+    "main command retry retains its identity after a completed prerequisite replay")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.composer.isEmpty, "completed new-session command clears its exact migrated draft")
+
+  model.beginNewConversation()
+  model.setPermissionPreset("workspace-write")
+  _ = await composerIsolationEventually { model.composerModelRouteAvailable }
+  text("/record explicit permission priority")
+  model.sendComposer()
+  _ = await composerIsolationEventually { ComposerIsolationURLProtocol.latestCreation != nil }
+  let supersededID = ComposerIsolationURLProtocol.latestCreation?["sessionId"]?.stringValue
+  ComposerIsolationURLProtocol.releaseCreation(success: true)
+  _ = await commandHeld()
+  ComposerIsolationURLProtocol.releaseCommand(state: "unknown")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  model.setPermissionPreset("read-only")
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["line"]?.stringValue == "/permission read-only",
+    "explicit permission selection is a separate confirmed user action")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+  _ = await composerIsolationEventually { model.composerErrorMessage == nil }
+  do {
+    let pending = try await store.restorePendingSubmission(sessionID: supersededID)
+    check(pending?.document.submissionPermissionPreset == nil && pending?.document.submissionID == supersededID,
+      "confirmed explicit permission selection durably supersedes the old prerequisite without changing the main identity")
+  } catch { check(false, "superseded permission draft restores: \(error)") }
+  model.sendComposer()
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["line"]?.stringValue == "/record explicit permission priority"
+    && ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == supersededID,
+    "main retry never reapplies the superseded creation permission and keeps its original identity")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
 }
 
 private actor ComposerImportGate {

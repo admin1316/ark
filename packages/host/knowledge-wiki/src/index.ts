@@ -17,6 +17,7 @@ import { WikiSnapshotStore } from './snapshot-store.ts'
 import { createProjectExecutionContext, type ProjectExecutionContext } from './project-context.ts'
 import { ingestSource as runIngest } from './ingest.ts'
 import { createOwnedStageExecutor } from './owned-stage-executor.ts'
+import { isKnowledgeFileErrorCode, knowledgeFilePolicyHash, KnowledgeFileError } from './file-extract.ts'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { knowledgeConnectionFields, knowledgeConnectionSchema, validateKnowledgeConnections, type KnowledgeConnections } from './connections.ts'
 import type { WikiProjectRequest, WikiProjectRegistry, KnowledgeResearchResult, KnowledgeProjectContextId, KnowledgeIngestAdmissionId } from './types.ts'
@@ -72,7 +73,16 @@ class KnowledgeResearchTimeoutError extends Error {
   constructor(timeoutMs: number) { super(`knowledge research timed out after ${timeoutMs}ms`) }
 }
 
+type PermanentFailure = NonNullable<IngestQueueTask['permanentFailure']>
 type SourceDisposition = string | { cancelledHash: string; admissionId?: string } | { retryAfter: number }
+  | { permanentFailure: PermanentFailure; admissionId?: string }
+
+function isPermanentFailure(value: unknown): value is PermanentFailure {
+  if (typeof value !== 'object' || value === null) return false
+  return isKnowledgeFileErrorCode(Reflect.get(value, 'code'))
+    && typeof Reflect.get(value, 'sourceHash') === 'string' && /^[a-f0-9]{64}$/u.test(Reflect.get(value, 'sourceHash') as string)
+    && typeof Reflect.get(value, 'policyHash') === 'string' && /^[a-f0-9]{64}$/u.test(Reflect.get(value, 'policyHash') as string)
+}
 
 function normalizeIngestInput(input: string): string {
   return input.replace(/^\/+/u, '').replace(/^raw\/sources\//u, '')
@@ -528,6 +538,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       for (const value of parsed) {
         if (typeof value !== 'object' || value === null) continue
         const task = value as Partial<IngestQueueTask>
+        if (task.permanentFailure !== undefined && task.status !== 'error') throw new Error('permanent failure requires an error knowledge ingest task')
         if (typeof task.input !== 'string'
           || !['pending', 'running', 'done', 'error', 'cancelled'].includes(task.status ?? '')) continue
         const input = normalizeIngestInput(task.input)
@@ -551,6 +562,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           ...(Array.isArray(task.warnings) ? { warnings: task.warnings.filter(value => typeof value === 'string') } : {}),
           ...(typeof task.error === 'string' ? { error: task.error } : {}),
           ...(typeof task.failedAt === 'number' ? { failedAt: task.failedAt } : {}),
+          ...task.permanentFailure === undefined ? {} : { permanentFailure: this.validatedPermanentFailure(task.permanentFailure) },
           ...(typeof task.completedAt === 'number' ? { completedAt: task.completedAt } : {}),
           ...(typeof task.cancelRequestedAt === 'number' ? { cancelRequestedAt: task.cancelRequestedAt } : {}),
           ...(typeof task.runId === 'string' ? { runId: task.runId } : {}),
@@ -566,7 +578,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         if (cache[task.input] !== undefined) continue
         if (task.status === 'done' && task.ingestedHash !== undefined) cache[task.input] = task.ingestedHash
         if (task.status === 'cancelled' && task.ingestedHash !== undefined) cache[task.input] = { cancelledHash: task.ingestedHash, ...task.admissionId === undefined ? {} : { admissionId: task.admissionId } }
-        if (task.status === 'error' && task.failedAt !== undefined) cache[task.input] = { retryAfter: task.failedAt + KnowledgeWikiService.FAILED_RETRY_MS }
+        if (task.status === 'error' && task.permanentFailure !== undefined) cache[task.input] = {
+          permanentFailure: task.permanentFailure, ...task.admissionId === undefined ? {} : { admissionId: task.admissionId },
+        }
+        else if (task.status === 'error' && task.failedAt !== undefined) cache[task.input] = { retryAfter: task.failedAt + KnowledgeWikiService.FAILED_RETRY_MS }
       }
       for (let index = 0; index < this.queue.length; index++) {
         const task = this.taskAt(index)
@@ -576,12 +591,19 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           && disposition.cancelledHash === this.currentHash(task.input, projectRoot)) {
           this.queue[index] = { ...task, status: 'cancelled', ingestedHash: disposition.cancelledHash, completedAt: Date.now() }
         }
+        if (task.projectRoot === projectRoot && task.status === 'pending' && typeof disposition === 'object' && 'permanentFailure' in disposition
+          && disposition.admissionId === task.admissionId
+          && this.permanentFailureIsCurrent(disposition.permanentFailure, task.input, projectRoot)) {
+          this.queue[index] = { ...task, status: 'error', permanentFailure: disposition.permanentFailure,
+            error: `source requires a content/policy change or manual retry (${disposition.permanentFailure.code})`,
+            completedAt: Date.now(), failedAt: Date.now() }
+        }
       }
       if (this.queue.filter(task => task.status === 'pending' || task.status === 'running').length > this.limits.ingestMaxActiveTasks) throw new Error('knowledge ingest queue exceeds ingestMaxActiveTasks; increase the deployment capacity before restoring')
       const active = this.queue.filter(task => task.projectRoot === projectRoot && (task.status === 'pending' || task.status === 'running'))
       this.requireStateFits(active, active.filter(task => task.status === 'pending').length * 512)
       const reserved = { ...cache }
-      for (const task of active) reserved[task.input] = { cancelledHash: 'f'.repeat(64), ...task.admissionId === undefined ? {} : { admissionId: task.admissionId } }
+      for (const task of active) reserved[task.input] = this.reservedFailureDisposition(task)
       this.requireStateFits(reserved)
       if (Object.keys(cache).length > 0) this.writeCache(cache, projectRoot)
       this.persistQueue(projectRoot)
@@ -686,6 +708,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const disposition = this.readCache(context.projectRoot)[normalized]
     if (typeof disposition === 'object') {
       if ('retryAfter' in disposition && Date.now() < disposition.retryAfter) return false
+      if (!force && 'permanentFailure' in disposition && this.permanentFailureIsCurrent(disposition.permanentFailure, normalized, context.projectRoot)) return false
       if (!force && 'cancelledHash' in disposition && disposition.cancelledHash === this.currentHash(normalized, context.projectRoot)) return false
     }
     const existing = this.queue.findLast(
@@ -708,8 +731,11 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         return false
       }
       if (existing.status === 'error') {
+        if (!force && existing.permanentFailure !== undefined
+          && this.permanentFailureIsCurrent(existing.permanentFailure, normalized, context.projectRoot)) return false
         const failedAt = existing.failedAt
-        if (failedAt !== undefined && Date.now() - failedAt < KnowledgeWikiService.FAILED_RETRY_MS) {
+        if (existing.permanentFailure === undefined && failedAt !== undefined
+          && Date.now() - failedAt < KnowledgeWikiService.FAILED_RETRY_MS) {
           return false
         }
       }
@@ -728,7 +754,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const active = [...this.queue.filter(task => task.projectRoot === context.projectRoot && (task.status === 'pending' || task.status === 'running')), next]
     this.requireStateFits(active, active.filter(task => task.status === 'pending').length * 512)
     const reservedCache = { ...this.readCache(context.projectRoot) }
-    for (const task of active) reservedCache[task.input] = { cancelledHash: 'f'.repeat(64), ...task.admissionId === undefined ? {} : { admissionId: task.admissionId } }
+    for (const task of active) reservedCache[task.input] = this.reservedFailureDisposition(task)
     this.requireStateFits(reservedCache)
     this.queue.push(next)
     if (persist) this.persistQueue(context.projectRoot)
@@ -741,6 +767,28 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     if (/^https?:\/\//i.test(input)) return undefined
     const source = resolveRawSourcePath(projectRoot, input)
     return this.sha256(readRegularFileBounded(source, MAX_RAW_SOURCE_BYTES))
+  }
+
+  private validatedPermanentFailure(value: unknown): PermanentFailure {
+    if (!isPermanentFailure(value)) throw new Error('invalid permanent knowledge ingest failure state')
+    return value
+  }
+
+  private reservedFailureDisposition(task: IngestQueueTask): SourceDisposition {
+    return { permanentFailure: { code: 'unsupported-format', sourceHash: 'f'.repeat(64), policyHash: 'f'.repeat(64) },
+      ...task.admissionId === undefined ? {} : { admissionId: task.admissionId } }
+  }
+
+  private permanentFailureIsCurrent(failure: PermanentFailure, input: string, projectRoot: string): boolean {
+    return failure.policyHash === knowledgeFilePolicyHash() && failure.sourceHash === this.currentHash(input, projectRoot)
+  }
+
+  private sourceHashForFailure(input: string, projectRoot: string): string | undefined {
+    try { return this.currentHash(input, projectRoot) }
+    catch {
+      // A removed/replaced/unreadable source cannot authorize a durable permanent suppression.
+      return undefined
+    }
   }
 
   private cacheFile(projectRoot = this.currentRoot): string {
@@ -756,6 +804,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         if (typeof value !== 'object' || value === null) throw new Error('invalid knowledge source disposition')
         if ('cancelledHash' in value && typeof value.cancelledHash === 'string' && (!('admissionId' in value) || typeof value.admissionId === 'string')) continue
         if ('retryAfter' in value && typeof value.retryAfter === 'number' && Number.isFinite(value.retryAfter)) continue
+        if ('permanentFailure' in value && isPermanentFailure(value.permanentFailure)
+          && (!('admissionId' in value) || typeof value.admissionId === 'string')) continue
         throw new Error('invalid knowledge source disposition')
       }
       return parsed as Record<string, SourceDisposition>
@@ -1392,11 +1442,17 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       } catch (error) {
         let message = error instanceof Error ? error.message : String(error)
         const remaining = this.queue.filter(row => row.projectRoot === running.projectRoot && this.taskKey(row) !== this.taskKey(running) && (row.status === 'pending' || row.status === 'running'))
-        if (Buffer.byteLength(this.encodeState([...remaining, { ...running, status: 'error', error: message, completedAt: Date.now(), failedAt: Date.now() }])) + remaining.filter(task => task.status === 'pending').length * 512 > this.limits.ingestStateMaxBytes) {
-          message = 'knowledge ingest error exceeds ingestStateMaxBytes; generated files were preserved'
-        }
         const stopped = this.serviceStopped()
         const revoked = running.projectRoot !== this.mainRoot && !this.readWorkspaces().some(row => row.path === running.projectRoot)
+        const failedHash = error instanceof KnowledgeFileError
+          ? error.sourceHash ?? this.sourceHashForFailure(running.input, context.projectRoot) : undefined
+        const permanentFailure = error instanceof KnowledgeFileError && failedHash !== undefined
+          ? { code: error.code, sourceHash: failedHash, policyHash: knowledgeFilePolicyHash() } : undefined
+        if (Buffer.byteLength(this.encodeState([...remaining, { ...running, status: 'error', error: message,
+          completedAt: Date.now(), failedAt: Date.now(), ...permanentFailure === undefined ? {} : { permanentFailure } }]))
+          + remaining.filter(task => task.status === 'pending').length * 512 > this.limits.ingestStateMaxBytes) {
+          message = 'knowledge ingest error exceeds ingestStateMaxBytes; generated files were preserved'
+        }
         console.error('[knowledge-wiki] ingest failed:', running.input, message)
         this.queue[currentIndex()] = {
           ...running,
@@ -1404,11 +1460,14 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           error: message,
           completedAt: Date.now(),
           ...stopped || revoked ? {} : { failedAt: Date.now() },
+          ...stopped || revoked || permanentFailure === undefined ? {} : { permanentFailure },
         }
         if (stopped) this.queue[currentIndex()] = this.resumableTask(running)
         if (this.taskAt(currentIndex()).status === 'error') {
           const cache = this.readCache(context.projectRoot)
-          cache[running.input] = { retryAfter: Date.now() + KnowledgeWikiService.FAILED_RETRY_MS }
+          cache[running.input] = permanentFailure === undefined
+            ? { retryAfter: Date.now() + KnowledgeWikiService.FAILED_RETRY_MS }
+            : { permanentFailure, ...running.admissionId === undefined ? {} : { admissionId: running.admissionId } }
           this.writeCache(cache, context.projectRoot)
         }
       } finally {
@@ -1489,7 +1548,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     let operation = this.researchOperations.get(key)
     if (operation === undefined) {
       if (this.researchOperations.size >= this.limits.researchConcurrency) {
-        return { findings: [], sourceCount: 0, warnings: ['knowledge research is busy; operation capacity reached'], degraded: true, errorCode: 'research-failed' }
+        return { findings: [], sources: [], sourceCount: 0, warnings: ['knowledge research is busy; operation capacity reached'], degraded: true, errorCode: 'research-failed' }
       }
       const controller = new AbortController()
       const ownerSignal = AbortSignal.any([
@@ -1547,6 +1606,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       const message = error instanceof Error ? error.message : String(error)
       return {
         findings: [],
+        sources: [],
         sourceCount: 0,
         warnings: [message],
         degraded: true,
@@ -1564,7 +1624,12 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     )
     if (result.written.length > 0) this.snapshots.invalidate(context.wikiRoot)
     return {
-      findings: result.written.map(path => ({ title: basename(path), path })),
+      findings: result.written.map((path) => {
+        const sourceURLs = result.pageSources[path]
+        if (sourceURLs === undefined || sourceURLs.length === 0) throw new Error('research candidate has no validated source association')
+        return { title: basename(path), path, sourceURLs }
+      }),
+      sources: result.sources,
       sourceCount: result.sourceCount,
       ...result.errorCode === undefined ? {} : { errorCode: result.errorCode },
       warnings: result.warnings,

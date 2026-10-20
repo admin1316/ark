@@ -10,9 +10,9 @@
 
 import { join } from 'node:path'
 import {
-  decodeSeqRanges, decodeStorageRecord, encodeSeqRanges, packChunkRuns, SESSION_FORMAT_VERSION,
+  decodeSeqRanges, decodeStorageRecord, encodeSeqRanges, packStorageRecords, SESSION_FORMAT_VERSION,
 } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionHeader, SessionId, StorageRecord } from '@deepseek-ai/dsh-session'
+import type { SessionAtomicGroup, SessionEvent, SessionHeader, SessionId, StorageRecord } from '@deepseek-ai/dsh-session'
 import { SessionFormatUnsupportedError, sessionFormatVersionRefusal } from '@deepseek-ai/dsh-session-persistence'
 
 /** Physical encoding selected for JSONL session artifacts. */
@@ -218,11 +218,40 @@ export function logPath(
  * so the switch changes only newly written bytes.
  * @param events - the batch to serialize, in log order.
  * @param packChunks - whether to pack delta runs into storage rows.
+ * @param groups - canonical groups that must occupy one complete physical record.
  * @returns the batch's JSONL text; the writer adds the final newline.
  */
-export function eventLines(events: readonly SessionEvent[], packChunks: boolean): string {
-  const records: readonly StorageRecord[] = packChunks ? packChunkRuns(events) : events
+export function eventLines(events: readonly SessionEvent[], packChunks: boolean, groups: readonly SessionAtomicGroup[] = []): string {
+  const records = packStorageRecords(events, groups, packChunks)
   return records.map(record => JSON.stringify(encodeProvenanceForStorage(record))).join('\n')
+}
+
+/**
+ * Keep each atomic record in a separate compression frame from ordinary regions.
+ * @param events - contiguous canonical events in this append batch.
+ * @param packChunks - whether ordinary delta runs use packed storage rows.
+ * @param groups - complete atomic boundaries that readers must preserve.
+ * @returns newline-terminated plaintext segments, one per compression frame.
+ */
+export function eventFrameContents(
+  events: readonly SessionEvent[], packChunks: boolean, groups: readonly SessionAtomicGroup[],
+): string[] {
+  const frames: string[] = []
+  let ordinary: string[] = []
+  const flush = (): void => {
+    if (ordinary.length === 0) return
+    frames.push(ordinary.join('\n') + '\n')
+    ordinary = []
+  }
+  for (const record of packStorageRecords(events, groups, packChunks)) {
+    const line = JSON.stringify(encodeProvenanceForStorage(record))
+    if (record.type === 'atomic-events') {
+      flush()
+      frames.push(line + '\n')
+    } else ordinary.push(line)
+  }
+  flush()
+  return frames
 }
 
 /**
@@ -380,10 +409,18 @@ export class SessionLogScanner {
   private consumeEventLine(line: Buffer, endByte: number): void {
     this.eventLine += 1
     let decoded: SessionEvent[]
+    let parsed: unknown
     try {
-      decoded = decodeStorageRecord(expandProvenanceFromStorage(JSON.parse(line.toString('utf8'))))
-    } catch {
+      parsed = JSON.parse(line.toString('utf8')) as unknown
+      decoded = decodeStorageRecord(expandProvenanceFromStorage(parsed))
+    } catch (error) {
       this.issue ??= new Error(`corrupt session log: unparsable committed event at line ${this.eventLine}`)
+      if (parsed !== null && typeof parsed === 'object' && 'type' in parsed && parsed.type === 'atomic-events') {
+        const row = parsed as { version?: unknown; events?: unknown }
+        if (row.version !== 1) throw error
+        if (Array.isArray(row.events) && row.events.some((event: unknown) => event !== null && typeof event === 'object'
+          && 'type' in event && event.type === 'turn/end')) throw this.issue
+      }
       return
     }
 

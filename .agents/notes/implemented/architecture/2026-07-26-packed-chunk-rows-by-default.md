@@ -12,7 +12,7 @@ The JSONL storage seam can reduce that envelope cost without changing the logica
 
 ## Decision
 
-`dsh-session-persistence-jsonl` resolves an omitted `packChunks` to `true`. The ACP demo wrapper exposes the same default, and every composition that omits the field inherits packed writes. `packChunks: false` remains an explicit write-side diagnostic mode that stores one event per line.
+`dsh-session-persistence-jsonl` resolves an omitted `packChunks` to `true`. The ACP demo wrapper exposes the same default, and every composition that omits the field inherits packed writes. `packChunks: false` remains an explicit write-side diagnostic mode that stores ordinary events on separate lines. The [atomic-input decision](2026-10-20-atomic-inbox-input-commit.md) owns indivisible groups, whose physical records do not depend on this option.
 
 Reading is unconditional and layout-blind. Packed, unpacked, and mixed files load into the same contiguous `SessionEvent[]`, so the default does not require a session-format version change or an on-disk runtime migration. The option controls newly appended batches only; it never selects a reader mode.
 
@@ -38,7 +38,7 @@ The command remains linked from the testing policy and ACP snapshot README while
 
 ### Verification contract
 
-JSONL persistence tests prove that omission writes a packed row, explicit `false` writes one event per line, and both forms load identical events. Canonicalizer unit tests cover header preservation, unpacked conversion, non-session JSONL, already-packed idempotence, and malformed input. The keyless snapshot gate covers every committed fixture and assembled replay path; documentation gates keep config defaults and bilingual contracts aligned.
+JSONL persistence tests prove that omission writes a packed row, explicit `false` writes ordinary events on separate lines, and both forms load identical events. Canonicalizer unit tests cover header preservation, unpacked conversion, non-session JSONL, already-packed idempotence, and malformed input. The keyless snapshot gate covers every committed fixture and assembled replay path; documentation gates keep config defaults and bilingual contracts aligned.
 
 ## Alternatives considered
 

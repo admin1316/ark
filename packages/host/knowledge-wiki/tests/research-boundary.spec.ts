@@ -33,7 +33,7 @@ function executor(): KnowledgeWikiStageExecutor {
       ? { text: null, sources: [{ url: 'https://fixture.test' }] }
       : { text: request.kind === 'llm-complete' && request.operation === 'research query expansion'
         ? 'valid query'
-        : '--- FILE: wiki/_candidates/research/result.md ---\n---\ntitle: Result\n---\nBody\n--- END FILE ---' }),
+        : '--- FILE: wiki/_candidates/research/result.md ---\n---\ntitle: Result\n---\nBody [source](https://fixture.test)\n--- END FILE ---' }),
   }
 }
 

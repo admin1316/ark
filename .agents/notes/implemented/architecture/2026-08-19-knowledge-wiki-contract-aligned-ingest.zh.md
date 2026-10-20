@@ -15,12 +15,12 @@ Status: implemented
 
 ## Decision
 
-[显式路由与持久输入](../bug-fix/2026-10-20-ark-explicit-routing-and-durable-input.zh.md)拥有独立服务连接、项目接收身份、严格源提取与有来源的研究。持久队列、仅成功后写入的导入缓存和规范页面写入理由继续由本笔记管理。
+[显式路由与持久输入](../bug-fix/2026-10-20-ark-explicit-routing-and-durable-input.zh.md)拥有独立服务连接、项目接收身份和严格源提取。[研究证据与永久拒绝](../bug-fix/2026-10-20-knowledge-research-evidence-and-permanent-rejections.zh.md)拥有引用发布及内容/策略相关的重试抑制。更广泛的持久队列、仅成功后写入的导入 hash 和规范页面写入理由继续由本笔记管理。
 
 本包现在是自包含引擎。关键机制：
 
 - **扫描只入队，缓存后写。** `scanSources` 比对 hash 后把变更文件以 `pending` 入队；`markIngested`（重读文件算 sha256）仅在摄取成功后执行。`drainQueue` 把「零产出且带 warnings」视为失败信号——这正是 Remote 摄取方法在 LLM 错误时返回的形态——坏 key 会把任务标为 `error` 并记 `failedAt`，而不是污染缓存。
-- **持久化队列 + 冷却。** `ingest-queue.json` 只落盘 pending/running 任务；服务 init 时 `restoreQueue` 恢复。失败任务进入 60 分钟冷却（`FAILED_RETRY_MS`）；60 秒定时器现在独立于扫描执行 drain，重启后恢复的任务得以继续。
+- **持久化队列 + 冷却。** `ingest-queue.json` 保存活动任务及有界终态历史；服务 init 时 `restoreQueue` 恢复。暂时或未分类失败进入 60 分钟冷却（`FAILED_RETRY_MS`）；60 秒定时器独立于扫描执行 drain，重启后可恢复任务得以继续。永久提取处理状态遵循所链接的研究证据决策。
 - **契约对齐的写盘管线。** 新模块按源 identity 推导摘要页 slug（`{structuralLength}-{readable}` 段以 `--` 连接，尾部 FNV-1a 32bit base36，上限 120 字符——以存量页名 `--1js7z6u`、`--n2u7v5` 验证一致），sanitize 生成内容（外层围栏、`frontmatter:` 前缀、缺失开 fence、frontmatter 内 wikilink 列表），日期戳到摄取日，规范化 `sources` 字段（剥 `raw/sources/` 前缀、过滤非法引用、去重、强制含本源 identity），并与既有页面 merge（仅本源独占时整页替换，否则保守并集 `sources`）。确定性兜底——index 条目、log 条目、源摘要页、评审项——与模型输出形态无关地照常执行。
 - **Prompt 契约。** 阶段二 prompt 钉死今日日期、精确摘要页路径、项目 schema 与严格的 frontmatter 规则，使模型输出落到存量语料格式上。
 
@@ -32,6 +32,6 @@ Status: implemented
 
 ## Consequences
 
-- **所得**：失败的摄取（坏 key、模型错误）现在以 `error` 任务呈现，带 60 分钟冷却、一行 console 日志且不写缓存；队列跨重启存活；新页面落到存量语料格式（以存量页名 `--1js7z6u`/`--n2u7v5` 验证）；69 个包测试覆盖管线与队列。
+- **所得**：失败的摄取（坏 key、模型错误）以 `error` 任务呈现，带 60 分钟冷却、一行 console 日志且不写成功摄取 hash；队列跨重启存活；新页面落到存量语料格式（以存量页名 `--1js7z6u`/`--n2u7v5` 验证）；包测试覆盖管线与队列。
 - **代价**：`scanSources` 不再同步 drain，新文件要等到下一个 60 秒定时器 tick 才开始摄取（此前扫描即排水）；零产出且带 warnings 一律视为失败，因此真正无变化的 merge（空 sources frontmatter）进入冷却而非立即完成。
-- **部署**：源码与安装运行时共同验证；扁平的 `.llm-wiki/ingest-cache.json` `{ identity: sha256 }` 映射仍是成功缓存。项目接收与连接设置遵循上文链接的显式路由决策。Ark 原生客户端消费进程内 Host 引擎，不依赖独立的 LLM Wiki 桌面应用。
+- **部署**：源码与安装运行时共同验证；`.llm-wiki/ingest-cache.json` 将成功 hash 与显式取消及失败处理状态共同保留。项目接收与连接设置遵循上文链接的显式路由决策。Ark 原生客户端消费进程内 Host 引擎，不依赖独立的 LLM Wiki 桌面应用。

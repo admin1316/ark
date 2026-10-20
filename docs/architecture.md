@@ -54,6 +54,8 @@ Here are some core packages that contribute to the Cordis tree.
 
 Events are the extension points, and picking the right domain is the first decision in most changes.
 
+Agent creation and resume prepare privately. The synchronous `agent/publishing` check runs at final registry entry before publication, so lifecycle owners can reject a late prepared agent while shutdown admission is closed.
+
 - **Session events** are durable facts appended to the log and broadcast through `session/event`. Use one when the fact must survive a reload.
 - **Agent events** (`agent/*`) carry a live `Agent`: inbox, step, status, request, validation, continuation. Use one to observe or intercept work in flight.
 - **Capability events** attach policy and adapters to a seam (`fs/*`, `tools/*`, `telemetry/*`) without importing the loop.
@@ -66,17 +68,17 @@ A **step** is one model request plus the tools it calls. A **turn** is zero or m
 
 ```text
 turn/start
-  claim next-step input plus one queued message
+  preview next-step input plus one queued message
   assemble prompt sections + tool schemas
   -> agent/pre-step                   reject | enter(messages)
      reject, or a first enter rewritten empty -> close the turn with no step
-     step/start
-     append entered messages as user/message
+     atomic commit: inbox claim + step/start
+                    + entered user/message events
      derive model history from the log
      agent/request -> llm/stream -> assistant/chunk* -> assistant/message
      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
      step/end
-     tools owe another request, or next-step input arrived -> claim -> next step
+     tools owe another request, or next-step input arrived -> preview -> next step
   -> agent/turn-stopping
 turn/end
 ```
@@ -85,7 +87,7 @@ turn/end
 
 Input reaches the driver through one inbox. Some messages wake it immediately; injected context waits in the inbox until another message does.
 
-`agent/pre-step` decides what the model sees. Listeners may rewrite the claimed messages or reject them outright; a rejected or empty first claim still closes a durable turn that spent no step, so the log records the attempt. Each step reads the prompt sections and tool schemas that plugins registered.
+`agent/pre-step` decides what the model sees from an unconsumed input preview. After asynchronous preparation, the loop checks that the selected input remains current and atomically commits its inbox removal, step start, and accepted messages. Cancellation with `keepInbox` or preparation failure preserves pending input; explicit rejection consumes the selected batch and closes a blocked no-step turn. Each step reads the prompt sections and tool schemas that plugins registered.
 
 Details: the [sequence diagram](agent-lifecycle.md), the [tool pipeline](tool-execution-pipeline.md), and [cancellation and error recovery](subsystems/core.md#the-agent-handle).
 

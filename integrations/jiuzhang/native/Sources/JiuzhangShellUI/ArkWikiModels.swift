@@ -13,6 +13,25 @@ public struct ArkWikiPage: Identifiable, Equatable, Sendable {
   public let links: [String]
   public let byteCount: Int
 
+  /// Host-stamped research provenance survives restarts in the existing page frontmatter.
+  public var researchSources: [ArkKnowledgeResearchSource] {
+    let lines = body.components(separatedBy: .newlines)
+    guard lines.first == "---", let closing = lines.dropFirst().firstIndex(of: "---") else { return [] }
+    var fields: [String: String] = [:]
+    for line in lines[1..<closing] {
+      guard let colon = line.firstIndex(of: ":") else { continue }
+      let key = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
+      guard fields[key] == nil else { return [] }
+      fields[key] = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+    }
+    guard fields["type"] == "research", fields["origin"] == "research",
+          let raw = fields["sources"]?.data(using: .utf8),
+          let values = try? JSONDecoder().decode([String].self, from: raw) else { return [] }
+    let sources = values.compactMap { ArkKnowledgeResearchSource(url: $0) }
+    guard sources.count == values.count, Set(values).count == values.count else { return [] }
+    return sources
+  }
+
   public init(
     id: String,
     title: String,

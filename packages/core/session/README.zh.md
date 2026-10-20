@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="service-sessionstore-ctx-key-sessions"></a>
 ## 服务：`SessionStore`（ctx 键：`sessions`）
 
-创建并持有事件溯源的 `Session` 实例。这里有意不实现持久化：插件订阅 `session/event`，在 `session/flush` 时刷新，并可镜像成对的 `session/created`／`session/disposed` 生命周期。
+创建并持有事件溯源的 `Session` 实例。这里有意不实现持久化：插件订阅 `session/committed`，在 `session/flush` 时刷新，并可镜像成对的 `session/created`／`session/disposed` 生命周期。UI 与投影消费方继续使用逐条 `session/event` 流。
 
 ### 公共 API
 
@@ -52,6 +52,7 @@ kind: "package-reference"
 普通类（不是 Cordis 服务）。活跃会话通过 `ctx.sessions.create()` 创建，脱离态的回放或检查会话通过 `Session.create()` 创建；脱离态工厂不会发布生命周期事件，也不会将会话绑定到 fiber。
 
 - `session.append(type, data, opts?)` 会为持久数据和 surface 元数据制作快照并冻结它们，校验标记形态、被引用的源事件 seq、替换覆盖完整性，以及仅修改内容的单个 `tool/result` 重写，随后同步提交，再在彼此独立的失败收容下通知观察者。对已挂接会话的重入追加会被拒绝，运行时检查也覆盖扩宽后的联合类型和已加载日志。
+- `session.appendAtomic(inputs)` 在修改日志前校验整组，发布一条带存储组界的 `session/committed` 通知，再逐条发布 `session/event`。所有观察方都看到完整已提交组；组校验失败时不发布任何内容。普通追加通过相同持久化流发布一条非原子事件。
 - `session.deriveMessages()` 对每个新的 surface 条目只做一次增量投影，并返回一个新数组，其中包含这些条目存储的完整、带标识且冻结的消息。assistant 消息的模型来源会保留生成该消息的提供方和模型，以及适配器私有回放状态。surface 重写会重建投影；不存在原始日志回退。
 - `session.deriveEventMessage(event)` 是重建和请求检查使用的规范逐事件投影。
 - `session.surface` 暴露只读 `SessionSurface` 视图，由会话唯一的增量 surface 管理器所有；每次提交重写，`replaceGeneration` 都会变化。
@@ -67,7 +68,7 @@ kind: "package-reference"
 
 ### 分片行存储编解码器（`chunk-rows.ts`）
 
-共享的[存储编解码器](src/chunk-rows.ts)通过 `@deepseek-ai/dsh-session/chunk-rows` 导出，在事件序列与紧凑行之间无损转换。它会逐字保留无法识别的事件，并拒绝形态错误的编码行；是否启用打包写入由持久化后端决定。
+共享的[存储编解码器](src/chunk-rows.ts)通过 `@deepseek-ai/dsh-session/chunk-rows` 导出，在事件序列与紧凑行之间无损转换。它会逐字保留无法识别的事件，并拒绝形态错误的编码行；是否启用打包写入由持久化后端决定。带版本的 `atomic-events` 记录保留显式组界，不增加逻辑会话事件类型。
 
 ### Surface 类型
 
@@ -103,7 +104,7 @@ kind: "package-reference"
 
 ### 扩展点
 
-- 持久化插件：订阅 `session/event`（延后写入），并在 `session/flush`（受等待）及 fiber dispose（资源释放）时排空。持久后端读取日志并重新加载到实时会话；这类后端会把元数据约定（`SessionHeader`、`session.header`）与日志一同存储。
+- 持久化插件：订阅 `session/committed`（带完整组界的延后写入），并在 `session/flush`（受等待）及 fiber dispose（资源释放）时排空。持久后端读取日志并重新加载到实时会话；这类后端会把元数据约定（`SessionHeader`、`session.header`）与日志一同存储。
 - 回放／fork：`create(id, { seed })` 校验并冻结连续的当前格式日志，再重建 surface；请求头必须包含提供方／模型，assistant 消息必须包含提供方／模型溯源信息。持久化层在构造该当前格式 seed 前负责读取兼容性处理。`fork(source, boundary?, childSessionId?)` 选择已完成轮次前缀并记录谱系。
 - 压缩：`dsh-compaction-basic` 为摘要检查点追加一个替换用 `user/message`，而 `dsh-compaction-tool-result-pruner` 追加仅修改内容的 `tool/result` 替换。工具配对边界策略及其缓存归 [`dsh-compaction` seam](../../compaction/compaction/README.zh.md) 所有；此包拥有有序 surface 成员关系、替换校验与 `replaceGeneration`。
 

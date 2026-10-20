@@ -14,6 +14,7 @@ import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
+export { exportLegacySessionArtifact } from './export-legacy.ts'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import {
   DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
@@ -24,9 +25,11 @@ import {
   type SessionPersistenceRevision as PersistenceRevision, type SessionRawArtifact,
   type StoredPrefix,
 } from '@deepseek-ai/dsh-session-persistence'
-import type { Session, SessionEvent, SessionId, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session'
+import { DEFAULT_WRITE_PRESSURE } from '@deepseek-ai/dsh-session-persistence'
+import type { SessionWritePressureConfig, SessionWriteState } from '@deepseek-ai/dsh-session-persistence'
+import type { Session, SessionAtomicGroup, SessionEvent, SessionId, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session'
 import {
-  encodeSegment, eventLines, logPath, logSuffix, parseHeaderMeta, projectDir, scanLog, sessionDir,
+  encodeSegment, eventFrameContents, eventLines, logPath, logSuffix, parseHeaderMeta, projectDir, scanLog, sessionDir,
   SessionLogScanner, toHeaderLine,
   type JsonlCompression,
 } from './format.ts'
@@ -85,6 +88,8 @@ export interface Config {
   preparedSessionCacheSize?: number
   /** Fixed live-event coalescing window; not a backend completion deadline. */
   writeBatchMaxDelayMs?: number
+  /** Unconfirmed-write byte watermarks and producer wait deadline. */
+  writePressure?: Partial<SessionWritePressureConfig>
 }
 
 /** Opaque coordinator token for replacing bytes recovered from a torn frame. */
@@ -130,6 +135,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   static Config: z<Config> = z.object({
     root: z.string().required(),
+    writePressure: z.object(Object.fromEntries(
+      (Object.entries(DEFAULT_WRITE_PRESSURE) as [keyof SessionWritePressureConfig, number][])
+        .map(([key, value]) => [key, z.number().step(1).min(1).default(value)]),
+    ) as Record<keyof SessionWritePressureConfig, z<number>>),
     packChunks: z.boolean().default(DEFAULT_PACK_CHUNKS),
     compression: JsonlCompressionSchema,
     preparedSessionCacheSize: z.number().step(1).min(1).default(DEFAULT_PREPARED_SESSION_CACHE_SIZE),
@@ -165,6 +174,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     this.coordinator = new PersistenceCoordinator<JsonlTornMarker>(this.ctx, this, {
       preparedSessionCacheSize,
       writeBatchMaxDelayMs,
+      ...config.writePressure === undefined ? {} : { writePressure: config.writePressure },
     })
   }
 
@@ -188,6 +198,14 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   append(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
     return this.coordinator.append(id, events)
+  }
+
+  override writeState(session?: Session): SessionWriteState { return this.coordinator.writeState(session) }
+
+  override flushAll(): Promise<void> { return this.coordinator.flushAll() }
+
+  override waitForCapacity(session: Session, signal: AbortSignal): Promise<void> {
+    return this.coordinator.waitForCapacity(session, signal)
   }
 
   delete(id: SessionId): Promise<boolean> {
@@ -457,11 +475,19 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     }
   }
 
-  /** Durably append a batch, lazily materializing the file when not yet present. */
-  async appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void> {
+  /**
+   * Durably append a batch, lazily materializing the file when not yet present.
+   * @param meta - immutable session identity and header.
+   * @param events - contiguous logical events owned by this write.
+   * @param isMaterialized - whether the durable artifact already exists.
+   * @param groups - complete atomic boundaries preserved in records and compression frames.
+   */
+  async appendBatch(
+    meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean, groups: readonly SessionAtomicGroup[] = [],
+  ): Promise<void> {
     await this.withMutation(meta.id, async () => {
-      if (isMaterialized) await this.appendLines(meta, events)
-      else await this.materialize(meta, events)
+      if (isMaterialized) await this.appendLines(meta, events, groups)
+      else await this.materialize(meta, events, groups)
     })
   }
 
@@ -628,12 +654,14 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   // --- materialization / append / repair (file mechanics) ---
 
   /** Atomically write the header line + first batch (temp-write, fsync, publish). */
-  private async materialize(meta: SessionHeader, events: readonly SessionEvent[]): Promise<void> {
+  private async materialize(
+    meta: SessionHeader, events: readonly SessionEvent[], groups: readonly SessionAtomicGroup[] = [],
+  ): Promise<void> {
     const project = projectDir(this.root, meta.cwd)
     const dir = sessionDir(this.root, meta.cwd, meta.id)
     const finalPath = logPath(this.root, meta.cwd, meta.id, this.compression)
     await this.rejectOppositeArtifact(meta.cwd, meta.id)
-    const content = await this.encodeMaterialization(meta, events)
+    const content = await this.encodeMaterialization(meta, events, groups)
     /* v8 ignore next -- native Windows coverage exercises this platform dispatch; Linux covers the POSIX peer */
     if (process.platform === 'win32') {
       await this.materializeWin32(project, dir, finalPath, meta.id, content)
@@ -733,22 +761,30 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   }
 
   /** Encode the header and first batch without combining their frame boundaries. */
-  private async encodeMaterialization(meta: SessionHeader, events: readonly SessionEvent[]): Promise<Buffer | string> {
+  private async encodeMaterialization(
+    meta: SessionHeader, events: readonly SessionEvent[], groups: readonly SessionAtomicGroup[] = [],
+  ): Promise<Buffer | string> {
     const header = JSON.stringify(toHeaderLine(meta)) + '\n'
     if (events.length === 0) {
       return this.compression === 'none' ? header : compressZstdFrame(header)
     }
-    const body = eventLines(events, this.packChunks) + '\n'
-    if (this.compression === 'none') return header + body
+    if (this.compression === 'none') return header + eventLines(events, this.packChunks, groups) + '\n'
     const headerFrame = await compressZstdFrame(header)
-    const eventFrame = await compressZstdFrame(body)
-    return Buffer.concat([headerFrame, eventFrame])
+    const eventFrames = await this.encodeCompressedEvents(events, groups)
+    return Buffer.concat([headerFrame, eventFrames])
   }
 
   /** Encode one durable append batch in the configured physical representation. */
-  private async encodeEventBatch(events: readonly SessionEvent[]): Promise<Buffer | string> {
-    const body = eventLines(events, this.packChunks) + '\n'
-    return this.compression === 'zstd' ? compressZstdFrame(body) : body
+  private async encodeEventBatch(events: readonly SessionEvent[], groups: readonly SessionAtomicGroup[] = []): Promise<Buffer | string> {
+    return this.compression === 'zstd' ? this.encodeCompressedEvents(events, groups)
+      : eventLines(events, this.packChunks, groups) + '\n'
+  }
+
+  /** Preserve an unsupported-reader refusal across frame-level tail recovery. */
+  private async encodeCompressedEvents(events: readonly SessionEvent[], groups: readonly SessionAtomicGroup[]): Promise<Buffer> {
+    const frames: Buffer[] = []
+    for (const content of eventFrameContents(events, this.packChunks, groups)) frames.push(await compressZstdFrame(content))
+    return Buffer.concat(frames)
   }
 
   /** fsync a POSIX directory so a just-created/renamed entry is crash-durable. */
@@ -768,8 +804,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
    * previous size before rethrowing because the unchanged cursor will retry the
    * batch; leaving partial bytes would create duplicate sequence numbers.
    */
-  private async appendLines(meta: SessionHeader, events: readonly SessionEvent[]): Promise<void> {
-    const content = await this.encodeEventBatch(events)
+  private async appendLines(
+    meta: SessionHeader, events: readonly SessionEvent[], groups: readonly SessionAtomicGroup[] = [],
+  ): Promise<void> {
+    const content = await this.encodeEventBatch(events, groups)
     const path = logPath(this.root, meta.cwd, meta.id, this.compression)
     const handle = await open(path, 'a')
     let closed = false

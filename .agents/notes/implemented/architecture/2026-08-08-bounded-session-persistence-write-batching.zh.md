@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-08-bounded-session-persistence-write-batching.md) | 中文
 
+[保存压力决策](../bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.zh.md)拥有以确认为准的背压及退出授权。本笔记继续拥有固定窗口调度及其崩溃丢失边界。
+
 ## 问题
 
 流式响应可能会在短时间内发出大量 `assistant/chunk` 事件。此前，只要空闲队列收到一个事件，持久化协调器就会立即调度一次后端追加。该追加仍在进行时到达的事件会共用一个后续批次，但如果后端速度很快，仍可能产生大量小规模的持久化追加。每次 JSONL 追加都会创建并同步一个 Zstandard 帧或原始格式后缀，而每次 SQLite 追加都会打开并提交一个事务，同时递增会话修订版本。

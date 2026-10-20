@@ -21,6 +21,8 @@ Model settings group knowledge connections in a card with aligned model selectio
 
 Knowledge research permits one active operation. Repeated Return or button activation does not submit another request; Cancel, project switching, and shutdown invalidate its results, cancel the transport, and await the owned task. Each request freezes the Host's advertised total research budget plus thirty seconds for cleanup and delivery, with both transfer and absolute deadlines; ordinary RPC requests retain their sixty-second timeout. Missing or invalid research budgets disable submission, and failed or timed-out requests never produce a completion notice.
 
+Quit waits for the Host's save confirmation while keeping the interface mounted. Before irreversible teardown it freezes local input, makes AppKit editors read-only, settles pending composer submissions, and saves the latest composer and Workbench drafts. Final draft failures retain the frozen window for retry or explicit force quit; the twenty-second prompt never treats elapsed time as saving success. Cancelling quit is available before local teardown begins.
+
 ## Build
 
 ```sh

@@ -24,6 +24,8 @@ import {
   type SessionLocation,
   type SessionPersistenceSnapshot,
 } from '@deepseek-ai/dsh-session-persistence'
+import { DEFAULT_WRITE_PRESSURE } from '@deepseek-ai/dsh-session-persistence'
+import type { SessionWritePressureConfig, SessionWriteState } from '@deepseek-ai/dsh-session-persistence'
 import type { JournalMode } from './schema.ts'
 import { SqliteStore } from './store.ts'
 
@@ -46,6 +48,8 @@ export interface Config {
   preparedSessionCacheSize?: number
   /** Fixed live-event coalescing window; not a backend completion deadline. */
   writeBatchMaxDelayMs?: number
+  /** Unconfirmed-write byte watermarks and producer wait deadline. */
+  writePressure?: Partial<SessionWritePressureConfig>
 }
 
 /**
@@ -59,6 +63,10 @@ export class SqliteSessionPersistence extends SessionPersistence {
 
   static Config: z<Config> = z.object({
     path: z.string().required(),
+    writePressure: z.object(Object.fromEntries(
+      (Object.entries(DEFAULT_WRITE_PRESSURE) as [keyof SessionWritePressureConfig, number][])
+        .map(([key, value]) => [key, z.number().step(1).min(1).default(value)]),
+    ) as Record<keyof SessionWritePressureConfig, z<number>>),
     journalMode: z.union(['wal', 'delete', 'truncate', 'persist'] as const).default('wal'),
     busyTimeoutMs: z.number().step(1).min(0).max(MAX_BUSY_TIMEOUT_MS).default(DEFAULT_BUSY_TIMEOUT_MS),
     preparedSessionCacheSize: z.number().step(1).min(1).default(DEFAULT_PREPARED_SESSION_CACHE_SIZE),
@@ -83,6 +91,7 @@ export class SqliteSessionPersistence extends SessionPersistence {
     this.coordinator = new PersistenceCoordinator(this.ctx, this.store, {
       preparedSessionCacheSize,
       writeBatchMaxDelayMs,
+      ...config.writePressure === undefined ? {} : { writePressure: config.writePressure },
     })
   }
 
@@ -106,6 +115,14 @@ export class SqliteSessionPersistence extends SessionPersistence {
 
   append(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
     return this.coordinator.append(id, events)
+  }
+
+  override writeState(session?: Session): SessionWriteState { return this.coordinator.writeState(session) }
+
+  override flushAll(): Promise<void> { return this.coordinator.flushAll() }
+
+  override waitForCapacity(session: Session, signal: AbortSignal): Promise<void> {
+    return this.coordinator.waitForCapacity(session, signal)
   }
 
   delete(id: SessionId): Promise<boolean> {

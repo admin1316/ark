@@ -15,6 +15,7 @@ import { Context, type Fiber } from '@deepseek-ai/cordis'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import SessionStore, { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { PersistenceBackend } from '../src/coordinator.ts'
 import { meta, oneTurnLog, appendLog } from './contract.ts'
 
 /**
@@ -224,6 +225,33 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
     }
 
     // --- write path: live session → flush → reload ---
+
+    it('persists each atomic live input cut once through the real backend', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      try {
+        const session = ctx.sessions.create(SessionId('atomic-live-cut'), { meta: { cwd: WORK } })
+        session.append('turn/start', { turn: 1 })
+        session.appendAtomic([
+          { type: 'step/start', data: { turn: 1, step: 1 } },
+          { type: 'user/message', data: createUserMessage({ content: [{ type: 'text', text: 'synthetic atomic input' }],
+            source: { kind: 'user' } }), surfaceOp: 'append' },
+        ])
+        session.append('step/end', { turn: 1, step: 1 })
+        session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+        await ctx.sessions.flush(session)
+        expect((await ctx.sessionPersistence.load(session.id)).events).toEqual(session.events)
+        if (ctx.sessionPersistence.supportsRawArtifacts) {
+          const artifact = await ctx.sessionPersistence.readRaw(session.id)
+          const records = artifact!.content.trimEnd().split('\n').map(line => JSON.parse(line) as { type: string; events?: unknown[] })
+          expect(records.filter(record => record.type === 'atomic-events')).toHaveLength(1)
+          expect(records.find(record => record.type === 'atomic-events')?.events).toHaveLength(2)
+        }
+      } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
 
     it('persists a live session driven through the store, surviving reload', async () => {
       const fix = await makeFixture()
@@ -1057,6 +1085,105 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
           reuse = inner.sessions.create(SessionId('buffered'), { meta: { cwd: WORK } })
         }, { inject: ['sessions'] }))
         await expect(ctx.sessions.flush(reuse)).rejects.toThrow(/persisted log|id collision/)
+      } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
+    it('owner-wide save retries a failed seed without losing its unconfirmed accounting', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      try {
+        const backend = (ctx.sessionPersistence as unknown as { coordinator: { backend: PersistenceBackend } }).coordinator.backend
+        const append = vi.spyOn(backend, 'appendBatch').mockRejectedValueOnce(new Error('synthetic seed write failure'))
+        const session = ctx.sessions.create(SessionId('retry-initial-seed'), { seed: oneTurnLog(), meta: { cwd: WORK } })
+        await expect(ctx.sessionPersistence.flushAll()).rejects.toThrow('save failed')
+        expect(ctx.sessionPersistence.writeState(session)).toMatchObject({
+          phase: 'failed', events: session.events.length, totalEvents: session.events.length,
+        })
+        await ctx.sessionPersistence.flushAll()
+        expect(append).toHaveBeenCalledTimes(2)
+        expect((await ctx.sessionPersistence.load(session.id)).events).toEqual(session.events)
+        expect(ctx.sessionPersistence.writeState()).toMatchObject({ phase: 'healthy', totalEvents: 0, totalBytes: 0 })
+      } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
+    it('counts only an unconfirmed initialization suffix and later queued events, without the stored history', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      const release = Promise.withResolvers<undefined>()
+      try {
+        const id = SessionId('initial-suffix-accounting')
+        await ctx.sessionPersistence.create(meta(id, WORK))
+        await ctx.sessionPersistence.append(id, oneTurnLog())
+        const stored = await ctx.sessionPersistence.load(id)
+        const backend = (ctx.sessionPersistence as unknown as { coordinator: { backend: PersistenceBackend } }).coordinator.backend
+        const append = backend.appendBatch.bind(backend)
+        const started = Promise.withResolvers<undefined>()
+        vi.spyOn(backend, 'appendBatch').mockImplementationOnce(async (...args) => {
+          started.resolve(undefined)
+          await release.promise
+          await append(...args)
+        })
+        const session = ctx.sessions.create(id, { seed: stored.events, meta: { cwd: WORK } })
+        await started.promise
+        expect(session.events.length - stored.events.length).toBe(1)
+        expect(ctx.sessionPersistence.writeState(session)).toMatchObject({ events: 1, totalEvents: 1 })
+        session.append('turn/start', { turn: 2 })
+        session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+        expect(ctx.sessionPersistence.writeState(session)).toMatchObject({ events: 3, totalEvents: 3 })
+        release.resolve(undefined)
+        await ctx.sessionPersistence.flushAll()
+        expect((await ctx.sessionPersistence.load(id)).events).toEqual(session.events)
+        expect(ctx.sessionPersistence.writeState().totalEvents).toBe(0)
+      } finally {
+        release.resolve(undefined)
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
+    it('owner-wide save reports initialization failure even without queued events and retries it', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      try {
+        const backend = (ctx.sessionPersistence as unknown as { coordinator: { backend: PersistenceBackend } }).coordinator.backend
+        vi.spyOn(backend, 'loadStored').mockRejectedValueOnce(new Error('synthetic initialization read failure'))
+        const session = ctx.sessions.create(SessionId('retry-empty-initialization'), { meta: { cwd: WORK } })
+        await expect(ctx.sessionPersistence.flushAll()).rejects.toThrow('save failed')
+        expect(ctx.sessionPersistence.writeState(session)).toMatchObject({ phase: 'failed', totalEvents: 0 })
+        await ctx.sessionPersistence.flushAll()
+        expect(ctx.sessionPersistence.writeState(session)).toMatchObject({ phase: 'healthy', totalEvents: 0 })
+      } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
+    it('owner-wide save retries a retired session no longer present in the live registry', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      try {
+        let session!: Session
+        const owner = await ctx.plugin(Object.assign((inner: Context) => {
+          session = inner.sessions.create(SessionId('retry-retired-owner'), { meta: { cwd: WORK } })
+        }, { inject: ['sessions'] }))
+        await ctx.sessions.flush(session)
+        const backend = (ctx.sessionPersistence as unknown as { coordinator: { backend: PersistenceBackend } }).coordinator.backend
+        const append = vi.spyOn(backend, 'appendBatch').mockRejectedValueOnce(new Error('synthetic retirement write failure'))
+        send(session, oneTurnLog())
+        await owner.dispose()
+        await vi.waitFor(() => { expect(ctx.sessionPersistence.writeState().phase).toBe('failed') })
+        expect(ctx.sessions.get(session.id)).toBeUndefined()
+        expect(ctx.sessionPersistence.writeState().totalEvents).toBe(session.events.length)
+        await ctx.sessionPersistence.flushAll()
+        expect(append).toHaveBeenCalledTimes(2)
+        expect((await ctx.sessionPersistence.load(session.id)).events).toEqual(session.events)
+        expect(ctx.sessionPersistence.writeState()).toMatchObject({ phase: 'healthy', totalEvents: 0, totalBytes: 0 })
       } finally {
         await fiber.dispose()
         await fix.cleanup()

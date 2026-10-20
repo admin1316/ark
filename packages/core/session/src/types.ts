@@ -408,6 +408,18 @@ export interface SurfaceIntent {
   sourceEventSeqs?: number[]
 }
 
+/** One contiguous group that storage must commit or recover as a whole. */
+export interface SessionAtomicGroup {
+  readonly firstSeq: number
+  readonly count: number
+}
+
+/** Typed input for an all-or-nothing synchronous session append. */
+export type SessionAppendInput = {
+  [K in SessionEventType]: { readonly type: K; readonly data: SessionEventMap[K] }
+    & (K extends SurfaceEventType ? SurfaceIntent : { readonly surfaceOp?: never; readonly sourceEventSeqs?: never })
+}[SessionEventType]
+
 /**
  * One immutable entry in the session log.
  *

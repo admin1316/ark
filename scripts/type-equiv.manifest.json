@@ -520,6 +520,16 @@
     },
     {
       "doc": "docs/subsystems/session.md",
+      "symbol": "SessionAppendInput",
+      "source": "packages/core/session/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session.md",
+      "symbol": "SessionAtomicGroup",
+      "source": "packages/core/session/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session.md",
       "symbol": "SessionSurface",
       "source": "packages/core/session/src/surface.ts"
     },

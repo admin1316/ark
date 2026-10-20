@@ -589,6 +589,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Human-command registry. Plain-context definitions are global; definitions registered through a command-injected child of an agent context shadow globals for that agent.',
     methods: [
       {
+        signature: 'hasInvocation(session: Session, invocationId: SessionRemoteCommandRequest[\'invocationId\']): boolean',
+        description: 'Test whether a submission identity already belongs to this session\'s command plane.',
+        parameters: [{ name: 'session', description: 'Live or borrowed session.' }, { name: 'invocationId', description: 'Stable caller submission identity.' }],
+        returns: 'Whether an active operation or authoritative log receipt owns the identity.',
+      },
+      {
+        signature: 'async receipt( session: Session, request: SessionRemoteCommandRequest, durable: boolean = false, ): Promise<SessionRemoteCommandValue | undefined>',
+        description: 'Read a receipt before resolving a live Agent; completed cold commands need no model configuration.',
+        parameters: [{ name: 'session', description: 'Exact live or borrowed persisted session.' }, { name: 'request', description: 'Original stable command submission.' }, { name: 'durable', description: 'Whether this exact snapshot was read from durable storage.' }],
+        returns: 'The original outcome, running state, or undefined for an unclaimed identity.',
+      },
+      {
+        signature: 'async execute( agent: Agent, request: SessionRemoteCommandRequest, signal: AbortSignal, assertAdmission: () => void, ): Promise<SessionRemoteCommandValue | undefined>',
+        description: 'Admit one durable command; repeats only observe its original invocation.',
+        parameters: [{ name: 'agent', description: 'Current receiving Agent resolved by the Host lifecycle owner.' }, { name: 'request', description: 'Stable caller identity and exact command input.' }, { name: 'signal', description: 'Operation lifetime, independent of any transport waiter.' }, { name: 'assertAdmission', description: 'Host-owned synchronous lifecycle and cross-plane identity fence.' }],
+        returns: 'A durable result, current state, or undefined for an unmatched command.',
+      },
+      {
+        signature: 'async whenSettled(): Promise<void>',
+        description: 'Await entered handlers and their durability checks before the Host disposes Agents.',
+        parameters: [],
+        returns: 'After every currently owned command has quiesced.',
+      },
+      {
         signature: 'register(definition: CommandDefinition): () => void',
         description: 'Register a global or calling-agent-scoped command.',
         parameters: [{ name: 'definition', description: 'discovery metadata and direct UI handler.' }],
@@ -607,7 +631,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the scoped shadow or global definition.',
       },
       {
-        signature: '@Remote async execute( agent: Agent, line: string, images: readonly EncodedImageAttachment[], signal: AbortSignal, ): Promise<CommandExecution | undefined>',
+        signature: 'async executeLocal( agent: Agent, line: string, images: readonly EncodedImageAttachment[], signal: AbortSignal, ): Promise<CommandExecution | undefined>',
         description: 'Parse and execute a known command without sending it to the model.\n\nA resolved command\'s lifecycle is logged: `command/run` is appended before the handler is invoked and `command/done` after settlement (a thrown or aborted handler settles as `kind: \'error\'`). Both are direct log-only appends — no turn wraps them, and persistence drains them at ordinary checkpoints. Admission misses (syntax or unknown name) log nothing — they never entered a handler. A `command/run` append failure fails the execution loud; a `command/done` append failure on the handler-failure path is contained so the handler\'s own error stays the reported failure.\n\nImage admission is enforced here, not in the composer: images sent to a command that does not declare `input.images`, an absent attachment store, and an exceeded attachment limit each settle as an error result before the handler runs, and a rejected batch publishes no durable object.',
         parameters: [{ name: 'agent', description: 'exact receiving agent.' }, { name: 'line', description: 'complete slash-command line.' }, { name: 'images', description: 'base64-encoded composer images accompanying the line, in submission order; empty for a plain invocation.' }, { name: 'signal', description: 'cancellation signal owned by the UI request.' }],
         returns: 'the settled execution (result + lifecycle pairing id), or `undefined` when syntax or name does not resolve.',
@@ -1503,6 +1527,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'the session the batch belongs to.' }, { name: 'events', description: 'the contiguous batch to persist, in seq order.' }],
       },
       {
+        signature: 'writeState(_session?: Session): SessionWriteState',
+        description: 'Inspect unconfirmed writes without loading a cold session.',
+        parameters: [{ name: '_session', description: 'optional exact selected live session.' }],
+        returns: 'current session and coordinator write health.',
+      },
+      {
+        signature: 'waitForCapacity(_session: Session, _signal: AbortSignal): Promise<void>',
+        description: 'Await low water without cancelling retained writes.',
+        parameters: [{ name: '_session', description: 'exact producer lifecycle.' }, { name: '_signal', description: 'cancellation of this capacity wait.' }],
+        returns: 'when the producer may continue.',
+      },
+      {
+        signature: 'flushAll(): Promise<void>',
+        description: 'Drain every persistence-owned lifecycle, including failed initialization and retired sessions.',
+        parameters: [],
+        returns: 'confirmation that all retained writes reached durable storage.',
+      },
+      {
         signature: 'abstract delete(id: SessionId): Promise<boolean>',
         description: 'Permanently remove an unowned session and await derived-data cleanup.',
         parameters: [{ name: 'id', description: 'exact session identity to remove.' }],
@@ -1887,6 +1929,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Delegate prompt admission, command routing, image persistence, and queue ownership.',
         parameters: [{ name: 'request', description: 'session prompt request.' }, { name: 'signal', description: 'caller-owned cancellation signal.' }],
         returns: 'the remote prompt result.',
+      },
+      {
+        signature: '@Remote(\'command\') remoteExportCommand(request: SessionRemoteCommandRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteCommandValue>>',
+        description: 'Submit or confirm one stable human-command invocation.',
+        parameters: [{ name: 'request', description: 'session identity, invocation identity and command payload.' }, { name: 'signal', description: 'caller-owned response wait cancellation.' }],
+        returns: 'the durable result or the current execution uncertainty.',
+      },
+      {
+        signature: '@Remote(\'storage\') remoteExportStorage(request: SessionRemoteStorageRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteStorageValue>>',
+        description: 'Observe saving or prepare a confirmed application quit.',
+        parameters: [{ name: 'request', description: 'storage action and optional exact quit attempt.' }, { name: 'signal', description: 'response wait cancellation.' }],
+        returns: 'current save counters and quit readiness.',
       },
       {
         signature: '@Remote(\'attachment\') remoteExportAttachment( request: SessionRemoteAttachmentRequest, signal: AbortSignal, ): Promise<SessionRemoteResult<SessionRemoteAttachmentValue>>',
@@ -3133,6 +3187,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.signal - the current turn\'s cancellation signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
+    name: 'agent/publishing',
+    mode: 'emit',
+    signature: '\'agent/publishing\'(this: Scoped<Agent>, payload: { agent: Agent }): void',
+    summary: 'Validate synchronous admission before the registry inserts an Agent and before its Session announcement can start persistence.',
+    description: 'Validate synchronous admission before the registry inserts an Agent and before its Session announcement can start persistence. Throwing vetoes publication; listeners must not return asynchronous work.',
+    parameters: [{ name: 'payload', description: '.agent - fully prepared Agent awaiting registry insertion. Scope-filtered dispatch identifies the prepared Agent.' }],
+  },
+  {
     name: 'agent/quiescence-timeout',
     mode: 'emit',
     signature: '\'agent/quiescence-timeout\'(this: Scoped<Agent>, payload: { agent: Agent turn: number step: number residual: AgentQuiescenceResidual }): void',
@@ -3331,6 +3393,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Transform one outbound record before it reaches the backend.',
     description: 'Transform one outbound record before it reaches the backend. This waterfall is the Service Definition\'s redaction extension point. It ships NO rules of its own: the innermost `next()` passes the record through unchanged, and with no listener mounted records reach the backend as captured, so exported data is exactly as clean as the rules a deployment mounts. Listeners stack by transforming `next()`\'s return value; returning without `next()` replaces everything beneath. Dispatched synchronously on the capture hot path inside the coordinator\'s containment: a throwing listener withholds that one record (fail-closed) and never reaches the agent loop. Live capture dispatches at append time; on-demand capture dispatches while reading the canonical log. Redaction applies to the exported copy only; the canonical session log is never rewritten.',
     parameters: [{ name: 'record', description: 'the candidate record, already the coordinator\'s own deep copy; listeners return a (possibly new) record and must not mutate it.' }],
+  },
+  {
+    name: 'session/committed',
+    mode: 'emit',
+    signature: '\'session/committed\'(this: Scoped<Session>, session: Session, events: readonly SessionEvent[], atomic: boolean): void',
+    summary: 'Post-commit persistence feed retaining each synchronous append group\'s boundary.',
+    description: 'Post-commit persistence feed retaining each synchronous append group\'s boundary. Scope-filtered dispatch reuses the owning session\'s scope.',
+    parameters: [{ name: 'session', description: 'session whose complete group has committed.' }, { name: 'events', description: 'immutable contiguous events committed together.' }, { name: 'atomic', description: 'whether storage must preserve the complete group.' }],
   },
   {
     name: 'session/created',
@@ -4366,11 +4436,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Inbox',
-    declaration: 'export class Inbox {\n    constructor(private readonly session: Session, private readonly notifications: InboxNotifications);\n    get nextTurn(): readonly UserMessage[];\n    get nextStep(): readonly UserMessage[];\n    project(target: InboxTarget, splice?: SessionEventMap[\'agent/inbox/spliced\']): readonly UserMessage[];\n    get hasPending(): boolean;\n    clear(): void;\n    claim(target: InboxTarget, turn: number): UserMessage[];\n    append(target: InboxTarget, message: UserMessage): void;\n    prepend(target: InboxTarget, message: UserMessage): void;\n    replace(messageId: MessageId, newMessage: UserMessage): boolean;\n    remove(messageId: MessageId): boolean;\n    splice(target: InboxTarget, start: number, deleteCount: number, inserted: UserMessage[]): UserMessage[];\n}',
+    declaration: 'export class Inbox {\n    constructor(private readonly session: Session, private readonly notifications: InboxNotifications);\n    get nextTurn(): readonly UserMessage[];\n    get nextStep(): readonly UserMessage[];\n    project(target: InboxTarget, splice?: SessionEventMap[\'agent/inbox/spliced\']): readonly UserMessage[];\n    get hasPending(): boolean;\n    preview(target: InboxTarget): InboxPreview;\n    isCurrent(preview: InboxPreview): boolean;\n    commit(preview: InboxPreview, turn: number, accepted: readonly SessionAppendInput[]): boolean;\n    clear(): void;\n    claim(target: InboxTarget, turn: number): UserMessage[];\n    append(target: InboxTarget, message: UserMessage): void;\n    prepend(target: InboxTarget, message: UserMessage): void;\n    replace(messageId: MessageId, newMessage: UserMessage): boolean;\n    remove(messageId: MessageId): boolean;\n    splice(target: InboxTarget, start: number, deleteCount: number, inserted: UserMessage[]): UserMessage[];\n}',
   },
   {
     name: 'InboxNotifications',
     declaration: 'export interface InboxNotifications {\n    inserted(message: UserMessage): void;\n    discarded(message: UserMessage): void;\n    claimed(message: UserMessage, turn: number): void;\n}',
+  },
+  {
+    name: 'InboxPreview',
+    declaration: 'export interface InboxPreview {\n    readonly revision: number;\n    readonly target: InboxTarget;\n    readonly messages: readonly UserMessage[];\n    readonly nextStepCount: number;\n    readonly nextTurnCount: number;\n}',
   },
   {
     name: 'InboxTarget',
@@ -5130,11 +5204,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Session',
-    declaration: 'export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    get id(): SessionId;\n    readonly firstLiveSeq: number;\n    static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader): Session;\n    static fromRestore(id: SessionId, seed: readonly SessionEvent[], header: SessionHeader): Session;\n    get events(): readonly SessionEvent[];\n    eventAt(seq: number): SessionEvent | undefined;\n    get seq(): number;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [\n        opts: SurfaceIntent\n    ] : [\n    ]): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}',
+    declaration: 'export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    get id(): SessionId;\n    readonly firstLiveSeq: number;\n    static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader): Session;\n    static fromRestore(id: SessionId, seed: readonly SessionEvent[], header: SessionHeader): Session;\n    get events(): readonly SessionEvent[];\n    eventAt(seq: number): SessionEvent | undefined;\n    get seq(): number;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [\n        opts: SurfaceIntent\n    ] : [\n    ]): SessionEvent<T>;\n    appendAtomic(inputs: readonly SessionAppendInput[]): readonly SessionEvent[];\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}',
   },
   {
     name: 'SessionAddress',
     declaration: 'export type SessionAddress = {\n    readonly kind: \'session\';\n    readonly sessionId: SessionId;\n} | {\n    readonly kind: \'subagent\';\n    readonly parentSessionId: SessionId;\n    readonly childSessionId: SessionId;\n    readonly mode: \'one-shot\' | \'continuable\';\n};',
+  },
+  {
+    name: 'SessionAppendInput',
+    declaration: 'export type SessionAppendInput = {\n    [K in SessionEventType]: {\n        readonly type: K;\n        readonly data: SessionEventMap[K];\n    } & (K extends SurfaceEventType ? SurfaceIntent : {\n        readonly surfaceOp?: never;\n        readonly sourceEventSeqs?: never;\n    });\n}[SessionEventType];',
   },
   {
     name: 'SessionAvailability',
@@ -5353,6 +5431,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionQueuedItem {\n    readonly id: MessageId;\n    readonly placement: \'queued\' | \'steering\' | \'context\';\n    readonly rpcId?: SessionRequestId;\n    readonly message: {\n        readonly id: MessageId;\n        readonly content: readonly JsonValue[];\n    };\n}',
   },
   {
+    name: 'SessionQuitAttemptId',
+    declaration: 'export type SessionQuitAttemptId = Branded<\'SessionQuitAttemptId\'>;',
+  },
+  {
     name: 'SessionRawArtifact',
     declaration: 'export interface SessionRawArtifact {\n    readonly meta: SessionHeader;\n    readonly filename: string;\n    readonly content: string;\n}',
   },
@@ -5395,6 +5477,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionRemoteCatalogModel',
     declaration: 'export interface SessionRemoteCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: SessionRemoteModelReasoning;\n}',
+  },
+  {
+    name: 'SessionRemoteCommandRequest',
+    declaration: 'export interface SessionRemoteCommandRequest {\n    readonly sessionId: SessionId;\n    readonly invocationId: SessionPromptInvocationId;\n    readonly line: string;\n    readonly images: readonly Extract<SessionRemotePromptContentPart, {\n        readonly type: \'image\';\n    }>[];\n}',
+  },
+  {
+    name: 'SessionRemoteCommandValue',
+    declaration: 'export type SessionRemoteCommandValue = {\n    readonly state: \'completed\';\n    readonly commandId: Branded<\'CommandId\'>;\n    readonly result: {\n        readonly kind: \'success\';\n        readonly text?: string;\n        readonly sourceEventSeq?: number;\n    } | {\n        readonly kind: \'error\';\n        readonly text: string;\n    };\n} | {\n    readonly state: \'running\';\n    readonly commandId: Branded<\'CommandId\'>;\n} | {\n    readonly state: \'unknown\';\n    readonly commandId: Branded<\'CommandId\'>;\n    readonly reason: \'interrupted\' | \'durability-unconfirmed\';\n};',
   },
   {
     name: 'SessionRemoteCreateRequest',
@@ -5565,6 +5655,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionRemoteSemanticRecord {\n    readonly id: string;\n    readonly kind: \'user\' | \'assistant\' | \'tool\';\n    readonly orderSeq: number;\n    readonly time: number;\n    readonly turn?: number;\n    readonly step?: number;\n    readonly state: \'complete\' | \'interrupted\' | \'active\' | \'failed-prefix\' | \'orphaned-prefix\' | \'unpaired\';\n    readonly preview: string;\n    readonly contentState: \'complete-at-cut\';\n    readonly canonicalEventSeq?: number;\n    readonly callEventSeq?: number;\n    readonly resultEventSeq?: number;\n    readonly completedTurnEndSeq?: number;\n}',
   },
   {
+    name: 'SessionRemoteStorageRequest',
+    declaration: 'export type SessionRemoteStorageRequest = {\n    readonly kind: \'state\';\n    readonly sessionId?: SessionId;\n} | {\n    readonly kind: \'retry-save\';\n} | {\n    readonly kind: \'prepare-quit\';\n    readonly attemptId: SessionQuitAttemptId;\n    readonly epoch: number;\n} | {\n    readonly kind: \'cancel-quit\';\n    readonly attemptId: SessionQuitAttemptId;\n    readonly epoch: number;\n};',
+  },
+  {
+    name: 'SessionRemoteStorageValue',
+    declaration: 'export interface SessionRemoteStorageValue {\n    readonly quitEpoch: number;\n    readonly write: {\n        readonly phase: \'healthy\' | \'pressured\' | \'failed\' | \'closing\';\n        readonly events: number;\n        readonly bytes: number;\n        readonly totalEvents: number;\n        readonly totalBytes: number;\n        readonly oldestAt: number | null;\n        readonly lastSuccessAt: number | null;\n        readonly waitTimeoutMs: number;\n        readonly errorCode: \'storage-write-failed\' | \'storage-stalled\' | null;\n    };\n    readonly retrying: boolean;\n    readonly quit: {\n        readonly attemptId: SessionQuitAttemptId;\n        readonly phase: \'stopping\' | \'saving\' | \'ready\' | \'failed\';\n        readonly safeToQuit: boolean;\n        readonly errorCode: \'storage-write-failed\' | null;\n    } | null;\n}',
+  },
+  {
     name: 'SessionRemoteSuccess',
     declaration: 'export interface SessionRemoteSuccess<Value> {\n    readonly ok: true;\n    readonly value: Value;\n}',
   },
@@ -5683,6 +5781,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionWireEvent',
     declaration: 'export interface SessionWireEvent {\n    readonly type: string;\n    readonly seq: number;\n    readonly time: number;\n    readonly data: JsonValue;\n    readonly sourceEventSeqs?: number[];\n    readonly surfaceOp?: SurfaceOp;\n}',
+  },
+  {
+    name: 'SessionWriteState',
+    declaration: 'export type SessionWriteState = SessionWriteCounters & ({\n    readonly phase: \'healthy\';\n    readonly errorCode: null;\n} | {\n    readonly phase: \'pressured\';\n    readonly errorCode: null;\n} | {\n    readonly phase: \'failed\';\n    readonly errorCode: \'storage-write-failed\' | \'storage-stalled\';\n} | {\n    readonly phase: \'closing\';\n    readonly errorCode: \'storage-write-failed\' | \'storage-stalled\' | null;\n});',
   },
   {
     name: 'SettingsApplies',

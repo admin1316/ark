@@ -162,6 +162,7 @@ public struct ArkRootView: View {
   @State private var workbenchShowsLauncher = true
   @State private var workbenchInitialTool: NativeWorkbenchTabKind = .files
   @State private var workbenchToolRequestRevision = 0
+  @State private var workbenchRequestedBrowserURL: URL?
   @State private var workbenchBrowserCancellationRevision = 0
   @State private var workbenchPanelWidth: CGFloat = 760
   @State private var workbenchDragOrigin: CGFloat?
@@ -239,7 +240,25 @@ public struct ArkRootView: View {
         requestedWorkbenchWidth: workbenchPanelWidth,
         dividerWidth: workbenchDividerWidth
       ) {
-        NativeMainArea(model: model)
+        VStack(spacing: 0) {
+          if let message = model.storageBannerMessage {
+            HStack(spacing: 12) {
+              Image(systemName: "exclamationmark.triangle")
+              Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)
+              Spacer(minLength: 8)
+              Button(model.languagePreference == .en ? "Retry saving" : "重试保存") {
+                model.retryStorageSave()
+              }
+              .disabled(model.storageActionInFlight || model.storageState?.retrying == true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .foregroundStyle(Color.primary)
+            .background(Color.orange.opacity(0.12))
+            .accessibilityElement(children: .contain)
+          }
+          NativeMainArea(model: model)
+        }
           .environment(\.arkOpenToolFile, openToolFile)
           .environment(\.arkOpenProducedFileExternally, openProducedFileExternally)
           .clipped()
@@ -342,13 +361,26 @@ public struct ArkRootView: View {
     .preferredColorScheme(appearance.colorScheme)
     .environment(\.locale, Locale(identifier: language.localeIdentifier))
     .onReceive(NotificationCenter.default.publisher(for: .arkShowSettings)) { _ in
+      guard !model.nativeInputFrozen else { return }
       showSettings = true
     }
     .onReceive(NotificationCenter.default.publisher(for: .arkBeginNewConversation)) { _ in
+      guard !model.nativeInputFrozen else { return }
       model.beginNewConversation()
     }
     .onReceive(NativeWorkbenchCommandCenter.shared.openTool) { kind in
+      guard !model.nativeInputFrozen else { return }
       openWorkbenchTool(kind)
+    }
+    .onReceive(NativeWorkbenchCommandCenter.shared.openResearchSource) { url in
+      guard !model.nativeInputFrozen, NativeBrowserNavigationPolicy.allows(url) else { return }
+      if workbenchActiveRoot == nil && workbenchRoot == nil {
+        guard let path = model.selectedKnowledgeProjectPath,
+              JiuzhangShellContract.protectedWorkspaceReason(path: path) == nil else { return }
+        requestWorkbenchRoot(WorkbenchRootSelection(url: URL(fileURLWithPath: path, isDirectory: true), title: model.activeWikiTitle))
+      }
+      openWorkbenchTool(.browser)
+      workbenchRequestedBrowserURL = url
     }
     .animation(.easeInOut(duration: 0.24), value: sidebarCollapsed)
     .overlay {
@@ -424,6 +456,7 @@ public struct ArkRootView: View {
     }
     .onAppear { applyApplicationAppearance() }
     .onChange(of: appearanceRaw) { _ in applyApplicationAppearance() }
+    .disabled(model.nativeInputFrozen)
     .onChange(of: model.selectedWorkspaceID) { _ in
       synchronizeWorkbenchRootWithSelection()
     }
@@ -469,6 +502,8 @@ public struct ArkRootView: View {
         initialTool: workbenchInitialTool,
         requestedTool: workbenchInitialTool,
         requestedToolRevision: workbenchToolRequestRevision,
+        requestedBrowserURL: workbenchRequestedBrowserURL,
+        browserRequestHandled: { workbenchRequestedBrowserURL = nil },
         browserCancellationRevision: workbenchBrowserCancellationRevision
       )
         .onDirtyStateChange { workbenchHasDirtyFiles = $0 }
@@ -498,6 +533,7 @@ public struct ArkRootView: View {
   }
 
   private func openWorkbenchTool(_ kind: NativeWorkbenchTabKind) {
+    workbenchRequestedBrowserURL = nil
     if let selection = workbenchRoot {
       requestWorkbenchRoot(selection)
     }
@@ -10267,6 +10303,30 @@ private struct NativeWikiDetail: View {
             Text(page.relativePath)
               .font(.system(size: 10, design: .monospaced))
               .foregroundStyle(ArkPalette.secondary)
+            if !page.researchSources.isEmpty {
+              VStack(alignment: .leading, spacing: 8) {
+                Text(language == .zh ? "来源 · 搜索摘要" : "Sources · search snippets")
+                  .font(.system(size: 12, weight: .semibold))
+                Text(language == .zh ? "研究使用搜索摘要，未读取来源全文；候选仍需审阅。" : "Research used search snippets, not full pages. Candidates still need review.")
+                  .font(.system(size: 10))
+                  .foregroundStyle(ArkPalette.secondary)
+                ForEach(page.researchSources) { source in
+                  Button {
+                    if let url = URL(string: source.url), NativeBrowserNavigationPolicy.allows(url) {
+                      NativeWorkbenchCommandCenter.shared.openResearchSource.send(url)
+                    }
+                  } label: {
+                    Label(source.url, systemImage: "arrow.up.right.square")
+                      .lineLimit(2)
+                      .multilineTextAlignment(.leading)
+                  }
+                  .buttonStyle(.link)
+                  .font(.system(size: 10))
+                  .help(language == .zh ? "在工作台浏览器中打开" : "Open in Workbench browser")
+                }
+              }
+              .accessibilityIdentifier("ark.wiki.research.sources")
+            }
             Text(page.body)
               .font(.system(size: 12))
               .textSelection(.enabled)

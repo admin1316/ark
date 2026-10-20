@@ -49,6 +49,8 @@ Three barriers are checkpointed. The model request is flushed before the adapter
 
 ### Observable behavior and failures
 
+The policy observes the backend's [write pressure](../session-persistence/README.md#save-health-and-producer-pressure). After each yielded stream chunk has reached its consumer, it checks unconfirmed-write health before pulling the next chunk. High water waits for capacity; failures and the configured deadline cancel only the exact producing Agent while preserving its inbox. Request, tool and step checkpoints share the same bounded producer wait. Cancelling or timing out this wait never cancels the owned durable write or drops its retained batch. The persistence backend owns all thresholds and counts; this plugin adds no separate queue.
+
 After a checkpoint, the checkpointed work is durable: resume restores it from the store like any persisted session. If cancellation lands while a tool checkpoint flush is pending, the wrapper returns the canonical `ABORTED_BEFORE_DISPATCH` result and never enters the tool body. A checkpoint rejection is fail-closed at both boundaries — the adapter or top-level tool body does not run — and a step-boundary rejection fails the turn before another request starts.
 
 -----
@@ -84,6 +86,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [Session persistence subsystem](../../../docs/subsystems/persistence.md) — the flush checkpoint, batching window, and crash recovery every backend shares.
 - [Session package map](../README.md) — adjacent persistence, projection, title, and telemetry packages.
 - [Session persistence seam](../session-persistence/README.md) — the `ctx.sessionPersistence` service this policy flushes through.
+- [Save pressure and quit decision](../../../.agents/notes/implemented/bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.md) — bounded producer waits and persistence ownership during exit.
 - [JSONL persistence backend](../session-persistence-jsonl/README.md) — the shipped backend this policy is usually loaded beside.
 
 -----
@@ -114,6 +117,7 @@ These limits define where the policy's durability guarantee stops. They are curr
 
 - **Durable execution intent, not exactly-once effects** — the policy records that a call was dispatched, not that its external effect completed. Side-effecting tools should forward `exec.callId` as an idempotency key when their provider supports one.
 - **No per-chunk checkpoint for streaming** — `assistant/chunk` events rely on bounded background batches; a hard crash may lose the current in-memory batch or outstanding write.
+- **Pressure is not a heap cap** — capacity checks follow each yielded chunk, and one chunk can exceed the serialized-byte threshold; the backend's bound does not measure total process memory.
 - **Unknown outcome, not automatic retry** — a persisted call without a result cannot prove whether its external effect completed, so recovery records an unknown outcome instead of retrying.
 
 <a id="dev-note"></a>

@@ -942,7 +942,7 @@ export interface SemanticHistoryLimits {
 }
 ```
 
-Source: [`packages/host/session-remote-operations/src/index.ts:165`](../packages/host/session-remote-operations/src/index.ts)
+Source: [`packages/host/session-remote-operations/src/index.ts:174`](../packages/host/session-remote-operations/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
@@ -1068,7 +1068,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/knowledge-wiki/src/index.ts:131`](../packages/host/knowledge-wiki/src/index.ts)
+Source: [`packages/host/knowledge-wiki/src/index.ts:141`](../packages/host/knowledge-wiki/src/index.ts)
 
 <a id="deepseek-aidsh-llm"></a>
 
@@ -1518,7 +1518,7 @@ export interface ReplayModelConfig {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/test-support/llm-replay/src/index.ts:918`](../packages/test-support/llm-replay/src/index.ts)
+Source: [`packages/test-support/llm-replay/src/index.ts:920`](../packages/test-support/llm-replay/src/index.ts)
 
 <a id="deepseek-aidsh-llm-retry"></a>
 
@@ -1994,13 +1994,17 @@ export interface Config {
   preparedSessionCacheSize?: number
   /** Fixed live-event coalescing window; not a backend completion deadline. */
   writeBatchMaxDelayMs?: number
+  /** Unconfirmed-write byte watermarks and producer wait deadline. */
+  writePressure?: Partial<SessionWritePressureConfig>
 }
 
 /** Physical encoding selected for JSONL session artifacts. */
 export type JsonlCompression = 'zstd' | 'none'
 ```
 
-Source: [`packages/session/session-persistence-jsonl/src/index.ts:65`](../packages/session/session-persistence-jsonl/src/index.ts)
+Depends on: [`SessionWritePressureConfig`](../packages/session/session-persistence/src/index.ts)
+
+Source: [`packages/session/session-persistence-jsonl/src/index.ts:68`](../packages/session/session-persistence-jsonl/src/index.ts)
 
 <a id="deepseek-aidsh-session-persistence-sqlite"></a>
 
@@ -2021,13 +2025,17 @@ export interface Config {
   preparedSessionCacheSize?: number
   /** Fixed live-event coalescing window; not a backend completion deadline. */
   writeBatchMaxDelayMs?: number
+  /** Unconfirmed-write byte watermarks and producer wait deadline. */
+  writePressure?: Partial<SessionWritePressureConfig>
 }
 
 /** Durable journal modes accepted by the backend. */
 export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 ```
 
-Source: [`packages/session/session-persistence-sqlite/src/index.ts:38`](../packages/session/session-persistence-sqlite/src/index.ts)
+Depends on: [`SessionWritePressureConfig`](../packages/session/session-persistence/src/index.ts)
+
+Source: [`packages/session/session-persistence-sqlite/src/index.ts:40`](../packages/session/session-persistence-sqlite/src/index.ts)
 
 <a id="deepseek-aidsh-session-projection-cache"></a>
 
@@ -3000,7 +3008,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/shell/tool-pwsh-persistent/src/index.ts:472`](../packages/shell/tool-pwsh-persistent/src/index.ts)
+Source: [`packages/shell/tool-pwsh-persistent/src/index.ts:496`](../packages/shell/tool-pwsh-persistent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-ralph"></a>
 
@@ -3074,7 +3082,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/tool-str-replace-editor/src/index.ts:497`](../packages/fs/tool-str-replace-editor/src/index.ts)
+Source: [`packages/fs/tool-str-replace-editor/src/index.ts:498`](../packages/fs/tool-str-replace-editor/src/index.ts)
 
 <a id="deepseek-aidsh-tool-subagent"></a>
 

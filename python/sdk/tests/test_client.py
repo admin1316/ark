@@ -13,6 +13,50 @@ from deepseek_harness import DeepSeekHarness, HarnessClient, HarnessConfig, Noti
 from deepseek_harness.errors import JsonRpcError
 
 
+def test_command_receipts_preserve_metadata_and_do_not_pollute_final_response(tmp_path: Path) -> None:
+    fixture = Path(__file__).resolve().parents[3] / "packages/sdk/client/tests/fixtures/command-events.json"
+    expected = json.loads(fixture.read_text())
+    script = tmp_path / "command_runtime.py"
+    script.write_text(
+        """
+import json
+import os
+import sys
+
+events = json.load(open(os.environ["COMMAND_EVENTS"]))
+def emit(value):
+    print(json.dumps(dict(jsonrpc="2.0", **value)), flush=True)
+
+for line in sys.stdin:
+    msg = json.loads(line)
+    if msg["method"] == "initialize":
+        emit({"id": msg["id"], "result": {"serverInfo": {"name": "synthetic-command-runtime"}}})
+    elif msg["method"] == "session/prompt":
+        session = msg["params"]["sessionId"]
+        records = [{"type": "agent/inbox/spliced", "data": {"target": "next-turn", "start": 0,
+            "inserted": [{"id": "synthetic-message"}]}}] + events + [
+            {"type": "assistant/message", "data": {"message": {"role": "assistant",
+                "content": [{"type": "text", "text": "assistant answer"}]}}},
+            {"type": "turn/end", "data": {"turn": 1, "reason": {"kind": "completed"}}}]
+        emit({"id": msg["id"], "result": {"messageId": "synthetic-message"}})
+        for seq, record in enumerate(records):
+            emit({"method": "session.event", "params": {"sessionId": session,
+                "event": dict(seq=seq, time=0, **record)}})
+        emit({"method": "session.status", "params": {"sessionId": session, "status": "idle"}})
+    elif msg["method"] == "shutdown":
+        emit({"id": msg["id"], "result": {}})
+        break
+""".strip()
+    )
+    with DeepSeekHarness(_launch_args=(sys.executable, str(script)), cwd=str(tmp_path),
+                         env={"COMMAND_EVENTS": str(fixture)}) as harness:
+        result = harness.run("observe command records", session_id="synthetic-sdk-session")
+    commands = [{"type": event["type"], "data": event["data"]}
+                for event in result.events if event["type"].startswith("command/")]
+    assert commands == expected
+    assert result.final_response == "assistant answer"
+
+
 def test_high_level_sdk_runs_turn_and_collects_final_response(tmp_path: Path) -> None:
     script = tmp_path / "fake_runtime.py"
     env_dump = tmp_path / "env.json"

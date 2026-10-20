@@ -13,6 +13,7 @@ import {
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { installModelSelectionProjection } from '@deepseek-ai/dsh-agent-default-model/session-selection'
 import { WorkspaceSessionDeletionBlockedError } from '@deepseek-ai/dsh-workspace'
+import { CommandId, type CommandRuntime } from '@deepseek-ai/dsh-commands'
 import SessionRemoteOperationsService, { SESSION_EXPORT_PATH } from '../src/index.ts'
 
 const contexts: Context[] = []
@@ -120,16 +121,19 @@ async function harness(cwd: string): Promise<MutableHarness> {
     },
   } as never)
   ctx.provide('commands', {
-    execute: (_agent: unknown, line: string) => {
-      if (line === '/ok') {
-        return Promise.resolve({ commandId: 'command-1', result: { kind: 'success', text: 'done' } })
+    hasInvocation: () => false,
+    receipt: () => Promise.resolve(undefined),
+    whenSettled: () => Promise.resolve(),
+    execute: (_agent, request) => {
+      if (request.line === '/ok') {
+        return Promise.resolve({ state: 'completed', commandId: CommandId('command-1'), result: { kind: 'success', text: 'done' } })
       }
-      if (line === '/bad') {
-        return Promise.resolve({ commandId: 'command-2', result: { kind: 'error', text: 'not allowed' } })
+      if (request.line === '/bad') {
+        return Promise.resolve({ state: 'completed', commandId: CommandId('command-2'), result: { kind: 'error', text: 'not allowed' } })
       }
       return Promise.resolve(undefined)
     },
-  } as never)
+  } satisfies Pick<CommandRuntime, 'hasInvocation' | 'receipt' | 'whenSettled' | 'execute'> as never)
   ctx.provide('llm', {
     listProviders: () => [{ id: 'provider', name: 'Provider' }],
     listModels: () => Promise.resolve([]),
@@ -142,6 +146,8 @@ async function harness(cwd: string): Promise<MutableHarness> {
   } as never)
   ctx.provide('sessionPersistence', {
     list: () => Promise.resolve([]), ensureMaterialized: () => Promise.resolve(),
+    writeState: () => ({ phase: 'healthy', events: 0, bytes: 0, totalEvents: 0, totalBytes: 0,
+      oldestAt: null, lastSuccessAt: null, waitTimeoutMs: 30000, errorCode: null }),
   } as never)
   await ctx.plugin(SessionProjectionRegistry)
   installModelSelectionProjection(ctx)

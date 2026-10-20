@@ -20,17 +20,37 @@ export const inject = ['invariants']
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
   // Install-scoped so a dispose/re-register cycle re-sweeps from a clean slate.
   const runIds = new WeakMap<Session, Set<string>>()
+  const doneIds = new WeakMap<Session, Set<string>>()
+  const invocationIds = new WeakMap<Session, Set<string>>()
   const validateEvent = (session: Session, event: SessionEvent): void => {
     if (event.type === 'command/run') {
+      const { invocationId, inputDigest } = event.data
+      let invocations: Set<string> | undefined
+      if (invocationId !== undefined || inputDigest !== undefined) {
+        if (typeof invocationId !== 'string' || invocationId.length === 0
+            || typeof inputDigest !== 'string' || !/^command-v1:[a-f0-9]{64}$/u.test(inputDigest)) {
+          fail('command/run has invalid invocation metadata')
+        }
+        if (event.seq >= (session.header.seedLength ?? 0)) {
+          invocations = invocationIds.get(session) ?? new Set<string>()
+          if (invocations.has(invocationId)) fail('command/run repeats invocationId')
+        }
+      }
       const ids = runIds.get(session) ?? new Set<string>()
       if (ids.has(event.data.commandId)) {
         fail(`command/run repeats commandId ${JSON.stringify(event.data.commandId)}`)
       }
       ids.add(event.data.commandId)
       runIds.set(session, ids)
+      if (invocations !== undefined) {
+        invocations.add(invocationId as string)
+        invocationIds.set(session, invocations)
+      }
       return
     }
     if (event.type !== 'command/done') return
+    const settled = doneIds.get(session) ?? new Set<string>()
+    if (settled.has(event.data.commandId)) fail('command/done repeats a settled commandId')
     if (runIds.get(session)?.has(event.data.commandId) !== true) {
       fail(`command/done ${JSON.stringify(event.data.commandId)} pairs no prior command/run in this log`)
     }
@@ -44,6 +64,8 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
         || sourceEvent.type === 'command/done')) {
       fail(`command/done ${JSON.stringify(event.data.commandId)} has invalid sourceEventSeq ${String(source)}`)
     }
+    settled.add(event.data.commandId)
+    doneIds.set(session, settled)
   }
   for (const session of ctx.sessions.list()) {
     for (const event of session.events) validateEvent(session, event)

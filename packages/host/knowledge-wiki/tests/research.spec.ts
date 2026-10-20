@@ -44,6 +44,7 @@ describe('deep research', () => {
       stageExecutorFor(llm, { search: async () => ({ sources:[] }) } as unknown as WebRuntime), 'p', 'm', await root(), 'topic', new AbortController().signal,
     )).resolves.toEqual({
       written: [],
+      pageSources: {}, sources: [],
       sourceCount: 0,
       warnings: ['research: LLM produced no usable queries'],
       errorCode: 'invalid-queries',
@@ -57,8 +58,8 @@ describe('deep research', () => {
       .mockResolvedValueOnce('1. alpha query\n- beta query\n* alpha query\n• gamma query\n4) delta query\nepsilon query\nzeta query')
       .mockResolvedValueOnce('synthesis')
     mocks.parseFileBlocks.mockReturnValue([
-      { path: 'draft.md', content: '---\ntitle: Draft\n---\n\nBody', closed: true },
-      { path: 'kept.md', content: '---\nstatus: candidate\norigin: research\ntitle: Kept\n---\n\nBody', closed: true },
+      { path: 'draft.md', content: '---\ntitle: Draft\n---\n\nBody [A](https://a.test)', closed: true },
+      { path: 'kept.md', content: '---\nstatus: candidate\norigin: research\ntitle: Kept\n---\n\nBody [shared](https://shared.test)', closed: true },
       { path: 'open.md', content: 'partial', closed: false },
     ])
     const search = vi.fn()

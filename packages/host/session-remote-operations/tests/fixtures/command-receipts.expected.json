@@ -1,0 +1,49 @@
+{
+  "original": {
+    "ok": true,
+    "value": {
+      "state": "completed",
+      "commandId": "{{command:1}}",
+      "result": {
+        "kind": "success",
+        "text": "synthetic effect saved"
+      }
+    }
+  },
+  "repeated": {
+    "ok": true,
+    "value": {
+      "state": "completed",
+      "commandId": "{{command:1}}",
+      "result": {
+        "kind": "success",
+        "text": "synthetic effect saved"
+      }
+    }
+  },
+  "events": [
+    {
+      "type": "command/run",
+      "data": {
+        "commandId": "{{command:1}}",
+        "name": "record",
+        "args": " example",
+        "source": {
+          "kind": "user"
+        },
+        "invocationId": "synthetic-command-invocation",
+        "inputDigest": "command-v1:09e50bb5af3d1284e27bc77826f1aba1bb48ab99005c290b29f82500d4dc73e4"
+      }
+    },
+    {
+      "type": "command/done",
+      "data": {
+        "commandId": "{{command:1}}",
+        "kind": "success",
+        "text": "synthetic effect saved"
+      }
+    }
+  ],
+  "filesystemEffect": "synthetic effect\n",
+  "modelRequests": 0
+}

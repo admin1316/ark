@@ -49,6 +49,8 @@ kind: "package-reference"
 
 ### 可观察行为与失败
 
+策略观察后端的[写入压力](../session-persistence/README.zh.md#save-health-and-producer-pressure)。每个流式 chunk 交给消费方后，策略会在拉取下一个 chunk 前检查未确认写入状态。达到高水位时等待容量；失败或达到配置期限时，仅取消准确的生产 Agent，并保留其 inbox。请求、工具与步骤检查点共享同一有界生产者等待。取消或超时结束的是等待，不会取消所属持久写入，也不会丢弃保留批次。所有阈值及计数由持久化后端拥有，本插件不增加独立队列。
+
 检查点之后，被检查点化的工作即已持久：恢复像任何持久化会话一样从存储还原它。如果取消在工具检查点 flush 等待期间到达，包装层会返回规范的 `ABORTED_BEFORE_DISPATCH` 结果，绝不进入工具正文。检查点拒绝在两个边界都按失败即阻止处理——适配器或顶层工具正文不运行——步骤边界的拒绝会在另一个请求开始前使轮次失败。
 
 -----
@@ -84,6 +86,7 @@ kind: "package-reference"
 - [会话持久化子系统](../../../docs/subsystems/persistence.zh.md)——每个后端共享的 flush 检查点、批处理窗口与崩溃恢复。
 - [会话包映射](../README.zh.md)——相邻的持久化、投影、标题与遥测包。
 - [会话持久化 seam](../session-persistence/README.zh.md)——本策略经由其刷新的 `ctx.sessionPersistence` 服务。
+- [保存压力与退出决策](../../../.agents/notes/implemented/bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.zh.md)——有界生产者等待及退出期间的持久化所有权。
 - [JSONL 持久化后端](../session-persistence-jsonl/README.zh.md)——本策略通常与之一起加载的随产品交付后端。
 
 -----
@@ -114,6 +117,7 @@ kind: "package-reference"
 
 - **持久记录执行意图，而非恰好一次副作用**——策略记录的是调用已分派，而非其外部副作用已完成。当提供方支持时，有副作用的工具应将 `exec.callId` 作为幂等键转发。
 - **流式内容没有逐分片检查点**——`assistant/chunk` 事件依赖有界后台批次；硬崩溃可能丢失当前内存批次或尚未完成的写入。
+- **压力不是堆内存上限**——容量检查位于每个已交付 chunk 之后，单个 chunk 可以超过序列化字节阈值；后端边界不计量整个进程的内存。
 - **记录未知结果，而非自动重试**——没有结果的持久调用无法证明其外部副作用是否完成，因此恢复记录未知结果，而不是自动重试。
 
 <a id="dev-note"></a>

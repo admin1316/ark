@@ -203,8 +203,10 @@ export function parseSessionLog(text: string): SessionEvent[] {
     const packed = PACKED_CHUNK_ROW_TYPES.has(record.type as string)
     const seqKey = packed ? 'seq0' : 'seq'
     const timeKey = packed ? 'time0' : 'time'
-    if (!Object.hasOwn(record, seqKey)) record[seqKey] = nextSeq
-    if (!Object.hasOwn(record, timeKey)) record[timeKey] = 0
+    if (record.type !== 'atomic-events') {
+      if (!Object.hasOwn(record, seqKey)) record[seqKey] = nextSeq
+      if (!Object.hasOwn(record, timeKey)) record[timeKey] = 0
+    }
     let decoded: SessionEvent[]
     try {
       if (Object.hasOwn(record, 'sourceEventSeqs')) {

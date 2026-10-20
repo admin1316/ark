@@ -1,6 +1,14 @@
 import Foundation
+import JiuzhangShellUI
 
 func runArkWikiQueueContractChecks() {
+  let page = ArkWikiPage(id: "research/example", title: "Example", relativePath: "_candidates/research/example.md", category: "research",
+    body: "---\ntype: research\norigin: research\nsources: [\"https://source.example/report\"]\n---\n\n[source](https://source.example/report)", links: [], byteCount: 1)
+  check(page.researchSources.map(\.url) == ["https://source.example/report"]
+    && page.researchSources.first?.evidence == "search-snippet", "research page sources survive in existing frontmatter with explicit snippet evidence")
+  let unsafePage = ArkWikiPage(id: "research/unsafe", title: "Unsafe", relativePath: "_candidates/research/unsafe.md", category: "research",
+    body: "---\ntype: research\norigin: research\nsources: [\"file:///tmp/private\"]\n---\n\nBody", links: [], byteCount: 1)
+  check(unsafePage.researchSources.isEmpty, "knowledge source buttons refuse local or dangerous links from edited frontmatter")
   let apiURL = contractNativeRoot.appendingPathComponent("Sources/JiuzhangShellCore/ArkDomainAPI.swift")
   let modelURL = contractNativeRoot.appendingPathComponent("Sources/JiuzhangShellUI/ArkAppModel.swift")
   let rootURL = contractNativeRoot.appendingPathComponent("Sources/JiuzhangShellUI/ArkRootView.swift")

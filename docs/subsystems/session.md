@@ -316,6 +316,26 @@ Required for `SurfaceEventType` events — every message-producing event must de
 
 Only `assistant/message` may carry a present empty `sourceEventSeqs`; when the field is absent, the event does not record which earlier events produced the message, and the provider may still have emitted chunks.
 
+### Atomic append inputs and storage groups
+
+```ts type-equiv
+/** Typed input for an all-or-nothing synchronous session append. */
+type SessionAppendInput = {
+  [K in SessionEventType]: { readonly type: K; readonly data: SessionEventMap[K] }
+    & (K extends SurfaceEventType ? SurfaceIntent : { readonly surfaceOp?: never; readonly sourceEventSeqs?: never })
+}[SessionEventType]
+```
+
+```ts type-equiv
+/** One contiguous group that storage must commit or recover as a whole. */
+interface SessionAtomicGroup {
+  readonly firstSeq: number
+  readonly count: number
+}
+```
+
+`Session.appendAtomic` validates all inputs before committing any event. `session/committed` carries the resulting group to persistence; individual `session/event` observers see the complete installed log. The [session package](../../packages/core/session/README.md) owns publication semantics and the [JSONL backend](../../packages/session/session-persistence-jsonl/README.md) owns physical records and offline rollback export.
+
 ### `SessionSurface` — the live readonly surface projection
 
 `Session.surface` returns the session's stable `SessionSurface` view. The same incremental manager validates append candidates before commit and advances this projection from committed events; callers can observe membership and replacement generation but cannot invoke validation.
@@ -485,6 +505,12 @@ declare class Session {
       ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
     ): SessionEvent<T>;
   /**
+     * Validate and commit a complete group before notifying any observer.
+     * @param inputs - typed event payloads and required surface intents, in order.
+     * @returns immutable events whose persistence boundary may never be split.
+     */
+  appendAtomic(inputs: readonly SessionAppendInput[]): readonly SessionEvent[];
+  /**
      * The {@link EpochHeader} in force after the log's last header event — the
      * header the NEXT request will be compared against — or undefined before
      * the first `request/header` snapshot. The live, incrementally-maintained
@@ -613,6 +639,12 @@ The hook bridges' `hook/invoked` / `hook/result` pairs (from `@deepseek-ai/dsh-h
 What a persistence backend relies on: the durable log persists every event losslessly, **including** `assistant/chunk` — `seq` must stay contiguous, so chunks cannot be filtered out of the canonical log. A backend may choose its own storage encoding for an event batch as long as `load` returns the exact appended events (the JSONL backend's default packed chunk rows are such an encoding — see [persistence.md](persistence.md)). All `event.data` must be JSON-serializable; `Session.append` enforces this at the source (throwing on non-serializable data), so a bad event never enters the log and `session.events` always equals what a backend can persist. Adding an event type that carries non-serializable data, corrupts core execution nesting, or violates its owner's declared relation is a breaking change to the on-disk format.
 
 The backends that consume this contract are on [persistence.md](persistence.md).
+
+## Native command and storage requests
+
+`SessionRemoteCommandRequest` identifies one exact session, caller-stable invocation, command line, and image list. `SessionRemoteCommandValue` distinguishes a terminal `completed` result from `running` and `unknown`; callers retain the original invocation when checking an uncertain result. The [command contract](commands.md) owns execution and retry semantics.
+
+`SessionRemoteStorageRequest` observes write state, retries retained saves, or prepares/cancels a quit attempt identified by `SessionQuitAttemptId` and epoch. `SessionRemoteStorageValue` returns operational counters and quit readiness without message contents or backend exception text. Observing state does not resume an agent. The [Remote declarations](../../packages/core/session/src/remote.ts) own these wire shapes; the [persistence contract](persistence.md) owns the save barrier.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -881,6 +913,22 @@ list(): Session[]
 @Remote('prompt') remoteExportPrompt(request: SessionRemotePromptRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemotePromptValue>>
 
 /**
+ * Submit or confirm one stable human-command invocation.
+ * @param request - session identity, invocation identity and command payload.
+ * @param signal - caller-owned response wait cancellation.
+ * @returns the durable result or the current execution uncertainty.
+ */
+@Remote('command') remoteExportCommand(request: SessionRemoteCommandRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteCommandValue>>
+
+/**
+ * Observe saving or prepare a confirmed application quit.
+ * @param request - storage action and optional exact quit attempt.
+ * @param signal - response wait cancellation.
+ * @returns current save counters and quit readiness.
+ */
+@Remote('storage') remoteExportStorage(request: SessionRemoteStorageRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteStorageValue>>
+
+/**
  * Delegate attachment authorization and bytes retrieval to the Host attachment authority.
  * @param request - session attachment request.
  * @param signal - caller-owned cancellation signal.
@@ -1028,6 +1076,29 @@ Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/sess
 <a id="session-events"></a>
 
 ### `session/*` events
+
+<a id="sessioncommitted--emit"></a>
+
+#### `session/committed` — emit
+
+Post-commit persistence feed retaining each synchronous append group's boundary. Scope-filtered dispatch reuses the owning session's scope.
+
+```ts cordis-catalog
+/**
+ * Post-commit persistence feed retaining each synchronous append group's boundary.
+ * Scope-filtered dispatch reuses the owning session's scope.
+ * @param session - session whose complete group has committed.
+ * @param events - immutable contiguous events committed together.
+ * @param atomic - whether storage must preserve the complete group.
+ * @dshScopeScan unsupported
+ * @mode emit
+ */
+'session/committed'(this: Scoped<Session>, session: Session, events: readonly SessionEvent[], atomic: boolean): void
+```
+
+Types: [Scoped](scope.md)
+
+Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 
 <a id="sessioncreated--emit"></a>
 

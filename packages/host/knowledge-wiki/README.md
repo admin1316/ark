@@ -58,19 +58,19 @@ Automatic session summaries use only registered secondary session workspaces. Th
 
 ## Durable state (.llm-wiki/)
 
-- `ingest-cache.json` — source identities map to a successful content hash, `{ cancelledHash, admissionId? }` for an explicitly cancelled source version, or `{ retryAfter }` for failure cooldown. Pruning terminal history does not re-admit unchanged completed/cancelled sources or bypass cooldown.
+- `ingest-cache.json` — source identities map to a successful content hash, `{ cancelledHash, admissionId? }` for explicit cancellation, `{ retryAfter }` for temporary failure cooldown, or `{ permanentFailure: { code, sourceHash, policyHash }, admissionId? }` for a permanent local extraction rejection. These dispositions survive terminal-history pruning and restart; a fresh manual admission does not inherit an older rejection.
 - `ingest-queue.json` — pending/running tasks and bounded terminal history; restored running tasks become pending without old lease metadata. Each new task has an admission identity so an explicit retry cannot inherit an earlier cancellation. Invalid or over-capacity state fails restoration without publishing a partial queue or changing project selection.
 - `review.json` — append-only array of review items (deduped by deterministic id).
 - `workspaces.json` — registered secondary workspaces.
 
 ## Behavior
 
-- Supported source text is bounded to 5 MiB and decoded as strict UTF-8. Markdown, text, Org, JSON, YAML, HTML/XML, CSV/TSV, and log files are admitted; PDF, Office, unsupported formats, malformed UTF-8, binary controls, and disguised binary containers are rejected before model analysis. Original source files remain local.
+- Supported source text is bounded to 5 MiB and decoded as strict UTF-8. Markdown, text, Org, JSON, YAML, HTML/XML, CSV/TSV, and log files are admitted; PDF, Office, unsupported formats, empty text, malformed UTF-8, binary controls, and disguised binary containers are rejected before model analysis. Original source files remain local.
 - Queue execution is serialized across projects. A synchronous source/URL import waits only for its own project/task completion, including when another project restores the same numeric id. Manual batches exceeding item, active-work, or complete encoded-state capacity reject without partial admission. Oversized stage outcomes return a capacity error and preserve generated files instead of reporting completion without a recoverable receipt.
 - `ingestQueueCancel` cancels only pending tasks. The running task retains its owner and finishes; project removal and service disposal independently abort owned work. Explicit cancellation persists its source fingerprint; service disposal preserves resumable work without recording a user cancellation. Recovered attempts may repeat external model work if the Host stopped before durable task completion; provider requests have no exactly-once guarantee.
 - Same-project research duplicates with the same normalized topic, route and settings revisions share one operation. Each request owns its subscription: cancelling one subscriber leaves the others running; the final cancellation stops the shared operation. Project removal or service disposal cancels the operation. Different settings revisions never join an older prepared connection. The total owner deadline aborts the same operation; capacity remains occupied until stage cleanup settles, then its timer is cleared. Existing research destinations are preserved; competing same-slug output returns a warning, and complete private staging bytes are published without replacement.
-- Research preflights the configured web service before query expansion. Zero citeable HTTP(S) sources blocks synthesis and page creation. Partial search failures remain warnings; results include source count, degradation, and a stable error classification. Cancellation prevents subsequent writes.
-- Sources under `raw/sources/` are scanned every 60s; changed files are enqueued for two-stage ingest. A failed ingest (LLM error, zero pages written) enters a 60-minute cooldown and never poisons the cache.
+- Research preflights search before query expansion. Zero credential-free HTTP(S) sources blocks synthesis. Sources are normalized without changing path/query meaning; only actual search results can be cited. The Host parses Markdown links/references, rejects unknown or dangerous links, requires a citation, and forces candidate/research provenance, dates and actually cited `sources`. Results include per-page `sourceURLs`, actual search `sources` labeled `search-snippet`, count, warnings and degradation. No valid output returns `invalid-output`, rejected citations return `invalid-citations`, and all-collision/write failure returns `no-pages`; partial successes preserve their warnings. Cancellation prevents subsequent writes.
+- Sources under `raw/sources/` are scanned every 60s. Temporary failures, including legacy errors without typed extraction classification, retain a 60-minute cooldown. Permanent local extraction errors travel through the owned worker with a code and failed-content fingerprint; unchanged content under the same decoder-policy fingerprint does not automatically retry, even after history pruning or restart. Changed content, changed decoder policy, or an explicit manual retry permits another admission. Neither failures nor cancellation record a successful-ingest hash.
 - The summary page for a source is forced onto the deterministic slug contract (`12-ark-sessions--32-…--<fnv32 base36>.md`), matching the existing corpus.
 - Generated pages are sanitized, date-stamped, canonicalized (`sources` field), and merged with any existing page: pages owned only by this source are replaced whole; shared pages keep their body and union their `sources`.
 - Deterministic fallbacks run regardless of model output shape: index entry, log entry, source summary page, review items.
@@ -95,11 +95,11 @@ Independent requests: the stage-2 prompt embeds the stage-1 output, so it cannot
 
 #### What the model sees
 
-An expansion request turning the topic into search queries and, only after citeable sources are available, a synthesis request fed those sources. Missing search capability spends no model request; zero-source search spends no synthesis request.
+An expansion request turns the topic into search queries; only actual citeable search results permit synthesis. The synthesis prompt labels the supplied titles, URLs and search snippets as incomplete evidence, forbids invented citations and requires at least one Markdown citation. Missing search capability spends no model request; zero-source search spends no synthesis request. The Host validates citations independently of the model instruction.
 
 #### Token effect
 
-Per research run, topic-proportional plus the fetched page content.
+Per research run, topic-proportional plus search-result titles, URLs and snippets; research does not fetch full pages.
 
 #### KV Cache effect
 
@@ -125,6 +125,7 @@ Independent request per image.
 - **Conservative shared-page merge** — an existing page with other sources keeps its body; only the `sources` frontmatter is unioned. LLM-body merge for shared pages is not implemented.
 - **Stage-2 review blocks only** — review items are parsed from the generation output; there is no standalone review-suggestion LLM stage.
 - **Text extraction only** — PDF and Office parsing remain unavailable until a verified extractor is integrated.
+- **Search-snippet research** — citation membership proves a URL came from search, not that a claim is true or the full page was read. Native candidates remain subject to review; their recorded sources can open in the isolated HTTP(S) Workbench browser.
 - **Online embeddings only** — vector search calls the embedding API per query; there is no persisted vector store.
 - **Polling watch** — `raw/sources` is scanned every 60 seconds; there is no filesystem watcher.
 - **Out of scope** — Web Clipper, MCP server, and a desktop UI are not provided; the knowledgeWiki Remote contract and the tool-knowledge-wiki consumer cover the UI surface.

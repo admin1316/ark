@@ -109,8 +109,8 @@ async function run(
   test: Harness,
   suffix = '',
   controller = new AbortController(),
-): Promise<NonNullable<Awaited<ReturnType<CommandRuntime['execute']>>>> {
-  const execution = await test.ctx.commands.execute(test.agent, `/compact${suffix}`, [], controller.signal)
+): Promise<NonNullable<Awaited<ReturnType<CommandRuntime['executeLocal']>>>> {
+  const execution = await test.ctx.commands.executeLocal(test.agent, `/compact${suffix}`, [], controller.signal)
   if (execution === undefined) throw new Error('compact command was not registered')
   return execution
 }

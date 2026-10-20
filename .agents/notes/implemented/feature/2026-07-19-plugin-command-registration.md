@@ -18,7 +18,7 @@ A shared mechanism must remain a UI concern rather than a model tool or agent-lo
 
 A `CommandDefinition` contains a lowercase name without `/`, a non-empty description, an optional unstructured-input hint, and an abortable handler. Registration validates and detaches the metadata, freezes the effective definition, and returns the exact Cordis effect disposer. Duplicate names fail within one layer. Every consumer sees every effective definition; a command plugin that cannot operate in a deployment omits its registration there instead of encoding consumer identities in the shared domain.
 
-`list(agent)` returns immutable name-sorted descriptors after scoped shadowing. `find(agent, name)` resolves the effective definition. `execute(agent, line, signal)` parses and runs a known definition, returning a detached `success` or `error` result; invalid syntax and unknown names return `undefined` so the adapter owns its direct error text.
+`list(agent)` returns immutable name-sorted descriptors after scoped shadowing. `find(agent, name)` resolves the effective definition. Local-only `executeLocal(agent, line, images, signal)` parses and runs a known definition, returning a detached `success` or `error` result; invalid syntax and unknown names return `undefined` so the adapter owns its direct error text. Native execution and recovery follow the [durable command receipt decision](../architecture/2026-10-20-durable-native-command-receipts.md).
 
 `parseCommand(line)` requires `/` at byte zero, a lowercase ASCII name containing letters, digits, `_`, or `-`, then whitespace or end-of-input. It preserves the complete adapter-delivered suffix as `rawInput`, including separator whitespace. Command-specific plugins own every further grammar decision.
 
@@ -30,7 +30,7 @@ Registration and removal emit the unfiltered, non-vetoing `commands/change` regi
 
 ### Direct dispatch and cancellation
 
-Commands run in a human-only command plane. The registry does not turn their input into `user/message`, their output does not become a session event, and neither is sent to the model implicitly. A handler receives the exact target agent, raw input, and request-owned `AbortSignal`; a producer may explicitly schedule separate model-visible work through that agent and then owns its logging and lifecycle contract. The registry stops awaiting an uncooperative handler when the signal aborts; the handler remains responsible for stopping external side effects already started.
+Commands run in a human-only command plane. The registry does not turn their input into `user/message`; command lifecycle records are log-only, and neither input nor output is sent to the model implicitly. A handler receives the exact target agent, raw input, and an `AbortSignal`; a producer may explicitly schedule separate model-visible work through that agent and then owns its logging and lifecycle contract. Local-only dispatch stops awaiting an uncooperative handler when its caller signal aborts; durable native dispatch retains ownership until actual handler settlement.
 
 Expected handler failures return `CommandResult.error`. Thrown or malformed results remain adapter-visible command failures, not model messages. This boundary deliberately separates UI output from durable domain mutation: a goal command may change `ctx.goals`, for example, but the goal service owns that persisted state.
 
@@ -54,7 +54,7 @@ TUI tests exercise all migrated built-ins, live plugin discovery, help/autocompl
 - **Make `dsh-agent-loop` inject commands** — rejected because the loop does not execute or discover human commands. Agent-scoped producers declare the UI dependency in a child plugin instead.
 - **Attach adapter masks to each definition** — rejected because support is a composition fact, not command-domain state. Every composed adapter exposes a registered command; an incompatible plugin omits registration in that deployment.
 - **Send unknown slash input to the model** — rejected because typoed or unavailable direct actions must fail predictably rather than change execution planes.
-- **Persist generic command input and output** — rejected because adapter notices are not model-visible state. A handler that changes durable behavior calls the owning domain API, which records its own events.
+- **Persist generic command input and output as model-visible domain state** — rejected because adapter notices are not model messages. A handler that changes durable behavior calls the owning domain API, which records its own events; log-only command receipts have the separate recovery contract linked above.
 
 ## Consequences
 
@@ -66,6 +66,6 @@ TUI tests exercise all migrated built-ins, live plugin discovery, help/autocompl
 ## Known limitations and deferred work
 
 - Input metadata is limited to an unstructured text hint. Typed forms, argument schemas, and completion providers remain command-owned or require a later registry or consumer extension.
-- Generic command output is live-only and is not reconstructed after TUI restart.
-- Registry cancellation stops awaiting immediately, but external work stops only when a handler cooperates with its signal.
-- The ACP automation server, headless CLI, and JSON-RPC SDK entry points do not expose the command plane; only TUI consumes it.
+- Local-only execution has no durable retry identity; native recovery uses the linked receipt contract.
+- Local-only cancellation stops awaiting immediately, but external work stops only when a handler cooperates with its signal.
+- The ACP automation server, headless CLI, and JSON-RPC SDK entry points do not expose the command plane; native Ark and interactive adapters consume it.

@@ -660,6 +660,16 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (scenario.name === 'input-atomic') {
+              const groups = actualLogs.flatMap(log => records(log.content))
+                .filter(record => record.type === 'atomic-events')
+              const input = groups.find(record => Array.isArray(record.events)
+                && record.events.some(event => (event as JsonObject).type === 'step/start'))
+              expect(input?.version).toBe(1)
+              expect(input?.seq).toBe((input?.events as JsonObject[])[0]?.seq)
+              expect((input?.events as JsonObject[]).map(event => event.type).slice(0, 3))
+                .toEqual(['agent/inbox/spliced', 'step/start', 'user/message'])
+            }
             finalWorkspace = await captureWorkspaceSnapshot(cwd, {
               ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
             })

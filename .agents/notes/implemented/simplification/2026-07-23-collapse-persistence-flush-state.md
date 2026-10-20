@@ -6,17 +6,19 @@ English | [中文](2026-07-23-collapse-persistence-flush-state.zh.md)
 
 The [bounded write-batching decision](../architecture/2026-08-08-bounded-session-persistence-write-batching.md) supersedes this note's immediate scheduling cadence. The single-controller ownership, failure retention, per-id serialization, retirement, and quiescent-disposal decisions remain current.
 
+The [save-pressure decision](../bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.md) adds acknowledgement-aware accounting, retryable initialization and an explicit all-owner save barrier. The ownership and adoption rationale here remains current.
+
 ## Problem
 
 The persistence coordinator represented one live session's write lifecycle with separate buffer, initialization, and retirement containers plus the per-id operation chain. Those structures mirrored the same fact: whether that exact `Session` still had initialization or events that must settle before its state could be released. The checkpoint-only drain also kept every event volatile until another plugin requested `session/flush`, even though the backend could begin durability work without blocking the synchronous producer.
 
 ## Decision
 
-Each live `Session` has one lifecycle entry containing initialization and one package-private write controller. The controller owns `pending`, the fixed batching timer, the optional active write, automatic-retry pause, and the shared flush barrier. A `session/event` listener copies the frozen event into `pending`; the first event starts a fixed deadline, and later events join without resetting it. A write takes one stable pending prefix; events admitted while it runs remain pending for a separately bounded follow-up batch.
+Each live `Session` has one lifecycle entry containing initialization and one package-private write controller. The controller owns `pending`, the fixed batching timer, the optional active write, automatic-retry pause, and the shared flush barrier. A `session/committed` listener copies the frozen batch and its atomic boundary into `pending`; the first event starts a fixed deadline, and later events join without resetting it. A write takes one stable pending prefix; events admitted while it runs remain pending for a separately bounded follow-up batch.
 
 `session/flush` is an immediate quiescence barrier. It waits for initialization, cancels the batching timer, joins any active attempt, and drains pending events, including events admitted while the barrier runs. A background failure is logged without rejecting the synchronous event producer, restores the complete ordered batch, and pauses automatic retry. A new event starts a fresh fixed window; explicit flush, retirement, or backend teardown retries immediately and surfaces a repeated failure.
 
-Initialization now enters the existing per-id operation chain once and calls the unserialized core operations while it owns that turn. The chain remains separate from the live controller because detached public `create`/`append`/`load` calls can race without a `Session` object and still require identity-level serialization.
+Initialization enters the existing per-id operation chain and calls the unserialized core operations while it owns that turn. A rejected initialization retains the exact operation for explicit retry. The chain remains separate from the live controller because detached public `create`/`append`/`load` calls can race without a `Session` object and still require identity-level serialization.
 
 Crash repair is cold-only. For a live identity, `load(id)` snapshots the authoritative in-memory events before awaiting their flush, then returns them with `SessionState.meta`, the header actually used for durable writes; it rejects an open turn without reading or repairing storage. A cold load reserves its identity synchronously inside the per-id chain before awaiting stored-prefix reads or repair writes; the `session/created` publication boundary rejects and rolls back a same-id live session until the reservation clears. HMR adoption remains separate through `loadStored` plus the coordinator's cwd check and truncates torn storage without closing the authoritative live turn.
 

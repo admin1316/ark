@@ -91,7 +91,7 @@ private final class KnowledgeIsolationURLProtocol: URLProtocol, @unchecked Senda
       case "knowledgeWiki/pageContent": reply(.object(["content": .string(context == "context-A" ? "A BODY" : "B BODY")]))
       case "knowledgeWiki/ingestQueueStatus": reply(Self.queue(active: active))
       case "knowledgeWiki/deepResearch":
-        reply(.object(["findings": .array([]), "sourceCount": .number(0), "warnings": .array([.string("没有可用搜索来源")]),
+        reply(.object(["findings": .array([]), "sources": .array([]), "sourceCount": .number(0), "warnings": .array([.string("没有可用搜索来源")]),
           "degraded": .bool(true), "errorCode": .string("no-sources")]))
       case "knowledgeWiki/search": reply(.array([]))
       default: fail()
@@ -269,12 +269,12 @@ func runArkKnowledgeIsolationContractChecks() async {
     check(model.wikiResearchBusy && KnowledgeIsolationURLProtocol.pending == 1,
       "an older cancellation and defer cannot clear the retry's research owner")
     KnowledgeIsolationURLProtocol.release("knowledgeWiki/deepResearch", topic: "synthetic repeated topic", value: .object([
-      "findings": .array([]), "sourceCount": .number(0), "warnings": .array([.string("OLD timeout")]),
+      "findings": .array([]), "sources": .array([]), "sourceCount": .number(0), "warnings": .array([.string("OLD timeout")]),
       "degraded": .bool(true), "errorCode": .string("research-timeout"),
     ]))
     check(model.knowledgeErrorMessage != "OLD timeout", "a cancelled old research response cannot replace retry state")
     KnowledgeIsolationURLProtocol.release("knowledgeWiki/deepResearch", topic: "synthetic retry topic", value: .object([
-      "findings": .array([]), "sourceCount": .number(0), "warnings": .array([.string("NEW search configuration failure")]),
+      "findings": .array([]), "sources": .array([]), "sourceCount": .number(0), "warnings": .array([.string("NEW search configuration failure")]),
       "degraded": .bool(true), "errorCode": .string("web-search-unavailable"),
     ]))
     let retryFinished = await knowledgeIsolationEventually {

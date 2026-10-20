@@ -152,6 +152,15 @@ declare module '@deepseek-ai/cordis' {
   interface Events {
     // ---- lifecycle (emit) ----
     /**
+     * Validate synchronous admission before the registry inserts an Agent and
+     * before its Session announcement can start persistence. Throwing vetoes
+     * publication; listeners must not return asynchronous work.
+     * @param payload.agent - fully prepared Agent awaiting registry insertion.
+     * Scope-filtered dispatch identifies the prepared Agent.
+     * @mode emit
+     */
+    'agent/publishing'(this: Scoped<Agent>, payload: { agent: Agent }): void
+    /**
      * A fully configured agent and live session were published. Setup is
      * composition-only; `agent/session-start` is the first startup-driving extension point.
      * Synchronous listener failure vetoes publication, while returned-promise

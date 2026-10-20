@@ -145,6 +145,18 @@ describe('DeepSeekHarness', () => {
     await harness.close()
   })
 
+  it('preserves historical and durable command metadata without adding command text to the final answer', async () => {
+    const expected: unknown = JSON.parse(await readFile(new URL('./fixtures/command-events.json', import.meta.url), 'utf8'))
+    const harness = harnessWith({ FAKE_COMMAND_EVENTS: '1', FAKE_TEXT: 'assistant answer' })
+    const result = await harness.run('observe command records')
+    const commands = result.events.filter(event => event.type === 'command/run' || event.type === 'command/done')
+      .map(event => ({ type: event.type, data: event.data }))
+    expect(commands).toEqual(expected)
+    expect(result.finalResponse).toBe('assistant answer')
+    expect(result.notifications.filter(notification => notification.method === 'session.event'
+      && (notification.params.event as { type: string }).type.startsWith('command/'))).toHaveLength(4)
+  })
+
   it('keeps events root-scoped while streaming notifications for the session tree', async () => {
     const harness = harnessWith({ FAKE_SUBAGENT: '1' })
     const seen: HarnessNotification[] = []

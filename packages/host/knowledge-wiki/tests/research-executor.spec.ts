@@ -24,7 +24,7 @@ describe('research executor result boundaries', () => {
 
     await expect(deepResearch(
       { isolation: 'owned-worker-v1', assertSearchAvailable() {}, execute }, 'fixture-provider', 'fixture-model', root, 'topic', new AbortController().signal,
-    )).resolves.toEqual({ written: [], sourceCount: 0, warnings: ['research: LLM produced no usable queries'], errorCode: 'invalid-queries' })
+    )).resolves.toEqual({ written: [], pageSources: {}, sources: [], sourceCount: 0, warnings: ['research: LLM produced no usable queries'], errorCode: 'invalid-queries' })
 
     expect(execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       kind: 'llm-complete', provider: 'fixture-provider', model: 'fixture-model', operation: 'research query expansion',
@@ -49,7 +49,7 @@ describe('research executor result boundaries', () => {
 
     await expect(deepResearch(executor, 'fixture-provider', 'fixture-model', root, 'topic', new AbortController().signal))
       .resolves.toEqual({
-        written: [], sourceCount: 0,
+        written: [], pageSources: {}, sources: [], sourceCount: 0,
         warnings: [...searchThrows ? ['search "valid query" failed: search process unavailable'] : [], 'research: no citeable web sources; synthesis was not run'],
         errorCode: 'no-sources',
       })

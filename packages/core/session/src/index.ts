@@ -1,7 +1,7 @@
 /**
  * Event-sourced session service: append-only session log, in-memory store, and
  * the derived LLM message history. Persistence is a plugin concern (subscribe
- * to `session/event`, drain on `session/flush`).
+ * to `session/committed`, drain on `session/flush`).
  *
  * @module @deepseek-ai/dsh-session
  */
@@ -14,7 +14,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionId } from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
+import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionAppendInput, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
 import { snapshotJsonValue } from './json.ts'
 import {
   validateRestoredSessionHeader,
@@ -36,6 +36,10 @@ import type {
   SessionRemoteAttachmentRequest,
   SessionRemoteAttachmentValue,
   SessionRemoteCancelRequest,
+  SessionRemoteCommandRequest,
+  SessionRemoteCommandValue,
+  SessionRemoteStorageRequest,
+  SessionRemoteStorageValue,
   SessionRemoteCreateRequest,
   SessionRemoteCreateValue,
   SessionRemoteForkRequest,
@@ -69,9 +73,9 @@ export { SessionForkError } from './fork.ts'
 export type { SessionForkErrorCode, SessionForkSource } from './fork.ts'
 export type { JsonValue } from './json.ts'
 export { interruptedTurnClosers, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from './repair.ts'
-export { decodeStorageRecord, packChunkRuns } from './chunk-rows.ts'
+export { decodeStorageRecord, packChunkRuns, packStorageRecords } from './chunk-rows.ts'
 export { decodeSeqRanges, encodeSeqRanges } from './seq-ranges.ts'
-export type { ChunkRow, StorageRecord } from './chunk-rows.ts'
+export type { AtomicEventsRow, ChunkRow, StorageRecord } from './chunk-rows.ts'
 export type {
   SessionSurface,
   SessionToolCallArguments,
@@ -99,6 +103,16 @@ declare module '@deepseek-ai/cordis' {
   }
 
   interface Events {
+    /**
+     * Post-commit persistence feed retaining each synchronous append group's boundary.
+     * Scope-filtered dispatch reuses the owning session's scope.
+     * @param session - session whose complete group has committed.
+     * @param events - immutable contiguous events committed together.
+     * @param atomic - whether storage must preserve the complete group.
+     * @dshScopeScan unsupported
+     * @mode emit
+     */
+    'session/committed'(this: Scoped<Session>, session: Session, events: readonly SessionEvent[], atomic: boolean): void
     /**
      * Creation announcement during session publication. A synchronous throw vetoes and rolls
      * back with a paired disposal; detach requested during dispatch is deferred.
@@ -163,7 +177,7 @@ function collectSessionCallbacks(ctx: Context, args: unknown[]): SessionCallback
 /** Invoke one resolved observe-only listener snapshot with per-listener containment. */
 function invokeContainedSessionObservers(
   ctx: Context,
-  name: 'session/event' | 'session/disposed',
+  name: 'session/event' | 'session/committed' | 'session/disposed',
   id: SessionId,
   args: unknown[],
   callbacks: SessionCallback[],
@@ -397,46 +411,52 @@ export class Session {
     data: SessionEventMap[T],
     ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
   ): SessionEvent<T> {
-    const surfaceOpts: SurfaceIntent | undefined = opts[0]
-    const surfaceMetadata = {
-      ...surfaceOpts?.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: surfaceOpts.sourceEventSeqs },
-      ...surfaceOpts?.surfaceOp === undefined ? {} : { surfaceOp: surfaceOpts.surfaceOp },
-    }
-    const dataSnapshot = snapshotJsonValue(data)
-    if (dataSnapshot === undefined) {
-      throw new Error(`session event "${type}" carries non-JSON-serializable data`)
-    }
-    assertSupportedRequestHeader(type, dataSnapshot, `session event "${type}"`)
-    const surfaceMetadataSnapshot = snapshotJsonValue(surfaceMetadata)
-    if (surfaceMetadataSnapshot === undefined) {
-      throw new Error(`session event "${type}" carries non-JSON-serializable surface metadata`)
-    }
+    return this.appendGroup([{ type, data, ...opts[0] } as SessionAppendInput], false)[0] as SessionEvent<T>
+  }
+
+  /**
+   * Validate and commit a complete group before notifying any observer.
+   * @param inputs - typed event payloads and required surface intents, in order.
+   * @returns immutable events whose persistence boundary may never be split.
+   */
+  appendAtomic(inputs: readonly SessionAppendInput[]): readonly SessionEvent[] {
+    return this.appendGroup(inputs, true)
+  }
+
+  private appendGroup(inputs: readonly SessionAppendInput[], atomic: boolean): readonly SessionEvent[] {
+    if (inputs.length === 0) throw new Error('session append group must not be empty')
     const entry = attachments.get(this)
     if (entry?.appending) {
       throw new Error('session append cannot reenter while another append is being published')
     }
-    const event = deepFreeze({
-      type,
-      seq: this.log.length,
-      time: Date.now(),
-      data: dataSnapshot,
-      ...(surfaceMetadataSnapshot as { surfaceOp?: unknown; sourceEventSeqs?: unknown }),
-    } as unknown as SessionEvent<T>)
-    this.surfaceManager.validateNext(event as SessionEvent)
-
     if (entry !== undefined) entry.appending = true
     try {
-      let callbacks: SessionCallback[] | undefined
-      const callbackArgs: unknown[] = [this, event]
+      const events = Object.freeze(inputs.map((input, index) => {
+        const snapshot = snapshotJsonValue(input)
+        if (snapshot === undefined) throw new Error(`session event "${input.type}" carries non-JSON-serializable data or non-JSON-serializable surface metadata`)
+        assertSupportedRequestHeader(snapshot.type, snapshot.data, `session event "${snapshot.type}"`)
+        return deepFreeze({ type: snapshot.type, seq: this.log.length + index, time: Date.now(), data: snapshot.data,
+          ...snapshot.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: snapshot.sourceEventSeqs },
+          ...snapshot.surfaceOp === undefined ? {} : { surfaceOp: snapshot.surfaceOp },
+        } as SessionEvent)
+      }))
+      if (atomic) this.surfaceManager.validateBatch(events)
+      else this.surfaceManager.validateNext(events[0] as SessionEvent)
+      let committed: SessionCallback[] = []
+      let callbacks: SessionCallback[][] = []
       if (entry !== undefined) {
-        callbacks = collectSessionCallbacks(entry.emitCtx, [entry.carrier, 'session/event', ...callbackArgs])
+        committed = collectSessionCallbacks(entry.emitCtx, [entry.carrier, 'session/committed', this, events, atomic])
+        callbacks = events.map(event => collectSessionCallbacks(entry.emitCtx, [entry.carrier, 'session/event', this, event]))
       }
-      this.log.push(event as SessionEvent)
+      this.log.push(...events)
       this.eventsSnapshot = undefined
-      if (callbacks !== undefined && entry !== undefined) {
-        invokeContainedSessionObservers(entry.emitCtx, 'session/event', entry.id, callbackArgs, callbacks)
+      if (entry !== undefined) {
+        invokeContainedSessionObservers(entry.emitCtx, 'session/committed', entry.id, [this, events, atomic], committed)
+        for (const [index, event] of events.entries()) {
+          invokeContainedSessionObservers(entry.emitCtx, 'session/event', entry.id, [this, event], callbacks[index] ?? [])
+        }
       }
-      return event
+      return events
     } finally {
       if (entry !== undefined) {
         entry.appending = false
@@ -929,6 +949,28 @@ export class SessionStore extends TypertRemoteService {
   @Remote('prompt')
   remoteExportPrompt(request: SessionRemotePromptRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemotePromptValue>> {
     return this.invokeRemote(operations => operations.prompt(request, signal), signal)
+  }
+
+  /**
+   * Submit or confirm one stable human-command invocation.
+   * @param request - session identity, invocation identity and command payload.
+   * @param signal - caller-owned response wait cancellation.
+   * @returns the durable result or the current execution uncertainty.
+   */
+  @Remote('command')
+  remoteExportCommand(request: SessionRemoteCommandRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteCommandValue>> {
+    return this.invokeRemote(operations => operations.command(request, signal), signal)
+  }
+
+  /**
+   * Observe saving or prepare a confirmed application quit.
+   * @param request - storage action and optional exact quit attempt.
+   * @param signal - response wait cancellation.
+   * @returns current save counters and quit readiness.
+   */
+  @Remote('storage')
+  remoteExportStorage(request: SessionRemoteStorageRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteStorageValue>> {
+    return this.invokeRemote(operations => operations.storage(request, signal), signal)
   }
 
   /**

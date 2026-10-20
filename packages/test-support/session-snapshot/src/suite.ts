@@ -25,6 +25,7 @@ import { describe, expect, it } from 'vitest'
 import { type AgentUnderTest, type HarvestedLog, type InputScript, runScenario } from './harness.ts'
 import { parseSnapshotManifest } from './manifest.ts'
 import { redactSessionSnapshotIds } from './identity.ts'
+import { expandAtomicSessionLog } from './storage-records.ts'
 import { captureExpectedWorkspaceSnapshot } from './workspace.ts'
 import {
   type CwdPathMode,
@@ -585,7 +586,7 @@ export interface FixtureReplacement {
 }
 
 function parseJsonlRecords(text: string): Record<string, unknown>[] {
-  return text.split('\n')
+  return expandAtomicSessionLog(text).split('\n')
     .filter(line => line.trim().length > 0)
     .map(line => JSON.parse(line) as Record<string, unknown>)
 }
@@ -701,7 +702,7 @@ function applyFixtureReplacements(content: string, replacements: readonly Fixtur
 
 /** Rewrite only validated durable-message ID fields, leaving every other occurrence untouched. */
 function applyFixtureMessageIds(content: string, replacements: ReadonlyMap<string, string>): string {
-  return content.split('\n').map((line) => {
+  return expandAtomicSessionLog(content).split('\n').map((line) => {
     if (line.trim().length === 0) return line
     const record = JSON.parse(line) as Record<string, unknown>
     let changed = false

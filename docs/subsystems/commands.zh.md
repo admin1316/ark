@@ -52,7 +52,7 @@ interface CommandDefinition {
 
 ## 调用与结果
 
-取消由适配器负责，适配器会传入确切的目标 agent。`rawInput` 紧接在解析后的名称之后，并保留适配器传入的分隔符与后缀。结果会直接呈现给 UI，而不是工具结果或会话事件。
+Host 拥有持久执行并传入确切的目标 agent；其活动信号在响应传输断开后继续有效。`rawInput` 紧接在解析后的名称之后，并保留适配器传入的分隔符与后缀。结果会直接呈现给 UI，而不是工具结果或会话事件。原生分派使用[会话包](../../packages/core/session/src/remote.ts)的 `SessionRemoteCommandRequest` 和 `SessionRemoteCommandValue`：调用方稳定的调用身份产生 `completed`、`running` 或 `unknown`。注册表引用现有 `command/run` 和 `command/done` 记录处理重试；中断的外部副作用绝不会自动重复执行。
 
 ```ts type-equiv
 /** Invocation passed to one registered command handler. */
@@ -71,7 +71,7 @@ interface CommandInvocation {
    * error so the dispatching composer retains the originals.
    */
   readonly attachments: readonly ImageBlock[]
-  /** Cancellation signal owned by the dispatching UI request. */
+  /** Host activity signal for durable execution; caller signal for local-only dispatch. */
   readonly signal: AbortSignal
 }
 ```
@@ -132,6 +132,39 @@ Human-command registry. Plain-context definitions are global; definitions regist
 
 ```ts cordis-catalog
 /**
+ * Test whether a submission identity already belongs to this session's command plane.
+ * @param session - Live or borrowed session.
+ * @param invocationId - Stable caller submission identity.
+ * @returns Whether an active operation or authoritative log receipt owns the identity.
+ */
+hasInvocation(session: Session, invocationId: SessionRemoteCommandRequest['invocationId']): boolean
+
+/**
+ * Read a receipt before resolving a live Agent; completed cold commands need no model configuration.
+ * @param session - Exact live or borrowed persisted session.
+ * @param request - Original stable command submission.
+ * @param durable - Whether this exact snapshot was read from durable storage.
+ * @returns The original outcome, running state, or undefined for an unclaimed identity.
+ */
+async receipt( session: Session, request: SessionRemoteCommandRequest, durable: boolean = false, ): Promise<SessionRemoteCommandValue | undefined>
+
+/**
+ * Admit one durable command; repeats only observe its original invocation.
+ * @param agent - Current receiving Agent resolved by the Host lifecycle owner.
+ * @param request - Stable caller identity and exact command input.
+ * @param signal - Operation lifetime, independent of any transport waiter.
+ * @param assertAdmission - Host-owned synchronous lifecycle and cross-plane identity fence.
+ * @returns A durable result, current state, or undefined for an unmatched command.
+ */
+async execute( agent: Agent, request: SessionRemoteCommandRequest, signal: AbortSignal, assertAdmission: () => void, ): Promise<SessionRemoteCommandValue | undefined>
+
+/**
+ * Await entered handlers and their durability checks before the Host disposes Agents.
+ * @returns After every currently owned command has quiesced.
+ */
+async whenSettled(): Promise<void>
+
+/**
  * Register a global or calling-agent-scoped command.
  * @param definition - discovery metadata and direct UI handler.
  * @returns the exact effect disposer that unregisters this definition.
@@ -179,10 +212,10 @@ find(agent: Agent, name: string): CommandDefinition | undefined
  * @returns the settled execution (result + lifecycle pairing id), or
  *   `undefined` when syntax or name does not resolve.
  */
-@Remote async execute( agent: Agent, line: string, images: readonly EncodedImageAttachment[], signal: AbortSignal, ): Promise<CommandExecution | undefined>
+async executeLocal( agent: Agent, line: string, images: readonly EncodedImageAttachment[], signal: AbortSignal, ): Promise<CommandExecution | undefined>
 ```
 
-Types: [Agent](core.zh.md) · [EncodedImageAttachment](attachment.zh.md)
+Types: [Agent](core.zh.md) · [EncodedImageAttachment](attachment.zh.md) · [Session](session.zh.md) · [SessionRemoteCommandRequest](session.zh.md) · [SessionRemoteCommandValue](session.zh.md)
 
 Source: [`packages/interaction/commands/src/index.ts`](../../packages/interaction/commands/src/index.ts)
 

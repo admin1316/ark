@@ -312,20 +312,32 @@ enum NativeWorkbenchDraftFlushOutcome {
 @MainActor
 public final class NativeWorkbenchDraftFlushCoordinator {
   private var flushers: [UUID: @MainActor () async -> NativeWorkbenchDraftFlushOutcome] = [:]
+  private var freezers: [UUID: @MainActor () -> Void] = [:]
+  private var frozen = false
 
   public init() {}
 
   @discardableResult
   func register(
+    freeze: @escaping @MainActor () -> Void = {},
     _ flush: @escaping @MainActor () async -> NativeWorkbenchDraftFlushOutcome
   ) -> UUID {
     let id = UUID()
     flushers[id] = flush
+    freezers[id] = freeze
+    if frozen { freeze() }
     return id
   }
 
   func unregister(_ id: UUID) {
     flushers.removeValue(forKey: id)
+    freezers.removeValue(forKey: id)
+  }
+
+  /// Close local mutation before taking the final draft snapshot, including late-mounted owners.
+  public func freezeLocalInput() {
+    frozen = true
+    for freeze in Array(freezers.values) { freeze() }
   }
 
   /// Flush every mounted Workbench and return the first failure after giving
@@ -344,7 +356,7 @@ public final class NativeWorkbenchDraftFlushCoordinator {
         if firstError == nil { firstError = error }
       }
     }
-    unavailableIDs.forEach { flushers.removeValue(forKey: $0) }
+    unavailableIDs.forEach { unregister($0) }
     return firstError
   }
 }

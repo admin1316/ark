@@ -764,6 +764,14 @@ try {
   })
   assert.equal(unknownRoute.status, 404, 'unknown API routes remain carrier 404s')
   record('http-response', { name: 'unknown-route', status: unknownRoute.status })
+  const retiredCommandRoute = await fetch(base + '/api/commands/execute', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + apiToken },
+    body: JSON.stringify({ type: 'client-request', rpcId: 'install-e2e-retired-command',
+      method: 'commands/execute', payload: { args: {} } }),
+  })
+  assert.equal(retiredCommandRoute.status, 404, 'commands cannot bypass Host durable admission')
+  record('http-response', { name: 'retired-command-execute', status: retiredCommandRoute.status })
 
   const rpcId = 'install-e2e-settings'
   const body = JSON.stringify({
@@ -977,6 +985,27 @@ try {
     frame => frame.method === 'host/session-added' && frame.payload?.sessionId === sessionId,
     'host session-added',
   )
+  const commandRequest = { sessionId, invocationId: 'install-e2e-command-once',
+    line: '/permission read-only', images: [] }
+  const commandResult = await remote('session/command', { request: commandRequest })
+  assert.equal(commandResult.state, 'completed', 'installed command must receive a durable terminal receipt')
+  assert.equal(commandResult.result.kind, 'success')
+  assert.deepEqual(await remote('session/command', { request: commandRequest }), commandResult,
+    'lost native response replays the same installed command result')
+  const commandConflict = await remoteResult('session/command', {
+    request: { ...commandRequest, line: '/permission workspace-write' },
+  })
+  assert.equal(commandConflict.ok, true)
+  assert.equal(commandConflict.value.ok, false)
+  assert.equal(commandConflict.value.error.code, 'invocation-conflict')
+  const commandHistory = await remote('session/history', { request: { sessionId, maxMessages: 50 } })
+  const commandEvents = commandHistory.events.map(row => row.event)
+  assert.equal(commandEvents.filter(event => event.type === 'command/run'
+    && event.data.invocationId === commandRequest.invocationId).length, 1)
+  assert.equal(commandEvents.filter(event => event.type === 'command/done'
+    && event.data.commandId === commandResult.commandId).length, 1)
+  record('durable-command', { sessionId, state: commandResult.state, resultKind: commandResult.result.kind,
+    duplicateRunCount: 0, changedInputRejected: true })
 
   await closeOwnedDownlink(muxDownlink, 'mux reconnect downlink')
   assert.equal(hostDownlink.socket.readyState, WebSocket.OPEN, 'mux-only disconnect keeps host downlink open')
@@ -1045,6 +1074,9 @@ try {
   record('restart-persistence', { sessionId, archivedAfterRestart: true })
   archiveState = await remote('workspace/unarchiveSession', { request: { sessionId } })
   assert.ok(!archiveState.archivedSessionIds.includes(sessionId))
+  assert.deepEqual(await remote('session/command', { request: commandRequest }), commandResult,
+    'installed Host restart replays a cold durable command without running its handler again')
+  record('durable-command-cold-replay', { sessionId, sameResult: true })
   archiveState = await remote('workspace/archiveSession', { request: { sessionId } })
   assert.ok(archiveState.archivedSessionIds.includes(sessionId))
   const deleted = await remote('workspace/deleteArchivedSession', { request: { sessionId } })

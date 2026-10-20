@@ -352,6 +352,7 @@ describe('review and verification gates', () => {
 
     await expect(service.deepResearch({ ...projectRequest(service), topic: 'closure topic' }, new AbortController().signal)).resolves.toEqual({
       findings: [],
+      sources: [],
       sourceCount: 0,
       warnings: ['primitive research failure'],
       degraded: true,
@@ -362,6 +363,7 @@ describe('review and verification gates', () => {
   it('reports a missing stage executor for deep research instead of a generic failure', async () => {
     await expect(service.deepResearch({ ...projectRequest(service), topic: 'closure topic' }, new AbortController().signal)).resolves.toEqual({
       findings: [],
+      sources: [],
       sourceCount: 0,
       warnings: [expect.stringContaining('stage executor unavailable')],
       degraded: true,

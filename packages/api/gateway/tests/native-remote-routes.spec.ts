@@ -17,6 +17,7 @@ const swiftConsumers = [
   'integrations/jiuzhang/native/Sources/JiuzhangShellCore/ArkManagementAPI.swift',
   'integrations/jiuzhang/native/Sources/JiuzhangShellCore/ArkFeedbackAPI.swift',
   'integrations/jiuzhang/native/Sources/JiuzhangShellCore/ArkDomainAPI.swift',
+  'integrations/jiuzhang/native/Sources/JiuzhangShellCore/ArkStorageAPI.swift',
   'integrations/jiuzhang/native/Sources/JiuzhangShellCore/ArkComposerAPI.swift',
   'integrations/jiuzhang/native/Sources/JiuzhangShellCore/ArkInteractionAPI.swift',
   'integrations/jiuzhang/native/Sources/JiuzhangShellCore/ArkPluginSettingsAPI.swift',
@@ -50,7 +51,7 @@ function slashRoutes(source: string): string[] {
   for (const match of source.matchAll(/public\s+static\s+let\s+\w+\s*=\s*"([A-Za-z][A-Za-z0-9]*\/[A-Za-z][A-Za-z0-9]*)"/gu)) {
     routes.add(match[1] as string)
   }
-  const remoteCall = /remote(?:Domain)?(?:Call|Request)\(\s*method:\s*"([A-Za-z][A-Za-z0-9]*\/[A-Za-z][A-Za-z0-9]*)"/gsu
+  const remoteCall = /(?:remote(?:Domain)?(?:Call|Request)|knowledgeCall)\([^)]*?method:\s*"([a-z]\w*\/[a-z]\w*)"/gisu
   for (const match of source.matchAll(remoteCall)) {
     routes.add(match[1] as string)
   }
@@ -92,6 +93,14 @@ describe('Native Typert Remote route coverage', () => {
     const texts = await Promise.all(swiftConsumers.map(path => readFile(`${repositoryRoot}/${path}`, 'utf8')))
     const fromSwift = [...new Set(texts.flatMap(legacyDotCalls))].sort()
     expect([...NATIVE_LEGACY_API_ENDPOINTS].sort()).toEqual(fromSwift)
+  })
+
+  it('keeps the Host session owner as the only public command execution route', async () => {
+    const descriptor = await readFile(`${repositoryRoot}/packages/interaction/commands/lib/typert.host.js`, 'utf8')
+    expect(NATIVE_TYPERT_REMOTE_ENDPOINTS).toContain('session/command')
+    expect(NATIVE_TYPERT_REMOTE_OWNERS['session/command']).toBe('sessions')
+    expect(NATIVE_TYPERT_REMOTE_ENDPOINTS).not.toContain('commands/execute')
+    expect(descriptor).not.toContain('#commands/execute')
   })
 
   it('keeps Native Review as the sole Git owner', async () => {

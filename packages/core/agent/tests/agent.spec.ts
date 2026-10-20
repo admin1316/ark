@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
@@ -212,6 +212,21 @@ describe('AgentRegistry', () => {
     dispose()
     expect(ctx.agents.get(agent.id)).toBeUndefined()
     expect(lifecycle).toEqual(['created:a1', 'disposed:a1'])
+  })
+
+  it('vetoes publication before either a registry entry or a created notification exists', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    const created = vi.fn()
+    ctx.on('agent/created', created)
+    ctx.on('agent/publishing', ({ agent }) => {
+      expect(ctx.agents.get(agent.id)).toBeUndefined()
+      throw new Error('admission closed')
+    })
+    expect(() => ctx.agents.register(stubAgent('unpublished'))).toThrow('admission closed')
+    expect(ctx.agents.list()).toEqual([])
+    expect(created).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
   })
 
   it('rejects an agent whose registry and session identities differ', async () => {

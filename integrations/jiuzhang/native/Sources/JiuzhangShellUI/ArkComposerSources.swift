@@ -699,6 +699,7 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
   public private(set) var submissionID: String?
   public private(set) var submissionMode: ArkPromptDeliveryMode?
   public private(set) var submissionTimeZone: String?
+  public private(set) var submissionPermissionPreset: String?
 
   public init(
     text: String = "",
@@ -711,6 +712,11 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     self.submissionID = nil
   }
 
+  init(commandLine: String, invocationID: String) {
+    self.init(text: commandLine)
+    submissionID = invocationID
+  }
+
   @discardableResult
   public mutating func ensureSubmissionID() -> String {
     if let submissionID { return submissionID }
@@ -720,10 +726,22 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
   }
 
   /// Freeze delivery metadata for an uncertain retry across app and Host restarts.
-  public mutating func prepareSubmission(mode: ArkPromptDeliveryMode, timeZone: String) {
+  public mutating func prepareSubmission(mode: ArkPromptDeliveryMode, timeZone: String,
+    permissionPreset: String? = nil) {
     _ = ensureSubmissionID()
-    if submissionMode == nil { submissionMode = mode }
+    if submissionMode == nil {
+      submissionMode = mode
+      submissionPermissionPreset = permissionPreset
+    }
     if submissionTimeZone == nil { submissionTimeZone = timeZone }
+  }
+
+  /// A confirmed explicit permission selection supersedes the draft's creation prerequisite.
+  mutating func clearSubmissionPermissionPrerequisite() -> Bool {
+    guard submissionPermissionPreset != nil else { return false }
+    submissionPermissionPreset = nil
+    revision &+= 1
+    return true
   }
 
   public mutating func replaceText(_ next: String) {
@@ -734,6 +752,7 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     submissionID = nil
     submissionMode = nil
     submissionTimeZone = nil
+    submissionPermissionPreset = nil
     revision &+= 1
   }
 
@@ -748,6 +767,7 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     submissionID = nil
     submissionMode = nil
     submissionTimeZone = nil
+    submissionPermissionPreset = nil
     revision &+= 1
     return true
   }
@@ -794,6 +814,7 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     submissionID = nil
     submissionMode = nil
     submissionTimeZone = nil
+    submissionPermissionPreset = nil
     revision &+= 1
     return true
   }
@@ -803,6 +824,7 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     submissionID = nil
     submissionMode = nil
     submissionTimeZone = nil
+    submissionPermissionPreset = nil
     revision &+= 1
   }
 
@@ -810,12 +832,14 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     submissionID = nil
     submissionMode = nil
     submissionTimeZone = nil
+    submissionPermissionPreset = nil
     guard !text.isEmpty || !references.isEmpty else { return }
     text = ""
     references = []
     submissionID = nil
     submissionMode = nil
     submissionTimeZone = nil
+    submissionPermissionPreset = nil
     revision &+= 1
   }
 

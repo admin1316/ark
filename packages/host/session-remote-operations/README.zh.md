@@ -11,7 +11,7 @@ kind: "package-reference"
 
 生成式 `session/*` Remote 端口与 `workspaceSessionRetirer` 能力的 Host 实现。本包组合现有的 Agent、会话持久化/查询/投影、Workspace、LLM、附件、标题、工具呈现、预设、队列与任务 owner；这些服务仍是各领域的权威来源。历史读取保留有界的数值索引和有明确释放时机的正文物化结果，不建立第二份持久会话日志，也不替换既有投影、工作区、附件或模型目录 owner。
 
-`SessionRemoteOperationsService` 实现 `list`、`search`、`create`、`history`、`models`、`selectModel`、`rename`、`fork`、`prompt`、`attachment`、`updateQueue` 与 `cancel`。创建和恢复按会话身份 single-flight。`AgentRegistry` 返回的句柄由本服务作为精确能力保留，所以永久删除只能退休由该 Host 创建或恢复、且当前空闲、已归档的根 Agent。后代删除顺序、持久化 reservation、日志持久删除、工作区记账和归档状态提交仍由 `WorkspaceRegistry` 负责。
+`SessionRemoteOperationsService` 实现 `list`、`search`、`create`、`history`、`models`、`selectModel`、`rename`、`fork`、`prompt`、`command`、`storage`、`attachment`、`updateQueue` 与 `cancel`。创建和恢复按会话身份 single-flight。`AgentRegistry` 返回的句柄由本服务作为精确能力保留，所以永久删除只能退休由该 Host 创建或恢复、且当前空闲、已归档的根 Agent。后代删除顺序、持久化 reservation、日志持久删除、工作区记账和归档状态提交仍由 `WorkspaceRegistry` 负责。
 
 同一服务还持有通过 `ctx.connection.downloads` 注册的精确 `/api/session/export` GET/HEAD 下载。它会在读取原始持久工件前 flush 实时会话，可选包含后代和引用媒体，以有界 ZIP 流式输出并支持取消；缺少持久化、查询或附件 owner 时，会在产生响应 body 前明确失败。
 
@@ -25,6 +25,7 @@ kind: "package-reference"
 
 - [历史视图](#history-views)
 - [提示调用身份](#prompt-identity)
+- [保存与退出](#saving-and-quitting)
 - [Session 单一入口与低成本列表](#canonical-session-ownership-and-cheap-listing)
 - [模型体验](#model-experience)
 - [已知限制与暂缓事项](#known-limitations-and-deferred-work)
@@ -71,6 +72,21 @@ kind: "package-reference"
 每个 `SessionRemotePromptRequest` 都携带必填的、不透明的 `invocationId`。本服务校验该身份，并把它与可选的规范化客户端时区一起持久化到准确的用户消息来源中。这样可以保留乐观消息对账能力，同时不会把传输层 RPC 身份泄漏进 Session 领域。
 
 以斜杠开头的行首先由命令注册表解析。没有命令认领时，本服务查询当前 Agent 的 skill 注册表，仅允许名称精确匹配且用户可调用的 skill，并保持用户文本不变，交由 `dsh-tool-skill` 在 `agent/pre-step` 注入；其他未匹配的斜杠行均返回 `unknown-command`。
+
+<a id="saving-and-quitting"></a>
+## 保存与退出
+
+`session/storage` 提供运行态写入状态、`retrying`、单调递增的 `quitEpoch` 及当前退出尝试，不包含消息正文或后端异常文本。保存处于压力、失败或关闭状态时，新的消息与命令准入会被拒绝；调用方保留输入及原调用身份。已有回执仍可确认，因此传输响应未确认时无需重新提交已接收工作。`retry-save` 排空持久化保留的所有者，包括不在活动 Session 注册表中的初始化与退休失败，不运行新的 Agent 轮次。
+
+先读取 `state`，再以其 `quitEpoch` 作为 `epoch`，连同新的 `attemptId` 发送 `prepare-quit`。相同尝试共享已拥有的停止/保存操作；失败尝试可用相同身份重试。准备阶段关闭新准入与 Agent 发布，保留 inbox 并取消全部已注册 Agent，等待其空闲边界和已进入的命令，随后等待持久化所有者的 `flushAll()` 屏障。只有这一序列完成后，结果才是 `ready` 且 `safeToQuit: true`。单凭零事件计数不足以判定安全，因为初始化仍可能未完成。
+
+`cancel-quit` 要求已观察到的代次及尝试身份。成功取消会清除尝试、推进 `quitEpoch` 并重新开放准入。旧代次的 prepare/cancel 请求只观察当前状态，不会重新关闭准入或覆盖更新的尝试；未来代次会被拒绝。原生调用方仅接受属于自身身份及代次的就绪结果，移除界面前保存本地草稿，确认失败或不可用时保留界面。二十秒提示提供等待/重试、取消退出或显式强制退出；时间经过不授权自动杀进程。确认保存后才使用既有的所属后端停止流程；例外是用户明确选择强制退出，或在 Host 尚未就绪且原生输入尚未接收前退出启动阶段。
+
+[保存压力决策](../../../.agents/notes/implemented/bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.zh.md)记录所有权及竞态边界；[持久化约定](../../session/session-persistence/README.zh.md#save-health-and-producer-pressure)拥有阈值与计数语义。
+
+Host 确认保存后，或所属后端已经退出时，原生拆卸可以取消未完成的 HTTP 响应观察，并等待其实际结算。原命令日志会保留，不虚构完成，也不创建另一轮调用。这一生命周期操作与取消普通调用方不同；普通调用方取消不会停止命令所有者。进入不可逆的原生拆卸后无法取消退出；重新设置的二十秒提示仍提供等待或显式强退，直到拆卸完成。
+
+移除界面前，原生退出会冻结本机编辑和动作，结算 composer 提交，并刷新最新 composer 与 Workbench 草稿。AppKit 编辑器切为只读，其修改所有者也拒绝迟到回调；仅禁用 SwiftUI 不足以完成冻结。最终草稿写入失败时保留冻结的窗口和原快照，供显式重试或强退，包括等待 Host 就绪期间产生的编辑。
 
 <a id="canonical-session-ownership-and-cheap-listing"></a>
 ## Session 单一入口与低成本列表

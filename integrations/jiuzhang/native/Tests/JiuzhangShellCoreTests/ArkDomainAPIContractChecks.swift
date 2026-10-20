@@ -88,8 +88,8 @@ func runArkDomainAPIContractChecks() {
   check(
     ArkAPIClient.endpointURL(
       baseURL: baseURL,
-      method: ArkDomainAPIContract.Method.commandsExecute
-    ).absoluteString == "http://127.0.0.1:3080/api/commands/execute",
+      method: ArkDomainAPIContract.Method.sessionCommand
+    ).absoluteString == "http://127.0.0.1:3080/api/session/command",
     "native command endpoint preserves its Remote namespace"
   )
   check(
@@ -591,6 +591,25 @@ func runArkDomainAPIContractChecks() {
   ]))
   check(command?.result == .success, "native command parser preserves success results")
   check(command?.sourceEventSequence == 42, "native command parser preserves source event linkage")
+  let completedCommand = try? ArkDomainAPIContract.commandOutcome(from: .object([
+    "state": .string("completed"), "commandId": .string("command-1"),
+    "result": .object(["kind": .string("success"), "text": .string("recorded")]),
+  ]))
+  check(completedCommand == .completed(ArkCommandExecution(id: "command-1", result: .success, text: "recorded")),
+        "native command submission preserves a completed durable outcome")
+  check((try? ArkDomainAPIContract.commandOutcome(from: .object([
+    "state": .string("running"), "commandId": .string("command-1"),
+  ]))) == .running(commandID: "command-1"), "native command submission preserves a running receipt")
+  for reason in ["interrupted", "durability-unconfirmed"] {
+    let outcome = try? ArkDomainAPIContract.commandOutcome(from: .object([
+      "state": .string("unknown"), "commandId": .string("command-1"), "reason": .string(reason),
+    ]))
+    check(outcome == .unknown(commandID: "command-1", reason: ArkCommandUnknownReason(rawValue: reason)!),
+          "native command submission keeps an uncertain outcome distinct from failure")
+  }
+  check((try? ArkDomainAPIContract.commandOutcome(from: .object([
+    "state": .string("unknown"), "commandId": .string("command-1"), "reason": .string("unsupported"),
+  ]))) == nil, "native command submission rejects an unrecognized uncertainty reason")
   do {
     let unmatched = try ArkDomainAPIContract.commandExecution(from: .null)
     check(unmatched == nil, "native command parser preserves an unmatched command")
@@ -614,7 +633,7 @@ func runArkDomainAPIContractChecks() {
   check(reviews?.first?.affectedPages == ["concepts/a.md"], "native review parser preserves affected pages")
 
   let blockedResearch = try? ArkDomainAPIContract.knowledgeResearch(from: .object([
-    "findings": .array([]), "sourceCount": .number(0), "warnings": .array([.string("search unavailable")]),
+    "findings": .array([]), "sources": .array([]), "sourceCount": .number(0), "warnings": .array([.string("search unavailable")]),
     "degraded": .bool(true), "errorCode": .string("web-search-unavailable"),
   ]))
   check((try? ArkDomainAPIContract.knowledgeResearchTimeout(from: .object([
@@ -637,12 +656,32 @@ func runArkDomainAPIContractChecks() {
     && blockedResearch?.warnings == ["search unavailable"] && blockedResearch?.errorCode == "web-search-unavailable",
     "native research DTO preserves blocked provenance instead of reducing it to findings")
   let partialResearch = try? ArkDomainAPIContract.knowledgeResearch(from: .object([
-    "findings": .array([.object(["title": .string("Evidence"), "path": .string("research/evidence.md")])]),
+    "findings": .array([.object(["title": .string("Evidence"), "path": .string("research/evidence.md"),
+      "sourceURLs": .array([.string("https://source.example/one")])])]),
+    "sources": .array([
+      .object(["url": .string("https://source.example/one"), "evidence": .string("search-snippet")]),
+      .object(["url": .string("https://source.example/two"), "evidence": .string("search-snippet")]),
+    ]),
     "sourceCount": .number(2), "warnings": .array([.string("one source failed")]), "degraded": .bool(true),
   ]))
   check(partialResearch?.findings.count == 1 && partialResearch?.sourceCount == 2
+    && partialResearch?.findings.first?.sourceURLs == ["https://source.example/one"]
+    && partialResearch?.sources.first?.evidence == "search-snippet"
     && partialResearch?.warnings == ["one source failed"] && partialResearch?.errorCode == nil,
     "native research DTO preserves partial success and its warning")
+  for sourceURL in ["javascript:alert(1)", "file:///tmp/private", "https://user:secret@source.example/one"] {
+    check(ArkKnowledgeResearchSource(url: sourceURL) == nil, "research sources reject dangerous schemes and URL credentials")
+  }
+  for unknownCitation in [true, false] {
+    let invalid: JSONValue = .object([
+      "findings": .array([.object(["title": .string("Invalid"), "path": .string("research/invalid.md"),
+        "sourceURLs": .array([.string(unknownCitation ? "https://unknown.example/" : "https://source.example/")])])]),
+      "sources": .array([.object(["url": .string("https://source.example/"), "evidence": .string("search-snippet")])]),
+      "sourceCount": .number(unknownCitation ? 1 : 2), "warnings": .array([]), "degraded": .bool(false),
+    ])
+    check((try? ArkDomainAPIContract.knowledgeResearch(from: invalid)) == nil,
+      "research refuses unknown finding citations or a source-count mismatch")
+  }
 
   do {
     _ = try ArkDomainAPIContract.sessionSearch(from: .object([

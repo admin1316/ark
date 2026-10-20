@@ -59,11 +59,11 @@ A command may declare `input.images` to accept composer image attachments. The e
 
 ### Dispatching from an adapter
 
-An interactive adapter calls `execute(agent, line, images, signal)` with the exact receiving agent, the full command line, and the submission's images. It returns the settled `CommandExecution` — the normalized result plus its lifecycle `commandId` — or `undefined` for invalid syntax or an unknown name. `list(agent)` and `find(agent, name)` serve discovery after agent-scoped shadowing.
+Native adapters submit `session/command` with `sessionId`, a caller-persisted `invocationId`, the exact `line`, and ordered `images`. The Host checks live or cold receipts before resolving an Agent. `completed` replays the durable result, `running` observes the same owned execution, and `unknown` preserves the identity without repeating the handler. Reusing an identity with different content fails; a different invocation cannot queue behind an active command in the same session. `list(agent)` and `find(agent, name)` serve discovery after agent-scoped shadowing. Same-process adapters may explicitly use `executeLocal(agent, line, images, signal)`; it has no Remote route or durable retry contract.
 
 ### Cancellation
 
-The caller's abort signal stops the registry from awaiting a handler; a handler that ignores the signal may continue its own external side effects after the caller stops waiting. A cancelled or thrown handler settles as a `command/done` error in the log.
+The Host owns durable command cancellation independently of the response transport. A disconnected caller may query the same identity while the handler remains active. Shutdown waits for the entered handler; it cannot publish a terminal record while uncooperative work continues. A durable run without a confirmed terminal record returns `unknown` after restart. Local-only dispatch stops awaiting on caller abort, so its handler must cooperate to stop external effects.
 
 -----
 
@@ -82,11 +82,12 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 | [`src/index.ts`](src/index.ts) | `CommandRuntime` service: registration, scoping, dispatch, lifecycle events |
 | [`src/types.ts`](src/types.ts) | Command definition, descriptor, execution, and result types |
 | [`src/brand.ts`](src/brand.ts) | `CommandId` brand for lifecycle pairing ids |
+| [`src/receipts.ts`](src/receipts.ts) | Input digest and host-only receipt projection over existing log events |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion pairing `command/run` with `command/done` per session log |
 
 ### Lifecycle events
 
-`execute()` mints a `commandId`, appends `command/run` before the handler runs, and appends `command/done` at settlement with the outcome kind and verbatim text; the exact payload fields live in [`src/index.ts`](src/index.ts). A successful result may name an earlier non-command authoritative domain event through `sourceEventSeq`; a thrown or aborted handler settles as `kind: 'error'`. Both events are direct standalone log-only appends: no turn wraps them, and persistence drains them at ordinary checkpoints and teardown. Admission misses (invalid syntax or unknown name) log nothing.
+Durable `execute()` flushes `command/run` with the invocation identity and input digest before entering the handler, then flushes `command/done` before returning `completed`. A successful result may name an earlier authoritative domain event through `sourceEventSeq`; handler exceptions become terminal error results. Both events are standalone log-only appends without turn wrappers. The receipt projection references those original records instead of creating a second ledger. A failed durability barrier returns `unknown`; it never authorizes another handler run. Admission misses (invalid syntax or unknown name) log nothing. Local-only dispatch uses ordinary checkpoints and teardown for persistence.
 
 ### Scoping
 
@@ -137,7 +138,7 @@ Registry metadata, command input, and direct output never enter a model request 
 These limits define what the registry does not offer. They are current package constraints, not a UI backlog.
 
 - **Only unstructured text input** — forms, completion schemas, and typed arguments remain command-owned parsing concerns.
-- **Cooperative side-effect cancellation** — dispatch stops awaiting on abort; handlers must honor the signal to stop work that has already escaped into external systems.
+- **External effects remain handler-owned** — a durable receipt prevents automatic handler repetition, but cannot guarantee exactly-once effects across external systems; an interrupted result requires inspection instead of automatic retry.
 
 <a id="dev-note"></a>
 ### Dev Note

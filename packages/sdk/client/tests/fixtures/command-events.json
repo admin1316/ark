@@ -1,0 +1,24 @@
+[
+  {
+    "type": "command/run",
+    "data": { "commandId": "synthetic-local-command", "name": "record", "source": { "kind": "user" } }
+  },
+  {
+    "type": "command/done",
+    "data": { "commandId": "synthetic-local-command", "kind": "success", "text": "local result" }
+  },
+  {
+    "type": "command/run",
+    "data": {
+      "commandId": "synthetic-durable-command",
+      "name": "record",
+      "source": { "kind": "user" },
+      "invocationId": "synthetic-sdk-command",
+      "inputDigest": "command-v1:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "type": "command/done",
+    "data": { "commandId": "synthetic-durable-command", "kind": "success", "text": "durable result" }
+  }
+]

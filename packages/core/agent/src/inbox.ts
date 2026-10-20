@@ -5,11 +5,20 @@
  */
 
 import type { MessageId } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEventMap, UserMessage } from '@deepseek-ai/dsh-session'
+import type { Session, SessionAppendInput, SessionEventMap, UserMessage } from '@deepseek-ai/dsh-session'
 import type { InboxTarget } from './types.ts'
 
 /** Mutable state privately owned by an {@link Inbox}. */
 type InboxState = Record<InboxTarget, UserMessage[]>
+
+/** One immutable preparation cut; edits of selected prefixes invalidate it. */
+export interface InboxPreview {
+  readonly revision: number
+  readonly target: InboxTarget
+  readonly messages: readonly UserMessage[]
+  readonly nextStepCount: number
+  readonly nextTurnCount: number
+}
 
 /** Live notifications committed by inbox mutations. */
 export interface InboxNotifications {
@@ -24,6 +33,9 @@ export interface InboxNotifications {
 /** A replay-once projection that incrementally consumes later inbox splices. */
 export class Inbox {
   private readonly state: InboxState = { 'next-turn': [], 'next-step': [] }
+  private revision = 0
+  private committing = false
+  private clearAfterCommit = false
 
   constructor(
     private readonly session: Session,
@@ -69,8 +81,78 @@ export class Inbox {
     return this.nextTurn.length > 0 || this.nextStep.length > 0
   }
 
+  /**
+   * Observe proposed input without consuming it during asynchronous preparation.
+   * @param target - whether this step also accepts one queued turn.
+   * @returns immutable message cut and its edit revision.
+   */
+  preview(target: InboxTarget): InboxPreview {
+    const nextTurnCount = target === 'next-turn' && this.nextTurn.length > 0 ? 1 : 0
+    return Object.freeze({ revision: this.revision, target,
+      messages: Object.freeze([...this.nextStep, ...this.nextTurn.slice(0, nextTurnCount)]),
+      nextStepCount: this.nextStep.length, nextTurnCount })
+  }
+
+  /**
+   * Check whether asynchronous preparation still describes the exact pending input.
+   * @param preview - cut captured by this inbox.
+   * @returns whether selected prefixes remain exact, allowing unaffected tail appends.
+   */
+  isCurrent(preview: InboxPreview): boolean {
+    if (preview.revision === this.revision) return true
+    return this.nextStep.length >= preview.nextStepCount
+      && this.nextStep.slice(0, preview.nextStepCount).every((message, index) => message === preview.messages[index])
+      && (preview.nextTurnCount === 0 || this.nextTurn[0] === preview.messages[preview.nextStepCount])
+  }
+
+  /**
+   * Atomically consume a current cut with its accepted step and user messages.
+   * @param preview - unchanged preparation cut.
+   * @param turn - turn that owns the accepted input.
+   * @param accepted - ordered step and message events committed with the deletions.
+   * @returns false if the queue changed; no event or notification is then published.
+   */
+  commit(preview: InboxPreview, turn: number, accepted: readonly SessionAppendInput[]): boolean {
+    if (!this.isCurrent(preview)) return false
+    const edits: SessionAppendInput[] = []
+    if (preview.nextStepCount > 0) edits.push({ type: 'agent/inbox/spliced', data: {
+      target: 'next-step', start: 0, removedCount: preview.nextStepCount, inserted: [],
+    } })
+    if (preview.nextTurnCount > 0) edits.push({ type: 'agent/inbox/spliced', data: {
+      target: 'next-turn', start: 0, removedCount: preview.nextTurnCount, inserted: [],
+    } })
+    this.committing = true
+    try {
+      if (edits.length + accepted.length > 0) this.session.appendAtomic([...edits, ...accepted])
+    } catch (error) {
+      this.committing = false
+      try { this.flushDeferredClear() } catch (clearError) {
+        throw new AggregateError([error, clearError], 'input commit and deferred cancellation failed')
+      }
+      throw error
+    } finally {
+      this.committing = false
+    }
+    this.state['next-step'].splice(0, preview.nextStepCount)
+    this.state['next-turn'].splice(0, preview.nextTurnCount)
+    this.revision++
+    for (const message of preview.messages) this.notifications.claimed(message, turn)
+    this.flushDeferredClear()
+    return true
+  }
+
+  private flushDeferredClear(): void {
+    if (!this.clearAfterCommit) return
+    this.clearAfterCommit = false
+    this.clear()
+  }
+
   /** Durably cancel all pending input, clearing next-step before next-turn. */
   clear(): void {
+    if (this.committing) {
+      this.clearAfterCommit = true
+      return
+    }
     this.splice('next-step', 0, this.nextStep.length, [])
     this.splice('next-turn', 0, this.nextTurn.length, [])
   }
@@ -200,6 +282,7 @@ export class Inbox {
     this.validate(splice)
     const event = this.session.append('agent/inbox/spliced', splice)
     const removed = inbox.splice(actualStart, actualDeleteCount, ...event.data.inserted)
+    this.revision++
     if (discardRemoved) {
       for (const message of removed) this.notifications.discarded(message)
     }
@@ -211,6 +294,7 @@ export class Inbox {
   private apply(splice: SessionEventMap['agent/inbox/spliced']): UserMessage[] {
     this.validate(splice)
     const inbox = this.state[splice.target]
+    this.revision++
     return inbox.splice(splice.start, splice.removedCount ?? 0, ...splice.inserted)
   }
 

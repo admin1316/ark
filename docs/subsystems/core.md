@@ -977,6 +977,28 @@ Types: [Scoped](scope.md) · [UserMessage](session.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 
+<a id="agentpublishing--emit"></a>
+
+#### `agent/publishing` — emit
+
+Validate synchronous admission before the registry inserts an Agent and before its Session announcement can start persistence. Throwing vetoes publication; listeners must not return asynchronous work.
+
+```ts cordis-catalog
+/**
+ * Validate synchronous admission before the registry inserts an Agent and
+ * before its Session announcement can start persistence. Throwing vetoes
+ * publication; listeners must not return asynchronous work.
+ * @param payload.agent - fully prepared Agent awaiting registry insertion.
+ * Scope-filtered dispatch identifies the prepared Agent.
+ * @mode emit
+ */
+'agent/publishing'(this: Scoped<Agent>, payload: { agent: Agent }): void
+```
+
+Types: [Scoped](scope.md)
+
+Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+
 <a id="agentquiescence-timeout--emit"></a>
 
 #### `agent/quiescence-timeout` — emit

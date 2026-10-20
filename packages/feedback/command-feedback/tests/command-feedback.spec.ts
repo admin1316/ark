@@ -82,7 +82,7 @@ async function harness(sharing?: SessionTelemetrySharingStatus): Promise<Harness
 
 /** Execute `/feedback` through the same registry boundary as a UI adapter. */
 async function run(test: Harness, suffix = ''): Promise<{ kind: string; text?: string }> {
-  const settled = await test.ctx.commands.execute(
+  const settled = await test.ctx.commands.executeLocal(
     test.agent,
     `/feedback${suffix}`,
     [],
@@ -169,8 +169,8 @@ describe('/feedback human command', () => {
     const signal = new AbortController().signal
     // Command adapters may dispatch concurrent requests without awaiting one another.
     const settled = await Promise.all([
-      test.ctx.commands.execute(test.agent, '/feedback first', [], signal),
-      test.ctx.commands.execute(test.agent, '/feedback second', [], signal),
+      test.ctx.commands.executeLocal(test.agent, '/feedback first', [], signal),
+      test.ctx.commands.executeLocal(test.agent, '/feedback second', [], signal),
     ])
     expect(settled.map(item => item?.result)).toEqual([
       { kind: 'success', text: `Feedback recorded for session ${test.session.id}\nAnonymous user: ${USER_ID}. Session sharing is not configured.` },
@@ -239,7 +239,7 @@ describe('/feedback human command', () => {
     const test = await harness()
     const controller = new AbortController()
     controller.abort(new Error('user cancelled the command'))
-    await expect(test.ctx.commands.execute(test.agent, '/feedback too late', [], controller.signal))
+    await expect(test.ctx.commands.executeLocal(test.agent, '/feedback too late', [], controller.signal))
       .rejects.toThrow('user cancelled the command')
     expect(test.session.events).toEqual([])
   })

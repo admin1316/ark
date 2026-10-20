@@ -318,6 +318,26 @@ interface SurfaceIntent {
 
 只有 `assistant/message` 可以携带存在但为空的 `sourceEventSeqs`；字段不存在时，该事件没有记录这条消息由哪些早期事件产生，但提供方仍可能发出过分片。
 
+### 原子追加输入与存储组
+
+```ts type-equiv
+/** Typed input for an all-or-nothing synchronous session append. */
+type SessionAppendInput = {
+  [K in SessionEventType]: { readonly type: K; readonly data: SessionEventMap[K] }
+    & (K extends SurfaceEventType ? SurfaceIntent : { readonly surfaceOp?: never; readonly sourceEventSeqs?: never })
+}[SessionEventType]
+```
+
+```ts type-equiv
+/** One contiguous group that storage must commit or recover as a whole. */
+interface SessionAtomicGroup {
+  readonly firstSeq: number
+  readonly count: number
+}
+```
+
+`Session.appendAtomic` 在提交任何事件之前验证所有输入。`session/committed` 把结果组传给持久化；逐条 `session/event` 观察方看到已经完整安装的日志。[会话包](../../packages/core/session/README.zh.md)拥有发布语义，[JSONL 后端](../../packages/session/session-persistence-jsonl/README.zh.md)拥有物理记录与离线回滚导出。
+
 ### `SessionSurface`：实时只读 surface 投影
 
 `Session.surface` 返回会话稳定的 `SessionSurface` 视图。同一个增量管理器在提交前校验追加候选事件，并根据已提交事件推进该投影；调用方可以观察成员关系和替换代次，但不能调用校验。
@@ -487,6 +507,12 @@ declare class Session {
       ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
     ): SessionEvent<T>;
   /**
+     * Validate and commit a complete group before notifying any observer.
+     * @param inputs - typed event payloads and required surface intents, in order.
+     * @returns immutable events whose persistence boundary may never be split.
+     */
+  appendAtomic(inputs: readonly SessionAppendInput[]): readonly SessionEvent[];
+  /**
      * The {@link EpochHeader} in force after the log's last header event — the
      * header the NEXT request will be compared against — or undefined before
      * the first `request/header` snapshot. The live, incrementally-maintained
@@ -617,6 +643,12 @@ interface TurnEndReasonMap {
 持久化后端依赖的约定如下：持久日志无损保存每个事件，**包括** `assistant/chunk`；`seq` 必须连续，因此不能从规范日志中过滤分片。后端可以为事件批次选择自己的存储编码，只要 `load` 返回与追加时完全一致的事件即可（JSONL 后端默认启用的打包分片行就是此类编码；见 [persistence.md](persistence.zh.md)）。所有 `event.data` 都必须可序列化为 JSON；`Session.append` 会从源头强制这一要求（遇到不可序列化数据时抛出），因此错误事件绝不会进入日志，`session.events` 始终与后端可持久化的内容一致。新增会携带不可序列化数据、破坏核心执行嵌套或违反事件所有方声明关系的事件类型，都会构成磁盘格式的破坏性变更。
 
 消费此约定的后端见 [persistence.md](persistence.zh.md)。
+
+## 原生命令与存储请求
+
+`SessionRemoteCommandRequest` 标识确切会话、调用方稳定的 invocation、命令行与图片列表。`SessionRemoteCommandValue` 区分终态 `completed` 结果与 `running`、`unknown`；调用方检查不确定结果时保留原 invocation。[命令约定](commands.zh.md)拥有执行与重试语义。
+
+`SessionRemoteStorageRequest` 观察写入状态、重试保留的保存工作，或准备／取消由 `SessionQuitAttemptId` 与 epoch 标识的退出尝试。`SessionRemoteStorageValue` 返回操作计数与退出就绪状态，不含消息内容或后端异常文本。观察状态不会恢复 agent。[Remote 声明](../../packages/core/session/src/remote.ts)拥有这些 wire 形状；[持久化约定](persistence.zh.md)拥有保存屏障。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -885,6 +917,22 @@ list(): Session[]
 @Remote('prompt') remoteExportPrompt(request: SessionRemotePromptRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemotePromptValue>>
 
 /**
+ * Submit or confirm one stable human-command invocation.
+ * @param request - session identity, invocation identity and command payload.
+ * @param signal - caller-owned response wait cancellation.
+ * @returns the durable result or the current execution uncertainty.
+ */
+@Remote('command') remoteExportCommand(request: SessionRemoteCommandRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteCommandValue>>
+
+/**
+ * Observe saving or prepare a confirmed application quit.
+ * @param request - storage action and optional exact quit attempt.
+ * @param signal - response wait cancellation.
+ * @returns current save counters and quit readiness.
+ */
+@Remote('storage') remoteExportStorage(request: SessionRemoteStorageRequest, signal: AbortSignal): Promise<SessionRemoteResult<SessionRemoteStorageValue>>
+
+/**
  * Delegate attachment authorization and bytes retrieval to the Host attachment authority.
  * @param request - session attachment request.
  * @param signal - caller-owned cancellation signal.
@@ -1032,6 +1080,29 @@ Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/sess
 <a id="session-events"></a>
 
 ### `session/*` events
+
+<a id="sessioncommitted--emit"></a>
+
+#### `session/committed` — emit
+
+Post-commit persistence feed retaining each synchronous append group's boundary. Scope-filtered dispatch reuses the owning session's scope.
+
+```ts cordis-catalog
+/**
+ * Post-commit persistence feed retaining each synchronous append group's boundary.
+ * Scope-filtered dispatch reuses the owning session's scope.
+ * @param session - session whose complete group has committed.
+ * @param events - immutable contiguous events committed together.
+ * @param atomic - whether storage must preserve the complete group.
+ * @dshScopeScan unsupported
+ * @mode emit
+ */
+'session/committed'(this: Scoped<Session>, session: Session, events: readonly SessionEvent[], atomic: boolean): void
+```
+
+Types: [Scoped](scope.zh.md)
+
+Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 
 <a id="sessioncreated--emit"></a>
 

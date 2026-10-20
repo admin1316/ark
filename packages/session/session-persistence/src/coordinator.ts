@@ -16,7 +16,7 @@ import {
   snapshotJsonValue,
   snapshotSessionEvent,
 } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session'
+import type { Session, SessionAtomicGroup, SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { BorrowedSessionSource, SessionInspection, SessionLocation } from './index.ts'
 import { SessionPersistenceDeleteBlockedError, SessionPersistenceNotFoundError } from './errors.ts'
@@ -25,6 +25,9 @@ import type { SessionPersistenceRevision } from './revision.ts'
 import { observeQueuedAbort, SessionPreparations } from './preparations.ts'
 import type { SessionPreparationReservation } from './preparations.ts'
 import { SessionWriteBehind } from './write-behind.ts'
+import type { SessionWriteQueueState } from './write-behind.ts'
+import { WritePressure, resolveWritePressure } from './write-pressure.ts'
+import type { SessionWritePressureConfig, SessionWriteState } from './write-pressure.ts'
 
 /** Default number of detached session preparations retained by a coordinator. */
 export const DEFAULT_PREPARED_SESSION_CACHE_SIZE = 5
@@ -84,6 +87,8 @@ export function sessionFormatVersionRefusal(id: string, version: number): string
 
 /** Coordinator policy supplied by a concrete persistence backend. */
 export interface PersistenceCoordinatorOptions {
+  /** Serialized-byte thresholds and maximum producer wait. */
+  readonly writePressure?: Partial<SessionWritePressureConfig>
   /** Maximum completed unpublished preparations retained for reuse. */
   readonly preparedSessionCacheSize: number
   /** Maximum intentional batching wait after an idle live queue receives work. */
@@ -193,7 +198,9 @@ export interface PersistenceBackend<TornMarker = unknown> {
    * commit ATOMICALLY (a crash between them must not leave a materialized-but-
    * empty session). Returns once the batch is durable.
    */
-  appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void>
+  appendBatch(
+    meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean, atomicGroups?: readonly SessionAtomicGroup[],
+  ): Promise<void>
 
   /**
    * Make a crash repair durable: truncate the torn tail (iff
@@ -249,6 +256,13 @@ interface SessionState {
 /** One live session's initialization and bounded write-behind controller. */
 interface LiveSessionState {
   init: Promise<void>
+  initialize?: () => Promise<void>
+  initializing: boolean
+  initFailed: boolean
+  initialEvents: number
+  initialBytes: number
+  initialSince: number | null
+  readonly seedEnd: number
   writes: SessionWriteBehind
 }
 
@@ -593,6 +607,7 @@ function adoptStoredEvents(events: SessionEvent[], id: SessionId): SessionEvent[
  * @typeParam TornMarker - the backend's opaque torn-tail repair token.
  */
 export class PersistenceCoordinator<TornMarker = unknown> {
+  private readonly pressure: WritePressure
   /** Backend bookkeeping keyed by session id (NOT the live Session object). */
   private states = new Map<SessionId, SessionState>()
   /** Lifecycle and write-behind state keyed by the exact live Session. */
@@ -627,11 +642,45 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       throw new TypeError(`writeBatchMaxDelayMs must be an integer between 1 and ${MAX_WRITE_BATCH_DELAY_MS}`)
     }
     this.writeBatchMaxDelayMs = options.writeBatchMaxDelayMs
+    this.pressure = new WritePressure(resolveWritePressure(options.writePressure))
     this.preparations = new SessionPreparations(options.preparedSessionCacheSize)
     this.installWritePath()
   }
 
   // --- Public API (the backend's service methods delegate here) ---
+
+  /**
+   * Read exact and aggregate unconfirmed-write counters.
+   * @param session - optional live lifecycle.
+   * @returns current write health.
+   */
+  writeState(session?: Session): SessionWriteState { return this.pressure.read(session) }
+
+  /**
+   * Save every retained owner, even after its Session has left the live registry.
+   * @returns durable acknowledgement for initialization, buffered writes, and retirements.
+   */
+  async flushAll(): Promise<void> {
+    for (;;) {
+      const owners = [...this.live.keys()]
+      const errors = await settledErrors(owners.map(session => this.ctx.sessions.get(session.id) === session
+        ? this.flush(session) : this.retireCore(session)))
+      while (this.chains.size > 0) await Promise.allSettled([...this.chains.values()])
+      if (errors.length > 0) throw new AggregateError(errors, `${this.backend.name} save failed`)
+      if ([...this.live.entries()].every(([session, live]) => owners.includes(session)
+        && !live.initializing && !live.initFailed && !live.writes.hasWork)) return
+    }
+  }
+
+  /**
+   * Wait for producer capacity without cancelling the writer.
+   * @param session - exact producer lifecycle.
+   * @param signal - caller wait cancellation.
+   * @returns when low water is reached.
+   */
+  waitForCapacity(session: Session, signal: AbortSignal): Promise<void> {
+    return this.pressure.wait(session, signal)
+  }
 
   /**
    * Register detached session metadata for lazy creation on the first append.
@@ -734,7 +783,15 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     return deleted
   }
 
-  private async appendCore(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
+  /** Preserve every boundary when adopting a pre-existing complete in-memory prefix. */
+  private appendSeed(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
+    const first = events[0]
+    return this.appendCore(id, events, first === undefined ? [] : [{ firstSeq: first.seq, count: events.length }])
+  }
+
+  private async appendCore(
+    id: SessionId, events: readonly SessionEvent[], atomicGroups: readonly SessionAtomicGroup[] = [],
+  ): Promise<void> {
     // Every append route converges here: the public service, live write-behind
     // drains, and HMR seed/suffix adoption. Legacy-shape rejection stays at
     // this shared boundary so a stale JavaScript plugin cannot persist a
@@ -756,7 +813,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       }
     }
 
-    await this.backend.appendBatch(state.meta, events, state.materialized)
+    await this.backend.appendBatch(state.meta, events, state.materialized, atomicGroups)
     // The durable write is the transaction: mark materialized + advance the
     // cursor as soon as it commits (uniform across backends).
     state.materialized = true
@@ -1200,13 +1257,10 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     // reverse registration order, so event admission closes before this final
     // drain reaches quiescence and closes the backend.
     ctx.effect(() => async () => {
+      this.pressure.close()
       let disposeError: unknown
       try {
-        const errors = await settledErrors([...this.live.keys()].map(session => this.flush(session)))
-        while (this.chains.size > 0) await Promise.allSettled([...this.chains.values()])
-        if (errors.length > 0) {
-          throw new AggregateError(errors, `${this.backend.name} dispose failed`)
-        }
+        await this.flushAll()
       } catch (error: unknown) {
         disposeError = error
         throw error
@@ -1230,9 +1284,10 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     })
 
     // Keep a persistence-owned copy of each frozen event and start its bounded window.
-    ctx.on('session/event', (session, event) => {
+    ctx.on('session/committed', (session, events, atomic) => {
       const live = this.initFor(session)
-      live.writes.enqueue(event)
+      const fresh = events.filter(event => event.seq >= live.seedEnd)
+      live.writes.enqueueBatch(fresh, atomic)
     })
 
     // Callers use flush as the immediate durability barrier for buffered writes.
@@ -1264,6 +1319,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     await this.flush(session)
     const id = session.header.id
     await this.serialize(id, () => {
+      this.pressure.forget(session)
       this.live.delete(session)
       if (this.states.get(id)?.owner === session) this.states.delete(id)
     })
@@ -1283,11 +1339,13 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     const seed = session.events
     const live: LiveSessionState = {
       init: Promise.resolve(),
+      initializing: false, initFailed: false, initialEvents: 0, initialBytes: 0, initialSince: null,
+      seedEnd: seed.length,
+      initialize: () => this.serialize(session.id, () => this.onCreated(session, seed)),
       writes: this.createWriteBehind(session, () => live.init),
     }
     this.live.set(session, live)
-    live.init = this.serialize(session.header.id, () => this.onCreated(session, seed))
-    live.init.catch(() => { /* observed by flush/dispose through the controller */ })
+    live.init = this.initialize(session, live)
     return live
   }
 
@@ -1307,13 +1365,66 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     state.owner = session
     const live: LiveSessionState = {
       init: Promise.resolve(),
+      initializing: false, initFailed: false, initialEvents: 0, initialBytes: 0, initialSince: null,
+      seedEnd: session.events.length,
       writes: this.createWriteBehind(session, () => live.init),
     }
     if (suffix.length > 0) {
-      live.init = this.serialize(session.id, () => this.appendCore(session.id, suffix))
-      live.init.catch(() => { /* observed by flush/dispose through the controller */ })
+      live.initialize = () => this.serialize(session.id, () => this.appendInitial(session, suffix))
+      this.live.set(session, live)
+      live.init = this.initialize(session, live)
     }
     return live
+  }
+
+  /** Retry only the retained initialization owner; no replacement writer is created. */
+  private initialize(session: Session, live: LiveSessionState): Promise<void> {
+    const operation = live.initialize
+    if (operation === undefined) return live.init
+    live.initializing = true
+    this.publishWriteState(session, live)
+    const initialized = operation().then(() => {
+      live.initializing = false
+      live.initFailed = false
+      delete live.initialize
+      this.publishWriteState(session, live)
+    }, (error: unknown) => {
+      live.initializing = false
+      live.initFailed = true
+      this.publishWriteState(session, live)
+      throw error
+    })
+    void initialized.catch(() => { /* observed by flushAll, session flush, or disposal */ })
+    return initialized
+  }
+
+  /** Account only the seed suffix still missing from the authoritative durable cursor. */
+  private async appendInitial(session: Session, seed: readonly SessionEvent[]): Promise<void> {
+    const live = this.live.get(session)
+    if (live === undefined) throw new Error(`session "${session.id}" lost its initialization owner`)
+    const cursor = this.states.get(session.id)?.cursor ?? 0
+    const suffix = seed.filter(event => event.seq >= cursor)
+    live.initialEvents = suffix.length
+    live.initialBytes = suffix.reduce((bytes, event) => bytes + Buffer.byteLength(JSON.stringify(event)), 0)
+    if (suffix.length > 0) live.initialSince ??= Date.now()
+    this.publishWriteState(session, live)
+    await this.appendSeed(session.id, suffix)
+    live.initialEvents = 0
+    live.initialBytes = 0
+    live.initialSince = null
+    this.publishWriteState(session, live)
+  }
+
+  /** Publish initialization and queued writes once each without copying payloads. */
+  private publishWriteState(session: Session, live: LiveSessionState, queued = live.writes.state): void {
+    const initialAt = live.initialSince
+    const oldestAt = initialAt === null ? queued.oldestAt : queued.oldestAt === null
+      ? initialAt : Math.min(initialAt, queued.oldestAt)
+    const state: SessionWriteQueueState = {
+      ...queued, events: queued.events + live.initialEvents, bytes: queued.bytes + live.initialBytes,
+      oldestAt, failed: queued.failed || live.initFailed, initializing: live.initializing,
+    }
+    this.pressure.update(session, state)
   }
 
   /**
@@ -1349,7 +1460,10 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     if (tracked !== undefined) {
       // case 1: already tracked.
       /* v8 ignore next -- initFor dedupes per session object; same-object re-entry can't occur */
-      if (tracked.owner === session) return
+      if (tracked.owner === session) {
+        await this.appendInitial(session, seed)
+        return
+      }
       if (tracked.owner === undefined) {
         // Ownerless state from the public create()/load() API. The FIRST live
         // session claims it — but ONLY if BOTH the cwd scope and the seed match.
@@ -1368,11 +1482,12 @@ export class PersistenceCoordinator<TornMarker = unknown> {
         // Persist the seed SUFFIX beyond the persisted prefix. Constructor seed
         // events never emit session/event, so the buffer never sees them.
         const suffix = seed.slice(tracked.cursor)
-        if (suffix.length > 0) await this.appendCore(id, suffix)
+        if (suffix.length > 0) await this.appendInitial(session, suffix)
         return
       }
       const owner = this.live.get(tracked.owner)
-      if (!tracked.materialized && !owner?.writes.hasWork) {
+      if (!tracked.materialized && !owner?.writes.hasWork && !owner?.initializing
+        && !owner?.initFailed && (owner?.initialEvents ?? 0) === 0) {
         this.states.delete(id)
       } else {
         throw new Error(`session "${id}" is already bound to a different live session in this backend (id collision)`)
@@ -1399,7 +1514,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     const created = this.states.get(id)
     /* v8 ignore next -- create() always sets the state for the id */
     if (created !== undefined) created.owner = session
-    if (seed.length > 0) await this.appendCore(id, seed)
+    if (seed.length > 0) await this.appendInitial(session, seed)
   }
 
   /**
@@ -1429,12 +1544,13 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       owner: session,
     })
     const suffix = seed.slice(storedEvents.length)
-    if (suffix.length > 0) await this.appendCore(session.header.id, suffix)
+    if (suffix.length > 0) await this.appendInitial(session, suffix)
   }
 
   private async flush(session: Session): Promise<void> {
     const live = this.initFor(session)
     live.writes.cancelAutomaticWait()
+    if (live.initFailed) live.init = this.initialize(session, live)
     try {
       await live.init
     } catch (error: unknown) {
@@ -1450,22 +1566,29 @@ export class PersistenceCoordinator<TornMarker = unknown> {
   private createWriteBehind(session: Session, ready: () => Promise<void>): SessionWriteBehind {
     return new SessionWriteBehind({
       maxDelayMs: this.writeBatchMaxDelayMs,
-      write: async (batch) => {
+      write: async (batch, atomicGroups) => {
         await ready()
-        await this.serialize(session.header.id, () => this.appendLiveBatch(session.header.id, batch))
+        await this.serialize(session.header.id, () => this.appendLiveBatch(session.header.id, batch, atomicGroups))
       },
       reportBackgroundFailure: (error) => {
         this.ctx.logger.warn(`${this.backend.name}: background write for session "${session.id}" failed (buffered events retained): ${String(error)}`)
+      },
+      stateChanged: (state) => {
+        const live = this.live.get(session)
+        if (live !== undefined) this.publishWriteState(session, live, state)
       },
     })
   }
 
   /** Append one controller-owned prefix after filtering events initialization already stored. */
-  private async appendLiveBatch(id: SessionId, batch: readonly SessionEvent[]): Promise<void> {
+  private async appendLiveBatch(id: SessionId, batch: readonly SessionEvent[], atomicGroups: readonly SessionAtomicGroup[]): Promise<void> {
     const state = this.states.get(id)
     /* v8 ignore next -- state is always set by the awaited initialization */
     const cursor = state?.cursor ?? 0
+    if (atomicGroups.some(group => group.firstSeq < cursor && group.firstSeq + group.count > cursor)) {
+      throw new Error('persistence cursor splits an atomic session group')
+    }
     const fresh = batch.filter(e => e.seq >= cursor)
-    await this.appendCore(id, fresh)
+    await this.appendCore(id, fresh, atomicGroups.filter(group => group.firstSeq >= cursor))
   }
 }

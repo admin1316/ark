@@ -8,6 +8,7 @@ import type { IngestQueueTask, KnowledgeProjectContextId } from '../src/types.ts
 import type { ProjectExecutionContext } from '../src/project-context.ts'
 import type { KnowledgeWikiStageExecutor } from '../src/stage-executor.ts'
 import { wikiTestConfig } from './config-fixture.ts'
+import { KnowledgeFileError } from '../src/file-extract.ts'
 
 interface QueueOwner {
   queue: IngestQueueTask[]
@@ -154,6 +155,24 @@ describe('task completion and bounded durable admission', () => {
     const fresh = new KnowledgeWikiService(ctx, config) as unknown as QueueOwner
     fresh.restoreQueue(main)
     expect(fresh.queue[0]?.status).toBe('error')
+  })
+
+  it('budgets permanent failure metadata before retaining a boundary-sized error', async () => {
+    const { main, service, owner } = fixture({ ingestMaxActiveTasks: 2, ingestStateMaxBytes: 4096 })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    writeFileSync(join(main, 'raw/sources/document.docx'), 'synthetic unsupported bytes')
+    vi.spyOn(owner, 'executeQueuedIngest').mockImplementation(async () => {
+      const running = owner.queue.find(task => task.status === 'running')!
+      const emptyError = [{ ...running, status: 'error', error: '', completedAt: Date.now(), failedAt: Date.now() }]
+      const base = Buffer.byteLength(`${JSON.stringify(emptyError, null, 2)}\n`)
+      throw new KnowledgeFileError('unsupported-format', 'x'.repeat(4095 - base), 'f'.repeat(64))
+    })
+    const result = await service.ingestSource({ projectContext: owner.projectToken(main), path: 'document.docx' })
+    expect(result.status).toBe('error')
+    expect(result.warnings.join()).toContain('error exceeds ingestStateMaxBytes')
+    expect(owner.queue).toHaveLength(1)
+    expect(owner.queue[0]?.permanentFailure?.code).toBe('unsupported-format')
+    expect(statSync(join(main, '.llm-wiki/ingest-queue.json')).size).toBeLessThanOrEqual(4096)
   })
 
   it('settles a completed-task waiter when final persistence fails and restores the running lease', async () => {
@@ -308,7 +327,7 @@ describe('research operation ownership', () => {
         if (request.kind !== 'llm-complete') throw new Error('unexpected stage')
         if (request.operation === 'research query expansion') { expansions++; await gate.promise; return { text: 'focused query' } }
         synthesis++
-        return { text: '--- FILE: wiki/_candidates/research/shared.md ---\n---\ntitle: Shared\n---\n\nComplete\n--- END FILE ---' }
+        return { text: '--- FILE: wiki/_candidates/research/shared.md ---\n---\ntitle: Shared\n---\n\nComplete [source](https://source.test)\n--- END FILE ---' }
       },
     }
     ctx.provide('knowledgeWikiStageExecutor', executor)

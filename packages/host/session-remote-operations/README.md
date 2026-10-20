@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 Host implementation of the generated `session/*` Remote port and the `workspaceSessionRetirer` capability. The package composes the existing Agent, Session persistence/query/projection, Workspace, LLM, attachment, title, tool-presentation, preset, queue, and job owners; these services remain the domain authorities. History reads retain bounded numeric indices and explicitly released content materializations; they do not create a second durable transcript or replace the existing projection, workspace, attachment, or model-catalog owners.
 
-`SessionRemoteOperationsService` implements `list`, `search`, `create`, `history`, `models`, `selectModel`, `rename`, `fork`, `prompt`, `attachment`, `updateQueue`, and `cancel`. Creation and resume are single-flight per identity. Handles returned by `AgentRegistry` remain exact capabilities owned by this service, so permanent deletion can retire only an idle, archived, root Agent created or resumed by this Host. `WorkspaceRegistry` remains responsible for descendant ordering, persistence reservations, durable log deletion, workspace accounting, and archive-state commits.
+`SessionRemoteOperationsService` implements `list`, `search`, `create`, `history`, `models`, `selectModel`, `rename`, `fork`, `prompt`, `command`, `storage`, `attachment`, `updateQueue`, and `cancel`. Creation and resume are single-flight per identity. Handles returned by `AgentRegistry` remain exact capabilities owned by this service, so permanent deletion can retire only an idle, archived, root Agent created or resumed by this Host. `WorkspaceRegistry` remains responsible for descendant ordering, persistence reservations, durable log deletion, workspace accounting, and archive-state commits.
 
 The same service owns the exact `/api/session/export` GET/HEAD download registered through `ctx.connection.downloads`. It flushes live Sessions before reading raw durable artifacts, optionally includes descendants and referenced media, streams a bounded ZIP with cancellation, and fails before body production when the required persistence/query/attachment owners are unavailable.
 
@@ -25,6 +25,7 @@ Ordinary prompt retries reuse `source.invocationId`: an existing matching receip
 
 - [History views](#history-views)
 - [Prompt identity](#prompt-identity)
+- [Saving and quitting](#saving-and-quitting)
 - [Canonical Session ownership and cheap listing](#canonical-session-ownership-and-cheap-listing)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
@@ -69,6 +70,20 @@ Child-history callers may supply `expectedParentSessionId`. The history owner ch
 Every `SessionRemotePromptRequest` carries a required opaque `invocationId`. The service validates it and persists it with the exact user message beside the optional canonical client time zone. This preserves optimistic-message reconciliation without leaking a transport RPC identity into the Session domain.
 
 A leading slash line resolves against the command registry first. When no command claims it, the service consults the live Agent's skill registry and admits only an exact user-invocable skill name, preserving the user's text unchanged for `dsh-tool-skill` to inject at `agent/pre-step`; every other unmatched slash line returns `unknown-command`.
+
+## Saving and quitting
+
+`session/storage` exposes operational write health, `retrying`, a monotonic `quitEpoch`, and the current quit attempt without message bodies or backend exception text. New prompt and command admissions reject while saving is pressured, failed or closing; callers retain their input and original invocation identity. Confirming an existing receipt remains available, so an unconfirmed transport response does not require resubmitting accepted work. `retry-save` drains retained persistence owners, including failed initialization and retirement outside the live Session registry; it does not run another Agent turn.
+
+Read `state` before `prepare-quit` and send its `quitEpoch` as `epoch` with a fresh `attemptId`. A matching attempt shares its owned stop/save operation; a failed attempt can retry with the same identity. Preparation closes new admission and Agent publication, cancels all registered Agents while preserving inboxes, waits for their idle boundaries and entered commands, then awaits the persistence owner's `flushAll()` barrier. The result is `ready` with `safeToQuit: true` only after this sequence completes. Zero event counters alone are insufficient, because initialization may still be pending.
+
+`cancel-quit` requires the observed epoch and attempt identity. Successful cancellation clears the attempt, advances `quitEpoch`, and reopens admission. Old-epoch prepare/cancel requests only observe current state; they cannot close admission again or overwrite a newer attempt. Future epochs reject. The native caller accepts readiness only for its own identity and epoch, saves local drafts before removing the interface, and retains the interface on failed or unavailable confirmation. Its twenty-second prompt offers waiting/retry, cancel quitting, or explicit force quit; elapsed time never authorizes an automatic kill. The existing owned backend stop follows confirmed saving, except when the user explicitly selects force quit or exits before Host readiness and before native input is accepted.
+
+The [save-pressure decision](../../../.agents/notes/implemented/bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.md) records ownership and race boundaries; the [persistence contract](../../session/session-persistence/README.md#save-health-and-producer-pressure) owns thresholds and counter semantics.
+
+After Host saving is confirmed or its owned backend has already exited, native teardown may cancel outstanding HTTP response observations and await their actual settlement. It preserves the original command journal and does not fabricate completion or another invocation. This lifecycle action differs from cancelling an ordinary caller, which leaves its command owner running. During irreversible native teardown, cancelling quit is unavailable; a renewed twenty-second prompt still offers waiting or explicit force until teardown finishes.
+
+Before removing the interface, native quit freezes local editing and actions, settles composer submissions, and flushes the latest composer and Workbench drafts. AppKit editors become read-only and their mutation owners reject late callbacks; SwiftUI disabling alone is insufficient. A failed final draft write retains the frozen window and the original snapshot for explicit retry or force, including edits made while waiting for Host readiness.
 
 ## Canonical Session ownership and cheap listing
 

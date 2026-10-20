@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-20-session-save-pressure-and-quit-barrier.md
+2026-10-20-session-save-pressure-and-quit-barrier.md: b718c2e180007b6374c633c5f339f2ce95fcc5b2
+2026-10-20-session-save-pressure-and-quit-barrier.zh.md: fd27d12c6b2cfcc81b8a6def6c2cb2c63bc4b53f

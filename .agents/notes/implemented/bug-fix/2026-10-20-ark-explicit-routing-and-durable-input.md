@@ -50,6 +50,8 @@ Ark's explicit test inventory rejects unregistered, missing and duplicate tests.
 
 ## Related decisions
 
+[Research evidence and permanent extraction rejections](2026-10-20-knowledge-research-evidence-and-permanent-rejections.md) owns deterministic citation membership, candidate metadata and content/policy-specific retry suppression. This note retains independent routing, project, operation-lifecycle and input-durability decisions.
+
 The [native risk boundaries](2026-08-29-ark-native-risk-boundaries.md) retain candidate-only builds, secret-safe credential mutation, event-pump quiescence and Workbench recovery. [Native shell packaging](2026-08-15-ark-native-shell-recovery-and-packaging.md) retains fresh process/pipe ownership and signing order. The [lock and exit-identity decision](2026-10-19-native-candidate-lock-and-exit-identity.md) retains exact dependency and signal authority. [Image admission](../feature/2026-07-22-web-multimodal-image-input-and-durable-attachments.md) retains accepted-object durability and authorized reads; client draft recovery is the narrower extension here. [Knowledge ingest](../architecture/2026-08-19-knowledge-wiki-contract-aligned-ingest.md) retains persisted queues and canonical write rules. These are partial overlaps with independently useful rationale, so the notes remain active rather than entering the frozen archive.
 
 ## Consequences
