@@ -176,7 +176,7 @@ func runArkEventRoutingContractChecks() {
   )
   let wikiFeed = eventRoutingSlice(
     root,
-    from: "private final class NativeWikiFeed",
+    from: "final class NativeWikiFeed",
     through: "private struct NativeWikiView"
   )
   let wikiList = eventRoutingSlice(

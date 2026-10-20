@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-20-ark-explicit-routing-and-durable-input.md
-2026-10-20-ark-explicit-routing-and-durable-input.md: aca4e1226af15938fb7cf247e3edea831b4a76f9
-2026-10-20-ark-explicit-routing-and-durable-input.zh.md: 8ea2d7fb9cce5bf1436b179525a50ebe9614a2a9
+2026-10-20-ark-explicit-routing-and-durable-input.md: dbb8fbe583154470685cec9e4350e271e0933fc1
+2026-10-20-ark-explicit-routing-and-durable-input.zh.md: e0dba8fac07246e7215aa35f1ceeb38d1e897119

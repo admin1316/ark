@@ -18,7 +18,7 @@ if ProcessInfo.processInfo.environment["ARK_COMPOSER_CRASH_CHILD"] != nil,
   Darwin._exit(helperStatus)
 }
 
-let expectedContractGroups = [
+let allContractGroups = [
   "inline",
   "backend-recovery",
   "backend-readiness",
@@ -47,6 +47,7 @@ let expectedContractGroups = [
   "goal-workflow",
   "wiki-queue",
   "wiki-project-lifecycle",
+  "knowledge-file-selection",
   "chat-status-localization",
   "context-meter",
   "message-image-store",
@@ -75,10 +76,19 @@ let expectedContractGroups = [
   "native-file-operations",
   "native-git-review",
 ]
+let selectedContractGroups = Array(CommandLine.arguments.dropFirst())
+guard Set(selectedContractGroups).count == selectedContractGroups.count,
+  selectedContractGroups.allSatisfy({ allContractGroups.contains($0) }) else {
+  print("Unknown or repeated Jiuzhang contract group")
+  exit(2)
+}
+let expectedContractGroups = selectedContractGroups.isEmpty
+  ? allContractGroups : allContractGroups.filter { selectedContractGroups.contains($0) }
 var reachedContractGroups: [String] = []
 
 @MainActor
 func runContractGroup(_ name: String, _ body: @MainActor () -> Void) {
+  guard expectedContractGroups.contains(name) else { return }
   body()
   reachedContractGroups.append(name)
   print("REACHED: \(name)")
@@ -86,6 +96,7 @@ func runContractGroup(_ name: String, _ body: @MainActor () -> Void) {
 
 @MainActor
 func runAsyncContractGroup(_ name: String, _ body: @MainActor () async -> Void) async {
+  guard expectedContractGroups.contains(name) else { return }
   await body()
   reachedContractGroups.append(name)
   print("REACHED: \(name)")
@@ -121,6 +132,7 @@ runContractGroup("long-task-summary", runArkLongTaskSummaryContractChecks)
 runContractGroup("goal-workflow", runArkGoalWorkflowContractChecks)
 runContractGroup("wiki-queue", runArkWikiQueueContractChecks)
 runContractGroup("wiki-project-lifecycle", runArkWikiProjectLifecycleContractChecks)
+await runAsyncContractGroup("knowledge-file-selection", runArkKnowledgeFileSelectionContractChecks)
 runContractGroup("chat-status-localization", runArkChatStatusLocalizationContractChecks)
 runContractGroup("context-meter", runArkContextMeterContractChecks)
 await runAsyncContractGroup("message-image-store", runArkMessageImageStoreContractChecks)

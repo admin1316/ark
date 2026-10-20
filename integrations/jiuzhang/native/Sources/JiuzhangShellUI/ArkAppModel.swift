@@ -655,6 +655,7 @@ public final class ArkAppModel: ObservableObject {
   @Published public private(set) var wikiReviewError: String?
   @Published private(set) var knowledgeResearchOperationID: UUID?
   @Published private(set) var knowledgeResearchRequestTimeout: TimeInterval?
+  @Published private(set) var knowledgeResearchResult: ArkKnowledgeResearchResult?
   public var wikiResearchBusy: Bool { knowledgeResearchOperationID != nil }
   public var wikiResearchReady: Bool { knowledgeResearchRequestTimeout != nil }
   @Published public private(set) var sessionSearchHits: [ArkSessionSearchHit] = []
@@ -978,8 +979,11 @@ public final class ArkAppModel: ObservableObject {
     return KnowledgeScope(path: path, context: context, generation: knowledgeGeneration)
   }
   private func knowledgeScopeIsCurrent(_ scope: KnowledgeScope) -> Bool {
-    !Task.isCancelled && !knowledgeStopped && knowledgeGeneration == scope.generation
-      && selectedKnowledgeProjectPath == scope.path
+    !Task.isCancelled && knowledgeScopeIsRegistered(scope)
+      && knowledgeGeneration == scope.generation && selectedKnowledgeProjectPath == scope.path
+  }
+  private func knowledgeScopeIsRegistered(_ scope: KnowledgeScope) -> Bool {
+    !knowledgeStopped
       && wikiProjects.first(where: { $0.path == scope.path })?.projectContext == scope.context
   }
   private var wikiIngestPollingTask: Task<Void, Never>?
@@ -3330,7 +3334,10 @@ public final class ArkAppModel: ObservableObject {
             self.storageObservationFailed = true
           }
         }
-        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+        do { try await Task.sleep(for: .seconds(1)) } catch {
+          // Cancelling the polling delay ends this model's storage observer.
+          return
+        }
       }
     }
   }
@@ -6037,8 +6044,20 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func importKnowledgeSources(_ urls: [URL]) {
+    prepareKnowledgeSourceImport()?(urls)
+  }
+
+  /// Capture the selected project before a file chooser yields to other native work.
+  func prepareKnowledgeSourceImport() -> (([URL]) -> Void)? {
+    guard let scope = knowledgeScope() else { return nil }
+    return { [weak self] urls in
+      guard let self, self.knowledgeScopeIsRegistered(scope) else { return }
+      self.importKnowledgeSources(urls, scope: scope)
+    }
+  }
+
+  private func importKnowledgeSources(_ urls: [URL], scope: KnowledgeScope) {
     guard !urls.isEmpty else { return }
-    guard let scope = knowledgeScope() else { return }
     let projectRoot = URL(fileURLWithPath: scope.path, isDirectory: true)
     let operationID = UUID()
     knowledgeOperationTasks[operationID] = Task {
@@ -6322,6 +6341,7 @@ public final class ArkAppModel: ObservableObject {
     let normalized = topic.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { return }
     guard let scope = knowledgeScope() else { return }
+    knowledgeResearchResult = nil
     guard let timeout = knowledgeResearchRequestTimeout else {
       knowledgeErrorMessage = "研究时限配置缺失或无效，请重新载入知识项目"
       return
@@ -6346,10 +6366,11 @@ public final class ArkAppModel: ObservableObject {
             : "Research produced no candidate pages with sources. Check the sources or retry.")
           return
         }
+        knowledgeResearchResult = result
         postResultMessage(languagePreference == .zh
           ? "已生成 \(result.findings.count) 个待审阅候选；\(result.sourceCount) 个搜索摘要来源，未读取全文。"
           : "Created \(result.findings.count) candidates for review from \(result.sourceCount) search-snippet sources; full pages were not read.")
-        knowledgeErrorMessage = result.degraded ? result.warnings.joined(separator: "\n") : nil
+        knowledgeErrorMessage = nil
       } catch {
         guard knowledgeResearchOperationID == operationID, knowledgeScopeIsCurrent(scope) else { return }
         knowledgeErrorMessage = error.localizedDescription
@@ -6358,6 +6379,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func stopDeepResearch() -> Task<Void, Never>? {
+    knowledgeResearchResult = nil
     guard let operationID = knowledgeResearchOperationID else { return nil }
     knowledgeResearchOperationID = nil
     let task = knowledgeOperationTasks[operationID]

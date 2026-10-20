@@ -14,7 +14,7 @@ The research owner treats search URLs as authoritative identities and the model 
 
 Local extraction rejects unsupported, binary, malformed, oversized and empty input with typed errors transported through the owned worker. Failed bytes and the actual decoder policy identify a permanent rejection. The existing source-disposition cache retains it independently of bounded queue history. A committed rejection suppresses its old restored lease, while a fresh admission identity preserves a user's explicit retry. Changed content or decoder policy allows another automatic attempt; temporary and unclassified historical failures retain their existing cooldown.
 
-The native client validates source counts and per-page associations, rejects zero-page completion, and displays recorded research URLs with a search-snippet limitation. Opening a source reuses the isolated Workbench browser and consumes a single-use navigation intent. The browser continues to reject non-HTTP(S) or credentialed URLs and receives no Ark credential or local-file bridge.
+The native client validates source counts and per-page associations and rejects zero-page completion. One observable result retains the current project's latest successful candidate count, search-snippet limitation, actual URLs and partial warnings. New research, cancellation, project switching and shutdown clear that result; operation and project identities reject stale publication. This presentation state is not serialized; candidate frontmatter retains the durable provenance. Successful research and selected pages share the source renderer. Opening a source reuses the isolated Workbench browser and consumes a single-use navigation intent. The browser continues to reject non-HTTP(S) or credentialed URLs and receives no Ark credential or local-file bridge.
 
 ## Alternatives considered
 
@@ -28,7 +28,7 @@ The native client validates source counts and per-page associations, rejects zer
 
 ## Verification
 
-A real YAML/Loader composition with the registered LLM runtime, owned executor and synthetic external search/model snapshots invalid citations, governed success and collision failure without a key. Focused tests cover link definitions, dangerous URLs, forced metadata, unchanged rejection after history pruning/restart, fresh retry admission and the cache/queue crash window. Native contracts check source decoding and persistent page provenance; candidate interaction remains a separate acceptance requirement.
+A real YAML/Loader composition with the registered LLM runtime, owned executor and synthetic external search/model snapshots invalid citations, governed success and collision failure without a key. Focused tests cover link definitions, dangerous URLs, forced metadata, unchanged rejection after history pruning/restart, fresh retry admission and the cache/queue crash window. Native contracts run transport replies through the AppModel and feed and check cancellation, project invalidation and persistent page provenance. The candidate count, snippet notice, partial warnings and source-opening action require interaction with the isolated native candidate; offscreen hosting without an accessibility tree does not verify those controls.
 
 ## Consequences
 

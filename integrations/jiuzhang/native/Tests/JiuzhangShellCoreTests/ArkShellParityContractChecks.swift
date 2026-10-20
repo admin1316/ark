@@ -21,11 +21,15 @@ func runArkShellParityContractChecks() {
   let l10nURL = contractNativeRoot.appendingPathComponent(
     "Sources/JiuzhangShellUI/ArkL10n.swift"
   )
+  let projectSelectionURL = contractNativeRoot.appendingPathComponent(
+    "Sources/JiuzhangShellUI/ArkKnowledgeFileSelection.swift"
+  )
   guard
     let root = try? String(contentsOf: rootURL, encoding: .utf8),
     let workbench = try? String(contentsOf: workbenchURL, encoding: .utf8),
     let trajectory = try? String(contentsOf: trajectoryURL, encoding: .utf8),
-    let l10n = try? String(contentsOf: l10nURL, encoding: .utf8)
+    let l10n = try? String(contentsOf: l10nURL, encoding: .utf8),
+    let projectSelection = try? String(contentsOf: projectSelectionURL, encoding: .utf8)
   else {
     check(false, "native shell sources are readable for parity checks")
     return
@@ -196,7 +200,8 @@ func runArkShellParityContractChecks() {
       && root.contains("ArkL10n.text(.wikiSearchPlaceholder, feed.language)")
       && root.contains("ArkL10n.text(.wikiImportHelp, feed.language)")
       && root.contains("ArkL10n.text(.wikiCreatePageTitle, feed.language)")
-      && root.contains("ArkL10n.text(.wikiCreateProjectTitle, feed.language)")
+      && root.contains("ArkKnowledgeProjectCreationSheet(draft: draft, language: feed.language)")
+      && projectSelection.contains("ArkL10n.text(.wikiCreateProjectTitle, language)")
       && root.contains("ArkL10n.text(.wikiReview, language)")
       && root.contains(".accessibilityLabel(ArkL10n.text(.wikiInspector, language))")
       && root.contains("ArkL10n.text(.wikiDetailEmpty, language)")

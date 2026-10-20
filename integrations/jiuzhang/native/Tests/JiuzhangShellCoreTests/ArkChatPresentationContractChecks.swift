@@ -884,7 +884,7 @@ func runArkChatPresentationContractChecks() {
     let streamingMarkdown = chatSourceSlice(
       root,
       from: "private struct NativeStreamingMarkdownText",
-      through: "@MainActor\nprivate final class NativeWikiFeed"
+      through: "@MainActor\nfinal class NativeWikiFeed"
     )
     let pendingMarkdown = chatSourceSlice(
       root,

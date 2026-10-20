@@ -19,6 +19,8 @@ Archive rows offer Restore and Permanent Delete through a native context menu an
 
 Model settings group knowledge connections in a card with aligned model selections, a collapsible optional vector service, and explicit Restore and Save actions. Expanded vector fields retain visible labels, including the secure credential field. Saving a connection does not certify a successful model call.
 
+Knowledge project and file selection share one nonblocking native chooser. Repeated activation cannot stack panels, and cancellation or view teardown discards late selections. File import captures its project before opening the chooser; switching projects cannot redirect the selected files, while revoked projects and stopped application models reject the selection. New-project sheets carry their selected directory with their presentation, and editing the project name does not change that directory.
+
 Knowledge research permits one active operation. Repeated Return or button activation does not submit another request; Cancel, project switching, and shutdown invalidate its results, cancel the transport, and await the owned task. Each request freezes the Host's advertised total research budget plus thirty seconds for cleanup and delivery, with both transfer and absolute deadlines; ordinary RPC requests retain their sixty-second timeout. Missing or invalid research budgets disable submission, and failed or timed-out requests never produce a completion notice.
 
 Quit waits for the Host's save confirmation while keeping the interface mounted. Before irreversible teardown it freezes local input, makes AppKit editors read-only, settles pending composer submissions, and saves the latest composer and Workbench drafts. Final draft failures retain the frozen window for retry or explicit force quit; the twenty-second prompt never treats elapsed time as saving success. Cancelling quit is available before local teardown begins.
@@ -32,3 +34,5 @@ zsh build-app.sh /path/to/output
 Emits `Ark.app` at the output path. The icon source is `Resources/AppIcon.png`, the square silver-symbol icon derived from the supplied Ark artwork. The build normalizes it to 1024 × 1024 and generates ICNS in temporary staging. In-app branding uses shared native vector paths in `ArkBrandView.swift`, with restrained silver shading in dark appearance and graphite shading in light appearance. The paths scale to compact sidebar symbols without transparent bitmap fringes.
 
 Build details, versioning, and both layouts: [engineering notes](../docs/engineering.md).
+
+`JiuzhangShellContractTests` runs all registered native contract groups by default. Passing group names as positional arguments runs only those groups; unknown or repeated names fail before execution. These process-level contracts do not replace isolated-candidate interaction checks for first sheet presentation and source-button actions.

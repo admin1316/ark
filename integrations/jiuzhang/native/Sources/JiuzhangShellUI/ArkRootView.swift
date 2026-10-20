@@ -8616,7 +8616,7 @@ private struct NativeStreamingMarkdownText: View {
 }
 
 @MainActor
-private final class NativeWikiFeed: ObservableObject {
+final class NativeWikiFeed: ObservableObject {
   @Published private(set) var pages: [ArkWikiPage]
   @Published private(set) var edges: [ArkWikiEdge]
   @Published private(set) var reviews: [ArkWikiReview]
@@ -8632,6 +8632,7 @@ private final class NativeWikiFeed: ObservableObject {
   @Published private(set) var reviewError: String?
   @Published private(set) var researchBusy: Bool
   @Published private(set) var researchReady: Bool
+  @Published private(set) var researchResult: ArkKnowledgeResearchResult?
   @Published private(set) var operationError: String?
   @Published private(set) var searchPaths: Set<String>
   @Published private(set) var searchMode: String
@@ -8661,6 +8662,7 @@ private final class NativeWikiFeed: ObservableObject {
     reviewError = model.wikiReviewError
     researchBusy = model.wikiResearchBusy
     researchReady = model.wikiResearchReady
+    researchResult = model.knowledgeResearchResult
     operationError = model.knowledgeErrorMessage
     searchPaths = model.knowledgeSearchPaths
     searchMode = model.knowledgeSearchMode
@@ -8714,6 +8716,9 @@ private final class NativeWikiFeed: ObservableObject {
     model.$knowledgeResearchRequestTimeout.map { $0 != nil }.removeDuplicates()
       .sink { [weak self] in self?.researchReady = $0 }
       .store(in: &cancellables)
+    model.$knowledgeResearchResult.removeDuplicates()
+      .sink { [weak self] in self?.researchResult = $0 }
+      .store(in: &cancellables)
     model.$knowledgeErrorMessage.removeDuplicates()
       .sink { [weak self] in self?.operationError = $0 }
       .store(in: &cancellables)
@@ -8746,14 +8751,13 @@ private final class NativeWikiFeed: ObservableObject {
 private struct NativeWikiView: View, Equatable {
   let model: ArkAppModel
   @StateObject private var feed: NativeWikiFeed
+  @StateObject private var fileSelection = ArkKnowledgeFileSelection()
   @State private var search = ""
   @State private var showCreatePage = false
-  @State private var showCreateProject = false
+  @State private var projectCreation: ArkKnowledgeProjectDraft?
   @State private var showImportURL = false
   @State private var importURL = ""
   @State private var pendingRemoveProject: ArkKnowledgeProject?
-  @State private var newProjectName = ""
-  @State private var newProjectPath = ""
   @State private var newPageTitle = ""
   @State private var newPageBody = ""
   @State private var researchTopic = ""
@@ -8919,6 +8923,9 @@ private struct NativeWikiView: View, Equatable {
           Divider().overlay(ArkPalette.border)
           NativeResearchBar(model: model, topic: $researchTopic, busy: feed.researchBusy,
             ready: feed.researchReady, language: feed.language)
+          if let result = feed.researchResult {
+            NativeKnowledgeResearchResultView(result: result, language: feed.language)
+          }
         }
         Divider().overlay(ArkPalette.border)
         NativeWikiDetail(
@@ -9003,40 +9010,15 @@ private struct NativeWikiView: View, Equatable {
       .frame(width: 560, height: 390)
       .background(ArkPalette.panel)
     }
-    .sheet(isPresented: $showCreateProject) {
-      VStack(alignment: .leading, spacing: 14) {
-        Text(ArkL10n.text(.wikiCreateProjectTitle, feed.language))
-          .font(.system(size: 18, weight: .semibold))
-        TextField(ArkL10n.text(.wikiProjectName, feed.language), text: $newProjectName)
-        LabeledContent(ArkL10n.text(.wikiProjectDirectory, feed.language)) {
-          Text(newProjectPath)
-            .font(.system(size: 11, design: .monospaced))
-            .lineLimit(2)
-            .truncationMode(.middle)
-        }
-        Text(ArkL10n.text(.wikiProjectCreationDetail, feed.language))
-          .font(.system(size: 11))
-          .foregroundStyle(ArkPalette.secondary)
-        HStack {
-          Spacer()
-          Button(ArkL10n.text(.wikiCancel, feed.language), role: .cancel) {
-            showCreateProject = false
-          }
-          Button(ArkL10n.text(.wikiCreate, feed.language)) {
-            model.createKnowledgeProject(name: newProjectName, path: newProjectPath)
-            showCreateProject = false
-          }
-          .buttonStyle(.borderedProminent)
-          .disabled(
-            newProjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-              || newProjectPath.isEmpty
-          )
-        }
+    .sheet(item: $projectCreation) { draft in
+      ArkKnowledgeProjectCreationSheet(draft: draft, language: feed.language) { name, path in
+        model.createKnowledgeProject(name: name, path: path)
+        projectCreation = nil
+      } cancel: {
+        projectCreation = nil
       }
-      .padding(22)
-      .frame(width: 520, height: 230)
-      .background(ArkPalette.panel)
     }
+    .onDisappear { fileSelection.cancel() }
     .confirmationDialog(
       ArkL10n.text(.wikiRemoveProjectTitle, feed.language),
       isPresented: Binding(
@@ -9079,15 +9061,17 @@ private struct NativeWikiView: View, Equatable {
   }
 
   private func chooseKnowledgeProjectDirectory() {
+    guard !fileSelection.isPresented, projectCreation == nil else { return }
     let panel = NSOpenPanel()
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
     panel.prompt = ArkL10n.text(.wikiChooseProjectDirectory, feed.language)
-    guard panel.runModal() == .OK, let url = panel.url else { return }
-    newProjectPath = url.path
-    newProjectName = url.lastPathComponent
-    showCreateProject = true
+    let destination = $projectCreation
+    fileSelection.present(panel, for: NSApp.keyWindow ?? NSApp.mainWindow) { urls in
+      guard let directory = urls.first else { return }
+      destination.wrappedValue = ArkKnowledgeProjectDraft(directory: directory)
+    }
   }
 
   private var localizedWikiTitle: String {
@@ -9098,13 +9082,14 @@ private struct NativeWikiView: View, Equatable {
   }
 
   private func chooseKnowledgeSources() {
+    guard !fileSelection.isPresented, projectCreation == nil,
+      let importSelection = model.prepareKnowledgeSourceImport() else { return }
     let panel = NSOpenPanel()
     panel.canChooseFiles = true
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = true
     panel.prompt = ArkL10n.text(.wikiChooseSources, feed.language)
-    guard panel.runModal() == .OK else { return }
-    model.importKnowledgeSources(panel.urls)
+    fileSelection.present(panel, for: NSApp.keyWindow ?? NSApp.mainWindow, selection: importSelection)
   }
 
   private func submitKnowledgeURL() {
@@ -10304,28 +10289,7 @@ private struct NativeWikiDetail: View {
               .font(.system(size: 10, design: .monospaced))
               .foregroundStyle(ArkPalette.secondary)
             if !page.researchSources.isEmpty {
-              VStack(alignment: .leading, spacing: 8) {
-                Text(language == .zh ? "来源 · 搜索摘要" : "Sources · search snippets")
-                  .font(.system(size: 12, weight: .semibold))
-                Text(language == .zh ? "研究使用搜索摘要，未读取来源全文；候选仍需审阅。" : "Research used search snippets, not full pages. Candidates still need review.")
-                  .font(.system(size: 10))
-                  .foregroundStyle(ArkPalette.secondary)
-                ForEach(page.researchSources) { source in
-                  Button {
-                    if let url = URL(string: source.url), NativeBrowserNavigationPolicy.allows(url) {
-                      NativeWorkbenchCommandCenter.shared.openResearchSource.send(url)
-                    }
-                  } label: {
-                    Label(source.url, systemImage: "arrow.up.right.square")
-                      .lineLimit(2)
-                      .multilineTextAlignment(.leading)
-                  }
-                  .buttonStyle(.link)
-                  .font(.system(size: 10))
-                  .help(language == .zh ? "在工作台浏览器中打开" : "Open in Workbench browser")
-                }
-              }
-              .accessibilityIdentifier("ark.wiki.research.sources")
+              NativeKnowledgeResearchSources(sources: page.researchSources, language: language)
             }
             Text(page.body)
               .font(.system(size: 12))

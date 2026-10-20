@@ -151,6 +151,7 @@ func runArkKnowledgeIsolationContractChecks() async {
       interactions: ArkInteractionAPI(baseURL: endpoint, apiToken: "synthetic", session: transport),
       eventPump: ArkEventPump(baseURL: endpoint, apiToken: "synthetic"), fallbackWikiRoot: a.appendingPathComponent("wiki"),
       documentStore: ArkDocumentReferenceStore(rootURL: root.appendingPathComponent("documents")), defaults: defaults)
+    let feed = NativeWikiFeed(model: model)
     await model.loadWiki()
     check(model.selectedKnowledgeProjectPath == a.path && model.selectedWikiPage?.body == "A BODY"
       && model.knowledgeSearchMode == "keyword", "knowledge initial project installs opaque identity and keyword status")
@@ -236,6 +237,22 @@ func runArkKnowledgeIsolationContractChecks() async {
       && bBytes == "UNCHANGED B",
       "copy then project switch enqueues into A only and leaves B bytes untouched")
 
+    model.selectKnowledgeProject(path: a.path)
+    _ = await knowledgeIsolationEventually { model.selectedWikiPage?.body == "A BODY" }
+    let selectedBeforeChooser = model.prepareKnowledgeSourceImport()
+    model.selectKnowledgeProject(path: b.path)
+    _ = await knowledgeIsolationEventually { model.selectedWikiPage?.body == "B BODY" }
+    let chooserInput = root.appendingPathComponent("chooser-source.txt")
+    try Data("CHOOSER A".utf8).write(to: chooserInput)
+    KnowledgeIsolationURLProtocol.hold("knowledgeWiki/ingestQueueAdd")
+    selectedBeforeChooser?([chooserInput])
+    _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 1 }
+    check(KnowledgeIsolationURLProtocol.captured("knowledgeWiki/ingestQueueAdd").last?["projectContext"] == .string("context-A")
+      && FileManager.default.fileExists(atPath: a.appendingPathComponent("raw/sources/chooser-source.txt").path)
+      && !FileManager.default.fileExists(atPath: b.appendingPathComponent("raw/sources/chooser-source.txt").path),
+      "a project switch while choosing files cannot redirect the captured import intent")
+    KnowledgeIsolationURLProtocol.release("knowledgeWiki/ingestQueueAdd", value: KnowledgeIsolationURLProtocol.queue(active: false))
+
     KnowledgeIsolationURLProtocol.hold("knowledgeWiki/writePage")
     model.selectKnowledgeProject(path: a.path)
     _ = await knowledgeIsolationEventually { model.selectedWikiPage?.body == "A BODY" }
@@ -320,9 +337,68 @@ func runArkKnowledgeIsolationContractChecks() async {
     check(KnowledgeIsolationURLProtocol.captured("knowledgeWiki/deepResearch").count == invalidBaseline,
       "nonpositive and nonfinite constructor deadlines never create a request")
 
+    let researchSuccess = JSONValue.object([
+      "findings": .array([.object(["title": .string("Synthetic evidence"),
+        "path": .string("_candidates/research/evidence.md"),
+        "sourceURLs": .array([.string("https://source.example/synthetic-evidence")])])]),
+      "sources": .array([.object(["url": .string("https://source.example/synthetic-evidence"),
+        "evidence": .string("search-snippet")])]),
+      "sourceCount": .number(1), "warnings": .array([.string("One synthetic search failed")]),
+      "degraded": .bool(true),
+    ])
+    KnowledgeIsolationURLProtocol.hold("knowledgeWiki/deepResearch")
+    model.runDeepResearch(topic: "synthetic visible provenance")
+    _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 1 }
+    KnowledgeIsolationURLProtocol.release("knowledgeWiki/deepResearch", value: researchSuccess)
+    let provenancePublished = await knowledgeIsolationEventually {
+      !model.wikiResearchBusy && feed.researchResult?.findings.count == 1
+    }
+    check(provenancePublished && model.knowledgeResearchResult == feed.researchResult
+      && feed.researchResult?.sources.first?.url == "https://source.example/synthetic-evidence"
+      && feed.researchResult?.warnings == ["One synthetic search failed"]
+      && model.knowledgeErrorMessage == nil,
+      "the actual research response reaches the current-project feed with sources and partial warnings")
+    await model.loadWiki()
+    check(feed.researchResult?.findings.count == 1,
+      "ordinary knowledge refresh retains the completed research provenance")
+
+    KnowledgeIsolationURLProtocol.hold("knowledgeWiki/deepResearch")
+    model.runDeepResearch(topic: "synthetic cancelled replacement")
+    check(model.knowledgeResearchResult == nil && feed.researchResult == nil,
+      "starting a replacement research removes the previous completion before awaiting transport")
+    _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 1 }
+    await model.cancelDeepResearch()
+    KnowledgeIsolationURLProtocol.release("knowledgeWiki/deepResearch", value: researchSuccess)
+    check(model.knowledgeResearchResult == nil && feed.researchResult == nil && !model.wikiResearchBusy,
+      "cancelling research cannot restore the old result or publish its late response")
+
+    KnowledgeIsolationURLProtocol.hold("knowledgeWiki/deepResearch")
+    model.runDeepResearch(topic: "synthetic project result")
+    _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 1 }
+    KnowledgeIsolationURLProtocol.release("knowledgeWiki/deepResearch", value: researchSuccess)
+    _ = await knowledgeIsolationEventually { !model.wikiResearchBusy && feed.researchResult != nil }
+    model.selectKnowledgeProject(path: b.path)
+    check(model.knowledgeResearchResult == nil && feed.researchResult == nil,
+      "switching projects removes the prior project's research sources synchronously")
+    _ = await knowledgeIsolationEventually { model.selectedWikiPage?.body == "B BODY" }
+
+    KnowledgeIsolationURLProtocol.hold("knowledgeWiki/deepResearch")
+    model.runDeepResearch(topic: "synthetic no pages")
+    _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 1 }
+    KnowledgeIsolationURLProtocol.release("knowledgeWiki/deepResearch", value: .object([
+      "findings": .array([]), "sources": researchSuccess["sources"] ?? .array([]), "sourceCount": .number(1),
+      "warnings": .array([.string("No candidate page was written")]), "degraded": .bool(true),
+      "errorCode": .string("no-pages"),
+    ]))
+    _ = await knowledgeIsolationEventually { !model.wikiResearchBusy }
+    check(model.knowledgeResearchResult == nil && feed.researchResult == nil
+      && model.knowledgeErrorMessage == "No candidate page was written",
+      "real sources without a written page display the failure without a success panel")
+
     model.runDeepResearch(topic: "synthetic topic")
     _ = await knowledgeIsolationEventually { model.knowledgeErrorMessage == "没有可用搜索来源" }
-    check(model.knowledgeErrorMessage == "没有可用搜索来源", "zero-source research displays its blocking warning instead of a completion toast")
+    check(model.knowledgeErrorMessage == "没有可用搜索来源" && model.knowledgeResearchResult == nil && feed.researchResult == nil,
+      "zero-source research displays its blocking warning without a completion or source panel")
     KnowledgeIsolationURLProtocol.activateQueue()
     model.refreshKnowledgeIngestQueue()
     _ = await knowledgeIsolationEventually { model.wikiIngestQueue.hasActiveTasks }
@@ -331,9 +407,18 @@ func runArkKnowledgeIsolationContractChecks() async {
     KnowledgeIsolationURLProtocol.hold("knowledgeWiki/deepResearch")
     model.runDeepResearch(topic: "synthetic shutdown")
     _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 2 }
+    let lateSelection = model.prepareKnowledgeSourceImport()
+    let lateInput = root.appendingPathComponent("after-shutdown.txt")
+    try Data("LATE CHOOSER".utf8).write(to: lateInput)
+    let importsBeforeShutdown = KnowledgeIsolationURLProtocol.captured("knowledgeWiki/ingestQueueAdd").count
     await model.shutdown()
+    lateSelection?([lateInput])
     check(KnowledgeIsolationURLProtocol.pending == 0 && KnowledgeIsolationURLProtocol.cancelledCount > 0 && !model.wikiResearchBusy,
       "shutdown awaits polling and research cancellation and invalidates research publication")
+    check(KnowledgeIsolationURLProtocol.captured("knowledgeWiki/ingestQueueAdd").count == importsBeforeShutdown
+      && !FileManager.default.fileExists(atPath: a.appendingPathComponent("raw/sources/after-shutdown.txt").path)
+      && !FileManager.default.fileExists(atPath: b.appendingPathComponent("raw/sources/after-shutdown.txt").path),
+      "a chooser response after model shutdown cannot copy or enqueue input")
   } catch { check(false, "knowledge isolation fixture completes: \(error)") }
   await runKnowledgeFallbackBoundsChecks(root: root)
 }
