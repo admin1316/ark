@@ -122,7 +122,7 @@ jobs:
         if: steps.pack-dsh.outputs.packed == 'true'
         run: pnpm run release:verify-packed-install --family dsh --from dist/npm --from dist/npm-vendor --from dist/npm-landlock
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: steps.pack-dsh.outputs.packed == 'true'
         with:
           name: dsh-npm-tarballs
