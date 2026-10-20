@@ -18,6 +18,7 @@ import WebSocket from 'ws'
 import {
   probeLoopbackPort,
   runCleanupSteps,
+  sameProcessIdentity,
   serializeRedactedError,
   signalOwnedProcess,
   waitLoopbackPortUnbound,
@@ -27,6 +28,7 @@ import {
   createInstallProcessOwnership,
   parseInstallProcessTable,
   retainedBackendIsAlive,
+  retainedInstallResiduals,
   retainedLauncherIsAlive,
 } from './helpers/install-process-ownership.mjs'
 
@@ -519,19 +521,24 @@ const observeFinalResiduals = async (ownedChild, baseURL) => {
   try {
     const rows = await processTable()
     const state = ownedChild === undefined ? undefined : processOwnership.get(ownedChild)
-    const launcherAlive = state === undefined ? false : retainedLauncherIsAlive(rows, state)
-    const capturedBackendSurvivors = state?.backends
-      .filter(backend => retainedBackendIsAlive(rows, state, backend)) ?? []
-    const exactExecutableResiduals = rows.filter(row => (
+    const residuals = retainedInstallResiduals(rows, [
+      ...executionEvidence.processRuns,
+      ...(state === undefined ? [] : [state]),
+    ])
+    const launcherAlive = residuals.launchers.length > 0
+    const capturedBackendSurvivors = residuals.backends
+    const unownedExecutableObservations = rows.filter(row => (
       row.executable === node
         && row.args.trim().split(/\s+/u).some(argument => argument === launcher || argument === runner)
+        && ![...residuals.launchers, ...residuals.backends].some(identity => sameProcessIdentity(row, identity))
     ))
     const listener = baseURL === undefined ? undefined : await listenerOwners(baseURL)
     const portProbe = listener === undefined ? undefined : await probeLoopbackPort(listener.port)
     const observation = {
       launcherAlive,
+      capturedLauncherSurvivors: residuals.launchers,
       capturedBackendSurvivors,
-      exactExecutableResiduals,
+      unownedExecutableObservations,
       ...(listener === undefined ? {} : {
         port: listener.port,
         listenerOwners: listener.owners,
@@ -541,7 +548,6 @@ const observeFinalResiduals = async (ownedChild, baseURL) => {
     record('final-residual-observation', observation)
     assert.equal(launcherAlive, false, 'captured launcher identity is gone after cleanup')
     assert.deepEqual(capturedBackendSurvivors, [], 'captured backend identities are gone after cleanup')
-    assert.deepEqual(exactExecutableResiduals, [], 'no exact launcher or runner executable residual remains')
     if (listener !== undefined) {
       assert.deepEqual(listener.owners, [], 'the exact readiness port has no listener owner')
       assert.equal(portProbe.state, 'refused', 'the exact readiness port definitively refuses connections')

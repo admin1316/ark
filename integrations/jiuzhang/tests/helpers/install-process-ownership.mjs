@@ -49,6 +49,30 @@ export const retainedBackendIsAlive = (rows, state, backend) => {
   return retainedLauncherIsAlive(rows, state)
 }
 
+/**
+ * Observe retained identities from every test-owned launch, including reparented backends.
+ * @param rows - Fresh process-table observations.
+ * @param states - Captured ownership from every launch in this test.
+ * @returns Surviving launchers and backends, once per retained identity.
+ */
+export const retainedInstallResiduals = (rows, states) => {
+  const launchers = []
+  const backends = []
+  for (const state of states) {
+    if (retainedLauncherIsAlive(rows, state)
+      && !launchers.some(launcher => sameIdentity(launcher, state.launcher))) {
+      launchers.push(state.launcher)
+    }
+    for (const backend of state.backends) {
+      if (retainedBackendIsAlive(rows, state, backend)
+        && !backends.some(retained => sameIdentity(retained, backend))) {
+        backends.push(backend)
+      }
+    }
+  }
+  return { launchers, backends }
+}
+
 export const createInstallProcessOwnership = readProcessTable => {
   const states = new WeakMap()
 

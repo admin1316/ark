@@ -1,5 +1,6 @@
 /** Durable human-command retries through Loader, the real Agent and JSONL persistence. */
 import { expect, it, vi } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import { appendFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { SessionId, SessionPromptInvocationId, type SessionRemoteCommandRequest } from '@deepseek-ai/dsh-session'
@@ -75,6 +76,39 @@ it('persists admission before side effects and replays a lost completed response
     const resume = vi.spyOn(run.ctx.agents, 'resume')
     vi.spyOn(run.ctx.llm, 'listProviders').mockReturnValue([])
     expect(await run.submit()).toEqual(original)
+    expect(resume).not.toHaveBeenCalled()
+    expect(calls).toBe(1)
+    expect(run.adapter.requests).toHaveLength(0)
+  } finally { await run.dispose() }
+})
+
+it('completes durable commands from an injected Host consumer without repeating their effect', async () => {
+  const run = await fixture()
+  let calls = 0
+  let submit: typeof run.submit | undefined
+  try {
+    run.ctx.commands.register({ name: 'record', description: 'Synthetic injected command effect', handler: () => {
+      calls += 1
+      return { kind: 'success', text: `recorded ${calls}` }
+    } })
+    run.ctx.loader.builtins['command-retry-consumer'] = Object.assign((ctx: Context) => {
+      const operations = ctx.sessionRemoteOperations
+      if (operations === undefined) throw new Error('injected Host command consumer has no operations owner')
+      submit = (request = run.request, signal = new AbortController().signal) => operations.command(request, signal)
+    }, { inject: ['sessionRemoteOperations'] })
+    await run.ctx.loader.create({ name: 'cordis:command-retry-consumer' })
+    await run.ctx.loader.await()
+    if (submit === undefined) throw new Error('injected Host consumer did not initialize')
+    const original = await submit()
+    expect(original).toMatchObject({ ok: true, value: { state: 'completed', result: { kind: 'success', text: 'recorded 1' } } })
+    expect(await submit()).toEqual(original)
+    expect(calls).toBe(1)
+    expect(run.handle.agent.session.events.filter(event => event.type === 'command/run')).toHaveLength(1)
+    expect(run.handle.agent.session.events.filter(event => event.type === 'command/done')).toHaveLength(1)
+    await run.handle.dispose({ keepInbox: true })
+    const resume = vi.spyOn(run.ctx.agents, 'resume')
+    vi.spyOn(run.ctx.llm, 'listProviders').mockReturnValue([])
+    expect(await submit()).toEqual(original)
     expect(resume).not.toHaveBeenCalled()
     expect(calls).toBe(1)
     expect(run.adapter.requests).toHaveLength(0)

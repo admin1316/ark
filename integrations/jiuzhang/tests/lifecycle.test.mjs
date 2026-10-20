@@ -26,6 +26,7 @@ import {
   createInstallProcessOwnership,
   parseInstallProcessTable,
   retainedBackendIsAlive,
+  retainedInstallResiduals,
   retainedLauncherIsAlive,
 } from './helpers/install-process-ownership.mjs'
 
@@ -710,6 +711,61 @@ test('lifecycle: retained backend allows only the captured reparented identity',
   assert.equal(retainedBackendIsAlive([{ ...backend, parentPid: 1, started: 'reused' }], state, backend), false)
   assert.equal(retainedBackendIsAlive([{ ...backend, parentPid: 1, executable: '/other/node' }], state, backend), false)
   assert.equal(retainedBackendIsAlive([{ ...backend, parentPid: 1, args: '/other/runner.js' }], state, backend), false)
+})
+
+test('lifecycle: installed residuals retain only this test\'s captured launch identities', async t => {
+  const executable = '/candidate/Ark.app/Contents/Resources/node/bin/node'
+  const launcherArgument = '/runtime/start.mjs'
+  const backendArgument = '/runtime/runner.js'
+  const identity = (pid, parentPid, started, argument) => ({
+    pid, parentPid, started, executable, args: `${executable} ${argument} --port 0`,
+  })
+  const firstLauncher = identity(102, 100, 'first launcher', launcherArgument)
+  const firstBackend = identity(103, 102, 'first backend', backendArgument)
+  const secondLauncher = identity(112, 100, 'restart launcher', launcherArgument)
+  const secondBackend = identity(113, 112, 'restart backend', backendArgument)
+  const gui = [
+    identity(202, 200, 'GUI launcher', launcherArgument),
+    identity(203, 202, 'GUI backend', backendArgument),
+  ]
+  let rows = [...gui, firstLauncher, firstBackend]
+  const ownership = createInstallProcessOwnership(async () => rows)
+  const capture = child => ownership.capture(child, {
+    launcherExecutable: executable, launcherArgument,
+    backendExecutable: executable, backendArgument,
+    listenerPids: [child.pid + 1],
+  })
+  const first = await capture({ pid: 102, exitCode: null, signalCode: null })
+  rows = [...gui, secondLauncher, secondBackend]
+  const second = await capture({ pid: 112, exitCode: null, signalCode: null })
+  const states = [first, second, second]
+
+  await t.test('matching GUI executables do not become owned residuals', () => {
+    assert.deepEqual(retainedInstallResiduals(gui, states), { launchers: [], backends: [] })
+  })
+  await t.test('either launch round remains visible without duplicate identities', () => {
+    assert.deepEqual(retainedInstallResiduals([
+      ...gui, firstLauncher, firstBackend, secondLauncher, secondBackend,
+    ], states), { launchers: [firstLauncher, secondLauncher], backends: [firstBackend, secondBackend] })
+  })
+  await t.test('a backend from either round remains owned after its launcher exits', () => {
+    assert.deepEqual(retainedInstallResiduals([
+      ...gui, { ...firstBackend, parentPid: 1 }, { ...secondBackend, parentPid: 1 },
+    ], states), { launchers: [], backends: [firstBackend, secondBackend] })
+  })
+  await t.test('reused or changed process identities grant no residual ownership', () => {
+    for (const changes of [
+      { started: 'reused PID' }, { executable: '/other/node' }, { args: '/other/runner.js' },
+    ]) {
+      assert.deepEqual(retainedInstallResiduals([
+        ...gui, { ...firstBackend, parentPid: 1, ...changes },
+      ], states), { launchers: [], backends: [] })
+    }
+  })
+  await t.test('an incomplete capture grants no ownership', () => {
+    assert.deepEqual(retainedInstallResiduals(gui, [{ launcher: undefined, backends: [] }]),
+      { launchers: [], backends: [] })
+  })
 })
 
 test('lifecycle: install ownership retains ps failure and emits zero backend signals', async () => {

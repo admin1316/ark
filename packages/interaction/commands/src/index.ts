@@ -388,7 +388,8 @@ export class CommandRuntime extends TypertRemoteService {
 
   private async flush(session: Session): Promise<void> {
     const persistence = this.ctx.get('sessionPersistence')
-    if (persistence === undefined || !await this.ctx.sessions.flush(session)) throw new Error('commands require a durability owner')
+    const sessions = this.ctx.get('sessions')
+    if (persistence === undefined || sessions === undefined || !await sessions.flush(session)) throw new Error('commands require a durability owner')
     await persistence.ensureMaterialized(session)
   }
 

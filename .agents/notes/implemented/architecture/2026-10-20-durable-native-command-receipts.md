@@ -14,6 +14,8 @@ The Host exposes `session/command`, accepts a caller-persisted invocation identi
 
 A new invocation flushes its run record before entering the handler and flushes its terminal record before reporting `completed`. The input digest binds the identity to the exact line and ordered image contents. The same identity observes `running` or replays its original completed success or error; different content conflicts. An admitted run without a confirmed result reports `unknown`, preserving the identity without re-entering the handler. One session owns at most one active command and does not queue another invocation behind it.
 
+Durability checkpoints resolve the optional session store and persistence owners explicitly through `ctx.get`. An injected Remote consumer does not grant `CommandRuntime` implicit access through `ctx.sessions`; relying on that property can fail before the handler despite both owners being mounted. Missing ownership still fails the durable call, while local execution remains independent of persistence.
+
 The Host activity signal owns cancellation independently of HTTP response observation. Entered handlers retain execution ownership until they actually settle, including handlers that ignore cancellation. Shutdown waits for that settlement. After Host readiness or observed backend exit, native teardown can cancel and await response observers without acknowledging their journals.
 
 ### Native acknowledgement
@@ -38,4 +40,4 @@ Retries preserve one admitted invocation and recover its recorded result without
 
 ## Verification
 
-The real Loader/Agent/JSONL command composition pins admission before a synthetic filesystem effect, concurrent and cold retries, interrupted runs, error replay and explicit new intent. Native contracts cover original identities, retained drafts, permission supersession and response teardown. Both SDKs replay the same synthetic command metadata through their real stdio clients.
+The real Loader/Agent/JSONL command composition pins admission before a synthetic filesystem effect, concurrent and cold retries, interrupted runs, error replay and explicit new intent. A Loader consumer injected only with the Host Remote service pins first-call durable completion and live/cold retries of one invocation identity with one effect; root-context calls alone do not exercise that scope. Native contracts cover original identities, retained drafts, permission supersession and response teardown. Both SDKs replay the same synthetic command metadata through their real stdio clients.
