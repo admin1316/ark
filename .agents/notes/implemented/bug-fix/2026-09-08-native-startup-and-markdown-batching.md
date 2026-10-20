@@ -26,6 +26,8 @@ The feed retains the last published bounded live-text frame when the reader move
 
 Retained frames belong to the existing feed and are keyed by session, message, and source identity. Chat/trajectory tab changes keep that owner; a change of session identity or history-cut `sourceRevision` clears it. The existing row projection consumes the retained text without a second parser or a second transcript snapshot owner.
 
+The session main area retains each session's bounded row-window binding alongside the feed and scroll controller when the Chat tab unmounts. A returning native scroll view completes its pending document layout before restoring the retained offset; a temporary short document must not clamp away the reader's saved position. Fresh sessions receive independent windows, and completed Markdown remains subject to the existing row limits.
+
 The trajectory fold computes an active assistant preview once after folding its chunks, rather than rescanning the growing full body for each delta. Canonical assistant messages still replace their streamed record. A 20,000-event regression retains the full output and every source event, compares the exact preview, and measures the fold against the five-second display budget.
 
 ## Alternatives considered

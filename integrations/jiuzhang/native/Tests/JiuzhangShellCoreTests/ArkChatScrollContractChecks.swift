@@ -905,6 +905,20 @@ private final class FlippedChatDocumentView: NSView {
 }
 
 @MainActor
+private final class PendingChatDocumentView: NSView {
+  var pendingHeight: CGFloat?
+  override var isFlipped: Bool { true }
+
+  override func layout() {
+    if let height = pendingHeight {
+      pendingHeight = nil
+      setFrameSize(NSSize(width: frame.width, height: height))
+    }
+    super.layout()
+  }
+}
+
+@MainActor
 private final class RecordingChatClipView: NSClipView {
   private(set) var scrollRequestCount = 0
 
@@ -1188,6 +1202,45 @@ private func runArkChatScrollAppKitHarnessChecks() {
     "SwiftUI chat scroll controller retains session state across AppKit reattachment"
   )
   controller.detach(from: reattachedScroll)
+
+  let pendingScroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 320, height: 200))
+  pendingScroll.borderType = .noBorder
+  pendingScroll.hasHorizontalScroller = false
+  pendingScroll.hasVerticalScroller = false
+  let pendingDocument = PendingChatDocumentView(frame: NSRect(x: 0, y: 0, width: 320, height: 300))
+  pendingScroll.documentView = pendingDocument
+  pendingDocument.pendingHeight = 1_240
+  pendingDocument.needsLayout = true
+  controller.attach(to: pendingScroll)
+  // The conditional Chat tab also activates on appearance after its attachment.
+  controller.activate(sessionID: "bridge-session")
+  check(
+    pendingDocument.frame.height == 1_240
+      && !controller.isAtBottom
+      && approximatelyEqual(Double(pendingScroll.documentVisibleRect.minY), 510)
+      && approximatelyEqual(controller.snapshot(for: "bridge-session")?.offset ?? -1, 510),
+    "Chat tab reattachment measures pending native document layout before restoring its retained reader offset"
+  )
+  controller.detach(from: pendingScroll)
+
+  let windows = ArkChatRenderWindows()
+  let firstMount = windows.binding(for: "bridge-session")
+  let displayRows = (0..<451).map { "markdown-row-\($0)" }
+  firstMount.wrappedValue.suspendLatest(in: displayRows, limit: 24)
+  let retainedRows = Array(displayRows[firstMount.wrappedValue.range(in: displayRows, limit: 24)])
+  let secondMount = windows.binding(for: "bridge-session")
+  let updatedRows = displayRows + ["terminal-status", "next-live-message"]
+  let returnedRows = Array(updatedRows[secondMount.wrappedValue.range(in: updatedRows, limit: 24)])
+  check(
+    retainedRows == returnedRows && secondMount.wrappedValue.firstRowID == "markdown-row-427",
+    "recreating Chat bindings keeps the same bounded Markdown window while rows append behind another tab"
+  )
+  let otherSession = windows.binding(for: "new-session")
+  check(otherSession.wrappedValue.followsLatest,
+        "a fresh session gets an independent render window")
+  otherSession.wrappedValue.earlier(in: displayRows, limit: 24)
+  check(windows.binding(for: "bridge-session").wrappedValue.firstRowID == "markdown-row-427",
+        "changing another session's window cannot overwrite the retained Chat reading window")
 
   let noOpScroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 320, height: 200))
   let recordingClip = RecordingChatClipView(frame: noOpScroll.contentView.frame)

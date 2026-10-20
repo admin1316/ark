@@ -1709,6 +1709,7 @@ private struct WorkspaceSection: View {
 private struct NativeMainArea: View {
   @ObservedObject var model: ArkAppModel
   @StateObject private var chatScrollController: ArkChatScrollController
+  @StateObject private var chatRenderWindows = ArkChatRenderWindows()
   /// The chat tab is conditionally mounted, but its authoritative feed must outlive that mount.
   /// Otherwise every chat/trajectory round trip reparses and republishes every restored answer.
   @StateObject private var chatTranscriptFeed: NativeChatTranscriptFeed
@@ -1755,7 +1756,8 @@ private struct NativeMainArea: View {
               transcriptFeed: chatTranscriptFeed,
               projectionMemo: chatProjectionMemo,
               rowCache: chatRowCache,
-              scrollController: chatScrollController
+              scrollController: chatScrollController,
+              renderWindow: chatRenderWindows.binding(for: chatTranscriptFeed.snapshot.context.sessionID)
             )
           case .trajectory: NativeTrajectoryParityView(model: model).equatable()
           case .wiki: NativeWikiView(model: model).equatable()
@@ -3897,7 +3899,7 @@ private struct NativeChatView: View {
   @AppStorage("ark.native.chat.content-width-adaptive") private var contentWidthAdaptive = true
   @AppStorage("ark.native.chat.compact-process") private var compactProcess = true
   @State private var expandedProcessGenerations = Set<String>()
-  @State private var renderWindow = ArkChatRenderWindow()
+  @Binding private var renderWindow: ArkChatRenderWindow
   @State private var requestedHistoryAnchorID: String?
   static let largeTranscriptEntryThreshold = 600
   static let activeStreamingRenderWindowEntries = 24
@@ -3911,13 +3913,15 @@ private struct NativeChatView: View {
     transcriptFeed: NativeChatTranscriptFeed,
     projectionMemo: NativeProjectionMemo<NativeChatProjectionKey, NativeChatBodyProjection>,
     rowCache: NativeProjectedRowCache,
-    scrollController: ArkChatScrollController
+    scrollController: ArkChatScrollController,
+    renderWindow: Binding<ArkChatRenderWindow>
   ) {
     self.model = model
     _transcriptFeed = ObservedObject(wrappedValue: transcriptFeed)
     _projectionMemo = ObservedObject(wrappedValue: projectionMemo)
     _rowCache = ObservedObject(wrappedValue: rowCache)
     _scrollController = ObservedObject(wrappedValue: scrollController)
+    _renderWindow = renderWindow
   }
 
   private var entries: [NativeChatEntry] { transcriptFeed.snapshot.entries }
@@ -4449,10 +4453,6 @@ private struct NativeChatView: View {
           }
           .onChange(of: context.sessionID) { sessionID in
             expandedProcessGenerations.removeAll()
-            // The render window is view state, not session state; a session
-            // that inherits an expanded window would render far more rows
-            // than the fresh one needs.
-            renderWindow.returnToLatest()
             requestedHistoryAnchorID = nil
             guard let sessionID else { return }
             scrollController.beginSessionTransition(to: sessionID)

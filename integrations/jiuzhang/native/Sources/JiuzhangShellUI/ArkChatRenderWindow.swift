@@ -1,4 +1,20 @@
 import Foundation
+import SwiftUI
+
+/// The row range and AppKit offset must outlive the same conditional Chat tab.
+/// Separate bindings keep a fresh session from inheriting another session's window.
+@MainActor
+final class ArkChatRenderWindows: ObservableObject {
+  @Published private var windows: [String: ArkChatRenderWindow] = [:]
+
+  func binding(for sessionID: String?) -> Binding<ArkChatRenderWindow> {
+    guard let sessionID else { return .constant(ArkChatRenderWindow()) }
+    return Binding(
+      get: { self.windows[sessionID] ?? ArkChatRenderWindow() },
+      set: { self.windows[sessionID] = $0 }
+    )
+  }
+}
 
 /// A movable, bounded row range. A reading anchor stays fixed while live rows
 /// append; only an explicit return to latest resumes following the tail.

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write integrations/jiuzhang/native/README.md
-README.md: 56aeddc062cb2614053815fcbab348c082017be3
-README.zh.md: 12034ead15d8f160625476dcf6c163368a98eab0
+README.md: c8d69a5c72b9b234a32fae1ba312bcb70e2405aa
+README.zh.md: 4851f3fde67775b4aa134479b5f9516027dbc834

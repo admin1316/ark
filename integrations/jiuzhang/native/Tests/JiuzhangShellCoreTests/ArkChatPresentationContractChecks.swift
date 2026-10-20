@@ -951,8 +951,7 @@ func runArkChatPresentationContractChecks() {
       "native chat coalesces projections in one paced refresh and linearly merges ordered entries"
     )
     check(
-      chatView?.contains("@State private var renderWindow = ArkChatRenderWindow()") == true
-        && chatView?.contains("renderWindow.range(in: displayIDs, limit: effectiveWindow)") == true
+      chatView?.contains("renderWindow.range(in: displayIDs, limit: effectiveWindow)") == true
         && chatView?.contains("renderWindow.earlier(in: displayIDs, limit: effectiveWindow)") == true
         && chatView?.contains("renderWindow.later(in: displayIDs, limit: effectiveWindow)") == true
         && chatView?.contains(".onChange(of: context.sessionRunning)") == true

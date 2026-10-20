@@ -513,6 +513,10 @@ public final class ArkChatScrollCoordinator {
   public func completeSessionTransition() {
     guard !invalidated, let sessionID = pendingSessionID else { return }
     pendingSessionID = nil
+    // Reattachment can precede the eager Markdown document's pending layout.
+    // Measuring its temporary frame would overwrite a retained reader offset.
+    scrollView?.layoutSubtreeIfNeeded()
+    scrollView?.documentView?.layoutSubtreeIfNeeded()
     let metrics =
       currentMetrics()
       ?? ArkChatScrollMetrics(
