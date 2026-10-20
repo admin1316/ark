@@ -1,3 +1,4 @@
+import { projectRequest } from './project-request-fixture.ts'
 import {
   mkdirSync,
   mkdtempSync,
@@ -24,8 +25,8 @@ interface QueueSurface {
   persistQueue(root?: string): void
   currentHash(input: string, root?: string): string | undefined
   listRawSources(root?: string): string[]
-  ingestQueueAdd(request: { inputs: string[] }): Promise<object>
-  ingestQueueCancel(): Promise<object>
+  ingestQueueAdd: KnowledgeWikiService['ingestQueueAdd']
+  ingestQueueCancel: KnowledgeWikiService['ingestQueueCancel']
   cancelPendingForRoot(root: string): boolean
   executeQueuedIngest(task: IngestQueueTask, context: ProjectExecutionContext, signal: AbortSignal): Promise<object>
   ingestUrlWithContext(request: { url: string }, context: ProjectExecutionContext, signal: AbortSignal): Promise<object>
@@ -49,8 +50,7 @@ beforeEach(() => {
   writeFileSync(join(root, 'raw', 'sources', 'nested', 'b.md'), 'B', 'utf8')
   ctx = new Context()
   service = new KnowledgeWikiService(ctx, wikiTestConfig({
-    wikiRoot: join(root, 'wiki'), mainRoot: root,
-    credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
+    wikiRoot: join(root, 'wiki'), mainRoot: root, llmProvider: 'p', llmModel: 'm',
   })) as unknown as QueueSurface
 })
 
@@ -95,8 +95,7 @@ describe('service initialization', () => {
       value: { interval: () => { throw 'timer primitive failure' } },
     })
     const failing = new KnowledgeWikiService(failingContext, wikiTestConfig({
-      wikiRoot: join(root, 'other-wiki'), mainRoot: root,
-      credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
+      wikiRoot: join(root, 'other-wiki'), mainRoot: root, llmProvider: 'p', llmModel: 'm',
     })) as unknown as QueueSurface
     await expect(failing[Service.init]()).rejects.toThrow('knowledge-wiki synchronous operation failed')
     failing.snapshots.dispose()
@@ -114,8 +113,7 @@ describe('queue restore and dispatch edges', () => {
 
     const recoveryContext = new Context()
     const recovery = new KnowledgeWikiService(recoveryContext, wikiTestConfig({
-      wikiRoot: join(root, 'wiki'), mainRoot: root,
-      credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
+      wikiRoot: join(root, 'wiki'), mainRoot: root, llmProvider: 'p', llmModel: 'm',
     })) as unknown as QueueSurface
     try {
       writeFileSync(queueFile, JSON.stringify([
@@ -226,13 +224,13 @@ describe('queue restore and dispatch edges', () => {
 
   it('adds queue work through the public wrapper and fails loudly on persistence errors', async () => {
     vi.spyOn(service, 'drainQueue').mockResolvedValue()
-    const snapshot = await service.ingestQueueAdd({ inputs: ['a.md', 'nested/b.md'] }) as { tasks: unknown[] }
+    const snapshot = await service.ingestQueueAdd({ ...projectRequest(service), inputs: ['a.md', 'nested/b.md'] }) as { tasks: unknown[] }
     expect(snapshot.tasks).toHaveLength(2)
 
     const blockedRoot = join(root, 'blocked-root')
     writeFileSync(blockedRoot, 'file', 'utf8')
     expect(() => { service.persistQueue(blockedRoot) }).toThrow()
-    expect(await service.ingestQueueCancel()).toMatchObject({ running: false })
+    expect(await service.ingestQueueCancel(projectRequest(service))).toMatchObject({ running: false })
   })
 
   it('skips completed rows during an otherwise empty drain', async () => {

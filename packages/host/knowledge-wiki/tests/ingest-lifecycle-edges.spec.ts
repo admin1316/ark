@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -21,9 +22,23 @@ import { sourceSummaryFileNameFromIdentity } from '../src/source-slug.ts'
 import { stageExecutorFor } from './stage-executor-fixture.ts'
 import type { KnowledgeWikiStageExecutor, KnowledgeWikiStageRequest } from '../src/stage-executor.ts'
 
+const reads = vi.hoisted(() => ({ afterRead: undefined as ((path: string) => void) | undefined }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      const result = await actual.readFile(...args)
+      if (typeof args[0] === 'string') reads.afterRead?.(args[0])
+      return result
+    },
+  }
+})
+
 const roots: string[] = []
 
 afterEach(() => {
+  reads.afterRead = undefined
   vi.useRealTimers()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -57,6 +72,42 @@ function writeSource(projectRoot: string, content = 'Reusable source about code,
 }
 
 describe('ingest prompt and stream boundaries', () => {
+  it('does not write generated or fallback candidates through an ancestor symlink', async () => {
+    const projectRoot = root()
+    const outside = root()
+    const sourceRel = writeSource(projectRoot)
+    mkdirSync(join(projectRoot, 'wiki'))
+    mkdirSync(join(outside, 'ingest', 'concepts'), { recursive: true })
+    mkdirSync(join(outside, 'ingest', 'sources'), { recursive: true })
+    symlinkSync(outside, join(projectRoot, 'wiki', '_candidates'), 'dir')
+    const result = await ingestSource(stageExecutorFor(llmFor(
+      '--- FILE: wiki/concepts/escaped.md ---\nCandidate body\n--- END FILE ---',
+    )), 'p', 'm', projectRoot, sourceRel, new AbortController().signal)
+    expect(existsSync(join(outside, 'ingest', 'concepts', 'escaped.md'))).toBe(false)
+    expect(result.written).toEqual(['wiki/_governance/ingest-candidate-log.md'])
+    expect(result.warnings.join('\n')).toMatch(/symbolic link|unsafe directory/u)
+  })
+
+  it.each(['generated log', 'fallback log'])('does not append %s when cancellation arrives during its read', async (kind) => {
+    const projectRoot = root()
+    const sourceRel = writeSource(projectRoot)
+    const log = join(projectRoot, 'wiki', '_governance', 'ingest-candidate-log.md')
+    mkdirSync(dirname(log), { recursive: true })
+    writeFileSync(log, '# Existing log\n')
+    const controller = new AbortController()
+    reads.afterRead = (path) => { if (path === log) controller.abort(new Error('cancelled while reading log')) }
+    const generated = kind === 'generated log'
+      ? '--- FILE: wiki/log.md ---\n## New entry\n--- END FILE ---'
+      : 'no FILE blocks'
+    const result = await ingestSource(stageExecutorFor(llmFor(generated)), 'p', 'm', projectRoot, sourceRel, controller.signal)
+    expect(controller.signal.aborted).toBe(true)
+    expect(readFileSync(log, 'utf8')).toBe('# Existing log\n')
+    expect(result.written).toEqual([])
+    expect(existsSync(join(projectRoot, 'wiki', '_candidates'))).toBe(false)
+    expect(existsSync(join(projectRoot, '.llm-wiki', 'review.json'))).toBe(false)
+    expect(result.warnings.join('\n')).toContain('cancelled while reading log')
+  })
+
   it('selects creative, engineering, and mixed language rules and truncates context', () => {
     expect(buildAnalysisPrompt('', '', '小说角色与世界观')).toContain('Chinese（简体中文）')
     expect(buildAnalysisPrompt('', '', '代码函数测试接口')).toContain('MANDATORY OUTPUT LANGUAGE: English')

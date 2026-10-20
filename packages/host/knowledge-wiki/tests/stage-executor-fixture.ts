@@ -8,6 +8,10 @@ import type { KnowledgeWikiStageExecutor } from '../src/stage-executor.ts'
 export function stageExecutorFor(llm: LlmRuntime, web?: WebRuntime): KnowledgeWikiStageExecutor {
   return {
     isolation: 'owned-worker-v1',
+    assertSearchAvailable() {
+      if (web === undefined) throw new Error('web service unavailable')
+      web.assertSearchAvailable?.()
+    },
     async execute(request, signal) {
       signal.throwIfAborted()
       if (request.kind === 'file-extract') {

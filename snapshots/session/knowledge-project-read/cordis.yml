@@ -1,0 +1,9 @@
+# Knowledge calls bind to the initiating session workspace.
+- insert:
+    - id: knowledge-wiki
+      name: '@deepseek-ai/dsh-knowledge-wiki'
+      config:
+        wikiRoot: !!js process.cwd() + '/wiki'
+        mainRoot: !!js process.cwd()
+    - id: tool-knowledge-wiki
+      name: '@deepseek-ai/dsh-tool-knowledge-wiki'

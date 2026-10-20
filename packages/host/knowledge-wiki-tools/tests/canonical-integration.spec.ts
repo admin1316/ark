@@ -1,9 +1,11 @@
+import { projectRequest } from '../../knowledge-wiki/tests/project-request-fixture.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId, type LlmRuntime } from '@deepseek-ai/dsh-llm'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import KnowledgeWikiService from '../../knowledge-wiki/src/index.ts'
@@ -25,7 +27,9 @@ afterEach(() => {
 })
 
 function execute(ctx: Context, name: string, args: unknown): Promise<ToolExecutionResult> {
+  const root = roots.at(-1)
   return ctx.tools.execute({
+    agent: { session: { header: { cwd: root } } } as never,
     signal: new AbortController().signal,
     callId: CallId(`wiki-integration-${name}`),
     name,
@@ -71,6 +75,12 @@ describe('canonical Knowledge Wiki and model tools', () => {
     ctx.provide('credentials', { resolve: async () => undefined })
     ctx.provide('timer', { interval: () => () => {} })
     ctx.provide('knowledgeWikiVerifierAuthority', verifierAuthority())
+    class MemorySettings extends SettingsProvider {
+      readonly writable = true
+      protected load() { return Promise.resolve({}) }
+      protected persist(_ns: SettingsNamespace, _section: Record<string, unknown>) { return Promise.resolve() }
+    }
+    await ctx.plugin(MemorySettings)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     class CanonicalWiki extends KnowledgeWikiService {
@@ -78,7 +88,6 @@ describe('canonical Knowledge Wiki and model tools', () => {
         super(owner, wikiTestConfig({
           wikiRoot,
           mainRoot: root,
-          credential: 'VISION_API_KEY',
           llmProvider: 'p',
           llmModel: 'm',
         }))
@@ -87,7 +96,6 @@ describe('canonical Knowledge Wiki and model tools', () => {
     await ctx.plugin(CanonicalWiki, wikiTestConfig({
       wikiRoot,
       mainRoot: root,
-      credential: 'VISION_API_KEY',
       llmProvider: 'p',
       llmModel: 'm',
     }))
@@ -98,13 +106,13 @@ describe('canonical Knowledge Wiki and model tools', () => {
       const queued = await execute(ctx, 'wiki_ingest', { input: 'raw/sources/source.md' })
       expect(queued.isError, JSON.stringify(queued)).not.toBe(true)
       await service.drainQueue()
-      const review = (await service.reviews({ status: 'unresolved' }))
+      const review = (await service.reviews({ ...projectRequest(service), status: 'unresolved' }))
         .find(item => item.reviewKind === 'candidate' && item.targetPath === 'concepts/queue-owner.md')
       expect(review).toBeDefined()
 
       const verified = await execute(ctx, 'wiki_verify_candidate', { reviewId: review!.id, action: 'Promote' })
       expect(verified.value).toMatchObject({ ok: true, result: 'pass' })
-      await expect(service.resolveReview({ reviewId: review!.id, action: 'Promote' })).resolves.toBe(true)
+      await expect(service.resolveReview({ ...projectRequest(service), reviewId: review!.id, action: 'Promote' })).resolves.toBe(true)
 
       const listed = await execute(ctx, 'wiki_files', {})
       expect((listed.value as { files: string[] }).files).toContain('concepts/queue-owner.md')

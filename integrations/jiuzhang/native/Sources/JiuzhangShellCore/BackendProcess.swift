@@ -7,6 +7,42 @@ public enum BackendProcessError: Error {
   case alreadyRunning
 }
 
+/// Owns one launch's readiness wait on the same queue as AppKit lifecycle events.
+/// Cancellation and generation checks keep queued timers from stopping a replacement.
+@MainActor
+public final class BackendReadinessDeadline {
+  private var launchID: UUID?
+  private var workItem: DispatchWorkItem?
+
+  public init() {}
+
+  public func arm(launchID: UUID, timeout: TimeInterval, onTimeout: @escaping () -> Void) {
+    precondition(timeout.isFinite && timeout > 0)
+    cancel()
+    self.launchID = launchID
+    let item = DispatchWorkItem { [weak self] in
+      guard let self, self.launchID == launchID else { return }
+      self.cancel()
+      onTimeout()
+    }
+    workItem = item
+    DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: item)
+  }
+
+  /// Accept readiness once, only while the exact launch is still waiting.
+  public func acceptReadiness(launchID: UUID) -> Bool {
+    guard self.launchID == launchID else { return false }
+    cancel()
+    return true
+  }
+
+  public func cancel() {
+    launchID = nil
+    workItem?.cancel()
+    workItem = nil
+  }
+}
+
 /// Rolling breaker for backend launches that reach readiness and then crash.
 /// A readiness line starts the stability clock; it does not forgive earlier
 /// failures until that exact process has remained ready for the whole window.
@@ -57,6 +93,7 @@ public final class BackendProcess {
   private var process: Process?
   private var output: Pipe?
   private var bufferedOutput = Data()
+  private var launchID: UUID?
   private var stopCompletions: [() -> Void] = []
   private var forceKillWorkItem: DispatchWorkItem?
   private var forceKillDeadline: Date?
@@ -99,8 +136,13 @@ public final class BackendProcess {
     }
     let process = Process()
     let output = Pipe()
+    let launchID = UUID()
+    let onLine = self.onLine
+    let onExit = self.onExit
     self.process = process
     self.output = output
+    self.launchID = launchID
+    bufferedOutput.removeAll(keepingCapacity: false)
     lock.unlock()
 
     process.executableURL = URL(fileURLWithPath: executable)
@@ -114,13 +156,13 @@ public final class BackendProcess {
       guard let self else { return }
       let data = handle.availableData
       guard !data.isEmpty else { return }
-      self.consume(data)
+      self.consume(data, launchID: launchID, onLine: onLine)
     }
     process.terminationHandler = { [weak self, weak output] terminated in
       DispatchQueue.main.async {
         guard let self, let output else { return }
         output.fileHandleForReading.readabilityHandler = nil
-        self.flushBufferedOutput()
+        self.flushBufferedOutput(launchID: launchID, onLine: onLine)
         // Clear the ownership slot before notifying observers. The observer
         // is allowed to start a replacement after it receives the exit signal;
         // clearing it afterwards races that recovery path into
@@ -130,6 +172,7 @@ public final class BackendProcess {
         if self.process === terminated {
           self.process = nil
           self.output = nil
+          self.launchID = nil
           self.forceKillWorkItem?.cancel()
           self.forceKillWorkItem = nil
           self.forceKillDeadline = nil
@@ -138,7 +181,7 @@ public final class BackendProcess {
         stopCompletions = self.stopCompletions
         self.stopCompletions.removeAll()
         self.lock.unlock()
-        self.onExit?(terminated.terminationStatus)
+        onExit?(terminated.terminationStatus)
         stopCompletions.forEach { $0() }
       }
     }
@@ -150,6 +193,7 @@ public final class BackendProcess {
       if self.process === process {
         self.process = nil
         self.output = nil
+        self.launchID = nil
       }
       lock.unlock()
       output.fileHandleForReading.readabilityHandler = nil
@@ -200,8 +244,9 @@ public final class BackendProcess {
     if shouldTerminate { process.terminate() }
   }
 
-  private func consume(_ data: Data) {
+  private func consume(_ data: Data, launchID: UUID, onLine: ((String) -> Void)?) {
     lock.lock()
+    guard self.launchID == launchID else { lock.unlock(); return }
     bufferedOutput.append(data)
     var lines: [String] = []
     while let newline = bufferedOutput.firstIndex(of: 0x0A) {
@@ -214,14 +259,15 @@ public final class BackendProcess {
     lock.unlock()
 
     for line in lines {
-      DispatchQueue.main.async { [weak self] in
-        self?.onLine?(line)
+      DispatchQueue.main.async {
+        onLine?(line)
       }
     }
   }
 
-  private func flushBufferedOutput() {
+  private func flushBufferedOutput(launchID: UUID, onLine: ((String) -> Void)?) {
     lock.lock()
+    guard self.launchID == launchID else { lock.unlock(); return }
     let data = bufferedOutput
     bufferedOutput.removeAll(keepingCapacity: false)
     lock.unlock()

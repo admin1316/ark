@@ -10,15 +10,18 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
 import s from '@deepseek-ai/schemastery'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
-import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { buildGraph, extractWikiLinkTargets, listPages, readPage } from './graph.ts'
-import { hybridSearch } from './search.ts'
+import { hybridSearch, type EmbeddingConnection } from './search.ts'
 import { WikiSnapshotStore } from './snapshot-store.ts'
 import { createProjectExecutionContext, type ProjectExecutionContext } from './project-context.ts'
 import { ingestSource as runIngest } from './ingest.ts'
-import { createOwnedStageExecutor, type StageConnectionFacts } from './owned-stage-executor.ts'
+import { createOwnedStageExecutor } from './owned-stage-executor.ts'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { knowledgeConnectionFields, knowledgeConnectionSchema, validateKnowledgeConnections, type KnowledgeConnections } from './connections.ts'
+import type { WikiProjectRequest, WikiProjectRegistry, KnowledgeResearchResult, KnowledgeProjectContextId } from './types.ts'
 import {
-  pageExists, sedimentTarget, extractConversationText, buildSessionSummaryPage,
+  sedimentTarget, extractConversationText, buildSessionSummaryPage,
 } from './auto-sediment.ts'
 import { deepResearch as runResearch } from './research.ts'
 import {
@@ -36,6 +39,7 @@ import { htmlToMarkdown } from './html-clip.ts'
 import { isImagePath } from './vision.ts'
 import {
   atomicWriteFile,
+  atomicWriteConfinedFile,
   isMissingPathError,
   readOptionalJson,
   readRegularFileBounded,
@@ -119,17 +123,25 @@ export interface Config {
   readonly wikiRoot: string
   /** Main workspace root (fixed, non-removable); defaults to the wiki root's parent. */
   readonly mainRoot: string
-  /** Credential reference for DashScope semantic embeddings and image descriptions. */
-  readonly credential: string
-  /** LLM provider id for ingest/research (default deepseek-official). */
+  /** Text provider registered with the LLM service. */
   readonly llmProvider: string
-  /** LLM model id for ingest/research. */
+  /** Text model resolved by that provider. */
   readonly llmModel: string
-  /** Chat-completions base URL the owned stage isolate calls (default https://api.deepseek.com). */
-  readonly llmBaseUrl: string
-  /** Credential reference holding the model key; empty falls back to the deployment's declared apiKeyEnv. */
-  readonly llmCredential: string
-  /** Publish the fork's owned-worker stage executor when nothing else provides one. */
+  /** Optional independent vision provider registered with the LLM service. */
+  readonly visionProvider: string
+  /** Image model resolved by the independent vision provider. */
+  readonly visionModel: string
+  /** Independent embedding provider; all connection fields empty disables it. */
+  readonly embeddingProvider: string
+  /** OpenAI-compatible embedding API base URL owned by the embedding provider. */
+  readonly embeddingBaseUrl: string
+  /** Embedding model resolved by the independent embedding provider. */
+  readonly embeddingModel: string
+  /** Credential reference resolved only for the declared embedding endpoint. */
+  readonly embeddingCredential: string
+  /** Maximum duration of an embedding request. */
+  readonly embeddingTimeoutMs: number
+  /** Enable the owned file worker and existing LLM/web provider dispatch. */
   readonly ownedStageExecutor: boolean
 }
 
@@ -139,30 +151,33 @@ export interface Config {
  */
 export default class KnowledgeWikiService extends TypertRemoteService {
   /** Required services. */
-  static inject = ['llm', 'timer', 'credentials']
+  static inject = ['llm', 'timer', 'credentials', 'settings']
 
   /** Loader validation for the deployment configuration. */
   static Config: s<Config> = s.object({
     wikiRoot: s.string().required(),
     mainRoot: s.string().default(''),
-    credential: s.string().default('VISION_API_KEY'),
-    llmBaseUrl: s.string().default('https://api.deepseek.com'),
-    llmCredential: s.string().default(''),
+    visionProvider: knowledgeConnectionFields.visionProvider,
+    visionModel: knowledgeConnectionFields.visionModel,
+    embeddingProvider: knowledgeConnectionFields.embeddingProvider,
+    embeddingBaseUrl: knowledgeConnectionFields.embeddingBaseUrl,
+    embeddingModel: knowledgeConnectionFields.embeddingModel,
+    embeddingCredential: knowledgeConnectionFields.embeddingCredential,
+    embeddingTimeoutMs: s.number().min(1).max(2_147_483_647).default(30_000),
     // Absence of an executor keeps non-cooperative ingest disabled, so the
     // deployment that wants ingest turns this on explicitly.
     ownedStageExecutor: s.boolean().default(false),
-    llmProvider: s.string().default('deepseek-official'),
-    llmModel: s.string().default('deepseek-reasoner'), // = deepseek-v4-flash + 推理模式（别名解析，实测检查能力≈v4-pro）
+    llmProvider: knowledgeConnectionFields.textProvider,
+    llmModel: knowledgeConnectionFields.textModel,
   })
 
+  private readonly embeddingTimeoutMs: number
   private readonly wikiRoot: string
   private readonly mainRoot: string
   private currentRoot: string
-  private readonly credential: CredentialRef
-  private readonly llmProvider: string
-  private readonly llmModel: string
-  private readonly llmBaseUrl: string
-  private readonly llmCredential: string
+  private connections: () => KnowledgeConnections
+  private readonly projectLifetimes = new Map<string, AbortController>()
+  private readonly projectTokens = new Map<string, KnowledgeProjectContextId>()
   private readonly ownedStageExecutor: KnowledgeWikiStageExecutor | undefined
   private readonly queue: IngestQueueTask[] = []
   private readonly restoredQueueRoots = new Set<string>()
@@ -171,6 +186,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   private queueDrain: Promise<void> | undefined
   private activeIngest: { readonly taskId: number; readonly controller: AbortController } | undefined
   private readonly backgroundStages = new Set<AbortController>()
+  private readonly lifetime = new AbortController()
+  private readonly stageOperations = new Set<Promise<unknown>>()
   private queueNextId = 1
   private projectGeneration = 0
 
@@ -184,46 +201,58 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const parent = dirname(this.wikiRoot)
     this.mainRoot = config.mainRoot.replace(/\/+$/u, '') || parent
     this.currentRoot = this.mainRoot
-    this.credential = credentialRef(config.credential)
-    this.llmProvider = config.llmProvider
-    this.llmModel = config.llmModel
-    // The loader schema (KnowledgeWikiService.Config) fills every optional
-    // deployment field, so a resolved Config is already complete: tests build one
-    // through the wikiTestConfig test fixture instead of hand-writing a partial object.
-    this.llmBaseUrl = config.llmBaseUrl.replace(/\/+$/u, '')
-    this.llmCredential = config.llmCredential
+    this.embeddingTimeoutMs = config.embeddingTimeoutMs
+    const entry: KnowledgeConnections = {
+      textProvider: config.llmProvider, textModel: config.llmModel,
+      visionProvider: config.visionProvider, visionModel: config.visionModel,
+      embeddingProvider: config.embeddingProvider, embeddingBaseUrl: config.embeddingBaseUrl,
+      embeddingModel: config.embeddingModel, embeddingCredential: config.embeddingCredential,
+    }
+    validateKnowledgeConnections(entry)
+    this.connections = () => entry
+    const settings = ctx.get('settings')
+    if (settings !== undefined) {
+      const scope = settings.register(settingsNamespace('knowledge-wiki'), knowledgeConnectionSchema, {
+        base: entry, validate: validateKnowledgeConnections,
+      })
+      this.connections = () => scope.get()
+    }
     this.ownedStageExecutor = config.ownedStageExecutor
-      ? createOwnedStageExecutor({ resolveConnection: () => this.resolveStageConnection() })
+      ? createOwnedStageExecutor({ llm: ctx.llm, web: () => ctx.get('web'), attachments: () => ctx.get('attachments') })
       : undefined
   }
 
-  /** Resolve on every operation so Keychain updates apply without a restart. */
-  private async resolveApiKey(): Promise<string> {
-    return (await this.ctx.credentials.resolve(this.credential))?.value ?? ''
+  private projectToken(root: string): KnowledgeProjectContextId {
+    let token = this.projectTokens.get(root)
+    if (token === undefined) {
+      token = randomUUID() as KnowledgeProjectContextId
+      this.projectTokens.set(root, token)
+      this.projectLifetimes.set(token, new AbortController())
+    }
+    return token
   }
 
-  /**
-   * Resolve the model connection facts one ingest stage needs. Credentials are
-   * re-resolved per stage so a changed key applies without a restart, and the
-   * deployment's declared `apiKeyEnv` wins over the environment default.
-   * @returns base URL and bearer credential handed to the owned isolate.
-   */
-  private async resolveStageConnection(): Promise<StageConnectionFacts> {
-    const candidates: string[] = []
-    if (this.llmCredential !== '') candidates.push(this.llmCredential)
-    try {
-      const settings = this.ctx.get('settings') as { remoteDescribe?: () => { namespaces?: Array<{ ns?: string; value?: unknown }> } } | undefined
-      const declared = settings?.remoteDescribe?.().namespaces?.find(entry => entry.ns === 'llm-deepseek')?.value as { apiKeyEnv?: unknown } | undefined
-      if (typeof declared?.apiKeyEnv === 'string' && declared.apiKeyEnv !== '') candidates.push(declared.apiKeyEnv)
-    } catch {
-      // A settings surface that cannot describe itself must not fail ingest.
-    }
-    candidates.push('DEEPSEEK_API_KEY')
-    for (const candidate of candidates) {
-      const resolved = (await this.ctx.credentials.resolve(credentialRef(candidate)))?.value ?? ''
-      if (resolved !== '') return { baseUrl: this.llmBaseUrl, apiKey: resolved }
-    }
-    return { baseUrl: this.llmBaseUrl, apiKey: process.env[candidates.at(-1) as string] ?? '' }
+  /** Resolve registered project identity once; never fall back to the selected UI project. */
+  private resolveProjectContext(token: string): ProjectExecutionContext {
+    const registered = new Set([this.mainRoot, ...this.readWorkspaces().map(row => row.path)])
+    const root = [...this.projectTokens].find(([root, id]) => id === token && registered.has(root))?.[0]
+    if (root === undefined) throw new Error('knowledge project context is missing, invalid, or revoked')
+    return createProjectExecutionContext(root, this.mainRoot, this.wikiRoot, this.projectGeneration)
+  }
+
+  /** Resolve the current operation's embedding credential only for its declared endpoint. */
+  private async embeddingConnection(
+    config = this.connections(),
+    signal = this.lifetime.signal,
+  ): Promise<EmbeddingConnection | undefined> {
+    if (config.embeddingProvider === '') return undefined
+    const apiKey = (await this.ctx.credentials.resolve(credentialRef(config.embeddingCredential)))?.value
+    if (!apiKey) return undefined
+    return Object.freeze({
+      provider: config.embeddingProvider, baseUrl: config.embeddingBaseUrl,
+      model: config.embeddingModel, apiKey,
+      signal: AbortSignal.any([signal, this.lifetime.signal, AbortSignal.timeout(this.embeddingTimeoutMs)]),
+    })
   }
 
   /** Optional trusted verifier/build owner; project files can never supply it. */
@@ -239,12 +268,33 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     return value as KnowledgeWikiVerifierAuthority
   }
 
-  /** Parent-owned hard-deadline stage executor; absence disables non-cooperative ingest. */
+  /** Parent-owned cancellable stage executor; absence disables ingest. */
   private get stageExecutor(): KnowledgeWikiStageExecutor | undefined {
     const value: unknown = this.ctx.get('knowledgeWikiStageExecutor')
-    // An externally provided executor stays authoritative; the owned-worker
-    // executor below is the fallback that makes non-cooperative ingest possible.
-    return isKnowledgeWikiStageExecutor(value) ? value : this.ownedStageExecutor
+    // Composition may supply another owner with the same cancellation contract.
+    const executor = isKnowledgeWikiStageExecutor(value) ? value : this.ownedStageExecutor
+    if (executor === undefined) return undefined
+    return this.trackStageExecutor(executor)
+  }
+
+  private trackStageExecutor(executor: KnowledgeWikiStageExecutor): KnowledgeWikiStageExecutor {
+    return {
+      isolation: executor.isolation,
+      ...executor.assertSearchAvailable === undefined ? {} : { assertSearchAvailable: () => executor.assertSearchAvailable?.() },
+      ...executor.prepareOperation === undefined ? {} : {
+        prepareOperation: async (route: { provider: string; model: string; modelCalls: number }, signal: AbortSignal) =>
+          this.trackStageExecutor(await (executor.prepareOperation as NonNullable<KnowledgeWikiStageExecutor['prepareOperation']>)(
+            route, signal,
+          )),
+      },
+      execute: (request, signal) => {
+        const operation = executor.execute(request, AbortSignal.any([signal, this.lifetime.signal]))
+        this.stageOperations.add(operation)
+        // The caller owns errors; this bookkeeping branch only releases the tracked promise.
+        void operation.then(() => { this.stageOperations.delete(operation) }, () => { this.stageOperations.delete(operation) })
+        return operation
+      },
+    }
   }
 
   /** Knowledge-base directory of the active workspace: the main wikiRoot, or `<root>/wiki` for a registered workspace. */
@@ -276,12 +326,15 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         this.activeWikiRoot,
         join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
       )
-      this.ctx.effect(() => () => { this.snapshots.dispose() }, 'knowledge-wiki: snapshot store')
-      this.ctx.effect(() => () => { this.activeIngest?.controller.abort(new Error('knowledge-wiki disposed')) }, 'knowledge-wiki: ingest owner')
-      this.ctx.effect(() => () => {
+      this.ctx.effect(() => async () => {
+        this.lifetime.abort(new Error('knowledge-wiki disposed'))
+        this.activeIngest?.controller.abort(new Error('knowledge-wiki disposed'))
         for (const controller of this.backgroundStages) controller.abort(new Error('knowledge-wiki disposed'))
-      }, 'knowledge-wiki: background stages')
+        await Promise.allSettled([...this.stageOperations, ...this.queueDrain === undefined ? [] : [this.queueDrain]])
+        this.snapshots.dispose()
+      }, 'knowledge-wiki: operation owner')
       const dispose = this.ctx.timer.interval(() => {
+        if (this.lifetime.signal.aborted) return
         void this.scanSources()
         // Drain independently of scan: restored pending tasks survive a
         // restart only when the timer drains them without a cache change.
@@ -302,22 +355,31 @@ export default class KnowledgeWikiService extends TypertRemoteService {
 
   /**
    * 会话级 AI 提炼：agent 销毁时把整段对话交给 LLM 浓缩为一页知识，
-   * 写入会话所属工作区的 `_candidates/sessions/`（每会话一页）。
+   * 仅写入已注册会话工作区的 `_candidates/`；注销工作区会取消提炼。
    * 候选页不进入主图谱，等待治理提案与人工审批后再晋升。
    *
-   * 与实时沉淀同一套工作区策略（非主工作区才写）；幂等靠 slug 含会话
-   * id + 页面存在检查。LLM 失败静默（不阻塞 agent 销毁）。
+   * 非主工作区才写；稳定主题页合并会话来源。失败只记日志，不阻塞 agent 销毁。
    */
   private async summarizeSession(sessionId: string | undefined): Promise<void> {
     const controller = new AbortController()
     this.backgroundStages.add(controller)
     try {
       if (!sessionId) return
+      this.lifetime.signal.throwIfAborted()
       const sessionQuery: unknown = this.ctx.get('sessionQuery')
       if (!isSessionQueryReader(sessionQuery)) return
       const surface = await sessionQuery.readSession(sessionId)
       const target = sedimentTarget(surface.session.cwd, this.mainRoot)
       if (!target) return
+      const registered = this.readWorkspaces().find(row => resolve(row.path) === dirname(target.wikiRoot))
+      if (registered === undefined) return
+      const token = this.projectToken(registered.path)
+      const context = this.resolveProjectContext(token)
+      const signal = AbortSignal.any([
+        controller.signal, this.lifetime.signal,
+        (this.projectLifetimes.get(token) as AbortController).signal,
+      ])
+      signal.throwIfAborted()
       const events = surface.events
       if (!Array.isArray(events) || events.length === 0) return
       const conversation = extractConversationText(events)
@@ -325,12 +387,13 @@ export default class KnowledgeWikiService extends TypertRemoteService {
 
       const completed = await executeKnowledgeWikiStage(this.stageExecutor, {
         kind: 'llm-complete',
-        provider: this.llmProvider,
-        model: this.llmModel,
+        provider: this.connections().textProvider,
+        model: this.connections().textModel,
         prompt: buildSummaryPrompt(conversation),
         operation: 'session summary',
         timeoutMs: 120_000,
-      }, controller.signal)
+      }, signal)
+      signal.throwIfAborted()
       const out = completed.text ?? ''
       const parsed = parseSummaryJson(out)
       if (!parsed || parsed.action === 'skip' || !parsed.title) return
@@ -342,7 +405,6 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         isIncident ? 'incidents' : isReflection ? 'reflections' : 'topics',
         `${slug}.md`,
       )
-      const alreadyExists = pageExists(target.wikiRoot, rel)
       const today = new Date().toISOString().slice(0, 10)
       const content = buildSessionSummaryPage({
         title: parsed.title,
@@ -363,8 +425,9 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           : {}),
       })
       try {
-        const full = join(target.wikiRoot, rel)
-        mkdirSync(dirname(full), { recursive: true })
+        const pageRel = `wiki/${rel.split(sep).join('/')}`
+        const full = resolveConfinedPath(context.projectRoot, pageRel, true)
+        const alreadyExists = existsSync(full)
         const next = alreadyExists
           ? isIncident
             ? mergeIncidentCandidate(
@@ -382,13 +445,14 @@ export default class KnowledgeWikiService extends TypertRemoteService {
               isReflection ? '反思证据增量' : '知识证据增量',
             )
           : content
-        if (next !== readFileIfExists(full)) atomicWriteFile(full, next)
-        const projectRoot = dirname(target.wikiRoot)
+        signal.throwIfAborted()
+        if (next !== readFileIfExists(full)) atomicWriteConfinedFile(context.projectRoot, pageRel, next)
+        signal.throwIfAborted()
         appendCandidateReviews(
-          join(projectRoot, '.llm-wiki', 'review.json'),
-          projectRoot,
+          this.reviewFile(context.projectRoot),
+          context.projectRoot,
           `session:${sessionId}`,
-          [`wiki/${rel}`],
+          [pageRel],
         )
         this.ctx.logger.info(`[knowledge-wiki] session-summary: ${rel}`)
       } catch (error) {
@@ -639,38 +703,66 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns the graph computed from the wiki page tree.
    */
 
-  private computeGraph(): Promise<WikiGraphResult> {
-    const wikiRoot = this.activeWikiRoot
+  private computeGraph(wikiRoot: string): Promise<WikiGraphResult> {
     return this.snapshots.get(wikiRoot, 'graph', () => promiseFromSync(() => buildGraph(wikiRoot)))
   }
 
   /**
    * Provides the graph operation.
+   * @param request - Host-issued registered project identity.
    * @returns The computed graph value.
    */
   @Remote('graph')
-  graph(): Promise<WikiGraphResult> {
-    return this.computeGraph()
+  async graph(request: WikiProjectRequest): Promise<WikiGraphResult> {
+    const context = this.resolveProjectContext(request.projectContext)
+    return this.computeGraph(context.wikiRoot)
   }
 
   /**
    * Provides the full graph operation.
+   * @param request - Host-issued registered project identity.
    * @returns The computed graph value.
    */
   @Remote('fullGraph')
-  fullGraph(): Promise<WikiGraphResult> {
-    return this.computeGraph()
+  async fullGraph(request: WikiProjectRequest): Promise<WikiGraphResult> {
+    const context = this.resolveProjectContext(request.projectContext)
+    return this.computeGraph(context.wikiRoot)
   }
 
   /**
    * Lists the list operation.
+   * @param request - Host-issued registered project identity.
    * @returns The wiki file entries.
    */
   @Remote('list')
-  list(): Promise<WikiFileEntry[]> {
-    const wikiRoot = this.activeWikiRoot
+  async list(request: WikiProjectRequest): Promise<WikiFileEntry[]> {
+    const context = this.resolveProjectContext(request.projectContext)
+    const wikiRoot = context.wikiRoot
     return this.snapshots.get(wikiRoot, 'list', () =>
       promiseFromSync(() => listPages(wikiRoot) as WikiFileEntry[]))
+  }
+
+  /**
+   * Describe independently configured knowledge routes without exposing credentials.
+   * @param request - Registered project identity.
+   * @returns Local keyword/hybrid mode and route configuration flags.
+   */
+  @Remote('projectStatus')
+  projectStatus(request: WikiProjectRequest): Promise<{
+    searchMode: 'keyword' | 'hybrid'
+    textConfigured: boolean
+    visionConfigured: boolean
+    embeddingConfigured: boolean
+  }> {
+    return promiseFromSync(() => {
+      this.resolveProjectContext(request.projectContext)
+      const config = this.connections()
+      return {
+        searchMode: config.embeddingProvider === '' ? 'keyword' : 'hybrid',
+        textConfigured: config.textProvider !== '', visionConfigured: config.visionProvider !== '',
+        embeddingConfigured: config.embeddingProvider !== '',
+      }
+    })
   }
 
   /**
@@ -679,29 +771,43 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns ranked hits.
    */
   @Remote('search')
-  async search(request: { query: string; topK?: number }): Promise<WikiSearchHit[]> {
-    const context = this.captureProjectContext()
+  async search(request: WikiProjectRequest & { query: string; topK?: number }): Promise<WikiSearchHit[]> {
+    const context = this.resolveProjectContext(request.projectContext)
+    const signal = AbortSignal.any([
+      this.lifetime.signal, (this.projectLifetimes.get(request.projectContext) as AbortController).signal,
+    ])
+    const config = this.connections()
+    const connection = await this.embeddingConnection(config, signal)
+    signal.throwIfAborted()
+    // Each query binds route and credential resolution before sharing a derived result.
+    // A reference rotation or a newly configured key must not reuse a previous route's cache.
+    const route = createHash('sha256').update(JSON.stringify([
+      config.embeddingProvider, config.embeddingBaseUrl, config.embeddingModel, config.embeddingCredential,
+      connection?.apiKey ?? '',
+    ])).digest('hex')
     const topK = request.topK ?? 8
-    const hits = await this.snapshots.get(context.wikiRoot, `search:${topK}:${request.query}`, async () =>
-      hybridSearch(context.wikiRoot, request.query, await this.resolveApiKey(), topK, (diagnostic) => {
-        // Semantic search is optional. Report the degradation once, then keep serving
-        // keyword results instead of failing every query with the same upstream error.
+    const hits = await this.snapshots.get(context.wikiRoot, `search:${route}:${topK}:${request.query}`, async () =>
+      hybridSearch(context.wikiRoot, request.query, connection, topK, (diagnostic) => {
         if (this.embeddingWarningLogged) return
         this.embeddingWarningLogged = true
         this.ctx.logger.warn(`[knowledge-wiki] semantic search unavailable, using keyword results: ${diagnostic.reason}`)
       }))
+    signal.throwIfAborted()
     this.recordKnowledgeRetrieval(hits.map(hit => hit.path), context.projectRoot)
     return hits.map(hit => ({ path: hit.path, score: hit.score }))
   }
 
   /**
    * Provides the knowledge utility operation.
+   * @param request - Host-issued registered project identity.
    * @returns The knowledge utility records.
    */
   @Remote('knowledgeUtility')
-  knowledgeUtility(): Promise<KnowledgeUtilityRecord[]> {
-    return promiseFromSync(() =>
-      Object.values(this.readUtility()).sort((left, right) => right.utilityScore - left.utilityScore))
+  knowledgeUtility(request: WikiProjectRequest): Promise<KnowledgeUtilityRecord[]> {
+    return promiseFromSync(() => {
+      const context = this.resolveProjectContext(request.projectContext)
+      return Object.values(this.readUtility(context.projectRoot)).sort((left, right) => right.utilityScore - left.utilityScore)
+    })
   }
 
   /**
@@ -710,18 +816,19 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns The value produced by record knowledge outcome.
    */
   @Remote('recordKnowledgeOutcome')
-  recordKnowledgeOutcome(request: {
+  recordKnowledgeOutcome(request: WikiProjectRequest & {
     paths: string[]
     outcome: 'successful' | 'corrected' | 'neutral'
   }): Promise<number> {
     return promiseFromSync(() => {
-      const records = this.readUtility()
+      const context = this.resolveProjectContext(request.projectContext)
+      const records = this.readUtility(context.projectRoot)
       const now = new Date().toISOString()
       let updated = 0
       for (const candidate of [...new Set(request.paths)]) {
         let safe: string
         try {
-          safe = resolveSafePath(this.activeWikiRoot, candidate, false).relativePath
+          safe = resolveSafePath(context.wikiRoot, candidate, false).relativePath
         } catch { continue }
         const current = records[safe] ?? {
           path: safe,
@@ -742,7 +849,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         }
         updated += 1
       }
-      if (updated > 0) this.writeUtility(records)
+      if (updated > 0) this.writeUtility(records, context.projectRoot)
       return updated
     })
   }
@@ -753,16 +860,17 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns The requested page content.
    */
   @Remote('pageContent')
-  pageContent(request: { path: string }): Promise<WikiPageContent> {
+  pageContent(request: WikiProjectRequest & { path: string }): Promise<WikiPageContent> {
     return promiseFromSync(() => {
+      const context = this.resolveProjectContext(request.projectContext)
       try {
         const { relativePath: safe, absolutePath: resolved } = resolveSafePath(
-          this.activeWikiRoot,
+          context.wikiRoot,
           request.path,
           false,
         )
         if (lstatSync(resolved).isDirectory()) return { path: request.path, content: '' }
-        return { path: request.path, content: readPage(this.activeWikiRoot, safe) }
+        return { path: request.path, content: readPage(context.wikiRoot, safe) }
       } catch (error) {
         if (!isMissingPathError(error) && !(error instanceof Error && error.message === 'path does not exist')) throw error
         return { path: request.path, content: '' }
@@ -776,15 +884,16 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns the written path.
    */
   @Remote('writePage')
-  writePage(request: {
+  writePage(request: WikiProjectRequest & {
     path: string
     content: string
     expectedContent?: string
   }): Promise<WikiWriteResult> {
     return promiseFromSync(() => {
+      const context = this.resolveProjectContext(request.projectContext)
       try {
         const { relativePath: safe, absolutePath: full } = resolveSafePath(
-          this.activeWikiRoot,
+          context.wikiRoot,
           request.path,
           true,
         )
@@ -803,7 +912,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           }
         }
         atomicWriteFile(full, request.content)
-        this.snapshots.invalidate(this.activeWikiRoot)
+        this.snapshots.invalidate(context.wikiRoot)
         return { path: safe, ok: true }
       } catch (error) {
         return { path: request.path, ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -817,17 +926,18 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns the created path.
    */
   @Remote('createPage')
-  createPage(request: { title: string; content?: string }): Promise<WikiWriteResult> {
+  createPage(request: WikiProjectRequest & { title: string; content?: string }): Promise<WikiWriteResult> {
     return promiseFromSync(() => {
+      const context = this.resolveProjectContext(request.projectContext)
       try {
         const slug = request.title.trim().replace(/[\\/:*?"<>|\s]+/gu, '-').replace(/-+/gu, '-').replace(/^-|-$/gu, '')
         const rel = `concepts/${slug}.md`
-        const full = join(this.activeWikiRoot, rel)
+        const full = join(context.wikiRoot, rel)
         if (existsSync(full)) return { path: rel, ok: false, error: 'page already exists' }
         const frontmatter = `---\ntype: concept\nstatus: canonical\norigin: human\ntitle: ${request.title.trim()}\napproved_at: ${new Date().toISOString().slice(0, 10)}\napproved_by: human\ncreated: ${new Date().toISOString().slice(0, 10)}\nupdated: ${new Date().toISOString().slice(0, 10)}\n---\n\n${request.content ?? ''}\n`
-        mkdirSync(join(this.activeWikiRoot, 'concepts'), { recursive: true })
+        mkdirSync(join(context.wikiRoot, 'concepts'), { recursive: true })
         atomicWriteFile(full, frontmatter)
-        this.snapshots.invalidate(this.activeWikiRoot)
+        this.snapshots.invalidate(context.wikiRoot)
         return { path: rel, ok: true }
       } catch (error) {
         return { path: '', ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -841,9 +951,9 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns written wiki paths and warnings.
    */
   @Remote('ingestSource')
-  async ingestSource(request: { path: string }): Promise<IngestOutcome> {
+  async ingestSource(request: WikiProjectRequest & { path: string }): Promise<IngestOutcome> {
     try {
-      const context = this.captureProjectContext()
+      const context = this.resolveProjectContext(request.projectContext)
       resolveRawSourcePath(context.projectRoot, request.path)
       return await this.enqueueAndWait(request.path, context)
     } catch (error) {
@@ -866,8 +976,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     }
     const outcome = await runIngest(
       this.stageExecutor,
-      this.llmProvider,
-      this.llmModel,
+      this.connections().textProvider,
+      this.connections().textModel,
       context.projectRoot,
       request.path,
       signal,
@@ -885,33 +995,36 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   ): Promise<{ written: [string, ...string[]]; warnings: string[] }> {
     signal.throwIfAborted()
     const source = resolveRawSourcePath(context.projectRoot, relPath)
-    const apiKey = await this.resolveApiKey()
-    if (apiKey && this.stageExecutor === undefined) {
+    const vision = this.connections()
+    const configured = vision.visionProvider !== ''
+    if (configured && this.stageExecutor === undefined) {
       throw new Error('knowledge Wiki stage executor unavailable; refusing vision work')
     }
     signal.throwIfAborted()
     const fileName = basename(relPath)
     const slug = fileName.replace(/[\/:*?"<>|\s]+/gu, '-').replace(/-+/gu, '-').replace(/\.[^.]+$/u, '')
+    const wikiParent = dirname(context.wikiRoot)
+    const wikiDirectory = basename(context.wikiRoot)
     const mediaRel = `_candidates/ingest/media/${slug}${extname(fileName).toLowerCase()}`
-    atomicWriteFile(
-      join(context.wikiRoot, mediaRel),
+    atomicWriteConfinedFile(
+      wikiParent, `${wikiDirectory}/${mediaRel}`,
       readRegularFileBounded(source, 16 * 1024 * 1024),
     )
     signal.throwIfAborted()
-    const caption = apiKey
+    const caption = configured
       ? (await executeKnowledgeWikiStage(this.stageExecutor, {
         kind: 'vision-describe',
-        apiKey,
+        provider: vision.visionProvider,
+        model: vision.visionModel,
         path: source,
         timeoutMs: 60_000,
       }, signal)).text ?? ''
       : ''
     signal.throwIfAborted()
-    if (!caption) return { written: [mediaRel], warnings: ['视觉说明生成失败（检查 apiKey/网络）'] }
+    if (!caption) return { written: [mediaRel], warnings: [configured ? '视觉说明生成失败，请检查所选连接。' : '未配置图片说明连接，图片已保留在本机。'] }
     const pageRel = `_candidates/ingest/sources/${slug}.md`
     const page = `---\ntype: source\nstatus: candidate\norigin: image\ntitle: ${fileName}\nsources: ["${relPath}"]\ncreated: ${new Date().toISOString().slice(0, 10)}\nupdated: ${new Date().toISOString().slice(0, 10)}\n---\n\n# ${fileName}\n\n![${fileName}](/${mediaRel})\n\n## 图片说明\n\n${caption}\n`
-    mkdirSync(dirname(join(context.wikiRoot, pageRel)), { recursive: true })
-    atomicWriteFile(join(context.wikiRoot, pageRel), page)
+    atomicWriteConfinedFile(wikiParent, `${wikiDirectory}/${pageRel}`, page)
     appendCandidateReviews(this.reviewFile(context.projectRoot), context.projectRoot, relPath, [`wiki/${pageRel}`])
     return { written: [pageRel, mediaRel], warnings: [] }
   }
@@ -922,11 +1035,12 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns written wiki paths and warnings.
    */
   @Remote('ingestUrl')
-  async ingestUrl(request: { url: string }): Promise<IngestOutcome> {
+  async ingestUrl(request: WikiProjectRequest & { url: string }): Promise<IngestOutcome> {
+    const context = this.resolveProjectContext(request.projectContext)
     try {
       const url = new URL(request.url)
       if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('only http and https URLs are allowed')
-      return await this.enqueueAndWait(request.url, this.captureProjectContext())
+      return await this.enqueueAndWait(request.url, context)
     } catch (error) {
       return ingestFailure(error, 'invalid-input')
     }
@@ -942,7 +1056,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     const md = htmlToMarkdown(fetched.text, fetched.url)
     const slug = new URL(fetched.url).hostname.replace(/\./gu, '-')
     const rel = `raw/sources/clips/${slug}-${Date.now()}.md`
-    atomicWriteFile(join(context.projectRoot, rel), `# ${request.url}\n\n> 来源：${request.url}\n\n${md}\n`)
+    atomicWriteConfinedFile(context.projectRoot, rel, `# ${request.url}\n\n> 来源：${request.url}\n\n${md}\n`)
     signal.throwIfAborted()
     return this.ingestSourceWithContext({ path: rel }, context, signal)
   }
@@ -954,36 +1068,40 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns the queue snapshot.
    */
   @Remote('ingestQueueAdd')
-  ingestQueueAdd(request: { inputs: string[] }): Promise<IngestQueueSnapshot> {
+  ingestQueueAdd(request: WikiProjectRequest & { inputs: string[] }): Promise<IngestQueueSnapshot> {
     return promiseFromSync(() => {
-      const context = this.captureProjectContext()
+      const context = this.resolveProjectContext(request.projectContext)
       for (const input of request.inputs) {
         // Manual enqueue may re-run a done task; the scanner path never does.
         this.enqueueIngest(input, true, context)
       }
       void this.drainQueue()
-      return this.queueSnapshot()
+      return this.queueSnapshot(context.projectRoot)
     })
   }
 
   /**
    * Provides the ingest queue status operation.
+   * @param request - Host-issued registered project identity.
    * @returns The current ingest queue snapshot.
    */
   @Remote('ingestQueueStatus')
-  ingestQueueStatus(): Promise<IngestQueueSnapshot> {
-    return promiseFromSync(() => this.queueSnapshot())
+  ingestQueueStatus(request: WikiProjectRequest): Promise<IngestQueueSnapshot> {
+    const context = this.resolveProjectContext(request.projectContext)
+    return promiseFromSync(() => this.queueSnapshot(context.projectRoot))
   }
 
   /**
    * Provides the ingest queue cancel operation.
+   * @param request - Host-issued registered project identity.
    * @returns The current ingest queue snapshot after cancellation.
    */
   @Remote('ingestQueueCancel')
-  ingestQueueCancel(): Promise<IngestQueueSnapshot> {
+  ingestQueueCancel(request: WikiProjectRequest): Promise<IngestQueueSnapshot> {
     return promiseFromSync(() => {
-      this.cancelPendingForRoot(this.currentRoot)
-      return this.queueSnapshot()
+      const context = this.resolveProjectContext(request.projectContext)
+      this.cancelPendingForRoot(context.projectRoot)
+      return this.queueSnapshot(context.projectRoot)
     })
   }
 
@@ -1014,8 +1132,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     return changed
   }
 
-  private queueSnapshot(): IngestQueueSnapshot {
-    const tasks = this.queue.filter(task => task.projectRoot === this.currentRoot)
+  private queueSnapshot(projectRoot: string): IngestQueueSnapshot {
+    const tasks = this.queue.filter(task => task.projectRoot === projectRoot)
     return {
       tasks: [...tasks],
       running: tasks.some(task => task.status === 'running'),
@@ -1053,6 +1171,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
 
   private async runQueue(): Promise<void> {
     for (const [index, task] of this.queue.entries()) {
+      if (this.lifetime.signal.aborted) break
       if (task.status !== 'pending') continue
       const controller = new AbortController()
       const running: IngestQueueTask = {
@@ -1156,19 +1275,18 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @throws If recording Candidate reviews fails after the pipeline returns.
    */
   @Remote('deepResearch')
-  async deepResearch(request: { topic: string }, signal: AbortSignal): Promise<{
-    findings: Array<{ title: string; path: string }>
-    warnings: string[]
-    degraded: boolean
-    errorCode?: 'stage-executor-unavailable' | 'research-failed'
-  }> {
-    const context = this.captureProjectContext()
+  async deepResearch(
+    request: WikiProjectRequest & { topic: string },
+    signal: AbortSignal,
+  ): Promise<KnowledgeResearchResult> {
+    const context = this.resolveProjectContext(request.projectContext)
+    signal = AbortSignal.any([signal, this.lifetime.signal, (this.projectLifetimes.get(request.projectContext) as AbortController).signal])
     let result
     try {
       result = await runResearch(
         this.stageExecutor,
-        this.llmProvider,
-        this.llmModel,
+        this.connections().textProvider,
+        this.connections().textModel,
         context.projectRoot,
         request.topic,
         signal,
@@ -1177,13 +1295,15 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       const message = error instanceof Error ? error.message : String(error)
       return {
         findings: [],
+        sourceCount: 0,
         warnings: [message],
         degraded: true,
-        errorCode: message.includes('stage executor unavailable')
+        errorCode: signal.aborted ? 'cancelled' : message.includes('stage executor unavailable')
           ? 'stage-executor-unavailable'
-          : 'research-failed',
+          : message.includes('web') ? 'web-search-unavailable' : 'research-failed',
       }
     }
+    signal.throwIfAborted()
     appendCandidateReviews(
       this.reviewFile(context.projectRoot),
       context.projectRoot,
@@ -1193,6 +1313,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     if (result.written.length > 0) this.snapshots.invalidate(context.wikiRoot)
     return {
       findings: result.written.map(path => ({ title: basename(path), path })),
+      sourceCount: result.sourceCount,
+      ...result.errorCode === undefined ? {} : { errorCode: result.errorCode },
       warnings: result.warnings,
       degraded: result.warnings.length > 0,
     }
@@ -1204,9 +1326,10 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns matching review items.
    */
   @Remote('reviews')
-  reviews(request: { status?: string; limit?: number }): Promise<WikiReviewItem[]> {
+  reviews(request: WikiProjectRequest & { status?: string; limit?: number }): Promise<WikiReviewItem[]> {
     return promiseFromSync(() => {
-      const all = readOptionalJson<WikiReviewItem[]>(this.reviewFile(), [])
+      const context = this.resolveProjectContext(request.projectContext)
+      const all = readOptionalJson<WikiReviewItem[]>(this.reviewFile(context.projectRoot), [])
       if (!Array.isArray(all)) throw new Error('invalid knowledge review state')
       const status = request.status ?? 'unresolved'
       const filtered = status === 'all' ? all : all.filter(item => status === 'resolved' ? item.resolved : !item.resolved)
@@ -1224,27 +1347,30 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    */
   @Remote('verifyCandidate')
   async verifyCandidate(
-    request: {
+    request: WikiProjectRequest & {
       reviewId: string
       action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' | 'Archive'
     },
     signal: AbortSignal,
   ): Promise<CandidateVerificationResult> {
+    const context = this.resolveProjectContext(request.projectContext)
+    signal = AbortSignal.any([signal, this.lifetime.signal, (this.projectLifetimes.get(request.projectContext) as AbortController).signal])
     const authority = this.verifierAuthority
-    const reviewFile = this.reviewFile()
+    const reviewFile = this.reviewFile(context.projectRoot)
     const result = await verifyCandidate(
       authority,
       reviewFile,
-      this.activeWikiRoot,
+      context.wikiRoot,
       request.reviewId,
       request.action,
       signal,
     )
+    signal.throwIfAborted()
     if (result.ok && result.receiptId !== undefined) {
       const recorded = recordTrustedCandidateVerification(
         authority,
         reviewFile,
-        this.activeWikiRoot,
+        context.wikiRoot,
         request.reviewId,
         result.receiptId,
         request.action,
@@ -1262,22 +1388,23 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns whether the item was found and updated.
    */
   @Remote('resolveReview')
-  resolveReview(request: { reviewId: string; action?: string }): Promise<boolean> {
+  resolveReview(request: WikiProjectRequest & { reviewId: string; action?: string }): Promise<boolean> {
     return promiseFromSync(() => {
-      const reviewFile = this.reviewFile()
+      const context = this.resolveProjectContext(request.projectContext)
+      const reviewFile = this.reviewFile(context.projectRoot)
       const advisory = resolveAdvisoryReviewBatch(reviewFile, [request.reviewId], request.action ?? 'skip')
       if (advisory.resolvedCount > 0) return true
       for (const candidateId of advisory.candidateIds) {
         const candidateResult = applyCandidateReview(
           this.verifierAuthority,
           reviewFile,
-          this.currentRoot,
-          this.activeWikiRoot,
+          context.projectRoot,
+          context.wikiRoot,
           join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
           candidateId,
           request.action ?? 'Skip',
         )
-        if (candidateResult) this.snapshots.invalidate(this.activeWikiRoot)
+        if (candidateResult) this.snapshots.invalidate(context.wikiRoot)
         return candidateResult === true
       }
       return false
@@ -1290,10 +1417,11 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns the number resolved.
    */
   @Remote('resolveReviews')
-  resolveReviews(request: { ids: string[]; action?: string }): Promise<number> {
+  resolveReviews(request: WikiProjectRequest & { ids: string[]; action?: string }): Promise<number> {
     return promiseFromSync(() => {
-      const projectRoot = this.currentRoot
-      const wikiRoot = this.activeWikiRoot
+      const context = this.resolveProjectContext(request.projectContext)
+      const projectRoot = context.projectRoot
+      const wikiRoot = context.wikiRoot
       const reviewFile = this.reviewFile(projectRoot)
       const advisory = resolveAdvisoryReviewBatch(reviewFile, request.ids, request.action ?? 'skip')
       let count = advisory.resolvedCount
@@ -1351,11 +1479,17 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns The available workspaces and current workspace.
    */
   @Remote('listProjects')
-  listProjects(): Promise<{ projects: Array<{ path: string; name: string; main?: boolean }>; current: string }> {
-    return promiseFromSync(() => {
-      const main = { path: this.mainRoot, name: '万相织鉴', main: true }
-      return { projects: [main, ...this.readWorkspaces()], current: this.currentRoot }
-    })
+  listProjects(): Promise<WikiProjectRegistry> {
+    return promiseFromSync(() => this.projectRegistry())
+  }
+
+  private projectRegistry(): WikiProjectRegistry {
+    return {
+      projects: [{ path: this.mainRoot, name: '万相织鉴', main: true }, ...this.readWorkspaces()]
+        .map(project => ({ ...project, projectContext: this.projectToken(project.path) })),
+      current: this.currentRoot,
+      currentProjectContext: this.projectToken(this.currentRoot),
+    }
   }
 
   /**
@@ -1364,7 +1498,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns the new current root.
    */
   @Remote('setProject')
-  setProject(request: { path: string }): Promise<{ current: string }> {
+  setProject(request: { path: string }): Promise<{ current: string; projectContext: KnowledgeProjectContextId }> {
     return promiseFromSync(() => {
       const target = request.path.replace(/\/+$/u, '')
       const known = [this.mainRoot, ...this.readWorkspaces().map(ws => ws.path.replace(/\/+$/u, ''))]
@@ -1381,7 +1515,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           )
         }
       }
-      return { current: this.currentRoot }
+      return { current: this.currentRoot, projectContext: this.projectToken(this.currentRoot) }
     })
   }
 
@@ -1391,7 +1525,11 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns the created path or an error.
    */
   @Remote('createProject')
-  createProject(request: { name: string; path: string }): Promise<{ path: string; error?: string }> {
+  createProject(request: { name: string; path: string }): Promise<{
+    path: string
+    error?: string
+    projectContext?: KnowledgeProjectContextId
+  }> {
     return promiseFromSync(() => {
       try {
         const name = request.name.trim()
@@ -1419,7 +1557,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           workspaces.push({ path: root, name })
           this.writeWorkspaces(workspaces)
         }
-        return { path: root }
+        return { path: root, projectContext: this.projectToken(root) }
       } catch (error) {
         return { path: '', error: error instanceof Error ? error.message : String(error) }
       }
@@ -1433,53 +1571,49 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @param request - The request input.
    */
   @Remote('removeProject')
-  removeProject(request: { path: string }): Promise<{
-    projects: Array<{ path: string; name: string; main?: boolean }>
-    current: string
-  }> {
+  removeProject(request: { path: string }): Promise<WikiProjectRegistry> {
     return promiseFromSync(() => {
       const target = request.path.replace(/\/+$/u, '')
       if (target === this.mainRoot) {
         // 主工作区不可删除：原样返回列表。
-        return {
-          projects: [{ path: this.mainRoot, name: '万相织鉴', main: true }, ...this.readWorkspaces()],
-          current: this.currentRoot,
-        }
+        return this.projectRegistry()
       }
       const registered = this.readWorkspaces()
       if (!registered.some(ws => ws.path.replace(/\/+$/u, '') === target)) {
-        return {
-          projects: [{ path: this.mainRoot, name: '万相织鉴', main: true }, ...registered],
-          current: this.currentRoot,
-        }
+        return this.projectRegistry()
       }
       const remaining = registered.filter(ws => ws.path.replace(/\/+$/u, '') !== target)
       this.writeWorkspaces(remaining)
+      const revoked = this.projectTokens.get(target)
+      if (revoked !== undefined) {
+        this.projectLifetimes.get(revoked)?.abort(new Error('knowledge project was unregistered'))
+        this.projectLifetimes.delete(revoked)
+      }
+      this.projectTokens.delete(target)
       this.cancelPendingForRoot(target)
       if (this.currentRoot === target) {
         this.currentRoot = this.mainRoot
         this.projectGeneration += 1
         this.restoreQueue(this.mainRoot)
       }
-      return {
-        projects: [{ path: this.mainRoot, name: '万相织鉴', main: true }, ...remaining],
-        current: this.currentRoot,
-      }
+      return this.projectRegistry()
     })
   }
 
   /**
    * Graph insights: surprising connections, isolated pages, bridge nodes,
    * and sparse communities.
+   * @param request - Host-issued registered project identity.
    * @returns the insight report.
    */
   @Remote('graphInsights')
-  async graphInsights(): Promise<{
+  async graphInsights(request: WikiProjectRequest): Promise<{
     isolated: Array<{ id: string; label: string; path: string }>
     bridges: Array<{ id: string; label: string; path: string; communities: number }>
     sparseCommunities: Array<{ id: number; nodeCount: number; topNodes: string[] }>
   }> {
-    const graph = await this.computeGraph()
+    const context = this.resolveProjectContext(request.projectContext)
+    const graph = await this.computeGraph(context.wikiRoot)
     const nodesById = new Map(graph.nodes.map(node => [node.id, node]))
     const isolated = graph.nodes
       .filter(node => node.linkCount <= 1)
@@ -1518,17 +1652,23 @@ export default class KnowledgeWikiService extends TypertRemoteService {
 
   /**
    * Lint the wiki: broken wikilinks, empty pages, and isolated pages.
+   * @param request - Host-issued registered project identity.
    * @returns the lint report.
    */
   @Remote('lint')
-  async lint(): Promise<{ brokenLinks: Array<{ from: string; target: string }>; emptyPages: string[]; totalPages: number }> {
-    const pages = await this.list()
+  async lint(request: WikiProjectRequest): Promise<{
+    brokenLinks: Array<{ from: string; target: string }>
+    emptyPages: string[]
+    totalPages: number
+  }> {
+    const context = this.resolveProjectContext(request.projectContext)
+    const pages = await this.list(request)
     const mdPages = pages.filter(page => page.path.endsWith('.md'))
     const known = new Set(mdPages.map(page => page.path))
     const brokenLinks: Array<{ from: string; target: string }> = []
     const emptyPages: string[] = []
     for (const page of mdPages) {
-      const content = readPage(this.activeWikiRoot, page.path)
+      const content = readPage(context.wikiRoot, page.path)
       const body = content.replace(/^---\n[\s\S]*?\n---\n?/u, '')
       if (body.trim().length === 0) emptyPages.push(page.path)
       for (const link of extractWikiLinkTargets(body)) {
@@ -1545,18 +1685,20 @@ export default class KnowledgeWikiService extends TypertRemoteService {
 
   /**
    * Export the whole knowledge-base project as a ZIP archive.
+   * @param request - Host-issued registered project identity.
    * @returns the archive path or an error.
    */
   @Remote('exportProject')
-  async exportProject(): Promise<{ path: string; error?: string }> {
+  async exportProject(request: WikiProjectRequest): Promise<{ path: string; error?: string }> {
+    const context = this.resolveProjectContext(request.projectContext)
     try {
-      const outDir = join(this.currentRoot, '.llm-wiki', 'exports')
+      const outDir = join(context.projectRoot, '.llm-wiki', 'exports')
       mkdirSync(outDir, { recursive: true })
       const outPath = join(outDir, `wanxiang-${new Date().toISOString().slice(0, 10)}.zip`)
       const { execFileSync } = await import('node:child_process')
       const inv = zipExportInvocation(ARCHIVE_INPUTS, outPath)
       execFileSync(inv.command, inv.args, {
-        cwd: this.currentRoot,
+        cwd: context.projectRoot,
         env: { ...process.env, ...inv.env },
       })
       return { path: outPath }
@@ -1571,7 +1713,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * @returns the archive summary or an error.
    */
   @Remote('importProject')
-  async importProject(request: { path: string }): Promise<{ ok: boolean; error?: string; entries?: string[] }> {
+  async importProject(request: WikiProjectRequest & { path: string }): Promise<{ ok: boolean; error?: string; entries?: string[] }> {
+    this.resolveProjectContext(request.projectContext)
     try {
       const { execFileSync } = await import('node:child_process')
       const inv = zipListInvocation(request.path)

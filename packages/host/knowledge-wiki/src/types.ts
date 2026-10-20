@@ -6,6 +6,11 @@
  * @module @deepseek-ai/dsh-knowledge-wiki/types
  */
 
+import type { Branded } from '@deepseek-ai/dsh-brand'
+
+/** Host-issued identity for one registered project during this service lifetime. */
+export type KnowledgeProjectContextId = Branded<'KnowledgeProjectContext'>
+
 /** One concept-graph node as served by LLM Wiki. */
 export interface WikiGraphNode {
   /** Stable node id. */
@@ -266,7 +271,37 @@ export interface IngestQueueSnapshot {
 
 /** Deep-research outcome. */
 export interface ResearchResult {
+  readonly errorCode?: KnowledgeResearchResult['errorCode']
   readonly written: string[]
   readonly sourceCount: number
   readonly warnings: string[]
+}
+
+/** Required identity on every project-scoped knowledge operation. */
+export interface WikiProjectRequest {
+  readonly projectContext: KnowledgeProjectContextId
+}
+
+/** Registered workspace identity; the opaque context expires on host restart or unregister. */
+export interface WikiProject {
+  readonly path: string
+  readonly name: string
+  readonly main?: boolean
+  readonly projectContext: KnowledgeProjectContextId
+}
+
+/** Host-owned project registry and current UI selection. */
+export interface WikiProjectRegistry {
+  readonly projects: WikiProject[]
+  readonly current: string
+  readonly currentProjectContext: KnowledgeProjectContextId
+}
+
+/** Complete user-visible research status. */
+export interface KnowledgeResearchResult {
+  readonly findings: Array<{ title: string; path: string }>
+  readonly sourceCount: number
+  readonly warnings: string[]
+  readonly degraded: boolean
+  readonly errorCode?: 'web-search-unavailable' | 'no-sources' | 'invalid-queries' | 'stage-executor-unavailable' | 'research-failed' | 'cancelled'
 }

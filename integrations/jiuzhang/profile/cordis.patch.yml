@@ -28,7 +28,8 @@
   config:
     wikiRoot: !!js process.env.ARK_WIKI_ROOT
     mainRoot: !!js process.env.ARK_MAIN_ROOT
-    credential: DEEPSEEK_API_KEY
+    # Knowledge text uses the selected LLM provider. Vision/vector routes remain
+    # unconfigured until explicitly selected; another provider never borrows its key.
     # Ark enables the owned-worker stage executor: without it every ingest task
     # fails with "stage executor unavailable" (the release ships no provider).
     ownedStageExecutor: true

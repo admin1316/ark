@@ -23,8 +23,8 @@ describe('research executor result boundaries', () => {
     const execute = vi.fn<KnowledgeWikiStageExecutor['execute']>(async () => ({ text: null }))
 
     await expect(deepResearch(
-      { isolation: 'owned-worker-v1', execute }, 'fixture-provider', 'fixture-model', root, 'topic', new AbortController().signal,
-    )).resolves.toEqual({ written: [], sourceCount: 0, warnings: ['research: LLM produced no usable queries'] })
+      { isolation: 'owned-worker-v1', assertSearchAvailable() {}, execute }, 'fixture-provider', 'fixture-model', root, 'topic', new AbortController().signal,
+    )).resolves.toEqual({ written: [], sourceCount: 0, warnings: ['research: LLM produced no usable queries'], errorCode: 'invalid-queries' })
 
     expect(execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       kind: 'llm-complete', provider: 'fixture-provider', model: 'fixture-model', operation: 'research query expansion',
@@ -37,6 +37,7 @@ describe('research executor result boundaries', () => {
     const requests: KnowledgeWikiStageRequest[] = []
     const executor: KnowledgeWikiStageExecutor = {
       isolation: 'owned-subprocess-v1',
+      assertSearchAvailable() {},
       execute(request) {
         requests.push(request)
         if (request.kind === 'web-search' && searchThrows) throw 'search process unavailable'
@@ -49,14 +50,14 @@ describe('research executor result boundaries', () => {
     await expect(deepResearch(executor, 'fixture-provider', 'fixture-model', root, 'topic', new AbortController().signal))
       .resolves.toEqual({
         written: [], sourceCount: 0,
-        warnings: searchThrows ? ['search "valid query" failed: search process unavailable'] : [],
+        warnings: [...searchThrows ? ['search "valid query" failed: search process unavailable'] : [], 'research: no citeable web sources; synthesis was not run'],
+        errorCode: 'no-sources',
       })
     expect(requests).toEqual([
       expect.objectContaining({ kind: 'llm-complete', operation: 'research query expansion' }),
       { kind: 'web-search', query: 'valid query', maxResults: 4, timeoutMs: 60_000 },
-      expect.objectContaining({ kind: 'llm-complete', operation: 'research synthesis' }),
     ])
-    expect(requests.at(-1)).toHaveProperty('prompt', expect.stringContaining('(none — synthesize from general knowledge'))
+    expect(requests.some(request => request.kind === 'llm-complete' && request.operation === 'research synthesis')).toBe(false)
     expect(await readdir(root)).toEqual([])
   })
 })

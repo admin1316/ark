@@ -10,13 +10,13 @@ Status: implemented
 
 ## 决策
 
-**每次启动拥有全新的 `Process` 与 `Pipe`。** `BackendProcess` 位于 `JiuzhangShellCore`（可在契约测试中直接测试），每次 `start` 创建新的进程与管道，在旧进程被回收前拒绝第二次启动（`BackendProcessError.alreadyRunning`），并经由各自的 termination handler 报告每次退出。`AppDelegate` 在未请求退出时移除旧原生模型并恢复加载态，就绪行到达时重置重启预算，并按既有递增退避重启。契约测试用 SIGKILL 杀死子进程两次，验证退出被报告、重启产生新 PID、双重启动被拒绝、`stop` 正确回收。
+**每次启动拥有全新的 `Process` 与 `Pipe`。** `BackendProcess` 位于 `JiuzhangShellCore`（可在契约测试中直接测试），每次 `start` 创建新的进程与管道，在旧进程被回收前拒绝第二次启动（`BackendProcessError.alreadyRunning`），并经由各自的 termination handler 报告每次退出。`AppDelegate` 在未请求退出时移除旧原生模型并恢复加载态，保留快速崩溃历史直到已就绪进程度过稳定窗口，再按递增退避重启。[显式路由与持久输入](2026-10-20-ark-explicit-routing-and-durable-input.zh.md)拥有逐代就绪期限与回调代次扩展。契约测试用 SIGKILL 杀死子进程两次，验证退出被报告、重启产生新 PID、双重启动被拒绝、`stop` 正确回收。
 
-**包先完整组装，再一次性签名。** `build-app.sh` 在签名前完成所有 `Info.plist` 修改（内嵌路径、`SUPublicEDKey`、`SUFeedURL`/禁用检查），嵌入 `Sparkle.framework`（SwiftPM 构件，Homebrew 兜底）并经由 `install_name_tool` 添加 `@executable_path/../Frameworks` rpath，然后才依次签名框架、内嵌 Node 与应用（`--deep`、hardened runtime、entitlements）——Developer ID 身份用 `--timestamp`，ad-hoc 用 `--timestamp=none`。`codesign --verify --deep --strict` 把关输出。公证提交 zip 归档（notarytool 拒绝裸 `.app` 目录），随后 staple 并验证。entitlements 增加 `com.apple.security.cs.disable-library-validation`——Sparkle 文档对 hardened-runtime 应用的要求，也让 ad-hoc 本地构建能加载框架。
+**包在最终封存前完整组装。** `build-app.sh` 完成所有 `Info.plist` 修改后，再签名内嵌 Node 与应用（`--deep`、hardened runtime、独立 entitlements）——Developer ID 身份用 `--timestamp`，ad-hoc 用 `--timestamp=none`。`codesign --verify --deep --strict` 把关输出。可选公证提交 zip 归档，再装订并验证。原生产品在应用外分发更新；应用 entitlements 既不授予 Node JIT 权限，也不授予库验证例外。[原生产品决策](../simplification/2026-08-29-retire-generic-web-ui.zh.md)管理保留的界面与浏览器应用交付的移除。
 
 **SwiftMath 字体查找只从精确锁定的源码进行适配。** 候选构建通过 `Package.resolved` 解析 SwiftMath，在修改任一文件前要求恰好一个 `MTFont` 资源锚点和两个 `MathFont` 资源锚点，并拒绝漂移、重复、缺失、部分适配或已适配的锚点。仅用于 release 的适配器从 `Bundle.main.resourceURL` 下解析 `SwiftMath_SwiftMath.bundle`；普通开发与约定测试可执行文件回退到 `Bundle.module`。构建退出时恢复锁定 checkout 的源码，把生成的 bundle 复制到 `Contents/Resources`，并将它作为最终应用包的一部分签名。
 
-**构建与本地安装脚本只产出候选包。** `build-app.sh` 在依赖操作前校验并规范化输出路径，拒绝正式应用路径树、软链接目标、嵌套 `Ark.app` 路径与任何已有候选包，且不会删除旧应用包。自包含构建还会把 Native 客户端需要的 RPC route 与 runtime 顶层 `@deepseek-ai/dsh-host-apiproxy` 直链实际指向的包进行比对；缺少包构件或 Host route 会在签名前失败。`install-local.sh` 在私有临时目录或显式指定的桌面候选目录下创建唯一命名的候选包，`update-local.sh` 委托给同一 owner。`--system` 会失败并提示受控 promotion 要求。正式替换仍是独立操作，必须经过候选验收、唯一回滚与显式授权。
+**构建与本地安装脚本只产出候选包。** `build-app.sh` 在依赖操作前校验并规范化输出路径，拒绝正式应用路径树、软链接目标、嵌套 `Ark.app` 路径与任何已有候选包，且不会删除旧应用包。自包含构建检查从 runtime 包直连入口取得的严格 Gateway 实现与描述符；缺少包产物或 Host 路由会在签名前失败。`install-local.sh` 默认使用唯一的 `~/ark-test/candidate/Ark.app` slot，要求通过验收生命周期清理已占用 slot，并拒绝桌面安装。`update-local.sh` 委托给同一 owner。`--system` 会失败并提示受控 promotion 要求。正式替换仍是独立操作，必须经过候选验收、临时代码回滚与显式授权。
 
 **Ark 凭据在 macOS 上默认使用钥匙串。** jiuzhang profile patch 通过 `!!js` 平台表达式设置 credentials 行的 `mode`：darwin 上为 `keychain`，其余平台为 `file`（Linux 开发/CI 组合继续使用文件后端）。profile 测试解析 loader 的 `!!js` 方言并断言平台选择结果。
 
@@ -36,4 +36,4 @@ Status: implemented
 
 ## 影响
 
-被杀死的后端会自动重启，原生客户端无需用户操作即可重新连接；只有重试预算耗尽后才出现失败对话框。自包含包通过 `codesign --verify --deep --strict` 且内嵌 Sparkle 与 SwiftMath 字体；带 Developer ID 的签名构建可以公证并 staple。SwiftMath 源码漂移会在编译前停止打包，而退出时恢复会让显式提供的已解析 scratch 树可重复使用。复用输出目录会失败，而不是替换其中的 `Ark.app`；便捷安装与更新入口止于已验证候选，维护者必须选择新目标并使用受控 promotion 流程。钥匙串模式在首次访问凭据时提示（ACL 绑定到 bundle 身份）并把机密移出主目录；没有签名身份的机器仍可产出可验证的 ad-hoc 构建。
+被杀死的后端会自动重启，原生客户端无需用户操作即可重新连接；只有重试预算耗尽后才出现失败对话框。构建要求内嵌 SwiftMath 字体后通过 `codesign --verify --deep --strict`；带 Developer ID 的签名构建可以公证并装订。SwiftMath 源码漂移会在编译前停止打包，而退出时恢复会让显式提供的已解析 scratch 树可重复使用。复用输出目录会失败，而不是替换其中的 `Ark.app`；便捷安装与更新入口止于候选，维护者复用指定 slot，并保持受控正式替换独立。钥匙串模式在首次访问凭据时提示（ACL 绑定到 bundle 身份）并把机密移出主目录；没有签名身份的机器仍可产出可验证的 ad-hoc 构建。

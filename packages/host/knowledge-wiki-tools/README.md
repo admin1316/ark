@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Model-facing knowledge-base tools over the composed `knowledgeWiki` service. The plugin registers `wiki_search`, `wiki_files`, `wiki_read`, `wiki_graph`, `wiki_reviews`, and `wiki_ingest` through the shared tool registry, and resolves the service lazily so the plugin can load before the knowledge-base provider is present. It adds no MCP bridge or desktop UI.
+Model-facing knowledge-base tools over the composed `knowledgeWiki` service. The plugin registers `wiki_search`, `wiki_files`, `wiki_read`, `wiki_graph`, `wiki_reviews`, `wiki_ingest`, and `wiki_verify_candidate` through the shared tool registry, and resolves the service lazily so the plugin can load before the knowledge-base provider is present. It adds no MCP bridge or desktop UI.
 
 ## Table of Contents
 
@@ -23,12 +23,12 @@ Model-facing knowledge-base tools over the composed `knowledgeWiki` service. The
 
 #### What the model sees
 
-The model receives six tool surfaces: search, file listing, page reading, graph inspection, unresolved-review listing, and source ingestion. The package also installs this prompt guidance:
+The model receives seven tools: search, canonical file listing, page reading, graph inspection, unresolved-review listing, source ingestion, and trusted Candidate verification. Each call derives its registered project from the initiating session cwd and passes its opaque project identity; the UI-selected project cannot change that choice. The package also installs this prompt guidance:
 
 ##### Knowledge Wiki prompt guidance
 
 ```markdown
-Use wiki_search to find knowledge-base pages, wiki_read to read one page, wiki_files to list pages, wiki_graph to inspect the knowledge graph, and wiki_reviews to check pending review items. Cite pages by their wiki path.
+Use wiki_search to find knowledge-base pages, wiki_read to read one Wiki-root-relative page, wiki_files to list canonical pages, wiki_graph to inspect the graph, wiki_reviews to inspect governance, wiki_verify_candidate to run the trusted verifier, and wiki_ingest to enqueue source work. Cite pages by their Wiki-root-relative path.
 ```
 
 #### Token effect
@@ -42,7 +42,7 @@ The package retains no model-content cache. Each tool call can append data-depen
 ## Known Limitations and Deferred Work
 
 - Calls fail with `knowledgeWiki service unavailable` when the composed `knowledgeWiki` service is absent; the plugin does not create a fallback store.
-- `wiki_ingest` accepts a project-relative source path or an `http(s)` URL and is registered in the tool surface, but the installed prompt guidance currently names the other five tools only.
+- Calls require an initiating session whose cwd is registered with the knowledge service; agentless calls and unregistered projects fail explicitly. The tool never switches the UI project or creates a fallback project.
 
 ### Dev Note
 

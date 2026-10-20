@@ -2798,6 +2798,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the disposer that unregisters the provider.',
       },
       {
+        signature: 'assertSearchAvailable(): void',
+        description: 'Check the selected search capability without making a network request. Consumers use this before starting paid query expansion. Selection is checked again by search() because provider availability can change.',
+        parameters: [],
+        returns: 'nothing when exactly one configured or usable provider can search.',
+        throws: ['WebError when search is unavailable, misconfigured, or ambiguous.'],
+      },
+      {
         signature: 'async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult>',
         description: 'Run one search through the selected provider. Resolves the provider at call time with the selection rules above; throws WebError when the capability cannot run. The seam enforces `request.maxResults` on the result: if the provider over-returns, `sources[]` is truncated and `truncated` set.',
         parameters: [{ name: 'request', description: 'the query and optional result limit.' }, { name: 'signal', description: 'optional cancellation signal forwarded to the provider.' }],

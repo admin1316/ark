@@ -10,6 +10,8 @@ Ark could assemble a Native client with an older Host RPC set, build directly ov
 
 ## Decision
 
+[Explicit routing and durable input](2026-10-20-ark-explicit-routing-and-durable-input.md) extends the knowledge-operation, composer and startup owners. Candidate-only publication, credential transactions, Workbench journals and event-pump ownership remain governed here.
+
 Native builds are candidate-only. The output owner rejects production, link-shaped, nested, and existing App targets, while the self-contained build follows the Native API runtime plan and requires every strict Remote route in the implementation, generated descriptor, Host lookup, and package entry before and after embedding.
 
 The canonical production bundle is `~/Ark.app`, separate from the source checkout at `~/ark`. Candidate output and workspace registration reject the production bundle, its descendants, and its ancestors. The source checkout remains eligible as an explicit maintenance workspace while retaining its existing build and candidate-output protections. The product defines no legacy installation alias.
@@ -54,4 +56,4 @@ Artifact-policy contracts reject unsafe outputs and missing Host routes. Provide
 
 ## Consequences
 
-Credentials-local has a runtime dependency on the already-shipped `node-pty` package for macOS Keychain mode. Candidate assembly refuses stale runtimes instead of producing a partially functional App. Git may still change the worktree before a concurrent edit is observed, but the in-memory draft survives and cannot silently overwrite the changed file. First-wins Wiki deduplication hides later ambiguous rows instead of repairing upstream data. The Native product packages no browser application, HTML fallback, or WebKit surface. Host-only Remote and NativeEvents owners provide the authenticated loopback API and event transports. This decision does not close fixed-port policy, the Queue mux-only reconnect proof, B0 freeze, unified soak, or production promotion.
+Credentials-local has a runtime dependency on the already-shipped `node-pty` package for macOS Keychain mode. Candidate assembly refuses stale runtimes instead of producing a partially functional App. Git may still change the worktree before a concurrent edit is observed, but the in-memory draft survives and cannot silently overwrite the changed file. First-wins Wiki deduplication hides later ambiguous rows instead of repairing upstream data. The Native product keeps its interface in AppKit/SwiftUI and packages no browser application or HTML fallback; the explicitly requested Workbench browser alone renders external HTTP(S) pages in WebKit without a credential, tool or local-file bridge. Host-only Remote and NativeEvents owners provide the authenticated loopback API and event transports. This decision does not close fixed-port policy, the Queue mux-only reconnect proof, B0 freeze, unified soak, or production promotion.

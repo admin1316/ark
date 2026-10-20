@@ -15,6 +15,8 @@ English | [中文](2026-08-19-knowledge-wiki-contract-aligned-ingest.zh.md)
 
 ## Decision
 
+[Explicit routing and durable input](../bug-fix/2026-10-20-ark-explicit-routing-and-durable-input.md) owns independent service connections, project admission identities, strict source extraction and source-backed research. The persisted queue, success-only ingest cache and canonical page-writing rationale remain governed here.
+
 The package is now a self-contained engine. Key mechanisms:
 
 - **Scan only enqueues; cache writes move to success.** `scanSources` compares hashes and enqueues changed files as `pending`; `markIngested` (sha256 re-read of the file) runs only after a successful ingest. `drainQueue` treats a zero-written, warnings-only outcome as the failure signal — the shape the Remote ingest methods return for an LLM error — so a broken key marks the task `error` with a `failedAt` timestamp instead of poisoning the cache.
@@ -32,4 +34,4 @@ The package is now a self-contained engine. Key mechanisms:
 
 - **Bought**: failed ingests (broken key, model error) now surface as `error` tasks with a 60-minute cooldown, a console log line, and no cache write; the queue survives restarts; new pages land on the existing corpus format (verified against the live `--1js7z6u`/`--n2u7v5` page names); 69 package tests cover the pipeline and queue.
 - **Cost**: `scanSources` no longer drains synchronously, so a new file waits until the next 60s timer tick to start ingesting (previously the scan drained immediately); a warnings-only outcome with zero pages is always treated as failure, so a genuinely unchanged merge (empty sources frontmatter) enters the cooldown rather than completing instantly.
-- **Deployment**: the jiuzhang-runtime rc.7 tgz must be rebuilt and re-installed; existing `.llm-wiki/ingest-cache.json` entries remain valid (same flat `{ identity: sha256 }` format), so the 79 existing pages stay untouched and only genuinely missing sources re-ingest. The Remote contract, config keys, and `.llm-wiki/` file formats are unchanged; the desktop app stays fully decoupled and is scheduled for deletion (Phase 4).
+- **Deployment**: source and installed runtime are verified together; the flat `.llm-wiki/ingest-cache.json` `{ identity: sha256 }` map remains the success cache. Project admission and connection settings follow the explicit-routing decision linked above. Ark's native client consumes the in-process Host engine rather than depending on the separate LLM Wiki desktop app.

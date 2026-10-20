@@ -56,18 +56,18 @@ describe('BM25 and vector primitives', () => {
   })
 
   it('keeps disabled embedding optional but reports HTTP, schema, and network failures', async () => {
-    expect(await embed(['text'], '')).toBeNull()
-    expect(await embed([], 'key')).toBeNull()
+    expect(await embed(['text'], undefined)).toBeNull()
+    expect(await embed([], { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' })).toBeNull()
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response('no', { status: 500 }))
       .mockResolvedValueOnce(new Response('{}', { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ embedding: [1, 2] }, {}] }), { status: 200 }))
       .mockRejectedValueOnce(new Error('offline'))
 
-    await expect(embed(['a'], 'key')).rejects.toThrow('failed (500)')
-    await expect(embed(['a'], 'key')).rejects.toThrow('malformed')
-    expect(await embed(['a', 'b'], 'key')).toEqual([[1, 2], []])
-    await expect(embed(['a'], 'key')).rejects.toThrow('offline')
+    await expect(embed(['a'], { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' })).rejects.toThrow('failed (500)')
+    await expect(embed(['a'], { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' })).rejects.toThrow('malformed')
+    expect(await embed(['a', 'b'], { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' })).toEqual([[1, 2], []])
+    await expect(embed(['a'], { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' })).rejects.toThrow('offline')
     const body = fetchMock.mock.calls[2]?.[1]?.body
     expect(typeof body === 'string' ? (JSON.parse(body) as { input: string[] }).input : undefined)
       .toEqual(['a', 'b'])
@@ -77,11 +77,11 @@ describe('BM25 and vector primitives', () => {
 describe('hybrid Wiki search', () => {
   it('falls back to keyword results when vectors are disabled or incomplete', async () => {
     const root = fixture()
-    const keywordOnly = await hybridSearch(root, 'alpha', '', 1)
+    const keywordOnly = await hybridSearch(root, 'alpha', undefined, 1)
     expect(keywordOnly).toHaveLength(1)
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] }), { status: 200 }))
-    expect(await hybridSearch(root, 'alpha', 'key', 2)).toEqual(await hybridSearch(root, 'alpha', '', 2))
+    expect(await hybridSearch(root, 'alpha', { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' }, 2)).toEqual(await hybridSearch(root, 'alpha', undefined, 2))
   })
 
   it('blends positive, zero, and missing semantic vectors and sorts the result', async () => {
@@ -97,11 +97,11 @@ describe('hybrid Wiki search', () => {
         { embedding: [0, 0] },
       ] }), { status: 200 }))
 
-    const positive = await hybridSearch(root, 'alpha', 'key', 5)
+    const positive = await hybridSearch(root, 'alpha', { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' }, 5)
     expect(positive[0]?.path).toBe('concepts/alpha.md')
     expect(positive.every(hit => Number.isFinite(hit.score))).toBe(true)
 
-    const zero = await hybridSearch(root, 'alpha', 'key', 5)
+    const zero = await hybridSearch(root, 'alpha', { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' }, 5)
     expect(zero).toHaveLength(2)
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
@@ -115,7 +115,7 @@ describe('hybrid Wiki search', () => {
       data: Array.from({ length: 16 }, () => ({ embedding: [1, 0] })),
     }), { status: 200 }))
 
-    const results = await hybridSearch(root, 'alpha', 'key', 20)
+    const results = await hybridSearch(root, 'alpha', { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' }, 20)
     expect(results.length).toBeGreaterThan(15)
   })
 })

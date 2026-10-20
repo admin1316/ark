@@ -613,6 +613,21 @@ func runArkDomainAPIContractChecks() {
   check(reviews?.first?.actions.first?.action == "Promote", "native review parser preserves Host actions")
   check(reviews?.first?.affectedPages == ["concepts/a.md"], "native review parser preserves affected pages")
 
+  let blockedResearch = try? ArkDomainAPIContract.knowledgeResearch(from: .object([
+    "findings": .array([]), "sourceCount": .number(0), "warnings": .array([.string("search unavailable")]),
+    "degraded": .bool(true), "errorCode": .string("web-search-unavailable"),
+  ]))
+  check(blockedResearch?.sourceCount == 0 && blockedResearch?.degraded == true
+    && blockedResearch?.warnings == ["search unavailable"] && blockedResearch?.errorCode == "web-search-unavailable",
+    "native research DTO preserves blocked provenance instead of reducing it to findings")
+  let partialResearch = try? ArkDomainAPIContract.knowledgeResearch(from: .object([
+    "findings": .array([.object(["title": .string("Evidence"), "path": .string("research/evidence.md")])]),
+    "sourceCount": .number(2), "warnings": .array([.string("one source failed")]), "degraded": .bool(true),
+  ]))
+  check(partialResearch?.findings.count == 1 && partialResearch?.sourceCount == 2
+    && partialResearch?.warnings == ["one source failed"] && partialResearch?.errorCode == nil,
+    "native research DTO preserves partial success and its warning")
+
   do {
     _ = try ArkDomainAPIContract.sessionSearch(from: .object([
       "items": .array([.object(["sessionId": .string("broken")])]),

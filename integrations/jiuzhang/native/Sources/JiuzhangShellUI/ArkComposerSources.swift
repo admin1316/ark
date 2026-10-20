@@ -697,6 +697,8 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
   public private(set) var references: [ArkComposerReferenceOccurrence]
   public private(set) var revision: UInt64
   public private(set) var submissionID: String?
+  public private(set) var submissionMode: ArkPromptDeliveryMode?
+  public private(set) var submissionTimeZone: String?
 
   public init(
     text: String = "",
@@ -717,11 +719,21 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     return identity
   }
 
+  /// Freeze delivery metadata for an uncertain retry across app and Host restarts.
+  public mutating func prepareSubmission(mode: ArkPromptDeliveryMode, timeZone: String) {
+    _ = ensureSubmissionID()
+    if submissionMode == nil { submissionMode = mode }
+    if submissionTimeZone == nil { submissionTimeZone = timeZone }
+  }
+
   public mutating func replaceText(_ next: String) {
     guard next != text else { return }
     let range = editRange(from: text, to: next)
     reconcile(replacing: range.oldRange, insertedLength: range.insertedLength)
     text = next
+    submissionID = nil
+    submissionMode = nil
+    submissionTimeZone = nil
     revision &+= 1
   }
 
@@ -733,6 +745,9 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     guard expectedRevision == revision, valid(range, in: text) else { return false }
     reconcile(replacing: range, insertedLength: (replacement as NSString).length)
     text = (text as NSString).replacingCharacters(in: range, with: replacement)
+    submissionID = nil
+    submissionMode = nil
+    submissionTimeZone = nil
     revision &+= 1
     return true
   }
@@ -776,15 +791,31 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
       length: (displayText as NSString).length
     ))
     references.sort { $0.offset < $1.offset }
+    submissionID = nil
+    submissionMode = nil
+    submissionTimeZone = nil
     revision &+= 1
     return true
   }
 
+  /// Attachments change the idempotent payload even when the visible text is unchanged.
+  public mutating func attachmentsDidChange() {
+    submissionID = nil
+    submissionMode = nil
+    submissionTimeZone = nil
+    revision &+= 1
+  }
+
   public mutating func clear() {
     submissionID = nil
+    submissionMode = nil
+    submissionTimeZone = nil
     guard !text.isEmpty || !references.isEmpty else { return }
     text = ""
     references = []
+    submissionID = nil
+    submissionMode = nil
+    submissionTimeZone = nil
     revision &+= 1
   }
 
@@ -903,4 +934,31 @@ public enum ArkComposerSubmissionRoute: Equatable, Sendable {
     }
     return .command(command)
   }
+}
+
+/// One running writer and the newest value for each draft; superseded queued edits own no tasks.
+@MainActor
+final class ArkComposerPersistenceQueue<Value> {
+  private var pending: [String: Value] = [:]
+  private var task: Task<Void, Never>?
+  private let write: (Value) async -> Void
+
+  init(write: @escaping (Value) async -> Void) { self.write = write }
+
+  var pendingCount: Int { pending.count }
+
+  func enqueue(_ value: Value, for key: String) {
+    pending[key] = value
+    guard task == nil else { return }
+    task = Task {
+      while let key = pending.keys.first, let value = pending.removeValue(forKey: key) {
+        await write(value)
+      }
+      task = nil
+    }
+  }
+
+  func discardPending(for key: String) { pending.removeValue(forKey: key) }
+
+  func flush() async { await task?.value }
 }

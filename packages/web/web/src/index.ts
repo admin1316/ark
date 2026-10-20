@@ -129,6 +129,20 @@ export class WebRuntime extends Service {
   }
 
   /**
+   * Check the selected search capability without making a network request.
+   * Consumers use this before starting paid query expansion. Selection is
+   * checked again by search() because provider availability can change.
+   * @returns nothing when exactly one configured or usable provider can search.
+   * @throws WebError when search is unavailable, misconfigured, or ambiguous.
+   */
+  assertSearchAvailable(): void {
+    resolveProvider({
+      providers: this.searchProviders,
+      ...this.searchProviderId !== undefined ? { configuredId: this.searchProviderId } : {},
+    })
+  }
+
+  /**
    * Run one search through the selected provider. Resolves the provider at call
    * time with the selection rules above; throws {@link WebError} when the
    * capability cannot run. The seam enforces `request.maxResults` on the result:

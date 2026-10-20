@@ -16,7 +16,7 @@ Peer products converge on an attachment rail above the editor, but their storage
 
 ## Decision
 
-Pasted, dropped or selected raster images use the durable attachment capability through the native composer. Unsent files remain temporary client-owned draft state. Every rich-content intake adapter decodes its wire blocks, proves route capability, and delegates the complete image batch to the attachment service before appending its message event. A provider adapter that produces structured image output must durably commit the output before appending its assistant block. Canonical user and assistant content contains only role-neutral `ImageBlock` references.
+Pasted, dropped or selected raster images use the durable attachment capability through the native composer. Unsent files remain client-owned draft state; Ark's private recovery journal does not mint canonical attachment references. Every rich-content intake adapter decodes its wire blocks, proves route capability, and delegates the complete image batch to the attachment service before appending its message event. A provider adapter that produces structured image output must durably commit the output before appending its assistant block. Canonical user and assistant content contains only role-neutral `ImageBlock` references.
 
 This note owns image admission, durable identity, provider conversion and authorized reads. Native file picking and document input have separate consumer paths; they do not implicitly turn ordinary files or PDFs into `ImageBlock`, or change this image persistence boundary.
 
@@ -32,11 +32,11 @@ The persistence boundary is message acceptance, not paste:
 
 | State | Allowed representation | Durability and ordering |
 | --- | --- | --- |
-| Unsent user draft | Native draft bytes or an OS temporary file; an external client may use its own temporary representation | Temporary and client-owned. It may disappear on reload or process exit and never appears in a session event. |
+| Unsent user draft | Native draft bytes, a private client journal, or an OS temporary file; an external client may use its own temporary representation | Client-owned and absent from session events. Cross-process recovery requires the client's own explicit journal contract. |
 | Accepted user image | Immutable object below `DSH_HOME` plus `ImageAttachmentRef` | The host commits every image before `agent.send()` or `agent.steer()` can append the owning user event. |
 | Structured model image output | Immutable object below `DSH_HOME` plus `ImageAttachmentRef` | The provider adapter commits the bytes before it emits a completed image block or assistant message event. Temporary URLs, paths, and base64 are forbidden in the event. |
 
-The native draft keeps `ArkPromptImage` bytes and display names, not preview identities in the session log. Unsent images do not promise cross-process recovery. The native draft owner isolates session switches and asynchronous imports; message acceptance still copies bytes into durable object storage. A temporary directory or preview lifetime cannot become an accepted message's durable identity.
+The native draft keeps `ArkPromptImage` bytes and display names, not preview identities in the session log. [Explicit routing and durable input](../bug-fix/2026-10-20-ark-explicit-routing-and-durable-input.md) owns Ark's bounded private draft journals and durable acknowledgement. The native draft owner isolates session switches and asynchronous imports; message acceptance still copies bytes into durable object storage. A temporary directory, client journal or preview lifetime cannot become an accepted message's durable identity.
 
 The local attachment backend resolves an explicit `dshHome`, then `$DSH_HOME`, then `~/.dsh`. It stores content-addressed objects below `$DSH_HOME/attachments/v1/objects/<prefix>/<sha256>` with owner-only directory and file permissions. On each process's first save for one home, it creates that home and synchronizes every ancestor entry to the filesystem root; existence is not treated as durability because another process may still be between `mkdir` and parent `fsync`. A temporary file is then written, synchronized, atomically published, and made durable with directory syncs on the publication path (POSIX; Windows relies on filesystem metadata journaling) before the service returns a reference. The content digest is encoded in the opaque `sha256:<digest>` identifier. Admission prepares a provider-independent master by applying orientation, removing metadata, converting to 8-bit sRGB/sRGBA, and preserving aspect ratio under independent dimension and byte limits. Reads verify the digest, byte length, and logged metadata. Route-specific deterministic request versions are cached separately; the full policy is recorded in [Unified image masters, request versions, and provider files](2026-08-20-unified-image-request-pipeline.md).
 
@@ -144,7 +144,7 @@ Temporary storage is appropriate before send, including for a native client that
 
 ### Persist immediately on paste or drop
 
-Immediate persistence makes drafts reload-resistant but creates durable objects before a session or message owns them, which requires quota, orphan lifetime, and cleanup policy. Version one keeps the unsent draft temporary and makes send acceptance the durability boundary.
+Immediate writes into the canonical attachment store create objects before a session or message owns them, requiring quota, orphan lifetime, and cleanup policy. Message acceptance remains that store's durability boundary; bounded client recovery journals are a separate owner and do not issue canonical references.
 
 ### Inline base64 in messages and session logs
 
@@ -189,7 +189,7 @@ Rejected because tool renderers are pure, synchronous, and replayable. MCP prepa
 - Durable storage grows without garbage collection. Version one chooses replay safety over premature deletion.
 - A missing or corrupt object makes exact model reconstruction fail. Failing loud preserves integrity but may prevent that session from continuing until repaired.
 - JSON-RPC base64 adds upload memory and roughly one-third encoding overhead. Version-one limits bound it; larger media needs streaming or a binary transport.
-- Unsent images do not survive reload. Durable drafts need quota and orphan cleanup rather than reusing message storage implicitly.
+- Cross-process draft recovery belongs to a client journal with quota and cleanup, rather than implicit reuse of canonical message storage.
 - Original-image decoding can exceed the inline display's pixel needs; admission pixel limits, native cache byte limits and session-switch cancellation jointly bound transient memory.
 - Capability metadata may be missing or stale. Host preflight improves feedback, while adapter enforcement remains authoritative.
 - A future output provider may require authenticated retrieval before an assistant image can complete, adding latency and a new failure point. Persist-before-event ordering favors replay integrity.

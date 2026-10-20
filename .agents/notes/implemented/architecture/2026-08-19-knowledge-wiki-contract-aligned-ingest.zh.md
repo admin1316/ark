@@ -15,6 +15,8 @@ Status: implemented
 
 ## Decision
 
+[显式路由与持久输入](../bug-fix/2026-10-20-ark-explicit-routing-and-durable-input.zh.md)拥有独立服务连接、项目接收身份、严格源提取与有来源的研究。持久队列、仅成功后写入的导入缓存和规范页面写入理由继续由本笔记管理。
+
 本包现在是自包含引擎。关键机制：
 
 - **扫描只入队，缓存后写。** `scanSources` 比对 hash 后把变更文件以 `pending` 入队；`markIngested`（重读文件算 sha256）仅在摄取成功后执行。`drainQueue` 把「零产出且带 warnings」视为失败信号——这正是 Remote 摄取方法在 LLM 错误时返回的形态——坏 key 会把任务标为 `error` 并记 `failedAt`，而不是污染缓存。
@@ -32,4 +34,4 @@ Status: implemented
 
 - **所得**：失败的摄取（坏 key、模型错误）现在以 `error` 任务呈现，带 60 分钟冷却、一行 console 日志且不写缓存；队列跨重启存活；新页面落到存量语料格式（以存量页名 `--1js7z6u`/`--n2u7v5` 验证）；69 个包测试覆盖管线与队列。
 - **代价**：`scanSources` 不再同步 drain，新文件要等到下一个 60 秒定时器 tick 才开始摄取（此前扫描即排水）；零产出且带 warnings 一律视为失败，因此真正无变化的 merge（空 sources frontmatter）进入冷却而非立即完成。
-- **部署**：jiuzhang-runtime rc.7 tgz 需重新构建安装；既有 `.llm-wiki/ingest-cache.json` 条目继续有效（同为扁平 `{ identity: sha256 }` 格式），存量 79 页不动，仅真正缺失的源重新摄取。Remote 契约、配置键与 `.llm-wiki/` 文件格式均不变；桌面应用保持完全解耦，计划删除（Phase 4）。
+- **部署**：源码与安装运行时共同验证；扁平的 `.llm-wiki/ingest-cache.json` `{ identity: sha256 }` 映射仍是成功缓存。项目接收与连接设置遵循上文链接的显式路由决策。Ark 原生客户端消费进程内 Host 引擎，不依赖独立的 LLM Wiki 桌面应用。

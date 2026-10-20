@@ -55,8 +55,17 @@ func runArkPromptRetryContractChecks() async {
   do {
     var draft = ArkComposerDraftDocument()
     let base = draft.ensureSubmissionID()
+    draft.prepareSubmission(mode: .steer, timeZone: "Asia/Shanghai")
     let restored = try JSONDecoder().decode(ArkComposerDraftDocument.self, from: JSONEncoder().encode(draft))
     check(restored.submissionID == base, "retry identity survives persisted draft decoding")
+    var retriedDelivery = restored
+    retriedDelivery.prepareSubmission(mode: .queue, timeZone: "UTC")
+    check(retriedDelivery.submissionMode == .steer && retriedDelivery.submissionTimeZone == "Asia/Shanghai",
+      "pending retry retains its first delivery mode and time zone after restart conditions change")
+    retriedDelivery.replaceText("new intentional input")
+    retriedDelivery.prepareSubmission(mode: .queue, timeZone: "UTC")
+    check(retriedDelivery.submissionID != base && retriedDelivery.submissionMode == .queue
+      && retriedDelivery.submissionTimeZone == "UTC", "new draft retires the previous delivery snapshot")
     draft.clear()
     check(draft.submissionID == nil, "successful image-only clearing retires its previous submission identity")
     let retried = draft.prepending(restored)

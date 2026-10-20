@@ -1,35 +1,39 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { extractFileText, decodeKnowledgeText } from '../src/file-extract.ts'
 
-const mocks = vi.hoisted(() => ({
-  readFile: vi.fn(),
-}))
+const roots: string[] = []
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
-vi.mock('node:fs/promises', () => ({ readFile: mocks.readFile }))
+function source(name: string, bytes: string | Buffer): string {
+  const root = mkdtempSync(join(tmpdir(), 'strict-knowledge-text-'))
+  roots.push(root)
+  const path = join(root, name)
+  writeFileSync(path, bytes)
+  return path
+}
 
-import { extractFileText } from '../src/file-extract.ts'
-
-afterEach(() => {
-  vi.clearAllMocks()
-})
-
-describe('file text extraction', () => {
-  it('reads supported text formats and reports read errors', async () => {
-    mocks.readFile.mockResolvedValueOnce('# page')
-    await expect(extractFileText('/project/README.MD')).resolves.toBe('# page')
-    expect(mocks.readFile).toHaveBeenCalledWith('/project/README.MD', 'utf8')
-
-    mocks.readFile.mockRejectedValueOnce(new Error('denied'))
-    await expect(extractFileText('/project/data.json')).rejects.toThrow('denied')
+describe('strict knowledge text admission', () => {
+  it('reads Chinese and table content without replacing bytes', async () => {
+    const text = '# 正文\n\n| 名称 | 数量 |\n|---|---|\n| 样本 | 2 |\n'
+    await expect(extractFileText(source('README.MD', text))).resolves.toBe(text)
   })
-
-  it('refuses Office/PDF parsing before non-cooperative work starts', async () => {
-    await expect(extractFileText('/project/report.PDF')).rejects.toThrow('owned stage executor')
-    await expect(extractFileText('/project/report.docx')).rejects.toThrow('owned stage executor')
+  it.each(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'epub'])('rejects %s before touching a file', async (ext) => {
+    await expect(extractFileText('/absent/report.' + ext)).rejects.toThrow('verified text extractor')
   })
-
-  it('returns null for unsupported formats without touching the filesystem', async () => {
-    await expect(extractFileText('/project/archive.zip')).resolves.toBeNull()
-    expect(mocks.readFile).not.toHaveBeenCalled()
+  it.each([Buffer.from([0xff]), Buffer.from([0]), Buffer.from('PK\x03\x04word/document.xml'), Buffer.from('%PDF-1.7')])('rejects binary content disguised as text', async (bytes) => {
+    await expect(extractFileText(source('disguised.txt', bytes))).rejects.toThrow()
   })
-
+  it('refuses oversized input and unsupported formats', async () => {
+    expect(() => decodeKnowledgeText('large.md', new Uint8Array(5 * 1024 * 1024 + 1))).toThrow('limit')
+    await expect(extractFileText('/absent/archive.zip')).resolves.toBeNull()
+  })
+  it('does not follow a leaf symlink', async () => {
+    const path = source('note.md', 'safe')
+    const link = path + '.txt'
+    symlinkSync(path, link)
+    await expect(extractFileText(link)).rejects.toThrow()
+  })
 })

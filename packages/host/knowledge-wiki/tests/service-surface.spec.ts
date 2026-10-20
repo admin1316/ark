@@ -1,3 +1,4 @@
+import { projectRequest } from './project-request-fixture.ts'
 import {
   existsSync,
   mkdirSync,
@@ -16,24 +17,24 @@ import { wikiTestConfig } from './config-fixture.ts'
 
 interface Surface {
   snapshots: { invalidate(root: string): void; dispose(): void }
-  graph(): Promise<WikiGraphResult>
-  fullGraph(): Promise<WikiGraphResult>
-  list(): Promise<Array<{ path: string }>>
-  search(request: { query: string; topK?: number }): Promise<Array<{ path: string; score: number }>>
-  knowledgeUtility(): Promise<Array<{ path: string; utilityScore: number; retrievalHits: number }>>
-  recordKnowledgeOutcome(request: { paths: string[]; outcome: 'successful' | 'corrected' | 'neutral' }): Promise<number>
-  pageContent(request: { path: string }): Promise<{ path: string; content: string }>
-  writePage(request: { path: string; content: string; expectedContent?: string }): Promise<Record<string, unknown>>
-  createPage(request: { title: string; content?: string }): Promise<Record<string, unknown>>
-  ingestSource(request: { path: string }): Promise<{ written: string[]; warnings: string[] }>
-  reviews(request: { status?: string; limit?: number }): Promise<WikiReviewItem[]>
-  resolveReview(request: { reviewId: string; action?: string }): Promise<boolean>
-  resolveReviews(request: { ids: string[]; action?: string }): Promise<number>
-  graphInsights(): Promise<Record<string, unknown[]>>
+  graph: KnowledgeWikiService['graph']
+  fullGraph: KnowledgeWikiService['fullGraph']
+  list: KnowledgeWikiService['list']
+  search: KnowledgeWikiService['search']
+  knowledgeUtility: KnowledgeWikiService['knowledgeUtility']
+  recordKnowledgeOutcome: KnowledgeWikiService['recordKnowledgeOutcome']
+  pageContent: KnowledgeWikiService['pageContent']
+  writePage: KnowledgeWikiService['writePage']
+  createPage: KnowledgeWikiService['createPage']
+  ingestSource: KnowledgeWikiService['ingestSource']
+  reviews: KnowledgeWikiService['reviews']
+  resolveReview: KnowledgeWikiService['resolveReview']
+  resolveReviews: KnowledgeWikiService['resolveReviews']
+  graphInsights: KnowledgeWikiService['graphInsights']
   computeGraph(): Promise<WikiGraphResult>
-  lint(): Promise<{ brokenLinks: Array<{ from: string; target: string }>; emptyPages: string[]; totalPages: number }>
-  exportProject(): Promise<{ path: string; error?: string }>
-  importProject(request: { path: string }): Promise<{ ok: boolean; error?: string; entries?: string[] }>
+  lint: KnowledgeWikiService['lint']
+  exportProject: KnowledgeWikiService['exportProject']
+  importProject: KnowledgeWikiService['importProject']
 }
 
 let root: string
@@ -60,7 +61,6 @@ beforeEach(() => {
   service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot,
     mainRoot: root,
-    credential: 'VISION_API_KEY',
     llmProvider: 'p',
     llmModel: 'm',
   })) as unknown as Surface
@@ -85,12 +85,12 @@ aliases: ["阿尔法"]
 
 alpha reusable method and validation
 `, 'utf8')
-    expect((await service.graph()).nodes).toHaveLength(1)
-    expect(await service.fullGraph()).toEqual(await service.graph())
-    expect((await service.list()).map(page => page.path)).toContain('concepts/alpha.md')
-    expect((await service.search({ query: 'alpha', topK: 1 }))[0]?.path).toBe('concepts/alpha.md')
-    expect((await service.search({ query: 'alpha' }))[0]?.path).toBe('concepts/alpha.md')
-    expect(await service.search({ query: 'the and' })).toEqual([])
+    expect((await service.graph(projectRequest(service))).nodes).toHaveLength(1)
+    expect(await service.fullGraph(projectRequest(service))).toEqual(await service.graph(projectRequest(service)))
+    expect((await service.list(projectRequest(service))).map(page => page.path)).toContain('concepts/alpha.md')
+    expect((await service.search({ ...projectRequest(service), query: 'alpha', topK: 1 }))[0]?.path).toBe('concepts/alpha.md')
+    expect((await service.search({ ...projectRequest(service), query: 'alpha' }))[0]?.path).toBe('concepts/alpha.md')
+    expect(await service.search({ ...projectRequest(service), query: 'the and' })).toEqual([])
 
     const utilityFile = join(root, '.llm-wiki', 'knowledge-utility.json')
     const recorded = JSON.parse(readFileSync(utilityFile, 'utf8')) as Record<string, object>
@@ -101,23 +101,23 @@ alpha reusable method and validation
         userCorrections: 0, utilityScore: -2,
       },
     }), 'utf8')
-    const utility = await service.knowledgeUtility()
+    const utility = await service.knowledgeUtility(projectRequest(service))
     expect(utility[0]).toMatchObject({ path: 'concepts/alpha.md', retrievalHits: 2 })
-    expect(await service.recordKnowledgeOutcome({
+    expect(await service.recordKnowledgeOutcome({ ...projectRequest(service),
       paths: ['concepts/alpha.md', 'concepts/alpha.md', '../unsafe'], outcome: 'successful',
     })).toBe(1)
-    expect(await service.recordKnowledgeOutcome({
+    expect(await service.recordKnowledgeOutcome({ ...projectRequest(service),
       paths: ['concepts/alpha.md'], outcome: 'corrected',
     })).toBe(1)
     writeFileSync(join(wikiRoot, 'concepts', 'unseen.md'), 'unseen', 'utf8')
-    expect(await service.recordKnowledgeOutcome({
+    expect(await service.recordKnowledgeOutcome({ ...projectRequest(service),
       paths: ['concepts/unseen.md'], outcome: 'neutral',
     })).toBe(1)
-    expect(await service.recordKnowledgeOutcome({ paths: [], outcome: 'neutral' })).toBe(0)
-    expect((await service.knowledgeUtility()).find(item => item.path === 'concepts/alpha.md')?.utilityScore).toBe(-0.5)
+    expect(await service.recordKnowledgeOutcome({ ...projectRequest(service), paths: [], outcome: 'neutral' })).toBe(0)
+    expect((await service.knowledgeUtility(projectRequest(service))).find(item => item.path === 'concepts/alpha.md')?.utilityScore).toBe(-0.5)
   })
 
-  it('keeps an absent Wiki empty but reports credential failures instead of hiding them', async () => {
+  it('keeps an unconfigured Wiki local without resolving unrelated credentials', async () => {
     const missingWiki = join(root, 'missing-wiki')
     const isolatedContext = new Context()
     Object.defineProperty(isolatedContext, 'credentials', {
@@ -127,13 +127,12 @@ alpha reusable method and validation
     const isolated = new KnowledgeWikiService(isolatedContext, wikiTestConfig({
       wikiRoot: missingWiki,
       mainRoot: root,
-      credential: 'VISION_API_KEY',
       llmProvider: 'p', llmModel: 'm',
     })) as unknown as Surface
-    expect(await isolated.graph()).toEqual({ nodes: [], edges: [], communities: [] })
-    expect(await isolated.list()).toEqual([])
-    await expect(isolated.search({ query: 'none' })).rejects.toThrow('credentials unavailable')
-    expect(await isolated.knowledgeUtility()).toEqual([])
+    expect(await isolated.graph(projectRequest(isolated))).toEqual({ nodes: [], edges: [], communities: [] })
+    expect(await isolated.list(projectRequest(isolated))).toEqual([])
+    await expect(isolated.search({ ...projectRequest(isolated), query: 'none' })).resolves.toEqual([])
+    expect(await isolated.knowledgeUtility(projectRequest(isolated))).toEqual([])
     isolated.snapshots.dispose()
     await isolatedContext.fiber.dispose()
   })
@@ -143,43 +142,42 @@ describe('page read/write CAS surface', () => {
   it('reads files, hides directories and unsafe paths, and enforces candidate-only generated creates', async () => {
     const canonical = join(wikiRoot, 'concepts', 'alpha.md')
     writeFileSync(canonical, 'old', 'utf8')
-    expect(await service.pageContent({ path: 'concepts/alpha.md' })).toEqual({
+    expect(await service.pageContent({ ...projectRequest(service), path: 'concepts/alpha.md' })).toEqual({
       path: 'concepts/alpha.md', content: 'old',
     })
-    expect(await service.pageContent({ path: 'concepts' })).toEqual({ path: 'concepts', content: '' })
-    await expect(service.pageContent({ path: '../outside' })).rejects.toThrow('traversal')
+    expect(await service.pageContent({ ...projectRequest(service), path: 'concepts' })).toEqual({ path: 'concepts', content: '' })
+    await expect(service.pageContent({ ...projectRequest(service), path: '../outside' })).rejects.toThrow('traversal')
 
-    expect(await service.writePage({ path: 'concepts/new.md', content: 'new' })).toMatchObject({ ok: false })
-    expect(await service.writePage({
+    expect(await service.writePage({ ...projectRequest(service), path: 'concepts/new.md', content: 'new' })).toMatchObject({ ok: false })
+    expect(await service.writePage({ ...projectRequest(service),
       path: 'concepts/alpha.md', content: 'new', expectedContent: 'stale',
     })).toMatchObject({ ok: false, conflict: true })
-    expect(await service.writePage({
+    expect(await service.writePage({ ...projectRequest(service),
       path: 'concepts/alpha.md', content: 'new', expectedContent: 'old',
     })).toEqual({ path: 'concepts/alpha.md', ok: true })
     expect(readFileSync(canonical, 'utf8')).toBe('new')
 
-    expect(await service.writePage({ path: '_candidates/manual.md', content: 'candidate' }))
+    expect(await service.writePage({ ...projectRequest(service), path: '_candidates/manual.md', content: 'candidate' }))
       .toEqual({ path: '_candidates/manual.md', ok: true })
-    expect(await service.writePage({ path: '../escape', content: 'x' })).toMatchObject({
+    expect(await service.writePage({ ...projectRequest(service), path: '../escape', content: 'x' })).toMatchObject({
       path: '../escape', ok: false, error: 'wiki path traversal is not allowed',
     })
   })
 
   it('creates human canonical pages with default/explicit content and detects duplicates', async () => {
-    expect(await service.createPage({ title: ' Human Page ', content: 'Body' }))
+    expect(await service.createPage({ ...projectRequest(service), title: ' Human Page ', content: 'Body' }))
       .toEqual({ path: 'concepts/Human-Page.md', ok: true })
     expect(readFileSync(join(wikiRoot, 'concepts', 'Human-Page.md'), 'utf8')).toContain('origin: human')
-    expect(await service.createPage({ title: ' Human Page ' })).toMatchObject({ ok: false, error: 'page already exists' })
-    expect(await service.createPage({ title: 'Second Page' })).toEqual({ path: 'concepts/Second-Page.md', ok: true })
+    expect(await service.createPage({ ...projectRequest(service), title: ' Human Page ' })).toMatchObject({ ok: false, error: 'page already exists' })
+    expect(await service.createPage({ ...projectRequest(service), title: 'Second Page' })).toEqual({ path: 'concepts/Second-Page.md', ok: true })
 
     const blockedRoot = join(root, 'blocked-wiki')
     writeFileSync(blockedRoot, 'file', 'utf8')
     const blockedContext = new Context()
     const blocked = new KnowledgeWikiService(blockedContext, wikiTestConfig({
-      wikiRoot: blockedRoot, mainRoot: root,
-      credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
+      wikiRoot: blockedRoot, mainRoot: root, llmProvider: 'p', llmModel: 'm',
     })) as unknown as Surface
-    expect(await blocked.createPage({ title: 'Fails' })).toMatchObject({ path: '', ok: false })
+    expect(await blocked.createPage({ ...projectRequest(blocked), title: 'Fails' })).toMatchObject({ path: '', ok: false })
     blocked.snapshots.dispose()
     await blockedContext.fiber.dispose()
   })
@@ -196,24 +194,24 @@ describe('review, insight, lint, and archive surface', () => {
     ]
     writeFileSync(reviewFile, JSON.stringify(items), 'utf8')
 
-    expect((await service.reviews({})).map(item => item.id)).toEqual(['a', 'c'])
-    expect((await service.reviews({ status: 'resolved', limit: 1 })).map(item => item.id)).toEqual(['b'])
-    expect(await service.reviews({ status: 'all' })).toHaveLength(3)
-    expect(await service.resolveReview({ reviewId: 'a' })).toBe(true)
-    expect(await service.resolveReview({ reviewId: 'missing', action: 'Skip' })).toBe(false)
-    expect(await service.resolveReviews({ ids: ['b', 'c', 'missing'], action: 'Skip' })).toBe(1)
+    expect((await service.reviews({ ...projectRequest(service) })).map(item => item.id)).toEqual(['a', 'c'])
+    expect((await service.reviews({ ...projectRequest(service), status: 'resolved', limit: 1 })).map(item => item.id)).toEqual(['b'])
+    expect(await service.reviews({ ...projectRequest(service), status: 'all' })).toHaveLength(3)
+    expect(await service.resolveReview({ ...projectRequest(service), reviewId: 'a' })).toBe(true)
+    expect(await service.resolveReview({ ...projectRequest(service), reviewId: 'missing', action: 'Skip' })).toBe(false)
+    expect(await service.resolveReviews({ ...projectRequest(service), ids: ['b', 'c', 'missing'], action: 'Skip' })).toBe(1)
     writeFileSync(reviewFile, JSON.stringify([
       { id: 'd', title: 'D', type: 'suggestion', reviewKind: 'advisory', resolved: false },
     ]), 'utf8')
-    expect(await service.resolveReviews({ ids: ['d'] })).toBe(1)
-    expect(await service.resolveReviews({ ids: ['d'] })).toBe(0)
+    expect(await service.resolveReviews({ ...projectRequest(service), ids: ['d'] })).toBe(1)
+    expect(await service.resolveReviews({ ...projectRequest(service), ids: ['d'] })).toBe(0)
 
     writeFileSync(reviewFile, 'broken', 'utf8')
-    await expect(service.reviews({})).rejects.toThrow(SyntaxError)
-    await expect(service.resolveReview({ reviewId: 'x' })).rejects.toThrow(SyntaxError)
-    await expect(service.resolveReviews({ ids: ['x'] })).rejects.toThrow(SyntaxError)
+    await expect(service.reviews({ ...projectRequest(service) })).rejects.toThrow(SyntaxError)
+    await expect(service.resolveReview({ ...projectRequest(service), reviewId: 'x' })).rejects.toThrow(SyntaxError)
+    await expect(service.resolveReviews({ ...projectRequest(service), ids: ['x'] })).rejects.toThrow(SyntaxError)
     writeFileSync(reviewFile, 'null', 'utf8')
-    await expect(service.resolveReviews({ ids: ['x'] })).rejects.toThrow('invalid knowledge review state')
+    await expect(service.resolveReviews({ ...projectRequest(service), ids: ['x'] })).rejects.toThrow('invalid knowledge review state')
   })
 
   it('derives graph insights and lints empty and broken-link pages', async () => {
@@ -237,7 +235,7 @@ describe('review, insight, lint, and archive surface', () => {
       ],
     }
     vi.spyOn(service, 'computeGraph').mockResolvedValue(graph)
-    const insights = await service.graphInsights()
+    const insights = await service.graphInsights(projectRequest(service))
     expect(insights.isolated).toHaveLength(1)
     expect(insights.bridges).toEqual([expect.objectContaining({ id: 'b', communities: 3 })])
     expect(insights.sparseCommunities).toHaveLength(1)
@@ -245,7 +243,7 @@ describe('review, insight, lint, and archive surface', () => {
     writeFileSync(join(wikiRoot, 'concepts', 'empty.md'), '---\ntitle: Empty\n---\n', 'utf8')
     writeFileSync(join(wikiRoot, 'concepts', 'links.md'), '[[missing]] [[empty]]', 'utf8')
     service.snapshots.invalidate(wikiRoot)
-    const lint = await service.lint()
+    const lint = await service.lint(projectRequest(service))
     expect(lint.emptyPages).toContain('concepts/empty.md')
     expect(lint.brokenLinks).toContainEqual({ from: 'concepts/links.md', target: 'missing' })
     expect(lint.totalPages).toBeGreaterThanOrEqual(2)
@@ -253,12 +251,12 @@ describe('review, insight, lint, and archive surface', () => {
 
   it('exports and inspects a minimal project archive and reports invalid imports', async () => {
     writeFileSync(join(wikiRoot, 'index.md'), '# Wiki', 'utf8')
-    const exported = await service.exportProject()
+    const exported = await service.exportProject(projectRequest(service))
     expect(exported.error).toBeUndefined()
     expect(existsSync(exported.path)).toBe(true)
-    const imported = await service.importProject({ path: exported.path })
+    const imported = await service.importProject({ ...projectRequest(service), path: exported.path })
     expect(imported.ok).toBe(true)
     expect(imported.entries).toContain('wiki/index.md')
-    expect((await service.importProject({ path: join(root, 'missing.zip') })).ok).toBe(false)
+    expect((await service.importProject({ ...projectRequest(service), path: join(root, 'missing.zip') })).ok).toBe(false)
   })
 })

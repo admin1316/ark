@@ -1,3 +1,4 @@
+import { projectRequest } from './project-request-fixture.ts'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -27,16 +28,15 @@ describe('archive primitive failures', () => {
     const ctx = new Context()
     contexts.push(ctx)
     const service = new KnowledgeWikiService(ctx, wikiTestConfig({
-      wikiRoot: join(root, 'wiki'), mainRoot: root,
-      credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
+      wikiRoot: join(root, 'wiki'), mainRoot: root, llmProvider: 'p', llmModel: 'm',
     })) as unknown as {
       snapshots: { dispose(): void }
-      exportProject(): Promise<{ path: string; error?: string }>
-      importProject(request: { path: string }): Promise<{ ok: boolean; error?: string }>
+      exportProject: KnowledgeWikiService['exportProject']
+      importProject: KnowledgeWikiService['importProject']
     }
 
-    expect(await service.exportProject()).toEqual({ path: '', error: 'primitive archive failure' })
-    expect(await service.importProject({ path: '/archive.zip' })).toEqual({
+    expect(await service.exportProject(projectRequest(service))).toEqual({ path: '', error: 'primitive archive failure' })
+    expect(await service.importProject({ ...projectRequest(service), path: '/archive.zip' })).toEqual({
       ok: false, error: 'primitive archive failure',
     })
     service.snapshots.dispose()

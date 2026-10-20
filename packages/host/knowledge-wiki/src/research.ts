@@ -6,12 +6,11 @@
  * @module @deepseek-ai/dsh-knowledge-wiki/research
  */
 
-import { mkdir } from 'node:fs/promises'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename } from 'node:path'
 import type { WebSearchSource } from '@deepseek-ai/dsh-web'
 import { parseFileBlocks } from './ingest.ts'
 import type { ResearchResult } from './types.ts'
-import { atomicWriteFile } from './filesystem.ts'
+import { atomicWriteConfinedFile } from './filesystem.ts'
 import { executeKnowledgeWikiStage, type KnowledgeWikiStageExecutor } from './stage-executor.ts'
 
 /** Parse 3-5 search queries out of the LLM expansion output. */
@@ -25,13 +24,13 @@ function parseQueries(text: string): string[] {
 /**
  * Run the deep-research pipeline for one topic.
  * Query expansion and synthesis each have a 120-second deadline; each search has 60 seconds.
- * Search and page-write failures become warnings; written Candidate pages are not rolled back.
+ * Zero sources blocks synthesis; partial search and page-write failures remain warnings.
  * @param executor - Parent-owned worker/subprocess executor for model and web-search stages; absence rejects.
  * @param provider - LLM provider id.
  * @param model - exact model id.
  * @param projectPath - absolute project root.
  * @param topic - the research topic.
- * @param signal - Cancels executor stages; the page-write loop does not check it after synthesis completes.
+ * @param signal - Cancels stages and prevents subsequent page writes.
  * @returns Project-relative wiki/_candidates/research paths, unique source URL count, and warnings.
  * @throws If query expansion or synthesis fails, times out, or observes cancellation.
  */
@@ -43,9 +42,16 @@ export async function deepResearch(
   topic: string,
   signal: AbortSignal,
 ): Promise<ResearchResult> {
+  signal.throwIfAborted()
+  if (executor === undefined) throw new Error('knowledge Wiki stage executor unavailable; refusing research')
+  if (executor.assertSearchAvailable === undefined) throw new Error('knowledge web search availability cannot be established')
+  executor.assertSearchAvailable()
+  const operationExecutor = executor.prepareOperation === undefined
+    ? executor
+    : await executor.prepareOperation({ provider, model, modelCalls: 2 }, signal)
   const warnings: string[] = []
 
-  const expansion = await executeKnowledgeWikiStage(executor, {
+  const expansion = await executeKnowledgeWikiStage(operationExecutor, {
     kind: 'llm-complete',
     provider,
     model,
@@ -63,34 +69,43 @@ export async function deepResearch(
   }, signal)
   const queries = parseQueries(expansion.text ?? '')
   if (queries.length === 0) {
-    return { written: [], sourceCount: 0, warnings: ['research: LLM produced no usable queries'] }
+    return { written: [], sourceCount: 0, warnings: ['research: LLM produced no usable queries'], errorCode: 'invalid-queries' }
   }
 
   const sources: WebSearchSource[] = []
   const seenUrls = new Set<string>()
   for (const query of queries) {
     try {
-      const result = await executeKnowledgeWikiStage(executor, {
+      const result = await executeKnowledgeWikiStage(operationExecutor, {
         kind: 'web-search',
         query,
         maxResults: 4,
         timeoutMs: 60_000,
       }, signal)
       for (const source of result.sources ?? []) {
+        let parsed: URL
+        try { parsed = new URL(source.url) } catch { continue }
+        if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) continue
         if (seenUrls.has(source.url)) continue
         seenUrls.add(source.url)
         sources.push(source)
       }
     } catch (error) {
+      signal.throwIfAborted()
       warnings.push(`search "${query}" failed: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  signal.throwIfAborted()
+  if (sources.length === 0) {
+    return { written: [], sourceCount: 0, warnings: [...warnings, 'research: no citeable web sources; synthesis was not run'], errorCode: 'no-sources' }
   }
 
   const sourceDigest = sources.map((source, i) => (
     `${i + 1}. ${source.title ?? source.url}\n   URL: ${source.url}\n   ${source.snippet ?? ''}`
   )).join('\n')
 
-  const synthesis = await executeKnowledgeWikiStage(executor, {
+  const synthesis = await executeKnowledgeWikiStage(operationExecutor, {
     kind: 'llm-complete',
     provider,
     model,
@@ -128,7 +143,7 @@ export async function deepResearch(
       `Topic: ${topic}`,
       '',
       'Collected sources:',
-      sourceDigest === '' ? '(none — synthesize from general knowledge and mark clearly)' : sourceDigest,
+      sourceDigest,
     ].join('\n'),
     operation: 'research synthesis',
     timeoutMs: 120_000,
@@ -136,26 +151,22 @@ export async function deepResearch(
 
   const written: string[] = []
   for (const block of parseFileBlocks(synthesis.text ?? '')) {
+    signal.throwIfAborted()
     if (!block.closed) {
       warnings.push(`FILE block not closed: ${block.path}`)
       continue
     }
-    const wikiRoot = resolve(projectPath, 'wiki')
     const fileName = basename(block.path)
     const rel = `wiki/_candidates/research/${fileName}`
-    const target = resolve(join(projectPath, rel))
-    if (!target.startsWith(wikiRoot + sep)) {
-      warnings.push(`research: FILE path escapes wiki directory: ${block.path}`)
-      continue
-    }
     try {
-      await mkdir(dirname(target), { recursive: true })
+      signal.throwIfAborted()
       let content = block.content
       if (!/^status:\s*/mu.test(content)) content = content.replace(/^---\n/u, '---\nstatus: candidate\n')
       if (!/^origin:\s*/mu.test(content)) content = content.replace(/^---\n/u, '---\norigin: research\n')
-      atomicWriteFile(target, content)
+      atomicWriteConfinedFile(projectPath, rel, content)
       written.push(rel)
     } catch (error) {
+      signal.throwIfAborted()
       warnings.push(error instanceof Error ? error.message : String(error))
     }
   }

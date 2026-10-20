@@ -10,6 +10,8 @@ Ark 可能把 Native 客户端与较旧的 Host RPC 集合组装在一起，也�
 
 ## Decision
 
+[显式路由与持久输入](2026-10-20-ark-explicit-routing-and-durable-input.zh.md)扩展知识操作、输入框与启动 owner。仅发布候选、凭据事务、Workbench 日志与事件泵归属继续由本笔记管理。
+
 Native 构建只产候选。输出 owner 拒绝正式、link-shaped、嵌套与既有 App 目标；self-contained 构建跟随 Native API runtime plan，在嵌入前后都要求每条严格 Remote route 同时存在于实现、生成 descriptor、Host lookup 与 package entry。
 
 规范正式应用包位于 `~/Ark.app`，与 `~/ark` 源码检出分离。候选输出和工作区注册会拒绝正式应用包本身、其后代及祖先。源码检出仍可显式作为维护工作区，同时保留已有的构建与候选输出保护。产品不定义旧安装路径别名。
@@ -54,4 +56,4 @@ Artifact policy contracts 会拒绝不安全输出与缺失 Host route。Provide
 
 ## Consequences
 
-credentials-local 在 macOS Keychain 模式下依赖已经随产品交付的 `node-pty` 包。候选组装会拒绝 stale runtime，而不是产出部分可用的 App。Git 仍可能在观察到并发编辑前改变 worktree，但内存 draft 会保留，也不能静默覆盖变化后的文件。Wiki first-wins 去重会隐藏后续歧义记录，而不是修复上游数据。Native 产品不打包浏览器应用、HTML fallback 或 WebKit surface；Host-only Remote 与 NativeEvents owner 提供经过鉴权的 loopback API 与事件传输。本决策不关闭固定端口策略、Queue 的 mux-only reconnect 证明、B0 freeze、unified soak 或正式版晋级。
+credentials-local 在 macOS Keychain 模式下依赖已经随产品交付的 `node-pty` 包。候选组装会拒绝 stale runtime，而不是产出部分可用的 App。Git 仍可能在观察到并发编辑前改变 worktree，但内存 draft 会保留，也不能静默覆盖变化后的文件。Wiki first-wins 去重会隐藏后续歧义记录，而不是修复上游数据。Native 产品界面保持 AppKit/SwiftUI，不打包浏览器应用或 HTML fallback；仅显式要求的 Workbench 浏览器通过 WebKit 渲染外部 HTTP(S) 页面，不提供凭据、工具或本地文件桥接；Host-only Remote 与 NativeEvents owner 提供经过鉴权的 loopback API 与事件传输。本决策不关闭固定端口策略、Queue 的 mux-only reconnect 证明、B0 freeze、unified soak 或正式版晋级。

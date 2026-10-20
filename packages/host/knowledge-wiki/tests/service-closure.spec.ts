@@ -1,3 +1,4 @@
+import { projectRequest } from './project-request-fixture.ts'
 /**
  * Closure tests for KnowledgeWikiService (src/index.ts) behavior the
  * surface/queue/summary/network specs leave uncovered: the owned-worker stage
@@ -33,36 +34,24 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
+import { LlmRuntime, LlmAdapter, type GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
 import KnowledgeWikiService, { isBlockedNetworkAddress, type Config } from '../src/index.ts'
 import { appendCandidateReviews } from '../src/reviews.ts'
 import type { KnowledgeWikiStageExecutor } from '../src/stage-executor.ts'
 import type { ProjectExecutionContext } from '../src/project-context.ts'
-import type { CandidateVerificationResult, IngestQueueTask } from '../src/types.ts'
+import type { IngestQueueTask } from '../src/types.ts'
 import { wikiTestConfig } from './config-fixture.ts'
 import { verifierAuthority } from './verifier-authority-fixture.ts'
 
-interface IngestOutcomeLike {
-  written: string[]
-  warnings: string[]
-  status: 'ok' | 'degraded' | 'error'
-  errorCode?: string
-}
-
-interface QueueSnapshotLike {
-  tasks: IngestQueueTask[]
-  running: boolean
-  cancelled: boolean
-}
-
 /** Private service surface exercised by these closure tests. */
-interface ClosureSurface {
+interface ClosureSurface extends Pick<KnowledgeWikiService, 'createProject'> {
   snapshots: { dispose(): void; currentGeneration(root: string): number }
   queue: IngestQueueTask[]
-  ingestSource(request: { path: string }): Promise<IngestOutcomeLike>
-  ingestQueueAdd(request: { inputs: string[] }): Promise<QueueSnapshotLike>
-  ingestQueueStatus(): Promise<QueueSnapshotLike>
-  ingestQueueCancel(): Promise<QueueSnapshotLike>
+  ingestSource: KnowledgeWikiService['ingestSource']
+  ingestQueueAdd: KnowledgeWikiService['ingestQueueAdd']
+  ingestQueueStatus: KnowledgeWikiService['ingestQueueStatus']
+  ingestQueueCancel: KnowledgeWikiService['ingestQueueCancel']
   drainQueue(): Promise<void>
   scanSources(): Promise<void>
   restoreQueue(projectRoot?: string): void
@@ -73,28 +62,16 @@ interface ClosureSurface {
   queueFile(projectRoot?: string): string
   listRawSources(projectRoot?: string): string[]
   recordKnowledgeRetrieval(paths: string[], projectRoot?: string): void
-  search(request: { query: string; topK?: number }): Promise<Array<{ path: string; score: number }>>
-  knowledgeUtility(): Promise<Array<{ path: string; retrievalHits: number }>>
-  writePage(request: { path: string; content: string; expectedContent?: string }): Promise<Record<string, unknown>>
-  lint(): Promise<{
-    brokenLinks: Array<{ from: string; target: string }>
-    emptyPages: string[]
-    totalPages: number
-  }>
-  pageContent(request: { path: string }): Promise<{ path: string; content: string }>
-  reviews(request: { status?: string; limit?: number }): Promise<Array<{ id: string; resolved?: boolean }>>
-  resolveReview(request: { reviewId: string; action?: string }): Promise<boolean>
+  search: KnowledgeWikiService['search']
+  knowledgeUtility: KnowledgeWikiService['knowledgeUtility']
+  writePage: KnowledgeWikiService['writePage']
+  lint: KnowledgeWikiService['lint']
+  pageContent: KnowledgeWikiService['pageContent']
+  reviews: KnowledgeWikiService['reviews']
+  resolveReview: KnowledgeWikiService['resolveReview']
   summarizeSession(sessionId: string | undefined): Promise<void>
-  deepResearch(request: { topic: string }, signal: AbortSignal): Promise<{
-    findings: Array<{ title: string; path: string }>
-    warnings: string[]
-    degraded: boolean
-    errorCode?: string
-  }>
-  verifyCandidate(
-    request: { reviewId: string; action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' | 'Archive' },
-    signal: AbortSignal,
-  ): Promise<CandidateVerificationResult>
+  deepResearch: KnowledgeWikiService['deepResearch']
+  verifyCandidate: KnowledgeWikiService['verifyCandidate']
   [Service.init](): Promise<void>
 }
 
@@ -226,7 +203,7 @@ beforeEach(() => {
     value: seedCredentials({}),
   })
   service = create(ctx, {
-    wikiRoot, mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
+    wikiRoot, mainRoot: root, llmProvider: 'p', llmModel: 'm',
   })
 })
 
@@ -241,116 +218,39 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-describe('owned stage isolate seam', () => {
-  it('ingests through the owned worker isolate with the configured llm credential', async () => {
-    const model = await startModelServer(index => index === 0 ? 'analysis of the note' : 'no FILE blocks here')
-    const ownedCtx = new Context()
-    contexts.push(ownedCtx)
-    Object.defineProperty(ownedCtx, 'credentials', {
-      configurable: true,
-      value: seedCredentials({ WIKI_LLM_KEY: 'declared-key' }),
-    })
-    const owned = create(ownedCtx, {
-      wikiRoot, mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-      llmCredential: 'WIKI_LLM_KEY', llmBaseUrl: model.baseUrl, ownedStageExecutor: true,
-    })
-    writeFileSync(join(root, 'raw', 'sources', 'note.md'),
-      'Reusable source about code, tests, API, and deployment.', 'utf8')
-
-    const outcome = await owned.ingestSource({ path: 'note.md' })
-
+describe('owned stage provider dispatch', () => {
+  it('ingests using only the selected provider owner', async () => {
+    const model = await startModelServer(index => index === 0 ? 'analysis' : 'no FILE blocks')
+    const owner = new Context()
+    contexts.push(owner)
+    await owner.plugin(LlmRuntime)
+    class LocalFixtureAdapter extends LlmAdapter {
+      override stream(options: GenerateOptions) {
+        return (async function* () {
+          const response = await fetch(model.baseUrl, { method: 'POST', headers: { authorization: 'Bearer fixture-selected-provider' }, ...(options.signal === undefined ? {} : { signal: options.signal }) })
+          const body = await response.json() as { choices: Array<{ message:{ content:string } }> }
+          yield { type: 'text-delta', index: 0, text: body.choices[0]!.message.content } as const
+        })()
+      }
+    }
+    owner.llm.registerAdapter(['fixture-route'], new LocalFixtureAdapter())
+    const owned = create(owner, { wikiRoot, mainRoot: root, llmProvider: 'fixture-route', llmModel: 'fixture', ownedStageExecutor: true })
+    writeFileSync(join(root, 'raw', 'sources', 'note.md'), 'Reusable source about code and tests.')
+    const outcome = await owned.ingestSource({ ...projectRequest(owned), path: 'note.md' })
     expect(outcome.status).toBe('ok')
-    expect(outcome.warnings).toEqual([])
-    expect(outcome.written).toContain('wiki/_governance/ingest-candidate-log.md')
     expect(outcome.written.some(path => path.startsWith('wiki/_candidates/ingest/sources/'))).toBe(true)
-    for (const path of outcome.written) expect(existsSync(join(root, path))).toBe(true)
-    // The parent resolved the connection facts and the isolate really sent them.
-    expect(model.authorizations).toEqual(['Bearer declared-key', 'Bearer declared-key'])
+    expect(model.authorizations).toEqual(['Bearer fixture-selected-provider', 'Bearer fixture-selected-provider'])
   })
 
-  it('prefers the settings-declared apiKeyEnv over the process environment default', async () => {
-    const model = await startModelServer(index => index === 0 ? 'analysis' : 'no FILE blocks')
-    const ownedCtx = new Context()
-    contexts.push(ownedCtx)
-    Object.defineProperty(ownedCtx, 'credentials', {
-      configurable: true,
-      value: seedCredentials({ DECLARED_ENV: 'settings-key' }),
-    })
-    ownedCtx.provide('settings', {
-      remoteDescribe: () => ({
-        namespaces: [
-          { ns: 'llm-other', value: { apiKeyEnv: 'IGNORED_ENV' } },
-          { ns: 'llm-deepseek', value: { apiKeyEnv: 'DECLARED_ENV' } },
-        ],
-      }),
-    })
-    const previous = process.env.DEEPSEEK_API_KEY
-    process.env.DEEPSEEK_API_KEY = 'process-key'
-    try {
-      const owned = create(ownedCtx, {
-        wikiRoot, mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-        llmBaseUrl: model.baseUrl, ownedStageExecutor: true,
-      })
-      writeFileSync(join(root, 'raw', 'sources', 'note.md'), 'Reusable source about code and tests.', 'utf8')
-
-      expect((await owned.ingestSource({ path: 'note.md' })).status).toBe('ok')
-      expect(model.authorizations[0]).toBe('Bearer settings-key')
-    } finally {
-      if (previous === undefined) delete process.env.DEEPSEEK_API_KEY
-      else process.env.DEEPSEEK_API_KEY = previous
-    }
-  })
-
-  it('falls back to the declared environment key when settings cannot describe itself', async () => {
-    const model = await startModelServer(index => index === 0 ? 'analysis' : 'no FILE blocks')
-    const ownedCtx = new Context()
-    contexts.push(ownedCtx)
-    Object.defineProperty(ownedCtx, 'credentials', { configurable: true, value: seedCredentials({}) })
-    ownedCtx.provide('settings', {
-      remoteDescribe: () => { throw new Error('settings surface unavailable') },
-    })
-    const previous = process.env.DEEPSEEK_API_KEY
-    process.env.DEEPSEEK_API_KEY = 'process-key'
-    try {
-      const owned = create(ownedCtx, {
-        wikiRoot, mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-        llmBaseUrl: model.baseUrl, ownedStageExecutor: true,
-      })
-      writeFileSync(join(root, 'raw', 'sources', 'note.md'), 'Reusable source about code and tests.', 'utf8')
-
-      expect((await owned.ingestSource({ path: 'note.md' })).status).toBe('ok')
-      expect(model.authorizations[0]).toBe('Bearer process-key')
-    } finally {
-      if (previous === undefined) delete process.env.DEEPSEEK_API_KEY
-      else process.env.DEEPSEEK_API_KEY = previous
-    }
-  })
-
-  it('fails the owned stage loudly when no credential resolves at all', async () => {
-    const model = await startModelServer(() => 'unused')
-    const ownedCtx = new Context()
-    contexts.push(ownedCtx)
-    Object.defineProperty(ownedCtx, 'credentials', { configurable: true, value: seedCredentials({}) })
-    // A settings service without a describe surface must not fail the stage by itself.
-    ownedCtx.provide('settings', {})
-    const previous = process.env.DEEPSEEK_API_KEY
-    delete process.env.DEEPSEEK_API_KEY
-    try {
-      const owned = create(ownedCtx, {
-        wikiRoot, mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
-        llmBaseUrl: model.baseUrl, ownedStageExecutor: true,
-      })
-      writeFileSync(join(root, 'raw', 'sources', 'note.md'), 'Reusable source about code and tests.', 'utf8')
-
-      const outcome = await owned.ingestSource({ path: 'note.md' })
-      expect(outcome).toMatchObject({ written: [], status: 'error', errorCode: 'ingest-failed' })
-      expect(outcome.warnings[0]).toContain('no model connection facts')
-      expect(model.authorizations).toEqual([])
-      expect(existsSync(join(wikiRoot, '_governance'))).toBe(false)
-    } finally {
-      if (previous === undefined) delete process.env.DEEPSEEK_API_KEY
-      else process.env.DEEPSEEK_API_KEY = previous
-    }
+  it('does not borrow an environment key for a missing provider', async () => {
+    const owner = new Context()
+    contexts.push(owner)
+    await owner.plugin(LlmRuntime)
+    const owned = create(owner, { wikiRoot, mainRoot: root, llmProvider: 'unconfigured-route', llmModel: 'fixture', ownedStageExecutor: true })
+    writeFileSync(join(root, 'raw', 'sources', 'note.md'), 'Reusable source about code and tests.')
+    const outcome = await owned.ingestSource({ ...projectRequest(owned), path: 'note.md' })
+    expect(outcome).toMatchObject({ written: [], status: 'error', errorCode: 'ingest-failed' })
+    expect(outcome.warnings[0]).toContain('unconfigured-route')
   })
 })
 
@@ -372,14 +272,14 @@ describe('review and verification gates', () => {
     for (const value of partials) {
       provided.set('knowledgeWikiVerifierAuthority', value)
       await expect(service.verifyCandidate(
-        { reviewId: 'missing-review', action: 'Promote' },
+        { ...projectRequest(service), reviewId: 'missing-review', action: 'Promote' },
         new AbortController().signal,
       )).resolves.toEqual({ ok: false, evidence: [], errorCode: 'verifier-authority-unavailable' })
     }
     // The complete shape passes the gate and reaches the review lookup instead.
     provided.set('knowledgeWikiVerifierAuthority', full)
     await expect(service.verifyCandidate(
-      { reviewId: 'missing-review', action: 'Promote' },
+      { ...projectRequest(service), reviewId: 'missing-review', action: 'Promote' },
       new AbortController().signal,
     )).resolves.toEqual({ ok: false, evidence: [], errorCode: 'review-not-found' })
 
@@ -393,7 +293,7 @@ describe('review and verification gates', () => {
       }),
     })
     await expect(service.verifyCandidate(
-      { reviewId: 'missing-review', action: 'Promote' },
+      { ...projectRequest(service), reviewId: 'missing-review', action: 'Promote' },
       new AbortController().signal,
     )).resolves.toMatchObject({ ok: false })
   })
@@ -430,7 +330,7 @@ describe('review and verification gates', () => {
     }
     ctx.provide('knowledgeWikiVerifierAuthority', racingAuthority)
 
-    const result = await service.verifyCandidate({ reviewId, action: 'Promote' }, new AbortController().signal)
+    const result = await service.verifyCandidate({ ...projectRequest(service), reviewId, action: 'Promote' }, new AbortController().signal)
 
     expect(result).toMatchObject({ ok: false, result: 'pass', errorCode: 'verification-failed' })
     if (result.receiptId === undefined) throw new Error('expected the authentic receipt to be retained')
@@ -444,13 +344,15 @@ describe('review and verification gates', () => {
   it('stringifies a primitive research failure instead of reporting it as a missing executor', async () => {
     ctx.provide('knowledgeWikiStageExecutor', {
       isolation: 'owned-worker-v1',
+      assertSearchAvailable() {},
       execute() {
         throw 'primitive research failure'
       },
     })
 
-    await expect(service.deepResearch({ topic: 'closure topic' }, new AbortController().signal)).resolves.toEqual({
+    await expect(service.deepResearch({ ...projectRequest(service), topic: 'closure topic' }, new AbortController().signal)).resolves.toEqual({
       findings: [],
+      sourceCount: 0,
       warnings: ['primitive research failure'],
       degraded: true,
       errorCode: 'research-failed',
@@ -458,8 +360,9 @@ describe('review and verification gates', () => {
   })
 
   it('reports a missing stage executor for deep research instead of a generic failure', async () => {
-    await expect(service.deepResearch({ topic: 'closure topic' }, new AbortController().signal)).resolves.toEqual({
+    await expect(service.deepResearch({ ...projectRequest(service), topic: 'closure topic' }, new AbortController().signal)).resolves.toEqual({
       findings: [],
+      sourceCount: 0,
       warnings: [expect.stringContaining('stage executor unavailable')],
       degraded: true,
       errorCode: 'stage-executor-unavailable',
@@ -479,7 +382,7 @@ describe('raw source tree safety', () => {
     mkdirSync(real, { recursive: true })
     symlinkSync(real, sources)
     await expect(service.scanSources()).rejects.toThrow('raw source root is not an ordinary directory')
-    expect((await service.ingestQueueStatus()).tasks).toEqual([])
+    expect((await service.ingestQueueStatus(projectRequest(service))).tasks).toEqual([])
   })
 
   it('propagates a non-missing stat failure for the source root', async () => {
@@ -489,7 +392,7 @@ describe('raw source tree safety', () => {
     writeFileSync(join(root, 'raw'), 'blocks the source root', 'utf8')
 
     await expect(service.scanSources()).rejects.toThrow(/ENOTDIR/u)
-    expect((await service.ingestQueueStatus()).tasks).toEqual([])
+    expect((await service.ingestQueueStatus(projectRequest(service))).tasks).toEqual([])
   })
 
   it('refuses non-regular, hard-linked, and oversized raw sources', async () => {
@@ -516,7 +419,7 @@ describe('raw source tree safety', () => {
       closeSync(descriptor)
     }
     await expect(service.scanSources()).rejects.toThrow('raw source exceeds 100 MiB')
-    expect((await service.ingestQueueStatus()).tasks).toEqual([])
+    expect((await service.ingestQueueStatus(projectRequest(service))).tasks).toEqual([])
   })
 })
 
@@ -543,7 +446,7 @@ describe('durable queue migration', () => {
 
     service.restoreQueue(root)
 
-    expect((await service.ingestQueueStatus()).tasks).toEqual([{
+    expect((await service.ingestQueueStatus(projectRequest(service))).tasks).toEqual([{
       id: 3,
       input: 'legacy.md',
       projectRoot: root,
@@ -581,7 +484,7 @@ describe('durable queue migration', () => {
 
     await service.scanSources()
 
-    expect((await service.ingestQueueStatus()).tasks.map(task => task.status)).toEqual(['error', 'pending'])
+    expect((await service.ingestQueueStatus(projectRequest(service))).tasks.map(task => task.status)).toEqual(['error', 'pending'])
   })
 
   it('skips restored rows that carry no usable status', async () => {
@@ -594,20 +497,20 @@ describe('durable queue migration', () => {
 
     service.restoreQueue(root)
 
-    expect((await service.ingestQueueStatus()).tasks).toEqual([])
+    expect((await service.ingestQueueStatus(projectRequest(service))).tasks).toEqual([])
     expect(service.queue).toEqual([])
   })
 
   it('normalizes a leading slash and keeps one task per cache-relative identity', async () => {
     writeFileSync(join(root, 'raw', 'sources', 'a.md'), 'A', 'utf8')
 
-    const added = await service.ingestQueueAdd({ inputs: ['/a.md'] })
+    const added = await service.ingestQueueAdd({ ...projectRequest(service), inputs: ['/a.md'] })
     expect(added.tasks.map(task => task.input)).toEqual(['a.md'])
     // The project-relative spelling of the same identity dedupes onto that task.
-    expect((await service.ingestQueueAdd({ inputs: ['a.md'] })).tasks).toHaveLength(1)
+    expect((await service.ingestQueueAdd({ ...projectRequest(service), inputs: ['a.md'] })).tasks).toHaveLength(1)
 
     await service.drainQueue()
-    const drained = (await service.ingestQueueStatus()).tasks[0]
+    const drained = (await service.ingestQueueStatus(projectRequest(service))).tasks[0]
     expect(drained?.input).toBe('a.md')
     expect(drained?.status).toBe('error')
     expect(drained?.error).toContain('stage executor unavailable')
@@ -618,14 +521,14 @@ describe('ingest admission and ownership', () => {
   it('reports a project-relative source that was queued under its cache-relative identity', async () => {
     writeFileSync(join(root, 'raw', 'sources', 'a.md'), 'A', 'utf8')
 
-    const outcome = await service.ingestSource({ path: '/raw/sources/a.md' })
+    const outcome = await service.ingestSource({ ...projectRequest(service), path: '/raw/sources/a.md' })
 
     expect(outcome).toEqual({
       written: [], warnings: ['ingest task was not admitted'], status: 'error', errorCode: 'invalid-input',
     })
     // The admitted task stays queued under its normalized identity.
-    expect((await service.ingestQueueStatus()).tasks.map(task => task.input)).toEqual(['a.md'])
-    await service.ingestQueueCancel()
+    expect((await service.ingestQueueStatus(projectRequest(service))).tasks.map(task => task.input)).toEqual(['a.md'])
+    await service.ingestQueueCancel(projectRequest(service))
     await service.drainQueue()
   })
 
@@ -635,10 +538,10 @@ describe('ingest admission and ownership', () => {
     writeFileSync(join(root, 'raw', 'sources', 'a.md'), 'A', 'utf8')
     writeFileSync(join(root, 'raw', 'sources', 'b.md'), 'B', 'utf8')
 
-    const running = service.ingestSource({ path: 'a.md' })
-    expect((await service.ingestQueueStatus()).running).toBe(true)
-    const queued = service.ingestSource({ path: 'b.md' })
-    await service.ingestQueueCancel()
+    const running = service.ingestSource({ ...projectRequest(service), path: 'a.md' })
+    expect((await service.ingestQueueStatus(projectRequest(service))).running).toBe(true)
+    const queued = service.ingestSource({ ...projectRequest(service), path: 'b.md' })
+    await service.ingestQueueCancel(projectRequest(service))
 
     const [cancelledRunning, cancelledQueued] = await Promise.all([running, queued])
     expect(cancelledRunning).toMatchObject({ written: [], status: 'error', errorCode: 'cancelled' })
@@ -647,11 +550,12 @@ describe('ingest admission and ownership', () => {
     expect(cancelledQueued.warnings).toEqual([expect.stringMatching(/^ingest task \d+ did not complete$/u)])
     expect(observed.length).toBeGreaterThanOrEqual(1)
     expect(observed.every(signal => signal.aborted)).toBe(true)
-    expect((await service.ingestQueueStatus()).tasks.map(task => task.status)).toEqual(['cancelled', 'cancelled'])
+    expect((await service.ingestQueueStatus(projectRequest(service))).tasks.map(task => task.status)).toEqual(['cancelled', 'cancelled'])
   })
 
   it('aborts owned ingest and background summary work when the service fiber is disposed', async () => {
     const external = tempRoot('wiki-closure-external-')
+    await service.createProject({ name: 'Summary disposal', path: external })
     const observed: AbortSignal[] = []
     const provided = new Map<string, unknown>([
       ['knowledgeWikiStageExecutor', hangingStageExecutor(observed)],
@@ -674,8 +578,8 @@ describe('ingest admission and ownership', () => {
 
     await service[Service.init]()
     const summary = service.summarizeSession('session-in-flight')
-    const ingest = service.ingestSource({ path: 'a.md' })
-    expect((await service.ingestQueueStatus()).running).toBe(true)
+    const ingest = service.ingestSource({ ...projectRequest(service), path: 'a.md' })
+    expect((await service.ingestQueueStatus(projectRequest(service))).running).toBe(true)
 
     await ctx.fiber.dispose()
     const [outcome] = await Promise.all([ingest, summary])
@@ -686,7 +590,7 @@ describe('ingest admission and ownership', () => {
     expect(observed.length).toBeGreaterThanOrEqual(1)
     expect(observed.every(signal => signal.aborted)).toBe(true)
     expect(timerDispose).toHaveBeenCalledOnce()
-    expect(existsSync(join(external, 'wiki'))).toBe(false)
+    expect(existsSync(join(external, 'wiki', '_candidates'))).toBe(false)
   })
 })
 
@@ -710,6 +614,7 @@ describe('session summary write failures', () => {
 
   it('writes nothing when the summary stage returns no text', async () => {
     const external = tempRoot('wiki-closure-empty-')
+    await service.createProject({ name: 'Summary empty', path: external })
     const reader = () => Promise.resolve({ session: { cwd: external }, events: longEvents() })
     const provided = new Map<string, unknown>([
       ['sessionQuery', { readSession: reader }],
@@ -722,11 +627,12 @@ describe('session summary write failures', () => {
 
     await service.summarizeSession('session-null-text')
 
-    expect(existsSync(join(external, 'wiki'))).toBe(false)
+    expect(existsSync(join(external, 'wiki', '_candidates'))).toBe(false)
   })
 
   it('reports an unsafe candidate path instead of writing a session summary', async () => {
     const external = tempRoot('wiki-closure-symlink-')
+    await service.createProject({ name: 'Summary symlink', path: external })
     const target = join(external, 'wiki', '_candidates', 'topics', 'stable-topic.md')
     mkdirSync(dirname(target), { recursive: true })
     symlinkSync(join(external, 'missing-target.md'), target)
@@ -747,20 +653,21 @@ describe('session summary write failures', () => {
 describe('page, search, and utility edges', () => {
   it('returns empty content for a page that does not exist yet', async () => {
     mkdirSync(join(wikiRoot, 'concepts'), { recursive: true })
-    expect(await service.pageContent({ path: 'concepts/absent.md' }))
+    expect(await service.pageContent({ ...projectRequest(service), path: 'concepts/absent.md' }))
       .toEqual({ path: 'concepts/absent.md', content: '' })
     // Unsafe paths still surface instead of degrading to an empty page.
-    await expect(service.pageContent({ path: '../outside.md' })).rejects.toThrow('traversal')
+    await expect(service.pageContent({ ...projectRequest(service), path: '../outside.md' })).rejects.toThrow('traversal')
   })
 
   it('refuses vision work when an image has a credential but no owned executor', async () => {
+    Object.assign(service, { connections: () => ({ textProvider: 'p', textModel: 'm', visionProvider: 'fixture-vision', visionModel: 'fixture-image' }) })
     Object.defineProperty(ctx, 'credentials', {
       configurable: true,
       value: seedCredentials({ VISION_API_KEY: 'vision-secret' }),
     })
     writeFileSync(join(root, 'raw', 'sources', 'image.png'), Buffer.from('png'))
 
-    const outcome = await service.ingestSource({ path: 'image.png' })
+    const outcome = await service.ingestSource({ ...projectRequest(service), path: 'image.png' })
 
     expect(outcome).toEqual({
       written: [],
@@ -772,6 +679,7 @@ describe('page, search, and utility edges', () => {
   })
 
   it('keeps the copied media page when the vision stage returns no caption', async () => {
+    Object.assign(service, { connections: () => ({ textProvider: 'p', textModel: 'm', visionProvider: 'fixture-vision', visionModel: 'fixture-image' }) })
     Object.defineProperty(ctx, 'credentials', {
       configurable: true,
       value: seedCredentials({ VISION_API_KEY: 'vision-secret' }),
@@ -782,11 +690,11 @@ describe('page, search, and utility edges', () => {
     })
     writeFileSync(join(root, 'raw', 'sources', 'image.png'), Buffer.from('png'))
 
-    const outcome = await service.ingestSource({ path: 'image.png' })
+    const outcome = await service.ingestSource({ ...projectRequest(service), path: 'image.png' })
 
     expect(outcome).toEqual({
       written: ['_candidates/ingest/media/image.png'],
-      warnings: ['视觉说明生成失败（检查 apiKey/网络）'],
+      warnings: ['视觉说明生成失败，请检查所选连接。'],
       status: 'degraded',
     })
     expect(existsSync(join(wikiRoot, '_candidates', 'ingest', 'media', 'image.png'))).toBe(true)
@@ -796,13 +704,14 @@ describe('page, search, and utility edges', () => {
   })
 
   it('skips the compare-and-swap when the expected content targets a missing page', async () => {
-    expect(await service.writePage({
+    expect(await service.writePage({ ...projectRequest(service),
       path: '_candidates/fresh.md', content: 'fresh body', expectedContent: 'stale',
     })).toEqual({ path: '_candidates/fresh.md', ok: true })
     expect(readFileSync(join(wikiRoot, '_candidates', 'fresh.md'), 'utf8')).toBe('fresh body')
   })
 
   it('degrades semantic search once and keeps serving keyword results', async () => {
+    Object.assign(service, { connections: () => ({ textProvider: 'p', textModel: 'm', embeddingProvider: 'fixture', embeddingBaseUrl: 'https://embedding.fixture.test/v1', embeddingModel: 'fixture', embeddingCredential: 'FIXTURE_KEY' }) })
     const warn = vi.fn()
     Object.defineProperty(ctx, 'logger', {
       configurable: true,
@@ -810,7 +719,7 @@ describe('page, search, and utility edges', () => {
     })
     Object.defineProperty(ctx, 'credentials', {
       configurable: true,
-      value: seedCredentials({ VISION_API_KEY: 'embedding-key' }),
+      value: seedCredentials({ FIXTURE_KEY: 'embedding-key' }),
     })
     mkdirSync(join(wikiRoot, 'concepts'), { recursive: true })
     writeFileSync(join(wikiRoot, 'concepts', 'alpha.md'), [
@@ -822,14 +731,14 @@ describe('page, search, and utility edges', () => {
       return Promise.reject(new Error('embedding request failed (401)'))
     })
 
-    expect((await service.search({ query: 'alpha', topK: 1 }))[0]?.path).toBe('concepts/alpha.md')
+    expect((await service.search({ ...projectRequest(service), query: 'alpha', topK: 1 }))[0]?.path).toBe('concepts/alpha.md')
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls[0]?.[0]).toContain('embedding request failed (401)')
     // A second query degrades silently: the diagnostic is reported once.
-    expect((await service.search({ query: 'alpha validation', topK: 1 }))[0]?.path).toBe('concepts/alpha.md')
+    expect((await service.search({ ...projectRequest(service), query: 'alpha validation', topK: 1 }))[0]?.path).toBe('concepts/alpha.md')
     expect(warn).toHaveBeenCalledTimes(1)
     expect(embeddingCalls).toHaveLength(2)
-    expect(await service.search({ query: 'the and' })).toEqual([])
+    expect(await service.search({ ...projectRequest(service), query: 'the and' })).toEqual([])
   })
 
   it('keys its durable cache and utility artifacts to the active project root', async () => {
@@ -851,10 +760,10 @@ describe('page, search, and utility edges', () => {
 
     // The recorded hash is the scanner's dedup contract.
     await service.scanSources()
-    expect((await service.ingestQueueStatus()).tasks).toEqual([])
+    expect((await service.ingestQueueStatus(projectRequest(service))).tasks).toEqual([])
 
     service.recordKnowledgeRetrieval(['concepts/alpha.md'])
-    expect((await service.knowledgeUtility()).find(item => item.path === 'concepts/alpha.md'))
+    expect((await service.knowledgeUtility(projectRequest(service))).find(item => item.path === 'concepts/alpha.md'))
       .toMatchObject({ path: 'concepts/alpha.md', retrievalHits: 1 })
   })
 
@@ -873,9 +782,9 @@ describe('page, search, and utility edges', () => {
     const reviewFile = join(root, '.llm-wiki', 'review.json')
     mkdirSync(dirname(reviewFile), { recursive: true })
     writeFileSync(reviewFile, 'null', 'utf8')
-    await expect(service.reviews({})).rejects.toThrow('invalid knowledge review state')
+    await expect(service.reviews({ ...projectRequest(service) })).rejects.toThrow('invalid knowledge review state')
     writeFileSync(reviewFile, JSON.stringify([{ id: 'advisory', resolved: false }]), 'utf8')
-    expect((await service.reviews({})).map(item => item.id)).toEqual(['advisory'])
+    expect((await service.reviews({ ...projectRequest(service) })).map(item => item.id)).toEqual(['advisory'])
   })
 
   it('keeps an unverified candidate unresolved without invalidating snapshots', async () => {
@@ -892,12 +801,12 @@ describe('page, search, and utility edges', () => {
     const reviewId = (JSON.parse(readFileSync(reviewFile, 'utf8')) as Array<{ id: string }>)[0]!.id
     const before = service.snapshots.currentGeneration(wikiRoot)
 
-    expect(await service.resolveReview({ reviewId, action: 'Promote' })).toBe(false)
+    expect(await service.resolveReview({ ...projectRequest(service), reviewId, action: 'Promote' })).toBe(false)
 
     expect(service.snapshots.currentGeneration(wikiRoot)).toBe(before)
     expect(existsSync(join(wikiRoot, 'concepts', 'unverified.md'))).toBe(false)
     expect(existsSync(candidateFull)).toBe(true)
-    expect((await service.reviews({})).map(item => item.resolved)).toEqual([false])
+    expect((await service.reviews({ ...projectRequest(service) })).map(item => item.resolved)).toEqual([false])
   })
 
   it('resolves every wikilink spelling it declares supported', async () => {
@@ -907,7 +816,7 @@ describe('page, search, and utility edges', () => {
     writeFileSync(join(wikiRoot, 'concepts', 'exact.md'),
       '[[concepts/alpha.md]] [[alpha]] [[top]] [[ghost]]', 'utf8')
 
-    const lint = await service.lint()
+    const lint = await service.lint(projectRequest(service))
 
     expect(lint.brokenLinks).toEqual([{ from: 'concepts/exact.md', target: 'ghost' }])
     expect(lint.totalPages).toBe(3)

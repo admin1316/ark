@@ -17,6 +17,6 @@ import { hybridSearch } from '../src/search.ts'
 
 describe('search page read boundary', () => {
   it('reports a disappearing page instead of presenting no matches', async () => {
-    await expect(hybridSearch('/wiki', 'alpha', '', 5)).rejects.toThrow('page disappeared')
+    await expect(hybridSearch('/wiki', 'alpha', undefined, 5)).rejects.toThrow('page disappeared')
   })
 })

@@ -83,6 +83,7 @@ describe('owned Knowledge Wiki stage deadlines', () => {
     const owner = new AbortController()
     const operation = executeKnowledgeWikiStage(executor, request, owner.signal)
     owner.abort('cancelled by parent')
+    child.resolve({ text: 'late result' })
     await expect(operation).rejects.toThrow('knowledge Wiki stage aborted')
     expect(childSignal?.aborted).toBe(true)
     expect(childSignal?.reason).toBe('cancelled by parent')
@@ -96,13 +97,13 @@ describe('owned Knowledge Wiki stage deadlines', () => {
       .rejects.toThrow('stage executor unavailable')
   })
 
-  it('returns at the hard deadline even when the external stage never settles', async () => {
+  it('aborts at the deadline and waits for the external owner to finish cleanup', async () => {
     vi.useFakeTimers()
     let observedAbort = false
     const executor: KnowledgeWikiStageExecutor = {
       isolation: 'owned-subprocess-v1',
-      execute: (_request, signal) => new Promise(() => {
-        signal.addEventListener('abort', () => { observedAbort = true }, { once: true })
+      execute: (_request, signal) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => { observedAbort = true; reject(signal.reason instanceof Error ? signal.reason : new Error('stage aborted')) }, { once: true })
       }),
     }
     try {
@@ -116,10 +117,12 @@ describe('owned Knowledge Wiki stage deadlines', () => {
     }
   })
 
-  it('propagates owner cancellation without waiting for a non-cooperative stage', async () => {
+  it('propagates owner cancellation after the stage settles', async () => {
     const executor: KnowledgeWikiStageExecutor = {
       isolation: 'owned-worker-v1',
-      execute: () => new Promise(() => {}),
+      execute: (_request, signal) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => { reject(signal.reason instanceof Error ? signal.reason : new Error('stage aborted')) }, { once: true })
+      }),
     }
     const owner = new AbortController()
     const operation = executeKnowledgeWikiStage(executor, request, owner.signal)

@@ -8,22 +8,14 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { resolve } from 'node:path'
+import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type KnowledgeWikiService from '@deepseek-ai/dsh-knowledge-wiki'
+import type { WikiProjectRequest } from '@deepseek-ai/dsh-knowledge-wiki/types'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
-type ToolKnowledgeWikiService = KnowledgeWikiService & {
-  verifyCandidate(request: {
-    reviewId: string
-    action: 'Promote' | 'Merge' | 'Replace' | 'Deduplicate' | 'Archive'
-  }, signal: AbortSignal): Promise<{
-    ok: boolean
-    receiptId?: string
-    result?: 'pass' | 'fail'
-    evidence: string[]
-    errorCode?: string
-  }>
-}
+type ToolKnowledgeWikiService = KnowledgeWikiService
 
 /** Stable Cordis plugin name. */
 export const name = 'tool-knowledge-wiki'
@@ -40,6 +32,16 @@ const REVIEW_MAX = 30
 /** Resolve the knowledgeWiki service; undefined when the bridge is absent. */
 function wikiService(ctx: Context): ToolKnowledgeWikiService | undefined {
   return ctx.get('knowledgeWiki') as ToolKnowledgeWikiService | undefined
+}
+
+/** Bind every model-facing call to its initiating session, never the UI's active workspace. */
+async function projectRequest(service: KnowledgeWikiService, exec: ToolExecution): Promise<WikiProjectRequest> {
+  const cwd = exec.agent?.session.header.cwd
+  if (cwd === undefined) throw new Error('knowledge tools require an initiating session with a registered project')
+  const registry = await service.listProjects()
+  const project = registry.projects.find(project => resolve(project.path) === resolve(cwd))
+  if (project === undefined) throw new Error('session project is not registered with the knowledge base')
+  return { projectContext: project.projectContext }
 }
 
 /** Text block helper for render callbacks. */
@@ -99,10 +101,10 @@ export function apply(ctx: Context): void {
         return textBlock(hits.map(hit => `- ${hit.path} (score ${hit.score})`).join('\n'))
       },
     },
-    async execute(args: { query: string }) {
+    async execute(args: { query: string }, exec) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const hits = await service.search({ query: args.query, topK: SEARCH_MAX_RESULTS })
+      const hits = await service.search({ ...await projectRequest(service, exec), query: args.query, topK: SEARCH_MAX_RESULTS })
       return { hits }
     },
   }))
@@ -125,10 +127,10 @@ export function apply(ctx: Context): void {
         return textBlock(`${value.total as number} files total. First ${files.length}:\n${files.map(file => `- ${file}`).join('\n')}`)
       },
     },
-    async execute(_args: Record<string, never>) {
+    async execute(_args: Record<string, never>, exec) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const entries = await service.list()
+      const entries = await service.list(await projectRequest(service, exec))
       return { files: entries.slice(0, FILES_MAX).map(entry => entry.path), total: entries.length }
     },
   }))
@@ -154,11 +156,11 @@ export function apply(ctx: Context): void {
         return textBlock(`# ${value.path as string}\n\n${value.content as string}${truncated}`)
       },
     },
-    async execute(args: { path: string }) {
+    async execute(args: { path: string }, exec) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
       const path = wikiRootRelativePath(args.path)
-      const page = await service.pageContent({ path })
+      const page = await service.pageContent({ ...await projectRequest(service, exec), path })
       if (page.content === '') throw new Error(`page not found or unreadable: ${args.path}`)
       const truncated = page.content.length > READ_MAX_CHARS
       return { path: page.path, content: page.content.slice(0, READ_MAX_CHARS), truncated }
@@ -217,10 +219,10 @@ export function apply(ctx: Context): void {
         return textBlock(`Nodes (${nodes.length}):\n${nodeLines.join('\n')}\n\nEdges (showing first 30 of ${edges.length}):\n${edgeLines.join('\n')}`)
       },
     },
-    async execute(args: { query?: string; nodeType?: string; limit?: number }) {
+    async execute(args: { query?: string; nodeType?: string; limit?: number }, exec) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const graph = await service.graph()
+      const graph = await service.graph(await projectRequest(service, exec))
       const q = args.query?.toLowerCase()
       const t = args.nodeType?.toLowerCase()
       const limit = Math.min(args.limit ?? 20, 100)
@@ -269,10 +271,10 @@ export function apply(ctx: Context): void {
         return textBlock(reviews.map(review => `- [${review.type}] ${review.title}${review.description ? ` — ${review.description.slice(0, 140)}` : ''}`).join('\n'))
       },
     },
-    async execute(_args: Record<string, never>) {
+    async execute(_args: Record<string, never>, exec) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const reviews = await service.reviews({ status: 'unresolved', limit: REVIEW_MAX })
+      const reviews = await service.reviews({ ...await projectRequest(service, exec), status: 'unresolved', limit: REVIEW_MAX })
       return {
         reviews: reviews.map(review => ({
           id: review.id,
@@ -318,10 +320,10 @@ export function apply(ctx: Context): void {
           : tasks.map(task => `- #${task.id} ${task.status}: ${task.input}`).join('\n'))
       },
     },
-    async execute(args: { input: string }) {
+    async execute(args: { input: string }, exec) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      const snapshot = await service.ingestQueueAdd({ inputs: [args.input] })
+      const snapshot = await service.ingestQueueAdd({ ...await projectRequest(service, exec), inputs: [args.input] })
       return {
         tasks: snapshot.tasks.map(task => ({ id: task.id, input: task.input, status: task.status })),
         running: snapshot.running,
@@ -366,7 +368,7 @@ export function apply(ctx: Context): void {
     ) {
       const service = wikiService(ctx)
       if (service === undefined) throw new Error('knowledgeWiki service unavailable')
-      return service.verifyCandidate({ reviewId: args.reviewId, action: args.action }, exec.signal)
+      return service.verifyCandidate({ ...await projectRequest(service, exec), reviewId: args.reviewId, action: args.action }, exec.signal)
     },
   }))
 }

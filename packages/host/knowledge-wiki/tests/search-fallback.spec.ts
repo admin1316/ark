@@ -29,7 +29,7 @@ describe('semantic search degradation', () => {
   ] as const)('falls back to keyword results for %s', async (_label, respond, expected) => {
     vi.stubGlobal('fetch', vi.fn(async () => respond()))
     const diagnostics: string[] = []
-    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', 'rejected-key', 8, d => diagnostics.push(d.reason))
+    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'rejected-key' }, 8, d => diagnostics.push(d.reason))
     expect(hits.map(hit => hit.path)).toContain('concepts/orbital-mechanics.md')
     expect(diagnostics).toEqual([expected])
   })
@@ -37,7 +37,7 @@ describe('semantic search degradation', () => {
   it('falls back when the endpoint cannot be reached', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('connect ECONNREFUSED') }))
     const diagnostics: string[] = []
-    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', 'rejected-key', 8, d => diagnostics.push(d.reason))
+    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'rejected-key' }, 8, d => diagnostics.push(d.reason))
     expect(hits.length).toBeGreaterThan(0)
     expect(diagnostics[0]).toContain('ECONNREFUSED')
   })
@@ -45,7 +45,7 @@ describe('semantic search degradation', () => {
   it('reports a non-Error embedding rejection verbatim', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw 'embedding socket reset' }))
     const diagnostics: string[] = []
-    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', 'rejected-key', 8, d => diagnostics.push(d.reason))
+    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'rejected-key' }, 8, d => diagnostics.push(d.reason))
     expect(diagnostics).toEqual(['embedding socket reset'])
     expect(hits.map(hit => hit.path)).toContain('concepts/orbital-mechanics.md')
   })
@@ -53,7 +53,7 @@ describe('semantic search degradation', () => {
   it('falls back when the embedding response is malformed', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ nope: true }), { status: 200, headers: { 'content-type': 'application/json' } })))
     const diagnostics: string[] = []
-    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', 'key', 8, d => diagnostics.push(d.reason))
+    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' }, 8, d => diagnostics.push(d.reason))
     expect(hits.length).toBeGreaterThan(0)
     expect(diagnostics).toEqual(['knowledge embedding response is malformed'])
   })
@@ -61,7 +61,7 @@ describe('semantic search degradation', () => {
   it('reports no diagnostic when the endpoint answers', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data: [{ embedding: [1, 0] }, { embedding: [1, 0] }] }), { status: 200, headers: { 'content-type': 'application/json' } })))
     const diagnostics: string[] = []
-    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', 'key', 8, d => diagnostics.push(d.reason))
+    const hits = await hybridSearch(seedWiki(), 'orbital mechanics', { provider: 'fixture', model: 'text-embedding-v3', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'key' }, 8, d => diagnostics.push(d.reason))
     expect(hits.length).toBeGreaterThan(0)
     expect(diagnostics).toEqual([])
   })

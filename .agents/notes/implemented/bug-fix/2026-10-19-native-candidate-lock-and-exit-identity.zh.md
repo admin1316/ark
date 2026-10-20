@@ -12,6 +12,8 @@ pnpm 11.7 在离线推导锁文件时，可能报告某个可选依赖的 `resol
 
 ## 决策
 
+[显式路由与持久输入](2026-10-20-ark-explicit-routing-and-durable-input.zh.md)增加就绪期限与必需 Ark CI。这些增加复用本笔记中的依赖与精确进程身份规则，不放宽它们。
+
 [运行时计划](../../../../integrations/jiuzhang/src/runtime-plan.mjs) 保留根锁定的外部依赖图，包括外平台可选解析结果。[打包所有者](../../../../integrations/jiuzhang/src/pack-runtime.mjs) 使用 `--reporter=ndjson` 推导锁文件，并将输出交给 [`assertArkOfflineLockResolution`](../../../../integrations/jiuzhang/src/runtime-closure.mjs)。即使 pnpm 以零退出，该辅助函数也会拒绝因 `resolution_failure` 而跳过的可选依赖。其唯一的解析失败例外来自根计划已存在的 `optionalDependencies` 中的 `omitted-platform-workspace` 边：事件的直接父节点名称和版本必须匹配该边的来源所有者，子节点名称及精确的 `bareSpecifier` 必须匹配计划中的子节点名称和版本。仅凭外平台属性不能获得例外。正常的平台跳过仍被允许。在线完整元数据缓存准备与离线打包相互独立；缓存不完整不能改变打包所接受的依赖图。
 
 [运行时锁校验器](../../../../integrations/jiuzhang/src/runtime-closure.mjs) 由安装前校验与最终收据校验共用。打包在冻结离线安装前，先按计划中的精确解析结果、完整性值和依赖边检查推导出的锁。最终收据保留同样的严格校验，独立于包管理器的诊断信息。

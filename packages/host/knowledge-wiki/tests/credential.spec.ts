@@ -80,13 +80,14 @@ describe('Knowledge Wiki credential resolution', () => {
     const service = new KnowledgeWikiService(ctx, wikiTestConfig({
       wikiRoot: '/tmp/wiki',
       mainRoot: '/tmp',
-      credential: 'VISION_API_KEY',
+      embeddingProvider: 'fixture', embeddingBaseUrl: 'https://embedding.fixture.test/v1',
+      embeddingModel: 'fixture', embeddingCredential: 'VISION_API_KEY',
       llmProvider: 'test',
       llmModel: 'test',
-    })) as unknown as { resolveApiKey(): Promise<string> }
+    })) as unknown as { embeddingConnection(): Promise<{ apiKey: string }> }
 
-    await expect(service.resolveApiKey()).resolves.toBe(first)
+    await expect(service.embeddingConnection()).resolves.toHaveProperty('apiKey', first)
     await ctx.credentials.set(credentialRef('VISION_API_KEY'), second)
-    await expect(service.resolveApiKey()).resolves.toBe(second)
+    await expect(service.embeddingConnection()).resolves.toHaveProperty('apiKey', second)
   })
 })

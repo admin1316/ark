@@ -125,6 +125,21 @@ export function ensureConfinedDirectory(root: string, input: string): string {
   return cursor
 }
 
+/**
+ * Atomically publish a file beneath an ordinary root without following existing links.
+ * @param root - Existing ordinary directory that owns the destination.
+ * @param input - Root-relative file path; all existing components must be ordinary.
+ * @param content - Complete bytes to publish.
+ * @returns Nothing after the file is durably published.
+ * @throws On unsafe paths, links, non-directory ancestors, or filesystem failures.
+ */
+export function atomicWriteConfinedFile(root: string, input: string, content: string | Buffer): void {
+  resolveConfinedPath(root, input, true)
+  const parent = dirname(input).split(sep).join('/')
+  if (parent !== '.') ensureConfinedDirectory(root, parent)
+  atomicWriteFile(resolveConfinedPath(root, input, true), content)
+}
+
 function ensureAbsoluteDirectory(path: string): string {
   const absolute = resolve(path)
   mkdirSync(absolute, { recursive: true, mode: 0o700 })

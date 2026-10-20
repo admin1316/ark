@@ -1,29 +1,19 @@
-import { createServer } from 'node:http'
-import { afterEach, describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { LlmRuntime, LlmAdapter } from '@deepseek-ai/dsh-llm'
+import { describe, expect, it } from 'vitest'
 import { createOwnedStageExecutor } from '../src/owned-stage-executor.ts'
 
-const servers: Array<ReturnType<typeof createServer>> = []
-
-afterEach(() => {
-  for (const server of servers.splice(0)) server.close()
-})
-
-describe('owned stage executor null model text', () => {
-  it('presents a model answer without content as a null stage text', async () => {
-    const server = createServer((_request, response) => {
-      response.setHeader('content-type', 'application/json')
-      response.end(JSON.stringify({ choices: [{ message: {} }] }))
-    })
-    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => { resolve() }))
-    servers.push(server)
-    const port = (server.address() as { port: number }).port
-    const executor = createOwnedStageExecutor({
-      resolveConnection: async () => ({ baseUrl: `http://127.0.0.1:${String(port)}`, apiKey: 'k' }),
-    })
-    const result = await executor.execute(
-      { kind: 'llm-complete', provider: 'deepseek-official', model: 'm', prompt: 'p', operation: 'ingest analysis', timeoutMs: 10_000 },
-      new AbortController().signal,
-    )
-    expect(result.text).toBeNull()
+describe('owned provider empty text', () => {
+  it('returns an empty text response without inventing content', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    class EmptyAdapter extends LlmAdapter {
+      override stream() { return (async function* () {})() }
+    }
+    ctx.llm.registerAdapter(['fixture'], new EmptyAdapter())
+    const executor = createOwnedStageExecutor({ llm: ctx.llm, web: () => undefined, attachments: () => undefined })
+    try {
+      await expect(executor.execute({ kind:'llm-complete',provider:'fixture',model:'fixture',prompt:'source',operation:'analysis',timeoutMs:1000 }, new AbortController().signal)).resolves.toEqual({ text:'' })
+    } finally { await ctx.fiber.dispose() }
   })
 })

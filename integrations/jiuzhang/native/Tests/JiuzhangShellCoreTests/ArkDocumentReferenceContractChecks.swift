@@ -3,7 +3,12 @@ import JiuzhangShellCore
 @testable import JiuzhangShellUI
 
 func runArkDocumentReferenceContractChecks() async {
+  await runComposerPersistenceCoalescingChecks()
+  await runComposerSharedJournalChecks()
+  await runArkComposerCrashRecoveryContractChecks()
   await runArkComposerSessionIsolationContractChecks()
+  await runArkKnowledgeIsolationContractChecks()
+  await runArkKnowledgeConnectionSaveContractChecks()
   let root = FileManager.default.temporaryDirectory
     .appendingPathComponent("ark-document-reference-\(UUID().uuidString)", isDirectory: true)
   do {
@@ -23,6 +28,20 @@ func runArkDocumentReferenceContractChecks() async {
     }
     let raw = paragraphs.joined(separator: "\n\n")
     let pasted = try await store.importPastedText(raw, name: "长文测试")
+    let journalImage = ArkPromptImage(mediaType: .png, data: Data([1, 2, 3]), name: "synthetic.png")
+    let journal = try await store.persistDraftAttachments(images: [journalImage], documents: [pasted])
+    let restoredStore = ArkDocumentReferenceStore(rootURL: root)
+    let restored = try await restoredStore.restoreDraftAttachments(journal)
+    check(restored.images == [journalImage] && restored.documents == [pasted],
+      "attachment journal restores identical image bytes and content-addressed document references in a new store")
+    await restoredStore.remove([pasted])
+    check(FileManager.default.fileExists(atPath: pasted.textURL.path),
+      "document cleanup preserves a reference held by a durable inactive draft")
+    do {
+      _ = try await restoredStore.restoreDraftAttachments("../outside")
+      check(false, "attachment journal rejects path identifiers")
+    } catch { check(true, "attachment journal rejects path identifiers") }
+    await restoredStore.removeDraftAttachments(journal)
     let prompt = try await store.contextualizedPrompt(
       baseText: "请查找 NEEDLE_CONTEXT 关键资料",
       documents: [pasted]
@@ -172,4 +191,91 @@ func runArkDocumentReferenceContractChecks() async {
       && modelSource.contains("await self.documentStore.remove(unused)"),
     "native composer owns long-paste cards, Word intake, bounded context, and cleanup"
   )
+}
+
+private actor ComposerPersistenceWriteGate {
+  private var started = false
+  private var continuation: CheckedContinuation<Void, Never>?
+
+  func block() async {
+    started = true
+    await withCheckedContinuation { continuation = $0 }
+  }
+
+  func waitUntilStarted() async {
+    while !started { await Task.yield() }
+  }
+
+  func release() { continuation?.resume(); continuation = nil }
+}
+
+@MainActor
+private func runComposerPersistenceCoalescingChecks() async {
+  let gate = ComposerPersistenceWriteGate()
+  var writes: [Int] = []
+  let queue = ArkComposerPersistenceQueue<Int> { value in
+    writes.append(value)
+    if value == 0 { await gate.block() }
+  }
+  queue.enqueue(0, for: "A")
+  await gate.waitUntilStarted()
+  for revision in 1...1_000 { queue.enqueue(revision, for: "A") }
+  for revision in 1_001...2_000 { queue.enqueue(revision, for: "B") }
+  check(queue.pendingCount == 2 && writes == [0],
+    "delayed composer writer keeps one latest pending revision per draft for a 2000-edit burst")
+  await gate.release()
+  await queue.flush()
+  check(writes.count == 3 && Set(writes) == [0, 1_000, 2_000] && queue.pendingCount == 0,
+    "composer flush commits each draft's latest revision without replaying superseded writes")
+  queue.enqueue(3_000, for: "discarded")
+  queue.discardPending(for: "discarded")
+  await queue.flush()
+  check(!writes.contains(3_000), "retired pending composer writes do not resurrect a discarded draft")
+}
+
+private func runComposerSharedJournalChecks() async {
+  let root = FileManager.default.temporaryDirectory.appendingPathComponent("ark-shared-journal-\(UUID().uuidString)")
+  defer { try? FileManager.default.removeItem(at: root) }
+  let store = ArkDocumentReferenceStore(rootURL: root)
+  let imageA = ArkPromptImage(mediaType: .png, data: Data([1, 2, 3]), name: "A.png")
+  let imageB = ArkPromptImage(mediaType: .png, data: Data([4, 5, 6]), name: "B.png")
+  func journals() throws -> [String] {
+    try FileManager.default.contentsOfDirectory(atPath: root.path)
+      .filter { $0.hasPrefix("draft-") && $0.hasSuffix(".json") }
+  }
+  do {
+    var captured = ArkComposerDraftDocument(text: "captured A")
+    captured.prepareSubmission(mode: .queue, timeZone: "Asia/Shanghai")
+    let first = try await store.persistComposerState(document: captured, sessionID: "A", images: [imageA], documents: [])
+    let inflight = try await store.persistInflightComposerSubmission(document: captured,
+      sessionID: "A", images: [imageA], documents: [])
+    let sharedCount = try journals().count
+    check(first == inflight && sharedCount == 1,
+      "autosave and transmitted-payload recovery share one attachment journal instead of duplicating image bytes")
+    var newer = captured
+    newer.replaceText("newer B")
+    let replacement = try await store.persistComposerState(document: newer,
+      sessionID: "A", images: [imageB], documents: [])
+    let inflightAfterReplace = try await store.restoreInflightSubmissions(sessionID: "A")
+    let replacementCount = try journals().count
+    check(replacementCount == 2 && inflightAfterReplace.first?.images == [imageA],
+      "replacing current attachments preserves the independently owned unconfirmed payload")
+    try await store.removeInflightSubmission(captured.submissionID)
+    let remaining = try journals()
+    check(remaining == ["draft-\(replacement).json"],
+      "retiring the last inflight owner removes its replaced attachment journal")
+    try await store.removePendingSubmission(sessionID: "A", matchingDocument: captured, journalIdentifier: first)
+    let stillNewer = try await store.restorePendingSubmission(sessionID: "A")
+    check(stillNewer?.document == newer && stillNewer?.images == [imageB],
+      "a retired writer cannot remove a newer durable draft")
+    newer.replaceText("newest B")
+    let sameAttachments = try await store.persistComposerState(document: newer,
+      sessionID: "A", images: [imageB], documents: [])
+    let reusedCount = try journals().count
+    check(sameAttachments == replacement && reusedCount == 1,
+      "later text edits reuse the current attachment journal after an earlier submission retires")
+    try await store.removePendingSubmission(sessionID: "A")
+    let allReleased = try journals().isEmpty
+    check(allReleased, "removing a draft releases its final owned attachment journal")
+  } catch { check(false, "shared composer attachment ownership completes: \(error)") }
 }

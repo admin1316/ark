@@ -318,7 +318,7 @@ func runArkSubagentLineageContractChecks() {
   check(
     model.contains("let sourceIsSubagent")
       && model.contains("if !sourceIsSubagent")
-      && model.contains("commitSubagentComposerSubmission")
+      && model.contains("commitComposerSubmission")
       && model.contains("ArkSubagentPromptInvocationIdentity.make")
       && subagentAPI.contains("\"invocationId\": .string(invocationID)")
       && subagentAPI.contains("value[\"durable\"]?.boolValue == true"),

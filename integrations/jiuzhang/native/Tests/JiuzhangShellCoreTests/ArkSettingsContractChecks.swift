@@ -4,6 +4,13 @@ import Foundation
 
 /// ui-theme 写入闸门的行为契约：single-flight + latest-intent 合并。
 func runArkSettingsContractChecks() {
+  check(ArkProviderPresentation.validationLabel(providerID: "openai", configured: true, verification: nil) == "已配置；未验证",
+    "a saved route is not presented as verified")
+  check(ArkProviderPresentation.validationLabel(providerID: "openai-codex", configured: true, verification: nil) == "需外部认证；未验收",
+    "catalog-only external authentication routes do not claim native acceptance")
+  check(ArkProviderPresentation.validationLabel(providerID: "openai", configured: true,
+    verification: ArkProviderVerification(provider: "openai", model: "fixture", verified: true, mode: "metadata-auth")) == "凭据已验证；生成未验证",
+    "metadata authentication does not claim generation or a complete provider acceptance matrix")
   func namespace(_ id: String, _ value: JSONValue) -> ArkSettingsNamespace {
     ArkSettingsNamespace(id: id, schema: .object([:]), value: value, base: nil, user: nil,
       secrets: [], applies: "live", revision: 1)

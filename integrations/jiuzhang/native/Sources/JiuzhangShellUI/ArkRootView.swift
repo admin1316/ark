@@ -7104,6 +7104,33 @@ private struct NativeComposer: View {
         NativeSettingsNotice(text: error, color: .red, icon: "exclamationmark.triangle.fill")
           .accessibilityIdentifier("ark.composer.error")
           .padding(.horizontal, 8)
+        if model.composerAttachmentRestoreFailed {
+          HStack {
+            Button(model.languagePreference == .zh ? "重试恢复附件" : "Retry attachment recovery") {
+              model.retryComposerAttachmentRestore()
+            }
+            .accessibilityIdentifier("ark.composer.attachments.retry-recovery")
+            Button(model.languagePreference == .zh ? "移除失败附件" : "Remove failed attachments", role: .destructive) {
+              model.discardFailedComposerAttachments()
+            }
+            .accessibilityIdentifier("ark.composer.attachments.discard-failed")
+          }
+          .buttonStyle(.bordered)
+        }
+      }
+      if model.composerRecoverableSubmissionCount > 0 {
+        HStack {
+          Text(model.languagePreference == .zh
+            ? "有 \(model.composerRecoverableSubmissionCount) 条消息的发送结果未确认"
+            : "\(model.composerRecoverableSubmissionCount) messages have an unconfirmed receipt")
+            .font(.caption)
+          Button(model.languagePreference == .zh ? "恢复待确认消息" : "Restore unconfirmed message") {
+            model.restoreUnconfirmedComposerSubmission()
+          }
+          .disabled(!model.canRestoreUnconfirmedSubmission)
+          .help(model.languagePreference == .zh ? "先保留或发送当前输入，再恢复待确认消息" : "Keep or send the current draft before restoring")
+          .accessibilityIdentifier("ark.composer.restore-unconfirmed")
+        }
       }
       if let interaction = model.selectedPendingInteraction {
         switch interaction {
@@ -8569,6 +8596,7 @@ private final class NativeWikiFeed: ObservableObject {
   @Published private(set) var reviewError: String?
   @Published private(set) var operationError: String?
   @Published private(set) var searchPaths: Set<String>
+  @Published private(set) var searchMode: String
   @Published private(set) var activeTitle: String
   @Published private(set) var selectedPageID: String?
   @Published private(set) var isThinking: Bool
@@ -8595,6 +8623,7 @@ private final class NativeWikiFeed: ObservableObject {
     reviewError = model.wikiReviewError
     operationError = model.knowledgeErrorMessage
     searchPaths = model.knowledgeSearchPaths
+    searchMode = model.knowledgeSearchMode
     activeTitle = model.activeWikiTitle
     selectedPageID = model.selectedWikiPageID
     isThinking = model.selectedSession?.running == true
@@ -8641,6 +8670,9 @@ private final class NativeWikiFeed: ObservableObject {
       .store(in: &cancellables)
     model.$knowledgeErrorMessage.removeDuplicates()
       .sink { [weak self] in self?.operationError = $0 }
+      .store(in: &cancellables)
+    model.$knowledgeSearchMode.removeDuplicates()
+      .sink { [weak self] in self?.searchMode = $0 }
       .store(in: &cancellables)
     model.$knowledgeSearchPaths.removeDuplicates()
       .sink { [weak self] in self?.searchPaths = $0 }
@@ -8775,6 +8807,12 @@ private struct NativeWikiView: View, Equatable {
         )
           .buttonStyle(.bordered)
           .tint(.green)
+        Text(feed.searchMode == "hybrid"
+          ? (feed.language == .zh ? "混合检索配置；失败时回退本地" : "Hybrid configured; local fallback on failure")
+          : (feed.language == .zh ? "本地关键词" : "Local keywords"))
+          .font(.caption)
+          .foregroundStyle(ArkPalette.secondary)
+          .accessibilityIdentifier("ark.wiki.search.mode")
         TextField(ArkL10n.text(.wikiSearchPlaceholder, feed.language), text: $search)
           .textFieldStyle(.roundedBorder)
           .onSubmit { model.searchKnowledge(search) }
@@ -10966,6 +11004,7 @@ private struct NativeModelsSettings: View {
       ScrollView {
         // Expanding settings cards need stable geometry and draft lifetimes across scrolling.
         VStack(spacing: 12) {
+          ArkKnowledgeConnectionsSettings(model: model)
           if model.settingsSnapshot?.namespaces.contains(where: { $0.id == "subagent-model-selection" }) == true {
             NativeSubagentModelSelectionCard(model: model)
           }
@@ -11073,6 +11112,7 @@ private struct NativeProviderSettingsCard: View {
   @State private var migrateLegacyCredentials = false
   @State private var connectionTest: Task<Void, Never>?
   @State private var connectionStatus: String?
+  @State private var connectionVerification: ArkProviderVerification?
 
   init(
     model: ArkAppModel,
@@ -11302,12 +11342,14 @@ private struct NativeProviderSettingsCard: View {
                   self.connectionTest = nil
                   connectionStatus = "测试已取消"
                 } else if let savedModel = model.availableModelGroups.first(where: { $0.id == provider.id })?.models.first {
+                  connectionVerification = nil
                   connectionStatus = "正在验证已保存配置：\(savedModel.name)…"
                   connectionTest = Task {
                     defer { if !Task.isCancelled { connectionTest = nil } }
                     do {
                       let result = try await model.verifyProviderConnection(provider: provider.id, model: savedModel.id)
                       guard !Task.isCancelled else { return }
+                      connectionVerification = result
                       connectionStatus = result.verified
                         ? (result.mode == "minimal-generation"
                           ? "模型调用验证通过：\(savedModel.name)"
@@ -11315,6 +11357,7 @@ private struct NativeProviderSettingsCard: View {
                         : "地址可达，但未验证密钥与模型权限"
                     } catch {
                       guard !Task.isCancelled else { return }
+                      connectionVerification = nil
                       connectionStatus = "连接未通过：\(error.localizedDescription)"
                     }
                   }
@@ -11369,6 +11412,7 @@ private struct NativeProviderSettingsCard: View {
       connectionTest?.cancel()
       connectionTest = nil
       connectionStatus = nil
+      connectionVerification = nil
     }
     .confirmationDialog("删除 \(provider.displayName)？", isPresented: $confirmProfileRemoval) {
       Button("删除 Provider 和托管凭据", role: .destructive) { model.removeProviderProfile(provider) }
@@ -11430,12 +11474,9 @@ private struct NativeProviderLoginControls: View {
 }
 
 private var statusLabel: String {
-    if state?.configured == true {
-      return ArkL10n.text(.statusCredentialSaved, model.languagePreference)
-    }
-    return provider.active
-      ? ArkL10n.text(.statusRegistered, model.languagePreference)
-      : ArkL10n.text(.statusUnavailable, model.languagePreference)
+    ArkProviderPresentation.validationLabel(providerID: provider.id,
+      configured: state?.configured ?? provider.active,
+      verification: connectionVerification)
   }
 
   private var statusColor: Color {

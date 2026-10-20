@@ -3,6 +3,19 @@ import JiuzhangShellCore
 
 /// Presentation groups never change a provider's routing or credential identity.
 enum ArkProviderPresentation {
+  /// Connection probes prove their named model only; catalog presence proves no authentication.
+  static func validationLabel(providerID: String, configured: Bool, verification: ArkProviderVerification?) -> String {
+    if let verification, verification.provider == providerID {
+      if verification.verified {
+        return verification.mode == "minimal-generation" ? "模型调用已验证" : "凭据已验证；生成未验证"
+      }
+      return "地址可达；权限未验证"
+    }
+    if ["openai-codex", "github-copilot", "google-vertex", "amazon-bedrock"].contains(providerID) {
+      return "需外部认证；未验收"
+    }
+    return configured ? "已配置；未验证" : "目录可选；未配置"
+  }
   struct Group<Entry>: Identifiable {
     let id: String
     let name: String

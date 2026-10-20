@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var failureLabel: NSTextField?
   private var requestedTermination = false
   private var restartCircuitBreaker = BackendRestartCircuitBreaker()
+  private let readinessDeadline = BackendReadinessDeadline()
+  private var backendLaunchID: UUID?
+  private var backendStartupFailure: String?
   private let terminationTimeoutSeconds: TimeInterval = 20
   private var terminationID: UUID?
   private var terminationBackendStopStarted = false
@@ -123,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard !requestedTermination else { return .terminateLater }
     guard backend.isRunning || appModel != nil else { return .terminateNow }
     requestedTermination = true
+    readinessDeadline.cancel()
     terminationBackendStopStarted = false
     terminationReplySent = false
     let requestID = UUID()
@@ -234,6 +238,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func startBackend() {
+    guard !requestedTermination else { return }
+    readinessDeadline.cancel()
+    let launchID = UUID()
+    backendLaunchID = launchID
+    backendStartupFailure = nil
     guard
       let recordedNode = Bundle.main.object(forInfoDictionaryKey: "JiuzhangNodeExecutable") as? String,
       let recordedLauncher = Bundle.main.object(forInfoDictionaryKey: "JiuzhangLauncherPath") as? String,
@@ -260,35 +269,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     backend.onLine = { [weak self] line in
       guard let self, !self.requestedTermination,
+            self.backendLaunchID == launchID, self.backend.isRunning,
             self.appModel == nil,
-            let url = JiuzhangShellContract.readinessURL(from: line)
+            let url = JiuzhangShellContract.readinessURL(from: line),
+            self.readinessDeadline.acceptReadiness(launchID: launchID)
       else { return }
       self.restartCircuitBreaker.recordReadiness()
       self.showNativeInterface(serviceURL: url)
     }
     backend.onExit = { [weak self] status in
-      guard let self, !self.requestedTermination else { return }
+      guard let self, !self.requestedTermination, self.backendLaunchID == launchID else { return }
+      self.readinessDeadline.cancel()
       Task { @MainActor [weak self] in
-        guard let self, !self.requestedTermination else { return }
+        guard let self, !self.requestedTermination, self.backendLaunchID == launchID else { return }
         if let error = await self.prepareNativeInterfaceShutdown() {
           self.presentDraftFlushFailure(error)
           return
         }
         await self.shutdownNativeInterface()
-        guard !self.requestedTermination else { return }
+        guard !self.requestedTermination, self.backendLaunchID == launchID else { return }
         guard let backoff = self.restartCircuitBreaker.restartDelayAfterUnexpectedExit() else {
-          self.showFailure("本机服务已停止（状态 \(status)）。")
+          self.showFailure(self.backendStartupFailure ?? "本机服务已停止（状态 \(status)）。")
           return
         }
         self.showStarting()
         DispatchQueue.main.asyncAfter(deadline: .now() + backoff) { [weak self] in
-          guard let self, !self.requestedTermination else { return }
+          guard let self, !self.requestedTermination, self.backendLaunchID == launchID else { return }
           self.startBackend()
         }
       }
     }
 
     do {
+      let readinessTimeout = try JiuzhangShellContract.backendReadinessTimeout()
       guard let locations = dataLocations else { throw JiuzhangCandidateDataError.invalidConfiguration }
       let home = locations.harnessHome
       let defaultWorkspace = locations.sessionWorkspace
@@ -318,7 +331,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ),
         workingDirectory: defaultWorkspace
       )
+      readinessDeadline.arm(launchID: launchID, timeout: readinessTimeout) { [weak self] in
+        guard let self, !self.requestedTermination, self.backendLaunchID == launchID else { return }
+        self.backendStartupFailure = "本机服务启动超时（\(readinessTimeout) 秒未就绪），自动重试次数已用尽。"
+        // Recovery begins only from this owned process's reaped exit callback.
+        self.backend.stop {}
+      }
     } catch {
+      readinessDeadline.cancel()
+      backendLaunchID = nil
       showFailure("Ark 启动失败：\(error.localizedDescription)")
     }
   }

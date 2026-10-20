@@ -15,56 +15,25 @@ import type { Message, ToolSchema } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import type { PiAiReplayResponse } from '../src/replay.ts'
 import { assemble, type AssembledResult } from './assemble.ts'
+import { providerApiCases, type ProviderCase } from './provider-api-cases.ts'
 
-interface ProviderCase {
-  provider: 'openai' | 'anthropic'
-  api: 'openai-responses' | 'anthropic-messages'
-  model: string
-  apiKeyEnv?: string
-  baseURL?: string
-  headers?: Record<string, string>
-  credentialHeaders?: Record<string, string>
-}
-
-const openAIBaseURL = process.env.DSH_PI_AI_OPENAI_BASE_URL
-const azureOpenAIKey = process.env.AZURE_OPENAI_API_KEY
-// Strictly ANTHROPIC_*: the DeepSeek endpoint does not serve the anthropic-messages
-// protocol, so falling back to DEEPSEEK_API_KEY turns the keyless skip into a 404.
-const anthropicApiKey = process.env.ANTHROPIC_API_KEY
-const anthropicBaseURL = process.env.DSH_PI_AI_ANTHROPIC_BASE_URL
-
-const providerCases: ProviderCase[] = [
-  {
-    provider: 'openai',
-    api: 'openai-responses',
-    model: process.env.DSH_PI_AI_OPENAI_MODEL ?? 'gpt-5.5',
-    ...azureOpenAIKey
-      ? { apiKeyEnv: 'AZURE_OPENAI_API_KEY', credentialHeaders: { 'api-key': 'AZURE_OPENAI_API_KEY' }, headers: { Authorization: '' } }
-      : {},
-    ...openAIBaseURL ? { baseURL: openAIBaseURL } : {},
-  },
-  {
-    provider: 'anthropic',
-    api: 'anthropic-messages',
-    model: process.env.DSH_PI_AI_ANTHROPIC_MODEL ?? 'claude-opus-4-8',
-    ...anthropicApiKey === undefined ? {} : { apiKeyEnv: 'ANTHROPIC_API_KEY' },
-    ...anthropicBaseURL === undefined ? {} : { baseURL: anthropicBaseURL },
-  },
-]
+const providerCases = providerApiCases(process.env)
 
 const contexts: Context[] = []
 
-async function harness(image?: StoredImageAttachment): Promise<Context> {
+async function harness(profile: ProviderCase, image?: StoredImageAttachment): Promise<Context> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(LlmPiAi, {
-    providers: Object.fromEntries(providerCases.map(profile => [profile.provider, {
+    providers: { [profile.provider]: {
+      api: profile.api,
+      models: [{ id: profile.model, input: ['text', 'image'] }],
       ...profile.apiKeyEnv === undefined ? {} : { apiKeyEnv: profile.apiKeyEnv },
       ...profile.credentialHeaders === undefined ? {} : { credentialHeaders: profile.credentialHeaders },
       ...profile.baseURL === undefined ? {} : { baseURL: profile.baseURL },
       ...profile.headers === undefined ? {} : { headers: profile.headers },
-    }])),
+    } },
   })
   if (image !== undefined) {
     const fixture = image
@@ -172,7 +141,7 @@ for (const profile of providerCases) {
     `llm-pi-ai ${profile.provider} e2e (${profile.api})`,
     () => {
       it('streams text with usage and native replay metadata', async () => {
-        const ctx = await harness()
+        const ctx = await harness(profile)
         const result = await assemble(ctx, {
           provider: profile.provider,
           model: profile.model,
@@ -188,7 +157,7 @@ for (const profile of providerCases) {
       })
 
       it('round-trips a tool call with provider-native replay metadata', async () => {
-        const ctx = await harness()
+        const ctx = await harness(profile)
         const prompt = ask('Use lookup_code with code "blue". Do not answer without calling the tool.')
         const first = await assemble(ctx, {
           provider: profile.provider,
@@ -242,7 +211,7 @@ for (const profile of providerCases) {
             height: 256,
             name: 'qr-code.png',
           }
-          const ctx = await harness({ ref, data })
+          const ctx = await harness(profile, { ref, data })
           const result = await assemble(ctx, {
             provider: profile.provider,
             model: profile.model,

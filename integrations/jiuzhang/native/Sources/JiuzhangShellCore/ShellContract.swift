@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import Darwin
 
 /// One data-location owner for production defaults and explicitly marked test bundles.
@@ -20,9 +21,24 @@ public enum JiuzhangCandidateDataError: LocalizedError {
   public var errorDescription: String? { "Invalid or non-isolated Ark candidate data configuration." }
 }
 
+public enum JiuzhangStartupConfigurationError: LocalizedError {
+  case invalidReadinessTimeout
+  public var errorDescription: String? { "ArkBackendReadinessTimeoutSeconds must be a positive finite number." }
+}
+
 /// Fixed startup rules for the native Jiuzhang desktop application.
 public enum JiuzhangShellContract {
   public static let loopbackHost = "127.0.0.1"
+
+  /// Read the deployment's signed startup limit; ambient environment cannot disable it.
+  public static func backendReadinessTimeout(info: [String: Any] = Bundle.main.infoDictionary ?? [:]) throws -> TimeInterval {
+    guard let raw = info["ArkBackendReadinessTimeoutSeconds"] else { return 30 }
+    guard let value = raw as? NSNumber,
+          CFGetTypeID(value) != CFBooleanGetTypeID(),
+          value.doubleValue.isFinite, value.doubleValue > 0
+    else { throw JiuzhangStartupConfigurationError.invalidReadinessTimeout }
+    return value.doubleValue
+  }
 
   /// Resolve signed bundle metadata, never ambient candidate environment variables.
   public static func launchDataLocations(

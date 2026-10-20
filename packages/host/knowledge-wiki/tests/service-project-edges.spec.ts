@@ -1,3 +1,4 @@
+import { projectRequest } from './project-request-fixture.ts'
 import {
   mkdirSync,
   mkdtempSync,
@@ -16,15 +17,15 @@ import { wikiTestConfig } from './config-fixture.ts'
 interface ProjectSurface {
   snapshots: { dispose(): void }
   currentRoot: string
-  listProjects(): Promise<{ projects: Array<{ path: string }>; current: string }>
-  createProject(request: { name: string; path: string }): Promise<{ path: string; error?: string }>
-  removeProject(request: { path: string }): Promise<{ projects: Array<{ path: string }>; current: string }>
-  pageContent(request: { path: string }): Promise<{ path: string; content: string }>
+  listProjects: KnowledgeWikiService['listProjects']
+  createProject: KnowledgeWikiService['createProject']
+  removeProject: KnowledgeWikiService['removeProject']
+  pageContent: KnowledgeWikiService['pageContent']
   computeGraph(): Promise<unknown>
-  graphInsights(): Promise<Record<string, unknown[]>>
-  list(): Promise<unknown[]>
-  lint(): Promise<{ brokenLinks: unknown[]; emptyPages: string[]; totalPages: number }>
-  exportProject(): Promise<{ path: string; error?: string }>
+  graphInsights: KnowledgeWikiService['graphInsights']
+  list: KnowledgeWikiService['list']
+  lint: KnowledgeWikiService['lint']
+  exportProject: KnowledgeWikiService['exportProject']
 }
 
 let root: string
@@ -36,8 +37,7 @@ beforeEach(() => {
   mkdirSync(join(root, 'wiki'), { recursive: true })
   ctx = new Context()
   service = new KnowledgeWikiService(ctx, wikiTestConfig({
-    wikiRoot: join(root, 'wiki'), mainRoot: root,
-    credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
+    wikiRoot: join(root, 'wiki'), mainRoot: root, llmProvider: 'p', llmModel: 'm',
   })) as unknown as ProjectSurface
 })
 
@@ -52,8 +52,7 @@ describe('workspace registry validation', () => {
   it('accepts missing workspaces fields and rejects every malformed row shape', async () => {
     const parentDefaultContext = new Context()
     const parentDefault = new KnowledgeWikiService(parentDefaultContext, wikiTestConfig({
-      wikiRoot: join(root, 'default-main', 'wiki'), mainRoot: '',
-      credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
+      wikiRoot: join(root, 'default-main', 'wiki'), mainRoot: '', llmProvider: 'p', llmModel: 'm',
     })) as unknown as ProjectSurface
     expect((await parentDefault.listProjects()).current).toBe(join(root, 'default-main'))
     parentDefault.snapshots.dispose()
@@ -83,7 +82,7 @@ describe('workspace registry validation', () => {
     const emptyPath = await service.createProject({ name: 'X', path: ' ' })
     expect(emptyPath.path).toBe('')
     expect(emptyPath.error).toBeTruthy()
-    expect(await service.createProject({ name: 'Main', path: root + '/' })).toEqual({ path: '', error: '主工作区已存在' })
+    expect(await service.createProject({ name: 'Main', path: root + '/' })).toMatchObject({ path: '', error: '主工作区已存在' })
 
     const external = mkdtempSync(join(tmpdir(), 'wiki-project-existing-'))
     try {
@@ -92,14 +91,14 @@ describe('workspace registry validation', () => {
       writeFileSync(join(external, 'wiki', 'log.md'), 'KEEP LOG', 'utf8')
       writeFileSync(join(external, 'purpose.md'), 'KEEP PURPOSE', 'utf8')
       writeFileSync(join(external, 'schema.md'), 'KEEP SCHEMA', 'utf8')
-      expect(await service.createProject({ name: 'External', path: external + '/' })).toEqual({ path: external })
-      expect(await service.createProject({ name: 'Renamed', path: external })).toEqual({ path: external })
+      expect(await service.createProject({ name: 'External', path: external + '/' })).toMatchObject({ path: external })
+      expect(await service.createProject({ name: 'Renamed', path: external })).toMatchObject({ path: external })
       const switcher = service as unknown as {
-        setProject(request: { path: string }): Promise<{ current: string }>
-        list(): Promise<unknown[]>
+        setProject: KnowledgeWikiService['setProject']
+        list: KnowledgeWikiService['list']
       }
       expect((await switcher.setProject({ path: external })).current).toBe(external)
-      await switcher.list()
+      await switcher.list(projectRequest(switcher))
       await switcher.setProject({ path: root })
       expect(readFileSync(join(external, 'wiki', 'index.md'), 'utf8')).toBe('KEEP INDEX')
       expect((await service.listProjects()).projects.map(project => project.path)).toEqual([root, external])
@@ -119,11 +118,11 @@ describe('workspace registry validation', () => {
   })
 
   it('does not switch to the already-active main project and removes an inactive registration', async () => {
-    expect((await (service as unknown as { setProject(request: { path: string }): Promise<{ current: string }> })
+    expect((await (service as unknown as { setProject: KnowledgeWikiService['setProject'] })
       .setProject({ path: root })).current).toBe(root)
     const external = mkdtempSync(join(tmpdir(), 'wiki-project-inactive-'))
     try {
-      expect(await service.createProject({ name: 'External', path: external })).toEqual({ path: external })
+      expect(await service.createProject({ name: 'External', path: external })).toMatchObject({ path: external })
       const removed = await service.removeProject({ path: external })
       expect(removed.current).toBe(root)
     } finally {
@@ -137,20 +136,18 @@ describe('path, diagnostics, and export failure edges', () => {
     const outside = join(root, 'outside.md')
     writeFileSync(outside, 'secret', 'utf8')
     symlinkSync(outside, join(root, 'wiki', 'linked.md'))
-    await expect(service.pageContent({ path: 'linked.md' })).rejects.toThrow('symbolic link is not allowed')
+    await expect(service.pageContent({ ...projectRequest(service), path: 'linked.md' })).rejects.toThrow('symbolic link is not allowed')
   })
 
   it('propagates graph insight and lint owner failures', async () => {
     vi.spyOn(service, 'computeGraph').mockRejectedValueOnce(new Error('graph failed'))
-    await expect(service.graphInsights()).rejects.toThrow('graph failed')
+    await expect(service.graphInsights(projectRequest(service))).rejects.toThrow('graph failed')
     vi.spyOn(service, 'list').mockRejectedValueOnce(new Error('list failed'))
-    await expect(service.lint()).rejects.toThrow('list failed')
+    await expect(service.lint(projectRequest(service))).rejects.toThrow('list failed')
   })
 
   it('reports export failure from an incomplete current project', async () => {
     service.currentRoot = join(root, 'missing-project')
-    const result = await service.exportProject()
-    expect(result.path).toBe('')
-    expect(result.error).toBeTruthy()
+    await expect(service.exportProject(projectRequest(service))).rejects.toThrow('project context')
   })
 })

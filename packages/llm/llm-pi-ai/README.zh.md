@@ -114,6 +114,12 @@ profile 通过可选 settings seam 每次操作重新读取：base 与用户设�
 
 插件会回答"该提供方可以提供哪些模型？"，供配置界面正在编辑或起草的路由使用。已知路由在没有端点覆盖时使用内置目录；显式端点会通过网络查询（`openai-completions` 与 `openai-responses` 形状）。LLM 管理层将一次性凭据绑定到该精确端点和协议，并拒绝重定向。发现操作不会借用已存储路由的密钥。无效容量值会被省略，而非转换为不安全整数。响应只是供显式采纳的候选元数据，不会持久修改目录。
 
+### 带凭据的协议测试
+
+[提供方 API 测试](tests/provider-apis.e2e.ts)分别控制官方 OpenAI、Azure OpenAI 与 Anthropic。`OPENAI_API_KEY` 独立启用官方 Responses 用例，不要求 Azure 配置。Azure 同时要求 `AZURE_OPENAI_API_KEY` 与 `DSH_PI_AI_AZURE_BASE_URL`；凭据通过 `api-key` 发送，不使用官方路由的凭据。`ANTHROPIC_API_KEY` 启用独立的 Messages 用例。未配置的用例报告跳过，不借用其他提供方的密钥。
+
+`DSH_PI_AI_OPENAI_MODEL`、`DSH_PI_AI_AZURE_MODEL` 与 `DSH_PI_AI_ANTHROPIC_MODEL` 覆盖测试模型；对应的 `DSH_PI_AI_*_BASE_URL` 字段选择显式测试端点。这些是真实 API 测试，可能消耗 Token。无密钥的[用例选择测试](tests/provider-api-cases.spec.ts)不调用模型，只验证启用规则；它们不证明账号可用或模型质量。
+
 ### 失败与恢复
 
 非空明文凭据标头会使 profile 保持非活动状态，并且仅在提供方目录的 `migrationRequired` 中暴露字段名称。设置读取分别隐藏已解析层、base 层和用户层中的这些值；含秘密的容器格式非法时安全拒绝。包含此类值的写入会被拒绝，不修改磁盘。应改用 `credentialHeaders` 引用；显式空 `Authorization` 仍是受支持的非秘密协议覆盖。标头名称不区分大小写，重复名称会被拒绝，包括公开标头与凭据标头之间的冲突。使用非常规名称的凭据标头也必须通过 `credentialHeaders` 声明；公开字段不是秘密探测机制。

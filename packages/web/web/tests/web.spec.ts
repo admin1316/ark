@@ -76,6 +76,31 @@ describe('WebRuntime registration', () => {
 })
 
 describe('WebRuntime execution resolution', () => {
+  it('checks search availability without invoking the provider', async () => {
+    const { ctx, web } = await mountWeb()
+    let calls = 0
+    const dispose = web.registerSearchProvider(makeSearchProvider('fixture', available, () => {
+      calls += 1
+      return Promise.resolve(searchResult('fixture'))
+    }))
+    expect(() => { web.assertSearchAvailable() }).not.toThrow()
+    expect(calls).toBe(0)
+    dispose()
+    expect(() => { web.assertSearchAvailable() }).toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_UNAVAILABLE' }))
+    await ctx.fiber.dispose()
+  })
+
+  it('applies configured and ambiguous selection failures during preflight', async () => {
+    const configured = await mountWeb({ searchProvider: 'missing' })
+    configured.web.registerSearchProvider(makeSearchProvider('other', available, () => Promise.resolve(searchResult('other'))))
+    expect(() => { configured.web.assertSearchAvailable() }).toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_MISSING' }))
+    const ambiguous = await mountWeb()
+    for (const id of ['a', 'b']) ambiguous.web.registerSearchProvider(makeSearchProvider(id, available, () => Promise.resolve(searchResult(id))))
+    expect(() => { ambiguous.web.assertSearchAvailable() }).toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_AMBIGUOUS' }))
+    await configured.ctx.fiber.dispose()
+    await ambiguous.ctx.fiber.dispose()
+  })
+
   it('throws WEB_PROVIDER_UNAVAILABLE when nothing is registered', async () => {
     const { web } = await mountWeb()
     await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_UNAVAILABLE' }))

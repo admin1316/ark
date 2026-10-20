@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  assertAbsolutePathInside, atomicWriteFile, createPrivateFileIfMissing, durableUnlinkFile,
+  assertAbsolutePathInside, atomicWriteConfinedFile, atomicWriteFile, createPrivateFileIfMissing, durableUnlinkFile,
   ensureConfinedDirectory, inodeIdentity, normalizeConfinedRelativePath, readConfinedText,
   readOptionalJson, readOptionalText, readRegularFileBounded, resolveConfinedPath,
 } from '../src/filesystem.ts'
@@ -97,6 +97,27 @@ describe('confined Wiki filesystem contracts', () => {
     expect(existsSync(file)).toBe(false)
     expect(readdirSync(root)).toEqual([])
     expect(() => { durableUnlinkFile(file) }).not.toThrow()
+  })
+
+  it('publishes confined files at the root and through newly created ordinary ancestors', () => {
+    const root = fixture()
+    atomicWriteConfinedFile(root, 'page.md', 'first')
+    atomicWriteConfinedFile(root, 'nested/pages/page.md', Buffer.from('nested'))
+    atomicWriteConfinedFile(root, 'page.md', 'replacement')
+    expect(readFileSync(join(root, 'page.md'), 'utf8')).toBe('replacement')
+    expect(readFileSync(join(root, 'nested/pages/page.md'), 'utf8')).toBe('nested')
+    if (process.platform !== 'win32') expect(lstatSync(join(root, 'nested')).mode & 0o077).toBe(0)
+  })
+
+  it('refuses a linked ancestor even when the direct destination parent is ordinary', () => {
+    const root = fixture()
+    const outside = fixture()
+    mkdirSync(join(root, 'wiki'))
+    mkdirSync(join(outside, 'research'))
+    symlinkSync(outside, join(root, 'wiki', '_candidates'), 'dir')
+    expect(() => { atomicWriteConfinedFile(root, 'wiki/_candidates/research/page.md', 'escaped') })
+      .toThrow(/symbolic link|unsafe directory/u)
+    expect(readdirSync(join(outside, 'research'))).toEqual([])
   })
 
   it('refuses directory, hard-link, and invalid-ancestor deletion targets', () => {

@@ -20,6 +20,77 @@ jobs:
   source-privacy:
     uses: ./.github/workflows/source-privacy.yml
 
+  ark-portable:
+    if: github.event_name == 'pull_request'
+    name: ark / portable regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+      - name: Build runtime test prerequisites
+        run: pnpm run build:lib:host
+      - name: Run complete registered portable Ark tests
+        run: node integrations/jiuzhang/tests/run.mjs --node-only
+
+  ark-installed:
+    if: github.event_name == 'pull_request'
+    name: ark / macos package and installed smoke
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+      - uses: actions/setup-python@v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Install build prerequisites
+        run: |
+          test "$(uname -m)" = arm64
+          pnpm install --frozen-lockfile
+          python -m pip install Pillow==11.3.0
+      - name: Verify test registration
+        run: node integrations/jiuzhang/tests/run.mjs --inventory-only
+      - name: Run macOS packaging and isolated-data fixtures
+        run: node --import tsx --test integrations/jiuzhang/tests/native-artifact-safety.test.mjs integrations/jiuzhang/tests/candidate-data.test.mjs
+      - name: Build and accept an isolated self-contained app
+        shell: bash
+        run: |
+          set -euo pipefail
+          ark_ci_root=$(mktemp -d /private/tmp/ark-ci.XXXXXX)
+          trap 'rm -rf -- "$ark_ci_root"' EXIT
+          mkdir -m 700 "$ark_ci_root/data"
+          node integrations/jiuzhang/src/pack-runtime.mjs --out "$ark_ci_root/pack"
+          JIUZHANG_SELF_CONTAINED=1 \
+          JIUZHANG_RUNTIME_ROOT="$ark_ci_root/pack/runtime-template" \
+          JIUZHANG_PACK_RECEIPT="$ark_ci_root/pack/pack-receipt.json" \
+          JIUZHANG_CANDIDATE_BUILD=1 \
+          JIUZHANG_CANDIDATE_DATA_HOME="$ark_ci_root/data" \
+          JIUZHANG_CANDIDATE_VERSION=0.0.1 \
+          JIUZHANG_CANDIDATE_BUILD_NUMBER=1 \
+          /bin/zsh integrations/jiuzhang/native/build-app.sh "$ark_ci_root/candidate"
+          ARK_APP_PATH="$ark_ci_root/candidate/Ark.app" \
+          ARK_INSTALL_E2E_RECEIPT="$ark_ci_root/install-receipt.json" \
+          node integrations/jiuzhang/tests/install-e2e.mjs
+
   # Standard hosted workers isolate static, coverage, and built-consumer checks.
   node-24:
     if: github.event_name == 'pull_request'
@@ -473,7 +544,7 @@ jobs:
   all-checks-passed:
     name: all checks passed
     runs-on: ubuntu-24.04
-    needs: [node-24, node-24-coverage, node-24-consumers, node-compat, python-sdk, python-runtime, windows, macos-native, source-privacy]
+    needs: [node-24, node-24-coverage, node-24-consumers, node-compat, python-sdk, python-runtime, windows, macos-native, ark-portable, ark-installed, source-privacy]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Fail if any needed job did not succeed

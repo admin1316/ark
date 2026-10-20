@@ -272,9 +272,10 @@ test('Ark uses a native SwiftUI interface and a dedicated API-only bundle', asyn
   const loadWikiBody = model.slice(loadWikiStart, loadWikiEnd)
   const loadWikiCatch = loadWikiBody.indexOf('} catch {')
   assert.ok(loadWikiCatch !== -1)
-  const wikiCancelGuard = loadWikiBody.indexOf('if isTaskCancellation(error) { return }', loadWikiCatch)
+  const wikiCancelGuard = loadWikiBody.indexOf('if isTaskCancellation(error) || !isCurrent() { return }', loadWikiCatch)
   const wikiClear = loadWikiBody.indexOf('wikiPages = []', loadWikiCatch)
   assert.ok(wikiCancelGuard !== -1 && wikiClear !== -1 && wikiCancelGuard < wikiClear)
+  assert.match(loadWikiBody, /func isCurrent\(\) -> Bool[\s\S]*!Task\.isCancelled && !knowledgeStopped[\s\S]*wikiLoadGeneration == loadGeneration[\s\S]*knowledgeGeneration == projectGeneration/)
 
   // refreshNavigation：cancellation guard 必须先于侧栏内联错误写入；
   // 边界用紧邻的真实下一个声明（selectSession），不做宽泛的下一函数搜索。

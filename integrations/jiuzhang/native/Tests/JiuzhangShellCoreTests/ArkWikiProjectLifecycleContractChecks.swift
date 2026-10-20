@@ -40,7 +40,8 @@ func runArkWikiProjectLifecycleContractChecks() {
       && hostRemoval?.contains("cancelPendingForRoot(target)") == true
       && hostRemoval?.contains("this.currentRoot = this.mainRoot") == true
       && hostRemoval?.contains("this.projectGeneration += 1") == true
-      && hostRemoval?.contains("current: this.currentRoot") == true,
+      && hostRemoval?.contains("return this.projectRegistry()") == true
+      && hostRemoval?.contains("this.projectTokens.delete(target)") == true,
     "Host removal unregisters once, cancels pending work, and returns to the main project"
   )
 

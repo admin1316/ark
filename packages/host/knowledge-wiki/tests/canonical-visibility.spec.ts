@@ -31,7 +31,7 @@ describe('canonical classification visibility', () => {
       'findings/bounded-queue.md',
       'research/native-layout.md',
     ])
-    await expect(hybridSearch(root, 'bounded queue', '', 8)).resolves.toEqual([
+    await expect(hybridSearch(root, 'bounded queue', undefined, 8)).resolves.toEqual([
       expect.objectContaining({ path: 'findings/bounded-queue.md' }),
     ])
   })

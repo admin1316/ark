@@ -17,7 +17,7 @@ import { sourceIdentityForPath, sourceSummaryFileNameFromIdentity } from './sour
 import { stampSourcesField } from './frontmatter-utils.ts'
 import { sanitizeIngestedFileContent, stampGeneratedFrontmatterDates, stampGeneratedLogDate } from './sanitize.ts'
 import { buildFallbackSourceSummaryPage, fallbackSummaryRelPath } from './fallback-summary.ts'
-import { atomicWriteFile, isMissingPathError } from './filesystem.ts'
+import { atomicWriteConfinedFile, isMissingPathError, resolveConfinedPath } from './filesystem.ts'
 import { mergePageContent } from './merge-page.ts'
 import { appendCandidateReviews, appendReviews, parseReviewBlocks } from './reviews.ts'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
@@ -269,7 +269,7 @@ function safeWikiPath(projectPath: string, rel: string): string {
   if (!target.startsWith(wikiRoot + sep)) {
     throw new Error(`ingest: FILE path escapes wiki directory: ${rel}`)
   }
-  return target
+  return resolveConfinedPath(projectPath, rel, true)
 }
 
 /** Route every generated wiki path into the non-graph candidate namespace. */
@@ -341,9 +341,11 @@ async function optionalText(path: string): Promise<string> {
 }
 
 /** Append one log entry to wiki/log.md (existing entries preserved). */
-async function appendLogEntry(logPath: string, entry: string): Promise<void> {
+async function appendLogEntry(projectPath: string, rel: string, entry: string, signal: AbortSignal): Promise<void> {
+  const logPath = resolveConfinedPath(projectPath, rel, true)
   const existing = await optionalText(logPath)
-  atomicWriteFile(logPath, existing.replace(/\n*$/, '\n\n') + entry + '\n')
+  signal.throwIfAborted()
+  atomicWriteConfinedFile(projectPath, rel, existing.replace(/\n*$/, '\n\n') + entry + '\n')
 }
 
 /**
@@ -394,7 +396,10 @@ export async function ingestSource(
   const today = new Date().toISOString().slice(0, 10)
   const summaryFileName = sourceSummaryFileNameFromIdentity(identity)
 
-  const analysis = await executeKnowledgeWikiStage(executor, {
+  const operationExecutor = executor?.prepareOperation === undefined
+    ? executor
+    : await executor.prepareOperation({ provider, model, modelCalls: 2 }, signal)
+  const analysis = await executeKnowledgeWikiStage(operationExecutor, {
     kind: 'llm-complete',
     provider,
     model,
@@ -403,7 +408,7 @@ export async function ingestSource(
     timeoutMs: 120_000,
   }, signal)
   if (analysis.text === null) throw new Error('ingest analysis returned no text')
-  const generated = await executeKnowledgeWikiStage(executor, {
+  const generated = await executeKnowledgeWikiStage(operationExecutor, {
     kind: 'llm-complete',
     provider,
     model,
@@ -441,7 +446,7 @@ export async function ingestSource(
       if (rel === CANDIDATE_LOG_REL) {
         const entry = block.content.replace(/^---[\s\S]*?---\n\n?/u, '').trim()
         if (entry !== '') {
-          await appendLogEntry(target, stampGeneratedLogDate(entry, today))
+          await appendLogEntry(projectPath, rel, stampGeneratedLogDate(entry, today), signal)
           written.push(rel)
         }
         continue
@@ -460,7 +465,7 @@ export async function ingestSource(
         content = merged
       }
       signal.throwIfAborted()
-      atomicWriteFile(target, content)
+      atomicWriteConfinedFile(projectPath, rel, content)
       written.push(rel)
     } catch (error) {
       warnings.push(error instanceof Error ? error.message : String(error))
@@ -472,7 +477,7 @@ export async function ingestSource(
   if (!written.includes(CANDIDATE_LOG_REL)) {
     try {
       signal.throwIfAborted()
-      await appendLogEntry(join(projectPath, CANDIDATE_LOG_REL), `## [${today}] ingest | ${sourceTitle}`)
+      await appendLogEntry(projectPath, CANDIDATE_LOG_REL, `## [${today}] ingest | ${sourceTitle}`, signal)
       written.push(CANDIDATE_LOG_REL)
     } catch (error) {
       warnings.push(`log append failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -482,8 +487,8 @@ export async function ingestSource(
   if (!written.includes(summaryRel)) {
     try {
       signal.throwIfAborted()
-      const target = safeWikiPath(projectPath, summaryRel)
-      atomicWriteFile(target, stampCandidateFrontmatter(buildFallbackSourceSummaryPage(identity, today)))
+      safeWikiPath(projectPath, summaryRel)
+      atomicWriteConfinedFile(projectPath, summaryRel, stampCandidateFrontmatter(buildFallbackSourceSummaryPage(identity, today)))
       written.push(summaryRel)
     } catch (error) {
       warnings.push(`summary fallback failed: ${error instanceof Error ? error.message : String(error)}`)

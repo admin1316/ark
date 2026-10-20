@@ -227,6 +227,15 @@ public struct ArkKnowledgeFinding: Identifiable, Equatable, Sendable {
   }
 }
 
+/// Research provenance and partial failures remain visible to the native caller.
+public struct ArkKnowledgeResearchResult: Equatable, Sendable {
+  public let findings: [ArkKnowledgeFinding]
+  public let sourceCount: Int
+  public let warnings: [String]
+  public let degraded: Bool
+  public let errorCode: String?
+}
+
 /// One action advertised by a knowledge-governance review.
 public struct ArkKnowledgeReviewAction: Identifiable, Equatable, Sendable {
   public let action: String
@@ -545,6 +554,19 @@ public enum ArkDomainAPIContract {
       else { throw invalidResponse("knowledgeWiki/deepResearch finding") }
       return ArkKnowledgeFinding(title: title, path: path)
     }
+  }
+
+  public static func knowledgeResearch(from value: JSONValue) throws -> ArkKnowledgeResearchResult {
+    guard let sourceCount = nonnegativeInteger(value["sourceCount"]),
+          let warnings = value["warnings"]?.arrayValue,
+          let degraded = value["degraded"]?.boolValue else {
+      throw invalidResponse("knowledgeWiki/deepResearch provenance")
+    }
+    return ArkKnowledgeResearchResult(
+      findings: try knowledgeFindings(from: value), sourceCount: sourceCount,
+      warnings: try stringArray(warnings, context: "knowledgeWiki/deepResearch warnings"),
+      degraded: degraded, errorCode: value["errorCode"]?.stringValue
+    )
   }
 
   public static func knowledgeReviews(from value: JSONValue) throws -> [ArkKnowledgeReviewItem] {
@@ -921,13 +943,26 @@ extension ArkAPIClient {
     return execution
   }
 
+  /// Bind every project operation before crossing the Host boundary.
+  public func knowledgeCall(
+    projectContext: String,
+    method: String,
+    args: [String: JSONValue] = [:]
+  ) async throws -> JSONValue {
+    guard !projectContext.isEmpty else { throw ArkAPIError(message: "知识项目尚未就绪，请重新载入") }
+    var request = args["request"]?.objectValue ?? [:]
+    request["projectContext"] = .string(projectContext)
+    return try await remoteCall(method: method, args: ["request": .object(request)])
+  }
+
   /// Run hybrid search over the active native knowledge project.
   public func searchKnowledge(
+    projectContext: String,
     query: String,
     topK: Int = 8
   ) async throws -> [ArkKnowledgeSearchHit] {
     guard topK > 0 else { throw ArkAPIError(message: "知识检索数量必须大于零") }
-    let value = try await remoteCall(
+    let value = try await knowledgeCall(projectContext: projectContext,
       method: ArkDomainAPIContract.Method.knowledgeSearch,
       args: ["request": .object(["query": .string(query), "topK": .number(Double(topK))])]
     )
@@ -936,12 +971,13 @@ extension ArkAPIClient {
 
   /// Create one human-authored canonical page in the active knowledge project.
   public func createKnowledgePage(
+    projectContext: String,
     title: String,
     content: String? = nil
   ) async throws -> ArkKnowledgeWriteResult {
     var request: [String: JSONValue] = ["title": .string(title)]
     if let content { request["content"] = .string(content) }
-    let value = try await remoteCall(
+    let value = try await knowledgeCall(projectContext: projectContext,
       method: ArkDomainAPIContract.Method.knowledgeCreatePage,
       args: ["request": .object(request)]
     )
@@ -951,11 +987,12 @@ extension ArkAPIClient {
   /// Compare-and-swap one existing knowledge page through the Host-owned,
   /// root-confined atomic writer.
   public func writeKnowledgePage(
+    projectContext: String,
     path: String,
     content: String,
     expectedContent: String
   ) async throws -> ArkKnowledgeWriteResult {
-    let value = try await remoteCall(
+    let value = try await knowledgeCall(projectContext: projectContext,
       method: ArkDomainAPIContract.Method.knowledgeWritePage,
       args: [
         "request": .object([
@@ -969,21 +1006,22 @@ extension ArkAPIClient {
   }
 
   /// Run the Host-owned deep-research pipeline and return its Candidate pages.
-  public func runDeepResearch(topic: String) async throws -> [ArkKnowledgeFinding] {
-    let value = try await remoteCall(
+  public func runDeepResearch(projectContext: String, topic: String) async throws -> ArkKnowledgeResearchResult {
+    let value = try await knowledgeCall(projectContext: projectContext,
       method: ArkDomainAPIContract.Method.knowledgeDeepResearch,
       args: ["request": .object(["topic": .string(topic)])]
     )
-    return try ArkDomainAPIContract.knowledgeFindings(from: value)
+    return try ArkDomainAPIContract.knowledgeResearch(from: value)
   }
 
   /// Load knowledge-governance reviews using the Host's status filter.
   public func knowledgeReviews(
+    projectContext: String,
     status: String = "unresolved",
     limit: Int = 100
   ) async throws -> [ArkKnowledgeReviewItem] {
     guard limit > 0 else { throw ArkAPIError(message: "Review 数量必须大于零") }
-    let value = try await remoteCall(
+    let value = try await knowledgeCall(projectContext: projectContext,
       method: ArkDomainAPIContract.Method.knowledgeReviews,
       args: [
         "request": .object([
@@ -998,12 +1036,13 @@ extension ArkAPIClient {
   /// Resolve one knowledge-governance review with an optional advertised action.
   @discardableResult
   public func resolveKnowledgeReview(
+    projectContext: String,
     reviewID: String,
     action: String? = nil
   ) async throws -> Bool {
     var request: [String: JSONValue] = ["reviewId": .string(reviewID)]
     if let action { request["action"] = .string(action) }
-    let value = try await remoteCall(
+    let value = try await knowledgeCall(projectContext: projectContext,
       method: ArkDomainAPIContract.Method.knowledgeResolveReview,
       args: ["request": .object(request)]
     )
@@ -1013,6 +1052,7 @@ extension ArkAPIClient {
   /// Resolve several knowledge-governance reviews in one Host transaction.
   @discardableResult
   public func resolveKnowledgeReviews(
+    projectContext: String,
     reviewIDs: [String],
     action: String? = nil
   ) async throws -> Int {
@@ -1020,7 +1060,7 @@ extension ArkAPIClient {
       "ids": .array(reviewIDs.map(JSONValue.string)),
     ]
     if let action { request["action"] = .string(action) }
-    let value = try await remoteCall(
+    let value = try await knowledgeCall(projectContext: projectContext,
       method: ArkDomainAPIContract.Method.knowledgeResolveReviews,
       args: ["request": .object(request)]
     )
@@ -1028,26 +1068,26 @@ extension ArkAPIClient {
   }
 
   /// Enqueue project-relative sources or public http(s) URLs in the Host-owned queue.
-  public func enqueueKnowledgeIngest(inputs: [String]) async throws -> ArkKnowledgeIngestQueue {
+  public func enqueueKnowledgeIngest(projectContext: String, inputs: [String]) async throws -> ArkKnowledgeIngestQueue {
     let normalized = inputs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
     guard !normalized.isEmpty else { throw ArkAPIError(message: "知识导入来源不能为空") }
-    let value = try await remoteCall(
+    let value = try await knowledgeCall(projectContext: projectContext,
       method: ArkDomainAPIContract.Method.knowledgeIngestQueueAdd,
       args: ["request": .object(["inputs": .array(normalized.map(JSONValue.string))])]
     )
     return try ArkDomainAPIContract.knowledgeIngestQueue(from: value)
   }
 
-  public func knowledgeIngestQueueStatus() async throws -> ArkKnowledgeIngestQueue {
-    let value = try await remoteCall(method: ArkDomainAPIContract.Method.knowledgeIngestQueueStatus)
+  public func knowledgeIngestQueueStatus(projectContext: String) async throws -> ArkKnowledgeIngestQueue {
+    let value = try await knowledgeCall(projectContext: projectContext, method: ArkDomainAPIContract.Method.knowledgeIngestQueueStatus)
     return try ArkDomainAPIContract.knowledgeIngestQueue(from: value)
   }
 
   /// Cancel all pending tasks through the Host queue owner. The running task
   /// remains owned by Host and is allowed to finish safely.
-  public func cancelPendingKnowledgeIngests() async throws -> ArkKnowledgeIngestQueue {
-    let value = try await remoteCall(method: ArkDomainAPIContract.Method.knowledgeIngestQueueCancel)
+  public func cancelPendingKnowledgeIngests(projectContext: String) async throws -> ArkKnowledgeIngestQueue {
+    let value = try await knowledgeCall(projectContext: projectContext, method: ArkDomainAPIContract.Method.knowledgeIngestQueueCancel)
     return try ArkDomainAPIContract.knowledgeIngestQueue(from: value)
   }
 }

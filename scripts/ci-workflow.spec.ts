@@ -184,7 +184,7 @@ describe('CI workflow', () => {
     }
     expect(aggregate.needs).toEqual([
       'node-24', 'node-24-coverage', 'node-24-consumers', 'node-compat',
-      'python-sdk', 'python-runtime', 'windows', 'macos-native', 'source-privacy',
+      'python-sdk', 'python-runtime', 'windows', 'macos-native', 'ark-portable', 'ark-installed', 'source-privacy',
     ])
     expect(aggregate.if).toContain('always()')
     const verdict = JSON.stringify(aggregate.steps)
@@ -196,6 +196,60 @@ describe('CI workflow', () => {
     expect(workflowJob(master, 'serial-windows')).toMatchObject({
       if: "github.event_name == 'push' && github.ref == 'refs/heads/main'", 'runs-on': 'windows-2025',
     })
+  })
+
+  it('runs required Ark regressions after their build prerequisites without secrets or uploaded test data', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const portable = workflowJob(workflow, 'ark-portable')
+    const installed = workflowJob(workflow, 'ark-installed')
+    const aggregate = workflowJob(workflow, 'all-checks-passed')
+    for (const [name, job] of [['ark-portable', portable], ['ark-installed', installed]] as const) {
+      expect(aggregate.needs, name).toContain(name)
+      expect(job.if, name).toBe("github.event_name == 'pull_request'")
+      expect(job['continue-on-error'], name).toBeUndefined()
+      expect(job.secrets, name).toBeUndefined()
+      expect(JSON.stringify(job), name).not.toMatch(/\bsecrets\s*\./u)
+      if (!Array.isArray(job.steps)) throw new TypeError(`${name} must define steps`)
+      const steps = job.steps.filter(isRecord)
+      expect(steps.find(step => step.uses === 'actions/checkout@v6'), name).toMatchObject({
+        with: { 'persist-credentials': false },
+      })
+      for (const step of steps) {
+        expect(step['continue-on-error'], name).toBeUndefined()
+        expect(typeof step.uses === 'string' ? step.uses : '', name).not.toMatch(/upload-artifact|deploy|release-action/u)
+        expect(typeof step.run === 'string' ? step.run : '', name).not.toMatch(/gh\s+(?:release\s+(?:create|upload)|api.*--method\s+(?:POST|PUT|PATCH))/u)
+      }
+    }
+    expect(portable['runs-on']).toBe('ubuntu-24.04')
+    if (!Array.isArray(portable.steps)) throw new TypeError('Ark portable must define steps')
+    const runs = portable.steps.filter(isRecord).map(step => step.run)
+    const build = runs.indexOf('pnpm run build:lib:host')
+    const node = runs.indexOf('node integrations/jiuzhang/tests/run.mjs --node-only')
+    expect(build).toBeGreaterThan(-1)
+    expect(node).toBeGreaterThan(build)
+    expect(JSON.stringify(portable.steps)).not.toContain('--product JiuzhangShellContractTests')
+
+    expect(installed['runs-on']).toBe('macos-15')
+    if (!Array.isArray(installed.steps)) throw new TypeError('Ark installed must define steps')
+    const installedSteps = installed.steps.filter(isRecord)
+    expect(installedSteps.find(step => step.name === 'Verify test registration')?.run)
+      .toBe('node integrations/jiuzhang/tests/run.mjs --inventory-only')
+    const smoke = installedSteps.find(step => step.name === 'Build and accept an isolated self-contained app')
+    if (typeof smoke?.run !== 'string') throw new TypeError('Ark installed must execute the self-contained smoke')
+    expect(smoke.run).toContain('set -euo pipefail')
+    expect(smoke.run).toContain('mktemp -d /private/tmp/ark-ci.XXXXXX')
+    expect(smoke.run).toContain('mkdir -m 700 "$ark_ci_root/data"')
+    expect(smoke.run).toContain('JIUZHANG_CANDIDATE_BUILD=1')
+    expect(smoke.run).toContain('JIUZHANG_CANDIDATE_DATA_HOME="$ark_ci_root/data"')
+    expect(smoke.run).toContain('JIUZHANG_RUNTIME_ROOT="$ark_ci_root/pack/runtime-template"')
+    expect(smoke.run).toContain('JIUZHANG_PACK_RECEIPT="$ark_ci_root/pack/pack-receipt.json"')
+    expect(smoke.run).toContain('ARK_APP_PATH="$ark_ci_root/candidate/Ark.app"')
+    const pack = smoke.run.indexOf('node integrations/jiuzhang/src/pack-runtime.mjs --out')
+    const assemble = smoke.run.indexOf('/bin/zsh integrations/jiuzhang/native/build-app.sh')
+    const accept = smoke.run.indexOf('node integrations/jiuzhang/tests/install-e2e.mjs')
+    expect(pack).toBeGreaterThan(-1)
+    expect(assemble).toBeGreaterThan(pack)
+    expect(accept).toBeGreaterThan(assemble)
   })
 
   it('gives the Wine Host TypeScript compile the repository heap budget', () => {

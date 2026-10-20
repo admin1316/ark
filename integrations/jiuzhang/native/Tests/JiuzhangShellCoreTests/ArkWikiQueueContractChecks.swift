@@ -25,7 +25,7 @@ func runArkWikiQueueContractChecks() {
     "native Wiki queue uses the existing typed Host Remote methods"
   )
   check(
-    api.contains("let value = try await remoteCall(method: ArkDomainAPIContract.Method.knowledgeIngestQueueCancel)")
+    api.contains("let value = try await knowledgeCall(projectContext: projectContext, method: ArkDomainAPIContract.Method.knowledgeIngestQueueCancel)")
       && api.contains("for _ in 0...snapshot.tasks.count") == false
       && api.contains("current Host verb cancels one pending task per call") == false,
     "native Wiki cancel delegates once to the atomic Host queue owner"
@@ -47,7 +47,7 @@ func runArkWikiQueueContractChecks() {
   )
   check(
     model.contains("ArkHTTPURLInput.normalizedHTTPURL(rawValue)")
-      && model.contains("client.enqueueKnowledgeIngest(inputs: [normalized])")
+      && model.contains("client.enqueueKnowledgeIngest(projectContext: scope.context, inputs: [normalized])")
       && model.contains("installKnowledgeIngestQueue(queue)"),
     "native Wiki URL import validates then joins the single queue owner"
   )

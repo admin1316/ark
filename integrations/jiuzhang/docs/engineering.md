@@ -39,7 +39,34 @@ pnpm run verify-translation-pairing          # bilingual doc pairs
 pnpm run verify-agent-note-format            # agent note format
 ```
 
-The integration tests are wired into the CI consumers gate and require the built Ark entry (`pnpm run build` first). The native contract builds and executes the Swift contract binary, verifies the API-only bundle, and rejects WebKit in the application executable.
+The registered Node runner requires the built Ark entry (`pnpm run build` first). `node integrations/jiuzhang/tests/run.mjs --node-only` runs the platform-eligible Node tests; `--inventory-only` rejects missing, duplicate or unregistered test files. The default runner also builds and executes native contracts on macOS. Product controls remain native; the Workbench browser alone renders external HTTP(S) pages in WebKit without an Ark credential, tool or local-file bridge.
+
+The required [CI workflow](../../../.github/workflows/ci.yml) separates portable Ark regressions, Swift native contracts, and a macOS packaging/install smoke. The portable job builds host outputs before the runner; the macOS smoke builds and seals a current-source runtime, assembles one isolated candidate with temporary data, and invokes the installed-state test. Test failures, skipped jobs and cancellation fail the aggregate verdict. These jobs do not certify manual native interaction or authorize production installation.
+
+## Knowledge connections and recovery
+
+The `knowledge-wiki` settings namespace uses the existing revision/CAS service and contains eight fields:
+
+| Route | Fields | Unconfigured behavior |
+|---|---|---|
+| Text analysis and research | `textProvider`, `textModel` | Explicitly selected registered LLM route; both fields are required when enabled. |
+| Image captions | `visionProvider`, `visionModel` | Both empty preserves local media and returns a warning. |
+| Vector retrieval | `embeddingProvider`, `embeddingBaseUrl`, `embeddingModel`, `embeddingCredential` | All empty uses local keyword retrieval; enabling requires the complete route and an independent credential reference. |
+
+Native Settings → Models edits these selections; credential values go to Keychain, not route settings. Text and image calls reuse the registered provider, including endpoint and protocol. Each multi-stage operation prepares its model calls before the first request; the provider retains credential-value rotation. Project operations carry the opaque `projectContext` from the registry, so changing UI selection cannot redirect an admitted operation. Host restart expires project identities. The [knowledge engine](../../../packages/host/knowledge-wiki/README.md) owns format limits, keyword fallback, project revocation and zero-source research behavior.
+
+The composer writes bounded owner-only draft and attachment journals with file sync, atomic publication and directory sync before ordinary-prompt transmission. Host acknowledgement waits for the inbox event to reach persistence; invocation identity and content digest deduplicate uncertain retries, including cold sessions. Acknowledgement clears only the matching draft revision and payload. New-conversation migration preserves a recovery record across session creation. Slash commands retain their separate execution contract and do not acquire general side-effect idempotency from prompt receipts.
+
+## Offline model evaluation
+
+The [evaluation cases](../evals/cases.mjs) contain 24 synthetic tasks across coding, Chinese writing, document analysis and fixture-tool execution. The [reporter](../evals/report.mjs) prepares four comparison slots over two rounds; it neither runs a model nor accesses the network or credentials.
+
+```sh
+node integrations/jiuzhang/evals/report.mjs template
+node integrations/jiuzhang/evals/report.mjs summarize /absolute/path/to/metadata.json
+```
+
+The template starts with every run unexecuted. Completed records require source/configuration hashes, rubric booleans and numeric observations. Reports distinguish failure, provider error, skip and not-run; missing usage or cost remains unknown. Free-text responses, errors, keys and unknown fields are rejected without echoing their values. Synthetic observations are labeled separately from measured calls. The [Claude research record](../evals/claude-research.json) links official documentation and marks unread reports explicitly; it does not establish account access, adapter compatibility or model quality. Paid comparisons require a separate approved budget.
 
 ## macOS application
 
@@ -50,10 +77,11 @@ zsh integrations/jiuzhang/native/build-app.sh /path/to/output
 # Self-contained distribution: embed the selected Node binary and the standalone
 # runtime inside the bundle, recording bundle-relative paths in Info.plist.
 JIUZHANG_SELF_CONTAINED=1 JIUZHANG_RUNTIME_ROOT=/path/to/runtime \
+  JIUZHANG_PACK_RECEIPT=/path/to/pack-receipt.json \
   zsh integrations/jiuzhang/native/build-app.sh /path/to/output
 ```
 
-Emits `Ark.app` at the output path: a native AppKit + SwiftUI executable, ICNS generation (Pillow required), and Info.plist recording of the Node.js executable, launcher, CLI, and runtime root. A self-contained build signs embedded Node separately with `Resources/node.entitlements`, then executes that signed Node before accepting the bundle. Signing is ad-hoc by default, or uses a Developer ID from `JIUZHANG_SIGN_IDENTITY`; `JIUZHANG_NOTARY_PROFILE` additionally submits to notarytool and staples the ticket. The self-contained bundle resolves its recorded `Contents/...` paths against `Bundle.main.bundleURL`, so moving the app does not break it. The application bundle's marketing version (`CFBundleShortVersionString`) is `3.1.1`; its independent build number (`CFBundleVersion`) is `2026102003`. The native contract tests assert both fields; update each assertion when its field changes. Source/standalone layouts still depend on the recorded external paths and require rebuilding when one moves.
+Emits `Ark.app` at the output path: a native AppKit + SwiftUI executable, ICNS generation (Pillow required), and Info.plist recording of the Node.js executable, launcher, runner, and runtime root. Self-contained builds require the receipt emitted by [pack-runtime](../src/pack-runtime.mjs). The build signs embedded Node separately with `Resources/node.entitlements`, then executes that signed Node before accepting the bundle. Signing is ad-hoc by default, or uses a Developer ID from `JIUZHANG_SIGN_IDENTITY`; `JIUZHANG_NOTARY_PROFILE` additionally submits to notarytool and staples the ticket. The self-contained bundle resolves its recorded `Contents/...` paths against `Bundle.main.bundleURL`, so moving the app does not break it. [Info.plist](../native/Resources/Info.plist) owns the independent marketing version and build number; native contracts pin both. Source/standalone layouts still depend on the recorded external paths and require rebuilding when one moves.
 
 ## Brand
 
@@ -65,7 +93,7 @@ Each Ark.app launch generates a fresh token and passes it to the child as `DSH_A
 
 ## Lifecycle recovery
 
-Ark embeds no WebKit-linked update framework. Updates are distributed outside the application until a fully native updater is implemented. Unexpected backend exits restart automatically with growing backoff (up to three attempts) before the failure dialog appears.
+Ark embeds no WebKit-linked update framework. Updates are distributed outside the application until a fully native updater is implemented. Each backend launch waits at most 30 seconds for readiness by default; signed `ArkBackendReadinessTimeoutSeconds` metadata accepts a positive finite deployment override. Readiness, exit, failure and quit invalidate the timer. A timeout stops and reaps only the owned launch before the existing three-retry backoff runs; old readiness and timer callbacks cannot affect its replacement. The stability window, not the first readiness line, resets rapid-crash history. Native shutdown cancels and awaits knowledge loading and polling; cancelled or stale project results cannot install a replacement view.
 
 ## Credentials storage
 
@@ -73,6 +101,6 @@ The credentials provider ships a `keychain` mode (macOS only): secrets live in t
 
 ## Installed-state acceptance
 
-`integrations/jiuzhang/tests/install-e2e.mjs` boots the product as an install would (embedded node + launcher, isolated home) and verifies API-only readiness, unauthenticated 401 behavior, token-admitted RPC, and the seeded local-model provider. Installed acceptance also checks that the Ark executable does not link WebKit and that its accessibility tree contains native controls rather than a Web area. Point the test at a standalone runtime (`JIUZHANG_RUNTIME_ROOT`) or an assembled `Ark.app` (`ARK_APP_PATH`).
+`integrations/jiuzhang/tests/install-e2e.mjs` boots the product as an install would (embedded node + launcher, isolated home) and verifies API-only readiness, unauthenticated 401 behavior, token-admitted RPC, and the seeded local-model provider. Point the test at a standalone runtime (`JIUZHANG_RUNTIME_ROOT`) or an assembled `Ark.app` (`ARK_APP_PATH`). Native controls, interaction and same-state screenshots require separate candidate acceptance; this API smoke alone does not prove them.
 
-Candidate shutdown verification: a candidate bundle's launcher and backend are owned descendants of the candidate UI process. Record the actual port from its `dsh native-api:` readiness line, quit the candidate UI, and verify that the UI, launcher, backend, and that exact listener all disappear before accepting the run. The launcher force-kills an uncooperative backend after four seconds; the UI waits seven seconds before force-killing the launcher, so the supervisor cannot be removed before its child deadline settles.
+Candidate shutdown verification: a candidate bundle's launcher and backend are owned descendants of the candidate UI process. Record the actual port from its `dsh native-api:` readiness line, quit the candidate UI, and verify that the UI, launcher, backend, and that exact listener all disappear before accepting the run. The launcher gives its child six seconds, while the native process owner allows eight seconds for launcher shutdown within AppKit's twenty-second total termination deadline. Cleanup retains exact process identity checks. Production promotion requires passed candidate acceptance and explicit user confirmation; release assets belong in `admin1316/ark-releases`.

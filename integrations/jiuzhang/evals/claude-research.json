@@ -1,0 +1,46 @@
+{
+  "schema": "ark.model-research.v1",
+  "checkedDate": "2026-10-20",
+  "scope": "Official documentation review only. No Claude integration, credential access, account capability check or model API call.",
+  "sources": [
+    { "url": "https://platform.claude.com/docs/en/models/overview", "reviewed": true },
+    { "url": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview", "reviewed": true },
+    { "url": "https://platform.claude.com/docs/en/models/fable-5-1/overview", "reviewed": true },
+    { "url": "https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost", "reviewed": true },
+    { "url": "https://www.anthropic.com/document/claude-sonnet-5-5-system-card", "reviewed": false, "reason": "Document exceeded the browsing tool size limit; no benchmark conclusions derived." },
+    { "url": "https://www.anthropic.com/claude-fable-5-1-mythos-5-1-system-card", "reviewed": false, "reason": "Redirected PDF was inaccessible to the browsing tool; no benchmark conclusions derived." }
+  ],
+  "candidates": [
+    {
+      "id": "claude-sonnet-5-5",
+      "role": "Comparison candidate; not configured or verified in Ark.",
+      "officialPositioning": "Speed and intelligence balance.",
+      "publishedLimits": { "contextTokens": 1000000, "maximumOutputTokens": 128000 },
+      "publishedStandardPriceUsdPerMillionTokens": { "input": 2, "output": 10 },
+      "compatibilityChecks": [
+        "Adaptive thinking and between_tools settings; reject unsupported forced tool selection.",
+        "Preserve thinking blocks without changing model or conversation context.",
+        "Non-default temperature, top_p or top_k can reject the request.",
+        "Streaming text between tools can appear as thinking blocks; test native presentation explicitly."
+      ]
+    },
+    {
+      "id": "claude-fable-5-1",
+      "role": "Latest documented high-complexity research reference; not an automatic replacement or an enabled integration.",
+      "officialPositioning": "Demanding reasoning and long-horizon agentic work; official guidance starts most workloads with Opus 5.5.",
+      "publishedLimits": { "contextTokens": 1000000, "maximumOutputTokens": 128000 },
+      "publishedStandardPriceUsdPerMillionTokens": { "input": 10, "output": 50 },
+      "compatibilityChecks": [
+        "Adaptive thinking is always on.",
+        "Forced tool selection and incompatible historical thinking blocks require migration checks."
+      ]
+    }
+  ],
+  "assessment": {
+    "measuredArkQuality": false,
+    "measuredArkLatency": false,
+    "measuredArkCost": false,
+    "benchmarkRanking": null,
+    "recommendation": "Keep Sonnet as the planned comparison slot. Consider Fable only after representative measured results and an explicit budget decision. Published pricing excludes caching, batch, tools and account-specific terms; it is not a bill estimate."
+  }
+}

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import JiuzhangShellCore
 
 /// One Markdown page loaded by the native knowledge workspace.
@@ -280,19 +281,49 @@ public enum ArkWikiLoader {
   }
 
   public static func load(root: URL) throws -> ([ArkWikiPage], [ArkWikiEdge]) {
+    // Foundation can enumerate /var roots using /private/var URLs. Derive both sides of
+    // the relative path from the same canonical representation.
+    let root = root.standardizedFileURL.resolvingSymlinksInPath()
     let manager = FileManager.default
     guard let enumerator = manager.enumerator(
       at: root,
-      includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+      includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey],
       options: [.skipsHiddenFiles]
     ) else { return ([], []) }
 
+    let rootFD = Darwin.open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+    guard rootFD >= 0 else { throw ArkAPIError(message: "知识库本地目录无法安全读取") }
+    defer { Darwin.close(rootFD) }
     var pages: [ArkWikiPage] = []
+    var visited = 0
+    var totalBytes = 0
+    let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath().path + "/"
     for case let url as URL in enumerator {
-      guard url.pathExtension.lowercased() == "md" else { continue }
-      let relativePath = url.path.replacingOccurrences(of: root.path + "/", with: "")
+      try Task.checkCancellation()
+      visited += 1
+      guard visited <= 8_192 else { throw ArkAPIError(message: "知识库本地索引超过 8192 个条目限制") }
+      let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+      if values.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+      guard values.isRegularFile == true, url.pathExtension.lowercased() == "md" else { continue }
+      let canonicalPath = url.standardizedFileURL.resolvingSymlinksInPath().path
+      guard canonicalPath.hasPrefix(canonicalRoot) else { continue }
+      guard pages.count < 2_048 else { throw ArkAPIError(message: "知识库本地索引超过 2048 页限制") }
+      let relativePath = String(canonicalPath.dropFirst(canonicalRoot.count))
       if relativePath.split(separator: "/").contains(where: { $0.hasPrefix("_") }) { continue }
-      let data = try Data(contentsOf: url)
+      guard let fd = confinedPageDescriptor(rootFD: rootFD, relativePath: relativePath) else { continue }
+      let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+      defer { try? file.close() }
+      var metadata = stat()
+      guard fstat(fd, &metadata) == 0, (metadata.st_mode & S_IFMT) == S_IFREG else { continue }
+      guard metadata.st_size >= 0, metadata.st_size <= 2 * 1_024 * 1_024 else {
+        throw ArkAPIError(message: "知识页面超过 2 MiB 本地读取限制")
+      }
+      let data = try file.read(upToCount: 2 * 1_024 * 1_024 + 1) ?? Data()
+      totalBytes += data.count
+      guard data.count <= 2 * 1_024 * 1_024, totalBytes <= 32 * 1_024 * 1_024 else {
+        throw ArkAPIError(message: "知识库本地读取超过 32 MiB 限制")
+      }
+      try Task.checkCancellation()
       guard let body = String(data: data, encoding: .utf8) else { continue }
       let id = String(relativePath.dropLast(3))
       let category = relativePath.split(separator: "/").dropLast().first.map(String.init) ?? "other"
@@ -327,6 +358,25 @@ public enum ArkWikiLoader {
       }
     }
     return (pages, edges)
+  }
+
+  /// Open each ancestor from the owned root so directory-link swaps cannot redirect a fallback read.
+  private static func confinedPageDescriptor(rootFD: Int32, relativePath: String) -> Int32? {
+    let components = relativePath.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    guard !components.isEmpty, components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return nil }
+    var directory = Darwin.dup(rootFD)
+    guard directory >= 0 else { return nil }
+    defer { Darwin.close(directory) }
+    for component in components.dropLast() {
+      let next = component.withCString { Darwin.openat(directory, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW) }
+      guard next >= 0 else { return nil }
+      Darwin.close(directory)
+      directory = next
+    }
+    return components[components.count - 1].withCString {
+      let descriptor = Darwin.openat(directory, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+      return descriptor >= 0 ? descriptor : nil
+    }
   }
 
   private static func title(in body: String) -> String? {

@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -13,7 +14,7 @@ import { Context } from '@deepseek-ai/cordis'
 import KnowledgeWikiService from '../src/index.ts'
 import { wikiTestConfig } from './config-fixture.ts'
 
-interface SummarySurface {
+interface SummarySurface extends Pick<KnowledgeWikiService, 'createProject' | 'removeProject'> {
   snapshots: { dispose(): void }
   summarizeSession(sessionId: string | undefined): Promise<void>
 }
@@ -52,7 +53,7 @@ function decision(overrides: Record<string, unknown> = {}): string {
   })
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   mainRoot = mkdtempSync(join(tmpdir(), 'wiki-summary-main-'))
   externalRoot = mkdtempSync(join(tmpdir(), 'wiki-summary-external-'))
   mkdirSync(join(mainRoot, 'wiki'), { recursive: true })
@@ -80,9 +81,9 @@ beforeEach(() => {
   service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot: join(mainRoot, 'wiki'),
     mainRoot,
-    credential: 'VISION_API_KEY',
     llmProvider: 'p', llmModel: 'm',
   })) as unknown as SummarySurface
+  expect(await service.createProject({ name: 'Summary fixture', path: externalRoot })).toMatchObject({ path: externalRoot })
 })
 
 afterEach(async () => {
@@ -114,7 +115,7 @@ describe('session summary admission', () => {
     })
     await service.summarizeSession('session-short')
 
-    expect(existsSync(join(externalRoot, 'wiki'))).toBe(false)
+    expect(existsSync(join(externalRoot, 'wiki', '_candidates'))).toBe(false)
   })
 
   it('stops on aborted/error finishes and malformed or rejected decisions', async () => {
@@ -138,7 +139,53 @@ describe('session summary admission', () => {
     ]) {
       await service.summarizeSession(`session-rejected-${Math.random()}`)
     }
-    expect(existsSync(join(externalRoot, 'wiki'))).toBe(false)
+    expect(existsSync(join(externalRoot, 'wiki', '_candidates'))).toBe(false)
+  })
+
+  it('does not invoke a model for a session in an unregistered project', async () => {
+    await service.removeProject({ path: externalRoot })
+    const execute = vi.fn()
+    stageExecutor = { isolation: 'owned-worker-v1', execute }
+    await service.summarizeSession('unregistered-session')
+    expect(execute).not.toHaveBeenCalled()
+    expect(existsSync(join(externalRoot, 'wiki', '_candidates'))).toBe(false)
+  })
+
+  it('cancels a registered project summary when that project is removed before the model returns', async () => {
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    let complete!: (value: { text: string }) => void
+    const completion = new Promise<{ text: string }>((resolve) => { complete = resolve })
+    let observed: AbortSignal | undefined
+    const execute = vi.fn((_request: unknown, signal: AbortSignal) => {
+      observed = signal
+      entered()
+      return completion
+    })
+    stageExecutor = { isolation: 'owned-worker-v1', execute }
+    const pending = service.summarizeSession('removed-in-flight')
+    await started
+    await service.removeProject({ path: externalRoot })
+    expect(observed?.aborted).toBe(true)
+    complete({ text: decision() })
+    await pending
+    await service.summarizeSession('removed-after-completion')
+    expect(execute).toHaveBeenCalledOnce()
+    expect(existsSync(join(externalRoot, 'wiki', '_candidates'))).toBe(false)
+    expect(existsSync(join(externalRoot, '.llm-wiki', 'review.json'))).toBe(false)
+  })
+
+  it('refuses a linked candidate ancestor without publishing a summary or review outside the project', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'wiki-summary-outside-'))
+    try {
+      mkdirSync(join(outside, 'topics'))
+      symlinkSync(outside, join(externalRoot, 'wiki', '_candidates'), 'dir')
+      await service.summarizeSession('linked-summary')
+      expect(existsSync(join(outside, 'topics', 'stable-topic.md'))).toBe(false)
+      expect(existsSync(join(externalRoot, '.llm-wiki', 'review.json'))).toBe(false)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
   })
 
   it('creates and merges one stable candidate topic across sessions', async () => {

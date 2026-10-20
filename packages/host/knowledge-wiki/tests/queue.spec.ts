@@ -1,3 +1,4 @@
+import { projectRequest } from './project-request-fixture.ts'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -23,11 +24,11 @@ interface TestService {
     signal: AbortSignal,
   ): Promise<{ written: string[]; warnings: string[] }>
   queue: IngestQueueTask[]
-  ingestSource(input: { path: string }): Promise<{ written: string[]; warnings: string[] }>
-  createProject(input: { name: string; path: string }): Promise<{ path: string; error?: string }>
-  setProject(input: { path: string }): Promise<{ current: string }>
-  ingestQueueStatus(): Promise<{ tasks: IngestQueueTask[]; running: boolean; cancelled: boolean }>
-  ingestQueueCancel(): Promise<{ tasks: IngestQueueTask[]; running: boolean; cancelled: boolean }>
+  ingestSource: KnowledgeWikiService['ingestSource']
+  createProject: KnowledgeWikiService['createProject']
+  setProject: KnowledgeWikiService['setProject']
+  ingestQueueStatus: KnowledgeWikiService['ingestQueueStatus']
+  ingestQueueCancel: KnowledgeWikiService['ingestQueueCancel']
 }
 
 let root: string
@@ -41,7 +42,7 @@ beforeEach(() => {
   writeFileSync(join(root, 'wiki', 'index.md'), '# Wiki Index\n')
   writeFileSync(join(root, 'raw', 'sources', 'ark-sessions', 'a.md'), 'content A')
   ctx = new Context()
-  service = new KnowledgeWikiService(ctx, wikiTestConfig({ wikiRoot: join(root, 'wiki'), mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm' })) as unknown as TestService
+  service = new KnowledgeWikiService(ctx, wikiTestConfig({ wikiRoot: join(root, 'wiki'), mainRoot: root, llmProvider: 'p', llmModel: 'm' })) as unknown as TestService
 })
 
 afterEach(async () => {
@@ -167,7 +168,7 @@ describe('owned timeout and quiescence', () => {
         if (task.input.endsWith('a.md')) {
           await executeKnowledgeWikiStage({
             isolation: 'owned-worker-v1',
-            execute: () => new Promise(() => {}),
+            execute: (_request, signal) => new Promise((_resolve, reject) => { signal.addEventListener('abort', () => { reject(signal.reason instanceof Error ? signal.reason : new Error('stage aborted')) }, { once: true }) }),
           }, {
             kind: 'file-extract',
             path: task.input,
@@ -204,7 +205,7 @@ describe('owned timeout and quiescence', () => {
     expect(running[0]!.runId).toBeTypeOf('string')
     expect(running[0]!.leaseStartedAt).toBeTypeOf('number')
 
-    await service.ingestQueueCancel()
+    await service.ingestQueueCancel(projectRequest(service))
     await drain
     const cancelled = JSON.parse(readFileSync(join(root, '.llm-wiki', 'ingest-queue.json'), 'utf8')) as IngestQueueTask[]
     expect(cancelled[0]).toMatchObject({ status: 'cancelled' })
@@ -231,7 +232,7 @@ describe('queue persistence', () => {
     expect(durable[0]!.createdAt).toBeTypeOf('number')
 
     const ctx2 = new Context()
-    const fresh = new KnowledgeWikiService(ctx2, wikiTestConfig({ wikiRoot: join(root, 'wiki'), mainRoot: root, credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm' })) as unknown as TestService
+    const fresh = new KnowledgeWikiService(ctx2, wikiTestConfig({ wikiRoot: join(root, 'wiki'), mainRoot: root, llmProvider: 'p', llmModel: 'm' })) as unknown as TestService
     fresh.restoreQueue()
     expect(fresh.queue.map(task => task.input)).toEqual(['ark-sessions/a.md'])
     expect(fresh.queue[0]!.status).toBe('pending')
@@ -256,7 +257,6 @@ describe('queue persistence', () => {
     const fresh = new KnowledgeWikiService(ctx2, wikiTestConfig({
       wikiRoot: join(root, 'wiki'),
       mainRoot: root,
-      credential: 'VISION_API_KEY',
       llmProvider: 'p',
       llmModel: 'm',
     })) as unknown as TestService
@@ -303,13 +303,13 @@ describe('enqueueIngest dedup', () => {
     const external = mkdtempSync(join(tmpdir(), 'kw-queue-scope-'))
     try {
       expect(await service.createProject({ name: 'External', path: external }))
-        .toEqual({ path: external })
+        .toMatchObject({ path: external })
       expect(service.enqueueIngest('ark-sessions/a.md')).toBe(true)
       await service.setProject({ path: external })
       expect(service.enqueueIngest('ark-sessions/a.md')).toBe(true)
 
-      expect(service.queue.map(task => task.projectRoot)).toEqual([root, external])
-      const snapshot = await service.ingestQueueStatus()
+      expect(service.queue.map(task => task.projectRoot)).toMatchObject([root, external])
+      const snapshot = await service.ingestQueueStatus(projectRequest(service))
       expect(snapshot.tasks).toHaveLength(1)
       expect(snapshot.tasks[0]!.projectRoot).toBe(external)
     } finally {
@@ -324,7 +324,7 @@ describe('pending cancellation', () => {
     expect(service.enqueueIngest('ark-sessions/a.md')).toBe(true)
     expect(service.enqueueIngest('ark-sessions/b.md')).toBe(true)
 
-    const cancelled = await service.ingestQueueCancel()
+    const cancelled = await service.ingestQueueCancel(projectRequest(service))
     expect(cancelled.tasks.map(task => task.status)).toEqual(['cancelled', 'cancelled'])
     expect(cancelled.tasks.every(task => typeof task.ingestedHash === 'string')).toBe(true)
 
@@ -339,7 +339,7 @@ describe('pending cancellation', () => {
 
   it('restores cancelled-source tombstones across service restart', async () => {
     service.enqueueIngest('ark-sessions/a.md')
-    await service.ingestQueueCancel()
+    await service.ingestQueueCancel(projectRequest(service))
 
     const durable = JSON.parse(readFileSync(join(root, '.llm-wiki', 'ingest-queue.json'), 'utf8')) as IngestQueueTask[]
     expect(durable).toHaveLength(1)
@@ -349,7 +349,6 @@ describe('pending cancellation', () => {
     const fresh = new KnowledgeWikiService(ctx2, wikiTestConfig({
       wikiRoot: join(root, 'wiki'),
       mainRoot: root,
-      credential: 'VISION_API_KEY',
       llmProvider: 'p',
       llmModel: 'm',
     })) as unknown as TestService

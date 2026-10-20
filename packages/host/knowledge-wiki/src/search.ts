@@ -1,7 +1,7 @@
 /**
  * Local hybrid search for the 万相织鉴 knowledge base: BM25 keyword scoring
- * over wiki pages, plus optional semantic vectors from the DashScope
- * embedding API. Runs fully in-process — no LLM Wiki app dependency.
+ * over wiki pages, plus optional semantic vectors from an explicitly configured
+ * OpenAI-compatible embedding endpoint. Runs fully in-process — no LLM Wiki app dependency.
  * @module @deepseek-ai/dsh-knowledge-wiki/search
  */
 
@@ -9,6 +9,15 @@ import { visitWikiTree } from './graph.ts'
 import { parseFrontmatterField } from './frontmatter-utils.ts'
 import { MAX_WIKI_PAGE_BYTES, readRegularFileBounded } from './filesystem.ts'
 const FRONTMATTER_RE = /^---\n[\s\S]*?\n---\n?/
+
+/** Detached endpoint/model/credential facts for one embedding operation. */
+export interface EmbeddingConnection {
+  readonly provider: string
+  readonly baseUrl: string
+  readonly model: string
+  readonly apiKey: string
+  readonly signal?: AbortSignal
+}
 
 /** One indexed page. */
 interface IndexedPage {
@@ -121,21 +130,23 @@ function scorePages(pages: IndexedPage[], query: string): ScoredPage[] {
 }
 
 /**
- * DashScope-compatible embedding for semantic search.
+ * Explicitly routed OpenAI-compatible embedding for semantic search.
  * @param texts - input texts.
- * @param apiKey - DashScope API key (empty disables vector search).
+ * @param connection - Detached independent route; absence disables vector search.
  * @returns vectors aligned with texts, or null when unavailable.
  */
-export async function embed(texts: string[], apiKey: string): Promise<number[][] | null> {
-  if (!apiKey || texts.length === 0) return null
-  const res = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings', {
+export async function embed(texts: string[], connection: EmbeddingConnection | undefined): Promise<number[][] | null> {
+  if (connection === undefined || texts.length === 0) return null
+  const res = await fetch(connection.baseUrl.replace(/\/+$/u, '') + '/embeddings', {
+    redirect: 'error',
+    ...connection.signal === undefined ? {} : { signal: connection.signal },
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${connection.apiKey}`,
     },
     body: JSON.stringify({
-      model: 'text-embedding-v3',
+      model: connection.model,
       input: texts.slice(0, 16),
     }),
   })
@@ -177,7 +188,7 @@ export function cosine(a: number[], b: number[]): number {
  * Hybrid search: BM25 scores blended with vector similarity when available.
  * @param wikiRoot - The wiki root input.
  * @param query - The query input.
- * @param apiKey - The api key input.
+ * @param connection - Independent embedding facts; absence keeps retrieval local.
  * @param topK - The top k input.
  * @param unavailable - optional notification when embedding throws before falling back to keyword results.
  * @returns The value produced by hybrid search.
@@ -185,7 +196,7 @@ export function cosine(a: number[], b: number[]): number {
 export async function hybridSearch(
   wikiRoot: string,
   query: string,
-  apiKey: string,
+  connection: EmbeddingConnection | undefined,
   topK: number,
   unavailable?: (diagnostic: EmbeddingUnavailable) => void,
 ): Promise<Array<{ path: string; score: number }>> {
@@ -199,7 +210,7 @@ export async function hybridSearch(
   try {
     vector = await embed(
       [query, ...topScoredPages.slice(0, 15).map(({ page }) => `${page.title}\n${page.text.slice(0, 600)}`)],
-      apiKey,
+      connection,
     )
   } catch (error) {
     // Semantic search is optional: embed() still reports the failure (its own contract),

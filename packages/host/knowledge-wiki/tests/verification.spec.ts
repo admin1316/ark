@@ -1,3 +1,4 @@
+import { projectRequest } from './project-request-fixture.ts'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -126,10 +127,10 @@ describe('Candidate verification gate', () => {
     const ctx = new Context()
     ctx.provide('knowledgeWikiVerifierAuthority', verifierAuthority('fail'))
     const service = new KnowledgeWikiService(ctx, wikiTestConfig({
-      wikiRoot: item.wikiRoot, mainRoot: item.root, credential: 'UNUSED_FIXTURE_REF', llmProvider: 'p', llmModel: 'm',
+      wikiRoot: item.wikiRoot, mainRoot: item.root, llmProvider: 'p', llmModel: 'm',
     }))
     try {
-      const result = await service.verifyCandidate({ reviewId: item.reviewId, action: 'Promote' }, new AbortController().signal)
+      const result = await service.verifyCandidate({ ...projectRequest(service), reviewId: item.reviewId, action: 'Promote' }, new AbortController().signal)
       expect(result).toMatchObject({ ok: false, result: 'fail' })
       if (result.receiptId === undefined) throw new Error('missing authentic failure receipt')
       const receiptPath = join(dirname(item.reviewFile), 'verification-receipts', `${result.receiptId}.json`)
@@ -153,7 +154,7 @@ describe('Candidate verification gate', () => {
         },
       }]))
 
-      const applied = await service.resolveReviews({ ids: [item.reviewId], action: 'Promote' })
+      const applied = await service.resolveReviews({ ...projectRequest(service), ids: [item.reviewId], action: 'Promote' })
       expect(readFileSync(receiptPath, 'utf8')).toBe(receiptBytes)
       expect({
         applied,
@@ -239,25 +240,21 @@ describe('Candidate verification gate', () => {
     const service = new KnowledgeWikiService(ctx, wikiTestConfig({
       wikiRoot: item.wikiRoot,
       mainRoot: item.root,
-      credential: 'VISION_API_KEY',
       llmProvider: 'p',
       llmModel: 'm',
     })) as unknown as {
-      verifyCandidate(
-        request: { reviewId: string; action: 'Promote' },
-        signal: AbortSignal,
-      ): Promise<{ ok: boolean; receiptId?: string }>
-      resolveReviews(request: { ids: string[]; action?: string }): Promise<number>
+      verifyCandidate: KnowledgeWikiService['verifyCandidate']
+      resolveReviews: KnowledgeWikiService['resolveReviews']
       snapshots: WikiSnapshotStore
     }
     const before = service.snapshots.currentGeneration(item.wikiRoot)
 
     try {
       await expect(service.verifyCandidate(
-        { reviewId: item.reviewId, action: 'Promote' },
+        { ...projectRequest(service), reviewId: item.reviewId, action: 'Promote' },
         new AbortController().signal,
       )).resolves.toMatchObject({ ok: true })
-      await expect(service.resolveReviews({ ids: [item.reviewId], action: 'Promote' })).resolves.toBe(1)
+      await expect(service.resolveReviews({ ...projectRequest(service), ids: [item.reviewId], action: 'Promote' })).resolves.toBe(1)
       expect(service.snapshots.currentGeneration(item.wikiRoot)).toBe(before + 1)
     } finally {
       await ctx.fiber.dispose()

@@ -442,6 +442,7 @@ public struct ArkKnowledgeProject: Identifiable, Equatable, Sendable {
   public let path: String
   public let name: String
   public let isMain: Bool
+  public var projectContext: String? = nil
 
   public var id: String { path }
   public var displayName: String { isMain ? "万相织鉴" : name }
@@ -657,6 +658,7 @@ public final class ArkAppModel: ObservableObject {
   @Published public private(set) var sessionSearchLoading = false
   @Published public private(set) var sessionSearchRemoteUnavailable = false
   @Published public private(set) var knowledgeSearchPaths: Set<String> = []
+  @Published public private(set) var knowledgeSearchMode = "keyword"
   @Published public private(set) var modelCatalog: ArkSessionModels?
   @Published private var hostModelGroups: [ArkModelProviderGroup] = []
   private var settingsLoadGeneration: UInt64 = 0
@@ -766,6 +768,7 @@ public final class ArkAppModel: ObservableObject {
       persistComposerDraft(for: oldValue)
       switchComposerAttachments(from: oldValue, to: selectedSessionID)
       installComposerDraft(Self.loadComposerDraft(defaults: defaults, sessionID: selectedSessionID))
+      restoreComposerAttachments(for: selectedSessionID)
       invalidateComposerSuggestions()
       prewarmComposerCatalog(for: selectedSessionID)
     }
@@ -886,6 +889,30 @@ public final class ArkAppModel: ObservableObject {
   // the existing published arrays. Image bytes never enter UserDefaults.
   private var composerAttachmentsBySession: [String: (images: [ArkPromptImage], documents: [ArkPendingDocument])] = [:]
   private var composerSubmittedDocuments: [ArkPendingDocument] = []
+  private var composerAttachmentGenerations: [String: UUID] = [:]
+  private var composerAttachmentRestores = Set<String>()
+  private var composerAttachmentRestoreOwners: [String: UUID] = [:]
+  @Published public private(set) var composerAttachmentRestoreFailed = false
+  private var composerAttachmentFailedKeys = Set<String>()
+  private var composerAttachmentTasks: [UUID: Task<Void, Never>] = [:]
+  private var composerSubmissionTask: Task<Void, Never>?
+  private var composerStopped = false
+  private struct ComposerPersistenceSnapshot {
+    let sessionID: String?
+    let document: ArkComposerDraftDocument
+    let images: [ArkPromptImage]
+    let documents: [ArkPendingDocument]
+    let generation: UUID?
+  }
+  private lazy var composerPersistence = ArkComposerPersistenceQueue<ComposerPersistenceSnapshot> { [weak self] snapshot in
+    await self?.writeComposerState(snapshot)
+  }
+  private var composerMigratingDrafts: [String: String] = [:]
+  private var composerRecoverableSubmissions: [String: [ArkPersistedComposerSubmission]] = [:]
+  @Published public private(set) var composerRecoverableSubmissionCount = 0
+  public var canRestoreUnconfirmedSubmission: Bool {
+    !composerSubmissionInFlight && composer.isEmpty && pendingImages.isEmpty && pendingDocuments.isEmpty
+  }
   struct ComposerOperationOwner {
     let key: String
     let token: UUID
@@ -911,6 +938,29 @@ public final class ArkAppModel: ObservableObject {
   private var trajectoryProjectionDirty = true
   private var trajectoryProjectionGeneration = 0
   private var wikiTask: Task<Void, Never>?
+  private var knowledgeGeneration: UInt64 = 0
+  private var wikiLoadGeneration: UInt64 = 0
+  private var knowledgeSearchGeneration: UInt64 = 0
+  private var knowledgeOperationTasks: [UUID: Task<Void, Never>] = [:]
+  private var knowledgeStopped = false
+  private struct KnowledgeScope: Equatable {
+    let path: String
+    let context: String
+    let generation: UInt64
+  }
+  private func knowledgeScope() -> KnowledgeScope? {
+    guard !knowledgeStopped, let path = selectedKnowledgeProjectPath,
+      let context = wikiProjects.first(where: { $0.path == path })?.projectContext else {
+      knowledgeErrorMessage = "知识项目尚未就绪，请重新载入"
+      return nil
+    }
+    return KnowledgeScope(path: path, context: context, generation: knowledgeGeneration)
+  }
+  private func knowledgeScopeIsCurrent(_ scope: KnowledgeScope) -> Bool {
+    !Task.isCancelled && !knowledgeStopped && knowledgeGeneration == scope.generation
+      && selectedKnowledgeProjectPath == scope.path
+      && wikiProjects.first(where: { $0.path == scope.path })?.projectContext == scope.context
+  }
   private var wikiIngestPollingTask: Task<Void, Never>?
   private var wikiIngestPollingGeneration = 0
   private var sessionExportTask: Task<Void, Never>?
@@ -932,6 +982,9 @@ public final class ArkAppModel: ObservableObject {
     static let tab = "ark.native.selected-tab"
     static func draft(_ sessionID: String?) -> String {
       "ark.native.composer-draft.\(sessionID ?? "new-session")"
+    }
+    static func draftAttachments(_ sessionID: String?) -> String {
+      "ark.native.composer-attachments.\(sessionID ?? "new-session")"
     }
     static func draftDocument(_ sessionID: String?) -> String {
       "ark.native.composer-document.\(sessionID ?? "new-session")"
@@ -976,6 +1029,7 @@ public final class ArkAppModel: ObservableObject {
     nextAgentPresetID = defaults.string(forKey: Keys.nextAgentPreset)
     busyEnterBehavior = defaults.string(forKey: Keys.busyEnterBehavior)
       .flatMap(ArkPromptDeliveryMode.init(rawValue:)) ?? .queue
+    restoreComposerAttachments(for: nil)
   }
 
   public var highlightedComposerSuggestion: ArkComposerSuggestion? {
@@ -1706,6 +1760,39 @@ public final class ArkAppModel: ObservableObject {
 
   private func persistComposerDraft(for sessionID: String?) {
     persistComposerDraft(composerDraftDocument, for: sessionID)
+    persistCurrentComposerState(for: sessionID)
+  }
+
+  private func persistCurrentComposerState(for sessionID: String?) {
+    enqueueComposerState(composerDraftDocument, for: sessionID, images: pendingImages, documents: pendingDocuments)
+  }
+
+  private func enqueueComposerState(_ document: ArkComposerDraftDocument, for sessionID: String?,
+    images: [ArkPromptImage], documents: [ArkPendingDocument]) {
+    let key = Keys.draft(sessionID)
+    guard !composerStopped, !composerAttachmentRestores.contains(key), !composerAttachmentFailedKeys.contains(key) else { return }
+    if composerMigratingDrafts[key] != nil, document.text.isEmpty, images.isEmpty, documents.isEmpty { return }
+    composerPersistence.enqueue(ComposerPersistenceSnapshot(sessionID: sessionID, document: document,
+      images: images, documents: documents, generation: composerAttachmentGenerations[key]), for: key)
+  }
+
+  private func writeComposerState(_ snapshot: ComposerPersistenceSnapshot) async {
+    let key = Keys.draft(snapshot.sessionID)
+    guard composerAttachmentGenerations[key] == snapshot.generation else { return }
+    do {
+      let journal = try await documentStore.persistComposerState(document: snapshot.document,
+        sessionID: snapshot.sessionID, images: snapshot.images, documents: snapshot.documents)
+      guard composerAttachmentGenerations[key] == snapshot.generation else {
+        try await documentStore.removePendingSubmission(sessionID: snapshot.sessionID,
+          matchingDocument: snapshot.document, journalIdentifier: journal)
+        return
+      }
+      let previous = defaults.string(forKey: Keys.draftAttachments(snapshot.sessionID))
+      defaults.set(journal, forKey: Keys.draftAttachments(snapshot.sessionID))
+      if let previous, previous != journal { await removeUnreferencedAttachmentJournal(previous) }
+    } catch {
+      if !composerStopped, selectedSessionID == snapshot.sessionID { composerErrorMessage = "草稿保存失败：\(error.localizedDescription)" }
+    }
   }
 
   private func persistComposerDraft(
@@ -1774,9 +1861,8 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private var allKnownSessionSummaries: [ArkSessionSummary] {
-    sessions + catalogSubagentSummariesByID.values.filter { synthetic in
-      !sessions.contains(where: { $0.id == synthetic.id })
-    }
+    let sessionIDs = Set(sessions.map(\.id))
+    return sessions + catalogSubagentSummariesByID.values.filter { !sessionIDs.contains($0.id) }
   }
 
   public func requestWorkbenchFileOpen(rootURL: URL, fileURL: URL) {
@@ -1974,6 +2060,47 @@ public final class ArkAppModel: ObservableObject {
 
   public func newCredentialReference(for providerID: String) -> String {
     ArkSettingsSnapshot.suggestedCredentialReference(for: providerID, namespaces: settingsSnapshot?.namespaces ?? [])
+  }
+
+  /// A new embedding secret gets a fresh reference before the whole route is CAS-published.
+  public func saveKnowledgeConnections(_ fields: [String: String], expectedRevision: Int,
+    embeddingSecret: String = "") async -> Bool {
+    let allowed = Set(["textProvider", "textModel", "visionProvider", "visionModel", "embeddingProvider",
+      "embeddingBaseUrl", "embeddingModel", "embeddingCredential"])
+    guard Set(fields.keys) == allowed, let snapshot = settingsSnapshot, snapshot.writable,
+      !settingsBusy else { return false }
+    var values = fields.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    if !embeddingSecret.isEmpty {
+      guard values["embeddingProvider"]?.isEmpty == false, values["embeddingModel"]?.isEmpty == false,
+        let rawURL = values["embeddingBaseUrl"], let url = URLComponents(string: rawURL),
+        let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased(), !host.isEmpty,
+        url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
+        scheme == "https" || (scheme == "http" && ["127.0.0.1", "::1", "[::1]", "localhost"].contains(host))
+      else {
+        settingsErrorMessage = "请先完整填写向量服务、有效 HTTPS 地址和模型；本机测试地址可使用 HTTP。"
+        return false
+      }
+      values["embeddingCredential"] = "ARK_KNOWLEDGE_EMBEDDING_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+    }
+    settingsBusy = true
+    defer { settingsBusy = false }
+    do {
+      if !embeddingSecret.isEmpty {
+        try await client.setCredential(ref: values["embeddingCredential"]!, value: embeddingSecret)
+      }
+      let updated = try await client.mutateSettings(namespace: "knowledge-wiki",
+        mutations: values.keys.sorted().map { .set(path: [$0], value: .string(values[$0]!)) },
+        expectedRevision: expectedRevision)
+      settingsSnapshot = ArkSettingsSnapshot(writable: snapshot.writable, hasDocument: snapshot.hasDocument,
+        namespaces: snapshot.namespaces.map { $0.id == updated.id ? updated : $0 })
+      settingsErrorMessage = nil
+      return true
+    } catch {
+      // A lost CAS response can mean it committed; retain its fresh credential and refresh only public settings.
+      if let refreshed = try? await client.settingsSnapshot() { settingsSnapshot = refreshed }
+      settingsErrorMessage = "知识连接未确认保存，请重新载入配置后重试。原有凭据未被覆盖。"
+      return false
+    }
   }
 
   public func verifyProviderConnection(provider: String, model: String) async throws -> ArkProviderVerification {
@@ -3157,6 +3284,27 @@ public final class ArkAppModel: ObservableObject {
 
   /// Stop event delivery and await both WebSocket pumps before the owner releases this model.
   public func shutdown() async {
+    composerStopped = true
+    knowledgeStopped = true
+    knowledgeGeneration &+= 1
+    wikiLoadGeneration &+= 1
+    let submission = composerSubmissionTask
+    submission?.cancel()
+    let attachmentRestores = Array(composerAttachmentTasks.values)
+    attachmentRestores.forEach { $0.cancel() }
+    let knowledgeOperations = Array(knowledgeOperationTasks.values)
+    knowledgeOperations.forEach { $0.cancel() }
+    let wikiLoading = wikiTask
+    wikiTask = nil
+    wikiLoading?.cancel()
+    let wikiPolling = wikiIngestPollingTask
+    stopKnowledgeIngestPolling(resetQueue: false)
+    if let submission { await submission.value }
+    for task in attachmentRestores { await task.value }
+    await composerPersistence.flush()
+    for task in knowledgeOperations { await task.value }
+    if let wikiLoading { await wikiLoading.value }
+    if let wikiPolling { await wikiPolling.value }
     eventReconnectTask?.cancel()
     statusRelocalizationTask?.cancel()
     historyReader?.cancel()
@@ -3375,6 +3523,8 @@ public final class ArkAppModel: ObservableObject {
     navigationErrorMessage = nil
     selectedWorkspaceID = workspaceID
     if let workspace = workspaces.first(where: { $0.id == workspaceID }) {
+      invalidateKnowledgeSelection()
+      stopKnowledgeIngestPolling(resetQueue: true)
       selectedKnowledgeProjectPath = workspace.path
     }
     clearConversationSurface()
@@ -3387,11 +3537,14 @@ public final class ArkAppModel: ObservableObject {
   public func beginNewConversation() {
     clearConversationSurface()
     let abandonedDocuments = pendingDocuments
+    composerMigratingDrafts.removeValue(forKey: Keys.draft(nil))
     selectedWorkspaceID = nil
     selectedTab = .chat
     composerDraftDocument.clear()
     installComposerDraft(composerDraftDocument)
     persistComposerDraft(for: nil)
+    discardPersistedComposerAttachments(for: nil)
+    Task { try? await documentStore.removePendingSubmission(sessionID: nil) }
     pendingImages = []
     pendingDocuments = []
     removeUnreferencedComposerDocuments(abandonedDocuments)
@@ -3802,6 +3955,7 @@ public final class ArkAppModel: ObservableObject {
           clearConversationSurface()
         }
         if selectedKnowledgeProjectPath == workspace.path {
+          invalidateKnowledgeSelection()
           stopKnowledgeIngestPolling(resetQueue: true)
           selectedKnowledgeProjectPath = nil
         }
@@ -3938,12 +4092,23 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func sendComposer(modeOverride: ArkPromptDeliveryMode?) {
-    guard !composerSubmissionInFlight else { return }
+    guard !composerStopped, !composerSubmissionInFlight else { return }
+    guard !composerAttachmentFailedKeys.contains(Keys.draft(selectedSessionID)) else {
+      composerErrorMessage = "草稿附件恢复失败，请重试恢复或明确移除失败附件后再发送"
+      return
+    }
+    guard !composerAttachmentRestores.contains(Keys.draft(selectedSessionID)) else {
+      composerErrorMessage = "正在恢复草稿附件，请稍候"
+      return
+    }
     guard composerModelRouteAvailable else {
       composerErrorMessage = ArkL10n.text(.composerChooseAvailableModel, languagePreference)
       return
     }
-    _ = composerDraftDocument.ensureSubmissionID()
+    composerDraftDocument.prepareSubmission(
+      mode: selectedSession?.running == true ? (modeOverride ?? busyEnterBehavior) : .queue,
+      timeZone: ArkInteractionAPI.launchTimeZoneIdentifier()
+    )
     persistComposerDraft(for: selectedSessionID)
     let capturedDocument = composerDraftDocument
     let text: String
@@ -3963,34 +4128,32 @@ public final class ArkAppModel: ObservableObject {
     let sourceAgentPresetID = nextAgentPresetID
     let pendingModel = draftModelSelection
     let pendingPermission = draftPermissionPreset
-    let sourceSessionWasRunning = selectedSession?.running == true
     let sourceIsSubagent = selectedSession?.origin == "subagent" || selectedSubagentEntry != nil
-    // A subagent prompt is not accepted until its caller-stable invocation has
-    // reached the child Session log. Keep the visible and persisted draft intact
-    // across that await so an app/Host failure cannot turn an uncertain outcome
-    // into silent data loss. Ordinary session submission retains its established
-    // eager-clear behavior.
-    if !sourceIsSubagent {
-      composerDraftDocument.clear()
-      installComposerDraft(composerDraftDocument)
-      persistComposerDraft(for: sourceSessionID)
-      pendingImages = []
-      pendingDocuments = []
-    }
+    // Ordinary prompts retain caller-stable receipts; slash commands clear only after their
+    // existing execution succeeds and do not acquire prompt retry semantics.
     invalidateComposerSuggestions()
     composerSubmissionInFlight = true
     composerSubmittedDocuments = documents
     let submissionOwner = beginComposerOperation(for: sourceSessionID ?? capturedDocument.submissionID)
-    Task {
+    composerSubmissionTask = Task {
       var targetSessionID = sourceSessionID
-      var mayReleaseDocuments = !sourceIsSubagent
       defer {
+        composerSubmissionTask = nil
         composerSubmittedDocuments = []
         composerSubmissionInFlight = false
         finishComposerOperation(submissionOwner)
         removeUnreferencedComposerDocuments(documents)
       }
       do {
+        await composerPersistence.flush()
+        let journalIdentifier: String
+        if text.hasPrefix("/"), !sourceIsSubagent {
+          journalIdentifier = try await documentStore.prepareComposerAttachments(
+            sessionID: sourceSessionID, images: images, documents: documents)
+        } else {
+          journalIdentifier = try await documentStore.persistInflightComposerSubmission(
+            document: capturedDocument, sessionID: sourceSessionID, images: images, documents: documents)
+        }
         await composerDocumentCleanupTask?.value
         guard composerOperationIsCurrent(submissionOwner) else { return }
         let promptText = try await documentStore.contextualizedPrompt(
@@ -4008,8 +4171,10 @@ public final class ArkAppModel: ObservableObject {
           )
           targetSessionID = sessionID
           guard composerOperationIsCurrent(submissionOwner) else { return }
+          let migratedVisibleDraft = try await migrateComposerSubmission(capturedDocument, sourceSessionID: sourceSessionID,
+            targetSessionID: sessionID, images: images, documents: documents, journalIdentifier: journalIdentifier)
           await refreshNavigation(refreshWiki: false)
-          if composerOperationIsCurrent(submissionOwner), selectedSessionID == sourceSessionID,
+          if migratedVisibleDraft, composerOperationIsCurrent(submissionOwner), selectedSessionID == sourceSessionID,
              historyProjectionGeneration == sourceNavigationGeneration {
             selectSession(sessionID)
           }
@@ -4049,15 +4214,11 @@ public final class ArkAppModel: ObservableObject {
             invocationID: invocationID
           )
           guard composerOperationIsCurrent(submissionOwner) else { return }
-          mayReleaseDocuments = commitSubagentComposerSubmission(
-            capturedDocument,
-            sourceSessionID: sourceSessionID,
-            documents: documents
-          )
         } else {
-          let deliveryMode: ArkPromptDeliveryMode = sourceSessionWasRunning
-            ? (modeOverride ?? busyEnterBehavior)
-            : .queue
+          guard let deliveryMode = capturedDocument.submissionMode,
+            let clientTimeZone = capturedDocument.submissionTimeZone else {
+            throw ArkAPIError(message: "草稿提交信息缺失，请重新编辑后发送")
+          }
           let route: ArkComposerSubmissionRoute
           if text.hasPrefix("/") {
             let commands = try await composerCommandsForSubmission(sessionID: sessionID)
@@ -4072,12 +4233,16 @@ public final class ArkAppModel: ObservableObject {
           guard composerOperationIsCurrent(submissionOwner) else { return }
           switch route {
           case .prompt:
+            try await documentStore.persistInflightSubmission(document: capturedDocument,
+              sessionID: sourceSessionID, journalIdentifier: journalIdentifier)
+            guard composerOperationIsCurrent(submissionOwner) else { return }
             try await interactions.sendPrompt(
               sessionID: sessionID,
               text: promptText,
               images: images,
               mode: deliveryMode,
-              submissionID: capturedDocument.submissionID
+              submissionID: capturedDocument.submissionID,
+              clientTimeZone: clientTimeZone
             )
           case .command(let command):
             guard documents.isEmpty else {
@@ -4096,23 +4261,23 @@ public final class ArkAppModel: ObservableObject {
           }
         }
         guard composerOperationIsCurrent(submissionOwner) else { return }
+        try await documentStore.removeInflightSubmission(capturedDocument.submissionID)
+        retireRecoverableSubmission(capturedDocument.submissionID)
+        await composerPersistence.flush()
+        try await documentStore.acknowledgePendingSubmission(sessionID: sessionID, submissionID: capturedDocument.submissionID)
+        if sourceSessionID != sessionID {
+          try await documentStore.acknowledgePendingSubmission(sessionID: sourceSessionID, submissionID: capturedDocument.submissionID)
+          composerMigratingDrafts.removeValue(forKey: Keys.draft(sourceSessionID))
+        }
+        commitComposerSubmission(capturedDocument, sessionID: sessionID, images: images, documents: documents)
         if selectedSessionID == sessionID { await refreshHistory() }
         await refreshNavigation(refreshWiki: false)
         composerSubmittedDocuments = []
-        if mayReleaseDocuments { removeUnreferencedComposerDocuments(documents) }
+        removeUnreferencedComposerDocuments(documents)
       } catch {
         guard composerOperationIsCurrent(submissionOwner) else {
           removeUnreferencedComposerDocuments(documents)
           return
-        }
-        if !sourceIsSubagent {
-          restoreComposerSubmission(
-            capturedDocument,
-            sourceSessionID: sourceSessionID,
-            targetSessionID: targetSessionID,
-            images: images,
-            documents: documents
-          )
         }
         guard selectedSessionID == targetSessionID else { return }
         composerErrorMessage = error.localizedDescription
@@ -4185,37 +4350,73 @@ public final class ArkAppModel: ObservableObject {
     return api.message.contains("does not support image input")
   }
 
-  /// Clear exactly the draft whose subagent invocation just received a durable
-  /// receipt. A user edit or session switch that wrote a different document is
-  /// never overwritten by the late acknowledgement.
-  private func commitSubagentComposerSubmission(
+  /// Clear only the exact acknowledged payload. Later edits and attachments retain a fresh identity.
+  private func commitComposerSubmission(
     _ captured: ArkComposerDraftDocument,
-    sourceSessionID: String?,
+    sessionID: String,
+    images: [ArkPromptImage],
     documents: [ArkPendingDocument]
-  ) -> Bool {
-    guard let sourceSessionID else { return false }
+  ) {
+    let document = selectedSessionID == sessionID ? composerDraftDocument
+      : Self.loadComposerDraft(defaults: defaults, sessionID: sessionID)
+    let attachments = selectedSessionID == sessionID ? (images: pendingImages, documents: pendingDocuments)
+      : (composerAttachmentsBySession[Keys.draft(sessionID)] ?? (images: [], documents: []))
+    guard document == captured, attachments.images == images, attachments.documents == documents else { return }
     var empty = captured
     empty.clear()
-    if selectedSessionID == sourceSessionID {
-      guard composerDraftDocument == captured else { return false }
+    persistComposerDraft(empty, for: sessionID)
+    if selectedSessionID == sessionID {
       installComposerDraft(empty)
-      persistComposerDraft(for: sourceSessionID)
-    } else {
-      guard Self.loadComposerDraft(defaults: defaults, sessionID: sourceSessionID) == captured else {
-        return false
-      }
-      persistComposerDraft(empty, for: sourceSessionID)
+      pendingImages = []
+      pendingDocuments = []
+    } else { composerAttachmentsBySession.removeValue(forKey: Keys.draft(sessionID)) }
+    discardPersistedComposerAttachments(for: sessionID)
+  }
+
+  private func migrateComposerSubmission(
+    _ captured: ArkComposerDraftDocument,
+    sourceSessionID: String?,
+    targetSessionID: String,
+    images: [ArkPromptImage],
+    documents: [ArkPendingDocument],
+    journalIdentifier identifier: String
+  ) async throws -> Bool {
+    let key = Keys.draft(targetSessionID)
+    let generation = composerAttachmentGenerations[key]
+    let destination = Self.loadComposerDraft(defaults: defaults, sessionID: targetSessionID)
+    guard destination.text.isEmpty || destination == captured else { return false }
+    let latestDestination = selectedSessionID == targetSessionID ? composerDraftDocument
+      : Self.loadComposerDraft(defaults: defaults, sessionID: targetSessionID)
+    guard !Task.isCancelled, !composerStopped, composerAttachmentGenerations[key] == generation,
+      latestDestination.text.isEmpty || latestDestination == captured else {
+      return false
     }
-    let submittedIDs = Set(documents.map(\.id))
+    try await documentStore.persistPendingSubmission(document: captured, sessionID: targetSessionID,
+      journalIdentifier: identifier)
+    let previous = defaults.string(forKey: Keys.draftAttachments(targetSessionID))
+    persistComposerDraft(captured, for: targetSessionID)
+    defaults.set(identifier, forKey: Keys.draftAttachments(targetSessionID))
+    if selectedSessionID == targetSessionID {
+      installComposerDraft(captured)
+      pendingImages = images
+      pendingDocuments = documents
+    } else { storeComposerAttachments(images, documents: documents, for: targetSessionID) }
+    if let previous { await removeUnreferencedAttachmentJournal(previous) }
+    let source = selectedSessionID == sourceSessionID ? composerDraftDocument
+      : Self.loadComposerDraft(defaults: defaults, sessionID: sourceSessionID)
+    guard source == captured else { return false }
+    composerMigratingDrafts[Keys.draft(sourceSessionID)] = captured.submissionID
+    var empty = captured
+    empty.clear()
+    persistComposerDraft(empty, for: sourceSessionID)
     if selectedSessionID == sourceSessionID {
-      pendingDocuments.removeAll { submittedIDs.contains($0.id) }
-    } else {
-      let key = Keys.draft(sourceSessionID)
-      if var attachments = composerAttachmentsBySession[key] {
-        attachments.documents.removeAll { submittedIDs.contains($0.id) }
-        storeComposerAttachments(attachments.images, documents: attachments.documents, for: sourceSessionID)
-      }
-    }
+      installComposerDraft(empty)
+      pendingImages = []
+      pendingDocuments = []
+    } else { composerAttachmentsBySession.removeValue(forKey: Keys.draft(sourceSessionID)) }
+    // Retain the home receipt until prompt acknowledgement; a crash before selected-session
+    // preferences reach disk can still retry the same caller-stable session identity.
+    discardPersistedComposerAttachments(for: sourceSessionID)
     return true
   }
 
@@ -4237,30 +4438,140 @@ public final class ArkAppModel: ObservableObject {
     return commands
   }
 
-  private func restoreComposerSubmission(
-    _ captured: ArkComposerDraftDocument,
-    sourceSessionID: String?,
-    targetSessionID: String?,
-    images: [ArkPromptImage],
-    documents: [ArkPendingDocument]
-  ) {
-    let destination = targetSessionID ?? sourceSessionID
-    if selectedSessionID == destination {
-      let restored = composerDraftDocument.prepending(captured)
-      installComposerDraft(restored)
-      persistComposerDraft(for: destination)
-      pendingImages.insert(contentsOf: images, at: 0)
-      let retainedIDs = Set(pendingDocuments.map(\.id))
-      pendingDocuments.insert(contentsOf: documents.filter { !retainedIDs.contains($0.id) }, at: 0)
-      return
+  private func composerAttachmentsDidChange(for sessionID: String?) {
+    let key = Keys.draft(sessionID)
+    composerAttachmentGenerations[key] = UUID()
+    if selectedSessionID == sessionID {
+      composerDraftDocument.attachmentsDidChange()
+      persistComposerDraft(for: sessionID)
+    } else {
+      var document = Self.loadComposerDraft(defaults: defaults, sessionID: sessionID)
+      document.attachmentsDidChange()
+      persistComposerDraft(document, for: sessionID)
+      let attachments = composerAttachmentsBySession[key]
+      enqueueComposerState(document, for: sessionID, images: attachments?.images ?? [], documents: attachments?.documents ?? [])
     }
-    let latest = Self.loadComposerDraft(defaults: defaults, sessionID: destination)
-    persistComposerDraft(latest.prepending(captured), for: destination)
-    let attachments = composerAttachmentsBySession[Keys.draft(destination)]
-    let retainedDocuments = attachments?.documents ?? []
-    let retainedIDs = Set(retainedDocuments.map(\.id))
-    storeComposerAttachments(images + (attachments?.images ?? []),
-      documents: documents.filter { !retainedIDs.contains($0.id) } + retainedDocuments, for: destination)
+  }
+
+  private func restoreComposerAttachments(for sessionID: String?) {
+    let key = Keys.draft(sessionID)
+    composerAttachmentRestoreFailed = composerAttachmentFailedKeys.contains(key)
+    composerRecoverableSubmissionCount = composerRecoverableSubmissions[key]?.count ?? 0
+    guard !composerStopped, !composerAttachmentRestores.contains(key), pendingImages.isEmpty, pendingDocuments.isEmpty,
+      composerAttachmentsBySession[key] == nil else { return }
+    let identifier = defaults.string(forKey: Keys.draftAttachments(sessionID))
+    let capturedDocument = selectedSessionID == sessionID ? composerDraftDocument
+      : Self.loadComposerDraft(defaults: defaults, sessionID: sessionID)
+    let generation = UUID()
+    composerAttachmentGenerations[key] = generation
+    composerAttachmentRestores.insert(key)
+    composerAttachmentRestoreOwners[key] = generation
+    let taskID = UUID()
+    composerAttachmentTasks[taskID] = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        self.composerAttachmentTasks.removeValue(forKey: taskID)
+        if self.composerAttachmentRestoreOwners[key] == generation {
+          self.composerAttachmentRestores.remove(key)
+          self.composerAttachmentRestoreOwners.removeValue(forKey: key)
+        }
+      }
+      do {
+        let inflight = try await self.documentStore.restoreInflightSubmissions(sessionID: sessionID)
+        guard !Task.isCancelled, self.composerAttachmentGenerations[key] == generation else { return }
+        let pending = try await self.documentStore.restorePendingSubmission(sessionID: sessionID)
+        let activeSubmissionID = pending?.document.submissionID ?? capturedDocument.submissionID
+        self.composerRecoverableSubmissions[key] = inflight.filter { $0.document.submissionID != activeSubmissionID }
+        if self.selectedSessionID == sessionID {
+          self.composerRecoverableSubmissionCount = self.composerRecoverableSubmissions[key]?.count ?? 0
+        }
+        let restored: (images: [ArkPromptImage], documents: [ArkPendingDocument])
+        if let pending {
+          restored = (pending.images, pending.documents)
+        } else if let identifier {
+          restored = try await self.documentStore.restoreDraftAttachments(identifier)
+        } else { return }
+        guard !Task.isCancelled, self.composerAttachmentGenerations[key] == generation else { return }
+        let current = self.selectedSessionID == sessionID ? self.composerDraftDocument
+          : Self.loadComposerDraft(defaults: self.defaults, sessionID: sessionID)
+        guard current == capturedDocument else { return }
+        if let pending {
+          self.persistComposerDraft(pending.document, for: sessionID)
+          self.defaults.set(pending.journalIdentifier, forKey: Keys.draftAttachments(sessionID))
+          if self.selectedSessionID == sessionID { self.installComposerDraft(pending.document) }
+        }
+        self.composerAttachmentFailedKeys.remove(key)
+        if self.selectedSessionID == sessionID {
+          self.composerAttachmentRestoreFailed = false
+          self.pendingImages = restored.images
+          self.pendingDocuments = restored.documents
+        } else { self.storeComposerAttachments(restored.images, documents: restored.documents, for: sessionID) }
+      } catch {
+        guard !Task.isCancelled, self.composerAttachmentGenerations[key] == generation else { return }
+        self.composerAttachmentFailedKeys.insert(key)
+        if self.selectedSessionID == sessionID {
+          self.composerAttachmentRestoreFailed = true
+          self.composerErrorMessage = "草稿附件恢复失败：\(error.localizedDescription)"
+        }
+      }
+    }
+  }
+
+  private func retireRecoverableSubmission(_ submissionID: String?) {
+    for key in Array(composerRecoverableSubmissions.keys) {
+      composerRecoverableSubmissions[key]?.removeAll { $0.document.submissionID == submissionID }
+    }
+    composerRecoverableSubmissionCount = composerRecoverableSubmissions[Keys.draft(selectedSessionID)]?.count ?? 0
+  }
+
+  public func restoreUnconfirmedComposerSubmission() {
+    guard canRestoreUnconfirmedSubmission,
+      let recovered = composerRecoverableSubmissions[Keys.draft(selectedSessionID)]?.first else { return }
+    installComposerDraft(recovered.document)
+    pendingImages = recovered.images
+    pendingDocuments = recovered.documents
+    persistComposerDraft(recovered.document, for: selectedSessionID)
+    defaults.set(recovered.journalIdentifier, forKey: Keys.draftAttachments(selectedSessionID))
+    retireRecoverableSubmission(recovered.document.submissionID)
+    composerErrorMessage = "已恢复发送结果未确认的消息；重试会沿用原提交身份"
+  }
+
+  public func retryComposerAttachmentRestore() {
+    let key = Keys.draft(selectedSessionID)
+    composerAttachmentFailedKeys.remove(key)
+    composerAttachmentRestoreFailed = false
+    restoreComposerAttachments(for: selectedSessionID)
+  }
+
+  public func discardFailedComposerAttachments() {
+    let sessionID = selectedSessionID
+    composerAttachmentFailedKeys.remove(Keys.draft(sessionID))
+    composerAttachmentRestoreFailed = false
+    composerErrorMessage = nil
+    discardPersistedComposerAttachments(for: sessionID)
+    composerDraftDocument.attachmentsDidChange()
+    persistComposerDraft(for: sessionID)
+    Task { try? await documentStore.removePendingSubmission(sessionID: sessionID) }
+  }
+
+  private func discardPersistedComposerAttachments(for sessionID: String?) {
+    let key = Keys.draft(sessionID)
+    composerAttachmentGenerations[key] = UUID()
+    composerAttachmentRestores.remove(key)
+    composerAttachmentRestoreOwners.removeValue(forKey: key)
+    composerAttachmentFailedKeys.remove(key)
+    if selectedSessionID == sessionID { composerAttachmentRestoreFailed = false }
+    composerPersistence.discardPending(for: key)
+    guard let identifier = defaults.string(forKey: Keys.draftAttachments(sessionID)) else { return }
+    defaults.removeObject(forKey: Keys.draftAttachments(sessionID))
+    Task { await removeUnreferencedAttachmentJournal(identifier) }
+  }
+
+  private func removeUnreferencedAttachmentJournal(_ identifier: String) async {
+    let referenced = defaults.dictionaryRepresentation().contains {
+      $0.key.hasPrefix("ark.native.composer-attachments.") && ($0.value as? String) == identifier
+    }
+    if !referenced { await documentStore.removeDraftAttachments(identifier) }
   }
 
   private func storeComposerAttachments(_ images: [ArkPromptImage], documents: [ArkPendingDocument], for sessionID: String?) {
@@ -4285,7 +4596,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func composerOperationIsCurrent(_ owner: ComposerOperationOwner) -> Bool {
-    composerOperations[owner.key]?.token == owner.token
+    !Task.isCancelled && !composerStopped && composerOperations[owner.key]?.token == owner.token
   }
 
   private func finishComposerOperation(_ owner: ComposerOperationOwner) {
@@ -4323,6 +4634,10 @@ public final class ArkAppModel: ObservableObject {
 
   /// Called by the authoritative host/session-deleted event; no permanent tombstones.
   func discardComposerAttachments(for sessionID: String) {
+    persistComposerDraft(ArkComposerDraftDocument(), for: sessionID)
+    if selectedSessionID == sessionID { installComposerDraft(ArkComposerDraftDocument()) }
+    discardPersistedComposerAttachments(for: sessionID)
+    Task { try? await documentStore.removePendingSubmission(sessionID: sessionID) }
     composerOperations.removeValue(forKey: Keys.draft(sessionID))
     var discarded = composerAttachmentsBySession.removeValue(forKey: Keys.draft(sessionID))?.documents ?? []
     if selectedSessionID == sessionID {
@@ -4351,6 +4666,7 @@ public final class ArkAppModel: ObservableObject {
       return
     }
     pendingImages.append(ArkPromptImage(mediaType: mediaType, data: data, name: "粘贴的图片"))
+    composerAttachmentsDidChange(for: selectedSessionID)
     composerErrorMessage = nil
   }
 
@@ -4398,6 +4714,7 @@ public final class ArkAppModel: ObservableObject {
   public func removePendingImage(at index: Int) {
     guard pendingImages.indices.contains(index) else { return }
     pendingImages.remove(at: index)
+    composerAttachmentsDidChange(for: selectedSessionID)
   }
 
   public func addPastedDocument(_ text: String) {
@@ -4494,6 +4811,7 @@ public final class ArkAppModel: ObservableObject {
         storeComposerAttachments(retained.images + loaded.images,
           documents: retained.documents + addedDocuments, for: sessionID)
       }
+      if !loaded.images.isEmpty || !addedDocuments.isEmpty { composerAttachmentsDidChange(for: sessionID) }
       return true
     } catch {
       removeUnreferencedComposerDocuments(importedDocuments)
@@ -4507,6 +4825,7 @@ public final class ArkAppModel: ObservableObject {
   public func removePendingDocument(at index: Int) {
     guard pendingDocuments.indices.contains(index) else { return }
     let document = pendingDocuments.remove(at: index)
+    composerAttachmentsDidChange(for: selectedSessionID)
     removeUnreferencedComposerDocuments([document])
   }
 
@@ -5271,18 +5590,30 @@ public final class ArkAppModel: ObservableObject {
   public func selectWikiPage(_ id: String?) {
     selectedWikiPageID = id
     guard let id else { return }
-    Task { await loadWikiPageContent(id: id) }
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
+      await loadWikiPageContent(id: id)
+    }
   }
 
   public func searchKnowledge(_ query: String) {
+    knowledgeSearchGeneration &+= 1
+    let searchGeneration = knowledgeSearchGeneration
     let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else {
       knowledgeSearchPaths = []
       return
     }
-    Task {
+    guard let scope = knowledgeScope() else { return }
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
       do {
-        let hits = try await client.searchKnowledge(query: normalized, topK: 50)
+        let hits = try await client.searchKnowledge(projectContext: scope.context, query: normalized, topK: 50)
+        guard knowledgeScopeIsCurrent(scope), knowledgeSearchGeneration == searchGeneration else { return }
         knowledgeSearchPaths = Set(hits.map(\.path))
         if let first = wikiPages.first(where: { knowledgeSearchPaths.contains($0.relativePath) }) {
           selectWikiPage(first.id)
@@ -5290,17 +5621,34 @@ public final class ArkAppModel: ObservableObject {
         postResultMessage(ArkL10n.format(.toastKnowledgeHits, languagePreference, arguments: [String(hits.count)]))
         knowledgeErrorMessage = nil
       } catch {
+        guard knowledgeScopeIsCurrent(scope), knowledgeSearchGeneration == searchGeneration else { return }
         knowledgeErrorMessage = error.localizedDescription
       }
     }
   }
 
   public func clearKnowledgeSearch() {
+    knowledgeSearchGeneration &+= 1
     knowledgeSearchPaths = []
+  }
+
+  private func invalidateKnowledgeSelection() {
+    knowledgeGeneration &+= 1
+    wikiIngestBusy = false
+    wikiReviewBusy = false
+    wikiSavingPageID = nil
+    wikiSaveError = nil
+    wikiReviewError = nil
+    wikiPages = []
+    wikiEdges = []
+    wikiReviews = []
+    knowledgeSearchPaths = []
+    selectedWikiPageID = nil
   }
 
   public func selectKnowledgeProject(path: String) {
     guard wikiProjects.contains(where: { $0.path == path }) else { return }
+    invalidateKnowledgeSelection()
     knowledgeErrorMessage = nil
     stopKnowledgeIngestPolling(resetQueue: true)
     selectedKnowledgeProjectPath = path
@@ -5312,7 +5660,11 @@ public final class ArkAppModel: ObservableObject {
     let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
     let normalizedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedName.isEmpty, !normalizedPath.isEmpty else { return }
-    Task {
+    let operationGeneration = knowledgeGeneration
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
       do {
         let value = try await client.remoteCall(
           method: "knowledgeWiki/createProject",
@@ -5326,16 +5678,23 @@ public final class ArkAppModel: ObservableObject {
         if let message = value["error"]?.stringValue, !message.isEmpty {
           throw ArkAPIError(message: message)
         }
+        guard !knowledgeStopped, knowledgeGeneration == operationGeneration else { return }
         _ = try await client.remoteCall(
           method: "knowledgeWiki/setProject",
           args: ["request": .object(["path": .string(normalizedPath)])]
         )
+        guard !knowledgeStopped, knowledgeGeneration == operationGeneration else { return }
+        invalidateKnowledgeSelection()
         stopKnowledgeIngestPolling(resetQueue: true)
         selectedKnowledgeProjectPath = normalizedPath
+        let installedGeneration = knowledgeGeneration
         await loadWiki()
+        guard !knowledgeStopped, knowledgeGeneration == installedGeneration,
+          selectedKnowledgeProjectPath == normalizedPath else { return }
         postResultMessage(ArkL10n.text(.toastKnowledgeProjectCreated, languagePreference))
         knowledgeErrorMessage = nil
       } catch {
+        guard !knowledgeStopped, !Task.isCancelled, knowledgeGeneration == operationGeneration else { return }
         knowledgeErrorMessage = error.localizedDescription
       }
     }
@@ -5352,21 +5711,30 @@ public final class ArkAppModel: ObservableObject {
       knowledgeErrorMessage = ArkL10n.text(.wikiProjectManagedByWorkspace, languagePreference)
       return
     }
-    Task {
+    let operationGeneration = knowledgeGeneration
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
       do {
         try await unregisterKnowledgeProject(path: project.path)
+        guard !knowledgeStopped, knowledgeGeneration == operationGeneration else { return }
         if selectedKnowledgeProjectPath.map({
           URL(fileURLWithPath: $0).standardizedFileURL.path == normalized
         }) == true {
           stopKnowledgeIngestPolling(resetQueue: true)
+          invalidateKnowledgeSelection()
           selectedKnowledgeProjectPath = nil
         }
         wikiTask?.cancel()
         wikiTask = nil
+        let installedGeneration = knowledgeGeneration
         await loadWiki()
+        guard !knowledgeStopped, knowledgeGeneration == installedGeneration else { return }
         postResultMessage(ArkL10n.text(.toastKnowledgeProjectRemoved, languagePreference))
         knowledgeErrorMessage = nil
       } catch {
+        guard !knowledgeStopped, !Task.isCancelled, knowledgeGeneration == operationGeneration else { return }
         knowledgeErrorMessage = error.localizedDescription
       }
     }
@@ -5374,18 +5742,20 @@ public final class ArkAppModel: ObservableObject {
 
   public func importKnowledgeSources(_ urls: [URL]) {
     guard !urls.isEmpty else { return }
-    let projectRoot = URL(
-      fileURLWithPath: selectedKnowledgeProjectPath
-        ?? fallbackWikiRoot.deletingLastPathComponent().path,
-      isDirectory: true
-    )
-    Task {
+    guard let scope = knowledgeScope() else { return }
+    let projectRoot = URL(fileURLWithPath: scope.path, isDirectory: true)
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
       do {
-        let inputs = try await Task.detached(priority: .userInitiated) {
+        let copying = Task.detached(priority: .userInitiated) {
+          try Task.checkCancellation()
           let manager = FileManager.default
           let sourceRoot = projectRoot.appendingPathComponent("raw/sources", isDirectory: true)
           try manager.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
           return try urls.map { url -> String in
+            try Task.checkCancellation()
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
             guard values.isRegularFile == true, values.isSymbolicLink != true else {
               throw ArkAPIError(message: "知识导入仅支持普通文件")
@@ -5405,12 +5775,20 @@ public final class ArkAppModel: ObservableObject {
             try manager.copyItem(at: url, to: destination)
             return "raw/sources/\(destination.lastPathComponent)"
           }
-        }.value
-        let queue = try await client.enqueueKnowledgeIngest(inputs: inputs)
+        }
+        let inputs = try await withTaskCancellationHandler {
+          let inputs = try await copying.value
+          try Task.checkCancellation()
+          return inputs
+        } onCancel: { copying.cancel() }
+        guard !knowledgeStopped, !Task.isCancelled else { return }
+        let queue = try await client.enqueueKnowledgeIngest(projectContext: scope.context, inputs: inputs)
+        guard knowledgeScopeIsCurrent(scope) else { return }
         installKnowledgeIngestQueue(queue)
         postResultMessage(ArkL10n.format(.toastKnowledgeImported, languagePreference, arguments: [String(inputs.count)]))
         knowledgeErrorMessage = nil
       } catch {
+        guard knowledgeScopeIsCurrent(scope) else { return }
         knowledgeErrorMessage = error.localizedDescription
       }
     }
@@ -5423,12 +5801,17 @@ public final class ArkAppModel: ObservableObject {
       return false
     }
     guard !wikiIngestBusy else { return false }
+    guard let scope = knowledgeScope() else { return false }
     wikiIngestBusy = true
     wikiIngestError = nil
-    Task {
-      defer { wikiIngestBusy = false }
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
+      defer { if knowledgeScopeIsCurrent(scope) { wikiIngestBusy = false } }
       do {
-        let queue = try await client.enqueueKnowledgeIngest(inputs: [normalized])
+        let queue = try await client.enqueueKnowledgeIngest(projectContext: scope.context, inputs: [normalized])
+        guard knowledgeScopeIsCurrent(scope) else { return }
         installKnowledgeIngestQueue(queue)
         postResultMessage(ArkL10n.format(
           .toastKnowledgeImported,
@@ -5437,6 +5820,7 @@ public final class ArkAppModel: ObservableObject {
         ))
         knowledgeErrorMessage = nil
       } catch {
+        guard knowledgeScopeIsCurrent(scope) else { return }
         wikiIngestError = error.localizedDescription
       }
     }
@@ -5445,13 +5829,21 @@ public final class ArkAppModel: ObservableObject {
 
   public func refreshKnowledgeIngestQueue() {
     guard !wikiIngestBusy else { return }
+    guard let scope = knowledgeScope() else { return }
     wikiIngestBusy = true
-    Task {
-      defer { wikiIngestBusy = false }
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
+      defer { if knowledgeScopeIsCurrent(scope) { wikiIngestBusy = false } }
       do {
-        installKnowledgeIngestQueue(try await client.knowledgeIngestQueueStatus())
+        guard knowledgeScopeIsCurrent(scope) else { return }
+        let queue = try await client.knowledgeIngestQueueStatus(projectContext: scope.context)
+        guard knowledgeScopeIsCurrent(scope) else { return }
+        installKnowledgeIngestQueue(queue)
         wikiIngestError = nil
       } catch {
+        guard knowledgeScopeIsCurrent(scope) else { return }
         wikiIngestError = error.localizedDescription
       }
     }
@@ -5461,14 +5853,22 @@ public final class ArkAppModel: ObservableObject {
   /// the currently running task, so the UI states that boundary explicitly.
   public func cancelPendingKnowledgeIngests() {
     guard !wikiIngestBusy, wikiIngestQueue.pendingCount > 0 else { return }
+    guard let scope = knowledgeScope() else { return }
     wikiIngestBusy = true
     wikiIngestError = nil
-    Task {
-      defer { wikiIngestBusy = false }
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
+      defer { if knowledgeScopeIsCurrent(scope) { wikiIngestBusy = false } }
       do {
-        installKnowledgeIngestQueue(try await client.cancelPendingKnowledgeIngests())
+        guard knowledgeScopeIsCurrent(scope) else { return }
+        let queue = try await client.cancelPendingKnowledgeIngests(projectContext: scope.context)
+        guard knowledgeScopeIsCurrent(scope) else { return }
+        installKnowledgeIngestQueue(queue)
         knowledgeErrorMessage = nil
       } catch {
+        guard knowledgeScopeIsCurrent(scope) else { return }
         wikiIngestError = error.localizedDescription
       }
     }
@@ -5484,7 +5884,7 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func startKnowledgeIngestPolling() {
-    guard wikiIngestPollingTask == nil else { return }
+    guard wikiIngestPollingTask == nil, let scope = knowledgeScope() else { return }
     wikiIngestPollingGeneration += 1
     let generation = wikiIngestPollingGeneration
     let projectPath = selectedKnowledgeProjectPath
@@ -5506,8 +5906,8 @@ public final class ArkAppModel: ObservableObject {
           selectedKnowledgeProjectPath == projectPath
         else { return }
         do {
-          let snapshot = try await client.knowledgeIngestQueueStatus()
-          guard wikiIngestPollingGeneration == generation else { return }
+          let snapshot = try await client.knowledgeIngestQueueStatus(projectContext: scope.context)
+          guard wikiIngestPollingGeneration == generation, knowledgeScopeIsCurrent(scope) else { return }
           wikiIngestQueue = snapshot
           wikiIngestError = nil
           if !snapshot.hasActiveTasks {
@@ -5517,6 +5917,7 @@ public final class ArkAppModel: ObservableObject {
           delay = min(delay * 2, 5)
         } catch {
           if isTaskCancellation(error) { return }
+          guard knowledgeScopeIsCurrent(scope) else { return }
           wikiIngestError = error.localizedDescription
           delay = 5
         }
@@ -5537,22 +5938,30 @@ public final class ArkAppModel: ObservableObject {
   public func createKnowledgePage(title: String, content: String) {
     let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { return }
-    Task {
+    guard let scope = knowledgeScope() else { return }
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
       do {
-        let result = try await client.createKnowledgePage(
+        let result = try await client.createKnowledgePage(projectContext: scope.context,
           title: normalized,
           content: content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : content
         )
+        guard knowledgeScopeIsCurrent(scope) else { return }
         guard result.succeeded else {
           throw ArkAPIError(message: result.error ?? "知识页面创建失败")
         }
+        guard knowledgeScopeIsCurrent(scope) else { return }
         await loadWiki()
+        guard knowledgeScopeIsCurrent(scope) else { return }
         if let page = wikiPages.first(where: { $0.relativePath == result.path }) {
           selectWikiPage(page.id)
         }
         postResultMessage(ArkL10n.text(.toastKnowledgePageCreated, languagePreference))
         knowledgeErrorMessage = nil
       } catch {
+        guard knowledgeScopeIsCurrent(scope) else { return }
         knowledgeErrorMessage = error.localizedDescription
       }
     }
@@ -5570,26 +5979,32 @@ public final class ArkAppModel: ObservableObject {
     guard wikiSavingPageID == nil,
           let page = wikiPages.first(where: { $0.id == id })
     else { return }
+    guard let scope = knowledgeScope() else { return }
     wikiSavingPageID = id
     wikiSaveError = nil
-    Task { [weak self] in
-      guard let self else { return }
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
       defer {
-        if self.wikiSavingPageID == id { self.wikiSavingPageID = nil }
+        if self.knowledgeScopeIsCurrent(scope), self.wikiSavingPageID == id { self.wikiSavingPageID = nil }
       }
       do {
-        let result = try await self.client.writeKnowledgePage(
+        let result = try await self.client.writeKnowledgePage(projectContext: scope.context,
           path: page.relativePath,
           content: content,
           expectedContent: expectedContent
         )
+        guard knowledgeScopeIsCurrent(scope) else { return }
         guard result.succeeded else {
           self.wikiSaveError = result.conflict
             ? "页面已在磁盘上被修改，请重新载入后再保存。"
             : (result.error ?? "知识页面保存失败")
           return
         }
+        guard self.knowledgeScopeIsCurrent(scope) else { return }
         await self.loadWiki()
+        guard self.knowledgeScopeIsCurrent(scope) else { return }
         if self.selectedWikiPageID == id {
           await self.loadWikiPageContent(id: id)
         }
@@ -5597,6 +6012,7 @@ public final class ArkAppModel: ObservableObject {
         self.postResultMessage("知识页面已保存")
         self.knowledgeErrorMessage = nil
       } catch {
+        guard knowledgeScopeIsCurrent(scope) else { return }
         let message = error.localizedDescription
         self.wikiSaveError = message.contains("page changed on disk")
           ? "页面已在磁盘上被修改，请重新载入后再保存。"
@@ -5608,13 +6024,24 @@ public final class ArkAppModel: ObservableObject {
   public func runDeepResearch(topic: String) {
     let normalized = topic.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { return }
-    Task {
+    guard let scope = knowledgeScope() else { return }
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
       do {
-        let findings = try await client.runDeepResearch(topic: normalized)
+        let result = try await client.runDeepResearch(projectContext: scope.context, topic: normalized)
+        guard knowledgeScopeIsCurrent(scope) else { return }
         await loadWiki()
-        postResultMessage(ArkL10n.format(.toastDeepResearchDone, languagePreference, arguments: [String(findings.count)]))
-        knowledgeErrorMessage = nil
+        guard knowledgeScopeIsCurrent(scope) else { return }
+        guard result.errorCode == nil, result.sourceCount > 0 else {
+          knowledgeErrorMessage = result.warnings.first ?? "研究没有取得来源，未生成研究结果"
+          return
+        }
+        postResultMessage("研究完成：\(result.sourceCount) 个来源，\(result.findings.count) 个页面")
+        knowledgeErrorMessage = result.degraded ? result.warnings.joined(separator: "\n") : nil
       } catch {
+        guard knowledgeScopeIsCurrent(scope) else { return }
         knowledgeErrorMessage = error.localizedDescription
       }
     }
@@ -5622,18 +6049,25 @@ public final class ArkAppModel: ObservableObject {
 
   public func resolveReview(_ reviewID: String, action: String?) {
     guard !wikiReviewBusy else { return }
+    guard let scope = knowledgeScope() else { return }
     wikiReviewBusy = true
     wikiReviewError = nil
-    Task {
-      defer { wikiReviewBusy = false }
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
+      defer { if knowledgeScopeIsCurrent(scope) { wikiReviewBusy = false } }
       do {
-        guard try await client.resolveKnowledgeReview(reviewID: reviewID, action: action) else {
+        guard try await client.resolveKnowledgeReview(projectContext: scope.context, reviewID: reviewID, action: action) else {
           throw ArkAPIError(message: "Review 未被本机知识服务接受")
         }
+        guard knowledgeScopeIsCurrent(scope) else { return }
         await loadWiki()
+        guard knowledgeScopeIsCurrent(scope) else { return }
         postResultMessage(ArkL10n.text(.toastReviewProcessed, languagePreference))
         knowledgeErrorMessage = nil
       } catch {
+        guard knowledgeScopeIsCurrent(scope) else { return }
         wikiReviewError = error.localizedDescription
       }
     }
@@ -5642,16 +6076,22 @@ public final class ArkAppModel: ObservableObject {
   public func resolveReviews(_ reviewIDs: [String], action: String? = "Skip") {
     let ids = Array(Set(reviewIDs)).filter { !$0.isEmpty }
     guard !ids.isEmpty, !wikiReviewBusy else { return }
+    guard let scope = knowledgeScope() else { return }
     wikiReviewBusy = true
     wikiReviewError = nil
-    Task {
-      defer { wikiReviewBusy = false }
+    let operationID = UUID()
+    knowledgeOperationTasks[operationID] = Task {
+      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      guard !knowledgeStopped, !Task.isCancelled else { return }
+      defer { if knowledgeScopeIsCurrent(scope) { wikiReviewBusy = false } }
       do {
-        let count = try await client.resolveKnowledgeReviews(reviewIDs: ids, action: action)
+        let count = try await client.resolveKnowledgeReviews(projectContext: scope.context, reviewIDs: ids, action: action)
         guard count > 0 else {
           throw ArkAPIError(message: ArkL10n.text(.wikiBulkReviewFailed, languagePreference))
         }
+        guard knowledgeScopeIsCurrent(scope) else { return }
         await loadWiki()
+        guard knowledgeScopeIsCurrent(scope) else { return }
         postResultMessage(ArkL10n.format(
           .toastReviewsProcessed,
           languagePreference,
@@ -5659,31 +6099,40 @@ public final class ArkAppModel: ObservableObject {
         ))
         knowledgeErrorMessage = nil
       } catch {
+        guard knowledgeScopeIsCurrent(scope) else { return }
         wikiReviewError = error.localizedDescription
       }
     }
   }
 
-  private func loadWiki(refreshIngestQueue: Bool = true) async {
+  func loadWiki(refreshIngestQueue: Bool = true) async {
+    guard !knowledgeStopped, !Task.isCancelled else { return }
+    wikiLoadGeneration &+= 1
+    let loadGeneration = wikiLoadGeneration
+    let projectGeneration = knowledgeGeneration
+    let requestedPath = selectedKnowledgeProjectPath
     let requestedLanguage = languagePreference
-    var root = fallbackWikiRoot
+    var root = requestedPath.map { URL(fileURLWithPath: $0).appendingPathComponent("wiki", isDirectory: true) } ?? fallbackWikiRoot
+    func isCurrent() -> Bool {
+      !Task.isCancelled && !knowledgeStopped && wikiLoadGeneration == loadGeneration
+        && knowledgeGeneration == projectGeneration && languagePreference == requestedLanguage
+    }
     do {
       let projectValue = try await client.remoteCall(method: "knowledgeWiki/listProjects")
-      var projects = (projectValue["projects"]?.arrayValue ?? []).compactMap { value -> ArkKnowledgeProject? in
+      let projects = (projectValue["projects"]?.arrayValue ?? []).compactMap { value -> ArkKnowledgeProject? in
         guard let path = value["path"]?.stringValue, !path.isEmpty else { return nil }
         return ArkKnowledgeProject(
           path: path,
           name: value["name"]?.stringValue ?? URL(fileURLWithPath: path).lastPathComponent,
-          isMain: value["main"]?.boolValue == true
+          isMain: value["main"]?.boolValue == true,
+          projectContext: value["projectContext"]?.stringValue
         )
       }
-      let fallbackPath = fallbackWikiRoot.deletingLastPathComponent().path
-      if !projects.contains(where: \.isMain) {
-        projects.insert(ArkKnowledgeProject(path: fallbackPath, name: "万相织鉴", isMain: true), at: 0)
-      }
-      let main = projects.first(where: \.isMain) ?? projects[0]
-      let requestedPath = selectedKnowledgeProjectPath
+      guard isCurrent(), let main = projects.first(where: \.isMain) ?? projects.first else { return }
       let project = projects.first(where: { $0.path == requestedPath }) ?? main
+      guard let projectContext = project.projectContext, !projectContext.isEmpty else {
+        throw ArkAPIError(message: "知识项目身份缺失，请重新启动后台")
+      }
       wikiProjects = projects
       selectedKnowledgeProjectPath = project.path
       activeWikiTitle = project.displayName
@@ -5695,16 +6144,19 @@ public final class ArkAppModel: ObservableObject {
         method: "knowledgeWiki/setProject",
         args: ["request": .object(["path": .string(project.path)])]
       )
-      async let listValue = client.remoteCall(method: "knowledgeWiki/list")
-      async let graphValue = client.remoteCall(method: "knowledgeWiki/graph")
-      async let reviewValue = client.remoteCall(
+      guard isCurrent() else { return }
+      async let listValue = client.knowledgeCall(projectContext: projectContext, method: "knowledgeWiki/list")
+      async let graphValue = client.knowledgeCall(projectContext: projectContext, method: "knowledgeWiki/graph")
+      async let reviewValue = client.knowledgeCall(projectContext: projectContext,
         method: "knowledgeWiki/reviews",
         args: ["request": .object(["status": .string("all"), "limit": .number(200)])]
       )
-      let (list, graph, reviews) = try await (listValue, graphValue, reviewValue)
-      guard selectedKnowledgeProjectPath == project.path,
+      async let statusValue = client.knowledgeCall(projectContext: projectContext, method: "knowledgeWiki/projectStatus")
+      let (list, graph, reviews, status) = try await (listValue, graphValue, reviewValue, statusValue)
+      guard isCurrent(), selectedKnowledgeProjectPath == project.path,
             languagePreference == requestedLanguage
       else { return }
+      knowledgeSearchMode = status["searchMode"]?.stringValue ?? "keyword"
       let nodesByPath = ArkWikiLoader.firstGraphNodeByPath(
         graph["nodes"]?.arrayValue ?? []
       )
@@ -5763,12 +6215,14 @@ public final class ArkAppModel: ObservableObject {
         )
       }
       if refreshIngestQueue,
-         let queue = try? await client.knowledgeIngestQueueStatus()
+         let queue = try? await client.knowledgeIngestQueueStatus(projectContext: projectContext)
       {
+        guard isCurrent() else { return }
         installKnowledgeIngestQueue(queue)
       }
       if wikiPages.isEmpty {
-        let fallback = try ArkWikiLoader.load(root: root)
+        let fallback = try await loadWikiFallback(root: root)
+        guard isCurrent() else { return }
         wikiPages = ArkWikiLoader.localizedPages(fallback.0, language: requestedLanguage)
         wikiEdges = ArkWikiLoader.visibleEdges(fallback.1, pages: wikiPages)
       }
@@ -5778,9 +6232,11 @@ public final class ArkAppModel: ObservableObject {
       }
       if let selectedWikiPageID { await loadWikiPageContent(id: selectedWikiPageID) }
     } catch {
+      if isTaskCancellation(error) || !isCurrent() { return }
       do {
-        guard languagePreference == requestedLanguage else { return }
-        let fallback = try ArkWikiLoader.load(root: root)
+        guard isCurrent() else { return }
+        let fallback = try await loadWikiFallback(root: root)
+        guard isCurrent() else { return }
         wikiPages = ArkWikiLoader.localizedPages(fallback.0, language: requestedLanguage)
         wikiEdges = ArkWikiLoader.visibleEdges(fallback.1, pages: wikiPages)
         wikiReviews = []
@@ -5790,7 +6246,7 @@ public final class ArkAppModel: ObservableObject {
         }
       } catch {
         // 页面切换导致的正常取消：保持现有数据，不清空、不报错。
-        if isTaskCancellation(error) { return }
+        if isTaskCancellation(error) || !isCurrent() { return }
 
         wikiPages = []
         wikiEdges = []
@@ -5801,14 +6257,16 @@ public final class ArkAppModel: ObservableObject {
   }
 
   private func loadWikiPageContent(id: String) async {
+    let loadGeneration = wikiLoadGeneration
+    guard let scope = knowledgeScope() else { return }
     guard let index = wikiPages.firstIndex(where: { $0.id == id }) else { return }
     let page = wikiPages[index]
     do {
-      let value = try await client.remoteCall(
+      let value = try await client.knowledgeCall(projectContext: scope.context,
         method: "knowledgeWiki/pageContent",
         args: ["request": .object(["path": .string(page.relativePath)])]
       )
-      guard selectedWikiPageID == id,
+      guard knowledgeScopeIsCurrent(scope), wikiLoadGeneration == loadGeneration, selectedWikiPageID == id,
             let currentIndex = wikiPages.firstIndex(where: { $0.id == id })
       else { return }
       let content = value["content"]?.stringValue ?? ""
@@ -5825,6 +6283,15 @@ public final class ArkAppModel: ObservableObject {
     } catch {
       // The file-backed fallback already carries content; keep it unchanged.
     }
+  }
+
+  private func loadWikiFallback(root: URL) async throws -> ([ArkWikiPage], [ArkWikiEdge]) {
+    let loading = Task.detached(priority: .utility) { try ArkWikiLoader.load(root: root) }
+    return try await withTaskCancellationHandler {
+      let result = try await loading.value
+      try Task.checkCancellation()
+      return result
+    } onCancel: { loading.cancel() }
   }
 
   private func flattenWikiEntries(_ value: JSONValue) -> [JSONValue] {
@@ -6379,7 +6846,8 @@ public final class ArkAppModel: ObservableObject {
       let previousUsage = turnUsageByTurn
       for turn in touchedTurns { historicalUsageFacts.removeValue(forKey: turn) }
       turnUsageProjection.append(contentsOf: incoming)
-      if touchedTurns.contains(where: { previousUsage[$0] != self.turnUsageByTurn[$0] }) {
+      let nextUsage = turnUsageByTurn
+      if touchedTurns.contains(where: { previousUsage[$0] != nextUsage[$0] }) {
         chatPresentationChanged = true
       }
       if events.count > ArkStreamingPresentationPolicy.presentedEventLimit {

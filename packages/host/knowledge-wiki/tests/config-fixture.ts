@@ -13,10 +13,7 @@ function isResolvedConfig(value: unknown): value is Config {
   if (typeof value !== 'object' || value === null) return false
   return typeof Reflect.get(value, 'wikiRoot') === 'string'
     && typeof Reflect.get(value, 'mainRoot') === 'string'
-    && typeof Reflect.get(value, 'credential') === 'string'
     && typeof Reflect.get(value, 'llmProvider') === 'string'
     && typeof Reflect.get(value, 'llmModel') === 'string'
-    && typeof Reflect.get(value, 'llmBaseUrl') === 'string'
-    && typeof Reflect.get(value, 'llmCredential') === 'string'
     && typeof Reflect.get(value, 'ownedStageExecutor') === 'boolean'
 }

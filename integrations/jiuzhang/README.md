@@ -31,6 +31,10 @@ Open Ark Settings → Models and add a compatible provider credential. Ark bundl
 
 Built-in providers retain their catalog endpoints, protocols and per-model capabilities. Native presentation groups brand variants without merging route identities or credentials. The model picker supports search and explicit selection; an empty model list restores the installed catalog. Logos are local, hash-verified resources with text fallback for missing artwork. OAuth and multi-field account setup still require complete native authorization wiring; catalog presence is not proof that those flows or a real account have passed acceptance.
 
+Settings → Models → Knowledge connections selects text analysis, image captions and optional vector search independently. Text and images use their selected provider's protocol and credentials; vector search needs its own endpoint and credential reference. Empty vector settings keep keyword search local; empty image settings preserve the file without generating a caption. Saving settings does not certify a model call. See [connection and recovery behavior](docs/engineering.md#knowledge-connections-and-recovery).
+
+The composer retains a recoverable ordinary-message draft until the Host confirms durable receipt. Later edits survive that acknowledgement; uncertain retries keep the same submission identity. This guarantee covers ordinary prompts, not arbitrary slash-command side effects.
+
 ## Feedback
 
 Ark is in internal testing. Report problems and suggestions to the product team directly.

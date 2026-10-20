@@ -1,68 +1,69 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { KnowledgeWikiStageExecutor } from '../src/stage-executor.ts'
 
-const mocks = vi.hoisted(() => ({
-  completeText: vi.fn(),
-  mkdir: vi.fn(),
-  parseFileBlocks: vi.fn(),
-  resolve: vi.fn(),
-  atomicWriteFile: vi.fn(),
-}))
-
-vi.mock('../src/ingest.ts', () => ({
-  completeText: mocks.completeText,
-  parseFileBlocks: mocks.parseFileBlocks,
-}))
-vi.mock('node:fs/promises', () => ({
-  mkdir: mocks.mkdir,
-}))
-vi.mock('../src/filesystem.ts', () => ({ atomicWriteFile: mocks.atomicWriteFile }))
-vi.mock('node:path', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:path')>()
-  return { ...actual, resolve: mocks.resolve }
+const writes = vi.hoisted(() => ({ failure: undefined as unknown }))
+vi.mock('../src/filesystem.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/filesystem.ts')>()
+  return {
+    ...actual,
+    atomicWriteConfinedFile: (...args: Parameters<typeof actual.atomicWriteConfinedFile>) => {
+      if (writes.failure !== undefined) throw writes.failure
+      actual.atomicWriteConfinedFile(...args)
+    },
+  }
 })
 
 import { deepResearch } from '../src/research.ts'
-import { stageExecutorFor } from './stage-executor-fixture.ts'
 
-const llm = {} as LlmRuntime
+const roots: string[] = []
+function root(): string {
+  const value = mkdtempSync(join(tmpdir(), 'wiki-research-boundary-'))
+  roots.push(value)
+  return value
+}
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  mocks.completeText.mockResolvedValueOnce('valid query').mockResolvedValueOnce('synthesis')
-  mocks.parseFileBlocks.mockReturnValue([
-    { path: 'result.md', content: '---\ntitle: Result\n---\nBody', closed: true },
-  ])
+function executor(): KnowledgeWikiStageExecutor {
+  return {
+    isolation: 'owned-worker-v1',
+    assertSearchAvailable: () => {},
+    execute: request => Promise.resolve(request.kind === 'web-search'
+      ? { text: null, sources: [{ url: 'https://fixture.test' }] }
+      : { text: request.kind === 'llm-complete' && request.operation === 'research query expansion'
+        ? 'valid query'
+        : '--- FILE: wiki/_candidates/research/result.md ---\n---\ntitle: Result\n---\nBody\n--- END FILE ---' }),
+  }
+}
+
+beforeEach(() => { writes.failure = undefined })
+afterEach(() => {
+  for (const value of roots.splice(0)) rmSync(value, { recursive: true, force: true })
 })
 
 describe('research write boundary', () => {
-  it('rejects a resolved target outside the Wiki root', async () => {
-    mocks.resolve.mockReturnValueOnce('/project/wiki').mockReturnValueOnce('/outside/result.md')
-
-    await expect(deepResearch(
-      stageExecutorFor(llm), 'p', 'm', '/project', 'topic', new AbortController().signal,
-    )).resolves.toEqual({
-      written: [],
-      sourceCount: 0,
-      warnings: [
-        'search "valid query" failed: web service unavailable',
-        'research: FILE path escapes wiki directory: result.md',
-      ],
-    })
-    expect(mocks.mkdir).not.toHaveBeenCalled()
+  it.each(['wiki', 'wiki/_candidates', 'wiki/_candidates/research'])
+  ('refuses a real %s ancestor symlink without writing outside the project', async (part) => {
+    const project = root()
+    const outside = root()
+    const linked = join(project, part)
+    const remaining = 'wiki/_candidates/research'.slice(part.length).replace(/^\//u, '')
+    const outsideParent = join(outside, remaining)
+    mkdirSync(dirname(linked), { recursive: true })
+    mkdirSync(outsideParent, { recursive: true })
+    symlinkSync(outside, linked, 'dir')
+    const result = await deepResearch(executor(), 'p', 'm', project, 'topic', new AbortController().signal)
+    expect(result.written).toEqual([])
+    expect(result.sourceCount).toBe(1)
+    expect(result.warnings.join('\n')).toMatch(/symbolic link|unsafe directory/u)
+    expect(existsSync(join(outsideParent, 'result.md'))).toBe(false)
   })
 
-  it('reports a non-Error write failure without throwing', async () => {
-    mocks.resolve
-      .mockReturnValueOnce('/project/wiki')
-      .mockReturnValueOnce('/project/wiki/_candidates/research/result.md')
-    mocks.mkdir.mockResolvedValue(undefined)
-    mocks.atomicWriteFile.mockImplementation(() => { throw 'disk unavailable' })
-
-    const result = await deepResearch(
-      stageExecutorFor(llm), 'p', 'm', '/project', 'topic', new AbortController().signal,
-    )
-    expect(result.warnings).toContain('disk unavailable')
+  it('reports a non-Error write failure without claiming a file was written', async () => {
+    writes.failure = 'disk unavailable'
+    const result = await deepResearch(executor(), 'p', 'm', root(), 'topic', new AbortController().signal)
+    expect(result.warnings).toEqual(['disk unavailable'])
     expect(result.written).toEqual([])
   })
 })

@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 
 /// Delivery policy for one native prompt submission.
-public enum ArkPromptDeliveryMode: String, Equatable, Sendable {
+public enum ArkPromptDeliveryMode: String, Codable, Equatable, Sendable {
   case queue
   case steer
 }
@@ -600,7 +600,7 @@ public actor ArkInteractionAPI {
   /// "GMT" — neither an IANA Area/Location nor the contract's literal "UTC",
   /// so the backend rejects it. That zone IS UTC; report it under the
   /// contract-legal name and pass every other identifier through unchanged.
-  static func launchTimeZoneIdentifier() -> String {
+  public static func launchTimeZoneIdentifier() -> String {
     let identifier = TimeZone.current.identifier
     return identifier == "GMT" ? "UTC" : identifier
   }
@@ -611,9 +611,10 @@ public actor ArkInteractionAPI {
     text: String,
     images: [ArkPromptImage] = [],
     mode: ArkPromptDeliveryMode = .queue,
-    submissionID: String? = nil
+    submissionID: String? = nil,
+    clientTimeZone: String? = nil
   ) async throws {
-    let timeZone = Self.launchTimeZoneIdentifier()
+    let timeZone = clientTimeZone ?? Self.launchTimeZoneIdentifier()
     var digest = SHA256()
     func append(_ data: Data) {
       var length = UInt64(data.count).bigEndian

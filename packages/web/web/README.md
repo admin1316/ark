@@ -62,6 +62,8 @@ const page = await ctx.web.fetch({ url: 'https://example.com' })
 
 Both calls accept an optional `AbortSignal` that is forwarded to the provider for cancellation. The normalized request and result shapes are the contract callers build on; the vocabulary section of the [web subsystem](../../../docs/subsystems/web.md) reference describes them exhaustively.
 
+`ctx.web.assertSearchAvailable()` runs the same local search-provider selection without issuing a query or network request. Consumers can call it before paid query expansion; missing, unavailable, misconfigured or ambiguous selection throws the same `WebError` codes. It neither reserves a provider nor proves remote health: `search()` selects again when it executes.
+
 ### Provider selection
 
 Each call resolves its provider at execution time, and registration or load order never matters. A configured provider id wins when it is registered and usable; without a configured id, the service runs the single usable provider or fails clearly:
@@ -149,7 +151,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 These limits define when the service is incomplete on its own. They are current package constraints.
 
-- **No observation surface** — there is no provider-change event and no capability-status query; availability is observable only by running a search or fetch and routing the thrown code, and the no-provider failure is the generic `WEB_PROVIDER_UNAVAILABLE` with no per-provider reason enumeration ([Agent Note](../../../.agents/notes/archived/simplification/2026-07-04-drop-unconsumed-web-observation-surface.md)).
+- **No provider-status subscription** — `assertSearchAvailable()` checks local search selection only; there is no provider-change event, fetch preflight or per-provider reason enumeration. The no-provider failure remains `WEB_PROVIDER_UNAVAILABLE` ([historical observation decision](../../../.agents/notes/archived/simplification/2026-07-04-drop-unconsumed-web-observation-surface.md)).
 - **Search requests carry only `query` and `maxResults`** — provider-neutral controls (recency, domain filters, regional hints, search depth) are deferred until the backends can honor them ([seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md)).
 - **`WebFetchBody` has no `pdf` arm** — text-extractable PDF support is named deferred work; the closed union makes adding it a compile-enforced change across the web packages.
 - **Provider-backed page extraction is out of scope of `fetch()`** — a Firecrawl/Tavily-style `web_extract` capability is deferred rather than widening the fetch operation.
@@ -164,6 +166,6 @@ This Dev Note is working context for maintainers: open questions and undecided d
 
 #### Future: observing provider state
 
-No provider-change event or capability-status query exists; consumers observe availability only by executing a call and routing the thrown code. Restoring a small observation surface is possible if a consumer needs per-provider reasons, but the archived simplification note records why the earlier one was dropped.
+Search preflight serves consumers that need to reject work before paid expansion. A provider-status subscription or per-provider reason query remains separate from that execution check; the archived simplification note records the earlier observation API's removal.
 
 </details>

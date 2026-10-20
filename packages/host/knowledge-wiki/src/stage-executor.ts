@@ -22,7 +22,8 @@ export type KnowledgeWikiStageRequest =
   }
   | {
     readonly kind: 'vision-describe'
-    readonly apiKey: string
+    readonly provider: string
+    readonly model: string
     readonly path: string
     readonly timeoutMs: number
   }
@@ -43,6 +44,18 @@ export interface KnowledgeWikiStageResult {
  */
 export interface KnowledgeWikiStageExecutor {
   readonly isolation: 'owned-worker-v1' | 'owned-subprocess-v1'
+  /**
+   * Bind an operation's model calls before its first model request.
+   * @param route - Fixed text route and number of one-shot model requests.
+   * @param signal - Cancellation while preparing the operation.
+   * @returns Executor whose prepared calls retain this operation's provider generation.
+   */
+  prepareOperation?(
+    route: { readonly provider: string; readonly model: string; readonly modelCalls: number },
+    signal: AbortSignal,
+  ): Promise<KnowledgeWikiStageExecutor>
+  /** Local provider preflight before research spends a model request. */
+  assertSearchAvailable?(): void
   execute(request: KnowledgeWikiStageRequest, signal: AbortSignal): Promise<KnowledgeWikiStageResult>
 }
 
@@ -61,59 +74,40 @@ export function isKnowledgeWikiStageExecutor(value: unknown): value is Knowledge
 }
 
 /**
- * Enforce the deadline even when an injected executor never settles.
- * Timeout/owner cancellation aborts the child signal and rejects without awaiting isolate termination.
- * @param executor - Parent-owned executor responsible for terminating its isolate on abort; absence rejects.
- * @param request - Stage input with a finite, positive timeoutMs deadline.
- * @param ownerSignal - Parent cancellation forwarded to the stage's dedicated controller.
- * @returns Stage result if it settles before cancellation/deadline; otherwise rejects and ignores late settlement.
- * @throws Rejects for unavailable execution, invalid deadlines, cancellation, timeout, or executor failure.
+ * Apply an owner deadline and await the executor's cancellation/termination boundary.
+ * @param executor - Owner whose execute promise settles only after its work stops.
+ * @param request - Stage input and finite positive deadline.
+ * @param ownerSignal - Cancellation forwarded to the stage controller.
+ * @returns Result after work settles; cancellation takes precedence over late success.
+ * @throws For unavailable execution, invalid deadlines, cancellation, or stage failure.
  */
-export function executeKnowledgeWikiStage(
+export async function executeKnowledgeWikiStage(
   executor: KnowledgeWikiStageExecutor | undefined,
   request: KnowledgeWikiStageRequest,
   ownerSignal: AbortSignal,
 ): Promise<KnowledgeWikiStageResult> {
-  if (executor === undefined) {
-    return Promise.reject(new Error('knowledge Wiki stage executor unavailable; refusing non-cooperative work'))
-  }
-  if (!Number.isFinite(request.timeoutMs) || request.timeoutMs <= 0) {
-    return Promise.reject(new Error('invalid knowledge Wiki stage deadline'))
-  }
-  if (ownerSignal.aborted) {
-    return Promise.reject(ownerSignal.reason instanceof Error
-      ? ownerSignal.reason
-      : new Error('knowledge Wiki stage aborted'))
-  }
+  if (executor === undefined) throw new Error('knowledge Wiki stage executor unavailable; refusing non-cooperative work')
+  if (!Number.isFinite(request.timeoutMs) || request.timeoutMs <= 0) throw new Error('invalid knowledge Wiki stage deadline')
   const controller = new AbortController()
-  return new Promise((resolve, reject) => {
-    let settled = false
-    function finish(operation: () => void): void {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
-      ownerSignal.removeEventListener('abort', abortFromOwner)
-      operation()
-    }
-    const abortFromOwner = (): void => {
-      controller.abort(ownerSignal.reason)
-      finish(() => {
-        reject(ownerSignal.reason instanceof Error ? ownerSignal.reason : new Error('knowledge Wiki stage aborted'))
-      })
-    }
-    ownerSignal.addEventListener('abort', abortFromOwner, { once: true })
-    const timeout = setTimeout(() => {
-      const error = new Error(`knowledge Wiki ${request.kind} timed out after ${request.timeoutMs}ms`)
-      controller.abort(error)
-      finish(() => { reject(error) })
-    }, request.timeoutMs)
-    void executor.execute(request, controller.signal).then(
-      (value) => { finish(() => { resolve(value) }) },
-      (error: unknown) => {
-        finish(() => {
-          reject(error instanceof Error ? error : new Error(String(error)))
-        })
-      },
-    )
-  })
+  const abortFromOwner = (): void => { controller.abort(ownerSignal.reason) }
+  const error = (): Error => controller.signal.reason instanceof Error
+    ? controller.signal.reason : new Error('knowledge Wiki stage aborted')
+  ownerSignal.addEventListener('abort', abortFromOwner, { once: true })
+  if (ownerSignal.aborted) abortFromOwner()
+  const timeout = setTimeout(() => {
+    controller.abort(new Error(`knowledge Wiki ${request.kind} timed out after ${request.timeoutMs}ms`))
+  }, request.timeoutMs)
+  const checkAbort = (): void => { if (controller.signal.aborted) throw error() }
+  try {
+    checkAbort()
+    const result = await executor.execute(request, controller.signal)
+    checkAbort()
+    return result
+  } catch (cause) {
+    checkAbort()
+    throw cause instanceof Error ? cause : new Error(String(cause))
+  } finally {
+    clearTimeout(timeout)
+    ownerSignal.removeEventListener('abort', abortFromOwner)
+  }
 }

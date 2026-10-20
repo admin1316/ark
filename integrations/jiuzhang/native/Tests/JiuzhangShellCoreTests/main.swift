@@ -13,10 +13,15 @@ if ProcessInfo.processInfo.environment["ARK_MARKDOWN_RENDER_PROBE_CHILD"] == "tr
 if ProcessInfo.processInfo.environment["ARK_MARKDOWN_RENDER_PROBE_CHILD"] == "1" {
   Darwin._exit(runArkMarkdownHostingProbeChild())
 }
+if ProcessInfo.processInfo.environment["ARK_COMPOSER_CRASH_CHILD"] != nil,
+   let helperStatus = await runArkComposerCrashRecoveryChildIfRequested() {
+  Darwin._exit(helperStatus)
+}
 
 let expectedContractGroups = [
   "inline",
   "backend-recovery",
+  "backend-readiness",
   "event-pump-lifecycle",
   "domain-api",
   "duplicate-key",
@@ -89,6 +94,7 @@ runContractGroup("inline", runInlineContractChecks)
 await runAsyncContractGroup("backend-recovery") {
   failureCount += await runBackendRecoveryContractChecks()
 }
+await runAsyncContractGroup("backend-readiness", runArkBackendReadinessContractChecks)
 await runAsyncContractGroup("event-pump-lifecycle", runArkEventPumpLifecycleContractChecks)
 runContractGroup("domain-api", runArkDomainAPIContractChecks)
 runContractGroup("duplicate-key", runArkDuplicateKeyContractChecks)

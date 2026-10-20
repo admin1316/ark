@@ -10,6 +10,7 @@ const signal = new AbortController().signal
 let calls = 0
 
 class FakeWiki extends Service {
+  readonly listProjects = vi.fn().mockResolvedValue({ projects:[{ path:'/fixture/project',name:'fixture',projectContext:'fixture-context' }],current:'/fixture/project',currentProjectContext:'fixture-context' })
   readonly search = vi.fn().mockResolvedValue([])
   readonly list = vi.fn().mockResolvedValue([])
   readonly pageContent = vi.fn().mockResolvedValue({ path: '', content: '' })
@@ -43,7 +44,7 @@ async function setup(withService = true): Promise<{ ctx: Context; service?: Fake
 }
 
 function execute(ctx: Context, name: string, args: unknown): Promise<ToolExecutionResult> {
-  return ctx.tools.execute({ signal, callId: CallId(`wiki-${++calls}`), name, arguments: args })
+  return ctx.tools.execute({ agent: { session:{ header:{ cwd:'/fixture/project' } } } as never, signal, callId: CallId(`wiki-${++calls}`), name, arguments: args })
 }
 
 function text(result: ToolExecutionResult): string {
@@ -87,7 +88,7 @@ describe('Knowledge Wiki tool catalog', () => {
     expect(text(await execute(ctx, 'wiki_search', { query: 'none' }))).toBe('No matches found.')
     const ranked = await execute(ctx, 'wiki_search', { query: 'match' })
     expect(text(ranked)).toContain('- entities/a.md (score 0.75)')
-    expect(service?.search).toHaveBeenLastCalledWith({ query: 'match', topK: 8 })
+    expect(service?.search).toHaveBeenLastCalledWith({ projectContext: 'fixture-context', query: 'match', topK: 8 })
   })
 
   it('lists at most sixty paths while reporting the full total', async () => {
@@ -164,7 +165,7 @@ describe('Knowledge Wiki tool catalog', () => {
       { id: '2', title: 'Missing', type: 'missing' },
     ] })
     expect(text(result)).toContain('[contradiction] Conflict — ' + 'd'.repeat(140))
-    expect(service?.reviews).toHaveBeenLastCalledWith({ status: 'unresolved', limit: 30 })
+    expect(service?.reviews).toHaveBeenLastCalledWith({ projectContext: 'fixture-context', status: 'unresolved', limit: 30 })
   })
 
   it('routes all ingestion through the durable queue owner', async () => {
@@ -180,7 +181,7 @@ describe('Knowledge Wiki tool catalog', () => {
       running: true,
     })
     expect(text(result)).toBe('- #7 pending: HTTPS://example.test/a')
-    expect(service?.ingestQueueAdd).toHaveBeenCalledWith({ inputs: ['HTTPS://example.test/a'] })
+    expect(service?.ingestQueueAdd).toHaveBeenCalledWith({ projectContext: 'fixture-context', inputs: ['HTTPS://example.test/a'] })
   })
 
   it('routes Candidate verification only through the trusted service owner', async () => {
@@ -189,7 +190,7 @@ describe('Knowledge Wiki tool catalog', () => {
     const result = await execute(ctx, 'wiki_verify_candidate', { reviewId: 'candidate-1', action: 'Promote' })
     expect(result.value).toMatchObject({ ok: true, receiptId: 'candidate-r1' })
     expect(service?.verifyCandidate).toHaveBeenCalledWith(
-      { reviewId: 'candidate-1', action: 'Promote' },
+      { projectContext: 'fixture-context', reviewId: 'candidate-1', action: 'Promote' },
       expect.any(AbortSignal),
     )
     const missingAction = await execute(ctx, 'wiki_verify_candidate', { reviewId: 'candidate-1' })
@@ -201,7 +202,7 @@ describe('Knowledge Wiki tool catalog', () => {
     const result = await execute(ctx, 'wiki_ingest', { input: 'raw/already-queued.md' })
     expect(result.value).toEqual({ tasks: [], running: false })
     expect(text(result)).toBe('No task was queued.')
-    expect(service?.ingestQueueAdd).toHaveBeenCalledExactlyOnceWith({ inputs: ['raw/already-queued.md'] })
+    expect(service?.ingestQueueAdd).toHaveBeenCalledExactlyOnceWith({ projectContext: 'fixture-context', inputs: ['raw/already-queued.md'] })
   })
 
   it.each([undefined, '', 'review-not-found'])('renders a negative verification without claiming authority, errorCode=%s', async (errorCode) => {
@@ -214,7 +215,7 @@ describe('Knowledge Wiki tool catalog', () => {
     expect(result.value).toEqual(outcome)
     expect(text(result)).toBe(errorCode ? `Candidate verification failed: ${errorCode}` : 'Candidate verification failed.')
     expect(service?.verifyCandidate).toHaveBeenCalledExactlyOnceWith(
-      { reviewId: 'missing', action: 'Promote' }, expect.any(AbortSignal),
+      { projectContext: 'fixture-context', reviewId: 'missing', action: 'Promote' }, expect.any(AbortSignal),
     )
   })
 })

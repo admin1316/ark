@@ -17,7 +17,7 @@ describe('Knowledge Wiki strict endpoint metadata', () => {
     })
   })
 
-  it('records that Native does not consume the new endpoint yet', () => {
+  it('records that Native consumes research provenance', () => {
     const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
     const nativeApi = readFileSync(
       join(repositoryRoot, 'integrations/jiuzhang/native/Sources/JiuzhangShellCore/ArkDomainAPI.swift'),
@@ -28,6 +28,6 @@ describe('Knowledge Wiki strict endpoint metadata', () => {
     const findingsStart = nativeApi.indexOf('public static func knowledgeFindings')
     const findingsEnd = nativeApi.indexOf('public static func knowledgeReviews', findingsStart)
     const findingsDecoder = nativeApi.slice(findingsStart, findingsEnd)
-    expect(findingsDecoder).not.toMatch(/warnings|degraded|errorCode/u)
+    expect(findingsDecoder).toMatch(/warnings|degraded|errorCode/u)
   })
 })

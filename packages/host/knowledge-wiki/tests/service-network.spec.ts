@@ -1,3 +1,4 @@
+import { projectRequest } from './project-request-fixture.ts'
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,8 +29,8 @@ import { wikiTestConfig } from './config-fixture.ts'
 
 interface NetworkSurface {
   snapshots: { dispose(): void }
-  ingestUrl(request: { url: string }): Promise<{ written: string[]; warnings: string[] }>
-  ingestQueueCancel(): Promise<object>
+  ingestUrl: KnowledgeWikiService['ingestUrl']
+  ingestQueueCancel: KnowledgeWikiService['ingestQueueCancel']
   ingestSourceWithContext(
     request: { path: string },
     context: object,
@@ -42,7 +43,7 @@ let ctx: Context
 let service: NetworkSurface
 
 async function expectUrlError(url: string, message: string): Promise<void> {
-  const result = await service.ingestUrl({ url }) as {
+  const result = await service.ingestUrl({ ...projectRequest(service), url }) as {
     written: string[]
     warnings: string[]
     status?: string
@@ -86,8 +87,7 @@ beforeEach(() => {
   mkdirSync(join(root, 'wiki'), { recursive: true })
   ctx = new Context()
   service = new KnowledgeWikiService(ctx, wikiTestConfig({
-    wikiRoot: join(root, 'wiki'), mainRoot: root,
-    credential: 'VISION_API_KEY', llmProvider: 'p', llmModel: 'm',
+    wikiRoot: join(root, 'wiki'), mainRoot: root, llmProvider: 'p', llmModel: 'm',
   })) as unknown as NetworkSurface
 })
 
@@ -118,12 +118,12 @@ describe('public URL security and clipping', () => {
       return request
     })
     if (kind === 'deadline') vi.useFakeTimers()
-    const pending = service.ingestUrl({ url: 'https://1.1.1.1/held' })
+    const pending = service.ingestUrl({ ...projectRequest(service), url: 'https://1.1.1.1/held' })
     try {
       await started.promise
       expect(requestSignal?.aborted).toBe(false)
       if (kind === 'deadline') await vi.advanceTimersByTimeAsync(15_000)
-      else await service.ingestQueueCancel()
+      else await service.ingestQueueCancel(projectRequest(service))
       const result = await pending
       expect(requestSignal?.aborted).toBe(true)
       expect(result.written).toEqual([])
@@ -132,7 +132,7 @@ describe('public URL security and clipping', () => {
       expect(mocks.lookup).not.toHaveBeenCalled()
       if (kind === 'deadline') expect(vi.getTimerCount()).toBe(0)
     } finally {
-      await service.ingestQueueCancel()
+      await service.ingestQueueCancel(projectRequest(service))
       await pending
       if (kind === 'deadline') vi.useRealTimers()
     }
@@ -167,7 +167,7 @@ describe('public URL security and clipping', () => {
       written: ['wiki/_candidates/clip.md'], warnings: [],
     })
 
-    const result = await service.ingestUrl({ url: 'https://example.test/start' })
+    const result = await service.ingestUrl({ ...projectRequest(service), url: 'https://example.test/start' })
     expect(result.written).toEqual(['wiki/_candidates/clip.md'])
     expect(mocks.request).toHaveBeenCalledTimes(2)
     expect(mocks.lookup).toHaveBeenCalledTimes(2)
@@ -182,8 +182,8 @@ describe('public URL security and clipping', () => {
   it('accepts explicit default ports', async () => {
     mocks.responses.push({ status: 200, body: 'ok' }, { status: 200, body: 'ok' })
     vi.spyOn(service, 'ingestSourceWithContext').mockResolvedValue({ written: [], warnings: [] })
-    expect((await service.ingestUrl({ url: 'http://1.1.1.1:80/a' })).warnings).toEqual([])
-    expect((await service.ingestUrl({ url: 'https://1.1.1.1:443/a' })).warnings).toEqual([])
+    expect((await service.ingestUrl({ ...projectRequest(service), url: 'http://1.1.1.1:80/a' })).warnings).toEqual([])
+    expect((await service.ingestUrl({ ...projectRequest(service), url: 'https://1.1.1.1:443/a' })).warnings).toEqual([])
     expect(mocks.request).toHaveBeenCalledTimes(2)
   })
 

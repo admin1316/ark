@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -41,11 +41,12 @@ describe('deep research', () => {
     mocks.completeText.mockResolvedValue('x\n' + 'z'.repeat(121))
 
     await expect(deepResearch(
-      stageExecutorFor(llm), 'p', 'm', await root(), 'topic', new AbortController().signal,
+      stageExecutorFor(llm, { search: async () => ({ sources:[] }) } as unknown as WebRuntime), 'p', 'm', await root(), 'topic', new AbortController().signal,
     )).resolves.toEqual({
       written: [],
       sourceCount: 0,
       warnings: ['research: LLM produced no usable queries'],
+      errorCode: 'invalid-queries',
     })
     expect(mocks.completeText).toHaveBeenCalledOnce()
   })
@@ -95,24 +96,8 @@ describe('deep research', () => {
     expect(mocks.completeText.mock.calls[1]?.[3]).toContain('https://shared.test')
   })
 
-  it('synthesizes without web and reports filesystem failures without throwing', async () => {
-    const projectFile = join(await root(), 'not-a-directory')
-    await writeFile(projectFile, 'occupied', 'utf8')
-    mocks.completeText
-      .mockResolvedValueOnce('valid query')
-      .mockResolvedValueOnce('synthesis')
-    mocks.parseFileBlocks.mockReturnValue([
-      { path: 'result.md', content: '---\ntitle: Result\n---\nBody', closed: true },
-    ])
-
-    const result = await deepResearch(
-      stageExecutorFor(llm), 'p', 'm', projectFile, 'topic', new AbortController().signal,
-    )
-
-    expect(result.sourceCount).toBe(0)
-    expect(result.written).toEqual([])
-    expect(result.warnings[0]).toContain('web service unavailable')
-    expect(result.warnings[1]).toBeTruthy()
-    expect(mocks.completeText.mock.calls[1]?.[3]).toContain('(none — synthesize from general knowledge')
+  it('blocks absent search before spending a model expansion request', async () => {
+    await expect(deepResearch(stageExecutorFor(llm), 'p', 'm', await root(), 'topic', new AbortController().signal)).rejects.toThrow('web service unavailable')
+    expect(mocks.completeText).not.toHaveBeenCalled()
   })
 })

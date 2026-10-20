@@ -4,29 +4,39 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
+import { arkTestInventory, verifyArkTestInventory } from './helpers/test-inventory.mjs'
 
 const execFileAsync = promisify(execFile)
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const nativeRoot = join(root, 'integrations/jiuzhang/native')
+const options = new Set(process.argv.slice(2))
+for (const option of options) {
+  if (!['--node-only', '--inventory-only'].includes(option)) throw new Error(`unknown Ark test option: ${option}`)
+}
+const inventory = await verifyArkTestInventory(join(root, 'integrations/jiuzhang/tests'))
+console.log(`Ark test inventory: ${inventory.registered} registered (${inventory.portable} portable, ${inventory.macos} macOS-only)`)
+if (options.has('--inventory-only')) process.exit(0)
+const tests = [
+  ...arkTestInventory.portable,
+  ...(process.platform === 'darwin' ? arkTestInventory.macos : []),
+].map(file => `integrations/jiuzhang/tests/${file}`)
 
-const nodeResult = await execFileAsync(process.execPath, [
-  '--import',
-  'tsx',
-  '--test',
-  '--test-concurrency=2',
-  'integrations/jiuzhang/tests/deepseek-extension-acceptance.test.ts',
-  'integrations/jiuzhang/tests/profile.test.mjs',
-  'integrations/jiuzhang/tests/runtime.test.mjs',
-  'integrations/jiuzhang/tests/candidate-data.test.mjs',
-  'integrations/jiuzhang/tests/runtime-closure.test.mjs',
-  'integrations/jiuzhang/tests/runtime-plan.test.mjs',
-  'integrations/jiuzhang/tests/native-only.test.mjs',
-  'integrations/jiuzhang/tests/native-artifact-safety.test.mjs',
-  'integrations/jiuzhang/tests/lifecycle.test.mjs',
-], { cwd: root, maxBuffer: 20_000_000 })
-process.stdout.write(nodeResult.stdout)
+try {
+  const nodeResult = await execFileAsync(process.execPath, [
+    '--import',
+    'tsx',
+    '--test',
+    '--test-concurrency=2',
+    ...tests,
+  ], { cwd: root, maxBuffer: 20_000_000 })
+  process.stdout.write(nodeResult.stdout)
+} catch (error) {
+  if (error.stdout) process.stdout.write(error.stdout)
+  if (error.stderr) process.stderr.write(error.stderr)
+  throw new Error('Ark registered Node tests failed; see the test output above')
+}
 
-if (process.platform === 'darwin') {
+if (process.platform === 'darwin' && !options.has('--node-only')) {
   const moduleCache = await mkdtemp(join(tmpdir(), 'ark-jiuzhang-swift-modules-'))
   const scratchPath = await mkdtemp(join(tmpdir(), 'ark-jiuzhang-swift-build-'))
   const swiftEnvironment = {

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-19-native-candidate-lock-and-exit-identity.md
-2026-10-19-native-candidate-lock-and-exit-identity.md: 48ce201915b4bcbe6c44adeb36248b86ad5538f0
-2026-10-19-native-candidate-lock-and-exit-identity.zh.md: fc64f83fc0ec25506be1182b37c9c5461de59961
+2026-10-19-native-candidate-lock-and-exit-identity.md: 50ec5ce2b36a1b9155474eeeef7eb91314a97821
+2026-10-19-native-candidate-lock-and-exit-identity.zh.md: 6a1f605e4a986acbab5624f5819006a1e7e82b26

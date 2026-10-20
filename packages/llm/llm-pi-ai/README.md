@@ -114,6 +114,12 @@ Private endpoints can declare reasoning-budget field spellings, vLLM priority an
 
 The plugin answers "which models can this provider serve?" for a route a configuration surface is editing or drafting. A known route without an endpoint override uses the installed catalog; an explicit endpoint is interrogated over the wire (`openai-completions` and `openai-responses` shapes). A one-shot credential is bound by the LLM owner to that exact endpoint and protocol, and redirects are refused. Discovery never borrows a stored route's key. Invalid capacity values are omitted rather than converted to unsafe integers. Replies are candidate metadata for explicit adoption, not persisted catalog changes.
 
+### Credentialed protocol tests
+
+The [provider API suite](tests/provider-apis.e2e.ts) gates official OpenAI, Azure OpenAI and Anthropic independently. `OPENAI_API_KEY` enables the official Responses case without Azure configuration. Azure requires both `AZURE_OPENAI_API_KEY` and `DSH_PI_AI_AZURE_BASE_URL`; it sends that credential through `api-key`, not the official route's credential. `ANTHROPIC_API_KEY` enables its own Messages case. Unconfigured cases report skipped instead of borrowing another provider's key.
+
+`DSH_PI_AI_OPENAI_MODEL`, `DSH_PI_AI_AZURE_MODEL` and `DSH_PI_AI_ANTHROPIC_MODEL` override the test models; their corresponding `DSH_PI_AI_*_BASE_URL` fields select explicit test endpoints. These are real API tests and can consume tokens. Keyless [case-selection tests](tests/provider-api-cases.spec.ts) verify activation rules without calling a model; they do not establish account access or model quality.
+
 ### Failures and recovery
 
 Non-empty literal credential headers keep their profile inactive and expose only `migrationRequired` field names in the provider directory. Settings reads redact these values independently from the resolved, base and user layers; malformed secret-bearing containers fail closed. Writes containing such values are rejected without changing disk. Use `credentialHeaders` references instead; an explicit empty `Authorization` remains a supported non-secret protocol override. Case-insensitive duplicate header names are rejected, including collisions between public and credential-backed headers. Credentials under unusual header names must also use `credentialHeaders`; public fields are not a secret-discovery mechanism.

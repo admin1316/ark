@@ -8,9 +8,9 @@ vi.mock('../src/filesystem.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/filesystem.ts')>()
   return {
     ...actual,
-    atomicWriteFile: (path: string, content: string | Buffer, mode?: number) => {
-      if (path.includes('/wiki/_')) throw 'atomic string failure'
-      actual.atomicWriteFile(path, content, mode)
+    atomicWriteConfinedFile: (root: string, path: string, content: string | Buffer) => {
+      if (path.startsWith('wiki/_')) throw 'atomic string failure'
+      actual.atomicWriteConfinedFile(root, path, content)
     },
   }
 })

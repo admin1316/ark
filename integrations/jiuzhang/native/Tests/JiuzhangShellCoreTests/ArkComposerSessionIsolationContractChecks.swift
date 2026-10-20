@@ -15,6 +15,10 @@ private final class ComposerIsolationURLProtocol: URLProtocol, @unchecked Sendab
     lock.lock(); defer { lock.unlock() }
     return calls.filter { $0.0 == method && $0.1 == sessionID }.count
   }
+  static var latestPrompt: JSONValue? {
+    lock.lock(); defer { lock.unlock() }
+    return held.last(where: { $0.body["method"]?.stringValue == "session/prompt" })?.body["payload"]?["args"]?["request"]
+  }
   static var latestCreation: JSONValue? {
     lock.lock(); defer { lock.unlock() }
     return held.last(where: { $0.body["method"]?.stringValue == "session/create" })?.body["payload"]?["args"]?["request"]
@@ -76,7 +80,12 @@ private final class ComposerIsolationURLProtocol: URLProtocol, @unchecked Sendab
           "models": .array([.object(["id": .string("text"), "name": .string("Text")]), .object(["id": .string("vision"), "name": .string("Vision")])])])]), "failures": .array([])]), domain: true)
       case "session/selectModel":
         reply(.object(["selected": .object(["provider": .string("fixture"), "model": .string("vision")])]), domain: true)
-      case "llm/providers": reply(.object(["providers": .array([])]))
+      case "llm/providers": reply(.object(["providers": .array([.object([
+        "provider": .string("fixture"), "displayName": .string("Fixture"), "settingsNs": .string("fixture-settings"), "active": .bool(true),
+      ])])]))
+      case "llm/models": reply(.object(["groups": .array([.object(["id": .string("fixture"), "name": .string("Fixture"),
+        "models": .array([.object(["id": .string("text"), "name": .string("Text")]), .object(["id": .string("vision"), "name": .string("Vision")])])])])]))
+      case "credentials/describe": reply(.object(["credentials": .object([:])]))
       case "settings/describe":
         reply(.object(["namespaces": .array([.object(["ns": .string("agent-default-model"), "revision": .number(1),
           "value": .object(["provider": .string("fixture"), "model": .string("vision")])])])]))
@@ -145,6 +154,20 @@ func runArkComposerSessionIsolationContractChecks() async {
   model.sendComposer()
   let held = await composerIsolationEventually { ComposerIsolationURLProtocol.pendingCount == 1 }
   check(held, "ordinary composer transport pauses after the captured A submission")
+  check(model.composer == "A original" && model.pendingImages.map(\.data) == [Data([1])]
+    && model.pendingDocuments == [aDocument] && defaults.string(forKey: "ark.native.composer-draft.A") == "A original",
+    "ordinary send retains visible and durable text and attachments before receipt")
+  let firstSubmissionID = ComposerIsolationURLProtocol.latestPrompt?["invocationId"]?.stringValue
+  let restarted = ArkAppModel(client: client,
+    interactions: ArkInteractionAPI(baseURL: endpoint, apiToken: "synthetic-contract", session: transport),
+    eventPump: ArkEventPump(baseURL: endpoint, apiToken: "synthetic-contract"),
+    fallbackWikiRoot: root, documentStore: store, defaults: defaults)
+  restarted.selectedSessionID = "A"
+  let restored = await composerIsolationEventually { !restarted.pendingDocuments.isEmpty && !restarted.pendingImages.isEmpty }
+  check(restored && restarted.composer == "A original" && restarted.pendingDocuments == [aDocument]
+    && restarted.pendingImages.map(\.data) == [Data([1])],
+    "new model after unacknowledged send restores durable text and local attachment journal")
+  await restarted.shutdown()
   text("A newer")
   model.selectedSessionID = "B"
   text("B draft"); addImage(2); await addDocument("B")
@@ -160,12 +183,40 @@ func runArkComposerSessionIsolationContractChecks() async {
     "late A image rejection never changes B model or automatically submits B")
   check(model.composerErrorMessage == nil, "late A rejection never publishes a composer error into B")
   model.selectedSessionID = "A"
-  check(model.composer == "A original\nA newer", "late A rejection merges into the latest persisted A draft")
+  check(model.composer == "A newer", "late A rejection preserves the latest persisted A draft without duplicating captured text")
   check(model.pendingImages.map(\.data) == [Data([1])] && model.pendingDocuments == [aDocument],
     "failed A attachments remain reachable when returning to A")
   // Release unexpected baseline retry before proceeding, keeping failure deterministic.
   ComposerIsolationURLProtocol.releasePrompt(success: false)
   _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+
+  model.selectSession("A")
+  _ = await composerIsolationEventually { model.composerModelRouteAvailable }
+  text("ordinary ack"); model.sendComposer()
+  let ackHeld = await composerIsolationEventually { ComposerIsolationURLProtocol.pendingCount == 1 }
+  check(ackHeld && model.composer == "ordinary ack", "ordinary ack fixture retains its draft while awaiting Host")
+  check(ComposerIsolationURLProtocol.latestPrompt?["invocationId"]?.stringValue != firstSubmissionID,
+    "editing the pending message creates a fresh idempotent invocation")
+  ComposerIsolationURLProtocol.releasePrompt(success: true)
+  let acknowledged = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(acknowledged && model.composer.isEmpty && model.pendingImages.isEmpty && model.pendingDocuments.isEmpty
+    && defaults.string(forKey: "ark.native.composer-draft.A") == ""
+    && defaults.string(forKey: "ark.native.composer-attachments.A") == nil,
+    "ordinary durable receipt clears exactly the accepted text and attachment pointer")
+
+  text("uncertain retry"); model.sendComposer()
+  _ = await composerIsolationEventually { ComposerIsolationURLProtocol.pendingCount == 1 }
+  let uncertainID = ComposerIsolationURLProtocol.latestPrompt?["invocationId"]?.stringValue
+  ComposerIsolationURLProtocol.releasePrompt(success: false)
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  model.sendComposer()
+  _ = await composerIsolationEventually { ComposerIsolationURLProtocol.pendingCount == 1 }
+  check(ComposerIsolationURLProtocol.latestPrompt?["invocationId"]?.stringValue == uncertainID,
+    "retry after uncertain ordinary failure reuses the exact captured invocation identity")
+  text("new input during receipt")
+  ComposerIsolationURLProtocol.releasePrompt(success: true)
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.composer == "new input during receipt", "late ordinary receipt never clears newer user text")
 
   model.beginNewConversation()
   let child = ArkSubagentEntry(id: "child-A", kind: "child", mode: "continuable", activity: "inactive", hasChildren: false, label: nil, reason: nil)
@@ -207,6 +258,22 @@ func runArkComposerSessionIsolationContractChecks() async {
   await runComposerDeletedSendChecks(model: model)
   await runComposerAttachmentImportIsolationChecks(model: model, store: store)
   await runComposerCreationNavigationChecks(model: model)
+  await runComposerNewSessionReceiptChecks(model: model, defaults: defaults)
+  let corruptID = UUID().uuidString.lowercased()
+  try? Data("broken JSON".utf8).write(to: root.appendingPathComponent("draft-\(corruptID).json"))
+  defaults.set(corruptID, forKey: "ark.native.composer-attachments.broken-recovery")
+  model.selectSession("broken-recovery")
+  _ = await composerIsolationEventually { model.composerAttachmentRestoreFailed && model.composerModelRouteAvailable }
+  text("must not send reduced payload")
+  let beforeBrokenSend = ComposerIsolationURLProtocol.callCount("session/prompt", sessionID: "broken-recovery")
+  model.sendComposer()
+  for _ in 0..<10 { await Task.yield() }
+  check(model.composerAttachmentRestoreFailed
+    && ComposerIsolationURLProtocol.callCount("session/prompt", sessionID: "broken-recovery") == beforeBrokenSend,
+    "corrupt attachment recovery blocks submission instead of silently sending text without attachments")
+  model.discardFailedComposerAttachments()
+  check(!model.composerAttachmentRestoreFailed && model.composer == "must not send reduced payload",
+    "explicit failed attachment removal preserves the user's text")
 }
 
 @MainActor
@@ -360,4 +427,47 @@ private func runComposerCreationNavigationChecks(model: ArkAppModel) async {
   let failedDone = await composerIsolationEventually { !model.sessionCreationInFlight }
   check(failedDone && model.selectedSessionID == "create-after-error" && model.navigationErrorMessage == previousError,
     "late session creation failure cannot overwrite the newer navigation error surface")
+}
+
+@MainActor
+private func runComposerNewSessionReceiptChecks(model: ArkAppModel, defaults: UserDefaults) async {
+  model.beginNewConversation()
+  let ready = await composerIsolationEventually { model.composerModelRouteAvailable }
+  check(ready, "new-session composer uses the configured native model route")
+  guard ready else { return }
+  model.composerTextDidChange("home submission", caret: 15, isComposing: false)
+  model.addPastedImage(data: Data([12]), mediaType: .png)
+  model.sendComposer()
+  _ = await composerIsolationEventually { ComposerIsolationURLProtocol.latestCreation != nil }
+  let target = ComposerIsolationURLProtocol.latestCreation?["sessionId"]?.stringValue
+  check(defaults.string(forKey: "ark.native.composer-draft.new-session") == "home submission",
+    "new-session creation wait retains its home draft")
+  ComposerIsolationURLProtocol.releaseCreation(success: true)
+  _ = await composerIsolationEventually { ComposerIsolationURLProtocol.latestPrompt != nil }
+  check(target != nil && model.selectedSessionID == target && model.composer == "home submission"
+    && model.pendingImages.map(\.data) == [Data([12])]
+    && defaults.string(forKey: "ark.native.composer-draft.new-session") == ""
+    && defaults.string(forKey: "ark.native.composer-attachments.\(target ?? "")") != nil,
+    "nil-to-session migration commits captured text and attachment journal before clearing home")
+  ComposerIsolationURLProtocol.releasePrompt(success: true)
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.composer.isEmpty && model.pendingImages.isEmpty
+    && defaults.string(forKey: "ark.native.composer-draft.\(target ?? "")") == "",
+    "new-session durable receipt clears its migrated draft exactly once")
+  model.beginNewConversation()
+  model.composerTextDidChange("creation captured", caret: 17, isComposing: false)
+  model.sendComposer()
+  _ = await composerIsolationEventually { ComposerIsolationURLProtocol.latestCreation != nil }
+  model.composerTextDidChange("new home input survives", caret: 23, isComposing: false)
+  model.addPastedImage(data: Data([13]), mediaType: .png)
+  ComposerIsolationURLProtocol.releaseCreation(success: true)
+  _ = await composerIsolationEventually { ComposerIsolationURLProtocol.latestPrompt != nil }
+  check(model.selectedSessionID == nil && model.composer == "new home input survives"
+    && model.pendingImages.map(\.data) == [Data([13])],
+    "creation response cannot navigate away from newer home text and attachments")
+  ComposerIsolationURLProtocol.releasePrompt(success: true)
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.selectedSessionID == nil && model.composer == "new home input survives"
+    && model.pendingImages.map(\.data) == [Data([13])],
+    "created-session acknowledgement cannot clear the newer home input")
 }

@@ -13,22 +13,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import KnowledgeWikiService from '../src/index.ts'
-import type { IngestQueueSnapshot, IngestQueueTask } from '../src/types.ts'
+import type { IngestQueueTask } from '../src/types.ts'
 import { wikiTestConfig } from './config-fixture.ts'
 
 interface ProjectLifecycleService {
-  createProject(request: { name: string; path: string }): Promise<{ path: string; error?: string }>
-  listProjects(): Promise<{
-    projects: Array<{ path: string; name: string; main?: boolean }>
-    current: string
-  }>
-  setProject(request: { path: string }): Promise<{ current: string }>
-  removeProject(request: { path: string }): Promise<{
-    projects: Array<{ path: string; name: string; main?: boolean }>
-    current: string
-  }>
+  createProject: KnowledgeWikiService['createProject']
+  listProjects: KnowledgeWikiService['listProjects']
+  setProject: KnowledgeWikiService['setProject']
+  removeProject: KnowledgeWikiService['removeProject']
   enqueueIngest(input: string, force?: boolean): boolean
-  ingestQueueStatus(): Promise<IngestQueueSnapshot>
+  ingestQueueStatus: KnowledgeWikiService['ingestQueueStatus']
   queue: IngestQueueTask[]
 }
 
@@ -47,7 +41,6 @@ beforeEach(() => {
   service = new KnowledgeWikiService(ctx, wikiTestConfig({
     wikiRoot: join(root, 'wiki'),
     mainRoot: root,
-    credential: 'VISION_API_KEY',
     llmProvider: 'p',
     llmModel: 'm',
   })) as unknown as ProjectLifecycleService
@@ -62,7 +55,7 @@ afterEach(async () => {
 describe('knowledge project lifecycle', () => {
   it('unregisters an external project, cancels pending work, and preserves every local file', async () => {
     const created = await service.createProject({ name: 'External', path: external })
-    expect(created).toEqual({ path: external })
+    expect(created).toMatchObject({ path: external })
     expect(existsSync(join(external, 'wiki', 'index.md'))).toBe(true)
     expect(existsSync(join(external, 'purpose.md'))).toBe(true)
 
@@ -82,7 +75,7 @@ describe('knowledge project lifecycle', () => {
 
     // A stale client cannot resurrect an unregistered project merely because
     // its preserved wiki directory still exists.
-    expect(await service.setProject({ path: external })).toEqual({ current: root })
+    expect(await service.setProject({ path: external })).toMatchObject({ current: root })
     expect((await service.listProjects()).projects.map(project => project.path)).toEqual([root])
 
     const registry = join(root, '.llm-wiki', 'workspaces.json')
@@ -94,7 +87,7 @@ describe('knowledge project lifecycle', () => {
   it('keeps the main project non-removable', async () => {
     const result = await service.removeProject({ path: root })
     expect(result.current).toBe(root)
-    expect(result.projects).toEqual([{ path: root, name: '万相织鉴', main: true }])
+    expect(result.projects).toEqual([expect.objectContaining({ path: root, name: '万相织鉴', main: true })])
     expect(existsSync(join(root, 'wiki', 'index.md'))).toBe(true)
   })
 

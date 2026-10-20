@@ -1024,7 +1024,7 @@ Source: [`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local
 
 ## `@deepseek-ai/dsh-knowledge-wiki`
 
-Requires: `llm` · `timer` · `credentials`
+Requires: `llm` · `timer` · `credentials` · `settings`
 
 ```ts config-catalog
 /** Deployment configuration. */
@@ -1033,22 +1033,30 @@ export interface Config {
   readonly wikiRoot: string
   /** Main workspace root (fixed, non-removable); defaults to the wiki root's parent. */
   readonly mainRoot: string
-  /** Credential reference for DashScope semantic embeddings and image descriptions. */
-  readonly credential: string
-  /** LLM provider id for ingest/research (default deepseek-official). */
+  /** Text provider registered with the LLM service. */
   readonly llmProvider: string
-  /** LLM model id for ingest/research. */
+  /** Text model resolved by that provider. */
   readonly llmModel: string
-  /** Chat-completions base URL the owned stage isolate calls (default https://api.deepseek.com). */
-  readonly llmBaseUrl: string
-  /** Credential reference holding the model key; empty falls back to the deployment's declared apiKeyEnv. */
-  readonly llmCredential: string
-  /** Publish the fork's owned-worker stage executor when nothing else provides one. */
+  /** Optional independent vision provider registered with the LLM service. */
+  readonly visionProvider: string
+  /** Image model resolved by the independent vision provider. */
+  readonly visionModel: string
+  /** Independent embedding provider; all connection fields empty disables it. */
+  readonly embeddingProvider: string
+  /** OpenAI-compatible embedding API base URL owned by the embedding provider. */
+  readonly embeddingBaseUrl: string
+  /** Embedding model resolved by the independent embedding provider. */
+  readonly embeddingModel: string
+  /** Credential reference resolved only for the declared embedding endpoint. */
+  readonly embeddingCredential: string
+  /** Maximum duration of an embedding request. */
+  readonly embeddingTimeoutMs: number
+  /** Enable the owned file worker and existing LLM/web provider dispatch. */
   readonly ownedStageExecutor: boolean
 }
 ```
 
-Source: [`packages/host/knowledge-wiki/src/index.ts:116`](../packages/host/knowledge-wiki/src/index.ts)
+Source: [`packages/host/knowledge-wiki/src/index.ts:121`](../packages/host/knowledge-wiki/src/index.ts)
 
 <a id="deepseek-aidsh-llm"></a>
 
