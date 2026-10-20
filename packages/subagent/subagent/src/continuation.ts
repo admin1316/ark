@@ -29,6 +29,7 @@ import type {
   AgentHandle,
   AgentOptions,
   AgentSetupCommit,
+  CancelOptions,
   CreateAgentOptions,
 } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId, boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
@@ -800,7 +801,7 @@ export class SubagentContinuationManager {
       for (const child of activation.ownedChildren) owned.add(child)
     }
     const roots = [...this.activations.values()].filter(activation => !owned.has(activation.childId))
-    await this.disposeRoots(roots, 'activation(s)')
+    await this.disposeRoots(roots, 'activation(s)', { keepInbox: true })
   }
 
   /**
@@ -857,12 +858,12 @@ export class SubagentContinuationManager {
     // Disposal propagates cancellation top-down in the same synchronous span;
     // handle release remains child-first.
     for (const activation of targets) {
-      const disposal = this.dispose(activation)
+      const disposal = this.dispose(activation, { keepInbox: true })
       void disposal.catch(() => undefined)
     }
 
     await Promise.all(materializations.map(materialization => materialization.settled))
-    await this.disposeRoots(targetRoots, 'scoped activation(s)')
+    await this.disposeRoots(targetRoots, 'scoped activation(s)', { keepInbox: true })
   }
 
   /**
@@ -905,10 +906,11 @@ export class SubagentContinuationManager {
   private async disposeRoots(
     roots: readonly Activation[],
     failureSubject: 'activation(s)' | 'scoped activation(s)' | 'selected activation(s)',
+    options: CancelOptions = {},
   ): Promise<void> {
     const failures = await Promise.all(roots.map(async (activation) => {
       try {
-        await this.dispose(activation)
+        await this.dispose(activation, options)
         return undefined
       } catch (error: unknown) {
         return error
@@ -1473,14 +1475,14 @@ export class SubagentContinuationManager {
    * @param activation - the residency epoch to stop and release.
    * @returns the one disposal transaction owned by this Activation.
    */
-  private dispose(activation: Activation): Promise<void> {
+  private dispose(activation: Activation, options: CancelOptions = {}): Promise<void> {
     const existing = activation.disposal
     if (existing !== undefined) return existing
     const completion = Promise.withResolvers<void>()
     // Presence is the admission cutoff. Assign it before the async helper starts
     // because that helper cancels Agents and may synchronously re-enter callers.
     activation.disposal = completion.promise
-    void this.finishDisposal(activation).then(completion.resolve, completion.reject)
+    void this.finishDisposal(activation, options).then(completion.resolve, completion.reject)
     return completion.promise
   }
 
@@ -1489,17 +1491,17 @@ export class SubagentContinuationManager {
    * @param activation - the Activation whose disposal transaction is installed.
    * @returns once the handle and ownership edge are released.
    */
-  private async finishDisposal(activation: Activation): Promise<void> {
+  private async finishDisposal(activation: Activation, options: CancelOptions): Promise<void> {
     this.wake(activation)
     const { childId } = activation
     // Stop top-down before the first await. Slow descendant cleanup may delay
     // release, but it cannot let this ancestor continue model or tool work.
-    activation.handle.agent.cancel({ kind: 'parent' })
+    activation.handle.agent.cancel({ kind: 'disposed' }, options)
     const idle = activation.handle.agent.whenIdle()
     const children = [...activation.ownedChildren]
       .map(child => this.activations.get(child))
       .filter((child): child is Activation => child !== undefined)
-    const childDisposals = children.map(child => this.dispose(child))
+    const childDisposals = children.map(child => this.dispose(child, options))
 
     const failures: SubagentError[] = []
     try {
@@ -1535,7 +1537,7 @@ export class SubagentContinuationManager {
       ))
     }
     try {
-      await activation.handle.dispose()
+      await activation.handle.dispose(options)
     } catch (error: unknown) {
       failures.push(new SubagentError(
         `subagent "${childId}" activation handle disposal failed: ${errorChain(error)}`,
@@ -1619,8 +1621,7 @@ export class SubagentContinuationManager {
       // about to dispose — once per tree layer, since each layer's own notice
       // then wakes the layer above it. Injecting delivers to a parent still
       // reading its inbox and records the account in the log either way; it
-      // does NOT survive that parent's own disposal, whose `keepInbox: false`
-      // cancel durably clears whatever it never claimed.
+      // remains durable during lifecycle disposal, whose pending inbox is retained.
       if (this.closingTeardownFor(parent) !== undefined) {
         parent.inject(message)
         return

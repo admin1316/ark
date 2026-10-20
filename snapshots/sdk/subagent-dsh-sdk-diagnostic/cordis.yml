@@ -28,6 +28,7 @@
       config:
         providerName: dsh-sdk-diagnostic
         profile: sdk
+        dshBin: !!js process.env.DSH_SNAPSHOT_SOURCE_BIN
         patches:
           - !!js process.env.DSH_TEST_CHILD_PATCH
         dshHome: !!js dshHomePath('children/foreground')
@@ -48,6 +49,7 @@
       config:
         providerName: dsh-sdk-diagnostic-background
         profile: sdk
+        dshBin: !!js process.env.DSH_SNAPSHOT_SOURCE_BIN
         patches:
           - !!js process.env.DSH_TEST_CHILD_PATCH
         dshHome: !!js dshHomePath('children/background')

@@ -36,6 +36,7 @@
       name: '@deepseek-ai/dsh-subagent-dsh-sdk'
       config:
         profile: sdk
+        dshBin: !!js process.env.DSH_SNAPSHOT_SOURCE_BIN
         patches: !!js JSON.parse(process.env.DSH_TEST_CHILD_PATCHES ?? '[]')
         dshHome: !!js process.env.DSH_TEST_CHILD_HOME
         provider: mock

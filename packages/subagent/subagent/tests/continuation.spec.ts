@@ -998,7 +998,7 @@ describe('continuable durability and teardown', () => {
 
     const drained = ctx.subagents.drainContinuableChildren(parent, [target.childId, target.childId])
 
-    expect(cancel).toHaveBeenCalledWith({ kind: 'parent' })
+    expect(cancel).toHaveBeenCalledWith({ kind: 'disposed' }, {})
     expect(ctx.agents.get(sibling.childId)).toBe(siblingAgent)
     releaseTarget.resolve(undefined)
     releaseGrandchild.resolve(undefined)
@@ -1814,33 +1814,37 @@ describe('continuable settlement delivery', () => {
     )
   })
 
-  it('reports a turn that failed before reaching its first step', async () => {
+  it('parks input after preparation fails until an explicit release stops the child', async () => {
     const releaseFirst = Promise.withResolvers<undefined>()
     const adapter = new GatedAdapter([
       { chunks: textResponse('the answer'), gate: releaseFirst.promise },
       { chunks: textResponse('parent ack') },
     ])
     const { ctx, parent } = await setupWith(adapter)
-    // The shipped durability checkpoint (`dsh-session-checkpoint-policy`) is
-    // fail-closed at the step boundary, so a rejected write ends the turn after
-    // it claimed its messages and before it entered a step.
+    // A preparation failure closes the turn without consuming its input.
     ctx.on('agent/pre-step', async ({ agent: subject, turn }, next) => {
       if (subject.session.header.parentSession === undefined || turn < 2) return next()
       throw new Error('ENOSPC: no space left on device')
     })
 
     const started = await ctx.subagents.startContinuable(startSpec(parent))
-    await followup(ctx, parent, started.childId, message('second task'))
+    const second = await followup(ctx, parent, started.childId, message('second task'))
+    const child = ctx.agents.get(started.childId)!
     releaseFirst.resolve(undefined)
-    await waitNoActivation(ctx, started.childId)
+    await child.whenIdle()
+    expect(child.status).toBe('idle')
+    expect(child.inbox.nextTurn.map(input => input.id)).toEqual([second])
+    expect(hasUserText(child.session.events, 'second task')).toBe(false)
+    expect(adapter.requests).toHaveLength(1)
+    expect(settlementNotices(parent)).toEqual([])
 
+    await ctx.subagents.drainContinuableChildren(parent, [started.childId])
+    await waitNoActivation(ctx, started.childId)
     await vi.waitFor(() => { expect(settlementNotices(parent)).toHaveLength(1) })
-    // The parent must not be told the child finished: the delivery it is still
-    // waiting on was claimed out of the inbox and then swallowed by the failure.
-    const child = await ctx.sessionPersistence.load(started.childId)
-    expect(hasUserText(child.events, 'second task')).toBe(false)
+    const stored = await ctx.sessionPersistence.load(started.childId)
+    expect(hasUserText(stored.events, 'second task')).toBe(false)
     expect(settlementNotices(parent)[0]!.text).toBe(
-      `Background subagent ${started.childId} failed before it finished.`
+      `Background subagent ${started.childId} was stopped before it finished.`
       + '\nIts closing message:\nthe answer',
     )
   })
@@ -1862,8 +1866,7 @@ describe('continuable settlement delivery', () => {
     })
 
     const started = await ctx.subagents.startContinuable(startSpec(parent))
-    // Queued while turn 1 still runs, so turn 2 opens and claims it without a
-    // second model call: the Activation is mid-turn when the drain cancels it.
+    // Turn 2 prepares the queued input without consuming it before the drain.
     await followup(ctx, parent, started.childId, message('second task'))
     releaseFirst.resolve(undefined)
     await atCheckpoint.promise
@@ -1871,9 +1874,7 @@ describe('continuable settlement delivery', () => {
     releaseCheckpoint.resolve(undefined)
     await drained
 
-    // Turn 2 leaves a balanced no-step `aborted` end, so the log alone would
-    // answer with turn 1's clean completion and tell the parent its still-unrun
-    // task had finished.
+    // The retained input prevents the prior completed turn from claiming success.
     await vi.waitFor(() => { expect(settlementNotices(parent)).toHaveLength(1) })
     expect(settlementNotices(parent)[0]!.text).toBe(
       `Background subagent ${started.childId} was stopped before it finished.`
@@ -1908,7 +1909,7 @@ describe('continuable settlement delivery', () => {
     )
   })
 
-  it('reports a child an ancestor interrupted before its first step as stopped', async () => {
+  it('retains interrupted preparation until the parent explicitly releases the child', async () => {
     const atCheckpoint = Promise.withResolvers<undefined>()
     const releaseCheckpoint = Promise.withResolvers<undefined>()
     const adapter = new GatedAdapter([{ chunks: textResponse('parent ack') }])
@@ -1922,10 +1923,14 @@ describe('continuable settlement delivery', () => {
 
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await atCheckpoint.promise
-    // The shipped interrupt path: nothing about it runs inside this manager, so
-    // no pre-cancel sample could see it — the child's own log has to say so.
+    const child = ctx.agents.get(started.childId)!
     ctx.subagents.interrupt(started.childId, { kind: 'ancestor', agent: parent })
     releaseCheckpoint.resolve(undefined)
+    await child.whenIdle()
+    expect(child.inbox.nextTurn.map(input => input.id)).toEqual([started.messageId])
+    expect(adapter.requests).toHaveLength(0)
+    expect(settlementNotices(parent)).toEqual([])
+    await ctx.subagents.drainContinuableChildren(parent, [started.childId])
     await waitNoActivation(ctx, started.childId)
 
     await vi.waitFor(() => { expect(settlementNotices(parent)).toHaveLength(1) })

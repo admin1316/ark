@@ -1,9 +1,10 @@
 /**
- * Keyless snapshot coverage for the TypeScript SDK path: each scenario spawns
- * the real `dsh --profile sdk` runtime through
+ * Keyless source-plane snapshots for the TypeScript SDK path: each scenario
+ * explicitly spawns the current source `dsh --profile sdk` runtime through
  * `@deepseek-ai/dsh-sdk-client`, drives one turn over stdio JSON-RPC,
  * and pins the SDK `RunResult`, the complete notification stream, and the
- * persisted session logs. Replay serves recorded model
+ * persisted session logs. Existing built CLI output cannot select this lane's
+ * runtime implementation. Replay serves recorded model
  * responses via `llm-replay` (`cordis.snapshot.yml`); `DSH_SNAPSHOT=record`
  * re-records against the live API; `DSH_SNAPSHOT=refresh` replays committed
  * fixtures and rewrites expected outputs.
@@ -18,6 +19,7 @@ import { describe, expect, it } from 'vitest'
 import {
   captureExpectedWorkspaceSnapshot,
   captureWorkspaceSnapshot,
+  expandAtomicSessionLog,
   normalizeSessionLog,
   normalizeSessionSnapshots,
   normalizeStdout,
@@ -248,8 +250,8 @@ interface LoggedTool {
 }
 
 function assembledTools(log: PersistedLog): LoggedTool[] {
-  const event = log.content.trimEnd().split('\n')
-    .map(line => JSON.parse(line) as LoggedRequestHeader)
+  const event = records(log.content)
+    .map(event => event as LoggedRequestHeader)
     .find(candidate => candidate.type === 'request/header')
   const tools = event?.data?.header?.tools
   if (tools === undefined) throw new Error('session log has no request/header tools')
@@ -268,8 +270,8 @@ function assembledToolDescriptions(log: PersistedLog): Record<string, string> {
 }
 
 function assembledSystem(log: PersistedLog): string {
-  const event = log.content.trimEnd().split('\n')
-    .map(line => JSON.parse(line) as LoggedRequestHeader)
+  const event = records(log.content)
+    .map(event => event as LoggedRequestHeader)
     .find(candidate => candidate.type === 'request/header')
   const system = event?.data?.header?.system
   if (typeof system !== 'string') throw new Error('session log has no request/header system')
@@ -277,8 +279,8 @@ function assembledSystem(log: PersistedLog): string {
 }
 
 function assembledRuntimeContexts(log: PersistedLog): string[] {
-  return log.content.trimEnd().split('\n').flatMap((line) => {
-    const event = JSON.parse(line) as {
+  return records(log.content).flatMap((record) => {
+    const event = record as {
       type?: string
       data?: { source?: { kind?: string; plugin?: string }; content?: Array<{ type?: string; text?: unknown }> }
     }
@@ -361,7 +363,7 @@ interface TurnAction {
 }
 
 function records(log: string): JsonObject[] {
-  return log.split(/\r?\n/)
+  return expandAtomicSessionLog(log).split(/\r?\n/)
     .filter(line => line.trim() !== '')
     .map(line => JSON.parse(line) as JsonObject)
 }
@@ -535,9 +537,12 @@ async function runScenario(scenario: CorpusScenario): Promise<{
     DSH_SNAPSHOT: mode,
     DSH_SNAPSHOT_PROVIDER: route.provider,
     DSH_SNAPSHOT_MODEL: route.model,
+    DSH_SNAPSHOT_SOURCE_BIN: dshBin,
     DSH_TELEMETRY_DISABLED: '1',
     DSH_AGENTS_HOME: join(cwd, '.agents'),
-    NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+    NODE_OPTIONS: [process.env.NODE_OPTIONS, '--import', import.meta.resolve('tsx/esm'),
+      '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+    TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../apps/cli/tsconfig.json', import.meta.url)),
     ...parentFixture === undefined ? {} : {
       DSH_SNAPSHOT_FILE: parentFixture,
       ...childFixtures.length > 0 ? { DSH_SNAPSHOT_CHILD_FILES: childFixtures.join(delimiter) } : {},
@@ -551,6 +556,7 @@ async function runScenario(scenario: CorpusScenario): Promise<{
   }
 
   const harness = new DeepSeekHarness({
+    dshBin,
     profile: 'sdk',
     patches,
     dshHome,

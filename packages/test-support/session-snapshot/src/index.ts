@@ -20,6 +20,7 @@
 export {
   redactSessionSnapshotIds,
 } from './identity.ts'
+export { expandAtomicSessionLog } from './storage-records.ts'
 export {
   runScenario,
   snapshotSpillRoot,

@@ -2989,14 +2989,14 @@
       "payload": {
         "sessionId": "{{child-1}}",
         "event": {
-          "type": "agent/inbox/spliced",
+          "type": "subagent/descriptor",
           "seq": 5,
           "time": 0,
           "data": {
-            "target": "next-turn",
-            "start": 0,
-            "removedCount": 1,
-            "inserted": []
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Check direct child"
           }
         }
       }
@@ -3006,14 +3006,14 @@
       "payload": {
         "sessionId": "{{child-1}}",
         "event": {
-          "type": "subagent/descriptor",
+          "type": "agent/inbox/spliced",
           "seq": 6,
           "time": 0,
           "data": {
-            "version": 3,
-            "mode": "one-shot",
-            "provider": "spawn",
-            "label": "Check direct child"
+            "target": "next-turn",
+            "start": 0,
+            "removedCount": 1,
+            "inserted": []
           }
         }
       }
@@ -3747,23 +3747,6 @@
     {
       "method": "session.event",
       "payload": {
-        "sessionId": "{{child-2}}",
-        "event": {
-          "type": "agent/inbox/spliced",
-          "seq": 5,
-          "time": 0,
-          "data": {
-            "target": "next-turn",
-            "start": 0,
-            "removedCount": 1,
-            "inserted": []
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/agent-start",
@@ -3785,12 +3768,29 @@
         "sessionId": "{{child-2}}",
         "event": {
           "type": "subagent/descriptor",
-          "seq": 6,
+          "seq": 5,
           "time": 0,
           "data": {
             "version": 3,
             "mode": "one-shot",
             "provider": "spawn"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{child-2}}",
+        "event": {
+          "type": "agent/inbox/spliced",
+          "seq": 6,
+          "time": 0,
+          "data": {
+            "target": "next-turn",
+            "start": 0,
+            "removedCount": 1,
+            "inserted": []
           }
         }
       }

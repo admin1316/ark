@@ -94,6 +94,8 @@ A request is validated against the provider's advertised capabilities, a durable
 
 The manager reserves a child identity, resolves the durable descriptor, creates (or cold-resumes) the child Agent, installs it in an Activation, and submits the prompt. Later messages become FIFO turns through the child's own inbox; an absent Activation cold-resumes from the persisted session. When a resident Activation settles, the manager tells the child's direct parent in the parent's own turn stream.
 
+Manager unload and host-descendant teardown retain pending input throughout the child forest. Explicit selected-child release discards its pending input. Both paths stop new work before waiting for quiescence; a retained inbox prevents a completed outcome.
+
 ### Ownership and invariants
 
 - **Publication is the boundary** — before it the provider owns the setup and must roll back on failure; after it the caller owns the run and must dispose it.

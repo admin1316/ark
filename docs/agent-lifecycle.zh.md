@@ -24,17 +24,20 @@ sequenceDiagram
   Agent->>Driver: queued work wakes driver
   Driver-->>SDK: <code>agent/status</code> running
   Driver->>Session: <code>turn/start</code>
-  Note over Agent,Driver: claim pending next-step input plus one queued prompt
-  Driver-->>SDK: <code>agent/inbox/spliced</code> pure deletion
-  Driver-->>SDK: <code>agent/inbox/claimed</code> { message, turn } per message
+  Note over Agent,Driver: preview pending next-step input plus one queued prompt
+  Driver->>Prompt: <code>system-prompt/assemble</code> waterfall
   Driver->>Hooks: <code>agent/pre-step</code> waterfall
   Hooks-->>Driver: authoritative reject or enter(messages)
-  alt proposed step rejected or pre-step failed
-    Driver-->>Driver: claimed batch stays removed, the open turn spends no step
+  alt preparation failed, cancelled, or selected input changed
+    Driver-->>Driver: pending input stays queued, the open turn spends no step
+  else proposed step rejected
+    Driver->>Session: <code>agent/inbox/spliced</code> pure deletions in one atomic commit
+    Driver-->>SDK: <code>agent/inbox/claimed</code> { message, turn } per message
   else enter proposed step
-  Driver->>Session: <code>step/start</code>
-  Driver->>Session: <code>user/message</code> per entered message
-  Driver->>Prompt: <code>system-prompt/assemble</code> waterfall
+  Driver-->>Driver: validate the exact preview before synchronous commit
+  Driver->>Session: atomic inbox deletions, <code>step/start</code>, <code>user/message</code>*
+  Session-->>SDK: <code>session/event</code> per committed event
+  Driver-->>SDK: <code>agent/inbox/claimed</code> { message, turn } per message
   Driver->>LLM: <code>agent/request</code> waterfall, then <code>llm/stream</code> waterfall
   LLM-->>Driver: StreamChunk*
   Driver->>Session: <code>assistant/chunk</code>*
@@ -62,10 +65,7 @@ sequenceDiagram
     Driver->>Hooks: <code>agent/turn-stopping</code> serial terminal checkpoint
   end
   opt next-step input is pending
-    Driver-->>Driver: claim pending next-step input
-    Driver-->>SDK: <code>agent/inbox/claimed</code> { message, turn } per message
-    Driver->>Hooks: <code>agent/pre-step</code> waterfall
-    Hooks-->>Driver: authoritative reject or enter(messages)
+    Driver-->>Driver: repeat preview, asynchronous preparation, and atomic commit
   end
   end
   end
@@ -77,7 +77,7 @@ sequenceDiagram
 
 `dsh-compaction-basic` 在派生请求之前通过 `agent/pre-step` 处理压力，而 `agent/request-error` 仅用于规范的上下文溢出。任一触发条件满足后，系统都会先执行可选的工具结果剪枝，再选择摘要。恢复发生在失败步骤结束之后、失败轮次结束之前；只有当剪枝或摘要生成推进了 surface replacement generation 时，系统才会开启一个全新的重试轮次，否则仍以原始请求错误为准。
 
-以返回的 `agent/pre-step` 决策为准；通过包装 `next()` 的监听器会保留下游消息与 `startsRequestSeries`，除非有意替换。steering（中途引导）和注入的上下文在后续的认领操作取得其下一步骤批次后，会经过同一 waterfall（瀑布式事件）。
+以返回的 `agent/pre-step` 决策为准；通过包装 `next()` 的监听器会保留下游消息与 `startsRequestSeries`，除非有意替换。钩子运行前，所选输入改变可使提示词组装重做；可能执行副作用的 pre-step 钩子不会自动重跑。驱动器在准备后验证预览，并同步将 inbox 删除与已接受的步骤及消息一起提交。取消或准备失败保留待处理输入；显式拒绝则消费所选输入，而不进入步骤。steering（中途引导）和注入的上下文在后续步骤使用同一边界。
 
 需要可回放 transcript（文本记录）数据的 SDK 用户应当消费 `session/event`；`agent/*` 是用于队列与状态、提示词拦截、请求构造、steering、继续执行和错误处理的实时协调接口。
 

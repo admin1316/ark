@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-20-atomic-inbox-input-commit.md
-2026-10-20-atomic-inbox-input-commit.md: f6e6ba882c075731c013a87e2b5cf273deee17bb
-2026-10-20-atomic-inbox-input-commit.zh.md: 7807e028af18e313220c7b5f0a876760603f3b05
+2026-10-20-atomic-inbox-input-commit.md: 104208f14a91b2e386a1f62d6a9121e6053e8150
+2026-10-20-atomic-inbox-input-commit.zh.md: d7cd8d889351e98fc8e640bea2c07eddcc8b98e1

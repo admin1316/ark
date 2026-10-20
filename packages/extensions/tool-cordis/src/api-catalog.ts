@@ -2382,14 +2382,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>',
-        description: 'Close continuable admission below exact live parent Agents, stop only their visible descendant Activations synchronously, then await admitted scoped materializations and release those forests child-first. The scoped cutoff lasts until each exact parent leaves the registry; unrelated parent trees remain live.',
+        description: 'Close continuable admission below exact live parent Agents, stop only their visible descendant Activations synchronously, then await admitted scoped materializations and release those forests child-first. The scoped cutoff lasts until each exact parent leaves the registry; unrelated parent trees remain live. Pending input is retained throughout these forests.',
         parameters: [{ name: 'parents', description: 'exact host-owned parent Agents entering teardown.' }],
         returns: 'once every retained descendant Activation released its `AgentHandle`.',
         throws: ['an aggregate error after all branches settle when any failed.'],
       },
       {
         signature: 'async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>',
-        description: 'Release selected resident continuable direct children of one exact live parent. Other children of the same parent remain admitted and resident. Absent targets and a manager-less composition are accepted no-ops.',
+        description: 'Release selected resident continuable direct children of one exact live parent. Other children of the same parent remain admitted and resident. Pending input in the selected forest is discarded. Absent targets and a manager-less composition are accepted no-ops.',
         parameters: [{ name: 'parent', description: 'exact live direct parent authorizing the selected release.' }, { name: 'childIds', description: 'durable direct-child ids to release when resident.' }],
         returns: 'once every selected Activation released its `AgentHandle`.',
         throws: ['{SubagentError} `UNAUTHORIZED` when a resident target belongs to a different parent or the supplied parent identity is stale.'],

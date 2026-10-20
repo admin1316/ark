@@ -22,17 +22,20 @@ sequenceDiagram
   Agent->>Driver: queued work wakes driver
   Driver-->>SDK: <code>agent/status</code> running
   Driver->>Session: <code>turn/start</code>
-  Note over Agent,Driver: claim pending next-step input plus one queued prompt
-  Driver-->>SDK: <code>agent/inbox/spliced</code> pure deletion
-  Driver-->>SDK: <code>agent/inbox/claimed</code> { message, turn } per message
+  Note over Agent,Driver: preview pending next-step input plus one queued prompt
+  Driver->>Prompt: <code>system-prompt/assemble</code> waterfall
   Driver->>Hooks: <code>agent/pre-step</code> waterfall
   Hooks-->>Driver: authoritative reject or enter(messages)
-  alt proposed step rejected or pre-step failed
-    Driver-->>Driver: claimed batch stays removed, the open turn spends no step
+  alt preparation failed, cancelled, or selected input changed
+    Driver-->>Driver: pending input stays queued, the open turn spends no step
+  else proposed step rejected
+    Driver->>Session: <code>agent/inbox/spliced</code> pure deletions in one atomic commit
+    Driver-->>SDK: <code>agent/inbox/claimed</code> { message, turn } per message
   else enter proposed step
-  Driver->>Session: <code>step/start</code>
-  Driver->>Session: <code>user/message</code> per entered message
-  Driver->>Prompt: <code>system-prompt/assemble</code> waterfall
+  Driver-->>Driver: validate the exact preview before synchronous commit
+  Driver->>Session: atomic inbox deletions, <code>step/start</code>, <code>user/message</code>*
+  Session-->>SDK: <code>session/event</code> per committed event
+  Driver-->>SDK: <code>agent/inbox/claimed</code> { message, turn } per message
   Driver->>LLM: <code>agent/request</code> waterfall, then <code>llm/stream</code> waterfall
   LLM-->>Driver: StreamChunk*
   Driver->>Session: <code>assistant/chunk</code>*
@@ -60,10 +63,7 @@ sequenceDiagram
     Driver->>Hooks: <code>agent/turn-stopping</code> serial terminal checkpoint
   end
   opt next-step input is pending
-    Driver-->>Driver: claim pending next-step input
-    Driver-->>SDK: <code>agent/inbox/claimed</code> { message, turn } per message
-    Driver->>Hooks: <code>agent/pre-step</code> waterfall
-    Hooks-->>Driver: authoritative reject or enter(messages)
+    Driver-->>Driver: repeat preview, asynchronous preparation, and atomic commit
   end
   end
   end
@@ -75,7 +75,7 @@ The `assistant/message` event records every successful provider call, including 
 
 `dsh-compaction-basic` uses `agent/pre-step` for pressure before request derivation and `agent/request-error` only for canonical context overflow. Once either trigger qualifies, optional tool-result pruning runs before summary selection. Recovery works between the closed failed step and failed turn close, and opens a fresh retry turn only when pruning or summarization advances the surface replacement generation; otherwise the original request error remains authoritative.
 
-The returned `agent/pre-step` decision is authoritative; listeners wrapping `next()` preserve downstream messages and `startsRequestSeries` unless replacement is intentional. Steering and injected context pass through the same waterfall after a later claim operation takes their next-step batch.
+The returned `agent/pre-step` decision is authoritative; listeners wrapping `next()` preserve downstream messages and `startsRequestSeries` unless replacement is intentional. Prompt assembly may repeat when selected input changes before the hook; an effectful pre-step hook is not automatically repeated. The driver validates the preview after preparation and synchronously commits inbox deletions with the accepted step and messages. Cancellation or preparation failure preserves pending input; an explicit rejection consumes its selected input without entering a step. Steering and injected context use the same boundary on later steps.
 
 SDK users that need replayable transcript data should consume `session/event`; `agent/*` is the live coordination API for queue/status, prompt interception, request construction, steering, continuation, and errors.
 

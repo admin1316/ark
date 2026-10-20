@@ -612,7 +612,7 @@ registerContinuableSetup(contribution: ContinuableSetupContribution): () => void
  * visible descendant Activations synchronously, then await admitted scoped
  * materializations and release those forests child-first. The scoped cutoff
  * lasts until each exact parent leaves the registry; unrelated parent trees
- * remain live.
+ * remain live. Pending input is retained throughout these forests.
  * @param parents - exact host-owned parent Agents entering teardown.
  * @returns once every retained descendant Activation released its `AgentHandle`.
  * @throws an aggregate error after all branches settle when any failed.
@@ -622,7 +622,8 @@ async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>
 /**
  * Release selected resident continuable direct children of one exact live
  * parent. Other children of the same parent remain admitted and resident.
- * Absent targets and a manager-less composition are accepted no-ops.
+ * Pending input in the selected forest is discarded. Absent targets and a
+ * manager-less composition are accepted no-ops.
  * @param parent - exact live direct parent authorizing the selected release.
  * @param childIds - durable direct-child ids to release when resident.
  * @returns once every selected Activation released its `AgentHandle`.

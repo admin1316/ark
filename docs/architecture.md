@@ -54,6 +54,8 @@ Here are some core packages that contribute to the Cordis tree.
 
 Events are the extension points, and picking the right domain is the first decision in most changes.
 
+Lifecycle teardown retains pending input while preventing further production; an explicit handle disposal or selected-child release discards pending input by default.
+
 Agent creation and resume prepare privately. The synchronous `agent/publishing` check runs at final registry entry before publication, so lifecycle owners can reject a late prepared agent while shutdown admission is closed.
 
 - **Session events** are durable facts appended to the log and broadcast through `session/event`. Use one when the fact must survive a reload.

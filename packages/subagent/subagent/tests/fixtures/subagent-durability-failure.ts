@@ -15,9 +15,9 @@ export const inject = ['agents', 'sessionPersistence', 'subagents']
  *  - The unknown-id `send_message` (`UNKNOWN_CHILD_ID`) resolves through a
  *    persistence load fenced behind both accepted follow-ups, so the transcript
  *    records the same order on every runner.
- *  - The child's final continuation turn fails its durability checkpoint with a
- *    fixed message, so the scenario proves child-first disposal survives a failed
- *    last flush.
+ *  - The child's final continuation turn fails its request durability checkpoint
+ *    after input commits, so its third model call never starts and child-first
+ *    disposal still observes the failed flush.
  *  - Under `DSH_SUBAGENT_PUBLISHED_FAILURE`, a one-shot child's first
  *    follow-up fails after publication, so its model prompt never runs; its
  *    published handle then also fails disposal, so the parent observes both
@@ -116,16 +116,15 @@ export function apply(ctx: Context): void {
     return next()
   })
 
-  // The child's ordinary per-turn flushes succeed; only the final continuation
-  // turn's durability checkpoint fails, turning that turn/end into a durable
-  // error the parent never sees.
-  const childTurn = new WeakMap<object, number>()
+  // Preparation must keep the third input pending until it commits. Arm only
+  // after step entry, so the request checkpoint fails before the model call.
+  const failedCheckpoint = new WeakSet<object>()
   ctx.on('session/event', (session, event) => {
-    if (session.header.parentSession === undefined || event.type !== 'turn/start') return
-    childTurn.set(session, event.data.turn)
+    if (session.header.parentSession === undefined || event.type !== 'step/start') return
+    if (event.data.turn === FAILED_CHECKPOINT_TURN) failedCheckpoint.add(session)
   })
   ctx.on('session/flush', (session) => {
     if (session.header.parentSession === undefined) return
-    if (childTurn.get(session) === FAILED_CHECKPOINT_TURN) throw new Error('snapshot disk full')
+    if (failedCheckpoint.has(session)) throw new Error('snapshot disk full')
   })
 }

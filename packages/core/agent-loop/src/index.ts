@@ -568,7 +568,7 @@ export class AgentLoop extends Service implements AgentFactory {
       })
       return operation
     }
-    const untrack = this.ownership.track(dispose)
+    const untrack = this.ownership.track(() => dispose(false, { keepInbox: true }))
     let unfollowOwner: () => Promise<void> | void
     try {
       unfollowOwner = ownerCtx.effect(() => () => {
@@ -576,7 +576,7 @@ export class AgentLoop extends Service implements AgentFactory {
         // unregistering this already-running owner effect from inside itself.
         if (disposing !== undefined) return
         abort.abort(new Error(`agent "${id}" setup aborted: owner disposed during setup`))
-        return dispose(true)
+        return dispose(true, { keepInbox: true })
       }, `agentLoop.lifecycle(${id})`)
       /* v8 ignore start -- ctx.effect throws only on an inactive fiber, which assertActive() above already rejected */
     } catch (error: unknown) {

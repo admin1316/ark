@@ -200,7 +200,7 @@ export function createActivationObserver(
       const own = child.session.events.slice(boundary)
       const output = finalAssistantOutput(own)
       captured = {
-        stopReason: epochStopReason(own),
+        stopReason: epochStopReason(own, child.inbox.hasPending),
         ...output === undefined ? {} : { output },
       }
     },
@@ -226,13 +226,14 @@ export function createActivationObserver(
  * {@link foldConsumedWork} supplies both halves the raw turn sequence cannot:
  * which turn accounts for the work this epoch consumed, and whether accepted
  * work was cancelled after it without any turn opening over it. A recorded
- * failure still wins over a cancellation — stopping a child that had already
- * failed does not turn its failure into a cancellation.
+ * failure still wins over a cancellation. The final inbox projection also
+ * identifies work retained by lifecycle disposal without a consumed turn.
  * @param events - this epoch's own event suffix.
+ * @param pending - whether the quiescent child retains unconsumed input.
  * @returns its terminal stop reason; `completed` only for an epoch that both
  *   closed cleanly and had nothing left to run.
  */
-function epochStopReason(events: readonly SessionEvent[]): SubagentResult['stopReason'] {
+function epochStopReason(events: readonly SessionEvent[], pending: boolean): SubagentResult['stopReason'] {
   const { end, droppedUnrun } = foldConsumedWork(events)
   switch (end?.data.reason.kind) {
     case 'max-tokens':
@@ -247,10 +248,10 @@ function epochStopReason(events: readonly SessionEvent[]): SubagentResult['stopR
     case 'blocked':
       return 'refusal'
     // A clean ending and no accounting turn at all share one rule: the epoch
-    // finished what it was given unless a cancelled queue says otherwise.
+    // finished what it was given only if no input was dropped or retained.
     case undefined:
     case 'completed':
-      return droppedUnrun ? 'aborted' : 'completed'
+      return droppedUnrun || pending ? 'aborted' : 'completed'
     /* v8 ignore next 3 -- `TurnEndReason` is merge-extensible, so this arm needs a
      * backend that adds a variant; treating an unnameable reason as success would
      * report failed work as completed. */

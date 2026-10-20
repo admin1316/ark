@@ -72,11 +72,13 @@ Each recorded-session directory carries a closed `snapshot.yml` manifest plus it
 
 `normalizeSessionSnapshot` retains the complete session header and event payloads but omits ordinary `seq`/`time` and packed-row `seq0`/`time0` envelopes from committed fixtures after normalizing paths and scrubbing request headers. Replay synthesizes the envelopes in memory, while runtime persistence continues to write complete logs. Fixtures use canonical packed rows; the [temporary repository migrator](../../../scripts/migrate-packed-session-fixtures.ts) (`pnpm run migrate:packed-session-fixtures`) rewrites older layouts, and its [removal proposal](../../../.agents/notes/proposed/process/2026-07-26-remove-packed-session-fixture-migrator.md) owns its deletion.
 
-The kit expands validated physical `atomic-events` records before identity mapping, normalization, and replay. Canonical fixtures retain the logical stream; the assembled headless `input-atomic` scenario separately checks the actual persisted group, so normalization cannot hide a missing atomic write.
+The kit expands validated physical `atomic-events` records before identity mapping, normalization, and replay. Adapters use the exported `expandAtomicSessionLog` before inspecting logical messages or deriving fixture input actions. Canonical fixtures retain the logical stream; the assembled headless `input-atomic` scenario separately checks the actual persisted group, so normalization cannot hide a missing atomic write.
 
 ### Record, replay, and refresh
 
 `pnpm run test:snapshot:record` calls the live LLM and rewrites recorded model fixtures; `pnpm run test:snapshot:refresh` stays keyless, runs the replay overlay, and rewrites stdout, comparable session-log expected outputs, and owned prompt and tool-schema sidecars from committed model scripts. Each composition owner keeps its replay patch beside its live patch; top-level `snapshots/` owns session-driven scenarios, while other expected outputs stay beside their owning package. [`dsh-llm-replay`](../llm-replay/README.md) serves the recorded streams selected through `DSH_SNAPSHOT_*` environment values.
+
+The TypeScript SDK adapter tests the current source CLI under tsx. It selects that entry explicitly for the root and SDK-spawned child runtimes, so existing built CLI output cannot mask source changes. Published-runtime acceptance uses separate built artifact smokes.
 
 ### Pinning request headers
 
