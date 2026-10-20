@@ -744,6 +744,15 @@ public struct ArkComposerDraftDocument: Codable, Equatable, Sendable {
     return true
   }
 
+  /// A displayed terminal command error preserves content for an explicitly new submission.
+  mutating func retireSubmission() {
+    submissionID = nil
+    submissionMode = nil
+    submissionTimeZone = nil
+    submissionPermissionPreset = nil
+    revision &+= 1
+  }
+
   public mutating func replaceText(_ next: String) {
     guard next != text else { return }
     let range = editRange(from: text, to: next)

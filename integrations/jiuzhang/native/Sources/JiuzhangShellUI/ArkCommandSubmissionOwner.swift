@@ -55,14 +55,10 @@ final class ArkCommandSubmissionOwner {
     try await documentStore.removeInflightSubmission(receipt.invocationID)
   }
 
-  /// The composer has already persisted this exact payload and retains its journal until success.
+  /// The composer persists this payload and acknowledges either confirmed terminal result.
   func submitCaptured(sessionID: String, line: String, images: [ArkPromptImage],
     invocationID: String) async throws -> ArkCommandExecution {
-    let execution = try await submit(sessionID: sessionID, line: line, images: images, invocationID: invocationID)
-    guard execution.result == .success else {
-      throw ArkAPIError(message: execution.text ?? "命令执行失败")
-    }
-    return execution
+    try await submit(sessionID: sessionID, line: line, images: images, invocationID: invocationID)
   }
 
   private func submit(sessionID: String, line: String, images: [ArkPromptImage], invocationID: String) async throws -> ArkCommandExecution {

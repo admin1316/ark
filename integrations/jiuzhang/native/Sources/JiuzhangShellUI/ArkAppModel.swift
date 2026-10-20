@@ -4504,8 +4504,15 @@ public final class ArkAppModel: ObservableObject {
               throw ArkAPIError(message: "命令提交身份缺失，请重新编辑后发送")
             }
             submittedAsCommand = true
-            _ = try await commandSubmissions.submitCaptured(sessionID: sessionID, line: text,
+            let execution = try await commandSubmissions.submitCaptured(sessionID: sessionID, line: text,
               images: images, invocationID: invocationID)
+            if execution.result == .error {
+              guard composerOperationIsCurrent(submissionOwner), selectedSessionID == sessionID else { return }
+              composerErrorMessage = execution.text ?? "命令执行失败"
+              try await retireFailedComposerCommand(capturedDocument, sessionID: sessionID,
+                sourceSessionID: sourceSessionID)
+              return
+            }
           }
         }
         guard composerOperationIsCurrent(submissionOwner) else { return }
@@ -4619,6 +4626,29 @@ public final class ArkAppModel: ObservableObject {
       pendingDocuments = []
     } else { composerAttachmentsBySession.removeValue(forKey: Keys.draft(sessionID)) }
     discardPersistedComposerAttachments(for: sessionID)
+  }
+
+  private func retireFailedComposerCommand(_ captured: ArkComposerDraftDocument, sessionID: String,
+    sourceSessionID: String?) async throws {
+    await composerPersistence.flush()
+    var replacement = captured
+    replacement.retireSubmission()
+    let saved = try await documentStore.acknowledgeCommandDraft(sessionID: sessionID,
+      previous: captured, replacement: replacement)
+    let latest = selectedSessionID == sessionID ? composerDraftDocument
+      : Self.loadComposerDraft(defaults: defaults, sessionID: sessionID)
+    if latest == captured {
+      guard saved else { throw ArkAPIError(message: "命令错误已确认，但草稿保存尚未确认；请重试查询原回执") }
+      persistComposerDraft(replacement, for: sessionID)
+      if selectedSessionID == sessionID { installComposerDraft(replacement) }
+    }
+    await composerPersistence.flush()
+    try await documentStore.removeInflightSubmission(captured.submissionID)
+    retireRecoverableSubmission(captured.submissionID)
+    if sourceSessionID != sessionID {
+      try await documentStore.acknowledgePendingSubmission(sessionID: sourceSessionID, submissionID: captured.submissionID)
+      composerMigratingDrafts.removeValue(forKey: Keys.draft(sourceSessionID))
+    }
   }
 
   private func migrateComposerSubmission(

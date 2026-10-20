@@ -27,6 +27,16 @@ private final class ComposerIsolationURLProtocol: URLProtocol, @unchecked Sendab
     lock.lock(); defer { lock.unlock() }
     return held.last(where: { $0.body["method"]?.stringValue == "session/command" })?.body["payload"]?["args"]?["request"]
   }
+  static func failCommandTransport() {
+    lock.lock()
+    let pending = held.filter { $0.body["method"]?.stringValue == "session/command" }
+    held.removeAll { $0.body["method"]?.stringValue == "session/command" }
+    lock.unlock()
+    for item in pending {
+      lock.lock(); item.stopped = true; lock.unlock()
+      item.client?.urlProtocol(item, didFailWithError: URLError(.networkConnectionLost))
+    }
+  }
   static func releaseCommand(state: String, reason: String = "interrupted", resultKind: String = "success") {
     lock.lock()
     let pending = held.filter { $0.body["method"]?.stringValue == "session/command" }
@@ -345,11 +355,88 @@ private func runComposerCommandReceiptChecks(model: ArkAppModel, store: ArkDocum
   check(model.composer == "/record uncertain", "running command receipt cannot clear the draft")
   model.sendComposer()
   _ = await commandHeld()
+  ComposerIsolationURLProtocol.releaseCommand(state: "unknown", reason: "durability-unconfirmed")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  model.sendComposer()
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == invocationID,
+    "unconfirmed command result durability retains the original composer invocation")
+  ComposerIsolationURLProtocol.failCommandTransport()
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  model.sendComposer()
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == invocationID,
+    "lost command transport still queries the original invocation instead of making a new intent")
   text("new input while command receipt returns")
   ComposerIsolationURLProtocol.releaseCommand(state: "completed")
   _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
   check(model.composer == "new input while command receipt returns",
     "completed native command clears only its captured draft revision")
+
+  text("/record terminal error")
+  model.addPastedImage(data: Data([91]), mediaType: .png)
+  let retainedImages = model.pendingImages
+  model.sendComposer()
+  verify(await commandHeld(), "terminal composer error fixture reaches the real command codec")
+  let failedID = ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed", resultKind: "error")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.composerErrorMessage == "synthetic confirmed command failure"
+    && model.composer == "/record terminal error" && model.pendingImages == retainedImages,
+    "displayed completed composer error retains text and images while retiring only its old intent")
+  do {
+    let restored = try await ArkDocumentReferenceStore(rootURL: root).restorePendingSubmission(sessionID: "command-A")
+    let inflight = try await store.restoreInflightSubmissions(sessionID: "command-A")
+    check(restored?.document.text == "/record terminal error" && restored?.document.submissionID == nil
+      && restored?.images == retainedImages && !inflight.contains { $0.document.submissionID == failedID },
+      "terminal composer error durably preserves the existing attachment journal without a retry identity")
+  } catch { check(false, "terminal command draft restores after acknowledgement: \(error)") }
+  model.sendComposer()
+  verify(await commandHeld(), "a new explicit composer submit after completed error reaches transport")
+  check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue != failedID,
+    "a new same-text composer submit after acknowledged error uses a fresh invocation")
+  text("new input while terminal error returns")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed", resultKind: "error")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.composer == "new input while terminal error returns" && model.pendingImages == retainedImages,
+    "old terminal error cannot overwrite later text or remove its attachments")
+
+  text("/record error acknowledgement failure")
+  model.sendComposer()
+  _ = await commandHeld()
+  let unacknowledgedID = ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue
+  let blockedRoot = root.appendingPathExtension("temporarily-unavailable")
+  do {
+    try FileManager.default.moveItem(at: root, to: blockedRoot)
+    try Data("synthetic blocked store".utf8).write(to: root)
+    ComposerIsolationURLProtocol.releaseCommand(state: "completed", resultKind: "error")
+    _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+    check(model.composer == "/record error acknowledgement failure" && model.pendingImages == retainedImages,
+      "failed native terminal acknowledgement retains the original identity and payload")
+    try FileManager.default.removeItem(at: root)
+    try FileManager.default.moveItem(at: blockedRoot, to: root)
+    let restored = try await store.restorePendingSubmission(sessionID: "command-A")
+    check(restored?.document.submissionID == unacknowledgedID,
+      "failed native terminal acknowledgement leaves the durable draft identity unchanged")
+  } catch {
+    if FileManager.default.fileExists(atPath: blockedRoot.path) {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.moveItem(at: blockedRoot, to: root)
+    }
+    check(false, "terminal acknowledgement failure fixture restores its synthetic store: \(error)")
+  }
+  model.sendComposer()
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == unacknowledgedID,
+    "retry after native acknowledgement failure queries the same terminal receipt")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed", resultKind: "error")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  model.sendComposer()
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue != unacknowledgedID,
+    "restored storage permits a fresh explicit intent only after terminal acknowledgement")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
 
   model.setPermissionPreset("read-only")
   verify(await commandHeld(), "native permission selector uses the shared command owner")
@@ -460,6 +547,20 @@ private func runComposerCommandReceiptChecks(model: ArkAppModel, store: ArkDocum
   }
   check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == creationID,
     "main command retry retains its identity after a completed prerequisite replay")
+  ComposerIsolationURLProtocol.releaseCommand(state: "completed", resultKind: "error")
+  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(model.composer == "/record created session", "completed new-session error preserves the migrated draft")
+  do {
+    let target = try await store.restorePendingSubmission(sessionID: creationID)
+    let home = try await store.restorePendingSubmission(sessionID: nil)
+    check(target?.document.submissionID == nil && home?.document.submissionID != creationID,
+      "completed migrated error retires both target and home identities without removing target content")
+  } catch { check(false, "migrated terminal error restores its preserved draft: \(error)") }
+  model.sendComposer()
+  _ = await commandHeld()
+  check(ComposerIsolationURLProtocol.latestCommand?["line"]?.stringValue == "/record created session"
+    && ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue != creationID,
+    "explicit submit after migrated terminal error uses a fresh main identity without repeating creation")
   ComposerIsolationURLProtocol.releaseCommand(state: "completed")
   _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
   check(model.composer.isEmpty, "completed new-session command clears its exact migrated draft")
